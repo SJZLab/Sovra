@@ -24,7 +24,8 @@ non-enforcing `kindnet` CNI, once with Calico installed) and prove the
 first cluster and actually blocks/allows real TCP connections on the
 second, for the exact contrast this task's negative_acceptance asks for.
 
-Reuses `packages.security.url_policy.is_cloud_metadata_address` as this
+Reuses `packages.security.url_policy._CLOUD_METADATA_NETWORKS` (a real CIDR
+overlap check against it, not a probe of a few concrete addresses) as this
 module's own single source of truth for "what counts as a cloud-metadata
 identity" (Section 65.4's own canonical AWS/GCP/Azure/DigitalOcean/Alibaba
 IMDS addresses) rather than re-deriving a second, possibly-drifting list --
@@ -39,11 +40,11 @@ import hashlib
 import ipaddress
 import json
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 
 import yaml
 
-from packages.security.url_policy import is_cloud_metadata_address
+from packages.security.url_policy import _CLOUD_METADATA_NETWORKS
 
 __all__ = [
     "NetworkPolicyTemplateError",
@@ -52,6 +53,7 @@ __all__ = [
     "IPv6EscapeError",
     "MissingExplicitScopingError",
     "InvalidEndpointDefinitionError",
+    "PublicCidrEndpointError",
     "PortRule",
     "CidrEndpoint",
     "PodSelectorEndpoint",
@@ -83,8 +85,8 @@ class NetworkPolicyDefaultOpenError(NetworkPolicyTemplateError):
 
 class MetadataEndpointExposedError(NetworkPolicyTemplateError):
     """`block_metadata_endpoint=False`, or an allowed endpoint's CIDR
-    contains a real cloud-metadata address
-    (`packages.security.url_policy.is_cloud_metadata_address`) --
+    overlaps a real cloud-metadata network
+    (`packages.security.url_policy._CLOUD_METADATA_NETWORKS`) --
     Section 65.4's own metadata carve-out, applied here to a workload's
     outbound allowlist rather than this process's own."""
 
@@ -114,14 +116,121 @@ class MissingExplicitScopingError(NetworkPolicyTemplateError):
 class InvalidEndpointDefinitionError(NetworkPolicyTemplateError):
     """A structurally malformed endpoint: an unparseable CIDR, an empty
     `ports` tuple (this module never renders an "all ports" allow rule --
-    every explicit endpoint names its exact allowed ports), or a port/
-    protocol outside the real, valid ranges."""
+    every explicit endpoint names its exact allowed ports), a port/
+    protocol outside the real, valid ranges, or (at render time only) an
+    `allowed_internal_endpoints` entry that is not *exactly* `CidrEndpoint`
+    or `PodSelectorEndpoint` -- a subclass or duck-typed object is refused
+    even though it would satisfy an `isinstance` check, since a subclass
+    can override `__post_init__` to skip every invariant below."""
+
+
+class PublicCidrEndpointError(NetworkPolicyTemplateError):
+    """Control-plane decision (2026-10-04T11:00Z review): an explicit
+    internal endpoint names a real internal address, never a public one --
+    `CidrEndpoint.cidr` must be a subnet of an RFC1918 private range
+    (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`). Checked after the
+    metadata-overlap check (a metadata address is reported as
+    `MetadataEndpointExposedError`, its own more specific identity, even
+    though it is also non-RFC1918)."""
 
 
 _PROTOCOLS: frozenset[str] = frozenset({"TCP", "UDP"})
 
 # Matches component_binding_schema.py's own NETWORK_POLICY_IDENTITY_MAX_LENGTH.
 TEMPLATE_ID_MAX_LENGTH = 200
+
+# Control-plane decision (2026-10-04T11:00Z review): an allowed internal
+# endpoint's CIDR must be a real private address, never a public one.
+# IPv6 (including ULA, fc00::/7) is out of scope here -- every IPv6 CIDR is
+# already refused outright by IPv6EscapeError before this is ever checked.
+_RFC1918_NETWORKS: tuple[ipaddress.IPv4Network, ...] = (
+    ipaddress.IPv4Network("10.0.0.0/8"),
+    ipaddress.IPv4Network("172.16.0.0/12"),
+    ipaddress.IPv4Network("192.168.0.0/16"),
+)
+
+
+def _validate_cidr_endpoint_fields(
+    description: object, cidr: object, ports: object
+) -> ipaddress.IPv4Network | ipaddress.IPv6Network:
+    """Every real invariant a `CidrEndpoint`'s three fields must satisfy,
+    independent of *how* those values came to be on the instance --  a
+    normal constructor call, a caller that bypassed `__post_init__` via
+    `object.__setattr__` on an already-frozen instance, or a subclass that
+    overrides `__post_init__` to skip it entirely. Called once at
+    construction time (`CidrEndpoint.__post_init__`) and once again,
+    independently, against the endpoint's own *current* attribute values
+    at render time (`_revalidate_endpoint_at_render_time`) -- so
+    `render_network_policy_manifest`'s own "always re-validates" docstring
+    claim holds against every one of those bypasses, not only a
+    template-level mutation.
+    """
+    if not description or not isinstance(description, str):
+        raise InvalidEndpointDefinitionError("description must be a non-empty string")
+    if not ports:
+        raise InvalidEndpointDefinitionError(
+            f"endpoint {description!r} must name at least one explicit port -- "
+            "an endpoint with no ports is not a representable allow rule"
+        )
+    try:
+        network = ipaddress.ip_network(cidr, strict=True)  # type: ignore[arg-type]
+    except (ValueError, TypeError) as exc:
+        raise InvalidEndpointDefinitionError(
+            f"endpoint {description!r} has an unparseable cidr {cidr!r}: {exc}"
+        ) from exc
+    if network.prefixlen == 0:
+        raise NetworkPolicyDefaultOpenError(
+            f"endpoint {description!r} allows the wildcard network {cidr!r} "
+            "(prefix length 0) -- this defeats deny-by-default exactly as much as "
+            "turning deny_by_default_egress off"
+        )
+    if isinstance(network, ipaddress.IPv6Network):
+        raise IPv6EscapeError(
+            f"endpoint {description!r} names an IPv6 cidr {cidr!r} -- "
+            "Release 1 ships no supported way to allow any IPv6 destination"
+        )
+    # Metadata carve-out: derived directly from url_policy's own real,
+    # canonical network list (FTF-H006's single source of truth for "what
+    # counts as a cloud-metadata identity") via a real CIDR-overlap check,
+    # rather than probing a hardcoded handful of concrete addresses that
+    # could drift from that list over time.
+    for metadata_network in _CLOUD_METADATA_NETWORKS:
+        if metadata_network.version == network.version and network.overlaps(metadata_network):
+            raise MetadataEndpointExposedError(
+                f"endpoint {description!r}'s cidr {cidr!r} overlaps the real "
+                f"cloud-metadata network {metadata_network} -- never permitted, "
+                "regardless of an operator's explicit allowlist intent"
+            )
+    if not any(network.subnet_of(rfc1918) for rfc1918 in _RFC1918_NETWORKS):
+        raise PublicCidrEndpointError(
+            f"endpoint {description!r}'s cidr {cidr!r} is not inside an RFC1918 "
+            "private range (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) -- an "
+            "explicit internal endpoint must name a real internal address, never "
+            "a public or otherwise-special one"
+        )
+    return network
+
+
+def _validate_pod_selector_endpoint_fields(
+    description: object, namespace: object, pod_labels: object, ports: object
+) -> None:
+    """As `_validate_cidr_endpoint_fields`, for a `PodSelectorEndpoint`'s
+    four fields -- called at construction time and again at render time
+    against the endpoint's own current attribute values."""
+    if not description or not isinstance(description, str):
+        raise InvalidEndpointDefinitionError("description must be a non-empty string")
+    if not namespace:
+        raise MissingExplicitScopingError(f"endpoint {description!r} has an empty namespace")
+    if not pod_labels:
+        raise MissingExplicitScopingError(
+            f"endpoint {description!r} has an empty pod_labels selector -- an "
+            "empty Kubernetes podSelector matches every pod in the namespace, which "
+            "is never an explicit internal-endpoint scoping"
+        )
+    if not ports:
+        raise InvalidEndpointDefinitionError(
+            f"endpoint {description!r} must name at least one explicit port"
+        )
 
 
 @dataclass(frozen=True)
@@ -164,47 +273,7 @@ class CidrEndpoint:
     ports: tuple[PortRule, ...]
 
     def __post_init__(self) -> None:
-        if not self.description or not isinstance(self.description, str):
-            raise InvalidEndpointDefinitionError("description must be a non-empty string")
-        if not self.ports:
-            raise InvalidEndpointDefinitionError(
-                f"endpoint {self.description!r} must name at least one explicit port -- "
-                "an endpoint with no ports is not a representable allow rule"
-            )
-        try:
-            network = ipaddress.ip_network(self.cidr, strict=True)
-        except ValueError as exc:
-            raise InvalidEndpointDefinitionError(
-                f"endpoint {self.description!r} has an unparseable cidr {self.cidr!r}: {exc}"
-            ) from exc
-        if network.prefixlen == 0:
-            raise NetworkPolicyDefaultOpenError(
-                f"endpoint {self.description!r} allows the wildcard network {self.cidr!r} "
-                "(prefix length 0) -- this defeats deny-by-default exactly as much as "
-                "turning deny_by_default_egress off"
-            )
-        if isinstance(network, ipaddress.IPv6Network):
-            raise IPv6EscapeError(
-                f"endpoint {self.description!r} names an IPv6 cidr {self.cidr!r} -- "
-                "Release 1 ships no supported way to allow any IPv6 destination"
-            )
-        # Metadata carve-out: reused from packages.security.url_policy so
-        # this module never drifts from FTF-H006's own canonical identity
-        # list. ip_network has no API to enumerate "every address this
-        # predicate recognizes", so this tests each of the concrete
-        # addresses that function's own docstring documents.
-        for probe in (
-            ipaddress.ip_address("169.254.169.254"),
-            ipaddress.ip_address("100.100.100.200"),
-            ipaddress.ip_address("fd00:ec2::254"),
-        ):
-            same_family_and_contained = probe.version == network.version and probe in network
-            if same_family_and_contained and is_cloud_metadata_address(probe):
-                raise MetadataEndpointExposedError(
-                    f"endpoint {self.description!r}'s cidr {self.cidr!r} contains the "
-                    f"real cloud-metadata address {probe} -- never permitted, regardless "
-                    "of an operator's explicit allowlist intent"
-                )
+        _validate_cidr_endpoint_fields(self.description, self.cidr, self.ports)
 
 
 @dataclass(frozen=True)
@@ -222,22 +291,9 @@ class PodSelectorEndpoint:
     ports: tuple[PortRule, ...]
 
     def __post_init__(self) -> None:
-        if not self.description or not isinstance(self.description, str):
-            raise InvalidEndpointDefinitionError("description must be a non-empty string")
-        if not self.namespace:
-            raise MissingExplicitScopingError(
-                f"endpoint {self.description!r} has an empty namespace"
-            )
-        if not self.pod_labels:
-            raise MissingExplicitScopingError(
-                f"endpoint {self.description!r} has an empty pod_labels selector -- an "
-                "empty Kubernetes podSelector matches every pod in the namespace, which "
-                "is never an explicit internal-endpoint scoping"
-            )
-        if not self.ports:
-            raise InvalidEndpointDefinitionError(
-                f"endpoint {self.description!r} must name at least one explicit port"
-            )
+        _validate_pod_selector_endpoint_fields(
+            self.description, self.namespace, self.pod_labels, self.ports
+        )
 
 
 AllowedInternalEndpoint = CidrEndpoint | PodSelectorEndpoint
@@ -321,36 +377,78 @@ def validate_network_policy_template(template: NetworkPolicyTemplate) -> Network
             "an explicit tuple (possibly empty, for a workload that genuinely needs no "
             "internal endpoints) is required; None means 'not yet configured'"
         )
-    # Each endpoint already validated itself in __post_init__ at
-    # construction time; re-running the same checks here would be inert
-    # (frozen dataclasses cannot be mutated after construction) and is
-    # deliberately not repeated.
+    # Endpoint-level invariants are not re-checked here: a template-level
+    # mutation (e.g. deny_by_default_egress flipped after construction) is
+    # caught above every time this function runs, but an *endpoint* bypass
+    # (object.__setattr__ on a frozen CidrEndpoint/PodSelectorEndpoint, a
+    # subclass overriding __post_init__, or a duck-typed stand-in) can only
+    # be caught by re-deriving the egress rule from that endpoint's own
+    # current values -- done independently, every render, by
+    # `_revalidate_endpoint_at_render_time` inside `_endpoint_egress_rule`.
     return template
 
 
+def _revalidate_endpoint_at_render_time(endpoint: object) -> AllowedInternalEndpoint:
+    """Re-runs every real per-endpoint invariant against `endpoint`'s own
+    *current* attribute values, independent of whatever validation ran (or
+    did not run) at construction time -- this is what lets
+    `render_network_policy_manifest`'s own docstring genuinely claim
+    "always re-validates", not merely at the template level.
+
+    Accepts *exactly* `CidrEndpoint` or `PodSelectorEndpoint` -- checked by
+    `type(endpoint) is ...`, never `isinstance`, since a subclass that
+    overrides `__post_init__` to skip every check below would still satisfy
+    an `isinstance` check. Anything else (a subclass, or any other
+    duck-typed object) is refused outright rather than rendered.
+    """
+    endpoint_type = type(endpoint)
+    if endpoint_type is CidrEndpoint:
+        cidr_endpoint = cast(CidrEndpoint, endpoint)
+        _validate_cidr_endpoint_fields(
+            cidr_endpoint.description, cidr_endpoint.cidr, cidr_endpoint.ports
+        )
+        return cidr_endpoint
+    if endpoint_type is PodSelectorEndpoint:
+        pod_endpoint = cast(PodSelectorEndpoint, endpoint)
+        _validate_pod_selector_endpoint_fields(
+            pod_endpoint.description,
+            pod_endpoint.namespace,
+            pod_endpoint.pod_labels,
+            pod_endpoint.ports,
+        )
+        return pod_endpoint
+    raise InvalidEndpointDefinitionError(
+        f"allowed_internal_endpoints contains a {endpoint_type!r} instance -- only the "
+        "exact CidrEndpoint or PodSelectorEndpoint types are ever rendered; a subclass or "
+        "other duck-typed object is refused even if it would satisfy isinstance()"
+    )
+
+
 def _endpoint_egress_rule(endpoint: AllowedInternalEndpoint) -> dict:
+    endpoint = _revalidate_endpoint_at_render_time(endpoint)
     ports = [{"protocol": rule.protocol, "port": rule.port} for rule in endpoint.ports]
-    if isinstance(endpoint, CidrEndpoint):
+    if type(endpoint) is CidrEndpoint:
         # No `except` clause here: the real Kubernetes API rejects an
         # ipBlock whose `except` values are not themselves inside `cidr`
-        # (kubernetes/kubernetes's own networking/v1 validation), and
-        # CidrEndpoint.__post_init__ already guarantees `cidr` never
-        # contains a real cloud-metadata address (or is IPv6 at all) --
-        # so there is never a metadata sub-range of this endpoint's own
-        # cidr to carve back out. Metadata/IPv6 are blocked the same way
-        # every other non-allow-listed destination is: this module's
-        # egress list is allow-only (Section 12), so an address is
-        # reachable if and only if it appears in one of these `to` blocks
-        # at all -- there is no broader "allow, except ..." rule for a
-        # narrower carve-out to ever be needed against.
+        # (kubernetes/kubernetes's own networking/v1 validation), and the
+        # revalidation above already guarantees `cidr` never contains a
+        # real cloud-metadata address (or is IPv6 at all) -- so there is
+        # never a metadata sub-range of this endpoint's own cidr to carve
+        # back out. Metadata/IPv6 are blocked the same way every other
+        # non-allow-listed destination is: this module's egress list is
+        # allow-only (Section 12), so an address is reachable if and only
+        # if it appears in one of these `to` blocks at all -- there is no
+        # broader "allow, except ..." rule for a narrower carve-out to ever
+        # be needed against.
         return {"to": [{"ipBlock": {"cidr": endpoint.cidr}}], "ports": ports}
+    pod_endpoint = cast(PodSelectorEndpoint, endpoint)
     return {
         "to": [
             {
                 "namespaceSelector": {
-                    "matchLabels": {"kubernetes.io/metadata.name": endpoint.namespace}
+                    "matchLabels": {"kubernetes.io/metadata.name": pod_endpoint.namespace}
                 },
-                "podSelector": {"matchLabels": dict(endpoint.pod_labels)},
+                "podSelector": {"matchLabels": dict(pod_endpoint.pod_labels)},
             }
         ],
         "ports": ports,

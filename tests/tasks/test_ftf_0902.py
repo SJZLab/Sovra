@@ -83,11 +83,13 @@ from packages.security.network_policy_templates import (  # noqa: E402
     NetworkPolicyTemplate,
     PodSelectorEndpoint,
     PortRule,
+    PublicCidrEndpointError,
     manifest_digest,
     render_network_policy_manifest,
     render_network_policy_yaml,
     validate_network_policy_template,
 )
+from packages.security.url_policy import _CLOUD_METADATA_NETWORKS  # noqa: E402
 
 MODULE_PATH = ROOT / "packages" / "security" / "network_policy_templates.py"
 
@@ -231,18 +233,101 @@ def test_cidr_endpoint_rejects_metadata_overlap_and_accepts_adjacent() -> None:
             ports=(PortRule("TCP", 80),),
         ),
     )
-    # Boundary: a /32 immediately adjacent to (but not containing) the real
-    # metadata address is a genuine, legitimate internal endpoint.
-    adjacent = CidrEndpoint(
-        description="adjacent-not-metadata",
-        cidr="169.254.169.253/32",
+    # Boundary: an RFC1918 address that is numerically similar to a real
+    # metadata address (but a different, non-overlapping network entirely)
+    # is a genuine, legitimate internal endpoint -- proves the overlap
+    # check is precise, not a sloppy substring/prefix match. (A /32
+    # literally adjacent to 169.254.169.254, e.g. .253, is no longer a
+    # legitimate example under the RFC1918-only restriction below --
+    # 169.254.0.0/16 is link-local, not RFC1918 -- see
+    # test_cidr_endpoint_requires_rfc1918_private_range.)
+    rfc1918_similar_to_alibaba_metadata = CidrEndpoint(
+        description="rfc1918-similar-to-alibaba-metadata",
+        cidr="10.100.100.200/32",
         ports=(PortRule("TCP", 80),),
     )
     check(
         "FTF-0902",
-        "a cidr adjacent to (not containing) the metadata address is accepted",
-        adjacent.cidr == "169.254.169.253/32",
+        "an RFC1918 cidr numerically similar to (but not overlapping) the Alibaba metadata "
+        "address is accepted",
+        rfc1918_similar_to_alibaba_metadata.cidr == "10.100.100.200/32",
     )
+    rfc1918_similar_to_aws_metadata = CidrEndpoint(
+        description="rfc1918-similar-to-aws-metadata",
+        cidr="10.254.169.254/32",
+        ports=(PortRule("TCP", 80),),
+    )
+    check(
+        "FTF-0902",
+        "an RFC1918 cidr numerically similar to (but not overlapping) the AWS/GCP/Azure "
+        "metadata address is accepted",
+        rfc1918_similar_to_aws_metadata.cidr == "10.254.169.254/32",
+    )
+
+
+def test_cidr_endpoint_requires_rfc1918_private_range() -> None:
+    # Control-plane decision (2026-10-04T11:00Z review): an explicit
+    # internal endpoint must be a real private address, never a public one.
+    check(
+        "FTF-0902",
+        "a public IPv4 cidr (a real public DNS resolver address) is refused",
+        _rejects(
+            PublicCidrEndpointError,
+            CidrEndpoint,
+            description="public-dns",
+            cidr="8.8.8.8/32",
+            ports=(PortRule("TCP", 443),),
+        ),
+    )
+    check(
+        "FTF-0902",
+        "a link-local address that is not a metadata address is refused as non-RFC1918 "
+        "(a distinct failure reason from the metadata-specific rejection above)",
+        _rejects(
+            PublicCidrEndpointError,
+            CidrEndpoint,
+            description="link-local-not-metadata",
+            cidr="169.254.1.1/32",
+            ports=(PortRule("TCP", 80),),
+        ),
+    )
+    rfc1918_boundary_cidrs = (
+        "10.0.0.1/32",
+        "10.255.255.254/32",
+        "172.16.0.1/32",
+        "172.31.255.254/32",
+        "192.168.0.1/32",
+        "192.168.255.254/32",
+    )
+    for cidr in rfc1918_boundary_cidrs:
+        endpoint = CidrEndpoint(description="rfc1918-ok", cidr=cidr, ports=(PortRule("TCP", 80),))
+        check("FTF-0902", f"an RFC1918 cidr ({cidr}) is accepted", endpoint.cidr == cidr)
+
+
+def test_metadata_overlap_is_derived_from_url_policy_cloud_metadata_networks() -> None:
+    # DoD (2026-10-04T11:00Z review): "derive metadata from
+    # url_policy._CLOUD_METADATA_NETWORKS" -- this test imports that same
+    # real list directly (not a hardcoded duplicate) so it automatically
+    # tracks any future addition/removal there, rather than silently going
+    # stale the way the old 3-probe-address check could.
+    ipv4_metadata_cidrs = [str(net) for net in _CLOUD_METADATA_NETWORKS if net.version == 4]
+    check(
+        "FTF-0902",
+        "url_policy defines at least one real IPv4 cloud-metadata network to derive from",
+        len(ipv4_metadata_cidrs) >= 1,
+    )
+    for cidr in ipv4_metadata_cidrs:
+        check(
+            "FTF-0902",
+            f"a cidr exactly matching url_policy's own real metadata network {cidr} is refused",
+            _rejects(
+                MetadataEndpointExposedError,
+                CidrEndpoint,
+                description="metadata-derived",
+                cidr=cidr,
+                ports=(PortRule("TCP", 80),),
+            ),
+        )
 
 
 def test_cidr_endpoint_rejects_empty_ports_and_bad_cidr() -> None:
@@ -516,6 +601,113 @@ def test_render_manifest_always_revalidates_even_a_mutated_template() -> None:
     )
 
 
+def test_render_manifest_revalidates_mutated_endpoint_fields_not_merely_the_template() -> None:
+    # Extends the template-level mutation test above to the endpoint level:
+    # a frozen CidrEndpoint/PodSelectorEndpoint can also be mutated
+    # post-construction via object.__setattr__, and render must catch it
+    # fresh every time, not merely trust __post_init__ ran once at
+    # construction (2026-10-04T11:00Z review finding 2/3).
+    cidr_endpoint = CidrEndpoint(description="x", cidr="10.0.0.5/32", ports=(PortRule("TCP", 80),))
+    template = _base_template(allowed_internal_endpoints=(cidr_endpoint,))
+
+    object.__setattr__(cidr_endpoint, "cidr", "0.0.0.0/0")
+    check(
+        "FTF-0902",
+        "a CidrEndpoint mutated to a wildcard cidr after construction is refused at render time",
+        _rejects(NetworkPolicyDefaultOpenError, render_network_policy_manifest, template),
+    )
+
+    object.__setattr__(cidr_endpoint, "cidr", "169.254.169.254/32")
+    check(
+        "FTF-0902",
+        "a CidrEndpoint mutated to the real metadata address after construction is refused "
+        "at render time",
+        _rejects(MetadataEndpointExposedError, render_network_policy_manifest, template),
+    )
+
+    object.__setattr__(cidr_endpoint, "cidr", "8.8.8.8/32")
+    check(
+        "FTF-0902",
+        "a CidrEndpoint mutated to a public cidr after construction is refused at render time",
+        _rejects(PublicCidrEndpointError, render_network_policy_manifest, template),
+    )
+
+    object.__setattr__(cidr_endpoint, "cidr", "2001:db8::/32")
+    check(
+        "FTF-0902",
+        "a CidrEndpoint mutated to an IPv6 cidr after construction is refused at render time",
+        _rejects(IPv6EscapeError, render_network_policy_manifest, template),
+    )
+
+    object.__setattr__(cidr_endpoint, "cidr", "10.0.0.5/32")
+    object.__setattr__(cidr_endpoint, "ports", ())
+    check(
+        "FTF-0902",
+        "a CidrEndpoint mutated to an empty ports tuple after construction is refused at "
+        "render time",
+        _rejects(InvalidEndpointDefinitionError, render_network_policy_manifest, template),
+    )
+
+    pod_endpoint = PodSelectorEndpoint(
+        description="y",
+        namespace="sovra-shared",
+        pod_labels={"app": "mlflow"},
+        ports=(PortRule("TCP", 5000),),
+    )
+    pod_template = _base_template(allowed_internal_endpoints=(pod_endpoint,))
+    object.__setattr__(pod_endpoint, "pod_labels", {})
+    check(
+        "FTF-0902",
+        "a PodSelectorEndpoint mutated to an empty pod_labels selector after construction is "
+        "refused at render time (an empty podSelector would match every pod in the namespace)",
+        _rejects(MissingExplicitScopingError, render_network_policy_manifest, pod_template),
+    )
+
+
+def test_render_manifest_rejects_a_subclassed_endpoint_bypassing_post_init() -> None:
+    # 2026-10-04T11:00Z review finding 3: "given a mutated, subclassed or
+    # duck-typed endpoint, the renderer emits ::/0, metadata, ports: [] and
+    # podSelector: {}". A subclass that overrides __post_init__ to skip
+    # every invariant still satisfies isinstance(endpoint, CidrEndpoint) --
+    # the renderer must reject it by its *exact* type instead.
+    class _BypassingCidrEndpoint(CidrEndpoint):
+        def __post_init__(self) -> None:  # deliberately skips every real check
+            pass
+
+    malicious = _BypassingCidrEndpoint(description="evil", cidr="0.0.0.0/0", ports=())
+    check(
+        "FTF-0902",
+        "constructing the bypassing subclass with malicious fields genuinely skips validation "
+        "(otherwise this proves nothing)",
+        malicious.cidr == "0.0.0.0/0" and malicious.ports == (),
+    )
+    template = _base_template(allowed_internal_endpoints=(malicious,))
+    check(
+        "FTF-0902",
+        "a CidrEndpoint subclass overriding __post_init__ to skip validation is refused at "
+        "render time by its exact type, not merely accepted via isinstance",
+        _rejects(InvalidEndpointDefinitionError, render_network_policy_manifest, template),
+    )
+
+
+def test_render_manifest_rejects_a_duck_typed_endpoint() -> None:
+    # 2026-10-04T11:00Z review finding 3, the "duck-typed" half: an object
+    # that is not a CidrEndpoint/PodSelectorEndpoint instance at all, but
+    # has the same attribute names, must still be refused.
+    class _FakeEndpoint:
+        description = "fake"
+        cidr = "0.0.0.0/0"
+        ports = (PortRule("TCP", 80),)
+
+    template = _base_template(allowed_internal_endpoints=(_FakeEndpoint(),))
+    check(
+        "FTF-0902",
+        "a duck-typed object with CidrEndpoint-shaped attributes, but no real CidrEndpoint/"
+        "PodSelectorEndpoint type, is refused at render time",
+        _rejects(InvalidEndpointDefinitionError, render_network_policy_manifest, template),
+    )
+
+
 def test_yaml_round_trip_matches_the_dict_manifest() -> None:
     template = _base_template()
     manifest = render_network_policy_manifest(template)
@@ -615,6 +807,147 @@ def test_fault_injection_deny_by_default_check_is_load_bearing() -> None:
             f"caught by this suite (subprocess stdout={result.stdout!r} "
             f"stderr={result.stderr!r})",
             result.returncode == 0 and "MUTATED_MODULE_ACCEPTED_DEFAULT_OPEN" in result.stdout,
+        )
+    finally:
+        MODULE_PATH.write_bytes(original)
+        restored = MODULE_PATH.read_bytes()
+        check(
+            "FTF-0902",
+            "the module file is restored byte-identical after fault injection",
+            restored == original,
+        )
+
+
+_RENDER_TIME_BYPASS_PROBE = """
+import sys
+sys.path.insert(0, {root!r})
+from packages.security.network_policy_templates import (
+    CidrEndpoint,
+    NetworkPolicyTemplate,
+    PortRule,
+    render_network_policy_manifest,
+)
+
+endpoint = CidrEndpoint(description="x", cidr="10.0.0.5/32", ports=(PortRule("TCP", 80),))
+template = NetworkPolicyTemplate(
+    schema_version=1,
+    template_id="probe",
+    organization_id="org-probe",
+    project_id=None,
+    namespace="sovra-probe",
+    pod_selector={{"app": "probe"}},
+    cni_profile="calico",
+    deny_by_default_egress=True,
+    deny_by_default_ingress=True,
+    block_metadata_endpoint=True,
+    ipv6_policy="blocked",
+    allowed_internal_endpoints=(endpoint,),
+)
+object.__setattr__(endpoint, "cidr", "0.0.0.0/0")
+try:
+    render_network_policy_manifest(template)
+    print("MUTATED_MODULE_ACCEPTED_WILDCARD_ENDPOINT")
+except Exception as exc:
+    print(f"STILL_REJECTED: {{exc}}")
+"""
+
+
+def test_fault_injection_render_time_endpoint_revalidation_is_load_bearing() -> None:
+    """Additive fault (an inserted `if False:` guard, same pattern as this
+    suite's own pre-existing deny_by_default_egress fault test): disables
+    the call to `_revalidate_endpoint_at_render_time` inside
+    `_endpoint_egress_rule`, in a fresh subprocess, against an endpoint
+    mutated to a wildcard cidr *after* construction (so the already-passed
+    __post_init__ check is never the thing being tested here). Proves the
+    render-time revalidation call itself is load-bearing, not decorative --
+    this is this review's own core finding (2026-10-04T11:00Z, items 2-3)."""
+    original = MODULE_PATH.read_bytes()
+    try:
+        src = original.decode("utf-8")
+        needle = "    endpoint = _revalidate_endpoint_at_render_time(endpoint)\n"
+        check(
+            "FTF-0902",
+            "expected render-time revalidation call found in the real module "
+            "(otherwise this proves nothing)",
+            needle in src,
+        )
+        mutated = src.replace(
+            needle,
+            "    if False:\n        endpoint = _revalidate_endpoint_at_render_time(endpoint)\n",
+            1,
+        )
+        check("FTF-0902", "fault injection actually changed the file", mutated != src)
+        MODULE_PATH.write_text(mutated, encoding="utf-8")
+
+        probe = _RENDER_TIME_BYPASS_PROBE.format(root=str(ROOT))
+        result = subprocess.run(
+            [sys.executable, "-c", probe], capture_output=True, text=True, timeout=30
+        )
+        check(
+            "FTF-0902",
+            "fault injection: disabling render-time endpoint revalidation lets a "
+            "post-construction mutated endpoint through "
+            f"(subprocess stdout={result.stdout!r} stderr={result.stderr!r})",
+            result.returncode == 0 and "MUTATED_MODULE_ACCEPTED_WILDCARD_ENDPOINT" in result.stdout,
+        )
+    finally:
+        MODULE_PATH.write_bytes(original)
+        restored = MODULE_PATH.read_bytes()
+        check(
+            "FTF-0902",
+            "the module file is restored byte-identical after fault injection",
+            restored == original,
+        )
+
+
+_RFC1918_BYPASS_PROBE = """
+import sys
+sys.path.insert(0, {root!r})
+from packages.security.network_policy_templates import CidrEndpoint, PortRule
+
+try:
+    CidrEndpoint(description="public", cidr="8.8.8.8/32", ports=(PortRule("TCP", 443),))
+    print("MUTATED_MODULE_ACCEPTED_PUBLIC_CIDR")
+except Exception as exc:
+    print(f"STILL_REJECTED: {{exc}}")
+"""
+
+
+def test_fault_injection_rfc1918_check_is_load_bearing_additive() -> None:
+    """Additive fault: an inserted `if False and ...` guard (this suite's
+    own established pattern) short-circuits the RFC1918-only restriction in
+    `_validate_cidr_endpoint_fields`, in a fresh subprocess, then confirms a
+    real public cidr (8.8.8.8/32) this suite depends on being refused
+    genuinely flips to "accepted" once the check is disabled, then restores
+    the module byte-identical."""
+    original = MODULE_PATH.read_bytes()
+    try:
+        src = original.decode("utf-8")
+        needle = "    if not any(network.subnet_of(rfc1918) for rfc1918 in _RFC1918_NETWORKS):"
+        check(
+            "FTF-0902",
+            "expected RFC1918 check found in the real module (otherwise this proves nothing)",
+            needle in src,
+        )
+        mutated = src.replace(
+            needle,
+            "    if False and not any(\n"
+            "        network.subnet_of(rfc1918) for rfc1918 in _RFC1918_NETWORKS\n"
+            "    ):",
+            1,
+        )
+        check("FTF-0902", "fault injection actually changed the file", mutated != src)
+        MODULE_PATH.write_text(mutated, encoding="utf-8")
+
+        probe = _RFC1918_BYPASS_PROBE.format(root=str(ROOT))
+        result = subprocess.run(
+            [sys.executable, "-c", probe], capture_output=True, text=True, timeout=30
+        )
+        check(
+            "FTF-0902",
+            "fault injection: disabling the RFC1918-only check is genuinely caught by this "
+            f"suite (subprocess stdout={result.stdout!r} stderr={result.stderr!r})",
+            result.returncode == 0 and "MUTATED_MODULE_ACCEPTED_PUBLIC_CIDR" in result.stdout,
         )
     finally:
         MODULE_PATH.write_bytes(original)

@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import contextlib
 import http.client
+import importlib
 import json
 import os
 import socket
@@ -59,9 +60,11 @@ API_ROOT = ROOT / "apps" / "api"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(API_ROOT))
 
+_CRUD_MODULE_PATH = API_ROOT / "app" / "evaluation" / "evaluation_suite_crud.py"
+
 import uvicorn  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
-from sqlalchemy import create_engine, text  # noqa: E402
+from sqlalchemy import create_engine, func, select, text  # noqa: E402
 from sqlalchemy.exc import DBAPIError  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 
@@ -71,7 +74,11 @@ from app.auth.organization_workspace_schema import (  # noqa: E402
     Workspace,
 )
 from app.auth.rbac_middleware import AuthenticatedPrincipal, Role  # noqa: E402
+from app.db.tenant_context import TenantContext, tenant_scoped_session_for  # noqa: E402
+from app.evaluation import evaluation_suite_crud as _evaluation_suite_crud_module  # noqa: E402
+from app.evaluation import evaluation_suite_routes as _evaluation_suite_routes_module  # noqa: E402
 from app.evaluation.evaluation_suite_routes import build_evaluation_suite_router  # noqa: E402
+from app.evaluation.evaluation_suite_schema import PURPOSE_FINAL, EvaluationSuite  # noqa: E402
 from app.projects.project_schema import Project  # noqa: E402
 from app.target_connectors.agent_manifest_schema import AgentManifest  # noqa: E402
 from app.target_connectors.target_application_connection_schema import (  # noqa: E402
@@ -215,7 +222,12 @@ class _Fixture:
         self.principals: dict[tuple[str, Role], AuthenticatedPrincipal] = {}
         self.memberships: dict[tuple[str, str, uuid.UUID], Role] = {}
         for label, org_id in org_ids.items():
-            for role in (Role.WORKSPACE_ADMIN, Role.EVALUATOR, Role.VIEWER):
+            for role in (
+                Role.ORGANIZATION_ADMIN,
+                Role.WORKSPACE_ADMIN,
+                Role.EVALUATOR,
+                Role.VIEWER,
+            ):
                 subject = f"user-{label}-{role.value}"
                 principal = AuthenticatedPrincipal(issuer=_ISSUER, subject=subject)
                 self.principals[(label, role)] = principal
@@ -877,6 +889,224 @@ def main() -> None:
             r.status == 409,
         )
 
+        # -- round-3 DoD (1): independence tested with at least 3 actor
+        # roles (organization_admin, workspace_admin, evaluator), not only
+        # evaluator -- the F19 finding was that a role-keyed independence
+        # bypass would stay green because the self-review case was never
+        # exercised with an admin-named actor. Each of the other two write
+        # roles independently creates/self-reviews/self-locks a FINAL
+        # suite and is refused exactly like the evaluator case above.
+        for admin_role, admin_label in (
+            (Role.WORKSPACE_ADMIN, "workspace_admin"),
+            (Role.ORGANIZATION_ADMIN, "organization_admin"),
+        ):
+            admin_header = fixture.header_for("org1", admin_role)
+            admin_subject = f"user-org1-{admin_role.value}"
+
+            r = _request(
+                base_url,
+                "POST",
+                collection_path(org1_id, project1_id),
+                principal=admin_header,
+                payload={
+                    "agent_manifest_id": str(locked_manifest_id),
+                    "purpose": "final",
+                    "name": f"{admin_label} self-review suite",
+                    "grading_logic_version": 1,
+                },
+            )
+            check(
+                "FTF-0601",
+                f"round-3 (1): a {admin_label} actor can create a FINAL suite (201)",
+                r.status == 201,
+            )
+            admin_suite = r.json() if r.status == 201 else {}
+            admin_suite_id = admin_suite.get("id")
+
+            r = _request(
+                base_url,
+                "PATCH",
+                item_path(org1_id, project1_id, admin_suite_id),
+                principal=admin_header,
+                payload={"reviewer_id": admin_subject},
+            )
+            check(
+                "FTF-0601",
+                f"round-3 (1): the {admin_label} actor assigning itself as "
+                "reviewer succeeds at PATCH time (200) -- it is a real "
+                "member (itself)",
+                r.status == 200,
+            )
+
+            r = _request(
+                base_url,
+                "POST",
+                lock_path(org1_id, project1_id, admin_suite_id),
+                principal=admin_header,
+            )
+            check(
+                "FTF-0601",
+                f"round-3 (1): locking a FINAL suite self-reviewed by this "
+                f"same {admin_label} actor is refused (409) -- independence "
+                "holds for every write role, not only evaluator (F19)",
+                r.status == 409,
+            )
+
+        # -- round-3 (2) / F06: a non-member reviewer_id on POST create is
+        # refused (400), not only on PATCH (already covered above) --
+        r = _request(
+            base_url,
+            "POST",
+            collection_path(org1_id, project1_id),
+            principal=org1_evaluator,
+            payload={
+                "agent_manifest_id": str(locked_manifest_id),
+                "purpose": "development",
+                "name": "POST with non-member reviewer",
+                "grading_logic_version": 1,
+                "reviewer_id": "totally-fake-nobody-on-create",
+            },
+        )
+        check(
+            "FTF-0601",
+            "round-3 (2) / F06: POST create with a non-member reviewer_id "
+            "is refused (400), not silently accepted and not a 500/409",
+            r.status == 400,
+        )
+
+        # -- round-3 F19 fault injection: temporarily add an additive
+        # independence bypass keyed on the *performing actor's* own
+        # identity ending in 'admin' (exactly the identity shape the two
+        # admin write roles above genuinely have: 'workspace_admin'/
+        # 'organization_admin') and prove, through the real HTTP router
+        # (never a direct CRUD call -- this must exercise the exact
+        # production request path) that this genuinely regresses the
+        # previously clean 409 -- then restore the module file
+        # byte-identical.
+        original_crud_source = _CRUD_MODULE_PATH.read_bytes()
+        crud_text = original_crud_source.decode("utf-8")
+        f19_needle = (
+            "if suite.purpose == PURPOSE_FINAL and reviewer_normalized == creator_normalized:"
+        )
+        check(
+            "FTF-0601",
+            "F19 fault injection target line is present in the real module",
+            f19_needle in crud_text,
+        )
+        f19_mutated = crud_text.replace(
+            f19_needle,
+            "if suite.purpose == PURPOSE_FINAL and reviewer_normalized == "
+            'creator_normalized and not actor.actor_id.endswith("admin"):',
+        )
+        check(
+            "FTF-0601",
+            "F19 fault injection actually changed the module source",
+            f19_mutated != crud_text,
+        )
+
+        f19_actor_id = f"user-org1-{Role.ORGANIZATION_ADMIN.value}"
+        f19_tenant_context = TenantContext(organization_id=org1_id)
+        with tenant_scoped_session_for(session_factory, f19_tenant_context) as f19_session:
+            f19_next_version = (
+                f19_session.execute(
+                    select(func.coalesce(func.max(EvaluationSuite.version), 0)).where(
+                        EvaluationSuite.project_id == project1_id
+                    )
+                ).scalar_one()
+                + 1
+            )
+            f19_suite = EvaluationSuite(
+                organization_id=org1_id,
+                project_id=project1_id,
+                agent_manifest_id=locked_manifest_id,
+                version=f19_next_version,
+                status="draft",
+                purpose=PURPOSE_FINAL,
+                name="F19 fault-injection admin self-review suite",
+                grading_logic_version=1,
+                reviewer_id=f19_actor_id,
+                created_by=f19_actor_id,
+            )
+            f19_session.add(f19_suite)
+            f19_session.flush()
+            f19_suite_id = f19_suite.id
+
+        def _lock_f19_suite_via_fresh_router() -> _Response:
+            # Rebuilds the router fresh from whatever is currently loaded
+            # in `_evaluation_suite_crud_module`/`_evaluation_suite_routes_module`
+            # -- the real production wiring (require_role -> route ->
+            # lock_evaluation_suite), never a direct CRUD call that would
+            # skip the router's own exception-to-HTTP-status mapping.
+            probe_app = FastAPI()
+            probe_app.include_router(
+                _evaluation_suite_routes_module.build_evaluation_suite_router(
+                    session_factory,
+                    principal_resolver=lambda req: (
+                        AuthenticatedPrincipal(issuer=_ISSUER, subject=f19_actor_id)
+                        if req.headers.get("x-test-principal") == "f19-probe"
+                        else None
+                    ),
+                    role_lookup=lambda issuer, subject, organization_id: (
+                        Role.ORGANIZATION_ADMIN
+                        if subject == f19_actor_id and organization_id == org1_id
+                        else None
+                    ),
+                )
+            )
+            with _running_app(probe_app) as probe_base_url:
+                return _request(
+                    probe_base_url,
+                    "POST",
+                    lock_path(org1_id, project1_id, f19_suite_id),
+                    principal="f19-probe",
+                )
+
+        baseline_response = _lock_f19_suite_via_fresh_router()
+        check(
+            "FTF-0601",
+            "F19 baseline: the real, unmutated module still refuses (409), "
+            "through the real HTTP router, an admin-named actor's own "
+            "self-review on a FINAL suite",
+            baseline_response.status == 409,
+        )
+
+        try:
+            _CRUD_MODULE_PATH.write_text(f19_mutated, encoding="utf-8")
+            importlib.reload(_evaluation_suite_crud_module)
+            importlib.reload(_evaluation_suite_routes_module)
+            fault_response = _lock_f19_suite_via_fresh_router()
+            check(
+                "FTF-0601",
+                "F19: an additive independence bypass keyed on an "
+                f"admin-named actor's own identity (real response status "
+                f"{fault_response.status}) genuinely regresses the "
+                "previously clean 409 -- the real "
+                "ck_evaluation_suites_independent_final_reviewer DB CHECK "
+                "still blocks the underlying UPDATE, but surfaces as an "
+                "unhandled 500 instead of the clean 409 this round's own "
+                "3-actor-role coverage (round-3 (1)) proves is otherwise "
+                "load-bearing for every write role, not only evaluator",
+                fault_response.status != 409,
+            )
+        finally:
+            _CRUD_MODULE_PATH.write_bytes(original_crud_source)
+            importlib.reload(_evaluation_suite_crud_module)
+            importlib.reload(_evaluation_suite_routes_module)
+            restored_crud_source = _CRUD_MODULE_PATH.read_bytes()
+            check(
+                "FTF-0601",
+                "the evaluation_suite_crud.py module file is restored "
+                "byte-identical after F19 fault injection",
+                restored_crud_source == original_crud_source,
+            )
+            check(
+                "FTF-0601",
+                "F19 post-restore: the reloaded, restored module once "
+                "again refuses (409), through the real HTTP router, the "
+                "identical admin-named self-review case",
+                _lock_f19_suite_via_fresh_router().status == 409,
+            )
+
         # -- L2 round-2: grading_logic_version above the Postgres Integer
         # column's own 4-byte signed range is refused on both POST and
         # PATCH (400), never reaching the database as a raw IntegerError --
@@ -1002,13 +1232,14 @@ def main() -> None:
         listed = r.json() if r.status == 200 else []
         check(
             "FTF-0601",
-            "listing shows all four real suites for project1 (the two "
+            "listing shows all seven real suites for project1 (the two "
             "original golden-path suites, the round-2 padded-self-review "
-            "suite, and the raw-inserted defense-in-depth row), ordered "
-            "by version",
+            "suite, the round-3 workspace_admin/organization_admin "
+            "self-review suites, the F19 fault-injection probe suite, and "
+            "the raw-inserted defense-in-depth row), ordered by version",
             isinstance(listed, list)
-            and len(listed) == 4
-            and [s["version"] for s in listed] == [1, 2, 3, 96],
+            and len(listed) == 7
+            and [s["version"] for s in listed] == [1, 2, 3, 4, 5, 6, 96],
         )
 
     # -- Real database-level defense-in-depth: the CHECK constraints catch

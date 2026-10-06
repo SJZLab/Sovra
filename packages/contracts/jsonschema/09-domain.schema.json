@@ -25,11 +25,12 @@
     },
     "Cidr": {
       "type": "string",
-      "description": "A strict (no host bits set) IPv4 CIDR. IPv6 is never a valid value here — Release 1 ships no supported way to allow any IPv6 destination (this task's own negative_acceptance: \"IPv6 escape is a release blocker\"). A network with prefix length 0 (0.0.0.0/0) is refused as default-open."
+      "pattern": "^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}/(3[0-2]|[12]?[0-9])$",
+      "description": "A strict (no host bits set) IPv4 CIDR, shape-validated by this pattern. IPv6 is never a valid value here — Release 1 ships no supported way to allow any IPv6 destination (this task's own negative_acceptance: \"IPv6 escape is a release blocker\"). A network with prefix length 0 (0.0.0.0/0) is refused as default-open. The enforcing module (packages/security/network_policy_templates.py) additionally requires the network to be a subnet of an RFC1918 private range (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) and to not overlap a real cloud-metadata network — narrowing this schema's own shape-only pattern cannot itself express strict-host-bits/RFC1918/metadata-overlap, so those remain enforced only by the real validating code, not by this contract alone."
     },
     "CidrEndpoint": {
       "type": "object",
-      "description": "An explicitly allowed internal destination named by CIDR — for a real internal service reached by a stable ClusterIP/VIP. Never permitted to contain a real cloud-metadata address (169.254.169.254/32, 100.100.100.200/32) — checked by packages.security.url_policy.is_cloud_metadata_address, this contract's own single source of truth for that identity, reused rather than re-derived.",
+      "description": "An explicitly allowed internal destination named by CIDR — for a real internal service reached by a stable ClusterIP/VIP. Never permitted to overlap a real cloud-metadata network (169.254.169.254/32, 100.100.100.200/32, fd00:ec2::254/128) — checked by packages.security.url_policy._CLOUD_METADATA_NETWORKS, this contract's own single source of truth for that identity, reused rather than re-derived. Must also be a subnet of an RFC1918 private range — see $defs/Cidr.",
       "properties": {
         "kind": { "const": "cidr" },
         "description": { "type": "string", "minLength": 1 },
