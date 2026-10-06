@@ -9296,10 +9296,6 @@ protection under test. Put the fault → RED table in your queue entry, and appl
 to sibling modules. Items returned 3–5 times this week all failed on exactly this.
 0. **2026-10-06T09:45Z (Control plane): highest priority, one item per lane, one PR per item.**
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
-   - **0-TOP. FTF-0510 round 5 (tests only; 5 blocking).** Production code is correct (oracle re-derived from
-     transformers). Missing tests: distribution pins via `analyze_tokenization`, the truncation-policy key, dropped rows,
-     mixed-batch count, and template inputs. Exact list: docs/certifications/queue.md "2026-10-06T21:00Z". Claim
-     `relay/FTF-0510-r5`.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
    - **0c. FTF-1807 round 4 (tests only).** The forbidden-claim scan is a phrase blacklist, so plain-language inversions
      pass. Pin every paragraph of runbook sections 1–6 exactly (whitespace-normalized text, or a per-section sha256
@@ -9322,7 +9318,7 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      numbers in the submission and Control plane adds re-pinned allowlist entries. Do not add tests for them. See
      docs/certifications/queue.md "2026-10-06T23:00Z".
    - **0e.** Then the Backlog.
-   - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002 and FTF-0103A are CERTIFIED
+   - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
      (2026-10-06); follow-ups FTF-1206A-F2, FTF-H034-F1, FTF-H034-F2 and FTF-H034-F3 are CERTIFIED.
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
@@ -9444,14 +9440,11 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 "2026-10-01T13:40Z". One PR per item group, titled "[relay] <ID>: fix L2 round-2 findings".
 
 ## Backlog (sliced, ready — relay takes these after Active; Refill & Sweep keeps >= 3)
+- **FTF-0510-F1 (Control plane 2026-10-07T00:00Z):** (a) a test that a sandbox SecurityError from the chat template
+  (`messages.append(1)`) becomes a `template_render_error` row issue; (b) `certifies_training_fit` requires verified,
+  non-None tokenizer/template digests (production change and test). Claim `relay/FTF-0510-F1-r1`.
 - **FTF-H034-F4 (tests only, Control plane 2026-10-06T23:00Z):** kill or justify the 12 mutation survivors in
   `scripts/task_claim.py` lines 80–270 (claim registry). Run the gate whole-file with `--files`. Claim `relay/FTF-H034-F4-r1`.
-0. **FTF-0510** Tokenization analysis. Dependency-ready since FTF-0306 was certified on
-   2026-10-01. DoD: `python tools/r1_handoff.py packet FTF-0510 --plan
-   FINE_TUNING_FACTORY_RELEASE_1.md`. Next on the FTF-1703 critical path.
-   (2026-10-05: FTF-1206A — the other item formerly listed here — moved to "## Active" item 0e;
-   implemented this shift, PR opened, PROVISIONAL. This backlog is now below the Refill & Sweep
-   ">= 3" target; the next shift should run Refill & Sweep to top it back up.)
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 

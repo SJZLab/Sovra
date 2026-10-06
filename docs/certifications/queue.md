@@ -24220,3 +24220,13 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
     - The integration "viewer cannot probe" check passes for the wrong reason (no discovery yet). Assert the role-gate
       detail instead.
     - Add a route-level test that admin metadata (api_key/api_base) never reaches the response.
+
+## 2026-10-07T00:00Z — Control plane: FTF-0510 CERTIFIED (round 5)
+- **FTF-0510: CERTIFIED** (PR #513, merge 777ecc0). Every round-4 GREEN fault is RED, the oracle was re-derived from
+  transformers, and whole-file mutation is 93/94 with one equivalent survivor.
+- **Allowlist:** one equivalent added: `ConversationTokenizer.prefix_token_counts` M3 at line 220, a Protocol `...`
+  stub that is never executed.
+- **Follow-up FTF-0510-F1 (Backlog):**
+  - a test that a sandbox SecurityError (`messages.append(1)` in the template) becomes a `template_render_error` row
+    issue;
+  - certification requires verified non-None digests.
