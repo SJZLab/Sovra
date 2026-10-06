@@ -1151,13 +1151,17 @@ def test_require_role_ignores_header_and_query_org_overrides() -> None:
                 "headers": [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()],
             }
         )
+
+        async def _run() -> object:
+            return await guard(request)
+
         try:
-            ctx = asyncio.run(guard(request))
+            ctx = asyncio.run(_run())
         except HTTPException as exc:
             return exc.status_code, exc.detail
         return 200, ctx
 
-    code, ctx = call(viewer_of_a_only, org_a)
+    code, _ctx = call(viewer_of_a_only, org_a)
     check("FTF-0103A", f"unit control: viewer of A reads A -> 200 (got {code})", code == 200)
     missing = call(viewer_of_a_only, uuid.uuid4())
     check("FTF-0103A", f"unit control: an unknown org -> 403 (got {missing[0]})", missing[0] == 403)

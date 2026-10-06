@@ -436,7 +436,7 @@ def main() -> None:
             org_overrides.append(("query organization_id", f"{projects_b}?organization_id={A}", {}))
             org_overrides.append(("query tenant_id", f"{projects_b}?tenant_id={A}", {}))
             for label, override_path, override_headers in org_overrides:
-                code, body = _api(
+                code, override_body = _api(
                     api, "GET", override_path, cookie=cookie, headers=override_headers
                 )
                 check(
@@ -447,7 +447,7 @@ def main() -> None:
                 check(
                     "FTF-0103A",
                     f"{label} override is indistinguishable from the missing-org case",
-                    (code, body) == (missing_org_code, missing_org_body),
+                    (code, override_body) == (missing_org_code, missing_org_body),
                 )
             # control: the same member really is allowed on A without any override.
             code, _ = _api(api, "GET", projects_a, cookie=cookie)
