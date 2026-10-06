@@ -6140,10 +6140,10 @@ FTF-0500A:
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_0500a.spec.ts
 FTF-0500B:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: S3/MinIO source validation + metadata preview
-  evidence_hash: ''
+  evidence_hash: '71f0f55d1aea6366cbbd01b0d015610df1f5af10'
   implementation_state: IMPLEMENTED
   notes: |-
     kind=retained_feature; requirements=AF-02, AF-15; scenarios=Q08, Q09, Q31;
@@ -6461,14 +6461,14 @@ FTF-0500B:
 
     Not self-certified (Law 4) -- independent Control-plane L2 review and a
     real CI run on the opened PR are required before certification.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500b.py, tests/integration/test_ftf_0500b_s3_minio_versioned_source.py
 FTF-0500C:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Database/API/trace source contract and fail-closed validation
-  evidence_hash: ''
+  evidence_hash: 'da3d26cbf50660e82cb5a8a964e561f5948a52dc'
   implementation_state: IMPLEMENTED
   notes: 'kind=retained_feature; requirements=AF-02, AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500,
     FTF-0500A, FTF-H006 (all CERTIFIED). Section 67.1''s own connector table made real for this
@@ -6886,7 +6886,7 @@ FTF-0500C:
     opened PR (including the existing `database-api-trace-source-integration` job, which now also
     provisions the new SQL_ASCII database and runs the new tests) are required before
     certification.'
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500c.py, tests/integration/test_ftf_0500c_database_api_trace_source.py
 FTF-0500D:

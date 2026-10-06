@@ -705,16 +705,20 @@
       "blockers": []
     },
     "FTF-0500B": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "71f0f55d1aea6366cbbd01b0d015610df1f5af10"
+      ],
       "independent_review": null,
       "blockers": []
     },
     "FTF-0500C": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "da3d26cbf50660e82cb5a8a964e561f5948a52dc"
+      ],
       "independent_review": null,
       "blockers": []
     },
