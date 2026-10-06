@@ -24035,3 +24035,29 @@ and ran with the script runner; the mutation gate ran where the file is in scope
 ### Hygiene
 - PR #493 committed `.mypy_cache`, and 2,308 cache files are tracked on main. This PR untracks them and adds the
   directory to `.gitignore`.
+
+## 2026-10-06T18:55Z — Control plane: FTF-0902 CERTIFIED (round 4)
+
+Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent verifier:
+top model (security). Producer session: `01BGMHsj` (relay).
+- PR #501, merge 5d8514f473e89c27a1cbb7fe53bb66f39499b9ee (head 77a6630). CI run 37510311065 is green across 46 jobs:
+  - `gate` 112429439103 passed, including the FTF-0902 negative-test step;
+  - `network-policy-enforcement-integration` 112429439976 passed. Under Calico the metadata endpoint is blocked,
+    and the job prints "all checks passed".
+- The round-4 blocker is fixed.
+  - The kube-dns selector constants are now `MappingProxyType`. Every render emits fresh `dict` copies and fails
+    closed if either copy is empty.
+  - Mutating any container in a returned manifest leaves the next render identical.
+  - In-place edits to the constants are refused. Rebinding them to `{}` or `None` fails closed.
+- Faults:
+  - F1–F4b (by reference, a full round-3 revert, dropping the non-empty check, a shallow copy, and an additive early
+    return) all turn RED;
+  - the combined faults C1–C4 show the new tests catch each one on their own, not only through an exception.
+- The round-3 harness has no regressions: 58 RED. The 6 GREEN are the known equivalent mutants or follow-ups.
+- Mutation gate on the module, run through the scratch wrapper (packages/ joins the gate's scope in #503): 118/124
+  killed. The 6 survivors are equivalent or fail closed.
+- Follow-up FTF-0902-F1, not blocking:
+  - the round-3 items: a lying-str protocol test and a template_id length-cap boundary;
+  - a test for the `ipv6_policy` strip/lower mutant;
+  - optionally, compare the selectors against inline literals.
+- This closes rounds 1–4 (#430, #467/#468, #491, #501).

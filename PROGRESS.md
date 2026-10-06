@@ -1,12 +1,11 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-06T17:45Z. Source: `python3 scripts/status.py` on main.
-- **Status: 107/302 certified · 26 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
+Updated: 2026-10-06T18:55Z. Source: `python3 scripts/status.py` on main.
+- **Status: 108/302 certified · 26 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
-- **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18.
+- **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902.
 - **Returned to the relay (NOT CERTIFIED), tests-only fixes:**
-  - FTF-0902 round 4 (DNS selector aliasing);
   - FTF-0500D round 4;
   - FTF-1002 round 4;
   - FTF-1206A-F2 round 2;
