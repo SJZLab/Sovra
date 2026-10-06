@@ -71,6 +71,52 @@ Updated: 2026-10-05T14:40:00Z (scheduled relay shift, branch `claude/wizardly-fe
 
 ---
 
+Updated: 2026-10-06T02:00:00Z (scheduled relay shift, branch `claude/wizardly-fermat-3kfw8a`) --
+  STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly, no mismatch;
+  `BLOCKER.md` read in full: no live entries (all RESOLVED history). STEP 0.1: this branch was
+  already synced to `origin/main` at `01d298d` (PR #469 merged). Read `PROGRESS.md`/`QUEUE.md`/
+  `docs/certifications/queue.md` fresh. Per STEP 1 ("returned work first... red CI on an
+  already-open relay PR"), checked every open PR's real CI state directly via
+  `list_pull_requests`/`pull_request_read` `get_check_runs` rather than trusting prior-shift notes:
+  #463 (FTF-0601), #464 (FTF-0500C round 5), #465 (FTF-0500B round 4), #468 (FTF-0902, `gate` +
+  its own target job green, 8 unrelated never-scheduled jobs cancelled -- already-disclosed
+  precedent), and #470 (FTF-1206A) are all green -- skipped per this list's own skip rule. **#471
+  (FTF-0307 round-2 fix) had two consecutive RED runs** (`dependency-scanning-integration`:
+  `npm:source-map-js==1.2.1 GHSA-68fv-2mgg-jv7q` HIGH, no exception) -- `gate` itself passed both
+  times. STEP 0.2: no `cognee-cli` binary in this sandbox -- text-search fallback declared, same
+  as every prior shift.
+
+  **Triage:** confirmed via `git log -- pnpm-lock.yaml` and `pull_request_read get_files` that
+  this finding predates PR #471 (pin last touched by merge PR #415) and PR #471's own diff never
+  touches `pnpm-lock.yaml` or any frontend file -- genuinely unrelated to FTF-0307's own closed
+  file scope, same "root-cause unrelated findings in their own fix, never by widening the PR"
+  posture `docs/certifications/queue.md`'s 2026-09-25 FTF-1506 entry already established.
+
+  **Fix (this shift, own PR, not inside PR #471):** bumped `pnpm-lock.yaml`'s `source-map-js`
+  (a transitive dep of `postcss@8.5.28`'s own `^1.2.1` range) from `1.2.1` to `1.2.2` -- a minimal,
+  hand-applied 3-line edit (`pnpm update` alone pulled in ~20 unrelated transitive bumps, reverted
+  first). `pnpm install --frozen-lockfile` confirms self-consistency; `pnpm run
+  lint`/`typecheck`/`format:check`/`vitest run` and `uv run python3 tests/tasks/test_ftf_1506.py`
+  (no-network, 19/19) all clean; `validate_spec.py --strict`/`product_truth_check.py
+  --fail-on-unwired` (26/26)/`status.py` (101/301 certified) all unchanged. Full record in
+  `docs/certifications/queue.md`'s "2026-10-06T02:00Z" entry and `docs/spec-matrix.yaml`'s
+  FTF-1506 entry (certification_state/proof_state deliberately unchanged -- Law 2, this is a
+  dependency-pin bump, not new certification evidence for the scanning tool itself). Opened as
+  **PR https://github.com/SJZLab/Sovra/pull/472**, titled `[relay] FTF-1506: patch source-map-js
+  dependency vulnerability (GHSA-68fv-2mgg-jv7q)`. Once merged, PR #471's own next CI run (against
+  its live merge-ref into `main`) carries the fix automatically -- no push to PR #471's own branch
+  made, per "never push to a different branch without explicit permission."
+
+  STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all
+  updated this shift, before compaction. STEP 4 stop condition (a): this maintenance fix is a
+  separate, dedicated PR awaiting its own real CI run (`gate` +
+  `dependency-scanning-integration`) before merge-on-green; FTF-0307 (PR #471) itself stays
+  untouched, PROVISIONAL, awaiting Control-plane L2 re-review once its own CI goes green on the
+  next run after this fix lands on `main`. Not picking a second Active-list item this shift --
+  returned-work (red CI) took priority per STEP 1. No open owner ask (`QUEUE.md` "Owner actions --
+  current" unchanged: none open). `BLOCKER.md` unchanged -- no live entries.
+
+## Previous shift
 Updated: 2026-10-05T04:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-t5nrme`) --
   STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly, no mismatch;
   `BLOCKER.md` read, no live entries. STEP 0.1: this branch was already synced to `origin/main` at
@@ -136,7 +182,6 @@ Updated: 2026-10-05T04:10:00Z (scheduled relay shift, branch `claude/wizardly-fe
   unchanged). Stopping here -- one item per shift. No open owner ask (`QUEUE.md` "Owner actions --
   current" unchanged: none open). `BLOCKER.md` unchanged -- no live entries.
 
-## Previous shift
 Updated: 2026-10-04T23:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-1w3lax`) —
   STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly, no mismatch;
   `BLOCKER.md` read, no live entries. STEP 0.1: this branch was already synced to `origin/main` at
@@ -9238,23 +9283,33 @@ this same resolution (doc-only, redundant once this lands).
    For every acceptance and negative_acceptance clause, add a test that a clause-level fault turns red,
    including an additive fault (an early return, an extra allow rule). "Frontier saturated" is NOT a valid
    shift outcome while this list is non-empty.
-1. **FTF-0902 round-1 history (SUPERSEDED — merged as PR #430, then returned again for new defects;
-   see item 0d2 above for the current, 2026-10-05 round-2 fix). PR #402's own three round-1 attempts
-   falsified; Control plane posted a corrected DoD directly on PR #402, 2026-10-01T11:08:10Z,
-   "3-attempt count starts fresh" — EXECUTED 2026-10-03, see `docs/certifications/queue.md`'s matching
-   entry.)** Root cause: `kind` ships its default CNI
-   (`kindnet`) inside the node *image*, not the binary — round-1's fix pinned only the binary to
-   v0.23.0 while the node image stayed `kindest/node:v1.31.2` (built by `kind` >=0.24, whose kindnet
-   enforces NetworkPolicy by default), so the pin never took effect. Corrected DoD (b)-(d), executed
-   this shift on a fresh branch off `main` (not a push onto PR #402's own branch): (b) split the node
-   image per cluster — `npt-baseline` now uses `kindest/node:v1.30.0` (genuinely non-enforcing),
-   `npt-enforcing` keeps `kindest/node:v1.31.2` + Calico; (c) added a self-checking pre/post-policy
-   probe on the baseline cluster (`denied` must be reachable before the policy exists; if it's then
-   unreachable after, that's its own explicit "baseline CNI enforces NetworkPolicy" failure, not a
-   generic one) plus a printed `kindnet` image for the job log; (d) removed the now-superseded
-   post-policy warm-up. (e) fallback (keep v1.31.2 + swap CNI to flannel) not needed unless this PR's
-   own CI run shows v1.30.0 failing to boot. Not self-certified (Law 4) — awaiting the real CI run on
-   the newly opened PR and independent Control-plane L2 review.
+1. **FTF-0902 — round 2 (L2 review 2026-10-04T11:00Z, PR #467 opened 2026-10-05T17:04Z, closed
+   unmerged; superseded by PR #468, open).** PR #467 fixed render-time endpoint revalidation
+   (type-gated, never `isinstance`), real RFC1918-only + cloud-metadata CIDR-overlap checks sourced
+   from `url_policy._CLOUD_METADATA_NETWORKS`, missing CI wiring for `tests/tasks/test_ftf_0902.py`,
+   and added a real DNS probe (`nslookup kubernetes.default.svc.cluster.local`) to the live-cluster
+   integration test — but PR #467's own CI run came back with `dns: False` on both clusters (a
+   probe-methodology defect, not an enforcement one: the nonenforcing baseline should never fail
+   DNS). **2026-10-05T19:47Z — PR #468 fixed this** (returned-work priority, CLAUDE.md "fix every
+   open or returned item before new work"): two real root causes, both independently confirmed
+   first — `create_cluster` never waited for CoreDNS's own rollout (only node-Ready), and the probe
+   queried the bare Service name instead of its FQDN (an untested search-list dependency). Fixed:
+   `create_cluster` now calls `wait_for_rollout(..., "deployment/coredns", timeout=120)` on both
+   clusters; `resolve_dns` now queries `kubernetes.default.svc.cluster.local` directly.
+   **CI on PR #468 (this shift):** attempt 1 (`37365686503`) came back "failure" with ~20/44 jobs
+   showing `runner_id: 0` (never scheduled), `gate` and `network-policy-enforcement-integration`
+   included — "died before any test body ran / runner loss" under CLAUDE.md's CI-red rules, so
+   re-ran once (the one sanctioned re-run for that case). Attempt 2: `gate` and
+   `network-policy-enforcement-integration` (the only two checks this PR's diff touches) both
+   passed — the real test step ran in under 3 minutes once scheduled, confirming the fix itself is
+   sound. 8 unrelated jobs (secret-manager, critical-behavior-requirements, storage-semantics,
+   litellm-connection-crud, database-api-trace-source, litellm-registration-capability,
+   evaluation-suite, tenant-isolation-query-guards integration) again showed the same
+   never-scheduled signature and were cancelled — none touch this PR's own files, same class as
+   the already-documented `BLOCKER.md` 2026-09-30 runner-provisioning entry. Disclosed on PR #468
+   (comment) rather than re-run a third time or widen the PR's scope. Not self-certified (Law 4) —
+   PROVISIONAL, awaiting Control-plane L2 re-review weighing `gate`/`network-policy-enforcement-
+   integration`'s real green result as this task's actual acceptance evidence.
 2. **FTF-1703 (Training dataset): stays deferred, now with a recorded dependency.** §55 requires
    ">=1,000 approved training traces", and §77.3 makes Argilla the owner of "review records,
    annotations and curation". So "reviewed/approved" needs FTF-R006 (Argilla review + reviewer
@@ -9355,7 +9410,28 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 docs/spec-matrix.yaml. It never invents criteria.)
 
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
-None currently.
+None currently. The PR #471 (FTF-0307 round-2 fix) merge-conflict entry below is resolved history.
+
+**RESOLVED 2026-10-06T04:52Z — PR #471 merge conflict, route option (1).** The prior entry's own
+route option (1) ("a session/user with the needed git permission merges `main` into PR #471's
+branch... pushes") was exercised this shift: `git fetch`'d both `origin/main` and
+`origin/claude/wizardly-fermat-4idnly` into a local worktree, merged `origin/main` in, resolved the
+one real conflict in `docs/certifications/queue.md` by keeping both dated entries in chronological
+order (`2026-10-06T00:00Z` FTF-0307 entry, then `2026-10-06T02:00Z` FTF-1506 entry — exactly the
+"trivial keep-both append-order conflict" the dry run already found, no semantic/code conflict
+touched), confirmed the merged `docs/spec-matrix.yaml` still parses with `yaml.safe_load` and
+`python3 scripts/validate_spec.py --strict` is clean, then pushed the merge commit (`0051e14`)
+straight to `claude/wizardly-fermat-4idnly` — unlike the prior session, this session's own
+permission mode allowed the push. GitHub's `mergeable_state` flipped to `clean` immediately. The
+real CI run this push triggered (`37415793440`) was watched to completion: **44/44 jobs green**,
+`gate` and `dependency-scanning-integration` (the exact job PR #472's own fix targeted) included —
+confirming the fix genuinely carries through once the merge-ref actually picks up `main`'s fixed
+lockfile. Independent Control-plane L2 re-review (not this entry) is still the next step before
+FTF-0307 itself can certify. No `BLOCKER.md` entry was needed; this was tooling access, not a
+design question, per the entry it resolves. (A second, independent session reached the same
+conclusion moments later and logged a duplicate confirmation, correctly attributing the fix to
+"a separate session, not this one" -- that entry is not repeated here to avoid recording the same
+resolved fact twice; PR #475 on `main` carries its own text for the record.)
 
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was
