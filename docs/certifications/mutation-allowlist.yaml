@@ -1,0 +1,24 @@
+# Mutation-gate allowlist (scripts/mutation_gate.py, read by the `mutation-gate` CI job).
+#
+# Each entry records ONE reviewed EQUIVALENT mutant: a SURVIVED mutant that
+# cannot change observable behavior (e.g. `<` -> `<=` on a value that can never
+# be equal, a dropped keyword whose value equals the constructor default), so no
+# test can kill it. A matching survivor is still printed by the gate, marked
+# "allowlisted", but does not fail it.
+#
+# This is NOT a place to park weak tests. A survivor that a real input could
+# expose must be KILLED by strengthening the test, never listed here. Every new
+# entry is reviewed by the Control plane at L2 like any other gate-weakening
+# change (Law 9), and `reason` must say why the mutant is equivalent.
+#
+# Entry shape (file/function/operator/reason required; line optional -- when
+# given it must match exactly, so it goes stale and resurfaces if the code
+# moves, which is the intended, conservative behavior):
+#
+#   entries:
+#     - file: apps/api/app/example.py        # repo-relative path
+#       function: ExampleClass.method        # dotted qualname as the gate prints it
+#       operator: M4                         # M1..M9
+#       line: 42                             # optional
+#       reason: "x is an int >= 1 here, so `x > 0` and `x >= 0` are equivalent"
+entries: []
