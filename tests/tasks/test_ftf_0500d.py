@@ -1486,6 +1486,170 @@ def test_fault_injection_purpose_check_additive_bypass_caught_by_independent_ora
     )
 
 
+# Independent literal expectations for the round-4 tests below: separately
+# written copies of the closed vocabularies (never the module's own
+# SUPPORTED_* tuples), so a production change to those tuples is caught too.
+_ORACLE_CLASSIFICATIONS: tuple[str, ...] = ("public", "internal", "confidential", "restricted")
+_ORACLE_PURPOSES: tuple[str, ...] = (
+    "training",
+    "validation",
+    "held_out_evaluation",
+    "candidate_development",
+    "baseline_only",
+)
+_ORACLE_PROFILES: tuple[str, ...] = ("standard", "zero_egress", "air_gapped")
+
+
+def test_independent_oracle_preview_display_fields_per_cell_with_non_default_values() -> None:
+    """FTF-0500D round 4, blocking item 1: every preview DISPLAY field is
+    asserted per cell against a literal expected value that differs from
+    the fixture default, so hard-coding `security_classification="public"`,
+    `requested_purpose="training"`, or any display name/type/profile in the
+    production preview stays RED. Cells: 4 classifications x 5 purposes x
+    3x3 (org, project) profile pairs = 180; the display name and source
+    type are unique per cell and distinct from the fixture default."""
+    executed_cases = 0
+    violations: list[str] = []
+    for classification in _ORACLE_CLASSIFICATIONS:
+        for purpose in _ORACLE_PURPOSES:
+            for org_profile in _ORACLE_PROFILES:
+                for project_profile in _ORACLE_PROFILES:
+                    executed_cases += 1
+                    display_name = (
+                        f"src::{classification}::{purpose}::{org_profile}::{project_profile}"
+                    )
+                    source_type = f"type::{classification}::{purpose}"
+                    preview = build_dataset_source_copy_preview(
+                        source_display_name=display_name,
+                        source_type=source_type,
+                        security_classification=classification,
+                        connection_status="active",
+                        allowed_purposes=[purpose],
+                        requested_purpose=purpose,
+                        organization_default_security_profile=org_profile,
+                        project_security_profile=project_profile,
+                        manifest=_manifest(
+                            estimated_bytes=1000 + executed_cases,
+                            estimated_records=7 + executed_cases,
+                            expected_transformations=(f"t{executed_cases}",),
+                        ),
+                    )
+                    expected = {
+                        "source_display_name": display_name,
+                        "source_type": source_type,
+                        "security_classification": classification,
+                        "requested_purpose": purpose,
+                        "estimated_bytes": 1000 + executed_cases,
+                        "estimated_records": 7 + executed_cases,
+                        "expected_transformations": (f"t{executed_cases}",),
+                        "effective_project_security_profile": _oracle_effective_profile(
+                            org_profile, project_profile
+                        ),
+                        "required_minimum_security_profile": _ORACLE_MINIMUM_PROFILE[
+                            classification
+                        ],
+                        "would_cross_security_boundary": _oracle_would_cross(
+                            classification, org_profile, project_profile
+                        ),
+                        "purpose_authorized": True,
+                    }
+                    for field_name, expected_value in expected.items():
+                        actual = getattr(preview, field_name)
+                        if actual != expected_value or type(actual) is not type(expected_value):
+                            violations.append(
+                                f"{classification}/{purpose}/{org_profile}/{project_profile} "
+                                f"{field_name}: expected {expected_value!r}, got {actual!r}"
+                            )
+    shown = violations[:5]
+    more = f" (+{len(violations) - 5} more)" if len(violations) > 5 else ""
+    check(
+        "FTF-0500D",
+        f"independent oracle: all {executed_cases} (classification x purpose x org profile x "
+        f"project profile) cells render every preview display field with its literal expected "
+        f"value (non-default per cell) -- violations: {shown}{more}",
+        executed_cases == 180 and violations == [],
+    )
+
+
+def _purpose_shapes(requested: str) -> list[tuple[str, list[str], bool]]:
+    """The four `allowed_purposes` shapes (plus requested-first-among-several)
+    with their literal expected authorization, never calling
+    `check_purpose_authorized`. `others` are two supported purposes other
+    than `requested`, in vocabulary order."""
+    others = [purpose for purpose in _ORACLE_PURPOSES if purpose != requested]
+    first_other, second_other = others[0], others[1]
+    return [
+        ("empty", [], False),
+        ("exactly_requested", [requested], True),
+        ("requested_among_several_not_first", [first_other, requested, second_other], True),
+        ("requested_last_of_several", [first_other, second_other, requested], True),
+        ("requested_first_of_several", [requested, first_other, second_other], True),
+        ("several_without_requested", [first_other, second_other], False),
+    ]
+
+
+def test_independent_oracle_allowed_purposes_shapes_preview_and_authorize() -> None:
+    """FTF-0500D round 4, blocking item 2: the review's "4 grant states" are
+    the SHAPES of `allowed_purposes` -- empty, exactly [requested], requested
+    among several but not first, several without requested (plus requested
+    first / last, so honoring only the first or only the last purpose is
+    caught). 5 purposes x 6 shapes x 2 statuses = 60 cells, each expected
+    value a literal, asserted against BOTH preview and authorize. An empty
+    list authorizing any purpose, or honoring only the first/last purpose,
+    turns this RED."""
+    executed_cases = 0
+    violations: list[str] = []
+    for requested in _ORACLE_PURPOSES:
+        for shape_name, allowed, shape_grants in _purpose_shapes(requested):
+            for status in ("active", "revoked"):
+                executed_cases += 1
+                expected_authorized = status == "active" and shape_grants
+                preview = build_dataset_source_copy_preview(
+                    source_display_name="shapes",
+                    source_type="upload",
+                    security_classification="public",
+                    connection_status=status,
+                    allowed_purposes=allowed,
+                    requested_purpose=requested,
+                    organization_default_security_profile="standard",
+                    project_security_profile="standard",
+                    manifest=_manifest(),
+                )
+                raised = False
+                try:
+                    authorize_dataset_source_copy(
+                        security_classification="public",
+                        connection_status=status,
+                        allowed_purposes=allowed,
+                        requested_purpose=requested,
+                        organization_default_security_profile="standard",
+                        project_security_profile="standard",
+                    )
+                except DatasetSourceCopyAuthorizationError:
+                    raised = True
+                if (
+                    preview.purpose_authorized is not expected_authorized
+                    or preview.blocked is expected_authorized
+                    or bool(preview.blocking_reasons) is expected_authorized
+                    or raised is expected_authorized
+                ):
+                    violations.append(
+                        f"requested={requested!r} shape={shape_name} status={status}: expected "
+                        f"authorized={expected_authorized}, preview.purpose_authorized="
+                        f"{preview.purpose_authorized} blocked={preview.blocked} "
+                        f"authorize_raised={raised}"
+                    )
+    shown = violations[:5]
+    more = f" (+{len(violations) - 5} more)" if len(violations) > 5 else ""
+    check(
+        "FTF-0500D",
+        f"independent oracle: all {executed_cases} (purpose x allowed_purposes shape x status) "
+        f"cells match the literal expected authorization for BOTH preview and authorize -- "
+        f"violations: {shown}{more}",
+        executed_cases == 60 and violations == [],
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
