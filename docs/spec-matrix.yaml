@@ -5443,9 +5443,19 @@ FTF-04A18:
     `discovered-agent-candidate-integration`) to `.github/workflows/ci.yml` in the same commit.
     Not self-certified (Law 4) -- independent Control-plane L2 review and a real CI run on the
     opened PR are required before certification.
+
+    Round 2 (2026-10-06, L2 review 2026-10-04T11:00Z): stale is now defined server-side against
+    the connection's latest snapshot -- a snapshot is stale if another snapshot of the same
+    connection supersedes it OR was captured strictly later (covers a newer snapshot created
+    without the optional supersedes link; integration test: unlinked newer snapshot -> 409, no
+    audit row, latest -> 201). UI: spec cases for a single-candidate list (no POST) and Enter
+    after load (focus not on a select button), fetch rejection / malformed body surfaced as
+    errors on both load and select. proving_test now lists the integration and Vitest tests that
+    catch the stale/audit/UI faults. See docs/certifications/submissions/ for the fault -> RED
+    table. certification_state unchanged (PROVISIONAL; Law 2/4).
   proof_state: L1-PROVEN
   proving_symbol: build_discovered_agent_candidate_selection_router
-  proving_test: tests/tasks/test_ftf_04a18.py
+  proving_test: tests/tasks/test_ftf_04a18.py, tests/integration/test_ftf_04a18_candidate_selection.py, apps/web/tests/ftf_04a18.spec.ts
 FTF-04A19:
   certification_state: CERTIFIED
   criticality: MUST

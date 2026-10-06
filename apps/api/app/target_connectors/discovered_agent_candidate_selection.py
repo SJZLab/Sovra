@@ -41,11 +41,13 @@ the clause needs a real backend write" task.
    to prove `candidate_id` is a real row under that exact snapshot (never
    a different snapshot/organization -- the same IDOR discipline every
    prior task in this chain already established).
-3. Refuses with `StaleSnapshotCandidateError` when some *other* real
-   snapshot of the same connection already names `snapshot_id` as the one
-   it supersedes (`target_source_snapshot_schema.py`'s own docstring:
-   `supersedes_snapshot_id` is set once, at INSERT time, on the *new* row,
-   pointing at the *old* one it replaces) -- this task's own real "stale
+3. Refuses with `StaleSnapshotCandidateError` when `snapshot_id` is not the
+   connection's latest snapshot, defined server-side against the real
+   database: some *other* snapshot of the same connection either names
+   `snapshot_id` as the one it supersedes (`supersedes_snapshot_id`, set
+   once at INSERT time on the *new* row) or was captured strictly after
+   it (`captured_at`). The second clause covers a newer snapshot created
+   without the optional supersedes link -- this task's own real "stale
    candidate from prior snapshot is rejected" negative_acceptance half,
    checked against the real database, never a client-supplied flag.
 4. Writes one real, append-only `AuditEvent` row
@@ -74,7 +76,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.auth.audit_event_writer import write_audit_event
@@ -127,21 +129,29 @@ class CandidateSelectionRecord:
     selected_at: datetime
 
 
-def _is_snapshot_superseded(
-    session: Session, organization_id: uuid.UUID, snapshot_id: uuid.UUID
+def _is_snapshot_stale(
+    session: Session, organization_id: uuid.UUID, snapshot: TargetSourceSnapshot
 ) -> bool:
-    """True iff some *other* real snapshot already names `snapshot_id` as
-    the one it supersedes. RLS on `target_source_snapshots` already
-    restricts every row this can see to the caller's own organization;
-    the explicit `organization_id` filter is kept for defense-in-depth
-    and readability, the same convention this chain's sibling CRUD
-    modules already follow for an otherwise-single-column WHERE clause."""
+    """True iff `snapshot` is no longer the connection's latest snapshot,
+    decided server-side against the real database: some *other* snapshot
+    of the same connection either names it as the one it supersedes, or
+    was captured strictly after it. The second clause matters because
+    `supersedes_snapshot_id` is an optional, client-supplied link -- a
+    newer snapshot created without it must still make this one stale.
+    RLS on `target_source_snapshots` already restricts every row this can
+    see to the caller's own organization; the explicit `organization_id`
+    filter is kept for defense-in-depth and readability."""
     statement = select(TargetSourceSnapshot.id).where(
         TargetSourceSnapshot.organization_id == organization_id,
-        TargetSourceSnapshot.supersedes_snapshot_id == snapshot_id,
+        TargetSourceSnapshot.target_application_connection_id
+        == snapshot.target_application_connection_id,
+        TargetSourceSnapshot.id != snapshot.id,
+        or_(
+            TargetSourceSnapshot.supersedes_snapshot_id == snapshot.id,
+            TargetSourceSnapshot.captured_at > snapshot.captured_at,
+        ),
     )
-    row = execute_tenant_scoped(session, organization_id, statement).first()
-    return row is not None
+    return execute_tenant_scoped(session, organization_id, statement).first() is not None
 
 
 def select_discovered_agent_candidate(
@@ -164,12 +174,12 @@ def select_discovered_agent_candidate(
     """
     # Proves (connection_id, snapshot_id) is real and in the caller's own
     # organization -- reused directly from FTF-04A07, never re-derived.
-    get_target_source_snapshot(session, context, connection_id, snapshot_id)
+    snapshot = get_target_source_snapshot(session, context, connection_id, snapshot_id)
 
-    if _is_snapshot_superseded(session, context.organization_id, snapshot_id):
+    if _is_snapshot_stale(session, context.organization_id, snapshot):
         raise StaleSnapshotCandidateError(
-            f"target source snapshot {snapshot_id} has been superseded by a "
-            "newer snapshot of the same connection; selection must be made "
+            f"target source snapshot {snapshot_id} is not the connection's latest snapshot (a "
+            "newer snapshot of the same connection exists); selection must be made "
             "against the connection's current snapshot"
         )
 
