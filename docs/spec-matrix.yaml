@@ -5350,10 +5350,10 @@ FTF-04A17:
   proving_symbol: build_discovered_agent_candidate_router
   proving_test: tests/tasks/test_ftf_04a17.py
 FTF-04A18:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: "Candidate-selection UI \u2014 no auto-selection"
-  evidence_hash: ''
+  evidence_hash: 6d5ff9501da3d86d335e398c978dc91ae4ec7f0d
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
@@ -5473,7 +5473,7 @@ FTF-04A18:
     errors on both load and select. proving_test now lists the integration and Vitest tests that
     catch the stale/audit/UI faults. See docs/certifications/submissions/ for the fault -> RED
     table. certification_state unchanged (PROVISIONAL; Law 2/4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: build_discovered_agent_candidate_selection_router
   proving_test: tests/tasks/test_ftf_04a18.py, tests/integration/test_ftf_04a18_candidate_selection.py, apps/web/tests/ftf_04a18.spec.ts
 FTF-04A19:
@@ -9576,10 +9576,10 @@ FTF-1206:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1206.py
 FTF-1206A:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Organization gateway policy persistence (migration prerequisite for FTF-1206)
-  evidence_hash: ''
+  evidence_hash: a8a1936049376e0dabd3bba2536b169fb04afcd9
   implementation_state: IMPLEMENTED
   notes: >-
     Owner-approved Release 1 addendum (2026-10-04), docs/adr/0002-task-addendum-ftf-1206a.md.
@@ -9661,7 +9661,7 @@ FTF-1206A:
     own persistence half (BLOCKER.md's RESOLVED 2026-10-02 entry, route option 1) -- a follow-up
     task, not done here, since this task's own `files` clause is closed to exactly the migration,
     the store module and these two test files.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1206a.py
 FTF-1301:

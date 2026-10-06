@@ -24,3 +24,6 @@ reports/
 .DS_Store
 .vscode/
 .idea/
+
+# Python type-checker cache (never commit)
+.mypy_cache/

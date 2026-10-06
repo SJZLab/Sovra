@@ -23979,3 +23979,59 @@ The full map is in `docs/certifications/wiring-map-2026-10-06.json`: each of the
   units (0205–0213, H004). After 0103A, Refill & Sweep puts it at the top of the Backlog.
 - Stale "no live caller yet" notes: 0103, 0104, 0105, H003, 0202, H006. Their callers exist now. Record their
   proving_symbols once FTF-0103A makes the success path reachable.
+
+## 2026-10-06T17:45Z — Control plane: FTF-04A18 CERTIFIED; FTF-1206A status flipped; FTF-0902 (round 4), FTF-1206A-F2 and FTF-H034-F1 returned
+
+Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent verifiers:
+top model for FTF-0902, FTF-1206A-F2 and FTF-H034-F1; mid-tier for FTF-04A18. All faults went into production code
+and ran with the script runner; the mutation gate ran where the file is in scope.
+
+### FTF-04A18 (#493, merge 6d5ff9501da3d86d335e398c978dc91ae4ec7f0d): CERTIFIED
+- Producer session: `013LXTon`. CI on d80fdbe: `gate` 112383468247 ("FTF-04A18 candidate selection ...: all checks
+  passed"), `candidate-selection-integration` 112383469113, `discovered-agent-candidate-integration` 112383468872.
+- Every blocking clause in the 10-04 entry turns RED, including the server-side latest-snapshot staleness checks:
+  delete, additive bypass, supersedes-only, captured_at-only, `>=`, inverted, and the same-connection filter.
+- UI clauses also turn RED: no auto-select of a single candidate, the Enter flow, surfaced errors, and a 409 that
+  is not treated as success.
+- Mutation gate: 22/22 mutants killed.
+- Follow-up FTF-04A18-F1: UI tests for a 500 on the list, a `{}` list body, and an ok select body without
+  `candidate_id`.
+
+### FTF-1206A: status flipped to CERTIFIED (verdict 2026-10-06T16:35Z; evidence a8a1936049376e0dabd3bba2536b169fb04afcd9)
+- Since FTF-H034-F1 (#495) merged, `sync_certified_status` creates the TRACKER entry for the addendum and leaves
+  `spec/tasks.json` byte-identical at 300. The verifier ran this check: the H034 test passes, and
+  `r1_handoff` integrity holds.
+
+### FTF-0902 (#491): NOT CERTIFIED, round 4 (1 blocking)
+- Producer session: `011d3fmH`. CI: gate 112374705053, network-policy-enforcement-integration 112374705651
+  (Calico metadata blocked).
+- All 5 round-3 items hold:
+  - 61 of 67 faults turn RED, including every fault that stayed GREEN in round 3;
+  - the remaining GREENs are masked or equivalent;
+  - probes P1–P9 are refused.
+- Mutation gate on the module, run through a scratch SOURCE_ROOTS wrapper: 112/118 killed, and the 6 survivors are
+  equivalent.
+- **Blocking:** the DNS rule emits module-level mutable dicts by reference. The Control plane reproduced on
+  unmodified code that clearing them in one returned manifest makes the next render emit
+  `{"namespaceSelector":{"matchLabels":{}},"podSelector":{"matchLabels":{}}}` on port 53. The fix is in
+  QUEUE 0b.
+- Follow-up FTF-0902-F1 adds:
+  - a lying-`str` protocol test;
+  - a template_id length-cap boundary test;
+  - packages/security in mutation-gate scope.
+
+### FTF-1206A-F2 (#498): NOT CERTIFIED, round 2 (tests only)
+- The "no tenant context" case reuses a pooled connection that already ran `set_config`, so it reads '' and
+  duplicates the '' case.
+- A WITH CHECK `current_setting(..., true) IS NULL OR …` fail-open stays GREEN for both tables. A fresh no-context
+  `sovra_app` connection inserted a foreign-org policy row under that fault.
+- With a fresh connection the fault turns RED. The fix is in QUEUE 0c.
+
+### FTF-H034-F1 (#495): NOT CERTIFIED, round 2 (tests only)
+- The production behavior is correct; the decisive check passed.
+- But widening the exclusion by regex (`FTF-\d+A`, or `FTF-\d+[A-Z]\w*`) stays GREEN. The only non-addendum test
+  id is `FTF-NOTREAL`, and 40+ real ids are addendum-shaped (04A*, 0500A–D). The fix is in QUEUE 0b2.
+
+### Hygiene
+- PR #493 committed `.mypy_cache`, and 2,308 cache files are tracked on main. This PR untracks them and adds the
+  directory to `.gitignore`.

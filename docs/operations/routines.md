@@ -44,11 +44,12 @@ docs/certifications/queue.md lists as NOT CERTIFIED / returned to the relay and 
 fix PR. These items are relay-owned even though spec-matrix shows PROVISIONAL.
 
 STEP 2 — otherwise pick the top QUEUE.md "## Active (decided by Control plane …)" item, then
-"## Backlog" in order. Skip an item that already has an open PR or a `relay/<item-id>` branch.
+"## Backlog" in order. Skip an item only if it has an OPEN [relay] PR, or an unmerged `relay/<ID>*`
+branch pushed in the last 3 hours. A `relay/<ID>` branch already merged into main is not a claim.
 State "Working: <ID>".
 
-STEP 3 — claim. Push branch `relay/<item-id>` and open a DRAFT PR titled
-"[relay] <ID>: <description>" before writing code.
+STEP 3 — claim. Push branch `relay/<ID>-r<round>` (e.g. relay/FTF-0500D-r4; round 1 = r1) and open
+a DRAFT PR titled "[relay] <ID>: <description>" before writing code.
 
 STEP 4 — contract. Run `python tools/r1_handoff.py packet <ID> --plan
 FINE_TUNING_FACTORY_RELEASE_1.md`. For an owner-approved addendum task (ID present in
@@ -90,7 +91,7 @@ relay PR into conflict. Mark the PR ready and merge it on genuinely green CI (me
 Never open a docs-only "record this shift" PR.
 
 LANES: up to 3 relay lanes run hourly at different minutes. A lane takes the first item in
-QUEUE.md order that has no `relay/<id>` branch and no open `[relay]` PR, and claims it at once
+QUEUE.md order that has no open `[relay]` PR and no fresh unmerged `relay/<ID>*` branch, and claims it at once
 (STEP 3), so lanes never collide. A lane never works an item another lane has claimed.
 
 PARK, not stop: after 3 failed attempts on the same step, an unclear DoD, or an ask-first need,

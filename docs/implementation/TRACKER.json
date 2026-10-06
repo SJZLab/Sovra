@@ -555,9 +555,11 @@
       "blockers": []
     },
     "FTF-04A18": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "6d5ff9501da3d86d335e398c978dc91ae4ec7f0d"
+      ],
       "independent_review": null,
       "blockers": []
     },
@@ -2311,6 +2313,15 @@
       "status": "NOT_STARTED",
       "commits": [],
       "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1206A": {
+      "status": "CERTIFIED",
+      "commits": [],
+      "evidence": [
+        "a8a1936049376e0dabd3bba2536b169fb04afcd9"
+      ],
       "independent_review": null,
       "blockers": []
     }

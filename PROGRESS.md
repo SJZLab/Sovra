@@ -1,18 +1,26 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-06T17:20Z. Source: `python3 scripts/status.py` on main.
-- **Status: 105/302 certified · 25 product-true** (denominator 302 since owner-approved addendum FTF-0103A, ADR 0003). Certification counts change only through Control-plane
-  `[CERT]` PRs, so these figures are exact until the next one.
-- **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307. FTF-1206A's verdict is CERTIFIED; its
-  status flips after relay item FTF-H034-F1.
-- **Merged PROVISIONAL, awaiting Control-plane review:** FTF-0902 round 3 (#491).
-- **Returned to the relay (NOT CERTIFIED):** FTF-0500D round 4, FTF-1002 round 4 (tests only). See
-  docs/certifications/queue.md 2026-10-06T16:35Z.
+Updated: 2026-10-06T17:45Z. Source: `python3 scripts/status.py` on main.
+- **Status: 107/302 certified · 26 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
+  Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
+- **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18.
+- **Returned to the relay (NOT CERTIFIED), tests-only fixes:**
+  - FTF-0902 round 4 (DNS selector aliasing);
+  - FTF-0500D round 4;
+  - FTF-1002 round 4;
+  - FTF-1206A-F2 round 2;
+  - FTF-H034-F1 round 2.
+  See docs/certifications/queue.md 2026-10-06T16:35Z and 17:45Z.
+- **Top of queue:** FTF-0103A (addendum). It wires a real session and Membership role lookup into every API route.
+  Today every /api/v1 route denies every request.
+- **New today:** every [relay] PR now runs a mutation gate (scripts/mutation_gate.py). It fails CI on any surviving
+  mutant.
 - **Needs the owner: nothing.** L2 reviews, certification, merging relay PRs and returned items are Control-plane or
   relay work. Owner asks appear only under QUEUE.md "Owner actions — current".
-- **Relay:** 3 hourly lanes (A owner routine at :48 every 2h; B :28 and C :08 via the dispatcher). Per-shift logs
-  are in docs/progress/ (one file per shift); entries below this block are history up to 2026-10-06.
+- **Relay:** 3 hourly lanes. Lane A is the owner routine at :48 every 2h. Lanes B (:28) and C (:08) run through the
+  Sonnet dispatcher. Per-shift logs are in docs/progress/ (one file per shift); entries below this block are history
+  up to 2026-10-06.
 
 ## 2026-10-05T23:30:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-shlvk5` — FTF-1206A implemented (Organization gateway policy persistence, migration prerequisite for FTF-1206)
 
