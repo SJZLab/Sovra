@@ -734,7 +734,7 @@ def test_catalog_revoked_after_discovery_shows_revoked_and_stale_never_healthy()
     # Round 2 blocking 1 ("no hidden stale access"): a connection discovered
     # healthy/callable and revoked afterwards must read revoked/stale, with
     # an already-removed entry staying removed (not re-labelled stale).
-    state = {"status": "active", "ids": ("model-a", "model-b")}
+    state: dict[str, Any] = {"status": "active", "ids": ("model-a", "model-b")}
 
     with _patched(
         tenant_scoped_session_for=_fake_tenant_scoped_session_for,
