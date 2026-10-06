@@ -9304,11 +9304,6 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      membership → 403. Add a test that fails if any /api/v1 route keeps a default resolver. Highest priority: it
      unblocks every success path.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
-   - **0b. FTF-0902 round 4 (security; 1 blocking).** `render_network_policy_manifest` emits the module-level
-     `KUBE_DNS_NAMESPACE_LABELS`/`KUBE_DNS_POD_LABELS` dicts by reference. Clearing them in one returned manifest makes
-     every later render allow all pods in all namespaces on port 53. Emit fresh copies (or immutable constants copied
-     on emit), assert they are non-empty at render, and add a test that mutates a returned manifest and then
-     re-renders. See docs/certifications/queue.md "2026-10-06T17:45Z".
    - **0b2. FTF-H034-F1 round 2 (tests only).** Add a negative case with an addendum-shaped id that has NO spec/addenda
      file (e.g. FTF-9999A or FTF-04A99) and assert it is reported missing from tasks.json. Widening the exclusion by
      regex must turn RED. Same entry.
@@ -9323,7 +9318,7 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      assertions; pin that the manifest digest covers base id/digest and each fact's value/known/detail separately;
      base-digest None/blank/"abc"/whitespace cases. Same entry.
    - **0e.** Then FTF-0510 and FTF-1807 (DoDs in "2026-10-04T11:00Z").
-   - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A and FTF-04A18 are CERTIFIED (2026-10-06).
+   - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18 and FTF-0902 are CERTIFIED (2026-10-06).
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid

@@ -9933,3 +9933,21 @@ PR is not landed by the next certifier shift.
 - Follow-up, not blocking:
   - FTF-1206A-F2 (round 2 open): a true no-context connection test;
   - FTF-1206A-F1.
+
+## FTF-0902 — Network-policy templates — CERTIFIED (2026-10-06)
+- Criterion: FTF-0902. PR #501, merge commit 5d8514f473e89c27a1cbb7fe53bb66f39499b9ee (head `77a6630`). This closes rounds 1–4.
+- Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent: the
+  producers are `01BGMHsj` (r4), `011d3fmH` (r3), `01XcRu6v` and `012M7ELE` (r2).
+- CI on 77a6630:
+  - `gate` 112429439103 passed;
+  - `network-policy-enforcement-integration` 112429439976 passed, with real kind clusters and Calico enforcement
+    (`denied: False`, `metadata: False`).
+- Independent verifier (top model):
+  - render-time exact-type revalidation, with normalized, non-empty emission;
+  - the whole rendered spec is pinned;
+  - PodSelector and CIDR endpoints are both covered;
+  - `::/0` and the RFC1918 boundaries are pinned;
+  - the kube-dns selectors are immutable and copied on each render;
+  - 58+ clause faults turn RED;
+  - mutation gate 118/124, with only equivalent survivors.
+- Follow-up, not blocking: FTF-0902-F1.

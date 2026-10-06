@@ -86,6 +86,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scripts.product_truth_check import SOURCE_ROOTS  # noqa: E402
 
+# The gate mutates production Python beyond product_truth_check's SOURCE_ROOTS: every package
+# under packages/ (security, litellm_client, storage, ...) and the gate/sync scripts under
+# scripts/ are production code too. A narrower root set made the gate pass vacuously
+# ("targets=[]") on PRs that only touched them (FTF-0902 round 4, 2026-10-06).
+# The gate never mutates itself.
+MUTATION_ROOTS = sorted(set(SOURCE_ROOTS) | {"packages", "scripts"})
+_SELF = "scripts/mutation_gate.py"
+
 DEFAULT_ALLOWLIST = "docs/certifications/mutation-allowlist.yaml"
 OPERATORS = ("M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9")
 GUARD_CALL = re.compile(r"^(_?validate|_?check|_?require|_?verify|_?assert|_?ensure|_?guard)")
@@ -178,7 +186,9 @@ def is_test_path(rel: str) -> bool:
 
 
 def under_source_roots(rel: str) -> bool:
-    return any(rel == r or rel.startswith(r.rstrip("/") + "/") for r in SOURCE_ROOTS)
+    if rel == _SELF:
+        return False
+    return any(rel == r or rel.startswith(r.rstrip("/") + "/") for r in MUTATION_ROOTS)
 
 
 _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
@@ -217,7 +227,7 @@ def select_targets(root: Path, base: str, files: list[str] | None) -> dict[str, 
                 raise UsageError(f"--files: {rel} is not a .py file")
             if not under_source_roots(rel) or is_test_path(rel):
                 raise UsageError(
-                    f"--files: {rel} is not production code under SOURCE_ROOTS {SOURCE_ROOTS}"
+                    f"--files: {rel} is not production code under MUTATION_ROOTS {MUTATION_ROOTS}"
                 )
             targets[rel] = None
         return targets
@@ -876,7 +886,7 @@ def _run(args: argparse.Namespace, t_start: float) -> int:
         _write_json(args, root, targets, [], mutants, generated, t_start)
         return 0
     if not mutants:
-        print("mutation_gate: nothing to mutate (no changed function under SOURCE_ROOTS) -- PASS")
+        print("mutation_gate: nothing to mutate (no changed function under MUTATION_ROOTS) -- PASS")
         _write_json(args, root, targets, [], mutants, generated, t_start)
         return 0
 

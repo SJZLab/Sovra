@@ -8678,10 +8678,10 @@ FTF-0901:
   proving_symbol: ''
   proving_test: ''
 FTF-0902:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Network-policy templates
-  evidence_hash: ''
+  evidence_hash: 5d8514f473e89c27a1cbb7fe53bb66f39499b9ee
   implementation_state: IMPLEMENTED
   notes: 'kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0005, FTF-0402
     (both CERTIFIED, confirmed before relying on them). Interface owner for phase 09 (Zero-data-egress
@@ -8908,7 +8908,7 @@ FTF-0902:
     Not self-certified (Law 4) -- awaiting independent Control-plane L2 review and a real CI run on
     the newly opened PR, including a real-green `network-policy-enforcement-integration` job with a
     real, non-`False` `dns` result on both clusters, before certification.'
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0902.py
 FTF-0903:
