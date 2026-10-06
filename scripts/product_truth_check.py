@@ -13,7 +13,9 @@ during shift work — these are complementary, not the same path.
 """
 
 import argparse
+import ast
 import pathlib
+import re
 import sys
 
 # Re-derived from the real layout FTF-0001 produced (PR #3), not a guess.
@@ -31,33 +33,91 @@ SOURCE_ROOTS = [
     "packages/shared",  # shared schema/adapter contracts
 ]
 
-TEST_PATTERNS = ["/test/", "/tests/", ".test.", ".spec.", "_test.", "test_"]
+TEST_PATTERNS = ["/test/", "/tests/", ".test.", ".spec.", "_test.", "_tests.", "test_"]
 
 
 def is_test_file(p):
     return any(x in p for x in TEST_PATTERNS)
 
 
+SOURCE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx"}
+SKIP_DIRS = {"__pycache__", "node_modules", ".venv", "dist", "build"}
+
+
+def _py_references(text, symbol):
+    """True when Python source *uses* `symbol`: a loaded Name or an attribute
+    access. A def/class of that name, an import, a docstring, a comment or a
+    string literal is not a use, and `OidcSettings` is not `Settings`. A use under
+    an import alias (`from m import symbol as _s`; `_s(...)`) counts."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return False
+    names = {symbol}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            names.update(a.asname for a in node.names if a.name == symbol and a.asname)
+    for node in ast.walk(tree):
+        if not isinstance(getattr(node, "ctx", None), ast.Load):
+            continue
+        if isinstance(node, ast.Name) and node.id in names:
+            return True
+        if isinstance(node, ast.Attribute) and node.attr == symbol:
+            return True
+    return False
+
+
+_JS_COMMENT = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
+
+
+def _js_references(text, symbol):
+    """True when TS/JS source uses `symbol` outside comments, import/export-from
+    lines and its own declaration (whole-word match only)."""
+    word = re.compile(r"(?<![\w$])" + re.escape(symbol) + r"(?![\w$])")
+    keywords = r"\b(function|class|const|let|var|interface|type|enum)\s+"
+    decl = re.compile(keywords + re.escape(symbol) + r"(?![\w$])")
+    for line in _JS_COMMENT.sub("", text).splitlines():
+        stripped = line.strip()
+        reexport = stripped.startswith("export ") and " from " in stripped
+        if stripped.startswith("import ") or reexport:
+            continue
+        line = decl.sub("", line)
+        if word.search(line):
+            return True
+    return False
+
+
 def find_callers(symbol, roots):
     """
-    Text search for non-test callers of symbol across source roots.
-    Reliable in CI (no external deps). Relay may additionally use Cognee MCP
-    recall queries ("what functions call <symbol>?") for semantic resolution
-    that handles renamed symbols and cross-module calls more accurately.
+    Non-test source files that USE `symbol` across source roots (Law 5: existence
+    is not evidence). Python is resolved by AST, TS/JS by whole-word match with
+    comments, imports and the declaration removed. A file that only defines,
+    imports, documents or mentions the symbol is not a caller; compiled or
+    non-source files (.pyc, .md, ...) are never read.
+    Deterministic and dependency-free so it runs in CI. Criteria (b) user-visible
+    assertion and (c) fault injection are proven by the Control-plane L2 verifier
+    and the mutation gate, not by this script.
     """
     callers = []
     for root in roots:
         rp = pathlib.Path(root)
         if not rp.exists():
             continue
-        for f in rp.rglob("*"):
-            if not f.is_file() or is_test_file(str(f)):
+        for f in sorted(rp.rglob("*")):
+            if not f.is_file() or f.suffix not in SOURCE_SUFFIXES:
+                continue
+            rel = f.relative_to(rp)
+            if SKIP_DIRS.intersection(rel.parts) or is_test_file(f"/{rp.name}/{rel.as_posix()}"):
                 continue
             try:
-                if symbol in f.read_text(errors="ignore"):
-                    callers.append(str(f))
-            except Exception:
-                pass
+                text = f.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            if symbol not in text:
+                continue
+            uses = _py_references if f.suffix == ".py" else _js_references
+            if uses(text, symbol):
+                callers.append(str(f))
     return callers
 
 
