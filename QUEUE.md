@@ -1,4 +1,50 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-06T02:00:00Z (scheduled relay shift, branch `claude/wizardly-fermat-3kfw8a`) --
+  STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly, no mismatch;
+  `BLOCKER.md` read in full: no live entries (all RESOLVED history). STEP 0.1: this branch was
+  already synced to `origin/main` at `01d298d` (PR #469 merged). Read `PROGRESS.md`/`QUEUE.md`/
+  `docs/certifications/queue.md` fresh. Per STEP 1 ("returned work first... red CI on an
+  already-open relay PR"), checked every open PR's real CI state directly via
+  `list_pull_requests`/`pull_request_read` `get_check_runs` rather than trusting prior-shift notes:
+  #463 (FTF-0601), #464 (FTF-0500C round 5), #465 (FTF-0500B round 4), #468 (FTF-0902, `gate` +
+  its own target job green, 8 unrelated never-scheduled jobs cancelled -- already-disclosed
+  precedent), and #470 (FTF-1206A) are all green -- skipped per this list's own skip rule. **#471
+  (FTF-0307 round-2 fix) had two consecutive RED runs** (`dependency-scanning-integration`:
+  `npm:source-map-js==1.2.1 GHSA-68fv-2mgg-jv7q` HIGH, no exception) -- `gate` itself passed both
+  times. STEP 0.2: no `cognee-cli` binary in this sandbox -- text-search fallback declared, same
+  as every prior shift.
+
+  **Triage:** confirmed via `git log -- pnpm-lock.yaml` and `pull_request_read get_files` that
+  this finding predates PR #471 (pin last touched by merge PR #415) and PR #471's own diff never
+  touches `pnpm-lock.yaml` or any frontend file -- genuinely unrelated to FTF-0307's own closed
+  file scope, same "root-cause unrelated findings in their own fix, never by widening the PR"
+  posture `docs/certifications/queue.md`'s 2026-09-25 FTF-1506 entry already established.
+
+  **Fix (this shift, own PR, not inside PR #471):** bumped `pnpm-lock.yaml`'s `source-map-js`
+  (a transitive dep of `postcss@8.5.28`'s own `^1.2.1` range) from `1.2.1` to `1.2.2` -- a minimal,
+  hand-applied 3-line edit (`pnpm update` alone pulled in ~20 unrelated transitive bumps, reverted
+  first). `pnpm install --frozen-lockfile` confirms self-consistency; `pnpm run
+  lint`/`typecheck`/`format:check`/`vitest run` and `uv run python3 tests/tasks/test_ftf_1506.py`
+  (no-network, 19/19) all clean; `validate_spec.py --strict`/`product_truth_check.py
+  --fail-on-unwired` (26/26)/`status.py` (101/301 certified) all unchanged. Full record in
+  `docs/certifications/queue.md`'s "2026-10-06T02:00Z" entry and `docs/spec-matrix.yaml`'s
+  FTF-1506 entry (certification_state/proof_state deliberately unchanged -- Law 2, this is a
+  dependency-pin bump, not new certification evidence for the scanning tool itself). Opened as
+  **PR https://github.com/SJZLab/Sovra/pull/472**, titled `[relay] FTF-1506: patch source-map-js
+  dependency vulnerability (GHSA-68fv-2mgg-jv7q)`. Once merged, PR #471's own next CI run (against
+  its live merge-ref into `main`) carries the fix automatically -- no push to PR #471's own branch
+  made, per "never push to a different branch without explicit permission."
+
+  STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all
+  updated this shift, before compaction. STEP 4 stop condition (a): this maintenance fix is a
+  separate, dedicated PR awaiting its own real CI run (`gate` +
+  `dependency-scanning-integration`) before merge-on-green; FTF-0307 (PR #471) itself stays
+  untouched, PROVISIONAL, awaiting Control-plane L2 re-review once its own CI goes green on the
+  next run after this fix lands on `main`. Not picking a second Active-list item this shift --
+  returned-work (red CI) took priority per STEP 1. No open owner ask (`QUEUE.md` "Owner actions --
+  current" unchanged: none open). `BLOCKER.md` unchanged -- no live entries.
+
+## Previous shift
 Updated: 2026-10-05T04:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-t5nrme`) --
   STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly, no mismatch;
   `BLOCKER.md` read, no live entries. STEP 0.1: this branch was already synced to `origin/main` at
@@ -64,7 +110,6 @@ Updated: 2026-10-05T04:10:00Z (scheduled relay shift, branch `claude/wizardly-fe
   unchanged). Stopping here -- one item per shift. No open owner ask (`QUEUE.md` "Owner actions --
   current" unchanged: none open). `BLOCKER.md` unchanged -- no live entries.
 
-## Previous shift
 Updated: 2026-10-04T23:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-1w3lax`) —
   STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly, no mismatch;
   `BLOCKER.md` read, no live entries. STEP 0.1: this branch was already synced to `origin/main` at
