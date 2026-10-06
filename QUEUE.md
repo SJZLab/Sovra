@@ -9304,25 +9304,26 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      membership → 403. Add a test that fails if any /api/v1 route keeps a default resolver. Highest priority: it
      unblocks every success path.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
-   - **0b. FTF-0902 round 3 (security; 5 blocking items).** Render-time revalidation still lets a mutated endpoint
-     emit `0.0.0.0/0`, `::/0`, `ports: []`, `port: null` and an empty pod selector; renderer-added peers stay GREEN;
-     the PodSelectorEndpoint half is untested; no `::/0` test; RFC1918 range boundaries are unpinned. See
-     docs/certifications/queue.md "2026-10-06T15:30Z". Everything else there is follow-up FTF-0902-F1.
-   - **0b2. FTF-H034-F1 (small; blocks FTF-1206A's certification).** Make the H034 tracker-sync test and
-     `sync_certified_status` addendum-aware (ADR 0002 keeps spec/tasks.json at 300). See docs/certifications/queue.md
-     "2026-10-06T16:35Z".
-   - **0c. FTF-1206A-F2 (security, tests only, one small PR).** A no-tenant-context fail-open in either table's
-     WITH CHECK stays GREEN in every suite. Add raw `sovra_app` INSERTs with no context and with '' context into both
-     tables, for an org that has no policy row (so UNIQUE cannot mask it); assert the row-level-security error and
-     that no row is left. See docs/certifications/queue.md "2026-10-06T16:35Z".
+   - **0b. FTF-0902 round 4 (security; 1 blocking).** `render_network_policy_manifest` emits the module-level
+     `KUBE_DNS_NAMESPACE_LABELS`/`KUBE_DNS_POD_LABELS` dicts by reference. Clearing them in one returned manifest makes
+     every later render allow all pods in all namespaces on port 53. Emit fresh copies (or immutable constants copied
+     on emit), assert they are non-empty at render, and add a test that mutates a returned manifest and then
+     re-renders. See docs/certifications/queue.md "2026-10-06T17:45Z".
+   - **0b2. FTF-H034-F1 round 2 (tests only).** Add a negative case with an addendum-shaped id that has NO spec/addenda
+     file (e.g. FTF-9999A or FTF-04A99) and assert it is reported missing from tasks.json. Widening the exclusion by
+     regex must turn RED. Same entry.
+   - **0c. FTF-1206A-F2 round 2 (security, tests only).** Run the "no tenant context" INSERT on a brand-new connection
+     (NullPool or dispose first) and assert the precondition `current_setting('app.current_organization_id', true)
+     IS NULL`. Keep the '' case separate. The fault `current_setting(..., true) IS NULL OR …` in WITH CHECK must turn
+     RED for each table. Same entry.
    - **0d. FTF-0500D round 4 (tests only; 2 blocking).** Assert preview `security_classification` and
      `requested_purpose` per cell with non-default values; cover the 4 `allowed_purposes` shapes (empty, exactly
      [requested], requested among several not first, several without requested). Same entry.
    - **0d3. FTF-1002 round 4 (tests only; 3 blocking).** Distinct licence per artifact with per-fact value/detail
      assertions; pin that the manifest digest covers base id/digest and each fact's value/known/detail separately;
      base-digest None/blank/"abc"/whitespace cases. Same entry.
-   - **0e.** Then FTF-0510, FTF-04A18 and FTF-1807 (DoDs in "2026-10-04T11:00Z").
-   - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601 and FTF-0307 are CERTIFIED (2026-10-06); FTF-1206A's verdict is CERTIFIED, with the status flip pending 0b2.
+   - **0e.** Then FTF-0510 and FTF-1807 (DoDs in "2026-10-04T11:00Z").
+   - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A and FTF-04A18 are CERTIFIED (2026-10-06).
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid
