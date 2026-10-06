@@ -439,6 +439,84 @@ def test_apply_mark_ready_succeeds_once_all_three_gates_are_satisfied() -> None:
     )
 
 
+def test_apply_mark_ready_refuses_every_malformed_weights_digest_shape() -> None:
+    """FTF-0307 round-3 same-class sweep (docs/certifications/queue.md
+    "2026-10-06T09:45Z" DoD (4)): `apply_mark_ready` re-validates the digest
+    with the shared `validate_weights_digest`, not merely `is None`. Each
+    value is set post-construction, as an ORM-loaded row would be."""
+    for digest in (
+        "",
+        "sha256:",
+        "sha256:" + "A" * 64,
+        "SHA256:" + "a" * 64,
+        "sha256:" + "a" * 63,
+        "sha256:" + "a" * 65,
+        " sha256:" + "a" * 64,
+        "sha256:" + "a" * 64 + " ",
+        "sha256:" + "a" * 64 + "\n",
+        "sha512:" + "a" * 64,
+        b"sha256:" + b"a" * 64,
+    ):
+        artifact = _make_artifact()
+        apply_accept_license(artifact, accepted_by="user-1")
+        artifact.weights_digest = digest  # type: ignore[assignment]
+        try:
+            apply_mark_ready(artifact)
+            refused = False
+        except ArtifactStateError as exc:
+            refused = "weights_digest" in str(exc)
+        check(
+            "FTF-0301",
+            f"negative_acceptance: mark_ready refuses a malformed weights_digest {digest!r}",
+            refused,
+        )
+        check(
+            "FTF-0301",
+            f"a refused mark_ready for digest {digest!r} leaves status registered",
+            artifact.status == "registered",
+        )
+
+
+def test_apply_mark_ready_uses_the_shared_validate_weights_digest() -> None:
+    from app.artifacts import artifact_crud, artifact_schema
+
+    check(
+        "FTF-0301",
+        "artifact_crud binds the shared artifact_schema.validate_weights_digest",
+        getattr(artifact_crud, "validate_weights_digest", None)
+        is artifact_schema.validate_weights_digest,
+    )
+
+
+def test_apply_mark_ready_refuses_an_unknown_or_non_str_status() -> None:
+    """FTF-0307 round-3 same-class sweep (DoD (5)): only a `registered`
+    artifact may transition to `ready`. An unrecognised or non-hashable
+    status (set post-construction, as an ORM-loaded row could carry) is
+    refused, never silently overwritten with `ready`."""
+    for status in ("a_future_status", "READY", " registered", ["ready"], {"registered"}):
+        artifact = _make_artifact()
+        apply_accept_license(artifact, accepted_by="user-1")
+        artifact.weights_digest = "sha256:" + "c" * 64
+        artifact.status = status  # type: ignore[assignment]
+        try:
+            apply_mark_ready(artifact)
+            outcome = "accepted"
+        except ArtifactStateError:
+            outcome = "refused"
+        except Exception as exc:  # noqa: BLE001 -- reported by the check below
+            outcome = repr(exc)
+        check(
+            "FTF-0301",
+            f"mark_ready refuses an artifact with status {status!r} (got {outcome})",
+            outcome == "refused",
+        )
+        check(
+            "FTF-0301",
+            f"a refused mark_ready never rewrites status {status!r} to ready",
+            artifact.status == status,
+        )
+
+
 def test_apply_mark_ready_refuses_on_archived_artifact() -> None:
     artifact = _make_artifact(status="archived")
     check(

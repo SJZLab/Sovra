@@ -53,6 +53,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.artifacts.artifact_crud import ArtifactNotFoundError, get_artifact
+from app.artifacts.artifact_schema import (
+    TrainableArtifactValidationError,
+    validate_weights_digest,
+)
 from app.auth.audit_event_writer import write_audit_event
 from app.auth.resource_authorization import ResourceAuthorizationError, authorize_resource_ownership
 from app.auth.tenant_isolation_query_guards import execute_tenant_scoped
@@ -98,8 +102,9 @@ class ModelVersionArtifactStateError(ValueError):
     """The referenced `TrainableArtifact` cannot back a real
     `full_weight`/`adapter` import -- this task's own negative_acceptance
     made real: a `registered` (still-mutable) or `archived` (closed)
-    artifact is refused, and a `ready` artifact with no resolved
-    `weights_digest` (should be structurally impossible, but checked
+    artifact is refused, and a `ready` artifact whose `weights_digest` is
+    missing or not a valid `sha256:` digest (the shared
+    `validate_weights_digest`; should be structurally impossible, but checked
     directly as defense in depth -- the same "re-validate, never merely
     trust an earlier check" discipline `artifact_crud.py`'s own
     `apply_mark_ready` already applies to `source_uri`) is refused."""
@@ -205,12 +210,13 @@ def create_model_version(
                 "import; a 'registered' artifact is still mutable and an 'archived' "
                 "one is a closed record"
             )
-        if artifact.weights_digest is None:
+        try:
+            weights_digest = validate_weights_digest(artifact.weights_digest)
+        except TrainableArtifactValidationError as exc:
             raise ModelVersionArtifactStateError(
-                f"trainable artifact {artifact.id} has no resolved weights_digest -- "
-                "a required but nonexistent weights/hash cannot back a model-version import"
-            )
-        weights_digest = artifact.weights_digest
+                f"trainable artifact {artifact.id} has no valid resolved weights_digest -- "
+                "a missing or malformed weights/hash cannot back a model-version import"
+            ) from exc
         base_model_revision = artifact.base_model_revision
 
     version_number = _next_version_number(session, context, project_id)

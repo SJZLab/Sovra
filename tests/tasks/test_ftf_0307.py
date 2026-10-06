@@ -87,6 +87,7 @@ from app.artifacts.training_capability_classifier import (  # noqa: E402
     AccessState,
     ArtifactAvailability,
     TrainingCapability,
+    TrainingCapabilityClassification,
     TrainingCapabilityClassificationError,
     classify_training_capability,
 )
@@ -661,6 +662,262 @@ def test_classification_result_is_frozen() -> None:
     check("FTF-0307", "TrainingCapabilityClassification is frozen (immutable)", not mutated)
 
 
+# -- 2026-10-06 L2 round-3 (docs/certifications/queue.md "2026-10-06T09:45Z") --
+
+# Every malformed digest shape the round-3 review named, plus neighbours.
+# Each is set post-construction (as an ORM row loaded from the database
+# would be -- `TrainableArtifact.__init__`'s own validation never runs then).
+_MALFORMED_DIGESTS: tuple[object, ...] = (
+    "",
+    "sha256:",
+    "sha256:" + "A" * 64,
+    "SHA256:" + "a" * 64,
+    "sha256:" + "a" * 63,
+    "sha256:" + "a" * 65,
+    " sha256:" + "a" * 64,
+    "sha256:" + "a" * 64 + " ",
+    "sha256:" + "a" * 64 + "\n",
+    "sha512:" + "a" * 64,
+    "sha256:" + "g" * 64,
+    "a" * 64,
+    b"sha256:" + b"a" * 64,
+    ["sha256:" + "a" * 64],
+)
+
+
+def _classify(**overrides: object) -> TrainingCapabilityClassification:
+    kwargs: dict[str, object] = {
+        "model_id": "gpt-a",
+        "organization_id": _ORG,
+        "reconciliation": _reconciliation("gpt-a"),
+        "probe": None,
+        "artifact": None,
+    }
+    kwargs.update(overrides)
+    return classify_training_capability(**kwargs)  # type: ignore[arg-type]
+
+
+def test_r3_registered_and_archived_artifacts_with_a_valid_digest_are_unknown() -> None:
+    """Round-3 DoD (1): the ready-status gate is pinned on its own, not
+    masked by a missing digest. A registered or archived artifact that DOES
+    carry a valid, resolved digest (realistic: the digest is resolved before
+    mark_ready, and archiving keeps it) must still never be trainable."""
+    for status, availability in (
+        ("registered", ArtifactAvailability.REGISTERED),
+        ("archived", ArtifactAvailability.ARCHIVED),
+    ):
+        artifact = _artifact(status=status, weights_digest=_WEIGHTS_DIGEST)
+        artifact.license_accepted_by = "reviewer-1"
+        artifact.license_accepted_at = _NOW
+        check(
+            "FTF-0307",
+            f"fixture: the {status} artifact really carries a valid digest",
+            artifact.weights_digest == _WEIGHTS_DIGEST,
+        )
+        result = _classify(artifact=artifact)
+        check(
+            "FTF-0307",
+            f"negative_acceptance: a {status} artifact with a valid digest is unknown, "
+            f"never trainable (got {result.capability!r})",
+            result.capability == TrainingCapability.UNKNOWN,
+        )
+        check(
+            "FTF-0307",
+            f"a {status} artifact reports its own real availability",
+            result.artifact_availability == availability,
+        )
+
+
+def test_r3_probe_only_endpoint_aliased_ft_stays_inference_only() -> None:
+    """Round-3 DoD (2): "Inference-only endpoint cannot become trainable by
+    editing name" at the model_id level, not only display_name. A probe-only
+    endpoint whose alias looks like a fine-tune (`ft:...`) is still only
+    inference_only; with no evidence at all it stays unknown."""
+    for alias in ("ft:x", "ft:gpt-a:org:custom", "gpt-a-trainable", "trainable_open_weight"):
+        probed = _classify(
+            model_id=alias,
+            reconciliation=_reconciliation(alias),
+            probe=_probe(ToolCallProbeState.PROBED, resolved_model=alias),
+        )
+        check(
+            "FTF-0307",
+            f"negative_acceptance: probe-only endpoint aliased {alias!r} is inference_only "
+            f"(got {probed.capability!r})",
+            probed.capability == TrainingCapability.INFERENCE_ONLY,
+        )
+        bare = _classify(model_id=alias, reconciliation=_reconciliation(alias))
+        check(
+            "FTF-0307",
+            f"negative_acceptance: alias {alias!r} with no evidence stays unknown "
+            f"(got {bare.capability!r})",
+            bare.capability == TrainingCapability.UNKNOWN,
+        )
+        registered = _classify(
+            model_id=alias,
+            reconciliation=_reconciliation(alias),
+            artifact=_artifact(status="registered", display_name=alias),
+        )
+        check(
+            "FTF-0307",
+            f"negative_acceptance: alias {alias!r} with only a registered artifact stays unknown",
+            registered.capability == TrainingCapability.UNKNOWN,
+        )
+
+
+def test_r3_renaming_the_model_id_never_carries_evidence_over() -> None:
+    """Round-3 DoD (2): the same real probe evidence, bound to `gpt-a`,
+    never transfers to a renamed alias of it (`ft:gpt-a`)."""
+    probe = _probe(ToolCallProbeState.PROBED, resolved_model="gpt-a")
+    before = _classify(model_id="gpt-a", probe=probe)
+    after = _classify(
+        model_id="ft:gpt-a", reconciliation=_reconciliation("gpt-a", "ft:gpt-a"), probe=probe
+    )
+    check(
+        "FTF-0307",
+        "the original model_id is inference_only on its own bound probe",
+        before.capability == TrainingCapability.INFERENCE_ONLY,
+    )
+    check(
+        "FTF-0307",
+        f"negative_acceptance: renaming the model_id to 'ft:gpt-a' carries no evidence over "
+        f"(got {after.capability!r})",
+        after.capability == TrainingCapability.UNKNOWN,
+    )
+
+
+_CASE_AND_SPACE_VARIANTS = ("GPT-A", "Gpt-A", " gpt-a", "gpt-a ", "gpt-a\n", "\tgpt-a", "gpt-a ")
+
+
+def test_r3_probe_matching_is_exact_never_case_or_whitespace_insensitive() -> None:
+    """Round-3 DoD (3): probe evidence for a case/whitespace variant of
+    `model_id` is a different model id, never evidence for this one."""
+    for variant in _CASE_AND_SPACE_VARIANTS:
+        result = _classify(probe=_probe(ToolCallProbeState.PROBED, resolved_model=variant))
+        check(
+            "FTF-0307",
+            f"negative_acceptance: a probe resolved to {variant!r} is not evidence for 'gpt-a' "
+            f"(got {result.capability!r})",
+            result.capability == TrainingCapability.UNKNOWN,
+        )
+
+
+def test_r3_access_matching_is_exact_never_case_or_whitespace_insensitive() -> None:
+    """Round-3 DoD (3): a reconciled alias that differs only in case or
+    whitespace does not grant access to `model_id`."""
+    for variant in _CASE_AND_SPACE_VARIANTS:
+        result = _classify(reconciliation=_reconciliation(variant))
+        check(
+            "FTF-0307",
+            f"a reconciled alias {variant!r} does not grant access to 'gpt-a'",
+            result.access == AccessState.NOT_GRANTED,
+        )
+
+
+def test_r3_artifact_id_is_the_real_artifact_id_never_fabricated() -> None:
+    """Round-3: `artifact_id` is exactly the supplied artifact's own id --
+    two distinct artifacts give two distinct ids, and an id-less artifact
+    reports None rather than an invented one."""
+    first = _artifact(status="ready")
+    second = _artifact(status="ready")
+    first_result = _classify(artifact=first)
+    second_result = _classify(artifact=second)
+    check(
+        "FTF-0307",
+        "artifact_id is the real first artifact's id",
+        first_result.artifact_id == str(first.id),
+    )
+    check(
+        "FTF-0307",
+        "artifact_id is the real second artifact's id",
+        second_result.artifact_id == str(second.id),
+    )
+    check(
+        "FTF-0307",
+        "two distinct artifacts never report the same artifact_id",
+        first_result.artifact_id != second_result.artifact_id,
+    )
+    unsaved = _artifact(status="registered")
+    unsaved.id = None  # type: ignore[assignment]
+    check(
+        "FTF-0307",
+        "an artifact with no id reports artifact_id None, never a fabricated one",
+        _classify(artifact=unsaved).artifact_id is None,
+    )
+    check(
+        "FTF-0307",
+        "no artifact reports artifact_id None",
+        _classify().artifact_id is None,
+    )
+
+
+def test_r3_classifier_uses_the_shared_validate_weights_digest() -> None:
+    """Round-3 DoD (4): one shared validator, not a per-module copy."""
+    from app.artifacts import artifact_schema, training_capability_classifier
+
+    check(
+        "FTF-0307",
+        "the classifier binds the shared artifact_schema.validate_weights_digest",
+        getattr(training_capability_classifier, "validate_weights_digest", None)
+        is artifact_schema.validate_weights_digest,
+    )
+
+
+def test_r3_malformed_weights_digest_on_a_ready_artifact_is_never_trainable() -> None:
+    """Round-3 DoD (4): only a real `sha256:` + 64 lowercase hex digest
+    counts as resolved. Every other shape fails closed to unknown."""
+    for digest in _MALFORMED_DIGESTS:
+        artifact = _artifact(status="ready")
+        artifact.weights_digest = digest  # type: ignore[assignment]
+        try:
+            result = _classify(artifact=artifact)
+        except Exception as exc:  # noqa: BLE001 -- the check below reports it
+            check(
+                "FTF-0307",
+                f"a malformed digest {digest!r} fails closed, never raises ({exc!r})",
+                False,
+            )
+            continue
+        check(
+            "FTF-0307",
+            f"negative_acceptance: a ready artifact with digest {digest!r} is unknown "
+            f"(got {result.capability!r})",
+            result.capability == TrainingCapability.UNKNOWN,
+        )
+    valid = _classify(artifact=_artifact(status="ready"))
+    check(
+        "FTF-0307",
+        "a ready artifact with a real sha256 digest is still trainable (no over-blocking)",
+        valid.capability == TrainingCapability.TRAINABLE_OPEN_WEIGHT,
+    )
+
+
+def test_r3_non_hashable_status_fails_closed_never_raises() -> None:
+    """Round-3 DoD (5): a non-hashable status (e.g. `["ready"]`) fails
+    closed to unknown with availability none; it never raises TypeError."""
+    for status in (["ready"], {"ready"}, {"status": "ready"}):
+        artifact = _artifact(status="ready")
+        artifact.status = status  # type: ignore[assignment]
+        try:
+            result = _classify(artifact=artifact)
+        except Exception as exc:  # noqa: BLE001 -- the check below reports it
+            check(
+                "FTF-0307",
+                f"a non-hashable status {status!r} fails closed, never raises ({exc!r})",
+                False,
+            )
+            continue
+        check(
+            "FTF-0307",
+            f"a non-hashable status {status!r} classifies unknown",
+            result.capability == TrainingCapability.UNKNOWN,
+        )
+        check(
+            "FTF-0307",
+            f"a non-hashable status {status!r} reports availability none",
+            result.artifact_availability == ArtifactAvailability.NONE,
+        )
+
+
 def _run_fault_script(script: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-c", script], capture_output=True, text=True, timeout=30
@@ -861,11 +1118,10 @@ print("CAPABILITY=" + result.capability.value)
 
 def test_fault_injection_missing_weights_digest_treated_as_trainable_is_caught() -> None:
     """A fifth, independent fault injection (Law 1), for the new round-2
-    guard: mutates the real on-disk module to drop the `weights_digest is
-    not None` requirement, runs a real `ready` artifact with no resolved
-    digest, and proves it would otherwise have been wrongly classified
-    trainable."""
-    target = "        and artifact.weights_digest is not None\n"
+    guard: mutates the real on-disk module to drop the weights_digest
+    requirement, runs a real `ready` artifact with no resolved digest, and
+    proves it would otherwise have been wrongly classified trainable."""
+    target = "        and _has_valid_weights_digest(artifact)\n"
     replacement = ""
     probe_script = (
         _FAULT_PRELUDE
@@ -890,6 +1146,73 @@ print("CAPABILITY=" + result.capability.value)
         expect_in_stdout="CAPABILITY=trainable_open_weight",
         description="dropping the weights_digest requirement genuinely lets a digest-unresolved "
         "ready artifact become trainable",
+    )
+
+
+def test_fault_injection_presence_only_digest_check_is_caught() -> None:
+    """Round-3 DoD (4), Law 1: weakening the shared-validator digest check
+    back to the round-2 `is not None` presence check lets a malformed
+    (`sha256:` with no hex) digest classify trainable."""
+    target = "        and _has_valid_weights_digest(artifact)\n"
+    replacement = "        and artifact.weights_digest is not None\n"
+    probe_script = (
+        _FAULT_PRELUDE
+        + """
+artifact = TrainableArtifact(
+    organization_id=_ORG, display_name="x", source_type="local_filesystem",
+    source_uri="model-a", model_family="tiny", base_model_revision="v1.0",
+    weights_digest=None, license_id="apache-2.0",
+    trust_remote_code_allowed=False, status="ready",
+)
+artifact.id = uuid.uuid4()
+artifact.weights_digest = "sha256:"
+result = classify_training_capability(
+    model_id="gpt-a", organization_id=_ORG, reconciliation=recon, probe=None, artifact=artifact
+)
+print("CAPABILITY=" + result.capability.value)
+"""
+    )
+    _assert_fault_injection(
+        target=target,
+        replacement=replacement,
+        probe_script=probe_script,
+        expect_in_stdout="CAPABILITY=trainable_open_weight",
+        description="a presence-only digest check genuinely lets a malformed digest become "
+        "trainable",
+    )
+
+
+def test_fault_injection_additive_name_allow_is_caught_by_the_alias_test() -> None:
+    """Round-3 DoD (2), Law 1, additive fault: inserts a name-based allow
+    (`model_id.startswith("ft:")` -> trainable) ahead of the real gates,
+    then runs this suite's own alias test against the mutated module in a
+    fresh subprocess and proves that test reports the failure."""
+    target = (
+        "    if (\n        artifact is not None\n"
+        "        and artifact_availability is ArtifactAvailability.READY\n"
+    )
+    replacement = (
+        '    if model_id.startswith("ft:"):\n'
+        "        capability = TrainingCapability.TRAINABLE_OPEN_WEIGHT\n"
+        '        detail = "fault"\n'
+        "    elif (\n        artifact is not None\n"
+        "        and artifact_availability is ArtifactAvailability.READY\n"
+    )
+    probe_script = f"""
+import runpy, sys
+sys.argv = [{str(Path(__file__).resolve())!r}]
+module = runpy.run_path({str(Path(__file__).resolve())!r}, run_name="ftf_0307_fault_probe")
+module["test_r3_probe_only_endpoint_aliased_ft_stays_inference_only"]()
+failures = module["FAILURES"]
+print("ALIAS_TEST_FAILURES=" + str(len(failures)))
+print("RED" if failures else "GREEN")
+"""
+    _assert_fault_injection(
+        target=target,
+        replacement=replacement,
+        probe_script=probe_script,
+        expect_in_stdout="\nRED",
+        description="an additive model_id name-allow is caught by the alias test",
     )
 
 

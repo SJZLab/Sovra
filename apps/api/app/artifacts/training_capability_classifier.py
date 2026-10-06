@@ -103,7 +103,12 @@ from packages.litellm_client.alias_reconciliation import AliasReconciliationResu
 from packages.litellm_client.real_chat_probe import RouteIdentityState
 from packages.litellm_client.real_tool_call_probe import ToolCallProbeResult, ToolCallProbeState
 
-from app.artifacts.artifact_schema import ALLOWED_STATUSES, TrainableArtifact
+from app.artifacts.artifact_schema import (
+    ALLOWED_STATUSES,
+    TrainableArtifact,
+    TrainableArtifactValidationError,
+    validate_weights_digest,
+)
 
 __all__ = [
     "AccessState",
@@ -159,6 +164,19 @@ if set(_ARTIFACT_STATUS_TO_AVAILABILITY) != set(ALLOWED_STATUSES):
     )
 
 
+def _has_valid_weights_digest(artifact: TrainableArtifact) -> bool:
+    """True only for a real `sha256:` + 64 lowercase hex digest, checked
+    with the shared `validate_weights_digest`. A row loaded from the
+    database never passes through `TrainableArtifact.__init__`'s own
+    validation, so this check runs on every artifact. Any other value
+    (None, blank, uppercase, wrong length, padded, non-str) fails closed."""
+    try:
+        validate_weights_digest(artifact.weights_digest)
+    except TrainableArtifactValidationError:
+        return False
+    return True
+
+
 @dataclass(frozen=True)
 class TrainingCapabilityClassification:
     model_id: str
@@ -193,8 +211,9 @@ def classify_training_capability(
     `weights_digest` before `status` can reach `ready`, this module
     re-checks both itself -- a cross-organization `artifact` argument is
     a caller contract violation (raises, like an invalid `model_id`), and
-    a `ready` artifact with no resolved `weights_digest` never classifies
-    as trainable. Probe evidence is bound to `model_id` with a verified
+    a `ready` artifact whose `weights_digest` is not a valid `sha256:` +
+    64 lowercase hex digest (the shared `validate_weights_digest`) never
+    classifies as trainable. Probe evidence is bound to `model_id` with a verified
     route identity (Section 3.5) before it can prove `inference_only` --
     a probe answer for a different model, or one whose identity the
     gateway's own response never confirmed, is not evidence for this
@@ -222,8 +241,13 @@ def classify_training_capability(
         license_approved = False
     else:
         artifact_id = str(artifact.id) if artifact.id is not None else None
-        artifact_availability = _ARTIFACT_STATUS_TO_AVAILABILITY.get(
-            artifact.status, ArtifactAvailability.NONE
+        # A non-str status (e.g. an unhashable `["ready"]`) is not a known
+        # status: it fails closed to `none` instead of raising TypeError.
+        status = artifact.status
+        artifact_availability = (
+            _ARTIFACT_STATUS_TO_AVAILABILITY.get(status, ArtifactAvailability.NONE)
+            if type(status) is str
+            else ArtifactAvailability.NONE
         )
         license_approved = artifact.license_accepted_at is not None
 
@@ -232,7 +256,7 @@ def classify_training_capability(
     if (
         artifact is not None
         and artifact_availability is ArtifactAvailability.READY
-        and artifact.weights_digest is not None
+        and _has_valid_weights_digest(artifact)
     ):
         capability = TrainingCapability.TRAINABLE_OPEN_WEIGHT
         detail = (
