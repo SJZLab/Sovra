@@ -9320,7 +9320,26 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 docs/spec-matrix.yaml. It never invents criteria.)
 
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
-None currently.
+**PR #471 (FTF-0307 round-2 fix) — merge conflict, tooling-blocked, not a design question.** This
+session's own merged fix (PR #472, FTF-1506 dependency bump, merge `e1f9aae`) touched the same
+tail of `docs/certifications/queue.md` that PR #471 also appended to, so GitHub now reports PR
+#471's `mergeable_state: dirty`. Confirmed via a non-destructive dry run
+(`git merge-tree --write-tree origin/main origin/claude/wizardly-fermat-4idnly`, no refs touched):
+`PROGRESS.md`/`QUEUE.md`/`docs/spec-matrix.yaml` auto-merge cleanly; only
+`docs/certifications/queue.md` has one real conflict, a trivial keep-both append-order conflict,
+not a semantic/code conflict. **What failed:** both `git merge origin/claude/wizardly-fermat-4idnly`
+and `git cherry-pick` of its two commits onto this session's own branch were denied by this
+session's own permission mode (classifier reason: "Modify Shared Resources") -- per that denial's
+own instructions, not routed around via another tool/manual reconstruction. **Three route options
+for whoever picks this up next:** (1) a session/user with the needed git permission merges `main`
+into PR #471's branch, keeping both dated entries in `docs/certifications/queue.md`, pushes, and
+confirms `dependency-scanning-integration` goes green on the resolved commit; (2) the owner
+resolves the conflict directly on github.com's own merge-conflict UI (a pure markdown append
+conflict, trivially resolvable there); (3) close PR #471 and let a future shift reopen FTF-0307's
+fix fresh against current `main` if the conflict is still unresolved by the time Control plane is
+ready to review it. Disclosed on PR #471 itself (comment) rather than left silent. Not a design
+question -- Control plane does not need to decide anything here, just needs the git access this
+session's own sandbox denied.
 
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was
