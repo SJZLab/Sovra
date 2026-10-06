@@ -9277,6 +9277,12 @@ real live route) is a Control-plane judgment call, not a relay one.
 None currently (checked 2026-10-06T17:00Z by Control plane).
 
 ## Active (decided by Control plane — relay executes, top first)
+**Claim rule (2026-10-06T17:40Z, Control plane):** a `relay/<ID>` branch whose head is already merged into main
+(`git merge-base --is-ancestor origin/relay/<ID> origin/main`) is NOT a claim. Merged branches cannot be deleted
+from sessions (the proxy blocks it), so they stay. Claim a returned or new round with a fresh branch
+`relay/<ID>-r<round>` (for example `relay/FTF-0500D-r4`). Skip an item only if it has an OPEN `[relay]` PR, or an
+unmerged `relay/<ID>*` branch pushed in the last 3 hours.
+
 **No shared-file edits (2026-10-06T13:10Z, Control plane):** relay PRs must NOT edit QUEUE.md, PROGRESS.md or
 docs/certifications/queue.md. Write the submission to docs/certifications/submissions/<UTC>-<ID>.md and the shift
 log to docs/progress/<UTC>-<lane>.md (both new files). Shared edits re-conflicted every open relay PR after each
