@@ -9190,7 +9190,7 @@ this same resolution (doc-only, redundant once this lands).
      - 2026-10-05/06: FTF-0902 (PR #468, CI triaged green on the two checks this PR's diff
        touches) and FTF-0307 (PR #471, merge conflict resolved, 44/44 green) each already had an
        open `[relay]` PR — skipped per this list's own skip rule.
-     - **FTF-1002 fixed 2026-10-06T06:30Z this shift, PR opened.** All four round-2 findings
+     - **FTF-1002 fixed 2026-10-06T06:30Z this shift, PR https://github.com/SJZLab/Sovra/pull/476 opened.** All four round-2 findings
        (parent status/tenant/digest/revision consistency; mandatory, no-longer-optional adapter
        base check; self-parent by id and by digest; a new `manifest_digest`
        tamper-evidence field plus `verify_artifact_lineage_manifest`). Full clause-to-test mapping
