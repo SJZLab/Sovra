@@ -491,11 +491,31 @@ def test_fault_injection_this_test_rejects_a_broken_gate(repo: Path, base: Path)
     check(CID, "fixture repaired after fault injection", guard_bytes(repo) == GUARD.encode())
 
 
+def test_mutation_roots_cover_every_production_python_tree() -> None:
+    # FTF-0902 round 4 passed vacuously ("targets=[]") because packages/security was outside the
+    # roots the gate mutates. Every package and the gate/sync scripts must be in scope; the gate
+    # itself and tests never are.
+    for rel in (
+        "packages/security/network_policy_templates.py",
+        "packages/litellm_client/connection_validation.py",
+        "packages/storage/tenant_policy.py",
+        "scripts/task_claim.py",
+        "apps/api/app/main.py",
+        "workers/data/record_schema_validator.py",
+    ):
+        check(CID, f"{rel} is in mutation scope", mg.under_source_roots(rel))
+    check(
+        CID, "the gate never mutates itself", not mg.under_source_roots("scripts/mutation_gate.py")
+    )
+    check(CID, "files outside every root stay out of scope", not mg.under_source_roots("docs/x.py"))
+
+
 def main() -> None:
     t0 = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="mutation-gate-test-") as tmp:
         base = Path(tmp)
         repo = make_repo(base)
+        test_mutation_roots_cover_every_production_python_tree()
         test_every_operator_generates_a_localized_parseable_mutant()
         test_weak_test_reports_survivors_and_fails(repo)
         test_strong_test_kills_every_mutant(repo)
