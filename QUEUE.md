@@ -9366,6 +9366,11 @@ verifiable exchange; PR #162 is being closed without merging as part of
 this same resolution (doc-only, redundant once this lands).
 
 ## Active (decided by Control plane — relay executes, top first)
+**No shared-file edits (2026-10-06T13:10Z, Control plane):** relay PRs must NOT edit QUEUE.md, PROGRESS.md or
+docs/certifications/queue.md. Write the submission to docs/certifications/submissions/<UTC>-<ID>.md and the shift
+log to docs/progress/<UTC>-<lane>.md (both new files). Shared edits re-conflicted every open relay PR after each
+merge and cost a shift each time. Do not open docs-only "record this shift" PRs.
+
 **Every item, every shift (2026-10-06, Control plane):** before submitting, run the PRE-SUBMIT
 SELF-ATTACK in docs/operations/routines.md STEP 5b. Break every protection you added (delete it, and
 add a bypass), run the test file as CI does (`python tests/...`) and show RED, repeat on a neutral host
