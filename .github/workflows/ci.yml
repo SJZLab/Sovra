@@ -339,6 +339,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_h007.py
       - name: FTF-0902 negative-test proof (network-policy templates -- render-time endpoint revalidation, metadata/RFC1918/IPv6 rejection, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0902.py
+      - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
+        run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -354,6 +356,86 @@ jobs:
       #   run: |
       #     pip install cognee --quiet
       #     cognee-cli remember .
+
+  mutation-gate:
+    # Law 1 made mechanical for relay submissions: every production function a
+    # `[relay]` PR changes (under product_truth_check.SOURCE_ROOTS) is broken one
+    # small way at a time (scripts/mutation_gate.py, operators M1-M9) and the PR's
+    # own tests/tasks tests are re-run; any mutant they leave GREEN fails this job
+    # and is listed, so the relay sees every surviving mutant before L2 review
+    # instead of one returned round at a time. Unit tests only for now: no
+    # services, so only tests/tasks/test_*.py (all no-DB by convention) are used.
+    # Reviewed equivalent mutants: docs/certifications/mutation-allowlist.yaml.
+    if: github.event_name == 'pull_request' && startsWith(github.event.pull_request.title, '[relay]')
+    runs-on: ubuntu-latest
+    continue-on-error: false
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies
+        run: uv sync --all-packages
+      - name: Select the PR's task tests
+        id: select
+        env:
+          # Untrusted PR text goes through env, never interpolated into the script.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          base="origin/${BASE_REF}"
+          list="$RUNNER_TEMP/mutation-tests.txt"
+          git diff --name-only --diff-filter=AMR "$base...HEAD" -- 'tests/tasks/test_*.py' \
+            | grep -v '^tests/tasks/test_mutation_gate\.py$' | sort -u > "$list" || true
+          if [ ! -s "$list" ]; then
+            echo "No tests/tasks/test_*.py changed; deriving task IDs instead."
+            ids=$(printf '%s\n%s\n' "$PR_TITLE" "$HEAD_REF" | grep -oiE 'FTF-[0-9A-Z]+' || true)
+            if [ -z "$ids" ]; then
+              # Fall back to task IDs on the added lines of the changed production files.
+              ids=$(git diff -U0 "$base...HEAD" -- apps/web apps/api workers packages \
+                    | grep -E '^\+' | grep -oiE 'FTF-[0-9A-Z]+' || true)
+            fi
+            for id in $(printf '%s\n' $ids | tr '[:upper:]' '[:lower:]' | sed 's/^ftf-//' | sort -u); do
+              for f in "tests/tasks/test_ftf_${id}.py" tests/tasks/test_ftf_"${id}"_*.py; do
+                if [ -f "$f" ]; then echo "$f" >> "$list"; fi
+              done
+            done
+            sort -u -o "$list" "$list"
+          fi
+          if [ ! -s "$list" ]; then
+            echo "mutation-gate: SKIPPED -- no changed tests/tasks/test_*.py and no tests/tasks/test_ftf_<id>.py for this PR's task ID(s); nothing to run mutants against."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Tests the mutants must be killed by:"
+          cat "$list"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+      - name: Mutation gate (every surviving mutant fails the job)
+        if: steps.select.outputs.skip == 'false'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          TEST_LIST: ${{ steps.select.outputs.list }}
+        run: |
+          set -euo pipefail
+          args=()
+          while IFS= read -r t; do
+            args+=(--test "uv run python3 $t")
+          done < "$TEST_LIST"
+          mkdir -p reports
+          uv run python3 scripts/mutation_gate.py --base "origin/${BASE_REF}" "${args[@]}" \
+            --timeout 300 --max-mutants 200 --json reports/mutation-gate.json
+      - name: Upload mutation report
+        if: always() && steps.select.outputs.skip == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-gate-report
+          path: reports/mutation-gate.json
+          if-no-files-found: ignore
 
   docker-local-stack-integration:
     # FTF-0004: real Postgres/Temporal/SeaweedFS (S3-compatible) integration
