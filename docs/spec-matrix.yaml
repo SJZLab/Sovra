@@ -8219,15 +8219,74 @@ FTF-0603:
   proving_symbol: ''
   proving_test: ''
 FTF-0604:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Exact-match grader
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0601
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18;
+    deps=FTF-0601 (CERTIFIED, confirmed before relying on it -- this task's
+    own only dependency). Path refined from the packet's own generic
+    suggestion (services/evaluation-worker/evaluators/exact_match_grader.py,
+    a services/ tree that does not exist in this repository) to
+    workers/evaluation/exact_match_grader.py -- this repo's real
+    SOURCE_ROOTS (FTF-0001/PR #10) name workers/evaluation as the
+    evaluation-worker root, previously empty scaffolding
+    (README.md/pyproject.toml only); added workers/evaluation/__init__.py
+    (empty, matching workers/data's own convention) so the module is
+    importable.
+
+    Built for real: grade_exact_match (workers/evaluation/exact_match_grader.py)
+    compares a candidate string against a non-empty sequence of canonical
+    approved values by full-string equality only, after applying the
+    caller's explicit, required (no default) case_policy
+    (case_sensitive/case_insensitive) and whitespace_policy
+    (exact/strip/collapse). Acceptance ("Exact matcher compares canonical
+    approved values with explicit whitespace/case policy") is met by the
+    policy enums being keyword-only with no default (TypeError if omitted,
+    tested) and by approved_values supporting several equally-canonical
+    answers, reporting which one matched.
+
+    negative_acceptance ("No fuzzy or partial matching secretly replaces
+    exact critical assertions") is met by construction: the only comparison
+    this module ever performs after normalization is Python `==` on full
+    strings -- no substring/in/startswith/edit-distance anywhere. Proven by
+    tests/tasks/test_ftf_0604.py (23 checks): a candidate that merely
+    contains, is contained by, or extends an approved value with unapproved
+    trailing text always fails, across every case/whitespace policy
+    combination (test_fuzzy_bypass_attack_trailing_unapproved_text_never_passes,
+    a real negative test against the shipped default code, not a
+    flipped-guard test).
+
+    Real fault injection (Law 1, disclosed): (1) changed the exact-equality
+    comparison to `normalized_approved in normalized_candidate` (a
+    substring-match bypass) -- 8 checks genuinely FAILed, bound to
+    FTF-0604; reverted byte-identical (diff-confirmed) and reran clean. (2)
+    gave whitespace_policy a default value (WHITESPACE_EXACT) instead of
+    requiring it explicitly -- the explicitness test genuinely FAILed;
+    reverted byte-identical and reran clean.
+
+    Host independence: str.strip/split/casefold are not locale-dependent in
+    Python; the module reads no git/env/locale/DB, so no neutral-host rerun
+    was needed.
+
+    Mutation gate (CI diff mode): see this round's own submission entry for
+    the kill-score summary.
+
+    Disclosed gap, same "no live caller yet" precedent as
+    FTF-0506/0507/0508/0509/0510/0511/0512/0514: no evaluation-run engine
+    exists yet to call this grader against a real candidate response
+    (Section 25's own runtime loop is not owned by any dependency-ready
+    task yet). proving_symbol stays blank (Law 6/7); product_truth_check.py's
+    product-true count is deliberately unchanged.
+
+    Not self-certified (Law 4): certification_state PROVISIONAL, proof_state
+    L1-PROVEN, awaiting independent Control-plane L2 review and a real CI
+    run on the opened PR.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0604.py
 FTF-0605:
   certification_state: NONE
   criticality: MUST
