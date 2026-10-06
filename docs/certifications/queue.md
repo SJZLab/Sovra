@@ -23386,3 +23386,11 @@ DoD (round 3), each shown RED first:
 - (4) Fix the label, and count actual loop iterations.
 
 **State:** all three remain `PROVISIONAL` / `L1-PROVEN`. FTF-1506 is unchanged (CERTIFIED).
+
+## 2026-10-06T10:00Z — Control plane: FTF-0601 round-3 DoD narrowed (blocking vs follow-up)
+FTF-0601's behavior is correct (2026-10-06T09:45Z entry). To certify in one shift, round 3 now BLOCKS only on:
+- (1) Reviewer independence for a `final` suite, tested with at least 3 actor roles (admin, owner, evaluator), plus an additive
+  role-bypass fault test (F19) that must turn RED.
+- (2) A POST with a non-member reviewer → 400, in integration (F06).
+Items (3)–(6) of the 09:45Z entry are FOLLOW-UPS that do not block L2: the contract `maximum`/`pattern` test, the migration-0019
+test, the PATCH-stored reviewer assertion, and DB CHECK hardening. They go to Backlog as FTF-0601-F1.
