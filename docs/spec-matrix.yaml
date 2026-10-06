@@ -7526,10 +7526,10 @@ FTF-0509:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0509.py
 FTF-0510:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Tokenization analysis
-  evidence_hash: ''
+  evidence_hash: 777ecc020c71ab3b3a8b6f2132d9508488da41b5
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0306, FTF-0500,
@@ -7583,7 +7583,7 @@ FTF-0510:
     downloaded tokenizer files (FTF-0302's own file-fetch plumbing is not wired to this module --
     a later, separately dependency-gated composition task). proving_symbol left blank
     accordingly (Law 6/7); product_truth_check.py's product-true count is unchanged.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0510.py
 FTF-0511:

@@ -1,16 +1,16 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-06T23:00Z. Source: `python3 scripts/status.py` on main.
-- **Status: 111/302 certified · 34 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
+Updated: 2026-10-07T00:00Z. Source: `python3 scripts/status.py` on main.
+- **Status: 112/302 certified · 34 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
 - **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902,
-  FTF-0500D, FTF-1002, FTF-0103A, plus follow-ups FTF-1206A-F2, FTF-H034-F1, FTF-H034-F2 and FTF-H034-F3.
+  FTF-0500D, FTF-1002, FTF-0103A, FTF-0510, plus follow-ups FTF-1206A-F2, FTF-H034-F1, FTF-H034-F2 and FTF-H034-F3.
 - **FTF-0103A (live login + Membership): CERTIFIED.** Every /api/v1 route now authorizes real logged-in members, and
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Returned to the relay:** FTF-0214 round 2. The model catalog's 10 units are proven wired live; 3 fixes remain,
   the main one a real defect where a revoked connection still showed as "healthy". Also returned, tests only:
-  FTF-0510 round 5 and FTF-1807 round 4.
+  FTF-1807 round 4. FTF-0510 (tokenization analysis) is CERTIFIED after 5 rounds.
 - **Product-true 27 → 34:** an independent verifier proved 7 certified foundations live end to end: config, tenant
   context, RBAC, audit, tenant-scoped queries, secret refs and the outbound guard. The product-truth gate was also
   tightened (#514), so a symbol only counts when real code calls it, not when it is merely mentioned.

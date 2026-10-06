@@ -10038,3 +10038,19 @@ PR is not landed by the next certifier shift.
   are still RED. The whole-file gate leaves 0 survivors in lines 312–396.
 - Follow-up, not blocking: FTF-H034-F4. Twelve pre-existing survivors in the claim registry (lines 80–270:
   Claim.is_expired, TaskClaimRegistry.__init__, _dependencies_ready_locked, complete, snapshot).
+
+## FTF-0510 — Tokenization analysis — CERTIFIED (2026-10-06)
+- Criterion: FTF-0510. Production code: PR #488 (merge fb82208). Round-5 tests: PR #513, merge commit
+  777ecc020c71ab3b3a8b6f2132d9508488da41b5 (head `5a9e643`). This closes rounds 1–5.
+- Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent: the
+  producer is `session_01GiJi9rC1YARspnfGcZoRaD` (round 5).
+- CI: 47/47 passed, including gate and mutation-gate.
+- Independent verifier (mid-tier):
+  - All 22 faults that stayed GREEN in round 4 are RED. They cover distribution pins, the policy key, silent row
+    drops, mixed-batch count, trim/lstrip blocks, tool_call_id and name, AddedToken specials,
+    add_generation_prompt and TemplateError wrapping.
+  - The recorded oracle values were re-derived with transformers 4.46.3 `apply_chat_template` and match.
+  - Whole-file mutation gate: 93/94, with one equivalent Protocol-stub survivor (allowlisted in this PR).
+- Follow-ups, not blocking (FTF-0510-F1):
+  - pin SecurityError and other non-Undefined template errors as row issues;
+  - require verified non-None digests before certifying training fit.
