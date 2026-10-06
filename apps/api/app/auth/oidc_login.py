@@ -89,6 +89,8 @@ from app.auth.oidc_settings import OidcSettings
 _ALLOWED_ALGS = {"RS256", "ES256"}
 _TXN_COOKIE_NAME = "sovra_oidc_txn"
 _SESSION_COOKIE_NAME = "sovra_session"
+# FTF-0103A: public name for the API's principal resolver (app.auth.session_principal).
+SESSION_COOKIE_NAME = _SESSION_COOKIE_NAME
 _TXN_TTL_SECONDS = 600
 _TXN_SALT = "sovra-oidc-txn"
 _SESSION_SALT = "sovra-oidc-session"
@@ -396,6 +398,11 @@ class _SessionRevocationStore:
             return jti in self._revoked
 
 
+# FTF-0103A: the same store `app.auth.session_principal` consults, so a logout
+# through this router revokes the session for the API's principal resolver too.
+SessionRevocationStore = _SessionRevocationStore
+
+
 class _RefreshTokenStore:
     """Server-side-only storage of each session's real provider
     refresh_token, keyed by that session's own `jti` -- the browser is
@@ -423,6 +430,7 @@ def build_oidc_login_router(
     signing_key: bytes,
     membership_lookup: MembershipStatusLookup = default_membership_lookup,
     http_opener: Callable[[urllib.request.Request], Any] = urllib.request.urlopen,
+    revocations: SessionRevocationStore | None = None,
 ) -> APIRouter:
     """Real FastAPI router for the /auth/* OIDC login surface (FTF-0101).
 
@@ -431,7 +439,7 @@ def build_oidc_login_router(
     to these values is `main.py`'s job (see module docstring: no
     secret-manager integration exists in this repo yet)."""
     router = APIRouter()
-    revoked_jtis = _SessionRevocationStore()
+    revoked_jtis = revocations if revocations is not None else SessionRevocationStore()
     refresh_tokens = _RefreshTokenStore()
 
     @router.get("/auth/login")

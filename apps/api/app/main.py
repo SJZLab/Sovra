@@ -106,10 +106,17 @@ this repository already assumes (see e.g.
 process/step, never through this running app. `install_tenant_pool_reset_guard`
 (FTF-0105) is installed on that engine as the same connection-pool-reuse
 defense-in-depth every tenant-scoped table in this repository already
-relies on. `principal_resolver`/`role_lookup` stay at their fail-closed
-defaults -- no live session-reader backed by `oidc_login.read_session_cookie`
-or DB-backed Membership lookup is wired in yet, the same disclosed gap
-FTF-0103/FTF-0106 already carry.
+relies on.
+
+FTF-0103A wires the live auth path: ONE real `SessionPrincipalResolver`
+(reads and verifies FTF-0101's session cookie, including revocation) and
+ONE real DB-backed `role_lookup` (the `memberships` table for the
+path-resolved organization) are passed to EVERY router below, and the same
+store backs FTF-0101's login-time `membership_lookup` so a revoked membership
+is denied at login. The login router and the resolver share one
+`SessionRevocationStore`, so `/auth/logout` revokes the session for the API
+too. A test (`tests/tasks/test_ftf_0103a.py`) fails if any /api/v1 route
+keeps a default resolver or role lookup.
 """
 
 from __future__ import annotations
@@ -121,8 +128,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.artifacts.artifact_routes import build_trainable_artifact_router
-from app.auth.oidc_login import build_oidc_login_router
+from app.auth.membership_store import build_membership_status_lookup, build_role_lookup
+from app.auth.oidc_login import SessionRevocationStore, build_oidc_login_router
 from app.auth.oidc_settings import OidcSettings
+from app.auth.session_principal import SessionPrincipalResolver
 from app.auth.tenant_isolation_query_guards import install_tenant_pool_reset_guard
 from app.budget.budget_policy_routes import build_budget_policy_router
 from app.component_bindings.component_binding_routes import build_component_binding_router
@@ -177,29 +186,123 @@ def create_app() -> FastAPI:
     session_factory = sessionmaker(bind=engine)
 
     app = FastAPI(title="Sovra Factory API")
-    app.include_router(
-        build_oidc_login_router(settings, client_secret=client_secret, signing_key=signing_key)
+    revocations = SessionRevocationStore()
+    # FTF-0103A: the one real resolver + role lookup every router receives.
+    principal_resolver = SessionPrincipalResolver(
+        signing_key=signing_key,
+        max_age_seconds=settings.session_ttl_seconds,
+        revocations=revocations,
     )
-    app.include_router(build_litellm_connection_router(session_factory))
-    app.include_router(build_trainable_artifact_router(session_factory))
-    app.include_router(build_project_router(session_factory))
-    app.include_router(build_tool_definition_router(session_factory))
-    app.include_router(build_critical_behavior_requirement_router(session_factory))
-    app.include_router(build_budget_policy_router(session_factory))
-    app.include_router(build_cost_profile_router(session_factory))
-    app.include_router(build_model_version_router(session_factory))
-    app.include_router(build_dataset_source_connection_router(session_factory))
-    app.include_router(build_target_application_connection_router(session_factory))
-    app.include_router(build_github_repository_listing_router(session_factory))
-    app.include_router(build_github_branch_ref_router(session_factory))
-    app.include_router(build_target_source_snapshot_router(session_factory))
-    app.include_router(build_github_source_snapshot_router(session_factory))
-    app.include_router(build_discovered_agent_candidate_router(session_factory))
-    app.include_router(build_component_binding_router(session_factory))
-    app.include_router(build_agent_manifest_router(session_factory))
-    app.include_router(build_manifest_evidence_router(session_factory))
-    app.include_router(build_evaluation_suite_router(session_factory))
-    app.include_router(build_discovered_agent_candidate_selection_router(session_factory))
+    role_lookup = build_role_lookup(session_factory)
+    app.include_router(
+        build_oidc_login_router(
+            settings,
+            client_secret=client_secret,
+            signing_key=signing_key,
+            membership_lookup=build_membership_status_lookup(session_factory),
+            revocations=revocations,
+        )
+    )
+    app.include_router(
+        build_litellm_connection_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_trainable_artifact_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_project_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_tool_definition_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_critical_behavior_requirement_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_budget_policy_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_cost_profile_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_model_version_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_dataset_source_connection_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_target_application_connection_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_github_repository_listing_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_github_branch_ref_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_target_source_snapshot_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_github_source_snapshot_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_discovered_agent_candidate_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_component_binding_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_agent_manifest_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_manifest_evidence_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_evaluation_suite_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_discovered_agent_candidate_selection_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
     return app
 
 
