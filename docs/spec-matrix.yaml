@@ -8035,10 +8035,10 @@ FTF-0520:
   proving_symbol: ''
   proving_test: ''
 FTF-0601:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Evaluation suite schema/API
-  evidence_hash: ''
+  evidence_hash: 88bf61978313ff3f9352d22b9a680de87f6eb89e
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0401, FTF-04A19,
@@ -8151,7 +8151,7 @@ FTF-0601:
     `evaluation-suite-integration` job already run both files. **Not self-certified (Law 4)** --
     awaiting independent Control-plane L2 re-review and a real CI run on the opened PR before
     certification.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: build_evaluation_suite_router
   proving_test: tests/tasks/test_ftf_0601.py
 FTF-0602:

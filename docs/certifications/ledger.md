@@ -9870,3 +9870,19 @@ PR is not landed by the next certifier shift.
 - Gates on dbd3a5b: product_truth 26/26, validate_spec clean, data_exposure OK.
 - `docs/spec-matrix.yaml` is set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit, and `sync_certified_status()` was
   run.
+
+## FTF-0601 — Evaluation suite schema/API — CERTIFIED (2026-10-06)
+- Criterion: FTF-0601. PR #483, merge commit 88bf61978313ff3f9352d22b9a680de87f6eb89e (head `df6bfb0`). This closes
+  rounds 1–3 (#463, #483).
+- Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent: the
+  producers are `session_01JDd2rF` and `session_01XiratpY`; neither is this session.
+- CI on the PR merge ref beb19c0: `evaluation-suite-integration` job 112335734001, real PG16 service, "FTF-0601 real
+  EvaluationSuite schema/API proof: all checks passed".
+- Independent verifier (mid-tier), round-3 DoD met:
+  - (1) FINAL-suite reviewer independence across evaluator, workspace_admin and organization_admin. Delete, additive
+    `endswith("admin")` and workspace-only bypass faults are all RED.
+  - (2) A non-member reviewer on POST create returns 400. POST-only removal and a membership short-circuit are RED.
+  - The DB CHECK `ck_evaluation_suites_independent_final_reviewer` is a second layer. A bypass of the app check
+    surfaces as a 500, which the 409 assertions catch.
+- Follow-up, not blocking: FTF-0601-F1 (see docs/certifications/queue.md 2026-10-06T10:00Z).
+- Gates on 56e0a74: product_truth 26/26, validate_spec clean, data_exposure OK, status 103/301 before this entry.
