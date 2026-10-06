@@ -619,6 +619,69 @@ def test_tasks_json_gap_exclusion_is_limited_to_real_addenda():
         )
 
 
+def test_addendum_shaped_ids_without_an_addendum_file_are_never_excused():
+    """FTF-H034-F1 round 2: the exclusion is keyed on a real spec/addenda/<id>.json,
+    never on an id's shape. 40+ real ids (04A*, 0500A-D) are addendum-shaped, so a
+    regex widening (`FTF-\\d+A`, `FTF-\\d+[A-Z]\\w*`) must turn this RED."""
+    import tempfile
+
+    shaped_without_file = ["FTF-9999A", "FTF-04A99", "FTF-0500E", "FTF-0103B", "FTF-ADDY"]
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = pathlib.Path(tmp)
+        addenda_dir = tmp_dir / "addenda"
+        addenda_dir.mkdir()
+        (addenda_dir / "FTF-ADDX.json").write_text("{}", encoding="utf-8")
+
+        missing = certified_ids_missing_from_tasks_json(
+            {"FTF-ADDX", *shaped_without_file}, tasks_by_id={}, addenda_dir=addenda_dir
+        )
+        check(
+            "FTF-H034",
+            "every addendum-shaped id with NO spec/addenda file is reported missing",
+            set(shaped_without_file) <= missing,
+        )
+        check(
+            "FTF-H034",
+            "the one id with a real addenda file is still excused",
+            "FTF-ADDX" not in missing,
+        )
+        check(
+            "FTF-H034",
+            "is_addendum_task is false for every addendum-shaped id without a file",
+            all(is_addendum_task(tid, addenda_dir) is False for tid in shaped_without_file),
+        )
+
+        # sync_certified_status must not mint a TRACKER entry for them either.
+        tasks_path = tmp_dir / "tasks.json"
+        tracker_path = tmp_dir / "tracker.json"
+        tasks_path.write_text(json.dumps({"tasks": []}), encoding="utf-8")
+        tracker_path.write_text(json.dumps({"tasks": {}}), encoding="utf-8")
+        sync_certified_status(
+            certification_states={tid: "CERTIFIED" for tid in shaped_without_file},
+            spec_matrix={tid: {"evidence_hash": "h"} for tid in shaped_without_file},
+            tasks_path=tasks_path,
+            tracker_path=tracker_path,
+            addenda_dir=addenda_dir,
+        )
+        tracker_tasks = json.loads(tracker_path.read_text(encoding="utf-8"))["tasks"]
+        check(
+            "FTF-H034",
+            "no TRACKER entry is created for an addendum-shaped id without an addenda file",
+            not (set(shaped_without_file) & set(tracker_tasks)),
+        )
+
+    # Real default directory (no addenda_dir override): real addenda excused, shaped fakes not.
+    real_missing = certified_ids_missing_from_tasks_json(
+        {"FTF-0103A", "FTF-1206A", "FTF-9999A", "FTF-04A99"}, tasks_by_id={}
+    )
+    check(
+        "FTF-H034",
+        "with the real spec/addenda directory, FTF-9999A and FTF-04A99 are missing; "
+        "the real addenda FTF-0103A and FTF-1206A are excused",
+        real_missing == {"FTF-9999A", "FTF-04A99"},
+    )
+
+
 def main():
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):
