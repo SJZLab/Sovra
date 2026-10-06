@@ -9205,7 +9205,8 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI): #464 (0500C r5),
      #465 (0500B r4), #468 (0902), #476 (1002), and #470 (1206A) if it conflicts. Merge each on green.
-   - **0b. FTF-0601 round 3 (tests only).** The DoD is in docs/certifications/queue.md "2026-10-06T09:45Z".
+   - **0b. FTF-0601 round 3 (tests only; 2 blocking items).** Independence across 3 actor roles plus the admin-bypass fault
+     test, and POST non-member → 400. See docs/certifications/queue.md "2026-10-06T10:00Z". Everything else is follow-up FTF-0601-F1.
    - **0c. FTF-0307 round 3** (ready gate, model_id-alias test, a shared `validate_weights_digest` across 3 modules). Same entry.
    - **0d. FTF-0500D round 3 (tests only):** an independent expected-value oracle. Same entry.
    - **0e.** Then FTF-0510, FTF-04A18 and FTF-1807 (DoDs in "2026-10-04T11:00Z").
