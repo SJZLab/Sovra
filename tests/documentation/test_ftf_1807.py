@@ -748,10 +748,44 @@ def _parse_operator_table(raw_doc_text: str) -> list[tuple[str, str, str]]:
         if not line.startswith("|"):
             continue
         cells = [_normalize_whitespace(c) for c in line.strip("|").split("|")]
-        if len(cells) != 3 or cells[0] in ("Signal", "---") or set(cells[0]) <= {"-", " "}:
+        if len(cells) != 3 or tuple(cells) == _TABLE_HEADER or set(cells[0]) <= {"-", " ", ":"}:
             continue
         rows.append((cells[0], cells[1], cells[2]))
     return rows
+
+
+_TABLE_HEADER = ("Signal", "Detection", "Effect")
+
+
+def _table_structure_violations(raw_doc_text: str) -> list[str]:
+    """Section 7 must be exactly: heading, one header row, one separator row,
+    the data rows. Any other `|` line (wrong cell count, a second header, a
+    row literally named "Signal") or any prose line is reported rather than
+    silently skipped."""
+    problems: list[str] = []
+    header_seen = separator_seen = 0
+    for line in _section(raw_doc_text, 7).splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if not line.startswith("|"):
+            problems.append(f"section 7 has a non-table line: {stripped[:60]!r}")
+            continue
+        cells = [_normalize_whitespace(c) for c in stripped.strip("|").split("|")]
+        if len(cells) != 3:
+            problems.append(f"section 7 table line has {len(cells)} cells: {stripped[:60]!r}")
+        elif all(re.fullmatch(r":?-{3,}:?", c) for c in cells):
+            separator_seen += 1
+            if header_seen != 1:
+                problems.append("section 7 separator row is not directly after the header")
+        elif tuple(cells) == _TABLE_HEADER:
+            header_seen += 1
+    if header_seen != 1 or separator_seen != 1:
+        problems.append(
+            f"section 7 has {header_seen} header rows and {separator_seen} separator rows, "
+            "expected 1 and 1"
+        )
+    return problems
 
 
 def _operator_table_violations(raw_doc_text: str) -> list[str]:
@@ -762,7 +796,7 @@ def _operator_table_violations(raw_doc_text: str) -> list[str]:
     is reported by row."""
     expected = _expected_operator_table()
     actual = _parse_operator_table(raw_doc_text)
-    problems: list[str] = []
+    problems: list[str] = _table_structure_violations(raw_doc_text)
     if len(actual) != len(expected):
         problems.append(f"operator table has {len(actual)} rows, expected {len(expected)}")
     for index, (want_row, got_row) in enumerate(zip(expected, actual, strict=False)):
@@ -832,8 +866,16 @@ _FORBIDDEN_CLAIMS: list[tuple[str, str]] = [
 ]
 
 
+def _scan_text(raw_doc_text: str) -> str:
+    """Whitespace-collapsed, lower-cased text with markdown emphasis and code
+    markers (`*`, backticks) removed, so bold, italic, inline-code or
+    code-fenced wrapping cannot hide a claim from the scan."""
+    stripped = raw_doc_text.lower().replace("*", "").replace("`", "")
+    return _normalize_whitespace(stripped)
+
+
 def _forbidden_claim_violations(raw_doc_text: str) -> list[str]:
-    normalized = _normalize_whitespace(raw_doc_text).lower().replace("**", "")
+    normalized = _scan_text(raw_doc_text)
     return [
         f"forbidden claim ({name}): {match.group(0)!r}"
         for name, pattern in _FORBIDDEN_CLAIMS
@@ -1146,6 +1188,501 @@ def test_round3_operator_procedure_steps_are_pinned_and_faults_turn_red():
         "swapping steps 1 and 2 turns the procedure pin RED",
         _procedure_violations("\n".join(swapped_lines)) != [],
     )
+
+
+# ---------------------------------------------------------------------------
+# Round 4 (2026-10-06T20:10Z review): the forbidden-claim scan is a phrase
+# blacklist, so a plain-language inversion ("Revoked keys keep working for up
+# to 5 minutes", "Falling back to OpenAI is acceptable") passes it, and the
+# prose of sections 1-6 was unpinned. The fix is to pin the text exactly: every
+# whitespace-normalized paragraph of every section is held as a sha256 below,
+# so ANY change to the runbook's wording fails, whether or not a blacklist
+# pattern happens to match it. The structured pins above stay (they name the
+# row/step that changed); the scan stays as a second, independent layer.
+# Updating the runbook now means re-reviewing it and re-pinning these hashes.
+# ---------------------------------------------------------------------------
+
+_PINNED_PARAGRAPH_SHA256: dict[int, tuple[str, ...]] = {
+    0: (
+        "6ac06da4427d4af566b96b443f9fcd38c1a9b0d9894e822717b1e883ec42679d",
+        "53d28e951002b5bbc4755b32e9ec5e50924dd7031be007fa096c272f80a3d3f8",
+        "3938174756eae65b05bbe43c186e37be575d02119618972c51fd7df3e1617196",
+    ),
+    1: (
+        "2ca0302e213e9f71b73fbe3a444fcd036d6aad3845db003389bdc93d1283dc3d",
+        "0a3245172fd197520f021f61b2f0850c66fa9acfb95dcb45d523fb2ebbf138d1",
+        "011ee0f08ae103a6148c3d7034ed8c3296a84854d85d6304659dc5a82e0455d1",
+    ),
+    2: (
+        "6682cba1e580c0b435ad7452690de65dfb7ba70b24c1ea0f36614f4d77c68b23",
+        "efcdf000e37de1e42a6a2013a14b86005a3ad631c53815f36f26a3b596d47315",
+        "ac888ab8a4abcff290f23e1afeec1bef038d25eb9018438ca43c29cbaa84d1cc",
+        "70038d71c448a44ec708d256a41940955b822287108387428f5f8e0c89013381",
+        "05deda6ab40bc5d3a2f17f8f454fd5ee7636a1b41f5bf0b2c634fd3652b26b31",
+    ),
+    3: (
+        "90142b5ff28257178684882c858b0dd871385bae34ec5d5ea048e28d6be987ce",
+        "f1e94b857ae02e558ef263468218e2e616a5b94971dfec740b497934c63c28a3",
+    ),
+    4: (
+        "bc1a9221c0b5c36d610d2131263398c94123cce090afeef9dc48c0e2808f8766",
+        "0035265a8295ec66247b884b169aabbeff6aaf5b98e67025270fe9b2624de2f7",
+    ),
+    5: (
+        "d912dd4ee8473afe2b6b3cce1edf4f7e45b28ab71c16152f0e3d8b2d08303aaf",
+        "ccebdfcaae735d4829d72b9f40a343c5f5cc4be36ac6ff4c415aa119c9abe6a0",
+    ),
+    6: (
+        "526d4993f6c2ed1f3c93c5cf62f4ba0d45efca4892a1bb3783ee13700ef4c40c",
+        "3e94e220ef477b7ab8f3bc6f69092735084631024c02eebb02f095f84b6d8ff7",
+        "e99e9804d98ba3451e1493c802c6dafc8824f759b5b05ef466559e98725e5725",
+    ),
+    7: (
+        "8249ecccee68f47ea6cad9800263159aec7dc3766e540c0f6b278e4ca4c09031",
+        "d1ea1876264c77b1b5160e9d2e203aab06ccb070b18e56befda085e109b664dd",
+    ),
+    8: (
+        "891e45a9679c04537b927ea9c4a5c852c3f8f87045bb57d590fed70f91866104",
+        "a5a872cf59586fa181ddd523829fd4e92444ec1392ff868f20779013a7bf35ca",
+        "4875855a11538afbd9e08773c6a24f9ecfaa2932a723691ad1317e593a4528e1",
+        "e7a870cabec22b7c1c5c4d90d0653e052f99bfd982740d1febb3735bbcbc5870",
+    ),
+}
+
+
+def _paragraphs_by_section(raw_doc_text: str) -> dict[int, list[str]]:
+    """Section 0 is the title + preamble; sections 1..N follow their `## N.`
+    heading. Paragraphs are blank-line separated blocks, whitespace-normalized
+    but otherwise exact (case, punctuation, markdown markers all count)."""
+    sections: dict[int, list[str]] = {0: []}
+    current = 0
+    for line in raw_doc_text.splitlines():
+        match = re.match(r"## (\d+)\.", line)
+        if match:
+            current = int(match.group(1))
+            sections.setdefault(current, [])
+        sections[current].append(line)
+    return {
+        number: [_normalize_whitespace(b) for b in "\n".join(lines).split("\n\n") if b.strip()]
+        for number, lines in sections.items()
+    }
+
+
+def _paragraph_pin_violations(raw_doc_text: str) -> list[str]:
+    import hashlib
+
+    actual = _paragraphs_by_section(raw_doc_text)
+    problems: list[str] = []
+    for number in sorted(set(actual) | set(_PINNED_PARAGRAPH_SHA256)):
+        want = _PINNED_PARAGRAPH_SHA256.get(number)
+        got = actual.get(number)
+        if want is None:
+            problems.append(f"section {number} is not in the pinned runbook")
+            continue
+        if got is None:
+            problems.append(f"section {number} is missing from the runbook")
+            continue
+        if len(got) != len(want):
+            problems.append(f"section {number} has {len(got)} paragraphs, expected {len(want)}")
+        for index, (want_hash, paragraph) in enumerate(zip(want, got, strict=False)):
+            if hashlib.sha256(paragraph.encode("utf-8")).hexdigest() != want_hash:
+                problems.append(
+                    f"section {number} paragraph {index + 1} differs from the pinned text "
+                    f"(starts {paragraph[:50]!r})"
+                )
+    return problems
+
+
+def _all_violations(raw_doc_text: str) -> list[str]:
+    return _all_round3_violations(raw_doc_text) + _paragraph_pin_violations(raw_doc_text)
+
+
+def test_round4_real_runbook_passes_the_paragraph_pin_and_every_checker():
+    """Negative test on the real default document, exercising every checker
+    together: the unmodified runbook has zero violations."""
+    doc_text = DOC_PATH.read_text(encoding="utf-8")
+    pinned = sum(len(v) for v in _PINNED_PARAGRAPH_SHA256.values())
+    actual = sum(len(v) for v in _paragraphs_by_section(doc_text).values())
+    check(
+        "FTF-1807",
+        f"the runbook has the {pinned} pinned paragraphs (found {actual})",
+        pinned == actual,
+    )
+    check(
+        "FTF-1807",
+        "every section 0-8 is pinned",
+        sorted(_PINNED_PARAGRAPH_SHA256) == list(range(9)),
+    )
+    problems = _all_violations(doc_text)
+    check("FTF-1807", f"the real runbook has no violation (got {problems})", problems == [])
+
+
+_PLAIN_LANGUAGE_INVERSIONS = [
+    "Revoked keys keep working for up to 5 minutes.",
+    "Falling back to OpenAI is acceptable.",
+    "Operators can keep using a revoked key until the next sync.",
+    "Calls to a revoked connection succeed for a few more minutes.",
+    "If the gateway is down, route traffic to a public provider instead.",
+    "Stale sync responses should be applied so access recovers quickly.",
+    "Cached answers are fine while the gateway is unreachable.",
+    "The freshness window can be raised to ride out an outage.",
+    "Acknowledging an anomaly restores the removed models.",
+    "A missing fingerprint means the route is equivalent to the pinned deployment.",
+    "Retries continue forever until the gateway answers.",
+    "Revocation takes effect only after the TTL runs out.",
+    "Attestation requests may reuse a cached response to save cost.",
+    "Anyone in the organization may acknowledge anomalies without review.",
+    "Admission continues on the last-known-good snapshot during any outage.",
+]
+
+
+def test_round4_plain_language_inversions_are_caught_by_the_paragraph_pin():
+    """The 15 inversions the review found GREEN, plus the same sentences as an
+    added section, appended to an existing paragraph, and wrapped in bold: all
+    of them turn the paragraph pin RED, and the blacklist scan is never needed."""
+    original = DOC_PATH.read_text(encoding="utf-8")
+    check(
+        "FTF-1807",
+        "precondition: the pin passes unmodified",
+        _paragraph_pin_violations(original) == [],
+    )
+    for sentence in _PLAIN_LANGUAGE_INVERSIONS:
+        added_paragraph = original.replace(
+            "## 7. Operator summary", f"{sentence}\n\n## 7. Operator summary", 1
+        )
+        check(
+            "FTF-1807",
+            f"an added paragraph {sentence!r} turns the paragraph pin RED",
+            _paragraph_pin_violations(added_paragraph) != [],
+        )
+        added_section = original + f"\n## 9. Addendum\n\n{sentence}\n"
+        check(
+            "FTF-1807",
+            f"an added section {sentence!r} turns the paragraph pin RED",
+            _paragraph_pin_violations(added_section) != [],
+        )
+        suffixed = original.replace(
+            "never through a retried or delayed stale one.",
+            f"never through a retried or delayed stale one. {sentence}",
+            1,
+        )
+        check(
+            "FTF-1807",
+            f"a sentence {sentence!r} appended to a section 5 paragraph turns the pin RED",
+            suffixed != original and _paragraph_pin_violations(suffixed) != [],
+        )
+        bold = original.replace(
+            "## 7. Operator summary", f"**{sentence}**\n\n## 7. Operator summary", 1
+        )
+        check(
+            "FTF-1807",
+            f"the bold sentence {sentence!r} turns the paragraph pin RED",
+            _paragraph_pin_violations(bold) != [],
+        )
+    named = [
+        _scan_text(sentence)
+        for sentence in _PLAIN_LANGUAGE_INVERSIONS
+        if _forbidden_claim_violations(original + "\n\n" + sentence + "\n") == []
+    ]
+    check(
+        "FTF-1807",
+        "precondition (the review's finding): most of these inversions evade the blacklist "
+        f"scan, which is exactly why the pin is needed (evading: {len(named)} of "
+        f"{len(_PLAIN_LANGUAGE_INVERSIONS)})",
+        len(named) >= 10,
+    )
+
+
+def test_round4_every_paragraph_of_every_section_is_pinned_exactly():
+    """Delete, empty, truncate or reword EVERY paragraph of sections 0-8 in
+    turn: each fault must turn the pin RED and name that section."""
+    original = DOC_PATH.read_text(encoding="utf-8")
+    blocks = [b for b in original.split("\n\n") if b.strip()]
+    check("FTF-1807", "the runbook splits into blank-line blocks", len(blocks) >= 20)
+    for index, block in enumerate(blocks):
+        words = block.split()
+        label = " ".join(words[:6])
+        faults = {
+            "deleted": original.replace(block, "", 1),
+            "last word dropped": original.replace(block, " ".join(words[:-1]), 1),
+            "case changed": original.replace(block, block.swapcase(), 1),
+            "word swapped": original.replace(block, block.replace(words[-1], "maybe", 1), 1),
+        }
+        for kind, broken in faults.items():
+            check(
+                "FTF-1807",
+                f"block {index + 1} ({label!r}) {kind}: the paragraph pin goes RED",
+                broken != original and _paragraph_pin_violations(broken) != [],
+            )
+    # the two named examples from the review: an emptied section and a flipped verb
+    for number, marker in ((3, "## 3."), (5, "## 5.")):
+        lines = original.splitlines()
+        start = next(i for i, line in enumerate(lines) if line.startswith(marker))
+        end = next(i for i in range(start + 1, len(lines)) if lines[i].startswith("## "))
+        emptied = "\n".join(lines[: start + 1] + [""] + lines[end:])
+        problems = _paragraph_pin_violations(emptied)
+        check(
+            "FTF-1807",
+            f"emptying the body of section {number} turns the pin RED and names it",
+            any(f"section {number} " in problem for problem in problems),
+        )
+    flipped = original.replace("is dropped entirely", "is applied", 1)
+    check(
+        "FTF-1807",
+        "changing 'is dropped entirely' to 'is applied' (section 5) turns the pin RED",
+        flipped != original
+        and any("section 5 " in problem for problem in _paragraph_pin_violations(flipped)),
+    )
+    check(
+        "FTF-1807",
+        "the flipped section 5 is NOT caught by the blacklist scan (why the pin exists)",
+        _forbidden_claim_violations(flipped) == [],
+    )
+
+
+_WRAPPED_BOLD_CODE_UPPER_CLAIMS = [
+    "Revoked access continues to be permitted until the TTL expires.",
+    "External fallback is permitted when the private route is unavailable.",
+    "A response served from cache is acceptable during attestation.",
+    "An unverified reroute is treated as equivalent to the pinned deployment.",
+]
+
+
+def test_round4_forbidden_claim_scan_catches_wrapped_bold_code_and_upper_case_claims():
+    original = DOC_PATH.read_text(encoding="utf-8")
+    for claim in _WRAPPED_BOLD_CODE_UPPER_CLAIMS:
+        words = claim.split()
+        variants = {
+            "plain": claim,
+            "hard-wrapped every word": "\n".join(words),
+            "hard-wrapped with indentation": "\n  ".join(words),
+            "wrapped mid-phrase in a list item": "- "
+            + " ".join(words[:3])
+            + "\n  "
+            + " ".join(words[3:]),
+            "bold": f"**{claim}**",
+            "bold on every word": " ".join(f"**{w}**" for w in words),
+            "italic": f"*{claim}*",
+            "inline code": f"`{claim}`",
+            "inline code on every word": " ".join(f"`{w}`" for w in words),
+            "code block": f"```\n{claim}\n```",
+            "code block with wrapping": "```text\n" + "\n".join(words) + "\n```",
+            "upper-case": claim.upper(),
+            "title-case": claim.title(),
+            "blockquote": f"> {claim}",
+            "table cell": f"| Note | {claim} | x |",
+        }
+        for kind, text in variants.items():
+            check(
+                "FTF-1807",
+                f"the scan is RED on the {kind} claim {claim!r}",
+                _forbidden_claim_violations(original + f"\n\n{text}\n") != [],
+            )
+            check(
+                "FTF-1807",
+                f"the paragraph pin is also RED on the {kind} claim {claim!r}",
+                _paragraph_pin_violations(original + f"\n\n{text}\n") != [],
+            )
+
+
+def test_round4_extra_or_suffixed_table_rows_are_caught():
+    original = DOC_PATH.read_text(encoding="utf-8")
+    check(
+        "FTF-1807",
+        "precondition: the table passes unmodified",
+        _operator_table_violations(original) == [],
+    )
+    rows = [
+        line for line in original.splitlines() if line.startswith("| ") and "Signal" not in line
+    ]
+    check("FTF-1807", "the doc table has 8 data rows", len(rows) == 8)
+    extra_row = "| Gateway fully down | `DEGRADED` | Calls continue on the cached snapshot |"
+    last = rows[-1]
+    faults = {
+        "extra row after the last row": original.replace(last, last + "\n" + extra_row, 1),
+        "extra row before the first row": original.replace(rows[0], extra_row + "\n" + rows[0], 1),
+        "extra row in the middle": original.replace(rows[3], rows[3] + "\n" + extra_row, 1),
+        "extra row after a blank line": original.replace(last, last + "\n\n" + extra_row, 1),
+        "extra row with an extra cell": original.replace(last, last + "\n" + extra_row + " x |", 1),
+        "extra row with too few cells": original.replace(last, last + "\n| Gateway down | ok |", 1),
+        "extra row named Signal": original.replace(
+            last, last + "\n| Signal | `X` | Calls continue |", 1
+        ),
+        "second header row": original.replace(last, last + "\n| Signal | Detection | Effect |", 1),
+        "extra prose line in section 7": original.replace(
+            "## 8. Operator procedure",
+            "Operators may ignore the table.\n\n## 8. Operator procedure",
+            1,
+        ),
+        "separator row removed": "\n".join(
+            line for line in original.splitlines() if not line.startswith("|---")
+        ),
+        "second separator row": original.replace(last, last + "\n|---|---|---|", 1),
+        "header row removed": "\n".join(
+            line for line in original.splitlines() if not line.startswith("| Signal |")
+        ),
+        "row deleted": original.replace(rows[2] + "\n", "", 1),
+        "row duplicated": original.replace(rows[2], rows[2] + "\n" + rows[2], 1),
+    }
+    for index, row in enumerate(rows):
+        cells = [c.strip() for c in row.strip("|").split("|")]
+        for column, name in enumerate(("signal", "detection", "effect")):
+            suffixed = list(cells)
+            suffixed[column] += " and may be ignored"
+            faults[f"row {index + 1} {name} cell suffixed"] = original.replace(
+                row, "| " + " | ".join(suffixed) + " |", 1
+            )
+            prefixed = list(cells)
+            prefixed[column] = "Usually " + prefixed[column]
+            faults[f"row {index + 1} {name} cell prefixed"] = original.replace(
+                row, "| " + " | ".join(prefixed) + " |", 1
+            )
+    for kind, broken in faults.items():
+        check(
+            "FTF-1807",
+            f"table fault '{kind}' turns the operator-table pin RED",
+            broken != original and _operator_table_violations(broken) != [],
+        )
+        check(
+            "FTF-1807",
+            f"table fault '{kind}' also turns the paragraph pin RED",
+            _paragraph_pin_violations(broken) != [],
+        )
+
+
+def test_round4_renumbered_procedure_steps_are_caught() -> None:
+    original = DOC_PATH.read_text(encoding="utf-8")
+    check(
+        "FTF-1807",
+        "precondition: the procedure passes unmodified",
+        _procedure_violations(original) == [],
+    )
+    head, marker, tail = original.partition("## 8. Operator procedure")
+    check("FTF-1807", "the procedure section was found", marker != "")
+
+    def renumber(old: str, new: str, count: int = 1) -> str:
+        return head + marker + tail.replace(old, new, count)
+
+    faults: dict[str, str] = {}
+    for number in range(1, 8):
+        for other in (number + 1, number + 5, 0, 9):
+            if other == number:
+                continue
+            faults[f"step {number} renumbered to {other}"] = renumber(
+                f"\n{number}. **", f"\n{other}. **"
+            )
+    faults["every step numbered 1."] = head + marker + re.sub(r"(?m)^[1-7]\. \*\*", "1. **", tail)
+    faults["steps shifted by one"] = (
+        head + marker + re.sub(r"(?m)^([1-7])\. \*\*", lambda m: f"{int(m.group(1)) + 1}. **", tail)
+    )
+    faults["steps counted from zero"] = (
+        head + marker + re.sub(r"(?m)^([1-7])\. \*\*", lambda m: f"{int(m.group(1)) - 1}. **", tail)
+    )
+    faults["step 4 and 5 numbers swapped"] = (
+        original.replace("\n4. **", "\n@@. **", 1)
+        .replace("\n5. **", "\n4. **", 1)
+        .replace("\n@@. **", "\n5. **", 1)
+    )
+    faults["numbers use a parenthesis"] = (
+        head + marker + re.sub(r"(?m)^([1-7])\. \*\*", r"\1) **", tail)
+    )
+    for kind, broken in faults.items():
+        check(
+            "FTF-1807",
+            f"renumbering fault '{kind}' turns the procedure pin RED",
+            broken != original and _procedure_violations(broken) != [],
+        )
+        check(
+            "FTF-1807",
+            f"renumbering fault '{kind}' also turns the paragraph pin RED",
+            _paragraph_pin_violations(broken) != [],
+        )
+
+
+def test_round4_a_heading_rename_that_keeps_the_count_is_caught():
+    original = DOC_PATH.read_text(encoding="utf-8")
+    check(
+        "FTF-1807",
+        "precondition: the headings pass unmodified",
+        _heading_violations(original) == [],
+    )
+    headings = [line for line in original.splitlines() if line.startswith(("# ", "## "))]
+    check("FTF-1807", "the doc has 9 headings", len(headings) == 9)
+    for index, heading in enumerate(headings):
+        renames = {
+            "reworded": heading + " (optional)",
+            "reworded in the middle": heading.replace(" ", " not ", 1),
+            "emptied title": heading.split(" ")[0] + " " + heading.split(" ")[1]
+            if " " in heading
+            else heading,
+            "upper-cased": heading.upper(),
+            "level changed": "##" + heading if heading.startswith("# ") else "#" + heading,
+        }
+        for kind, new in renames.items():
+            broken = original.replace(heading, new, 1)
+            check(
+                "FTF-1807",
+                f"heading {index + 1} {kind} ({new!r}) turns the heading pin RED",
+                broken != original and _heading_violations(broken) != [],
+            )
+            check(
+                "FTF-1807",
+                f"heading {index + 1} {kind} also turns the paragraph pin RED",
+                _paragraph_pin_violations(broken) != [],
+            )
+    swapped = (
+        original.replace(headings[3], "@@", 1)
+        .replace(headings[4], headings[3], 1)
+        .replace("@@", headings[4], 1)
+    )
+    check(
+        "FTF-1807",
+        "swapping two section headings (count unchanged) turns the heading pin RED",
+        _heading_violations(swapped) != [],
+    )
+
+
+def test_round4_a_fault_in_one_checker_is_not_hidden_by_the_others():
+    """Each checker must independently catch its own fault class on the real
+    document with only that class of damage applied: the heading pin on a pure
+    rename, the table pin on a pure Effect rewrite, the procedure pin on a pure
+    step rewrite, the paragraph pin on a pure prose rewrite."""
+    original = DOC_PATH.read_text(encoding="utf-8")
+    cases = {
+        "heading": (
+            original.replace("## 2. Revocation handling", "## 2. Revocation notes", 1),
+            _heading_violations,
+        ),
+        "table": (
+            original.replace(
+                "Immediate, unconditional call refusal", "Call refusal after the next sync", 1
+            ),
+            _operator_table_violations,
+        ),
+        "procedure": (
+            original.replace("do not wait for the freshness TTL", "wait for the freshness TTL", 1),
+            _procedure_violations,
+        ),
+        "paragraph": (
+            original.replace("is dropped entirely", "is applied", 1),
+            _paragraph_pin_violations,
+        ),
+    }
+    checkers = {
+        "heading": _heading_violations,
+        "table": _operator_table_violations,
+        "procedure": _procedure_violations,
+        "paragraph": _paragraph_pin_violations,
+    }
+    for name, (broken, checker) in cases.items():
+        check("FTF-1807", f"the {name} fault changed the doc", broken != original)
+        check("FTF-1807", f"the {name} checker catches its own fault class", checker(broken) != [])
+        others = [other for other in checkers if other != name]
+        check(
+            "FTF-1807",
+            f"the {name} fault is what the {name} checker is for (others: {others})",
+            _all_violations(broken) != [],
+        )
 
 
 def main():
