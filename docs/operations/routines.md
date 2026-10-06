@@ -72,6 +72,11 @@ Before submitting, for EVERY protection or check you added or changed:
   and asserts the bad outcome does not happen (never only "flip the guard off, expect failure");
 - never stub out the protection the test claims to pin.
 Record the fault → RED table in the queue entry. A fault that stays GREEN is a missing test: add it.
+MUTATION GATE (machine-enforced, CI job `mutation-gate` on every [relay] PR): before submitting, run
+`uv run python3 scripts/mutation_gate.py --base origin/main --test "uv run python3 tests/tasks/test_ftf_<id>.py"`
+(one --test per task test file) and kill every surviving mutant with a real test. Paste the summary line into the
+submission. Never edit docs/certifications/mutation-allowlist.yaml; only the Control plane adds reviewed
+equivalent mutants. CI fails on any survivor and on any relay edit to the allowlist.
 SAME-CLASS SWEEP: when a defect class is named (cursor cycle, fail-open parse, error-shaped success,
 duplicate identity, encoding, swallowed error), check and fix the same class in every sibling module
 under the same package, and list the result per module.

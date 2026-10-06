@@ -378,6 +378,15 @@ jobs:
         uses: astral-sh/setup-uv@v3
       - name: Install Python dependencies
         run: uv sync --all-packages
+      - name: Relay PRs may not edit the mutation allowlist (Control-plane file)
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if git diff --name-only "origin/${BASE_REF}...HEAD" | grep -qx 'docs/certifications/mutation-allowlist.yaml'; then
+            echo "::error::A [relay] PR changed docs/certifications/mutation-allowlist.yaml. Only the Control plane adds reviewed equivalent mutants; kill the mutant with a test instead."
+            exit 1
+          fi
       - name: Select the PR's task tests
         id: select
         env:
