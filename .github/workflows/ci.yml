@@ -396,34 +396,40 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
-          base="origin/${BASE_REF}"
-          list="$RUNNER_TEMP/mutation-tests.txt"
-          git diff --name-only --diff-filter=AMR "$base...HEAD" -- 'tests/tasks/test_*.py' \
-            | grep -v '^tests/tasks/test_mutation_gate\.py$' | sort -u > "$list" || true
-          if [ ! -s "$list" ]; then
-            echo "No tests/tasks/test_*.py changed; deriving task IDs instead."
-            ids=$(printf '%s\n%s\n' "$PR_TITLE" "$HEAD_REF" | grep -oiE 'FTF-[0-9A-Z]+' || true)
-            if [ -z "$ids" ]; then
-              # Fall back to task IDs on the added lines of the changed production files.
-              ids=$(git diff -U0 "$base...HEAD" -- apps/web apps/api workers packages \
-                    | grep -E '^\+' | grep -oiE 'FTF-[0-9A-Z]+' || true)
-            fi
-            for id in $(printf '%s\n' $ids | tr '[:upper:]' '[:lower:]' | sed 's/^ftf-//' | sort -u); do
-              for f in "tests/tasks/test_ftf_${id}.py" tests/tasks/test_ftf_"${id}"_*.py; do
-                if [ -f "$f" ]; then echo "$f" >> "$list"; fi
-              done
-            done
-            sort -u -o "$list" "$list"
-          fi
-          if [ ! -s "$list" ]; then
-            echo "mutation-gate: SKIPPED -- no changed tests/tasks/test_*.py and no tests/tasks/test_ftf_<id>.py for this PR's task ID(s); nothing to run mutants against."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "Tests the mutants must be killed by:"
-          cat "$list"
-          echo "skip=false" >> "$GITHUB_OUTPUT"
-          echo "list=$list" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          import os, pathlib, re, subprocess
+          base = "origin/" + os.environ["BASE_REF"]
+          def git(*args):
+              return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout
+          changed = git("diff", "--name-only", "--diff-filter=AMR", f"{base}...HEAD", "--", "tests/tasks/").split()
+          tests = sorted({f for f in changed if re.fullmatch(r"tests/tasks/test_[^/]+\.py", f)
+                          and f != "tests/tasks/test_mutation_gate.py"})
+          if not tests:
+              print("No tests/tasks/test_*.py changed; deriving task IDs instead.")
+              text = os.environ.get("PR_TITLE", "") + "\n" + os.environ.get("HEAD_REF", "")
+              ids = re.findall(r"FTF-[0-9A-Z]+", text, flags=re.I)
+              if not ids:
+                  added = git("diff", "-U0", f"{base}...HEAD", "--", "apps/web", "apps/api", "workers", "packages")
+                  ids = re.findall(r"FTF-[0-9A-Z]+", "\n".join(l for l in added.splitlines() if l.startswith("+")), flags=re.I)
+              found = set()
+              for i in {x.lower().removeprefix("ftf-") for x in ids}:
+                  exact = pathlib.Path(f"tests/tasks/test_ftf_{i}.py")
+                  if exact.is_file():
+                      found.add(str(exact))
+                  found.update(str(p) for p in pathlib.Path("tests/tasks").glob(f"test_ftf_{i}_*.py"))
+              tests = sorted(found)
+          out = pathlib.Path(os.environ["GITHUB_OUTPUT"])
+          lst = pathlib.Path(os.environ["RUNNER_TEMP"]) / "mutation-tests.txt"
+          if not tests:
+              print("mutation-gate: SKIPPED -- no changed tests/tasks/test_*.py and no tests/tasks/test_ftf_<id>.py for this PR's task ID(s); nothing to run mutants against.")
+              with out.open("a") as fh:
+                  fh.write("skip=true\n")
+          else:
+              lst.write_text("\n".join(tests) + "\n")
+              print("Tests the mutants must be killed by:\n" + "\n".join(tests))
+              with out.open("a") as fh:
+                  fh.write(f"skip=false\nlist={lst}\n")
+          PY
       - name: Mutation gate (every surviving mutant fails the job)
         if: steps.select.outputs.skip == 'false'
         env:
