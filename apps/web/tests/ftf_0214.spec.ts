@@ -252,3 +252,172 @@ test("safe filters are sent to the real route as query parameters", async () => 
   const [url] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[1]!;
   expect(url).toBe(catalogUrl(API_BASE, ORG_ID, CONNECTION_ID, PROJECT_ID, "callable", "enriched"));
 });
+
+function mockCatalogBody(body: Record<string, unknown>) {
+  (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+    ok: true,
+    json: async () => body,
+  });
+}
+
+const BASE_ENTRY = {
+  first_seen_at: "2026-10-06T12:00:00+00:00",
+  last_seen_callable_at: null,
+  metadata_status: "limited",
+};
+
+test("round 2: a revoked connection's catalog renders revoked/stale and disables every probe button", async () => {
+  await loadAndSelectProject();
+  mockCatalogBody({
+    connection_status: "revoked",
+    access_state: "revoked",
+    last_successful_check_at: "2026-10-06T10:00:00+00:00",
+    last_checked_at: "2026-10-06T10:00:00+00:00",
+    alert: null,
+    anomaly: null,
+    model_groups: null,
+    entries: [{ ...BASE_ENTRY, id: MODEL_A, status: "stale", fields: {} }],
+  });
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId(`catalog-entry-${MODEL_A}`)).toBeTruthy());
+  expect(screen.getByTestId("catalog-connection-status").textContent).toContain("revoked");
+  expect(screen.getByTestId("catalog-access-state").textContent).toContain("revoked");
+  expect(screen.getByTestId("catalog-access-state").textContent).not.toContain("healthy");
+  expect(screen.getByTestId(`entry-status-${MODEL_A}`).textContent).toBe("stale");
+  expect((screen.getByTestId(`probe-button-${MODEL_A}`) as HTMLButtonElement).disabled).toBe(true);
+});
+
+test("round 2: a revoked connection disables the probe even if a stale snapshot still says callable", async () => {
+  await loadAndSelectProject();
+  mockCatalogBody({
+    connection_status: "revoked",
+    access_state: "healthy",
+    last_successful_check_at: null,
+    last_checked_at: null,
+    alert: null,
+    anomaly: null,
+    model_groups: null,
+    entries: [{ ...BASE_ENTRY, id: MODEL_A, status: "callable", fields: {} }],
+  });
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId(`catalog-entry-${MODEL_A}`)).toBeTruthy());
+  expect((screen.getByTestId(`probe-button-${MODEL_A}`) as HTMLButtonElement).disabled).toBe(true);
+});
+
+test("round 2: degraded access, alert, anomaly, capability fields and model groups are all rendered", async () => {
+  await loadAndSelectProject();
+  mockCatalogBody({
+    connection_status: "active",
+    access_state: "degraded",
+    last_successful_check_at: "2026-10-06T09:00:00+00:00",
+    last_checked_at: "2026-10-06T11:00:00+00:00",
+    alert: "authorized model count dropped from 10 to 2",
+    anomaly: {
+      id: 7,
+      kind: "major_reduction",
+      detected_at: "2026-10-06T11:00:00+00:00",
+      previous_count: 10,
+      new_count: 2,
+      status: "open",
+    },
+    model_groups: { state: "enriched", entries: { "grp-x": { rpm: 60 } } },
+    entries: [{ ...BASE_ENTRY, id: MODEL_A, status: "callable", fields: { max_tokens: 4096 } }],
+  });
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId(`catalog-entry-${MODEL_A}`)).toBeTruthy());
+  expect(screen.getByTestId("catalog-access-state").textContent).toContain("degraded");
+  expect(screen.getByTestId("catalog-alert").textContent).toContain("dropped from 10 to 2");
+  expect(screen.getByTestId("catalog-anomaly").textContent).toContain("10");
+  expect(screen.getByTestId("catalog-anomaly").textContent).toContain("open");
+  expect(screen.getByTestId(`entry-fields-${MODEL_A}`).textContent).toContain("4096");
+  expect(screen.getByTestId("model-groups-state").textContent).toContain("enriched");
+  expect(screen.getByTestId("model-group-grp-x").textContent).toContain("60");
+});
+
+test("round 2: the probe sends the selected non-chat kind and renders type, route identity and timestamp", async () => {
+  await loadAndSelectProject();
+  mockCatalog();
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId(`catalog-entry-${MODEL_A}`)).toBeTruthy());
+
+  fireEvent.change(screen.getByTestId("probe-kind"), { target: { value: "tool_call" } });
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({
+      probe_type: "tool_call",
+      state: "probed",
+      route_identity_state: "unverified",
+      resolved_model: "other-model",
+      usage: { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 },
+      latency_ms: 9,
+      detail: "",
+      probed_at: "2026-10-06T12:09:00+00:00",
+    }),
+  });
+  fireEvent.click(screen.getByTestId(`probe-button-${MODEL_A}`));
+  await waitFor(() => expect(screen.getByTestId(`probe-result-${MODEL_A}`)).toBeTruthy());
+
+  const [, init] = fetchMock.mock.calls[2]!;
+  expect(JSON.parse(init.body as string)).toEqual({ probe_type: "tool_call" });
+  expect(screen.getByTestId(`probe-type-${MODEL_A}`).textContent).toBe("tool_call");
+  expect(screen.getByTestId(`probe-route-identity-${MODEL_A}`).textContent).toBe("unverified");
+  expect(screen.getByTestId(`probe-probed-at-${MODEL_A}`).textContent).toBe(
+    "2026-10-06T12:09:00+00:00",
+  );
+  expect(screen.getByTestId(`probe-result-${MODEL_A}`).textContent).toContain("7 tokens");
+});
+
+test("round 2: a model id containing '/' is URL-encoded in the probe request", async () => {
+  expect(probeUrl(API_BASE, ORG_ID, CONNECTION_ID, "openai/gpt-4o", PROJECT_ID)).toBe(
+    `${API_BASE}/api/v1/organizations/${ORG_ID}/connections/litellm/${CONNECTION_ID}` +
+      `/models/openai%2Fgpt-4o/probe?project_id=${PROJECT_ID}`,
+  );
+  await loadAndSelectProject();
+  mockCatalogBody({
+    connection_status: "active",
+    access_state: "healthy",
+    last_successful_check_at: "2026-10-06T12:00:00+00:00",
+    last_checked_at: "2026-10-06T12:00:00+00:00",
+    alert: null,
+    anomaly: null,
+    model_groups: null,
+    entries: [{ ...BASE_ENTRY, id: "openai/gpt-4o", status: "callable", fields: {} }],
+  });
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId("catalog-entry-openai/gpt-4o")).toBeTruthy());
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({
+      probe_type: "chat",
+      state: "probed",
+      route_identity_state: "verified",
+      resolved_model: "openai/gpt-4o",
+      usage: null,
+      latency_ms: 1,
+      detail: "",
+      probed_at: "2026-10-06T12:10:00+00:00",
+    }),
+  });
+  fireEvent.click(screen.getByTestId("probe-button-openai/gpt-4o"));
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+  expect(fetchMock.mock.calls[2]![0]).toContain("/models/openai%2Fgpt-4o/probe");
+});
+
+test("round 2: access_state=revoked alone (connection still active) disables a callable entry's probe", async () => {
+  await loadAndSelectProject();
+  mockCatalogBody({
+    connection_status: "active",
+    access_state: "revoked",
+    last_successful_check_at: null,
+    last_checked_at: null,
+    alert: null,
+    anomaly: null,
+    model_groups: null,
+    entries: [{ ...BASE_ENTRY, id: MODEL_A, status: "callable", fields: {} }],
+  });
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId(`catalog-entry-${MODEL_A}`)).toBeTruthy());
+  expect((screen.getByTestId(`probe-button-${MODEL_A}`) as HTMLButtonElement).disabled).toBe(true);
+});

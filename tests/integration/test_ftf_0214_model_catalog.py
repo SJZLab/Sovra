@@ -996,6 +996,133 @@ def main() -> None:
             body.get("parsed_content") == {"word": "pong", "count": 1},
         )
 
+        # -- round 2 blocking 3: a model id containing "/" must reach the
+        #    probe route (the route needs {model_id:path}), not 404 --------
+        _STATE.model_ids = ["model-a", "openai/gpt-4o"]
+        r = _request(base_url, "GET", catalog_path(org1_id, active_id), principal=org1_admin)
+        check(
+            "FTF-0214", "catalog discovery with a slash-bearing model id succeeds", r.status == 200
+        )
+        r = _request(
+            base_url,
+            "POST",
+            probe_path(org1_id, active_id, "openai/gpt-4o", f"?project_id={project1_id}"),
+            principal=org1_admin,
+            payload={"probe_type": "chat"},
+        )
+        check(
+            "FTF-0214",
+            "round 2: a probe for a model id containing '/' (openai/gpt-4o) is routed, never 404",
+            r.status == 200,
+        )
+        _STATE.model_ids = ["model-a", "model-b", "model-c"]
+
+        # -- F1: the viewer is refused by the role gate itself, on a
+        #    connection that HAS been discovered (so the reason is the role,
+        #    not a missing discovery) ---------------------------------------
+        r = _request(
+            base_url,
+            "POST",
+            probe_path(org1_id, active_id, "model-a", f"?project_id={project1_id}"),
+            principal=org1_viewer,
+            payload={"probe_type": "chat"},
+        )
+        check(
+            "FTF-0214",
+            "F1: a viewer cannot probe a discovered connection (403 from the role gate, "
+            "not from model_access_denied)",
+            r.status == 403 and "model_access_denied" not in (r.json().get("detail") or ""),
+        )
+
+        # -- F1: admin-only connection metadata never reaches the response --
+        r = _request(
+            base_url,
+            "POST",
+            probe_path(org1_id, active_id, "model-a", f"?project_id={project1_id}"),
+            principal=org1_admin,
+            payload={"probe_type": "chat"},
+        )
+        r2 = _request(base_url, "GET", catalog_path(org1_id, active_id), principal=org1_admin)
+        leaked = ("api_key", "api_base", "secret_ref", "openbao://", "base_url")
+        check(
+            "FTF-0214",
+            "F1: neither the probe nor the catalog response exposes api_key/api_base/secret_ref",
+            not any(word in str(r.json()) for word in leaked)
+            and not any(word in str(r2.json()) for word in leaked),
+        )
+
+        # -- round 2 blocking 1: discover an ACTIVE connection, revoke it in
+        #    the DB, then the catalog must show revoked/stale (no hidden
+        #    stale access) and the probe is refused with no gateway call ---
+        with Session(owner_engine) as session:
+            from app.litellm.connection_schema import LiteLLMConnection
+
+            rv_conn = LiteLLMConnection(
+                organization_id=org1_id,
+                name="revoke-after-discovery-gateway",
+                base_url=f"https://127.0.0.1:{gateway_port}",
+                secret_ref="openbao://secret/litellm/org1/api_key",
+                status="active",
+            )
+            session.add(rv_conn)
+            session.commit()
+            rv_id = rv_conn.id
+        r = _request(base_url, "GET", catalog_path(org1_id, rv_id), principal=org1_admin)
+        body = r.json() if r.status == 200 else {}
+        check(
+            "FTF-0214",
+            "round 2: the to-be-revoked connection is first discovered healthy/callable",
+            body.get("access_state") == "healthy"
+            and any(e.get("status") == "callable" for e in body.get("entries", [])),
+        )
+        with Session(owner_engine) as session:
+            from sqlalchemy import text as _sql_text
+
+            session.execute(
+                _sql_text("UPDATE litellm_connections SET status='revoked' WHERE id=:i"),
+                {"i": rv_id},
+            )
+            session.commit()
+        requests_before = _STATE.request_count
+        r = _request(base_url, "GET", catalog_path(org1_id, rv_id), principal=org1_admin)
+        body = r.json() if r.status == 200 else {}
+        entries = body.get("entries", [])
+        check(
+            "FTF-0214",
+            "round 2 (no hidden stale access): a revoked-after-discovery catalog shows "
+            "access_state=revoked, never healthy",
+            r.status == 200
+            and body.get("connection_status") == "revoked"
+            and body.get("access_state") == "revoked",
+        )
+        check(
+            "FTF-0214",
+            "round 2: every previously callable entry is stale after revocation, none callable",
+            bool(entries)
+            and all(e.get("status") != "callable" for e in entries)
+            and any(e.get("status") == "stale" for e in entries),
+        )
+        check(
+            "FTF-0214",
+            "round 2: a revoked connection's catalog read makes no gateway call",
+            _STATE.request_count == requests_before,
+        )
+        r = _request(
+            base_url,
+            "POST",
+            probe_path(org1_id, rv_id, "model-a", f"?project_id={project1_id}"),
+            principal=org1_admin,
+            payload={"probe_type": "chat"},
+        )
+        check(
+            "FTF-0214",
+            "round 2: probing a revoked connection is 403 model_access_denied:connection_revoked "
+            "with no gateway call",
+            r.status == 403
+            and (r.json().get("detail") or "") == "model_access_denied:connection_revoked"
+            and _STATE.request_count == requests_before,
+        )
+
         # -- negative_acceptance: an unapproved probe_type value is refused --
         r = _request(
             base_url,

@@ -81,6 +81,7 @@ from __future__ import annotations
 import sys
 import uuid
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -105,7 +106,9 @@ from packages.litellm_client.connection_validation import (  # noqa: E402
     default_connection_validation_policy,
 )
 from packages.litellm_client.last_known_good_catalog import (  # noqa: E402
+    AccessState,
     CatalogEntryStatus,
+    CatalogSnapshot,
     LastKnownGoodCatalog,
 )
 from packages.litellm_client.model_group_info_optional_enrichment import (  # noqa: E402
@@ -166,13 +169,30 @@ __all__ = ["build_model_catalog_router"]
 
 _ITEM_PATH = "/api/v1/organizations/{organization_id}/connections/litellm/{connection_id}"
 _CATALOG_PATH = _ITEM_PATH + "/catalog"
-_PROBE_PATH = _ITEM_PATH + "/models/{model_id}/probe"
+_PROBE_PATH = _ITEM_PATH + "/models/{model_id:path}/probe"
 
 _PROBE_KINDS = frozenset({"chat", "streaming", "tool_call", "structured_output"})
 
 _ProbeResult = (
     ChatProbeResult | StreamProbeResult | ToolCallProbeResult | StructuredOutputProbeResult
 )
+
+
+def _revoked_snapshot(snapshot: CatalogSnapshot) -> CatalogSnapshot:
+    """A revoked connection never shows hidden stale access: whatever the
+    in-memory catalog last saw (it may still read `healthy`/`callable`
+    because no discovery has run since the revocation), every callable
+    entry is marked `stale` and `access_state` is `revoked`."""
+    return replace(
+        snapshot,
+        access_state=AccessState.REVOKED,
+        entries=tuple(
+            replace(entry, status=CatalogEntryStatus.STALE)
+            if entry.status == CatalogEntryStatus.CALLABLE
+            else entry
+            for entry in snapshot.entries
+        ),
+    )
 
 
 def _serialize_entry(entry: AccessSnapshotEntry) -> dict[str, object]:
@@ -355,7 +375,7 @@ def build_model_catalog_router(
             # own 409-on-revoked precedent, just surfaced here as a
             # historical, still-readable snapshot rather than a hard error
             # so a revoked connection's catalog stays auditable.
-            snapshot = catalog_obj.snapshot()
+            snapshot = _revoked_snapshot(catalog_obj.snapshot())
             reconciliation = None
         else:
             result: ModelDiscoveryResult = discover_models(
