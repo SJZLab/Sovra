@@ -44,6 +44,7 @@ from scripts.spec_verification import TASKS_FILE, TaskNode, load_tasks
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SPEC_MATRIX_FILE = REPO_ROOT / "docs" / "spec-matrix.yaml"
 TRACKER_FILE = REPO_ROOT / "docs" / "implementation" / "TRACKER.json"
+ADDENDA_DIR = REPO_ROOT / "spec" / "addenda"
 
 DEFAULT_MAX_CONCURRENCY = 4
 HARD_MAX_CONCURRENCY = 6
@@ -283,12 +284,38 @@ class TaskClaimRegistry:
             }
 
 
+def is_addendum_task(task_id: str, addenda_dir: Path = ADDENDA_DIR) -> bool:
+    """True if `task_id` is a Release-1 addendum (ADR 0002) -- a task added
+    after `spec/tasks.json` was frozen at 300, with its own contract at
+    `spec/addenda/<task_id>.json` instead of an entry in that frozen file."""
+    return (addenda_dir / f"{task_id}.json").is_file()
+
+
+def certified_ids_missing_from_tasks_json(
+    certified_ids: Any,
+    tasks_by_id: dict[str, Any],
+    addenda_dir: Path = ADDENDA_DIR,
+) -> set[str]:
+    """CERTIFIED ids that `spec/tasks.json` does not genuinely reflect,
+    excluding real addendum ids (ADR 0002 freezes that file at 300 -- an
+    addendum id is never expected to appear there). The exclusion is
+    narrow: an id with no `spec/addenda/<id>.json` file is never excused,
+    so a genuine gap for a non-addendum task still reports missing."""
+    return {
+        tid
+        for tid in certified_ids
+        if not is_addendum_task(tid, addenda_dir)
+        and tasks_by_id.get(tid, {}).get("status") != "CERTIFIED"
+    }
+
+
 def sync_certified_status(
     *,
     certification_states: dict[str, str] | None = None,
     spec_matrix: dict[str, Any] | None = None,
     tasks_path: Path = TASKS_FILE,
     tracker_path: Path = TRACKER_FILE,
+    addenda_dir: Path = ADDENDA_DIR,
 ) -> list[str]:
     """Write the real, already-CERTIFIED status/evidence-hash into
     `spec/tasks.json` and `docs/implementation/TRACKER.json` for every task
@@ -301,7 +328,14 @@ def sync_certified_status(
     function fixes exactly that, and only that: it never marks a task
     CERTIFIED, sets commits/evidence, or invents a claim/lease for anything
     `docs/spec-matrix.yaml` does not already independently show certified.
-    Returns the sorted list of task IDs it updated.
+
+    `spec/tasks.json` is frozen at 300 real tasks (ADR 0002): a CERTIFIED
+    addendum id (`spec/addenda/<id>.json` exists) has no entry there by
+    design and is skipped for that file, but still gets its own
+    status/evidence entry created or updated in `TRACKER.json`, which is
+    not frozen.
+
+    Returns the sorted union of task IDs updated in either file.
     """
     if certification_states is None:
         certification_states = load_certification_states()
@@ -315,8 +349,10 @@ def sync_certified_status(
     tasks_data = json.loads(tasks_path.read_text(encoding="utf-8"))
     tasks_by_id = {t["id"]: t for t in tasks_data["tasks"]}
     tracker_data = json.loads(tracker_path.read_text(encoding="utf-8"))
+    tracker_tasks = tracker_data.setdefault("tasks", {})
 
-    updated: list[str] = []
+    tasks_updated: list[str] = []
+    tracker_updated: list[str] = []
     for task_id in certified_ids:
         entry = spec_matrix.get(task_id, {})
         evidence_hash = entry.get("evidence_hash", "")
@@ -327,20 +363,34 @@ def sync_certified_status(
         ):
             task["status"] = "CERTIFIED"
             task["evidence"] = [evidence_hash] if evidence_hash else task.get("evidence", [])
-            updated.append(task_id)
+            tasks_updated.append(task_id)
 
-        tracker_task = tracker_data.get("tasks", {}).get(task_id)
-        if tracker_task is not None:
+        tracker_task = tracker_tasks.get(task_id)
+        if tracker_task is None:
+            if is_addendum_task(task_id, addenda_dir):
+                tracker_tasks[task_id] = {
+                    "status": "CERTIFIED",
+                    "commits": [],
+                    "evidence": [evidence_hash] if evidence_hash else [],
+                    "independent_review": None,
+                    "blockers": [],
+                }
+                tracker_updated.append(task_id)
+        elif tracker_task.get("status") != "CERTIFIED" or (
+            evidence_hash and evidence_hash not in tracker_task.get("evidence", [])
+        ):
             tracker_task["status"] = "CERTIFIED"
             if evidence_hash and evidence_hash not in tracker_task.get("evidence", []):
                 tracker_task["evidence"] = [evidence_hash]
+            tracker_updated.append(task_id)
 
-    if updated:
+    if tasks_updated:
         tasks_path.write_text(
             json.dumps(tasks_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
+    if tracker_updated:
         tracker_path.write_text(
             json.dumps(tracker_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
 
-    return sorted(set(updated))
+    return sorted(set(tasks_updated) | set(tracker_updated))
