@@ -61,6 +61,7 @@ from packages.litellm_client.organization_policy_control import (  # noqa: E402
 from sqlalchemy import Table, create_engine, select, text  # noqa: E402
 from sqlalchemy.exc import DBAPIError  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
+from sqlalchemy.pool import NullPool  # noqa: E402
 
 from app.auth.audit_event_writer import AuditEvent  # noqa: E402
 from app.auth.organization_workspace_schema import (  # noqa: E402
@@ -158,7 +159,8 @@ def main() -> None:
     )
 
     owner_engine = create_engine(migration_url)
-    app_engine = create_engine(_app_role_url(migration_url, app_password))
+    app_url = _app_role_url(migration_url, app_password)
+    app_engine = create_engine(app_url)
 
     # -- Seed two real tenants, each with a real workspace + project -------
     with Session(owner_engine) as session:
@@ -747,6 +749,11 @@ def main() -> None:
             f"control: the raw {table_name} INSERT is valid under the owning tenant context",
             control_ok,
         )
+        # FTF-1206A-F2 round 2: the "no tenant context" case MUST run on a brand-new
+        # connection. A pooled connection that already ran set_config(..., true) reads
+        # '' (not NULL) after the transaction ends, which would just duplicate the ''
+        # case and leave an `IS NULL OR ...` WITH CHECK fail-open uncaught. NullPool
+        # guarantees a never-used connection; the GUC precondition is asserted, not assumed.
         for label, context_sql in (
             ("no tenant context", None),
             (
@@ -754,9 +761,26 @@ def main() -> None:
                 "SELECT set_config(" "'app.current_organization_id', '', true)",
             ),
         ):
+            fresh_engine = (
+                create_engine(app_url, poolclass=NullPool) if context_sql is None else None
+            )
+            engine_for_case = fresh_engine if fresh_engine is not None else app_engine
             try:
-                with Session(app_engine) as session:
-                    if context_sql is not None:
+                with Session(engine_for_case) as session:
+                    if context_sql is None:
+                        guc_is_null = session.execute(
+                            text(
+                                "SELECT current_setting('app.current_organization_id', true) "
+                                "IS NULL"
+                            )
+                        ).scalar_one()
+                        check(
+                            "FTF-1206A-F2",
+                            f"precondition ({table_name}): the fresh connection's "
+                            "app.current_organization_id is genuinely NULL (never set)",
+                            guc_is_null is True,
+                        )
+                    else:
                         session.execute(text(context_sql))
                     session.execute(statement, params)
                     session.commit()
@@ -774,6 +798,9 @@ def main() -> None:
                     f"{exc.orig!r})",
                     "row-level security" in str(exc.orig),
                 )
+            finally:
+                if fresh_engine is not None:
+                    fresh_engine.dispose()
         with Session(owner_engine) as session:
             left = session.execute(
                 text(
