@@ -779,6 +779,452 @@ def test_record_index_only_echoes_real_ints() -> None:
         )
 
 
+# ---------------------------------------------------------------------------------------------
+# Round 5 (L2 review 2026-10-06T21:00Z): distribution through the report, batch_position keying,
+# never-dropped rows, mixed-batch count, and real-world template inputs. Every recorded constant
+# below was produced by real transformers==4.46.3 `apply_chat_template` (scratch venv, NOT a repo
+# dependency -- see the oracle note above), never derived from the module under test.
+# ---------------------------------------------------------------------------------------------
+
+_USER_TEXTS = [
+    "hello world",
+    "order status shipped",
+    "please cancel the pending order",
+    "lookup order one two three",
+    "thank you for your order today",
+    "hello world this is a real test",
+    "the order has shipped today",
+    "order status shipped pending cancelled",
+    "please cancel the pending order today",
+    "lookup order one two three the order has shipped today",
+    "hello",
+    "thank you",
+]
+
+
+def _distribution_conversations() -> list[list[dict[str, object]]]:
+    """Twelve conversations of strictly different lengths, in a deliberately non-sorted order."""
+    conversations: list[list[dict[str, object]]] = []
+    for position, text in enumerate(_USER_TEXTS):
+        conversations.append(
+            [
+                _text_message("user", text),
+                _text_message("assistant", " ".join(_USER_TEXTS[: position + 1])),
+            ]
+        )
+    return conversations
+
+
+def _truncation_conversations() -> list[list[dict[str, object]]]:
+    long_text = " ".join(_CORPUS[:12])
+    return [
+        [_text_message("user", long_text), _text_message("assistant", long_text)] for _ in range(3)
+    ]
+
+
+_BLOCK_TEMPLATE = (
+    "{% for message in messages %}\n"
+    '  {% if message["role"] == "user" %}\n'
+    "<|user|>\n"
+    '{{ message["content"] }}\n'
+    '  {% elif message["role"] == "assistant" %}\n'
+    "<|assistant|>\n"
+    '{{ message["content"] }}\n'
+    "  {% endif %}\n"
+    "{% endfor %}\n"
+    "{% if add_generation_prompt %}\n"
+    "<|assistant|>\n"
+    "{% endif %}\n"
+)
+
+
+def _block_conversation() -> list[dict[str, object]]:
+    return [
+        _text_message("user", "hello world this is a real test"),
+        _text_message("assistant", "the order has shipped today"),
+    ]
+
+
+_FIELDS_TEMPLATE = (
+    "{% for message in messages %}"
+    '<|{{ message["role"] }}|>'
+    '{% if message["name"] is defined %}[{{ message["name"] }}]{% endif %}'
+    '{% if message["tool_call_id"] is defined %}#{{ message["tool_call_id"] }}{% endif %}'
+    '{{ message["content"] }}{{ eos_token }}\n'
+    "{% endfor %}"
+    "{% if add_generation_prompt %}<|assistant|>{% endif %}"
+)
+
+_UNDEFINED_TEMPLATE = '{% for message in messages %}{{ message["missing"]["x"] }}{% endfor %}'
+
+
+def _build_byte_level_tokenizer() -> Tokenizer:
+    """A whitespace-SENSITIVE real tokenizer (byte-level BPE): the default fixture's Whitespace
+    pre-tokenizer discards newlines/indent, so it can never tell block-newline handling apart."""
+    tokenizer = Tokenizer(models.BPE())
+    tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
+    trainer = trainers.BpeTrainer(
+        vocab_size=400,
+        special_tokens=["[UNK]"],
+        initial_alphabet=pre_tokenizers.ByteLevel.alphabet(),
+    )
+    tokenizer.train_from_iterator(_CORPUS, trainer)
+    return tokenizer
+
+
+_BYTE_LEVEL_TOKENIZER_JSON_PATH = os.path.join(_SCRATCH_DIR, "tokenizer_byte_level.json")
+_build_byte_level_tokenizer().save(_BYTE_LEVEL_TOKENIZER_JSON_PATH)
+_BYTE_LEVEL_TOKENIZER_JSON_SHA256 = hashlib.sha256(
+    Path(_BYTE_LEVEL_TOKENIZER_JSON_PATH).read_bytes()
+).hexdigest()
+
+
+def _tokenizer_for(
+    template: str,
+    config_overrides: dict[str, object] | None = None,
+    *,
+    byte_level: bool = False,
+) -> ChatTemplateFastTokenizer:
+    config: dict[str, object] = dict(_TOKENIZER_CONFIG, chat_template=template)
+    config.update(config_overrides or {})
+    return ChatTemplateFastTokenizer.from_resolved_files(
+        _BYTE_LEVEL_TOKENIZER_JSON_PATH if byte_level else _TOKENIZER_JSON_PATH,
+        config,
+        expected_tokenizer_json_sha256=(
+            _BYTE_LEVEL_TOKENIZER_JSON_SHA256 if byte_level else _TOKENIZER_JSON_SHA256
+        ),
+        expected_chat_template_sha256=hashlib.sha256(template.encode("utf-8")).hexdigest(),
+    )
+
+
+_TRANSFORMERS_DISTRIBUTION_TOTALS = (23, 27, 34, 39, 46, 54, 57, 62, 69, 83, 75, 78)
+# Nearest-rank over the sorted totals above, worked by hand from the recorded totals.
+# (count, min, max, mean, p50, p90, p99); sorted totals 23 27 34 39 46 54 57 62 69 75 78 83,
+# sum 647.
+_EXPECTED_DISTRIBUTION = (12, 23, 83, 647 / 12, 54, 78, 83)
+_TRANSFORMERS_TRUNCATION_TOTAL = 151
+_TRANSFORMERS_SINGLE_MESSAGE_COUNTS = (16,)
+_TRANSFORMERS_BLOCK_COUNTS = (16, 33)
+_TRANSFORMERS_FIELDS_COUNTS = (14, 25, 54, 70)
+
+
+def test_distribution_through_the_report_is_pinned_exactly() -> None:
+    conversations = _distribution_conversations()
+    report = analyze_tokenization(
+        [_candidate(c, record_index=i) for i, c in enumerate(conversations)],
+        tokenizer=_exact_tokenizer(),
+        max_sequence_length=100000,
+    )
+    totals = tuple(c.total_token_count for c in report.conversations)
+    check(
+        "FTF-0510",
+        f"per-conversation totals equal recorded transformers output ({totals})",
+        totals == _TRANSFORMERS_DISTRIBUTION_TOTALS,
+    )
+    d = report.distribution
+    assert d is not None
+    got = (d.count, d.min, d.max, d.mean, d.p50, d.p90, d.p99)
+    check(
+        "FTF-0510",
+        f"count/min/max/mean/p50/p90/p99 pinned exactly through analyze_tokenization "
+        f"({got} vs {_EXPECTED_DISTRIBUTION}); swapped or off-by-one percentiles go RED",
+        got == _EXPECTED_DISTRIBUTION,
+    )
+
+
+def test_truncation_policy_is_keyed_by_batch_position_not_record_index() -> None:
+    conversations = _truncation_conversations()
+    # record_index values deliberately differ from batch_position: positions 0,1,2 carry
+    # record_index 2,0,1. A policy for batch_position 1 only must resolve ONLY position 1.
+    report = analyze_tokenization(
+        [_candidate(c, record_index=idx) for c, idx in zip(conversations, (2, 0, 1), strict=True)],
+        tokenizer=_exact_tokenizer(),
+        max_sequence_length=5,
+        truncation_policy={1: "drop_example"},
+    )
+    flags = {
+        c.batch_position: (c.record_index, c.requires_explicit_truncation_policy)
+        for c in report.conversations
+    }
+    check(
+        "FTF-0510",
+        f"fixture: every row exceeds the limit (totals {_TRANSFORMERS_TRUNCATION_TOTAL})",
+        all(c.total_token_count == _TRANSFORMERS_TRUNCATION_TOTAL for c in report.conversations)
+        and _TRANSFORMERS_TRUNCATION_TOTAL > 5,
+    )
+    check(
+        "FTF-0510",
+        f"policy {{1: ...}} resolves batch_position 1 only, never the row whose record_index "
+        f"is 1 ({flags})",
+        flags == {0: (2, True), 1: (0, False), 2: (1, True)},
+    )
+    check(
+        "FTF-0510",
+        "two unresolved truncations still refuse to certify",
+        report.certifies_training_fit is False,
+    )
+
+
+def _assert_issue_and_no_certification(label: str, records: list[object], code: str) -> None:
+    report = analyze_tokenization(
+        records,  # type: ignore[arg-type]
+        tokenizer=_exact_tokenizer(),
+        max_sequence_length=1000,
+    )
+    check(
+        "FTF-0510",
+        f"{label}: reported as exactly one {code} issue at its batch_position, never crashed "
+        f"or silently skipped (got {[(i.batch_position, i.code) for i in report.issues]})",
+        [(i.batch_position, i.code) for i in report.issues] == [(0, code)]
+        and not report.conversations
+        and report.distribution is None,
+    )
+    check(
+        "FTF-0510", f"{label}: certifies_training_fit is False", not report.certifies_training_fit
+    )
+
+
+def test_malformed_rows_are_never_dropped_silently() -> None:
+    good = [_text_message("user", "hello world"), _text_message("assistant", "hi")]
+    _assert_issue_and_no_certification(
+        "non-Mapping candidate", ["not-a-mapping"], "invalid_candidate"
+    )
+    _assert_issue_and_no_certification("None candidate", [None], "invalid_candidate")
+    _assert_issue_and_no_certification(
+        "candidate content=None", [{"record_index": 0, "content": None}], "invalid_messages"
+    )
+    _assert_issue_and_no_certification(
+        "message content=None",
+        [_candidate([{"role": "user", "content": None}, *good])],
+        "invalid_content",
+    )
+    _assert_issue_and_no_certification(
+        "extra content keys",
+        [{"record_index": 0, "content": {"messages": good, "metadata": {}, "extra": 1}}],
+        "invalid_messages",
+    )
+    _assert_issue_and_no_certification(
+        "missing metadata key",
+        [{"record_index": 0, "content": {"messages": good}}],
+        "invalid_messages",
+    )
+    _assert_issue_and_no_certification(
+        "string inside messages",
+        [{"record_index": 0, "content": {"messages": [good[0], "oops"], "metadata": {}}}],
+        "invalid_messages",
+    )
+    _assert_issue_and_no_certification(
+        "messages is a bare string",
+        [{"record_index": 0, "content": {"messages": "oops", "metadata": {}}}],
+        "invalid_messages",
+    )
+
+
+def test_single_message_conversation_is_tokenized_not_dropped() -> None:
+    message = _text_message("assistant", "the order has shipped today")
+    report = analyze_tokenization(
+        [_candidate([message])], tokenizer=_exact_tokenizer(), max_sequence_length=1000
+    )
+    check(
+        "FTF-0510",
+        "a single-message conversation is neither dropped nor crashed: it yields exactly one "
+        "conversation with one boundary equal to recorded transformers output",
+        len(report.conversations) == 1
+        and not report.issues
+        and report.conversations[0].message_token_counts == _TRANSFORMERS_SINGLE_MESSAGE_COUNTS
+        and report.conversations[0].total_token_count == _TRANSFORMERS_SINGLE_MESSAGE_COUNTS[-1],
+    )
+    over = analyze_tokenization(
+        [_candidate([message])], tokenizer=_exact_tokenizer(), max_sequence_length=1
+    )
+    check(
+        "FTF-0510",
+        "a single over-long message is its own critical turn and needs a policy",
+        over.conversations[0].requires_explicit_truncation_policy
+        and not over.certifies_training_fit,
+    )
+
+
+def test_mixed_batch_distribution_counts_only_tokenized_rows() -> None:
+    good = [_text_message("user", "hello world"), _text_message("assistant", "hi")]
+    bad_row: dict[str, object] = {"record_index": 1, "content": {"messages": [], "metadata": {}}}
+    report = analyze_tokenization(
+        [_candidate(good, record_index=0), bad_row],
+        tokenizer=_exact_tokenizer(),
+        max_sequence_length=1000,
+    )
+    assert report.distribution is not None
+    check(
+        "FTF-0510",
+        f"one good row + one issue row: distribution.count == 1, not len(records) "
+        f"(got {report.distribution.count})",
+        report.distribution.count == 1 and len(report.conversations) == 1,
+    )
+    check(
+        "FTF-0510",
+        "the issue row is reported at its own batch_position and blocks certification",
+        [(i.batch_position, i.record_index) for i in report.issues] == [(1, 1)]
+        and not report.certifies_training_fit,
+    )
+    check(
+        "FTF-0510",
+        "the good row keeps its own batch_position",
+        report.conversations[0].batch_position == 0,
+    )
+
+
+def test_block_newline_template_matches_recorded_transformers_output() -> None:
+    tokenizer = _tokenizer_for(_BLOCK_TEMPLATE, byte_level=True)
+    actual = tokenizer.prefix_token_counts(_block_conversation())
+    check(
+        "FTF-0510",
+        f"multi-line template (trim_blocks/lstrip_blocks) boundaries equal recorded "
+        f"transformers output ({actual} vs {_TRANSFORMERS_BLOCK_COUNTS})",
+        actual == _TRANSFORMERS_BLOCK_COUNTS,
+    )
+
+
+def test_template_using_tool_call_id_name_and_generation_prompt() -> None:
+    tokenizer = _tokenizer_for(_FIELDS_TEMPLATE)
+    actual = tokenizer.prefix_token_counts(
+        [
+            {
+                "role": m["role"],
+                "content": m["content"],
+                **{k: m[k] for k in ("tool_call_id", "name") if k in m},
+            }
+            for m in _tool_call_conversation()
+        ]
+    )
+    check(
+        "FTF-0510",
+        f"a template reading tool_call_id/name/add_generation_prompt equals recorded "
+        f"transformers output with add_generation_prompt=False ({actual} vs "
+        f"{_TRANSFORMERS_FIELDS_COUNTS})",
+        actual == _TRANSFORMERS_FIELDS_COUNTS,
+    )
+    report = analyze_tokenization(
+        [_candidate(_tool_call_conversation())], tokenizer=tokenizer, max_sequence_length=1000
+    )
+    check(
+        "FTF-0510",
+        "through analyze_tokenization the same totals hold (the generation prompt is never "
+        "appended, the tool message's name and tool_call_id reach the template)",
+        report.conversations[0].message_token_counts == _TRANSFORMERS_FIELDS_COUNTS,
+    )
+
+
+def test_added_token_dict_bos_and_eos_match_plain_string_tokens() -> None:
+    template = "{{ bos_token }}" + _TEMPLATE
+    as_dicts = _tokenizer_for(
+        template,
+        {
+            "bos_token": {"content": "<s>", "lstrip": False, "special": True},
+            "eos_token": {"content": "</s>", "lstrip": False, "special": True},
+        },
+    )
+    actual = as_dicts.prefix_token_counts(_oracle_conversation())
+    check(
+        "FTF-0510",
+        f"AddedToken-dict bos/eos give the recorded transformers counts ({actual} vs "
+        f"{_TRANSFORMERS_ORACLE_PREFIX_COUNTS}); str(dict) would render a repr and go RED",
+        actual == _TRANSFORMERS_ORACLE_PREFIX_COUNTS,
+    )
+
+
+def test_undefined_error_at_render_is_a_row_issue() -> None:
+    tokenizer = _tokenizer_for(_UNDEFINED_TEMPLATE)
+    report = analyze_tokenization(
+        [_candidate([_text_message("user", "hi"), _text_message("assistant", "ok")])],
+        tokenizer=tokenizer,
+        max_sequence_length=1000,
+    )
+    check(
+        "FTF-0510",
+        "a jinja2.UndefinedError at render is reported as one template_render_error row issue, "
+        f"not a crash (got {[(i.batch_position, i.code) for i in report.issues]})",
+        [(i.batch_position, i.code) for i in report.issues] == [(0, "template_render_error")]
+        and not report.conversations
+        and not report.certifies_training_fit,
+    )
+
+
+def test_bool_max_sequence_length_is_rejected() -> None:
+    for bad_value in (True, False):
+        try:
+            analyze_tokenization(
+                [_candidate([_text_message("user", "hi")])],
+                tokenizer=_exact_tokenizer(),
+                max_sequence_length=bad_value,
+            )
+        except TokenizationAnalysisError:
+            continue
+        check("FTF-0510", f"bool max_sequence_length={bad_value!r} must raise", False)
+
+
+def test_approximate_alias_tokenizer_counts_are_pinned() -> None:
+    tokenizer = _approximate_tokenizer()
+    messages = [_text_message("user", "hello world"), _text_message("assistant", "hi there")]
+    first = len(_REAL_FAST_TOKENIZER.encode("user: hello world").ids)
+    second = len(_REAL_FAST_TOKENIZER.encode("assistant: hi there").ids)
+    actual = tokenizer.prefix_token_counts(messages)
+    check(
+        "FTF-0510",
+        f"alias counts are cumulative per-message encodings "
+        f"({actual} vs {(first, first + second)})",
+        actual == (first, first + second),
+    )
+    report = analyze_tokenization(
+        [_candidate(messages)], tokenizer=tokenizer, max_sequence_length=1000
+    )
+    check(
+        "FTF-0510",
+        "an alias report carries no pinned digests",
+        report.tokenizer_json_sha256 is None and report.chat_template_sha256 is None,
+    )
+
+
+def test_alias_tokenizer_treats_non_list_content_as_empty_text() -> None:
+    tokenizer = _approximate_tokenizer()
+    empty = tokenizer.prefix_token_counts([{"role": "user", "content": []}])
+    for bad in (None, 5, "plain string", b"bytes"):
+        try:
+            actual = tokenizer.prefix_token_counts([{"role": "user", "content": bad}])
+        except TypeError:
+            actual = None
+        check(
+            "FTF-0510",
+            f"alias backend: content={bad!r} counts as empty text ({actual} vs {empty}), never "
+            "a crash",
+            actual == empty,
+        )
+
+
+def test_missing_or_null_special_tokens_render_empty_like_transformers() -> None:
+    template = "{{ bos_token }}" + _TEMPLATE
+    without_tokens = template.replace("{{ bos_token }}", "").replace("{{ eos_token }}", "")
+    expected = _tokenizer_for(without_tokens).prefix_token_counts(_oracle_conversation())
+    for label, overrides in (
+        ("bos_token=None, eos_token missing", {"bos_token": None}),
+        ("both None", {"bos_token": None, "eos_token": None}),
+    ):
+        config: dict[str, object] = {"chat_template": template}
+        config.update(overrides)
+        tokenizer = ChatTemplateFastTokenizer.from_resolved_files(
+            _TOKENIZER_JSON_PATH,
+            config,
+            expected_tokenizer_json_sha256=_TOKENIZER_JSON_SHA256,
+            expected_chat_template_sha256=hashlib.sha256(template.encode("utf-8")).hexdigest(),
+        )
+        actual = tokenizer.prefix_token_counts(_oracle_conversation())
+        check(
+            "FTF-0510",
+            f"{label}: absent special tokens render as empty text, never the string 'None' "
+            f"({actual} vs {expected})",
+            actual == expected,
+        )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
