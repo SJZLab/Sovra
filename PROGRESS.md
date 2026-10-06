@@ -258,6 +258,70 @@ here — one item per shift, per this list's own rule; not picking up 0c2 (FTF-0
 shift. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged: "None currently," both prior asks
 already resolved/closed 2026-10-04). `BLOCKER.md` unchanged — no live entries.
 
+## 2026-10-05T04:40:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-j8lgbg` — FTF-0500B round-4 fix-and-resubmit (PR opened)
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch. `BLOCKER.md` read in
+full: no live entries. STEP 0.1: this branch was already synced to `origin/main` at `c128d58` (FTF-H007+FTF-04A06
+CERTIFIED, PR #462). Read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh. QUEUE.md "## Active" item 0
+names 0a/0b DONE, 0c (FTF-0601) and 0c2 (FTF-0500C round 5) next in strict order — a fresh `list_pull_requests`
+showed both already had an open `[relay]` PR from a concurrent session (#463, #464), so neither was re-claimed per
+this list's own "skip only an item that has an open `[relay]` PR" rule. Picked 0c3, **FTF-0500B round 4** — no open
+PR existed for it. STEP 0.2: no `cognee-cli` binary in this sandbox — text-search fallback declared.
+
+STEP 2 (PEV): **P** — read the 2026-10-04T17:20Z Control-plane L2 review's five findings directly against
+`apps/api/app/datasets/s3_minio_source_validation_metadata_preview.py` before any change: (1) the marker-cycle
+check compared only the immediately previous marker pair, with no independent page-fetch cap (so a longer
+A-to-B-to-A cycle through distinct pages went undetected); (2) `IsTruncated` accepted only the literal string
+"true", silently treating "1", case/whitespace variants, garbage, and a missing element as "not truncated"; (3) the
+root element was only checked against "Error", so any other unexpected root (a namespaced `<Error>`,
+`<Foo><Error/></Foo>`, `<ListBucketResult>`, `<html>`) was accepted as an empty, complete listing; (4) duplicate
+`(Key, VersionId)` pairs, within a page or across pages, were accepted into the "exact version" manifest; (5) a
+non-integer `<Size>` raised a bare, uncategorized `ValueError`, and a negative one was accepted. This task's only
+sibling connector in `apps/api/app/datasets/` (`database_api_trace_source_contract_and_fail_closed_validation.py`,
+FTF-0500C) already had its own open round-5 PR (#464) from a concurrent session when this shift started — the
+systemic same-class-sweep rule is disclosed, not applied to that file this shift, to avoid a merge conflict with
+that in-flight PR.
+
+**E** — fixed all five. (1) `used_marker_pairs: set[tuple[str, str]]` now records every `(key-marker,
+version-id-marker)` pair already requested in this listing; revisiting one — the single-previous case or a longer
+cycle — is refused (`SourceUnavailableError`) before the repeat request is made. Independently, a new
+`S3MinioSourceConfig.max_page_fetches` field (default `DEFAULT_MAX_PAGE_FETCHES = 10_000`) hard-caps the total
+number of page fetches, refusing a listing whose markers keep advancing and never repeat. The old single-marker
+"stuck pagination" check is removed, superseded by the general seen-set (confirmed: the pre-existing
+`test_stuck_pagination_without_advancing_marker_is_refused`, unmodified, still passes — exactly one real request
+before refusing). (2) new `_parse_is_truncated` strictly accepts only "true"/"1" (truncated) or "false"/"0" (not
+truncated), case/whitespace-insensitive, and refuses anything else — including a missing element — with
+`SourceUnavailableError`. (3) `_parse_list_versions_xml` now requires the root's own local tag to equal
+"ListVersionsResult" (the pre-existing "Error" check, with its own Code/Message message, stays). (4) a new
+`seen_key_version_pairs` set tracks every real `(Key, VersionId)` pair across the whole listing; a repeat raises
+the new `DuplicateObjectVersionError`. (5) `<Size>` parsing is now wrapped in its own `try`/`except ValueError`,
+raising `SourceUnavailableError` for a non-integer value, plus a separate explicit refusal for a negative value.
+
+Added 9 new positive/negative test functions (`test_longer_marker_cycle_through_distinct_pages_is_refused`,
+`test_marker_cycle_with_empty_pages_is_refused`, `test_ever_advancing_pagination_hits_the_page_fetch_cap`,
+`test_is_truncated_strict_values_are_each_correctly_interpreted`,
+`test_is_truncated_garbage_or_missing_value_is_refused`, `test_unexpected_root_element_is_refused`,
+`test_duplicate_key_version_pair_within_one_page_is_refused`,
+`test_duplicate_key_version_pair_across_pages_is_refused`, `test_non_integer_size_is_refused`,
+`test_negative_size_is_refused`) plus 3 new fault-injection tests
+(`test_fault_injection_duplicate_version_check_is_load_bearing_additive` — an *additive* early `continue` before
+the existing raise, per the relay DoD rule's own "early return" example;
+`test_fault_injection_root_tag_required_check_is_load_bearing`;
+`test_fault_injection_is_truncated_strict_parsing_is_load_bearing`), and renamed/retargeted the pre-existing
+stuck-pagination fault test (`test_fault_injection_marker_cycle_check_is_load_bearing`) at the new seen-set check.
+Full clause-to-test mapping in `docs/certifications/queue.md`'s "2026-10-05T04:40Z" entry and
+`docs/spec-matrix.yaml`'s FTF-0500B entry.
+
+**Law 1, shown able to fail first:** `git stash` of the production module alone (keeping every test change),
+re-ran the full suite against the genuinely pre-fix (round-3) module — the suite crashed immediately with a real,
+bound `TypeError` on `S3MinioSourceConfig.__init__()` (`max_page_fetches` does not exist pre-fix). Running each new
+test individually against the pre-fix module confirmed every one fails for real, except one
+(`test_marker_cycle_with_empty_pages_is_refused`) that initially passed for the wrong reason: the old code looped
+the cycle unboundedly and happened to raise `SourceUnavailableError` only once it exhausted the test fixture's own
+fixed 3-page list, not from genuine cycle detection — fixed by adding a second assertion (exactly 3 real requests,
+matching the sibling entries-bearing cycle test), confirmed RED against the pre-fix module with that assertion in
+place. `git stash pop` restored the fix byte-identical; all 39 tests (was 25) re-ran clean end to end, exit 0, "all
+checks passed."
 ## 2026-10-06T03:12:00Z — Same shift, branch `claude/wizardly-fermat-3kfw8a` — PR #472 merged; PR #471 now has a tooling-blocked merge conflict, parked
 
 **PR #472 merged** (merge commit `e1f9aae`) after all 44 checks went green, including `gate` and
@@ -466,6 +530,32 @@ next shift.
 `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the opened PR are required
 before certification.
 
+Verification this shift: `uv sync --all-packages`; `uv run ruff check .` clean; `ruff format --check .` flagged the
+changed production module only (reformatted via `ruff format`, re-verified clean, full suite re-run clean after
+reformatting). `uv run mypy .` clean repo-wide (371 source files, zero errors). `git fetch --unshallow` (this
+sandbox's own pre-existing shallow-clone artifact); `python3 scripts/validate_spec.py --strict` clean — directly
+confirmed the new `docs/spec-matrix.yaml` prose parses with `python3 -c "import yaml; yaml.safe_load(...)"` first,
+per this repo's own 2026-10-01 YAML-unterminated-quote lesson. `product_truth_check.py --fail-on-unwired`:
+unchanged `26/26`. `status.py`: `101/301` certified / 24 product-true — the increase from 99 to 101 is
+FTF-H007/FTF-04A06's own prior-shift certification (eecfa93/2cab888), unrelated to this fix (Law 2 — a resubmission
+is not a certification). Regression swept `test_ftf_0500.py`/`test_ftf_0303.py`/`test_ftf_h006.py` (via `uv run
+python3`, since a bare `python3` lacks sqlalchemy/fastapi) — all exit 0, zero interference (the printed
+`TenantContextError` traceback inside `test_ftf_0500.py`'s own stdout and `test_ftf_h006.py`'s own disclosed
+no-IPv6-stack skip are both that suite's own pre-existing, disclosed negative-test/skip cases).
+
+Updated `docs/spec-matrix.yaml`'s FTF-0500B entry with a full "2026-10-05 L2 round-4 fix-and-resubmit" note
+(`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN` — Law 2). Appended a full evidence
+entry to `docs/certifications/queue.md` ("2026-10-05T04:40Z"). Updated `QUEUE.md`: new top dated log entry; the
+"## Active" item 0's own sub-item 0c2 marked as having an open concurrent PR (#464, not re-claimed), sub-item 0c3
+marked done.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all updated this shift,
+before compaction. STEP 4 stop condition (a): FTF-0500B round 4 now joins the same PROVISIONAL backlog awaiting
+Control-plane L2 certification and the L4 gate (101/301 certified, unchanged by this fix). Stopping here — one
+item per shift, per this list's own rule; 0c (FTF-0601, PR #463) and 0c2 (FTF-0500C round 5, PR #464) both already
+have open concurrent PRs from other sessions, and 0d (FTF-0500D, FTF-0902, FTF-0307, FTF-1002, FTF-0510, FTF-04A18,
+FTF-1807) is next for a future shift once 0a-0c3 all clear Control-plane review. No open owner ask (`QUEUE.md`
+"Owner actions — current" unchanged: "None currently"). `BLOCKER.md` unchanged — no live entries.
 STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all updated this shift,
 before compaction. STEP 4 stop condition (a): FTF-0500D now joins the same PROVISIONAL backlog awaiting
 Control-plane L2 certification and the L4 gate (101/301 certified, unchanged). Stopping here — one item per

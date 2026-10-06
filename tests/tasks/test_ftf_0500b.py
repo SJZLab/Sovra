@@ -123,6 +123,20 @@ def _list_versions_xml(
     ).encode()
 
 
+def _list_versions_xml_raw_is_truncated(*, entries_xml: str, is_truncated_xml: str) -> bytes:
+    """Like `_list_versions_xml`, but takes the raw `<IsTruncated>...`
+    XML fragment (or `""` to omit the element entirely) instead of a plain
+    bool -- needed to construct the garbage/case/whitespace/missing
+    `IsTruncated` edge cases `_list_versions_xml` cannot express."""
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<ListVersionsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
+        "<Name>acme-bucket</Name>"
+        f"{is_truncated_xml}{entries_xml}"
+        "</ListVersionsResult>"
+    ).encode()
+
+
 def _install_pages(pages: list[bytes]) -> None:
     global _CURRENT_PAGES
     _CURRENT_PAGES = pages
@@ -558,7 +572,7 @@ def test_fault_injection_error_root_check_is_load_bearing_additive() -> None:
     branch (not merely a negated condition) must still be caught by this
     test."""
     original = _MODULE_PATH.read_bytes()
-    target = b'    if _local_tag(root.tag) == "Error":\n'
+    target = b'    if root_tag == "Error":\n'
     check(
         "FTF-0500B",
         "fault injection target snippet is present in the real source",
@@ -610,9 +624,14 @@ def test_fault_injection_error_root_check_is_load_bearing_additive() -> None:
         )
 
 
-def test_fault_injection_stuck_pagination_check_is_load_bearing() -> None:
+def test_fault_injection_marker_cycle_check_is_load_bearing() -> None:
+    """Renamed from `..._stuck_pagination_check_...` for round 4: the
+    single-previous-marker comparison was replaced by a seen-set of every
+    marker pair requested in this listing, which also catches a longer
+    A-to-B-to-A cycle (round-4 finding 1), not only an immediately-repeated
+    page."""
     original = _MODULE_PATH.read_bytes()
-    target = b"if new_key_marker == key_marker and new_version_id_marker == version_id_marker:"
+    target = b"        if marker_pair in used_marker_pairs:\n"
     check(
         "FTF-0500B",
         "fault injection target snippet is present in the real source",
@@ -627,8 +646,7 @@ def test_fault_injection_stuck_pagination_check_is_load_bearing() -> None:
     try:
         mutated = original.replace(
             target,
-            b"if False and new_key_marker == key_marker and "
-            b"new_version_id_marker == version_id_marker:",
+            b"        if False and marker_pair in used_marker_pairs:\n",
             1,
         )
         check("FTF-0500B", "fault injection actually changed the file", mutated != original)
@@ -637,19 +655,25 @@ def test_fault_injection_stuck_pagination_check_is_load_bearing() -> None:
         # Bounded by the fixture's own fixed page list (not by the module):
         # with the check disabled, the connector keeps requesting a "next"
         # page that never exists, instead of stopping after page one.
-        _install_pages([stuck_page])
+        _install_pages([stuck_page, stuck_page, stuck_page])
         before = len(REQUEST_LOG)
         try:
             s3_preview.validate_and_preview_s3_minio_source(
                 _config(max_preview_records=20), policy=_policy()
             )
-        except s3_preview.SourceUnavailableError:
+        except (s3_preview.SourceUnavailableError, s3_preview.DuplicateObjectVersionError):
+            # With the cycle check disabled, the connector re-requests the
+            # identical stuck page; the still-active duplicate-(Key,
+            # VersionId) check fires on the second page's repeated entry
+            # before the fixture's own fixed page list runs out -- either
+            # way, more than one real request is made, which is what this
+            # test is proving.
             pass
         check(
             "FTF-0500B",
-            "fault injection: disabling the stuck-pagination check genuinely lets the "
-            "connector attempt further requests past the first non-advancing page, instead "
-            "of refusing immediately",
+            "fault injection: disabling the marker-cycle check genuinely lets the connector "
+            "attempt further requests past the first non-advancing page, instead of refusing "
+            "immediately",
             len(REQUEST_LOG) - before > 1,
         )
     finally:
@@ -671,8 +695,8 @@ def test_fault_injection_stuck_pagination_check_is_load_bearing() -> None:
             restored_raises = True
         check(
             "FTF-0500B",
-            "after restoring the file, the stuck-pagination check genuinely fires again, "
-            "after exactly one request",
+            "after restoring the file, the marker-cycle check genuinely fires again, after "
+            "exactly one request",
             restored_raises and len(REQUEST_LOG) - before == 1,
         )
 
@@ -1084,6 +1108,494 @@ def test_fault_injection_source_changed_check_is_load_bearing() -> None:
             "FTF-0500B",
             "after restoring the file, the source-changed-during-listing check genuinely "
             "fires again",
+            restored_raises,
+        )
+
+
+# -- Round-4 L2 findings (2026-10-04T17:20Z): marker-cycle/page-fetch-cap,
+# strict IsTruncated parsing, required ListVersionsResult root, duplicate
+# (Key, VersionId) pairs, and non-integer/negative Size. --------------------
+
+
+def test_longer_marker_cycle_through_distinct_pages_is_refused() -> None:
+    """Round-4 finding 1: not only an immediately-repeated page, but a
+    longer A-to-B-to-A cycle through several distinct pages must also be
+    refused -- the old single-previous-marker comparison this module used
+    before round 4 would not have caught this."""
+    page_a = _list_versions_xml(
+        entries_xml=_version_entry(
+            "org-42/a.jsonl", "v1", is_latest=True, size=1, etag=_SINGLE_PART_ETAG
+        ),
+        is_truncated=True,
+        next_key_marker="org-42/b.jsonl",
+        next_version_id_marker="vb",
+    )
+    page_b = _list_versions_xml(
+        entries_xml=_version_entry(
+            "org-42/b.jsonl", "vb", is_latest=True, size=1, etag=_SINGLE_PART_ETAG
+        ),
+        is_truncated=True,
+        next_key_marker="org-42/c.jsonl",
+        next_version_id_marker="vc",
+    )
+    page_c = _list_versions_xml(
+        entries_xml=_version_entry(
+            "org-42/c.jsonl", "vc", is_latest=True, size=1, etag=_SINGLE_PART_ETAG
+        ),
+        is_truncated=True,
+        next_key_marker="org-42/b.jsonl",
+        next_version_id_marker="vb",
+    )
+    _install_pages([page_a, page_b, page_c])
+    before = len(REQUEST_LOG)
+    raised = False
+    try:
+        s3_preview.validate_and_preview_s3_minio_source(
+            _config(max_preview_records=20), policy=_policy()
+        )
+    except s3_preview.SourceUnavailableError:
+        raised = True
+    check(
+        "FTF-0500B",
+        "negative_acceptance: a longer A-to-B-to-A pagination marker cycle through several "
+        "distinct pages is refused, not only an immediately-repeated page",
+        raised,
+    )
+    check(
+        "FTF-0500B",
+        "the cycle is detected before a fourth, redundant request is made -- exactly three "
+        "real requests happen",
+        len(REQUEST_LOG) - before == 3,
+    )
+
+
+def test_marker_cycle_with_empty_pages_is_refused() -> None:
+    """Round-4 finding 1, empty-page variant: the same cycle, but every
+    page reports zero entries -- the cycle check must not depend on any
+    entries being present to fire."""
+    page_a = _list_versions_xml(
+        entries_xml="",
+        is_truncated=True,
+        next_key_marker="org-42/b",
+        next_version_id_marker="vb",
+    )
+    page_b = _list_versions_xml(
+        entries_xml="",
+        is_truncated=True,
+        next_key_marker="org-42/a",
+        next_version_id_marker="va",
+    )
+    page_c = _list_versions_xml(
+        entries_xml="",
+        is_truncated=True,
+        next_key_marker="org-42/b",
+        next_version_id_marker="vb",
+    )
+    _install_pages([page_a, page_b, page_c])
+    before = len(REQUEST_LOG)
+    raised = False
+    try:
+        s3_preview.validate_and_preview_s3_minio_source(
+            _config(max_preview_records=20), policy=_policy()
+        )
+    except s3_preview.SourceUnavailableError:
+        raised = True
+    check(
+        "FTF-0500B",
+        "negative_acceptance: a pagination marker cycle made entirely of empty pages is "
+        "still refused",
+        raised,
+    )
+    check(
+        "FTF-0500B",
+        "the cycle is detected before a fourth, redundant request is made -- exactly three "
+        "real requests happen (not merely a coincidental failure from running out of the "
+        "fixture's own fixed page list)",
+        len(REQUEST_LOG) - before == 3,
+    )
+
+
+def test_ever_advancing_pagination_hits_the_page_fetch_cap() -> None:
+    """Round-4 finding 1, cap variant: markers that keep advancing and
+    never repeat would defeat the cycle check alone -- an independent
+    hard page-fetch cap must still refuse the listing rather than follow
+    it forever."""
+    pages = [
+        _list_versions_xml(
+            entries_xml="",
+            is_truncated=True,
+            next_key_marker=f"org-42/k{i}",
+            next_version_id_marker=f"v{i}",
+        )
+        for i in range(10)
+    ]
+    _install_pages(pages)
+    before = len(REQUEST_LOG)
+    raised = False
+    try:
+        s3_preview.validate_and_preview_s3_minio_source(
+            _config(max_preview_records=20, max_page_fetches=5), policy=_policy()
+        )
+    except s3_preview.SourceUnavailableError:
+        raised = True
+    check(
+        "FTF-0500B",
+        "negative_acceptance: a listing with ever-advancing, never-repeating pagination "
+        "markers is refused once it exceeds max_page_fetches, rather than followed forever",
+        raised,
+    )
+    check(
+        "FTF-0500B",
+        "the page-fetch cap fires after exactly max_page_fetches real requests",
+        len(REQUEST_LOG) - before == 5,
+    )
+
+
+def test_is_truncated_strict_values_are_each_correctly_interpreted() -> None:
+    """Round-4 finding 2: `<IsTruncated>` must be parsed strictly --
+    "TRUE"/"1"/" true " (case/whitespace-insensitive true) and
+    "false"/"0" must each be read correctly, not merely accepted or
+    rejected as a blanket default."""
+    entry = _version_entry("org-42/a.jsonl", "v1", is_latest=True, size=1, etag=_SINGLE_PART_ETAG)
+    for raw_value, expected in (
+        ("TRUE", True),
+        ("1", True),
+        (" true ", True),
+        ("false", False),
+        ("0", False),
+    ):
+        _install_pages(
+            [
+                _list_versions_xml_raw_is_truncated(
+                    entries_xml=entry,
+                    is_truncated_xml=f"<IsTruncated>{raw_value}</IsTruncated>",
+                )
+            ]
+        )
+        result = s3_preview.validate_and_preview_s3_minio_source(
+            _config(max_preview_records=1), policy=_policy()
+        )
+        check(
+            "FTF-0500B",
+            f"negative_acceptance: <IsTruncated>{raw_value!r}</IsTruncated> is strictly "
+            f"interpreted as truncated={expected}",
+            result.truncated is expected,
+        )
+
+
+def test_is_truncated_garbage_or_missing_value_is_refused() -> None:
+    """Round-4 finding 2: anything other than "true"/"1"/"false"/"0"
+    (case/whitespace-insensitive), including a missing element entirely,
+    is refused rather than silently treated as "not truncated"."""
+    entry = _version_entry("org-42/a.jsonl", "v1", is_latest=True, size=1, etag=_SINGLE_PART_ETAG)
+    for is_truncated_xml in (
+        "<IsTruncated>maybe</IsTruncated>",
+        "<IsTruncated></IsTruncated>",
+        "",
+    ):
+        _install_pages(
+            [
+                _list_versions_xml_raw_is_truncated(
+                    entries_xml=entry, is_truncated_xml=is_truncated_xml
+                )
+            ]
+        )
+        raised = False
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(
+                _config(max_preview_records=20), policy=_policy()
+            )
+        except s3_preview.SourceUnavailableError:
+            raised = True
+        check(
+            "FTF-0500B",
+            f"negative_acceptance: an unrecognized/missing <IsTruncated> value "
+            f"({is_truncated_xml!r}) is refused, never silently treated as not truncated",
+            raised,
+        )
+
+
+def test_unexpected_root_element_is_refused() -> None:
+    """Round-4 finding 3: only a real <ListVersionsResult> root is ever
+    treated as a listing -- any other root, not only a non-namespaced
+    <Error>, must be refused the same way."""
+    bodies = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<ns:Error xmlns:ns="urn:example"><Code>X</Code></ns:Error>',
+        b'<?xml version="1.0" encoding="UTF-8"?><Foo><Error/></Foo>',
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"/>',
+        b"<html><body>not xml-s3 at all</body></html>",
+    )
+    for body in bodies:
+        _install_pages([body])
+        raised = False
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+        except s3_preview.SourceUnavailableError:
+            raised = True
+        check(
+            "FTF-0500B",
+            f"negative_acceptance: an HTTP-200 response whose root is not a real "
+            f"<ListVersionsResult> ({body!r}) is refused",
+            raised,
+        )
+
+
+def test_duplicate_key_version_pair_within_one_page_is_refused() -> None:
+    """Round-4 finding 4: the same (Key, VersionId) pair appearing twice
+    within one page is refused."""
+    entries = _version_entry(
+        "org-42/a.jsonl", "v1", is_latest=True, size=1, etag=_SINGLE_PART_ETAG
+    ) + _version_entry("org-42/a.jsonl", "v1", is_latest=False, size=1, etag=_SINGLE_PART_ETAG)
+    _install_pages([_list_versions_xml(entries_xml=entries)])
+    raised = False
+    try:
+        s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+    except s3_preview.DuplicateObjectVersionError:
+        raised = True
+    check(
+        "FTF-0500B",
+        "negative_acceptance: the same (Key, VersionId) pair appearing twice within one page "
+        "is refused",
+        raised,
+    )
+
+
+def test_duplicate_key_version_pair_across_pages_is_refused() -> None:
+    """Round-4 finding 4: the same (Key, VersionId) pair reappearing on a
+    later page of the same listing is refused."""
+    page1 = _list_versions_xml(
+        entries_xml=_version_entry(
+            "org-42/a.jsonl", "v1", is_latest=True, size=1, etag=_SINGLE_PART_ETAG
+        ),
+        is_truncated=True,
+        next_key_marker="org-42/a.jsonl",
+        next_version_id_marker="v1",
+    )
+    page2 = _list_versions_xml(
+        entries_xml=_version_entry(
+            "org-42/a.jsonl", "v1", is_latest=False, size=1, etag=_SINGLE_PART_ETAG
+        )
+    )
+    _install_pages([page1, page2])
+    raised = False
+    try:
+        s3_preview.validate_and_preview_s3_minio_source(
+            _config(max_preview_records=20), policy=_policy()
+        )
+    except s3_preview.DuplicateObjectVersionError:
+        raised = True
+    check(
+        "FTF-0500B",
+        "negative_acceptance: the same (Key, VersionId) pair reappearing on a later page of "
+        "the same listing is refused",
+        raised,
+    )
+
+
+def test_non_integer_size_is_refused() -> None:
+    """Round-4 finding 5: a non-integer <Size> is refused with this
+    module's own error class, never a bare uncategorized ValueError."""
+    entries_xml = (
+        "<Version><Key>org-42/a.jsonl</Key><VersionId>v1</VersionId>"
+        "<IsLatest>true</IsLatest><LastModified>2026-01-01T00:00:00.000Z</LastModified>"
+        f"<ETag>&quot;{_SINGLE_PART_ETAG}&quot;</ETag><Size>not-a-number</Size></Version>"
+    )
+    _install_pages([_list_versions_xml(entries_xml=entries_xml)])
+    raised = False
+    try:
+        s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+    except s3_preview.SourceUnavailableError:
+        raised = True
+    check(
+        "FTF-0500B",
+        "negative_acceptance: a non-integer <Size> is refused with this module's own error "
+        "class",
+        raised,
+    )
+
+
+def test_negative_size_is_refused() -> None:
+    """Round-4 finding 5: a negative <Size> is refused, never silently
+    accepted into the manifest."""
+    entries_xml = (
+        "<Version><Key>org-42/a.jsonl</Key><VersionId>v1</VersionId>"
+        "<IsLatest>true</IsLatest><LastModified>2026-01-01T00:00:00.000Z</LastModified>"
+        f"<ETag>&quot;{_SINGLE_PART_ETAG}&quot;</ETag><Size>-5</Size></Version>"
+    )
+    _install_pages([_list_versions_xml(entries_xml=entries_xml)])
+    raised = False
+    try:
+        s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+    except s3_preview.SourceUnavailableError:
+        raised = True
+    check(
+        "FTF-0500B",
+        "negative_acceptance: a negative <Size> is refused, never silently accepted into the "
+        "manifest",
+        raised,
+    )
+
+
+def test_fault_injection_duplicate_version_check_is_load_bearing_additive() -> None:
+    """Additive-fault variant required by the 2026-10-04 relay DoD rule: a
+    careless future edit that adds an early `continue` for the
+    duplicate-pair branch (not merely a negated condition) must still be
+    caught by this test."""
+    original = _MODULE_PATH.read_bytes()
+    target = b"            if key_version_pair in seen_key_version_pairs:\n"
+    check(
+        "FTF-0500B",
+        "fault injection target snippet is present in the real source",
+        target in original,
+    )
+    entries = _version_entry(
+        "org-42/a.jsonl", "v1", is_latest=True, size=1, etag=_SINGLE_PART_ETAG
+    ) + _version_entry("org-42/a.jsonl", "v1", is_latest=False, size=1, etag=_SINGLE_PART_ETAG)
+    try:
+        additive_fault = target + b"                continue\n"
+        mutated = original.replace(target, additive_fault, 1)
+        check("FTF-0500B", "fault injection actually changed the file", mutated != original)
+        _MODULE_PATH.write_bytes(mutated)
+        importlib.reload(s3_preview)
+        _install_pages([_list_versions_xml(entries_xml=entries)])
+        no_longer_raises = False
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+            no_longer_raises = True
+        except s3_preview.DuplicateObjectVersionError:
+            no_longer_raises = False
+        check(
+            "FTF-0500B",
+            "fault injection: an additive early-continue bypass of the duplicate-pair check "
+            "genuinely lets a repeated (Key, VersionId) pair through as a fabricated success",
+            no_longer_raises,
+        )
+    finally:
+        _MODULE_PATH.write_bytes(original)
+        importlib.reload(s3_preview)
+        check(
+            "FTF-0500B",
+            "the module file is restored byte-identical after fault injection",
+            _MODULE_PATH.read_bytes() == original,
+        )
+        _install_pages([_list_versions_xml(entries_xml=entries)])
+        restored_raises = False
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+        except s3_preview.DuplicateObjectVersionError:
+            restored_raises = True
+        check(
+            "FTF-0500B",
+            "after restoring the file, the duplicate-pair check genuinely fires again",
+            restored_raises,
+        )
+
+
+def test_fault_injection_root_tag_required_check_is_load_bearing() -> None:
+    original = _MODULE_PATH.read_bytes()
+    target = b'    if root_tag != "ListVersionsResult":\n'
+    check(
+        "FTF-0500B",
+        "fault injection target snippet is present in the real source",
+        target in original,
+    )
+    bogus_body = (
+        b'<?xml version="1.0" encoding="UTF-8"?><Foo><IsTruncated>false</IsTruncated></Foo>'
+    )
+    try:
+        mutated = original.replace(
+            target, b'    if False and root_tag != "ListVersionsResult":\n', 1
+        )
+        check("FTF-0500B", "fault injection actually changed the file", mutated != original)
+        _MODULE_PATH.write_bytes(mutated)
+        importlib.reload(s3_preview)
+        _install_pages([bogus_body])
+        no_longer_raises = False
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+            no_longer_raises = True
+        except s3_preview.SourceUnavailableError:
+            no_longer_raises = False
+        check(
+            "FTF-0500B",
+            "fault injection: disabling the root-tag-required check genuinely lets an "
+            "unexpected root element through as a fabricated, empty-but-successful listing",
+            no_longer_raises,
+        )
+    finally:
+        _MODULE_PATH.write_bytes(original)
+        importlib.reload(s3_preview)
+        check(
+            "FTF-0500B",
+            "the module file is restored byte-identical after fault injection",
+            _MODULE_PATH.read_bytes() == original,
+        )
+        _install_pages([bogus_body])
+        restored_raises = False
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+        except s3_preview.SourceUnavailableError:
+            restored_raises = True
+        check(
+            "FTF-0500B",
+            "after restoring the file, the root-tag-required check genuinely fires again",
+            restored_raises,
+        )
+
+
+def test_fault_injection_is_truncated_strict_parsing_is_load_bearing() -> None:
+    original = _MODULE_PATH.read_bytes()
+    target = b'    if normalized in ("true", "1"):\n'
+    check(
+        "FTF-0500B",
+        "fault injection target snippet is present in the real source",
+        target in original,
+    )
+    entry = _version_entry("org-42/a.jsonl", "v1", is_latest=True, size=1, etag=_SINGLE_PART_ETAG)
+    garbage_body = _list_versions_xml_raw_is_truncated(
+        entries_xml=entry, is_truncated_xml="<IsTruncated>maybe</IsTruncated>"
+    )
+    try:
+        mutated = original.replace(target, b'    if True or normalized in ("true", "1"):\n', 1)
+        check("FTF-0500B", "fault injection actually changed the file", mutated != original)
+        _MODULE_PATH.write_bytes(mutated)
+        importlib.reload(s3_preview)
+        _install_pages([garbage_body])
+        no_longer_raises = False
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(
+                _config(max_preview_records=1), policy=_policy()
+            )
+            no_longer_raises = True
+        except s3_preview.SourceUnavailableError:
+            no_longer_raises = False
+        check(
+            "FTF-0500B",
+            "fault injection: widening the strict IsTruncated check genuinely lets a garbage "
+            "value through as a fabricated result instead of being refused",
+            no_longer_raises,
+        )
+    finally:
+        _MODULE_PATH.write_bytes(original)
+        importlib.reload(s3_preview)
+        check(
+            "FTF-0500B",
+            "the module file is restored byte-identical after fault injection",
+            _MODULE_PATH.read_bytes() == original,
+        )
+        _install_pages([garbage_body])
+        restored_raises = False
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(
+                _config(max_preview_records=1), policy=_policy()
+            )
+        except s3_preview.SourceUnavailableError:
+            restored_raises = True
+        check(
+            "FTF-0500B",
+            "after restoring the file, the strict IsTruncated check genuinely fires again",
             restored_raises,
         )
 

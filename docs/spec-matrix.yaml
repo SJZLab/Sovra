@@ -6340,6 +6340,127 @@ FTF-0500B:
     Not self-certified (Law 4) -- independent Control-plane L2 review and a
     real CI run (including the new integration job) on the opened PR are
     required before certification.
+
+    2026-10-05 L2 round-4 fix-and-resubmit (certification_state stays
+    PROVISIONAL, proof_state stays L1-PROVEN -- Law 2). The
+    2026-10-04T17:20Z Control-plane L2 review (docs/certifications/queue.md)
+    found five real gaps: (1) the pagination-marker check only compared the
+    immediately-previous marker pair, so a longer A-to-B-to-A cycle through
+    several distinct pages went undetected, and there was no hard page/
+    request cap for ever-advancing markers; (2) `IsTruncated` only accepted
+    the literal string "true", so "1" (a valid xsd:boolean), case/whitespace
+    variants, garbage, or a missing element were all silently read as "not
+    truncated"; (3) the root element was only checked against "Error", so
+    any other unexpected root (a namespaced `<Error>`, `<Foo><Error/></Foo>`,
+    `<ListBucketResult>`, `<html>`) was accepted as an empty, complete
+    listing; (4) duplicate `(Key, VersionId)` pairs, within one page or
+    across pages, were accepted into the "exact version" manifest; (5) a
+    non-integer `<Size>` raised a bare, uncategorized `ValueError` instead of
+    this module's own error class, and a negative `<Size>` was accepted.
+
+    Fixed: (1) the single-marker comparison was replaced by a seen-set of
+    every `(key-marker, version-id-marker)` pair already requested in this
+    listing -- revisiting one (whether the immediately previous page or a
+    longer cycle) is refused (`SourceUnavailableError`); independently, a new
+    `max_page_fetches` config field (default
+    `DEFAULT_MAX_PAGE_FETCHES = 10_000`) hard-caps the number of page
+    fetches, refusing a listing with ever-advancing, never-repeating markers
+    that would otherwise defeat the cycle check alone. (2) new
+    `_parse_is_truncated` strictly accepts only "true"/"1" (truncated) or
+    "false"/"0" (not truncated), case/whitespace-insensitive, and refuses
+    anything else -- including a missing element -- with
+    `SourceUnavailableError`. (3) `_parse_list_versions_xml` now requires the
+    root's own local tag to be exactly "ListVersionsResult"; any other root
+    (the pre-existing "Error" check stays, with its own Code/Message message)
+    is refused the same way. (4) a new `seen_key_version_pairs` set tracks
+    every real `(Key, VersionId)` pair across the whole listing; a repeat --
+    within a page or across pages -- raises the new
+    `DuplicateObjectVersionError`. (5) `<Size>` parsing is now wrapped in its
+    own `try`/`except ValueError`, raising `SourceUnavailableError` for a
+    non-integer value, and a separate explicit check refuses a negative
+    value the same way. The old single-marker "stuck pagination" check
+    (`new_key_marker == key_marker and ...`) is removed -- superseded by the
+    general marker-cycle seen-set, which also catches the exact
+    immediately-repeated-page case it covered (confirmed: the pre-existing
+    `test_stuck_pagination_without_advancing_marker_is_refused` needed no
+    change and still passes, exactly one real request before refusing).
+
+    New tests (tests/tasks/test_ftf_0500b.py, 25 -> 39 test functions):
+    `test_longer_marker_cycle_through_distinct_pages_is_refused` and
+    `test_marker_cycle_with_empty_pages_is_refused` (finding 1, cycle);
+    `test_ever_advancing_pagination_hits_the_page_fetch_cap` (finding 1,
+    cap); `test_is_truncated_strict_values_are_each_correctly_interpreted`
+    and `test_is_truncated_garbage_or_missing_value_is_refused` (finding 2);
+    `test_unexpected_root_element_is_refused` (finding 3);
+    `test_duplicate_key_version_pair_within_one_page_is_refused` and
+    `test_duplicate_key_version_pair_across_pages_is_refused` (finding 4);
+    `test_non_integer_size_is_refused` and `test_negative_size_is_refused`
+    (finding 5); plus three new disclosed fault-injection tests --
+    `test_fault_injection_duplicate_version_check_is_load_bearing_additive`
+    (an *additive* early `continue` bypassing the duplicate-pair raise, not
+    merely a negated condition, per the relay DoD rule's own "early return"
+    example), `test_fault_injection_root_tag_required_check_is_load_bearing`,
+    and `test_fault_injection_is_truncated_strict_parsing_is_load_bearing` --
+    and the pre-existing stuck-pagination fault test was renamed
+    `test_fault_injection_marker_cycle_check_is_load_bearing` and retargeted
+    at the new seen-set check (it still proves the identical
+    immediately-repeated-page scenario, now via the general mechanism). Each
+    fault test reverts the module file byte-identical (confirmed by direct
+    byte comparison in the test itself).
+
+    Law 1, shown able to fail first: `git stash` of the module fix alone
+    (keeping every test change), re-ran the suite against the genuinely
+    pre-fix (round-3) module -- a direct `TypeError` on the new
+    `max_page_fetches` config field (a real, bound failure: the field does
+    not exist pre-fix), and, run individually, each of the nine new
+    positive/negative tests failed for real against the pre-fix code
+    (`test_longer_marker_cycle_through_distinct_pages_is_refused`,
+    `test_is_truncated_strict_values_are_each_correctly_interpreted`,
+    `test_is_truncated_garbage_or_missing_value_is_refused`,
+    `test_unexpected_root_element_is_refused`,
+    `test_duplicate_key_version_pair_within_one_page_is_refused`,
+    `test_duplicate_key_version_pair_across_pages_is_refused`,
+    `test_negative_size_is_refused` as real check-failures;
+    `test_non_integer_size_is_refused` as an uncaught, uncategorized
+    `ValueError`). The empty-page cycle test
+    (`test_marker_cycle_with_empty_pages_is_refused`) initially passed
+    against the pre-fix module for the wrong reason -- the old code looped
+    unboundedly and happened to raise `SourceUnavailableError` only once it
+    ran out of the fixture's own fixed 3-page list, not from real cycle
+    detection -- so a second assertion (exactly three real requests, not
+    more) was added to make it a genuine discriminator; re-run against the
+    pre-fix module, that assertion now fails for real. `git stash pop`
+    restores the fix byte-identical; all 39 tests re-run clean.
+
+    Full verification this shift: `uv sync --all-packages`; `uv run ruff
+    check .` clean; `ruff format --check .` flagged the changed module only
+    (reformatted via `ruff format`, re-verified clean, tests re-run clean
+    after reformatting). `uv run mypy .` clean repo-wide (371 source files,
+    zero errors). `python3 scripts/validate_spec.py --strict` clean (`git
+    fetch --unshallow` first). `product_truth_check.py --fail-on-unwired`
+    unchanged 26/26. `status.py`: 101/301 certified / 24 product-true (the
+    increase from 99 to 101 is FTF-H007/FTF-04A06's own prior-shift
+    certification, unrelated to this fix -- Law 2, a resubmission is not a
+    certification). Regression swept test_ftf_0500.py/test_ftf_0303.py/
+    test_ftf_h006.py (via `uv run python3`) -- zero regressions (the printed
+    `TenantContextError` traceback and the disclosed no-IPv6-stack skip are
+    both that suite's own pre-existing, disclosed cases).
+
+    Systemic-sweep rule disclosed, not applied here: this task's only
+    sibling connector in apps/api/app/datasets/ is
+    database_api_trace_source_contract_and_fail_closed_validation.py
+    (FTF-0500C), which has its own open round-5 fix PR (#464) from a
+    concurrent relay session addressing FTF-0500C's own distinct round-5
+    findings at the time this shift started -- not touched here to avoid a
+    merge conflict with that in-flight PR. FTF-0500C's own cursor/marker
+    protections were already hardened in its own prior rounds (a real `set`
+    tracks every REST cursor already used, per PROGRESS.md's
+    2026-10-04T21:45Z entry); any further class-sweep onto FTF-0500C is
+    Control plane's own call on the next review of PR #464, not duplicated
+    here.
+
+    Not self-certified (Law 4) -- independent Control-plane L2 review and a
+    real CI run on the opened PR are required before certification.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500b.py, tests/integration/test_ftf_0500b_s3_minio_versioned_source.py
