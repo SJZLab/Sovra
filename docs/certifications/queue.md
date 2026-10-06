@@ -23198,3 +23198,56 @@ including this clause-to-test mapping (`certification_state` stays `PROVISIONAL`
 **V (certification)** -- per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state:
 L1-PROVEN` unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the
 opened PR (#471) are required before certification.
+
+## 2026-10-06T02:00Z — Relay maintenance: FTF-1506 dependency bump (source-map-js 1.2.1 → 1.2.2), unblocking PR #471's unrelated CI failure
+
+Not a fix-and-resubmit of an uncertified task -- FTF-1506 stays `certification_state: L2-CERTIFIED`,
+unaffected (its own module/test files are untouched). Logged here for visibility since it's a
+cross-cutting dependency-scan finding, same convention as the 2026-09-25 FTF-1506 entry above.
+
+**What happened:** this shift's STEP 1 ("returned work first... red CI on an already-open relay
+PR") found PR #471 (FTF-0307 round-2 fix) with two consecutive red CI runs (#727 head `062e6bc`,
+#728 head `088f605`), both failing only on `dependency-scanning-integration`:
+`npm:source-map-js==1.2.1 GHSA-68fv-2mgg-jv7q severity=HIGH`, `fixed_versions: ["1.2.2"]`,
+no policy exception. `gate` itself passed on both runs -- confirmed via `pull_request_read`
+`get_check_runs` on PR #471 directly, not assumed from prior shift notes.
+
+**Ruled out as this PR's own defect first** (CI-red triage, per this repo's own precedent):
+`git log --oneline -- pnpm-lock.yaml` on `main` shows the `source-map-js@1.2.1` pin predates PR
+#471 by several merges (last touched by merge PR #415); PR #471's own `get_files` diff is
+`PROGRESS.md`/`QUEUE.md`/`apps/api/app/artifacts/training_capability_classifier.py`/
+`docs/certifications/queue.md`/`docs/spec-matrix.yaml`/`tests/tasks/test_ftf_0307.py` -- no
+lockfile, no npm/frontend file at all. This is a live OSV.dev finding against a dependency
+already pinned on `main`, unrelated to FTF-0307's own closed file scope -- the same "root-cause
+unrelated-to-the-diff findings in their own fix, never by widening the PR" posture this file's
+own 2026-09-25 FTF-1506 entry already established.
+
+**Fix (this PR, a dedicated minimal bump, not inside PR #471):** `source-map-js` is a transitive
+dependency of `postcss@8.5.28` (`^1.2.1` range -- confirmed via `pnpm view postcss@8.5.28
+dependencies`; 1.2.2 satisfies it, a pure patch-level resolution, not a new dependency or a range
+change). First attempt (`pnpm update source-map-js@1.2.2 --no-save`) pulled in ~20 unrelated
+transitive bumps via loose semver ranges (rolldown, `@oxc-project/types`, nanoid, the
+eslint-family packages, postcss's own patch version) -- reverted (`git checkout --
+pnpm-lock.yaml`), then applied by hand: exactly three lines in `pnpm-lock.yaml` (the `packages:`
+resolution block's version/integrity, `postcss`'s own `dependencies:` entry, the `snapshots:`
+entry), nothing else. `git diff --stat`: 1 file, 4 insertions, 4 deletions.
+
+**Verification:** `pnpm install --frozen-lockfile` -- "Lockfile is up to date, resolution step is
+skipped" (self-consistent). `pnpm run lint`/`typecheck`/`format:check`/`vitest run` (52/52) all
+clean. `uv run python3 tests/tasks/test_ftf_1506.py` (no-network) still "all checks passed"
+(19/19). `python3 scripts/validate_spec.py --strict` clean (directly confirmed the new
+`docs/spec-matrix.yaml` prose parses with `yaml.safe_load` first). `product_truth_check.py
+--fail-on-unwired`: unchanged `26/26`. `status.py`: unchanged `101/301` certified / 24
+product-true (Law 2 -- a dependency-pin bump is not a certification). Whether 1.2.2 actually
+clears GHSA-68fv-2mgg-jv7q cannot be confirmed locally (this sandbox's own outbound proxy blocks
+`api.osv.dev` directly, same disclosed gap as every prior FTF-1506/FTF-0004 entry) -- the real
+`dependency-scanning-integration` CI job on this fix's own PR is the only genuine proof, watched
+to completion as part of this submission.
+
+**Not self-certified (Law 4):** `certification_state`/`proof_state` on FTF-1506 deliberately left
+unchanged (`L2-CERTIFIED`) -- this is a dependency-pin bump to an already-certified CI tool's own
+scanned inputs, not a change to the tool itself; no new certification claimed. Once this PR merges
+to `main`, PR #471's own next CI run (against `refs/remotes/pull/471/merge`, which merges current
+`main` into its head) will carry the fixed lockfile automatically -- no push to PR #471's own
+branch needed or made, consistent with "never push to a different branch without explicit
+permission."

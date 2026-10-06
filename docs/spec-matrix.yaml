@@ -9911,6 +9911,51 @@ FTF-1506:
     (merge commit `c805cd03e1c3cb03dfeced0888c373e00a547859`). PR #262
     (the original, CI-blocked submission this PR fixed) closed as
     superseded.
+
+    2026-10-06 relay maintenance (new live OSV.dev finding, not a defect in
+    this task's own module): PR #471 (FTF-0307, a task with no `pnpm-lock.yaml`
+    in its own closed `files` scope)'s `dependency-scanning-integration` job
+    failed twice in a row (runs #727/#728, head commits `062e6bc`/`088f605`)
+    with one real blocking finding -- `npm:source-map-js==1.2.1`
+    GHSA-68fv-2mgg-jv7q, severity HIGH, `fixed_versions: ["1.2.2"]` -- genuinely
+    unrelated to that PR's own diff (confirmed: `git log -- pnpm-lock.yaml`
+    shows the pin predates PR #471 by several merges, last touched by merge
+    PR #415; PR #471's own changed-files list is `PROGRESS.md`/`QUEUE.md`/
+    `apps/api/app/artifacts/training_capability_classifier.py`/
+    `docs/certifications/queue.md`/`docs/spec-matrix.yaml`/
+    `tests/tasks/test_ftf_0307.py` -- no lockfile). `source-map-js` is a
+    transitive dependency of `postcss@8.5.28` (`^1.2.1` range, confirmed via
+    `pnpm view postcss@8.5.28 dependencies` -- 1.2.2 satisfies it, a pure
+    patch-level resolution, not a new dependency or a range change). Per this
+    repo's own CI-red precedent (above, 2026-09-25: "a check unrelated to the
+    PR's own diff is this repo's to root-cause, fixed via its own separate
+    bump, not by widening the unrelated PR"), remediated via a dedicated
+    minimal 3-line lockfile edit (this PR, FTF-1506 tagged since this is the
+    dependency-scan task's own negative_acceptance firing correctly) rather
+    than inside PR #471 itself -- `source-map-js@1.2.1` to `@1.2.2` in all
+    three of its `pnpm-lock.yaml` occurrences (the `packages:` resolution
+    block, `postcss`'s own `dependencies:` entry, and the `snapshots:` entry),
+    nothing else touched (confirmed via `git diff --stat`: 1 file, 4
+    insertions, 4 deletions). Deliberately not run via `pnpm update`, whose
+    first attempt pulled in ~20 unrelated transitive bumps (rolldown,
+    oxc-project/types, nanoid, eslint-family packages, postcss's own patch
+    version) via loose semver ranges resolving to newer-than-lockfile
+    versions -- reverted, then applied by hand to keep this fix scoped to the
+    one real finding. `pnpm install --frozen-lockfile` confirms the edited
+    lockfile is self-consistent ("Lockfile is up to date, resolution step is
+    skipped"); `pnpm run lint`/`typecheck`/`format:check`/`vitest run` all
+    clean; `tests/tasks/test_ftf_1506.py` (no-network) still 19/19. Whether
+    1.2.2 actually clears GHSA-68fv-2mgg-jv7q cannot be confirmed locally
+    (this sandbox's own outbound proxy blocks `api.osv.dev` directly, same
+    disclosed gap as the 2026-09-25 entry above) -- the real
+    `dependency-scanning-integration` CI job on this fix's own PR is the only
+    genuine proof, watched to completion as part of this submission.
+    `certification_state`/`proof_state` deliberately unchanged (still
+    L2-CERTIFIED -- this is a one-line dependency-pin bump to an
+    already-certified CI tool's own scanned inputs, not a change to
+    `tests/security/dependency_scanning.py` or `tests/tasks/test_ftf_1506.py`
+    themselves; Law 2 -- nothing here moves a tracker status without new
+    certification-level evidence, and none is claimed).
   proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1506.py
