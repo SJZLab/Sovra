@@ -27,9 +27,32 @@ mismatch invalidates load/qualification") is covered by
 `test_resolved_base_artifact_only_meaningful_for_adapter`,
 `test_adapter_base_mismatch_is_refused`,
 `test_unresolved_base_artifact_cannot_validate_an_adapter` and
-`test_lineage_fact_cannot_carry_a_value_while_unknown`, plus a real fault
-injection (Law 1) proving the base-revision-mismatch check genuinely fails
-when its real guard is removed.
+`test_lineage_fact_cannot_carry_a_value_while_unknown`.
+
+2026-10-06 L2 round-2 review findings (`docs/certifications/queue.md`
+"2026-10-04T11:00Z", PR #424) and their tests:
+- a `registered`/`archived` main parent ->
+  `test_registered_artifact_is_refused`, `test_archived_artifact_is_refused`;
+- a cross-tenant main parent -> `test_cross_tenant_artifact_is_refused`;
+- a main parent whose current digest/revision has drifted from the
+  model_version's own recorded value ->
+  `test_model_version_weights_digest_drift_is_refused`,
+  `test_model_version_base_model_revision_drift_is_refused`;
+- an adapter's base check being optional ->
+  `test_adapter_without_resolved_base_artifact_is_refused`;
+- a self-parent, by id or by digest ->
+  `test_adapter_self_parent_by_id_is_refused`,
+  `test_adapter_self_parent_by_digest_is_refused`;
+- a cross-tenant resolved base -> `test_cross_tenant_resolved_base_artifact_is_refused`;
+- no manifest digest / not tamper-evident ->
+  `test_manifest_digest_is_present_and_verifiable`,
+  `test_verify_artifact_lineage_manifest_detects_tampering`;
+plus two real fault injections (Law 1): one proving the pre-existing
+`base_model_revision` compare is load-bearing in isolation (now with
+distinct digests so the new self-digest check cannot also catch it), and
+one *additive* fault -- an early `return None` inserted right after the
+id-match check -- proving every one of this round's new guards is
+genuinely load-bearing together, not merely present.
 
 Run directly: python3 tests/tasks/test_ftf_1002.py
 """
@@ -51,8 +74,10 @@ sys.path.insert(0, str(API_ROOT))
 from app.artifacts.artifact_lineage_manifest import (  # noqa: E402
     AdapterBaseMismatchError,
     ArtifactLineageError,
+    ArtifactLineageManifestTamperedError,
     LineageFact,
     build_artifact_lineage_manifest,
+    verify_artifact_lineage_manifest,
 )
 from app.artifacts.artifact_schema import TrainableArtifact  # noqa: E402
 from app.model_versions.model_version_schema import ModelVersion  # noqa: E402
@@ -67,6 +92,7 @@ def check(criterion_id: str, description: str, condition: bool) -> None:
 
 
 _ORG_ID = uuid.uuid4()
+_OTHER_ORG_ID = uuid.uuid4()
 _PROJECT_ID = uuid.uuid4()
 _REAL_DIGEST = "sha256:" + "a" * 64
 _BASE_DIGEST = "sha256:" + "b" * 64
@@ -75,6 +101,7 @@ _BASE_DIGEST = "sha256:" + "b" * 64
 def _artifact(
     *,
     artifact_id: uuid.UUID | None = None,
+    organization_id: uuid.UUID | None = None,
     status: str = "ready",
     base_model_revision: str = "a1b2c3d4",
     weights_digest: str | None = _REAL_DIGEST,
@@ -82,7 +109,7 @@ def _artifact(
 ) -> TrainableArtifact:
     now = datetime.now(UTC)
     artifact = TrainableArtifact(
-        organization_id=_ORG_ID,
+        organization_id=organization_id if organization_id is not None else _ORG_ID,
         display_name=f"artifact-{uuid.uuid4().hex[:8]}",
         source_type="local_filesystem",
         source_uri="model-a",
@@ -106,13 +133,14 @@ def _artifact(
 def _model_version(
     *,
     import_kind: str,
+    organization_id: uuid.UUID | None = None,
     trainable_artifact_id: uuid.UUID | None = None,
     weights_digest: str | None = None,
     base_model_revision: str | None = None,
     endpoint_reference: str | None = None,
 ) -> ModelVersion:
     kwargs: dict[str, object] = {
-        "organization_id": _ORG_ID,
+        "organization_id": organization_id if organization_id is not None else _ORG_ID,
         "project_id": _PROJECT_ID,
         "version_number": 1,
         "import_kind": import_kind,
@@ -130,17 +158,26 @@ def _model_version(
     return model_version
 
 
+def _linked_full_weight_model_version(artifact: TrainableArtifact) -> ModelVersion:
+    """A `full_weight` ModelVersion whose own recorded weights_digest/
+    base_model_revision/organization_id genuinely match `artifact`'s --
+    the real, non-drifted baseline every negative test below perturbs
+    exactly one field away from."""
+    return _model_version(
+        import_kind="full_weight",
+        organization_id=artifact.organization_id,
+        trainable_artifact_id=artifact.id,
+        weights_digest=artifact.weights_digest,
+        base_model_revision=artifact.base_model_revision,
+    )
+
+
 # -- Positive: acceptance clause -------------------------------------------
 
 
 def test_full_weight_import_binds_base_tokenizer_license_runtime_method() -> None:
     artifact = _artifact(required_python_packages=["transformers==4.44.0", "torch==2.4.0"])
-    model_version = _model_version(
-        import_kind="full_weight",
-        trainable_artifact_id=artifact.id,
-        weights_digest=artifact.weights_digest,
-        base_model_revision=artifact.base_model_revision,
-    )
+    model_version = _linked_full_weight_model_version(artifact)
     manifest = build_artifact_lineage_manifest(model_version, artifact)
 
     check(
@@ -188,7 +225,9 @@ def test_adapter_import_reports_method_adapter() -> None:
         weights_digest=artifact.weights_digest,
         base_model_revision=artifact.base_model_revision,
     )
-    base_artifact = _artifact(status="ready", base_model_revision="base-rev-1")
+    base_artifact = _artifact(
+        status="ready", base_model_revision="base-rev-1", weights_digest=_BASE_DIGEST
+    )
     manifest = build_artifact_lineage_manifest(
         model_version, artifact, resolved_base_artifact=base_artifact
     )
@@ -214,12 +253,7 @@ def test_endpoint_import_reports_every_dimension_unknown() -> None:
 
 def test_runtime_is_unknown_when_no_packages_are_declared() -> None:
     artifact = _artifact(required_python_packages=[])
-    model_version = _model_version(
-        import_kind="full_weight",
-        trainable_artifact_id=artifact.id,
-        weights_digest=artifact.weights_digest,
-        base_model_revision=artifact.base_model_revision,
-    )
+    model_version = _linked_full_weight_model_version(artifact)
     manifest = build_artifact_lineage_manifest(model_version, artifact)
     check(
         "FTF-1002",
@@ -248,12 +282,7 @@ def test_weight_backed_import_with_no_artifact_is_refused() -> None:
 def test_artifact_not_matching_trainable_artifact_id_is_refused() -> None:
     real_artifact = _artifact()
     wrong_artifact = _artifact()
-    model_version = _model_version(
-        import_kind="full_weight",
-        trainable_artifact_id=real_artifact.id,
-        weights_digest=real_artifact.weights_digest,
-        base_model_revision=real_artifact.base_model_revision,
-    )
+    model_version = _linked_full_weight_model_version(real_artifact)
     try:
         build_artifact_lineage_manifest(model_version, wrong_artifact)
         check(
@@ -281,13 +310,8 @@ def test_endpoint_import_with_a_real_artifact_is_refused() -> None:
 
 def test_resolved_base_artifact_only_meaningful_for_adapter() -> None:
     artifact = _artifact()
-    model_version = _model_version(
-        import_kind="full_weight",
-        trainable_artifact_id=artifact.id,
-        weights_digest=artifact.weights_digest,
-        base_model_revision=artifact.base_model_revision,
-    )
-    base_artifact = _artifact(status="ready")
+    model_version = _linked_full_weight_model_version(artifact)
+    base_artifact = _artifact(status="ready", weights_digest=_BASE_DIGEST)
     try:
         build_artifact_lineage_manifest(
             model_version, artifact, resolved_base_artifact=base_artifact
@@ -316,7 +340,9 @@ def test_adapter_base_mismatch_is_refused() -> None:
         weights_digest=artifact.weights_digest,
         base_model_revision=artifact.base_model_revision,
     )
-    mismatched_base = _artifact(status="ready", base_model_revision="a-different-base-rev")
+    mismatched_base = _artifact(
+        status="ready", base_model_revision="a-different-base-rev", weights_digest=_BASE_DIGEST
+    )
     try:
         build_artifact_lineage_manifest(
             model_version, artifact, resolved_base_artifact=mismatched_base
@@ -334,7 +360,9 @@ def test_unresolved_base_artifact_cannot_validate_an_adapter() -> None:
         weights_digest=artifact.weights_digest,
         base_model_revision=artifact.base_model_revision,
     )
-    unresolved_base = _artifact(status="registered", base_model_revision="declared-base-rev")
+    unresolved_base = _artifact(
+        status="registered", base_model_revision="declared-base-rev", weights_digest=_BASE_DIGEST
+    )
     try:
         build_artifact_lineage_manifest(
             model_version, artifact, resolved_base_artifact=unresolved_base
@@ -342,6 +370,175 @@ def test_unresolved_base_artifact_cannot_validate_an_adapter() -> None:
         check("FTF-1002", "a non-'ready' resolved_base_artifact cannot validate an adapter", False)
     except AdapterBaseMismatchError:
         check("FTF-1002", "a non-'ready' resolved_base_artifact cannot validate an adapter", True)
+
+
+# -- Negative: 2026-10-06 L2 round-2 findings ------------------------------
+
+
+def test_registered_artifact_is_refused() -> None:
+    artifact = _artifact(status="registered")
+    model_version = _linked_full_weight_model_version(artifact)
+    try:
+        build_artifact_lineage_manifest(model_version, artifact)
+        check("FTF-1002", "a 'registered' (still-mutable) parent is refused", False)
+    except ArtifactLineageError:
+        check("FTF-1002", "a 'registered' (still-mutable) parent is refused", True)
+
+
+def test_archived_artifact_is_refused() -> None:
+    artifact = _artifact(status="archived")
+    model_version = _linked_full_weight_model_version(artifact)
+    try:
+        build_artifact_lineage_manifest(model_version, artifact)
+        check("FTF-1002", "an 'archived' (closed) parent is refused", False)
+    except ArtifactLineageError:
+        check("FTF-1002", "an 'archived' (closed) parent is refused", True)
+
+
+def test_cross_tenant_artifact_is_refused() -> None:
+    artifact = _artifact(organization_id=_OTHER_ORG_ID)
+    model_version = _model_version(
+        import_kind="full_weight",
+        organization_id=_ORG_ID,
+        trainable_artifact_id=artifact.id,
+        weights_digest=artifact.weights_digest,
+        base_model_revision=artifact.base_model_revision,
+    )
+    try:
+        build_artifact_lineage_manifest(model_version, artifact)
+        check("FTF-1002", "a cross-tenant parent is refused", False)
+    except ArtifactLineageError:
+        check("FTF-1002", "a cross-tenant parent is refused", True)
+
+
+def test_model_version_weights_digest_drift_is_refused() -> None:
+    artifact = _artifact()
+    model_version = _linked_full_weight_model_version(artifact)
+    # Simulate the artifact's own current digest having drifted away from
+    # what model_version's own immutable row already recorded at creation.
+    artifact.weights_digest = "sha256:" + "f" * 64
+    try:
+        build_artifact_lineage_manifest(model_version, artifact)
+        check("FTF-1002", "a weights_digest drifted from the model_version's own is refused", False)
+    except ArtifactLineageError:
+        check("FTF-1002", "a weights_digest drifted from the model_version's own is refused", True)
+
+
+def test_model_version_base_model_revision_drift_is_refused() -> None:
+    artifact = _artifact()
+    model_version = _linked_full_weight_model_version(artifact)
+    artifact.base_model_revision = "a-different-revision-now"
+    try:
+        build_artifact_lineage_manifest(model_version, artifact)
+        check(
+            "FTF-1002",
+            "a base_model_revision drifted from the model_version's own is refused",
+            False,
+        )
+    except ArtifactLineageError:
+        check(
+            "FTF-1002",
+            "a base_model_revision drifted from the model_version's own is refused",
+            True,
+        )
+
+
+def test_adapter_without_resolved_base_artifact_is_refused() -> None:
+    artifact = _artifact(base_model_revision="declared-base-rev")
+    model_version = _model_version(
+        import_kind="adapter",
+        trainable_artifact_id=artifact.id,
+        weights_digest=artifact.weights_digest,
+        base_model_revision=artifact.base_model_revision,
+    )
+    try:
+        build_artifact_lineage_manifest(model_version, artifact)
+        check(
+            "FTF-1002",
+            "an adapter import with no resolved_base_artifact at all is refused -- the base "
+            "check is mandatory, not optional",
+            False,
+        )
+    except ArtifactLineageError:
+        check(
+            "FTF-1002",
+            "an adapter import with no resolved_base_artifact at all is refused -- the base "
+            "check is mandatory, not optional",
+            True,
+        )
+
+
+def test_adapter_self_parent_by_id_is_refused() -> None:
+    artifact = _artifact(base_model_revision="declared-base-rev")
+    model_version = _model_version(
+        import_kind="adapter",
+        trainable_artifact_id=artifact.id,
+        weights_digest=artifact.weights_digest,
+        base_model_revision=artifact.base_model_revision,
+    )
+    try:
+        build_artifact_lineage_manifest(model_version, artifact, resolved_base_artifact=artifact)
+        check(
+            "FTF-1002", "an adapter resolving to itself (same id) as its own base is refused", False
+        )
+    except AdapterBaseMismatchError:
+        check(
+            "FTF-1002", "an adapter resolving to itself (same id) as its own base is refused", True
+        )
+
+
+def test_adapter_self_parent_by_digest_is_refused() -> None:
+    artifact = _artifact(base_model_revision="declared-base-rev")
+    model_version = _model_version(
+        import_kind="adapter",
+        trainable_artifact_id=artifact.id,
+        weights_digest=artifact.weights_digest,
+        base_model_revision=artifact.base_model_revision,
+    )
+    # A distinct row (different id), but it shares the adapter's own
+    # weights_digest -- exactly the same self-referential defect by a
+    # different field.
+    same_digest_base = _artifact(
+        status="ready", base_model_revision="declared-base-rev", weights_digest=_REAL_DIGEST
+    )
+    try:
+        build_artifact_lineage_manifest(
+            model_version, artifact, resolved_base_artifact=same_digest_base
+        )
+        check(
+            "FTF-1002",
+            "an adapter whose resolved base shares its own weights_digest is refused",
+            False,
+        )
+    except AdapterBaseMismatchError:
+        check(
+            "FTF-1002",
+            "an adapter whose resolved base shares its own weights_digest is refused",
+            True,
+        )
+
+
+def test_cross_tenant_resolved_base_artifact_is_refused() -> None:
+    artifact = _artifact(base_model_revision="declared-base-rev")
+    model_version = _model_version(
+        import_kind="adapter",
+        trainable_artifact_id=artifact.id,
+        weights_digest=artifact.weights_digest,
+        base_model_revision=artifact.base_model_revision,
+    )
+    foreign_base = _artifact(
+        organization_id=_OTHER_ORG_ID,
+        status="ready",
+        base_model_revision="declared-base-rev",
+        weights_digest=_BASE_DIGEST,
+    )
+    try:
+        build_artifact_lineage_manifest(
+            model_version, artifact, resolved_base_artifact=foreign_base
+        )
+        check("FTF-1002", "a cross-tenant resolved_base_artifact is refused", False)
+    except AdapterBaseMismatchError:
+        check("FTF-1002", "a cross-tenant resolved_base_artifact is refused", True)
 
 
 def test_lineage_fact_cannot_carry_a_value_while_unknown() -> None:
@@ -354,18 +551,59 @@ def test_lineage_fact_cannot_carry_a_value_while_unknown() -> None:
 
 def test_manifest_is_frozen() -> None:
     artifact = _artifact()
-    model_version = _model_version(
-        import_kind="full_weight",
-        trainable_artifact_id=artifact.id,
-        weights_digest=artifact.weights_digest,
-        base_model_revision=artifact.base_model_revision,
-    )
+    model_version = _linked_full_weight_model_version(artifact)
     manifest = build_artifact_lineage_manifest(model_version, artifact)
     try:
         manifest.import_kind = "adapter"  # type: ignore[misc]
         check("FTF-1002", "ArtifactLineageManifest is immutable", False)
     except FrozenInstanceError:
         check("FTF-1002", "ArtifactLineageManifest is immutable", True)
+
+
+# -- Negative: manifest tamper-evidence (2026-10-06 L2 round-2) -----------
+
+
+def test_manifest_digest_is_present_and_verifiable() -> None:
+    artifact = _artifact()
+    model_version = _linked_full_weight_model_version(artifact)
+    manifest = build_artifact_lineage_manifest(model_version, artifact)
+    check(
+        "FTF-1002",
+        "manifest carries a real sha256 manifest_digest",
+        isinstance(manifest.manifest_digest, str)
+        and manifest.manifest_digest.startswith("sha256:")
+        and len(manifest.manifest_digest) == len("sha256:") + 64,
+    )
+    try:
+        verify_artifact_lineage_manifest(manifest)
+        check("FTF-1002", "verify_artifact_lineage_manifest accepts an untampered manifest", True)
+    except ArtifactLineageManifestTamperedError:
+        check("FTF-1002", "verify_artifact_lineage_manifest accepts an untampered manifest", False)
+
+
+def test_verify_artifact_lineage_manifest_detects_tampering() -> None:
+    artifact = _artifact()
+    model_version = _linked_full_weight_model_version(artifact)
+    manifest = build_artifact_lineage_manifest(model_version, artifact)
+    # The frozen dataclass guard refuses ordinary attribute assignment
+    # (test_manifest_is_frozen already proves that); object.__setattr__
+    # bypasses it directly, simulating mutation/corruption after
+    # construction -- exactly what verify_artifact_lineage_manifest exists
+    # to detect.
+    object.__setattr__(manifest, "import_kind", "adapter")
+    try:
+        verify_artifact_lineage_manifest(manifest)
+        check(
+            "FTF-1002",
+            "verify_artifact_lineage_manifest detects a manifest mutated past the frozen guard",
+            False,
+        )
+    except ArtifactLineageManifestTamperedError:
+        check(
+            "FTF-1002",
+            "verify_artifact_lineage_manifest detects a manifest mutated past the frozen guard",
+            True,
+        )
 
 
 # -- Real fault injection (Law 1) -------------------------------------------
@@ -376,7 +614,9 @@ def test_fault_injection_disabling_base_revision_compare_genuinely_fails() -> No
     `AdapterBaseMismatchError` and prove the mismatch case this task's own
     negative_acceptance requires genuinely stops failing -- then restore
     the module byte-identical. Proves the guard is load-bearing, not
-    merely present."""
+    merely present. The probe's `artifact`/`mismatched_base` deliberately
+    carry distinct weights_digest values so this round's new self-digest
+    check cannot also catch the fault -- isolating this one guard."""
     original = _MODULE_PATH.read_bytes()
     text = original.decode("utf-8")
     needle = "if resolved_base_artifact.base_model_revision != artifact.base_model_revision:"
@@ -399,11 +639,11 @@ from app.model_versions.model_version_schema import ModelVersion
 org_id = uuid.uuid4()
 now = datetime.now(UTC)
 
-def make_artifact(revision, status="ready"):
+def make_artifact(revision, digest, status="ready"):
     a = TrainableArtifact(
         organization_id=org_id, display_name="a-" + uuid.uuid4().hex[:8],
         source_type="local_filesystem", source_uri="model-a", model_family="tiny",
-        base_model_revision=revision, weights_digest="sha256:" + "a" * 64,
+        base_model_revision=revision, weights_digest=digest,
         license_id="apache-2.0", trust_remote_code_allowed=False, status=status,
     )
     a.id = uuid.uuid4()
@@ -414,8 +654,8 @@ def make_artifact(revision, status="ready"):
         a.license_accepted_at = now
     return a
 
-artifact = make_artifact("declared-base-rev")
-mismatched_base = make_artifact("a-different-base-rev")
+artifact = make_artifact("declared-base-rev", "sha256:" + "a" * 64)
+mismatched_base = make_artifact("a-different-base-rev", "sha256:" + "b" * 64)
 mv = ModelVersion(
     organization_id=org_id, project_id=uuid.uuid4(), version_number=1, import_kind="adapter",
     trainable_artifact_id=artifact.id, weights_digest=artifact.weights_digest,
@@ -441,6 +681,84 @@ print("NO_ERROR_RAISED")
         check(
             "FTF-1002",
             "the module file is restored byte-identical after fault injection",
+            restored == original,
+        )
+
+
+def test_fault_injection_additive_early_return_bypasses_every_round2_guard() -> None:
+    """Additive fault (Law 1's own 'an early return' example, not merely an
+    edit of an existing line): insert a brand-new, unconditional
+    `return None` immediately after the real id-match check and before
+    every one of this round's new status/tenant/digest/revision/mandatory-
+    base checks. Prove a scenario that should be refused (an 'archived'
+    parent) instead silently returns `None` -- then restore the module
+    byte-identical."""
+    original = _MODULE_PATH.read_bytes()
+    text = original.decode("utf-8")
+    needle = '    if artifact.status != "ready":'
+    check(
+        "FTF-1002",
+        "additive fault injection anchor line is present in the real module",
+        needle in text,
+    )
+    mutated = text.replace(
+        needle,
+        "    return None  # additive fault: bypasses every round-2 guard below\n" + needle,
+        1,
+    )
+    check(
+        "FTF-1002", "additive fault injection actually changed the module source", mutated != text
+    )
+
+    try:
+        _MODULE_PATH.write_text(mutated, encoding="utf-8")
+        probe_script = f"""
+import sys
+sys.path.insert(0, {str(ROOT)!r})
+sys.path.insert(0, {str(API_ROOT)!r})
+import uuid
+from datetime import datetime, UTC
+from app.artifacts.artifact_lineage_manifest import build_artifact_lineage_manifest
+from app.artifacts.artifact_schema import TrainableArtifact
+from app.model_versions.model_version_schema import ModelVersion
+
+org_id = uuid.uuid4()
+now = datetime.now(UTC)
+
+artifact = TrainableArtifact(
+    organization_id=org_id, display_name="a-" + uuid.uuid4().hex[:8],
+    source_type="local_filesystem", source_uri="model-a", model_family="tiny",
+    base_model_revision="rev-1", weights_digest="sha256:" + "a" * 64,
+    license_id="apache-2.0", trust_remote_code_allowed=False, status="archived",
+)
+artifact.id = uuid.uuid4()
+artifact.created_at = now
+artifact.updated_at = now
+mv = ModelVersion(
+    organization_id=org_id, project_id=uuid.uuid4(), version_number=1, import_kind="full_weight",
+    trainable_artifact_id=artifact.id, weights_digest=artifact.weights_digest,
+    base_model_revision=artifact.base_model_revision, created_by="user-1", created_at=now,
+)
+mv.id = uuid.uuid4()
+result = build_artifact_lineage_manifest(mv, artifact)
+print("NO_ERROR_RAISED result=" + repr(result))
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", probe_script], capture_output=True, text=True, timeout=30
+        )
+        check(
+            "FTF-1002",
+            "additive fault injection: an early return after the id-match check genuinely lets "
+            f"an archived parent through uncaught (stdout={completed.stdout!r} "
+            f"stderr={completed.stderr!r})",
+            completed.returncode == 0 and "NO_ERROR_RAISED" in completed.stdout,
+        )
+    finally:
+        _MODULE_PATH.write_bytes(original)
+        restored = _MODULE_PATH.read_bytes()
+        check(
+            "FTF-1002",
+            "the module file is restored byte-identical after additive fault injection",
             restored == original,
         )
 

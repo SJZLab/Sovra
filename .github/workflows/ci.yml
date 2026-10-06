@@ -331,6 +331,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_1002.py
       - name: FTF-1206 negative-test proof (Organization gateway policy control -- no widening, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1206.py
+      - name: FTF-1206A negative-test proof (Organization gateway policy persistence -- RLS/GRANT migration shape + fault injection, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_1206a.py
       - name: FTF-1807 negative-test proof (LiteLLM outage runbook -- doc/code fidelity, no DB required)
         run: uv run python3 tests/documentation/test_ftf_1807.py
       - name: FTF-H007 negative-test proof (source boundary -- executable hook/dangerous call/escaping symlink detection, no DB required)
@@ -2116,6 +2118,51 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real EvaluationSuite evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0601_evaluation_suite.py
+
+  organization-gateway-policy-integration:
+    # FTF-1206A: real Postgres organization-gateway-policy persistence
+    # evidence (Section 3/6/38/65/66/71/77/81) -- two real organizations
+    # each with a real workspace/project, a real upgrade/downgrade/upgrade
+    # round-trip, the policy upsert-in-place (create then update, exactly
+    # one row, each audited via a real FTF-0104 event), the append-only
+    # route-change history (real, retrievable, ordered, both outcomes
+    # audited), tenant isolation on the policy read (RLS, not an app-layer
+    # filter), the cross-tenant/missing-project identical denial for
+    # record_route_change, the restricted sovra_app GRANT surface (can
+    # never UPDATE/DELETE route-change history, can never DELETE a policy
+    # row), and the real jsonb_typeof(...) = 'array' CHECK rejecting a raw
+    # non-array INSERT. No OpenBao needed -- this resource carries no
+    # credential. Same real `services: postgres` container pattern as
+    # evaluation-suite-integration (this repo's interactive dev sandbox has
+    # no container-registry egress for a Docker Postgres image; that
+    # evidence was instead produced locally against a directly-installed
+    # PostgreSQL 16 -- see this task's docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf1206a
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf1206a"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf1206a
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real organization-gateway-policy persistence evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_1206a_org_gateway_policy.py
 
   network-policy-enforcement-integration:
     # FTF-0902: real kind+Calico NetworkPolicy enforcement + negative-

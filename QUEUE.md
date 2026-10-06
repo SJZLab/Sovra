@@ -1,4 +1,100 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-05T23:30:00Z (scheduled relay shift, branch `claude/wizardly-fermat-shlvk5`) --
+  STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly, no mismatch.
+  STEP 0.1: this branch was restarted from `origin/main` at `01d298d` (PR #469 merged -- the
+  2026-10-05T21:30Z shift's own FTF-0902 CI-triage, docs-only). Read `PROGRESS.md`/`QUEUE.md`/
+  `docs/certifications/queue.md` fresh, not assumed from prior context. Checked "## Active" item
+  0's own chain before picking work: 0a/0b DONE; 0c (FTF-0601, PR #463)/0c2 (FTF-0500C round 5, PR
+  #464)/0c3 (FTF-0500B round 4, PR #465) each independently reconfirmed GREEN this shift via
+  `pull_request_read get_check_runs` (44/44 on each) -- skipped per this list's own skip rule; 0d
+  (FTF-0500D) already merged (PR #466). Next in list order, **0e. FTF-1206A** -- no open PR found
+  for it (`search_pull_requests` confirmed only the closed, docs-only ADR PR #445). STEP 0.2: no
+  `cognee-cli` binary in this sandbox -- text-search fallback declared, same as every prior shift.
+
+  STEP 2 (PEV): **P** -- read `spec/addenda/FTF-1206A.json` and `docs/adr/0002-task-addendum-
+  ftf-1206a.md` directly (r1_handoff does not cover an addendum task). Confirmed all three
+  dependencies (FTF-0104, FTF-1201, FTF-H003) are `certification_state: CERTIFIED`. Read the
+  existing `packages/litellm_client/organization_policy_control.py` (FTF-1206's own already-
+  certified pure decision procedures) and the migration/CRUD conventions `0017_evaluation_suites.py`/
+  `0018_eval_suites_reviewer_fix.py`/`evaluation_suite_crud.py`/`audit_event_writer.py` already
+  established, before writing any code, to keep this task's own real `files` clause closed to
+  exactly the migration, the store module and its two test files (never touching
+  `organization_policy_control.py` or FTF-1206's own route/CRUD surface, per the task contract and
+  BLOCKER.md's RESOLVED 2026-10-02 "route option 1" decision).
+
+  **E** -- `apps/api/alembic/versions/0019_org_gateway_policies.py` (two tables:
+  `organization_gateway_policies` -- one row per org, `UNIQUE(organization_id)`, three real
+  `jsonb_typeof(...) = 'array'`-checked columns, `sovra_app` granted SELECT/INSERT/UPDATE, never
+  DELETE; `organization_gateway_route_changes` -- append-only, a real composite FK to `projects`,
+  `sovra_app` granted SELECT/INSERT only, never UPDATE/DELETE -- this task's own negative_acceptance
+  clause). Both ENABLE+FORCE RLS with a real, non-allow-all `tenant_isolation` policy. (Discovered
+  the hard way, via a real `DataError` on the first `alembic upgrade head`: the contract's own
+  suggested filename made a revision id 34 characters, over `alembic_version.version_num`'s own
+  32-character column width -- shortened to `0019_org_gateway_policies`, 25 characters, and fixed
+  before writing any test.) `apps/api/app/litellm/organization_gateway_policy_store.py`: `get_
+  organization_gateway_policy`/`upsert_organization_gateway_policy` (create-or-update in place) and
+  `record_route_change`/`list_route_changes` (append-only; never decides authorization itself, only
+  durably records a decision already proven elsewhere), reusing `organization_policy_control.py`'s
+  own `validate_namespace`/`validate_approver_identity` directly (same function object).
+
+  **V** -- stood up a real local PostgreSQL 16 cluster (`sovra_migrate`/`sovra_ftf1206a`, this
+  sandbox's own pre-existing no-container-registry-egress boundary, same class as every prior
+  Postgres-integration-tested task) and ran both new test files directly: `tests/tasks/
+  test_ftf_1206a.py` (no-DB; migration shape, two independent real fault injections against the
+  file on disk, store-module domain shape) and `tests/integration/test_ftf_1206a_org_gateway_
+  policy.py` (real Postgres; upgrade/downgrade/upgrade round-trip, every acceptance/
+  negative_acceptance clause). **Law 1, shown able to fail for real:** removed the cross-tenant
+  `_authorize_project_or_raise` call from `record_route_change` and re-ran the integration suite
+  against a fresh database -- the cross-tenant write that should have been cleanly refused instead
+  crashed with a real, uncaught `IntegrityError` from the composite FK's own backstop, proving the
+  check is load-bearing; reverted byte-identical (diff-confirmed) and re-ran clean. Both suites: "all
+  checks passed." `uv run ruff check .`/`ruff format --check .` clean (375 files). `uv run mypy .`
+  clean repo-wide (375 source files). `python3 scripts/validate_spec.py --strict` clean (after `git
+  fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact; directly confirmed the
+  new `docs/spec-matrix.yaml` prose parses with `yaml.safe_load` first). `scripts/
+  data_exposure_check.py --backends postgres_rls,s3_identity --fail-on-exposure` clean. `product_
+  truth_check.py --fail-on-unwired`: unchanged `26/26` (`proving_symbol` stays blank -- disclosed,
+  no live route exists for this task by design, same "no live caller yet" class FTF-1206 itself
+  already established). `status.py`: unchanged `101/301` certified / 24 product-true (Law 2 -- a
+  resubmission is not a certification). Regression swept `test_ftf_1206.py`/`test_ftf_0104.py`/
+  `test_ftf_h003.py`/`test_ftf_0601.py`/`test_ftf_0401.py` -- zero regressions. Added CI job
+  `organization-gateway-policy-integration` and a `tests/tasks/test_ftf_1206a.py` gate step to
+  `.github/workflows/ci.yml` (45 jobs total, re-parsed clean). Updated `docs/spec-matrix.yaml`'s
+  FTF-1206A entry (`certification_state: PROVISIONAL`, `proof_state: L1-PROVEN`, `implementation_
+  state: IMPLEMENTED`) with the full clause-to-test mapping. Appended a full evidence entry to
+  `docs/certifications/queue.md`. Updated this file's own "## Active" item 0e (FTF-1206A done, PR
+  opened) and "## Backlog" (FTF-1206A removed, now below the Refill & Sweep ">= 3" target -- next
+  shift should run Refill & Sweep).
+
+  **V (certification)** -- per Law 4, not self-certified: `certification_state: PROVISIONAL`/
+  `proof_state: L1-PROVEN` in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a
+  real CI run on the opened PR (including the new integration job) are required before
+  certification.
+
+  STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml`/
+  `.github/workflows/ci.yml` all updated this shift, before compaction. STEP 4 stop condition (a):
+  FTF-1206A now joins the same PROVISIONAL backlog awaiting Control-plane L2 certification and the
+  L4 gate (101/301 certified, unchanged). Stopping here -- one item per shift, per this list's own
+  rule. No open owner ask (`QUEUE.md` "Owner actions -- current" unchanged: none open). `BLOCKER.md`
+  unchanged -- no live entries.
+
+  **Post-open PR #470 maintenance (same session, 2026-10-06T09:XXZ):** `main` advanced past this
+  PR's own merge-base twice while CI ran (PR #463's FTF-0601 round-2 fix, PR #471's FTF-0307 fix,
+  each independently merged). Merged `origin/main` into this branch and found a real, substantive
+  collision, not just a textual one: PR #463's own `0019_eval_suites_reviewer_norm.py` and this
+  task's own `0019_org_gateway_policies.py` had independently claimed the identical Alembic
+  revision id `0019`. Caught before pushing, not left for CI to discover -- renumbered this task's
+  own migration to `0020_org_gateway_policies.py`, rebased its `down_revision` onto
+  `0019_eval_suites_reviewer_norm` (confirmed that revision is genuinely now the real chain head
+  before this task's own migration), and updated every reference to the old filename/revision id
+  in `tests/tasks/test_ftf_1206a.py`/`docs/spec-matrix.yaml`/this file/`PROGRESS.md`/
+  `docs/certifications/queue.md`. Re-ran the full real-Postgres chain locally (`alembic upgrade
+  head` through all 20 migrations, then both `test_ftf_1206a.py` and
+  `test_ftf_1206a_org_gateway_policy.py`) before pushing -- "a push that turns CI red costs a cycle
+  and the reviewers' trust." Also fixed this list's own "0e" entry: the textual merge had
+  duplicated a stale "0e. Then FTF-1206A (Backlog)" placeholder alongside this shift's own real
+  "0e. FTF-1206A implemented" entry (an artifact of `main`'s own unrelated 0d2/FTF-0307 insertion
+  landing between them) -- removed the stale duplicate, kept one real 0e.
 Updated: 2026-10-05T04:40:00Z (scheduled relay shift, branch `claude/wizardly-fermat-7vy5ny`) —
   STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` exactly, no mismatch; `BLOCKER.md` read in
   full, no live entries (all RESOLVED). STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
@@ -42,78 +138,81 @@ Updated: 2026-10-05T04:40:00Z (scheduled relay shift, branch `claude/wizardly-fe
   live entries.
 
 ---
-Updated: 2026-10-05T14:40:00Z (scheduled relay shift, branch `claude/wizardly-fermat-q24x99`) --
-  STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` exactly, no mismatch; `BLOCKER.md` read,
-  no live entries. STEP 0.1: synced `origin/main` (tip `2d52ae4`, FTF-0500D round-2 PR #466 merged by
-  the immediately prior shift). Read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh.
-  "## Active" item 0: 0a/0b/0d DONE; re-verified 0c/0c2/0c3 directly via `list_pull_requests`/
-  `pull_request_read(get_check_runs)` rather than trusted from the prior shift's summary -- PRs
-  #463/#464/#465 all still open with every check run `success` (`gate` included on each): skipped
-  per the list's own skip rule. No open PR exists for FTF-0902's current round (the only PR naming
-  it, #402, is the stale pre-round-1 bundle already superseded by the merged PR #430). Picked the
-  next unclaimed item in strict list order: **FTF-0902**. STEP 0.2: no `cognee-cli` binary in this
+Updated: 2026-10-05T04:40:00Z (scheduled relay shift, branch `claude/wizardly-fermat-j8lgbg`) —
+  STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly, no mismatch;
+  `BLOCKER.md` read, no live entries. STEP 0.1: this branch was already synced to `origin/main` at
+  `c128d58` (0 commits ahead/behind, FTF-H007+FTF-04A06 CERTIFIED via PR #462/merge `c128d58`) --
+  read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh. The "## Active" item 0 list
+  names 0a/0b DONE, 0c **FTF-0601** and 0c2 **FTF-0500C round 5** as next in strict order. A fresh
+  `list_pull_requests` showed both already had an open `[relay]` PR from a concurrent session (#463
+  for FTF-0601, #464 for FTF-0500C round 5) -- per this list's own "skip only an item that has an
+  open `[relay]` PR" rule, neither was re-claimed. Picked **0c3, FTF-0500B round 4** -- confirmed via
+  `search_pull_requests` that no open PR exists for it. STEP 0.2: no `cognee-cli` binary in this
   sandbox -- text-search fallback declared, same as every prior shift.
 
-  STEP 2 (PEV): **P** -- pulled the real current DoD from `docs/certifications/queue.md`'s
-  "2026-10-04T11:00Z" entry (three findings: `tests/tasks/test_ftf_0902.py` not run by any CI step;
-  a renderer accepting a mutated/subclassed/duck-typed endpoint's own `::/0`/metadata/empty-ports/
-  empty-selector values; Control-plane RFC1918-only decision for `CidrEndpoint.cidr`; plus two
-  secondary items, a `$defs/Cidr` pattern and DNS live-testing disclosure). Read
-  `packages/security/network_policy_templates.py` and both existing test files in full: confirmed
-  `_endpoint_egress_rule` used `isinstance(endpoint, CidrEndpoint)` and trusted each endpoint's own
-  one-time `__post_init__` check, with no re-derivation of its current field values at render time --
-  exactly the gap the review named.
+  STEP 2 (PEV): **P** -- read the 2026-10-04T17:20Z Control-plane L2 review's five findings
+  (docs/certifications/queue.md) directly against
+  `s3_minio_source_validation_metadata_preview.py` before any change: (1) the marker-cycle check
+  only compared the immediately previous pair, with no independent page-fetch cap; (2)
+  `IsTruncated` fails open on anything but the literal "true"; (3) the root was only checked
+  against "Error", not required to be "ListVersionsResult"; (4) duplicate `(Key, VersionId)` pairs
+  were accepted; (5) a non-integer `<Size>` raised a bare `ValueError`, a negative one was accepted.
+  This task's only sibling connector, `database_api_trace_source_contract_and_fail_closed_
+  validation.py` (FTF-0500C), already had its own open round-5 PR (#464) from a concurrent
+  session -- the systemic same-class-sweep rule is disclosed, not applied to that file this shift,
+  to avoid a merge conflict with that in-flight PR.
 
-  **E** -- extracted `_validate_cidr_endpoint_fields`/`_validate_pod_selector_endpoint_fields` as the
-  real invariant functions, called both at construction (`__post_init__`) and again, independently,
-  at render time via new `_revalidate_endpoint_at_render_time` (type-gated via `type(endpoint) is
-  ...`, never `isinstance`, so a subclass overriding `__post_init__` is still refused). Metadata
-  overlap now derived directly from `url_policy._CLOUD_METADATA_NETWORKS` (a real CIDR-overlap
-  check) instead of three hardcoded probe addresses. New `PublicCidrEndpointError` enforces the
-  RFC1918-only decision, checked after the metadata check. Added a CI step for
-  `tests/tasks/test_ftf_0902.py`, a `$defs/Cidr` IPv4-CIDR regex pattern, and a real
-  `resolve_dns`/`nslookup kubernetes.default` probe to the live-cluster integration test, asserted on
-  both clusters. New unit tests for every clause (mutated-endpoint revalidation across all five fault
-  shapes, a subclassed bypassing endpoint, a duck-typed endpoint, RFC1918 boundaries, metadata
-  derived from the real `url_policy` tuple) plus two additive fault-injection tests (`if False:`
-  around the new revalidation call; `if False and ...` around the new RFC1918 check), each proving
-  the real check load-bearing in a fresh subprocess against the real on-disk module, then restored
-  byte-identical. Full clause-to-test mapping in `docs/certifications/queue.md`'s "2026-10-05T14:40Z"
-  entry.
+  **E** -- fixed all five: a `used_marker_pairs` seen-set replaces the single-previous-marker
+  comparison (catches a longer A-to-B-to-A cycle, not only an immediately-repeated page);
+  independently, a new `max_page_fetches` config field (default 10,000) hard-caps page fetches; a
+  new `_parse_is_truncated` strictly accepts only "true"/"1"/"false"/"0" (case/whitespace-
+  insensitive), refusing anything else including a missing element; the root's own local tag must
+  now equal "ListVersionsResult" (the existing "Error" check stays); a new `seen_key_version_pairs`
+  set refuses a repeated `(Key, VersionId)` pair anywhere in the listing (`DuplicateObjectVersionError`,
+  a new error class); `<Size>` parsing is now wrapped in `try`/`except ValueError` plus an explicit
+  negative-value refusal, both via this module's own `SourceUnavailableError`. Added 9 new
+  positive/negative test functions plus 3 new fault-injection tests (one additive -- an early
+  `continue` before the duplicate-pair raise) and renamed/retargeted the pre-existing stuck-
+  pagination fault test at the new seen-set check. Full clause-to-test mapping in
+  `docs/certifications/queue.md`'s "2026-10-05T04:40Z" entry and `docs/spec-matrix.yaml`'s
+  FTF-0500B entry. **Law 1, shown able to fail first:** `git stash` of the module fix alone (keeping
+  every test change), re-ran against the genuine pre-fix (round-3) module -- a real, bound
+  `TypeError` on the new `max_page_fetches` field; run individually, each new test failed for real
+  against the pre-fix code, except one (`test_marker_cycle_with_empty_pages_is_refused`) that
+  initially passed for the wrong reason (fixture exhaustion, not real cycle detection) -- fixed by
+  adding an exact-request-count assertion, confirmed RED against pre-fix after that fix. `git stash
+  pop` restored the fix byte-identical; all 39 tests (was 25) re-ran clean. **V** -- per Law 4, not
+  self-certified: `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` unchanged in
+  `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the opened PR
+  are required before certification.
 
-  **V** -- `tests/tasks/test_ftf_0902.py`: "all checks passed". `uv run ruff check .`/
-  `ruff format --check .` clean (371 files, zero new errors). `uv run mypy .` clean on every new/
-  changed file (5 pre-existing `apps/api/alembic/*` findings and 7 pre-existing `test_ftf_0500c*`
-  `unused-ignore` findings confirmed present identically via `git stash`, untouched by this
-  submission). `python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`;
-  `docs/spec-matrix.yaml` prose confirmed parseable via `yaml.safe_load` first). `product_truth_
-  check.py --fail-on-unwired`: unchanged `26/26`. `status.py`: unchanged `101/301` certified / 24
-  product-true (Law 2). **Law 1, shown able to fail:** `git stash` of the module/contract fix alone
-  (keeping every test change), re-run against the genuine pre-fix module -- fails immediately with
-  `ImportError: cannot import name 'PublicCidrEndpointError'` (exit 1); `git stash pop` restored the
-  fix, re-ran clean (exit 0). Regression swept `test_ftf_0005.py`/`test_ftf_0402.py`/
-  `test_ftf_h006.py` -- zero regressions. The live-cluster `network-policy-enforcement-integration`
-  job cannot run inside this sandbox (no Docker/kind) -- its real result on the opened PR's own CI
-  run is this item's actual acceptance-clause evidence. Updated `docs/spec-matrix.yaml`'s FTF-0902
-  entry with a full "2026-10-05T14:40Z L2 round-2 fix-and-resubmit" note (`certification_state` stays
-  `PROVISIONAL`, `proof_state` stays `L1-PROVEN` -- Law 2). Appended a full evidence entry to
-  `docs/certifications/queue.md`. Updated this file's own "## Active" item 0 to mark FTF-0902 fixed
-  (0d2) and marked the stale round-1 FTF-0902 entry (item 1 below) SUPERSEDED.
+  Verification this shift: `uv sync --all-packages`; `uv run ruff check .` clean; `ruff format
+  --check .` flagged the changed module only, fixed via `ruff format`, re-verified clean, tests
+  re-run clean after reformatting. `uv run mypy .` clean repo-wide (371 source files, zero errors).
+  `git fetch --unshallow` (this sandbox's own pre-existing shallow-clone artifact); `python3
+  scripts/validate_spec.py --strict` clean; directly confirmed the new `docs/spec-matrix.yaml`
+  prose parses with `python3 -c "import yaml; yaml.safe_load(...)"` first, per this repo's own
+  2026-10-01 YAML-unterminated-quote lesson. `product_truth_check.py --fail-on-unwired`: unchanged
+  `26/26`. `status.py`: `101/301` certified / 24 product-true (the increase from 99 to 101 is
+  FTF-H007/FTF-04A06's own prior-shift certification, unrelated to this fix -- Law 2, a resubmission
+  is not a certification). Regression swept `test_ftf_0500.py`/`test_ftf_0303.py`/`test_ftf_h006.py`
+  (via `uv run python3`) -- zero regressions (same disclosed `TenantContextError`/no-IPv6-stack
+  cases every prior shift already established).
 
-  **V (certification)** -- not self-certified (Law 4): `certification_state: PROVISIONAL`/
-  `proof_state: L1-PROVEN` unchanged; independent Control-plane L2 re-review and a real CI run on the
-  opened PR (including the now-CI-wired unit suite and the DNS-probe-extended integration job) are
-  required before certification.
+  Updated `docs/spec-matrix.yaml`'s FTF-0500B entry with a full "2026-10-05 L2 round-4
+  fix-and-resubmit" note (`certification_state` stays `PROVISIONAL`, `proof_state` stays
+  `L1-PROVEN` -- Law 2). Appended a full evidence entry to `docs/certifications/queue.md`
+  ("2026-10-05T04:40Z"). Updated this file's own "## Active" item 0: sub-item 0c2 marked as having
+  an open concurrent PR (#464, not re-claimed), sub-item 0c3 marked done.
 
-  STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml`/
-  `.github/workflows/ci.yml`/`packages/contracts/jsonschema/09-domain.schema.json` all updated this
-  shift, before compaction. STEP 4 stop condition (a): FTF-0902 now joins the same PROVISIONAL
-  backlog awaiting Control-plane L2 certification and the L4 gate (101/301 certified, unchanged).
-  Stopping here -- one item per shift, per this list's own rule. No open owner ask. `BLOCKER.md`
-  unchanged -- no live entries.
-
----
-
+  STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all
+  updated this shift, before compaction. STEP 4 stop condition (a): FTF-0500B round 4 now joins the
+  same PROVISIONAL backlog awaiting Control-plane L2 certification and the L4 gate (101/301
+  certified, unchanged by this fix). Stopping here -- one item per shift, per this list's own rule;
+  0c (FTF-0601, PR #463) and 0c2 (FTF-0500C round 5, PR #464) both already have open concurrent PRs,
+  and 0d (FTF-0500D, FTF-0902, FTF-0307, FTF-1002, FTF-0510, FTF-04A18, FTF-1807) is next for a
+  future shift once 0a-0c3 all clear Control-plane review. No open owner ask (`QUEUE.md` "Owner
+  actions -- current" unchanged: "None currently"). `BLOCKER.md` unchanged -- no live entries.
 Updated: 2026-10-06T02:00:00Z (scheduled relay shift, branch `claude/wizardly-fermat-3kfw8a`) --
   STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly, no mismatch;
   `BLOCKER.md` read in full: no live entries (all RESOLVED history). STEP 0.1: this branch was
@@ -9267,6 +9366,11 @@ verifiable exchange; PR #162 is being closed without merging as part of
 this same resolution (doc-only, redundant once this lands).
 
 ## Active (decided by Control plane — relay executes, top first)
+**No shared-file edits (2026-10-06T13:10Z, Control plane):** relay PRs must NOT edit QUEUE.md, PROGRESS.md or
+docs/certifications/queue.md. Write the submission to docs/certifications/submissions/<UTC>-<ID>.md and the shift
+log to docs/progress/<UTC>-<lane>.md (both new files). Shared edits re-conflicted every open relay PR after each
+merge and cost a shift each time. Do not open docs-only "record this shift" PRs.
+
 **Every item, every shift (2026-10-06, Control plane):** before submitting, run the PRE-SUBMIT
 SELF-ATTACK in docs/operations/routines.md STEP 5b. Break every protection you added (delete it, and
 add a bypass), run the test file as CI does (`python tests/...`) and show RED, repeat on a neutral host
@@ -9275,12 +9379,16 @@ protection under test. Put the fault → RED table in your queue entry, and appl
 to sibling modules. Items returned 3–5 times this week all failed on exactly this.
 0. **2026-10-06T09:45Z (Control plane): highest priority, one item per lane, one PR per item.**
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
-   - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI): #464 (0500C r5),
+   - **0a. Merge conflicts on your own open PRs first** (#468 FTF-0902 remains) (merge main into the branch, re-run CI): #464 (0500C r5),
      #465 (0500B r4), #468 (0902), #476 (1002), and #470 (1206A) if it conflicts. Merge each on green.
    - **0b. FTF-0601 round 3 (tests only; 2 blocking items).** Independence across 3 actor roles plus the admin-bypass fault
      test, and POST non-member → 400. See docs/certifications/queue.md "2026-10-06T10:00Z". Everything else is follow-up FTF-0601-F1.
    - **0c. FTF-0307 round 3** (ready gate, model_id-alias test, a shared `validate_weights_digest` across 3 modules). Same entry.
    - **0d. FTF-0500D round 3 (tests only):** an independent expected-value oracle. Same entry.
+   - **0d2. FTF-1206A round 2 (2 blocking tests: raw-RLS foreign-tenant read/write, list_route_changes project auth).**
+     See docs/certifications/queue.md "2026-10-06T13:45Z".
+   - **0d3. FTF-1002 round 3** (in-module digest/revision validation, base identity binding, refuse a base for an
+     endpoint, per-fact distinct fixtures). Same entry.
    - **0e.** Then FTF-0510, FTF-04A18 and FTF-1807 (DoDs in "2026-10-04T11:00Z").
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05). FTF-0500B/0500C come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
@@ -9402,13 +9510,12 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 "2026-10-01T13:40Z". One PR per item group, titled "[relay] <ID>: fix L2 round-2 findings".
 
 ## Backlog (sliced, ready — relay takes these after Active; Refill & Sweep keeps >= 3)
-0. **FTF-1206A** Organization gateway policy persistence. This is a NEW owner-approved addendum
-   (ADR 0002, 2026-10-04). Its contract is `spec/addenda/FTF-1206A.json`; r1_handoff does not
-   cover it. All dependencies (FTF-0104, FTF-1201, FTF-H003) are CERTIFIED. It must land before
-   FTF-1206's persistence half. Must pass `scripts/data_exposure_check.py`.
-1. **FTF-0510** Tokenization analysis. Dependency-ready since FTF-0306 was certified on
+0. **FTF-0510** Tokenization analysis. Dependency-ready since FTF-0306 was certified on
    2026-10-01. DoD: `python tools/r1_handoff.py packet FTF-0510 --plan
    FINE_TUNING_FACTORY_RELEASE_1.md`. Next on the FTF-1703 critical path.
+   (2026-10-05: FTF-1206A — the other item formerly listed here — moved to "## Active" item 0e;
+   implemented this shift, PR opened, PROVISIONAL. This backlog is now below the Refill & Sweep
+   ">= 3" target; the next shift should run Refill & Sweep to top it back up.)
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 
