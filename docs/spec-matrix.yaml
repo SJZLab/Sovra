@@ -9159,6 +9159,29 @@ FTF-1002:
     runs `tests/tasks/test_ftf_1002.py` in full. Not self-certified (Law 4):
     certification_state/proof_state unchanged; independent Control-plane L2 re-review and a real
     CI run on the newly opened PR are required before CERTIFIED.
+
+    2026-10-06T16:30Z L2 round-3 fix-and-resubmit (docs/certifications/queue.md "2026-10-06T13:45Z"):
+    fixed all four open items. (a) model_version/artifact weights_digest and base_model_revision are
+    now re-validated with the shared validate_weights_digest/validate_base_model_revision, refusing
+    None/blank/malformed values an ORM-loaded row's skipped __init__ validation would otherwise let
+    through. (b) resolved_base_artifact's own digest/revision are likewise re-validated; a new
+    model_family identity check refuses a resolved base from a different family than the adapter
+    declares even when base_model_revision coincidentally matches; the resolved base's own id, digest,
+    model_family and source_uri are now recorded in the manifest's base LineageFact detail. (c) an
+    endpoint import with a resolved_base_artifact is now refused instead of silently ignored. (d) test
+    fixtures: the tamper test now mutates every one of the nine manifest fields individually (not only
+    import_kind), and a new test confirms two manifests sharing one model_version_id but distinct
+    digests never collide. Clause-to-test mapping and fault-to-RED table:
+    docs/certifications/submissions/2026-10-06T1630Z-FTF-1002.md. Four fault-injection tests mutate the
+    real on-disk module (format-validation bypass, model_family-check bypass, resolved-base
+    format-validation bypass, endpoint-refusal bypass), each confirmed to reproduce the exact named
+    gap, then restore the module byte-identical. `uv run python3 tests/tasks/test_ftf_1002.py` all
+    checks passed; `ruff check .`/`ruff format --check .` clean (376 files); `mypy .` clean (376 source
+    files); `validate_spec.py --strict` clean; `product_truth_check.py --fail-on-unwired` unchanged
+    26/26; `status.py` unchanged 103/301 certified (Law 2); `data_exposure_check.py` OK. Regression
+    swept test_ftf_0301/0303/0304/0305/1001.py -- zero regressions. Not self-certified (Law 4):
+    certification_state/proof_state unchanged; independent Control-plane L2 re-review and a real CI
+    run on the newly opened PR are required before CERTIFIED.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1002.py
