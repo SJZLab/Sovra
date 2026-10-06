@@ -64,6 +64,8 @@ Updated: 2026-10-05T23:30:00Z (scheduled relay shift, branch `claude/wizardly-fe
   state: IMPLEMENTED`) with the full clause-to-test mapping. Appended a full evidence entry to
   `docs/certifications/queue.md`. Updated this file's own "## Active" item 0e (FTF-1206A done, PR
   opened) and "## Backlog" (FTF-1206A removed, now below the Refill & Sweep ">= 3" target -- next
+- **FTF-H034-F4 (tests only, Control plane 2026-10-06T23:00Z):** kill or justify the 12 mutation survivors in
+  `scripts/task_claim.py` lines 80–270 (claim registry). Run the gate whole-file with `--files`. Claim `relay/FTF-H034-F4-r1`.
   shift should run Refill & Sweep).
 
   **V (certification)** -- per Law 4, not self-certified: `certification_state: PROVISIONAL`/
@@ -9301,21 +9303,29 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      mixed-batch count, and template inputs. Exact list: docs/certifications/queue.md "2026-10-06T21:00Z". Claim
      `relay/FTF-0510-r5`.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
-   - **0b. FTF-H034-F3 (tests only, small).** Replacing `scripts/task_claim.py:365` with `[evidence_hash]` stays GREEN.
-     Fix: a tasks.json entry with non-CERTIFIED status and `evidence_hash=""`; assert evidence is unchanged and never
-     `[""]`. Same entry.
    - **0c. FTF-1807 round 4 (tests only).** The forbidden-claim scan is a phrase blacklist, so plain-language inversions
      pass. Pin every paragraph of runbook sections 1–6 exactly (whitespace-normalized text, or a per-section sha256
      held in the test), keeping the existing structured pins. Add in-suite faults for each checker: wrapped, bold,
      code-block and upper-case claims; an extra or suffixed table row; renumbered steps; and a heading rename that
      keeps the count. Same entry.
-   - **0d. FTF-0214 (model catalog UI): highest-yield wiring task.** It wires 10 certified units (0205–0213, H004) to
-     live routes. Set their `proving_symbol`s, and make product_truth_check prove each one through a real caller.
-     Contract: `python tools/r1_handoff.py packet FTF-0214 --plan FINE_TUNING_FACTORY_RELEASE_1.md`;
-     docs/certifications/wiring-map-2026-10-06.json lists the units.
+   - **0b. FTF-0214 round 2 (3 blocking): push to the OPEN PR #516 (branch `relay/FTF-0214`), merging main in first.**
+     The backend wiring of all 10 units is proven live. Fix these three:
+     1. A revoked connection's catalog reads `access_state: healthy` with entries `callable`
+        (model_catalog_routes.py:339-349 returns the snapshot unchanged). On revocation, mark entries stale, set
+        access_state to revoked, and render `connection_status` in the UI. Integration test: discover an ACTIVE
+        connection, revoke it in the DB, then assert the catalog shows revoked/stale and the probe returns 403
+        `model_access_denied:connection_revoked` with no gateway call.
+     2. The UI must render capability `fields`, `model_groups`, the probe's `route_identity_state`, `probed_at` and
+        `probe_type`. Add vitest assertions using non-healthy, alert, anomaly and non-chat fixtures; hardcoding
+        "healthy", hiding alert/anomaly, or always sending `chat` must turn RED.
+     3. Model IDs containing "/" (`openai/gpt-4o`) return 404 on probe. Use `{model_id:path}` and `encodeURIComponent`
+        in the UI, and add a test.
+     Mutation gate: the 8 M9 survivors (lines 360/375/377/476/485/494) are confirmed EQUIVALENT. List their new line
+     numbers in the submission and Control plane adds re-pinned allowlist entries. Do not add tests for them. See
+     docs/certifications/queue.md "2026-10-06T23:00Z".
    - **0e.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002 and FTF-0103A are CERTIFIED
-     (2026-10-06); follow-ups FTF-1206A-F2, FTF-H034-F1 and FTF-H034-F2 are CERTIFIED.
+     (2026-10-06); follow-ups FTF-1206A-F2, FTF-H034-F1, FTF-H034-F2 and FTF-H034-F3 are CERTIFIED.
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid
