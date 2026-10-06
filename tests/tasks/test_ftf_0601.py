@@ -71,10 +71,12 @@ from app.evaluation.evaluation_suite_routes import (  # noqa: E402
 from app.evaluation.evaluation_suite_schema import (  # noqa: E402
     ALLOWED_PURPOSES,
     ALLOWED_STATUSES,
+    GRADING_LOGIC_VERSION_MAX,
     PURPOSE_DEVELOPMENT,
     PURPOSE_FINAL,
     EvaluationSuite,
     EvaluationSuiteValidationError,
+    normalize_identity,
     validate_grading_logic_version,
     validate_name,
     validate_purpose,
@@ -183,6 +185,19 @@ def test_validate_name() -> None:
         "an over-length name is refused",
         _rejects(validate_name, "x" * 201),
     )
+    check(
+        "FTF-0601",
+        "L2 round-2: a whitespace-only name is refused on POST and PATCH "
+        "(validate_name is the one real validator both paths call)",
+        _rejects(validate_name, "   "),
+    )
+    check(
+        "FTF-0601",
+        "L2 round-2 additive-fault guard: a tab/newline-only name is "
+        "refused too -- not merely the single space character a narrower "
+        "fix might have special-cased",
+        _rejects(validate_name, "\t\n"),
+    )
 
 
 def test_validate_grading_logic_version() -> None:
@@ -216,6 +231,24 @@ def test_validate_grading_logic_version() -> None:
         "a non-integer is refused",
         _rejects(validate_grading_logic_version, "1"),
     )
+    check(
+        "FTF-0601",
+        "L2 round-2: GRADING_LOGIC_VERSION_MAX is the real Postgres "
+        "Integer column's own 4-byte signed upper bound",
+        GRADING_LOGIC_VERSION_MAX == 2147483647,
+    )
+    check(
+        "FTF-0601",
+        "the real upper bound itself round-trips unchanged (boundary, not " "off-by-one)",
+        validate_grading_logic_version(GRADING_LOGIC_VERSION_MAX) == GRADING_LOGIC_VERSION_MAX,
+    )
+    check(
+        "FTF-0601",
+        "L2 round-2: GRADING_LOGIC_VERSION_MAX + 1 (2147483648) is refused "
+        "-- previously reached the database unvalidated and surfaced as a "
+        "real IntegerError/500 instead of a 400",
+        _rejects(validate_grading_logic_version, GRADING_LOGIC_VERSION_MAX + 1),
+    )
 
 
 def test_validate_reviewer_id_or_none() -> None:
@@ -238,6 +271,43 @@ def test_validate_reviewer_id_or_none() -> None:
         "FTF-0601",
         "a whitespace-only reviewer_id is refused",
         _rejects(validate_reviewer_id_or_none, "   "),
+    )
+    check(
+        "FTF-0601",
+        "L2 round-2: a padded reviewer_id is stored *stripped*, not raw -- "
+        "a bare `==` against an unpadded creator identity previously never "
+        "matched, letting a padded self-review bypass independence",
+        validate_reviewer_id_or_none("  reviewer-1  ") == "reviewer-1",
+    )
+    check(
+        "FTF-0601",
+        "the 200-char length cap applies to the stripped value, not the " "raw padded input",
+        validate_reviewer_id_or_none(" " + "x" * 200 + " ") == "x" * 200,
+    )
+
+
+def test_normalize_identity() -> None:
+    check(
+        "FTF-0601",
+        "L2 round-2: normalize_identity strips and casefolds -- the one "
+        "comparison every identity check in this module/its CRUD layer "
+        "uses (reviewer-vs-creator, reviewer-vs-actor, reviewer-vs-member)",
+        normalize_identity("  USER-O-Evaluator  ") == "user-o-evaluator",
+    )
+    check(
+        "FTF-0601",
+        "a padded value and its unpadded original normalize equal",
+        normalize_identity(" creator-1") == normalize_identity("creator-1"),
+    )
+    check(
+        "FTF-0601",
+        "a case-variant value and its original normalize equal",
+        normalize_identity("CREATOR-1") == normalize_identity("creator-1"),
+    )
+    check(
+        "FTF-0601",
+        "genuinely distinct identities still normalize distinct",
+        normalize_identity("creator-1") != normalize_identity("reviewer-1"),
     )
 
 
@@ -318,6 +388,42 @@ def test_construction_rejects_final_suite_locked_with_self_review() -> None:
             status="locked",
             locked_at=datetime.now(UTC),
             reviewer_id="creator-1",
+            created_by="creator-1",
+        ),
+    )
+
+
+def test_construction_rejects_final_suite_locked_with_padded_self_review() -> None:
+    check(
+        "FTF-0601",
+        "L2 round-2 independence bypass: a locked final-purpose suite "
+        "whose reviewer_id is a *padded* variant of its own created_by is "
+        "refused -- normalize_identity (strip+casefold) catches what a "
+        "bare `==` missed",
+        _rejects(
+            _make_suite,
+            purpose=PURPOSE_FINAL,
+            status="locked",
+            locked_at=datetime.now(UTC),
+            reviewer_id="  creator-1  ",
+            created_by="creator-1",
+        ),
+    )
+
+
+def test_construction_rejects_final_suite_locked_with_case_variant_self_review() -> None:
+    check(
+        "FTF-0601",
+        "L2 round-2 independence bypass: a locked final-purpose suite "
+        "whose reviewer_id is a *case-variant* of its own created_by is "
+        "refused -- normalize_identity (strip+casefold) catches what a "
+        "bare `==` missed",
+        _rejects(
+            _make_suite,
+            purpose=PURPOSE_FINAL,
+            status="locked",
+            locked_at=datetime.now(UTC),
+            reviewer_id="CREATOR-1",
             created_by="creator-1",
         ),
     )

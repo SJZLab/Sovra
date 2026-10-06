@@ -247,13 +247,17 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+          pattern: '\S'
+          description: Must contain at least one non-whitespace character; whitespace-only is refused.
         grading_logic_version:
           type: integer
           minimum: 1
+          maximum: 2147483647
           description: >-
             Must always be an explicit positive integer -- this task's
             own negative_acceptance, "unversioned grading logic ...
-            rejected".
+            rejected". Capped at the Postgres Integer column's own
+            4-byte signed range.
         reviewer_id:
           type: [string, 'null']
       required: [agent_manifest_id, purpose, name, grading_logic_version]
@@ -266,9 +270,12 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+          pattern: '\S'
+          description: Must contain at least one non-whitespace character; whitespace-only is refused.
         grading_logic_version:
           type: integer
           minimum: 1
+          maximum: 2147483647
         reviewer_id:
           type: [string, 'null']
       additionalProperties: false
@@ -300,6 +307,7 @@ components:
         grading_logic_version:
           type: integer
           minimum: 1
+          maximum: 2147483647
         reviewer_id:
           type: [string, 'null']
         created_by:

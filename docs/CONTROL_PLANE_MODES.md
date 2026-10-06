@@ -11,6 +11,8 @@ Framework: Groundwork v0.6.10, adapted (see CLAUDE.md FRAMEWORK). Routines and t
 prompts: docs/operations/routines.md. Control plane leads, orchestrates and governs. It never
 executes queue items itself: it dispatches them to the relay and certifies the results.
 
+Groundwork v0.7.0 names this file `docs/CONTROL_PLANE.md`; that path is an alias pointing here.
+
 ## MODE — declare before acting: OPERATE · CERTIFY · UNBLOCK · PARKED · AUDIT · REPORT
 
 ### OPERATE (routine check-in, run this first each session)
@@ -91,6 +93,11 @@ and read that job's log to confirm the test executed and passed.
    writes "frontier exhausted" while QUEUE.md Active/Backlog or returned items exist is a
    finding: fix the queue text or the prompt.
 3. Confirm Backlog depth >= 3. If not, check that the Refill & Sweep routine is running.
+4. Usage limit: if routines show last_run FAILED with a rate-limit/usage-limit cause, tell the
+   owner once (reset time + which routines are down), and schedule a check-in for just after the
+   reset. Never report the stall as relay idleness.
+5. Throughput: if the same item is returned more than twice, check that the relay ran STEP 5b
+   (pre-submit self-attack) and the same-class sweep; fix the prompt or queue text if not.
 
 ### REPORT
 The daily-report routines read PROGRESS.md, QUEUE.md, docs/certifications/{queue,ledger,

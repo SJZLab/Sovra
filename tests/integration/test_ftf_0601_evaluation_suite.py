@@ -259,7 +259,8 @@ def main() -> None:
     roundtrip_result = _run_downgrade_upgrade_roundtrip(migration_url)
     check(
         "FTF-0601",
-        f"0017_evaluation_suites alone round-trips downgrade -1 -> upgrade head cleanly "
+        f"the head migration (0019_eval_suites_reviewer_norm) round-trips downgrade -1 -> "
+        f"upgrade head cleanly "
         f"(exit {roundtrip_result.returncode})\nstdout: {roundtrip_result.stdout}\n"
         f"stderr: {roundtrip_result.stderr}",
         roundtrip_result.returncode == 0,
@@ -703,22 +704,58 @@ def main() -> None:
             r.status == 409,
         )
 
-        # -- assign a reviewer via PATCH, then lock succeeds (development) --
+        # -- L2 round-2: an arbitrary, non-member reviewer_id string is
+        # refused at assignment time (self-asserted free text is no longer
+        # accepted -- it must name a real member of the suite's own
+        # organization) --
         r = _request(
             base_url,
             "PATCH",
             item_path(org1_id, project1_id, suite1_id),
             principal=org1_evaluator,
-            payload={"reviewer_id": "evaluator-seed"},
+            payload={"reviewer_id": "totally-fake-nobody"},
         )
-        check("FTF-0601", "assigning a reviewer via PATCH succeeds (200)", r.status == 200)
+        check(
+            "FTF-0601",
+            "L2 round-2: assigning a reviewer_id that names no real "
+            "organization member is refused (400), not silently accepted",
+            r.status == 400,
+        )
+
+        # -- assign a real member as reviewer via PATCH, then lock
+        # attempted by someone else (the suite's own creator) is refused:
+        # only the assigned reviewer principal may perform the lock --
+        r = _request(
+            base_url,
+            "PATCH",
+            item_path(org1_id, project1_id, suite1_id),
+            principal=org1_evaluator,
+            payload={"reviewer_id": f"user-org1-{Role.WORKSPACE_ADMIN.value}"},
+        )
+        check(
+            "FTF-0601",
+            "assigning a real organization member as reviewer via PATCH succeeds (200)",
+            r.status == 200,
+        )
 
         r = _request(
             base_url, "POST", lock_path(org1_id, project1_id, suite1_id), principal=org1_evaluator
         )
         check(
             "FTF-0601",
-            "acceptance: locking a development suite with a real reviewer succeeds (200)",
+            "L2 round-2: the suite's own creator, who is not its assigned "
+            "reviewer, is refused when attempting to lock it (403) -- "
+            "Section 69.1: only the real assigned reviewer may lock",
+            r.status == 403,
+        )
+
+        r = _request(
+            base_url, "POST", lock_path(org1_id, project1_id, suite1_id), principal=org1_admin
+        )
+        check(
+            "FTF-0601",
+            "acceptance: locking a development suite succeeds when "
+            "performed by its own real, assigned reviewer principal (200)",
             r.status == 200,
         )
         check(
@@ -788,6 +825,168 @@ def main() -> None:
             r.status == 200,
         )
 
+        # -- L2 round-2 independence bypass: a padded/case-variant of the
+        # creator's own identity as reviewer on a new FINAL suite still
+        # refuses at lock (409), even though it is a real organization
+        # member (itself) and so passes the membership check --
+        r = _request(
+            base_url,
+            "POST",
+            collection_path(org1_id, project1_id),
+            principal=org1_evaluator,
+            payload={
+                "agent_manifest_id": str(locked_manifest_id),
+                "purpose": "final",
+                "name": "Padded self-review suite",
+                "grading_logic_version": 1,
+            },
+        )
+        check("FTF-0601", "a third suite for the same project succeeds (201)", r.status == 201)
+        suite3 = r.json() if r.status == 201 else {}
+        suite3_id = suite3.get("id")
+
+        # Use the creator's own real subject, padded and case-flipped --
+        # normalizes (strip+casefold) to the exact same identity.
+        creator_subject = f"user-org1-{Role.EVALUATOR.value}"
+        padded_case_variant_self = f"  {creator_subject.upper()}  "
+        r = _request(
+            base_url,
+            "PATCH",
+            item_path(org1_id, project1_id, suite3_id),
+            principal=org1_evaluator,
+            payload={"reviewer_id": padded_case_variant_self},
+        )
+        check(
+            "FTF-0601",
+            "assigning a padded/case-variant of the creator's own identity "
+            "as reviewer succeeds at PATCH time -- it normalizes to a real "
+            "member (itself), so the membership check alone does not catch "
+            "this (200)",
+            r.status == 200,
+        )
+
+        r = _request(
+            base_url, "POST", lock_path(org1_id, project1_id, suite3_id), principal=org1_evaluator
+        )
+        check(
+            "FTF-0601",
+            "L2 round-2 independence bypass: locking a FINAL suite whose "
+            "reviewer_id is a padded, case-variant of its own created_by "
+            "is refused (409) -- normalize_identity (strip+casefold) "
+            "catches what a bare `==` missed",
+            r.status == 409,
+        )
+
+        # -- L2 round-2: grading_logic_version above the Postgres Integer
+        # column's own 4-byte signed range is refused on both POST and
+        # PATCH (400), never reaching the database as a raw IntegerError --
+        r = _request(
+            base_url,
+            "POST",
+            collection_path(org1_id, project1_id),
+            principal=org1_evaluator,
+            payload={
+                "agent_manifest_id": str(locked_manifest_id),
+                "purpose": "development",
+                "name": "Overflowing version",
+                "grading_logic_version": 2147483648,
+            },
+        )
+        check(
+            "FTF-0601",
+            "L2 round-2: grading_logic_version=2147483648 on POST is "
+            "refused (400), not a 500 from a raw database IntegerError",
+            r.status == 400,
+        )
+
+        r = _request(
+            base_url,
+            "PATCH",
+            item_path(org1_id, project1_id, suite3_id),
+            principal=org1_evaluator,
+            payload={"grading_logic_version": 2147483648},
+        )
+        check(
+            "FTF-0601",
+            "L2 round-2: grading_logic_version=2147483648 on PATCH is " "refused (400)",
+            r.status == 400,
+        )
+
+        # -- L2 round-2: a whitespace-only name is refused on both POST and
+        # PATCH --
+        r = _request(
+            base_url,
+            "POST",
+            collection_path(org1_id, project1_id),
+            principal=org1_evaluator,
+            payload={
+                "agent_manifest_id": str(locked_manifest_id),
+                "purpose": "development",
+                "name": "   ",
+                "grading_logic_version": 1,
+            },
+        )
+        check(
+            "FTF-0601",
+            "L2 round-2: a whitespace-only name on POST is refused (400)",
+            r.status == 400,
+        )
+
+        r = _request(
+            base_url,
+            "PATCH",
+            item_path(org1_id, project1_id, suite3_id),
+            principal=org1_evaluator,
+            payload={"name": "\t\n "},
+        )
+        check(
+            "FTF-0601",
+            "L2 round-2: a whitespace-only name on PATCH is refused (400)",
+            r.status == 400,
+        )
+
+        # -- L2 round-2 defense-in-depth: a raw INSERT with a
+        # whitespace-only reviewer_id (bypassing validate_reviewer_id_or_none
+        # entirely) still refuses at the real lock_evaluation_suite's own
+        # application-level check (409), not only at the database CHECK --
+        with Session(owner_engine) as raw_session:
+            raw_session.execute(
+                text("SELECT set_config('app.current_organization_id', :org_id, true)"),
+                {"org_id": str(org1_id)},
+            )
+            raw_suite_id = raw_session.execute(
+                text(
+                    "INSERT INTO evaluation_suites "
+                    "(id, organization_id, project_id, agent_manifest_id, version, status, "
+                    "purpose, name, grading_logic_version, created_by, reviewer_id) "
+                    "VALUES (:id, :org_id, :project_id, :manifest_id, 96, 'draft', "
+                    "'development', 'raw whitespace reviewer', 1, 'creator', '   ') "
+                    "RETURNING id"
+                ),
+                {
+                    "id": str(uuid.uuid4()),
+                    "org_id": str(org1_id),
+                    "project_id": str(project1_id),
+                    "manifest_id": str(locked_manifest_id),
+                },
+            ).scalar_one()
+            raw_session.commit()
+
+        r = _request(
+            base_url,
+            "POST",
+            lock_path(org1_id, project1_id, raw_suite_id),
+            principal=org1_evaluator,
+        )
+        check(
+            "FTF-0601",
+            "L2 round-2 defense-in-depth: locking a raw-inserted row whose "
+            "reviewer_id is whitespace-only (bypassing application "
+            "validation entirely) is refused (409) by "
+            "lock_evaluation_suite's own real check",
+            r.status == 409,
+        )
+
         # -- get one / list --
         r = _request(
             base_url, "GET", item_path(org1_id, project1_id, suite1_id), principal=org1_admin
@@ -803,10 +1002,13 @@ def main() -> None:
         listed = r.json() if r.status == 200 else []
         check(
             "FTF-0601",
-            "listing shows both real suites for project1, ordered by version",
+            "listing shows all four real suites for project1 (the two "
+            "original golden-path suites, the round-2 padded-self-review "
+            "suite, and the raw-inserted defense-in-depth row), ordered "
+            "by version",
             isinstance(listed, list)
-            and len(listed) == 2
-            and [s["version"] for s in listed] == [1, 2],
+            and len(listed) == 4
+            and [s["version"] for s in listed] == [1, 2, 3, 96],
         )
 
     # -- Real database-level defense-in-depth: the CHECK constraints catch
