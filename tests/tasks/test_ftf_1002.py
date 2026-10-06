@@ -105,6 +105,7 @@ def _artifact(
     status: str = "ready",
     base_model_revision: str = "a1b2c3d4",
     weights_digest: str | None = _REAL_DIGEST,
+    model_family: str = "tiny",
     required_python_packages: list[str] | None = None,
 ) -> TrainableArtifact:
     now = datetime.now(UTC)
@@ -113,7 +114,7 @@ def _artifact(
         display_name=f"artifact-{uuid.uuid4().hex[:8]}",
         source_type="local_filesystem",
         source_uri="model-a",
-        model_family="tiny",
+        model_family=model_family,
         base_model_revision=base_model_revision,
         weights_digest=weights_digest,
         license_id="apache-2.0",
@@ -541,6 +542,195 @@ def test_cross_tenant_resolved_base_artifact_is_refused() -> None:
         check("FTF-1002", "a cross-tenant resolved_base_artifact is refused", True)
 
 
+# -- Negative: 2026-10-06 L2 round-3 findings ------------------------------
+
+
+def test_r3_blank_revision_on_both_sides_is_refused() -> None:
+    """Round-3 DoD (a): format is validated in the module itself, not
+    merely by `TrainableArtifact.__init__` (which an ORM row loaded from
+    the database never runs). Set on BOTH `artifact` and `model_version`
+    to the SAME blank value, post-construction -- isolated from the
+    pre-existing drift check, which only compares the two against each
+    other and would not catch a value that's equally blank on both
+    sides."""
+    artifact = _artifact()
+    model_version = _linked_full_weight_model_version(artifact)
+    artifact.base_model_revision = ""
+    model_version.base_model_revision = ""
+    try:
+        build_artifact_lineage_manifest(model_version, artifact)
+        check(
+            "FTF-1002",
+            "negative_acceptance: a blank base_model_revision (identical on both sides, so "
+            "the drift check alone cannot catch it) is refused",
+            False,
+        )
+    except ArtifactLineageError:
+        check(
+            "FTF-1002",
+            "negative_acceptance: a blank base_model_revision (identical on both sides, so "
+            "the drift check alone cannot catch it) is refused",
+            True,
+        )
+
+
+def test_r3_malformed_digest_on_both_sides_is_refused() -> None:
+    """Round-3 DoD (a): same isolation technique as the revision test
+    above, for weights_digest. None/''/'abc'/uppercase/whitespace are all
+    malformed."""
+    for bad_digest in (None, "", "abc", "sha256:" + "A" * 64, "sha256:" + "a" * 64 + " "):
+        artifact = _artifact()
+        model_version = _linked_full_weight_model_version(artifact)
+        artifact.weights_digest = bad_digest
+        model_version.weights_digest = bad_digest
+        try:
+            build_artifact_lineage_manifest(model_version, artifact)
+            check(
+                "FTF-1002",
+                f"negative_acceptance: a malformed weights_digest {bad_digest!r} (identical on "
+                "both sides) is refused",
+                False,
+            )
+        except ArtifactLineageError:
+            check(
+                "FTF-1002",
+                f"negative_acceptance: a malformed weights_digest {bad_digest!r} (identical on "
+                "both sides) is refused",
+                True,
+            )
+
+
+def test_r3_resolved_base_model_family_mismatch_is_refused() -> None:
+    """Round-3 DoD (b): "there is no model_family check" -- a resolved
+    base of a different model_family than the adapter itself declares
+    must be refused even when base_model_revision happens to match."""
+    artifact = _artifact(base_model_revision="shared-rev", model_family="llama")
+    model_version = _model_version(
+        import_kind="adapter",
+        trainable_artifact_id=artifact.id,
+        weights_digest=artifact.weights_digest,
+        base_model_revision=artifact.base_model_revision,
+    )
+    mismatched_family_base = _artifact(
+        status="ready",
+        base_model_revision="shared-rev",
+        model_family="mistral",
+        weights_digest=_BASE_DIGEST,
+    )
+    try:
+        build_artifact_lineage_manifest(
+            model_version, artifact, resolved_base_artifact=mismatched_family_base
+        )
+        check(
+            "FTF-1002",
+            "negative_acceptance: a resolved base of a different model_family (same "
+            "base_model_revision string) is refused",
+            False,
+        )
+    except AdapterBaseMismatchError:
+        check(
+            "FTF-1002",
+            "negative_acceptance: a resolved base of a different model_family (same "
+            "base_model_revision string) is refused",
+            True,
+        )
+
+
+def test_r3_resolved_base_case_variant_digest_is_refused() -> None:
+    """Round-3 DoD (b): "a case-variant self-digest evades the check" --
+    an uppercase-variant digest (set post-construction, bypassing
+    `TrainableArtifact.__init__`'s own validation, the same as a row
+    loaded from the database would carry it) is refused by the round-3
+    format-validation fix (DoD item (a)) before the self-digest
+    comparison is even reached -- `validate_weights_digest` accepts only
+    the canonical lowercase-hex pattern, so a case variant can never
+    survive to be compared at all."""
+    artifact = _artifact(base_model_revision="shared-rev-2")
+    model_version = _model_version(
+        import_kind="adapter",
+        trainable_artifact_id=artifact.id,
+        weights_digest=artifact.weights_digest,
+        base_model_revision=artifact.base_model_revision,
+    )
+    case_variant_self = _artifact(status="ready", base_model_revision="shared-rev-2")
+    assert artifact.weights_digest is not None
+    case_variant_self.weights_digest = artifact.weights_digest.upper()
+    try:
+        build_artifact_lineage_manifest(
+            model_version, artifact, resolved_base_artifact=case_variant_self
+        )
+        check(
+            "FTF-1002",
+            "negative_acceptance: a resolved base whose weights_digest is an uppercase variant "
+            "of the adapter's own digest is refused",
+            False,
+        )
+    except AdapterBaseMismatchError:
+        check(
+            "FTF-1002",
+            "negative_acceptance: a resolved base whose weights_digest is an uppercase variant "
+            "of the adapter's own digest is refused",
+            True,
+        )
+
+
+def test_r3_resolved_base_id_and_digest_are_recorded_in_the_manifest() -> None:
+    """Round-3 DoD (b): "the base id and digest are not recorded in the
+    manifest" -- for an adapter import, the resolved base's own real
+    identity (id, digest, model_family, source_uri) must be discoverable
+    from the returned manifest, not only the adapter's own declared
+    base_model_revision."""
+    artifact = _artifact(base_model_revision="shared-rev-3")
+    model_version = _model_version(
+        import_kind="adapter",
+        trainable_artifact_id=artifact.id,
+        weights_digest=artifact.weights_digest,
+        base_model_revision=artifact.base_model_revision,
+    )
+    base_artifact = _artifact(
+        status="ready", base_model_revision="shared-rev-3", weights_digest=_BASE_DIGEST
+    )
+    manifest = build_artifact_lineage_manifest(
+        model_version, artifact, resolved_base_artifact=base_artifact
+    )
+    assert base_artifact.weights_digest is not None
+    check(
+        "FTF-1002",
+        "the resolved base artifact's own real id is recorded in the manifest's base fact",
+        str(base_artifact.id) in manifest.base.detail,
+    )
+    check(
+        "FTF-1002",
+        "the resolved base artifact's own real weights_digest is recorded in the manifest's "
+        "base fact",
+        base_artifact.weights_digest in manifest.base.detail,
+    )
+
+
+def test_r3_endpoint_import_with_resolved_base_artifact_is_refused() -> None:
+    """Round-3 DoD (c): "an endpoint import with a resolved_base_artifact
+    silently ignores it" -- an endpoint has no local artifact at all, so
+    a supplied base cannot be real evidence; it must be refused, not
+    silently dropped."""
+    model_version = _model_version(import_kind="endpoint")
+    stray_base = _artifact(status="ready")
+    try:
+        build_artifact_lineage_manifest(model_version, None, resolved_base_artifact=stray_base)
+        check(
+            "FTF-1002",
+            "negative_acceptance: an endpoint import with a resolved_base_artifact is refused, "
+            "not silently ignored",
+            False,
+        )
+    except ArtifactLineageError:
+        check(
+            "FTF-1002",
+            "negative_acceptance: an endpoint import with a resolved_base_artifact is refused, "
+            "not silently ignored",
+            True,
+        )
+
+
 def test_lineage_fact_cannot_carry_a_value_while_unknown() -> None:
     try:
         LineageFact(known=False, value="sha256:" + "c" * 64, detail="should never construct")
@@ -604,6 +794,94 @@ def test_verify_artifact_lineage_manifest_detects_tampering() -> None:
             "verify_artifact_lineage_manifest detects a manifest mutated past the frozen guard",
             True,
         )
+
+
+# Round-3 DoD (d): "mutate EVERY fact in the tamper test" -- the test above
+# only ever mutated `import_kind`. A field `_compute_manifest_digest` (or
+# its caller) silently omitted from the canonical dict would go
+# undetected forever if no test ever mutated exactly that field.
+_MANIFEST_TAMPER_MUTATIONS: tuple[tuple[str, object], ...] = (
+    ("model_version_id", "a-different-model-version-id"),
+    ("import_kind", "adapter"),
+    ("base", LineageFact(known=True, value="sha256:" + "9" * 64, detail="mutated")),
+    ("tokenizer", LineageFact(known=True, value="sha256:" + "9" * 64, detail="mutated")),
+    ("training", LineageFact(known=True, value="mutated-training", detail="mutated")),
+    ("data", LineageFact(known=True, value="mutated-data", detail="mutated")),
+    ("license", LineageFact(known=True, value="mutated-license", detail="mutated")),
+    ("runtime", LineageFact(known=True, value="mutated-runtime", detail="mutated")),
+    ("method", LineageFact(known=True, value="mutated-method", detail="mutated")),
+)
+
+
+def test_verify_artifact_lineage_manifest_detects_tampering_of_every_field() -> None:
+    for field_name, mutated_value in _MANIFEST_TAMPER_MUTATIONS:
+        artifact = _artifact(required_python_packages=["torch==2.4.0"])
+        model_version = _linked_full_weight_model_version(artifact)
+        manifest = build_artifact_lineage_manifest(model_version, artifact)
+        object.__setattr__(manifest, field_name, mutated_value)
+        try:
+            verify_artifact_lineage_manifest(manifest)
+            check(
+                "FTF-1002",
+                f"verify_artifact_lineage_manifest detects tampering of field {field_name!r} "
+                "(a field the digest silently omitted would let exactly this mutation through)",
+                False,
+            )
+        except ArtifactLineageManifestTamperedError:
+            check(
+                "FTF-1002",
+                f"verify_artifact_lineage_manifest detects tampering of field {field_name!r}",
+                True,
+            )
+
+
+def test_manifest_digest_differs_for_distinct_field_values_sharing_the_same_model_version_id() -> (
+    None
+):
+    """Round-3 DoD (d): "add a test for the same id with a different
+    digest" -- two manifests built for the SAME model_version_id but
+    artifacts with distinct weights_digest values must not collide. A
+    digest computed mostly or only from model_version_id (rather than
+    genuinely from content) would pass every mutation test above (which
+    always compares a manifest against its own mutated self) yet still
+    collide across two genuinely different, legitimately-built
+    manifests."""
+    shared_mv_id = uuid.uuid4()
+
+    artifact_a = _artifact(weights_digest="sha256:" + "1" * 64)
+    mv_a = _model_version(
+        import_kind="full_weight",
+        organization_id=artifact_a.organization_id,
+        trainable_artifact_id=artifact_a.id,
+        weights_digest=artifact_a.weights_digest,
+        base_model_revision=artifact_a.base_model_revision,
+    )
+    mv_a.id = shared_mv_id
+    manifest_a = build_artifact_lineage_manifest(mv_a, artifact_a)
+
+    artifact_b = _artifact(weights_digest="sha256:" + "2" * 64)
+    mv_b = _model_version(
+        import_kind="full_weight",
+        organization_id=artifact_b.organization_id,
+        trainable_artifact_id=artifact_b.id,
+        weights_digest=artifact_b.weights_digest,
+        base_model_revision=artifact_b.base_model_revision,
+    )
+    mv_b.id = shared_mv_id
+    manifest_b = build_artifact_lineage_manifest(mv_b, artifact_b)
+
+    check(
+        "FTF-1002",
+        "both manifests really share the same model_version_id (isolating this as the only "
+        "shared field)",
+        manifest_a.model_version_id == manifest_b.model_version_id,
+    )
+    check(
+        "FTF-1002",
+        "manifest_digest differs for two manifests sharing the same model_version_id but "
+        "distinct base/tokenizer weights_digest values",
+        manifest_a.manifest_digest != manifest_b.manifest_digest,
+    )
 
 
 # -- Real fault injection (Law 1) -------------------------------------------
@@ -761,6 +1039,230 @@ print("NO_ERROR_RAISED result=" + repr(result))
             "the module file is restored byte-identical after additive fault injection",
             restored == original,
         )
+
+
+# -- Round-3 self-attack: fault injection for every new guard (STEP 5b) ---
+
+_R3_PROBE_PRELUDE = f"""
+import sys
+sys.path.insert(0, {str(ROOT)!r})
+sys.path.insert(0, {str(API_ROOT)!r})
+import uuid
+from datetime import datetime, UTC
+from app.artifacts.artifact_lineage_manifest import (
+    AdapterBaseMismatchError,
+    ArtifactLineageError,
+    build_artifact_lineage_manifest,
+)
+from app.artifacts.artifact_schema import TrainableArtifact
+from app.model_versions.model_version_schema import ModelVersion
+
+org_id = uuid.uuid4()
+now = datetime.now(UTC)
+
+
+def make_artifact(revision, digest, status="ready", model_family="tiny"):
+    a = TrainableArtifact(
+        organization_id=org_id, display_name="a-" + uuid.uuid4().hex[:8],
+        source_type="local_filesystem", source_uri="model-a", model_family=model_family,
+        base_model_revision=revision, weights_digest=digest,
+        license_id="apache-2.0", trust_remote_code_allowed=False, status=status,
+    )
+    a.id = uuid.uuid4()
+    a.created_at = now
+    a.updated_at = now
+    if status == "ready":
+        a.license_accepted_by = "reviewer-1"
+        a.license_accepted_at = now
+    return a
+"""
+
+
+def _run_r3_fault(*, needle: str, replacement: str, probe_body: str, description: str) -> None:
+    """Shared round-3 fault-injection runner: mutate `_MODULE_PATH` by
+    replacing `needle` with `replacement` (asserted present/changed
+    first), run `probe_body` (appended to `_R3_PROBE_PRELUDE`) in a fresh
+    subprocess against the mutated module, check it prints
+    `NO_ERROR_RAISED`, then restore the module file byte-identical no
+    matter what happened above."""
+    original = _MODULE_PATH.read_bytes()
+    text = original.decode("utf-8")
+    check("FTF-1002", f"[{description}] fault injection anchor is present", needle in text)
+    mutated = text.replace(needle, replacement, 1)
+    check(
+        "FTF-1002", f"[{description}] fault injection actually changed the module", mutated != text
+    )
+
+    try:
+        _MODULE_PATH.write_text(mutated, encoding="utf-8")
+        completed = subprocess.run(
+            [sys.executable, "-c", _R3_PROBE_PRELUDE + probe_body],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        check(
+            "FTF-1002",
+            f"[{description}] genuinely lets the attack through uncaught "
+            f"(stdout={completed.stdout!r} stderr={completed.stderr!r})",
+            completed.returncode == 0 and "NO_ERROR_RAISED" in completed.stdout,
+        )
+    finally:
+        _MODULE_PATH.write_bytes(original)
+        restored = _MODULE_PATH.read_bytes()
+        check(
+            "FTF-1002",
+            f"[{description}] the module file is restored byte-identical after fault injection",
+            restored == original,
+        )
+
+
+def test_fault_injection_r3_format_validation_bypass_is_caught() -> None:
+    """Round-3 DoD (a), Law 1: deleting the shared-validator format check
+    lets a blank base_model_revision (identical on both sides, so the
+    pre-existing drift check alone cannot catch it) through uncaught."""
+    needle = (
+        "    try:\n"
+        "        validate_weights_digest(model_version.weights_digest)\n"
+        "        validate_weights_digest(artifact.weights_digest)\n"
+        "        validate_base_model_revision(model_version.base_model_revision)\n"
+        "        validate_base_model_revision(artifact.base_model_revision)\n"
+        "    except TrainableArtifactValidationError as exc:\n"
+        "        raise ArtifactLineageError(\n"
+        '            f"model_version {model_version.id} or its parent artifact '
+        '{artifact.id} carries a "\n'
+        '            f"malformed or unresolved weights_digest/base_model_revision -- {exc}"\n'
+        "        ) from exc\n"
+    )
+    _run_r3_fault(
+        needle=needle,
+        replacement="",
+        probe_body="""
+artifact = make_artifact("rev-1", "sha256:" + "a" * 64)
+artifact.base_model_revision = ""  # post-construction: bypasses __init__'s own validation
+mv = ModelVersion(
+    organization_id=org_id, project_id=uuid.uuid4(), version_number=1, import_kind="full_weight",
+    trainable_artifact_id=artifact.id, weights_digest=artifact.weights_digest,
+    base_model_revision="rev-1", created_by="user-1", created_at=now,
+)
+mv.id = uuid.uuid4()
+mv.base_model_revision = ""  # post-construction: bypasses __init__'s own validation
+build_artifact_lineage_manifest(mv, artifact)
+print("NO_ERROR_RAISED")
+""",
+        description="format-validation bypass (blank revision, identical both sides)",
+    )
+
+
+def test_fault_injection_r3_model_family_check_bypass_is_caught() -> None:
+    """Round-3 DoD (b), Law 1, additive fault: a resolved base of a
+    different model_family than the adapter declares is let through once
+    the model_family check is removed."""
+    needle = (
+        "        if resolved_base_artifact.model_family != artifact.model_family:\n"
+        "            raise AdapterBaseMismatchError(\n"
+        '                f"resolved base artifact {resolved_base_artifact.id} declares '
+        'model_family "\n'
+        '                f"{resolved_base_artifact.model_family!r}, but adapter artifact '
+        '{artifact.id} "\n'
+        '                f"declares model_family {artifact.model_family!r} -- refusing a '
+        'resolved base "\n'
+        '                "from a different model family than the adapter itself declares"\n'
+        "            )\n"
+    )
+    _run_r3_fault(
+        needle=needle,
+        replacement="",
+        probe_body="""
+artifact = make_artifact("shared-rev", "sha256:" + "a" * 64, model_family="llama")
+mv = ModelVersion(
+    organization_id=org_id, project_id=uuid.uuid4(), version_number=1, import_kind="adapter",
+    trainable_artifact_id=artifact.id, weights_digest=artifact.weights_digest,
+    base_model_revision=artifact.base_model_revision, created_by="user-1", created_at=now,
+)
+mv.id = uuid.uuid4()
+base = make_artifact("shared-rev", "sha256:" + "b" * 64, model_family="mistral")
+build_artifact_lineage_manifest(mv, artifact, resolved_base_artifact=base)
+print("NO_ERROR_RAISED")
+""",
+        description="model_family check bypass (adapter llama, resolved base mistral)",
+    )
+
+
+def test_fault_injection_r3_resolved_base_format_validation_bypass_is_caught() -> None:
+    """Round-3 DoD (b), Law 1: "the base digest is not validated" -- with
+    the resolved base's own format-validation block removed, a malformed
+    (case-variant) base digest is let through uncaught. This is the real
+    guard that makes `test_r3_resolved_base_case_variant_digest_is_refused`
+    pass: once this block is gone, a case-variant digest reaches the
+    (intentionally non-case-insensitive) self-digest `==` comparison
+    unvalidated and that comparison, correctly, does not catch it either
+    (it is not the same digest, only a case variant) -- so the artifact is
+    silently accepted."""
+    needle = (
+        "        try:\n"
+        "            validate_weights_digest(resolved_base_artifact.weights_digest)\n"
+        "            validate_base_model_revision(resolved_base_artifact.base_model_revision)\n"
+        "        except TrainableArtifactValidationError as exc:\n"
+        "            raise AdapterBaseMismatchError(\n"
+        '                f"resolved base artifact {resolved_base_artifact.id} carries a '
+        'malformed or "\n'
+        '                f"unresolved weights_digest/base_model_revision -- {exc}"\n'
+        "            ) from exc\n"
+    )
+    _run_r3_fault(
+        needle=needle,
+        replacement="",
+        probe_body="""
+artifact = make_artifact("shared-rev", "sha256:" + "a" * 64)
+mv = ModelVersion(
+    organization_id=org_id, project_id=uuid.uuid4(), version_number=1, import_kind="adapter",
+    trainable_artifact_id=artifact.id, weights_digest=artifact.weights_digest,
+    base_model_revision=artifact.base_model_revision, created_by="user-1", created_at=now,
+)
+mv.id = uuid.uuid4()
+base = make_artifact("shared-rev", "sha256:" + "b" * 64)
+base.weights_digest = "sha256:" + "B" * 64  # case-variant, malformed once unvalidated
+build_artifact_lineage_manifest(mv, artifact, resolved_base_artifact=base)
+print("NO_ERROR_RAISED")
+""",
+        description="resolved_base_artifact format-validation bypass (case-variant digest)",
+    )
+
+
+def test_fault_injection_r3_endpoint_resolved_base_refusal_bypass_is_caught() -> None:
+    """Round-3 DoD (c), Law 1, additive fault: an endpoint import with a
+    resolved_base_artifact is silently accepted once this round's new
+    refusal is removed."""
+    needle = (
+        "        if resolved_base_artifact is not None:\n"
+        "            # 2026-10-06 L2 round-3 finding: an endpoint import with a\n"
+        "            # resolved_base_artifact silently ignored it. resolved_base_\n"
+        "            # artifact is only meaningful for an adapter import (Section\n"
+        "            # 68.1); an endpoint has no local artifact at all, so a\n"
+        "            # supplied base cannot be real evidence either.\n"
+        "            raise ArtifactLineageError(\n"
+        "                f\"model_version {model_version.id} is import_kind='endpoint' -- \"\n"
+        '                "resolved_base_artifact is only meaningful for an adapter import; '
+        'refusing to "\n'
+        '                "silently ignore a supplied base for an endpoint-only import"\n'
+        "            )\n"
+    )
+    _run_r3_fault(
+        needle=needle,
+        replacement="",
+        probe_body="""
+mv = ModelVersion(
+    organization_id=org_id, project_id=uuid.uuid4(), version_number=1, import_kind="endpoint",
+    endpoint_reference="https://models.example.com/v1/prod", created_by="user-1", created_at=now,
+)
+mv.id = uuid.uuid4()
+stray_base = make_artifact("rev-1", "sha256:" + "a" * 64)
+build_artifact_lineage_manifest(mv, None, resolved_base_artifact=stray_base)
+print("NO_ERROR_RAISED")
+""",
+        description="endpoint + resolved_base_artifact refusal bypass",
+    )
 
 
 def main() -> None:
