@@ -598,6 +598,556 @@ def test_fault_injection_fallback_allowed_claim_is_caught_by_the_semantics_check
     )
 
 
+# ---------------------------------------------------------------------------
+# Round 3 (2026-10-04T11:00Z review): pin every operator-table row, scan the
+# WHOLE document for forbidden claims, pin the operator procedure steps, and
+# prove each protection turns RED on an added section / reworded rows / a
+# reworded step. All checks below are pure functions of the document text, so
+# the fault tests feed them modified in-memory copies and never touch the file.
+# ---------------------------------------------------------------------------
+
+# Separately written literal expectations (never read back from the doc).
+# Constants that the doc must agree with are derived from the real modules.
+_PROCEDURE_STEP_COUNT = 7
+
+
+def _expected_operator_table() -> list[tuple[str, str, str]]:
+    ttl = _expected_ttl_phrase()
+    retries = catalog_anomaly_detector.DEFAULT_RETRY_CEILING
+    drop = int(catalog_anomaly_detector._MAJOR_REDUCTION_THRESHOLD * 100)
+    return [
+        (
+            "Key/connection revoked (401/403)",
+            "`DiscoveryState.INVALID_TOKEN`",
+            "Immediate, unconditional call refusal (`access_revoked`)",
+        ),
+        (
+            "Connection revoked by admin",
+            "`litellm_connections.status != 'active'`",
+            "Immediate refusal (`CONNECTION_REVOKED`), independent of catalog state",
+        ),
+        (
+            f"No successful refresh for {ttl}",
+            "`FRESHNESS_EXPIRED`",
+            "New work refused; existing snapshot kept for audit only",
+        ),
+        (
+            f">{drop}% model-count drop",
+            "Anomaly opened",
+            "Recorded for operator review; authorization from the fresh result still "
+            "applies unconditionally",
+        ),
+        (
+            "Transient network failure",
+            f"`DEGRADED`, bounded {retries}-attempt retry counter",
+            "Existing entries untouched; no revocation inferred",
+        ),
+        (
+            "Stale/out-of-order sync response",
+            "`sequence <= last_applied_sequence`",
+            "Dropped before it reaches the catalog; cannot reinstate access",
+        ),
+        (
+            "Router silently reroutes to a different deployment",
+            "Changed/missing `x-litellm-model-id` fingerprint",
+            "Identity stays `UNVERIFIED`; never claimed equivalent to the pinned deployment",
+        ),
+        (
+            "Response served from cache during attestation",
+            "Structurally impossible",
+            'Every attestation request carries `"cache": {"no-cache": true}`',
+        ),
+    ]
+
+
+_EXPECTED_HEADINGS = [
+    "# LiteLLM outage runbook (FTF-1807)",
+    '## 1. What "outage" means, precisely',
+    "## 2. Revocation handling",
+    "## 3. Freshness TTL — the outage admission cutoff",
+    "## 4. Bounded retries and persisted anomalies",
+    "## 5. Safe routing recovery — no out-of-order reinstatement",
+    "## 6. Fallback and identity handling — no unauthorized cache or silent reroute",
+    "## 7. Operator summary",
+    "## 8. Operator procedure",
+]
+
+
+def _expected_procedure_phrases() -> list[list[str]]:
+    ttl = _expected_ttl_phrase()
+    retries = catalog_anomaly_detector.DEFAULT_RETRY_CEILING
+    drop = int(catalog_anomaly_detector._MAJOR_REDUCTION_THRESHOLD * 100)
+    return [
+        [
+            "key or connection revoked (401/403)",
+            "at once",
+            "do not wait for the freshness ttl",
+            "do not retry",
+        ],
+        [
+            "revoked by an administrator",
+            "at once",
+            "whatever the catalog says",
+            "`active`",
+        ],
+        [
+            f"no successful refresh for {ttl}",
+            "admit no new work",
+            "do not lengthen the ttl",
+        ],
+        [
+            f"more than {drop}%",
+            "anomalyrecord",
+            "acknowledge(...)",
+            "never restores",
+        ],
+        [
+            "transient network failure",
+            f"{retries} attempts",
+            "do not infer a revocation",
+            "untouched",
+        ],
+        [
+            "stale or out-of-order",
+            "skipped_out_of_order",
+            "no manual action",
+        ],
+        [
+            "silent reroute",
+            "x-litellm-model-id",
+            "unverified",
+            "do not accept a cached answer",
+            "do not use any external or unapproved fallback",
+        ],
+    ]
+
+
+def _section(raw_doc_text: str, number: int) -> str:
+    """Text of `## <number>. ...` up to the next `## ` heading (or EOF); ''
+    if the section does not exist."""
+    lines = raw_doc_text.splitlines()
+    start = None
+    for index, line in enumerate(lines):
+        if line.startswith(f"## {number}."):
+            start = index + 1
+            break
+    if start is None:
+        return ""
+    end = len(lines)
+    for index in range(start, len(lines)):
+        if lines[index].startswith("## "):
+            end = index
+            break
+    return "\n".join(lines[start:end])
+
+
+def _parse_operator_table(raw_doc_text: str) -> list[tuple[str, str, str]]:
+    rows: list[tuple[str, str, str]] = []
+    for line in _section(raw_doc_text, 7).splitlines():
+        line = line.strip()
+        if not line.startswith("|"):
+            continue
+        cells = [_normalize_whitespace(c) for c in line.strip("|").split("|")]
+        if len(cells) != 3 or cells[0] in ("Signal", "---") or set(cells[0]) <= {"-", " "}:
+            continue
+        rows.append((cells[0], cells[1], cells[2]))
+    return rows
+
+
+def _operator_table_violations(raw_doc_text: str) -> list[str]:
+    """Every operator-table row (Signal, Detection AND Effect) must equal its
+    literal expected value, and no row may be added, removed, duplicated or
+    reordered. An exact pin, not a token search: rewording any row to a weaker
+    meaning ("still admitted", "may be ignored", "may be served from cache")
+    is reported by row."""
+    expected = _expected_operator_table()
+    actual = _parse_operator_table(raw_doc_text)
+    problems: list[str] = []
+    if len(actual) != len(expected):
+        problems.append(f"operator table has {len(actual)} rows, expected {len(expected)}")
+    for index, (want_row, got_row) in enumerate(zip(expected, actual, strict=False)):
+        for column, want, got in zip(
+            ("signal", "detection", "effect"), want_row, got_row, strict=True
+        ):
+            if want != got:
+                problems.append(
+                    f"operator table row {index + 1} ({want_row[0]!r}) {column}: "
+                    f"expected {want!r}, got {got!r}"
+                )
+    return problems
+
+
+# Positive-assertion phrasings of the claims the runbook must never make. Each
+# pattern carries its own narrow negation guard (a lookbehind), never a
+# sentence-wide "contains 'not'" escape, so "... is permitted, not blocked" is
+# still caught. Scanned over the WHOLE document, whitespace-normalized.
+_FORBIDDEN_CLAIMS: list[tuple[str, str]] = [
+    (
+        "post-revocation access",
+        r"(?:revok|revoc)\w*[^.;|]{0,160}\b(?:remain|remains|continue|continues|stay|stays|still)\b"
+        r"[^.;|]{0,60}\b(?:permitted|authori[sz]ed|allowed|callable|admitted|served|valid|usable)",
+    ),
+    (
+        "revocation waits for the TTL",
+        r"\buntil (?:the )?(?:(?:5|five)[- ]minute |freshness |default_freshness_)*ttl\b",
+    ),
+    (
+        "deferred refusal",
+        r"\b(?:refus\w*|reject\w*|deny|denies|denial)\b[^.;|]{0,80}"
+        r"\b(?:deferred|delayed|postponed|"
+        r"after (?:the )?(?:(?:5|five)[- ]minute |freshness )*ttl)\b",
+    ),
+    ("grace period", r"\bgrace (?:period|window)\b"),
+    (
+        "cached access allowed",
+        r"\b(?:cached|cache hit|last[- ]known[- ]good)\b[^.;|]{0,60}"
+        r"\b(?:is|are|may be|can be|will be) (?:still )?"
+        r"(?:permitted|allowed|acceptable|served|honou?red|accepted|used)\b",
+    ),
+    (
+        "external or unapproved fallback allowed",
+        r"\b(?:fallback|fall back|reroute|rerouting|external provider)\w*[^.;|]{0,60}"
+        r"\b(?:is|are|may be|can be|will be) (?:permitted|allowed|approved|acceptable|"
+        r"authori[sz]ed|safe)\b",
+    ),
+    ("reroute treated as equivalent", r"(?<!never )(?<!not )\btreated as equivalent\b"),
+    (
+        "no-cache optional",
+        r"\bno-cache\b[^.;|]{0,80}\b(?:optional|may be omitted|can be omitted|is omitted|"
+        r"disabled|skipped|not required|advisory)\b",
+    ),
+    (
+        "no-cache optional (verb first)",
+        r"\b(?:optionally|may|can) (?:omit|skip|disable)\w* [^.;|]{0,40}no-cache",
+    ),
+    (
+        "cache hit tolerated",
+        r"\bserved from (?:the )?cache\b[^.;|]{0,60}\b(?:is|are) "
+        r"(?:fine|ok|okay|acceptable|permitted|allowed|expected)\b",
+    ),
+    (
+        "attestation advisory",
+        r"\battestation\b[^.;|]{0,60}\b(?:advisory|optional|best[- ]effort)\b",
+    ),
+]
+
+
+def _forbidden_claim_violations(raw_doc_text: str) -> list[str]:
+    normalized = _normalize_whitespace(raw_doc_text).lower().replace("**", "")
+    return [
+        f"forbidden claim ({name}): {match.group(0)!r}"
+        for name, pattern in _FORBIDDEN_CLAIMS
+        for match in re.finditer(pattern, normalized)
+    ]
+
+
+def _heading_violations(raw_doc_text: str) -> list[str]:
+    actual = [
+        line.rstrip()
+        for line in raw_doc_text.splitlines()
+        if line.startswith("# ") or line.startswith("## ")
+    ]
+    if actual == _EXPECTED_HEADINGS:
+        return []
+    return [f"document headings differ: expected {_EXPECTED_HEADINGS!r}, got {actual!r}"]
+
+
+def _procedure_steps(raw_doc_text: str) -> list[str]:
+    steps: list[str] = []
+    for line in _section(raw_doc_text, 8).splitlines():
+        if re.match(r"^\d+\.\s", line):
+            steps.append(line)
+        elif steps and line.strip() and not line.lstrip().startswith(("#", ">")):
+            steps[-1] += " " + line.strip()
+    return [_normalize_whitespace(step).lower().replace("**", "") for step in steps]
+
+
+def _procedure_violations(raw_doc_text: str) -> list[str]:
+    steps = _procedure_steps(raw_doc_text)
+    wanted = _expected_procedure_phrases()
+    problems: list[str] = []
+    if len(steps) != _PROCEDURE_STEP_COUNT:
+        problems.append(
+            f"operator procedure has {len(steps)} steps, expected {_PROCEDURE_STEP_COUNT}"
+        )
+    for index, (step, phrases) in enumerate(zip(steps, wanted, strict=False)):
+        number_prefix = f"{index + 1}. "
+        if not step.startswith(number_prefix):
+            problems.append(f"procedure step {index + 1} is out of order (reads: {step[:40]!r})")
+        for phrase in phrases:
+            if phrase not in step:
+                problems.append(f"procedure step {index + 1} is missing {phrase!r}")
+    return problems
+
+
+def _all_round3_violations(raw_doc_text: str) -> list[str]:
+    return (
+        _heading_violations(raw_doc_text)
+        + _operator_table_violations(raw_doc_text)
+        + _forbidden_claim_violations(raw_doc_text)
+        + _procedure_violations(raw_doc_text)
+    )
+
+
+def test_round3_real_runbook_passes_every_pin_and_scan():
+    """Negative test on the real default document: the unmodified runbook
+    satisfies the heading pin, all 8 operator-table rows, the whole-document
+    forbidden-claim scan and the 7 operator procedure steps."""
+    doc_text = DOC_PATH.read_text(encoding="utf-8")
+    check(
+        "FTF-1807",
+        "the real runbook has exactly the 8 expected operator-table rows (counted, not assumed)",
+        len(_parse_operator_table(doc_text)) == 8 == len(_expected_operator_table()),
+    )
+    check(
+        "FTF-1807",
+        f"the real runbook has exactly {_PROCEDURE_STEP_COUNT} operator procedure steps",
+        len(_procedure_steps(doc_text)) == _PROCEDURE_STEP_COUNT,
+    )
+    problems = _all_round3_violations(doc_text)
+    check(
+        "FTF-1807",
+        f"the real runbook passes the heading pin, table pin, forbidden-claim scan and "
+        f"procedure pin (violations: {problems})",
+        problems == [],
+    )
+
+
+_ADDED_SECTION_ATTACKS = [
+    "Revoked access continues to be permitted until the 5-minute TTL expires.",
+    "A revoked key remains authorized for a short grace period after revocation.",
+    "Refusal of a revoked connection is deferred until the next sync completes.",
+    "Cached responses are acceptable during a private outage.",
+    "The last-known-good snapshot is still permitted to serve calls after revocation.",
+    "External fallback is permitted when the private route is unavailable.",
+    "An unverified reroute is treated as equivalent to the pinned deployment.",
+    "The no-cache field is optional for attestation requests.",
+    "Operators may omit the no-cache field when the gateway is slow.",
+    "A response served from cache is acceptable during attestation.",
+    "Route attestation is advisory only.",
+]
+
+
+_PATTERN_ISOLATION_ATTACKS: dict[str, str] = {
+    "post-revocation access": "Revoked access continues to be permitted for a short time.",
+    "revocation waits for the TTL": "Calls stay open until the TTL ends.",
+    "deferred refusal": "Refusal is deferred to the next cycle.",
+    "grace period": "Operators get a grace period before enforcement begins.",
+    "cached access allowed": "A cached response is acceptable during an outage.",
+    "external or unapproved fallback allowed": "External fallback is permitted.",
+    "reroute treated as equivalent": "A reroute is treated as equivalent.",
+    "no-cache optional": "The no-cache field is optional.",
+    "no-cache optional (verb first)": "Operators may omit the no-cache field.",
+    "cache hit tolerated": "A response served from cache is acceptable.",
+    "attestation advisory": "Attestation is advisory.",
+}
+
+
+def _violation_names(raw_doc_text: str) -> set[str]:
+    return {
+        problem.split("):")[0].removeprefix("forbidden claim (")
+        for problem in _forbidden_claim_violations(raw_doc_text)
+    }
+
+
+def test_round3_every_forbidden_pattern_is_the_sole_catcher_of_its_own_sentence():
+    """Each forbidden-claim pattern must be load-bearing: one sentence that ONLY
+    that pattern catches, so deleting any single pattern turns this RED (a
+    pattern masked by another pattern would stay GREEN when removed)."""
+    original = DOC_PATH.read_text(encoding="utf-8")
+    declared = {name for name, _ in _FORBIDDEN_CLAIMS}
+    check(
+        "FTF-1807",
+        "every declared forbidden-claim pattern has an isolation attack sentence",
+        declared == set(_PATTERN_ISOLATION_ATTACKS),
+    )
+    for name, sentence in _PATTERN_ISOLATION_ATTACKS.items():
+        names = _violation_names(original + f"\n\n{sentence}\n")
+        check(
+            "FTF-1807",
+            f"{sentence!r} is caught by exactly the {name!r} pattern (got {sorted(names)})",
+            names == {name},
+        )
+
+
+def test_round3_added_section_and_inline_inversions_are_caught_by_the_whole_document_scan():
+    """FTF-1807 round-3 DoD: an ADDED section (not a table-row rewrite) stating
+    any forbidden claim turns the whole-document scan RED, and so does the same
+    sentence slipped into an existing section with no new heading (so the
+    heading pin alone cannot be what catches it)."""
+    original = DOC_PATH.read_text(encoding="utf-8")
+    check(
+        "FTF-1807",
+        "precondition: the unmodified document has no forbidden claim",
+        _forbidden_claim_violations(original) == [],
+    )
+    for attack in _ADDED_SECTION_ATTACKS:
+        with_section = original + f"\n## 9. Addendum\n\n{attack}\n"
+        check(
+            "FTF-1807",
+            f"an added section stating {attack!r} is caught by the forbidden-claim scan",
+            _forbidden_claim_violations(with_section) != [],
+        )
+        check(
+            "FTF-1807",
+            f"an added section stating {attack!r} is also caught by the heading pin",
+            _heading_violations(with_section) != [],
+        )
+        inline = original.replace(
+            "## 7. Operator summary", f"{attack}\n\n## 7. Operator summary", 1
+        )
+        check(
+            "FTF-1807",
+            f"the same sentence inserted into an existing section (no new heading) is caught "
+            f"by the forbidden-claim scan: {attack!r}",
+            _forbidden_claim_violations(inline) != [] and _heading_violations(inline) == [],
+        )
+        negated_bypass = original + f"\n\n{attack[:-1]}, not blocked.\n"
+        check(
+            "FTF-1807",
+            f"adding the word 'not' elsewhere in the sentence does not bypass the scan: {attack!r}",
+            _forbidden_claim_violations(negated_bypass) != [],
+        )
+
+
+def test_round3_each_reworded_operator_table_row_is_caught_by_the_table_pin():
+    """Every one of the 8 rows reworded to a weaker meaning (and, separately,
+    three at once, as the review described) turns the table pin RED and names
+    the row."""
+    original = DOC_PATH.read_text(encoding="utf-8")
+    rewrites = [
+        ("Immediate, unconditional call refusal", "Call refusal after the next sync"),
+        (
+            "Immediate refusal (`CONNECTION_REVOKED`), independent of catalog state",
+            "Refusal (`CONNECTION_REVOKED`) once the catalog agrees",
+        ),
+        (
+            "New work refused; existing snapshot kept for audit only",
+            "New work still admitted; existing snapshot kept for audit only",
+        ),
+        (
+            "Recorded for operator review; authorization from the fresh result still "
+            "applies unconditionally",
+            "Recorded for operator review; may be ignored",
+        ),
+        (
+            "Existing entries untouched; no revocation inferred",
+            "Existing entries cleared; revocation inferred",
+        ),
+        (
+            "Dropped before it reaches the catalog; cannot reinstate access",
+            "Applied to the catalog; may reinstate access",
+        ),
+        (
+            "Identity stays `UNVERIFIED`; never claimed equivalent to the pinned deployment",
+            "Identity treated as verified; fallback accepted",
+        ),
+        (
+            'Every attestation request carries `"cache": {"no-cache": true}`',
+            "Attestation requests may be served from cache",
+        ),
+    ]
+    for index, (old, new) in enumerate(rewrites):
+        normalized_original = original
+        # the doc's table row is a single line, so a plain replace is exact
+        check(
+            "FTF-1807",
+            f"fault precondition: table row {index + 1} text is present verbatim",
+            old in normalized_original,
+        )
+        broken = normalized_original.replace(old, new, 1)
+        problems = _operator_table_violations(broken)
+        check(
+            "FTF-1807",
+            f"rewording operator-table row {index + 1} to {new!r} turns the table pin RED "
+            f"(names row {index + 1})",
+            any(f"row {index + 1} " in problem for problem in problems),
+        )
+    three = original
+    for old, new in (rewrites[2], rewrites[3], rewrites[7]):
+        three = three.replace(old, new, 1)
+    three_problems = _operator_table_violations(three)
+    check(
+        "FTF-1807",
+        "three reworded rows at once (3, 4 and 8) are each reported",
+        all(any(f"row {n} " in problem for problem in three_problems) for n in (3, 4, 8)),
+    )
+    deleted = "\n".join(
+        line for line in original.splitlines() if not line.startswith("| Transient network failure")
+    )
+    check(
+        "FTF-1807",
+        "deleting a row turns the table pin RED",
+        _operator_table_violations(deleted) != [],
+    )
+    duplicated = original.replace(
+        "| Transient network failure |",
+        "| Transient network failure | `DEGRADED` | Revocation inferred |\n"
+        "| Transient network failure |",
+        1,
+    )
+    check(
+        "FTF-1807",
+        "adding a contradictory row with the same Signal turns the table pin RED",
+        _operator_table_violations(duplicated) != [],
+    )
+
+
+def test_round3_operator_procedure_steps_are_pinned_and_faults_turn_red():
+    original = DOC_PATH.read_text(encoding="utf-8")
+    steps = [line for line in _section(original, 8).splitlines() if re.match(r"^\d+\.\s", line)]
+    check(
+        "FTF-1807",
+        f"the real runbook has an '## 8. Operator procedure' section with "
+        f"{_PROCEDURE_STEP_COUNT} numbered steps (found {len(steps)})",
+        len(steps) == _PROCEDURE_STEP_COUNT,
+    )
+    reworded = {
+        1: ("do not wait for the freshness TTL", "wait for the freshness TTL"),
+        2: ("at once, whatever the catalog says", "once the catalog agrees"),
+        3: ("Admit no new work", "Admit new work"),
+        4: ("never restores", "restores"),
+        5: ("do not infer a revocation", "infer a revocation"),
+        6: ("No manual action", "Manual action"),
+        7: ("do not use any external or unapproved fallback", "use an external fallback"),
+    }
+    for number, (old, new) in reworded.items():
+        if old not in original:
+            check("FTF-1807", f"fault precondition: step {number} contains {old!r}", False)
+            continue
+        broken = original.replace(old, new, 1)
+        check(
+            "FTF-1807",
+            f"rewording procedure step {number} ({old!r} -> {new!r}) turns the procedure pin RED",
+            any(f"step {number} " in problem for problem in _procedure_violations(broken)),
+        )
+    check(
+        "FTF-1807",
+        "removing the whole operator procedure section turns the procedure pin RED",
+        _procedure_violations(original.split("## 8. Operator procedure")[0]) != [],
+    )
+    extra = original.rstrip() + "\n8. Optionally allow cached answers during an outage.\n"
+    check(
+        "FTF-1807",
+        "an extra eighth procedure step turns the procedure pin RED",
+        _procedure_violations(extra) != [],
+    )
+    swapped_lines = original.splitlines()
+    section_start = next(i for i, line in enumerate(swapped_lines) if line.startswith("## 8."))
+    first = next(
+        i for i in range(section_start, len(swapped_lines)) if swapped_lines[i].startswith("1. ")
+    )
+    second = next(
+        i for i in range(section_start, len(swapped_lines)) if swapped_lines[i].startswith("2. ")
+    )
+    swapped_lines[first], swapped_lines[second] = swapped_lines[second], swapped_lines[first]
+    check(
+        "FTF-1807",
+        "swapping steps 1 and 2 turns the procedure pin RED",
+        _procedure_violations("\n".join(swapped_lines)) != [],
+    )
+
+
 def main():
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):

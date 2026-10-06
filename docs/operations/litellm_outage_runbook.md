@@ -155,6 +155,37 @@ equivalent to the pinned deployment.
 | Router silently reroutes to a different deployment | Changed/missing `x-litellm-model-id` fingerprint | Identity stays `UNVERIFIED`; never claimed equivalent to the pinned deployment |
 | Response served from cache during attestation | Structurally impossible | Every attestation request carries `"cache": {"no-cache": true}` |
 
+## 8. Operator procedure
+
+Follow the step that matches the signal you observe. Each step restates only
+behavior the cited modules already enforce; none of them claims that a live
+scheduler, pager, or admin UI exists yet (see the disclosure at the top).
+
+1. **Key or connection revoked (401/403).** Treat access as revoked at once:
+   calls are already refused, so do not wait for the freshness TTL and do not
+   retry the discovery call as if the failure were transient. Access returns
+   only after a fresh, successful discovery call with a valid key.
+2. **Connection revoked by an administrator.** Treat every model on that
+   connection as refused at once, whatever the catalog says. The status is
+   re-read on every call, so only the connection's own status returning to
+   `active` ends the refusal.
+3. **No successful refresh for 5 minutes.** Admit no new work against that
+   connection. Do not lengthen the TTL to ride out the outage; restore
+   connectivity, and admission resumes only after a fresh, successful
+   discovery call.
+4. **More than 50% of model ids disappear.** Review the persisted
+   `AnomalyRecord` before calling `acknowledge(...)`. Acknowledging only
+   records the review; it never restores an id that was removed.
+5. **Transient network failure.** Expect at most 3 attempts before the retry
+   ceiling; do not infer a revocation from a transient failure, and leave the
+   existing catalog entries untouched.
+6. **Stale or out-of-order sync response.** No manual action is needed: it is
+   dropped as `SKIPPED_OUT_OF_ORDER`. Wait for the next genuinely newer cycle.
+7. **Suspected silent reroute.** Compare the `x-litellm-model-id` fingerprint
+   with the pinned deployment. If it differs or is missing, treat the identity
+   as `UNVERIFIED`: do not claim private or reproducible qualification, do not
+   accept a cached answer, and do not use any external or unapproved fallback.
+
 See `tests/documentation/test_ftf_1807.py` for the executable proof that
 every row above is real, tested behavior of the cited modules, and not
 merely asserted here.
