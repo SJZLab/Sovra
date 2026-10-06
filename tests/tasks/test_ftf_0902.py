@@ -62,6 +62,7 @@ Run directly: python3 tests/tasks/test_ftf_0902.py
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -81,6 +82,7 @@ from packages.security.network_policy_templates import (  # noqa: E402
     MissingExplicitScopingError,
     NetworkPolicyDefaultOpenError,
     NetworkPolicyTemplate,
+    NetworkPolicyTemplateError,
     PodSelectorEndpoint,
     PortRule,
     PublicCidrEndpointError,
@@ -457,7 +459,7 @@ def test_validate_rejects_ipv6_policy_bypassing_the_type_checker() -> None:
 def test_validate_rejects_missing_explicit_endpoint_scoping() -> None:
     check(
         "FTF-0902",
-        "negative_acceptance: allowed_internal_endpoints=None ('not yet configured') " "is refused",
+        "negative_acceptance: allowed_internal_endpoints=None ('not yet configured') is refused",
         _rejects(
             MissingExplicitScopingError,
             validate_network_policy_template,
@@ -786,14 +788,14 @@ def test_fault_injection_deny_by_default_check_is_load_bearing() -> None:
     original = MODULE_PATH.read_bytes()
     try:
         src = original.decode("utf-8")
-        needle = "    if not template.deny_by_default_egress:"
+        pattern = re.compile(r"^(\s*)if (template\.deny_by_default_egress is not True):", re.M)
         check(
             "FTF-0902",
             "expected deny_by_default_egress check found in the real module "
             "(otherwise this proves nothing)",
-            needle in src,
+            pattern.search(src) is not None,
         )
-        mutated = src.replace(needle, "    if False and not template.deny_by_default_egress:", 1)
+        mutated = pattern.sub(r"\1if False and \2:", src, count=1)
         check("FTF-0902", "fault injection actually changed the file", mutated != src)
         MODULE_PATH.write_text(mutated, encoding="utf-8")
 
@@ -855,7 +857,7 @@ except Exception as exc:
 def test_fault_injection_render_time_endpoint_revalidation_is_load_bearing() -> None:
     """Additive fault (an inserted `if False:` guard, same pattern as this
     suite's own pre-existing deny_by_default_egress fault test): disables
-    the call to `_revalidate_endpoint_at_render_time` inside
+    the render-time `_validate_cidr_endpoint_fields` call inside
     `_endpoint_egress_rule`, in a fresh subprocess, against an endpoint
     mutated to a wildcard cidr *after* construction (so the already-passed
     __post_init__ check is never the thing being tested here). Proves the
@@ -864,17 +866,22 @@ def test_fault_injection_render_time_endpoint_revalidation_is_load_bearing() -> 
     original = MODULE_PATH.read_bytes()
     try:
         src = original.decode("utf-8")
-        needle = "    endpoint = _revalidate_endpoint_at_render_time(endpoint)\n"
+        pattern = re.compile(
+            r"cidr, ports = _validate_cidr_endpoint_fields\(\s*"
+            r"cidr_endpoint\.description, cidr_endpoint\.cidr, cidr_endpoint\.ports\s*\)"
+        )
         check(
             "FTF-0902",
             "expected render-time revalidation call found in the real module "
             "(otherwise this proves nothing)",
-            needle in src,
+            pattern.search(src) is not None,
         )
-        mutated = src.replace(
-            needle,
-            "    if False:\n        endpoint = _revalidate_endpoint_at_render_time(endpoint)\n",
-            1,
+        mutated = pattern.sub(
+            "cidr, ports = cidr_endpoint.cidr, [\n"
+            '            {"protocol": r.protocol, "port": r.port} for r in cidr_endpoint.ports\n'
+            "        ]",
+            src,
+            count=1,
         )
         check("FTF-0902", "fault injection actually changed the file", mutated != src)
         MODULE_PATH.write_text(mutated, encoding="utf-8")
@@ -957,6 +964,432 @@ def test_fault_injection_rfc1918_check_is_load_bearing_additive() -> None:
             "the module file is restored byte-identical after fault injection",
             restored == original,
         )
+
+
+# --- Round 3 (2026-10-06T15:30Z review): render-time exact types, pinned output, ---
+# --- PodSelectorEndpoint half, ::/0, RFC1918 boundaries.                        ---
+
+
+class _TruthyEmptyTuple(tuple):
+    def __bool__(self) -> bool:
+        return True
+
+
+class _TruthyEmptyDict(dict):
+    def __bool__(self) -> bool:
+        return True
+
+
+class _LyingStr(str):
+    """`str(x)` reports a benign value; the real string value is hostile."""
+
+    def __str__(self) -> str:
+        return "10.0.0.0/8"
+
+
+def _render_must_refuse(label: str, template: NetworkPolicyTemplate) -> None:
+    try:
+        manifest = render_network_policy_manifest(template)
+    except NetworkPolicyTemplateError:
+        return
+    check(
+        "FTF-0902",
+        f"{label}: render must refuse, but emitted {manifest['spec']['egress']!r}",
+        False,
+    )
+
+
+def _cidr_template(**field_overrides: object) -> NetworkPolicyTemplate:
+    endpoint = CidrEndpoint(description="x", cidr="10.0.0.5/32", ports=(PortRule("TCP", 80),))
+    for name, value in field_overrides.items():
+        object.__setattr__(endpoint, name, value)
+    return _base_template(allowed_internal_endpoints=(endpoint,))
+
+
+def _pod_template(**field_overrides: object) -> NetworkPolicyTemplate:
+    endpoint = PodSelectorEndpoint(
+        description="y",
+        namespace="sovra-shared",
+        pod_labels={"app": "mlflow"},
+        ports=(PortRule("TCP", 5000),),
+    )
+    for name, value in field_overrides.items():
+        object.__setattr__(endpoint, name, value)
+    return _base_template(allowed_internal_endpoints=(endpoint,))
+
+
+def test_r3_render_time_exact_types_refuse_type_lying_endpoint_fields() -> None:
+    # Review item 1: every probe in the review's table, on the unmodified code.
+    _render_must_refuse(
+        "str-subclass cidr lying about __str__ (real 0.0.0.0/0)",
+        _cidr_template(cidr=_LyingStr("0.0.0.0/0")),
+    )
+    _render_must_refuse(
+        "str-subclass cidr lying about __str__ (real ::/0)", _cidr_template(cidr=_LyingStr("::/0"))
+    )
+    _render_must_refuse(
+        "str-subclass cidr, benign real value", _cidr_template(cidr=_LyingStr("10.0.0.5/32"))
+    )
+    _render_must_refuse(
+        "truthy-empty tuple-subclass ports", _cidr_template(ports=_TruthyEmptyTuple())
+    )
+    _render_must_refuse("list ports", _cidr_template(ports=[PortRule("TCP", 80)]))
+    _render_must_refuse(
+        "tuple-subclass ports with a valid rule",
+        _cidr_template(ports=_TruthyEmptyTuple((PortRule("TCP", 80),))),
+    )
+    port_none = PortRule("TCP", 80)
+    object.__setattr__(port_none, "port", None)
+    _render_must_refuse("PortRule.port=None", _cidr_template(ports=(port_none,)))
+    proto_none = PortRule("TCP", 80)
+    object.__setattr__(proto_none, "protocol", None)
+    _render_must_refuse("PortRule.protocol=None", _cidr_template(ports=(proto_none,)))
+    port_zero = PortRule("TCP", 80)
+    object.__setattr__(port_zero, "port", 0)
+    _render_must_refuse("PortRule.port=0", _cidr_template(ports=(port_zero,)))
+    port_big = PortRule("TCP", 80)
+    object.__setattr__(port_big, "port", 65536)
+    _render_must_refuse("PortRule.port=65536", _cidr_template(ports=(port_big,)))
+    port_bool = PortRule("TCP", 80)
+    object.__setattr__(port_bool, "port", True)
+    _render_must_refuse("PortRule.port=True", _cidr_template(ports=(port_bool,)))
+    proto_sctp = PortRule("TCP", 80)
+    object.__setattr__(proto_sctp, "protocol", "SCTP")
+    _render_must_refuse("PortRule.protocol=SCTP", _cidr_template(ports=(proto_sctp,)))
+
+    class _PortRuleSub(PortRule):
+        def __post_init__(self) -> None:
+            pass
+
+    _render_must_refuse("PortRule subclass", _cidr_template(ports=(_PortRuleSub("TCP", 80),)))
+    _render_must_refuse("str-subclass description", _cidr_template(description=_LyingStr("d")))
+
+    # Template-level types, same rule.
+    _render_must_refuse(
+        "empty-dict-subclass template pod_selector", _base_template(pod_selector=_TruthyEmptyDict())
+    )
+    _render_must_refuse(
+        "str-subclass template namespace", _base_template(namespace=_LyingStr("ns"))
+    )
+    _render_must_refuse(
+        "list template allowed_internal_endpoints", _base_template(allowed_internal_endpoints=[])
+    )
+
+
+def test_r3_render_emits_only_normalized_values() -> None:
+    template = _cidr_template(cidr="10.0.0.0/8")
+    cidr = render_network_policy_manifest(template)["spec"]["egress"][1]["to"][0]["ipBlock"]["cidr"]
+    check(
+        "FTF-0902",
+        "rendered cidr is the normalized str(ip_network)",
+        cidr == "10.0.0.0/8" and type(cidr) is str,
+    )
+    manifest = render_network_policy_manifest(_base_template())
+    for rule in manifest["spec"]["egress"]:
+        for port in rule["ports"]:
+            check("FTF-0902", "rendered port is an exact int", type(port["port"]) is int)
+            check("FTF-0902", "rendered protocol is an exact str", type(port["protocol"]) is str)
+
+
+def test_r3_pod_selector_endpoint_render_time_half() -> None:
+    # Review item 3: the PodSelectorEndpoint side was untested.
+    class _BypassingPodEndpoint(PodSelectorEndpoint):
+        def __post_init__(self) -> None:
+            pass
+
+    evil = _BypassingPodEndpoint(description="evil", namespace="", pod_labels={}, ports=())
+    _render_must_refuse(
+        "PodSelectorEndpoint subclass skipping __post_init__",
+        _base_template(allowed_internal_endpoints=(evil,)),
+    )
+    _render_must_refuse("pod endpoint empty ports", _pod_template(ports=()))
+    _render_must_refuse("pod endpoint truthy-empty ports", _pod_template(ports=_TruthyEmptyTuple()))
+    _render_must_refuse("pod endpoint list ports", _pod_template(ports=[PortRule("TCP", 5000)]))
+    _render_must_refuse(
+        "pod endpoint truthy-empty pod_labels", _pod_template(pod_labels=_TruthyEmptyDict())
+    )
+    _render_must_refuse("pod endpoint empty pod_labels", _pod_template(pod_labels={}))
+    _render_must_refuse("pod endpoint blank namespace", _pod_template(namespace=""))
+    _render_must_refuse(
+        "pod endpoint str-subclass namespace", _pod_template(namespace=_LyingStr("ns"))
+    )
+    _render_must_refuse("pod endpoint non-str label value", _pod_template(pod_labels={"app": None}))
+    _render_must_refuse("pod endpoint non-str label key", _pod_template(pod_labels={1: "x"}))
+    _render_must_refuse("pod endpoint empty label value", _pod_template(pod_labels={"app": ""}))
+    port_none = PortRule("TCP", 5000)
+    object.__setattr__(port_none, "port", None)
+    _render_must_refuse("pod endpoint PortRule.port=None", _pod_template(ports=(port_none,)))
+
+
+def _scan_rendered_spec(spec: dict, declared_cidrs: set[str]) -> list[str]:
+    """Structural scan of every peer and port in a rendered spec."""
+    problems: list[str] = []
+    if spec.get("policyTypes") != ["Ingress", "Egress"]:
+        problems.append(f"policyTypes={spec.get('policyTypes')!r}")
+    if spec.get("ingress") != []:
+        problems.append(f"ingress={spec.get('ingress')!r}")
+    if not spec.get("podSelector", {}).get("matchLabels"):
+        problems.append("empty template podSelector")
+    for rule in spec.get("egress", []):
+        if set(rule) != {"to", "ports"}:
+            problems.append(f"rule keys {sorted(rule)}")
+        if not rule.get("ports"):
+            problems.append("rule with no ports")
+        for port in rule.get("ports", []):
+            if set(port) != {"protocol", "port"}:
+                problems.append(f"port keys {sorted(port)} (endPort or extra key)")
+            if port.get("protocol") not in ("TCP", "UDP"):
+                problems.append(f"protocol {port.get('protocol')!r}")
+            number = port.get("port")
+            if type(number) is not int or not 1 <= number <= 65535:
+                problems.append(f"port {number!r}")
+        if not rule.get("to"):
+            problems.append("rule with no peers")
+        for peer in rule.get("to", []):
+            if "ipBlock" in peer:
+                if set(peer) != {"ipBlock"} or set(peer["ipBlock"]) != {"cidr"}:
+                    problems.append(f"ipBlock peer shape {peer!r}")
+                elif peer["ipBlock"]["cidr"] not in declared_cidrs:
+                    problems.append(f"undeclared ipBlock {peer['ipBlock']['cidr']!r}")
+            else:
+                if set(peer) != {"namespaceSelector", "podSelector"}:
+                    problems.append(f"selector peer shape {sorted(peer)}")
+                for key in ("namespaceSelector", "podSelector"):
+                    if not peer.get(key, {}).get("matchLabels"):
+                        problems.append(f"empty {key} in {peer!r}")
+    return problems
+
+
+def test_r3_rendered_spec_is_pinned_exactly() -> None:
+    # Review item 2: a renderer that adds a peer/port/endPort or drops Egress must go RED.
+    dns_rule = {
+        "to": [
+            {
+                "namespaceSelector": {
+                    "matchLabels": {"kubernetes.io/metadata.name": "kube-system"}
+                },
+                "podSelector": {"matchLabels": {"k8s-app": "kube-dns"}},
+            }
+        ],
+        "ports": [{"protocol": "UDP", "port": 53}, {"protocol": "TCP", "port": 53}],
+    }
+    expected_base = {
+        "podSelector": {"matchLabels": {"app": "training-worker"}},
+        "policyTypes": ["Ingress", "Egress"],
+        "ingress": [],
+        "egress": [
+            dns_rule,
+            {
+                "to": [{"ipBlock": {"cidr": "10.96.0.10/32"}}],
+                "ports": [{"protocol": "TCP", "port": 5432}],
+            },
+            {
+                "to": [
+                    {
+                        "namespaceSelector": {
+                            "matchLabels": {"kubernetes.io/metadata.name": "sovra-shared"}
+                        },
+                        "podSelector": {"matchLabels": {"app": "mlflow"}},
+                    }
+                ],
+                "ports": [{"protocol": "TCP", "port": 5000}],
+            },
+        ],
+    }
+    spec = render_network_policy_manifest(_base_template())["spec"]
+    check(
+        "FTF-0902",
+        f"base template spec equals the pinned expected spec (got {spec!r})",
+        spec == expected_base,
+    )
+    check(
+        "FTF-0902",
+        "base template spec passes the structural scan",
+        _scan_rendered_spec(spec, {"10.96.0.10/32"}) == [],
+    )
+
+    spec_closed = render_network_policy_manifest(
+        _base_template(allowed_internal_endpoints=(), allow_dns=True)
+    )["spec"]
+    check(
+        "FTF-0902",
+        "a fully closed workload renders only the DNS rule",
+        spec_closed == {**expected_base, "egress": [dns_rule]},
+    )
+    spec_nodns = render_network_policy_manifest(
+        _base_template(allowed_internal_endpoints=(), allow_dns=False)
+    )["spec"]
+    check(
+        "FTF-0902",
+        "a closed workload with DNS off renders egress: [] with Egress still in policyTypes",
+        spec_nodns == {**expected_base, "egress": []},
+    )
+
+    # The scan itself must be able to fail on each review fault shape.
+    bad_variants = {
+        "::/0 peer on DNS rule": lambda s: s["egress"][0]["to"].append(
+            {"ipBlock": {"cidr": "::/0"}}
+        ),
+        "metadata peer": lambda s: s["egress"][1]["to"].append(
+            {"ipBlock": {"cidr": "169.254.169.254/32"}}
+        ),
+        "empty podSelector peer": lambda s: s["egress"][1]["to"].append({"podSelector": {}}),
+        "endPort": lambda s: s["egress"][0]["ports"][0].update({"endPort": 65535}),
+        "Egress dropped": lambda s: s.update({"policyTypes": ["Ingress"]}),
+    }
+    import copy
+
+    for name, mutate in bad_variants.items():
+        mutated = copy.deepcopy(spec)
+        mutate(mutated)
+        check(
+            "FTF-0902", f"scan flags: {name}", _scan_rendered_spec(mutated, {"10.96.0.10/32"}) != []
+        )
+        check("FTF-0902", f"exact pin flags: {name}", mutated != expected_base)
+
+
+def test_r3_render_normalizes_and_never_aliases_caller_objects() -> None:
+    # A bare address is rendered as the normalized /32 -- not echoed raw.
+    endpoint = CidrEndpoint(description="x", cidr="10.0.0.5", ports=(PortRule("TCP", 80),))
+    rendered = render_network_policy_manifest(
+        _base_template(allowed_internal_endpoints=(endpoint,))
+    )
+    check(
+        "FTF-0902",
+        "a bare-address cidr is rendered as str(ip_network(...)) == 10.0.0.5/32",
+        rendered["spec"]["egress"][1]["to"][0]["ipBlock"]["cidr"] == "10.0.0.5/32",
+    )
+    # Mutating the caller's objects after rendering must not change the manifest.
+    labels = {"app": "mlflow"}
+    pod = PodSelectorEndpoint(
+        description="y", namespace="sovra-shared", pod_labels=labels, ports=(PortRule("TCP", 5000),)
+    )
+    selector = {"app": "training-worker"}
+    template = _base_template(pod_selector=selector, allowed_internal_endpoints=(pod,))
+    manifest = render_network_policy_manifest(template)
+    labels["app"] = "evil"
+    selector["app"] = "evil"
+    check(
+        "FTF-0902",
+        "the manifest does not alias the endpoint's pod_labels dict",
+        manifest["spec"]["egress"][1]["to"][0]["podSelector"]["matchLabels"] == {"app": "mlflow"},
+    )
+    check(
+        "FTF-0902",
+        "the manifest does not alias the template's pod_selector dict",
+        manifest["spec"]["podSelector"]["matchLabels"] == {"app": "training-worker"},
+    )
+
+
+def test_r3_valid_field_subclass_endpoints_are_refused_by_exact_type() -> None:
+    # Field validation alone must not be what refuses these: the fields are valid.
+    class _SubCidr(CidrEndpoint):
+        def __post_init__(self) -> None:
+            pass
+
+    class _SubPod(PodSelectorEndpoint):
+        def __post_init__(self) -> None:
+            pass
+
+    sub_cidr = _SubCidr(description="x", cidr="10.0.0.5/32", ports=(PortRule("TCP", 80),))
+    _render_must_refuse(
+        "valid-field CidrEndpoint subclass", _base_template(allowed_internal_endpoints=(sub_cidr,))
+    )
+    sub_pod = _SubPod(
+        description="y",
+        namespace="sovra-shared",
+        pod_labels={"app": "mlflow"},
+        ports=(PortRule("TCP", 5000),),
+    )
+    _render_must_refuse(
+        "valid-field PodSelectorEndpoint subclass",
+        _base_template(allowed_internal_endpoints=(sub_pod,)),
+    )
+
+
+def test_r3_ipv6_default_route_is_refused_directly() -> None:
+    # Review item 4: `::/0` (and friends) on the real default code.
+    for cidr in (
+        "::/0",
+        "::/1",
+        "::",
+        "2001:db8::/32",
+        "fd00:ec2::254/128",
+        "fc00::/7",
+        "::ffff:10.0.0.1/128",
+    ):
+        try:
+            CidrEndpoint(description="v6", cidr=cidr, ports=(PortRule("TCP", 80),))
+            check("FTF-0902", f"IPv6 cidr {cidr!r} must be refused at construction", False)
+        except NetworkPolicyTemplateError:
+            pass
+        _render_must_refuse(f"IPv6 cidr {cidr!r} mutated in", _cidr_template(cidr=cidr))
+    check(
+        "FTF-0902",
+        "::/0 is the default-open class",
+        _rejects(NetworkPolicyDefaultOpenError, CidrEndpoint, "v6", "::/0", (PortRule("TCP", 80),)),
+    )
+    check(
+        "FTF-0902",
+        "a non-wildcard IPv6 cidr is the IPv6-escape class",
+        _rejects(IPv6EscapeError, CidrEndpoint, "v6", "2001:db8::/32", (PortRule("TCP", 80),)),
+    )
+
+
+def test_r3_rfc1918_boundaries_are_pinned() -> None:
+    # Review item 5: ranges must not widen, shrink or gain neighbours.
+    refused = (
+        "9.255.255.255/32",
+        "11.0.0.0/32",
+        "10.0.0.0/7",
+        "8.0.0.0/7",
+        "0.0.0.0/1",
+        "172.15.255.255/32",
+        "172.32.0.0/32",
+        "172.0.0.0/8",
+        "172.16.0.0/11",
+        "172.16.0.0/10",
+        "192.167.255.255/32",
+        "192.169.0.0/32",
+        "192.168.0.0/15",
+        "192.0.0.0/8",
+        "100.64.0.1/32",
+        "100.64.0.0/10",
+        "127.0.0.1/32",
+        "1.1.1.1/32",
+        "255.255.255.255/32",
+    )
+    accepted = (
+        "10.0.0.0/8",
+        "10.0.0.0/32",
+        "10.255.255.255/32",
+        "172.16.0.0/12",
+        "172.16.0.0/32",
+        "172.31.255.255/32",
+        "192.168.0.0/16",
+        "192.168.0.0/32",
+        "192.168.255.255/32",
+    )
+    for cidr in refused:
+        try:
+            CidrEndpoint(description="b", cidr=cidr, ports=(PortRule("TCP", 80),))
+            check("FTF-0902", f"{cidr} must be refused at construction", False)
+        except NetworkPolicyTemplateError:
+            pass
+        _render_must_refuse(f"{cidr} mutated in", _cidr_template(cidr=cidr))
+    for cidr in accepted:
+        try:
+            endpoint = CidrEndpoint(description="b", cidr=cidr, ports=(PortRule("TCP", 80),))
+            out = render_network_policy_manifest(
+                _base_template(allowed_internal_endpoints=(endpoint,))
+            )
+            check(
+                "FTF-0902",
+                f"{cidr} is rendered unchanged",
+                out["spec"]["egress"][1]["to"][0]["ipBlock"]["cidr"] == cidr,
+            )
+        except NetworkPolicyTemplateError as exc:
+            check("FTF-0902", f"{cidr} must be accepted, got {exc!r}", False)
 
 
 def main() -> None:

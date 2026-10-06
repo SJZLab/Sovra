@@ -150,9 +150,73 @@ _RFC1918_NETWORKS: tuple[ipaddress.IPv4Network, ...] = (
 )
 
 
+def _exact_str(value: object, what: str, *, empty_error: type[Exception]) -> str:
+    """`value` must be *exactly* `str` (never a subclass, whose `__str__`/
+    `__eq__`/`__bool__` can lie to every check that follows) and non-empty."""
+    if type(value) is not str:
+        raise InvalidEndpointDefinitionError(f"{what} must be exactly a str, got {type(value)!r}")
+    if not value:
+        raise empty_error(f"{what} must be a non-empty string")
+    return value
+
+
+def _normalize_label_map(value: object, what: str) -> dict[str, str]:
+    """A fresh `dict[str, str]` rebuilt from `value`, which must be exactly a
+    non-empty `dict` whose keys and values are exactly non-empty `str`. The
+    returned dict is what gets rendered -- never the caller's own object."""
+    if type(value) is not dict:
+        raise InvalidEndpointDefinitionError(f"{what} must be exactly a dict, got {type(value)!r}")
+    if not value:
+        raise MissingExplicitScopingError(
+            f"{what} is empty -- an empty Kubernetes selector matches every pod in the "
+            "namespace, which is never an explicit scoping"
+        )
+    labels: dict[str, str] = {}
+    for key, label_value in value.items():
+        labels[_exact_str(key, f"{what} key", empty_error=InvalidEndpointDefinitionError)] = (
+            _exact_str(
+                label_value, f"{what} value for {key!r}", empty_error=InvalidEndpointDefinitionError
+            )
+        )
+    return labels
+
+
+def _normalize_ports(ports: object, description: str) -> list[dict[str, str | int]]:
+    """Re-derives the exact rendered `ports` list from `ports`, which must be
+    exactly a non-empty `tuple` of exactly `PortRule`, each with an exact
+    `str` protocol in the allowed set and an exact `int` port in 1-65535.
+    Independent of `PortRule.__post_init__` having run (or of a subclass /
+    `object.__setattr__` having skipped it); the result is non-empty by
+    construction, so there is never an "all ports" `ports: []` rule."""
+    if type(ports) is not tuple:
+        raise InvalidEndpointDefinitionError(
+            f"endpoint {description!r} ports must be exactly a tuple, got {type(ports)!r}"
+        )
+    if not ports:
+        raise InvalidEndpointDefinitionError(
+            f"endpoint {description!r} must name at least one explicit port -- "
+            "an endpoint with no ports is not a representable allow rule"
+        )
+    rendered: list[dict[str, str | int]] = []
+    for rule in ports:
+        if type(rule) is not PortRule:
+            raise InvalidEndpointDefinitionError(
+                f"endpoint {description!r} ports must be exactly PortRule, got {type(rule)!r}"
+            )
+        protocol, port = rule.protocol, rule.port
+        if type(protocol) is not str or protocol not in _PROTOCOLS:
+            raise InvalidEndpointDefinitionError(
+                f"protocol must be exactly one of {sorted(_PROTOCOLS)}, got {protocol!r}"
+            )
+        if type(port) is not int or not (1 <= port <= 65535):
+            raise InvalidEndpointDefinitionError(f"port must be an exact int 1-65535, got {port!r}")
+        rendered.append({"protocol": protocol, "port": port})
+    return rendered
+
+
 def _validate_cidr_endpoint_fields(
     description: object, cidr: object, ports: object
-) -> ipaddress.IPv4Network | ipaddress.IPv6Network:
+) -> tuple[str, list[dict[str, str | int]]]:
     """Every real invariant a `CidrEndpoint`'s three fields must satisfy,
     independent of *how* those values came to be on the instance --  a
     normal constructor call, a caller that bypassed `__post_init__` via
@@ -160,20 +224,22 @@ def _validate_cidr_endpoint_fields(
     overrides `__post_init__` to skip it entirely. Called once at
     construction time (`CidrEndpoint.__post_init__`) and once again,
     independently, against the endpoint's own *current* attribute values
-    at render time (`_revalidate_endpoint_at_render_time`) -- so
-    `render_network_policy_manifest`'s own "always re-validates" docstring
-    claim holds against every one of those bypasses, not only a
-    template-level mutation.
+    at render time (`_endpoint_egress_rule`).
+
+    Types are exact (`type(x) is str`, never `isinstance`): a `str` subclass
+    can report one value from `__str__` (which `ipaddress` parses) and
+    another from everything else. Returns the *normalized* values to emit --
+    `str(ip_network(cidr))` and a rebuilt, non-empty ports list -- so the
+    renderer never emits a field it did not itself just validate.
     """
-    if not description or not isinstance(description, str):
-        raise InvalidEndpointDefinitionError("description must be a non-empty string")
-    if not ports:
+    description = _exact_str(description, "description", empty_error=InvalidEndpointDefinitionError)
+    rendered_ports = _normalize_ports(ports, description)
+    if type(cidr) is not str:
         raise InvalidEndpointDefinitionError(
-            f"endpoint {description!r} must name at least one explicit port -- "
-            "an endpoint with no ports is not a representable allow rule"
+            f"endpoint {description!r} cidr must be exactly a str, got {type(cidr)!r}"
         )
     try:
-        network = ipaddress.ip_network(cidr, strict=True)  # type: ignore[arg-type]
+        network = ipaddress.ip_network(cidr, strict=True)
     except (ValueError, TypeError) as exc:
         raise InvalidEndpointDefinitionError(
             f"endpoint {description!r} has an unparseable cidr {cidr!r}: {exc}"
@@ -208,29 +274,23 @@ def _validate_cidr_endpoint_fields(
             "explicit internal endpoint must name a real internal address, never "
             "a public or otherwise-special one"
         )
-    return network
+    return str(network), rendered_ports
 
 
 def _validate_pod_selector_endpoint_fields(
     description: object, namespace: object, pod_labels: object, ports: object
-) -> None:
+) -> tuple[str, dict[str, str], list[dict[str, str | int]]]:
     """As `_validate_cidr_endpoint_fields`, for a `PodSelectorEndpoint`'s
-    four fields -- called at construction time and again at render time
-    against the endpoint's own current attribute values."""
-    if not description or not isinstance(description, str):
-        raise InvalidEndpointDefinitionError("description must be a non-empty string")
-    if not namespace:
+    four fields. Returns the normalized `(namespace, labels, ports)` to
+    emit -- fresh objects, never the caller's own."""
+    description = _exact_str(description, "description", empty_error=InvalidEndpointDefinitionError)
+    if type(namespace) is str and not namespace:
         raise MissingExplicitScopingError(f"endpoint {description!r} has an empty namespace")
-    if not pod_labels:
-        raise MissingExplicitScopingError(
-            f"endpoint {description!r} has an empty pod_labels selector -- an "
-            "empty Kubernetes podSelector matches every pod in the namespace, which "
-            "is never an explicit internal-endpoint scoping"
-        )
-    if not ports:
-        raise InvalidEndpointDefinitionError(
-            f"endpoint {description!r} must name at least one explicit port"
-        )
+    namespace = _exact_str(
+        namespace, f"endpoint {description!r} namespace", empty_error=MissingExplicitScopingError
+    )
+    labels = _normalize_label_map(pod_labels, f"endpoint {description!r} pod_labels")
+    return namespace, labels, _normalize_ports(ports, description)
 
 
 @dataclass(frozen=True)
@@ -243,18 +303,7 @@ class PortRule:
     port: int
 
     def __post_init__(self) -> None:
-        if self.protocol not in _PROTOCOLS:
-            raise InvalidEndpointDefinitionError(
-                f"protocol must be one of {sorted(_PROTOCOLS)}, got {self.protocol!r}"
-            )
-        if (
-            not isinstance(self.port, int)
-            or isinstance(self.port, bool)
-            or not (1 <= self.port <= 65535)
-        ):
-            raise InvalidEndpointDefinitionError(
-                f"port must be an integer 1-65535, got {self.port!r}"
-            )
+        _normalize_ports((self,), "PortRule")
 
 
 @dataclass(frozen=True)
@@ -330,6 +379,26 @@ class NetworkPolicyTemplate:
     allow_dns: bool = True
 
 
+def _validated_template_identity(
+    template: NetworkPolicyTemplate,
+) -> tuple[str, str, str, dict[str, str]]:
+    """Exact-type, non-empty `(template_id, organization_id, namespace,
+    pod_selector)`, with `pod_selector` rebuilt as a fresh dict -- the only
+    values the renderer ever emits for the template's own identity."""
+    template_id = template.template_id
+    if type(template_id) is not str or not template_id or len(template_id) > TEMPLATE_ID_MAX_LENGTH:
+        raise MissingExplicitScopingError(
+            f"template_id must be a non-empty str of at most {TEMPLATE_ID_MAX_LENGTH} "
+            f"characters, got {template_id!r}"
+        )
+    organization_id = _exact_str(
+        template.organization_id, "organization_id", empty_error=MissingExplicitScopingError
+    )
+    namespace = _exact_str(template.namespace, "namespace", empty_error=MissingExplicitScopingError)
+    pod_selector = _normalize_label_map(template.pod_selector, "template pod_selector")
+    return template_id, organization_id, namespace, pod_selector
+
+
 def validate_network_policy_template(template: NetworkPolicyTemplate) -> NetworkPolicyTemplate:
     """Raises a specific `NetworkPolicyTemplateError` subclass for every
     real invariant this task's acceptance/negative_acceptance names.
@@ -337,33 +406,20 @@ def validate_network_policy_template(template: NetworkPolicyTemplate) -> Network
     endpoint, has already validated itself in `__post_init__` -- this
     function's own job is the cross-field/template-level invariants no
     single dataclass's constructor can see)."""
-    if not template.template_id or len(template.template_id) > TEMPLATE_ID_MAX_LENGTH:
-        raise MissingExplicitScopingError(
-            f"template_id must be a non-empty string of at most {TEMPLATE_ID_MAX_LENGTH} "
-            f"characters, got {template.template_id!r}"
-        )
-    if not template.organization_id:
-        raise MissingExplicitScopingError("organization_id must be a non-empty string")
-    if not template.namespace:
-        raise MissingExplicitScopingError("namespace must be a non-empty string")
-    if not template.pod_selector:
-        raise MissingExplicitScopingError(
-            "pod_selector must be non-empty -- an empty Kubernetes podSelector matches "
-            "every pod in the namespace, which is never an explicit scoping"
-        )
-    if not template.deny_by_default_egress:
+    _validated_template_identity(template)
+    if template.deny_by_default_egress is not True:
         raise NetworkPolicyDefaultOpenError(
             f"template {template.template_id!r} has deny_by_default_egress=False"
         )
-    if not template.deny_by_default_ingress:
+    if template.deny_by_default_ingress is not True:
         raise NetworkPolicyDefaultOpenError(
             f"template {template.template_id!r} has deny_by_default_ingress=False"
         )
-    if not template.block_metadata_endpoint:
+    if template.block_metadata_endpoint is not True:
         raise MetadataEndpointExposedError(
             f"template {template.template_id!r} has block_metadata_endpoint=False"
         )
-    if template.ipv6_policy != "blocked":
+    if type(template.ipv6_policy) is not str or template.ipv6_policy != "blocked":
         # Only reachable from untrusted deserialized data bypassing the
         # type checker -- the Literal type offers no other value to
         # construct through normal Python code.
@@ -377,6 +433,11 @@ def validate_network_policy_template(template: NetworkPolicyTemplate) -> Network
             "an explicit tuple (possibly empty, for a workload that genuinely needs no "
             "internal endpoints) is required; None means 'not yet configured'"
         )
+    if type(template.allowed_internal_endpoints) is not tuple:
+        raise InvalidEndpointDefinitionError(
+            "allowed_internal_endpoints must be exactly a tuple, got "
+            f"{type(template.allowed_internal_endpoints)!r}"
+        )
     # Endpoint-level invariants are not re-checked here: a template-level
     # mutation (e.g. deny_by_default_egress flipped after construction) is
     # caught above every time this function runs, but an *endpoint* bypass
@@ -384,75 +445,61 @@ def validate_network_policy_template(template: NetworkPolicyTemplate) -> Network
     # subclass overriding __post_init__, or a duck-typed stand-in) can only
     # be caught by re-deriving the egress rule from that endpoint's own
     # current values -- done independently, every render, by
-    # `_revalidate_endpoint_at_render_time` inside `_endpoint_egress_rule`.
+    # `_endpoint_egress_rule` inside `_endpoint_egress_rule`.
     return template
 
 
-def _revalidate_endpoint_at_render_time(endpoint: object) -> AllowedInternalEndpoint:
+def _endpoint_egress_rule(endpoint: object) -> dict:
     """Re-runs every real per-endpoint invariant against `endpoint`'s own
     *current* attribute values, independent of whatever validation ran (or
-    did not run) at construction time -- this is what lets
-    `render_network_policy_manifest`'s own docstring genuinely claim
-    "always re-validates", not merely at the template level.
+    did not run) at construction time, and builds the egress rule *only*
+    from the normalized values that validation returns -- never from the
+    endpoint's own attributes. This is what lets
+    `render_network_policy_manifest`'s "always re-validates" claim hold
+    against a mutated, subclassed, duck-typed or type-lying endpoint.
 
     Accepts *exactly* `CidrEndpoint` or `PodSelectorEndpoint` -- checked by
     `type(endpoint) is ...`, never `isinstance`, since a subclass that
-    overrides `__post_init__` to skip every check below would still satisfy
-    an `isinstance` check. Anything else (a subclass, or any other
-    duck-typed object) is refused outright rather than rendered.
+    overrides `__post_init__` to skip every check would still satisfy an
+    `isinstance` check. Anything else is refused outright.
+
+    No `except` clause on the ipBlock: the real Kubernetes API rejects an
+    `except` not inside `cidr`, and validation guarantees `cidr` never
+    contains a cloud-metadata address (or is IPv6), so there is never a
+    sub-range to carve back out. The egress list is allow-only (Section 12):
+    an address is reachable iff it appears in one of these `to` blocks.
     """
     endpoint_type = type(endpoint)
     if endpoint_type is CidrEndpoint:
         cidr_endpoint = cast(CidrEndpoint, endpoint)
-        _validate_cidr_endpoint_fields(
+        cidr, ports = _validate_cidr_endpoint_fields(
             cidr_endpoint.description, cidr_endpoint.cidr, cidr_endpoint.ports
         )
-        return cidr_endpoint
+        return {"to": [{"ipBlock": {"cidr": cidr}}], "ports": ports}
     if endpoint_type is PodSelectorEndpoint:
         pod_endpoint = cast(PodSelectorEndpoint, endpoint)
-        _validate_pod_selector_endpoint_fields(
+        namespace, labels, ports = _validate_pod_selector_endpoint_fields(
             pod_endpoint.description,
             pod_endpoint.namespace,
             pod_endpoint.pod_labels,
             pod_endpoint.ports,
         )
-        return pod_endpoint
+        return {
+            "to": [
+                {
+                    "namespaceSelector": {
+                        "matchLabels": {"kubernetes.io/metadata.name": namespace}
+                    },
+                    "podSelector": {"matchLabels": labels},
+                }
+            ],
+            "ports": ports,
+        }
     raise InvalidEndpointDefinitionError(
         f"allowed_internal_endpoints contains a {endpoint_type!r} instance -- only the "
         "exact CidrEndpoint or PodSelectorEndpoint types are ever rendered; a subclass or "
         "other duck-typed object is refused even if it would satisfy isinstance()"
     )
-
-
-def _endpoint_egress_rule(endpoint: AllowedInternalEndpoint) -> dict:
-    endpoint = _revalidate_endpoint_at_render_time(endpoint)
-    ports = [{"protocol": rule.protocol, "port": rule.port} for rule in endpoint.ports]
-    if type(endpoint) is CidrEndpoint:
-        # No `except` clause here: the real Kubernetes API rejects an
-        # ipBlock whose `except` values are not themselves inside `cidr`
-        # (kubernetes/kubernetes's own networking/v1 validation), and the
-        # revalidation above already guarantees `cidr` never contains a
-        # real cloud-metadata address (or is IPv6 at all) -- so there is
-        # never a metadata sub-range of this endpoint's own cidr to carve
-        # back out. Metadata/IPv6 are blocked the same way every other
-        # non-allow-listed destination is: this module's egress list is
-        # allow-only (Section 12), so an address is reachable if and only
-        # if it appears in one of these `to` blocks at all -- there is no
-        # broader "allow, except ..." rule for a narrower carve-out to ever
-        # be needed against.
-        return {"to": [{"ipBlock": {"cidr": endpoint.cidr}}], "ports": ports}
-    pod_endpoint = cast(PodSelectorEndpoint, endpoint)
-    return {
-        "to": [
-            {
-                "namespaceSelector": {
-                    "matchLabels": {"kubernetes.io/metadata.name": pod_endpoint.namespace}
-                },
-                "podSelector": {"matchLabels": dict(pod_endpoint.pod_labels)},
-            }
-        ],
-        "ports": ports,
-    }
 
 
 def render_network_policy_manifest(template: NetworkPolicyTemplate) -> dict:
@@ -471,6 +518,7 @@ def render_network_policy_manifest(template: NetworkPolicyTemplate) -> dict:
     "this plus whatever else").
     """
     validate_network_policy_template(template)
+    template_id, organization_id, namespace, pod_selector = _validated_template_identity(template)
 
     egress_rules: list[dict] = []
     if template.allow_dns:
@@ -493,15 +541,15 @@ def render_network_policy_manifest(template: NetworkPolicyTemplate) -> dict:
         "apiVersion": "networking.k8s.io/v1",
         "kind": "NetworkPolicy",
         "metadata": {
-            "name": template.template_id,
-            "namespace": template.namespace,
+            "name": template_id,
+            "namespace": namespace,
             "labels": {
                 "app.kubernetes.io/managed-by": "sovra-network-policy-templates",
-                "sovra.io/organization-id": template.organization_id,
+                "sovra.io/organization-id": organization_id,
             },
         },
         "spec": {
-            "podSelector": {"matchLabels": dict(template.pod_selector)},
+            "podSelector": {"matchLabels": pod_selector},
             "policyTypes": ["Ingress", "Egress"],
             "ingress": [],
             "egress": egress_rules,
