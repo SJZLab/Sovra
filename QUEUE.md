@@ -9152,6 +9152,12 @@ verifiable exchange; PR #162 is being closed without merging as part of
 this same resolution (doc-only, redundant once this lands).
 
 ## Active (decided by Control plane — relay executes, top first)
+**Every item, every shift (2026-10-06, Control plane):** before submitting, run the PRE-SUBMIT
+SELF-ATTACK in docs/operations/routines.md STEP 5b. Break every protection you added (delete it, and
+add a bypass), run the test file as CI does (`python tests/...`) and show RED, repeat on a neutral host
+for anything host-dependent, include a negative test on the real default code, and never stub the
+protection under test. Put the fault → RED table in your queue entry, and apply the SAME-CLASS SWEEP
+to sibling modules. Items returned 3–5 times this week all failed on exactly this.
 0. **2026-10-04 (corrected 15:25Z by Control plane): highest priority, one item per shift, one PR per item.**
    Work strictly in this order. Skip only an item that has an open `[relay]` PR with GREEN CI.
    - **0a. DONE.** #449's red CI was fixed via #453, which merged as 6473924.
