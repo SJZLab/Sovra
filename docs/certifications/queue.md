@@ -24178,3 +24178,13 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
   - Non-blocking (F1): certification should require verified non-None digests; assert the ApproximateAliasTokenizer
     counts; reject a bool `max_sequence_length`.
   - Show each fault above RED before submitting (STEP 5b).
+
+## 2026-10-06T21:30Z — Control plane: product-truth gate tightened (#514); 7 certified tasks attested WIRED
+- The gate counted docstrings, the defining file and `.pyc` bytes as callers. It now uses AST and whole-word
+  resolution (governance PR #514).
+- An independent wiring verifier proved live call chains plus fault → RED for FTF-0005, 0102, 0103, 0104, 0105, 0202
+  and H006. Their proving_symbols are recorded, and product-true goes from 27 to 34 (see the ledger).
+- Not recorded:
+  - FTF-H003: the storage tenant policy is unwired, and the cache and alias layers are not built.
+  - FTF-04A03 and FTF-04A04: their UI is unmounted.
+- Relay: wiring work that reaches these tasks must make the missing parts live. FTF-0214 stays 0d.

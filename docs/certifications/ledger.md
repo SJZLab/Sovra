@@ -10007,3 +10007,26 @@ PR is not landed by the next certifier shift.
   in Claim/TaskClaimRegistry); W1–U2 and 7 extra update-branch faults are RED.
 - Follow-up, not blocking: FTF-H034-F3. Replacing line 365's ternary with `[evidence_hash]` writes `[""]` into
   tasks.json and the tests stay GREEN; the gate has no ternary operator, so it never generated this mutant.
+
+## Wiring attestation — 7 certified tasks proven on the live path (2026-10-06)
+- Scope: product-true only (proving_symbol). Certification state is unchanged. Validated-by: control-plane session
+  https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. An independent verifier traced each call chain from
+  `create_app()` (apps/api/app/main.py) and ran it live: real uvicorn, real Postgres 16, real OIDC login, POST /projects
+  201. Each symbol was then broken and the run turned RED.
+- Gate: product_truth_check after #514 (AST-resolved callers, merge ab158c4) reports 34/34.
+
+| Task | proving_symbol | Live chain (abridged) | Fault → RED |
+|---|---|---|---|
+| FTF-0005 | `Settings` | main.py:177 `Settings.from_env()` → :184 engine → every router | from_env raises → test_ftf_0005 and the live harness |
+| FTF-0102 | `set_tenant_context` | project_routes:215 → tenant_context:89 → query_guards:136/156 | empty org bind → test_ftf_0102 and the live harness |
+| FTF-0103 | `require_role` | every *_routes `require_role` dep, real resolver main.py:191/196 | role check removed → test_ftf_0103 and the live harness |
+| FTF-0104 | `write_audit_event` | project_routes:216 → project_crud:219 (about 44 CRUD callers) | `session.add` removed → live probe and test_audit_event_writer (proving_test widened) |
+| FTF-0105 | `execute_tenant_scoped` | project_crud:132/151/242, membership_store:74; pool guard main.py:185 | raises → test_ftf_0105 and the live harness |
+| FTF-0202 | `store_secret_ref` | main.py:246 → dataset_source routes:220 → crud:293/250 → secret_manager:437 | KV write skipped → live probe and test_ftf_0202 |
+| FTF-H006 | `guarded_fetch` | component_binding routes:251 → crud:413/400 → outbound_guard:271 (plus connectors) | raises or allow-all → test_ftf_h006 and test_component_bindings |
+
+- Not recorded (Law 6/7):
+  - FTF-H003: only the IDOR core is live. `packages/storage/tenant_policy.py` has no importer, and the cache and
+    model-alias layers have no code.
+  - FTF-04A03 and FTF-04A04: the backend routes are live, but the UI selector is unmounted (apps/web has no pages).
+    They are wired by FTF-0214 / FTF-H029.
