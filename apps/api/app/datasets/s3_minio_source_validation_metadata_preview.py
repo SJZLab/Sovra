@@ -86,13 +86,34 @@ enforced as seven independent, disclosed checks:
      (`SourceUnavailableError`) rather than silently parsed as a listing
      with zero entries and `IsTruncated=false` -- a fabricated "source is
      empty" success.
-  7. **Pagination that claims more pages but never advances** -- a real
-     `IsTruncated=true` response must also advance at least one of
-     `NextKeyMarker`/`NextVersionIdMarker`; a response that reports
-     truncation without ever advancing either marker is refused
-     (`SourceUnavailableError`) rather than re-fetched forever (no real
-     next page exists to request) or allowed to silently append duplicate
-     copies of the same page into the bounded preview.
+  7. **Pagination marker cycles and unbounded pagination** -- every
+     `(key-marker, version-id-marker)` pair this module is about to
+     request is checked against every pair it has already requested in
+     this same listing; revisiting one (whether the immediately previous
+     page -- `IsTruncated=true` with neither marker advanced -- or a
+     longer A-to-B-to-A cycle through several distinct pages) is refused
+     (`SourceUnavailableError`) rather than re-fetched forever or allowed
+     to silently append duplicate copies of an already-seen page into the
+     bounded preview. Independently, a hard `max_page_fetches` request cap
+     refuses a listing that keeps reporting new, ever-advancing markers
+     without ever finishing or revisiting one.
+  8. **Duplicate identity within one listing** -- a real `(Key, VersionId)`
+     pair is never allowed to appear twice across the whole listing (within
+     one page or across pages); encountering an already-seen pair is
+     refused (`DuplicateObjectVersionError`) rather than silently
+     double-counted into the manifest.
+  9. **Malformed pagination/size fields fail closed, never silently
+     default** -- the real `<IsTruncated>` element must be present and
+     must read as exactly `"true"`/`"1"` (truncated) or `"false"`/`"0"`
+     (not truncated), case/whitespace-insensitive; anything else --
+     missing, garbage, or any other value -- is refused
+     (`SourceUnavailableError`) rather than silently treated as "not
+     truncated". The real `<ListVersionsResult>` root element itself is
+     required; any other root (including a non-`<Error>` one) is refused
+     the same way an `<Error>` root already is. A non-integer or negative
+     real `<Size>` is refused with this module's own error class rather
+     than raising a bare, uncategorized `ValueError` or accepting a
+     negative byte count.
 
 The returned `manifest_hash` (sha256 over the canonical JSON serialization
 of the exact bounded `(key, version_id, size_bytes, etag_raw)` tuples
@@ -139,6 +160,7 @@ from app.services.storage_semantics_client import S3Credentials, S3Endpoint, sig
 
 __all__ = [
     "CrossTenantPrefixError",
+    "DuplicateObjectVersionError",
     "OverlyBroadGrantError",
     "S3MinioSourceConfig",
     "S3MinioSourceValidationError",
@@ -163,6 +185,11 @@ _DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_MAX_PREVIEW_RECORDS = 20
 # The real S3 ListObjectVersions API's own default/maximum `max-keys`.
 DEFAULT_PAGE_SIZE = 1000
+# A hard cap on the number of page fetches in one listing -- independent of
+# the pagination-marker-cycle check, this bounds a listing that keeps
+# reporting new, ever-advancing markers without ever finishing or
+# revisiting one.
+DEFAULT_MAX_PAGE_FETCHES = 10_000
 
 GuardedFetchFn = Callable[..., GuardedResponse]
 
@@ -200,6 +227,12 @@ class VersioningDisabledError(S3MinioSourceValidationError):
     source, so no real "exact version manifest" can be produced from it."""
 
 
+class DuplicateObjectVersionError(S3MinioSourceValidationError):
+    """A real `(Key, VersionId)` pair was already seen earlier in this same
+    listing -- within one page, or across pages -- and is refused rather
+    than silently double-counted into the manifest."""
+
+
 @dataclass(frozen=True)
 class S3MinioSourceConfig:
     """The real, explicit trust boundary a caller supplies for one
@@ -213,6 +246,7 @@ class S3MinioSourceConfig:
     tenant_key_prefix: str
     max_preview_records: int = DEFAULT_MAX_PREVIEW_RECORDS
     page_size: int = DEFAULT_PAGE_SIZE
+    max_page_fetches: int = DEFAULT_MAX_PAGE_FETCHES
 
 
 @dataclass(frozen=True)
@@ -271,6 +305,29 @@ def _local_tag(tag: str) -> str:
     return tag.split("}", 1)[1] if "}" in tag else tag
 
 
+def _parse_is_truncated(raw: str | None) -> bool:
+    """Strict, fail-closed parse of the real `<IsTruncated>` element's own
+    text. Only `"true"`/`"1"` (truncated) or `"false"`/`"0"` (not
+    truncated), case/whitespace-insensitive, are ever accepted -- a missing
+    element or any other value is refused rather than silently treated as
+    "not truncated" (which would return a partial listing as if it were
+    complete)."""
+    if raw is None:
+        raise SourceUnavailableError(
+            "the S3/MinIO endpoint's ListObjectVersions response is missing the required "
+            "<IsTruncated> element"
+        )
+    normalized = raw.strip().lower()
+    if normalized in ("true", "1"):
+        return True
+    if normalized in ("false", "0"):
+        return False
+    raise SourceUnavailableError(
+        f"the S3/MinIO endpoint returned an unrecognized <IsTruncated> value {raw!r} -- only "
+        "'true'/'1' (truncated) or 'false'/'0' (not truncated) are ever accepted"
+    )
+
+
 def _parse_list_versions_xml(
     body: bytes,
 ) -> tuple[list[dict[str, object]], bool, str | None, str | None]:
@@ -288,7 +345,8 @@ def _parse_list_versions_xml(
             f"the S3/MinIO endpoint returned an unparsable ListObjectVersions response: {exc}"
         ) from exc
 
-    if _local_tag(root.tag) == "Error":
+    root_tag = _local_tag(root.tag)
+    if root_tag == "Error":
         code: str | None = None
         message: str | None = None
         for child in root:
@@ -301,16 +359,22 @@ def _parse_list_versions_xml(
             "the S3/MinIO endpoint returned an HTTP 200 response with an <Error> root "
             f"(Code={code!r}, Message={message!r}) -- never treated as an empty listing"
         )
+    if root_tag != "ListVersionsResult":
+        raise SourceUnavailableError(
+            "the S3/MinIO endpoint returned an HTTP 200 response with an unexpected root "
+            f"element {root_tag!r} -- only a real <ListVersionsResult> root is ever treated "
+            "as a listing"
+        )
 
     entries: list[dict[str, object]] = []
-    is_truncated = False
+    is_truncated_text: str | None = None
     next_key_marker: str | None = None
     next_version_id_marker: str | None = None
 
     for child in root:
         name = _local_tag(child.tag)
         if name == "IsTruncated":
-            is_truncated = (child.text or "").strip().lower() == "true"
+            is_truncated_text = child.text
         elif name == "NextKeyMarker":
             next_key_marker = child.text
         elif name == "NextVersionIdMarker":
@@ -320,6 +384,16 @@ def _parse_list_versions_xml(
             for sub in child:
                 fields[_local_tag(sub.tag)] = sub.text or ""
             size_text = fields.get("Size", "0") or "0"
+            try:
+                size_bytes = int(size_text)
+            except ValueError as exc:
+                raise SourceUnavailableError(
+                    f"key {fields.get('Key', '')!r} reports a non-integer <Size> " f"{size_text!r}"
+                ) from exc
+            if size_bytes < 0:
+                raise SourceUnavailableError(
+                    f"key {fields.get('Key', '')!r} reports a negative <Size> {size_bytes}"
+                )
             entries.append(
                 {
                     "key": fields.get("Key", ""),
@@ -327,10 +401,12 @@ def _parse_list_versions_xml(
                     "is_latest": fields.get("IsLatest", "").strip().lower() == "true",
                     "last_modified": fields.get("LastModified", ""),
                     "etag": fields.get("ETag", "").strip('"'),
-                    "size": int(size_text),
+                    "size": size_bytes,
                     "is_delete_marker": name == "DeleteMarker",
                 }
             )
+
+    is_truncated = _parse_is_truncated(is_truncated_text)
     return entries, is_truncated, next_key_marker, next_version_id_marker
 
 
@@ -359,12 +435,33 @@ def validate_and_preview_s3_minio_source(
     active_policy = policy or default_s3_minio_preview_policy()
     collected: list[S3ObjectVersionMetadata] = []
     latest_version_by_key: dict[str, str] = {}
+    seen_key_version_pairs: set[tuple[str, str]] = set()
+    used_marker_pairs: set[tuple[str, str]] = set()
     total_examined = 0
     key_marker = ""
     version_id_marker = ""
     is_truncated = False
+    page_fetches = 0
 
     while True:
+        page_fetches += 1
+        if page_fetches > config.max_page_fetches:
+            raise SourceUnavailableError(
+                f"exceeded the maximum of {config.max_page_fetches} page fetches listing "
+                f"bucket {config.bucket!r} (prefix={prefix!r}) without completing the "
+                "listing -- refusing to keep following ever-advancing pagination markers "
+                "forever"
+            )
+        marker_pair = (key_marker, version_id_marker)
+        if marker_pair in used_marker_pairs:
+            raise SourceUnavailableError(
+                "the S3/MinIO endpoint's pagination markers revisited a page already "
+                f"fetched earlier in this same listing (key-marker={key_marker!r}, "
+                f"version-id-marker={version_id_marker!r}) -- refusing a pagination cycle "
+                "rather than looping forever or returning duplicate pages as the preview"
+            )
+        used_marker_pairs.add(marker_pair)
+
         query: dict[str, str] = {
             "versions": "",
             "prefix": prefix,
@@ -420,6 +517,14 @@ def validate_and_preview_s3_minio_source(
                     "insensitive) -- object versioning is disabled (or suspended) on this "
                     "source, so no exact version manifest can be produced from it"
                 )
+            key_version_pair = (key, version_id)
+            if key_version_pair in seen_key_version_pairs:
+                raise DuplicateObjectVersionError(
+                    f"key {key!r} version {version_id!r} appears more than once in this "
+                    "listing -- refusing to let a duplicate entry corrupt the exact version "
+                    "manifest"
+                )
+            seen_key_version_pairs.add(key_version_pair)
             if entry["is_latest"] and not entry["is_delete_marker"]:
                 previously_seen = latest_version_by_key.get(key)
                 if previously_seen is not None and previously_seen != version_id:
@@ -457,16 +562,8 @@ def validate_and_preview_s3_minio_source(
             break
         if not is_truncated:
             break
-        new_key_marker = next_key_marker or ""
-        new_version_id_marker = next_version_id_marker or ""
-        if new_key_marker == key_marker and new_version_id_marker == version_id_marker:
-            raise SourceUnavailableError(
-                "the S3/MinIO endpoint reported IsTruncated=true without advancing the "
-                "pagination marker (stuck pagination) -- refusing to loop forever or "
-                "silently return duplicate pages as the preview"
-            )
-        key_marker = new_key_marker
-        version_id_marker = new_version_id_marker
+        key_marker = next_key_marker or ""
+        version_id_marker = next_version_id_marker or ""
 
     truncated = is_truncated or total_examined > len(collected)
 

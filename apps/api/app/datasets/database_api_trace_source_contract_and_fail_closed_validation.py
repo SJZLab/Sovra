@@ -222,13 +222,18 @@ class NonUniqueStableKeyError(SourceUnavailableError):
         column (e.g. `b`/`B` tie under a case-insensitive ICU collation,
         which Python has no way to know about).
 
-    Because of the last point, tie/NULL detection is never done with Python
+    Because of the last point, tie detection is never done with Python
     equality or a Python `set()` -- it is pushed into the query itself
-    (`{key} IS NOT DISTINCT FROM LAG({key}) OVER (ORDER BY {key} ASC)`),
-    which inherits the stable key column's own real type, NaN handling and
-    collation directly from the connected database, plus an explicit
-    real-NULL check, rather than trusting a Python-side approximation of
-    what "the same value" means for an arbitrary real column."""
+    (`{key} = LAG({key}) OVER (ORDER BY {key} ASC)`), which inherits the
+    stable key column's own real type, NaN handling and collation directly
+    from the connected database, rather than trusting a Python-side
+    approximation of what "the same value" means for an arbitrary real
+    column. NULL keys are refused separately, by a whole-table existence
+    check (`_verify_no_null_keys`) that runs before this comparison is ever
+    built -- so by the time this LAG comparison runs, a plain `=` and
+    `IS NOT DISTINCT FROM` are provably equivalent (no NULL operand can
+    reach it), and `=` is used since it carries no unproven claim about
+    NULL-vs-NULL semantics."""
 
 
 class PostgresIdentifierError(SourceUnavailableError):
@@ -306,18 +311,86 @@ def _verify_watermark_present(
     stable_key_column: str,
     resume_after_key: object,
 ) -> None:
-    query = sql.SQL("SELECT 1 FROM {schema}.{table} WHERE {key} = %s").format(
+    # 2026-10-04 L2 round-5 finding: counts the real matching rows, not
+    # merely their existence -- a real concurrent INSERT of a second row at
+    # exactly the watermark value (racing in after the page that produced
+    # this watermark was fetched, in its own separate snapshot) would pass
+    # a bare existence check while the resumed `WHERE key > %s` comparison
+    # is now genuinely ambiguous about which of the two tied rows it is
+    # resuming past.
+    query = sql.SQL("SELECT count(*) FROM {schema}.{table} WHERE {key} = %s").format(
         schema=sql.Identifier(schema),
         table=sql.Identifier(table),
         key=sql.Identifier(stable_key_column),
     )
-    row = conn.execute(query, (resume_after_key,)).fetchone()
-    if row is None:
+    try:
+        row = conn.execute(query, (resume_after_key,)).fetchone()
+    except (UndefinedTable, UndefinedColumn) as exc:
+        raise UnknownSourceContractError(
+            f"the declared schema/table/column contract {schema}.{table} "
+            f"({stable_key_column}) does not exist in the real connected database -- "
+            "refusing to fabricate an empty preview for an unknown contract"
+        ) from exc
+    count = int(row[0]) if row is not None else 0  # type: ignore[call-overload]
+    if count == 0:
         raise LostWatermarkError(
             f"resume_after_key {resume_after_key!r} no longer exists in "
             f"{schema}.{table} ({stable_key_column}) -- the watermark this capture was "
             "resuming from has been lost (the row was deleted or the source's ordering "
             "shifted); refusing to resume from an arbitrary position"
+        )
+    if count > 1:
+        raise NonUniqueStableKeyError(
+            f"resume_after_key {resume_after_key!r} now matches {count} real rows in "
+            f"{schema}.{table} ({stable_key_column}) -- the stable key is no longer unique "
+            "at the exact resume point (a real concurrent insert raced in after this "
+            "watermark's own page was fetched); refusing to resume from an ambiguous position"
+        )
+
+
+def _verify_no_null_keys(
+    conn: psycopg.Connection[tuple[object, ...]],
+    *,
+    schema: str,
+    table: str,
+    stable_key_column: str,
+) -> None:
+    """2026-10-04 L2 round-5 finding: a real NULL stable-key value outside
+    the current call's own fetched-plus-lookahead window was silently
+    dropped -- `ORDER BY key ASC` places NULLs last by default, so a
+    resumed `WHERE key > %s` can never reach a NULL-keyed row (`NULL > %s`
+    is never true in SQL), and once the capture's own window has moved
+    past where a NULL would have sorted, nothing in that call's own result
+    set ever looks at it again. Checking only the current window's own
+    lookahead row (as the main query below still does, for a defect
+    actually visible within one call) cannot catch a NULL that never enters
+    any call's window at all. This check runs unconditionally, on every
+    call (not only a resumed one), against the WHOLE table, inside the
+    same `REPEATABLE READ` transaction as the paginated `SELECT` that
+    follows it -- so it sees the identical real snapshot, and a NULL that
+    exists anywhere in the source is always caught before a single row is
+    returned, never only when it happens to land in one call's own
+    window."""
+    query = sql.SQL("SELECT EXISTS (SELECT 1 FROM {schema}.{table} WHERE {key} IS NULL)").format(
+        schema=sql.Identifier(schema),
+        table=sql.Identifier(table),
+        key=sql.Identifier(stable_key_column),
+    )
+    try:
+        row = conn.execute(query).fetchone()
+    except (UndefinedTable, UndefinedColumn) as exc:
+        raise UnknownSourceContractError(
+            f"the declared schema/table/column contract {schema}.{table} "
+            f"({stable_key_column}) does not exist in the real connected database -- "
+            "refusing to fabricate an empty preview for an unknown contract"
+        ) from exc
+    if row is not None and bool(row[0]):
+        raise NonUniqueStableKeyError(
+            f"stable_key_column {stable_key_column!r} contains at least one real NULL "
+            f"value in {schema}.{table} -- a NULL key can never satisfy `key > %s` and "
+            "would become permanently unreachable on some resumed capture, however far "
+            "from the current window; refusing the whole source rather than risk "
+            "silently losing rows beyond the page this call happens to fetch"
         )
 
 
@@ -400,6 +473,18 @@ def validate_and_preview_postgres_source(
                         "statement_timeout -- refusing to run an unbounded query"
                     )
 
+                # 2026-10-04 L2 round-5 finding: runs on every call, not only
+                # a resumed one, and over the whole table, not only the
+                # current window -- `_verify_no_null_keys`'s own docstring
+                # has the full reasoning for why the lookahead-row check
+                # below cannot substitute for this.
+                _verify_no_null_keys(
+                    conn,
+                    schema=schema,
+                    table=table,
+                    stable_key_column=stable_key_column,
+                )
+
                 if resume_after_key is not None:
                     _verify_watermark_present(
                         conn,
@@ -415,14 +500,16 @@ def validate_and_preview_postgres_source(
                 # the LIMIT cutoff, which a single-row-over-the-line
                 # `>`-comparison resume would otherwise silently skip on the
                 # next call. `NonUniqueStableKeyError`'s own docstring has
-                # the full reasoning, including why the tie/NULL check below
-                # is pushed into the query itself rather than done with
-                # Python equality or a Python `set()`.
+                # the full reasoning, including why the tie check below is
+                # pushed into the query itself rather than done with Python
+                # equality or a Python `set()`; NULL keys are already
+                # refused above by `_verify_no_null_keys`, so no NULL
+                # operand can ever reach this comparison.
                 fetch_limit = config.max_preview_records + 1
                 select_columns = sql.SQL(", ").join(sql.Identifier(c) for c in all_columns)
-                tied_with_prev = sql.SQL(
-                    "({key} IS NOT DISTINCT FROM LAG({key}) OVER (ORDER BY {key} ASC))"
-                ).format(key=sql.Identifier(stable_key_column))
+                tied_with_prev = sql.SQL("({key} = LAG({key}) OVER (ORDER BY {key} ASC))").format(
+                    key=sql.Identifier(stable_key_column)
+                )
                 if resume_after_key is None:
                     query = sql.SQL(
                         "SELECT {cols}, {tied} AS __tied_with_prev FROM {schema}.{table} "

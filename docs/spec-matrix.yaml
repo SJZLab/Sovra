@@ -6340,6 +6340,127 @@ FTF-0500B:
     Not self-certified (Law 4) -- independent Control-plane L2 review and a
     real CI run (including the new integration job) on the opened PR are
     required before certification.
+
+    2026-10-05 L2 round-4 fix-and-resubmit (certification_state stays
+    PROVISIONAL, proof_state stays L1-PROVEN -- Law 2). The
+    2026-10-04T17:20Z Control-plane L2 review (docs/certifications/queue.md)
+    found five real gaps: (1) the pagination-marker check only compared the
+    immediately-previous marker pair, so a longer A-to-B-to-A cycle through
+    several distinct pages went undetected, and there was no hard page/
+    request cap for ever-advancing markers; (2) `IsTruncated` only accepted
+    the literal string "true", so "1" (a valid xsd:boolean), case/whitespace
+    variants, garbage, or a missing element were all silently read as "not
+    truncated"; (3) the root element was only checked against "Error", so
+    any other unexpected root (a namespaced `<Error>`, `<Foo><Error/></Foo>`,
+    `<ListBucketResult>`, `<html>`) was accepted as an empty, complete
+    listing; (4) duplicate `(Key, VersionId)` pairs, within one page or
+    across pages, were accepted into the "exact version" manifest; (5) a
+    non-integer `<Size>` raised a bare, uncategorized `ValueError` instead of
+    this module's own error class, and a negative `<Size>` was accepted.
+
+    Fixed: (1) the single-marker comparison was replaced by a seen-set of
+    every `(key-marker, version-id-marker)` pair already requested in this
+    listing -- revisiting one (whether the immediately previous page or a
+    longer cycle) is refused (`SourceUnavailableError`); independently, a new
+    `max_page_fetches` config field (default
+    `DEFAULT_MAX_PAGE_FETCHES = 10_000`) hard-caps the number of page
+    fetches, refusing a listing with ever-advancing, never-repeating markers
+    that would otherwise defeat the cycle check alone. (2) new
+    `_parse_is_truncated` strictly accepts only "true"/"1" (truncated) or
+    "false"/"0" (not truncated), case/whitespace-insensitive, and refuses
+    anything else -- including a missing element -- with
+    `SourceUnavailableError`. (3) `_parse_list_versions_xml` now requires the
+    root's own local tag to be exactly "ListVersionsResult"; any other root
+    (the pre-existing "Error" check stays, with its own Code/Message message)
+    is refused the same way. (4) a new `seen_key_version_pairs` set tracks
+    every real `(Key, VersionId)` pair across the whole listing; a repeat --
+    within a page or across pages -- raises the new
+    `DuplicateObjectVersionError`. (5) `<Size>` parsing is now wrapped in its
+    own `try`/`except ValueError`, raising `SourceUnavailableError` for a
+    non-integer value, and a separate explicit check refuses a negative
+    value the same way. The old single-marker "stuck pagination" check
+    (`new_key_marker == key_marker and ...`) is removed -- superseded by the
+    general marker-cycle seen-set, which also catches the exact
+    immediately-repeated-page case it covered (confirmed: the pre-existing
+    `test_stuck_pagination_without_advancing_marker_is_refused` needed no
+    change and still passes, exactly one real request before refusing).
+
+    New tests (tests/tasks/test_ftf_0500b.py, 25 -> 39 test functions):
+    `test_longer_marker_cycle_through_distinct_pages_is_refused` and
+    `test_marker_cycle_with_empty_pages_is_refused` (finding 1, cycle);
+    `test_ever_advancing_pagination_hits_the_page_fetch_cap` (finding 1,
+    cap); `test_is_truncated_strict_values_are_each_correctly_interpreted`
+    and `test_is_truncated_garbage_or_missing_value_is_refused` (finding 2);
+    `test_unexpected_root_element_is_refused` (finding 3);
+    `test_duplicate_key_version_pair_within_one_page_is_refused` and
+    `test_duplicate_key_version_pair_across_pages_is_refused` (finding 4);
+    `test_non_integer_size_is_refused` and `test_negative_size_is_refused`
+    (finding 5); plus three new disclosed fault-injection tests --
+    `test_fault_injection_duplicate_version_check_is_load_bearing_additive`
+    (an *additive* early `continue` bypassing the duplicate-pair raise, not
+    merely a negated condition, per the relay DoD rule's own "early return"
+    example), `test_fault_injection_root_tag_required_check_is_load_bearing`,
+    and `test_fault_injection_is_truncated_strict_parsing_is_load_bearing` --
+    and the pre-existing stuck-pagination fault test was renamed
+    `test_fault_injection_marker_cycle_check_is_load_bearing` and retargeted
+    at the new seen-set check (it still proves the identical
+    immediately-repeated-page scenario, now via the general mechanism). Each
+    fault test reverts the module file byte-identical (confirmed by direct
+    byte comparison in the test itself).
+
+    Law 1, shown able to fail first: `git stash` of the module fix alone
+    (keeping every test change), re-ran the suite against the genuinely
+    pre-fix (round-3) module -- a direct `TypeError` on the new
+    `max_page_fetches` config field (a real, bound failure: the field does
+    not exist pre-fix), and, run individually, each of the nine new
+    positive/negative tests failed for real against the pre-fix code
+    (`test_longer_marker_cycle_through_distinct_pages_is_refused`,
+    `test_is_truncated_strict_values_are_each_correctly_interpreted`,
+    `test_is_truncated_garbage_or_missing_value_is_refused`,
+    `test_unexpected_root_element_is_refused`,
+    `test_duplicate_key_version_pair_within_one_page_is_refused`,
+    `test_duplicate_key_version_pair_across_pages_is_refused`,
+    `test_negative_size_is_refused` as real check-failures;
+    `test_non_integer_size_is_refused` as an uncaught, uncategorized
+    `ValueError`). The empty-page cycle test
+    (`test_marker_cycle_with_empty_pages_is_refused`) initially passed
+    against the pre-fix module for the wrong reason -- the old code looped
+    unboundedly and happened to raise `SourceUnavailableError` only once it
+    ran out of the fixture's own fixed 3-page list, not from real cycle
+    detection -- so a second assertion (exactly three real requests, not
+    more) was added to make it a genuine discriminator; re-run against the
+    pre-fix module, that assertion now fails for real. `git stash pop`
+    restores the fix byte-identical; all 39 tests re-run clean.
+
+    Full verification this shift: `uv sync --all-packages`; `uv run ruff
+    check .` clean; `ruff format --check .` flagged the changed module only
+    (reformatted via `ruff format`, re-verified clean, tests re-run clean
+    after reformatting). `uv run mypy .` clean repo-wide (371 source files,
+    zero errors). `python3 scripts/validate_spec.py --strict` clean (`git
+    fetch --unshallow` first). `product_truth_check.py --fail-on-unwired`
+    unchanged 26/26. `status.py`: 101/301 certified / 24 product-true (the
+    increase from 99 to 101 is FTF-H007/FTF-04A06's own prior-shift
+    certification, unrelated to this fix -- Law 2, a resubmission is not a
+    certification). Regression swept test_ftf_0500.py/test_ftf_0303.py/
+    test_ftf_h006.py (via `uv run python3`) -- zero regressions (the printed
+    `TenantContextError` traceback and the disclosed no-IPv6-stack skip are
+    both that suite's own pre-existing, disclosed cases).
+
+    Systemic-sweep rule disclosed, not applied here: this task's only
+    sibling connector in apps/api/app/datasets/ is
+    database_api_trace_source_contract_and_fail_closed_validation.py
+    (FTF-0500C), which has its own open round-5 fix PR (#464) from a
+    concurrent relay session addressing FTF-0500C's own distinct round-5
+    findings at the time this shift started -- not touched here to avoid a
+    merge conflict with that in-flight PR. FTF-0500C's own cursor/marker
+    protections were already hardened in its own prior rounds (a real `set`
+    tracks every REST cursor already used, per PROGRESS.md's
+    2026-10-04T21:45Z entry); any further class-sweep onto FTF-0500C is
+    Control plane's own call on the next review of PR #464, not duplicated
+    here.
+
+    Not self-certified (Law 4) -- independent Control-plane L2 review and a
+    real CI run on the opened PR are required before certification.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500b.py, tests/integration/test_ftf_0500b_s3_minio_versioned_source.py
@@ -6671,7 +6792,100 @@ FTF-0500C:
     `tests/integration/test_ftf_0500c_database_api_trace_source.py`. Regression swept
     `test_ftf_0500.py`/`test_ftf_0500b.py`/`test_ftf_h006.py` -- zero interference (same disclosed
     precedents as round 3). Not self-certified (Law 4) -- independent Control-plane L2 review and a
-    real CI run on the opened PR are required before certification.'
+    real CI run on the opened PR are required before certification.
+
+
+    **2026-10-05T07:40Z L2 round-5 fix-and-resubmit.** Fixes all four findings from the
+    2026-10-04T15:30Z Control-plane L2 review (merge 8247025), round 5:
+
+
+    (1) **NULL-keyed rows outside the current call''s own fetched-plus-lookahead window were
+    silently lost.** The old lookahead-only check could only ever catch a NULL landing inside one
+    call''s own window; a NULL sorting further out (e.g. keys 1..5,NULL with n=2, reached only
+    after several resumed calls) was never checked at all, since `WHERE key > %s` can never match a
+    real NULL (`NULL > %s` is never true in SQL) -- the capture "completed" having silently never
+    returned it. Fixed with a new `_verify_no_null_keys`: a whole-table
+    `SELECT EXISTS (SELECT 1 FROM {schema}.{table} WHERE {key} IS NULL)`, run unconditionally on
+    every call (not only a resumed one), inside the *same* `REPEATABLE READ` transaction as the
+    paginated `SELECT` that follows -- so it sees one identical real snapshot and catches a NULL
+    anywhere in the source regardless of how far any one call''s own window reaches. New real
+    `far_null_key_records` table (keys 1,2,3,4,5,NULL) proves the very first call is refused outright
+    even though the NULL sorts far outside that call''s own fetch window
+    (`test_real_null_stable_key_value_beyond_the_first_window_is_still_refused`). Additive fault
+    (an inserted early `return` in `_verify_no_null_keys`, not a negated condition) proves a real
+    multi-page resumed capture over the same table genuinely completes having silently never
+    returned the NULL row without the check
+    (`test_disabling_the_whole_table_null_check_genuinely_loses_the_null_row`).
+
+
+    (2) **The `IS NOT DISTINCT FROM` claim was unproven.** With the NULL check in (1) now running
+    before the tie-detection query is ever built, no NULL operand can reach it, so `IS NOT DISTINCT
+    FROM` and plain `=` are provably equivalent at that point. Per the review''s own stated option,
+    the claim is removed rather than kept unproven: the LAG comparison now uses plain `=`, and
+    `NonUniqueStableKeyError`''s own docstring and this module''s inline comments were updated to
+    describe NULL exclusion as (1)''s own separate, prior check rather than a property of the tie
+    comparison itself.
+
+
+    (3) **The integration harness''s own `_SessionSettingsSpyConnection` failed on a SQL_ASCII
+    cluster** (`str(b''on'')` produces the literal text `"b''on''"`, not `"on"`) -- confirmed this is a
+    test-harness defect, not a module one, by connecting directly to a real, freshly-created
+    SQL_ASCII-encoded Postgres database on this exact cluster and confirming `SHOW
+    transaction_read_only`/`SHOW transaction_isolation` genuinely come back as raw `bytes`
+    (`b''off''`/`b''read committed''`). Fixed: a new `_decode_guc` helper decodes bytes before storing.
+    New real `_ASCII_TEST_DB` (`ENCODING ''SQL_ASCII'' TEMPLATE template0`) and
+    `test_real_read_only_transaction_mode_is_set_on_a_real_sql_ascii_cluster` prove the fix against
+    a genuinely different real server encoding, not only the pre-existing UTF8 one.
+
+
+    (4) **A real concurrent duplicate at the resume watermark was silently lost.**
+    `_verify_watermark_present` checked only existence (`SELECT 1 ... WHERE key = %s`), not
+    uniqueness -- a real second row inserted at exactly the watermark value, racing in *after* the
+    page that produced that watermark was already fetched (so that page''s own lookahead-based tie
+    check could never have seen it), could never be returned by any later page either (`WHERE key >
+    %s` excludes it forever), permanently losing it. Fixed: the check now counts real matching rows
+    (`SELECT count(*) ... WHERE key = %s`) and raises a new, specific `NonUniqueStableKeyError` when
+    more than one row matches, rather than only refusing a zero-count miss. New real
+    `concurrent_watermark_dup_records` table backs
+    `test_real_concurrent_duplicate_at_the_watermark_is_refused_not_silently_lost`: a real
+    concurrent INSERT (via the real/write role, on a separate connection) of a duplicate at the
+    exact watermark is refused outright; a disclosed fault injection (disabling the new `count > 1`
+    check) proves a real resumed capture genuinely loses the concurrently-inserted row without it.
+
+
+    Both `_verify_no_null_keys` and the fixed `_verify_watermark_present` also now wrap a real
+    `UndefinedTable`/`UndefinedColumn` as `UnknownSourceContractError` (this task''s own existing
+    negative_acceptance contract) rather than falling through to the generic `psycopg.Error` wrap --
+    caught directly by re-running the full suite, which found `test_real_unknown_table_is_refused_not_fabricated`
+    genuinely broken by the new NULL check''s own initial omission of this wrapping, fixed before
+    this submission (not merely asserted: every pre-existing test in both suites still passes
+    unmodified).
+
+
+    **Law 1, shown able to fail first:** `git stash` of the module fix alone (keeping every new/
+    updated test), re-ran `tests/integration/test_ftf_0500c_database_api_trace_source.py` against
+    the genuinely pre-fix module -- **4 of 47 checks failed**, output bound to criterion
+    `FTF-0500C`: both new negative-test assertions for findings (1) and (4) failed for real, and
+    both new fault-injection anchor-patches correctly reported "not found" against code that does
+    not yet contain `_verify_no_null_keys` or the new `count > 1` branch. `git stash pop` restored
+    the fix; re-ran -- all 47 checks pass. `tests/tasks/test_ftf_0500c.py` (fake-connection unit
+    suite, unaffected by this round''s own real-Postgres-only mechanics): unchanged, all pass.
+
+
+    **Verification:** `uv run ruff check .`/`ruff format --check .` clean repo-wide (371 files).
+    `uv run mypy .` clean repo-wide (371 source files, zero errors). `python3 scripts/validate_spec.py
+    --strict` clean (`docs/spec-matrix.yaml` prose directly re-confirmed parseable with
+    `yaml.safe_load` first). `product_truth_check.py --fail-on-unwired`: unchanged `26/26`.
+    `status.py`: unchanged `101/301` certified, 24 product-true (Law 2 -- a resubmission is not a
+    certification). Both suites re-run clean end to end against a real, freshly-started local
+    PostgreSQL 16 (`pg_ctlcluster 16 main start`). Regression swept
+    `test_ftf_0500.py`/`test_ftf_0303.py`/`test_ftf_0500b.py`/`test_ftf_0500d.py` -- zero
+    regressions (the `test_ftf_0500.py` run''s own printed traceback is a pre-existing, deliberate
+    failure-path assertion inside that suite, not a new defect -- exit code 0, "all checks passed").
+    Not self-certified (Law 4) -- independent Control-plane L2 review and a real CI run on the
+    opened PR (including the existing `database-api-trace-source-integration` job, which now also
+    provisions the new SQL_ASCII database and runs the new tests) are required before
+    certification.'
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500c.py, tests/integration/test_ftf_0500c_database_api_trace_source.py
@@ -8744,6 +8958,56 @@ FTF-1002:
     a certification). Added this task's own CI gate step to .github/workflows/ci.yml in the same
     commit. Not self-certified (Law 4): independent Control-plane L2 review and a real CI run on
     the opened PR are required before CERTIFIED.
+
+    2026-10-06T06:30Z L2 round-2 fix-and-resubmit (control-plane review of merged PR #424,
+    docs/certifications/queue.md "2026-10-04T11:00Z"): fixed all four findings. (1) a
+    registered/archived or cross-tenant main artifact, and a main artifact whose current
+    weights_digest/base_model_revision has drifted from model_version's own recorded value, are
+    now refused by build_artifact_lineage_manifest (four new checks against the real parent
+    artifact, right after the existing id-match check). (2) resolved_base_artifact is now
+    mandatory for every adapter import -- previously optional, letting a caller skip every base
+    check by simply not supplying it. (3) a self-parent is refused both by row identity
+    (resolved_base_artifact.id == artifact.id) and by digest (resolved_base_artifact.weights_digest
+    == artifact.weights_digest), plus a new cross-tenant check on resolved_base_artifact itself.
+    (4) added a real manifest_digest field (sha256 over a canonical-JSON encoding of every field
+    the manifest carries) and verify_artifact_lineage_manifest, which recomputes it and raises the
+    new ArtifactLineageManifestTamperedError on mismatch -- this task's own tamper-evidence
+    requirement. Clause-to-test mapping: registered/archived parent ->
+    test_registered_artifact_is_refused/test_archived_artifact_is_refused; cross-tenant parent ->
+    test_cross_tenant_artifact_is_refused; digest/revision drift ->
+    test_model_version_weights_digest_drift_is_refused/
+    test_model_version_base_model_revision_drift_is_refused; mandatory adapter base ->
+    test_adapter_without_resolved_base_artifact_is_refused; self-parent by id/digest ->
+    test_adapter_self_parent_by_id_is_refused/test_adapter_self_parent_by_digest_is_refused;
+    cross-tenant base -> test_cross_tenant_resolved_base_artifact_is_refused; tamper-evidence ->
+    test_manifest_digest_is_present_and_verifiable/
+    test_verify_artifact_lineage_manifest_detects_tampering. Law 1: `git stash` of the module fix
+    alone (keeping every test change) first crashed the suite on ImportError (the new
+    ArtifactLineageManifestTamperedError/verify_artifact_lineage_manifest symbols do not exist
+    pre-fix) -- to confirm the real defects independent of that import failure, ran a standalone
+    ad hoc script directly against the genuinely pre-fix module reproducing all ten scenarios
+    (registered/archived/cross-tenant/digest-drift/revision-drift/no-base-at-all/self-parent-by-id/
+    self-parent-by-digest/cross-tenant-base parent each silently accepted, and the manifest object
+    genuinely has no manifest_digest attribute at all) -- every one confirmed accepted/missing for
+    real on the unmodified module. `git stash pop` restored the fix byte-identical; the full suite
+    (25 test functions, was 13) re-ran clean, including a second, *additive* fault injection (an
+    unconditional `return None` inserted immediately after the real id-match check, bypassing
+    every one of this round's new guards at once) proving an archived parent genuinely passes
+    through uncaught when that insertion is present, then reverted byte-identical.
+    `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean (372 files);
+    `uv run mypy .` clean (372 source files, zero errors); `python3 scripts/validate_spec.py
+    --strict` clean (after `git fetch origin main --unshallow`). `product_truth_check.py
+    --fail-on-unwired`: unchanged 26/26 (proving_symbol stays blank -- this round adds no live
+    caller; disclosed, per the DoD's own "or record that half BLOCKED" option, in this module's
+    own updated docstring). `status.py`: unchanged 101/301 certified / 24 product-true (Law 2 -- a
+    resubmission is not a certification). Regression swept `test_ftf_0306.py`/`test_ftf_1001.py`
+    (this task's own two dependencies) via `uv run python3` -- both exit 0, zero regressions
+    (`test_ftf_1001.py`'s own stderr TenantContextError traceback is the same pre-existing,
+    disclosed negative-test assertion this task's own round-1 entry already confirmed, unrelated
+    to this change). No `.github/workflows/ci.yml` change needed -- the existing gate step already
+    runs `tests/tasks/test_ftf_1002.py` in full. Not self-certified (Law 4):
+    certification_state/proof_state unchanged; independent Control-plane L2 re-review and a real
+    CI run on the newly opened PR are required before CERTIFIED.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1002.py
@@ -9095,18 +9359,94 @@ FTF-1206:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1206.py
 FTF-1206A:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Organization gateway policy persistence (migration prerequisite for FTF-1206)
   evidence_hash: ''
-  implementation_state: ABSENT
+  implementation_state: IMPLEMENTED
   notes: >-
     Owner-approved Release 1 addendum (2026-10-04), docs/adr/0002-task-addendum-ftf-1206a.md.
     The contract is spec/addenda/FTF-1206A.json; tools/r1_handoff.py covers only the frozen 300.
     FTF-1206 now depends on this task. Denominator 301.
-  proof_state: UNPROVEN
+
+    Implemented 2026-10-05: real forward migration
+    `apps/api/alembic/versions/0020_org_gateway_policies.py` (revision id kept <=32 chars --
+    alembic_version.version_num's own column width -- so the filename is shortened from the
+    contract's own suggested `organization_gateway_policies` to `org_gateway_policies`; discovered
+    the hard way, via a real DataError on the first `alembic upgrade head` attempt, not assumed.
+    First written as revision `0019_org_gateway_policies`; renumbered to `0020` and rebased onto
+    `0019_eval_suites_reviewer_norm` when merging this PR's own branch forward onto `main`, because
+    FTF-0601's own round-2 fix (PR #463, merged separately) had independently claimed revision
+    `0019` first -- caught and fixed as part of this PR's own merge-conflict resolution, not
+    silently left as two same-numbered migrations.) Adds two tables: `organization_gateway_policies`
+    (one real row per organization, `UNIQUE
+    (organization_id)`, three `jsonb` array columns each guarded by a real `jsonb_typeof(...) =
+    'array'` CHECK, `sovra_app` granted SELECT/INSERT/UPDATE -- never DELETE, a policy is reset via
+    UPDATE, not removed) and `organization_gateway_route_changes` (append-only, one row per real
+    route-change decision attempt, a real composite FK `(organization_id, project_id) ->
+    projects(organization_id, id)` reusing FTF-0401's own `uq_projects_organization_id_id`,
+    `sovra_app` granted SELECT/INSERT only -- never UPDATE/DELETE, this task's own
+    negative_acceptance clause enforced at the database level). Both tables ENABLE+FORCE row-level
+    security with a real, non-allow-all `tenant_isolation` policy scoped to
+    `app.current_organization_id`, same discipline as every prior migration in this chain.
+
+    `apps/api/app/litellm/organization_gateway_policy_store.py` is the real persistence/query layer
+    this task's own `api_contract` scopes it to ("Internal store consumed by FTF-1206's
+    organization_policy_control; no new public route in this task") -- `get_organization_gateway_
+    policy`/`upsert_organization_gateway_policy` (create-or-update in place, never a growing history
+    of competing rows) and `record_route_change`/`list_route_changes` (append-only; this function
+    never decides authorization itself, only durably records a decision the caller already proved
+    against `organization_policy_control.enforce_route_change_authority`). Every real query goes
+    through `execute_tenant_scoped`/`authorize_resource_ownership` (FTF-H003/FTF-0105); every
+    mutation writes a real FTF-0104 audit event in the same transaction. Reuses
+    `organization_policy_control.py`'s own already-certified `validate_namespace`/`validate_
+    approver_identity` directly (same function object, confirmed by identity check in
+    `tests/tasks/test_ftf_1206a.py`) -- never a parallel re-implementation.
+
+    `tests/tasks/test_ftf_1206a.py` (no-DB): migration-shape checks (RLS ENABLE+FORCE, the real
+    non-allow-all tenant_isolation policy, the restricted GRANT surface on both tables, the three
+    jsonb_typeof CHECKs, the composite FK, the single-serialized-head chain onto FTF-0601's own
+    0018), two independent real fault injections against the tracked migration file on disk (missing
+    FORCE ROW LEVEL SECURITY; a widened route-changes GRANT reintroducing UPDATE), and the store
+    module's own domain shape (ActorInfo, ProjectNotFoundError, both ORM record classes' real column
+    sets, a pure in-memory `_to_policy` round-trip, the validator-reuse identity check,
+    `record_route_change`'s own `actor_info` parameter has no default). "all checks passed."
+
+    `tests/integration/test_ftf_1206a_org_gateway_policy.py` (real local PostgreSQL 16, this
+    sandbox's own pre-existing no-container-registry-egress boundary -- CI runs it against a real
+    `services: postgres` container): two real organizations each with a real workspace/project;
+    proves a real upgrade/downgrade/upgrade round-trip (Sections 6/65/71); acceptance -- no policy
+    yet reads back None, a create then an update both leave exactly one row and are each audited via
+    a real FTF-0104 event, the route-change history is real, retrievable and ordered, both outcomes
+    audited; negative_acceptance -- a different tenant sees no policy where org1's real one exists
+    (RLS, not an app-layer filter), a route change against another organization's real project and
+    against a genuinely missing project both raise the identical `ProjectNotFoundError` (same type,
+    same message) and leave no row behind, `sovra_app` genuinely cannot UPDATE or DELETE an existing
+    route-change row (real `DBAPIError`, both confirmed), nor DELETE a policy row, and a raw INSERT
+    of a non-array JSON value into a namespaces column is rejected by the real database CHECK, not
+    only by application-level validation. **Law 1, shown able to fail for real:** temporarily removed
+    the cross-tenant `_authorize_project_or_raise` call from `record_route_change` and re-ran this
+    suite against a fresh database -- the cross-tenant write attempt that should have been refused
+    cleanly instead reached the INSERT and crashed with a real, uncaught `IntegrityError` (the
+    composite FK's own backstop, not this suite's intended clean 400-shaped denial), proving the
+    check is load-bearing; reverted byte-identical (diff-confirmed) and re-ran clean. "all checks
+    passed."
+
+    `uv run ruff check .`/`ruff format --check .` clean (375 files). `uv run mypy .` clean repo-wide
+    (375 source files, zero errors). `python3 scripts/validate_spec.py --strict` clean (after `git
+    fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact).
+    `scripts/data_exposure_check.py --backends postgres_rls,s3_identity --fail-on-exposure` clean.
+    `product_truth_check.py --fail-on-unwired`: unchanged -- `proving_symbol` stays blank, no live
+    FastAPI route exists for this task by design (same disclosed "no live caller yet" class already
+    accepted for FTF-1206/FTF-0005/FTF-0006/FTF-0102/FTF-0103/FTF-0104/FTF-0105 before each one's own
+    first live caller existed). **Not self-certified (Law 4)** -- awaiting independent Control-plane
+    L2 re-review and a real CI run on the opened PR before certification. This unblocks FTF-1206's
+    own persistence half (BLOCKER.md's RESOLVED 2026-10-02 entry, route option 1) -- a follow-up
+    task, not done here, since this task's own `files` clause is closed to exactly the migration,
+    the store module and these two test files.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_1206a.py
 FTF-1301:
   certification_state: CERTIFIED
   criticality: MUST
