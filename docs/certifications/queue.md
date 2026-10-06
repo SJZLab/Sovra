@@ -23394,3 +23394,27 @@ FTF-0601's behavior is correct (2026-10-06T09:45Z entry). To certify in one shif
 - (2) A POST with a non-member reviewer → 400, in integration (F06).
 Items (3)–(6) of the 09:45Z entry are FOLLOW-UPS that do not block L2: the contract `maximum`/`pattern` test, the migration-0019
 test, the PATCH-stored reviewer assertion, and DB CHECK hardening. They go to Backlog as FTF-0601-F1.
+
+## 2026-10-06T13:00Z — Relay maintenance: re-occurred merge conflicts fixed on five open [relay] PRs (#464, #465, #468, #470, #476)
+
+Not a fix-and-resubmit of any task's own DoD -- FTF-0500C (#464), FTF-0500B (#465), FTF-0902 (#468), FTF-1206A
+(#470) and FTF-1002 (#476) each stay exactly `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` as their
+own producing shift left them, unaffected by this entry (none of their own module/test files were touched).
+Logged here for visibility, same convention as the FTF-1506 dependency-bump and PR #477 merge-conflict entries
+above.
+
+All five PRs had gone `mergeable_state: dirty` against `main` tip `c073152` (PR #480) despite every one already
+showing green CI at their existing head -- a recurrence of the same conflict-thrash pattern PR #477 fixed earlier
+today for the same five PRs, caused by `main` continuing to advance with further append-only tracker commits from
+other concurrent relay sessions after that fix landed. Per `QUEUE.md`'s own "## Active" item 0a, fixed all five
+again this shift: `git merge-tree --write-tree` triage confirmed every conflict confined to
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`; resolved each conflict region on its own merits (keep-both
+in timestamp order for distinct dated entries, or take `origin/main`'s strictly newer status block alone where both
+sides had overwritten the same mutable "## Active" prose); validated (`yaml.safe_load` + `validate_spec.py
+--strict` on all five; `data_exposure_check.py --fail-on-exposure` on #470, the one adding a migration); pushed each
+merge commit to its own existing branch (#464 `4e1982a`, #465 `01f85e2`, #468 `294798c`, #470 `1b080fe`, #476
+`236a55a`). `pull_request_read` confirmed `mergeable_state` flipped from `dirty` to `unstable` (mergeable, CI
+freshly re-triggered) on all five immediately after.
+
+**State:** unchanged on every task named above -- independent Control-plane L2 review on each PR's own merits is
+still the next step once its fresh CI run completes.

@@ -29488,3 +29488,69 @@ work was fixing parked returned-work (top priority per CLAUDE.md's own ordering)
 **FTF-1002, FTF-0510, FTF-04A18 and FTF-1807 remain the next-priority, not-yet-attempted items** per the Active
 list's own stated order. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged: "None currently").
 `BLOCKER.md` unchanged — no live entries.
+
+## 2026-10-06T13:00:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-oouhlx` — fixed five open [relay] PRs' re-occurred merge conflicts (returned work, item 0a); no new backlog item picked
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch. `BLOCKER.md` read in
+full: no live entries. STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh. `QUEUE.md`'s
+"## Active" item 0's own 0a named five open `[relay]` PRs needing a merge of `main` into their branch: #464
+(FTF-0500C round 5), #465 (FTF-0500B round 4), #468 (FTF-0902), #476 (FTF-1002), #470 (FTF-1206A). STEP 0.2: no
+`cognee-cli` binary in this sandbox — text-search fallback declared, same as every prior shift.
+
+Per CLAUDE.md "Returned work first... a merge conflict... outranks starting a fresh backlog item," checked each of
+the five PRs directly rather than trusting `QUEUE.md`'s own prose. `pull_request_read(get)` on each confirmed all
+five were genuinely `mergeable_state: dirty` against the then-current `main` tip (`c073152`, PR #480), despite every
+one already showing all check runs green at their existing head SHA (44-45/44-45, `gate` included on each) — the
+same conflict-thrash pattern an earlier shift today (PR #477) had already fixed once for the same five PRs, which
+recurred because `main` kept advancing with further append-only tracker commits from other concurrent sessions
+after that fix landed.
+
+**P** — for each of the five branches, ran `git merge-tree --write-tree origin/main origin/<branch>` first (no refs
+touched) to confirm every conflict was confined to the three append-only tracker files
+(`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`) and never a code, test, or `docs/spec-matrix.yaml` file —
+confirmed on all five.
+
+**E** — for each branch: created a real git worktree, ran `git merge origin/main --no-edit`, and resolved every
+conflict region by hand, reading each one's actual content rather than assuming a single shape:
+- Two distinct dated log entries on each side (the common case) — resolved "keep both," ordered by their own real
+  timestamps (or, where both carried the identical timestamp, in an order consistent with the surrounding
+  already-established continuation on either side, so the merged file stays non-decreasing by date throughout).
+- The mutable "## Active" status-prose block, when both sides had independently overwritten the *same* section
+  (found on QUEUE.md's "## Active" header line on #464, #468's second QUEUE.md conflict, #470, and #476) — resolved
+  by taking `origin/main`'s strictly newer status block only (the 2026-10-06T09:45Z Control-plane entry in every
+  case), never concatenating two contradictory status blocks into the live tracker.
+
+Validated each of the five before committing: `python3 -c "import yaml; yaml.safe_load(open('docs/spec-matrix.yaml'))"`
+plus `python3 scripts/validate_spec.py --strict` clean on every one; `python3 scripts/data_exposure_check.py
+--backends postgres_rls,s3_identity --fail-on-exposure` clean on #470 (the only one of the five adding a new
+migration/table). Confirmed no `<<<<<<<`/`=======`/`>>>>>>>` marker residue via `grep` on every touched file before
+each commit, and no file left in git's unmerged (`UU`) state after `git add`.
+
+Pushed each merge commit to its own existing PR branch — never to `main`, never to a different branch than the one
+that opened the PR, per this session's own push-to-own-branch-only constraint:
+
+| PR | Task | Branch | New head |
+|---|---|---|---|
+| #464 | FTF-0500C round 5 | `claude/wizardly-fermat-a6faz0` | `4e1982a` |
+| #465 | FTF-0500B round 4 | `claude/wizardly-fermat-j8lgbg` | `01f85e2` |
+| #468 | FTF-0902 | `claude/wizardly-fermat-6n6dmf` | `294798c` |
+| #470 | FTF-1206A | `claude/wizardly-fermat-shlvk5` | `1b080fe` |
+| #476 | FTF-1002 | `claude/wizardly-fermat-vv36w4` | `236a55a` |
+
+**V** — `pull_request_read(get)` immediately after each push confirmed `mergeable_state` flipped away from `dirty`
+on all five (to `unstable` — mergeable, with CI freshly triggered on the new head and still running at the time of
+this check). This is git-mechanics-only work (five merge commits resolving append-order/status-overwrite markdown
+conflicts), not a new DoD submission on any of the five tasks.
+
+**V (certification)** — per Law 4, not self-certified, and nothing here is a certification claim in the first
+place: no `certification_state`/`proof_state` changed on FTF-0500C/FTF-0500B/FTF-0902/FTF-1002/FTF-1206A; each
+stays exactly `PROVISIONAL`/`L1-PROVEN` as its own producing shift left it, still awaiting independent
+Control-plane L2 review on its own merits.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before compaction. STEP 4
+stop condition (a): all five PRs now have a clean merge against the current `main` tip and a fresh CI run in
+flight; this shift's own returned-work item (0a) is done. Stopping here — 0a was this shift's one item, applied
+across the five already-open PRs it named, not five separate new submissions. **0b (FTF-0601 round 3), 0c
+(FTF-0307 round 3), 0d (FTF-0500D round 3) and 0e (FTF-0510, FTF-04A18, FTF-1807) remain the next-priority,
+not-yet-attempted items** per the Active list's own stated order. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged: "None currently"). `BLOCKER.md` unchanged — no live entries.
