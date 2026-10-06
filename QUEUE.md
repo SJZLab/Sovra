@@ -9320,26 +9320,26 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 docs/spec-matrix.yaml. It never invents criteria.)
 
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
-**PR #471 (FTF-0307 round-2 fix) — merge conflict, tooling-blocked, not a design question.** This
-session's own merged fix (PR #472, FTF-1506 dependency bump, merge `e1f9aae`) touched the same
-tail of `docs/certifications/queue.md` that PR #471 also appended to, so GitHub now reports PR
-#471's `mergeable_state: dirty`. Confirmed via a non-destructive dry run
-(`git merge-tree --write-tree origin/main origin/claude/wizardly-fermat-4idnly`, no refs touched):
-`PROGRESS.md`/`QUEUE.md`/`docs/spec-matrix.yaml` auto-merge cleanly; only
-`docs/certifications/queue.md` has one real conflict, a trivial keep-both append-order conflict,
-not a semantic/code conflict. **What failed:** both `git merge origin/claude/wizardly-fermat-4idnly`
-and `git cherry-pick` of its two commits onto this session's own branch were denied by this
-session's own permission mode (classifier reason: "Modify Shared Resources") -- per that denial's
-own instructions, not routed around via another tool/manual reconstruction. **Three route options
-for whoever picks this up next:** (1) a session/user with the needed git permission merges `main`
-into PR #471's branch, keeping both dated entries in `docs/certifications/queue.md`, pushes, and
-confirms `dependency-scanning-integration` goes green on the resolved commit; (2) the owner
-resolves the conflict directly on github.com's own merge-conflict UI (a pure markdown append
-conflict, trivially resolvable there); (3) close PR #471 and let a future shift reopen FTF-0307's
-fix fresh against current `main` if the conflict is still unresolved by the time Control plane is
-ready to review it. Disclosed on PR #471 itself (comment) rather than left silent. Not a design
-question -- Control plane does not need to decide anything here, just needs the git access this
-session's own sandbox denied.
+None currently. The PR #471 (FTF-0307 round-2 fix) merge-conflict entry below is resolved history.
+
+**RESOLVED 2026-10-06T04:52Z — PR #471 merge conflict, route option (1).** The prior entry's own
+route option (1) ("a session/user with the needed git permission merges `main` into PR #471's
+branch... pushes") was exercised this shift: `git fetch`'d both `origin/main` and
+`origin/claude/wizardly-fermat-4idnly` into a local worktree, merged `origin/main` in, resolved the
+one real conflict in `docs/certifications/queue.md` by keeping both dated entries in chronological
+order (`2026-10-06T00:00Z` FTF-0307 entry, then `2026-10-06T02:00Z` FTF-1506 entry — exactly the
+"trivial keep-both append-order conflict" the dry run already found, no semantic/code conflict
+touched), confirmed the merged `docs/spec-matrix.yaml` still parses with `yaml.safe_load` and
+`python3 scripts/validate_spec.py --strict` is clean, then pushed the merge commit (`0051e14`)
+straight to `claude/wizardly-fermat-4idnly` — unlike the prior session, this session's own
+permission mode allowed the push. GitHub's `mergeable_state` flipped to `clean` immediately. The
+real CI run this push triggered (`37415793440`) was watched to 40/44 jobs complete, all green,
+zero failures, including `dependency-scanning-integration` (the exact job PR #472's own fix
+targeted) and `network-policy-enforcement-integration` — the remaining 4 jobs (`gate` and three
+slower integration jobs) were still running when this entry was written; none of the 44 had failed.
+Full confirmation (`gate` included) is Control plane's own next step when it re-reviews this PR, same
+as every other item in this list. No `BLOCKER.md` entry was needed; this was tooling access, not a
+design question, per the entry it resolves.
 
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was
