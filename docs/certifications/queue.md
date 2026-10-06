@@ -23799,3 +23799,265 @@ Follow-up FTF-1206A-F1, not blocking:
 - `actor_not_blank` and NOT NULL `approvers` tests;
 - the stale `0019` docstring;
 - TASK_INDEX row FTF-1206 should list FTF-1206A.
+
+## 2026-10-06T15:30Z — Control plane: FTF-0601 and FTF-0307 CERTIFIED; FTF-0902 NOT CERTIFIED (round 3)
+
+Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent verifiers:
+mid-tier for FTF-0601, top model for FTF-0902 (security item). Faults were injected into production code and run with
+the script runner, as CI does.
+
+### FTF-0601 (#483, merge 88bf61978313ff3f9352d22b9a680de87f6eb89e): CERTIFIED
+- Producer sessions: `01JDd2rF`, `01XiratpY`. Neither is this session.
+- CI `evaluation-suite-integration` job 112335734001 on the PR merge ref beb19c0: "FTF-0601 real EvaluationSuite
+  schema/API proof: all checks passed". The CheckViolation traceback in that log is the test's own F19 probe.
+- Both round-3 blocking items hold:
+  - (1) Independence is tested for evaluator, workspace_admin and organization_admin. Deleting the check, an additive
+    `endswith("admin")` bypass, and a workspace_admin-only bypass each turn RED (8, 6 and 4 failures). The DB CHECK
+    still blocks the UPDATE, but it surfaces as a 500, and the tests assert 409.
+  - (2) POST create with a non-member reviewer returns 400. Removing the POST-only check, or short-circuiting
+    `_check_reviewer_is_member`, turns RED.
+- The test's embedded fault injection restores the module byte-identical (sha256 checked, git status clean).
+- Gates: product_truth 26/26, validate_spec clean, data_exposure OK.
+- Follow-up FTF-0601-F1 (from the 10:00Z entry) stays open and is not blocking.
+
+### FTF-0307 (#484, merge acbeb5447187d75c2d52d98ed0702f0b73248962): CERTIFIED
+- Producer session: `01PYwyLH` (relay lane B, dispatched by this Control-plane session through create_session; it
+  wrote the code, this session did not). Not this session.
+- CI on head c8674bf: `gate` job 112343071699 shows "FTF-0307 training capability classifier: all checks passed", plus
+  the 0301 and 1001 suites. `trainable-artifact-schema-api-integration` 112343071907 and
+  `model-version-schema-api-integration` 112343074605 succeeded.
+- All 5 round-3 DoD items (09:45Z entry) hold. 40+ production faults across the classifier, `artifact_crud`,
+  `model_version_crud` and the shared `validate_weights_digest` turn RED:
+  - (1) the ready-status gate;
+  - (2) rename/alias (`ft:`, display_name) cannot make a model trainable;
+  - (3) exact probe and access matching, and a real artifact_id;
+  - (4) one shared digest validator across 3 modules;
+  - (5) a non-str status maps to unknown.
+- Bypass probes on unmodified code are refused: fullwidth or Arabic-Indic digits, NUL, NBSP, uppercase, lying str
+  subclasses for digest and status, alias names, and an unverified route.
+- Follow-up FTF-0307-F1, not blocking:
+  - an absent `ft:*` model_id must stay `not_granted` (an additive access-grant fault is GREEN);
+  - a None-digest case in the 1001 suite;
+  - pin mark_ready against case-variant statuses;
+  - `type(model_id) is str` with a lying-subclass test;
+  - pin model_version_crud's ready gate in the 1001 unit suite (today it is pinned only by the integration test);
+  - the future wizard-entry gate must bind artifact to model.
+
+### FTF-0902 (#468, merge 56e0a74; code 882c2c6): NOT CERTIFIED, round 3 (5 blocking items)
+- Producer sessions: `01XcRu6v`, `012M7ELE`, `01XiratpY`.
+- CI evidence is real: `network-policy-enforcement-integration` job 112338073530 shows baseline (kindnet)
+  `{'allowed': True, 'denied': True, 'dns': True, 'metadata': True}`, enforcing (calico)
+  `{'allowed': True, 'denied': False, 'dns': True, 'metadata': False}`, then "all checks passed". The `gate` job
+  112338072917 runs `tests/tasks/test_ftf_0902.py`.
+- 28 production faults were injected; 11 stayed GREEN. The unmodified code is also bypassable (Control plane
+  reproduced these on main acbeb54):
+
+| Probe on unmodified code (endpoint fields set with `object.__setattr__`, which the DoD names) | Rendered |
+|---|---|
+| cidr = `str` subclass whose `__str__` is "10.0.0.0/8", real value "0.0.0.0/0" (or "::/0") | `{"ipBlock":{"cidr":"0.0.0.0/0"}}`, hashed by `manifest_digest` |
+| ports = truthy-but-empty tuple subclass | `"ports": []` (all ports) |
+| pod_labels = truthy-but-empty dict subclass | `podSelector: {matchLabels: {}}` (every pod) |
+| PortRule.port = None / protocol = None | `{"protocol":"TCP","port":null}` (all ports) |
+
+Blocking, each shown RED first, then GREEN:
+1. **Render-time revalidation must not trust types.**
+   - Require exact types at render time: `str` for cidr, namespace and description; a `tuple` of exact `PortRule`, each
+     re-validated (number in 1–65535, protocol in the allowed set); `dict[str, str]` for labels. Apply the same to the
+     template (`pod_selector`, namespace).
+   - Emit only normalized values (`str(ip_network(...))`, a rebuilt ports list), checked non-empty after conversion.
+   - Test each probe in the table above.
+2. **The rendered output must be pinned.** Today a renderer that adds a `::/0` peer to the DNS rule, a
+   169.254.169.254/32 peer to a CIDR rule, a `{"podSelector":{}}` peer, `endPort: 65535` on DNS, or drops `Egress`
+   from policyTypes stays GREEN. Add an exact-equality assertion on the whole rendered `spec` for representative
+   templates, or a scan of every peer and port: no ipBlock outside the declared endpoints, no empty selector, every
+   port numbered, no `endPort`, `Egress` always present.
+3. **Cover the PodSelectorEndpoint half.** A subclass skip and empty ports at render time stay GREEN; only the Cidr
+   side is tested.
+4. **Test `::/0` directly.** An additive `if cidr == "::/0": return network` stays GREEN.
+5. **Pin the RFC1918-only boundaries.** Widening to 172.0.0.0/8, 10.0.0.0/7 or adding 100.64.0.0/10 stays GREEN. Add
+   boundary cases (9.255.255.255/32, 11.0.0.0/32, 172.15.255.255/32, 172.32.0.0/32, 192.167.255.255/32,
+   192.169.0.0/32, 100.64.0.1/32) and supernets (10.0.0.0/7).
+
+Follow-up FTF-0902-F1, not blocking:
+- the submission's clause map overstates coverage (only the Cidr side was exercised);
+- `$defs/Cidr` still matches 0.0.0.0/0 and 169.254.169.254/32; the narrowing is recorded, which meets the DoD option;
+- the integration docstring claim that no code path can render an IPv6-allowing rule is false today; fix it with item 1;
+- the self-fault tests locate their target by exact source string; make them robust to refactors.
+
+Masked, not missed: an IPv4-only prefix-0 check and dropping fd00:ec2::254 are each caught by the IPv6 refusal;
+removing both layers turns RED.
+
+## 2026-10-06T16:35Z — Control plane: FTF-1206A verdict CERTIFIED (status flip deferred); FTF-0500D and FTF-1002 NOT CERTIFIED (round 4)
+
+Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent verifiers:
+top model for FTF-1206A (Law 18), mid-tier for FTF-0500D and FTF-1002. Faults were injected into production code and
+run with the script runner.
+
+### FTF-1206A (#486, squash a8a1936049376e0dabd3bba2536b169fb04afcd9): CERTIFIED
+- **Status flip deferred.** Setting spec-matrix to CERTIFIED turns the `gate` job RED: FTF-H034's
+  `test_real_committed_tracker_and_tasks_reflect_actual_certified_set` requires every CERTIFIED id to be in
+  `spec/tasks.json`, but ADR 0002 freezes that file at 300 tasks (r1_handoff enforces it) and the addendum is not in
+  it. The fix is code, so it goes to the relay as FTF-H034-F1 (QUEUE item 0b2). Control plane flips 1206A to
+  CERTIFIED, and adds its ledger entry, once FTF-H034-F1 is merged and verified. This verdict stands until then.
+- Producer session: `019gwFQK` (relay lane C). Not this session.
+- CI on head 65b5572: `organization-gateway-policy-integration` job 112345825620 shows "all checks passed", and the
+  Postgres log shows the expected RLS and permission errors. `gate` job 112345824990 passed.
+- Both round-2 blocking items hold, through a real `sovra_app` connection:
+  - (1) the integration test turns RED on each table separately for `USING(true)`, `WITH CHECK(true)`, RLS disabled,
+    and a nullable fail-open in both clauses;
+  - (2) `list_route_changes` turns RED when its project authorization is removed, or swallowed into `[]`.
+  - Removing FORCE is caught by the unit test and data_exposure_check. `sovra_app` is neither owner nor superuser, so
+    it is behaviorally masked.
+- Bypass probes as `sovra_app` were all refused: no, empty, foreign or random context; moving a row to another org;
+  a cross-org FK; SET ROLE, TRUNCATE, DISABLE RLS and DROP POLICY.
+- Follow-up FTF-1206A-F2 (security, queued as item 0c): a WITH CHECK that fails open only when no tenant context is
+  set stays GREEN in every suite. With it, a no-context `sovra_app` could write any org's policy row. Production is
+  correct today. The verifier showed the gap only by injecting the fault. Optional governance change: make
+  data_exposure_check flag `IS NULL OR` and `WITH CHECK (true)`.
+- FTF-1206A-F1 stays as listed in the 13:45Z entry.
+
+### FTF-0500D (#485, merge cdd56c4): NOT CERTIFIED, round 4 (2 blocking, tests only)
+- Producer session: `01XiratpY`. CI `gate` job 112362446367 passed. The oracle is genuinely independent: literal
+  tables and max/compare logic, with no production call.
+- About 58 faults turn RED. Blocking GREEN faults:
+  1. The preview's `security_classification` hardcoded to "public", and `requested_purpose` hardcoded to "training",
+     stay GREEN. Both are named in DoD (2). Assert both per cell with non-default values, and also
+     `source_display_name` with a value distinct from the fixture default.
+  2. The "4 grant states" requirement was read as status×grant. It means 4 shapes of `allowed_purposes`: empty,
+     exactly [requested], requested among several but not first, and several without requested. An empty list
+     authorizing any purpose, or honoring only the first purpose, stays GREEN. Expected values must come from the
+     independent oracle, against both preview and authorize.
+- Follow-up FTF-0500D-F1: preview `would_cross` must not couple to purpose denial (and vice versa); a multi-element
+  transformations order test; the text and order of blocking_reasons.
+
+### FTF-1002 (#490, merge 702d756): NOT CERTIFIED, round 4 (3 blocking, tests only)
+- Producer session: `01XiratpY`. CI `gate` job 112363239960 passed. Clauses (a) and (c) hold. The unmodified production
+  code refused every probe.
+- Blocking:
+  1. (d) Every fixture is still `license_id="apache-2.0"`. Hardcoding the licence value, dropping `accepted_by` or
+     `accepted_at`, or setting the adapter `base.value` to the base digest each stays GREEN. Use a distinct licence
+     per artifact, and assert each fact's value and detail.
+  2. (b) Dropping `detail` (or `value`, or `known`) from `_canonical_fact`, or stripping the resolved-base part before
+     hashing, stays GREEN. The tamper test replaces whole facts. Add: two adapters differing only in the resolved
+     base id or digest give different `manifest_digest`s, and tamper each fact's value, known and detail separately.
+  3. (a) No behavioral test covers a None or blank base digest. Add None, blank, "abc" and whitespace base-digest
+     cases, with a valid adapter digest.
+- Follow-up FTF-1002-F1:
+  - decide what (b) compares for `source_uri` (today it is recorded only);
+  - recorded `model_family` and `source_uri` are not asserted;
+  - a zero-width-space revision is accepted;
+  - `verify` that compares only a 20-character prefix stays GREEN;
+  - anchor-text fault tests mask behavioral results.
+
+### FTF-H034-F1 (new, blocking FTF-1206A's status flip; small, show RED first)
+- In `tests/tasks/test_ftf_h034.py`, exclude ids that have `spec/addenda/<id>.json` from the `spec/tasks.json`
+  check only. ADR 0002 freezes tasks.json at 300. Keep the TRACKER check for all CERTIFIED ids.
+- In `scripts/task_claim.py` `sync_certified_status`, create or update TRACKER.json entries for addendum ids
+  (status, evidence = evidence_hash). Write the files when only the tracker changed; today it writes only when
+  tasks.json changed.
+- Tests: certifying an addendum id in a temp spec-matrix updates TRACKER and leaves tasks.json at 300. A
+  non-addendum CERTIFIED id missing from tasks.json still turns the test RED, so the exclusion must not widen past
+  spec/addenda.
+
+**AUDIT note (items returned more than twice):** 0500D and 1002 are on round 4. Both misses are hardcoded-value and
+sub-field faults that the STEP 5b self-attack should have produced. For every computed field, the relay must also
+hardcode it and drop it, not only delete the guard.
+
+## 2026-10-06T17:20Z — Control plane: wiring audit and addendum FTF-0103A
+
+The full map is in `docs/certifications/wiring-map-2026-10-06.json`: each of the 80 certified tasks with a blank
+`proving_symbol`, its wiring task, and the confidence of that match.
+- 37 will be wired by a later task, 10 already have a live caller (they only need `proving_symbol` recorded), 22 have
+  no product surface (CI, gates, fixtures), and 11 are unclear (no task owns their dispatcher).
+- **Blocking finding:** every /api/v1 route denies every request. main.py builds every router with FTF-0103's
+  default fail-closed resolver and role lookup, and there is no Membership table. The owner approved addendum
+  FTF-0103A (ADR 0003, denominator 302). It is QUEUE item 0-TOP.
+- There are no web app pages yet (they arrive with H029/R007) and no worker entry points.
+- `product_truth_check` counts a plain text match of the symbol, even in the defining file. A call-site check comes
+  with the mutation-gate governance PR.
+- Highest-yield wiring task that is dependency-ready now: FTF-0214, the model catalog UI. It wires 10 certified
+  units (0205–0213, H004). After 0103A, Refill & Sweep puts it at the top of the Backlog.
+- Stale "no live caller yet" notes: 0103, 0104, 0105, H003, 0202, H006. Their callers exist now. Record their
+  proving_symbols once FTF-0103A makes the success path reachable.
+
+## 2026-10-06T17:45Z — Control plane: FTF-04A18 CERTIFIED; FTF-1206A status flipped; FTF-0902 (round 4), FTF-1206A-F2 and FTF-H034-F1 returned
+
+Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent verifiers:
+top model for FTF-0902, FTF-1206A-F2 and FTF-H034-F1; mid-tier for FTF-04A18. All faults went into production code
+and ran with the script runner; the mutation gate ran where the file is in scope.
+
+### FTF-04A18 (#493, merge 6d5ff9501da3d86d335e398c978dc91ae4ec7f0d): CERTIFIED
+- Producer session: `013LXTon`. CI on d80fdbe: `gate` 112383468247 ("FTF-04A18 candidate selection ...: all checks
+  passed"), `candidate-selection-integration` 112383469113, `discovered-agent-candidate-integration` 112383468872.
+- Every blocking clause in the 10-04 entry turns RED, including the server-side latest-snapshot staleness checks:
+  delete, additive bypass, supersedes-only, captured_at-only, `>=`, inverted, and the same-connection filter.
+- UI clauses also turn RED: no auto-select of a single candidate, the Enter flow, surfaced errors, and a 409 that
+  is not treated as success.
+- Mutation gate: 22/22 mutants killed.
+- Follow-up FTF-04A18-F1: UI tests for a 500 on the list, a `{}` list body, and an ok select body without
+  `candidate_id`.
+
+### FTF-1206A: status flipped to CERTIFIED (verdict 2026-10-06T16:35Z; evidence a8a1936049376e0dabd3bba2536b169fb04afcd9)
+- Since FTF-H034-F1 (#495) merged, `sync_certified_status` creates the TRACKER entry for the addendum and leaves
+  `spec/tasks.json` byte-identical at 300. The verifier ran this check: the H034 test passes, and
+  `r1_handoff` integrity holds.
+
+### FTF-0902 (#491): NOT CERTIFIED, round 4 (1 blocking)
+- Producer session: `011d3fmH`. CI: gate 112374705053, network-policy-enforcement-integration 112374705651
+  (Calico metadata blocked).
+- All 5 round-3 items hold:
+  - 61 of 67 faults turn RED, including every fault that stayed GREEN in round 3;
+  - the remaining GREENs are masked or equivalent;
+  - probes P1–P9 are refused.
+- Mutation gate on the module, run through a scratch SOURCE_ROOTS wrapper: 112/118 killed, and the 6 survivors are
+  equivalent.
+- **Blocking:** the DNS rule emits module-level mutable dicts by reference. The Control plane reproduced on
+  unmodified code that clearing them in one returned manifest makes the next render emit
+  `{"namespaceSelector":{"matchLabels":{}},"podSelector":{"matchLabels":{}}}` on port 53. The fix is in
+  QUEUE 0b.
+- Follow-up FTF-0902-F1 adds:
+  - a lying-`str` protocol test;
+  - a template_id length-cap boundary test;
+  - packages/security in mutation-gate scope.
+
+### FTF-1206A-F2 (#498): NOT CERTIFIED, round 2 (tests only)
+- The "no tenant context" case reuses a pooled connection that already ran `set_config`, so it reads '' and
+  duplicates the '' case.
+- A WITH CHECK `current_setting(..., true) IS NULL OR …` fail-open stays GREEN for both tables. A fresh no-context
+  `sovra_app` connection inserted a foreign-org policy row under that fault.
+- With a fresh connection the fault turns RED. The fix is in QUEUE 0c.
+
+### FTF-H034-F1 (#495): NOT CERTIFIED, round 2 (tests only)
+- The production behavior is correct; the decisive check passed.
+- But widening the exclusion by regex (`FTF-\d+A`, or `FTF-\d+[A-Z]\w*`) stays GREEN. The only non-addendum test
+  id is `FTF-NOTREAL`, and 40+ real ids are addendum-shaped (04A*, 0500A–D). The fix is in QUEUE 0b2.
+
+### Hygiene
+- PR #493 committed `.mypy_cache`, and 2,308 cache files are tracked on main. This PR untracks them and adds the
+  directory to `.gitignore`.
+
+## 2026-10-06T18:55Z — Control plane: FTF-0902 CERTIFIED (round 4)
+
+Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent verifier:
+top model (security). Producer session: `01BGMHsj` (relay).
+- PR #501, merge 5d8514f473e89c27a1cbb7fe53bb66f39499b9ee (head 77a6630). CI run 37510311065 is green across 46 jobs:
+  - `gate` 112429439103 passed, including the FTF-0902 negative-test step;
+  - `network-policy-enforcement-integration` 112429439976 passed. Under Calico the metadata endpoint is blocked,
+    and the job prints "all checks passed".
+- The round-4 blocker is fixed.
+  - The kube-dns selector constants are now `MappingProxyType`. Every render emits fresh `dict` copies and fails
+    closed if either copy is empty.
+  - Mutating any container in a returned manifest leaves the next render identical.
+  - In-place edits to the constants are refused. Rebinding them to `{}` or `None` fails closed.
+- Faults:
+  - F1–F4b (by reference, a full round-3 revert, dropping the non-empty check, a shallow copy, and an additive early
+    return) all turn RED;
+  - the combined faults C1–C4 show the new tests catch each one on their own, not only through an exception.
+- The round-3 harness has no regressions: 58 RED. The 6 GREEN are the known equivalent mutants or follow-ups.
+- Mutation gate on the module, run through the scratch wrapper (packages/ joins the gate's scope in #503): 118/124
+  killed. The 6 survivors are equivalent or fail closed.
+- Follow-up FTF-0902-F1, not blocking:
+  - the round-3 items: a lying-str protocol test and a template_id length-cap boundary;
+  - a test for the `ipv6_policy` strip/lower mutant;
+  - optionally, compare the selectors against inline literals.
+- This closes rounds 1–4 (#430, #467/#468, #491, #501).

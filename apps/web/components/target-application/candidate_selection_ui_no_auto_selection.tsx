@@ -41,6 +41,10 @@
  * surfaced here as `error`, never silently retried against a different
  * snapshot or masked as success.
  *
+ * Network failures (a rejected `fetch`, an unreadable or malformed body)
+ * are surfaced as `error` on both the listing and the select path --
+ * never swallowed into an empty list or a confirmation.
+ *
  * Scope disclosed, not hidden -- same precedent
  * `github_branch_ref_selector_immutable_sha_resolver.tsx` already
  * established: this repository has no Next.js app shell yet, so this is
@@ -122,6 +126,11 @@ async function readErrorDetail(response: Response): Promise<string> {
   return `request failed (${response.status})`;
 }
 
+function networkErrorMessage(caught: unknown): string {
+  const reason = caught instanceof Error && caught.message ? caught.message : "unknown error";
+  return `network error: ${reason}`;
+}
+
 export function CandidateSelectionUI({
   apiBaseUrl,
   organizationId,
@@ -153,7 +162,15 @@ export function CandidateSelectionUI({
         return;
       }
       const body: CandidateListingResponse = await response.json();
+      if (!body || !Array.isArray(body.items)) {
+        setError("malformed candidate listing response");
+        return;
+      }
       setCandidates(body.items);
+    } catch (caught) {
+      // A network failure or unreadable body is surfaced, never swallowed
+      // and never turned into an empty or "successful" listing.
+      setError(networkErrorMessage(caught));
     } finally {
       setLoading(false);
     }
@@ -179,8 +196,15 @@ export function CandidateSelectionUI({
         return;
       }
       const body: CandidateSelectionConfirmation = await response.json();
+      if (!body || typeof body.candidate_id !== "string") {
+        setError("malformed candidate selection response");
+        return;
+      }
       setConfirmed(body);
       onSelected?.(body);
+    } catch (caught) {
+      // Nothing is confirmed unless the POST really succeeded.
+      setError(networkErrorMessage(caught));
     } finally {
       setSelectingId(null);
     }

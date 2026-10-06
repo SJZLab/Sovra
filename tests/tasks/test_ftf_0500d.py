@@ -52,8 +52,9 @@ org != project, or when purpose == 'validation', stays GREEN."
 `test_authorize_raises_whenever_preview_blocks_across_full_matrix` closes
 this: every `security_classification` x `organization_default_security_
 profile` x `project_security_profile` x `connection_status` x grant x
-`requested_purpose` combination (4 x 3 x 3 x 2 x 2 x 5 = 1,440 cases) is
-checked.
+`requested_purpose` combination is checked -- the review's own prose cited
+"1,440 cases", but the module's real, already-closed enums multiply out to
+4 x 3 x 3 x 2 x 2 x 5 = 720, not 1,440 (fixed 2026-10-06T13:45Z round-3).
 `test_fault_injection_additive_org_project_divergence_early_return`
 reproduces the finding directly against the real on-disk module in an
 isolated subprocess: it adds the exact additive early-return fault the
@@ -61,6 +62,29 @@ review named (skip both checks whenever org != project), confirms the
 original, narrower classification x profile matrix (which always held
 org == project) is genuinely blind to it, confirms the new full matrix
 genuinely catches it, then restores the module file byte-identical.
+
+2026-10-06T13:45Z L2 review finding (round 3), fixed here: every matrix
+test above (including the full 720-case one) compares `preview.blocked`
+against whether `authorize_dataset_source_copy` raises -- but both sides
+call the SAME shared helpers (`would_cross_security_boundary`,
+`check_purpose_authorized`), so an additive bug inside either helper (a
+hardcoded `return False` for `restricted`+`zero_egress`, or an additive
+purpose/status allow) makes both sides wrong identically and the
+self-referential comparison still passes.
+`test_independent_oracle_boundary_crossing_classification_profile_matrix`
+and `test_independent_oracle_purpose_authorization_status_grant_purpose_matrix`
+close this: both build an expected value from a literal table written in
+this test file (never calling the production module's own
+`would_cross_security_boundary`/`check_purpose_authorized`/
+`resolve_effective_project_security_profile`/`security_profile_rank`), and
+assert it against both `preview` and `authorize`.
+`test_fault_injection_boundary_check_additive_bypass_caught_by_independent_oracle`
+and `test_fault_injection_purpose_check_additive_bypass_caught_by_independent_oracle`
+inject exactly the two additive-allow fault classes the round-3 review
+named, directly into the real on-disk module in an isolated subprocess,
+and confirm the independent oracle (unlike the self-referential matrix
+tests) genuinely catches each one, then restore the module file
+byte-identical.
 
 Run directly: python3 tests/tasks/test_ftf_0500d.py
 """
@@ -697,10 +721,13 @@ def _allowed_purposes_for(requested_purpose: str, granted: bool) -> list[str]:
     return [purpose for purpose in SUPPORTED_PURPOSES if purpose != requested_purpose]
 
 
-def _full_matrix_violations() -> list[str]:
+def _full_matrix_violations() -> tuple[list[str], int]:
     """Full classification x org-default x project x connection_status x
-    grant x requested_purpose matrix (4 x 3 x 3 x 2 x 2 x 5 = 1,440
-    cases). `_classification_profile_matrix_violations` above only ever
+    grant x requested_purpose matrix. The 2026-10-04T11:00Z L2 review's
+    own prose cited "1,440 cases"; the module's real, already-closed
+    enums multiply out to 4 x 3 x 3 x 2 x 2 x 5 = 720, not 1,440 -- fixed
+    here (2026-10-06T13:45Z round-3 finding) rather than left stale.
+    `_classification_profile_matrix_violations` above only ever
     held org_default == project (so `resolve_effective_project_security_
     profile`'s own divergence branch was never exercised by a
     boundary-crossing assertion) and only ever used a single,
@@ -708,14 +735,20 @@ def _full_matrix_violations() -> list[str]:
     2026-10-04T11:00Z L2 review named literally. This varies all six
     dimensions independently and asserts, for every combination, that
     `authorize_dataset_source_copy` raises exactly when the
-    independently built preview's own `blocked` flag says it should."""
+    independently built preview's own `blocked` flag says it should.
+    Returns `(violations, executed_cases)` -- `executed_cases` is an
+    actual count of loop-body executions, not a separately computed
+    multiplication, per the round-3 DoD's "count actual loop
+    iterations"."""
     violations: list[str] = []
+    executed_cases = 0
     for classification in SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS:
         for org_profile in SUPPORTED_PROJECT_SECURITY_PROFILES:
             for project_profile in SUPPORTED_PROJECT_SECURITY_PROFILES:
                 for connection_status in ("active", "revoked"):
                     for requested_purpose in SUPPORTED_PURPOSES:
                         for granted in (True, False):
+                            executed_cases += 1
                             allowed_purposes = _allowed_purposes_for(requested_purpose, granted)
                             preview = build_dataset_source_copy_preview(
                                 source_display_name="matrix",
@@ -752,11 +785,11 @@ def _full_matrix_violations() -> list[str]:
                                     f"preview.blocked={preview.blocked} but "
                                     f"authorize raised={raised}"
                                 )
-    return violations
+    return violations, executed_cases
 
 
 def test_full_matrix_enumerates_every_real_value_of_every_dimension() -> None:
-    # The 2026-10-04T11:00Z review's own prose cites "1,440 cases"; the
+    # The 2026-10-04T11:00Z review's own prose cited "1,440 cases"; the
     # module's real, already-closed enums (4 classifications x 3 org
     # profiles x 3 project profiles x 2 connection statuses x 2 grant
     # states x 5 purposes) multiply out to 4*3*3*2*2*5 = 720, not 1,440 --
@@ -777,7 +810,7 @@ def test_full_matrix_enumerates_every_real_value_of_every_dimension() -> None:
         "FTF-0500D",
         "the full matrix's own six dimensions multiply out to the real full-factorial case "
         f"count across every closed enum this module defines (4x3x3x2x2x5): {case_count}",
-        case_count == 4 * 3 * 3 * 2 * 2 * 5,
+        case_count == 720,
     )
     check(
         "FTF-0500D",
@@ -787,18 +820,31 @@ def test_full_matrix_enumerates_every_real_value_of_every_dimension() -> None:
         and len(SUPPORTED_PROJECT_SECURITY_PROFILES) == 3
         and len(SUPPORTED_PURPOSES) == 5,
     )
+    # Round-3 DoD: "count actual loop iterations", not only a separately
+    # computed multiplication that could silently drift from what the loop
+    # actually runs (e.g. a dimension accidentally iterated over a stale
+    # or truncated collection). `executed_cases` is incremented once per
+    # real loop-body execution inside `_full_matrix_violations`.
+    _, executed_cases = _full_matrix_violations()
+    check(
+        "FTF-0500D",
+        f"the full matrix's loop body actually executed exactly 720 times (not merely "
+        f"computed by multiplication): executed_cases={executed_cases}",
+        executed_cases == 720 and executed_cases == case_count,
+    )
 
 
 def test_authorize_raises_whenever_preview_blocks_across_full_matrix() -> None:
-    violations = _full_matrix_violations()
+    violations, executed_cases = _full_matrix_violations()
     shown = violations[:5]
     more = f" (+{len(violations) - 5} more)" if len(violations) > 5 else ""
     check(
         "FTF-0500D",
         "authorize_dataset_source_copy raises in exactly the (classification, org_default, "
         "project, connection_status, grant, purpose) combinations the preview marks blocked, "
-        f"across the full 1,440-case matrix -- violations: {shown}{more}",
-        violations == [],
+        f"across the full 720-case matrix (executed_cases={executed_cases}) -- "
+        f"violations: {shown}{more}",
+        violations == [] and executed_cases == 720,
     )
 
 
@@ -857,7 +903,7 @@ for classification in SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS:
         if preview.would_cross_security_boundary != raised:
             narrow_violations.append(f"{classification}:{profile}")
 
-# The full 1,440-case matrix.
+# The full 720-case matrix.
 full_violations = []
 for classification in SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS:
     for org_profile in SUPPORTED_PROJECT_SECURITY_PROFILES:
@@ -971,7 +1017,7 @@ def test_fault_injection_additive_org_project_divergence_early_return() -> None:
         )
         check(
             "FTF-0500D",
-            "[L2 finding, reproduced] the full 1,440-case matrix genuinely catches the injected "
+            "[L2 finding, reproduced] the full 720-case matrix genuinely catches the injected "
             f"org != project early-return fault; full-matrix violations found: {full_count}",
             full_count > 0,
         )
@@ -990,6 +1036,617 @@ def test_fault_injection_additive_org_project_divergence_early_return() -> None:
         f"the full matrix check is clean again once the fault is reverted; "
         f"violations: {clean_full_count}",
         clean_full_count == 0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 2026-10-06T13:45Z L2 review finding (round 3): every matrix test above
+# compares `preview.blocked`/`preview.would_cross_security_boundary`/
+# `preview.purpose_authorized` against whether `authorize_dataset_source_
+# copy` raises -- but both sides call the SAME shared helpers
+# (`would_cross_security_boundary`, `check_purpose_authorized`), so an
+# additive bug inside either helper makes both sides wrong identically and
+# the self-referential comparison still passes. Example named by the
+# review: an additive `return False` for `restricted`+`zero_egress` in
+# `would_cross_security_boundary` would AUTHORIZE restricted data into
+# zero_egress, with every matrix test above staying green.
+#
+# The tests below build an INDEPENDENT expected-value oracle: literal
+# tables computed by this test file's own separately written logic, never
+# calling `would_cross_security_boundary`, `check_purpose_authorized`,
+# `resolve_effective_project_security_profile` or `security_profile_rank`.
+# A bug in any of those four production helpers cannot also corrupt this
+# oracle's own expectation, because the oracle never calls them.
+# ---------------------------------------------------------------------------
+
+# Independent of the module's own `_PROFILE_RANK` -- a separately written
+# literal rank table.
+_ORACLE_PROFILE_RANK: dict[str, int] = {"standard": 0, "zero_egress": 1, "air_gapped": 2}
+
+# Independent of the module's own `MINIMUM_REQUIRED_SECURITY_PROFILE`
+# dict object identity -- a separately written literal copy of the same
+# disclosed mapping (see module docstring for the mapping's own
+# rationale). Cross-checked against the real export below, once, by
+# value -- not relied upon by any oracle computation.
+_ORACLE_MINIMUM_PROFILE: dict[str, str] = {
+    "public": "standard",
+    "internal": "standard",
+    "confidential": "zero_egress",
+    "restricted": "air_gapped",
+}
+
+
+def test_oracle_minimum_profile_table_matches_the_real_export() -> None:
+    # Confirms the independent literal table above is not silently stale
+    # relative to the module's own disclosed mapping -- a one-time value
+    # comparison, never used inside the oracle computations themselves.
+    check(
+        "FTF-0500D",
+        "the independent oracle's own literal MINIMUM_REQUIRED_SECURITY_PROFILE copy matches "
+        "the module's real export by value",
+        _ORACLE_MINIMUM_PROFILE == dict(MINIMUM_REQUIRED_SECURITY_PROFILE),
+    )
+
+
+def _oracle_would_cross(classification: str, org_profile: str, project_profile: str) -> bool:
+    """Literal, independently-derived expected value for whether copying
+    `classification` data into a project whose effective security profile
+    is the more restrictive of `org_profile`/`project_profile` would leave
+    that classification's own required minimum security boundary. Never
+    calls `would_cross_security_boundary`, `resolve_effective_project_
+    security_profile` or `security_profile_rank`."""
+    effective_rank = max(_ORACLE_PROFILE_RANK[org_profile], _ORACLE_PROFILE_RANK[project_profile])
+    required_rank = _ORACLE_PROFILE_RANK[_ORACLE_MINIMUM_PROFILE[classification]]
+    return effective_rank < required_rank
+
+
+def _oracle_effective_profile(org_profile: str, project_profile: str) -> str:
+    """Literal, independently-derived expected effective profile: the
+    more restrictive (higher-ranked) of the two, project profile winning
+    ties -- never calls `resolve_effective_project_security_profile`."""
+    if _ORACLE_PROFILE_RANK[project_profile] >= _ORACLE_PROFILE_RANK[org_profile]:
+        return project_profile
+    return org_profile
+
+
+def test_independent_oracle_boundary_crossing_classification_profile_matrix() -> None:
+    """36 (classification, org_profile, project_profile) cells -- purpose
+    always granted and connection always active, so only the
+    boundary-crossing path is exercised and isolated from the purpose
+    path. Every expected value comes from the independent oracle helpers
+    above, never from the production module's own helpers. Also covers
+    round-3 DoD item (2): per-field preview assertions with non-default
+    (org != project) values -- `effective_project_security_profile` and
+    `required_minimum_security_profile` are asserted on every cell, most
+    of which have org != project."""
+    executed_cases = 0
+    violations: list[str] = []
+    for classification in SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS:
+        for org_profile in SUPPORTED_PROJECT_SECURITY_PROFILES:
+            for project_profile in SUPPORTED_PROJECT_SECURITY_PROFILES:
+                executed_cases += 1
+                expected_cross = _oracle_would_cross(classification, org_profile, project_profile)
+                expected_effective = _oracle_effective_profile(org_profile, project_profile)
+                expected_required = _ORACLE_MINIMUM_PROFILE[classification]
+
+                preview = build_dataset_source_copy_preview(
+                    source_display_name="oracle",
+                    source_type="upload",
+                    security_classification=classification,
+                    connection_status="active",
+                    allowed_purposes=["training"],
+                    requested_purpose="training",
+                    organization_default_security_profile=org_profile,
+                    project_security_profile=project_profile,
+                    manifest=_manifest(),
+                )
+                raised_boundary = False
+                try:
+                    authorize_dataset_source_copy(
+                        security_classification=classification,
+                        connection_status="active",
+                        allowed_purposes=["training"],
+                        requested_purpose="training",
+                        organization_default_security_profile=org_profile,
+                        project_security_profile=project_profile,
+                    )
+                except SecurityBoundaryCrossingError:
+                    raised_boundary = True
+
+                if (
+                    preview.would_cross_security_boundary != expected_cross
+                    or raised_boundary != expected_cross
+                    or preview.effective_project_security_profile != expected_effective
+                    or preview.required_minimum_security_profile != expected_required
+                ):
+                    violations.append(
+                        f"classification={classification!r} org={org_profile!r} "
+                        f"project={project_profile!r}: expected_cross={expected_cross} "
+                        f"preview.would_cross={preview.would_cross_security_boundary} "
+                        f"authorize_raised_boundary={raised_boundary} "
+                        f"expected_effective={expected_effective!r} "
+                        f"preview.effective={preview.effective_project_security_profile!r} "
+                        f"expected_required={expected_required!r} "
+                        f"preview.required={preview.required_minimum_security_profile!r}"
+                    )
+    shown = violations[:5]
+    more = f" (+{len(violations) - 5} more)" if len(violations) > 5 else ""
+    check(
+        "FTF-0500D",
+        f"independent oracle (literal table, never calling the production helpers): all "
+        f"{executed_cases} classification x org-profile x project-profile cells (4x3x3=36) "
+        f"match the expected would_cross/effective/required values for both preview and "
+        f"authorize -- violations: {shown}{more}",
+        executed_cases == 36 and violations == [],
+    )
+
+
+def test_independent_oracle_purpose_authorization_status_grant_purpose_matrix() -> None:
+    """20 (connection_status, requested_purpose, granted) cases -- 2
+    statuses x 2 grant states x 5 purposes, covering the round-3 review's
+    own "4 grant states" (status x grant) across every purpose.
+    classification/profiles held fixed at a non-crossing case (public /
+    standard / standard) so only the purpose-authorization path is
+    exercised, isolated from the boundary path. Expected value is a
+    literal boolean (`status == "active" and granted`), never calling
+    `check_purpose_authorized`."""
+    executed_cases = 0
+    violations: list[str] = []
+    for connection_status in ("active", "revoked"):
+        for granted in (True, False):
+            for requested_purpose in SUPPORTED_PURPOSES:
+                executed_cases += 1
+                allowed_purposes = _allowed_purposes_for(requested_purpose, granted)
+                expected_authorized = connection_status == "active" and granted
+
+                preview = build_dataset_source_copy_preview(
+                    source_display_name="oracle",
+                    source_type="upload",
+                    security_classification="public",
+                    connection_status=connection_status,
+                    allowed_purposes=allowed_purposes,
+                    requested_purpose=requested_purpose,
+                    organization_default_security_profile="standard",
+                    project_security_profile="standard",
+                    manifest=_manifest(),
+                )
+                raised_auth = False
+                try:
+                    authorize_dataset_source_copy(
+                        security_classification="public",
+                        connection_status=connection_status,
+                        allowed_purposes=allowed_purposes,
+                        requested_purpose=requested_purpose,
+                        organization_default_security_profile="standard",
+                        project_security_profile="standard",
+                    )
+                except DatasetSourceCopyAuthorizationError:
+                    raised_auth = True
+
+                if preview.purpose_authorized != expected_authorized or raised_auth != (
+                    not expected_authorized
+                ):
+                    violations.append(
+                        f"status={connection_status!r} purpose={requested_purpose!r} "
+                        f"granted={granted}: expected_authorized={expected_authorized} "
+                        f"preview.purpose_authorized={preview.purpose_authorized} "
+                        f"authorize_raised_auth_error={raised_auth}"
+                    )
+    shown = violations[:5]
+    more = f" (+{len(violations) - 5} more)" if len(violations) > 5 else ""
+    check(
+        "FTF-0500D",
+        f"independent oracle (literal table, never calling the production helpers): all "
+        f"{executed_cases} connection_status x grant x requested_purpose cases (2x2x5=20, the "
+        f"review's own 4 status-x-grant states x every purpose) match the expected purpose-"
+        f"authorization value for both preview and authorize -- violations: {shown}{more}",
+        executed_cases == 20 and violations == [],
+    )
+
+
+_BOUNDARY_ADDITIVE_BYPASS_FAULT_CHECK_SCRIPT = """
+import sys
+sys.path.insert(0, "__ROOT__")
+from workers.data.dataset_source_security_boundary_preview_audit_evidence import (
+    SecurityBoundaryCrossingError,
+    SourceCopyManifest,
+    authorize_dataset_source_copy,
+    build_dataset_source_copy_preview,
+)
+
+manifest = SourceCopyManifest(estimated_bytes=1, estimated_records=1, expected_transformations=())
+
+# restricted + effective zero_egress: independent oracle expects
+# would_cross=True (restricted requires air_gapped; zero_egress is one
+# rank below it). The injected fault hardcodes a `return False` for
+# exactly this pairing.
+preview = build_dataset_source_copy_preview(
+    source_display_name="fault",
+    source_type="upload",
+    security_classification="restricted",
+    connection_status="active",
+    allowed_purposes=["training"],
+    requested_purpose="training",
+    organization_default_security_profile="zero_egress",
+    project_security_profile="zero_egress",
+    manifest=manifest,
+)
+raised = False
+try:
+    authorize_dataset_source_copy(
+        security_classification="restricted",
+        connection_status="active",
+        allowed_purposes=["training"],
+        requested_purpose="training",
+        organization_default_security_profile="zero_egress",
+        project_security_profile="zero_egress",
+    )
+except SecurityBoundaryCrossingError:
+    raised = True
+
+EXPECTED_CROSS = True
+MATCHES_ORACLE = (preview.would_cross_security_boundary == EXPECTED_CROSS) and (
+    raised == EXPECTED_CROSS
+)
+print("MATCHES_ORACLE=" + str(MATCHES_ORACLE))
+"""
+
+
+def _run_boundary_fault_check_script() -> bool:
+    script = _BOUNDARY_ADDITIVE_BYPASS_FAULT_CHECK_SCRIPT.replace("__ROOT__", str(ROOT))
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, timeout=60
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"boundary fault script failed (exit {result.returncode}): {result.stderr}"
+        )
+    for line in result.stdout.splitlines():
+        if line.startswith("MATCHES_ORACLE="):
+            return line[len("MATCHES_ORACLE=") :] == "True"
+    raise RuntimeError(f"boundary fault script produced no MATCHES_ORACLE= line: {result.stdout!r}")
+
+
+def test_fault_injection_boundary_check_additive_bypass_caught_by_independent_oracle() -> None:
+    """Round-3 DoD item (3): a fault test for the named additive-allow
+    class in `would_cross_security_boundary` ("an additive `return False`
+    for restricted+zero_egress ... which AUTHORIZES restricted data into
+    zero_egress"). Injects it directly into the real on-disk module,
+    confirms the independent oracle catches it (unlike the self-
+    referential matrix tests, which would stay green), then restores the
+    module file byte-identical."""
+    import workers.data.dataset_source_security_boundary_preview_audit_evidence as _module
+
+    module_path = Path(_module.__file__)
+    original_bytes = module_path.read_bytes()
+    original_hash = hashlib.md5(original_bytes).hexdigest()
+    original_text = original_bytes.decode("utf-8")
+
+    anchor = (
+        "    required = "
+        "required_minimum_security_profile_for_classification(security_classification)\n"
+    )
+    check(
+        "FTF-0500D",
+        "the exact anchor this additive-fault injection targets exists exactly once in the "
+        "real on-disk module before injection",
+        original_text.count(anchor) == 1,
+    )
+    mutated_text = original_text.replace(
+        anchor,
+        anchor
+        + '    if security_classification == "restricted" and '
+        + 'effective_project_security_profile == "zero_egress":\n'
+        + "        return False\n",
+        1,
+    )
+
+    try:
+        module_path.write_text(mutated_text, encoding="utf-8")
+        matches_oracle = _run_boundary_fault_check_script()
+        check(
+            "FTF-0500D",
+            "[round-3 finding, reproduced] the independent oracle genuinely catches the "
+            "injected additive restricted+zero_egress bypass in would_cross_security_boundary "
+            f"(the self-referential matrix tests would not); matches_oracle={matches_oracle}",
+            matches_oracle is False,
+        )
+    finally:
+        module_path.write_bytes(original_bytes)
+        restored_hash = hashlib.md5(module_path.read_bytes()).hexdigest()
+        check(
+            "FTF-0500D",
+            "the module file is restored byte-identical after fault injection",
+            restored_hash == original_hash,
+        )
+
+    clean_matches_oracle = _run_boundary_fault_check_script()
+    check(
+        "FTF-0500D",
+        f"the independent oracle is clean again once the fault is reverted; "
+        f"matches_oracle={clean_matches_oracle}",
+        clean_matches_oracle is True,
+    )
+
+
+_PURPOSE_ADDITIVE_BYPASS_FAULT_CHECK_SCRIPT = """
+import sys
+sys.path.insert(0, "__ROOT__")
+from workers.data.dataset_source_security_boundary_preview_audit_evidence import (
+    DatasetSourceCopyAuthorizationError,
+    SourceCopyManifest,
+    authorize_dataset_source_copy,
+    build_dataset_source_copy_preview,
+)
+
+manifest = SourceCopyManifest(estimated_bytes=1, estimated_records=1, expected_transformations=())
+
+# connection revoked, purpose not granted, requested purpose is the one
+# the injected fault bypasses unconditionally. Independent oracle expects
+# purpose_authorized=False (status alone already denies it).
+preview = build_dataset_source_copy_preview(
+    source_display_name="fault",
+    source_type="upload",
+    security_classification="public",
+    connection_status="revoked",
+    allowed_purposes=["training"],
+    requested_purpose="baseline_only",
+    organization_default_security_profile="standard",
+    project_security_profile="standard",
+    manifest=manifest,
+)
+raised = False
+try:
+    authorize_dataset_source_copy(
+        security_classification="public",
+        connection_status="revoked",
+        allowed_purposes=["training"],
+        requested_purpose="baseline_only",
+        organization_default_security_profile="standard",
+        project_security_profile="standard",
+    )
+except DatasetSourceCopyAuthorizationError:
+    raised = True
+
+EXPECTED_AUTHORIZED = False
+MATCHES_ORACLE = (preview.purpose_authorized == EXPECTED_AUTHORIZED) and (
+    raised == (not EXPECTED_AUTHORIZED)
+)
+print("MATCHES_ORACLE=" + str(MATCHES_ORACLE))
+"""
+
+
+def _run_purpose_fault_check_script() -> bool:
+    script = _PURPOSE_ADDITIVE_BYPASS_FAULT_CHECK_SCRIPT.replace("__ROOT__", str(ROOT))
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, timeout=60
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"purpose fault script failed (exit {result.returncode}): {result.stderr}"
+        )
+    for line in result.stdout.splitlines():
+        if line.startswith("MATCHES_ORACLE="):
+            return line[len("MATCHES_ORACLE=") :] == "True"
+    raise RuntimeError(f"purpose fault script produced no MATCHES_ORACLE= line: {result.stdout!r}")
+
+
+def test_fault_injection_purpose_check_additive_bypass_caught_by_independent_oracle() -> None:
+    """Round-3 DoD item (3): a fault test for the named additive-allow
+    class in `check_purpose_authorized` ("purpose-specific allows, or a
+    revoked-status allow"). Injects a purpose-specific unconditional
+    bypass directly into the real on-disk module, confirms the
+    independent oracle catches it, then restores the module file
+    byte-identical."""
+    import workers.data.dataset_source_security_boundary_preview_audit_evidence as _module
+
+    module_path = Path(_module.__file__)
+    original_bytes = module_path.read_bytes()
+    original_hash = hashlib.md5(original_bytes).hexdigest()
+    original_text = original_bytes.decode("utf-8")
+
+    anchor = '    if connection_status != "active":\n'
+    check(
+        "FTF-0500D",
+        "the exact anchor this additive-fault injection targets exists exactly once in the "
+        "real on-disk module before injection",
+        original_text.count(anchor) == 1,
+    )
+    mutated_text = original_text.replace(
+        anchor,
+        '    if requested_purpose == "baseline_only":\n        return\n' + anchor,
+        1,
+    )
+
+    try:
+        module_path.write_text(mutated_text, encoding="utf-8")
+        matches_oracle = _run_purpose_fault_check_script()
+        check(
+            "FTF-0500D",
+            "[round-3 finding, reproduced] the independent oracle genuinely catches the "
+            "injected additive purpose-specific bypass in check_purpose_authorized (the "
+            f"self-referential matrix tests would not); matches_oracle={matches_oracle}",
+            matches_oracle is False,
+        )
+    finally:
+        module_path.write_bytes(original_bytes)
+        restored_hash = hashlib.md5(module_path.read_bytes()).hexdigest()
+        check(
+            "FTF-0500D",
+            "the module file is restored byte-identical after fault injection",
+            restored_hash == original_hash,
+        )
+
+    clean_matches_oracle = _run_purpose_fault_check_script()
+    check(
+        "FTF-0500D",
+        f"the independent oracle is clean again once the fault is reverted; "
+        f"matches_oracle={clean_matches_oracle}",
+        clean_matches_oracle is True,
+    )
+
+
+# Independent literal expectations for the round-4 tests below: separately
+# written copies of the closed vocabularies (never the module's own
+# SUPPORTED_* tuples), so a production change to those tuples is caught too.
+_ORACLE_CLASSIFICATIONS: tuple[str, ...] = ("public", "internal", "confidential", "restricted")
+_ORACLE_PURPOSES: tuple[str, ...] = (
+    "training",
+    "validation",
+    "held_out_evaluation",
+    "candidate_development",
+    "baseline_only",
+)
+_ORACLE_PROFILES: tuple[str, ...] = ("standard", "zero_egress", "air_gapped")
+
+
+def test_independent_oracle_preview_display_fields_per_cell_with_non_default_values() -> None:
+    """FTF-0500D round 4, blocking item 1: every preview DISPLAY field is
+    asserted per cell against a literal expected value that differs from
+    the fixture default, so hard-coding `security_classification="public"`,
+    `requested_purpose="training"`, or any display name/type/profile in the
+    production preview stays RED. Cells: 4 classifications x 5 purposes x
+    3x3 (org, project) profile pairs = 180; the display name and source
+    type are unique per cell and distinct from the fixture default."""
+    executed_cases = 0
+    violations: list[str] = []
+    for classification in _ORACLE_CLASSIFICATIONS:
+        for purpose in _ORACLE_PURPOSES:
+            for org_profile in _ORACLE_PROFILES:
+                for project_profile in _ORACLE_PROFILES:
+                    executed_cases += 1
+                    display_name = (
+                        f"src::{classification}::{purpose}::{org_profile}::{project_profile}"
+                    )
+                    source_type = f"type::{classification}::{purpose}"
+                    preview = build_dataset_source_copy_preview(
+                        source_display_name=display_name,
+                        source_type=source_type,
+                        security_classification=classification,
+                        connection_status="active",
+                        allowed_purposes=[purpose],
+                        requested_purpose=purpose,
+                        organization_default_security_profile=org_profile,
+                        project_security_profile=project_profile,
+                        manifest=_manifest(
+                            estimated_bytes=1000 + executed_cases,
+                            estimated_records=7 + executed_cases,
+                            expected_transformations=(f"t{executed_cases}",),
+                        ),
+                    )
+                    expected = {
+                        "source_display_name": display_name,
+                        "source_type": source_type,
+                        "security_classification": classification,
+                        "requested_purpose": purpose,
+                        "estimated_bytes": 1000 + executed_cases,
+                        "estimated_records": 7 + executed_cases,
+                        "expected_transformations": (f"t{executed_cases}",),
+                        "effective_project_security_profile": _oracle_effective_profile(
+                            org_profile, project_profile
+                        ),
+                        "required_minimum_security_profile": _ORACLE_MINIMUM_PROFILE[
+                            classification
+                        ],
+                        "would_cross_security_boundary": _oracle_would_cross(
+                            classification, org_profile, project_profile
+                        ),
+                        "purpose_authorized": True,
+                    }
+                    for field_name, expected_value in expected.items():
+                        actual = getattr(preview, field_name)
+                        if actual != expected_value or type(actual) is not type(expected_value):
+                            violations.append(
+                                f"{classification}/{purpose}/{org_profile}/{project_profile} "
+                                f"{field_name}: expected {expected_value!r}, got {actual!r}"
+                            )
+    shown = violations[:5]
+    more = f" (+{len(violations) - 5} more)" if len(violations) > 5 else ""
+    check(
+        "FTF-0500D",
+        f"independent oracle: all {executed_cases} (classification x purpose x org profile x "
+        f"project profile) cells render every preview display field with its literal expected "
+        f"value (non-default per cell) -- violations: {shown}{more}",
+        executed_cases == 180 and violations == [],
+    )
+
+
+def _purpose_shapes(requested: str) -> list[tuple[str, list[str], bool]]:
+    """The four `allowed_purposes` shapes (plus requested-first-among-several)
+    with their literal expected authorization, never calling
+    `check_purpose_authorized`. `others` are two supported purposes other
+    than `requested`, in vocabulary order."""
+    others = [purpose for purpose in _ORACLE_PURPOSES if purpose != requested]
+    first_other, second_other = others[0], others[1]
+    return [
+        ("empty", [], False),
+        ("exactly_requested", [requested], True),
+        ("requested_among_several_not_first", [first_other, requested, second_other], True),
+        ("requested_last_of_several", [first_other, second_other, requested], True),
+        ("requested_first_of_several", [requested, first_other, second_other], True),
+        ("several_without_requested", [first_other, second_other], False),
+    ]
+
+
+def test_independent_oracle_allowed_purposes_shapes_preview_and_authorize() -> None:
+    """FTF-0500D round 4, blocking item 2: the review's "4 grant states" are
+    the SHAPES of `allowed_purposes` -- empty, exactly [requested], requested
+    among several but not first, several without requested (plus requested
+    first / last, so honoring only the first or only the last purpose is
+    caught). 5 purposes x 6 shapes x 2 statuses = 60 cells, each expected
+    value a literal, asserted against BOTH preview and authorize. An empty
+    list authorizing any purpose, or honoring only the first/last purpose,
+    turns this RED."""
+    executed_cases = 0
+    violations: list[str] = []
+    for requested in _ORACLE_PURPOSES:
+        for shape_name, allowed, shape_grants in _purpose_shapes(requested):
+            for status in ("active", "revoked"):
+                executed_cases += 1
+                expected_authorized = status == "active" and shape_grants
+                preview = build_dataset_source_copy_preview(
+                    source_display_name="shapes",
+                    source_type="upload",
+                    security_classification="public",
+                    connection_status=status,
+                    allowed_purposes=allowed,
+                    requested_purpose=requested,
+                    organization_default_security_profile="standard",
+                    project_security_profile="standard",
+                    manifest=_manifest(),
+                )
+                raised = False
+                try:
+                    authorize_dataset_source_copy(
+                        security_classification="public",
+                        connection_status=status,
+                        allowed_purposes=allowed,
+                        requested_purpose=requested,
+                        organization_default_security_profile="standard",
+                        project_security_profile="standard",
+                    )
+                except DatasetSourceCopyAuthorizationError:
+                    raised = True
+                if (
+                    preview.purpose_authorized is not expected_authorized
+                    or preview.blocked is expected_authorized
+                    or bool(preview.blocking_reasons) is expected_authorized
+                    or raised is expected_authorized
+                ):
+                    violations.append(
+                        f"requested={requested!r} shape={shape_name} status={status}: expected "
+                        f"authorized={expected_authorized}, preview.purpose_authorized="
+                        f"{preview.purpose_authorized} blocked={preview.blocked} "
+                        f"authorize_raised={raised}"
+                    )
+    shown = violations[:5]
+    more = f" (+{len(violations) - 5} more)" if len(violations) > 5 else ""
+    check(
+        "FTF-0500D",
+        f"independent oracle: all {executed_cases} (purpose x allowed_purposes shape x status) "
+        f"cells match the literal expected authorization for BOTH preview and authorize -- "
+        f"violations: {shown}{more}",
+        executed_cases == 60 and violations == [],
     )
 
 

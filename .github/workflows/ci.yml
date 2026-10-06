@@ -333,12 +333,16 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_1206.py
       - name: FTF-1206A negative-test proof (Organization gateway policy persistence -- RLS/GRANT migration shape + fault injection, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1206a.py
+      - name: FTF-0103A negative-test proof (live session principal + Membership -- every /api/v1 route wired to the real resolver/role lookup, fail-closed resolver, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0103a.py
       - name: FTF-1807 negative-test proof (LiteLLM outage runbook -- doc/code fidelity, no DB required)
         run: uv run python3 tests/documentation/test_ftf_1807.py
       - name: FTF-H007 negative-test proof (source boundary -- executable hook/dangerous call/escaping symlink detection, no DB required)
         run: uv run python3 tests/tasks/test_ftf_h007.py
       - name: FTF-0902 negative-test proof (network-policy templates -- render-time endpoint revalidation, metadata/RFC1918/IPv6 rejection, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0902.py
+      - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
+        run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -354,6 +358,101 @@ jobs:
       #   run: |
       #     pip install cognee --quiet
       #     cognee-cli remember .
+
+  mutation-gate:
+    # Law 1 made mechanical for relay submissions: every production function a
+    # `[relay]` PR changes (under product_truth_check.SOURCE_ROOTS) is broken one
+    # small way at a time (scripts/mutation_gate.py, operators M1-M9) and the PR's
+    # own tests/tasks tests are re-run; any mutant they leave GREEN fails this job
+    # and is listed, so the relay sees every surviving mutant before L2 review
+    # instead of one returned round at a time. Unit tests only for now: no
+    # services, so only tests/tasks/test_*.py (all no-DB by convention) are used.
+    # Reviewed equivalent mutants: docs/certifications/mutation-allowlist.yaml.
+    if: github.event_name == 'pull_request' && startsWith(github.event.pull_request.title, '[relay]')
+    runs-on: ubuntu-latest
+    continue-on-error: false
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies
+        run: uv sync --all-packages
+      - name: Relay PRs may not edit the mutation allowlist (Control-plane file)
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if git diff --name-only "origin/${BASE_REF}...HEAD" | grep -qx 'docs/certifications/mutation-allowlist.yaml'; then
+            echo "::error::A [relay] PR changed docs/certifications/mutation-allowlist.yaml. Only the Control plane adds reviewed equivalent mutants; kill the mutant with a test instead."
+            exit 1
+          fi
+      - name: Select the PR's task tests
+        id: select
+        env:
+          # Untrusted PR text goes through env, never interpolated into the script.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, pathlib, re, subprocess
+          base = "origin/" + os.environ["BASE_REF"]
+          def git(*args):
+              return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout
+          changed = git("diff", "--name-only", "--diff-filter=AMR", f"{base}...HEAD", "--", "tests/tasks/").split()
+          tests = sorted({f for f in changed if re.fullmatch(r"tests/tasks/test_[^/]+\.py", f)
+                          and f != "tests/tasks/test_mutation_gate.py"})
+          if not tests:
+              print("No tests/tasks/test_*.py changed; deriving task IDs instead.")
+              text = os.environ.get("PR_TITLE", "") + "\n" + os.environ.get("HEAD_REF", "")
+              ids = re.findall(r"FTF-[0-9A-Z]+", text, flags=re.I)
+              if not ids:
+                  added = git("diff", "-U0", f"{base}...HEAD", "--", "apps/web", "apps/api", "workers", "packages")
+                  ids = re.findall(r"FTF-[0-9A-Z]+", "\n".join(l for l in added.splitlines() if l.startswith("+")), flags=re.I)
+              found = set()
+              for i in {x.lower().removeprefix("ftf-") for x in ids}:
+                  exact = pathlib.Path(f"tests/tasks/test_ftf_{i}.py")
+                  if exact.is_file():
+                      found.add(str(exact))
+                  found.update(str(p) for p in pathlib.Path("tests/tasks").glob(f"test_ftf_{i}_*.py"))
+              tests = sorted(found)
+          out = pathlib.Path(os.environ["GITHUB_OUTPUT"])
+          lst = pathlib.Path(os.environ["RUNNER_TEMP"]) / "mutation-tests.txt"
+          if not tests:
+              print("mutation-gate: SKIPPED -- no changed tests/tasks/test_*.py and no tests/tasks/test_ftf_<id>.py for this PR's task ID(s); nothing to run mutants against.")
+              with out.open("a") as fh:
+                  fh.write("skip=true\n")
+          else:
+              lst.write_text("\n".join(tests) + "\n")
+              print("Tests the mutants must be killed by:\n" + "\n".join(tests))
+              with out.open("a") as fh:
+                  fh.write(f"skip=false\nlist={lst}\n")
+          PY
+      - name: Mutation gate (every surviving mutant fails the job)
+        if: steps.select.outputs.skip == 'false'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          TEST_LIST: ${{ steps.select.outputs.list }}
+        run: |
+          set -euo pipefail
+          args=()
+          while IFS= read -r t; do
+            args+=(--test "uv run python3 $t")
+          done < "$TEST_LIST"
+          mkdir -p reports
+          uv run python3 scripts/mutation_gate.py --base "origin/${BASE_REF}" "${args[@]}" \
+            --timeout 300 --max-mutants 200 --json reports/mutation-gate.json
+      - name: Upload mutation report
+        if: always() && steps.select.outputs.skip == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-gate-report
+          path: reports/mutation-gate.json
+          if-no-files-found: ignore
 
   docker-local-stack-integration:
     # FTF-0004: real Postgres/Temporal/SeaweedFS (S3-compatible) integration
@@ -2163,6 +2262,49 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real organization-gateway-policy persistence evidence against the live database
         run: uv run python3 tests/integration/test_ftf_1206a_org_gateway_policy.py
+
+  live-auth-path-integration:
+    # FTF-0103A: real OIDC login -> real API call. A real idpyoidc OpenID
+    # Provider (FTF-0101's harness), the REAL app.main.create_app() served
+    # by uvicorn and reading the session cookie plus the `memberships`
+    # table through the restricted sovra_app role, and a real Postgres 16
+    # with the full migration chain: 200 for an active member; 401 for no,
+    # tampered, expired or logged-out sessions; 403 for a foreign org, an
+    # insufficient role and a revoked membership; no body/header/query/
+    # workspace-level path widens a role; sovra_app cannot write
+    # memberships; no-context/foreign-context reads return 0 rows; WITH
+    # CHECK is not fail-open -- tests/integration/
+    # test_ftf_0103a_live_auth_path.py. Same real `services: postgres`
+    # container pattern as organization-gateway-policy-integration (this
+    # repo's interactive dev sandbox has no container-registry egress; that
+    # evidence was instead produced locally against a directly-installed
+    # PostgreSQL 16 -- see this task's submission file).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0103a
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0103a"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0103a
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member + idpyoidc dev dependency)
+        run: uv sync --all-packages
+      - name: Prove the real OIDC-login -> API live-auth-path evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_0103a_live_auth_path.py
 
   network-policy-enforcement-integration:
     # FTF-0902: real kind+Calico NetworkPolicy enforcement + negative-

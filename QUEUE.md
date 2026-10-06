@@ -9274,98 +9274,15 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-None currently. 2026-10-04: the owner decided to keep branch protection as it is
-(instruction-tier) for now, and approved FTF-1206A (ADR 0002). Both asks are closed.
-
-2026-09-30 (resolved 2026-10-01T01:14Z): the repo-wide GitHub Actions runner-provisioning outage
-escalated at 09:20Z (past its own "clears within hours" precedent window — 3h37m+ continuous at
-escalation time) is confirmed genuinely cleared: PR #342's own run (`36681155484`) reached a
-real terminal state with a real `runner_id`/`runner_name` and real per-step timestamps,
-structurally different from every `runner_id: 0` failure during the outage — the same resolution
-bar this entry itself set. See `PROGRESS.md`'s/`QUEUE.md`'s own top dated log entry and
-`BLOCKER.md`'s matching RESOLVED entry for the full evidence.
-
-2026-09-21 (resolved, kept for the resolution-bar precedent the entry above reuses): the
-GitHub Actions runner-provisioning outage first found on PR #170 (2026-09-21, escalated to an
-owner ask the same day) and independently reconfirmed on PR #172 (FTF-R016) and PR #176
-(FTF-0202) was confirmed genuinely cleared: a certifier shift independently ran real, fresh CI on
-four separate PRs that day (#159, #160, #161, #167) -- 21/21, 22/22, 23/23, and 23/23 real jobs,
-every one with a real `runner_id`/`runner_name` and real per-step
-execution timestamps, structurally different from every failing run
-during the outage (`runner_id: 0`, no runner ever assigned). This
-directly confirms the resolution bar the original owner-ask entry
-itself set ("a session confirms CI is provisioning runners again on a
-fresh PR event"), independently of PR #178's own earlier claim to the
-same effect. FTF-1302 (PR #170) and FTF-R016 (PR #172), both previously
-reviewed sound but NOT CERTIFIED solely because of this outage, were
-re-reviewed with a fresh, genuine CI run each -- see this
-file's own top status note and `docs/certifications/queue.md` for the
-full history.
-
-2026-09-20: **FTF-0202 ("Secret-manager integration")'s own
-secret-backend-selection ask is RESOLVED** (2026-09-21, live owner
-conversation -- OpenBao selected; see `docs/spec-matrix.yaml`'s FTF-0202
-entry and `docs/certifications/queue.md`'s "Owner ask resolved: FTF-0202
-secret backend (OpenBao)" entry for the full evidenced record). FTF-0202
-itself has since been implemented and independently CERTIFIED.
-
-Historical note: the outage was also reconfirmed 2026-09-21 on a second,
-completely unrelated PR (#172, FTF-R016 — see `docs/certifications/
-queue.md`'s "2026-09-21 — FTF-R016 (PR #172) — NOT CERTIFIED" entry),
-ruling out anything PR #170-specific as the cause at the time. That
-finding is superseded by the "None currently" resolution above.
-
-FTF-0202 ("Secret-manager integration") — **RESOLVED 2026-09-22, directly
-witnessed.** Backend: **OpenBao** (self-hosted, Vault's open-source fork).
-
-Original ask (2026-09-20, preserved for context): acceptance clause 1
-("Store/resolve/rotate short-lived secret refs through the actual
-selected secret backend") named no concrete system anywhere in this
-repository's architecture docs (`docs/architecture/
-REFERENCE_REPOSITORIES.md`, `SPEC.md`, this plan's own Section 77/81
-seven-reused-component list — a secret manager is not one of the seven).
-The only existing artifact was a `vault://`/`openbao://`/`secret://`
-reference-string *shape* convention (already used by two CERTIFIED tasks,
-FTF-0201/FTF-0101) — it fixed the shape, not the backend. Options put to
-the owner: (1) self-hosted HashiCorp Vault, (2) self-hosted OpenBao, (3) a
-cloud provider secret manager reachable from Railway (AWS Secrets Manager
-/ GCP Secret Manager), (4) other.
-
-Between 2026-09-20 and 2026-09-21, three separate automated sessions each
-recorded a claim that the owner had confirmed OpenBao — PR #143 (no
-detail at all), a commit on PR #159's branch (`efec3c0`, first to add
-reasoning: self-hosted-from-scratch is too complex to deploy, a
-cloud-managed store adds external dependency/cost OpenBao avoids), and PR
-#162 (repeats the same reasoning, still open/unmerged). None of the three
-is independently verifiable: all three are a session's own account of a
-conversation, none is the owner writing directly into GitHub, and at
-least one (the PR #159 commit) came from an unattended scheduled shift
-that structurally has no live channel to the owner — meaning that
-specific claim, whatever its content, cannot describe a conversation that
-happened in that session. A 2026-09-21 Control-plane certifier shift
-correctly declined to treat any of the three as evidence and left this
-ask open (see the flagged notes in this file's own prior history and
-`docs/certifications/queue.md`).
-
-This entry is different: the owner raised this exact discrepancy directly
-in an interactive conversation on 2026-09-22, was shown the three prior
-claims and precisely what was missing from each, and confirmed OpenBao
-stands — the backend, and the reasoning already on record (self-hosted
-avoids OpenBao's complexity-to-deploy while a managed cloud store adds
-external dependency and cost), were not disputed at any point in that
-exchange. This is the first record of this decision anchored to a session
-that can directly vouch for the exchange, rather than reporting another
-session's account of one. **FTF-0202 is now genuinely dependency-ready**
-for a future relay shift to implement against a real OpenBao instance —
-implementing it is a separate task with its own PEV cycle, not done here.
-
-PR #143 stays closed, unmerged (superseded, no action needed). PR #159's
-own `efec3c0` and PR #162 are superseded by this entry, not contradicted
-by it — same conclusion, this is simply the first version tied to a
-verifiable exchange; PR #162 is being closed without merging as part of
-this same resolution (doc-only, redundant once this lands).
+None currently (checked 2026-10-06T17:00Z by Control plane).
 
 ## Active (decided by Control plane — relay executes, top first)
+**Claim rule (2026-10-06T17:40Z, Control plane):** a `relay/<ID>` branch whose head is already merged into main
+(`git merge-base --is-ancestor origin/relay/<ID> origin/main`) is NOT a claim. Merged branches cannot be deleted
+from sessions (the proxy blocks it), so they stay. Claim a returned or new round with a fresh branch
+`relay/<ID>-r<round>` (for example `relay/FTF-0500D-r4`). Skip an item only if it has an OPEN `[relay]` PR, or an
+unmerged `relay/<ID>*` branch pushed in the last 3 hours.
+
 **No shared-file edits (2026-10-06T13:10Z, Control plane):** relay PRs must NOT edit QUEUE.md, PROGRESS.md or
 docs/certifications/queue.md. Write the submission to docs/certifications/submissions/<UTC>-<ID>.md and the shift
 log to docs/progress/<UTC>-<lane>.md (both new files). Shared edits re-conflicted every open relay PR after each
@@ -9379,22 +9296,34 @@ protection under test. Put the fault → RED table in your queue entry, and appl
 to sibling modules. Items returned 3–5 times this week all failed on exactly this.
 0. **2026-10-06T09:45Z (Control plane): highest priority, one item per lane, one PR per item.**
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
-   - **0a. Merge conflicts on your own open PRs first** (#468 FTF-0902 remains) (merge main into the branch, re-run CI): #464 (0500C r5),
-     #465 (0500B r4), #468 (0902), #476 (1002), and #470 (1206A) if it conflicts. Merge each on green.
-   - **0b. FTF-0601 round 3 (tests only; 2 blocking items).** Independence across 3 actor roles plus the admin-bypass fault
-     test, and POST non-member → 400. See docs/certifications/queue.md "2026-10-06T10:00Z". Everything else is follow-up FTF-0601-F1.
-   - **0c. FTF-0307 round 3** (ready gate, model_id-alias test, a shared `validate_weights_digest` across 3 modules). Same entry.
-   - **0d. FTF-0500D round 3 (tests only):** an independent expected-value oracle. Same entry.
-   - **0d2. FTF-1206A round 2 (2 blocking tests: raw-RLS foreign-tenant read/write, list_route_changes project auth).**
-     See docs/certifications/queue.md "2026-10-06T13:45Z".
-   - **0d3. FTF-1002 round 3** (in-module digest/revision validation, base identity binding, refuse a base for an
-     endpoint, per-fact distinct fixtures). Same entry.
-   - **0e.** Then FTF-0510, FTF-04A18 and FTF-1807 (DoDs in "2026-10-04T11:00Z").
-   - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05). FTF-0500B/0500C come back here only if returned again.
+   - **0-TOP. FTF-0103A (owner-approved addendum, 2026-10-06; contract spec/addenda/FTF-0103A.json, ADR 0003).**
+     Every /api/v1 route denies every request today, because main.py uses the default fail-closed resolver and role
+     lookup. Build the Membership table (RLS, app role SELECT-only), a real session principal resolver reading
+     FTF-0101's cookie, and a DB role lookup, and pass both to EVERY router. Prove it through `create_app()` with the
+     real OIDC provider: login → API 200; no, tampered or revoked session → 401; foreign org, wrong role or revoked
+     membership → 403. Add a test that fails if any /api/v1 route keeps a default resolver. Highest priority: it
+     unblocks every success path.
+   - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
+   - **0b2. FTF-H034-F1 round 2 (tests only).** Add a negative case with an addendum-shaped id that has NO spec/addenda
+     file (e.g. FTF-9999A or FTF-04A99) and assert it is reported missing from tasks.json. Widening the exclusion by
+     regex must turn RED. Same entry.
+   - **0c. FTF-1206A-F2 round 2 (security, tests only).** Run the "no tenant context" INSERT on a brand-new connection
+     (NullPool or dispose first) and assert the precondition `current_setting('app.current_organization_id', true)
+     IS NULL`. Keep the '' case separate. The fault `current_setting(..., true) IS NULL OR …` in WITH CHECK must turn
+     RED for each table. Same entry.
+   - **0d. FTF-0500D round 4 (tests only; 2 blocking).** Assert preview `security_classification` and
+     `requested_purpose` per cell with non-default values; cover the 4 `allowed_purposes` shapes (empty, exactly
+     [requested], requested among several not first, several without requested). Same entry.
+   - **0d3. FTF-1002 round 4 (tests only; 3 blocking).** Distinct licence per artifact with per-fact value/detail
+     assertions; pin that the manifest digest covers base id/digest and each fact's value/known/detail separately;
+     base-digest None/blank/"abc"/whitespace cases. Same entry.
+   - **0e.** Then FTF-0510 and FTF-1807 (DoDs in "2026-10-04T11:00Z").
+   - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18 and FTF-0902 are CERTIFIED (2026-10-06).
+     They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid
    outcome while this list is non-empty.
-1. **FTF-0902 — round 2 (L2 review 2026-10-04T11:00Z, PR #467 opened 2026-10-05T17:04Z, closed
+1. **(History; superseded by 0b above.) FTF-0902 — round 2 (L2 review 2026-10-04T11:00Z, PR #467 opened 2026-10-05T17:04Z, closed
    unmerged; superseded by PR #468, open).** PR #467 fixed render-time endpoint revalidation
    (type-gated, never `isinstance`), real RFC1918-only + cloud-metadata CIDR-overlap checks sourced
    from `url_policy._CLOUD_METADATA_NETWORKS`, missing CI wiring for `tests/tasks/test_ftf_0902.py`,

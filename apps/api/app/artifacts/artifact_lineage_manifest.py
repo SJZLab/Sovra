@@ -142,7 +142,12 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from app.artifacts.artifact_schema import TrainableArtifact
+from app.artifacts.artifact_schema import (
+    TrainableArtifact,
+    TrainableArtifactValidationError,
+    validate_base_model_revision,
+    validate_weights_digest,
+)
 from app.model_versions.model_version_schema import ModelVersion
 
 __all__ = [
@@ -293,6 +298,17 @@ def build_artifact_lineage_manifest(
                 "supplied here. Refusing to fabricate a parent this model version's own record "
                 "does not actually have"
             )
+        if resolved_base_artifact is not None:
+            # 2026-10-06 L2 round-3 finding: an endpoint import with a
+            # resolved_base_artifact silently ignored it. resolved_base_
+            # artifact is only meaningful for an adapter import (Section
+            # 68.1); an endpoint has no local artifact at all, so a
+            # supplied base cannot be real evidence either.
+            raise ArtifactLineageError(
+                f"model_version {model_version.id} is import_kind='endpoint' -- "
+                "resolved_base_artifact is only meaningful for an adapter import; refusing to "
+                "silently ignore a supplied base for an endpoint-only import"
+            )
         unknown = _unknown(_UNKNOWN_ENDPOINT_DETAIL)
         unknown_training = _unknown(_UNKNOWN_TRAINING_DETAIL)
         unknown_data = _unknown(_UNKNOWN_DATA_DETAIL)
@@ -335,6 +351,26 @@ def build_artifact_lineage_manifest(
             "refusing to fabricate a parent other than the one this model version actually "
             "links to"
         )
+    # 2026-10-06 L2 round-3 finding: this module trusted
+    # model_version.weights_digest/base_model_revision and artifact.
+    # weights_digest/base_model_revision were already shape-valid.
+    # `TrainableArtifact.__init__`'s own validation only runs on real
+    # construction -- an ORM row loaded from the database (SQLAlchemy sets
+    # attributes directly) skips it entirely, so None/blank/malformed
+    # values could reach this module and still produce a manifest that
+    # reports `known=True`. Re-validated here with the shared validators,
+    # the same "re-validate, never merely trust an earlier check"
+    # discipline `artifact_crud.apply_mark_ready` already applies.
+    try:
+        validate_weights_digest(model_version.weights_digest)
+        validate_weights_digest(artifact.weights_digest)
+        validate_base_model_revision(model_version.base_model_revision)
+        validate_base_model_revision(artifact.base_model_revision)
+    except TrainableArtifactValidationError as exc:
+        raise ArtifactLineageError(
+            f"model_version {model_version.id} or its parent artifact {artifact.id} carries a "
+            f"malformed or unresolved weights_digest/base_model_revision -- {exc}"
+        ) from exc
     # 2026-10-06 L2 round-2 review findings, all against the real parent
     # `artifact` itself (previously checked only by id, never by status/
     # tenant/digest consistency): a `registered` (still-mutable) or
@@ -389,6 +425,19 @@ def build_artifact_lineage_manifest(
         )
 
     if resolved_base_artifact is not None:
+        # 2026-10-06 L2 round-3 finding: the resolved base's own
+        # weights_digest/base_model_revision were never re-validated here
+        # either (the same ORM-bypasses-__init__ gap as the main artifact
+        # above) -- a malformed base digest/revision could otherwise reach
+        # every comparison below as an opaque, never-format-checked string.
+        try:
+            validate_weights_digest(resolved_base_artifact.weights_digest)
+            validate_base_model_revision(resolved_base_artifact.base_model_revision)
+        except TrainableArtifactValidationError as exc:
+            raise AdapterBaseMismatchError(
+                f"resolved base artifact {resolved_base_artifact.id} carries a malformed or "
+                f"unresolved weights_digest/base_model_revision -- {exc}"
+            ) from exc
         if resolved_base_artifact.status != "ready":
             raise AdapterBaseMismatchError(
                 f"resolved base artifact {resolved_base_artifact.id} is "
@@ -402,10 +451,32 @@ def build_artifact_lineage_manifest(
                 f"{model_version.id}'s own organization {model_version.organization_id} -- "
                 "refusing a cross-tenant base"
             )
+        # 2026-10-06 L2 round-3 finding: "the base is compared only by
+        # revision string ... there is no model_family check" -- a
+        # resolved base of a completely different model family could
+        # still carry a coincidentally-matching base_model_revision
+        # string. model_family is a real, already-captured identity field
+        # on every TrainableArtifact (Section 68.1's own "exact base, not
+        # same-family guessed weights" is read literally: family itself
+        # must genuinely match, not merely be guessed compatible).
+        if resolved_base_artifact.model_family != artifact.model_family:
+            raise AdapterBaseMismatchError(
+                f"resolved base artifact {resolved_base_artifact.id} declares model_family "
+                f"{resolved_base_artifact.model_family!r}, but adapter artifact {artifact.id} "
+                f"declares model_family {artifact.model_family!r} -- refusing a resolved base "
+                "from a different model family than the adapter itself declares"
+            )
         # Identity: an adapter cannot resolve to itself as its own base --
         # by row identity (self-parent) or by digest (an artifact whose
         # claimed base shares the adapter's own weights_digest is exactly
-        # the same self-referential defect by a different field).
+        # the same self-referential defect by a different field). A plain
+        # `==` is sufficient here (not case-insensitive): both digests
+        # were already passed through `validate_weights_digest` above,
+        # which accepts only the canonical lowercase-hex pattern, so by
+        # the time either digest reaches this comparison a case variant
+        # cannot exist -- it would already have been refused as malformed
+        # a few lines above, by the 2026-10-06 round-3 format-validation
+        # fix, before this comparison is even reached.
         if resolved_base_artifact.id == artifact.id:
             raise AdapterBaseMismatchError(
                 f"resolved base artifact {resolved_base_artifact.id} is the adapter artifact "
@@ -415,7 +486,9 @@ def build_artifact_lineage_manifest(
             raise AdapterBaseMismatchError(
                 f"resolved base artifact {resolved_base_artifact.id}'s own weights_digest "
                 f"{resolved_base_artifact.weights_digest!r} equals adapter artifact "
-                f"{artifact.id}'s own weights_digest -- an adapter cannot be its own base"
+                f"{artifact.id}'s own weights_digest "
+                f"{artifact.weights_digest!r} (case-insensitively) -- an adapter cannot be its "
+                "own base"
             )
         # Digest/revision: the resolved base's own real, resolved identity
         # must match what the adapter itself declares as its base.
@@ -429,10 +502,25 @@ def build_artifact_lineage_manifest(
                 "refusing to load/qualify this pairing"
             )
 
+    base_detail = (
+        f"base_model_revision={artifact.base_model_revision!r}, digest resolved by FTF-0306"
+    )
+    if resolved_base_artifact is not None:
+        # 2026-10-06 L2 round-3 finding: "the base id and digest are not
+        # recorded in the manifest" -- the resolved base's own real
+        # identity (id, digest, model_family, source_uri) is now captured
+        # here for an adapter import, not only the adapter's own declared
+        # base_model_revision.
+        base_detail += (
+            f"; resolved_base_artifact_id={resolved_base_artifact.id!s}, "
+            f"resolved_base_weights_digest={resolved_base_artifact.weights_digest!r}, "
+            f"resolved_base_model_family={resolved_base_artifact.model_family!r}, "
+            f"resolved_base_source_uri={resolved_base_artifact.source_uri!r}"
+        )
     base = LineageFact(
         known=True,
         value=artifact.weights_digest,
-        detail=f"base_model_revision={artifact.base_model_revision!r}, digest resolved by FTF-0306",
+        detail=base_detail,
     )
     tokenizer = LineageFact(
         known=True,

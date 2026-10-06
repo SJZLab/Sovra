@@ -61,6 +61,7 @@ from packages.litellm_client.organization_policy_control import (  # noqa: E402
 from sqlalchemy import Table, create_engine, select, text  # noqa: E402
 from sqlalchemy.exc import DBAPIError  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
+from sqlalchemy.pool import NullPool  # noqa: E402
 
 from app.auth.audit_event_writer import AuditEvent  # noqa: E402
 from app.auth.organization_workspace_schema import (  # noqa: E402
@@ -158,7 +159,8 @@ def main() -> None:
     )
 
     owner_engine = create_engine(migration_url)
-    app_engine = create_engine(_app_role_url(migration_url, app_password))
+    app_url = _app_role_url(migration_url, app_password)
+    app_engine = create_engine(app_url)
 
     # -- Seed two real tenants, each with a real workspace + project -------
     with Session(owner_engine) as session:
@@ -696,6 +698,126 @@ def main() -> None:
         "the refused raw foreign-tenant INSERT left no row behind",
         leaked_raw == [],
     )
+
+    # -- 10b. FTF-1206A-F2: a WITH CHECK that fails open when NO tenant ----
+    #         context is set (or it is '') must be caught. A fresh org3 with
+    #         no policy row means UNIQUE(organization_id) cannot mask a
+    #         successful insert; the route-change case uses org1's real
+    #         project so the composite FK is satisfied and only RLS stands in
+    #         the way. Asserted on the real "row-level security" error, with
+    #         the same statement as a positive control under the own context.
+    with Session(owner_engine) as session:
+        org3 = Organization(name="Initech 1206A-F2", slug=f"initech-1206a-{uuid.uuid4().hex[:8]}")
+        session.add(org3)
+        session.commit()
+        org3_id = org3.id
+    insert_policy_org3 = text(
+        "INSERT INTO organization_gateway_policies "
+        "(id, organization_id, allowed_registration_namespaces, "
+        "allowed_deployment_namespaces, approvers, route_change_requires_approval) "
+        "VALUES (gen_random_uuid(), :org_id, '[]'::jsonb, '[\"*\"]'::jsonb, "
+        "'[]'::jsonb, false)"
+    )
+    insert_route_f2 = text(
+        "INSERT INTO organization_gateway_route_changes "
+        "(id, organization_id, project_id, actor, target_deployment_namespace, "
+        "approved, bypass_requested, request_id) "
+        "VALUES (gen_random_uuid(), :org_id, :project_id, 'user:raw', "
+        "'factory-production', true, false, 'f2-no-context')"
+    )
+    f2_cases = (
+        ("organization_gateway_policies", insert_policy_org3, {"org_id": str(org3_id)}),
+        (
+            "organization_gateway_route_changes",
+            insert_route_f2,
+            {"org_id": str(org1_id), "project_id": str(project1_id)},
+        ),
+    )
+    for table_name, statement, params in f2_cases:
+        own_ctx = org3_id if table_name == "organization_gateway_policies" else org1_id
+        control_ok = False
+        with Session(app_engine) as session:
+            set_tenant_context(session, own_ctx)
+            try:
+                session.execute(statement, params)
+                control_ok = True
+            except DBAPIError:
+                pass
+            session.rollback()
+        check(
+            "FTF-1206A-F2",
+            f"control: the raw {table_name} INSERT is valid under the owning tenant context",
+            control_ok,
+        )
+        # FTF-1206A-F2 round 2: the "no tenant context" case MUST run on a brand-new
+        # connection. A pooled connection that already ran set_config(..., true) reads
+        # '' (not NULL) after the transaction ends, which would just duplicate the ''
+        # case and leave an `IS NULL OR ...` WITH CHECK fail-open uncaught. NullPool
+        # guarantees a never-used connection; the GUC precondition is asserted, not assumed.
+        for label, context_sql in (
+            ("no tenant context", None),
+            (
+                "empty-string tenant context",
+                "SELECT set_config(" "'app.current_organization_id', '', true)",
+            ),
+        ):
+            fresh_engine = (
+                create_engine(app_url, poolclass=NullPool) if context_sql is None else None
+            )
+            engine_for_case = fresh_engine if fresh_engine is not None else app_engine
+            try:
+                with Session(engine_for_case) as session:
+                    if context_sql is None:
+                        guc_is_null = session.execute(
+                            text(
+                                "SELECT current_setting('app.current_organization_id', true) "
+                                "IS NULL"
+                            )
+                        ).scalar_one()
+                        check(
+                            "FTF-1206A-F2",
+                            f"precondition ({table_name}): the fresh connection's "
+                            "app.current_organization_id is genuinely NULL (never set)",
+                            guc_is_null is True,
+                        )
+                    else:
+                        session.execute(text(context_sql))
+                    session.execute(statement, params)
+                    session.commit()
+                check(
+                    "FTF-1206A-F2",
+                    f"negative_acceptance: a raw sovra_app INSERT into {table_name} "
+                    f"with {label} is refused by RLS",
+                    False,
+                )
+            except DBAPIError as exc:
+                check(
+                    "FTF-1206A-F2",
+                    f"negative_acceptance: a raw sovra_app INSERT into {table_name} "
+                    f"with {label} is refused by RLS (row-level security in error: "
+                    f"{exc.orig!r})",
+                    "row-level security" in str(exc.orig),
+                )
+            finally:
+                if fresh_engine is not None:
+                    fresh_engine.dispose()
+        with Session(owner_engine) as session:
+            left = session.execute(
+                text(
+                    f"SELECT count(*) FROM {table_name} WHERE "
+                    + (
+                        "organization_id = :o"
+                        if table_name == "organization_gateway_policies"
+                        else "request_id = 'f2-no-context'"
+                    )
+                ),
+                {"o": str(org3_id)},
+            ).scalar_one()
+        check(
+            "FTF-1206A-F2",
+            f"the refused no-context INSERTs left no row behind in {table_name}",
+            left == 0,
+        )
 
     # -- 11. negative_acceptance (round 2): list_route_changes itself must --
     #        refuse a project the principal cannot access. RLS alone would

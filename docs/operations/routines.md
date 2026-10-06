@@ -19,7 +19,8 @@ then delete the old one once the new one has fired cleanly.
 fresh session gets no repository, and `add_repo` is not available inside it, so a direct lane
 routine cannot clone or push (tested 2026-10-06, session cse_01SHBikPo5Vv5YDCnvy2ZqHz). Instead,
 routines "Sovra relay B dispatch (lane 2)" and "Sovra relay C dispatch (lane 3)" wake the
-persistent session "Sovra relay dispatcher" (session_01Eowmii6EasByALwXW9uyQE). It skips the
+persistent session "Sovra relay dispatcher (sonnet)" (session_018evqdaQsYGpt7vPGVFW9UL; replaced the
+Opus dispatcher on 2026-10-06 16:25Z to cut per-firing cost). It skips the
 firing if that lane's previous session is still working; otherwise it calls `create_session` with
 the repo as source, model claude-sonnet-5-5, and the Relay prompt below with a one-line lane
 header. The dispatcher does no repository work. Lane A stays the owner-created routine.
@@ -43,11 +44,12 @@ docs/certifications/queue.md lists as NOT CERTIFIED / returned to the relay and 
 fix PR. These items are relay-owned even though spec-matrix shows PROVISIONAL.
 
 STEP 2 — otherwise pick the top QUEUE.md "## Active (decided by Control plane …)" item, then
-"## Backlog" in order. Skip an item that already has an open PR or a `relay/<item-id>` branch.
+"## Backlog" in order. Skip an item only if it has an OPEN [relay] PR, or an unmerged `relay/<ID>*`
+branch pushed in the last 3 hours. A `relay/<ID>` branch already merged into main is not a claim.
 State "Working: <ID>".
 
-STEP 3 — claim. Push branch `relay/<item-id>` and open a DRAFT PR titled
-"[relay] <ID>: <description>" before writing code.
+STEP 3 — claim. Push branch `relay/<ID>-r<round>` (e.g. relay/FTF-0500D-r4; round 1 = r1) and open
+a DRAFT PR titled "[relay] <ID>: <description>" before writing code.
 
 STEP 4 — contract. Run `python tools/r1_handoff.py packet <ID> --plan
 FINE_TUNING_FACTORY_RELEASE_1.md`. For an owner-approved addendum task (ID present in
@@ -71,6 +73,11 @@ Before submitting, for EVERY protection or check you added or changed:
   and asserts the bad outcome does not happen (never only "flip the guard off, expect failure");
 - never stub out the protection the test claims to pin.
 Record the fault → RED table in the queue entry. A fault that stays GREEN is a missing test: add it.
+MUTATION GATE (machine-enforced, CI job `mutation-gate` on every [relay] PR): before submitting, run
+`uv run python3 scripts/mutation_gate.py --base origin/main --test "uv run python3 tests/tasks/test_ftf_<id>.py"`
+(one --test per task test file) and kill every surviving mutant with a real test. Paste the summary line into the
+submission. Never edit docs/certifications/mutation-allowlist.yaml; only the Control plane adds reviewed
+equivalent mutants. CI fails on any survivor and on any relay edit to the allowlist.
 SAME-CLASS SWEEP: when a defect class is named (cursor cycle, fail-open parse, error-shaped success,
 duplicate identity, encoding, swallowed error), check and fix the same class in every sibling module
 under the same package, and list the result per module.
@@ -84,7 +91,7 @@ relay PR into conflict. Mark the PR ready and merge it on genuinely green CI (me
 Never open a docs-only "record this shift" PR.
 
 LANES: up to 3 relay lanes run hourly at different minutes. A lane takes the first item in
-QUEUE.md order that has no `relay/<id>` branch and no open `[relay]` PR, and claims it at once
+QUEUE.md order that has no open `[relay]` PR and no fresh unmerged `relay/<ID>*` branch, and claims it at once
 (STEP 3), so lanes never collide. A lane never works an item another lane has claimed.
 
 PARK, not stop: after 3 failed attempts on the same step, an unclear DoD, or an ask-first need,
