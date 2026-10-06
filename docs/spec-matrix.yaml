@@ -8271,8 +8271,23 @@ FTF-0604:
     Python; the module reads no git/env/locale/DB, so no neutral-host rerun
     was needed.
 
-    Mutation gate (CI diff mode): see this round's own submission entry for
-    the kill-score summary.
+    Mutation gate (CI diff mode): 48 run, 42 KILLED, 6 SURVIVED, score 87.5%.
+    All 6 survivors are the same disclosed equivalent-mutant class FTF-0214's
+    own review already accepted: _normalize's own case_policy/whitespace_policy
+    == comparisons against WHITESPACE_STRIP/WHITESPACE_COLLAPSE/CASE_INSENSITIVE,
+    mutated to a.strip().lower() == b. Both operands are already validated by
+    grade_exact_match (the only caller) to exact membership in a small
+    lowercase, whitespace-free closed set moments earlier in the same call,
+    so .strip().lower() is a provable no-op, not a weakened check. Requesting
+    Control plane add these 6 entries to docs/certifications/mutation-allowlist.yaml
+    (relay cannot edit it per CLAUDE.md/ci.yml). The module was restructured
+    this round to remove a second, redundant validation layer that used to
+    live inside the normalize helpers (its own raise was dead code once the
+    single top-level check in grade_exact_match already covers the same
+    input) -- that redundancy was the real cause of 14 of this round's
+    original 20 survivors; removing it, plus two new tests asserting the
+    result object echoes the real case_policy/whitespace_policy used (not a
+    placeholder), killed all of them down to these 6 true equivalents.
 
     Disclosed gap, same "no live caller yet" precedent as
     FTF-0506/0507/0508/0509/0510/0511/0512/0514: no evaluation-run engine
