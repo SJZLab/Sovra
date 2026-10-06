@@ -1392,6 +1392,93 @@ def test_r3_rfc1918_boundaries_are_pinned() -> None:
             check("FTF-0902", f"{cidr} must be accepted, got {exc!r}", False)
 
 
+def test_dns_rule_is_never_shared_between_renders() -> None:
+    """FTF-0902 round 4: the kube-dns carve-out must be freshly built per render.
+
+    Emitting the module-level selector dicts by reference meant clearing them in
+    one returned manifest made every later render allow all pods in all
+    namespaces on port 53.
+    """
+    import packages.security.network_policy_templates as npt
+
+    expected_dns_to = {
+        "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}},
+        "podSelector": {"matchLabels": {"k8s-app": "kube-dns"}},
+    }
+    first = render_network_policy_manifest(_base_template())
+    first_to = first["spec"]["egress"][0]["to"][0]
+    check(
+        "FTF-0902",
+        "first render carries the literal kube-dns selectors",
+        first_to == expected_dns_to,
+    )
+
+    # Attack: the caller mutates / clears every selector dict in the returned manifest.
+    first_to["namespaceSelector"]["matchLabels"].clear()
+    first_to["podSelector"]["matchLabels"].clear()
+    first_to["podSelector"]["matchLabels"]["evil"] = "x"
+    first["spec"]["egress"][0]["ports"].clear()
+
+    second = render_network_policy_manifest(_base_template())
+    check(
+        "FTF-0902",
+        "a re-render after mutating a returned manifest still emits the literal kube-dns selectors",
+        second["spec"]["egress"][0]["to"][0] == expected_dns_to,
+    )
+    check(
+        "FTF-0902",
+        "a re-render after mutating a returned manifest still emits ports 53 UDP+TCP",
+        second["spec"]["egress"][0]["ports"]
+        == [{"protocol": "UDP", "port": 53}, {"protocol": "TCP", "port": 53}],
+    )
+    check(
+        "FTF-0902",
+        "two renders never share the same selector dict objects",
+        second["spec"]["egress"][0]["to"][0]["namespaceSelector"]["matchLabels"]
+        is not render_network_policy_manifest(_base_template())["spec"]["egress"][0]["to"][0][
+            "namespaceSelector"
+        ]["matchLabels"],
+    )
+    check(
+        "FTF-0902",
+        "no returned selector dict is the module-level constant itself",
+        second["spec"]["egress"][0]["to"][0]["namespaceSelector"]["matchLabels"]
+        is not npt.KUBE_DNS_NAMESPACE_LABELS
+        and second["spec"]["egress"][0]["to"][0]["podSelector"]["matchLabels"]
+        is not npt.KUBE_DNS_POD_LABELS,
+    )
+
+    # Attack on the constants themselves: mutation must fail, and a rebinding to an
+    # empty selector must be refused at render (fail closed), never emitted.
+    for const_name in ("KUBE_DNS_NAMESPACE_LABELS", "KUBE_DNS_POD_LABELS"):
+        const = getattr(npt, const_name)
+        try:
+            const.clear()
+            mutated = True
+        except (TypeError, AttributeError):
+            mutated = False
+        check("FTF-0902", f"{const_name} cannot be cleared in place", not mutated)
+        check("FTF-0902", f"{const_name} is still non-empty", len(const) > 0)
+    for const_name in ("KUBE_DNS_NAMESPACE_LABELS", "KUBE_DNS_POD_LABELS"):
+        original = getattr(npt, const_name)
+        try:
+            setattr(npt, const_name, {})
+            refused = _rejects(
+                NetworkPolicyTemplateError, render_network_policy_manifest, _base_template()
+            )
+            leaked = False
+            if not refused:
+                to = render_network_policy_manifest(_base_template())["spec"]["egress"][0]["to"][0]
+                leaked = (
+                    to["namespaceSelector"]["matchLabels"] == {}
+                    or to["podSelector"]["matchLabels"] == {}
+                )
+        finally:
+            setattr(npt, const_name, original)
+        check("FTF-0902", f"an emptied {const_name} is refused at render", refused)
+        check("FTF-0902", f"an emptied {const_name} never reaches a manifest", not leaked)
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
