@@ -849,6 +849,71 @@ def test_sync_certified_status_tasks_json_update_condition_is_an_or():
         )
 
 
+def test_sync_certified_status_tasks_json_empty_hash_never_writes_empty_evidence():
+    # FTF-H034-F3: with an empty matrix hash, the spec/tasks.json branch must promote the status
+    # but keep the existing evidence untouched -- never replace it with [""].
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = pathlib.Path(tmp)
+        tasks_path = tmp_dir / "tasks.json"
+        tracker_path = tmp_dir / "tracker.json"
+        tracker_path.write_text(json.dumps({"tasks": {}}), encoding="utf-8")
+        tasks_path.write_text(
+            json.dumps(
+                {
+                    "tasks": [
+                        {"id": "T-KEEP", "status": "NOT_STARTED", "evidence": ["kept"]},
+                        {"id": "T-NONE", "status": "NOT_STARTED", "evidence": []},
+                        {"id": "T-MISSING", "status": "NOT_STARTED"},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        updated = sync_certified_status(
+            certification_states={
+                "T-KEEP": "CERTIFIED",
+                "T-NONE": "CERTIFIED",
+                "T-MISSING": "CERTIFIED",
+            },
+            spec_matrix={
+                "T-KEEP": {"evidence_hash": ""},
+                "T-NONE": {"evidence_hash": ""},
+                "T-MISSING": {"evidence_hash": ""},
+            },
+            tasks_path=tasks_path,
+            tracker_path=tracker_path,
+            addenda_dir=tmp_dir / "no-addenda",
+        )
+        by_id = {t["id"]: t for t in json.loads(tasks_path.read_text(encoding="utf-8"))["tasks"]}
+        check(
+            "FTF-H034-F3",
+            "a non-CERTIFIED entry with existing evidence and an empty matrix hash is promoted "
+            'and its evidence stays exactly ["kept"], never [""]',
+            by_id["T-KEEP"] == {"id": "T-KEEP", "status": "CERTIFIED", "evidence": ["kept"]},
+        )
+        check(
+            "FTF-H034-F3",
+            "a non-CERTIFIED entry with no evidence and an empty matrix hash is promoted with "
+            'evidence still [], never [""]',
+            by_id["T-NONE"] == {"id": "T-NONE", "status": "CERTIFIED", "evidence": []},
+        )
+        check(
+            "FTF-H034-F3",
+            "an entry with no evidence key and an empty matrix hash is promoted without gaining "
+            '[""] evidence',
+            by_id["T-MISSING"].get("status") == "CERTIFIED"
+            and by_id["T-MISSING"].get("evidence", []) == [],
+        )
+        check(
+            "FTF-H034-F3",
+            "every promoted id is reported and no tasks.json entry carries an empty-string hash",
+            updated == ["T-KEEP", "T-MISSING", "T-NONE"]
+            and all("" not in t.get("evidence", []) for t in by_id.values()),
+        )
+
+
 def main():
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):
