@@ -730,6 +730,56 @@ def test_catalog_revoked_connection_never_calls_discover_models() -> None:
             )
 
 
+def test_catalog_revoked_after_discovery_shows_revoked_and_stale_never_healthy() -> None:
+    # Round 2 blocking 1 ("no hidden stale access"): a connection discovered
+    # healthy/callable and revoked afterwards must read revoked/stale, with
+    # an already-removed entry staying removed (not re-labelled stale).
+    state = {"status": "active", "ids": ("model-a", "model-b")}
+
+    with _patched(
+        tenant_scoped_session_for=_fake_tenant_scoped_session_for,
+        get_connection=lambda *a, **k: _fake_connection(status=state["status"]),
+        get_project=_ok_get_project,
+        discover_models=lambda **k: _discovery_result(state["ids"]),
+        enrich_visible_models=lambda **k: _empty_enrichment(),
+        enrich_visible_model_groups=lambda **k: _empty_group_enrichment(),
+    ):
+        with _running_app() as base_url:
+            cid = uuid.uuid4()
+            r = _request(base_url, "GET", catalog_path(cid), principal="admin")
+            state["ids"] = ("model-a",)
+            r = _request(base_url, "GET", catalog_path(cid), principal="admin")
+            body = r.json() if r.status == 200 else {}
+            by_id = {e["id"]: e["status"] for e in body.get("entries", [])}
+            check(
+                "FTF-0214",
+                "before revocation: access healthy, model-a callable, model-b removed",
+                body.get("access_state") == "healthy"
+                and by_id == {"model-a": "callable", "model-b": "removed"},
+            )
+            state["status"] = "revoked"
+            r = _request(base_url, "GET", catalog_path(cid), principal="admin")
+            body = r.json() if r.status == 200 else {}
+            by_id = {e["id"]: e["status"] for e in body.get("entries", [])}
+            check(
+                "FTF-0214",
+                "round 2: after revocation access_state is revoked, never healthy",
+                body.get("access_state") == "revoked"
+                and body.get("connection_status") == "revoked",
+            )
+            check(
+                "FTF-0214",
+                "round 2: after revocation the callable entry is stale and the removed entry "
+                "stays removed",
+                by_id == {"model-a": "stale", "model-b": "removed"},
+            )
+            check(
+                "FTF-0214",
+                "round 2: a revoked entry carries no capability fields",
+                all(e.get("fields") == {} for e in body.get("entries", [])),
+            )
+
+
 def test_catalog_non_revoked_status_still_calls_discover_models() -> None:
     # Distinguishes the exact literal "revoked" comparison (not a normalized
     # or inverted one) -- a status that is merely a different case of the
@@ -1305,6 +1355,7 @@ def main() -> None:
     test_catalog_bad_project_id_and_not_found_project_are_rejected()
     test_catalog_happy_path_composes_discovery_and_enrichment()
     test_catalog_revoked_connection_never_calls_discover_models()
+    test_catalog_revoked_after_discovery_shows_revoked_and_stale_never_healthy()
     test_catalog_non_revoked_status_still_calls_discover_models()
     test_catalog_only_the_literal_discovered_state_triggers_enrichment()
     test_catalog_non_discovered_result_never_crashes_and_skips_groups()
