@@ -29287,15 +29287,12 @@ local branch afterward.
 
 **V** — `pull_request_read get` on PR #471 immediately after the push: `mergeable_state` flipped from `dirty` to
 `clean`, head SHA now `0051e14`. The push triggered a fresh real CI run (`37415793440`); watched via
-`pull_request_read get_check_runs` across several polls: 40 of 44 jobs reached `completed`/`success` with zero
-failures anywhere in the run, including `dependency-scanning-integration` (completed, success — the exact job
-PR #472's own fix targeted; this confirms the fix genuinely carries through once the merge-ref picks up `main`'s
-current lockfile) and `network-policy-enforcement-integration`. The remaining 4 jobs (`gate` and three of this
-PR's own slower integration jobs — `target-application-connection-integration`, `secret-manager-integration`,
-`dataset-source-connection-integration`) were still `in_progress`, consistent with their own typical multi-minute
-duration on this PR's own prior runs, with no failure signal from any of them at the time this entry was written.
-This shift does not claim the full `gate` result — that is Control plane's own next step when it re-reviews PR
-#471, same as every other item already in "## Active."
+`pull_request_read get_check_runs` to completion across several polls: **44/44 jobs `completed`/`success`, zero
+failures anywhere in the run**, including `dependency-scanning-integration` (the exact job PR #472's own fix
+targeted — now genuinely green against the merge ref's current, fixed lockfile), `network-policy-enforcement-integration`,
+and `gate` itself (completed 04:58:36Z). This is CI evidence only, not a certification — independent
+Control-plane L2 re-review is still required before FTF-0307 can certify, same as every other item already in
+"## Active."
 
 No code change was made to any task module — this was git-mechanics-only work (a merge commit resolving an
 append-order markdown conflict), not a new DoD submission, so no `docs/spec-matrix.yaml`/`docs/certifications/

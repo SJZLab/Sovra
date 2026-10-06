@@ -9333,12 +9333,11 @@ touched), confirmed the merged `docs/spec-matrix.yaml` still parses with `yaml.s
 `python3 scripts/validate_spec.py --strict` is clean, then pushed the merge commit (`0051e14`)
 straight to `claude/wizardly-fermat-4idnly` — unlike the prior session, this session's own
 permission mode allowed the push. GitHub's `mergeable_state` flipped to `clean` immediately. The
-real CI run this push triggered (`37415793440`) was watched to 40/44 jobs complete, all green,
-zero failures, including `dependency-scanning-integration` (the exact job PR #472's own fix
-targeted) and `network-policy-enforcement-integration` — the remaining 4 jobs (`gate` and three
-slower integration jobs) were still running when this entry was written; none of the 44 had failed.
-Full confirmation (`gate` included) is Control plane's own next step when it re-reviews this PR, same
-as every other item in this list. No `BLOCKER.md` entry was needed; this was tooling access, not a
+real CI run this push triggered (`37415793440`) was watched to completion: **44/44 jobs green**,
+`gate` and `dependency-scanning-integration` (the exact job PR #472's own fix targeted) included —
+confirming the fix genuinely carries through once the merge-ref actually picks up `main`'s fixed
+lockfile. Independent Control-plane L2 re-review (not this entry) is still the next step before
+FTF-0307 itself can certify. No `BLOCKER.md` entry was needed; this was tooling access, not a
 design question, per the entry it resolves.
 
 ## Active (awaiting Control plane — no relay action left)

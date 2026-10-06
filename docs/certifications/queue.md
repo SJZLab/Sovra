@@ -23221,12 +23221,11 @@ prior shift's.
 
 **Verification:** `pull_request_read get` on PR #471 confirmed `mergeable_state` flipped from
 `dirty` to `clean` immediately. The push triggered a fresh real CI run (`37415793440`); polled via
-`pull_request_read get_check_runs`: 40/44 jobs reached `completed`/`success` with zero failures,
-including `dependency-scanning-integration` (the exact job PR #472's own fix targeted -- now
-genuinely green against the merge ref's current, fixed lockfile) and
-`network-policy-enforcement-integration`. The remaining 4 jobs (`gate` and three of this PR's own
-slower integration jobs) were still `in_progress` with no failure signal when this entry was
-written; the full `gate` result is Control plane's own next step when it re-reviews this PR.
+`pull_request_read get_check_runs` to completion: **44/44 jobs `completed`/`success`, zero
+failures**, including `dependency-scanning-integration` (the exact job PR #472's own fix targeted
+-- now genuinely green against the merge ref's current, fixed lockfile), `network-policy-enforcement-integration`,
+and `gate` itself. Independent Control-plane L2 re-review is still required before FTF-0307 can
+certify -- this entry is CI evidence only, not a certification.
 
 **Not self-certified (Law 4):** nothing here changes `certification_state`/`proof_state` on
 FTF-0307 or any other task -- this was returned-work git maintenance (resolving a parked merge
