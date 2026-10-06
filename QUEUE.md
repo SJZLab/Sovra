@@ -1,4 +1,65 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-06T13:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-05q043`) --
+  STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly, no mismatch.
+  `BLOCKER.md` has no live entry ("No open blockers," resolved history only). STEP 0.1: read
+  `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh. Checked "## Active" item 0's own
+  chain first (returned work takes priority): 0a (merge conflicts on #464/#465/#468/#470/#476) --
+  confirmed all five `mergeable_state: clean` and all 44/45 check runs `success` via
+  `pull_request_read get`/`get_check_runs` -- skipped per this list's own skip rule (all five since
+  merged into `main` as #464/#465/#470/#476 by the time this shift checked; #468 stays open, still
+  green/clean). Next unaddressed item: **0b, FTF-0601 round 3 (tests only, narrowed to 2 blocking
+  items by the 2026-10-06T10:00Z Control-plane entry)**.
+  STEP 0.2: no `cognee-cli` binary in this sandbox -- text-search fallback declared, same as every
+  prior shift.
+
+  STEP 1: Working: FTF-0601 round 3 (blocking items only).
+
+  STEP 2 (PEV): **P** -- read the narrowed DoD (`docs/certifications/queue.md` "2026-10-06T10:00Z")
+  directly: blocks only on (1) independence tested with >=3 actor roles (admin/owner/evaluator) plus
+  an additive role-bypass fault test (F19), and (2) a POST non-member reviewer -> 400 (F06). Read
+  `evaluation_suite_crud.py`/`evaluation_suite_routes.py` and both existing test files before writing
+  anything -- confirmed F06 was already correctly mapped to 400 at the route layer (behavior
+  untouched, tests-only DoD), and that the independence check has no actor-role parameter at all, so
+  an "admin-named-actor bypass" fault has to be an *additive* condition on `actor.actor_id` to be
+  injectable at all.
+
+  **E** -- `tests/integration/test_ftf_0601_evaluation_suite.py`: added an `ORGANIZATION_ADMIN`
+  principal/membership to the fixture (previously only `workspace_admin`/`evaluator`/`viewer`
+  existed); added self-review create/assign/lock cases for `workspace_admin` and
+  `organization_admin` (409 each, alongside the pre-existing `evaluator` case); added a POST-create
+  non-member-reviewer 400 case (F06); added the F19 fault test -- patches
+  `and not actor.actor_id.endswith("admin")` onto `lock_evaluation_suite`'s own independence `if`,
+  reloads both `evaluation_suite_crud` and `evaluation_suite_routes` (the latter re-binds its own
+  imported `lock_evaluation_suite` name), rebuilds a fresh router from the reloaded functions, and
+  hits it over real HTTP -- never a direct CRUD call, so it exercises the identical production
+  request path. First attempt asserted the fault would let the self-review through silently; running
+  it for real against a live Postgres showed that's false -- the real
+  `ck_evaluation_suites_independent_final_reviewer` DB CHECK still blocks the UPDATE regardless, so
+  the fault instead converts the clean 409 into an unhandled 500. Rewrote the test's own assertion to
+  match the real, observed failure mode rather than the originally-assumed one, shown RED (not 409)
+  with the fault present and GREEN (409) both before and after. Module file restored byte-identical,
+  confirmed by content comparison. Updated the listing-count assertion for the three new real suites
+  (versions 4/5/6, alongside the pre-existing 1/2/3/96).
+
+  **V** -- both `tests/tasks/test_ftf_0601.py` and `tests/integration/test_ftf_0601_evaluation_suite.py`
+  run clean against a real local PostgreSQL 16 stood up in this sandbox (`sovra_migrate`/
+  `sovra_ftf0601`). `uv run ruff check .`/`ruff format --check .` clean (376 files). `uv run mypy .`
+  clean (376 files). `python3 scripts/validate_spec.py --strict` clean (after `git fetch origin main
+  --unshallow`, same precedent already on record for a shallow-clone sandbox).
+  `product_truth_check.py --fail-on-unwired` unchanged 26/26. `status.py` unchanged 101/301
+  certified (Law 2). `data_exposure_check.py --backends postgres_rls,s3_identity --fail-on-exposure`
+  OK. Merged `origin/main` into this branch first (picked up #464/#465/#470/#476 cleanly, no
+  conflicts) before pushing. PR: https://github.com/SJZLab/Sovra/pull/483. Appended to
+  `docs/certifications/queue.md` ("2026-10-06T13:05Z"). Not self-certified (Law 4) --
+  `certification_state: PROVISIONAL` unchanged, awaiting independent Control-plane L2 re-review and a
+  real CI run.
+
+  STEP 3: this file, `docs/certifications/queue.md` and `PROGRESS.md` updated this shift, before
+  compaction. STEP 4 stop condition (a): PR #483 is open with 0b's own two blocking items done; next
+  in list order for a future shift is 0c (FTF-0307 round 3) per "## Active" item 0's own ordering.
+  No open owner ask (`QUEUE.md` "Owner actions -- current" unchanged: "None currently"). `BLOCKER.md`
+  unchanged -- no live entries.
+
 Updated: 2026-10-05T23:30:00Z (scheduled relay shift, branch `claude/wizardly-fermat-shlvk5`) --
   STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly, no mismatch.
   STEP 0.1: this branch was restarted from `origin/main` at `01d298d` (PR #469 merged -- the
@@ -9376,8 +9437,11 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI): #464 (0500C r5),
      #465 (0500B r4), #468 (0902), #476 (1002), and #470 (1206A) if it conflicts. Merge each on green.
-   - **0b. FTF-0601 round 3 (tests only; 2 blocking items).** Independence across 3 actor roles plus the admin-bypass fault
-     test, and POST non-member → 400. See docs/certifications/queue.md "2026-10-06T10:00Z". Everything else is follow-up FTF-0601-F1.
+   - **0b. FTF-0601 round 3 (tests only; 2 blocking items) — DONE 2026-10-06T13:05Z, PR #483 open.** Independence across
+     3 actor roles (organization_admin/workspace_admin/evaluator) plus the F19 admin-bypass fault test (through the real
+     HTTP router; the real DB CHECK constraint turns the fault into an unhandled 500, not a silent bypass — see
+     docs/certifications/queue.md "2026-10-06T13:05Z"), and F06 (POST non-member → 400). Everything else stays follow-up
+     FTF-0601-F1 in Backlog. PROVISIONAL, awaiting Control-plane L2 re-review — nothing left for the relay here.
    - **0c. FTF-0307 round 3** (ready gate, model_id-alias test, a shared `validate_weights_digest` across 3 modules). Same entry.
    - **0d. FTF-0500D round 3 (tests only):** an independent expected-value oracle. Same entry.
    - **0e.** Then FTF-0510, FTF-04A18 and FTF-1807 (DoDs in "2026-10-04T11:00Z").
@@ -9507,6 +9571,16 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
    (2026-10-05: FTF-1206A — the other item formerly listed here — moved to "## Active" item 0e;
    implemented this shift, PR opened, PROVISIONAL. This backlog is now below the Refill & Sweep
    ">= 3" target; the next shift should run Refill & Sweep to top it back up.)
+1. **FTF-0601-F1** Follow-up (non-blocking) findings from the round-3 L2 review, deferred per
+   docs/certifications/queue.md "2026-10-06T10:00Z": (3) a contract test asserting
+   `maximum: 2147483647` and `pattern: '\S'` in both OpenAPI/JSON-schema contract files; (4) a
+   migration test seeding a violating locked row at 0018 so `upgrade head` fails naming the row,
+   plus a raw INSERT of a locked final suite with reviewer≈creator rejected by the DB CHECK;
+   (5) assert the stored reviewer after PATCH is stripped; (6) hardening (should, not must): bring
+   the DB CHECK closer to the app check (`btrim` of whitespace classes; `lower()` casefold gap is
+   documented-acceptable), and fail the 0019 precheck closed when the role cannot see rows (RLS).
+   Optional: document `lock` 400 in OpenAPI. FTF-0601's own two blocking round-3 items (1)/(2) are
+   DONE (PR #483, 2026-10-06T13:05Z) — this item is the remainder, not a gate on certification.
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 

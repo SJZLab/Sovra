@@ -23752,3 +23752,35 @@ FTF-0601's behavior is correct (2026-10-06T09:45Z entry). To certify in one shif
 - (2) A POST with a non-member reviewer → 400, in integration (F06).
 Items (3)–(6) of the 09:45Z entry are FOLLOW-UPS that do not block L2: the contract `maximum`/`pattern` test, the migration-0019
 test, the PATCH-stored reviewer assertion, and DB CHECK hardening. They go to Backlog as FTF-0601-F1.
+
+## 2026-10-06T13:05Z — FTF-0601 round-3 blocking items fixed (tests only), PR #483 opened
+Both items this narrowed DoD blocks on are done, submitted PROVISIONAL:
+- **(1) Independence, 3 actor roles + F19.** `tests/integration/test_ftf_0601_evaluation_suite.py` now independently creates/
+  self-assigns/self-locks a FINAL suite as `workspace_admin` and `organization_admin` (in addition to the pre-existing
+  `evaluator` case), each refused 409. The F19 additive-fault test temporarily patches `and not actor.actor_id.endswith("admin")`
+  onto `lock_evaluation_suite`'s own independence `if`, reloads the module, rebuilds the router from the reloaded functions, and
+  hits it over real HTTP (never a direct CRUD call). Finding, not assumed: the real `ck_evaluation_suites_independent_final_
+  reviewer` DB CHECK still blocks the resulting UPDATE even with the bypass present, so the fault does not silently let the
+  self-review through — it converts the previously-clean 409 into an unhandled 500 (confirmed: `baseline_response.status == 409`
+  before the patch, `fault_response.status != 409` after, `== 409` again post-restore). That is still a genuine regression the
+  old evaluator-only coverage would have missed, and this round's own 3-actor-role test would catch — the fault test asserts
+  exactly that, not the stronger (and, after checking, false) "bypass succeeds silently" claim. Module file restored
+  byte-identical, confirmed by content comparison before/after.
+- **(2) F06.** A non-member `reviewer_id` on POST create (not only PATCH, already covered) is refused 400 — new integration
+  check.
+- Fixture extended with an `ORGANIZATION_ADMIN` principal/membership per org (previously only `workspace_admin`/`evaluator`/
+  `viewer` existed). Listing-count assertion updated for the three new real suites these tests create (versions 4, 5, 6,
+  alongside the pre-existing 1, 2, 3, 96 — the suite's own `_next_version` is a live `MAX(version)+1` query, so the three POSTs
+  that were refused before any row existed — the non-member-reviewer 400 cases — do not consume a version number; confirmed by
+  running the suite and reading the real response list back).
+
+**Verification:** both `tests/tasks/test_ftf_0601.py` and `tests/integration/test_ftf_0601_evaluation_suite.py` pass against a
+real local PostgreSQL 16 (ran directly, not only asserted). `uv run ruff check .` / `ruff format --check .` clean (376 files).
+`uv run mypy .` clean (376 source files). `python3 scripts/validate_spec.py --strict` clean (after `git fetch origin main
+--unshallow`, same precedent this file's own history already carries for a shallow-clone sandbox).
+`product_truth_check.py --fail-on-unwired` unchanged 26/26. `status.py` unchanged 101/301 certified (Law 2 — a resubmission is
+not a certification). `data_exposure_check.py --backends postgres_rls,s3_identity --fail-on-exposure` OK.
+
+PR: https://github.com/SJZLab/Sovra/pull/483 (branch `claude/wizardly-fermat-05q043`, merged `origin/main` in first — clean
+merge, no conflicts). Not self-certified (Law 4) — `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` unchanged,
+awaiting independent Control-plane L2 re-review and a real CI run on this PR.
