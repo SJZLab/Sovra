@@ -151,7 +151,7 @@ export function probeUrl(
 ): string {
   const base =
     `${trimBase(apiBaseUrl)}/api/v1/organizations/${organizationId}` +
-    `/connections/litellm/${connectionId}/models/${modelId}/probe`;
+    `/connections/litellm/${connectionId}/models/${encodeURIComponent(modelId)}/probe`;
   const params = new URLSearchParams();
   if (projectId) params.set("project_id", projectId);
   const query = params.toString();
@@ -365,6 +365,7 @@ export function ModelCatalogUI({ apiBaseUrl, organizationId, connectionId }: Mod
 
       {catalog && (
         <section data-testid="catalog-results">
+          <p data-testid="catalog-connection-status">Connection: {catalog.connection_status}</p>
           <p data-testid="catalog-access-state">Access: {catalog.access_state}</p>
           <p data-testid="catalog-freshness">
             Last successful check: {catalog.last_successful_check_at ?? "never"}
@@ -375,6 +376,19 @@ export function ModelCatalogUI({ apiBaseUrl, organizationId, connectionId }: Mod
               Anomaly: {catalog.anomaly.previous_count} -&gt; {catalog.anomaly.new_count} (
               {catalog.anomaly.status})
             </p>
+          )}
+
+          {catalog.model_groups && (
+            <div data-testid="catalog-model-groups">
+              <p data-testid="model-groups-state">Model groups: {catalog.model_groups.state}</p>
+              <ul>
+                {Object.entries(catalog.model_groups.entries).map(([groupId, groupFields]) => (
+                  <li key={groupId} data-testid={`model-group-${groupId}`}>
+                    {groupId}: {JSON.stringify(groupFields)}
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
 
           <label>
@@ -401,11 +415,18 @@ export function ModelCatalogUI({ apiBaseUrl, organizationId, connectionId }: Mod
                   <span data-testid={`entry-metadata-status-${entry.id}`}>
                     {entry.metadata_status}
                   </span>
+                  <span data-testid={`entry-fields-${entry.id}`}>
+                    {JSON.stringify(entry.fields)}
+                  </span>
                   <button
                     type="button"
                     data-testid={`probe-button-${entry.id}`}
                     disabled={
-                      entry.status !== "callable" || !selectedProjectId || probingModelId !== null
+                      entry.status !== "callable" ||
+                      catalog.connection_status === "revoked" ||
+                      catalog.access_state === "revoked" ||
+                      !selectedProjectId ||
+                      probingModelId !== null
                     }
                     onClick={() => handleProbe(entry.id)}
                   >
@@ -415,6 +436,11 @@ export function ModelCatalogUI({ apiBaseUrl, organizationId, connectionId }: Mod
                     <span data-testid={`probe-result-${entry.id}`}>
                       {result.state} (
                       {result.usage ? `${result.usage.total_tokens} tokens` : "cost unknown"})
+                      <span data-testid={`probe-type-${entry.id}`}>{result.probe_type}</span>
+                      <span data-testid={`probe-route-identity-${entry.id}`}>
+                        {result.route_identity_state}
+                      </span>
+                      <span data-testid={`probe-probed-at-${entry.id}`}>{result.probed_at}</span>
                     </span>
                   )}
                 </li>
