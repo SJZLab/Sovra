@@ -9379,22 +9379,24 @@ protection under test. Put the fault → RED table in your queue entry, and appl
 to sibling modules. Items returned 3–5 times this week all failed on exactly this.
 0. **2026-10-06T09:45Z (Control plane): highest priority, one item per lane, one PR per item.**
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
-   - **0a. Merge conflicts on your own open PRs first** (#468 FTF-0902 remains) (merge main into the branch, re-run CI): #464 (0500C r5),
-     #465 (0500B r4), #468 (0902), #476 (1002), and #470 (1206A) if it conflicts. Merge each on green.
-   - **0b. FTF-0601 round 3 (tests only; 2 blocking items).** Independence across 3 actor roles plus the admin-bypass fault
-     test, and POST non-member → 400. See docs/certifications/queue.md "2026-10-06T10:00Z". Everything else is follow-up FTF-0601-F1.
-   - **0c. FTF-0307 round 3** (ready gate, model_id-alias test, a shared `validate_weights_digest` across 3 modules). Same entry.
-   - **0d. FTF-0500D round 3 (tests only):** an independent expected-value oracle. Same entry.
+   - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
+   - **0b. FTF-0902 round 3 (security; 5 blocking items).** Render-time revalidation still lets a mutated endpoint
+     emit `0.0.0.0/0`, `::/0`, `ports: []`, `port: null` and an empty pod selector; renderer-added peers stay GREEN;
+     the PodSelectorEndpoint half is untested; no `::/0` test; RFC1918 range boundaries are unpinned. See
+     docs/certifications/queue.md "2026-10-06T15:30Z". Everything else there is follow-up FTF-0902-F1.
+   - **0d. FTF-0500D round 3 (tests only):** an independent expected-value oracle. See docs/certifications/queue.md
+     "2026-10-06T09:45Z".
    - **0d2. FTF-1206A round 2 (2 blocking tests: raw-RLS foreign-tenant read/write, list_route_changes project auth).**
      See docs/certifications/queue.md "2026-10-06T13:45Z".
    - **0d3. FTF-1002 round 3** (in-module digest/revision validation, base identity binding, refuse a base for an
      endpoint, per-fact distinct fixtures). Same entry.
    - **0e.** Then FTF-0510, FTF-04A18 and FTF-1807 (DoDs in "2026-10-04T11:00Z").
-   - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05). FTF-0500B/0500C come back here only if returned again.
+   - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601 and FTF-0307 are CERTIFIED (2026-10-06).
+     They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid
    outcome while this list is non-empty.
-1. **FTF-0902 — round 2 (L2 review 2026-10-04T11:00Z, PR #467 opened 2026-10-05T17:04Z, closed
+1. **(History; superseded by 0b above.) FTF-0902 — round 2 (L2 review 2026-10-04T11:00Z, PR #467 opened 2026-10-05T17:04Z, closed
    unmerged; superseded by PR #468, open).** PR #467 fixed render-time endpoint revalidation
    (type-gated, never `isinstance`), real RFC1918-only + cloud-metadata CIDR-overlap checks sourced
    from `url_policy._CLOUD_METADATA_NETWORKS`, missing CI wiring for `tests/tasks/test_ftf_0902.py`,

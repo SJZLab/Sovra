@@ -568,6 +568,166 @@ def main() -> None:
             True,
         )
 
+    # -- 10. negative_acceptance (Law 18, round 2): a RAW query as the ------
+    #        restricted app role under a FOREIGN tenant context, with NO
+    #        application-layer `WHERE organization_id` filter, must see 0
+    #        rows from BOTH tables even though org1 really has rows in each
+    #        -- this is the only check that fails if the RLS policy itself
+    #        is loosened (e.g. `USING (true)`); every store function above
+    #        adds its own app-layer filter, which would mask that.
+    for table in (POLICIES_TABLE, ROUTE_CHANGES_TABLE):
+        with Session(owner_engine) as session:
+            owner_rows = session.execute(
+                text(f"SELECT count(*) FROM {table.name} WHERE organization_id = :o"),
+                {"o": str(org1_id)},
+            ).scalar_one()
+        check(
+            "FTF-1206A",
+            f"control: org1 really has rows in {table.name} (owner connection), "
+            "so a 0-row foreign read below is RLS, not an empty table",
+            owner_rows >= 1,
+        )
+        with Session(app_engine) as session:
+            set_tenant_context(session, org2_id)
+            foreign_rows = session.execute(text(f"SELECT id FROM {table.name}")).all()
+        check(
+            "FTF-1206A",
+            f"negative_acceptance: a raw, unfiltered SELECT on {table.name} as "
+            "sovra_app under org2's tenant context returns 0 rows although org1 "
+            f"has {owner_rows} (RLS itself, not an app-layer filter)",
+            foreign_rows == [],
+        )
+        with Session(app_engine) as session:
+            no_context_rows = session.execute(text(f"SELECT id FROM {table.name}")).all()
+        check(
+            "FTF-1206A",
+            f"negative_acceptance: a raw, unfiltered SELECT on {table.name} as "
+            "sovra_app with NO tenant context returns 0 rows",
+            no_context_rows == [],
+        )
+
+    # A foreign-tenant INSERT (org2 context writing an org1-owned row) must be
+    # refused by RLS's WITH CHECK -- asserted on the real "row-level security"
+    # error text so the composite FK / UNIQUE backstops cannot satisfy it.
+    # The positive control (same statement under org1's own context, rolled
+    # back) proves the statement is otherwise valid.
+    insert_route_change = text(
+        "INSERT INTO organization_gateway_route_changes "
+        "(id, organization_id, project_id, actor, target_deployment_namespace, "
+        "approved, bypass_requested, request_id) "
+        "VALUES (gen_random_uuid(), :org_id, :project_id, 'user:raw', "
+        "'factory-production', true, false, :request_id)"
+    )
+    insert_params = {
+        "org_id": str(org1_id),
+        "project_id": str(project1_id),
+        "request_id": "raw-foreign-insert",
+    }
+    control_ok = False
+    with Session(app_engine) as session:
+        set_tenant_context(session, org1_id)
+        try:
+            session.execute(insert_route_change, insert_params)
+            control_ok = True
+        except DBAPIError:
+            pass
+        session.rollback()
+    check(
+        "FTF-1206A",
+        "control: the raw route-change INSERT is valid under org1's own context",
+        control_ok,
+    )
+    try:
+        with Session(app_engine) as session:
+            set_tenant_context(session, org2_id)
+            session.execute(insert_route_change, insert_params)
+            session.commit()
+        check(
+            "FTF-1206A",
+            "negative_acceptance: a raw foreign-tenant INSERT into "
+            "organization_gateway_route_changes is refused by RLS",
+            False,
+        )
+    except DBAPIError as exc:
+        check(
+            "FTF-1206A",
+            "negative_acceptance: a raw foreign-tenant INSERT into "
+            "organization_gateway_route_changes is refused by RLS "
+            f"(row-level security in error: {exc.orig!r})",
+            "row-level security" in str(exc.orig),
+        )
+    try:
+        with Session(app_engine) as session:
+            set_tenant_context(session, org2_id)
+            session.execute(
+                text(
+                    "INSERT INTO organization_gateway_policies "
+                    "(id, organization_id, allowed_registration_namespaces, "
+                    "allowed_deployment_namespaces, approvers, "
+                    "route_change_requires_approval) "
+                    "VALUES (gen_random_uuid(), :org_id, '[]'::jsonb, "
+                    "'[\"*\"]'::jsonb, '[]'::jsonb, false)"
+                ),
+                {"org_id": str(org1_id)},
+            )
+            session.commit()
+        check(
+            "FTF-1206A",
+            "negative_acceptance: a raw foreign-tenant INSERT into "
+            "organization_gateway_policies is refused by RLS",
+            False,
+        )
+    except DBAPIError as exc:
+        check(
+            "FTF-1206A",
+            "negative_acceptance: a raw foreign-tenant INSERT into "
+            "organization_gateway_policies is refused by RLS "
+            f"(row-level security in error: {exc.orig!r})",
+            "row-level security" in str(exc.orig),
+        )
+    with Session(owner_engine) as session:
+        leaked_raw = session.execute(
+            select(ROUTE_CHANGES_TABLE.c.id).where(
+                ROUTE_CHANGES_TABLE.c.request_id == "raw-foreign-insert"
+            )
+        ).all()
+    check(
+        "FTF-1206A",
+        "the refused raw foreign-tenant INSERT left no row behind",
+        leaked_raw == [],
+    )
+
+    # -- 11. negative_acceptance (round 2): list_route_changes itself must --
+    #        refuse a project the principal cannot access. RLS alone would
+    #        make a foreign project's history look EMPTY (indistinguishable
+    #        from a project with no changes), so only the explicit project
+    #        authorization raises -- drop it and this check goes red.
+    for label, project_id in (
+        ("another organization's real project", project2_id),
+        ("a genuinely missing project", uuid.uuid4()),
+    ):
+        with Session(app_engine) as session:
+            set_tenant_context(session, org1_id)
+            try:
+                list_route_changes(session, ctx1, project_id)
+                refused = False
+            except ProjectNotFoundError:
+                refused = True
+        check(
+            "FTF-1206A",
+            f"negative_acceptance: list_route_changes refuses {label} "
+            "(ProjectNotFoundError, not an empty list)",
+            refused,
+        )
+    with Session(app_engine) as session:
+        set_tenant_context(session, org1_id)
+        own_history = list_route_changes(session, ctx1, project1_id)
+    check(
+        "FTF-1206A",
+        "control: list_route_changes still returns the caller's own project's history",
+        len(own_history) == 2,
+    )
+
     if FAILURES:
         print(f"FTF-1206A organization gateway policy real proof: {len(FAILURES)} failed")
         for failure in FAILURES:

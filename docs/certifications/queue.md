@@ -23799,3 +23799,90 @@ Follow-up FTF-1206A-F1, not blocking:
 - `actor_not_blank` and NOT NULL `approvers` tests;
 - the stale `0019` docstring;
 - TASK_INDEX row FTF-1206 should list FTF-1206A.
+
+## 2026-10-06T15:30Z — Control plane: FTF-0601 and FTF-0307 CERTIFIED; FTF-0902 NOT CERTIFIED (round 3)
+
+Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent verifiers:
+mid-tier for FTF-0601, top model for FTF-0902 (security item). Faults were injected into production code and run with
+the script runner, as CI does.
+
+### FTF-0601 (#483, merge 88bf61978313ff3f9352d22b9a680de87f6eb89e): CERTIFIED
+- Producer sessions: `01JDd2rF`, `01XiratpY`. Neither is this session.
+- CI `evaluation-suite-integration` job 112335734001 on the PR merge ref beb19c0: "FTF-0601 real EvaluationSuite
+  schema/API proof: all checks passed". The CheckViolation traceback in that log is the test's own F19 probe.
+- Both round-3 blocking items hold:
+  - (1) Independence is tested for evaluator, workspace_admin and organization_admin. Deleting the check, an additive
+    `endswith("admin")` bypass, and a workspace_admin-only bypass each turn RED (8, 6 and 4 failures). The DB CHECK
+    still blocks the UPDATE, but it surfaces as a 500, and the tests assert 409.
+  - (2) POST create with a non-member reviewer returns 400. Removing the POST-only check, or short-circuiting
+    `_check_reviewer_is_member`, turns RED.
+- The test's embedded fault injection restores the module byte-identical (sha256 checked, git status clean).
+- Gates: product_truth 26/26, validate_spec clean, data_exposure OK.
+- Follow-up FTF-0601-F1 (from the 10:00Z entry) stays open and is not blocking.
+
+### FTF-0307 (#484, merge acbeb5447187d75c2d52d98ed0702f0b73248962): CERTIFIED
+- Producer session: `01PYwyLH` (relay lane B, dispatched by this Control-plane session through create_session; it
+  wrote the code, this session did not). Not this session.
+- CI on head c8674bf: `gate` job 112343071699 shows "FTF-0307 training capability classifier: all checks passed", plus
+  the 0301 and 1001 suites. `trainable-artifact-schema-api-integration` 112343071907 and
+  `model-version-schema-api-integration` 112343074605 succeeded.
+- All 5 round-3 DoD items (09:45Z entry) hold. 40+ production faults across the classifier, `artifact_crud`,
+  `model_version_crud` and the shared `validate_weights_digest` turn RED:
+  - (1) the ready-status gate;
+  - (2) rename/alias (`ft:`, display_name) cannot make a model trainable;
+  - (3) exact probe and access matching, and a real artifact_id;
+  - (4) one shared digest validator across 3 modules;
+  - (5) a non-str status maps to unknown.
+- Bypass probes on unmodified code are refused: fullwidth or Arabic-Indic digits, NUL, NBSP, uppercase, lying str
+  subclasses for digest and status, alias names, and an unverified route.
+- Follow-up FTF-0307-F1, not blocking:
+  - an absent `ft:*` model_id must stay `not_granted` (an additive access-grant fault is GREEN);
+  - a None-digest case in the 1001 suite;
+  - pin mark_ready against case-variant statuses;
+  - `type(model_id) is str` with a lying-subclass test;
+  - pin model_version_crud's ready gate in the 1001 unit suite (today it is pinned only by the integration test);
+  - the future wizard-entry gate must bind artifact to model.
+
+### FTF-0902 (#468, merge 56e0a74; code 882c2c6): NOT CERTIFIED, round 3 (5 blocking items)
+- Producer sessions: `01XcRu6v`, `012M7ELE`, `01XiratpY`.
+- CI evidence is real: `network-policy-enforcement-integration` job 112338073530 shows baseline (kindnet)
+  `{'allowed': True, 'denied': True, 'dns': True, 'metadata': True}`, enforcing (calico)
+  `{'allowed': True, 'denied': False, 'dns': True, 'metadata': False}`, then "all checks passed". The `gate` job
+  112338072917 runs `tests/tasks/test_ftf_0902.py`.
+- 28 production faults were injected; 11 stayed GREEN. The unmodified code is also bypassable (Control plane
+  reproduced these on main acbeb54):
+
+| Probe on unmodified code (endpoint fields set with `object.__setattr__`, which the DoD names) | Rendered |
+|---|---|
+| cidr = `str` subclass whose `__str__` is "10.0.0.0/8", real value "0.0.0.0/0" (or "::/0") | `{"ipBlock":{"cidr":"0.0.0.0/0"}}`, hashed by `manifest_digest` |
+| ports = truthy-but-empty tuple subclass | `"ports": []` (all ports) |
+| pod_labels = truthy-but-empty dict subclass | `podSelector: {matchLabels: {}}` (every pod) |
+| PortRule.port = None / protocol = None | `{"protocol":"TCP","port":null}` (all ports) |
+
+Blocking, each shown RED first, then GREEN:
+1. **Render-time revalidation must not trust types.**
+   - Require exact types at render time: `str` for cidr, namespace and description; a `tuple` of exact `PortRule`, each
+     re-validated (number in 1–65535, protocol in the allowed set); `dict[str, str]` for labels. Apply the same to the
+     template (`pod_selector`, namespace).
+   - Emit only normalized values (`str(ip_network(...))`, a rebuilt ports list), checked non-empty after conversion.
+   - Test each probe in the table above.
+2. **The rendered output must be pinned.** Today a renderer that adds a `::/0` peer to the DNS rule, a
+   169.254.169.254/32 peer to a CIDR rule, a `{"podSelector":{}}` peer, `endPort: 65535` on DNS, or drops `Egress`
+   from policyTypes stays GREEN. Add an exact-equality assertion on the whole rendered `spec` for representative
+   templates, or a scan of every peer and port: no ipBlock outside the declared endpoints, no empty selector, every
+   port numbered, no `endPort`, `Egress` always present.
+3. **Cover the PodSelectorEndpoint half.** A subclass skip and empty ports at render time stay GREEN; only the Cidr
+   side is tested.
+4. **Test `::/0` directly.** An additive `if cidr == "::/0": return network` stays GREEN.
+5. **Pin the RFC1918-only boundaries.** Widening to 172.0.0.0/8, 10.0.0.0/7 or adding 100.64.0.0/10 stays GREEN. Add
+   boundary cases (9.255.255.255/32, 11.0.0.0/32, 172.15.255.255/32, 172.32.0.0/32, 192.167.255.255/32,
+   192.169.0.0/32, 100.64.0.1/32) and supernets (10.0.0.0/7).
+
+Follow-up FTF-0902-F1, not blocking:
+- the submission's clause map overstates coverage (only the Cidr side was exercised);
+- `$defs/Cidr` still matches 0.0.0.0/0 and 169.254.169.254/32; the narrowing is recorded, which meets the DoD option;
+- the integration docstring claim that no code path can render an IPv6-allowing rule is false today; fix it with item 1;
+- the self-fault tests locate their target by exact source string; make them robust to refactors.
+
+Masked, not missed: an IPv4-only prefix-0 check and dropping fd00:ec2::254 are each caught by the IPv6 refusal;
+removing both layers turns RED.

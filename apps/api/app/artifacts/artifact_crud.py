@@ -316,17 +316,27 @@ def apply_mark_ready(artifact: TrainableArtifact) -> bool:
        both be set (Section 65.1's "never trusting an arbitrary... value"
        -- these are only ever set by `apply_accept_license` from a real
        authenticated actor, never a client-supplied field).
-    3. Mutable unresolved revision: `weights_digest` must be resolved
-       (non-`None`, already shape-validated at write time) AND
+    3. Mutable unresolved revision: `weights_digest` must be a valid
+       `sha256:` + 64 lowercase hex digest, re-checked here with the shared
+       `validate_weights_digest` (a row loaded from the database skips the
+       write-time check) AND
        `base_model_revision` must be a pinned, non-floating identifier
        (`is_pinned_revision`).
 
     Idempotent: an already-`ready` artifact is a no-op (`False`).
-    Refuses (`ArtifactStateError`) on an `archived` artifact."""
+    Refuses (`ArtifactStateError`) on an `archived` artifact, and on any
+    status other than `registered` (including a non-str one)."""
     if artifact.status == "archived":
         raise ArtifactStateError(f"artifact {artifact.id} is archived and cannot become ready")
     if artifact.status == "ready":
         return False
+    if type(artifact.status) is not str or artifact.status != "registered":
+        # Only `registered` may transition. An unrecognised or non-str
+        # status is refused, never overwritten with `ready`.
+        raise ArtifactStateError(
+            f"artifact {artifact.id} has unrecognised status {artifact.status!r} and "
+            "cannot become ready"
+        )
 
     reasons: list[str] = []
     try:
@@ -335,8 +345,10 @@ def apply_mark_ready(artifact: TrainableArtifact) -> bool:
         reasons.append("source_uri is unsafe")
     if artifact.license_accepted_by is None or artifact.license_accepted_at is None:
         reasons.append("license has not been accepted by a known, authenticated actor")
-    if artifact.weights_digest is None:
-        reasons.append("weights_digest has not been resolved")
+    try:
+        validate_weights_digest(artifact.weights_digest)
+    except TrainableArtifactValidationError:
+        reasons.append("weights_digest has not been resolved to a valid sha256 digest")
     if not is_pinned_revision(artifact.base_model_revision):
         reasons.append("base_model_revision is a mutable, unresolved alias, not a pinned identity")
 

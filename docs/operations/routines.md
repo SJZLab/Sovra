@@ -8,12 +8,21 @@ then delete the old one once the new one has fired cleanly.
 | Routine | Schedule (UTC) | Model | Writes |
 |---|---|---|---|
 | Sovra relay A | `48 * * * *` (hourly) | claude-sonnet-5 | relay PRs |
-| Sovra relay B | `28 * * * *` (hourly, new lane) | claude-sonnet-5 | relay PRs |
-| Sovra relay C | `08 * * * *` (hourly, new lane) | claude-sonnet-5 | relay PRs |
+| Sovra relay B | `28 * * * *` (hourly, via dispatcher — see below) | claude-sonnet-5-5 | relay PRs |
+| Sovra relay C | `08 * * * *` (hourly, via dispatcher — see below) | claude-sonnet-5-5 | relay PRs |
 | Sovra certifier | event: PR opened **plus** `18 1-23/2 * * *` (30 min after each relay shift) | default (mid-tier) | ledger/spec-matrix via PR |
 | Sovra watchdog | `40 */4 * * *` | cheapest capable | watchdog-findings.md via PR |
 | Sovra refill & sweep | `20 * * * *` (new) | cheapest capable | QUEUE.md Backlog/Parked via `[QUEUE]` PR |
 | Sovra daily report 08:30 / 19:30 KSA | `30 5 * * *`, `30 16 * * *` | claude-haiku-4-5 | email only |
+
+**Lanes B and C run through a dispatcher (live since 2026-10-06 15:08Z).** A routine fired as a
+fresh session gets no repository, and `add_repo` is not available inside it, so a direct lane
+routine cannot clone or push (tested 2026-10-06, session cse_01SHBikPo5Vv5YDCnvy2ZqHz). Instead,
+routines "Sovra relay B dispatch (lane 2)" and "Sovra relay C dispatch (lane 3)" wake the
+persistent session "Sovra relay dispatcher" (session_01Eowmii6EasByALwXW9uyQE). It skips the
+firing if that lane's previous session is still working; otherwise it calls `create_session` with
+the repo as source, model claude-sonnet-5-5, and the Relay prompt below with a one-line lane
+header. The dispatcher does no repository work. Lane A stays the owner-created routine.
 
 ---
 
