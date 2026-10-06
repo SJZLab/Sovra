@@ -29313,3 +29313,92 @@ work was fixing parked returned-work (top priority per CLAUDE.md's own ordering)
 **FTF-1002, FTF-0510, FTF-04A18 and FTF-1807 remain the next-priority, not-yet-attempted items** per the Active
 list's own stated order. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged: "None currently").
 `BLOCKER.md` unchanged — no live entries.
+
+## 2026-10-06T06:30:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-vv36w4` — fixed FTF-1002's
+## L2 round-2 findings (parent status/tenant/digest consistency, mandatory adapter base, self-parent checks,
+## manifest tamper-evidence); PR opened
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch. STEP 0.1: read
+`BLOCKER.md` (no live entries), `QUEUE.md`'s "Owner actions — current" (none open, "## Parked" resolved to "None
+currently") and "## Active" section, and `docs/certifications/queue.md`'s tail, all fresh this shift. STEP 0.2: no
+`cognee-cli` binary in this sandbox — text-search fallback declared, same as every prior shift.
+
+Per CLAUDE.md "Returned work first": checked every open `[relay]` PR before picking new work. `git fetch origin
+main` confirmed the designated branch already carries everything through PR #474 (the prior shift's own merge-
+conflict-resolution doc commit) — no reset needed, nothing new to pull. Listed all open PRs
+(`list_pull_requests`): #471 (FTF-0307), #470 (FTF-1206A), #468 (FTF-0902), #465 (FTF-0500B), #464 (FTF-0500C),
+#463 (FTF-0601) — independently re-confirmed each one's own most recent CI run via `pull_request_read
+get_check_runs`: #471/#470/#465/#464/#463 each 44–45/44–45 green; #468's own run already carried the prior
+shift's own disclosed, already-spent one-sanctioned-re-run outcome (`gate`/`network-policy-enforcement-
+integration` green, 8 unrelated jobs still showing the already-documented runner-provisioning-outage signature,
+already disclosed via PR comment) — no new failure, nothing further to do there this shift. No merge conflicts,
+no red CI needing a fix, no returned `NOT CERTIFIED` item without an open fix PR already in flight. Per
+`QUEUE.md`'s own "## Active" item 0's own list order, the next not-yet-attempted item is **FTF-1002**.
+
+**P** — ran `python tools/r1_handoff.py packet FTF-1002 --plan FINE_TUNING_FACTORY_RELEASE_1.md`, read the
+generated packet, then read the real, already-implemented module (`apps/api/app/artifacts/
+artifact_lineage_manifest.py`, `docs/spec-matrix.yaml`'s FTF-1002 entry) and the 2026-10-04T11:00Z L2 review's own
+four findings (`docs/certifications/queue.md`): (1) an artifact whose digest or revision differs from the
+ModelVersion is accepted; (2) an unresolved (`registered`), archived or cross-tenant parent is accepted; (3) an
+adapter with no base link at all (the check is optional), or an adapter whose base value is its own digest, is
+accepted; a self-parent is accepted; (4) there is no manifest digest, so nothing makes it tamper-evident. Read
+`app.model_versions.model_version_schema.ModelVersion` and `app.artifacts.artifact_schema.TrainableArtifact` in
+full first, to ground every fix in real schema fields (`status` enum `registered`/`ready`/`archived`,
+`organization_id`, and `ModelVersion`'s own `weights_digest`/`base_model_revision`, copied from the artifact at
+creation time and never re-derived) rather than inventing a field. Confirmed `ModelVersion` and `TrainableArtifact`
+are this task's own only two dependencies (FTF-1001/FTF-0306, both CERTIFIED) before relying on them.
+
+**E** — fixed all four findings in `artifact_lineage_manifest.py`: four new checks against the real parent
+`artifact` (status must be `ready`; organization must match the model_version's own; weights_digest/
+base_model_revision must match the model_version's own already-recorded value) added immediately after the
+existing id-match check; `resolved_base_artifact` is now mandatory (not optional) for every `adapter` import; two
+new checks on `resolved_base_artifact` itself (cross-tenant; self-parent, both by row id and by sharing the
+adapter's own `weights_digest`); a new `manifest_digest: str` field on `ArtifactLineageManifest` (sha256 over a
+canonical-JSON, `sort_keys=True` encoding of every field) plus a new `verify_artifact_lineage_manifest` function
+and `ArtifactLineageManifestTamperedError`. Added 12 new test functions to `tests/tasks/test_ftf_1002.py` (13 → 25)
+covering every new check, plus two real fault injections (Law 1): the pre-existing base-revision-compare fault
+test (fixed to use distinct digests between `artifact`/`mismatched_base` so this round's new self-digest check
+cannot also catch it — isolating that one guard), and a new **additive** fault (an unconditional `return None`
+inserted immediately after the real id-match check, bypassing every one of this round's new guards at once).
+
+**Law 1, shown able to fail first:** `git stash` of the module fix alone (keeping every test change) crashed the
+suite immediately on `ImportError` (the new `ArtifactLineageManifestTamperedError`/`verify_artifact_lineage_
+manifest` symbols do not exist pre-fix). To confirm the real defects independent of that import failure, ran a
+standalone ad hoc script directly against the genuinely pre-fix module reproducing all ten scenarios
+(registered/archived/cross-tenant parent, weights_digest drift, base_model_revision drift, adapter with no base
+link at all, self-parent by id, self-parent by digest, cross-tenant base, and "the manifest object has no
+`manifest_digest` attribute") — every one confirmed accepted/missing for real. `git stash pop` restored the fix
+byte-identical; the full 25-test suite re-ran clean, including the additive fault injection (confirmed an
+`archived` parent genuinely passes through uncaught with the inserted early return present, then reverted
+byte-identical).
+
+**V** — `uv sync --all-packages`; `uv run ruff check .` clean (372 files; one `E501` in the new test file
+self-fixed via `ruff format`, re-verified clean, suite re-run clean after reformatting); `uv run mypy .` clean
+repo-wide (372 source files, zero errors). `python3 scripts/validate_spec.py --strict` clean (after `git fetch
+origin main --unshallow`; directly confirmed the new `docs/spec-matrix.yaml` prose parses with `yaml.safe_load`
+first). `product_truth_check.py --fail-on-unwired`: unchanged `26/26` (`proving_symbol` stays blank — disclosed,
+this round adds no live caller, same precedent FTF-0306/FTF-0307 already established; this task's own DoD "add a
+live load consumer, or record that half BLOCKED" stays disclosed BLOCKED in the module's own updated docstring).
+`status.py`: unchanged `101/301` certified / 24 product-true (Law 2 — a resubmission is not a certification).
+Regression swept `test_ftf_0306.py`/`test_ftf_1001.py` (this task's own two dependencies) via `uv run python3` —
+both exit 0, zero regressions (`test_ftf_1001.py`'s own stderr `TenantContextError` traceback is the same
+pre-existing, disclosed negative-test assertion this task's own round-1 entry already confirmed). No
+`.github/workflows/ci.yml` change needed — the existing gate step already runs `tests/tasks/test_ftf_1002.py` in
+full.
+
+Updated `docs/spec-matrix.yaml`'s FTF-1002 entry with a full "2026-10-06T06:30Z L2 round-2 fix-and-resubmit" note,
+including the clause-to-test mapping (`certification_state` stays `PROVISIONAL`, `proof_state` stays
+`L1-PROVEN` — Law 2). Appended a full evidence entry to `docs/certifications/queue.md` ("2026-10-06T06:30Z").
+Updated `QUEUE.md`'s "## Active" item 0's own 0d note to mark FTF-1002 fixed and disclose the still-untouched
+FTF-0510/FTF-04A18/FTF-1807 items for the next shift.
+
+**V (certification)** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state:
+L1-PROVEN` unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the
+opened PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all updated this shift,
+before compaction. STEP 4 stop condition (a): FTF-1002 now joins the same PROVISIONAL backlog awaiting
+Control-plane L2 certification and the L4 gate (101/301 certified, unchanged). Stopping here — one item per shift,
+per this list's own rule; **FTF-0510, FTF-04A18 and FTF-1807 remain the next-priority items** per the Active
+list's own stated order. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged: "None currently").
+`BLOCKER.md` unchanged — no live entries.

@@ -23232,3 +23232,85 @@ FTF-0307 or any other task -- this was returned-work git maintenance (resolving 
 conflict per its own recorded route option), not a certification claim or a new DoD submission.
 `QUEUE.md`'s own "## Parked" entry is resolved to "None currently" with this resolution recorded as
 history in place.
+
+## 2026-10-06T06:30Z — [relay] FTF-1002: fix L2 round-2 findings (parent status/tenant/digest consistency, mandatory adapter base, self-parent checks, manifest tamper-evidence)
+
+Fixes all four findings from the 2026-10-04T11:00Z Control-plane L2 review of FTF-1002 (merged PR #424), restated
+as `QUEUE.md`'s own "## Active" item 0, next in list order after FTF-0902/FTF-0307 (each already has an open
+`[relay]` PR with green CI this shift, skipped per that list's own skip rule).
+
+**Findings (verbatim from the review):** "It accepts: an artifact whose digest or revision differs from the
+ModelVersion; an unresolved, archived or cross-tenant parent; an adapter with no base link (the check is
+optional), and an adapter whose base value is its own digest; a self-parent. There is no manifest digest, so
+nothing makes it tamper-evident. Hard-coded licence and digest faults stay GREEN."
+
+**Fix, in `apps/api/app/artifacts/artifact_lineage_manifest.py`:**
+1. Four new checks against the real parent `artifact` itself (previously checked only by `id`, immediately after
+   the existing id-match check): `artifact.status != "ready"` (refuses a `registered`/still-mutable or `archived`
+   parent); `artifact.organization_id != model_version.organization_id` (refuses a cross-tenant parent);
+   `artifact.weights_digest != model_version.weights_digest` and `artifact.base_model_revision !=
+   model_version.base_model_revision` (refuses a parent whose current digest/revision has drifted from what this
+   model version's own immutable row already recorded at creation).
+2. `resolved_base_artifact` is now mandatory for every `import_kind='adapter'` model_version -- previously
+   optional, so a caller could skip every base-validation check below by simply not supplying one.
+3. Two new identity checks on `resolved_base_artifact` itself: a cross-tenant base
+   (`resolved_base_artifact.organization_id != model_version.organization_id`); a self-parent, both by row
+   identity (`resolved_base_artifact.id == artifact.id`) and by digest
+   (`resolved_base_artifact.weights_digest == artifact.weights_digest` -- a distinct row sharing the adapter's own
+   digest is the same self-referential defect by a different field).
+4. A new `manifest_digest: str` field on `ArtifactLineageManifest` (a sha256 over a canonical-JSON,
+   `sort_keys=True` encoding of every field the manifest carries, via new `_compute_manifest_digest`), plus a new
+   `verify_artifact_lineage_manifest(manifest)` function that recomputes it and raises the new
+   `ArtifactLineageManifestTamperedError` on any mismatch -- detecting mutation past the frozen-dataclass guard
+   (`object.__setattr__`) or corruption across a persist/reload round trip.
+
+**Clause-to-test mapping** (`tests/tasks/test_ftf_1002.py`, 13 -> 25 test functions):
+- registered/archived parent -> `test_registered_artifact_is_refused` / `test_archived_artifact_is_refused`
+- cross-tenant parent -> `test_cross_tenant_artifact_is_refused`
+- digest/revision drift vs the model_version's own recorded value ->
+  `test_model_version_weights_digest_drift_is_refused` / `test_model_version_base_model_revision_drift_is_refused`
+- adapter base check made mandatory -> `test_adapter_without_resolved_base_artifact_is_refused`
+- self-parent by id / by digest -> `test_adapter_self_parent_by_id_is_refused` /
+  `test_adapter_self_parent_by_digest_is_refused`
+- cross-tenant resolved base -> `test_cross_tenant_resolved_base_artifact_is_refused`
+- manifest tamper-evidence -> `test_manifest_digest_is_present_and_verifiable` /
+  `test_verify_artifact_lineage_manifest_detects_tampering`
+
+**Law 1, every new test shown able to fail for real:** `git stash` of the module fix alone (keeping every test
+change) immediately crashed the suite on `ImportError` (the new `ArtifactLineageManifestTamperedError`/
+`verify_artifact_lineage_manifest` symbols do not exist pre-fix) -- to confirm the real defects independent of
+that import failure, ran a standalone ad hoc script directly against the genuinely pre-fix module reproducing all
+ten scenarios named above: every one of registered/archived/cross-tenant/digest-drift/revision-drift/
+no-base-at-all/self-parent-by-id/self-parent-by-digest/cross-tenant-base was confirmed **silently accepted** (no
+exception raised), and the returned manifest object genuinely has no `manifest_digest` attribute at all. `git
+stash pop` restored the fix byte-identical; the full suite re-ran clean (25/25). A second, **additive** fault
+injection (Law 1's own "an early return" example, not an edit of an existing line): an unconditional `return None`
+inserted immediately after the real id-match check, in an isolated subprocess against the real on-disk module --
+confirmed an `archived` parent (which the fix above refuses) genuinely passes through uncaught once that
+insertion is present, proving every one of this round's new guards together is load-bearing, not merely present;
+reverted byte-identical.
+
+**Full verification this shift.** `uv sync --all-packages`; `uv run ruff check .` clean (372 files; one `E501`
+line-length finding in the new test file self-fixed via `uv run ruff format`, re-verified clean, suite re-run
+clean after reformatting); `uv run mypy .` clean repo-wide (372 source files, zero errors). `python3
+scripts/validate_spec.py --strict` clean (after `git fetch origin main --unshallow`, this sandbox's own
+pre-existing shallow-clone artifact; directly confirmed the new `docs/spec-matrix.yaml` prose parses with
+`python3 -c "import yaml; yaml.safe_load(...)"` first). `product_truth_check.py --fail-on-unwired`: unchanged
+26/26 (`proving_symbol` stays blank -- this round adds no live caller; this task's own DoD "add a live load
+consumer, or record that half BLOCKED" stays disclosed BLOCKED in the module's own updated docstring, same
+disclosed "no live caller yet" precedent FTF-0306/FTF-0307 already established). `status.py`: unchanged 101/301
+certified / 24 product-true (Law 2 -- a resubmission is not a certification). Regression swept
+`test_ftf_0306.py`/`test_ftf_1001.py` (this task's own two dependencies) via `uv run python3` -- both exit 0, zero
+regressions (`test_ftf_1001.py`'s own stderr `TenantContextError` traceback is the same pre-existing, disclosed
+negative-test assertion this task's own round-1 entry already confirmed, unrelated to this change; confirmed by
+its own final "all checks passed" line and `exit=0`). No `.github/workflows/ci.yml` change needed -- the existing
+gate step already runs `tests/tasks/test_ftf_1002.py` in full.
+
+Updated `docs/spec-matrix.yaml`'s FTF-1002 entry with a full "2026-10-06T06:30Z L2 round-2 fix-and-resubmit" note,
+including this clause-to-test mapping (`certification_state` stays `PROVISIONAL`, `proof_state` stays
+`L1-PROVEN` -- Law 2). Updated `QUEUE.md`'s "## Active" item 0 to mark FTF-1002 fixed and disclose the
+still-untouched FTF-0510/FTF-04A18/FTF-1807 items for the next shift.
+
+**V (certification)** -- per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state:
+L1-PROVEN` unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the
+opened PR are required before certification.

@@ -9187,6 +9187,16 @@ this same resolution (doc-only, redundant once this lands).
      Control-plane L2 re-review and a real CI run. Next in list order: FTF-0902, FTF-0307,
      FTF-1002, FTF-0510, FTF-04A18 and FTF-1807. Their DoDs are in docs/certifications/queue.md
      "2026-10-04T11:00Z".
+     - 2026-10-05/06: FTF-0902 (PR #468, CI triaged green on the two checks this PR's diff
+       touches) and FTF-0307 (PR #471, merge conflict resolved, 44/44 green) each already had an
+       open `[relay]` PR — skipped per this list's own skip rule.
+     - **FTF-1002 fixed 2026-10-06T06:30Z this shift, PR opened.** All four round-2 findings
+       (parent status/tenant/digest/revision consistency; mandatory, no-longer-optional adapter
+       base check; self-parent by id and by digest; a new `manifest_digest`
+       tamper-evidence field plus `verify_artifact_lineage_manifest`). Full clause-to-test mapping
+       in `docs/certifications/queue.md`'s "2026-10-06T06:30Z" entry and `docs/spec-matrix.yaml`'s
+       FTF-1002 entry. Not self-certified (Law 4) — awaiting Control-plane L2 re-review and a real
+       CI run. **Next in list order: FTF-0510, FTF-04A18 and FTF-1807** (still not yet attempted).
    - **0e.** Then FTF-1206A (Backlog; contract `spec/addenda/FTF-1206A.json`).
    - FTF-0500B re-enters this list only if Control plane returns it again. A NEW verdict
      entry in docs/certifications/queue.md does NOT outrank 0a–0c. Work the list order, not the newest entry.

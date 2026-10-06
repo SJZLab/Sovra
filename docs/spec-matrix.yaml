@@ -8600,6 +8600,56 @@ FTF-1002:
     a certification). Added this task's own CI gate step to .github/workflows/ci.yml in the same
     commit. Not self-certified (Law 4): independent Control-plane L2 review and a real CI run on
     the opened PR are required before CERTIFIED.
+
+    2026-10-06T06:30Z L2 round-2 fix-and-resubmit (control-plane review of merged PR #424,
+    docs/certifications/queue.md "2026-10-04T11:00Z"): fixed all four findings. (1) a
+    registered/archived or cross-tenant main artifact, and a main artifact whose current
+    weights_digest/base_model_revision has drifted from model_version's own recorded value, are
+    now refused by build_artifact_lineage_manifest (four new checks against the real parent
+    artifact, right after the existing id-match check). (2) resolved_base_artifact is now
+    mandatory for every adapter import -- previously optional, letting a caller skip every base
+    check by simply not supplying it. (3) a self-parent is refused both by row identity
+    (resolved_base_artifact.id == artifact.id) and by digest (resolved_base_artifact.weights_digest
+    == artifact.weights_digest), plus a new cross-tenant check on resolved_base_artifact itself.
+    (4) added a real manifest_digest field (sha256 over a canonical-JSON encoding of every field
+    the manifest carries) and verify_artifact_lineage_manifest, which recomputes it and raises the
+    new ArtifactLineageManifestTamperedError on mismatch -- this task's own tamper-evidence
+    requirement. Clause-to-test mapping: registered/archived parent ->
+    test_registered_artifact_is_refused/test_archived_artifact_is_refused; cross-tenant parent ->
+    test_cross_tenant_artifact_is_refused; digest/revision drift ->
+    test_model_version_weights_digest_drift_is_refused/
+    test_model_version_base_model_revision_drift_is_refused; mandatory adapter base ->
+    test_adapter_without_resolved_base_artifact_is_refused; self-parent by id/digest ->
+    test_adapter_self_parent_by_id_is_refused/test_adapter_self_parent_by_digest_is_refused;
+    cross-tenant base -> test_cross_tenant_resolved_base_artifact_is_refused; tamper-evidence ->
+    test_manifest_digest_is_present_and_verifiable/
+    test_verify_artifact_lineage_manifest_detects_tampering. Law 1: `git stash` of the module fix
+    alone (keeping every test change) first crashed the suite on ImportError (the new
+    ArtifactLineageManifestTamperedError/verify_artifact_lineage_manifest symbols do not exist
+    pre-fix) -- to confirm the real defects independent of that import failure, ran a standalone
+    ad hoc script directly against the genuinely pre-fix module reproducing all ten scenarios
+    (registered/archived/cross-tenant/digest-drift/revision-drift/no-base-at-all/self-parent-by-id/
+    self-parent-by-digest/cross-tenant-base parent each silently accepted, and the manifest object
+    genuinely has no manifest_digest attribute at all) -- every one confirmed accepted/missing for
+    real on the unmodified module. `git stash pop` restored the fix byte-identical; the full suite
+    (25 test functions, was 13) re-ran clean, including a second, *additive* fault injection (an
+    unconditional `return None` inserted immediately after the real id-match check, bypassing
+    every one of this round's new guards at once) proving an archived parent genuinely passes
+    through uncaught when that insertion is present, then reverted byte-identical.
+    `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean (372 files);
+    `uv run mypy .` clean (372 source files, zero errors); `python3 scripts/validate_spec.py
+    --strict` clean (after `git fetch origin main --unshallow`). `product_truth_check.py
+    --fail-on-unwired`: unchanged 26/26 (proving_symbol stays blank -- this round adds no live
+    caller; disclosed, per the DoD's own "or record that half BLOCKED" option, in this module's
+    own updated docstring). `status.py`: unchanged 101/301 certified / 24 product-true (Law 2 -- a
+    resubmission is not a certification). Regression swept `test_ftf_0306.py`/`test_ftf_1001.py`
+    (this task's own two dependencies) via `uv run python3` -- both exit 0, zero regressions
+    (`test_ftf_1001.py`'s own stderr TenantContextError traceback is the same pre-existing,
+    disclosed negative-test assertion this task's own round-1 entry already confirmed, unrelated
+    to this change). No `.github/workflows/ci.yml` change needed -- the existing gate step already
+    runs `tests/tasks/test_ftf_1002.py` in full. Not self-certified (Law 4):
+    certification_state/proof_state unchanged; independent Control-plane L2 re-review and a real
+    CI run on the newly opened PR are required before CERTIFIED.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1002.py

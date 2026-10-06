@@ -94,10 +94,52 @@ real, raising checks, not merely descriptive text:
    qualification" clause made real: the caller (a future training/serving
    worker) receives a real exception instead of a manifest, and must not
    proceed to load or qualify the mismatched pairing.
+
+2026-10-06 L2 round-2 review findings and fixes (control-plane review of
+merged PR #424, `docs/certifications/queue.md` "2026-10-04T11:00Z"): the
+round-1 checks above verified only that `artifact.id` matched
+`model_version.trainable_artifact_id`, and that an `adapter`'s
+*caller-supplied* `resolved_base_artifact` -- when a caller bothered to
+supply one at all -- had a matching `base_model_revision`. Four real
+gaps followed from that: (1) a `registered` (still-mutable) or `archived`
+parent, or a parent in a *different* organization than the `model_version`
+being built, was accepted with no check at all; (2) a parent whose current
+`weights_digest`/`base_model_revision` had drifted from the value this
+`model_version`'s own immutable row already recorded at creation time was
+accepted; (3) `resolved_base_artifact` was optional for an `adapter`
+import, so a caller could skip every base-validation check by simply not
+supplying it; (4) nothing stopped an adapter from resolving to *itself* as
+its own base, either by row identity or by sharing its own
+`weights_digest`. All four are now real, raising checks (status/tenant/
+digest/revision parity against the real parent; a mandatory, non-optional
+`resolved_base_artifact` for every `adapter` import; cross-tenant and
+self-parent/self-digest checks on the resolved base itself) -- see
+`build_artifact_lineage_manifest`.
+
+A fifth finding -- "there is no manifest digest, so nothing makes it
+tamper-evident" -- is fixed by adding a real `manifest_digest` field
+(`ArtifactLineageManifest`, computed by `_compute_manifest_digest` as a
+canonical-JSON sha256 over every field the manifest actually carries) and
+`verify_artifact_lineage_manifest`, which recomputes that digest from a
+manifest's own current field values and raises
+`ArtifactLineageManifestTamperedError` on any mismatch -- detecting
+mutation past the frozen-dataclass guard (`object.__setattr__`) or
+corruption across a persist/reload round trip.
+
+Disclosed, not silently dropped: this task's own DoD item "add a live
+load consumer, or record that half BLOCKED" stays BLOCKED -- no training/
+serving worker task is dependency-ready yet to actually call
+`build_artifact_lineage_manifest`/`verify_artifact_lineage_manifest`
+(`proving_symbol` stays blank in `docs/spec-matrix.yaml`, the same
+disclosed "no live caller yet" precedent FTF-0306/FTF-0307 already
+established); this round adds no live caller, only the fixes above and
+their tests.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 
 from app.artifacts.artifact_schema import TrainableArtifact
@@ -107,8 +149,10 @@ __all__ = [
     "AdapterBaseMismatchError",
     "ArtifactLineageError",
     "ArtifactLineageManifest",
+    "ArtifactLineageManifestTamperedError",
     "LineageFact",
     "build_artifact_lineage_manifest",
+    "verify_artifact_lineage_manifest",
 ]
 
 
@@ -125,6 +169,17 @@ class AdapterBaseMismatchError(ArtifactLineageError):
     base, not same-family guessed weights" rule, violated. Raised instead
     of returned so a caller cannot accidentally load or qualify the
     mismatched pairing by ignoring a boolean field."""
+
+
+class ArtifactLineageManifestTamperedError(ArtifactLineageError):
+    """A manifest's own stored `manifest_digest` does not match the real
+    digest recomputed from its own field values -- the manifest was
+    mutated (bypassing its frozen-dataclass construction guard, e.g. via
+    `object.__setattr__`) or corrupted/forged across a
+    serialize/deserialize round trip after construction. Raised by
+    `verify_artifact_lineage_manifest`, this task's own tamper-evidence
+    requirement (2026-10-06 L2 round-2 review: "There is no manifest
+    digest, so nothing makes it tamper-evident")."""
 
 
 @dataclass(frozen=True)
@@ -159,6 +214,7 @@ class ArtifactLineageManifest:
     license: LineageFact
     runtime: LineageFact
     method: LineageFact
+    manifest_digest: str
 
 
 _UNKNOWN_ENDPOINT_DETAIL = (
@@ -179,6 +235,42 @@ _UNKNOWN_DATA_DETAIL = (
 
 def _unknown(detail: str) -> LineageFact:
     return LineageFact(known=False, value=None, detail=detail)
+
+
+def _canonical_fact(fact: LineageFact) -> dict[str, object]:
+    return {"known": fact.known, "value": fact.value, "detail": fact.detail}
+
+
+def _compute_manifest_digest(
+    *,
+    model_version_id: str,
+    import_kind: str,
+    base: LineageFact,
+    tokenizer: LineageFact,
+    training: LineageFact,
+    data: LineageFact,
+    license: LineageFact,  # noqa: A002 -- matches this task's own acceptance-clause dimension name
+    runtime: LineageFact,
+    method: LineageFact,
+) -> str:
+    """This task's own tamper-evidence requirement: a canonical content
+    digest over every field this manifest actually carries, so a mutated
+    or corrupted manifest is detectable by `verify_artifact_lineage_manifest`
+    instead of trusted on sight. `json.dumps(..., sort_keys=True)` makes the
+    encoding deterministic regardless of attribute-assignment order."""
+    canonical = {
+        "model_version_id": model_version_id,
+        "import_kind": import_kind,
+        "base": _canonical_fact(base),
+        "tokenizer": _canonical_fact(tokenizer),
+        "training": _canonical_fact(training),
+        "data": _canonical_fact(data),
+        "license": _canonical_fact(license),
+        "runtime": _canonical_fact(runtime),
+        "method": _canonical_fact(method),
+    }
+    payload = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
 
 
 def build_artifact_lineage_manifest(
@@ -202,16 +294,29 @@ def build_artifact_lineage_manifest(
                 "does not actually have"
             )
         unknown = _unknown(_UNKNOWN_ENDPOINT_DETAIL)
+        unknown_training = _unknown(_UNKNOWN_TRAINING_DETAIL)
+        unknown_data = _unknown(_UNKNOWN_DATA_DETAIL)
         return ArtifactLineageManifest(
             model_version_id=str(model_version.id),
             import_kind=model_version.import_kind,
             base=unknown,
             tokenizer=unknown,
-            training=_unknown(_UNKNOWN_TRAINING_DETAIL),
-            data=_unknown(_UNKNOWN_DATA_DETAIL),
+            training=unknown_training,
+            data=unknown_data,
             license=unknown,
             runtime=unknown,
             method=unknown,
+            manifest_digest=_compute_manifest_digest(
+                model_version_id=str(model_version.id),
+                import_kind=model_version.import_kind,
+                base=unknown,
+                tokenizer=unknown,
+                training=unknown_training,
+                data=unknown_data,
+                license=unknown,
+                runtime=unknown,
+                method=unknown,
+            ),
         )
 
     # full_weight / adapter: Section 68.1's own "no fabricated parent" rule
@@ -230,20 +335,90 @@ def build_artifact_lineage_manifest(
             "refusing to fabricate a parent other than the one this model version actually "
             "links to"
         )
+    # 2026-10-06 L2 round-2 review findings, all against the real parent
+    # `artifact` itself (previously checked only by id, never by status/
+    # tenant/digest consistency): a `registered` (still-mutable) or
+    # `archived` (closed) parent, a cross-tenant parent, or a parent whose
+    # own current weights_digest/base_model_revision has drifted from the
+    # value this model version's own immutable row already recorded at
+    # creation time, were all silently accepted before this fix.
+    if artifact.status != "ready":
+        raise ArtifactLineageError(
+            f"artifact {artifact.id} is status={artifact.status!r}, not 'ready' -- a "
+            "'registered' (still mutable) or 'archived' (closed) parent cannot back a real "
+            "lineage claim (Section 35: 'Every model version is immutable', FTF-0301's own "
+            "ready-transition gate)"
+        )
+    if artifact.organization_id != model_version.organization_id:
+        raise ArtifactLineageError(
+            f"artifact {artifact.id} belongs to organization {artifact.organization_id}, not "
+            f"model_version {model_version.id}'s own organization {model_version.organization_id} "
+            "-- refusing a cross-tenant parent"
+        )
+    if artifact.weights_digest != model_version.weights_digest:
+        raise ArtifactLineageError(
+            f"artifact {artifact.id}'s current weights_digest {artifact.weights_digest!r} does "
+            f"not match model_version {model_version.id}'s own recorded weights_digest "
+            f"{model_version.weights_digest!r} -- refusing a parent whose digest has drifted "
+            "from what this model version actually captured"
+        )
+    if artifact.base_model_revision != model_version.base_model_revision:
+        raise ArtifactLineageError(
+            f"artifact {artifact.id}'s current base_model_revision "
+            f"{artifact.base_model_revision!r} does not match model_version {model_version.id}'s "
+            f"own recorded base_model_revision {model_version.base_model_revision!r} -- refusing "
+            "a parent whose revision has drifted from what this model version actually captured"
+        )
+
+    if model_version.import_kind == "adapter":
+        # Previously optional: a caller could omit resolved_base_artifact
+        # entirely and skip every base-validation check below. Section
+        # 68.1's own "Adapter must resolve exact base" rule is not
+        # optional -- an adapter import always requires it.
+        if resolved_base_artifact is None:
+            raise ArtifactLineageError(
+                f"model_version {model_version.id} is import_kind='adapter' -- a real, "
+                "already-resolved resolved_base_artifact is required (Section 68.1: 'Adapter "
+                "must resolve exact base, not same-family guessed weights'); it is not optional"
+            )
+    elif resolved_base_artifact is not None:
+        raise ArtifactLineageError(
+            "resolved_base_artifact is only meaningful for import_kind='adapter' "
+            f"(Section 68.1's own adapter-vs-exact-base rule); got "
+            f"{model_version.import_kind!r}"
+        )
 
     if resolved_base_artifact is not None:
-        if model_version.import_kind != "adapter":
-            raise ArtifactLineageError(
-                "resolved_base_artifact is only meaningful for import_kind='adapter' "
-                f"(Section 68.1's own adapter-vs-exact-base rule); got "
-                f"{model_version.import_kind!r}"
-            )
         if resolved_base_artifact.status != "ready":
             raise AdapterBaseMismatchError(
                 f"resolved base artifact {resolved_base_artifact.id} is "
                 f"{resolved_base_artifact.status!r}, not 'ready' -- its own identity is not yet "
                 "pinned/resolved (FTF-0306), so it cannot validate this adapter's declared base"
             )
+        if resolved_base_artifact.organization_id != model_version.organization_id:
+            raise AdapterBaseMismatchError(
+                f"resolved base artifact {resolved_base_artifact.id} belongs to organization "
+                f"{resolved_base_artifact.organization_id}, not model_version "
+                f"{model_version.id}'s own organization {model_version.organization_id} -- "
+                "refusing a cross-tenant base"
+            )
+        # Identity: an adapter cannot resolve to itself as its own base --
+        # by row identity (self-parent) or by digest (an artifact whose
+        # claimed base shares the adapter's own weights_digest is exactly
+        # the same self-referential defect by a different field).
+        if resolved_base_artifact.id == artifact.id:
+            raise AdapterBaseMismatchError(
+                f"resolved base artifact {resolved_base_artifact.id} is the adapter artifact "
+                f"{artifact.id} itself -- an adapter cannot be its own base"
+            )
+        if resolved_base_artifact.weights_digest == artifact.weights_digest:
+            raise AdapterBaseMismatchError(
+                f"resolved base artifact {resolved_base_artifact.id}'s own weights_digest "
+                f"{resolved_base_artifact.weights_digest!r} equals adapter artifact "
+                f"{artifact.id}'s own weights_digest -- an adapter cannot be its own base"
+            )
+        # Digest/revision: the resolved base's own real, resolved identity
+        # must match what the adapter itself declares as its base.
         if resolved_base_artifact.base_model_revision != artifact.base_model_revision:
             raise AdapterBaseMismatchError(
                 f"adapter artifact {artifact.id} declares base_model_revision "
@@ -301,14 +476,55 @@ def build_artifact_lineage_manifest(
             "fabricated"
         )
 
+    training_fact = _unknown(_UNKNOWN_TRAINING_DETAIL)
+    data_fact = _unknown(_UNKNOWN_DATA_DETAIL)
     return ArtifactLineageManifest(
         model_version_id=str(model_version.id),
         import_kind=model_version.import_kind,
         base=base,
         tokenizer=tokenizer,
-        training=_unknown(_UNKNOWN_TRAINING_DETAIL),
-        data=_unknown(_UNKNOWN_DATA_DETAIL),
+        training=training_fact,
+        data=data_fact,
         license=license_fact,
         runtime=runtime,
         method=method,
+        manifest_digest=_compute_manifest_digest(
+            model_version_id=str(model_version.id),
+            import_kind=model_version.import_kind,
+            base=base,
+            tokenizer=tokenizer,
+            training=training_fact,
+            data=data_fact,
+            license=license_fact,
+            runtime=runtime,
+            method=method,
+        ),
     )
+
+
+def verify_artifact_lineage_manifest(manifest: ArtifactLineageManifest) -> None:
+    """Recompute `manifest`'s own canonical content digest from its actual
+    current field values and compare it against the digest it carries,
+    raising `ArtifactLineageManifestTamperedError` on any mismatch. This is
+    this task's own tamper-evidence requirement made real: a caller that
+    persists a manifest (e.g. under Section 77.4's own MLflow-referenced
+    evidence) and later reloads it can detect mutation (bypassing the
+    frozen-dataclass guard via `object.__setattr__`) or corruption across
+    the round trip, instead of trusting a reloaded manifest on sight."""
+    recomputed = _compute_manifest_digest(
+        model_version_id=manifest.model_version_id,
+        import_kind=manifest.import_kind,
+        base=manifest.base,
+        tokenizer=manifest.tokenizer,
+        training=manifest.training,
+        data=manifest.data,
+        license=manifest.license,
+        runtime=manifest.runtime,
+        method=manifest.method,
+    )
+    if recomputed != manifest.manifest_digest:
+        raise ArtifactLineageManifestTamperedError(
+            f"manifest for model_version {manifest.model_version_id} carries manifest_digest "
+            f"{manifest.manifest_digest!r}, but its own current field values recompute to "
+            f"{recomputed!r} -- the manifest was mutated or corrupted after construction"
+        )
