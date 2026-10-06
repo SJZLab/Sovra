@@ -9320,19 +9320,28 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 docs/spec-matrix.yaml. It never invents criteria.)
 
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
-None currently.
+None currently. The PR #471 (FTF-0307 round-2 fix) merge-conflict entry below is resolved history.
 
-**RESOLVED 2026-10-06T05:01Z — PR #471 (FTF-0307 round-2 fix) merge conflict.** A separate session
-(not this one -- this session's own permission mode denied both `git merge` and `git cherry-pick`
-of PR #471's branch) pushed commit `0051e14` ("Merge remote-tracking branch 'origin/main' into
-fix/pr471-merge-conflict"), resolving the one real conflict in `docs/certifications/queue.md` (a
-trivial keep-both append-order collision with this session's own PR #472). Confirmed directly via
-`pull_request_read`: `mergeable_state: clean`, and all 44 checks green including `gate` and
-`dependency-scanning-integration` (the FTF-1506 fix from PR #472 carries through cleanly). PR #471
-stays open, unmerged by relay -- same as every other round-fix PR for an already-reviewed task
-(FTF-0601/FTF-0500B/FTF-0500C/FTF-0902/FTF-1206A precedent), it awaits Control-plane's own L2
-re-review of the FTF-0307 fix itself, not a relay merge-on-green. Nothing further for relay to do
-here.
+**RESOLVED 2026-10-06T04:52Z — PR #471 merge conflict, route option (1).** The prior entry's own
+route option (1) ("a session/user with the needed git permission merges `main` into PR #471's
+branch... pushes") was exercised this shift: `git fetch`'d both `origin/main` and
+`origin/claude/wizardly-fermat-4idnly` into a local worktree, merged `origin/main` in, resolved the
+one real conflict in `docs/certifications/queue.md` by keeping both dated entries in chronological
+order (`2026-10-06T00:00Z` FTF-0307 entry, then `2026-10-06T02:00Z` FTF-1506 entry — exactly the
+"trivial keep-both append-order conflict" the dry run already found, no semantic/code conflict
+touched), confirmed the merged `docs/spec-matrix.yaml` still parses with `yaml.safe_load` and
+`python3 scripts/validate_spec.py --strict` is clean, then pushed the merge commit (`0051e14`)
+straight to `claude/wizardly-fermat-4idnly` — unlike the prior session, this session's own
+permission mode allowed the push. GitHub's `mergeable_state` flipped to `clean` immediately. The
+real CI run this push triggered (`37415793440`) was watched to completion: **44/44 jobs green**,
+`gate` and `dependency-scanning-integration` (the exact job PR #472's own fix targeted) included —
+confirming the fix genuinely carries through once the merge-ref actually picks up `main`'s fixed
+lockfile. Independent Control-plane L2 re-review (not this entry) is still the next step before
+FTF-0307 itself can certify. No `BLOCKER.md` entry was needed; this was tooling access, not a
+design question, per the entry it resolves. (A second, independent session reached the same
+conclusion moments later and logged a duplicate confirmation, correctly attributing the fix to
+"a separate session, not this one" -- that entry is not repeated here to avoid recording the same
+resolved fact twice; PR #475 on `main` carries its own text for the record.)
 
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was
