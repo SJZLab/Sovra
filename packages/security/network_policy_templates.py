@@ -39,7 +39,9 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Literal, cast
 
 import yaml
@@ -352,8 +354,29 @@ AllowedInternalEndpoint = CidrEndpoint | PodSelectorEndpoint
 # a template's own explicit endpoints, since a workload with zero DNS
 # egress cannot resolve even the internal service names its own allowed
 # endpoints might use.
-KUBE_DNS_NAMESPACE_LABELS: dict[str, str] = {"kubernetes.io/metadata.name": "kube-system"}
-KUBE_DNS_POD_LABELS: dict[str, str] = {"k8s-app": "kube-dns"}
+#
+# Read-only mappings: a caller who mutates a rendered manifest can never reach
+# these (render emits fresh copies), and nothing can clear them in place.
+KUBE_DNS_NAMESPACE_LABELS: Mapping[str, str] = MappingProxyType(
+    {"kubernetes.io/metadata.name": "kube-system"}
+)
+KUBE_DNS_POD_LABELS: Mapping[str, str] = MappingProxyType({"k8s-app": "kube-dns"})
+
+
+def _kube_dns_selector_labels() -> tuple[dict[str, str], dict[str, str]]:
+    """Fresh, caller-independent copies of the kube-dns selector labels.
+
+    An empty selector matches every pod / namespace, so an emptied constant
+    would silently turn the DNS carve-out into "allow everything on port 53":
+    refuse to render rather than emit it."""
+    namespace_labels = dict(KUBE_DNS_NAMESPACE_LABELS)
+    pod_labels = dict(KUBE_DNS_POD_LABELS)
+    if not namespace_labels or not pod_labels:
+        raise MissingExplicitScopingError(
+            "the kube-dns selector labels are empty -- an empty selector matches every "
+            "pod/namespace, so the DNS egress rule is refused rather than rendered"
+        )
+    return namespace_labels, pod_labels
 
 
 @dataclass(frozen=True)
@@ -522,12 +545,13 @@ def render_network_policy_manifest(template: NetworkPolicyTemplate) -> dict:
 
     egress_rules: list[dict] = []
     if template.allow_dns:
+        dns_namespace_labels, dns_pod_labels = _kube_dns_selector_labels()
         egress_rules.append(
             {
                 "to": [
                     {
-                        "namespaceSelector": {"matchLabels": KUBE_DNS_NAMESPACE_LABELS},
-                        "podSelector": {"matchLabels": KUBE_DNS_POD_LABELS},
+                        "namespaceSelector": {"matchLabels": dns_namespace_labels},
+                        "podSelector": {"matchLabels": dns_pod_labels},
                     }
                 ],
                 "ports": [{"protocol": "UDP", "port": 53}, {"protocol": "TCP", "port": 53}],
