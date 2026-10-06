@@ -23232,3 +23232,23 @@ FTF-0307 or any other task -- this was returned-work git maintenance (resolving 
 conflict per its own recorded route option), not a certification claim or a new DoD submission.
 `QUEUE.md`'s own "## Parked" entry is resolved to "None currently" with this resolution recorded as
 history in place.
+
+
+## 2026-10-06T09:10Z — Relay maintenance: fixed six open [relay] PRs' merge conflicts (#463, #464, #465, #468, #470, #471)
+
+Not a fix-and-resubmit of any uncertified task's own code -- every conflict was confined to the three append-only
+log files (`PROGRESS.md`, `QUEUE.md`, this file), never a code/test/`docs/spec-matrix.yaml` file, and no task's
+`certification_state`/`proof_state` changes here. Logged for visibility since it unblocked CI on six PRs that
+were stuck `dirty` against the current `main` tip.
+
+`git merge-tree --write-tree` triage against all open PR branches found two conflict shapes: a pure append-order
+one (two unrelated dated log entries, one per side -- resolved keep-both) and, on #465 and #468 only, a
+status-field overwrite in `QUEUE.md`'s own "## Active" item bullets (both sides edited the same mutable status
+prose) -- resolved by taking `origin/main`'s strictly-newer version there instead of keep-both, to avoid leaving
+two contradictory status blocks in the live tracker. Each resolution validated (`yaml.safe_load` on the merged
+spec-matrix, `python3 scripts/validate_spec.py --strict` clean) before commit, then pushed to each PR's own
+existing branch -- #463 `2c8764c`, #464 `6af3734`, #465 `8dd558e`, #468 `2e73679`, #470 `8b5ccb7`, #471
+`991e8b3`. `mergeable_state` confirmed flipped away from `dirty` on every one immediately after.
+
+**Not self-certified (Law 4):** nothing here changes `certification_state`/`proof_state` on any of the six
+tasks -- this was returned-work git maintenance, not a certification claim or a new DoD submission.

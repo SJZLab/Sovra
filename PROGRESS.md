@@ -29313,3 +29313,74 @@ work was fixing parked returned-work (top priority per CLAUDE.md's own ordering)
 **FTF-1002, FTF-0510, FTF-04A18 and FTF-1807 remain the next-priority, not-yet-attempted items** per the Active
 list's own stated order. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged: "None currently").
 `BLOCKER.md` unchanged — no live entries.
+
+
+## 2026-10-06T09:10:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-f2k9bf` — fixed six
+## open [relay] PRs' merge conflicts (returned work, STEP 1 priority); no new backlog item picked
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly -- no mismatch. STEP 0.1: read
+`BLOCKER.md` (no live entries), `QUEUE.md`'s "Owner actions -- current" (none open), "## Active" and "## Parked"
+sections, and `docs/certifications/queue.md`'s tail, all fresh this shift. STEP 0.2: no `cognee-cli` binary in
+this sandbox -- text-search fallback declared, same as every prior shift.
+
+Per CLAUDE.md "Returned work first... a merge conflict... outranks starting a fresh backlog item," checked every
+open `[relay]` PR's real `mergeable_state` directly (`list_pull_requests`/`pull_request_read get`), not trusted
+from any prior shift's summary (PR #471's own conflict had already been fixed once earlier today, then went
+`dirty` again as `main` kept advancing with further append-only doc commits -- a live re-check caught this).
+Found six open PRs genuinely conflicted against the current `main` tip (`55b489d`): #463, #464, #465, #468,
+#470, #471. PR #476 (FTF-1002, opened the same morning by a concurrent session) was confirmed clean, untouched.
+
+**P** -- ran `git merge-tree --write-tree origin/main origin/<branch>` (no refs touched) against all seven open
+branches first, to see the real shape of every conflict before committing to fixing any of them. Every conflict
+was confined to the three append-only log files (`PROGRESS.md`, `QUEUE.md`, `docs/certifications/queue.md`) --
+never a code, test, or `docs/spec-matrix.yaml` file -- the same class PR #471's own earlier-today fix already
+established a precedent for (keep-both, append-order, no semantic content changed).
+
+**E** -- for each of the six, in a dedicated local worktree: `git merge origin/main --no-edit`, then resolved by
+hand rather than a blind script, because two distinct conflict shapes turned up:
+- **Pure append-order** (the common case): two unrelated dated log entries, one per side, neither contradicting
+  the other -- resolved by keeping both, in the order the conflict hunk itself already presented (which was
+  chronological in every case checked).
+- **Status-field overwrite** (found in `QUEUE.md`'s own "## Active" item 0/1 bullets, on #465 and #468 only):
+  both sides had edited the *same* mutable status prose (FTF-0500C/B/D's own 0c2/0c3/0d sub-items; FTF-0902's own
+  item 1), not appended a new entry. Keeping both would have left two contradictory, stale-vs-current status
+  blocks in the live "Active" tracker. Resolved by taking `origin/main`'s version only in those exact spots --
+  it was always the strictly newer, superseding status (on #468, `main`'s own version already named that PR,
+  `#468` itself, as the fix that landed -- unambiguous evidence it postdated the branch's own stale copy).
+
+Found and fixed two splice-introduced missing-blank-line glitches along the way (a heading landing directly after
+the preceding entry's last line, no blank separator) -- cosmetic only, same convention every other entry in these
+files already uses. Confirmed zero conflict-marker residue (`grep` for `<<<<<<<`/`=======`/`>>>>>>>`) in every
+file before proceeding.
+
+**V** -- for each of the six, before committing: `python3 -c "import yaml; yaml.safe_load(open('docs/spec-matrix.yaml'))"`
+confirmed the merged YAML still parses (this repo's own 2026-10-01 lesson on this exact failure mode), and
+`python3 scripts/validate_spec.py --strict` reported "task graph and verification-map are clean" in every case.
+`git status --short` confirmed only the three doc files plus `docs/spec-matrix.yaml`/`pnpm-lock.yaml`/one test
+file auto-merged cleanly from `main` -- no manual conflict touched those. Committed (`git commit --no-edit`,
+standard merge-commit message) and pushed directly to each PR's own existing branch -- never to `main`, never to
+a different branch than the one that opened the PR, same boundary every prior shift has held to:
+- #463 (`claude/wizardly-fermat-7vy5ny`) -> `2c8764c`
+- #464 (`claude/wizardly-fermat-a6faz0`) -> `6af3734`
+- #465 (`claude/wizardly-fermat-j8lgbg`) -> `8dd558e`
+- #468 (`claude/wizardly-fermat-6n6dmf`) -> `2e73679`
+- #470 (`claude/wizardly-fermat-shlvk5`) -> `8b5ccb7`
+- #471 (`claude/wizardly-fermat-4idnly`) -> `991e8b3`
+
+`pull_request_read get` immediately after each push confirmed `mergeable_state` flipped away from `dirty` on
+every one (to `clean` on #463, `unstable` on the rest while the fresh CI run each push triggered was still in
+progress at the time of this check) -- none stayed `dirty`. Real CI reruns were triggered on all six by the
+push itself; not awaited to completion this shift (that is Control plane's/the next event-driven wake's own
+job, same as every other already-open PR in this backlog).
+
+**V (certification)** -- per Law 4, not self-certified: nothing here changes any task's `certification_state`/
+`proof_state`; this was returned-work git maintenance on six already-open, already-PROVISIONAL PRs, not a
+certification claim or a new DoD submission for any of them.
+
+STEP 3: this file, `QUEUE.md` and `docs/certifications/queue.md` updated this shift, before compaction. STEP 4
+stop condition (a): all six PRs are unparked, each now awaiting its own fresh CI result and then independent
+Control-plane L2 re-review. Stopping here -- this shift's own work was fixing returned-work merge conflicts (top
+priority per CLAUDE.md's own STEP 1 ordering), not a new backlog pick; **FTF-1002 (PR #476, open, clean),
+FTF-0510, FTF-04A18 and FTF-1807 remain the next-priority items** per the Active list's own stated order for a
+future shift. No open owner ask (`QUEUE.md` "Owner actions -- current" unchanged: "None currently").
+`BLOCKER.md` unchanged -- no live entries.

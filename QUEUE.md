@@ -1,4 +1,58 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-06T09:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-f2k9bf`) --
+  STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly, no mismatch.
+  STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh. `BLOCKER.md`: no
+  live entries. STEP 0.2: no `cognee-cli` binary in this sandbox -- text-search fallback declared,
+  same as every prior shift.
+
+  Per STEP 1 ("returned work first... a merge conflict... outranks starting a fresh backlog item"),
+  checked every open `[relay]` PR's real `mergeable_state` directly (`list_pull_requests` +
+  `pull_request_read get`) rather than trusting prior-shift notes. Found **six** open PRs with a
+  real merge conflict against the current `main` tip (`55b489d`) -- #463 (FTF-0601), #464
+  (FTF-0500C round 5), #465 (FTF-0500B round 4), #468 (FTF-0902), #470 (FTF-1206A), and #471
+  (FTF-0307, already fixed once this same day by an earlier shift, but `main` had advanced again
+  with further append-only doc commits since). #476 (FTF-1002, opened 07:04Z by a concurrent
+  session) was confirmed clean -- not touched.
+
+  **Triage (`git merge-tree --write-tree`, no refs touched, run against every open PR branch
+  before committing to fixing any):** every real conflict was confined to the three append-only
+  log files (`PROGRESS.md`, `QUEUE.md`, `docs/certifications/queue.md`) -- never a code file --
+  the same class PR #471's own earlier-today fix already established a precedent for. Two sub-kinds
+  found: (a) a pure append-order conflict (two distinct dated log entries, one per side, both
+  historical and non-contradictory) -- resolved by keeping both, in as-close-to-chronological-order
+  as the existing conflict hunk already presented, consistent with the established precedent; (b) a
+  **status-field** conflict in `QUEUE.md`'s own "## Active" item 0/1 bullets (FTF-0500C/B/D's own
+  0c2/0c3/0d sub-items on #465, and FTF-0902's own item 1 on #468), where both sides edited the
+  *same* mutable status text rather than appending a new entry -- resolved by taking `origin/main`'s
+  version only in those spots, since it was always the strictly newer, superseding status (in #468's
+  case, `main`'s own version already named this very PR, `#468`, as the fix). No code, test, or
+  `docs/spec-matrix.yaml` content was touched or judged in either case -- pure git mechanics on
+  doc-log files, the same boundary PR #471's own earlier fix stayed inside.
+
+  **Execution (six local worktrees, one per PR, each: `git merge origin/main --no-edit`, resolve,
+  fix two splice-introduced missing-blank-line glitches found along the way, confirm zero
+  conflict-marker residue via `grep`, validate `yaml.safe_load` on `docs/spec-matrix.yaml` and
+  `python3 scripts/validate_spec.py --strict`, commit, push to the PR's own existing branch):**
+  #463 (`2c8764c`), #464 (`6af3734`), #465 (`8dd558e`), #468 (`2e73679`), #470 (`8b5ccb7`), #471
+  (`991e8b3`). `pull_request_read get` confirmed every one's `mergeable_state` flipped away from
+  `dirty` (to `clean` or `unstable`-while-the-fresh-CI-run-this-push-triggered-completes) --
+  none stayed `dirty`. No push to `main` itself; each push went to that PR's own already-existing
+  branch, same "never push to a different branch without explicit permission" boundary every prior
+  shift has held to.
+
+  **V (certification):** per Law 4, not self-certified -- nothing here changes any task's
+  `certification_state`/`proof_state`; this was returned-work git maintenance on six already-open,
+  already-PROVISIONAL PRs, not a certification claim or a new DoD submission for any of them.
+
+  STEP 3: this file, `PROGRESS.md` and `docs/certifications/queue.md` updated this shift, before
+  compaction. STEP 4 stop condition (a): all six PRs are unparked, each awaiting its own fresh CI
+  run and then independent Control-plane L2 re-review. Stopping here -- this shift's own work was
+  fixing returned-work merge conflicts (top priority per CLAUDE.md's own STEP 1 ordering), not a new
+  backlog pick; **FTF-1002 (PR #476, open, clean), FTF-0510, FTF-04A18 and FTF-1807 remain the
+  next-priority items** per the Active list's own stated order for a future shift. No open owner ask
+  (`QUEUE.md` "Owner actions -- current" unchanged: "None currently"). `BLOCKER.md` unchanged -- no
+  live entries.
+
 Updated: 2026-10-06T02:00:00Z (scheduled relay shift, branch `claude/wizardly-fermat-3kfw8a`) --
   STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly, no mismatch;
   `BLOCKER.md` read in full: no live entries (all RESOLVED history). STEP 0.1: this branch was
