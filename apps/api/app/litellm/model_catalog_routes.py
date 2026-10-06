@@ -188,7 +188,7 @@ def _revoked_snapshot(snapshot: CatalogSnapshot) -> CatalogSnapshot:
         access_state=AccessState.REVOKED,
         entries=tuple(
             replace(entry, status=CatalogEntryStatus.STALE)
-            if entry.status == CatalogEntryStatus.CALLABLE
+            if entry.status is CatalogEntryStatus.CALLABLE
             else entry
             for entry in snapshot.entries
         ),
