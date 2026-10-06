@@ -682,6 +682,173 @@ def test_addendum_shaped_ids_without_an_addendum_file_are_never_excused():
     )
 
 
+def test_sync_certified_status_updates_an_existing_tracker_entry_exactly():
+    # FTF-H034-F2: pins the TRACKER.json update branch (an entry that already exists).
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = pathlib.Path(tmp)
+        addenda_dir = tmp_dir / "addenda"
+        addenda_dir.mkdir()
+        tasks_path = tmp_dir / "tasks.json"
+        tracker_path = tmp_dir / "tracker.json"
+        tasks_path.write_text(json.dumps({"tasks": []}), encoding="utf-8")
+        tracker_path.write_text(
+            json.dumps(
+                {
+                    "tasks": {
+                        # CERTIFIED already, but carrying a stale evidence hash.
+                        "T-RECERT": {"status": "CERTIFIED", "evidence": ["old"], "keep": 1},
+                        # not yet CERTIFIED, no evidence.
+                        "T-FRESH": {"status": "NOT_STARTED", "evidence": []},
+                        # not yet CERTIFIED, but already holds the current hash.
+                        "T-HASHED": {"status": "NOT_STARTED", "evidence": ["h3"]},
+                        # CERTIFIED with evidence, and the matrix hash is empty.
+                        "T-EMPTY-KEEP": {"status": "CERTIFIED", "evidence": ["kept"]},
+                        # not CERTIFIED, and the matrix hash is empty.
+                        "T-EMPTY-NEW": {"status": "NOT_STARTED", "evidence": []},
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        def sync(hashes: dict[str, str]) -> list[str]:
+            return sync_certified_status(
+                certification_states={tid: "CERTIFIED" for tid in hashes},
+                spec_matrix={tid: {"evidence_hash": h} for tid, h in hashes.items()},
+                tasks_path=tasks_path,
+                tracker_path=tracker_path,
+                addenda_dir=addenda_dir,
+            )
+
+        hashes = {
+            "T-RECERT": "new",
+            "T-FRESH": "h2",
+            "T-HASHED": "h3",
+            "T-EMPTY-KEEP": "",
+            "T-EMPTY-NEW": "",
+        }
+        updated = sync(hashes)
+        entries = json.loads(tracker_path.read_text(encoding="utf-8"))["tasks"]
+        check(
+            "FTF-H034-F2",
+            "re-certifying an existing CERTIFIED entry with a new hash REPLACES its evidence "
+            "with exactly [new] and reports the id",
+            entries["T-RECERT"]["evidence"] == ["new"]
+            and entries["T-RECERT"]["status"] == "CERTIFIED"
+            and entries["T-RECERT"]["keep"] == 1
+            and "T-RECERT" in updated,
+        )
+        check(
+            "FTF-H034-F2",
+            "a NOT_STARTED entry with a hash becomes CERTIFIED with evidence exactly [hash]",
+            entries["T-FRESH"] == {"status": "CERTIFIED", "evidence": ["h2"]}
+            and "T-FRESH" in updated,
+        )
+        check(
+            "FTF-H034-F2",
+            "a NOT_STARTED entry already holding the current hash becomes CERTIFIED without "
+            "its evidence being rewritten or duplicated",
+            entries["T-HASHED"] == {"status": "CERTIFIED", "evidence": ["h3"]}
+            and "T-HASHED" in updated,
+        )
+        check(
+            "FTF-H034-F2",
+            "an empty matrix hash never overwrites existing evidence and an unchanged CERTIFIED "
+            "entry is not reported as updated",
+            entries["T-EMPTY-KEEP"] == {"status": "CERTIFIED", "evidence": ["kept"]}
+            and "T-EMPTY-KEEP" not in updated,
+        )
+        check(
+            "FTF-H034-F2",
+            'an empty matrix hash promotes the status but NEVER writes evidence == [""]',
+            entries["T-EMPTY-NEW"] == {"status": "CERTIFIED", "evidence": []}
+            and "T-EMPTY-NEW" in updated,
+        )
+        check(
+            "FTF-H034-F2",
+            "no entry anywhere carries an empty-string evidence hash",
+            all("" not in e.get("evidence", []) for e in entries.values()),
+        )
+        check(
+            "FTF-H034-F2",
+            "the update branch returns exactly the sorted set of ids it changed",
+            updated == ["T-EMPTY-NEW", "T-FRESH", "T-HASHED", "T-RECERT"],
+        )
+
+        before = tracker_path.read_bytes()
+        tasks_before = tasks_path.read_bytes()
+        second = sync(hashes)
+        check(
+            "FTF-H034-F2",
+            "a second sync is idempotent: it returns [] and leaves both files byte-identical",
+            second == []
+            and tracker_path.read_bytes() == before
+            and tasks_path.read_bytes() == tasks_before,
+        )
+
+
+def test_sync_certified_status_tasks_json_update_condition_is_an_or():
+    # FTF-H034-F2: spec/tasks.json is updated when EITHER the status is not CERTIFIED OR the
+    # hash is missing from its evidence -- each half alone must trigger the update.
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = pathlib.Path(tmp)
+        tasks_path = tmp_dir / "tasks.json"
+        tracker_path = tmp_dir / "tracker.json"
+        tracker_path.write_text(json.dumps({"tasks": {}}), encoding="utf-8")
+        tasks_path.write_text(
+            json.dumps(
+                {
+                    "tasks": [
+                        # status wrong, hash already present: only the status half is true.
+                        {"id": "T-STATUS", "status": "NOT_STARTED", "evidence": ["h1"]},
+                        # status right, hash stale: only the evidence half is true.
+                        {"id": "T-EVIDENCE", "status": "CERTIFIED", "evidence": ["old"]},
+                        # both already right: must not be reported.
+                        {"id": "T-SAME", "status": "CERTIFIED", "evidence": ["h3"]},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        updated = sync_certified_status(
+            certification_states={
+                "T-STATUS": "CERTIFIED",
+                "T-EVIDENCE": "CERTIFIED",
+                "T-SAME": "CERTIFIED",
+            },
+            spec_matrix={
+                "T-STATUS": {"evidence_hash": "h1"},
+                "T-EVIDENCE": {"evidence_hash": "h2"},
+                "T-SAME": {"evidence_hash": "h3"},
+            },
+            tasks_path=tasks_path,
+            tracker_path=tracker_path,
+            addenda_dir=tmp_dir / "no-addenda",
+        )
+        by_id = {t["id"]: t for t in json.loads(tasks_path.read_text(encoding="utf-8"))["tasks"]}
+        check(
+            "FTF-H034-F2",
+            "a wrong status alone (hash already in evidence) still updates the tasks.json entry",
+            by_id["T-STATUS"] == {"id": "T-STATUS", "status": "CERTIFIED", "evidence": ["h1"]}
+            and "T-STATUS" in updated,
+        )
+        check(
+            "FTF-H034-F2",
+            "a stale evidence hash alone (status already CERTIFIED) still updates the entry",
+            by_id["T-EVIDENCE"] == {"id": "T-EVIDENCE", "status": "CERTIFIED", "evidence": ["h2"]}
+            and "T-EVIDENCE" in updated,
+        )
+        check(
+            "FTF-H034-F2",
+            "an already-correct tasks.json entry is not reported",
+            "T-SAME" not in updated,
+        )
+
+
 def main():
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):
