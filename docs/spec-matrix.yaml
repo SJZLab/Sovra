@@ -2059,6 +2059,16 @@ FTF-0307:
 
     Not self-certified (Law 4) -- independent Control-plane L2 re-review and a real CI run on the
     opened PR are required before certification.
+
+    L2 round-3 fix-and-resubmit (2026-10-06, docs/certifications/queue.md "2026-10-06T09:45Z"):
+    (1) registered/archived artifacts WITH a valid digest -> unknown; (2) model_id alias tests
+    (probe-only `ft:x` -> inference_only, rename carries no evidence) plus an in-suite additive
+    name-allow fault test; (3) case/whitespace probe and access variants -> no match, artifact_id
+    pinned to the real id; (4) the shared artifact_schema.validate_weights_digest is now used by the
+    classifier, artifact_crud.apply_mark_ready and model_version_crud.create_model_version, with
+    tests in test_ftf_0307/0301/1001; (5) a non-str status -> unknown, never TypeError. Same-class
+    sweep: apply_mark_ready now refuses any status other than `registered`. Fault -> RED table:
+    docs/certifications/submissions/2026-10-06T1500Z-FTF-0307.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0307.py

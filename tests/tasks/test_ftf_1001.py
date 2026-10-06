@@ -131,6 +131,121 @@ def _make_full_weight_version(**overrides: object) -> ModelVersion:
 # -- 1. validate_import_kind / validate_endpoint_reference -------------------
 
 
+_MALFORMED_DIGESTS: tuple[object, ...] = (
+    "",
+    "sha256:",
+    "sha256:" + "A" * 64,
+    "SHA256:" + "a" * 64,
+    "sha256:" + "a" * 63,
+    "sha256:" + "a" * 65,
+    " sha256:" + "a" * 64,
+    "sha256:" + "a" * 64 + " ",
+    "sha256:" + "a" * 64 + "\n",
+    "sha512:" + "a" * 64,
+    b"sha256:" + b"a" * 64,
+)
+
+
+class _GatePassed(Exception):
+    """Raised by the patched `_next_version_number`: the artifact gate let
+    the import through to version numbering."""
+
+
+def _create_with_artifact_digest(digest: object) -> str:
+    """Drive the real `create_model_version` with a ready artifact carrying
+    `digest`. Only the project-authorization and artifact-fetch DB calls are
+    replaced; the artifact gate under test runs unmodified. Returns
+    "refused", "passed" or the unexpected exception's repr."""
+    from app.artifacts.artifact_schema import TrainableArtifact
+    from app.model_versions import model_version_crud
+
+    artifact = TrainableArtifact(
+        organization_id=_ORG_ID,
+        display_name="llama-8b",
+        source_type="huggingface",
+        source_uri="meta-llama/Llama-3.1-8B",
+        model_family="llama",
+        base_model_revision="a" * 40,
+        license_id="apache-2.0",
+        status="ready",
+    )
+    artifact.id = _ARTIFACT_ID
+    # Set post-construction, as an ORM-loaded row would carry it.
+    artifact.weights_digest = digest  # type: ignore[assignment]
+
+    def _no_authz(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    def _fetch(*_args: object, **_kwargs: object) -> TrainableArtifact:
+        return artifact
+
+    def _next(*_args: object, **_kwargs: object) -> int:
+        raise _GatePassed
+
+    saved = (
+        model_version_crud._authorize_project_or_raise,
+        model_version_crud.get_artifact,
+        model_version_crud._next_version_number,
+    )
+    model_version_crud._authorize_project_or_raise = _no_authz
+    model_version_crud.get_artifact = _fetch
+    model_version_crud._next_version_number = _next
+    try:
+        create_model_version(
+            MagicMock(),
+            MagicMock(organization_id=_ORG_ID),
+            project_id=_PROJECT_ID,
+            import_kind="full_weight",
+            trainable_artifact_id=_ARTIFACT_ID,
+            actor=MagicMock(actor_type="user", actor_id="user-1", request_id="r-1"),
+        )
+        return "no-exception"
+    except model_version_crud.ModelVersionArtifactStateError:
+        return "refused"
+    except _GatePassed:
+        return "passed"
+    except Exception as exc:  # noqa: BLE001 -- reported by the caller's check
+        return repr(exc)
+    finally:
+        (
+            model_version_crud._authorize_project_or_raise,
+            model_version_crud.get_artifact,
+            model_version_crud._next_version_number,
+        ) = saved
+
+
+def test_create_refuses_every_malformed_artifact_weights_digest() -> None:
+    """FTF-0307 round-3 same-class sweep (docs/certifications/queue.md
+    "2026-10-06T09:45Z" DoD (4)): `create_model_version` re-validates the
+    parent artifact's digest with the shared `validate_weights_digest`, not
+    merely `is None`, before copying it into the model version."""
+    for digest in _MALFORMED_DIGESTS:
+        outcome = _create_with_artifact_digest(digest)
+        check(
+            "FTF-1001",
+            f"negative_acceptance: a ready artifact with digest {digest!r} cannot back a "
+            f"model-version import (got {outcome})",
+            outcome == "refused",
+        )
+    check(
+        "FTF-1001",
+        "a ready artifact with a real sha256 digest passes the gate (no over-blocking)",
+        _create_with_artifact_digest(_REAL_DIGEST) == "passed",
+    )
+
+
+def test_model_version_crud_uses_the_shared_validate_weights_digest() -> None:
+    from app.artifacts import artifact_schema
+    from app.model_versions import model_version_crud
+
+    check(
+        "FTF-1001",
+        "model_version_crud binds the shared artifact_schema.validate_weights_digest",
+        getattr(model_version_crud, "validate_weights_digest", None)
+        is artifact_schema.validate_weights_digest,
+    )
+
+
 def test_validate_import_kind_is_the_closed_three_kind_set() -> None:
     check(
         "FTF-1001",
