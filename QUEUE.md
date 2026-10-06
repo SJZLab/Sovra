@@ -64,8 +64,6 @@ Updated: 2026-10-05T23:30:00Z (scheduled relay shift, branch `claude/wizardly-fe
   state: IMPLEMENTED`) with the full clause-to-test mapping. Appended a full evidence entry to
   `docs/certifications/queue.md`. Updated this file's own "## Active" item 0e (FTF-1206A done, PR
   opened) and "## Backlog" (FTF-1206A removed, now below the Refill & Sweep ">= 3" target -- next
-- **FTF-H034-F4 (tests only, Control plane 2026-10-06T23:00Z):** kill or justify the 12 mutation survivors in
-  `scripts/task_claim.py` lines 80–270 (claim registry). Run the gate whole-file with `--files`. Claim `relay/FTF-H034-F4-r1`.
   shift should run Refill & Sweep).
 
   **V (certification)** -- per Law 4, not self-certified: `certification_state: PROVISIONAL`/
@@ -9446,6 +9444,8 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 "2026-10-01T13:40Z". One PR per item group, titled "[relay] <ID>: fix L2 round-2 findings".
 
 ## Backlog (sliced, ready — relay takes these after Active; Refill & Sweep keeps >= 3)
+- **FTF-H034-F4 (tests only, Control plane 2026-10-06T23:00Z):** kill or justify the 12 mutation survivors in
+  `scripts/task_claim.py` lines 80–270 (claim registry). Run the gate whole-file with `--files`. Claim `relay/FTF-H034-F4-r1`.
 0. **FTF-0510** Tokenization analysis. Dependency-ready since FTF-0306 was certified on
    2026-10-01. DoD: `python tools/r1_handoff.py packet FTF-0510 --plan
    FINE_TUNING_FACTORY_RELEASE_1.md`. Next on the FTF-1703 critical path.
