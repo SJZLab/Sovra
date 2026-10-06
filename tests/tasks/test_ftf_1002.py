@@ -59,6 +59,7 @@ Run directly: python3 tests/tasks/test_ftf_1002.py
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import uuid
@@ -107,6 +108,9 @@ def _artifact(
     weights_digest: str | None = _REAL_DIGEST,
     model_family: str = "tiny",
     required_python_packages: list[str] | None = None,
+    license_id: str = "apache-2.0",
+    license_accepted_by: str = "reviewer-1",
+    license_accepted_at: datetime | None = None,
 ) -> TrainableArtifact:
     now = datetime.now(UTC)
     artifact = TrainableArtifact(
@@ -117,7 +121,7 @@ def _artifact(
         model_family=model_family,
         base_model_revision=base_model_revision,
         weights_digest=weights_digest,
-        license_id="apache-2.0",
+        license_id=license_id,
         trust_remote_code_allowed=False,
         status=status,
         required_python_packages_json=required_python_packages or [],
@@ -126,8 +130,10 @@ def _artifact(
     artifact.created_at = now
     artifact.updated_at = now
     if status == "ready":
-        artifact.license_accepted_by = "reviewer-1"
-        artifact.license_accepted_at = now
+        artifact.license_accepted_by = license_accepted_by
+        artifact.license_accepted_at = (
+            license_accepted_at if license_accepted_at is not None else now
+        )
     return artifact
 
 
@@ -1262,6 +1268,537 @@ build_artifact_lineage_manifest(mv, None, resolved_base_artifact=stray_base)
 print("NO_ERROR_RAISED")
 """,
         description="endpoint + resolved_base_artifact refusal bypass",
+    )
+
+
+# -- Round-4 return (2026-10-06T16:35Z, PR #490 returned): 3 blocking findings ----
+#
+# (d) every fixture used the SAME license_id="apache-2.0" -- a hardcoded license.value, a dropped
+#     accepted_by, a dropped accepted_at, or an adapter's base.value silently switched to the
+#     resolved base's own digest instead of the adapter artifact's own digest, would all have
+#     stayed GREEN. Nothing ever varied to expose any of the four.
+# (b) `_canonical_fact` dropping "detail" (or "value", or "known") stays GREEN, because every
+#     existing tamper test swaps a whole LineageFact for a different one (always changing several
+#     sub-fields together) -- never mutates exactly one sub-field in isolation. Also: two adapters
+#     differing only in the resolved base's own id or digest must produce different
+#     manifest_digests (the resolved-base part must genuinely be hashed, not merely described).
+# (a) no behavioral test covered a None/blank/malformed/whitespace resolved-base weights_digest
+#     with the adapter's own digest genuinely valid throughout.
+
+
+def test_r4_license_fact_binds_the_real_per_artifact_license_and_acceptance_detail() -> None:
+    """Round-4 DoD (d): two artifacts with distinct, non-default license_id/accepted_by/
+    accepted_at values prove the manifest genuinely binds each artifact's own real license fact,
+    not a value every prior fixture happened to share."""
+    accepted_at_a = datetime(2025, 3, 1, 12, 0, 0, tzinfo=UTC)
+    artifact_a = _artifact(
+        license_id="mit", license_accepted_by="reviewer-alpha", license_accepted_at=accepted_at_a
+    )
+    manifest_a = build_artifact_lineage_manifest(
+        _linked_full_weight_model_version(artifact_a), artifact_a
+    )
+
+    accepted_at_b = datetime(2025, 9, 15, 8, 30, 0, tzinfo=UTC)
+    artifact_b = _artifact(
+        license_id="gpl-3.0", license_accepted_by="reviewer-beta", license_accepted_at=accepted_at_b
+    )
+    manifest_b = build_artifact_lineage_manifest(
+        _linked_full_weight_model_version(artifact_b), artifact_b
+    )
+
+    check(
+        "FTF-1002",
+        "artifact A's license fact carries its own non-default license_id, not a hardcoded "
+        "'apache-2.0'",
+        manifest_a.license.value == "mit",
+    )
+    check(
+        "FTF-1002",
+        "artifact A's license detail carries its own real accepted_by and accepted_at",
+        "reviewer-alpha" in manifest_a.license.detail
+        and accepted_at_a.isoformat() in manifest_a.license.detail,
+    )
+    check(
+        "FTF-1002",
+        "artifact B's license fact carries its own distinct license_id",
+        manifest_b.license.value == "gpl-3.0",
+    )
+    check(
+        "FTF-1002",
+        "artifact B's license detail carries its own real accepted_by and accepted_at, distinct "
+        "from artifact A's",
+        "reviewer-beta" in manifest_b.license.detail
+        and accepted_at_b.isoformat() in manifest_b.license.detail,
+    )
+    check(
+        "FTF-1002",
+        "the two artifacts' license facts are genuinely distinct, not a shared default",
+        manifest_a.license.value != manifest_b.license.value
+        and manifest_a.license.detail != manifest_b.license.detail,
+    )
+
+
+def test_r4_adapter_base_value_is_the_artifacts_own_digest_not_the_resolved_bases() -> None:
+    """Round-4 DoD (d): no existing test asserted WHICH digest `manifest.base.value` carries for
+    an adapter import -- only that it is `known`
+    (`test_adapter_import_reports_method_adapter`). Assert the exact value: the adapter artifact's
+    OWN weights_digest, never the resolved base artifact's digest (deliberately distinct here so
+    the two cannot be confused)."""
+    artifact = _artifact(base_model_revision="shared-rev-5", weights_digest=_REAL_DIGEST)
+    model_version = _model_version(
+        import_kind="adapter",
+        trainable_artifact_id=artifact.id,
+        weights_digest=artifact.weights_digest,
+        base_model_revision=artifact.base_model_revision,
+    )
+    base_artifact = _artifact(
+        status="ready", base_model_revision="shared-rev-5", weights_digest=_BASE_DIGEST
+    )
+    manifest = build_artifact_lineage_manifest(
+        model_version, artifact, resolved_base_artifact=base_artifact
+    )
+    check(
+        "FTF-1002",
+        "an adapter's base fact value is the adapter artifact's OWN weights_digest",
+        manifest.base.value == _REAL_DIGEST,
+    )
+    check(
+        "FTF-1002",
+        "an adapter's base fact value is never the resolved base artifact's own digest",
+        manifest.base.value != _BASE_DIGEST,
+    )
+
+
+def test_r4_resolved_base_weights_digest_none_blank_malformed_or_whitespace_is_refused() -> None:
+    """Round-4 DoD (a): None/blank/'abc'/whitespace on the resolved base's own weights_digest,
+    with the adapter's own digest genuinely valid throughout (isolating this from
+    `test_r3_malformed_digest_on_both_sides_is_refused`, which perturbs the ADAPTER's own digest,
+    and from the case-variant-only `test_r3_resolved_base_case_variant_digest_is_refused`), must
+    each be refused."""
+    for bad_base_digest in (None, "", "abc", "sha256:" + "a" * 64 + " "):
+        artifact = _artifact(base_model_revision="shared-rev-6")
+        model_version = _model_version(
+            import_kind="adapter",
+            trainable_artifact_id=artifact.id,
+            weights_digest=artifact.weights_digest,
+            base_model_revision=artifact.base_model_revision,
+        )
+        base_artifact = _artifact(status="ready", base_model_revision="shared-rev-6")
+        base_artifact.weights_digest = bad_base_digest  # post-construction: bypasses __init__
+        try:
+            build_artifact_lineage_manifest(
+                model_version, artifact, resolved_base_artifact=base_artifact
+            )
+            check(
+                "FTF-1002",
+                f"negative_acceptance: a resolved base with weights_digest={bad_base_digest!r} "
+                "(adapter's own digest genuinely valid) is refused",
+                False,
+            )
+        except AdapterBaseMismatchError:
+            check(
+                "FTF-1002",
+                f"negative_acceptance: a resolved base with weights_digest={bad_base_digest!r} "
+                "(adapter's own digest genuinely valid) is refused",
+                True,
+            )
+
+
+def test_r4_manifest_digest_differs_for_resolved_base_identity_or_digest_difference() -> None:
+    """Round-4 DoD (b): 'stripping the resolved-base part before hashing stays GREEN' -- two
+    adapters whose own fields are otherwise identical, differing ONLY in the resolved base
+    artifact's id (same digest) or ONLY in the resolved base artifact's own digest (same id), must
+    produce DIFFERENT manifest_digest values -- proving the resolved base's own identity is
+    genuinely folded into the hashed content."""
+    artifact = _artifact(base_model_revision="shared-rev-4")
+    model_version = _model_version(
+        import_kind="adapter",
+        trainable_artifact_id=artifact.id,
+        weights_digest=artifact.weights_digest,
+        base_model_revision=artifact.base_model_revision,
+    )
+
+    base_1 = _artifact(
+        status="ready", base_model_revision="shared-rev-4", weights_digest=_BASE_DIGEST
+    )
+    manifest_1 = build_artifact_lineage_manifest(
+        model_version, artifact, resolved_base_artifact=base_1
+    )
+
+    base_2 = _artifact(
+        status="ready", base_model_revision="shared-rev-4", weights_digest=_BASE_DIGEST
+    )
+    check(
+        "FTF-1002",
+        "the two resolved bases genuinely differ by id only (same digest)",
+        base_1.id != base_2.id and base_1.weights_digest == base_2.weights_digest,
+    )
+    manifest_2 = build_artifact_lineage_manifest(
+        model_version, artifact, resolved_base_artifact=base_2
+    )
+    check(
+        "FTF-1002",
+        "manifest_digest differs when only the resolved base artifact's id differs",
+        manifest_1.manifest_digest != manifest_2.manifest_digest,
+    )
+
+    base_3 = _artifact(
+        status="ready",
+        base_model_revision="shared-rev-4",
+        weights_digest="sha256:" + "7" * 64,
+        artifact_id=base_1.id,
+    )
+    check(
+        "FTF-1002",
+        "the two resolved bases genuinely differ by digest only (same id)",
+        base_3.id == base_1.id and base_3.weights_digest != base_1.weights_digest,
+    )
+    manifest_3 = build_artifact_lineage_manifest(
+        model_version, artifact, resolved_base_artifact=base_3
+    )
+    check(
+        "FTF-1002",
+        "manifest_digest differs when only the resolved base artifact's weights_digest differs",
+        manifest_1.manifest_digest != manifest_3.manifest_digest,
+    )
+
+
+def test_r4_tamper_detects_isolated_subfield_mutations() -> None:
+    """Round-4 DoD (b): tamper each fact's value, known and detail SEPARATELY -- every existing
+    tamper test (`test_verify_artifact_lineage_manifest_detects_tampering_of_every_field`) swaps
+    the whole LineageFact for a different one, always changing several sub-fields together.
+    Mutating exactly one sub-field, leaving the other two untouched, proves the digest genuinely
+    covers each sub-field independently."""
+    artifact = _artifact(required_python_packages=["torch==2.4.0"])
+    model_version = _linked_full_weight_model_version(artifact)
+
+    mutations: tuple[tuple[str, object], ...] = (
+        ("value", "sha256:" + "9" * 64),
+        ("known", False),
+        ("detail", "tampered-detail-only"),
+    )
+    for label, new_value in mutations:
+        manifest = build_artifact_lineage_manifest(model_version, artifact)
+        object.__setattr__(manifest.base, label, new_value)
+        try:
+            verify_artifact_lineage_manifest(manifest)
+            check(
+                "FTF-1002",
+                f"verify_artifact_lineage_manifest detects an isolated mutation of base.{label} "
+                "alone (the other two sub-fields left untouched)",
+                False,
+            )
+        except ArtifactLineageManifestTamperedError:
+            check(
+                "FTF-1002",
+                f"verify_artifact_lineage_manifest detects an isolated mutation of base.{label} "
+                "alone (the other two sub-fields left untouched)",
+                True,
+            )
+
+
+# -- Round-4 fault injection (Law 1) ---------------------------------------
+
+_R4_PROBE_PRELUDE = (
+    _R3_PROBE_PRELUDE
+    + """
+from app.artifacts.artifact_lineage_manifest import (
+    ArtifactLineageManifestTamperedError,
+    verify_artifact_lineage_manifest,
+)
+"""
+)
+
+
+def _invalidate_pycache() -> None:
+    """Several round-4 fault tests rewrite `_MODULE_PATH` in quick succession (write the fault,
+    probe it, restore -- repeated per test). CPython's default bytecode cache is invalidated by
+    source mtime+size, not content, so two rewrites landing within the same filesystem mtime
+    tick can make the next subprocess's `import` silently serve a STALE cached `.pyc` instead of
+    recompiling the file it just read fresh off disk -- a real failure mode observed while
+    developing this round (three canonical_fact fault tests run back to back; the third saw the
+    second's cached bytecode). Deleting any cached bytecode for this module after every write
+    removes that risk outright, rather than relying on timing."""
+    cache_dir = _MODULE_PATH.parent / "__pycache__"
+    if not cache_dir.is_dir():
+        return
+    for cached in cache_dir.glob(f"{_MODULE_PATH.stem}.*.pyc"):
+        cached.unlink(missing_ok=True)
+
+
+_NO_PYCACHE_ENV = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+
+
+def _run_r4_fault(*, needle: str, replacement: str, probe_body: str, description: str) -> None:
+    """Same contract as `_run_r3_fault` (mutate `_MODULE_PATH`, run `probe_body` in a fresh
+    subprocess against `_R4_PROBE_PRELUDE`, expect `NO_ERROR_RAISED`, always restore
+    byte-identical) -- kept separate because round 4's probes need `verify_artifact_lineage_
+    manifest`/`ArtifactLineageManifestTamperedError`, which `_R3_PROBE_PRELUDE` does not import.
+    Also invalidates the bytecode cache around every write (see `_invalidate_pycache`)."""
+    original = _MODULE_PATH.read_bytes()
+    text = original.decode("utf-8")
+    check("FTF-1002", f"[{description}] fault injection anchor is present", needle in text)
+    mutated = text.replace(needle, replacement, 1)
+    check(
+        "FTF-1002", f"[{description}] fault injection actually changed the module", mutated != text
+    )
+    try:
+        _MODULE_PATH.write_text(mutated, encoding="utf-8")
+        _invalidate_pycache()
+        completed = subprocess.run(
+            [sys.executable, "-c", _R4_PROBE_PRELUDE + probe_body],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=_NO_PYCACHE_ENV,
+        )
+        check(
+            "FTF-1002",
+            f"[{description}] genuinely lets the attack through uncaught "
+            f"(stdout={completed.stdout!r} stderr={completed.stderr!r})",
+            completed.returncode == 0 and "NO_ERROR_RAISED" in completed.stdout,
+        )
+    finally:
+        _MODULE_PATH.write_bytes(original)
+        _invalidate_pycache()
+        restored = _MODULE_PATH.read_bytes()
+        check(
+            "FTF-1002",
+            f"[{description}] the module file is restored byte-identical after fault injection",
+            restored == original,
+        )
+
+
+def _run_r4_value_fault(
+    *, needle: str, replacement: str, probe_body: str, description: str, expected_marker: str
+) -> None:
+    """Like `_run_r4_fault`, but for a fault that corrupts a VALUE instead of bypassing a raise.
+    `probe_body` must print a line containing `expected_marker` only when the fault's wrong value
+    is actually observed -- proving the corresponding behavioral assertion in this file would go
+    RED under this exact fault. Also invalidates the bytecode cache around every write (see
+    `_invalidate_pycache`)."""
+    original = _MODULE_PATH.read_bytes()
+    text = original.decode("utf-8")
+    check("FTF-1002", f"[{description}] fault injection anchor is present", needle in text)
+    mutated = text.replace(needle, replacement, 1)
+    check(
+        "FTF-1002", f"[{description}] fault injection actually changed the module", mutated != text
+    )
+    try:
+        _MODULE_PATH.write_text(mutated, encoding="utf-8")
+        _invalidate_pycache()
+        completed = subprocess.run(
+            [sys.executable, "-c", _R4_PROBE_PRELUDE + probe_body],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=_NO_PYCACHE_ENV,
+        )
+        check(
+            "FTF-1002",
+            f"[{description}] genuinely produces the wrong value, which the behavioral "
+            f"assertion would catch (stdout={completed.stdout!r} stderr={completed.stderr!r})",
+            completed.returncode == 0 and expected_marker in completed.stdout,
+        )
+    finally:
+        _MODULE_PATH.write_bytes(original)
+        _invalidate_pycache()
+        restored = _MODULE_PATH.read_bytes()
+        check(
+            "FTF-1002",
+            f"[{description}] the module file is restored byte-identical after fault injection",
+            restored == original,
+        )
+
+
+_LICENSE_FACT_NEEDLE = (
+    "    license_fact = LineageFact(\n"
+    "        known=True,\n"
+    "        value=artifact.license_id,\n"
+    '        detail=f"accepted_by={artifact.license_accepted_by!r} at {accepted_at!r}",\n'
+    "    )\n"
+)
+
+
+def test_fault_injection_r4_hardcoded_license_value_is_caught() -> None:
+    """Round-4 DoD (d), Law 1: hardcoding license.value to 'apache-2.0' lets a distinct real
+    license_id ('mit') go unreported -- caught by `test_r4_license_fact_binds_the_real_per_
+    artifact_license_and_acceptance_detail`."""
+    replacement = _LICENSE_FACT_NEEDLE.replace("value=artifact.license_id,", 'value="apache-2.0",')
+    _run_r4_value_fault(
+        needle=_LICENSE_FACT_NEEDLE,
+        replacement=replacement,
+        probe_body="""
+artifact = make_artifact("rev-1", "sha256:" + "a" * 64)
+artifact.license_id = "mit"
+mv = ModelVersion(
+    organization_id=org_id, project_id=uuid.uuid4(), version_number=1, import_kind="full_weight",
+    trainable_artifact_id=artifact.id, weights_digest=artifact.weights_digest,
+    base_model_revision=artifact.base_model_revision, created_by="user-1", created_at=now,
+)
+mv.id = uuid.uuid4()
+manifest = build_artifact_lineage_manifest(mv, artifact)
+print("FAULT_VALUE=" + repr(manifest.license.value))
+""",
+        description="hardcoded license.value ('apache-2.0' instead of the real license_id)",
+        expected_marker="FAULT_VALUE='apache-2.0'",
+    )
+
+
+def test_fault_injection_r4_license_detail_drops_accepted_by_is_caught() -> None:
+    """Round-4 DoD (d), Law 1: hardcoding accepted_by=None in the license detail drops the real
+    reviewer identity -- caught by the same test above."""
+    replacement = _LICENSE_FACT_NEEDLE.replace(
+        'detail=f"accepted_by={artifact.license_accepted_by!r} at {accepted_at!r}",',
+        'detail=f"accepted_by=None at {accepted_at!r}",',
+    )
+    _run_r4_value_fault(
+        needle=_LICENSE_FACT_NEEDLE,
+        replacement=replacement,
+        probe_body="""
+artifact = make_artifact("rev-1", "sha256:" + "a" * 64)
+artifact.license_accepted_by = "reviewer-x"
+mv = ModelVersion(
+    organization_id=org_id, project_id=uuid.uuid4(), version_number=1, import_kind="full_weight",
+    trainable_artifact_id=artifact.id, weights_digest=artifact.weights_digest,
+    base_model_revision=artifact.base_model_revision, created_by="user-1", created_at=now,
+)
+mv.id = uuid.uuid4()
+manifest = build_artifact_lineage_manifest(mv, artifact)
+print("FAULT_DETAIL=" + manifest.license.detail)
+""",
+        description="license detail drops the real accepted_by (hardcoded to None)",
+        expected_marker="accepted_by=None",
+    )
+
+
+def test_fault_injection_r4_license_detail_drops_accepted_at_is_caught() -> None:
+    """Round-4 DoD (d), Law 1: hardcoding 'at None' in the license detail drops the real
+    acceptance timestamp -- caught by the same test above."""
+    replacement = _LICENSE_FACT_NEEDLE.replace(
+        'detail=f"accepted_by={artifact.license_accepted_by!r} at {accepted_at!r}",',
+        'detail=f"accepted_by={artifact.license_accepted_by!r} at None",',
+    )
+    _run_r4_value_fault(
+        needle=_LICENSE_FACT_NEEDLE,
+        replacement=replacement,
+        probe_body="""
+artifact = make_artifact("rev-1", "sha256:" + "a" * 64)
+mv = ModelVersion(
+    organization_id=org_id, project_id=uuid.uuid4(), version_number=1, import_kind="full_weight",
+    trainable_artifact_id=artifact.id, weights_digest=artifact.weights_digest,
+    base_model_revision=artifact.base_model_revision, created_by="user-1", created_at=now,
+)
+mv.id = uuid.uuid4()
+manifest = build_artifact_lineage_manifest(mv, artifact)
+print("FAULT_DETAIL=" + manifest.license.detail)
+""",
+        description="license detail drops the real accepted_at (hardcoded to None)",
+        expected_marker=" at None",
+    )
+
+
+def test_fault_injection_r4_adapter_base_value_uses_resolved_base_digest_is_caught() -> None:
+    """Round-4 DoD (d), Law 1: switching an adapter's base.value to the resolved base artifact's
+    own digest (instead of the adapter artifact's own digest) -- caught by
+    `test_r4_adapter_base_value_is_the_artifacts_own_digest_not_the_resolved_bases`."""
+    needle = (
+        "    base = LineageFact(\n"
+        "        known=True,\n"
+        "        value=artifact.weights_digest,\n"
+        "        detail=base_detail,\n"
+        "    )\n"
+    )
+    replacement = needle.replace(
+        "value=artifact.weights_digest,",
+        "value=(resolved_base_artifact.weights_digest if resolved_base_artifact is not None "
+        "else artifact.weights_digest),",
+    )
+    _run_r4_value_fault(
+        needle=needle,
+        replacement=replacement,
+        probe_body="""
+artifact = make_artifact("shared-rev-x", "sha256:" + "a" * 64)
+mv = ModelVersion(
+    organization_id=org_id, project_id=uuid.uuid4(), version_number=1, import_kind="adapter",
+    trainable_artifact_id=artifact.id, weights_digest=artifact.weights_digest,
+    base_model_revision=artifact.base_model_revision, created_by="user-1", created_at=now,
+)
+mv.id = uuid.uuid4()
+base = make_artifact("shared-rev-x", "sha256:" + "f" * 64)
+manifest = build_artifact_lineage_manifest(mv, artifact, resolved_base_artifact=base)
+print("FAULT_VALUE=" + repr(manifest.base.value))
+""",
+        description="adapter base.value switched to the resolved base artifact's own digest",
+        expected_marker="FAULT_VALUE='sha256:" + "f" * 64 + "'",
+    )
+
+
+_CANONICAL_FACT_NEEDLE = (
+    "def _canonical_fact(fact: LineageFact) -> dict[str, object]:\n"
+    '    return {"known": fact.known, "value": fact.value, "detail": fact.detail}\n'
+)
+
+
+def _canonical_fact_drop_probe(tamper_field: str, tamper_value: str) -> str:
+    return f"""
+artifact = make_artifact("rev-1", "sha256:" + "a" * 64)
+mv = ModelVersion(
+    organization_id=org_id, project_id=uuid.uuid4(), version_number=1, import_kind="full_weight",
+    trainable_artifact_id=artifact.id, weights_digest=artifact.weights_digest,
+    base_model_revision=artifact.base_model_revision, created_by="user-1", created_at=now,
+)
+mv.id = uuid.uuid4()
+manifest = build_artifact_lineage_manifest(mv, artifact)
+object.__setattr__(manifest.base, {tamper_field!r}, {tamper_value})
+verify_artifact_lineage_manifest(manifest)
+print("NO_ERROR_RAISED")
+"""
+
+
+def test_fault_injection_r4_canonical_fact_drops_detail_key_is_caught() -> None:
+    """Round-4 DoD (b), Law 1: dropping 'detail' from `_canonical_fact`'s own dict lets a
+    detail-only tamper through undetected -- caught by
+    `test_r4_tamper_detects_isolated_subfield_mutations`."""
+    replacement = _CANONICAL_FACT_NEEDLE.replace(
+        '{"known": fact.known, "value": fact.value, "detail": fact.detail}',
+        '{"known": fact.known, "value": fact.value}',
+    )
+    _run_r4_fault(
+        needle=_CANONICAL_FACT_NEEDLE,
+        replacement=replacement,
+        probe_body=_canonical_fact_drop_probe("detail", '"tampered-detail-only"'),
+        description="_canonical_fact drops 'detail' (a detail-only tamper goes undetected)",
+    )
+
+
+def test_fault_injection_r4_canonical_fact_drops_value_key_is_caught() -> None:
+    """Round-4 DoD (b), Law 1: dropping 'value' from `_canonical_fact`'s own dict lets a
+    value-only tamper through undetected -- caught by the same test above."""
+    replacement = _CANONICAL_FACT_NEEDLE.replace(
+        '{"known": fact.known, "value": fact.value, "detail": fact.detail}',
+        '{"known": fact.known, "detail": fact.detail}',
+    )
+    _run_r4_fault(
+        needle=_CANONICAL_FACT_NEEDLE,
+        replacement=replacement,
+        probe_body=_canonical_fact_drop_probe("value", '"sha256:" + "9" * 64'),
+        description="_canonical_fact drops 'value' (a value-only tamper goes undetected)",
+    )
+
+
+def test_fault_injection_r4_canonical_fact_drops_known_key_is_caught() -> None:
+    """Round-4 DoD (b), Law 1: dropping 'known' from `_canonical_fact`'s own dict lets a
+    known-only tamper through undetected -- caught by the same test above."""
+    replacement = _CANONICAL_FACT_NEEDLE.replace(
+        '{"known": fact.known, "value": fact.value, "detail": fact.detail}',
+        '{"value": fact.value, "detail": fact.detail}',
+    )
+    _run_r4_fault(
+        needle=_CANONICAL_FACT_NEEDLE,
+        replacement=replacement,
+        probe_body=_canonical_fact_drop_probe("known", "False"),
+        description="_canonical_fact drops 'known' (a known-only tamper goes undetected)",
     )
 
 
