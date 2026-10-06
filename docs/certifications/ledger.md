@@ -9903,3 +9903,33 @@ PR is not landed by the next certifier shift.
   - 40+ production faults RED, including additive bypasses. Unmodified-code bypass probes are refused.
 - Follow-up, not blocking: FTF-0307-F1 (see docs/certifications/queue.md 2026-10-06T15:30Z).
 - Gates on acbeb54: product_truth 26/26, validate_spec clean, data_exposure OK.
+
+## FTF-04A18 — Discovered agent candidate selection — CERTIFIED (2026-10-06)
+- Criterion: FTF-04A18. PR #493, merge commit 6d5ff9501da3d86d335e398c978dc91ae4ec7f0d (head `d80fdbe`). This closes rounds 1–2.
+- Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent: the
+  producer is `session_013LXTon`.
+- CI on d80fdbe:
+  - `gate` 112383468247 passed;
+  - `candidate-selection-integration` 112383469113 passed;
+  - `discovered-agent-candidate-integration` 112383468872 passed.
+- Independent verifier (mid-tier):
+  - the server-side latest-snapshot staleness checks and the UI selection/error clauses all turn RED under
+    production faults;
+  - mutation gate: 22/22 killed.
+- Follow-up, not blocking: FTF-04A18-F1 (UI tests for a non-OK list response and malformed bodies).
+
+## FTF-1206A — Organization gateway policy persistence — CERTIFIED (2026-10-06)
+- Criterion: FTF-1206A, an owner-approved addendum (ADR 0002). PR #486, squash commit a8a1936049376e0dabd3bba2536b169fb04afcd9 (head `65b5572`).
+- Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent: the
+  producer is `session_019gwFQK` (relay lane C).
+- CI: `organization-gateway-policy-integration` 112345825620 (real PG16) and `gate` 112345824990 both passed.
+- Independent verifier (top model, Law 18), verdict 2026-10-06T16:35Z:
+  - ENABLE + FORCE RLS on both tables;
+  - raw `sovra_app` foreign- or absent-context reads return 0 rows;
+  - foreign INSERTs are refused;
+  - history is append-only;
+  - `list_route_changes` authorization holds.
+- The status flip followed FTF-H034-F1 (#495), which made the tracker sync addendum-aware.
+- Follow-up, not blocking:
+  - FTF-1206A-F2 (round 2 open): a true no-context connection test;
+  - FTF-1206A-F1.
