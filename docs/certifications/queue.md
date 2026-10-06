@@ -23077,6 +23077,22 @@ redundant layers, and each pair of them turns the suite RED.
 Follow-up, not blocking: `scripts/verify_task.py --stage task` is BLOCKED for every item, including certified ones, because
 `spec/verification-map.json` has no merged evidence records. Control plane will scope this as a tooling task.
 
+## 2026-10-05T04:40Z — FTF-0601 round-2 fix-and-resubmit (relay)
+Full evidence, clause-to-test mapping and Law-1 fault-injection record are in `docs/spec-matrix.yaml`'s
+FTF-0601 entry (new note appended this shift) and `PROGRESS.md`'s matching top dated entry. Summary: all
+six findings from the "2026-10-01T13:40Z" FTF-0601 re-review fixed -- `normalize_identity` (strip+casefold)
+closes the independence-bypass vector in both `EvaluationSuite.__init__` and `lock_evaluation_suite`;
+`reviewer_id` is now checked against real organization membership at assignment time
+(`OrganizationMemberLookup`, fail-closed default, wired from the router's already-injected `role_lookup`);
+`lock_evaluation_suite` now refuses a lock attempt from anyone other than the suite's own assigned reviewer
+(`EvaluationSuiteLockForbiddenError`, 403); `grading_logic_version` is capped at the real Postgres `Integer`
+range (2147483647) in the validator and in both shared contract files; `validate_name` rejects
+whitespace-only; migration `0019_eval_suites_reviewer_norm` recreates both reviewer-related CHECK
+constraints with normalized (`lower(trim(...))`) conditions, with a data-remediation guard that fails
+closed (raises, naming violating row IDs) rather than silently applying a stricter constraint. Not
+self-certified (Law 4) -- `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` unchanged, awaiting
+Control-plane L2 re-review and a real CI run on PR https://github.com/SJZLab/Sovra/pull/463.
+
 ## 2026-10-05T04:40Z — [relay] FTF-0500B: fix L2 round-4 findings (marker-cycle seen-set + page-fetch cap, strict IsTruncated parsing, required ListVersionsResult root, duplicate (Key, VersionId) refusal, Size validation)
 
 Relay response to the 2026-10-04T17:20Z Control-plane L2 review (this file, same timestamp). QUEUE.md "## Active"
@@ -23249,6 +23265,61 @@ next shift.
 L1-PROVEN` unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the
 opened PR are required before certification.
 
+## 2026-10-06T00:00Z — [relay] FTF-0307: fix L2 round-2 findings (probe model/route-identity binding, weights_digest requirement, organization binding)
+Fixes the three findings from the 2026-10-04T11:00Z Control-plane L2 review (merged PR #422), per the standing relay
+DoD rule ("each acceptance and negative_acceptance clause gets a test that a clause-level fault turns red, including
+at least one additive fault"). PR: https://github.com/SJZLab/Sovra/pull/471 (branch `claude/wizardly-fermat-4idnly`
+-> `main`).
+
+Clause-to-test mapping (full detail in `docs/spec-matrix.yaml`'s FTF-0307 entry, "L2 fix-and-resubmit (2026-10-06,
+round 2)" note):
+- Probe bound to `model_id` -> `test_probe_for_a_different_model_never_classifies_this_model_inference_only` +
+  additive fault `test_fault_injection_unbound_probe_model_treated_as_success_is_caught` (drops the
+  `resolved_model == model_id` line; a mismatched-model PROBED result then wrongly becomes inference_only).
+- Probe route identity verified -> `test_probe_with_unverified_route_identity_never_classifies_inference_only` +
+  additive fault `test_fault_injection_unverified_route_identity_treated_as_success_is_caught` (drops the
+  `route_identity_state is VERIFIED` line; an unverified-identity PROBED result then wrongly becomes
+  inference_only).
+- `weights_digest` required for trainable -> `test_ready_artifact_without_a_resolved_weights_digest_never_
+  classifies_trainable` + additive fault `test_fault_injection_missing_weights_digest_treated_as_trainable_is_
+  caught` (drops the `weights_digest is not None` line; a digest-unresolved ready artifact then wrongly becomes
+  trainable).
+- Organization binding -> `test_cross_organization_artifact_is_refused_never_classified` +
+  `test_organization_id_must_be_a_real_uuid` + additive fault `test_fault_injection_cross_organization_artifact_
+  unblocked_is_caught` (removes the whole cross-org raise block; a different organization's ready artifact then
+  wrongly classifies trainable instead of being refused).
+- Unrecognised status fails closed (already-correct, now pinned) -> `test_unrecognised_artifact_status_fails_
+  closed_to_unknown` (bypasses `TrainableArtifact.__init__`'s own validation via a direct post-construction
+  attribute set, simulating an ORM-loaded row with a status value from a migration this module does not yet know).
+- `role=None` passthrough (already-correct, now pinned) -> `test_assigned_role_none_passes_through_as_none_never_
+  defaulted`.
+- `license_approved=False` when not accepted (already-correct, now pinned) -> `test_license_approved_is_false_
+  when_not_yet_accepted`.
+- Real rename scenario -> `test_renaming_an_artifact_after_creation_never_changes_its_own_classification`
+  (classifies the same real artifact object before and after a live `display_name` mutation, confirming the
+  result is identical and driven only by status/digest).
+
+The two pre-existing round-1 fault injections were updated for the new required `organization_id` parameter and the
+new `weights_digest`-bearing fixture, re-verified still catching their own original faults.
+
+`uv run ruff check .`/`ruff format --check .`/`uv run mypy .` clean repo-wide (371 files, zero errors).
+`python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`, this sandbox's own pre-existing
+shallow-clone artifact). Regression swept `test_ftf_0207.py`/`test_ftf_0212.py`/`test_ftf_0301.py`/
+`test_ftf_0306.py` (this task's own four dependencies) -- all exit 0, zero regressions (the printed SSL/
+TenantContextError tracebacks in `test_ftf_0212.py`'s/`test_ftf_0301.py`'s own stdout are those suites' own
+disclosed negative-test cases, same precedent already established). `product_truth_check.py --fail-on-unwired`:
+unchanged `26/26`. `status.py`: unchanged `101/301` certified / 24 product-true (Law 2 -- a resubmission is not a
+certification). No `.github/workflows/ci.yml` change needed -- the existing "FTF-0307 negative-test proof" step
+already runs `tests/tasks/test_ftf_0307.py` in full.
+
+Updated `docs/spec-matrix.yaml`'s FTF-0307 entry with a full "L2 fix-and-resubmit (2026-10-06, round 2)" note,
+including this clause-to-test mapping (`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN`
+-- Law 2).
+
+**V (certification)** -- per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state:
+L1-PROVEN` unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the
+opened PR (#471) are required before certification.
+
 ## 2026-10-06T02:00Z — Relay maintenance: FTF-1506 dependency bump (source-map-js 1.2.1 → 1.2.2), unblocking PR #471's unrelated CI failure
 
 Not a fix-and-resubmit of an uncertified task -- FTF-1506 stays `certification_state: L2-CERTIFIED`,
@@ -23337,3 +23408,94 @@ FTF-0307 or any other task -- this was returned-work git maintenance (resolving 
 conflict per its own recorded route option), not a certification claim or a new DoD submission.
 `QUEUE.md`'s own "## Parked" entry is resolved to "None currently" with this resolution recorded as
 history in place.
+
+## 2026-10-06T09:45Z — Control-plane L2 batch: FTF-0601 (#463), FTF-0307 (#471), FTF-0500D (#466), FTF-1506 (#472)
+
+**Independence.** The certifier session is `session_01QVznorVMjnmcttUhyDnoGR`. The producers are:
+- `01XUcfJ2` for #463 (merge 81b925e);
+- `01A5UPrh` for #471 (merge a4762f6);
+- `015U7WVo` for #466 (merge 2d52ae4);
+- `0183rpfA` for #472 (merge e1f9aae).
+None match, so the review is independent. Verifiers ran on the mid-tier model (policy A5) at main a4762f6, with the CI script
+runner and real Postgres 16 where CI uses it. On a4762f6, product_truth is 26/26, validate_spec is clean, and data_exposure is
+OK.
+
+### FTF-1506 (#472): maintenance only; the item stays CERTIFIED
+The PR is a 4-line `pnpm-lock.yaml` bump, `source-map-js` 1.2.1 → 1.2.2 (GHSA-68fv-2mgg-jv7q), with no new dependency. The
+existing L2 capability is unchanged. The `dependency-scanning-integration` job (112086767916) logs "0 blocking". Reintroducing
+1.2.1 against an OSV-shaped stub makes the real scan path go RED: "cannot be silently ignored". The policy exceptions list is
+empty. No status change.
+
+### FTF-0601 (#463): NOT CERTIFIED, returned (round 3, tests only)
+Behaviour is correct, tested against the real router and real PG. All six DoD items hold:
+- strip+casefold, including NBSP, U+3000 and ß/SS;
+- membership and lookalike reviewers rejected (400);
+- the reviewer-only lock (403), including a reviewer removed from the org;
+- the 2^31 cap on POST and PATCH;
+- whitespace-only names rejected;
+- migration 0019's fail-closed precheck.
+Faults that stay GREEN:
+- **F19 (additive, independence):** an independence bypass for actors named `*admin` stays green, because independence is only
+  exercised with an evaluator actor.
+- **F06:** removing the membership check on POST stays green; there is no POST non-member test.
+- **F20/F21:** altering the OpenAPI or JSON-schema `maximum` stays green; no test reads the contracts.
+- **F22/F23:** removing migration 0019's precheck, or reverting its CHECK to bare `=`, stays green; that path is untested.
+- **F25:** an unvalidated PATCH reviewer stays green; the stored value after PATCH is not asserted.
+- `pytest` passes even with production code broken. Only the script runner is meaningful, which is already rule A5.
+DoD (round 3), each shown RED first under the script runner:
+- (1) Independence tested with at least 3 actor roles (admin, owner, evaluator), plus an additive role-bypass fault test.
+- (2) A POST non-member reviewer → 400, in integration.
+- (3) A contract test asserting `maximum: 2147483647` and `pattern: '\S'` in both contract files.
+- (4) A migration test: seed a violating locked row at 0018, then `upgrade head` must fail naming the row. Also a raw INSERT of a
+  locked final suite with reviewer≈creator must be rejected by the DB CHECK.
+- (5) Assert the stored reviewer after PATCH is stripped.
+- (6) Hardening (should): bring the DB CHECK closer to the app check (`btrim` of whitespace classes; `lower()` is acceptable
+  with a documented casefold gap), and fail the 0019 precheck closed when the role cannot see rows (RLS). Optional: document
+  `lock` 400 in OpenAPI.
+
+### FTF-0307 (#471): NOT CERTIFIED, returned (round 3)
+The round-2 DoD items pass, and 25 faults are RED. Faults that stay GREEN, against negative_acceptance clauses:
+- **The ready-status gate is unpinned.** Dropping `artifact_availability is READY`, or treating a registered or archived
+  artifact as ready at the gate, leaves the suite green. The only registered test has digest=None, which masks the gate. A
+  registered artifact with a resolved digest is realistic.
+- **"Editing the name cannot make it trainable".** An additive `model_id.startswith("ft:") → trainable` stays green. Only
+  `display_name` renames are tested.
+- Case-insensitive or stripped probe/access matching, and a fabricated `artifact_id`, stay green.
+- `weights_digest` is validated only for `None`. `""`, `"sha256:"`, uppercase, wrong length and whitespace all classify as
+  trainable. The same pattern is in `artifact_crud.apply_mark_ready` and `model_version_crud`.
+- `artifact.status=["ready"]` raises TypeError instead of failing closed.
+DoD (round 3), each shown RED first:
+- (1) A registered artifact and an archived artifact, each WITH a valid digest → unknown.
+- (2) A model_id rename/alias test, e.g. a probe-only endpoint aliased `ft:x` → inference_only, plus an additive name-allow
+  fault.
+- (3) Case and whitespace variants of probe and access matching → no match.
+- (4) A shared `validate_weights_digest` (sha256, 64 lowercase hex), used by the classifier, `apply_mark_ready` and
+  `model_version_crud` (same-class sweep), with tests in each.
+- (5) A non-hashable status → unknown.
+Law 7 note: there is no production caller yet (a pure composer, like the FTF-0306 precedent), so a blank `proving_symbol` is
+accepted.
+
+### FTF-0500D (#466): NOT CERTIFIED, returned (round 3, tests only)
+The production module is correct: an independent oracle over 1,440 cases (4 grant states) shows 0 disagreements. Faults that
+stay GREEN, because `preview.blocked == authorize raises` compares two functions that share the same helpers:
+- an additive `return False` for restricted+zero_egress (or air_gapped) in `would_cross_security_boundary`, which
+  AUTHORIZES restricted data into zero_egress;
+- purpose-specific allows, or a revoked-status allow, in `check_purpose_authorized`.
+Preview display fields (classification, purpose, effective/required profile) can also be hardcoded with the suite staying
+green. The matrix count assertion is tautological, and the "1,440" label is wrong (the matrix is 720).
+DoD (round 3), each shown RED first:
+- (1) An expected-value oracle INDEPENDENT of production helpers (a literal table over 4×3×3 boundary cells, plus
+  purpose×status×grant with 4 grant states), asserted against BOTH preview and authorize.
+- (2) Per-field preview assertions with non-default values.
+- (3) Fault tests for the shared-helper additive allows above.
+- (4) Fix the label, and count actual loop iterations.
+
+**State:** all three remain `PROVISIONAL` / `L1-PROVEN`. FTF-1506 is unchanged (CERTIFIED).
+
+## 2026-10-06T10:00Z — Control plane: FTF-0601 round-3 DoD narrowed (blocking vs follow-up)
+FTF-0601's behavior is correct (2026-10-06T09:45Z entry). To certify in one shift, round 3 now BLOCKS only on:
+- (1) Reviewer independence for a `final` suite, tested with at least 3 actor roles (admin, owner, evaluator), plus an additive
+  role-bypass fault test (F19) that must turn RED.
+- (2) A POST with a non-member reviewer → 400, in integration (F06).
+Items (3)–(6) of the 09:45Z entry are FOLLOW-UPS that do not block L2: the contract `maximum`/`pattern` test, the migration-0019
+test, the PATCH-stored reviewer assertion, and DB CHECK hardening. They go to Backlog as FTF-0601-F1.

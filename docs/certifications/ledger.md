@@ -9807,3 +9807,10 @@ PR is not landed by the next certifier shift.
   follow-up.
 - `docs/spec-matrix.yaml` is set to CERTIFIED / L2-CERTIFIED with evidence_hash = merge commit, and
   `sync_certified_status()` was run (TRACKER.json and spec/tasks.json updated).
+
+## FTF-1506 — Dependency scanning — maintenance note (2026-10-06), stays CERTIFIED
+- PR #472 (merge e1f9aaed26, session `0183rpfA`; certifier session `01QVzn`, independent) bumps `source-map-js` 1.2.1 → 1.2.2
+  for GHSA-68fv-2mgg-jv7q in `pnpm-lock.yaml` only, with no new dependency.
+- `dependency-scanning-integration` job 112086767916 reports "0 blocking". A verifier reintroduced 1.2.1 with an OSV-shaped
+  stub, and the real scan path went RED.
+- The capability evidence is unchanged; no status change.
