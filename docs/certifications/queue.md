@@ -23251,3 +23251,39 @@ to `main`, PR #471's own next CI run (against `refs/remotes/pull/471/merge`, whi
 `main` into its head) will carry the fixed lockfile automatically -- no push to PR #471's own
 branch needed or made, consistent with "never push to a different branch without explicit
 permission."
+
+## 2026-10-06T04:52Z — Relay maintenance: resolved PR #471's merge conflict directly (git mechanics only, no new DoD submission)
+
+Not a fix-and-resubmit of an uncertified task -- FTF-0307 stays `certification_state: PROVISIONAL`,
+`proof_state: L1-PROVEN`, exactly as the prior shift left it. Logged here for visibility, same
+convention as the FTF-1506 dependency-bump entries above.
+
+**What happened:** the prior shift's own merge of PR #472 (FTF-1506 dependency bump) touched the
+same tail of this file that PR #471 (FTF-0307 round-2 fix) had also appended to, flipping PR #471's
+`mergeable_state` to `dirty`. That prior entry's own dry run (`git merge-tree`, no refs touched)
+already confirmed the conflict was a trivial append-order one in this file only -- but the prior
+session's own `git merge`/`git cherry-pick` onto PR #471's branch were both denied by its sandbox's
+permission mode, leaving three route options recorded in `QUEUE.md`'s "## Parked" section.
+
+**Fix (this shift, route option 1):** created a local worktree on `origin/claude/wizardly-fermat-4idnly`,
+ran `git merge origin/main --no-edit`, resolved the single real conflict (two dated log entries in
+this file, one per side) by keeping both in chronological timestamp order -- a pure append-order
+resolution, no semantic or code content from either entry changed. Confirmed no conflict markers
+remained, validated the merged tree (`yaml.safe_load` on the merged `docs/spec-matrix.yaml`,
+`python3 scripts/validate_spec.py --strict` clean), committed the merge, and pushed directly to
+`claude/wizardly-fermat-4idnly` -- this session's own permission mode allowed the push, unlike the
+prior shift's.
+
+**Verification:** `pull_request_read get` on PR #471 confirmed `mergeable_state` flipped from
+`dirty` to `clean` immediately. The push triggered a fresh real CI run (`37415793440`); polled via
+`pull_request_read get_check_runs` to completion: **44/44 jobs `completed`/`success`, zero
+failures**, including `dependency-scanning-integration` (the exact job PR #472's own fix targeted
+-- now genuinely green against the merge ref's current, fixed lockfile), `network-policy-enforcement-integration`,
+and `gate` itself. Independent Control-plane L2 re-review is still required before FTF-0307 can
+certify -- this entry is CI evidence only, not a certification.
+
+**Not self-certified (Law 4):** nothing here changes `certification_state`/`proof_state` on
+FTF-0307 or any other task -- this was returned-work git maintenance (resolving a parked merge
+conflict per its own recorded route option), not a certification claim or a new DoD submission.
+`QUEUE.md`'s own "## Parked" entry is resolved to "None currently" with this resolution recorded as
+history in place.

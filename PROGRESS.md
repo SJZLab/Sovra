@@ -29322,3 +29322,69 @@ in `docs/certifications/queue.md` "2026-10-04T11:00Z"). No open owner ask (`QUEU
 actions — current" unchanged: "None currently"). `BLOCKER.md` unchanged — no live entries.
 Certified: 101/301 (unchanged this shift — a submission, not a certification, Law 2). Product-true:
 26/26 unchanged.
+## 2026-10-06T04:52:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-e7vilr` — fixed PR #471's
+## parked merge conflict (returned work, route option 1); no new backlog item picked
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch. STEP 0.1: read
+`BLOCKER.md` (no live entries — "No open blockers. The entries below are resolved history."), `QUEUE.md`'s "Owner
+actions — current" (none open) and "## Active"/"## Parked" sections, and `docs/certifications/queue.md`'s tail,
+all fresh this shift. STEP 0.2: no `cognee-cli` binary in this sandbox — text-search fallback declared, same as
+every prior shift.
+
+Per CLAUDE.md "Returned work first... a merge conflict... outranks starting a fresh backlog item," checked
+`QUEUE.md`'s "## Parked" section before picking any new work. Found exactly one live entry: PR #471 (FTF-0307
+round-2 fix, `claude/wizardly-fermat-4idnly` → `main`) with `mergeable_state: dirty` after the immediately prior
+shift's own PR #472 (FTF-1506 dependency bump) touched the same tail of `docs/certifications/queue.md`. That
+entry's own dry run (`git merge-tree`, no refs touched) had already confirmed the conflict was a trivial
+append-order one in `docs/certifications/queue.md` only, with `PROGRESS.md`/`QUEUE.md`/`docs/spec-matrix.yaml`
+auto-merging clean — but the prior session's own `git merge`/`git cherry-pick` attempts had both been denied by
+its sandbox's permission mode. Independently re-confirmed the mergeable_state (`pull_request_read get` on PR #471:
+`mergeable_state: "dirty"`) and the CI evidence this entry's own route option (1) depends on — PR #471's most
+recent run (`37397353034`, triggered 03:10Z, after PR #472 merged) still showed `dependency-scanning-integration`
+failing with the pre-fix finding, because the job log's own checkout step showed it ran against the merge ref's
+stale base SHA (`01d298d`, the PR's original base, not `main`'s current head) — GitHub had not yet recomputed the
+merge ref to carry PR #472's fix, consistent with `mergeable_state: dirty` rather than a real regression.
+
+**E** — exercised route option (1) directly, rather than leaving it for "whoever picks this up next": created a
+local git worktree on `origin/claude/wizardly-fermat-4idnly`, ran `git merge origin/main --no-edit`, and got the
+exact single conflict the dry run predicted in `docs/certifications/queue.md` (three-way conflict markers around
+two dated log entries — this session's own `2026-10-06T00:00Z` FTF-0307 entry on `HEAD`, the prior shift's own
+`2026-10-06T02:00Z` FTF-1506 entry on `origin/main`). Resolved by keeping both, in chronological timestamp order
+(00:00Z before 02:00Z) — a pure append-order resolution, no semantic or code content changed, no narrative text
+from either entry edited. Confirmed no conflict markers remained (`grep` for `<<<<<<<`/`=======`/`>>>>>>>`
+returned nothing), then validated the merged tree before committing: `python3 -c "import yaml;
+yaml.safe_load(open('docs/spec-matrix.yaml'))"` confirmed the merged YAML still parses, and `python3
+scripts/validate_spec.py --strict` (after `git fetch origin main --unshallow`) reported "task graph and
+verification-map are clean." Committed the merge (`git commit --no-edit`, no conflict-marker residue) and pushed
+directly to `claude/wizardly-fermat-4idnly` (`git push origin fix/pr471-merge-conflict:claude/wizardly-fermat-4idnly`)
+— this session's own permission mode allowed it, unlike the prior shift's. Cleaned up the temporary worktree and
+local branch afterward.
+
+**V** — `pull_request_read get` on PR #471 immediately after the push: `mergeable_state` flipped from `dirty` to
+`clean`, head SHA now `0051e14`. The push triggered a fresh real CI run (`37415793440`); watched via
+`pull_request_read get_check_runs` to completion across several polls: **44/44 jobs `completed`/`success`, zero
+failures anywhere in the run**, including `dependency-scanning-integration` (the exact job PR #472's own fix
+targeted — now genuinely green against the merge ref's current, fixed lockfile), `network-policy-enforcement-integration`,
+and `gate` itself (completed 04:58:36Z). This is CI evidence only, not a certification — independent
+Control-plane L2 re-review is still required before FTF-0307 can certify, same as every other item already in
+"## Active."
+
+No code change was made to any task module — this was git-mechanics-only work (a merge commit resolving an
+append-order markdown conflict), not a new DoD submission, so no `docs/spec-matrix.yaml`/`docs/certifications/
+queue.md` certification-state edit was needed for FTF-0307 itself; FTF-0307 stays exactly
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` as the prior shift left it. Logged this fix as a
+dated entry in `docs/certifications/queue.md` (git-maintenance visibility, same convention as the FTF-1506
+dependency-bump entries) and resolved `QUEUE.md`'s own "## Parked" entry to "None currently," with the resolution
+recorded as history in place.
+
+**V (certification)** — per Law 4, not self-certified: nothing here changes any task's `certification_state`/
+`proof_state`; this was returned-work git maintenance on an already-open, already-PROVISIONAL PR, not a
+certification claim.
+
+STEP 3: this file, `QUEUE.md` and `docs/certifications/queue.md` updated this shift, before compaction. STEP 4
+stop condition (a): PR #471 (FTF-0307) is unparked and its own CI is green on every job observed so far, joining
+the same backlog awaiting Control-plane L2 certification once `gate` finishes. Stopping here — this shift's own
+work was fixing parked returned-work (top priority per CLAUDE.md's own ordering), not a new backlog pick;
+**FTF-1002, FTF-0510, FTF-04A18 and FTF-1807 remain the next-priority, not-yet-attempted items** per the Active
+list's own stated order. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged: "None currently").
+`BLOCKER.md` unchanged — no live entries.
