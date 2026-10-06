@@ -639,7 +639,7 @@ FTF-0205:
     Merged PR #205 (merge commit `b421fb366870167dcb7ecaab7a658adf1c2c6510`); `evidence_hash` set
     to that commit. Ledger entry appended (`docs/certifications/ledger.md`).
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: enrich_visible_models
   proving_test: tests/tasks/test_ftf_0205.py
 FTF-0206:
   certification_state: CERTIFIED
@@ -701,7 +701,7 @@ FTF-0206:
     Merged PR #207 (merge commit 7ee47f8c4fa2f7dbce7d6557a29bdb82b4369a53); evidence_hash set to
     that commit. Ledger entry appended (docs/certifications/ledger.md).
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: enrich_visible_model_groups
   proving_test: tests/tasks/test_ftf_0206.py
 FTF-0207:
   certification_state: CERTIFIED
@@ -820,7 +820,7 @@ FTF-0207:
     the first) -- left for a watchdog audit to log formally; out of scope
     for this certifier shift beyond this disclosure.
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: reconcile_aliases
   proving_test: tests/tasks/test_ftf_0207.py
 FTF-0208:
   certification_state: CERTIFIED
@@ -899,7 +899,7 @@ FTF-0208:
     record, not blocking since the underlying behavior is independently
     verified correct.'
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: LastKnownGoodCatalog
   proving_test: tests/tasks/test_ftf_0208.py
 FTF-0209:
   certification_state: CERTIFIED
@@ -961,7 +961,7 @@ FTF-0209:
     wiring/route task) to keep that true of whatever API surface
     ultimately exposes acknowledge().'
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: CatalogAnomalyDetector
   proving_test: tests/tasks/test_ftf_0209.py
 FTF-0210:
   certification_state: CERTIFIED
@@ -1094,7 +1094,7 @@ FTF-0210:
     FTF-0201/FTF-0204/FTF-0207 confirmed genuinely CERTIFIED before relying
     on them. No blocking defect found.'
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: probe_chat
   proving_test: tests/tasks/test_ftf_0210.py
 FTF-0211:
   certification_state: CERTIFIED
@@ -1259,7 +1259,7 @@ FTF-0211:
     disclosed -- same precedent as every sibling FTF-020x task). Certified count moves 55/300 ->
     56/300. Product-true: unchanged at 17/17.
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: probe_stream_chat
   proving_test: tests/tasks/test_ftf_0211.py
 FTF-0212:
   certification_state: CERTIFIED
@@ -1316,7 +1316,7 @@ FTF-0212:
 
     Submitted PROVISIONAL, not self-certified (Law 4) -- awaiting independent Control-plane L2 review.
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: probe_tool_call
   proving_test: tests/tasks/test_ftf_0212.py
 FTF-0213:
   certification_state: CERTIFIED
@@ -1465,19 +1465,131 @@ FTF-0213:
     1751211044041e15fc4708b4be552c3957509e80) into `main`. No blocking
     defect found.'
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: probe_structured_output
   proving_test: tests/tasks/test_ftf_0213.py
 FTF-0214:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Model catalog UI
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-02; scenarios=Q02, Q21; deps=FTF-0201, FTF-0207, FTF-0208,
-    FTF-0209, FTF-0210
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-02; scenarios=Q02, Q21; deps=FTF-0201, FTF-0207,
+    FTF-0208, FTF-0209, FTF-0210 (all CERTIFIED). Control-plane wiring directive (QUEUE.md
+    "## Active" item 0d, 2026-10-06T09:45Z; docs/certifications/wiring-map-2026-10-06.json):
+    "wires 10 certified units (0205-0213, H004) to live routes." Built for real in a new
+    apps/api/app/litellm/model_catalog_routes.py (path refined from the packet's own frontend-only
+    `files` list, per Section 84.3's own "refine any oversized item into bounded child IDs" and
+    "reuse an existing compatible module" allowance -- the packet's `files` list predates the
+    wiring-map's own discovery that 0205-0213/H004 need a real backend composition, not only a UI,
+    before a UI has anything real to call) plus the real frontend component
+    apps/web/components/litellm-gateway/model_catalog_ui.tsx the packet's own files list did name.
+
+    This task's own real composition, this repository's first live caller of all ten previously-
+    unwired modules: `GET .../connections/litellm/{connection_id}/catalog` left-joins a fresh
+    `discover_models` (FTF-0204, already live) result through `enrich_visible_models` (FTF-0205)
+    and `reconcile_aliases` (FTF-0207), applies it to one real, per-connection, in-process
+    `LastKnownGoodCatalog` (FTF-0208) via `CatalogAnomalyDetector.record` (FTF-0209), and combines
+    the result with `build_access_snapshot` (FTF-H004) -- the exact composition each of those five
+    modules' own docstring already named as "0214's job". `enrich_visible_model_groups` (FTF-0206)
+    is surfaced as a separate, explicitly optional `model_groups` field (never merged into a
+    per-model `fields` mapping `build_access_snapshot` itself does not support), called with
+    `capability_supported=True` unconditionally -- the simplest honest default given no signal in
+    this repository distinguishes gateway builds that support `/model_group/info` ahead of time;
+    the module's own already-CERTIFIED `NOT_SUPPORTED` state handles a real 404 gracefully either
+    way. `POST .../models/{model_id}/probe` dispatches to `probe_chat`/`probe_stream_chat`/
+    `probe_tool_call`/`probe_structured_output` (FTF-0210/0211/0212/0213) only after
+    `require_model_access` (FTF-H004) -- ownership, Factory-level revocation and catalog-level
+    freshness/callable state, all re-checked fresh against the same in-process catalog the `GET
+    .../catalog` call populated -- passes; `approved_model_ids=frozenset({model_id})` is the one
+    model this exact call explicitly named, satisfying Section 3.4's "probe only explicitly
+    approved models" without inventing a separate allowlist concept.
+
+    Acceptance clause 1 ("Catalog shows actual access freshness/capability/probe evidence, safe
+    filters and explicit project selection") is met for real: freshness is `last_successful_check_at`/
+    `last_checked_at` read straight from the real `CatalogSnapshot`; capability evidence is the real
+    `/model/info`/`/model_group/info` fields; probe evidence is the real, live-dispatched probe
+    result. Safe filters (`status`/`metadata_status` query parameters) only ever narrow
+    `build_access_snapshot`'s own already-authorized entry set -- never widen it -- and an
+    unrecognized value is refused (400), never silently ignored. Explicit project selection is a
+    required `project_id` query parameter on `POST .../probe`, resolved through the already-live
+    `app.projects.project_crud.get_project` inside the exact same tenant-scoped session as the
+    connection lookup -- a nonexistent/foreign project is denied (404) before any probe is ever
+    authorized; the frontend component additionally never pre-selects a project (`selectedProjectId`
+    starts `null`) and disables both "Load catalog" and every "Run probe" button until one is
+    explicitly clicked.
+
+    Negative_acceptance ("No automatic model selection, fabricated costs or hidden stale access;
+    viewer cannot run paid probe") is met structurally: no model is ever auto-probed (every probe
+    is a real user click passing one explicit `model_id`); a missing `usage` is rendered/serialized
+    as `null`/"unknown", never a fabricated zero; a Factory-level-revoked connection's catalog read
+    never dials the real gateway again (verified by a real gateway-request-count assertion in the
+    integration proof) while its historical entries stay visible for audit, matching Section 3.3's
+    "removed names become unselectable... kept for audit/display"; "viewer cannot run paid probe"
+    reuses `connection_routes.py`'s own `CONNECTION_ADMIN_ROLES` gate (every route in this file is
+    `organization_admin`-only) -- proven against a real `Role.VIEWER` principal in both the real
+    Postgres integration proof and the frontend's own mocked-fetch test (the frontend test proves
+    the request shape; the real role denial is proven end-to-end only against the real route, in
+    `tests/integration/test_ftf_0214_model_catalog.py`).
+
+    Real relevant integration: `tests/integration/test_ftf_0214_model_catalog.py` -- a real Postgres
+    (two real organizations, four real `LiteLLMConnection` rows: active/revoked/foreign/never-
+    discovered, one real `Project` row), a real local HTTPS gateway serving `/v1/models`,
+    `/model/info`, `/model_group/info` and a dispatching `/v1/chat/completions` (plain/streaming/
+    tool-call/structured-output, distinguished by the real request body each probe module itself
+    sends), and a real uvicorn server over the actual live route. 32 real checks: role-boundary
+    denial (unauthenticated 401, viewer 403 on both the catalog and the probe), the full composed
+    catalog (all three real discovered models, real `/model/info` enrichment on model-a, real
+    `/model_group/info` enrichment, no fabricated field on model-b), explicit project selection
+    (valid project accepted, nonexistent project 404), safe filters (narrowing accepted, unknown
+    value 400), a real 3-model-to-1-model drop recorded as a real FTF-0209 anomaly while the two
+    dropped ids are marked `removed` (not deleted) for audit, a Factory-revoked connection's catalog
+    never dialing the gateway again, the cross-tenant IDOR case (404, identical to missing), explicit
+    project selection on the probe route (400 with none), the never-successfully-discovered-catalog
+    denial (403 `no_successful_discovery_yet`), the foreign-connection probe denial (404), all four
+    real probe kinds dispatched and parsed for real (chat usage, streaming reconstructed text, tool-
+    call observed name, structured-output schema-validated content), and an unrecognized `probe_type`
+    (400). Law 1, shown able to fail first: a real **additive fault injection** -- monkeypatching
+    `model_catalog_routes.require_model_access` to an unconditional no-op on a second, independently
+    built router instance -- flips the never-discovered-connection probe from the real 403 this
+    same suite already proved into a 200, proving the real guard (not this test's own assumption)
+    is what denies it. `tests/tasks/test_ftf_0214.py` covers the one new DB-free surface (the
+    content-free serializers) directly against each of the nine composed modules' own real
+    dataclasses, including one additive fault (dropping `fields` from the entry serializer) shown
+    RED then reverted. `apps/web/tests/ftf_0214.spec.ts` (9 checks, Vitest + React Testing Library +
+    jsdom, mocked `fetch`) proves the real component: URL contract, no-pre-selection, explicit-
+    selection-enables-load, freshness/capability rendering, a removed entry's probe button disabled,
+    a real probe POST with the real body shape and no-fabricated-cost rendering, a real 403 surfaced
+    never retried, a real network error surfaced, and safe filters reaching the real query string.
+
+    Disclosed, not hidden: (1) UI reachability from `/` stays BLOCKED -- this repository has no
+    `apps/web/app/` page tree yet (FTF-H029 has not landed), so `model_catalog_ui.tsx` is a real,
+    DOM-tested component with no live browser path yet, same class FTF-04A03/FTF-04A04 already
+    established; the backend half (both live routes, wired into `main.py`) has no such gap. (2) The
+    per-connection `LastKnownGoodCatalog`/`CatalogAnomalyDetector` registry is in-process only
+    (module docstring's own "In-process catalog state") -- not durable across a restart and not
+    shared across multiple API replicas; a real durable/periodic sync is FTF-0215's own,
+    separately-dependency-gated task, not this one's `files` list. (3) `enrich_visible_model_groups`
+    is always called with `capability_supported=True` (see composition note above) rather than a
+    derived heuristic -- disclosed as the simplest honest default, not a correctness gap (the
+    module's own already-CERTIFIED `NOT_SUPPORTED` state covers a real-but-unsupported gateway).
+
+    Verification: `uv run ruff check .` / `uv run ruff format --check .` / `uv run mypy .` clean
+    (388 source files). `pnpm run lint` / `pnpm run format:check` / `pnpm run typecheck` clean.
+    `pnpm exec vitest run`: 11/11 files, 66/66 tests. `python3 scripts/validate_spec.py --strict`
+    clean. `product_truth_check.py --fail-on-unwired`: 27/27 -> 38/38 (this task's own
+    `build_model_catalog_router`, proven by `main.py`'s real `app.include_router` call, plus the ten
+    composed modules' own symbols, each proven by this task's own new live-calling file -- FTF-0205/
+    0206/0207/0208/0209/0210/0211/0212/0213/H004's own spec-matrix entries updated to record the
+    real symbol this task now calls). `scripts/status.py`: certified count unchanged (this PR is
+    PROVISIONAL, Law 2 -- a submission is not a certification).
+
+    Not self-certified (Law 4): `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN`,
+    awaiting independent Control-plane L2 review and a real CI run (including the new
+    `model-catalog-integration` job) before certification.
+  proof_state: L1-PROVEN
+  proving_symbol: build_model_catalog_router
+  proving_test: tests/tasks/test_ftf_0214.py
 FTF-0215:
   certification_state: CERTIFIED
   criticality: MUST
@@ -11285,7 +11397,7 @@ FTF-H004:
     catalog UI") as the task that renders a catalog to an end user. proving_symbol stays blank and
     product_truth_check.py''s product-true count is deliberately unchanged.'
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: require_model_access
   proving_test: tests/tasks/test_ftf_h004.py, tests/integration/test_ftf_h004_access_guard.py
 FTF-H005:
   certification_state: CERTIFIED
