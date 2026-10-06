@@ -56,6 +56,8 @@ from scripts.spec_verification import TaskNode  # noqa: E402
 from scripts.task_claim import (  # noqa: E402
     ClaimDenied,
     TaskClaimRegistry,
+    certified_ids_missing_from_tasks_json,
+    is_addendum_task,
     sync_certified_status,
 )
 
@@ -501,24 +503,120 @@ def test_real_committed_tracker_and_tasks_reflect_actual_certified_set():
     by_id = {t["id"]: t for t in tasks_data["tasks"]}
     tracker_data = json.loads(TRACKER_FILE.read_text(encoding="utf-8"))
 
-    all_reflected_in_tasks = all(
-        by_id.get(tid, {}).get("status") == "CERTIFIED" for tid in certified_ids
-    )
+    # spec/tasks.json is frozen at 300 real tasks (ADR 0002): a genuine
+    # Release-1 addendum id has no entry there by design, so it is excused
+    # from this specific file's check only -- never from the TRACKER check
+    # below, and never for an id that is not a real addendum.
+    missing_from_tasks = certified_ids_missing_from_tasks_json(certified_ids, by_id)
     all_reflected_in_tracker = all(
         tracker_data.get("tasks", {}).get(tid, {}).get("status") == "CERTIFIED"
         for tid in certified_ids
     )
     check(
         "FTF-H034",
-        "spec/tasks.json's status field genuinely reflects every currently-CERTIFIED task "
-        "(this task's own delivery ran sync_certified_status against the real repo files)",
-        all_reflected_in_tasks,
+        "spec/tasks.json's status field genuinely reflects every currently-CERTIFIED task, "
+        "except a real spec/addenda/<id>.json addendum id which the frozen 300-task file "
+        "never carries by design (this task's own delivery ran sync_certified_status "
+        "against the real repo files)",
+        len(missing_from_tasks) == 0,
     )
     check(
         "FTF-H034",
-        "TRACKER.json's status field genuinely reflects every currently-CERTIFIED task",
+        "TRACKER.json's status field genuinely reflects every currently-CERTIFIED task, "
+        "including addendum ids (TRACKER.json is not frozen)",
         all_reflected_in_tracker,
     )
+
+
+def test_sync_certified_status_creates_tracker_entry_for_addendum_id_without_touching_tasks_json():
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = pathlib.Path(tmp)
+        tasks_path = tmp_dir / "tasks.json"
+        tracker_path = tmp_dir / "tracker.json"
+        addenda_dir = tmp_dir / "addenda"
+        addenda_dir.mkdir()
+        (addenda_dir / "FTF-ADDX.json").write_text("{}", encoding="utf-8")
+
+        original_tasks_text = json.dumps(
+            {"tasks": [{"id": "T-CERTIFIED", "status": "CERTIFIED", "evidence": ["x"]}]}
+        )
+        tasks_path.write_text(original_tasks_text, encoding="utf-8")
+        tracker_path.write_text(
+            json.dumps({"tasks": {"T-CERTIFIED": {"status": "CERTIFIED", "evidence": ["x"]}}}),
+            encoding="utf-8",
+        )
+
+        updated = sync_certified_status(
+            certification_states={"FTF-ADDX": "CERTIFIED", "T-CERTIFIED": "CERTIFIED"},
+            spec_matrix={
+                "FTF-ADDX": {"evidence_hash": "addx-hash"},
+                "T-CERTIFIED": {"evidence_hash": "x"},
+            },
+            tasks_path=tasks_path,
+            tracker_path=tracker_path,
+            addenda_dir=addenda_dir,
+        )
+        check(
+            "FTF-H034",
+            "sync_certified_status reports the addendum id as updated (it changed TRACKER.json)",
+            "FTF-ADDX" in updated,
+        )
+
+        tasks_after = tasks_path.read_text(encoding="utf-8")
+        check(
+            "FTF-H034",
+            "an addendum id with no spec/tasks.json entry leaves that frozen file untouched "
+            "(ADR 0002: 300 tasks, never widened)",
+            tasks_after == original_tasks_text,
+        )
+
+        tracker_after = json.loads(tracker_path.read_text(encoding="utf-8"))
+        check(
+            "FTF-H034",
+            "a new TRACKER.json entry is created for the CERTIFIED addendum id, with its "
+            "real evidence hash",
+            tracker_after["tasks"].get("FTF-ADDX")
+            == {
+                "status": "CERTIFIED",
+                "commits": [],
+                "evidence": ["addx-hash"],
+                "independent_review": None,
+                "blockers": [],
+            },
+        )
+
+
+def test_tasks_json_gap_exclusion_is_limited_to_real_addenda():
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        addenda_dir = pathlib.Path(tmp) / "addenda"
+        addenda_dir.mkdir()
+        (addenda_dir / "FTF-ADDX.json").write_text("{}", encoding="utf-8")
+
+        missing = certified_ids_missing_from_tasks_json(
+            {"FTF-ADDX", "FTF-NOTREAL"}, tasks_by_id={}, addenda_dir=addenda_dir
+        )
+        check(
+            "FTF-H034",
+            "a real addendum id (spec/addenda/<id>.json exists) missing from tasks.json is "
+            "excused -- the frozen 300-task index never carries it by design",
+            "FTF-ADDX" not in missing,
+        )
+        check(
+            "FTF-H034",
+            "a non-addendum CERTIFIED id missing from tasks.json is NOT excused -- turns RED "
+            "so the exclusion cannot silently widen past spec/addenda",
+            "FTF-NOTREAL" in missing,
+        )
+        check(
+            "FTF-H034",
+            "is_addendum_task agrees: false for a non-addendum id, true for a real one",
+            is_addendum_task("FTF-NOTREAL", addenda_dir) is False
+            and is_addendum_task("FTF-ADDX", addenda_dir) is True,
+        )
 
 
 def main():
