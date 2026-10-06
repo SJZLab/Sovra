@@ -1991,6 +1991,74 @@ FTF-0307:
 
     Submitted PROVISIONAL, not self-certified (Law 4) -- independent Control-plane L2 review and a
     real CI run on the opened PR are required before certification.
+
+    L2 fix-and-resubmit (2026-10-06, round 2; docs/certifications/queue.md "2026-10-04T11:00Z"):
+    Control-plane review found (1) `probe.state is PROBED` alone let a real probe answer for a
+    *different* model, or one whose route identity the gateway's own response never confirmed,
+    classify this model_id inference_only; (2) any `ready` TrainableArtifact classified
+    trainable_open_weight with no weights_digest requirement and no organization binding -- a
+    cross-organization or still-digest-unresolved artifact would pass; (3) no test pinned the
+    already-correct unrecognised-status/role-None/license-not-accepted fail-closed behavior, nor a
+    real post-construction rename scenario. Fixed: `classify_training_capability` now takes a
+    required `organization_id: uuid.UUID` and raises `TrainingCapabilityClassificationError` if a
+    non-None `artifact.organization_id` differs from it (defense in depth -- `artifact_crud.
+    get_artifact` already tenant-scopes its own fetch, this module no longer trusts that alone, the
+    same "never only one layer" discipline FTF-0601's own PATCH-path fix already applied);
+    `trainable_open_weight` additionally requires `artifact.weights_digest is not None`;
+    `inference_only` additionally requires `probe.resolved_model == model_id` and
+    `probe.route_identity_state is RouteIdentityState.VERIFIED` (imported from
+    `real_chat_probe.RouteIdentityState`, Section 3.5's own route-identity-fingerprint type).
+
+    Clause-to-test mapping (tests/tasks/test_ftf_0307.py, 25 test functions, was 12):
+    - probe bound to model_id -> `test_probe_for_a_different_model_never_classifies_this_model_
+      inference_only` + `test_fault_injection_unbound_probe_model_treated_as_success_is_caught`
+      (additive fault: drops the `resolved_model == model_id` line, a mismatched-model PROBED
+      result then wrongly becomes inference_only).
+    - probe route identity verified -> `test_probe_with_unverified_route_identity_never_
+      classifies_inference_only` + `test_fault_injection_unverified_route_identity_treated_as_
+      success_is_caught` (additive fault: drops the `route_identity_state is VERIFIED` line, an
+      unverified-identity PROBED result then wrongly becomes inference_only).
+    - weights_digest required for trainable -> `test_ready_artifact_without_a_resolved_weights_
+      digest_never_classifies_trainable` + `test_fault_injection_missing_weights_digest_treated_
+      as_trainable_is_caught` (additive fault: drops the `weights_digest is not None` line, a
+      digest-unresolved ready artifact then wrongly becomes trainable).
+    - organization binding -> `test_cross_organization_artifact_is_refused_never_classified` +
+      `test_organization_id_must_be_a_real_uuid` + `test_fault_injection_cross_organization_
+      artifact_unblocked_is_caught` (additive fault: removes the whole cross-org raise block, a
+      different organization's ready artifact then wrongly classifies trainable instead of being
+      refused).
+    - unrecognised status fails closed (already-correct behavior, now pinned) ->
+      `test_unrecognised_artifact_status_fails_closed_to_unknown` (bypasses `TrainableArtifact.
+      __init__`'s own validation via a direct post-construction attribute set, simulating an
+      ORM-loaded row with a status value from a migration this module does not yet know).
+    - role=None passthrough (already-correct, now pinned) -> `test_assigned_role_none_passes_
+      through_as_none_never_defaulted`.
+    - license_approved=False when not accepted (already-correct, now pinned) -> `test_license_
+      approved_is_false_when_not_yet_accepted`.
+    - real rename scenario -> `test_renaming_an_artifact_after_creation_never_changes_its_own_
+      classification` (classifies the same real artifact object before and after a live
+      `display_name` mutation, confirming the result is identical and driven only by status/
+      digest).
+    The two pre-existing round-1 fault injections (`test_fault_injection_registered_artifact_
+    treated_as_ready_is_caught`, `test_fault_injection_any_probe_state_treated_as_success_is_
+    caught`) were updated for the new required `organization_id` parameter and the new
+    `weights_digest`-bearing fixture, re-verified still catching their own original faults.
+
+    uv run ruff check .//ruff format --check . clean repo-wide (371 files); uv run mypy . clean
+    repo-wide (371 source files, zero errors). python3 scripts/validate_spec.py --strict clean
+    (after `git fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact).
+    Regression swept test_ftf_0207.py/test_ftf_0212.py/test_ftf_0301.py/test_ftf_0306.py (this
+    task's own four dependencies, via `uv run python3`) -- all exit 0, zero regressions (the
+    printed SSL/TenantContextError tracebacks in test_ftf_0212.py's/test_ftf_0301.py's own stdout
+    are those suites' own disclosed negative-test cases, same precedent already established,
+    confirmed exit 0). scripts/product_truth_check.py --fail-on-unwired: unchanged 26/26
+    (proving_symbol still blank -- no live caller added by this fix, same disclosed boundary this
+    module's own docstring already established). scripts/status.py: unchanged 101/301 certified
+    (Law 2 -- a resubmission is not a certification). No `.github/workflows/ci.yml` change needed
+    -- the existing "FTF-0307 negative-test proof" step already runs this file in full.
+
+    Not self-certified (Law 4) -- independent Control-plane L2 re-review and a real CI run on the
+    opened PR are required before certification.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0307.py

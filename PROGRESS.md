@@ -29347,6 +29347,81 @@ already-open item, not a new backlog pick). No open owner ask (`QUEUE.md` "Owner
 "None currently"). `BLOCKER.md` unchanged — no live entries (this CI-infra pattern did not block all work, only one
 PR's non-target jobs, so it does not meet BLOCKER.md's own "stops ALL work" bar).
 
+Updated: 2026-10-06T00:00:00Z (scheduled autonomous relay shift, branch
+  `claude/wizardly-fermat-4idnly`, session `https://claude.ai/code/session_01A5UPrhir1v1M6L1HXuXeMP`)
+  — **submitted FTF-0307 round-2 fix-and-resubmit.** STEP 0: `sha256sum CLAUDE.md` matched
+  `CLAUDE.md.sha256`.
+
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`'s own tails before acting.
+Found five already-open `[relay]` PRs, each with real green CI (`gate` job passing): #463
+(FTF-0601 round 2), #464 (FTF-0500C round 5), #465 (FTF-0500B round 4), #468 (FTF-0902 round 2,
+"gate" green; the one cancelled `tenant-isolation-query-guards-integration` job is the same
+already-disclosed runner-scheduling-noise class the prior shift's own PR #469 entry recorded,
+unrelated to this PR's own changed files) and #470 (FTF-1206A). Per `QUEUE.md`'s own "## Active"
+item 0 skip rule ("Skip only an item that has an open `[relay]` PR with GREEN CI"), 0a–0e are all
+done or already claimed — nothing left for the relay to push on any of them this shift; each stays
+awaiting independent Control-plane L2 re-review.
+
+**Working: FTF-0307** — the next genuinely unclaimed item in `QUEUE.md`'s own stated list order
+("Next in list order: FTF-0902, FTF-0307, FTF-1002, FTF-0510, FTF-04A18 and FTF-1807", item 0d's
+own note; FTF-0902 was already fixed before this shift via PR #468). Confirmed no open PR/branch
+already claims FTF-0307 before starting (`list_pull_requests` showed none).
+
+**P** — read `apps/api/app/artifacts/training_capability_classifier.py` and its round-2 findings
+in `docs/certifications/queue.md`'s "2026-10-04T11:00Z" entry: (1) `probe.state is PROBED` alone
+let a probe answer for a *different* model, or one whose route identity the gateway's own response
+never confirmed, classify this `model_id` `inference_only`; (2) any `ready` artifact classified
+`trainable_open_weight` with no `weights_digest` requirement and no organization binding; (3) no
+test pinned the already-correct unrecognised-status/`role=None`/license-not-accepted behavior, nor
+a real rename scenario. Formed the fix hypothesis before writing any test or module change: add a
+required `organization_id` parameter with a cross-org raise, require `weights_digest is not None`
+for `trainable_open_weight`, and require `probe.resolved_model == model_id` plus
+`probe.route_identity_state is RouteIdentityState.VERIFIED` for `inference_only`.
+
+**E** — implemented the three guards in `training_capability_classifier.py`. Wrote 13 new tests in
+`tests/tasks/test_ftf_0307.py` (9 regular + 4 Law-1 fault injections) plus updated the two
+pre-existing round-1 fault injections and the `_artifact`/`_probe` test helpers for the new
+required `organization_id` parameter and a `weights_digest`-bearing fixture. Each new fault
+injection mutates the real on-disk module to remove exactly one new guard, runs the mutated module
+in a fresh subprocess, confirms the real defect reproduces (e.g. a digest-unresolved ready artifact
+genuinely becomes `trainable_open_weight` once the `weights_digest is not None` line is dropped),
+then reverts the file byte-identical (verified via `md5`-equivalent byte comparison in the test
+itself).
+
+**V** — `uv run python3 tests/tasks/test_ftf_0307.py`: "all checks passed" (25 test functions, was
+12). `uv run ruff check .`/`ruff format --check .` clean (371 files). `uv run mypy .` clean (371
+source files, zero errors). `python3 scripts/validate_spec.py --strict` clean (after `git fetch
+--unshallow`, this sandbox's own pre-existing shallow-clone artifact). Regression swept
+`test_ftf_0207.py`/`test_ftf_0212.py`/`test_ftf_0301.py`/`test_ftf_0306.py` (this task's own four
+dependencies, via `uv run python3`) — all exit 0, zero regressions (the printed SSL/
+`TenantContextError` tracebacks in `test_ftf_0212.py`'s/`test_ftf_0301.py`'s own stdout are those
+suites' own disclosed negative-test cases, same precedent already established).
+`scripts/product_truth_check.py --fail-on-unwired`: unchanged `26/26`. `scripts/status.py`:
+unchanged `101/301` certified / 24 product-true (Law 2 — a resubmission is not a certification). No
+`.github/workflows/ci.yml` change needed — the existing "FTF-0307 negative-test proof" step already
+runs the full file. Confirmed no other module imports `classify_training_capability` (grep,
+`proving_symbol` still blank, same disclosed "no live caller yet" precedent) so the new required
+`organization_id` parameter breaks no caller.
+
+Pushed to `claude/wizardly-fermat-4idnly` (the designated branch for this session). Opened
+**PR https://github.com/SJZLab/Sovra/pull/471** ("[relay] FTF-0307: fix L2 round-2 findings
+(probe model/route-identity binding, weights_digest requirement, organization binding)").
+Appended the full clause-to-test mapping to `docs/certifications/queue.md` ("2026-10-06T00:00Z"
+entry) and to `docs/spec-matrix.yaml`'s FTF-0307 entry (notes field, "L2 fix-and-resubmit
+(2026-10-06, round 2)"). Updated `QUEUE.md`'s "## Active" item 0 with a new 0d2 entry recording
+this fix and the remaining list order (FTF-1002, FTF-0510, FTF-04A18, FTF-1807).
+
+**V (certification)** — per Law 4, not self-certified: `docs/spec-matrix.yaml`'s FTF-0307 entry
+stays `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`; independent Control-plane L2
+re-review and a real CI run on PR #471 are required before certification.
+
+STEP 3: this file, `QUEUE.md` and `docs/certifications/queue.md` updated this shift, before
+compaction. STEP 4 stop condition (a): one item per shift, per the Active list's own rule —
+stopping here. **FTF-1002, FTF-0510, FTF-04A18 and FTF-1807 remain the next-priority items** (DoDs
+in `docs/certifications/queue.md` "2026-10-04T11:00Z"). No open owner ask (`QUEUE.md` "Owner
+actions — current" unchanged: "None currently"). `BLOCKER.md` unchanged — no live entries.
+Certified: 101/301 (unchanged this shift — a submission, not a certification, Law 2). Product-true:
+26/26 unchanged.
 ## 2026-10-06T04:52:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-e7vilr` — fixed PR #471's
 ## parked merge conflict (returned work, route option 1); no new backlog item picked
 
