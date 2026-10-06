@@ -77,6 +77,67 @@ Updated: 2026-10-05T23:30:00Z (scheduled relay shift, branch `claude/wizardly-fe
   L4 gate (101/301 certified, unchanged). Stopping here -- one item per shift, per this list's own
   rule. No open owner ask (`QUEUE.md` "Owner actions -- current" unchanged: none open). `BLOCKER.md`
   unchanged -- no live entries.
+
+  **Post-open PR #470 maintenance (same session, 2026-10-06T09:XXZ):** `main` advanced past this
+  PR's own merge-base twice while CI ran (PR #463's FTF-0601 round-2 fix, PR #471's FTF-0307 fix,
+  each independently merged). Merged `origin/main` into this branch and found a real, substantive
+  collision, not just a textual one: PR #463's own `0019_eval_suites_reviewer_norm.py` and this
+  task's own `0019_org_gateway_policies.py` had independently claimed the identical Alembic
+  revision id `0019`. Caught before pushing, not left for CI to discover -- renumbered this task's
+  own migration to `0020_org_gateway_policies.py`, rebased its `down_revision` onto
+  `0019_eval_suites_reviewer_norm` (confirmed that revision is genuinely now the real chain head
+  before this task's own migration), and updated every reference to the old filename/revision id
+  in `tests/tasks/test_ftf_1206a.py`/`docs/spec-matrix.yaml`/this file/`PROGRESS.md`/
+  `docs/certifications/queue.md`. Re-ran the full real-Postgres chain locally (`alembic upgrade
+  head` through all 20 migrations, then both `test_ftf_1206a.py` and
+  `test_ftf_1206a_org_gateway_policy.py`) before pushing -- "a push that turns CI red costs a cycle
+  and the reviewers' trust." Also fixed this list's own "0e" entry: the textual merge had
+  duplicated a stale "0e. Then FTF-1206A (Backlog)" placeholder alongside this shift's own real
+  "0e. FTF-1206A implemented" entry (an artifact of `main`'s own unrelated 0d2/FTF-0307 insertion
+  landing between them) -- removed the stale duplicate, kept one real 0e.
+Updated: 2026-10-05T04:40:00Z (scheduled relay shift, branch `claude/wizardly-fermat-7vy5ny`) —
+  STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` exactly, no mismatch; `BLOCKER.md` read in
+  full, no live entries (all RESOLVED). STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
+  queue.md` fresh — the freshest entry was Control plane's own 2026-10-05T03:20Z certification of
+  FTF-H007/FTF-04A06, naming QUEUE.md item 0c (FTF-0601) as next. STEP 0.2: no `cognee-cli` binary in
+  this sandbox — text-search fallback declared.
+
+  STEP 1: picked **FTF-0601 round-2** (the "2026-10-01T13:40Z" review's six findings, restated at
+  item 0c above).
+
+  STEP 2 (PEV): full account — the real fix, clause-to-test mapping, and Law-1 fault-injection
+  evidence (10 genuine FAILs against the pre-fix code, including the exact original 500/`DataError`
+  reproduced on `grading_logic_version=2147483648`) are in `docs/spec-matrix.yaml`'s FTF-0601 entry
+  and `docs/certifications/queue.md`'s "2026-10-05T04:40Z" entry — not duplicated here to keep this
+  already-large file from growing further than necessary. Summary: `normalize_identity` (strip+
+  casefold) closes the independence-bypass vector; a new fail-closed `OrganizationMemberLookup`
+  checks `reviewer_id` against real organization membership at assignment time; `lock_evaluation_
+  suite` now refuses any actor other than the assigned reviewer (403); `grading_logic_version` is
+  capped at the real Postgres `Integer` range in both the validator and the shared contracts;
+  `validate_name` rejects whitespace-only; new migration `0019_eval_suites_reviewer_norm` normalizes
+  both reviewer CHECK constraints with a fail-closed data-remediation guard.
+
+  **V** — `uv sync --all-packages`; `ruff check .`/`ruff format --check .` clean (373 files, after
+  one self-fixed import-sort/line-length finding on the new migration file); `mypy .` clean (372
+  source files); `python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`);
+  `product_truth_check.py --fail-on-unwired` unchanged `26/26`; `status.py` unchanged `101/301`
+  certified (Law 2). Regression swept `test_ftf_0103.py`/`test_ftf_h003.py`, zero regressions. Ran
+  `tests/integration/test_ftf_0601_evaluation_suite.py` against a real local PostgreSQL 16 (started
+  this sandbox's own pre-installed, stopped `pg_ctlcluster 16 main`, created the `sovra_migrate`
+  superuser role and `sovra_ftf0601` database matching CI's own `evaluation-suite-integration` job
+  exactly) — all checks passed, including the full `0001`-`0019` Alembic chain and `0019`'s own
+  downgrade/upgrade round-trip. **Per Law 4, not self-certified** — `certification_state: PROVISIONAL`/
+  `proof_state: L1-PROVEN` unchanged; awaiting independent Control-plane L2 re-review and a real CI
+  run on the opened PR before certification.
+
+  STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all updated
+  this shift, before compaction. STEP 4 stop condition (a): FTF-0601 round-2 now joins the same
+  PROVISIONAL backlog awaiting Control-plane L2 certification and the L4 gate. Stopping here — one
+  item per shift; not picking up 0c2 (FTF-0500C round 5) in the same shift. No open owner ask
+  (`QUEUE.md` "Owner actions — current" unchanged: "None currently"). `BLOCKER.md` unchanged — no
+  live entries.
+
+---
 Updated: 2026-10-06T02:00:00Z (scheduled relay shift, branch `claude/wizardly-fermat-3kfw8a`) --
   STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly, no mismatch;
   `BLOCKER.md` read in full: no live entries (all RESOLVED history). STEP 0.1: this branch was
@@ -9234,22 +9295,23 @@ this same resolution (doc-only, redundant once this lands).
    Work strictly in this order. Skip only an item that has an open `[relay]` PR with GREEN CI.
    - **0a. DONE.** #449's red CI was fixed via #453, which merged as 6473924.
    - **0b. DONE 2026-10-05: FTF-H007 + FTF-04A06 CERTIFIED** (#461, merge eecfa93; see ledger.md). Next is 0c.
-   - **0c. FTF-0601. Returned NOT CERTIFIED in the same 2026-10-01T13:40Z entry — NOT awaiting review.** DoD:
-     1. Strip `reviewer_id` on store, and compare it with the creator after strip+casefold.
-     2. `reviewer_id` must be an existing member of the suite's organization. Only that reviewer may lock
-        (actor == reviewer_id). For a `final` suite, the reviewer must differ from the creator.
-     3. Cap `grading_logic_version` at 2147483647 in the validator, and add `maximum` to the OpenAPI and
-        JSON-schema contracts.
-     4. `validate_name` rejects whitespace-only on POST and PATCH.
-     5. Integration tests, each shown RED first:
-        - a padded or case-variant creator as reviewer, then lock: 409;
-        - a non-member reviewer: 400;
-        - the creator locking a suite: 403;
-        - 2^31 on POST and PATCH: 400;
-        - a whitespace-only name: 400;
-        - a raw-DB whitespace reviewer, then lock: 409.
-     6. Add a data-remediation step or runbook note to migration 0018 for existing locked rows with an
-        empty reviewer.
+   - **0c. DONE 2026-10-05: FTF-0601 round-2 fix submitted PROVISIONAL, PR https://github.com/SJZLab/Sovra/pull/463 opened.** All six DoD items
+     addressed: (1) `normalize_identity` (strip+casefold) in `evaluation_suite_schema.py`, used by both
+     `EvaluationSuite.__init__` and `lock_evaluation_suite`'s independence checks; `validate_reviewer_id_
+     or_none` now stores the stripped value. (2) new `OrganizationMemberLookup` (fail-closed default)
+     checked in `create_evaluation_suite`/`update_evaluation_suite` at assignment time and again in
+     `lock_evaluation_suite` as defense-in-depth; wired from the router's already-injected `role_lookup`.
+     (3) `lock_evaluation_suite` now raises `EvaluationSuiteLockForbiddenError` (403) unless
+     `actor.actor_id` normalizes equal to `reviewer_id`. (4) `GRADING_LOGIC_VERSION_MAX = 2147483647` in
+     the validator, `maximum` added to both `packages/contracts/openapi/06-interface.yaml` and
+     `packages/contracts/jsonschema/06-domain.schema.json`. (5) `validate_name` rejects whitespace-only;
+     `pattern: '\S'` added to both contract files' `EvaluationSuiteName`. (6) new migration
+     `0019_eval_suites_reviewer_norm` recreates both reviewer CHECK constraints with normalized
+     conditions, with a fail-closed data-remediation guard (raises naming violating row IDs rather than
+     auto-mutating a locked record). Full clause-to-test mapping and Law-1 fault-injection evidence (10
+     genuine FAILs against the pre-fix code, including the exact original 500/`DataError` reproduced) in
+     `docs/spec-matrix.yaml`'s FTF-0601 entry and `docs/certifications/queue.md`'s "2026-10-05T04:40Z"
+     entry. Not self-certified (Law 4) — awaiting Control-plane L2 re-review and a real CI run. Next is 0c2.
    - **0c2. FTF-0500C round 5.** Returned 2026-10-04T15:30Z (docs/certifications/queue.md, same timestamp).
      The blocker is NULL keys beyond the first window being silently lost. Work it only after 0a–0c.
    - **0c3. FTF-0500B round 4.** Returned 2026-10-04T17:20Z (docs/certifications/queue.md, same timestamp).
@@ -9265,7 +9327,16 @@ this same resolution (doc-only, redundant once this lands).
      Control-plane L2 re-review and a real CI run. Next in list order: FTF-0902, FTF-0307,
      FTF-1002, FTF-0510, FTF-04A18 and FTF-1807. Their DoDs are in docs/certifications/queue.md
      "2026-10-04T11:00Z".
-   - **0e. FTF-1206A implemented 2026-10-05 this shift, PR https://github.com/SJZLab/Sovra/pull/470 opened.** Migration
+   - **0d2. FTF-0307 fixed 2026-10-06 this shift, PR #471 opened.** Probe-to-model_id/route-identity
+     binding, a mandatory weights_digest for trainable_open_weight, and a required organization_id
+     with a cross-organization raise — all three round-2 findings from docs/certifications/queue.md
+     "2026-10-04T11:00Z". 13 new tests (9 regular + 4 Law-1 fault injections, each reverted
+     byte-identical), full clause-to-test mapping in this shift's own docs/certifications/queue.md
+     entry and docs/spec-matrix.yaml's FTF-0307 entry. Not self-certified (Law 4) — awaiting
+     Control-plane L2 re-review and a real CI run. Next in list order: FTF-1002, FTF-0510,
+     FTF-04A18 and FTF-1807. Their DoDs are in docs/certifications/queue.md "2026-10-04T11:00Z".
+   - **0e. FTF-1206A implemented 2026-10-05 this shift, PR https://github.com/SJZLab/Sovra/pull/470 opened
+     (merged forward onto the current `main` tip including PR #463/#471, this shift).** Migration
      `0019_org_gateway_policies.py` (two tables: `organization_gateway_policies`,
      `organization_gateway_route_changes`, both RLS-forced, the policy table
      SELECT/INSERT/UPDATE-only, the route-change table SELECT/INSERT-only —
@@ -9281,7 +9352,8 @@ this same resolution (doc-only, redundant once this lands).
      This unblocks FTF-1206's own persistence half as a follow-up task (this
      task's own `files` clause stayed closed to exactly the migration, the store
      module and its two test files — no change to `organization_policy_control.py`
-     or FTF-1206's own route/CRUD surface).
+     or FTF-1206's own route/CRUD surface). Supersedes the stale "0e. Then
+     FTF-1206A (Backlog)" placeholder this list carried before this shift.
    - FTF-0500B re-enters this list only if Control plane returns it again. A NEW verdict
      entry in docs/certifications/queue.md does NOT outrank 0a–0c. Work the list order, not the newest entry.
    For every acceptance and negative_acceptance clause, add a test that a clause-level fault turns red,

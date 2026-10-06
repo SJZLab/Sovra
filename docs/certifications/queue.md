@@ -23077,6 +23077,22 @@ redundant layers, and each pair of them turns the suite RED.
 Follow-up, not blocking: `scripts/verify_task.py --stage task` is BLOCKED for every item, including certified ones, because
 `spec/verification-map.json` has no merged evidence records. Control plane will scope this as a tooling task.
 
+## 2026-10-05T04:40Z — FTF-0601 round-2 fix-and-resubmit (relay)
+Full evidence, clause-to-test mapping and Law-1 fault-injection record are in `docs/spec-matrix.yaml`'s
+FTF-0601 entry (new note appended this shift) and `PROGRESS.md`'s matching top dated entry. Summary: all
+six findings from the "2026-10-01T13:40Z" FTF-0601 re-review fixed -- `normalize_identity` (strip+casefold)
+closes the independence-bypass vector in both `EvaluationSuite.__init__` and `lock_evaluation_suite`;
+`reviewer_id` is now checked against real organization membership at assignment time
+(`OrganizationMemberLookup`, fail-closed default, wired from the router's already-injected `role_lookup`);
+`lock_evaluation_suite` now refuses a lock attempt from anyone other than the suite's own assigned reviewer
+(`EvaluationSuiteLockForbiddenError`, 403); `grading_logic_version` is capped at the real Postgres `Integer`
+range (2147483647) in the validator and in both shared contract files; `validate_name` rejects
+whitespace-only; migration `0019_eval_suites_reviewer_norm` recreates both reviewer-related CHECK
+constraints with normalized (`lower(trim(...))`) conditions, with a data-remediation guard that fails
+closed (raises, naming violating row IDs) rather than silently applying a stricter constraint. Not
+self-certified (Law 4) -- `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` unchanged, awaiting
+Control-plane L2 re-review and a real CI run on PR https://github.com/SJZLab/Sovra/pull/463.
+
 ## 2026-10-05T04:10Z — [relay] FTF-0500D: fix L2 round-2 findings (full 6-dimension matrix test, additive early-return fault test)
 Fixes the finding from the 2026-10-04T11:00Z Control-plane L2 review (merged PR #410): "the matrix holds org
 default equal to the project profile and fixes the purpose, so an early return when org != project, or when
@@ -23156,7 +23172,7 @@ files -- `packages/litellm_client/organization_policy_control.py` (FTF-1206's ow
 procedures) and FTF-1206's own route/CRUD surface are untouched.
 
 **Implementation:**
-- `apps/api/alembic/versions/0019_org_gateway_policies.py` -- two real tables. `organization_gateway_policies`:
+- `apps/api/alembic/versions/0020_org_gateway_policies.py` -- two real tables. `organization_gateway_policies`:
   one row per organization (`UNIQUE(organization_id)`), three `jsonb` array columns each guarded by a real
   `jsonb_typeof(...) = 'array'` CHECK, `sovra_app` granted SELECT/INSERT/UPDATE -- never DELETE (a policy is reset
   via UPDATE, never removed). `organization_gateway_route_changes`: append-only, one row per real route-change
@@ -23164,13 +23180,19 @@ procedures) and FTF-1206's own route/CRUD surface are untouched.
   FTF-0401's own `uq_projects_organization_id_id`, `sovra_app` granted SELECT/INSERT only -- never UPDATE/DELETE
   (this task's own negative_acceptance clause, enforced at the database level). Both tables ENABLE+FORCE row-level
   security with a real, non-allow-all `tenant_isolation` policy scoped to `app.current_organization_id`, same
-  discipline as every prior migration in this chain. Chains onto FTF-0601's own `0018_eval_suites_reviewer_fix` as
-  the single serialized head.
+  discipline as every prior migration in this chain. Chains onto FTF-0601's own round-2 `0019_eval_suites_
+  reviewer_norm` as the single serialized head.
   - Disclosed, found the hard way: the contract's own suggested filename (`organization_gateway_policies.py`)
     produces a 34-character revision id, over `alembic_version.version_num`'s own 32-character column width -- the
     first `alembic upgrade head` attempt against a real local Postgres failed with a real `DataError`
     (`StringDataRightTruncation`), not assumed in advance. Fixed by shortening the revision id (and filename) to
     `0019_org_gateway_policies` (25 characters), confirmed clean, before writing any test.
+  - Disclosed, found a second time, after this PR was already open and green: `main` advanced with PR #463
+    (FTF-0601 round-2) in the meantime, which independently claimed the identical revision id `0019`
+    (`0019_eval_suites_reviewer_norm.py`) first. Merging `main` into this branch surfaced the collision --
+    renumbered this task's own migration to `0020_org_gateway_policies`, rebased `down_revision` onto
+    `0019_eval_suites_reviewer_norm`, and re-ran the full real-Postgres chain (now 20 migrations) plus both of
+    this task's own test files before pushing the fix.
 - `apps/api/app/litellm/organization_gateway_policy_store.py` -- the real persistence/query layer this task's own
   `api_contract` scopes it to ("Internal store consumed by FTF-1206's organization_policy_control; no new public
   route in this task"). `get_organization_gateway_policy`/`upsert_organization_gateway_policy` (create-or-update in
@@ -23250,6 +23272,61 @@ Refill & Sweep ">= 3" target for the next shift to top up.
 **V (certification)** -- per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state:
 L1-PROVEN` in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the opened PR
 (including the new integration job) are required before certification.
+## 2026-10-06T00:00Z — [relay] FTF-0307: fix L2 round-2 findings (probe model/route-identity binding, weights_digest requirement, organization binding)
+Fixes the three findings from the 2026-10-04T11:00Z Control-plane L2 review (merged PR #422), per the standing relay
+DoD rule ("each acceptance and negative_acceptance clause gets a test that a clause-level fault turns red, including
+at least one additive fault"). PR: https://github.com/SJZLab/Sovra/pull/471 (branch `claude/wizardly-fermat-4idnly`
+-> `main`).
+
+Clause-to-test mapping (full detail in `docs/spec-matrix.yaml`'s FTF-0307 entry, "L2 fix-and-resubmit (2026-10-06,
+round 2)" note):
+- Probe bound to `model_id` -> `test_probe_for_a_different_model_never_classifies_this_model_inference_only` +
+  additive fault `test_fault_injection_unbound_probe_model_treated_as_success_is_caught` (drops the
+  `resolved_model == model_id` line; a mismatched-model PROBED result then wrongly becomes inference_only).
+- Probe route identity verified -> `test_probe_with_unverified_route_identity_never_classifies_inference_only` +
+  additive fault `test_fault_injection_unverified_route_identity_treated_as_success_is_caught` (drops the
+  `route_identity_state is VERIFIED` line; an unverified-identity PROBED result then wrongly becomes
+  inference_only).
+- `weights_digest` required for trainable -> `test_ready_artifact_without_a_resolved_weights_digest_never_
+  classifies_trainable` + additive fault `test_fault_injection_missing_weights_digest_treated_as_trainable_is_
+  caught` (drops the `weights_digest is not None` line; a digest-unresolved ready artifact then wrongly becomes
+  trainable).
+- Organization binding -> `test_cross_organization_artifact_is_refused_never_classified` +
+  `test_organization_id_must_be_a_real_uuid` + additive fault `test_fault_injection_cross_organization_artifact_
+  unblocked_is_caught` (removes the whole cross-org raise block; a different organization's ready artifact then
+  wrongly classifies trainable instead of being refused).
+- Unrecognised status fails closed (already-correct, now pinned) -> `test_unrecognised_artifact_status_fails_
+  closed_to_unknown` (bypasses `TrainableArtifact.__init__`'s own validation via a direct post-construction
+  attribute set, simulating an ORM-loaded row with a status value from a migration this module does not yet know).
+- `role=None` passthrough (already-correct, now pinned) -> `test_assigned_role_none_passes_through_as_none_never_
+  defaulted`.
+- `license_approved=False` when not accepted (already-correct, now pinned) -> `test_license_approved_is_false_
+  when_not_yet_accepted`.
+- Real rename scenario -> `test_renaming_an_artifact_after_creation_never_changes_its_own_classification`
+  (classifies the same real artifact object before and after a live `display_name` mutation, confirming the
+  result is identical and driven only by status/digest).
+
+The two pre-existing round-1 fault injections were updated for the new required `organization_id` parameter and the
+new `weights_digest`-bearing fixture, re-verified still catching their own original faults.
+
+`uv run ruff check .`/`ruff format --check .`/`uv run mypy .` clean repo-wide (371 files, zero errors).
+`python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`, this sandbox's own pre-existing
+shallow-clone artifact). Regression swept `test_ftf_0207.py`/`test_ftf_0212.py`/`test_ftf_0301.py`/
+`test_ftf_0306.py` (this task's own four dependencies) -- all exit 0, zero regressions (the printed SSL/
+TenantContextError tracebacks in `test_ftf_0212.py`'s/`test_ftf_0301.py`'s own stdout are those suites' own
+disclosed negative-test cases, same precedent already established). `product_truth_check.py --fail-on-unwired`:
+unchanged `26/26`. `status.py`: unchanged `101/301` certified / 24 product-true (Law 2 -- a resubmission is not a
+certification). No `.github/workflows/ci.yml` change needed -- the existing "FTF-0307 negative-test proof" step
+already runs `tests/tasks/test_ftf_0307.py` in full.
+
+Updated `docs/spec-matrix.yaml`'s FTF-0307 entry with a full "L2 fix-and-resubmit (2026-10-06, round 2)" note,
+including this clause-to-test mapping (`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN`
+-- Law 2).
+
+**V (certification)** -- per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state:
+L1-PROVEN` unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the
+opened PR (#471) are required before certification.
+
 ## 2026-10-06T02:00Z — Relay maintenance: FTF-1506 dependency bump (source-map-js 1.2.1 → 1.2.2), unblocking PR #471's unrelated CI failure
 
 Not a fix-and-resubmit of an uncertified task -- FTF-1506 stays `certification_state: L2-CERTIFIED`,

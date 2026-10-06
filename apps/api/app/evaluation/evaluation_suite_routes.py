@@ -51,10 +51,12 @@ from app.evaluation.evaluation_suite_crud import (
     ActorInfo,
     EvaluationSuiteIncompleteError,
     EvaluationSuiteLockedError,
+    EvaluationSuiteLockForbiddenError,
     EvaluationSuiteManifestMismatchError,
     EvaluationSuiteManifestNotFoundError,
     EvaluationSuiteManifestNotLockedError,
     EvaluationSuiteNotFoundError,
+    EvaluationSuiteReviewerNotMemberError,
     ProjectNotFoundError,
     create_evaluation_suite,
     get_evaluation_suite,
@@ -117,6 +119,25 @@ def _actor_from(ctx: AuthorizedContext, request: Request) -> ActorInfo:
         actor_id=ctx.principal.subject,
         request_id=uuid.uuid4().hex,
     )
+
+
+def _member_lookup_for(
+    ctx: AuthorizedContext, role_lookup: RoleLookup
+) -> Callable[[uuid.UUID, str], bool]:
+    """Adapts the already-injected `role_lookup` (FTF-0103) into the CRUD
+    layer's generic "is this subject an active member" shape -- this
+    task's own real notion of organization membership until a dedicated
+    Membership-only lookup exists (same disclosed gap as `role_lookup`
+    itself: "member" currently means "holds some real role," since no
+    role-less Membership row can exist in this repository's current
+    model). Uses the *calling* request's own authenticated issuer -- a
+    reviewer's organization membership is resolved against the same
+    identity provider the request itself was authenticated against."""
+
+    def _lookup(organization_id: uuid.UUID, subject: str) -> bool:
+        return role_lookup(ctx.principal.issuer, subject, organization_id) is not None
+
+    return _lookup
 
 
 async def _read_json_body(request: Request) -> dict[str, Any]:
@@ -234,6 +255,7 @@ def build_evaluation_suite_router(
                     grading_logic_version=_require_int(payload, "grading_logic_version"),
                     reviewer_id=_optional_str(payload, "reviewer_id"),
                     actor=_actor_from(ctx, request),
+                    member_lookup=_member_lookup_for(ctx, role_lookup),
                 )
                 body = _serialize(suite)
         except (
@@ -244,6 +266,8 @@ def build_evaluation_suite_router(
             raise HTTPException(status_code=404, detail="not_found") from exc
         except (EvaluationSuiteManifestMismatchError, EvaluationSuiteManifestNotLockedError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except EvaluationSuiteReviewerNotMemberError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except (ValueError, EvaluationSuiteValidationError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return JSONResponse(body, status_code=201)
@@ -306,12 +330,15 @@ def build_evaluation_suite_router(
                     grading_logic_version=_optional_int(payload, "grading_logic_version"),
                     reviewer_id=_optional_str(payload, "reviewer_id"),
                     actor=_actor_from(ctx, request),
+                    member_lookup=_member_lookup_for(ctx, role_lookup),
                 )
                 body = _serialize(suite)
         except (EvaluationSuiteNotFoundError, TenantContextError) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
         except EvaluationSuiteLockedError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except EvaluationSuiteReviewerNotMemberError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except (ValueError, EvaluationSuiteValidationError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return JSONResponse(body, status_code=200)
@@ -335,12 +362,17 @@ def build_evaluation_suite_router(
                     project_id=project_id,
                     suite_id=suite_id,
                     actor=_actor_from(ctx, request),
+                    member_lookup=_member_lookup_for(ctx, role_lookup),
                 )
                 body = _serialize(suite)
         except (EvaluationSuiteNotFoundError, TenantContextError) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
         except (EvaluationSuiteLockedError, EvaluationSuiteIncompleteError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except EvaluationSuiteLockForbiddenError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except EvaluationSuiteReviewerNotMemberError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return JSONResponse(body, status_code=200)

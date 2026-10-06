@@ -49,8 +49,8 @@ id)` (reusing `0006_tool_definitions.py`'s own already-added
 written against a project that does not genuinely belong to the same
 organization.
 
-Revision ID: 0019_org_gateway_policies
-Revises: 0018_eval_suites_reviewer_fix
+Revision ID: 0020_org_gateway_policies
+Revises: 0019_eval_suites_reviewer_norm
 Create Date: 2026-10-05
 """
 
@@ -61,8 +61,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "0019_org_gateway_policies"
-down_revision = "0018_eval_suites_reviewer_fix"
+revision = "0020_org_gateway_policies"
+down_revision = "0019_eval_suites_reviewer_norm"
 branch_labels = None
 depends_on = None
 

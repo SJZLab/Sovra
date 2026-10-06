@@ -1991,6 +1991,74 @@ FTF-0307:
 
     Submitted PROVISIONAL, not self-certified (Law 4) -- independent Control-plane L2 review and a
     real CI run on the opened PR are required before certification.
+
+    L2 fix-and-resubmit (2026-10-06, round 2; docs/certifications/queue.md "2026-10-04T11:00Z"):
+    Control-plane review found (1) `probe.state is PROBED` alone let a real probe answer for a
+    *different* model, or one whose route identity the gateway's own response never confirmed,
+    classify this model_id inference_only; (2) any `ready` TrainableArtifact classified
+    trainable_open_weight with no weights_digest requirement and no organization binding -- a
+    cross-organization or still-digest-unresolved artifact would pass; (3) no test pinned the
+    already-correct unrecognised-status/role-None/license-not-accepted fail-closed behavior, nor a
+    real post-construction rename scenario. Fixed: `classify_training_capability` now takes a
+    required `organization_id: uuid.UUID` and raises `TrainingCapabilityClassificationError` if a
+    non-None `artifact.organization_id` differs from it (defense in depth -- `artifact_crud.
+    get_artifact` already tenant-scopes its own fetch, this module no longer trusts that alone, the
+    same "never only one layer" discipline FTF-0601's own PATCH-path fix already applied);
+    `trainable_open_weight` additionally requires `artifact.weights_digest is not None`;
+    `inference_only` additionally requires `probe.resolved_model == model_id` and
+    `probe.route_identity_state is RouteIdentityState.VERIFIED` (imported from
+    `real_chat_probe.RouteIdentityState`, Section 3.5's own route-identity-fingerprint type).
+
+    Clause-to-test mapping (tests/tasks/test_ftf_0307.py, 25 test functions, was 12):
+    - probe bound to model_id -> `test_probe_for_a_different_model_never_classifies_this_model_
+      inference_only` + `test_fault_injection_unbound_probe_model_treated_as_success_is_caught`
+      (additive fault: drops the `resolved_model == model_id` line, a mismatched-model PROBED
+      result then wrongly becomes inference_only).
+    - probe route identity verified -> `test_probe_with_unverified_route_identity_never_
+      classifies_inference_only` + `test_fault_injection_unverified_route_identity_treated_as_
+      success_is_caught` (additive fault: drops the `route_identity_state is VERIFIED` line, an
+      unverified-identity PROBED result then wrongly becomes inference_only).
+    - weights_digest required for trainable -> `test_ready_artifact_without_a_resolved_weights_
+      digest_never_classifies_trainable` + `test_fault_injection_missing_weights_digest_treated_
+      as_trainable_is_caught` (additive fault: drops the `weights_digest is not None` line, a
+      digest-unresolved ready artifact then wrongly becomes trainable).
+    - organization binding -> `test_cross_organization_artifact_is_refused_never_classified` +
+      `test_organization_id_must_be_a_real_uuid` + `test_fault_injection_cross_organization_
+      artifact_unblocked_is_caught` (additive fault: removes the whole cross-org raise block, a
+      different organization's ready artifact then wrongly classifies trainable instead of being
+      refused).
+    - unrecognised status fails closed (already-correct behavior, now pinned) ->
+      `test_unrecognised_artifact_status_fails_closed_to_unknown` (bypasses `TrainableArtifact.
+      __init__`'s own validation via a direct post-construction attribute set, simulating an
+      ORM-loaded row with a status value from a migration this module does not yet know).
+    - role=None passthrough (already-correct, now pinned) -> `test_assigned_role_none_passes_
+      through_as_none_never_defaulted`.
+    - license_approved=False when not accepted (already-correct, now pinned) -> `test_license_
+      approved_is_false_when_not_yet_accepted`.
+    - real rename scenario -> `test_renaming_an_artifact_after_creation_never_changes_its_own_
+      classification` (classifies the same real artifact object before and after a live
+      `display_name` mutation, confirming the result is identical and driven only by status/
+      digest).
+    The two pre-existing round-1 fault injections (`test_fault_injection_registered_artifact_
+    treated_as_ready_is_caught`, `test_fault_injection_any_probe_state_treated_as_success_is_
+    caught`) were updated for the new required `organization_id` parameter and the new
+    `weights_digest`-bearing fixture, re-verified still catching their own original faults.
+
+    uv run ruff check .//ruff format --check . clean repo-wide (371 files); uv run mypy . clean
+    repo-wide (371 source files, zero errors). python3 scripts/validate_spec.py --strict clean
+    (after `git fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact).
+    Regression swept test_ftf_0207.py/test_ftf_0212.py/test_ftf_0301.py/test_ftf_0306.py (this
+    task's own four dependencies, via `uv run python3`) -- all exit 0, zero regressions (the
+    printed SSL/TenantContextError tracebacks in test_ftf_0212.py's/test_ftf_0301.py's own stdout
+    are those suites' own disclosed negative-test cases, same precedent already established,
+    confirmed exit 0). scripts/product_truth_check.py --fail-on-unwired: unchanged 26/26
+    (proving_symbol still blank -- no live caller added by this fix, same disclosed boundary this
+    module's own docstring already established). scripts/status.py: unchanged 101/301 certified
+    (Law 2 -- a resubmission is not a certification). No `.github/workflows/ci.yml` change needed
+    -- the existing "FTF-0307 negative-test proof" step already runs this file in full.
+
+    Not self-certified (Law 4) -- independent Control-plane L2 re-review and a real CI run on the
+    opened PR are required before certification.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0307.py
@@ -7783,6 +7851,82 @@ FTF-0601:
     `evaluation-suite-integration` job already run these files. **Not self-certified (Law 4)** --
     awaiting independent Control-plane L2 re-review and a real CI run on the opened PR before
     certification.
+
+    L2 round-2 fix-and-resubmit (2026-10-05, docs/certifications/queue.md "2026-10-01T13:40Z"
+    findings; QUEUE.md "## Active" item 0c): six new findings against the real router (via RLS) --
+    independence bypass (a padded or case-variant `reviewer_id` compared equal to the creator under
+    a bare `==`), `grading_logic_version=2147483648` surfacing a real 500 (`DataError`), a
+    whitespace-only `name` stored with 200/201, the lock-level whitespace check unpinned, and
+    `reviewer_id` being unbound self-asserted free text (the creator could lock their own `final`
+    suite under any name). Clause-to-test mapping:
+
+    1. Strip+casefold identity comparison (`normalize_identity`, `evaluation_suite_schema.py`):
+    `validate_reviewer_id_or_none` now stores the *stripped* value (was previously returned raw,
+    unstripped); `EvaluationSuite.__init__`'s and `lock_evaluation_suite`'s own independence checks
+    now compare via `normalize_identity` (strip+casefold) instead of a bare `==`. Tests:
+    `test_construction_rejects_final_suite_locked_with_padded_self_review`,
+    `..._with_case_variant_self_review` (unit), the real-router "padded, case-variant creator as
+    reviewer, then lock" case (integration, 409).
+
+    2. Reviewer must be a real organization member: new `OrganizationMemberLookup`/
+    `default_organization_member_lookup` (fail-closed, same disclosed gap as `rbac_middleware`'s own
+    `default_role_lookup` -- no live Membership table exists yet) checked in `create_evaluation_
+    suite`/`update_evaluation_suite` at assignment time, and re-checked in `lock_evaluation_suite` as
+    defense-in-depth against a raw-write bypass. The real router wires it from the already-injected
+    `role_lookup` (member == holds some real role). Test: the real-router "non-member reviewer" PATCH
+    case (integration, 400).
+
+    3. Lock must be performed by the reviewer principal: new `EvaluationSuiteLockForbiddenError`
+    (403) in `lock_evaluation_suite` when `normalize_identity(actor.actor_id) !=
+    normalize_identity(suite.reviewer_id)`. Test: the real-router "the creator locking a suite" case
+    (integration, 403), and "acceptance: locking a development suite succeeds when performed by its
+    own real, assigned reviewer principal" (200).
+
+    4. `grading_logic_version` capped at `GRADING_LOGIC_VERSION_MAX = 2147483647` (Postgres
+    `Integer`'s own 4-byte signed range) in `validate_grading_logic_version`; `maximum: 2147483647`
+    added to both `packages/contracts/openapi/06-interface.yaml` and `packages/contracts/jsonschema/
+    06-domain.schema.json`. Tests: `test_validate_grading_logic_version` (unit, boundary + boundary+1),
+    the real-router "2147483648 on POST/PATCH" cases (integration, 400 each -- previously a real
+    500/`DataError`, reproduced and confirmed before the fix: stashing the three production files
+    reproduced the exact original 500 crash on the PATCH case).
+
+    5. `validate_name` rejects whitespace-only (was `not value`, which a non-empty whitespace string
+    passes) on both POST and PATCH; `pattern: '\S'` added to `EvaluationSuiteName` in both contract
+    files. Tests: `test_validate_name` (unit, space and tab/newline), the real-router "whitespace-only
+    name on POST/PATCH" cases (integration, 400 each).
+
+    6. Migration `0019_eval_suites_reviewer_norm`: both `ck_evaluation_suites_independent_final_
+    reviewer` and `ck_evaluation_suites_reviewer_present_when_locked` recreated with
+    `lower(trim(...))`/`trim(...)` conditions matching the application-level normalization, mirrored
+    in `EvaluationSuite.__table_args__`. Data-remediation step (not a silent schema change):
+    `upgrade()` queries for any existing row that would violate either new condition and raises
+    `RuntimeError` naming the exact row IDs rather than auto-mutating a locked evaluation record: no
+    violating row exists in this chain's own history, so this path is untested by the real migration
+    run itself, but it fails closed rather than fails silent -- documented in the migration's own
+    docstring as the explicit operator runbook. Full chain `0001`-`0019` upgrades clean against a
+    real local PostgreSQL 16; `0019` alone round-trips `downgrade -1` -> `upgrade head` clean.
+
+    Every clause-level fault confirmed red first against the exact pre-fix code (Law 1): directly
+    reproduced the three validator bugs (`validate_name('   ')`, `validate_grading_logic_version
+    (2147483648)`, `validate_reviewer_id_or_none('  creator-1  ')` returning unstripped) against the
+    pre-fix function bodies, each reproducing the exact predicted defect; then stashed the three
+    production files (`evaluation_suite_schema.py`/`evaluation_suite_crud.py`/
+    `evaluation_suite_routes.py`) and a full re-run of `tests/integration/
+    test_ftf_0601_evaluation_suite.py` against the genuine pre-fix code -- 10 genuine FAILs, including
+    a real crash reproducing the exact original `DataError`/500 on `grading_logic_version=2147483648`
+    PATCH -- then restored the fix and both suites re-ran clean (all checks passed).
+
+    `uv sync --all-packages`; `ruff check .`/`ruff format --check .` clean (373 files, after one
+    self-fixed import-sort/line-length finding on the new migration file). `mypy .` clean (372 source
+    files). `python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`, this
+    sandbox's own pre-existing shallow-clone artifact). `product_truth_check.py --fail-on-unwired`
+    unchanged `26/26`. `status.py` unchanged `101/301` certified (Law 2 -- a resubmission is not a
+    certification). Regression swept `test_ftf_0103.py`/`test_ftf_h003.py` (RBAC/tenant-isolation
+    primitives this task's own new `member_lookup` wiring composes, never reimplements), zero
+    regressions. No `ci.yml` change needed -- the existing `gate`-job step and the existing
+    `evaluation-suite-integration` job already run both files. **Not self-certified (Law 4)** --
+    awaiting independent Control-plane L2 re-review and a real CI run on the opened PR before
+    certification.
   proof_state: L1-PROVEN
   proving_symbol: build_evaluation_suite_router
   proving_test: tests/tasks/test_ftf_0601.py
@@ -8962,11 +9106,16 @@ FTF-1206A:
     FTF-1206 now depends on this task. Denominator 301.
 
     Implemented 2026-10-05: real forward migration
-    `apps/api/alembic/versions/0019_org_gateway_policies.py` (revision id kept <=32 chars --
+    `apps/api/alembic/versions/0020_org_gateway_policies.py` (revision id kept <=32 chars --
     alembic_version.version_num's own column width -- so the filename is shortened from the
     contract's own suggested `organization_gateway_policies` to `org_gateway_policies`; discovered
-    the hard way, via a real DataError on the first `alembic upgrade head` attempt, not assumed)
-    adds two tables: `organization_gateway_policies` (one real row per organization, `UNIQUE
+    the hard way, via a real DataError on the first `alembic upgrade head` attempt, not assumed.
+    First written as revision `0019_org_gateway_policies`; renumbered to `0020` and rebased onto
+    `0019_eval_suites_reviewer_norm` when merging this PR's own branch forward onto `main`, because
+    FTF-0601's own round-2 fix (PR #463, merged separately) had independently claimed revision
+    `0019` first -- caught and fixed as part of this PR's own merge-conflict resolution, not
+    silently left as two same-numbered migrations.) Adds two tables: `organization_gateway_policies`
+    (one real row per organization, `UNIQUE
     (organization_id)`, three `jsonb` array columns each guarded by a real `jsonb_typeof(...) =
     'array'` CHECK, `sovra_app` granted SELECT/INSERT/UPDATE -- never DELETE, a policy is reset via
     UPDATE, not removed) and `organization_gateway_route_changes` (append-only, one row per real

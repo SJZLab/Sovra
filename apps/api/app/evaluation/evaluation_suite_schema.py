@@ -134,11 +134,13 @@ from app.auth.organization_workspace_schema import Base
 __all__ = [
     "ALLOWED_PURPOSES",
     "ALLOWED_STATUSES",
+    "GRADING_LOGIC_VERSION_MAX",
     "NAME_MAX_LENGTH",
     "PURPOSE_DEVELOPMENT",
     "PURPOSE_FINAL",
     "EvaluationSuite",
     "EvaluationSuiteValidationError",
+    "normalize_identity",
     "validate_grading_logic_version",
     "validate_name",
     "validate_purpose",
@@ -147,6 +149,12 @@ __all__ = [
 ]
 
 NAME_MAX_LENGTH = 200
+
+# Postgres `Integer` is a 4-byte signed int (-2147483648..2147483647) -- an
+# L2 round-2 finding: `grading_logic_version=2147483648` reached the
+# database unvalidated and surfaced as an opaque 500 (`DataError`) instead
+# of a real 400. See `validate_grading_logic_version` below.
+GRADING_LOGIC_VERSION_MAX = 2147483647
 
 # Section 69.1/69.4's own train/validation/development/final role
 # vocabulary, narrowed to the two purposes a suite itself can carry -- see
@@ -185,24 +193,47 @@ def validate_purpose(value: object) -> str:
 
 
 def validate_name(value: object) -> str:
-    if not isinstance(value, str) or not value:
-        raise EvaluationSuiteValidationError("name must be a non-empty string")
+    """Refuses an empty *or whitespace-only* string -- an L2 round-2
+    finding: `"   "` passed the old `not value` check (a non-empty string
+    is truthy) and was stored as a real suite name."""
+    if not isinstance(value, str) or not value.strip():
+        raise EvaluationSuiteValidationError("name must be a non-empty, non-whitespace string")
     if len(value) > NAME_MAX_LENGTH:
         raise EvaluationSuiteValidationError(f"name must be at most {NAME_MAX_LENGTH} characters")
     return value
 
 
 def validate_grading_logic_version(value: object) -> int:
-    """Refuses anything but a real positive integer -- this task's own
-    negative_acceptance, "unversioned grading logic ... rejected" (see
-    this module's own docstring, point 3). `bool` is deliberately excluded
-    even though it is a `int` subclass in Python -- a caller passing
-    `True`/`False` almost certainly made a mistake, not a real version."""
+    """Refuses anything but a real positive integer in Postgres `Integer`
+    range -- this task's own negative_acceptance, "unversioned grading
+    logic ... rejected" (see this module's own docstring, point 3). `bool`
+    is deliberately excluded even though it is a `int` subclass in Python
+    -- a caller passing `True`/`False` almost certainly made a mistake, not
+    a real version. The upper bound is an L2 round-2 finding:
+    `2147483648` (2**31) previously reached the database unvalidated and
+    surfaced as an opaque 500 (`DataError`) instead of a real 400."""
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise EvaluationSuiteValidationError(
             f"grading_logic_version must be a positive integer: {value!r}"
         )
+    if value > GRADING_LOGIC_VERSION_MAX:
+        raise EvaluationSuiteValidationError(
+            f"grading_logic_version must be at most {GRADING_LOGIC_VERSION_MAX}: {value!r}"
+        )
     return value
+
+
+def normalize_identity(value: str) -> str:
+    """strip+casefold -- the one normalization every identity comparison in
+    this module/its CRUD layer uses (reviewer vs. creator independence,
+    actor vs. reviewer lock binding, reviewer vs. organization membership)
+    so a padding or letter-case variant of the same real identity can never
+    be treated as a different one. An L2 round-2 finding: a padded
+    (`" user-o-evaluator"`) or case-variant (`"USER-O-EVALUATOR"`)
+    `reviewer_id` compared equal to neither the creator nor the actor under
+    a bare `==`, letting a final suite lock with an effectively self-
+    reviewed, or an effectively uncontrolled, reviewer identity."""
+    return value.strip().casefold()
 
 
 def validate_reviewer_id_or_none(value: object) -> str | None:
@@ -211,14 +242,20 @@ def validate_reviewer_id_or_none(value: object) -> str | None:
     refused here the same way `None` is accepted, so a caller cannot smuggle
     "no reviewer" past this check by sending `""` instead of omitting the
     field (FTF-0601's own negative_acceptance -- a `final` suite locking
-    with no real reviewer)."""
+    with no real reviewer). The stored value is the *stripped* string, not
+    the raw input -- an L2 round-2 finding: a padded value (`"
+    user-o-evaluator"`) previously round-tripped unchanged, so a bare `==`
+    comparison against the creator's own unpadded identity never matched."""
     if value is None:
         return None
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, str):
         raise EvaluationSuiteValidationError("reviewer_id must be a non-empty string or null")
-    if len(value) > 200:
+    stripped = value.strip()
+    if not stripped:
+        raise EvaluationSuiteValidationError("reviewer_id must be a non-empty string or null")
+    if len(stripped) > 200:
         raise EvaluationSuiteValidationError("reviewer_id must be at most 200 characters")
-    return value
+    return stripped
 
 
 class EvaluationSuite(Base):
@@ -267,16 +304,23 @@ class EvaluationSuite(Base):
         # Section 69.1: "Final suite creator/reviewer is independent of
         # candidate implementer" -- a locked, final-purpose suite can
         # never carry the same identity for both fields (see this module's
-        # own docstring, "reviewer role").
+        # own docstring, "reviewer role"). `lower(trim(...))` is this
+        # CHECK's own DB-level mirror of `normalize_identity` (strip+
+        # casefold) -- an L2 round-2 finding: a bare `=` let a padded or
+        # case-variant reviewer_id bypass this constraint (migration
+        # 0019_eval_suites_reviewer_normalization).
         CheckConstraint(
-            "NOT (purpose = 'final' AND status = 'locked' AND reviewer_id = created_by)",
+            "NOT (purpose = 'final' AND status = 'locked' "
+            "AND lower(trim(reviewer_id)) = lower(trim(created_by)))",
             name="ck_evaluation_suites_independent_final_reviewer",
         ),
-        # A locked suite must have a real, non-empty reviewer assigned (any
-        # purpose) -- `<> ''` closes the real gap `IS NOT NULL` alone left
-        # open (an empty-string reviewer_id satisfies `IS NOT NULL`).
+        # A locked suite must have a real, non-empty, non-whitespace-only
+        # reviewer assigned (any purpose) -- `trim(...) <> ''` closes the
+        # real gap a bare `<> ''` alone left open (a whitespace-only
+        # reviewer_id written by a raw INSERT satisfies `<> ''`; migration
+        # 0019_eval_suites_reviewer_normalization).
         CheckConstraint(
-            "status <> 'locked' OR (reviewer_id IS NOT NULL AND reviewer_id <> '')",
+            "status <> 'locked' OR (reviewer_id IS NOT NULL AND trim(reviewer_id) <> '')",
             name="ck_evaluation_suites_reviewer_present_when_locked",
         ),
         ForeignKeyConstraint(
@@ -326,14 +370,19 @@ class EvaluationSuite(Base):
                 "Section 69.1: 'Final suite creator/reviewer is independent "
                 "of candidate implementer'"
             )
+        reviewer_id = kwargs.get("reviewer_id")
+        created_by = kwargs.get("created_by")
         if (
             is_locked
             and kwargs.get("purpose") == PURPOSE_FINAL
-            and kwargs.get("reviewer_id") == kwargs.get("created_by")
+            and isinstance(reviewer_id, str)
+            and isinstance(created_by, str)
+            and normalize_identity(reviewer_id) == normalize_identity(created_by)
         ):
             raise EvaluationSuiteValidationError(
                 "a final-purpose suite's reviewer_id must differ from its "
-                "own created_by -- Section 69.1's own independence rule"
+                "own created_by (compared after strip+casefold) -- Section "
+                "69.1's own independence rule"
             )
 
         super().__init__(**kwargs)

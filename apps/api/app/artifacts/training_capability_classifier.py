@@ -94,11 +94,13 @@ never a name-based or metadata-based lookup this module performs itself.
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 
 from packages.litellm_client.alias_reconciliation import AliasReconciliationResult
+from packages.litellm_client.real_chat_probe import RouteIdentityState
 from packages.litellm_client.real_tool_call_probe import ToolCallProbeResult, ToolCallProbeState
 
 from app.artifacts.artifact_schema import ALLOWED_STATUSES, TrainableArtifact
@@ -173,6 +175,7 @@ class TrainingCapabilityClassification:
 def classify_training_capability(
     *,
     model_id: str,
+    organization_id: uuid.UUID,
     reconciliation: AliasReconciliationResult,
     probe: ToolCallProbeResult | None = None,
     artifact: TrainableArtifact | None = None,
@@ -181,9 +184,31 @@ def classify_training_capability(
     """Combine already-resolved evidence into the four independent
     dimensions this task's own acceptance clause names. Never performs a
     network call, a database query, or a name/string-based lookup of its
-    own -- every input is already-resolved data the caller supplies."""
+    own -- every input is already-resolved data the caller supplies.
+
+    Defense in depth (never trusting a single upstream check alone, the
+    same discipline FTF-0601's own PATCH-path fix already applied): even
+    though `artifact_crud.get_artifact` already tenant-scopes its own
+    fetch and `apply_mark_ready` already requires a resolved
+    `weights_digest` before `status` can reach `ready`, this module
+    re-checks both itself -- a cross-organization `artifact` argument is
+    a caller contract violation (raises, like an invalid `model_id`), and
+    a `ready` artifact with no resolved `weights_digest` never classifies
+    as trainable. Probe evidence is bound to `model_id` with a verified
+    route identity (Section 3.5) before it can prove `inference_only` --
+    a probe answer for a different model, or one whose identity the
+    gateway's own response never confirmed, is not evidence for this
+    model and fails closed to `unknown`.
+    """
     if not isinstance(model_id, str) or not model_id:
         raise TrainingCapabilityClassificationError("model_id must be a non-empty string")
+    if not isinstance(organization_id, uuid.UUID):
+        raise TrainingCapabilityClassificationError("organization_id must be a real uuid.UUID")
+    if artifact is not None and artifact.organization_id != organization_id:
+        raise TrainingCapabilityClassificationError(
+            "artifact does not belong to the caller-supplied organization_id -- "
+            "classify_training_capability never classifies a cross-organization artifact"
+        )
 
     access = AccessState.NOT_GRANTED
     for reconciled in reconciliation.models:
@@ -204,17 +229,33 @@ def classify_training_capability(
 
     evidence_probed_at = probe.probed_at if probe is not None else None
 
-    if artifact_availability is ArtifactAvailability.READY:
+    if (
+        artifact is not None
+        and artifact_availability is ArtifactAvailability.READY
+        and artifact.weights_digest is not None
+    ):
         capability = TrainingCapability.TRAINABLE_OPEN_WEIGHT
-        detail = "backed by a ready TrainableArtifact (full_weight/adapter)"
-    elif probe is not None and probe.state is ToolCallProbeState.PROBED:
+        detail = (
+            "backed by a ready TrainableArtifact with a resolved weights_digest "
+            "(full_weight/adapter)"
+        )
+    elif (
+        probe is not None
+        and probe.state is ToolCallProbeState.PROBED
+        and probe.resolved_model == model_id
+        and probe.route_identity_state is RouteIdentityState.VERIFIED
+    ):
         capability = TrainingCapability.INFERENCE_ONLY
         detail = (
-            "no ready artifact; a real dated probe confirms the endpoint answers inference calls"
+            "no ready, digest-verified artifact; a real dated probe bound to this model_id with "
+            "a verified route identity confirms the endpoint answers inference calls"
         )
     else:
         capability = TrainingCapability.UNKNOWN
-        detail = "no ready artifact and no successful real probe evidence -- fails closed"
+        detail = (
+            "no ready digest-verified artifact and no model-bound, route-verified real probe "
+            "evidence -- fails closed"
+        )
 
     return TrainingCapabilityClassification(
         model_id=model_id,

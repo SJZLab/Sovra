@@ -10,7 +10,7 @@ as every prior Postgres-integration-tested task). This suite proves,
 without any database:
 
 1. The tracked forward migration (`apps/api/alembic/versions/
-   0019_org_gateway_policies.py`) genuinely declares ENABLE+FORCE
+   0020_org_gateway_policies.py`) genuinely declares ENABLE+FORCE
    ROW LEVEL SECURITY and a real, non-allow-all `tenant_isolation` policy
    on both tables; grants the restricted `sovra_app` role SELECT/INSERT/
    UPDATE (never DELETE) on `organization_gateway_policies`, and SELECT/
@@ -19,9 +19,12 @@ without any database:
    `jsonb_typeof(...) = 'array'` CHECK on all three namespace/approver
    columns; carries the real composite foreign key tying a route-change
    record's `project_id` to the same organization's own `projects` row;
-   and chains onto FTF-0601's own `0018_eval_suites_reviewer_fix` as the
-   single serialized head -- proven by real fault injection against the
-   file on disk, not just re-reading its text.
+   and chains onto FTF-0601's own round-2 `0019_eval_suites_reviewer_norm`
+   (merged into `main` as PR #463 after this task's own migration was
+   first written as `0019_org_gateway_policies` -- renumbered to `0020`
+   on merge, since `0019` was independently claimed by that PR first) as
+   the single serialized head -- proven by real fault injection against
+   the file on disk, not just re-reading its text.
 2. `organization_gateway_policy_store.py`'s own domain shape -- `ActorInfo`,
    `ProjectNotFoundError`, the two ORM record classes' real column sets,
    the `_to_policy` conversion round-trip, and that the module reuses
@@ -63,9 +66,9 @@ from app.litellm.organization_gateway_policy_store import (  # noqa: E402
     record_route_change,
 )
 
-MIGRATION_PATH = ROOT / "apps" / "api" / "alembic" / "versions" / "0019_org_gateway_policies.py"
+MIGRATION_PATH = ROOT / "apps" / "api" / "alembic" / "versions" / "0020_org_gateway_policies.py"
 PRIOR_MIGRATION_PATH = (
-    ROOT / "apps" / "api" / "alembic" / "versions" / "0018_eval_suites_reviewer_fix.py"
+    ROOT / "apps" / "api" / "alembic" / "versions" / "0019_eval_suites_reviewer_norm.py"
 )
 
 FAILURES: list[str] = []
@@ -211,15 +214,16 @@ def test_migration_chains_onto_ftf_0601_round2_as_single_serialized_head() -> No
     check(
         "FTF-1206A",
         "this migration's down_revision points at FTF-0601's own round-2 "
-        "fix migration, not a parallel branch",
-        'down_revision = "0018_eval_suites_reviewer_fix"' in src,
+        "fix migration (0019_eval_suites_reviewer_norm, merged into main as "
+        "PR #463), not a parallel branch",
+        'down_revision = "0019_eval_suites_reviewer_norm"' in src,
     )
     prior_src = PRIOR_MIGRATION_PATH.read_text(encoding="utf-8")
     check(
         "FTF-1206A",
-        "0018_eval_suites_reviewer_fix is still the prior migration in the "
+        "0019_eval_suites_reviewer_norm is still the prior migration in the "
         "chain (revision id unchanged by this task)",
-        'revision = "0018_eval_suites_reviewer_fix"' in prior_src,
+        'revision = "0019_eval_suites_reviewer_norm"' in prior_src,
     )
 
 
