@@ -1,4 +1,19 @@
 # PROGRESS — Sovra
+
+## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
+Updated: 2026-10-06T17:00Z. Source: `python3 scripts/status.py` on main.
+- **Status: 105/301 certified · 25 product-true.** Certification counts change only through Control-plane
+  `[CERT]` PRs, so these figures are exact until the next one.
+- **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307. FTF-1206A's verdict is CERTIFIED; its
+  status flips after relay item FTF-H034-F1.
+- **Merged PROVISIONAL, awaiting Control-plane review:** FTF-0902 round 3 (#491).
+- **Returned to the relay (NOT CERTIFIED):** FTF-0500D round 4, FTF-1002 round 4 (tests only). See
+  docs/certifications/queue.md 2026-10-06T16:35Z.
+- **Needs the owner: nothing.** L2 reviews, certification, merging relay PRs and returned items are Control-plane or
+  relay work. Owner asks appear only under QUEUE.md "Owner actions — current".
+- **Relay:** 3 hourly lanes (A owner routine at :48 every 2h; B :28 and C :08 via the dispatcher). Per-shift logs
+  are in docs/progress/ (one file per shift); entries below this block are history up to 2026-10-06.
+
 ## 2026-10-05T23:30:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-shlvk5` — FTF-1206A implemented (Organization gateway policy persistence, migration prerequisite for FTF-1206)
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch. `BLOCKER.md` read in
