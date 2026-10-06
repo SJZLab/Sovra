@@ -9338,7 +9338,10 @@ real CI run this push triggered (`37415793440`) was watched to completion: **44/
 confirming the fix genuinely carries through once the merge-ref actually picks up `main`'s fixed
 lockfile. Independent Control-plane L2 re-review (not this entry) is still the next step before
 FTF-0307 itself can certify. No `BLOCKER.md` entry was needed; this was tooling access, not a
-design question, per the entry it resolves.
+design question, per the entry it resolves. (A second, independent session reached the same
+conclusion moments later and logged a duplicate confirmation, correctly attributing the fix to
+"a separate session, not this one" -- that entry is not repeated here to avoid recording the same
+resolved fact twice; PR #475 on `main` carries its own text for the record.)
 
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was
