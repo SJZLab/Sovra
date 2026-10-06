@@ -809,6 +809,21 @@ def test_migration_functions_emit_the_real_schema() -> None:
         {"organization_id", "workspace_id", "issuer", "subject", "role", "status", "created_at"}
         <= columns,
     )
+    constraints = {
+        c.name: str(c.sqltext) for c in tables[0][1:] if c.__class__.__name__ == "CheckConstraint"
+    }
+    role_check = constraints.get("ck_memberships_role", "")
+    check(
+        "FTF-0103A",
+        "the role CHECK allows exactly the six Section 6.4 roles",
+        sorted(re.findall(r"'([a-z_]+)'", role_check)) == sorted(SIX_ROLES),
+    )
+    check(
+        "FTF-0103A",
+        "the status CHECK allows exactly active/revoked",
+        sorted(re.findall(r"'([a-z_]+)'", constraints.get("ck_memberships_status", "")))
+        == ["active", "revoked"],
+    )
     statements = " | ".join(up.statements())
     for needle in (
         'GRANT SELECT ON memberships TO "sovra_app"',

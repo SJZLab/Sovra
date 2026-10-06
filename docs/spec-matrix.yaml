@@ -92,18 +92,38 @@ FTF-0103:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0103.py
 FTF-0103A:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Live session principal and Membership persistence (wires FTF-0101 sessions and FTF-0103 RBAC into every live route)
   evidence_hash: ''
-  implementation_state: ABSENT
+  implementation_state: IMPLEMENTED
   notes: >-
     Owner-approved Release 1 addendum (2026-10-06), docs/adr/0003-task-addendum-ftf-0103a.md.
     The contract is spec/addenda/FTF-0103A.json; tools/r1_handoff.py covers only the frozen 300.
-    Unblocks every success path in apps/api (today every /api/v1 route denies every request). Denominator 302.
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+    Unblocks every success path in apps/api (before this, every /api/v1 route denied every request). Denominator 302.
+
+    Implemented 2026-10-06 (PROVISIONAL, not self-certified): forward migration
+    `apps/api/alembic/versions/0021_memberships.py` (`memberships`: org/workspace-nullable composite FK,
+    issuer+subject identity, six-role CHECK, active/revoked CHECK, NULLS NOT DISTINCT uniqueness, ENABLE+FORCE RLS,
+    `tenant_isolation` policy plus a SELECT-only `identity_self_lookup` policy that admits only the identity bound
+    transaction-locally by the login-time lookup, `sovra_app` granted SELECT only);
+    `apps/api/app/auth/membership_store.py` (DB-backed `role_lookup` -- active, organization-level rows only, so a
+    workspace-level or revoked membership never grants an organization role -- and the login `membership_lookup`);
+    `apps/api/app/auth/session_principal.py` (`SessionPrincipalResolver`: signed cookie only, verified, age-checked,
+    revocation-checked; header/query/body can never supply an identity or role; content-free decision events);
+    `apps/api/app/auth/membership_admin_cli.py` (operator CLI, migrate role, the only write path);
+    `apps/api/app/main.py` passes the one real resolver and role lookup to EVERY router and wires the login
+    router's membership lookup and a shared `SessionRevocationStore` (so `/auth/logout` revokes the API session too).
+    Proof: tests/tasks/test_ftf_0103a.py (no DB; enumerates every /api/v1 route of the real `create_app()` and fails if
+    any keeps a default resolver/role lookup or has no `require_role` guard -- the audit is itself shown able to
+    fail) and tests/integration/test_ftf_0103a_live_auth_path.py (real idpyoidc provider + real `create_app()` over
+    HTTP + real Postgres 16 as `sovra_app`: 200/401/403 matrix, no role widening by body/header/query/workspace
+    membership, app role cannot write, absent/foreign tenant context reads 0 rows, WITH CHECK not fail-open).
+    Mutation gate (scripts/mutation_gate.py) 51/51 killed locally. See
+    docs/certifications/submissions/2026-10-06T1900Z-FTF-0103A.md.
+  proof_state: L1-PROVEN
+  proving_symbol: SessionPrincipalResolver
+  proving_test: tests/tasks/test_ftf_0103a.py
 FTF-0104:
   certification_state: CERTIFIED
   criticality: MUST

@@ -708,6 +708,11 @@ def main() -> None:
         "no row leaked from the refused WITH CHECK inserts",
         _count(owner, A, subject="with-check-probe") == 0,
     )
+    with owner.begin() as conn:  # clear anything a fail-open policy let through
+        conn.execute(
+            text("SELECT set_config('app.current_organization_id', :o, true)"), {"o": str(A)}
+        )
+        conn.execute(text("DELETE FROM memberships WHERE subject = 'with-check-probe'"))
     _probe_insert(str(A), A)()  # positive control: own context passes
     check(
         "FTF-0103A",
@@ -732,4 +737,10 @@ def _finish() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except BaseException as exc:  # noqa: BLE001 - report every check collected so far
+        FAILURES.append(f"FAIL [FTF-0103A] unexpected {type(exc).__name__}: {str(exc)[:300]}")
+        _finish()
