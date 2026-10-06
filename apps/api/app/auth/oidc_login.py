@@ -88,7 +88,9 @@ from app.auth.oidc_settings import OidcSettings
 
 _ALLOWED_ALGS = {"RS256", "ES256"}
 _TXN_COOKIE_NAME = "sovra_oidc_txn"
-SESSION_COOKIE_NAME = "sovra_session"
+_SESSION_COOKIE_NAME = "sovra_session"
+# FTF-0103A: public name for the API's principal resolver (app.auth.session_principal).
+SESSION_COOKIE_NAME = _SESSION_COOKIE_NAME
 _TXN_TTL_SECONDS = 600
 _TXN_SALT = "sovra-oidc-txn"
 _SESSION_SALT = "sovra-oidc-session"
@@ -370,7 +372,7 @@ def read_session_cookie(signing_key: bytes, token: str, *, max_age: int) -> dict
         return None
 
 
-class SessionRevocationStore:
+class _SessionRevocationStore:
     """Real, working logout revocation for a single running process.
 
     Section 45/65.3 require "logout/session revocation", not merely
@@ -396,8 +398,9 @@ class SessionRevocationStore:
             return jti in self._revoked
 
 
-# Backwards-compatible private alias (FTF-0101's own tests/docs name it so).
-_SessionRevocationStore = SessionRevocationStore
+# FTF-0103A: the same store `app.auth.session_principal` consults, so a logout
+# through this router revokes the session for the API's principal resolver too.
+SessionRevocationStore = _SessionRevocationStore
 
 
 class _RefreshTokenStore:
@@ -436,10 +439,6 @@ def build_oidc_login_router(
     to these values is `main.py`'s job (see module docstring: no
     secret-manager integration exists in this repo yet)."""
     router = APIRouter()
-    # FTF-0103A: a caller that also resolves principals from this same
-    # session cookie (`app.auth.session_principal`) passes the SAME store
-    # here, so a logout through this router revokes the session for the
-    # API's own principal resolver too.
     revoked_jtis = revocations if revocations is not None else SessionRevocationStore()
     refresh_tokens = _RefreshTokenStore()
 
@@ -505,7 +504,7 @@ def build_oidc_login_router(
         response = RedirectResponse(settings.post_login_redirect_path, status_code=302)
         response.delete_cookie(_TXN_COOKIE_NAME)
         response.set_cookie(
-            SESSION_COOKIE_NAME,
+            _SESSION_COOKIE_NAME,
             session_token,
             max_age=settings.session_ttl_seconds,
             httponly=True,
@@ -515,7 +514,7 @@ def build_oidc_login_router(
         return response
 
     def _read_active_session(request: Request) -> dict[str, Any] | None:
-        token = request.cookies.get(SESSION_COOKIE_NAME)
+        token = request.cookies.get(_SESSION_COOKIE_NAME)
         if not token:
             return None
         data = read_session_cookie(signing_key, token, max_age=settings.session_ttl_seconds)
@@ -552,7 +551,7 @@ def build_oidc_login_router(
         revoked_jtis.revoke(data["jti"])
         refresh_tokens.pop(data["jti"])
         response = JSONResponse({"status": "logged_out"})
-        response.delete_cookie(SESSION_COOKIE_NAME)
+        response.delete_cookie(_SESSION_COOKIE_NAME)
         return response
 
     @router.post("/auth/refresh")
@@ -611,7 +610,7 @@ def build_oidc_login_router(
 
         response = JSONResponse({"status": "refreshed"})
         response.set_cookie(
-            SESSION_COOKIE_NAME,
+            _SESSION_COOKIE_NAME,
             new_session_token,
             max_age=settings.session_ttl_seconds,
             httponly=True,

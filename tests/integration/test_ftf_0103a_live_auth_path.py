@@ -42,18 +42,18 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(API_ROOT))
 sys.path.insert(0, str(ROOT / "tests" / "integration"))
 
+import test_oidc_login_real_provider as oidc_it  # noqa: E402  (FTF-0101's real-OP harness)
 import uvicorn  # noqa: E402
 from sqlalchemy import create_engine, text  # noqa: E402
 from sqlalchemy.exc import DBAPIError  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
-import test_oidc_login_real_provider as oidc_it  # noqa: E402  (FTF-0101's real-OP harness)
+from app.auth.oidc_login import read_session_cookie  # noqa: E402
 from app.auth.organization_workspace_schema import (  # noqa: E402
     APP_ROLE_NAME,
     Organization,
     Workspace,
 )
-from app.auth.oidc_login import read_session_cookie  # noqa: E402
 
 FAILURES: list[str] = []
 # The real OP's fixed (test-only) authenticated user; its ID-token `sub` is the
@@ -259,7 +259,11 @@ def main() -> None:
 
     # -- migration: upgrade / downgrade / upgrade round trip ---------------
     up = _alembic(migration_url, "upgrade", "head")
-    check("FTF-0103A", f"alembic upgrade head ({up.returncode}): {up.stderr[-300:]}", up.returncode == 0)
+    check(
+        "FTF-0103A",
+        f"alembic upgrade head ({up.returncode}): {up.stderr[-300:]}",
+        up.returncode == 0,
+    )
     owner = create_engine(migration_url)
     with owner.connect() as conn:
         has_table = conn.execute(text("SELECT to_regclass('public.memberships')")).scalar_one()
@@ -273,7 +277,9 @@ def main() -> None:
         down.returncode == 0 and gone is None,
     )
     up2 = _alembic(migration_url, "upgrade", "head")
-    check("FTF-0103A", f"re-upgrade head ({up2.returncode}): {up2.stderr[-300:]}", up2.returncode == 0)
+    check(
+        "FTF-0103A", f"re-upgrade head ({up2.returncode}): {up2.stderr[-300:]}", up2.returncode == 0
+    )
     if FAILURES:
         _finish()
 
@@ -298,18 +304,25 @@ def main() -> None:
             grant = lambda org, role, ws=None: _cli(  # noqa: E731
                 migration_url,
                 "grant",
-                "--organization-id", str(org),
-                "--issuer", issuer,
-                "--subject", SUBJECT,
-                "--role", role,
+                "--organization-id",
+                str(org),
+                "--issuer",
+                issuer,
+                "--subject",
+                SUBJECT,
+                "--role",
+                role,
                 *(["--workspace-id", str(ws)] if ws else []),
             )
             revoke = lambda org, ws=None: _cli(  # noqa: E731
                 migration_url,
                 "revoke",
-                "--organization-id", str(org),
-                "--issuer", issuer,
-                "--subject", SUBJECT,
+                "--organization-id",
+                str(org),
+                "--issuer",
+                issuer,
+                "--subject",
+                SUBJECT,
                 *(["--workspace-id", str(ws)] if ws else []),
             )
             projects_a = f"/api/v1/organizations/{A}/projects"
@@ -326,7 +339,11 @@ def main() -> None:
             # Active viewer in org A -> real login -> real API calls.
             check("FTF-0103A", "CLI grant viewer in A", grant(A, "viewer").returncode == 0)
             status, cookie, body = _login(api, issuer)
-            check("FTF-0103A", f"login for an active member succeeds: {status} {body}", status == 302 and cookie is not None)
+            check(
+                "FTF-0103A",
+                f"login for an active member succeeds: {status} {body}",
+                status == 302 and cookie is not None,
+            )
             assert cookie is not None, (status, body, FAILURES)
             code, _ = _api(api, "GET", projects_a, cookie=cookie)
             check("FTF-0103A", f"active viewer GET own org -> 200 (got {code})", code == 200)
@@ -341,41 +358,74 @@ def main() -> None:
             code, _ = _api(api, "GET", projects_a, cookie=f"{name}=garbage")
             check("FTF-0103A", f"garbage cookie -> 401 (got {code})", code == 401)
             code, _ = _api(
-                api, "GET", projects_a,
-                headers={"X-Sovra-Subject": SUBJECT, "X-Forwarded-User": SUBJECT, "Authorization": f"Bearer {SUBJECT}"},
+                api,
+                "GET",
+                projects_a,
+                headers={
+                    "X-Sovra-Subject": SUBJECT,
+                    "X-Forwarded-User": SUBJECT,
+                    "Authorization": f"Bearer {SUBJECT}",
+                },
             )
-            check("FTF-0103A", f"identity headers without a session -> 401 (got {code})", code == 401)
+            check(
+                "FTF-0103A", f"identity headers without a session -> 401 (got {code})", code == 401
+            )
 
             # 403 matrix: foreign org behaves like a missing org.
             foreign_code, foreign_body = _api(api, "GET", projects_b, cookie=cookie)
             missing_code, missing_body = _api(
                 api, "GET", f"/api/v1/organizations/{uuid.uuid4()}/projects", cookie=cookie
             )
-            check("FTF-0103A", f"member of A only, org B -> 403 (got {foreign_code})", foreign_code == 403)
+            check(
+                "FTF-0103A",
+                f"member of A only, org B -> 403 (got {foreign_code})",
+                foreign_code == 403,
+            )
             check(
                 "FTF-0103A",
                 "a foreign organization is indistinguishable from a missing one",
                 (foreign_code, foreign_body) == (missing_code, missing_body),
             )
             code, _ = _api(
-                api, "POST", projects_a, cookie=cookie,
-                body={"workspace_id": str(WS_A), "name": "p1", "project_type": "generic_model_tuning"},
+                api,
+                "POST",
+                projects_a,
+                cookie=cookie,
+                body={
+                    "workspace_id": str(WS_A),
+                    "name": "p1",
+                    "project_type": "generic_model_tuning",
+                },
             )
             check("FTF-0103A", f"viewer (insufficient role) POST -> 403 (got {code})", code == 403)
 
             # negative_acceptance: nothing in the request can grant/widen a role.
             code, _ = _api(
-                api, "POST", projects_b, cookie=cookie,
+                api,
+                "POST",
+                projects_b,
+                cookie=cookie,
                 headers={"X-Sovra-Role": "organization_admin", "X-Role": "organization_admin"},
                 body={
-                    "organization_id": str(B), "role": "organization_admin",
-                    "workspace_id": str(WS_B), "name": "x", "project_type": "generic_model_tuning",
+                    "organization_id": str(B),
+                    "role": "organization_admin",
+                    "workspace_id": str(WS_B),
+                    "name": "x",
+                    "project_type": "generic_model_tuning",
                 },
             )
-            check("FTF-0103A", f"body/header role claims cannot widen -> 403 (got {code})", code == 403)
+            check(
+                "FTF-0103A",
+                f"body/header role claims cannot widen -> 403 (got {code})",
+                code == 403,
+            )
             code, _ = _api(api, "GET", f"{projects_b}?role=organization_admin", cookie=cookie)
             check("FTF-0103A", f"query role claim cannot widen -> 403 (got {code})", code == 403)
-            check("FTF-0103A", "CLI grants a WORKSPACE-level org_admin in B", grant(B, "organization_admin", WS_B).returncode == 0)
+            check(
+                "FTF-0103A",
+                "CLI grants a WORKSPACE-level org_admin in B",
+                grant(B, "organization_admin", WS_B).returncode == 0,
+            )
             code, _ = _api(api, "GET", projects_b, cookie=cookie)
             check(
                 "FTF-0103A",
@@ -384,10 +434,21 @@ def main() -> None:
             )
 
             # Role change takes effect on the SAME session (role read per request).
-            check("FTF-0103A", "CLI upgrades A to workspace_admin", grant(A, "workspace_admin").returncode == 0)
+            check(
+                "FTF-0103A",
+                "CLI upgrades A to workspace_admin",
+                grant(A, "workspace_admin").returncode == 0,
+            )
             code, resp = _api(
-                api, "POST", projects_a, cookie=cookie,
-                body={"workspace_id": str(WS_A), "name": "p1", "project_type": "generic_model_tuning"},
+                api,
+                "POST",
+                projects_a,
+                cookie=cookie,
+                body={
+                    "workspace_id": str(WS_A),
+                    "name": "p1",
+                    "project_type": "generic_model_tuning",
+                },
             )
             check("FTF-0103A", f"workspace_admin POST -> 201 (got {code} {resp})", code == 201)
 
@@ -403,7 +464,11 @@ def main() -> None:
                 status == 403 and cookie2 is None and body.get("status") == "revoked",
             )
             nothing = revoke(A)
-            check("FTF-0103A", "revoking an already-revoked membership exits 1", nothing.returncode == 1)
+            check(
+                "FTF-0103A",
+                "revoking an already-revoked membership exits 1",
+                nothing.returncode == 1,
+            )
             bad = grant(A, "superuser")
             check("FTF-0103A", "CLI refuses a role outside the six", bad.returncode == 1)
 
@@ -413,12 +478,13 @@ def main() -> None:
             assert cookie3 is not None
             code, _ = _api(api, "GET", projects_a, cookie=cookie3)
             check("FTF-0103A", f"fresh session -> 200 (got {code})", code == 200)
-            data = read_session_cookie(
-                oidc_it.SIGNING_KEY, cookie3.split("=", 1)[1], max_age=900
-            )
+            data = read_session_cookie(oidc_it.SIGNING_KEY, cookie3.split("=", 1)[1], max_age=900)
             assert data is not None
             code, _ = _api(
-                api, "POST", "/auth/logout", cookie=cookie3,
+                api,
+                "POST",
+                "/auth/logout",
+                cookie=cookie3,
                 headers={"Origin": "http://localhost:3000", "X-CSRF-Token": data["csrf"]},
             )
             check("FTF-0103A", f"logout -> 200 (got {code})", code == 200)
@@ -448,32 +514,64 @@ def main() -> None:
         def run() -> None:
             with app_engine.begin() as conn:
                 conn.execute(
-                    text("SELECT set_config('app.current_organization_id', :o, true)"), {"o": str(A)}
+                    text("SELECT set_config('app.current_organization_id', :o, true)"),
+                    {"o": str(A)},
                 )
                 conn.execute(text(sql))
 
         return _expect_db_error(run, "permission denied")
 
     before = _count(owner, A)
-    check("FTF-0103A", "sovra_app cannot INSERT memberships", _try(
-        f"INSERT INTO memberships (organization_id, issuer, subject, role) VALUES ('{A}', 'i', 's', 'viewer')"))
-    check("FTF-0103A", "sovra_app cannot UPDATE memberships", _try("UPDATE memberships SET role = 'organization_admin'"))
+    check(
+        "FTF-0103A",
+        "sovra_app cannot INSERT memberships",
+        _try(
+            f"INSERT INTO memberships (organization_id, issuer, subject, role) "
+            f"VALUES ('{A}', 'i', 's', 'viewer')"
+        ),
+    )
+    check(
+        "FTF-0103A",
+        "sovra_app cannot UPDATE memberships",
+        _try("UPDATE memberships SET role = 'organization_admin'"),
+    )
     check("FTF-0103A", "sovra_app cannot DELETE memberships", _try("DELETE FROM memberships"))
-    check("FTF-0103A", "no membership row was changed by the refused writes", _count(owner, A) == before)
+    check(
+        "FTF-0103A",
+        "no membership row was changed by the refused writes",
+        _count(owner, A) == before,
+    )
 
     rows_no_ctx = _raw_app_query(app_engine, "SELECT id FROM memberships")
-    rows_empty = _raw_app_query(app_engine, "SELECT id FROM memberships", settings={"app.current_organization_id": ""})
+    rows_empty = _raw_app_query(
+        app_engine, "SELECT id FROM memberships", settings={"app.current_organization_id": ""}
+    )
     rows_foreign = _raw_app_query(
-        app_engine, "SELECT id FROM memberships WHERE organization_id = :o",
-        settings={"app.current_organization_id": str(B)}, params={"o": A},
+        app_engine,
+        "SELECT id FROM memberships WHERE organization_id = :o",
+        settings={"app.current_organization_id": str(B)},
+        params={"o": A},
     )
     rows_own = _raw_app_query(
-        app_engine, "SELECT id FROM memberships",
+        app_engine,
+        "SELECT id FROM memberships",
         settings={"app.current_organization_id": str(A)},
     )
-    check("FTF-0103A", f"absent tenant context reads 0 rows (got {len(rows_no_ctx)})", len(rows_no_ctx) == 0)
-    check("FTF-0103A", f"empty tenant context reads 0 rows (got {len(rows_empty)})", len(rows_empty) == 0)
-    check("FTF-0103A", f"foreign tenant context reads 0 rows (got {len(rows_foreign)})", len(rows_foreign) == 0)
+    check(
+        "FTF-0103A",
+        f"absent tenant context reads 0 rows (got {len(rows_no_ctx)})",
+        len(rows_no_ctx) == 0,
+    )
+    check(
+        "FTF-0103A",
+        f"empty tenant context reads 0 rows (got {len(rows_empty)})",
+        len(rows_empty) == 0,
+    )
+    check(
+        "FTF-0103A",
+        f"foreign tenant context reads 0 rows (got {len(rows_foreign)})",
+        len(rows_foreign) == 0,
+    )
     check("FTF-0103A", "positive control: own tenant context reads A's rows", len(rows_own) >= 1)
 
     # identity_self_lookup exposes only the bound identity's own rows.
@@ -481,27 +579,50 @@ def main() -> None:
         ("issuer only", {"app.current_issuer": issuer}, 0),
         ("subject only", {"app.current_subject": SUBJECT}, 0),
         ("another identity", {"app.current_issuer": issuer, "app.current_subject": "nobody"}, 0),
-        ("another issuer", {"app.current_issuer": "https://evil.example/", "app.current_subject": SUBJECT}, 0),
+        (
+            "another issuer",
+            {"app.current_issuer": "https://evil.example/", "app.current_subject": SUBJECT},
+            0,
+        ),
     ):
         got = _raw_app_query(app_engine, "SELECT id FROM memberships", settings=settings)
-        check("FTF-0103A", f"identity binding ({label}) reads {expect} rows (got {len(got)})", len(got) == expect)
+        check(
+            "FTF-0103A",
+            f"identity binding ({label}) reads {expect} rows (got {len(got)})",
+            len(got) == expect,
+        )
     own_identity = _raw_app_query(
-        app_engine, "SELECT DISTINCT subject FROM memberships",
+        app_engine,
+        "SELECT DISTINCT subject FROM memberships",
         settings={"app.current_issuer": issuer, "app.current_subject": SUBJECT},
     )
-    check("FTF-0103A", "positive control: own identity reads only its own rows",
-          [r[0] for r in own_identity] == [SUBJECT])
+    check(
+        "FTF-0103A",
+        "positive control: own identity reads only its own rows",
+        [r[0] for r in own_identity] == [SUBJECT],
+    )
 
     # Policy shape: RLS on+forced, no allow-all policy.
     with owner.connect() as conn:
-        flags = conn.execute(text(
-            "SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname = 'memberships'"
-        )).one()
-        policies = conn.execute(text(
-            "SELECT policyname, cmd, qual, with_check FROM pg_policies WHERE tablename = 'memberships'"
-        )).fetchall()
+        flags = conn.execute(
+            text(
+                "SELECT relrowsecurity, relforcerowsecurity FROM pg_class "
+                "WHERE relname = 'memberships'"
+            )
+        ).one()
+        policies = conn.execute(
+            text(
+                "SELECT policyname, cmd, qual, with_check FROM pg_policies "
+                "WHERE tablename = 'memberships'"
+            )
+        ).fetchall()
     check("FTF-0103A", "RLS enabled and forced on memberships", tuple(flags) == (True, True))
-    check("FTF-0103A", "no allow-all policy", all((p[2] or "").strip() not in ("true", "(true)") for p in policies) and len(policies) == 2)
+    check(
+        "FTF-0103A",
+        "no allow-all policy",
+        all((p[2] or "").strip() not in ("true", "(true)") for p in policies)
+        and len(policies) == 2,
+    )
 
     # Constraints (migration role; the superuser bypasses RLS, constraints still hold).
     def _owner_insert(org, ws, role="viewer", status="active", subject="constraint-probe"):
@@ -509,23 +630,43 @@ def main() -> None:
             with owner.begin() as conn:
                 conn.execute(
                     text(
-                        "INSERT INTO memberships (organization_id, workspace_id, issuer, subject, role, status) "
+                        "INSERT INTO memberships "
+                        "(organization_id, workspace_id, issuer, subject, role, status) "
                         "VALUES (:o, :w, 'iss', :s, :r, :st)"
                     ),
                     {"o": org, "w": ws, "s": subject, "r": role, "st": status},
                 )
+
         return run
 
     _owner_insert(A, None)()
-    check("FTF-0103A", "duplicate org-level (NULL workspace) membership is rejected",
-          _expect_db_error(_owner_insert(A, None), "uq_memberships_org_workspace_identity"))
+    check(
+        "FTF-0103A",
+        "duplicate org-level (NULL workspace) membership is rejected",
+        _expect_db_error(_owner_insert(A, None), "uq_memberships_org_workspace_identity"),
+    )
     _owner_insert(A, WS_A)()  # same identity, workspace-level: a distinct row
-    check("FTF-0103A", "role outside the six is rejected",
-          _expect_db_error(_owner_insert(A, None, role="superuser", subject="x1"), "ck_memberships_role"))
-    check("FTF-0103A", "status outside active/revoked is rejected",
-          _expect_db_error(_owner_insert(A, None, status="pending", subject="x2"), "ck_memberships_status"))
-    check("FTF-0103A", "workspace of a different organization is rejected",
-          _expect_db_error(_owner_insert(A, WS_B, subject="x3"), "fk_memberships_organization_id_workspace_id"))
+    check(
+        "FTF-0103A",
+        "role outside the six is rejected",
+        _expect_db_error(
+            _owner_insert(A, None, role="superuser", subject="x1"), "ck_memberships_role"
+        ),
+    )
+    check(
+        "FTF-0103A",
+        "status outside active/revoked is rejected",
+        _expect_db_error(
+            _owner_insert(A, None, status="pending", subject="x2"), "ck_memberships_status"
+        ),
+    )
+    check(
+        "FTF-0103A",
+        "workspace of a different organization is rejected",
+        _expect_db_error(
+            _owner_insert(A, WS_B, subject="x3"), "fk_memberships_organization_id_workspace_id"
+        ),
+    )
 
     # WITH CHECK is not fail-open: a non-superuser holding INSERT is still bound by RLS.
     with owner.begin() as conn:
@@ -538,7 +679,10 @@ def main() -> None:
             with owner.begin() as conn:
                 conn.execute(text("SET LOCAL ROLE ftf0103a_probe"))
                 if ctx is not None:
-                    conn.execute(text("SELECT set_config('app.current_organization_id', :c, true)"), {"c": ctx})
+                    conn.execute(
+                        text("SELECT set_config('app.current_organization_id', :c, true)"),
+                        {"c": ctx},
+                    )
                 conn.execute(
                     text(
                         "INSERT INTO memberships (organization_id, issuer, subject, role) "
@@ -546,6 +690,7 @@ def main() -> None:
                     ),
                     {"o": org},
                 )
+
         return run
 
     for label, ctx, org in (
@@ -553,13 +698,22 @@ def main() -> None:
         ("empty tenant context", "", A),
         ("foreign tenant context", str(B), A),
     ):
-        check("FTF-0103A", f"WITH CHECK refuses an INSERT under {label}",
-              _expect_db_error(_probe_insert(ctx, org), "row-level security"))
-    check("FTF-0103A", "no row leaked from the refused WITH CHECK inserts",
-          _count(owner, A, subject="with-check-probe") == 0)
+        check(
+            "FTF-0103A",
+            f"WITH CHECK refuses an INSERT under {label}",
+            _expect_db_error(_probe_insert(ctx, org), "row-level security"),
+        )
+    check(
+        "FTF-0103A",
+        "no row leaked from the refused WITH CHECK inserts",
+        _count(owner, A, subject="with-check-probe") == 0,
+    )
     _probe_insert(str(A), A)()  # positive control: own context passes
-    check("FTF-0103A", "positive control: own-context INSERT succeeds",
-          _count(owner, A, subject="with-check-probe") == 1)
+    check(
+        "FTF-0103A",
+        "positive control: own-context INSERT succeeds",
+        _count(owner, A, subject="with-check-probe") == 1,
+    )
     with owner.begin() as conn:
         conn.execute(text("REVOKE ALL ON memberships FROM ftf0103a_probe"))
         conn.execute(text("DROP ROLE ftf0103a_probe"))

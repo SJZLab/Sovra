@@ -22,72 +22,88 @@ import argparse
 import os
 import sys
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.auth.membership_store import MembershipError, grant_membership, revoke_membership
 
 __all__ = ["main"]
 
 
+def _grant(session: Session, args: argparse.Namespace) -> int:
+    membership_id = grant_membership(
+        session,
+        organization_id=args.organization_id,
+        workspace_id=args.workspace_id,
+        issuer=args.issuer,
+        subject=args.subject,
+        role=args.role,
+    )
+    session.commit()
+    print(f"granted membership {membership_id}")
+    return 0
+
+
+def _revoke(session: Session, args: argparse.Namespace) -> int:
+    changed = revoke_membership(
+        session,
+        organization_id=args.organization_id,
+        workspace_id=args.workspace_id,
+        issuer=args.issuer,
+        subject=args.subject,
+    )
+    session.commit()
+    if changed == 0:
+        print("no active membership matched; nothing revoked", file=sys.stderr)
+        return 1
+    print(f"revoked {changed} membership(s)")
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="membership_admin_cli", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("grant", "revoke"):
-        cmd = sub.add_parser(name)
+    grant = sub.add_parser("grant")
+    revoke = sub.add_parser("revoke")
+    for cmd in (grant, revoke):
         cmd.add_argument("--organization-id", type=uuid.UUID, required=True)
         cmd.add_argument("--issuer", required=True)
         cmd.add_argument("--subject", required=True)
         cmd.add_argument("--workspace-id", type=uuid.UUID, default=None)
-        if name == "grant":
-            cmd.add_argument("--role", required=True)
+    grant.add_argument("--role", required=True)
+    grant.set_defaults(handler=_grant)
+    revoke.set_defaults(handler=_revoke)
     return parser
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    session_factory: Callable[[], Session] | None = None,
+) -> int:
     args = _parser().parse_args(argv)
-    database_url = os.environ.get("SOVRA_DATABASE_URL")
-    if not database_url:
-        print("SOVRA_DATABASE_URL (the migrate-role connection) is required", file=sys.stderr)
-        return 2
+    engine = None
+    if session_factory is None:
+        database_url = os.environ.get("SOVRA_DATABASE_URL")
+        if not database_url:
+            print("SOVRA_DATABASE_URL (the migrate-role connection) is required", file=sys.stderr)
+            return 2
+        engine = create_engine(database_url)
+        session_factory = sessionmaker(bind=engine)
 
-    engine = create_engine(database_url)
-    session = sessionmaker(bind=engine)()
+    session = session_factory()
     try:
-        if args.command == "grant":
-            membership_id = grant_membership(
-                session,
-                organization_id=args.organization_id,
-                workspace_id=args.workspace_id,
-                issuer=args.issuer,
-                subject=args.subject,
-                role=args.role,
-            )
-            session.commit()
-            print(f"granted membership {membership_id}")
-            return 0
-        changed = revoke_membership(
-            session,
-            organization_id=args.organization_id,
-            workspace_id=args.workspace_id,
-            issuer=args.issuer,
-            subject=args.subject,
-        )
-        session.commit()
-        if changed == 0:
-            print("no active membership matched; nothing revoked", file=sys.stderr)
-            return 1
-        print(f"revoked {changed} membership(s)")
-        return 0
+        return int(args.handler(session, args))
     except MembershipError as exc:
         session.rollback()
         print(f"refused: {exc}", file=sys.stderr)
         return 1
     finally:
         session.close()
-        engine.dispose()
+        if engine is not None:
+            engine.dispose()
 
 
 if __name__ == "__main__":

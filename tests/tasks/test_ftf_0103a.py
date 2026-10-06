@@ -378,6 +378,719 @@ def test_store_and_cli_modules_exist() -> None:
         check("FTF-0103A", f"{module} is importable", ok)
 
 
+# -- 4. store / CLI / migration logic against a scripted fake session ------
+#    (the SQL itself is proven against real Postgres in the integration
+#    test; these pin the Python decision logic around it, no database)
+
+
+class _FakeResult:
+    def __init__(self, rows: list[tuple] | None = None, scalar: object = None, rowcount: int = 0):
+        self.rows = rows or []
+        self._scalar = scalar
+        self.rowcount = rowcount
+
+    def first(self) -> tuple | None:
+        return self.rows[0] if self.rows else None
+
+    def one(self) -> tuple:
+        if len(self.rows) != 1:
+            raise RuntimeError("expected exactly one row")
+        return self.rows[0]
+
+    def __iter__(self):  # noqa: ANN204
+        return iter(self.rows)
+
+    def scalar_one_or_none(self) -> object:
+        return self._scalar
+
+
+class _FakeSession:
+    """Records every statement; models only the tenant-context read-back that
+    `execute_tenant_scoped` performs, everything else is scripted."""
+
+    def __init__(self, handler=None) -> None:  # noqa: ANN001
+        self.handler = handler or (lambda sql, params: _FakeResult())
+        self.calls: list[tuple[str, dict]] = []
+        self.tenant = ""
+        self.committed = self.rolled_back = self.closed = False
+
+    def execute(self, clause: object, params: dict | None = None) -> _FakeResult:
+        sql, params = str(clause), dict(params or {})
+        self.calls.append((sql, params))
+        if "set_config('app.current_organization_id'" in sql:
+            self.tenant = params["org_id"]
+            return _FakeResult()
+        if "current_setting('app.current_organization_id'" in sql:
+            return _FakeResult(scalar=self.tenant or None)
+        if "set_config('app.current_issuer'" in sql:
+            return _FakeResult()
+        return self.handler(sql, params)
+
+    def commit(self) -> None:
+        self.committed = True
+
+    def rollback(self) -> None:
+        self.rolled_back = True
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _data_calls(session: _FakeSession) -> list[tuple[str, dict]]:
+    return [c for c in session.calls if "set_config" not in c[0] and "current_setting" not in c[0]]
+
+
+def test_lookup_org_role_decision_logic() -> None:
+    from app.auth.membership_store import lookup_org_role
+    from app.auth.rbac_middleware import Role
+
+    org = uuid.uuid4()
+    session = _FakeSession(lambda sql, params: _FakeResult(rows=[("viewer",)]))
+    role = lookup_org_role(lambda: session, "https://iss/", "sub-1", org)  # type: ignore[arg-type,return-value]
+    check("FTF-0103A", "an active org-level row maps to its Role", role is Role.VIEWER)
+    sql, params = _data_calls(session)[0]
+    check(
+        "FTF-0103A", "role query only counts ORGANIZATION-level rows", "workspace_id IS NULL" in sql
+    )
+    check("FTF-0103A", "role query only counts ACTIVE rows", "status = 'active'" in sql)
+    check(
+        "FTF-0103A",
+        "role query is bound to the path organization and the validated identity",
+        params == {"org": org, "issuer": "https://iss/", "subject": "sub-1"},
+    )
+    check(
+        "FTF-0103A",
+        "the tenant context was bound to the path organization",
+        session.tenant == str(org),
+    )
+    check(
+        "FTF-0103A",
+        "the unit of work was committed and closed",
+        session.committed and session.closed,
+    )
+
+    none_session = _FakeSession(lambda sql, params: _FakeResult(rows=[]))
+    check(
+        "FTF-0103A",
+        "no matching row -> None (denied), never a default role",
+        lookup_org_role(lambda: none_session, "i", "s", org) is None,  # type: ignore[arg-type,return-value]
+    )
+    odd = _FakeSession(lambda sql, params: _FakeResult(rows=[("superuser",)]))
+    check(
+        "FTF-0103A",
+        "an unknown stored role fails closed (None), never guessed",
+        lookup_org_role(lambda: odd, "i", "s", org) is None,  # type: ignore[arg-type,return-value]
+    )
+
+    def boom(sql: str, params: dict) -> _FakeResult:
+        raise RuntimeError("database unavailable")
+
+    broken = _FakeSession(boom)
+    try:
+        lookup_org_role(lambda: broken, "i", "s", org)  # type: ignore[arg-type,return-value]
+        raised = False
+    except RuntimeError:
+        raised = True
+    check(
+        "FTF-0103A", "a database error propagates (never converted to a grant or a denial)", raised
+    )
+    check(
+        "FTF-0103A",
+        "the failed unit of work was rolled back and closed",
+        broken.rolled_back and broken.closed,
+    )
+
+
+def test_lookup_membership_status_decision_logic() -> None:
+    from app.auth.membership_store import lookup_membership_status
+    from app.auth.oidc_login import MembershipStatus
+
+    def status_for(rows: list[tuple]) -> tuple[MembershipStatus, _FakeSession]:
+        session = _FakeSession(lambda sql, params: _FakeResult(rows=rows))
+        return lookup_membership_status(lambda: session, "https://iss/", "sub-1"), session  # type: ignore[arg-type,return-value]
+
+    active, session = status_for([("active",)])
+    check("FTF-0103A", "an active membership -> ACTIVE", active is MembershipStatus.ACTIVE)
+    check(
+        "FTF-0103A",
+        "revoked only -> REVOKED",
+        status_for([("revoked",)])[0] is MembershipStatus.REVOKED,
+    )
+    check("FTF-0103A", "no row -> UNKNOWN", status_for([])[0] is MembershipStatus.UNKNOWN)
+    check(
+        "FTF-0103A",
+        "any active membership wins over revoked ones",
+        status_for([("revoked",), ("active",)])[0] is MembershipStatus.ACTIVE,
+    )
+    bind = [c for c in session.calls if "set_config('app.current_issuer'" in c[0]]
+    check(
+        "FTF-0103A",
+        "the identity (not a tenant) is bound transaction-locally",
+        len(bind) == 1
+        and bind[0][1] == {"issuer": "https://iss/", "subject": "sub-1"}
+        and ", true)" in bind[0][0],
+    )
+    check(
+        "FTF-0103A",
+        "the lookup committed and closed its unit of work",
+        session.committed and session.closed,
+    )
+
+    def boom(sql: str, params: dict) -> _FakeResult:
+        raise RuntimeError("database unavailable")
+
+    broken = _FakeSession(boom)
+    try:
+        lookup_membership_status(lambda: broken, "i", "s")  # type: ignore[arg-type,return-value]
+        raised = False
+    except RuntimeError:
+        raised = True
+    check("FTF-0103A", "a database error propagates instead of reading as UNKNOWN/ACTIVE", raised)
+    check(
+        "FTF-0103A",
+        "the failed unit of work was rolled back and closed",
+        broken.rolled_back and broken.closed,
+    )
+
+
+def test_builders_delegate_to_the_real_lookups() -> None:
+    from app.auth.membership_store import build_membership_status_lookup, build_role_lookup
+    from app.auth.oidc_login import MembershipStatus
+    from app.auth.rbac_middleware import Role
+
+    org = uuid.uuid4()
+    session = _FakeSession(lambda sql, params: _FakeResult(rows=[("approver",)]))
+    role = build_role_lookup(lambda: session)("i", "s", org)  # type: ignore[arg-type,return-value]
+    check("FTF-0103A", "build_role_lookup returns the stored role", role is Role.APPROVER)
+    session2 = _FakeSession(lambda sql, params: _FakeResult(rows=[("active",)]))
+    status = build_membership_status_lookup(lambda: session2)("i", "s")  # type: ignore[arg-type,return-value]
+    check(
+        "FTF-0103A",
+        "build_membership_status_lookup returns the stored status",
+        status is MembershipStatus.ACTIVE,
+    )
+
+
+def test_grant_and_revoke_membership_logic() -> None:
+    from app.auth.membership_store import MembershipError, grant_membership, revoke_membership
+
+    org, ws, new_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+
+    def refused(**kwargs: object) -> bool:
+        session = _FakeSession()
+        try:
+            grant_membership(session, **kwargs)  # type: ignore[arg-type]
+        except MembershipError:
+            return not _data_calls(session)
+        return False
+
+    base = {"organization_id": org, "issuer": "i", "subject": "s", "role": "viewer"}
+    check(
+        "FTF-0103A",
+        "a role outside the six is refused before any SQL",
+        refused(**{**base, "role": "superuser"}),
+    )
+    check(
+        "FTF-0103A", "an empty issuer is refused before any SQL", refused(**{**base, "issuer": ""})
+    )
+    check(
+        "FTF-0103A",
+        "an empty subject is refused before any SQL",
+        refused(**{**base, "subject": ""}),
+    )
+    check(
+        "FTF-0103A",
+        "a missing issuer AND subject are each refused independently",
+        refused(**{**base, "issuer": "", "subject": ""}),
+    )
+
+    session = _FakeSession(lambda sql, params: _FakeResult(rows=[(new_id,)]))
+    got = grant_membership(session, **base, workspace_id=ws)  # type: ignore[arg-type]
+    sql, params = _data_calls(session)[0]
+    check("FTF-0103A", "grant returns the membership id", got == new_id)
+    check(
+        "FTF-0103A",
+        "grant binds the organization's tenant context first",
+        session.tenant == str(org),
+    )
+    check(
+        "FTF-0103A",
+        "grant upserts and re-activates an existing membership",
+        "ON CONFLICT" in sql and "status = 'active'" in sql and "role = EXCLUDED.role" in sql,
+    )
+    check(
+        "FTF-0103A",
+        "grant binds every identity field",
+        params == {"org": org, "ws": ws, "issuer": "i", "subject": "s", "role": "viewer"},
+    )
+
+    for rows, expected in ((1, 1), (0, 0)):
+        rsession = _FakeSession(lambda sql, params, n=rows: _FakeResult(rowcount=n))
+        changed = revoke_membership(rsession, organization_id=org, issuer="i", subject="s")  # type: ignore[arg-type]
+        rsql, rparams = _data_calls(rsession)[0]
+        check(
+            "FTF-0103A", f"revoke returns the changed-row count ({expected})", changed == expected
+        )
+        check(
+            "FTF-0103A",
+            "revoke binds the organization's tenant context",
+            rsession.tenant == str(org),
+        )
+        check(
+            "FTF-0103A",
+            "revoke only touches an ACTIVE row of the exact identity/workspace",
+            "status = 'revoked'" in rsql
+            and "status = 'active'" in rsql
+            and "workspace_id IS NOT DISTINCT FROM :ws" in rsql
+            and rparams == {"org": org, "ws": None, "issuer": "i", "subject": "s"},
+        )
+
+
+def _run_cli(argv: list[str], session: _FakeSession | None) -> tuple[int, str, str]:
+    import contextlib
+    import io
+
+    from app.auth import membership_admin_cli as cli
+
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            code = cli.main(argv, session_factory=(lambda: session) if session else None)  # type: ignore[arg-type,return-value]
+        except SystemExit as exc:
+            code = int(exc.code or 0)
+    return code, out.getvalue(), err.getvalue()
+
+
+def test_membership_admin_cli_behaviour() -> None:
+    org = str(uuid.uuid4())
+    common = ["--organization-id", org, "--issuer", "https://iss/", "--subject", "s"]
+    new_id = uuid.uuid4()
+
+    session = _FakeSession(lambda sql, params: _FakeResult(rows=[(new_id,)]))
+    code, out, _err = _run_cli(["grant", *common, "--role", "viewer"], session)
+    check(
+        "FTF-0103A",
+        "CLI grant succeeds (exit 0), commits, closes",
+        code == 0 and session.committed and session.closed,
+    )
+    check("FTF-0103A", "CLI grant reports the membership id", str(new_id) in out)
+    check("FTF-0103A", "CLI grant used the grant SQL", "ON CONFLICT" in _data_calls(session)[0][0])
+
+    session = _FakeSession(lambda sql, params: _FakeResult(rowcount=1))
+    code, out, _err = _run_cli(["revoke", *common], session)
+    check("FTF-0103A", "CLI revoke succeeds (exit 0) and commits", code == 0 and session.committed)
+    check(
+        "FTF-0103A",
+        "CLI revoke used the revoke SQL, not the grant SQL",
+        "status = 'revoked'" in _data_calls(session)[0][0],
+    )
+    check("FTF-0103A", "CLI revoke reports the count", "revoked 1 membership" in out)
+
+    session = _FakeSession(lambda sql, params: _FakeResult(rowcount=0))
+    code, _out, err = _run_cli(["revoke", *common], session)
+    check(
+        "FTF-0103A",
+        "CLI revoke with nothing to revoke exits 1",
+        code == 1 and "nothing revoked" in err,
+    )
+
+    session = _FakeSession()
+    code, _out, err = _run_cli(["grant", *common, "--role", "superuser"], session)
+    check(
+        "FTF-0103A",
+        "CLI refuses an invalid role (exit 1), rolls back, never commits",
+        code == 1 and "refused" in err and session.rolled_back and not session.committed,
+    )
+
+    for label, argv in (
+        ("grant without --role", ["grant", *common]),
+        ("revoke with a stray --role", ["revoke", *common, "--role", "viewer"]),
+        (
+            "a non-uuid organization",
+            [
+                "grant",
+                "--organization-id",
+                "nope",
+                "--issuer",
+                "i",
+                "--subject",
+                "s",
+                "--role",
+                "viewer",
+            ],
+        ),
+        ("no sub-command", []),
+    ):
+        code, _o, _e = _run_cli(argv, _FakeSession())
+        check("FTF-0103A", f"CLI usage error ({label}) exits 2", code == 2)
+
+    import contextlib
+    import io
+
+    from app.auth import membership_admin_cli as cli
+
+    saved = os.environ.pop("SOVRA_DATABASE_URL", None)
+    err_buf = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err_buf):
+            code = cli.main(["revoke", *common])
+    finally:
+        if saved is not None:
+            os.environ["SOVRA_DATABASE_URL"] = saved
+    check(
+        "FTF-0103A",
+        "no SOVRA_DATABASE_URL and no injected factory exits 2",
+        code == 2 and "SOVRA_DATABASE_URL" in err_buf.getvalue(),
+    )
+
+    class _Engine:
+        disposed = False
+
+        def dispose(self) -> None:
+            _Engine.disposed = True
+
+    fake_session = _FakeSession(lambda sql, params: _FakeResult(rowcount=1))
+    saved_ce, saved_sm = cli.create_engine, cli.sessionmaker
+    cli.__dict__["create_engine"] = lambda url: _Engine()
+    cli.__dict__["sessionmaker"] = lambda bind: (lambda: fake_session)
+    os.environ["SOVRA_DATABASE_URL"] = "postgresql+psycopg://migrate@localhost/none"
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = cli.main(["revoke", *common])
+    finally:
+        cli.__dict__["create_engine"], cli.__dict__["sessionmaker"] = saved_ce, saved_sm
+        if saved is None:
+            os.environ.pop("SOVRA_DATABASE_URL", None)
+        else:
+            os.environ["SOVRA_DATABASE_URL"] = saved
+    check(
+        "FTF-0103A",
+        "the CLI builds its own engine from SOVRA_DATABASE_URL and disposes it",
+        code == 0 and _Engine.disposed and fake_session.closed,
+    )
+
+
+def test_migration_functions_emit_the_real_schema() -> None:
+    import importlib.util
+
+    class _FakeOp:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, tuple, dict]] = []
+
+        def __getattr__(self, name: str):  # noqa: ANN204
+            def record(*args: object, **kwargs: object) -> None:
+                self.calls.append((name, args, kwargs))
+
+            return record
+
+        def statements(self) -> list[str]:
+            return [str(a[0]) for n, a, _k in self.calls if n == "execute"]
+
+    spec = importlib.util.spec_from_file_location("migration_0021_under_test", MIGRATION)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    up = _FakeOp()
+    module.__dict__["op"] = up
+    module.upgrade()
+    tables = [a for n, a, _k in up.calls if n == "create_table"]
+    check(
+        "FTF-0103A",
+        "upgrade creates exactly the memberships table",
+        len(tables) == 1 and tables[0][0] == "memberships",
+    )
+    columns = {
+        c.name for c in tables[0][1:] if hasattr(c, "name") and c.__class__.__name__ == "Column"
+    }
+    check(
+        "FTF-0103A",
+        "memberships has the Section 6.4 columns",
+        {"organization_id", "workspace_id", "issuer", "subject", "role", "status", "created_at"}
+        <= columns,
+    )
+    statements = " | ".join(up.statements())
+    for needle in (
+        'GRANT SELECT ON memberships TO "sovra_app"',
+        "ENABLE ROW LEVEL SECURITY",
+        "FORCE ROW LEVEL SECURITY",
+        "CREATE POLICY tenant_isolation ON memberships FOR ALL",
+        "WITH CHECK (organization_id = NULLIF(current_setting("
+        "'app.current_organization_id', true), '')::uuid)",
+        "CREATE POLICY identity_self_lookup ON memberships FOR SELECT",
+        "issuer = NULLIF(current_setting('app.current_issuer', true), '') AND subject = NULLIF(",
+        "NULLS NOT DISTINCT",
+    ):
+        check("FTF-0103A", f"upgrade executes: {needle[:60]}", needle in statements)
+    check(
+        "FTF-0103A",
+        "upgrade grants the app role nothing beyond SELECT",
+        statements.count("GRANT") == 1
+        and "INSERT" not in statements
+        and "UPDATE" not in statements,
+    )
+    check(
+        "FTF-0103A",
+        "upgrade creates the issuer/subject lookup index",
+        any(
+            n == "create_index" and a[0] == "ix_memberships_issuer_subject" for n, a, _k in up.calls
+        ),
+    )
+
+    down = _FakeOp()
+    module.__dict__["op"] = down
+    module.downgrade()
+    dstatements = " | ".join(down.statements())
+    check(
+        "FTF-0103A",
+        "downgrade drops both policies, revokes the grant and the unique index",
+        "DROP POLICY IF EXISTS identity_self_lookup" in dstatements
+        and "DROP POLICY IF EXISTS tenant_isolation" in dstatements
+        and 'REVOKE ALL ON memberships FROM "sovra_app"' in dstatements
+        and "DROP INDEX IF EXISTS uq_memberships_org_workspace_identity" in dstatements,
+    )
+    check(
+        "FTF-0103A",
+        "downgrade drops the table",
+        [a for n, a, _k in down.calls if n == "drop_table"] == [("memberships",)],
+    )
+
+
+# -- 5. session resolver: malformed claims + content-free decision events ---
+
+
+def _mint(payload: dict) -> str:
+    from app.auth import oidc_login
+
+    return oidc_login._serializer(SIGNING_KEY, oidc_login._SESSION_SALT).dumps(payload)
+
+
+def test_session_resolver_malformed_claims_and_decision_events() -> None:
+    import logging
+
+    from app.auth import oidc_login
+    from app.auth.session_principal import SessionPrincipalResolver
+
+    resolver = SessionPrincipalResolver(
+        signing_key=SIGNING_KEY,
+        max_age_seconds=900,
+        revocations=oidc_login.SessionRevocationStore(),
+    )
+    good = {"jti": "j1", "iss": "https://iss/", "sub": "s1"}
+    check(
+        "FTF-0103A",
+        "control: a fully-formed signed payload resolves",
+        resolver(_request(_mint(good))) is not None,
+    )
+    for label, payload in (
+        ("missing jti", {k: v for k, v in good.items() if k != "jti"}),
+        ("missing iss", {k: v for k, v in good.items() if k != "iss"}),
+        ("missing sub", {k: v for k, v in good.items() if k != "sub"}),
+        ("empty iss", {**good, "iss": ""}),
+        ("empty sub", {**good, "sub": ""}),
+        ("non-string jti", {**good, "jti": 7}),
+        ("non-string iss", {**good, "iss": 7}),
+        ("non-string sub", {**good, "sub": 7}),
+    ):
+        check(
+            "FTF-0103A",
+            f"a validly-signed but malformed session ({label}) -> None",
+            resolver(_request(_mint(payload))) is None,
+        )
+
+    records: list[logging.LogRecord] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    logger = logging.getLogger("sovra.auth.decision")
+    handler, old_level = _Capture(), logger.level
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    try:
+        resolver(_request(None, {"x-request-id": "req-123"}))
+        resolver(_request("garbage"))
+        resolver(_request(_mint({"jti": "j"})))
+        revoked_store = oidc_login.SessionRevocationStore()
+        revoked_store.revoke("j1")
+        SessionPrincipalResolver(
+            signing_key=SIGNING_KEY, max_age_seconds=900, revocations=revoked_store
+        )(_request(_mint(good)))
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(old_level)
+    reasons = [getattr(r, "reason", None) for r in records]
+    check(
+        "FTF-0103A",
+        f"each denial emits a decision event with its reason code (got {reasons})",
+        reasons
+        == ["no_session", "invalid_or_expired_session", "malformed_session", "revoked_session"],
+    )
+    check(
+        "FTF-0103A",
+        "decision events carry outcome=denied and the request id",
+        all(getattr(r, "outcome", None) == "denied" for r in records)
+        and getattr(records[0], "request_id", None) == "req-123",
+    )
+    dump = " ".join(str(r.__dict__) for r in records)
+    check(
+        "FTF-0103A",
+        "decision events are content-free (no subject, issuer or cookie)",
+        "s1" not in dump and "https://iss/" not in dump and "garbage" not in dump,
+    )
+
+
+# -- 6. main.create_app: production flag + shared logout revocation ----------
+
+
+def test_create_app_honours_the_production_flag() -> None:
+    from app.auth.oidc_settings import OidcConfigurationError
+
+    http_env = {
+        **_full_app_env(),
+        "SOVRA_OIDC_ISSUER": "http://idp.internal.example",
+        "SOVRA_OIDC_REDIRECT_URI": "http://factory.internal.example/auth/callback",
+        "SOVRA_OIDC_AUTHORIZATION_ENDPOINT": "http://idp.internal.example/authorize",
+        "SOVRA_OIDC_TOKEN_ENDPOINT": "http://idp.internal.example/token",
+        "SOVRA_OIDC_JWKS_URI": "http://idp.internal.example/jwks",
+        "SOVRA_OIDC_ALLOWED_ORIGIN": "http://factory.internal.example",
+    }
+
+    def build(environment: str) -> BaseException | None:
+        env = {**http_env, "SOVRA_ENVIRONMENT": environment}
+        saved = {k: os.environ.get(k) for k in env}
+        os.environ.update(env)
+        try:
+            import app.main as main_module
+
+            main_module.create_app()
+            return None
+        except BaseException as exc:  # noqa: BLE001
+            return exc
+        finally:
+            for key, old in saved.items():
+                if old is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = old
+
+    check("FTF-0103A", "staging accepts plain-http OIDC endpoints", build("staging") is None)
+    check(
+        "FTF-0103A",
+        "production rejects plain-http OIDC endpoints",
+        isinstance(build("production"), OidcConfigurationError),
+    )
+
+
+def test_logout_revokes_the_session_for_the_api_resolver() -> None:
+    """FTF-0101's login router and FTF-0103A's resolver share ONE revocation
+    store: login -> API 200 -> logout -> the same cookie is 401 on the API."""
+    import contextlib
+    import threading
+
+    import uvicorn
+    from fastapi import Depends
+
+    sys.path.insert(0, str(ROOT / "tests" / "tasks"))
+    import test_ftf_0101 as t101  # noqa: E402  (FTF-0101's fake-OP harness)
+
+    from app.auth.oidc_login import (
+        MembershipStatus,
+        SessionRevocationStore,
+        build_oidc_login_router,
+        read_session_cookie,
+    )
+    from app.auth.oidc_settings import OidcSettings
+    from app.auth.rbac_middleware import AuthorizedContext, Role, require_role
+    from app.auth.session_principal import SessionPrincipalResolver
+
+    with t101._run_fake_provider() as (provider_base, state):
+        provider_port = int(provider_base.rsplit(":", 1)[1])
+        api_port = t101.free_port()
+        settings = OidcSettings.from_env(
+            t101._base_settings_env(provider_port, api_port), production=False
+        )
+        revocations = SessionRevocationStore()
+        app = FastAPI()
+        app.include_router(
+            build_oidc_login_router(
+                settings,
+                client_secret=t101.CLIENT_SECRET,
+                signing_key=t101.SIGNING_KEY,
+                membership_lookup=lambda iss, sub: MembershipStatus.ACTIVE,
+                revocations=revocations,
+            )
+        )
+        guard = require_role(
+            frozenset(Role),
+            principal_resolver=SessionPrincipalResolver(
+                signing_key=t101.SIGNING_KEY,
+                max_age_seconds=settings.session_ttl_seconds,
+                revocations=revocations,
+            ),
+            role_lookup=lambda issuer, subject, org: Role.VIEWER,
+        )
+
+        guard_dependency = Depends(guard)
+
+        @app.get("/api/v1/organizations/{organization_id}/ping")
+        def ping(organization_id: str, ctx: AuthorizedContext = guard_dependency) -> dict[str, str]:
+            return {"role": ctx.role.value}
+
+        server = uvicorn.Server(
+            uvicorn.Config(app, host="127.0.0.1", port=api_port, log_level="warning")
+        )
+        thread = threading.Thread(target=server.run, daemon=True)
+        thread.start()
+        for _ in range(200):
+            if server.started:
+                break
+            time.sleep(0.02)
+        api = f"http://127.0.0.1:{api_port}"
+        try:
+            cookie = t101._establish_session(api, settings, state)
+            path = f"/api/v1/organizations/{uuid.uuid4()}/ping"
+            before = t101._request(api, "GET", path, headers={"Cookie": cookie})
+            check(
+                "FTF-0103A", f"live session -> API 200 (got {before.status})", before.status == 200
+            )
+            none = t101._request(api, "GET", path)
+            check("FTF-0103A", f"no session -> API 401 (got {none.status})", none.status == 401)
+            data = read_session_cookie(
+                t101.SIGNING_KEY, cookie.split("=", 1)[1], max_age=settings.session_ttl_seconds
+            )
+            assert data is not None
+            logout = t101._request(
+                api,
+                "POST",
+                "/auth/logout",
+                headers={
+                    "Cookie": cookie,
+                    "Origin": "http://localhost:3000",
+                    "X-CSRF-Token": data["csrf"],
+                },
+                body=b"",
+            )
+            check("FTF-0103A", f"logout -> 200 (got {logout.status})", logout.status == 200)
+            after = t101._request(api, "GET", path, headers={"Cookie": cookie})
+            check(
+                "FTF-0103A",
+                f"logged-out session -> API 401 (got {after.status})",
+                after.status == 401,
+            )
+            check(
+                "FTF-0103A",
+                "the shared store records the revoked jti",
+                revocations.is_revoked(data["jti"]),
+            )
+        finally:
+            server.should_exit = True
+            thread.join(timeout=5)
+            with contextlib.suppress(Exception):
+                pass
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
