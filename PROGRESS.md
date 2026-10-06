@@ -29426,6 +29426,94 @@ item per shift, per this list's own rule; not picking a second task. No open own
 current" unchanged — only the pre-existing, already-resolved branch-protection note). `BLOCKER.md` unchanged — no
 live entries.
 
+## 2026-10-05T11:14:07Z — Shift: FTF-0500C round-5 fix-and-resubmit
+
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` tails fresh this shift
+(these files are too large for a full read — read via `tail`/`sed`/`grep` instead, per their own
+multi-MB size). `BLOCKER.md`: no live entries. `CLAUDE.md.sha256` matched `sha256sum CLAUDE.md`
+exactly — no mismatch, continued the shift. STEP 0.2: no `cognee-cli` binary in this sandbox —
+text-search fallback declared, same as every prior shift.
+
+`git status` showed the designated branch already at `origin/main` (c128d58, PR #462 merged) —
+nothing to reset.
+
+Checked `QUEUE.md`'s "## Active" item 0 order before picking work: 0a/0b already DONE (FTF-H007 +
+FTF-04A06 CERTIFIED via #461). **0c (FTF-0601)** already has an open `[relay]` PR (#463,
+`claude/wizardly-fermat-7vy5ny`, opened 2026-10-05T07:13:34Z, `mergeable_state: clean`) covering
+the full round-2 DoD — per CLAUDE.md's own "claim before implementing... skip any item that
+already has a claim branch or open PR," skipped. Also found two stale open PRs with no current
+relay action needed: **#402** (FTF-0902's own round-1 attempt, superseded by PR #430's already-
+merged round-2 fix per QUEUE.md's own history — left alone, not closed, since closing an open PR
+is not an explicitly listed "do without asking" action and this shift's own DoD is elsewhere) and
+**#295** (FTF-0214, a long-standing genuine blocker escalation, still accurately describing a real
+blocker). Picked up **0c2: FTF-0500C round 5** — no existing claim branch or open PR for it
+(confirmed via `search_pull_requests`).
+
+**P** — read `apps/api/app/datasets/database_api_trace_source_contract_and_fail_closed_validation.py`
+in full and the 2026-10-04T15:30Z review's own four findings (`docs/certifications/queue.md`): (1)
+NULL-keyed rows outside the current call's own fetched-plus-lookahead window silently lost; (2) the
+`IS NOT DISTINCT FROM` claim unproven; (3) the integration harness's own session-settings spy fails
+on a SQL_ASCII cluster; (4) a real concurrent duplicate at the resume watermark silently lost.
+Formed a fix for each before writing any test: a new whole-table, every-call `_verify_no_null_keys`
+inside the same `REPEATABLE READ` transaction (not reliant on any one call's own window); dropping
+the `IS NOT DISTINCT FROM` claim in favor of plain `=` once (1) provably excludes every NULL
+upstream; a `_decode_guc` helper in the test harness; and a count-based (not existence-based)
+`_verify_watermark_present`.
+
+**E** — implemented all four in the module, plus a new `_decode_guc` helper and new
+`_ASCII_TEST_DB`/`far_null_key_records`/`concurrent_watermark_dup_records` fixtures in
+`tests/integration/test_ftf_0500c_database_api_trace_source.py` (confirmed directly against this
+sandbox's own real cluster that a fresh `ENCODING 'SQL_ASCII' TEMPLATE template0` database
+genuinely returns `bytes`, not `str`, for `SHOW transaction_read_only`/`SHOW
+transaction_isolation`, before relying on it in a test). Added 6 new test functions (43 → 49 checks)
+covering all four findings, each with Law-1 fault-injection evidence where a real defect-reproducing
+fault applies; updated two pre-existing fault-injection tests
+(`test_disabling_the_non_unique_key_check_genuinely_lets_a_skip_through`) whose own fixed dataset's
+resume watermark is now also independently caught by the new (4) check, so isolating each check's
+own load-bearingness needed both disabled together for that one fault run. Found and fixed a real
+regression during development: the new whole-table checks initially fell through to the generic
+`psycopg.Error` wrapper instead of this task's own `UnknownSourceContractError` for a real
+`UndefinedTable` — caught by re-running the full suite (`test_real_unknown_table_is_refused_not_fabricated`
+broke), fixed before this submission by wrapping `UndefinedTable`/`UndefinedColumn` in both new
+checks, identically to the existing main-query handling.
+
+**Law 1, shown able to fail first:** `git stash` of the module fix alone (keeping every new/updated
+test), re-ran `tests/integration/test_ftf_0500c_database_api_trace_source.py` against the genuinely
+pre-fix module (a real, freshly-started local PostgreSQL 16 via `pg_ctlcluster 16 main start`) —
+**4 of 47 checks failed**, output bound to criterion `FTF-0500C`: both new negative-test
+assertions for findings (1) and (4) failed for real, and both new fault-injection anchor-patches
+correctly reported "not found" against code lacking `_verify_no_null_keys`/the new `count > 1`
+branch. `git stash pop` restored the fix; re-ran — all 47 pass.
+
+**V** — `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean (371 files,
+after `ruff format` self-fixed two files' own formatting). `uv run mypy .` clean repo-wide (371
+source files, zero errors — fixed a real `count: object` comparison type error and two stray
+`type: ignore` comments found during this pass, none pre-existing). `python3 scripts/validate_spec.py
+--strict` clean (`docs/spec-matrix.yaml` prose directly re-confirmed parseable with
+`yaml.safe_load` first). `product_truth_check.py --fail-on-unwired`: unchanged `26/26`.
+`status.py`: unchanged `101/301` certified / 24 product-true (Law 2 — a resubmission is not a
+certification). Regression swept `test_ftf_0500.py`/`test_ftf_0303.py`/`test_ftf_0500b.py`/
+`test_ftf_0500d.py` (via `uv run python3`) — all exit 0, zero regressions (`test_ftf_0500.py`'s own
+printed traceback is a pre-existing, deliberate failure-path assertion in that suite, not new). No
+`ci.yml` change needed — the existing `database-api-trace-source-integration` job already runs the
+whole test file, which now provisions the new SQL_ASCII database and runs the new tests itself.
+
+Updated `docs/spec-matrix.yaml`'s FTF-0500C entry with a full "2026-10-05T07:40Z L2 round-5
+fix-and-resubmit" note (`certification_state` stays `PROVISIONAL`, `proof_state` stays
+`L1-PROVEN` — Law 2). Appended a full evidence entry to `docs/certifications/queue.md`
+("2026-10-05T07:40Z"). Updated `QUEUE.md`'s Active item 0c2 to mark this round's fix submitted
+(DONE this shift, awaiting review — not re-marked DONE outright, per Law 2).
+
+**V (certification)** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/
+`proof_state: L1-PROVEN` unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2
+re-review and a real CI run on the opened PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all updated
+this shift, before compaction. STEP 4 stop condition (a): FTF-0500C round 5 now joins the same
+PROVISIONAL backlog awaiting Control-plane L2 certification and the L4 gate (101/301 certified,
+unchanged). Stopping here — one item per shift. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged). `BLOCKER.md` unchanged — no live entries.
+
 ## 2026-10-05T21:30:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-oho98i` — triaged red CI on
 ## PR #468 (FTF-0902 round 2's own fix of PR #467's own red CI); no new code change, disclosed and stopped
 

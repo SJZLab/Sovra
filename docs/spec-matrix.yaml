@@ -6671,7 +6671,100 @@ FTF-0500C:
     `tests/integration/test_ftf_0500c_database_api_trace_source.py`. Regression swept
     `test_ftf_0500.py`/`test_ftf_0500b.py`/`test_ftf_h006.py` -- zero interference (same disclosed
     precedents as round 3). Not self-certified (Law 4) -- independent Control-plane L2 review and a
-    real CI run on the opened PR are required before certification.'
+    real CI run on the opened PR are required before certification.
+
+
+    **2026-10-05T07:40Z L2 round-5 fix-and-resubmit.** Fixes all four findings from the
+    2026-10-04T15:30Z Control-plane L2 review (merge 8247025), round 5:
+
+
+    (1) **NULL-keyed rows outside the current call''s own fetched-plus-lookahead window were
+    silently lost.** The old lookahead-only check could only ever catch a NULL landing inside one
+    call''s own window; a NULL sorting further out (e.g. keys 1..5,NULL with n=2, reached only
+    after several resumed calls) was never checked at all, since `WHERE key > %s` can never match a
+    real NULL (`NULL > %s` is never true in SQL) -- the capture "completed" having silently never
+    returned it. Fixed with a new `_verify_no_null_keys`: a whole-table
+    `SELECT EXISTS (SELECT 1 FROM {schema}.{table} WHERE {key} IS NULL)`, run unconditionally on
+    every call (not only a resumed one), inside the *same* `REPEATABLE READ` transaction as the
+    paginated `SELECT` that follows -- so it sees one identical real snapshot and catches a NULL
+    anywhere in the source regardless of how far any one call''s own window reaches. New real
+    `far_null_key_records` table (keys 1,2,3,4,5,NULL) proves the very first call is refused outright
+    even though the NULL sorts far outside that call''s own fetch window
+    (`test_real_null_stable_key_value_beyond_the_first_window_is_still_refused`). Additive fault
+    (an inserted early `return` in `_verify_no_null_keys`, not a negated condition) proves a real
+    multi-page resumed capture over the same table genuinely completes having silently never
+    returned the NULL row without the check
+    (`test_disabling_the_whole_table_null_check_genuinely_loses_the_null_row`).
+
+
+    (2) **The `IS NOT DISTINCT FROM` claim was unproven.** With the NULL check in (1) now running
+    before the tie-detection query is ever built, no NULL operand can reach it, so `IS NOT DISTINCT
+    FROM` and plain `=` are provably equivalent at that point. Per the review''s own stated option,
+    the claim is removed rather than kept unproven: the LAG comparison now uses plain `=`, and
+    `NonUniqueStableKeyError`''s own docstring and this module''s inline comments were updated to
+    describe NULL exclusion as (1)''s own separate, prior check rather than a property of the tie
+    comparison itself.
+
+
+    (3) **The integration harness''s own `_SessionSettingsSpyConnection` failed on a SQL_ASCII
+    cluster** (`str(b''on'')` produces the literal text `"b''on''"`, not `"on"`) -- confirmed this is a
+    test-harness defect, not a module one, by connecting directly to a real, freshly-created
+    SQL_ASCII-encoded Postgres database on this exact cluster and confirming `SHOW
+    transaction_read_only`/`SHOW transaction_isolation` genuinely come back as raw `bytes`
+    (`b''off''`/`b''read committed''`). Fixed: a new `_decode_guc` helper decodes bytes before storing.
+    New real `_ASCII_TEST_DB` (`ENCODING ''SQL_ASCII'' TEMPLATE template0`) and
+    `test_real_read_only_transaction_mode_is_set_on_a_real_sql_ascii_cluster` prove the fix against
+    a genuinely different real server encoding, not only the pre-existing UTF8 one.
+
+
+    (4) **A real concurrent duplicate at the resume watermark was silently lost.**
+    `_verify_watermark_present` checked only existence (`SELECT 1 ... WHERE key = %s`), not
+    uniqueness -- a real second row inserted at exactly the watermark value, racing in *after* the
+    page that produced that watermark was already fetched (so that page''s own lookahead-based tie
+    check could never have seen it), could never be returned by any later page either (`WHERE key >
+    %s` excludes it forever), permanently losing it. Fixed: the check now counts real matching rows
+    (`SELECT count(*) ... WHERE key = %s`) and raises a new, specific `NonUniqueStableKeyError` when
+    more than one row matches, rather than only refusing a zero-count miss. New real
+    `concurrent_watermark_dup_records` table backs
+    `test_real_concurrent_duplicate_at_the_watermark_is_refused_not_silently_lost`: a real
+    concurrent INSERT (via the real/write role, on a separate connection) of a duplicate at the
+    exact watermark is refused outright; a disclosed fault injection (disabling the new `count > 1`
+    check) proves a real resumed capture genuinely loses the concurrently-inserted row without it.
+
+
+    Both `_verify_no_null_keys` and the fixed `_verify_watermark_present` also now wrap a real
+    `UndefinedTable`/`UndefinedColumn` as `UnknownSourceContractError` (this task''s own existing
+    negative_acceptance contract) rather than falling through to the generic `psycopg.Error` wrap --
+    caught directly by re-running the full suite, which found `test_real_unknown_table_is_refused_not_fabricated`
+    genuinely broken by the new NULL check''s own initial omission of this wrapping, fixed before
+    this submission (not merely asserted: every pre-existing test in both suites still passes
+    unmodified).
+
+
+    **Law 1, shown able to fail first:** `git stash` of the module fix alone (keeping every new/
+    updated test), re-ran `tests/integration/test_ftf_0500c_database_api_trace_source.py` against
+    the genuinely pre-fix module -- **4 of 47 checks failed**, output bound to criterion
+    `FTF-0500C`: both new negative-test assertions for findings (1) and (4) failed for real, and
+    both new fault-injection anchor-patches correctly reported "not found" against code that does
+    not yet contain `_verify_no_null_keys` or the new `count > 1` branch. `git stash pop` restored
+    the fix; re-ran -- all 47 checks pass. `tests/tasks/test_ftf_0500c.py` (fake-connection unit
+    suite, unaffected by this round''s own real-Postgres-only mechanics): unchanged, all pass.
+
+
+    **Verification:** `uv run ruff check .`/`ruff format --check .` clean repo-wide (371 files).
+    `uv run mypy .` clean repo-wide (371 source files, zero errors). `python3 scripts/validate_spec.py
+    --strict` clean (`docs/spec-matrix.yaml` prose directly re-confirmed parseable with
+    `yaml.safe_load` first). `product_truth_check.py --fail-on-unwired`: unchanged `26/26`.
+    `status.py`: unchanged `101/301` certified, 24 product-true (Law 2 -- a resubmission is not a
+    certification). Both suites re-run clean end to end against a real, freshly-started local
+    PostgreSQL 16 (`pg_ctlcluster 16 main start`). Regression swept
+    `test_ftf_0500.py`/`test_ftf_0303.py`/`test_ftf_0500b.py`/`test_ftf_0500d.py` -- zero
+    regressions (the `test_ftf_0500.py` run''s own printed traceback is a pre-existing, deliberate
+    failure-path assertion inside that suite, not a new defect -- exit code 0, "all checks passed").
+    Not self-certified (Law 4) -- independent Control-plane L2 review and a real CI run on the
+    opened PR (including the existing `database-api-trace-source-integration` job, which now also
+    provisions the new SQL_ASCII database and runs the new tests) are required before
+    certification.'
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500c.py, tests/integration/test_ftf_0500c_database_api_trace_source.py
