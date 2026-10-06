@@ -51,6 +51,7 @@ identical to every prior task's own discipline in this chain.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -64,6 +65,7 @@ from app.db.tenant_context import TenantContext
 from app.evaluation.evaluation_suite_schema import (
     PURPOSE_FINAL,
     EvaluationSuite,
+    normalize_identity,
     validate_grading_logic_version,
     validate_name,
     validate_reviewer_id_or_none,
@@ -73,19 +75,43 @@ from app.target_connectors.agent_manifest_schema import AgentManifest
 
 __all__ = [
     "ActorInfo",
+    "OrganizationMemberLookup",
     "EvaluationSuiteIncompleteError",
     "EvaluationSuiteLockedError",
+    "EvaluationSuiteLockForbiddenError",
     "EvaluationSuiteManifestMismatchError",
     "EvaluationSuiteManifestNotFoundError",
     "EvaluationSuiteManifestNotLockedError",
     "EvaluationSuiteNotFoundError",
+    "EvaluationSuiteReviewerNotMemberError",
     "ProjectNotFoundError",
     "create_evaluation_suite",
+    "default_organization_member_lookup",
     "get_evaluation_suite",
     "list_evaluation_suites",
     "lock_evaluation_suite",
     "update_evaluation_suite",
 ]
+
+# (organization_id, subject) -> is this subject a real, active member of
+# this organization. An L2 round-2 finding: `reviewer_id` was self-asserted
+# free text with no check against real organization membership at all.
+# Fail-closed by default (same disclosed-gap discipline as
+# `app.auth.rbac_middleware.default_role_lookup`) until a real DB-backed
+# Membership table exists -- see that module's own docstring for the
+# matching, already-disclosed gap.
+OrganizationMemberLookup = Callable[[uuid.UUID, str], bool]
+
+
+def default_organization_member_lookup(organization_id: uuid.UUID, subject: str) -> bool:
+    """Fail-closed: no live Membership table exists yet (see
+    `app.auth.rbac_middleware`'s own module docstring for the identical,
+    already-disclosed gap at the role-lookup layer). Every reviewer is
+    treated as not-a-member until a real DB-backed lookup replaces this
+    one."""
+    del organization_id, subject
+    return False
+
 
 _TABLE = EvaluationSuite.__table__
 _ID_COLUMN = _TABLE.c.id
@@ -140,7 +166,26 @@ class EvaluationSuiteLockedError(ValueError):
 class EvaluationSuiteIncompleteError(ValueError):
     """`lock_evaluation_suite` was called with no `reviewer_id` assigned,
     or (for a `final`-purpose suite) with `reviewer_id` equal to the
-    suite's own `created_by` -- Section 69.1's own independence rule."""
+    suite's own `created_by` (compared after strip+casefold --
+    `normalize_identity`) -- Section 69.1's own independence rule."""
+
+
+class EvaluationSuiteReviewerNotMemberError(ValueError):
+    """`reviewer_id` does not correspond to any real, active member of the
+    suite's own organization -- an L2 round-2 finding: `reviewer_id` was
+    previously self-asserted free text with no membership check at all."""
+
+
+class EvaluationSuiteLockForbiddenError(Exception):
+    """Only the suite's own assigned reviewer may lock it -- the
+    authenticated actor's identity does not match `reviewer_id` (compared
+    after strip+casefold -- `normalize_identity`). An L2 round-2 finding:
+    any caller holding a write role, including the suite's own creator,
+    could previously lock a suite under any self-asserted `reviewer_id`
+    with no actor-identity check at all -- Section 69.1: "Final suite
+    creator/reviewer is independent of candidate implementer," read as
+    requiring the lock itself to be performed by that real reviewer, not
+    merely requiring the field to carry a different string."""
 
 
 @dataclass(frozen=True)
@@ -233,6 +278,17 @@ def _next_version(session: Session, context: TenantContext, project_id: uuid.UUI
     return int(result.scalar_one()) + 1
 
 
+def _check_reviewer_is_member(
+    context: TenantContext, reviewer_id: str | None, member_lookup: OrganizationMemberLookup
+) -> None:
+    if reviewer_id is None:
+        return
+    if not member_lookup(context.organization_id, normalize_identity(reviewer_id)):
+        raise EvaluationSuiteReviewerNotMemberError(
+            f"reviewer_id {reviewer_id!r} is not an active member of this organization"
+        )
+
+
 def create_evaluation_suite(
     session: Session,
     context: TenantContext,
@@ -244,6 +300,7 @@ def create_evaluation_suite(
     grading_logic_version: int,
     actor: ActorInfo,
     reviewer_id: str | None = None,
+    member_lookup: OrganizationMemberLookup = default_organization_member_lookup,
 ) -> EvaluationSuite:
     """Creates a new `draft` `EvaluationSuite` at the next version number
     for this project, bound to an already-`locked` `AgentManifest`."""
@@ -263,6 +320,7 @@ def create_evaluation_suite(
         reviewer_id=reviewer_id,
         created_by=actor.actor_id,
     )
+    _check_reviewer_is_member(context, suite.reviewer_id, member_lookup)
     session.add(suite)
     session.flush()
     write_audit_event(
@@ -307,6 +365,7 @@ def update_evaluation_suite(
     name: str | None = None,
     grading_logic_version: int | None = None,
     reviewer_id: str | None = None,
+    member_lookup: OrganizationMemberLookup = default_organization_member_lookup,
 ) -> EvaluationSuite:
     """Edits mutable fields on a `draft` suite. Only fields explicitly
     passed (non-`None`) are changed; `agent_manifest_id`/`purpose`/
@@ -337,6 +396,7 @@ def update_evaluation_suite(
         suite.grading_logic_version = validate_grading_logic_version(grading_logic_version)
     if reviewer_id is not None:
         suite.reviewer_id = validate_reviewer_id_or_none(reviewer_id)
+        _check_reviewer_is_member(context, suite.reviewer_id, member_lookup)
 
     session.flush()
     write_audit_event(
@@ -359,11 +419,20 @@ def lock_evaluation_suite(
     project_id: uuid.UUID,
     suite_id: uuid.UUID,
     actor: ActorInfo,
+    member_lookup: OrganizationMemberLookup = default_organization_member_lookup,
 ) -> EvaluationSuite:
     """`draft` -> `locked`: requires a real `reviewer_id` already assigned
-    (Section 69.1), and for a `final`-purpose suite, that reviewer must
-    differ from the suite's own `created_by` -- the same independence rule
-    this module's own schema docstring describes.
+    (Section 69.1); for a `final`-purpose suite, that reviewer must differ
+    from the suite's own `created_by` (compared after strip+casefold --
+    the same independence rule this module's own schema docstring
+    describes); the lock itself must be performed by that exact reviewer
+    identity (`actor.actor_id` normalized-equal to `reviewer_id` -- an L2
+    round-2 finding: any write-role caller, including the suite's own
+    creator, could previously lock a suite regardless of who `reviewer_id`
+    actually named); and `reviewer_id` is re-checked against real
+    organization membership as defense-in-depth against a raw write that
+    bypassed `create_evaluation_suite`/`update_evaluation_suite`'s own
+    membership check.
     """
     suite = _fetch_or_raise(session, context, project_id, suite_id)
     if suite.status != "draft":
@@ -374,10 +443,19 @@ def lock_evaluation_suite(
             f"evaluation suite {suite_id} has no reviewer_id assigned -- Section 69.1: "
             "'Final suite creator/reviewer is independent of candidate implementer'"
         )
-    if suite.purpose == PURPOSE_FINAL and suite.reviewer_id == suite.created_by:
+    reviewer_normalized = normalize_identity(suite.reviewer_id)
+    creator_normalized = normalize_identity(suite.created_by)
+    if suite.purpose == PURPOSE_FINAL and reviewer_normalized == creator_normalized:
         raise EvaluationSuiteIncompleteError(
-            f"evaluation suite {suite_id} is purpose='final' and its own reviewer_id equals "
-            "created_by -- Section 69.1's own independence rule"
+            f"evaluation suite {suite_id} is purpose='final' and its own reviewer_id "
+            "normalizes (strip+casefold) to the same identity as created_by -- "
+            "Section 69.1's own independence rule"
+        )
+    _check_reviewer_is_member(context, suite.reviewer_id, member_lookup)
+    if normalize_identity(actor.actor_id) != normalize_identity(suite.reviewer_id):
+        raise EvaluationSuiteLockForbiddenError(
+            f"evaluation suite {suite_id} can only be locked by its assigned reviewer "
+            f"({suite.reviewer_id!r}), not actor {actor.actor_id!r} -- Section 69.1"
         )
 
     suite.status = "locked"

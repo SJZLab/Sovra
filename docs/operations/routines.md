@@ -7,7 +7,9 @@ then delete the old one once the new one has fired cleanly.
 
 | Routine | Schedule (UTC) | Model | Writes |
 |---|---|---|---|
-| Sovra relay | `48 */2 * * *` | claude-sonnet-5 | relay PRs |
+| Sovra relay A | `48 * * * *` (hourly) | claude-sonnet-5 | relay PRs |
+| Sovra relay B | `28 * * * *` (hourly, new lane) | claude-sonnet-5 | relay PRs |
+| Sovra relay C | `08 * * * *` (hourly, new lane) | claude-sonnet-5 | relay PRs |
 | Sovra certifier | event: PR opened **plus** `18 1-23/2 * * *` (30 min after each relay shift) | default (mid-tier) | ledger/spec-matrix via PR |
 | Sovra watchdog | `40 */4 * * *` | cheapest capable | watchdog-findings.md via PR |
 | Sovra refill & sweep | `20 * * * *` (new) | cheapest capable | QUEUE.md Backlog/Parked via `[QUEUE]` PR |
@@ -50,10 +52,28 @@ it. V: run ruff, mypy, the suite and its regression neighbours, scripts/product_
 --fail-on-unwired, scripts/validate_spec.py --strict, scripts/status.py, and
 scripts/data_exposure_check.py --backends postgres_rls,s3_identity --fail-on-exposure.
 
+STEP 5b — PRE-SUBMIT SELF-ATTACK (mandatory; this alone caused 3–5 review rounds per item).
+Before submitting, for EVERY protection or check you added or changed:
+- break it in the production code (delete it, and separately add an early-return/bypass);
+- run the test file exactly as CI does (`python tests/...`, not pytest) and show it turns RED;
+- for anything that reads host config (git, env, locale, DB encoding), repeat on a neutral host
+  (e.g. `GIT_CONFIG_SYSTEM` = an empty file; a SQL_ASCII database) — RED must not depend on the host;
+- include at least one NEGATIVE test that runs the real default code with the attack input present
+  and asserts the bad outcome does not happen (never only "flip the guard off, expect failure");
+- never stub out the protection the test claims to pin.
+Record the fault → RED table in the queue entry. A fault that stays GREEN is a missing test: add it.
+SAME-CLASS SWEEP: when a defect class is named (cursor cycle, fail-open parse, error-shaped success,
+duplicate identity, encoding, swallowed error), check and fix the same class in every sibling module
+under the same package, and list the result per module.
+
 STEP 6 — submit. Merge current main into the branch. Set the item's spec-matrix entry to
 PROVISIONAL/L1-PROVEN (never CERTIFIED). Append a submission entry to
 docs/certifications/queue.md and a PROGRESS.md entry. Touch only your own item's QUEUE.md
 lines. Mark the PR ready. Merge it on genuinely green CI (merge = PROVISIONAL only).
+
+LANES: up to 3 relay lanes run hourly at different minutes. A lane takes the first item in
+QUEUE.md order that has no `relay/<id>` branch and no open `[relay]` PR, and claims it at once
+(STEP 3), so lanes never collide. A lane never works an item another lane has claimed.
 
 PARK, not stop: after 3 failed attempts on the same step, an unclear DoD, or an ask-first need,
 move the item to QUEUE.md "## Parked" (what failed, what was tried, three route options). An
@@ -85,6 +105,9 @@ only noted as "not ready". The scheduled fire exists because a PR-opened event a
 CI and merge: without it, merged fixes are never revisited (the 2026-10-01 finding). Never
 re-review unchanged code that an earlier verdict already returned. If nothing qualifies,
 report "nothing to certify" and stop.
+
+VERIFIER MODEL: run independent verifier subagents on the mid-tier model (Sonnet); use the top
+model only for security-critical items (H-series, auth, RBAC, tenant isolation, code execution).
 
 For each item, follow docs/CONTROL_PLANE_MODES.md CERTIFY exactly:
 1. Independence: compare your session ID with every commit's Claude-Session trailer AND every

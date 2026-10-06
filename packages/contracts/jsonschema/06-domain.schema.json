@@ -15,7 +15,15 @@
     "EvaluationSuiteName": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 200
+      "maxLength": 200,
+      "pattern": "\\S",
+      "description": "Must contain at least one non-whitespace character; whitespace-only is refused."
+    },
+    "EvaluationSuiteGradingLogicVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647,
+      "description": "Capped at the Postgres Integer column's own 4-byte signed range."
     },
     "EvaluationSuiteCreateRequest": {
       "type": "object",
@@ -23,7 +31,7 @@
         "agent_manifest_id": { "type": "string", "format": "uuid" },
         "purpose": { "$ref": "#/$defs/EvaluationSuitePurpose" },
         "name": { "$ref": "#/$defs/EvaluationSuiteName" },
-        "grading_logic_version": { "type": "integer", "minimum": 1 },
+        "grading_logic_version": { "$ref": "#/$defs/EvaluationSuiteGradingLogicVersion" },
         "reviewer_id": { "type": ["string", "null"] }
       },
       "required": ["agent_manifest_id", "purpose", "name", "grading_logic_version"],
@@ -34,7 +42,7 @@
       "description": "Any non-empty subset of the mutable fields. Refused once locked.",
       "properties": {
         "name": { "$ref": "#/$defs/EvaluationSuiteName" },
-        "grading_logic_version": { "type": "integer", "minimum": 1 },
+        "grading_logic_version": { "$ref": "#/$defs/EvaluationSuiteGradingLogicVersion" },
         "reviewer_id": { "type": ["string", "null"] }
       },
       "additionalProperties": false
@@ -51,7 +59,7 @@
         "status": { "$ref": "#/$defs/EvaluationSuiteStatus" },
         "purpose": { "$ref": "#/$defs/EvaluationSuitePurpose" },
         "name": { "type": "string" },
-        "grading_logic_version": { "type": "integer", "minimum": 1 },
+        "grading_logic_version": { "$ref": "#/$defs/EvaluationSuiteGradingLogicVersion" },
         "reviewer_id": { "type": ["string", "null"] },
         "created_by": { "type": "string" },
         "locked_at": { "type": ["string", "null"], "format": "date-time" },
