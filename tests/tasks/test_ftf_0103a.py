@@ -1106,6 +1106,113 @@ def test_logout_revokes_the_session_for_the_api_resolver() -> None:
                 pass
 
 
+# -- 7. require_role: the organization comes from the path only -----------
+def test_require_role_ignores_header_and_query_org_overrides() -> None:
+    import asyncio
+    from urllib.parse import urlencode
+
+    from fastapi import HTTPException
+
+    from app.auth.rbac_middleware import (
+        AuthenticatedPrincipal,
+        Role,
+        require_role,
+    )
+
+    org_a, org_b = uuid.uuid4(), uuid.uuid4()
+    lookups: list[uuid.UUID] = []
+
+    def viewer_of_a_only(issuer: str, subject: str, organization_id: uuid.UUID) -> Role | None:
+        lookups.append(organization_id)
+        return Role.VIEWER if organization_id == org_a else None
+
+    def permissive(issuer: str, subject: str, organization_id: uuid.UUID) -> Role | None:
+        lookups.append(organization_id)
+        return Role.VIEWER
+
+    def call(
+        lookup,
+        path_org: uuid.UUID,
+        headers: dict[str, str] | None = None,
+        params: dict[str, str] | None = None,
+    ) -> tuple[int, object]:
+        guard = require_role(
+            {Role.VIEWER},
+            principal_resolver=lambda request: AuthenticatedPrincipal("iss", "sub"),
+            role_lookup=lookup,
+        )
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": f"/orgs/{path_org}/projects",
+                "path_params": {"organization_id": str(path_org)},
+                "query_string": urlencode(params or {}).encode(),
+                "headers": [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()],
+            }
+        )
+
+        async def _run() -> object:
+            return await guard(request)
+
+        try:
+            ctx = asyncio.run(_run())
+        except HTTPException as exc:
+            return exc.status_code, exc.detail
+        return 200, ctx
+
+    code, _ctx = call(viewer_of_a_only, org_a)
+    check("FTF-0103A", f"unit control: viewer of A reads A -> 200 (got {code})", code == 200)
+    missing = call(viewer_of_a_only, uuid.uuid4())
+    check("FTF-0103A", f"unit control: an unknown org -> 403 (got {missing[0]})", missing[0] == 403)
+
+    attempts: list[tuple[str, dict[str, str], dict[str, str]]] = [
+        (f"header {name}", {name: str(org_a)}, {})
+        for name in (
+            "X-Organization-Id",
+            "X-Sovra-Organization-Id",
+            "X-Tenant-Id",
+            "X-Organization",
+            "Organization-Id",
+        )
+    ]
+    attempts.append(("query organization_id", {}, {"organization_id": str(org_a)}))
+    attempts.append(("query tenant_id", {}, {"tenant_id": str(org_a)}))
+    for label, headers, params in attempts:
+        lookups.clear()
+        code, detail = call(viewer_of_a_only, org_b, headers, params)
+        check(
+            "FTF-0103A",
+            f"unit: {label} naming A cannot override path org B -> 403 (got {code})",
+            code == 403,
+        )
+        check(
+            "FTF-0103A",
+            f"unit: {label} override gets the same detail as the missing-org case",
+            detail == missing[1],
+        )
+        check(
+            "FTF-0103A",
+            f"unit: {label} -- the role lookup is only ever asked about the path org B",
+            bool(lookups) and all(entry == org_b for entry in lookups),
+        )
+
+    # Negative test on the real default code with the attack input present: with every
+    # override naming A, authorization is still made against the path org B only.
+    lookups.clear()
+    code, ctx = call(
+        permissive,
+        org_b,
+        {"X-Organization-Id": str(org_a), "X-Tenant-Id": str(org_a)},
+        {"organization_id": str(org_a)},
+    )
+    check(
+        "FTF-0103A",
+        "unit: with every override naming A, the context is still the path org B",
+        lookups == [org_b] and getattr(ctx, "organization_id", None) == org_b,
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
