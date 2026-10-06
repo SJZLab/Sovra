@@ -1584,6 +1584,24 @@ FTF-0214:
     real symbol this task now calls). `scripts/status.py`: certified count unchanged (this PR is
     PROVISIONAL, Law 2 -- a submission is not a certification).
 
+    `scripts/mutation_gate.py --base origin/main` (PRE-SUBMIT SELF-ATTACK, run locally twice):
+    first run (serializers-only tests) 72/93 KILLED; found and fixed two real defects the gate's
+    own closer look surfaced (an unvalidated `metadata_status` filter value, contradicting this
+    task's own "unrecognized value refused" clause; a dead `except ConnectionStateError` in
+    `probe()` that no reachable code path raises) plus two redundant `status_code=200` kwargs.
+    Added real FastAPI/uvicorn route-level tests (no DB -- module-level DB/gateway functions
+    monkeypatched, same technique the integration suite's own `require_model_access` fault
+    injection already uses) covering every validation branch, the revoked/non-revoked/
+    non-discovered composition paths, mixed-entry safe filters, both routes' 404/403 boundaries,
+    and all four probe dispatches. Second run: 80/88 KILLED, 8 SURVIVED (score 90.9%) -- all 8 are
+    the gate's own `M9` "normalization bypass" operator on a value already validated to exact
+    equality against a fixed lowercase enum set moments earlier (`DiscoveryState.DISCOVERED`;
+    `status_filter`/`e.status.value`; `metadata_filter`/`e.metadata_status.value`; `probe_type`,
+    once per dispatch branch) -- a provable no-op given that validation, not a weakened test.
+    Full per-mutant table in `docs/certifications/submissions/2026-10-06T2121Z-FTF-0214.md`;
+    requesting Control plane add these 8 to `docs/certifications/mutation-allowlist.yaml` as
+    reviewed equivalent mutants (this session cannot edit that file directly).
+
     Not self-certified (Law 4): `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN`,
     awaiting independent Control-plane L2 review and a real CI run (including the new
     `model-catalog-integration` job) before certification.
