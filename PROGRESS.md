@@ -1,8 +1,8 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-06T17:00Z. Source: `python3 scripts/status.py` on main.
-- **Status: 105/301 certified · 25 product-true.** Certification counts change only through Control-plane
+Updated: 2026-10-06T17:20Z. Source: `python3 scripts/status.py` on main.
+- **Status: 105/302 certified · 25 product-true** (denominator 302 since owner-approved addendum FTF-0103A, ADR 0003). Certification counts change only through Control-plane
   `[CERT]` PRs, so these figures are exact until the next one.
 - **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307. FTF-1206A's verdict is CERTIFIED; its
   status flips after relay item FTF-H034-F1.

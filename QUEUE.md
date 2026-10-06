@@ -9290,6 +9290,13 @@ protection under test. Put the fault → RED table in your queue entry, and appl
 to sibling modules. Items returned 3–5 times this week all failed on exactly this.
 0. **2026-10-06T09:45Z (Control plane): highest priority, one item per lane, one PR per item.**
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
+   - **0-TOP. FTF-0103A (owner-approved addendum, 2026-10-06; contract spec/addenda/FTF-0103A.json, ADR 0003).**
+     Every /api/v1 route denies every request today, because main.py uses the default fail-closed resolver and role
+     lookup. Build the Membership table (RLS, app role SELECT-only), a real session principal resolver reading
+     FTF-0101's cookie, and a DB role lookup, and pass both to EVERY router. Prove it through `create_app()` with the
+     real OIDC provider: login → API 200; no, tampered or revoked session → 401; foreign org, wrong role or revoked
+     membership → 403. Add a test that fails if any /api/v1 route keeps a default resolver. Highest priority: it
+     unblocks every success path.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
    - **0b. FTF-0902 round 3 (security; 5 blocking items).** Render-time revalidation still lets a mutated endpoint
      emit `0.0.0.0/0`, `::/0`, `ports: []`, `port: null` and an empty pod selector; renderer-added peers stay GREEN;

@@ -23962,3 +23962,20 @@ run with the script runner.
 **AUDIT note (items returned more than twice):** 0500D and 1002 are on round 4. Both misses are hardcoded-value and
 sub-field faults that the STEP 5b self-attack should have produced. For every computed field, the relay must also
 hardcode it and drop it, not only delete the guard.
+
+## 2026-10-06T17:20Z — Control plane: wiring audit and addendum FTF-0103A
+
+The full map is in `docs/certifications/wiring-map-2026-10-06.json`: each of the 80 certified tasks with a blank
+`proving_symbol`, its wiring task, and the confidence of that match.
+- 37 will be wired by a later task, 10 already have a live caller (they only need `proving_symbol` recorded), 22 have
+  no product surface (CI, gates, fixtures), and 11 are unclear (no task owns their dispatcher).
+- **Blocking finding:** every /api/v1 route denies every request. main.py builds every router with FTF-0103's
+  default fail-closed resolver and role lookup, and there is no Membership table. The owner approved addendum
+  FTF-0103A (ADR 0003, denominator 302). It is QUEUE item 0-TOP.
+- There are no web app pages yet (they arrive with H029/R007) and no worker entry points.
+- `product_truth_check` counts a plain text match of the symbol, even in the defining file. A call-site check comes
+  with the mutation-gate governance PR.
+- Highest-yield wiring task that is dependency-ready now: FTF-0214, the model catalog UI. It wires 10 certified
+  units (0205–0213, H004). After 0103A, Refill & Sweep puts it at the top of the Backlog.
+- Stale "no live caller yet" notes: 0103, 0104, 0105, H003, 0202, H006. Their callers exist now. Record their
+  proving_symbols once FTF-0103A makes the success path reachable.
