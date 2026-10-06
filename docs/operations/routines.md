@@ -19,7 +19,8 @@ then delete the old one once the new one has fired cleanly.
 fresh session gets no repository, and `add_repo` is not available inside it, so a direct lane
 routine cannot clone or push (tested 2026-10-06, session cse_01SHBikPo5Vv5YDCnvy2ZqHz). Instead,
 routines "Sovra relay B dispatch (lane 2)" and "Sovra relay C dispatch (lane 3)" wake the
-persistent session "Sovra relay dispatcher" (session_01Eowmii6EasByALwXW9uyQE). It skips the
+persistent session "Sovra relay dispatcher (sonnet)" (session_018evqdaQsYGpt7vPGVFW9UL; replaced the
+Opus dispatcher on 2026-10-06 16:25Z to cut per-firing cost). It skips the
 firing if that lane's previous session is still working; otherwise it calls `create_session` with
 the repo as source, model claude-sonnet-5-5, and the Relay prompt below with a one-line lane
 header. The dispatcher does no repository work. Lane A stays the owner-created routine.

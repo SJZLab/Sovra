@@ -23886,3 +23886,79 @@ Follow-up FTF-0902-F1, not blocking:
 
 Masked, not missed: an IPv4-only prefix-0 check and dropping fd00:ec2::254 are each caught by the IPv6 refusal;
 removing both layers turns RED.
+
+## 2026-10-06T16:35Z — Control plane: FTF-1206A verdict CERTIFIED (status flip deferred); FTF-0500D and FTF-1002 NOT CERTIFIED (round 4)
+
+Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent verifiers:
+top model for FTF-1206A (Law 18), mid-tier for FTF-0500D and FTF-1002. Faults were injected into production code and
+run with the script runner.
+
+### FTF-1206A (#486, squash a8a1936049376e0dabd3bba2536b169fb04afcd9): CERTIFIED
+- **Status flip deferred.** Setting spec-matrix to CERTIFIED turns the `gate` job RED: FTF-H034's
+  `test_real_committed_tracker_and_tasks_reflect_actual_certified_set` requires every CERTIFIED id to be in
+  `spec/tasks.json`, but ADR 0002 freezes that file at 300 tasks (r1_handoff enforces it) and the addendum is not in
+  it. The fix is code, so it goes to the relay as FTF-H034-F1 (QUEUE item 0b2). Control plane flips 1206A to
+  CERTIFIED, and adds its ledger entry, once FTF-H034-F1 is merged and verified. This verdict stands until then.
+- Producer session: `019gwFQK` (relay lane C). Not this session.
+- CI on head 65b5572: `organization-gateway-policy-integration` job 112345825620 shows "all checks passed", and the
+  Postgres log shows the expected RLS and permission errors. `gate` job 112345824990 passed.
+- Both round-2 blocking items hold, through a real `sovra_app` connection:
+  - (1) the integration test turns RED on each table separately for `USING(true)`, `WITH CHECK(true)`, RLS disabled,
+    and a nullable fail-open in both clauses;
+  - (2) `list_route_changes` turns RED when its project authorization is removed, or swallowed into `[]`.
+  - Removing FORCE is caught by the unit test and data_exposure_check. `sovra_app` is neither owner nor superuser, so
+    it is behaviorally masked.
+- Bypass probes as `sovra_app` were all refused: no, empty, foreign or random context; moving a row to another org;
+  a cross-org FK; SET ROLE, TRUNCATE, DISABLE RLS and DROP POLICY.
+- Follow-up FTF-1206A-F2 (security, queued as item 0c): a WITH CHECK that fails open only when no tenant context is
+  set stays GREEN in every suite. With it, a no-context `sovra_app` could write any org's policy row. Production is
+  correct today. The verifier showed the gap only by injecting the fault. Optional governance change: make
+  data_exposure_check flag `IS NULL OR` and `WITH CHECK (true)`.
+- FTF-1206A-F1 stays as listed in the 13:45Z entry.
+
+### FTF-0500D (#485, merge cdd56c4): NOT CERTIFIED, round 4 (2 blocking, tests only)
+- Producer session: `01XiratpY`. CI `gate` job 112362446367 passed. The oracle is genuinely independent: literal
+  tables and max/compare logic, with no production call.
+- About 58 faults turn RED. Blocking GREEN faults:
+  1. The preview's `security_classification` hardcoded to "public", and `requested_purpose` hardcoded to "training",
+     stay GREEN. Both are named in DoD (2). Assert both per cell with non-default values, and also
+     `source_display_name` with a value distinct from the fixture default.
+  2. The "4 grant states" requirement was read as status×grant. It means 4 shapes of `allowed_purposes`: empty,
+     exactly [requested], requested among several but not first, and several without requested. An empty list
+     authorizing any purpose, or honoring only the first purpose, stays GREEN. Expected values must come from the
+     independent oracle, against both preview and authorize.
+- Follow-up FTF-0500D-F1: preview `would_cross` must not couple to purpose denial (and vice versa); a multi-element
+  transformations order test; the text and order of blocking_reasons.
+
+### FTF-1002 (#490, merge 702d756): NOT CERTIFIED, round 4 (3 blocking, tests only)
+- Producer session: `01XiratpY`. CI `gate` job 112363239960 passed. Clauses (a) and (c) hold. The unmodified production
+  code refused every probe.
+- Blocking:
+  1. (d) Every fixture is still `license_id="apache-2.0"`. Hardcoding the licence value, dropping `accepted_by` or
+     `accepted_at`, or setting the adapter `base.value` to the base digest each stays GREEN. Use a distinct licence
+     per artifact, and assert each fact's value and detail.
+  2. (b) Dropping `detail` (or `value`, or `known`) from `_canonical_fact`, or stripping the resolved-base part before
+     hashing, stays GREEN. The tamper test replaces whole facts. Add: two adapters differing only in the resolved
+     base id or digest give different `manifest_digest`s, and tamper each fact's value, known and detail separately.
+  3. (a) No behavioral test covers a None or blank base digest. Add None, blank, "abc" and whitespace base-digest
+     cases, with a valid adapter digest.
+- Follow-up FTF-1002-F1:
+  - decide what (b) compares for `source_uri` (today it is recorded only);
+  - recorded `model_family` and `source_uri` are not asserted;
+  - a zero-width-space revision is accepted;
+  - `verify` that compares only a 20-character prefix stays GREEN;
+  - anchor-text fault tests mask behavioral results.
+
+### FTF-H034-F1 (new, blocking FTF-1206A's status flip; small, show RED first)
+- In `tests/tasks/test_ftf_h034.py`, exclude ids that have `spec/addenda/<id>.json` from the `spec/tasks.json`
+  check only. ADR 0002 freezes tasks.json at 300. Keep the TRACKER check for all CERTIFIED ids.
+- In `scripts/task_claim.py` `sync_certified_status`, create or update TRACKER.json entries for addendum ids
+  (status, evidence = evidence_hash). Write the files when only the tracker changed; today it writes only when
+  tasks.json changed.
+- Tests: certifying an addendum id in a temp spec-matrix updates TRACKER and leaves tasks.json at 300. A
+  non-addendum CERTIFIED id missing from tasks.json still turns the test RED, so the exclusion must not widen past
+  spec/addenda.
+
+**AUDIT note (items returned more than twice):** 0500D and 1002 are on round 4. Both misses are hardcoded-value and
+sub-field faults that the STEP 5b self-attack should have produced. For every computed field, the relay must also
+hardcode it and drop it, not only delete the guard.
