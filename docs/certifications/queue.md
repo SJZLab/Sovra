@@ -24061,3 +24061,91 @@ top model (security). Producer session: `01BGMHsj` (relay).
   - a test for the `ipv6_policy` strip/lower mutant;
   - optionally, compare the selectors against inline literals.
 - This closes rounds 1–4 (#430, #467/#468, #491, #501).
+
+## 2026-10-06T20:10Z — Control plane: FTF-0500D, FTF-1002, FTF-1206A-F2, FTF-H034-F1 CERTIFIED; FTF-0103A (round 2) and FTF-1807 (round 4) returned
+
+Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent verifiers:
+top model for FTF-0103A, FTF-1206A-F2 and FTF-H034-F1; mid-tier for FTF-0500D, FTF-1002 and FTF-1807. Producer
+sessions: `01Gy4xXk` (0103A), `01BGMHsj` (0500D, 1206A-F2, H034-F1, 1807), `012gb47Z` (1002). None is this session.
+
+### FTF-0500D (#505, merge 2fb298eb57ee39910b654ac0620ce2af177dabd7): CERTIFIED
+- CI: gate 112444119528 passed.
+- The oracle stays independent.
+- About 60 faults turn RED, including:
+  - P1, P3 and P4 (display, classification and purpose hardcoded), caught by a 180-cell display-field test;
+  - H7d and H7e (empty or first-only allowed_purposes), caught by a 60-cell shape test;
+  - every round-3 core fault.
+- Whole-file mutation gate: 72/92 killed. The survivors are redundant validators (equivalent), plus three small
+  test gaps recorded as FTF-0500D-F1.
+- Follow-up FTF-0500D-F1:
+  - a test that an unknown connection status raises;
+  - a zero bytes/records boundary;
+  - refusing a non-sequence transformations value;
+  - transformations order;
+  - display fields in the shape test.
+
+### FTF-1002 (#507, merge 84241a42d68c4a7f07a689deae23c9109d822143): CERTIFIED
+- CI: gate 112451816141 passed.
+- All round-4 DoD faults turn RED, behaviorally and in full CI mode:
+  - (1) per-artifact licence: hardcoded value, dropped `accepted_by`/`accepted_at`, adapter `base.value`;
+  - (2) `_canonical_fact` dropping detail, value or known; stripping the resolved base; the two-adapter
+    digest-difference test;
+  - (3) a16, plus None, blank, "abc" and whitespace base digests.
+- Whole-file mutation gate: 114/129 killed. Eight survivors are equivalent M9 normalisations.
+- Follow-up FTF-1002-F1:
+  - isolated value/known/detail tamper for every fact, not only `base`;
+  - distinct weights_digest per fixture;
+  - order-sensitive licence detail assertions;
+  - verify a fresh endpoint manifest;
+  - unknown-fact detail text;
+  - the earlier F1 items.
+
+### FTF-1206A-F2 round 2 (#504, merge fb2f65c800043d3c73d2f8216ed9d937f12fa0e8): CERTIFIED
+- CI: `organization-gateway-policy-integration` 112438988030 passed. Its Postgres log shows the no-context INSERTs
+  refused on fresh backends.
+- The no-context case runs on a NullPool connection, and its `IS NULL` precondition is proven not vacuous (test-side
+  faults P1 and P2 turn RED).
+- F4f and F4g turn RED. F4c–F4e, COALESCE, USING(true) and RLS-disabled show no regression.
+- Follow-up: removing FORCE is caught only by data_exposure_check (expected, because sovra_app is not the owner).
+
+### FTF-H034-F1 round 2 (#502, merge 9f6ce955c012a9b8850f63ea4ee6530114bebe70): CERTIFIED
+- The addendum-shaped ids with no addenda file (FTF-9999A, 04A99, 0500E, 0103B) are reported missing.
+- W2 and W3 turn RED. W1, W4, D1, D2, S1, S2, G1 and U1/U2 show no regression.
+- New follow-up **FTF-H034-F2 (QUEUE 0b, tests only):** the whole-file mutation gate on `scripts/task_claim.py`
+  leaves 7 survivors in the `sync_certified_status` update branch: re-certifying with a new hash keeps stale
+  evidence, the sync is not idempotent, and an empty hash refresh is untested. The production code is correct. Now
+  that scripts/ is in mutation scope, any future change to the function fails CI until these die.
+
+### FTF-0103A (#499, merge 3a5d94a): NOT CERTIFIED, round 2 (1 blocking, tests only)
+- CI on ca33612: `live-auth-path-integration` 112442806419 ("all checks passed"), gate 112442805670, and
+  mutation-gate 112442805576 (51/51 killed).
+- On unmodified code, all six contract items hold:
+  - real OIDC login gives 200;
+  - no, tampered, expired or logged-out cookies give 401;
+  - a foreign org, the wrong role, or a revoked membership gives 403;
+  - 83 /api/v1 routes each use exactly one real resolver and one real role lookup;
+  - the memberships table has the §6.4 constraints, ENABLE+FORCE RLS and a SELECT-only app role;
+  - no secrets are logged.
+- No bypass probe succeeded: org case and format variants, forged keys, replay after logout, and header/body/query
+  injection.
+- **Blocking:** `require_role` honoring `X-Organization-Id` (C13b) or `?organization_id=` (C13f) stays GREEN in
+  every suite. Under C13b, a viewer of org A gets 200 on org B with the header set to A. This clause is in the
+  contract's negative_acceptance. The fix is in QUEUE 0-TOP.
+- Follow-up FTF-0103A-F1 (recommended before any multi-replica deploy):
+  - the session revocation store is in memory per process, so a logged-out cookie works again after a restart or
+    on another replica (inherited from FTF-0101);
+  - check positively that each route uses the real resolver;
+  - sanitize the logged `x-request-id`;
+  - a unit check that the role-lookup SQL keeps its org filter (today only RLS masks that fault).
+
+### FTF-1807 (#506): NOT CERTIFIED, round 4 (tests only)
+- 15 plain-language inversions stay GREEN. Examples: "Revoked keys keep working for up to 5 minutes", "Falling back
+  to OpenAI is acceptable".
+- Section bodies 1–6 are mostly unpinned. Emptying section 3 or 5, or changing "is dropped entirely" to "is
+  applied", stays GREEN.
+- Several checker-code faults are not killed.
+- The fix is to pin the text exactly instead of extending the blacklist. See QUEUE 0c.
+- Same-class follow-up: audit the other tests/documentation runbook tests for the same blacklist weakness.
+
+**Mutation gate, first real use:** FTF-0103A's production change ran 51 mutants and killed all 51. Tests-only rounds
+correctly show `targets=[]`; for those, verifiers run the gate in whole-file mode.

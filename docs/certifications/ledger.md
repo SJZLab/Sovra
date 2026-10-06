@@ -9951,3 +9951,27 @@ PR is not landed by the next certifier shift.
   - 58+ clause faults turn RED;
   - mutation gate 118/124, with only equivalent survivors.
 - Follow-up, not blocking: FTF-0902-F1.
+
+## FTF-0500D — Dataset source security-boundary preview — CERTIFIED (2026-10-06)
+- Criterion: FTF-0500D. PR #505, merge commit 2fb298eb57ee39910b654ac0620ce2af177dabd7 (head `6247fba`). This closes rounds 1–4.
+- Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent: the
+  producer is `session_01BGMHsj`.
+- CI: gate 112444119528 passed.
+- Independent verifier (mid-tier):
+  - an independent expected-value oracle;
+  - per-cell display fields and allowed_purposes shapes are pinned;
+  - about 60 faults turn RED;
+  - mutation gate 72/92, with only equivalent survivors or F1 items.
+- Follow-up, not blocking: FTF-0500D-F1.
+
+## FTF-1002 — Artifact lineage manifest — CERTIFIED (2026-10-06)
+- Criterion: FTF-1002. PR #507, merge commit 84241a42d68c4a7f07a689deae23c9109d822143 (head `41ff673`). This closes rounds 1–4.
+- Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent: the
+  producers are `session_012gb47Z` (r4) and `01XiratpY` (r3).
+- CI: gate 112451816141 passed.
+- Independent verifier (mid-tier):
+  - per-artifact licence facts are pinned;
+  - the manifest digest covers every canonical sub-field and the resolved base;
+  - base-digest validation is pinned behaviorally;
+  - mutation gate 114/129, with only equivalent survivors or F1 items.
+- Follow-up, not blocking: FTF-1002-F1.
