@@ -132,6 +132,7 @@ from packages.litellm_client.v1_model_info_enrichment import enrich_visible_mode
 from packages.litellm_client.v1_models_discovery import (  # noqa: E402
     DiscoveryState,
     ModelDiscoveryResult,
+    ModelMetadataStatus,
     discover_models,
 )
 from packages.model_catalog.access_snapshot import (  # noqa: E402
@@ -306,6 +307,10 @@ def build_model_catalog_router(
         if status_filter is not None and status_filter not in {s.value for s in CatalogEntryStatus}:
             raise HTTPException(status_code=400, detail="unknown status filter")
         metadata_filter = request.query_params.get("metadata_status")
+        if metadata_filter is not None and metadata_filter not in {
+            s.value for s in ModelMetadataStatus
+        }:
+            raise HTTPException(status_code=400, detail="unknown metadata_status filter")
         raw_project_id = request.query_params.get("project_id")
 
         tenant_context = TenantContext.from_authorized_context(ctx)
