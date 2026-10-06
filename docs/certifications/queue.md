@@ -23143,3 +23143,58 @@ next shift.
 **V (certification)** -- per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state:
 L1-PROVEN` unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the
 opened PR are required before certification.
+
+## 2026-10-06T00:00Z — [relay] FTF-0307: fix L2 round-2 findings (probe model/route-identity binding, weights_digest requirement, organization binding)
+Fixes the three findings from the 2026-10-04T11:00Z Control-plane L2 review (merged PR #422), per the standing relay
+DoD rule ("each acceptance and negative_acceptance clause gets a test that a clause-level fault turns red, including
+at least one additive fault"). PR: https://github.com/SJZLab/Sovra/pull/471 (branch `claude/wizardly-fermat-4idnly`
+-> `main`).
+
+Clause-to-test mapping (full detail in `docs/spec-matrix.yaml`'s FTF-0307 entry, "L2 fix-and-resubmit (2026-10-06,
+round 2)" note):
+- Probe bound to `model_id` -> `test_probe_for_a_different_model_never_classifies_this_model_inference_only` +
+  additive fault `test_fault_injection_unbound_probe_model_treated_as_success_is_caught` (drops the
+  `resolved_model == model_id` line; a mismatched-model PROBED result then wrongly becomes inference_only).
+- Probe route identity verified -> `test_probe_with_unverified_route_identity_never_classifies_inference_only` +
+  additive fault `test_fault_injection_unverified_route_identity_treated_as_success_is_caught` (drops the
+  `route_identity_state is VERIFIED` line; an unverified-identity PROBED result then wrongly becomes
+  inference_only).
+- `weights_digest` required for trainable -> `test_ready_artifact_without_a_resolved_weights_digest_never_
+  classifies_trainable` + additive fault `test_fault_injection_missing_weights_digest_treated_as_trainable_is_
+  caught` (drops the `weights_digest is not None` line; a digest-unresolved ready artifact then wrongly becomes
+  trainable).
+- Organization binding -> `test_cross_organization_artifact_is_refused_never_classified` +
+  `test_organization_id_must_be_a_real_uuid` + additive fault `test_fault_injection_cross_organization_artifact_
+  unblocked_is_caught` (removes the whole cross-org raise block; a different organization's ready artifact then
+  wrongly classifies trainable instead of being refused).
+- Unrecognised status fails closed (already-correct, now pinned) -> `test_unrecognised_artifact_status_fails_
+  closed_to_unknown` (bypasses `TrainableArtifact.__init__`'s own validation via a direct post-construction
+  attribute set, simulating an ORM-loaded row with a status value from a migration this module does not yet know).
+- `role=None` passthrough (already-correct, now pinned) -> `test_assigned_role_none_passes_through_as_none_never_
+  defaulted`.
+- `license_approved=False` when not accepted (already-correct, now pinned) -> `test_license_approved_is_false_
+  when_not_yet_accepted`.
+- Real rename scenario -> `test_renaming_an_artifact_after_creation_never_changes_its_own_classification`
+  (classifies the same real artifact object before and after a live `display_name` mutation, confirming the
+  result is identical and driven only by status/digest).
+
+The two pre-existing round-1 fault injections were updated for the new required `organization_id` parameter and the
+new `weights_digest`-bearing fixture, re-verified still catching their own original faults.
+
+`uv run ruff check .`/`ruff format --check .`/`uv run mypy .` clean repo-wide (371 files, zero errors).
+`python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`, this sandbox's own pre-existing
+shallow-clone artifact). Regression swept `test_ftf_0207.py`/`test_ftf_0212.py`/`test_ftf_0301.py`/
+`test_ftf_0306.py` (this task's own four dependencies) -- all exit 0, zero regressions (the printed SSL/
+TenantContextError tracebacks in `test_ftf_0212.py`'s/`test_ftf_0301.py`'s own stdout are those suites' own
+disclosed negative-test cases, same precedent already established). `product_truth_check.py --fail-on-unwired`:
+unchanged `26/26`. `status.py`: unchanged `101/301` certified / 24 product-true (Law 2 -- a resubmission is not a
+certification). No `.github/workflows/ci.yml` change needed -- the existing "FTF-0307 negative-test proof" step
+already runs `tests/tasks/test_ftf_0307.py` in full.
+
+Updated `docs/spec-matrix.yaml`'s FTF-0307 entry with a full "L2 fix-and-resubmit (2026-10-06, round 2)" note,
+including this clause-to-test mapping (`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN`
+-- Law 2).
+
+**V (certification)** -- per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state:
+L1-PROVEN` unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the
+opened PR (#471) are required before certification.

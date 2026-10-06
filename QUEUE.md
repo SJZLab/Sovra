@@ -9139,9 +9139,15 @@ this same resolution (doc-only, redundant once this lands).
      per this file's own top dated log entry) plus the additive org!=project early-return fault
      test the DoD named. Zero violations found against the unmodified module — a test-coverage
      gap, not a production defect; no module code changed. Not self-certified (Law 4) — awaiting
-     Control-plane L2 re-review and a real CI run. Next in list order: FTF-0902, FTF-0307,
-     FTF-1002, FTF-0510, FTF-04A18 and FTF-1807. Their DoDs are in docs/certifications/queue.md
-     "2026-10-04T11:00Z".
+     Control-plane L2 re-review and a real CI run.
+   - **0d2. FTF-0307 fixed 2026-10-06 this shift, PR #471 opened.** Probe-to-model_id/route-identity
+     binding, a mandatory weights_digest for trainable_open_weight, and a required organization_id
+     with a cross-organization raise — all three round-2 findings from docs/certifications/queue.md
+     "2026-10-04T11:00Z". 13 new tests (9 regular + 4 Law-1 fault injections, each reverted
+     byte-identical), full clause-to-test mapping in this shift's own docs/certifications/queue.md
+     entry and docs/spec-matrix.yaml's FTF-0307 entry. Not self-certified (Law 4) — awaiting
+     Control-plane L2 re-review and a real CI run. Next in list order: FTF-1002, FTF-0510,
+     FTF-04A18 and FTF-1807. Their DoDs are in docs/certifications/queue.md "2026-10-04T11:00Z".
    - **0e.** Then FTF-1206A (Backlog; contract `spec/addenda/FTF-1206A.json`).
    - FTF-0500B re-enters this list only if Control plane returns it again. A NEW verdict
      entry in docs/certifications/queue.md does NOT outrank 0a–0c. Work the list order, not the newest entry.
