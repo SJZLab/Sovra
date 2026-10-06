@@ -421,6 +421,37 @@ def main() -> None:
             )
             code, _ = _api(api, "GET", f"{projects_b}?role=organization_admin", cookie=cookie)
             check("FTF-0103A", f"query role claim cannot widen -> 403 (got {code})", code == 403)
+
+            # negative_acceptance: no header or query parameter may select/override the
+            # organization the request is authorized against (it comes from the path only).
+            # The caller is a member of A only; each override names A while the path names B,
+            # so honoring any of them would turn the 403 into a 200.
+            missing_org_code, missing_org_body = _api(
+                api, "GET", f"/api/v1/organizations/{uuid.uuid4()}/projects", cookie=cookie
+            )
+            org_overrides: list[tuple[str, str, dict[str, str]]] = [
+                (f"header {name}", projects_b, {name: str(A)})
+                for name in ("X-Organization-Id", "X-Sovra-Organization-Id", "X-Tenant-Id")
+            ]
+            org_overrides.append(("query organization_id", f"{projects_b}?organization_id={A}", {}))
+            org_overrides.append(("query tenant_id", f"{projects_b}?tenant_id={A}", {}))
+            for label, override_path, override_headers in org_overrides:
+                code, body = _api(
+                    api, "GET", override_path, cookie=cookie, headers=override_headers
+                )
+                check(
+                    "FTF-0103A",
+                    f"{label} naming A cannot override path org B -> 403 (got {code})",
+                    code == 403,
+                )
+                check(
+                    "FTF-0103A",
+                    f"{label} override is indistinguishable from the missing-org case",
+                    (code, body) == (missing_org_code, missing_org_body),
+                )
+            # control: the same member really is allowed on A without any override.
+            code, _ = _api(api, "GET", projects_a, cookie=cookie)
+            check("FTF-0103A", f"control: the member reads org A -> 200 (got {code})", code == 200)
             check(
                 "FTF-0103A",
                 "CLI grants a WORKSPACE-level org_admin in B",
