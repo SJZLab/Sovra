@@ -92,10 +92,10 @@ FTF-0103:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0103.py
 FTF-0103A:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Live session principal and Membership persistence (wires FTF-0101 sessions and FTF-0103 RBAC into every live route)
-  evidence_hash: ''
+  evidence_hash: 5e598e083ccb78e9f14fd0ecea3b46ab271c99b6
   implementation_state: IMPLEMENTED
   notes: >-
     Owner-approved Release 1 addendum (2026-10-06), docs/adr/0003-task-addendum-ftf-0103a.md.
@@ -121,7 +121,7 @@ FTF-0103A:
     membership, app role cannot write, absent/foreign tenant context reads 0 rows, WITH CHECK not fail-open).
     Mutation gate (scripts/mutation_gate.py) 51/51 killed locally. See
     docs/certifications/submissions/2026-10-06T1900Z-FTF-0103A.md.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: SessionPrincipalResolver
   proving_test: tests/tasks/test_ftf_0103a.py
 FTF-0104:

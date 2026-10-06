@@ -24149,3 +24149,32 @@ sessions: `01Gy4xXk` (0103A), `01BGMHsj` (0500D, 1206A-F2, H034-F1, 1807), `012g
 
 **Mutation gate, first real use:** FTF-0103A's production change ran 51 mutants and killed all 51. Tests-only rounds
 correctly show `targets=[]`; for those, verifiers run the gate in whole-file mode.
+
+## 2026-10-06T21:00Z — Control plane: FTF-0103A and FTF-H034-F2 CERTIFIED; FTF-0510 returned (tests only)
+- **FTF-0103A: CERTIFIED** (round 2, PR #509, merge 5e598e0). Every header and query org override is RED in the unit
+  and live suites. Ten prior faults are RED. See the ledger.
+- **FTF-H034-F2: CERTIFIED** (PR #510, merge 090de1c). Follow-up FTF-H034-F3: pin `scripts/task_claim.py:365` for an
+  empty hash, using a tasks.json entry with non-CERTIFIED status and `evidence_hash=""`, and assert evidence is
+  unchanged and never contains `""`.
+- **FTF-0510: NOT CERTIFIED (round 5, tests only).** Production code is correct: the recorded oracle was
+  re-derived from transformers 4.46.3 `apply_chat_template` and matches exactly, no dependency was added, and there
+  are no stubs. Faults that stay GREEN, each needing a test:
+  1. Distribution through the report: swapping p90 and p99, p50 off by one, or p99 off by one all stay GREEN. Fix:
+     an `analyze_tokenization` test with at least 10 conversations, asserting count, min, max, mean, p50, p90 and p99
+     exactly.
+  2. Truncation policy keyed by `record_index` instead of `batch_position` stays GREEN. Fix: a multi-row batch where
+     the indexes differ and the policy exists for one position only.
+  3. Silently dropped rows. Fix: tests for a non-Mapping candidate (`invalid_candidate`), `content=None`, extra
+     content keys, a string inside `messages`, and a single-message conversation. Each must produce its issue and
+     certify=False, never a crash or a silent skip.
+  4. `distribution.count` replaced by `len(records)` stays GREEN. Fix: a mixed batch of one good row and one issue
+     row, asserting count == 1.
+  5. Template inputs. Fix:
+     - a multi-line template with block newlines (trim_blocks / lstrip_blocks), pinned against a recorded
+       transformers value;
+     - a template that references `tool_call_id`, `name` and `add_generation_prompt`;
+     - `bos_token` and `eos_token` given as AddedToken dicts (`{"content": "<s>"}`);
+     - a row that raises `jinja2.UndefinedError` at render.
+  - Non-blocking (F1): certification should require verified non-None digests; assert the ApproximateAliasTokenizer
+    counts; reject a bool `max_sequence_length`.
+  - Show each fault above RED before submitting (STEP 5b).

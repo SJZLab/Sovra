@@ -9975,3 +9975,35 @@ PR is not landed by the next certifier shift.
   - base-digest validation is pinned behaviorally;
   - mutation gate 114/129, with only equivalent survivors or F1 items.
 - Follow-up, not blocking: FTF-1002-F1.
+
+## FTF-0103A — Live session principal and Membership persistence — CERTIFIED (2026-10-06)
+- Criterion: FTF-0103A (addendum, ADR 0003). Production code: PR #499. Round 2 tests: PR #509, merge commit
+  5e598e083ccb78e9f14fd0ecea3b46ab271c99b6 (head `6d0d23b`). This closes rounds 1–2.
+- Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent: the
+  producer is `session_013ZizErE5CXhBTxtfAC1eot`.
+- CI: run 37526623884 passed, 47/47 checks.
+- Independent verifier (top tier, security). Both the unit and live suites were run locally against real
+  Postgres 16, the real `create_app()` and the real OIDC provider.
+  - Seven org-override faults in `apps/api/app/auth/rbac_middleware.py` were injected:
+    - org taken from `X-Organization-Id`, `X-Tenant-Id`, `X-Sovra-Organization-Id`, `?organization_id=` or `?tenant_id=`;
+    - a header-only role lookup;
+    - a header honoured in `organization_id_from_path`.
+    All seven are RED in both suites.
+  - Ten prior-criteria faults are RED in at least one suite:
+    - FORCE RLS, the SELECT-only grant, 401 without a session, non-member, insufficient role, a default resolver
+      left on a router, revocation, expiry, revoked membership, and a revoked-only login.
+  - Mutation gate: `session_principal.py` and `membership_store.py` have 0 survivors. `rbac_middleware.py` (FTF-0103
+    code) is 37/42; all 5 survivors are equivalent and none is in org derivation.
+- Product-true: proving_symbol `SessionPrincipalResolver` is passed to every /api/v1 router by `create_app()`.
+- Follow-ups, not blocking:
+  - FTF-0103A-F1: a unit check for the SQL `organization_id = :org` filter (RLS already enforces it), and a unit
+    case for an insufficient role.
+  - Make the in-process session revocation store durable before any multi-replica deploy.
+
+## FTF-H034-F2 — sync_certified_status tracker-update branch pinned — CERTIFIED (2026-10-06)
+- Follow-up of FTF-H034. PR #510, merge commit 090de1c (head `42637f6`). Producer: `session_013ZizErE5CXhBTxtfAC1eot`.
+- CI: gate 112480998215 and mutation-gate 112480998522 passed.
+- Verifier: whole-file gate on scripts/task_claim.py leaves 0 survivors in lines 312–396 (the 12 survivors are all
+  in Claim/TaskClaimRegistry); W1–U2 and 7 extra update-branch faults are RED.
+- Follow-up, not blocking: FTF-H034-F3. Replacing line 365's ternary with `[evidence_hash]` writes `[""]` into
+  tasks.json and the tests stay GREEN; the gate has no ternary operator, so it never generated this mutant.

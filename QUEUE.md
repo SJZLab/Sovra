@@ -9296,23 +9296,14 @@ protection under test. Put the fault → RED table in your queue entry, and appl
 to sibling modules. Items returned 3–5 times this week all failed on exactly this.
 0. **2026-10-06T09:45Z (Control plane): highest priority, one item per lane, one PR per item.**
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
-   - **0-TOP. FTF-0103A round 2 (security, tests only; 1 blocking).** The production code holds, but no test catches
-     an org override. Making `require_role` honor `X-Organization-Id` (or `X-Sovra-Organization-Id`, `X-Tenant-Id`) or
-     `?organization_id=` stays GREEN in every suite.
-     - Integration test: call `GET /api/v1/organizations/{B}/projects` with cookie A, once with each header set to A
-       and once with `?organization_id={A}`. Assert 403 and the same body as the missing-org case.
-     - Unit test: the same checks in `tests/tasks/test_ftf_0103a.py`, using a TestClient app with `require_role` and a
-       fake role lookup.
-     - Show both faults RED. See docs/certifications/queue.md "2026-10-06T20:10Z".
+   - **0-TOP. FTF-0510 round 5 (tests only; 5 blocking).** Production code is correct (oracle re-derived from
+     transformers). Missing tests: distribution pins via `analyze_tokenization`, the truncation-policy key, dropped rows,
+     mixed-batch count, and template inputs. Exact list: docs/certifications/queue.md "2026-10-06T21:00Z". Claim
+     `relay/FTF-0510-r5`.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
-   - **0b. FTF-H034-F2 (tests only).** The mutation gate leaves 7 survivors in the `sync_certified_status` update
-     branch for an existing TRACKER entry, and CI will block any future change to that function until they die.
-     In a temporary addenda directory:
-     - re-certify an existing CERTIFIED addendum with a new hash, and assert evidence == [new] and that the id is
-       returned;
-     - run a second sync, and assert it returns [] and leaves the file unchanged;
-     - use an empty evidence_hash, and assert evidence is never [""].
-     Then re-run the gate on scripts/task_claim.py with 0 survivors in lines 362–383. Same entry.
+   - **0b. FTF-H034-F3 (tests only, small).** Replacing `scripts/task_claim.py:365` with `[evidence_hash]` stays GREEN.
+     Fix: a tasks.json entry with non-CERTIFIED status and `evidence_hash=""`; assert evidence is unchanged and never
+     `[""]`. Same entry.
    - **0c. FTF-1807 round 4 (tests only).** The forbidden-claim scan is a phrase blacklist, so plain-language inversions
      pass. Pin every paragraph of runbook sections 1–6 exactly (whitespace-normalized text, or a per-section sha256
      held in the test), keeping the existing structured pins. Add in-suite faults for each checker: wrapped, bold,
@@ -9322,9 +9313,9 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      live routes. Set their `proving_symbol`s, and make product_truth_check prove each one through a real caller.
      Contract: `python tools/r1_handoff.py packet FTF-0214 --plan FINE_TUNING_FACTORY_RELEASE_1.md`;
      docs/certifications/wiring-map-2026-10-06.json lists the units.
-   - **0e.** Then FTF-0510 (draft #488) and the Backlog.
-   - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D and FTF-1002 are CERTIFIED
-     (2026-10-06); follow-ups FTF-1206A-F2 and FTF-H034-F1 are CERTIFIED.
+   - **0e.** Then the Backlog.
+   - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002 and FTF-0103A are CERTIFIED
+     (2026-10-06); follow-ups FTF-1206A-F2, FTF-H034-F1 and FTF-H034-F2 are CERTIFIED.
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid
