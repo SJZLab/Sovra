@@ -23077,6 +23077,22 @@ redundant layers, and each pair of them turns the suite RED.
 Follow-up, not blocking: `scripts/verify_task.py --stage task` is BLOCKED for every item, including certified ones, because
 `spec/verification-map.json` has no merged evidence records. Control plane will scope this as a tooling task.
 
+## 2026-10-05T04:40Z — FTF-0601 round-2 fix-and-resubmit (relay)
+Full evidence, clause-to-test mapping and Law-1 fault-injection record are in `docs/spec-matrix.yaml`'s
+FTF-0601 entry (new note appended this shift) and `PROGRESS.md`'s matching top dated entry. Summary: all
+six findings from the "2026-10-01T13:40Z" FTF-0601 re-review fixed -- `normalize_identity` (strip+casefold)
+closes the independence-bypass vector in both `EvaluationSuite.__init__` and `lock_evaluation_suite`;
+`reviewer_id` is now checked against real organization membership at assignment time
+(`OrganizationMemberLookup`, fail-closed default, wired from the router's already-injected `role_lookup`);
+`lock_evaluation_suite` now refuses a lock attempt from anyone other than the suite's own assigned reviewer
+(`EvaluationSuiteLockForbiddenError`, 403); `grading_logic_version` is capped at the real Postgres `Integer`
+range (2147483647) in the validator and in both shared contract files; `validate_name` rejects
+whitespace-only; migration `0019_eval_suites_reviewer_norm` recreates both reviewer-related CHECK
+constraints with normalized (`lower(trim(...))`) conditions, with a data-remediation guard that fails
+closed (raises, naming violating row IDs) rather than silently applying a stricter constraint. Not
+self-certified (Law 4) -- `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` unchanged, awaiting
+Control-plane L2 re-review and a real CI run on PR https://github.com/SJZLab/Sovra/pull/463.
+
 ## 2026-10-05T04:10Z — [relay] FTF-0500D: fix L2 round-2 findings (full 6-dimension matrix test, additive early-return fault test)
 Fixes the finding from the 2026-10-04T11:00Z Control-plane L2 review (merged PR #410): "the matrix holds org
 default equal to the project profile and fixes the purpose, so an early return when org != project, or when

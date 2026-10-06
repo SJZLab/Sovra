@@ -7783,6 +7783,82 @@ FTF-0601:
     `evaluation-suite-integration` job already run these files. **Not self-certified (Law 4)** --
     awaiting independent Control-plane L2 re-review and a real CI run on the opened PR before
     certification.
+
+    L2 round-2 fix-and-resubmit (2026-10-05, docs/certifications/queue.md "2026-10-01T13:40Z"
+    findings; QUEUE.md "## Active" item 0c): six new findings against the real router (via RLS) --
+    independence bypass (a padded or case-variant `reviewer_id` compared equal to the creator under
+    a bare `==`), `grading_logic_version=2147483648` surfacing a real 500 (`DataError`), a
+    whitespace-only `name` stored with 200/201, the lock-level whitespace check unpinned, and
+    `reviewer_id` being unbound self-asserted free text (the creator could lock their own `final`
+    suite under any name). Clause-to-test mapping:
+
+    1. Strip+casefold identity comparison (`normalize_identity`, `evaluation_suite_schema.py`):
+    `validate_reviewer_id_or_none` now stores the *stripped* value (was previously returned raw,
+    unstripped); `EvaluationSuite.__init__`'s and `lock_evaluation_suite`'s own independence checks
+    now compare via `normalize_identity` (strip+casefold) instead of a bare `==`. Tests:
+    `test_construction_rejects_final_suite_locked_with_padded_self_review`,
+    `..._with_case_variant_self_review` (unit), the real-router "padded, case-variant creator as
+    reviewer, then lock" case (integration, 409).
+
+    2. Reviewer must be a real organization member: new `OrganizationMemberLookup`/
+    `default_organization_member_lookup` (fail-closed, same disclosed gap as `rbac_middleware`'s own
+    `default_role_lookup` -- no live Membership table exists yet) checked in `create_evaluation_
+    suite`/`update_evaluation_suite` at assignment time, and re-checked in `lock_evaluation_suite` as
+    defense-in-depth against a raw-write bypass. The real router wires it from the already-injected
+    `role_lookup` (member == holds some real role). Test: the real-router "non-member reviewer" PATCH
+    case (integration, 400).
+
+    3. Lock must be performed by the reviewer principal: new `EvaluationSuiteLockForbiddenError`
+    (403) in `lock_evaluation_suite` when `normalize_identity(actor.actor_id) !=
+    normalize_identity(suite.reviewer_id)`. Test: the real-router "the creator locking a suite" case
+    (integration, 403), and "acceptance: locking a development suite succeeds when performed by its
+    own real, assigned reviewer principal" (200).
+
+    4. `grading_logic_version` capped at `GRADING_LOGIC_VERSION_MAX = 2147483647` (Postgres
+    `Integer`'s own 4-byte signed range) in `validate_grading_logic_version`; `maximum: 2147483647`
+    added to both `packages/contracts/openapi/06-interface.yaml` and `packages/contracts/jsonschema/
+    06-domain.schema.json`. Tests: `test_validate_grading_logic_version` (unit, boundary + boundary+1),
+    the real-router "2147483648 on POST/PATCH" cases (integration, 400 each -- previously a real
+    500/`DataError`, reproduced and confirmed before the fix: stashing the three production files
+    reproduced the exact original 500 crash on the PATCH case).
+
+    5. `validate_name` rejects whitespace-only (was `not value`, which a non-empty whitespace string
+    passes) on both POST and PATCH; `pattern: '\S'` added to `EvaluationSuiteName` in both contract
+    files. Tests: `test_validate_name` (unit, space and tab/newline), the real-router "whitespace-only
+    name on POST/PATCH" cases (integration, 400 each).
+
+    6. Migration `0019_eval_suites_reviewer_norm`: both `ck_evaluation_suites_independent_final_
+    reviewer` and `ck_evaluation_suites_reviewer_present_when_locked` recreated with
+    `lower(trim(...))`/`trim(...)` conditions matching the application-level normalization, mirrored
+    in `EvaluationSuite.__table_args__`. Data-remediation step (not a silent schema change):
+    `upgrade()` queries for any existing row that would violate either new condition and raises
+    `RuntimeError` naming the exact row IDs rather than auto-mutating a locked evaluation record: no
+    violating row exists in this chain's own history, so this path is untested by the real migration
+    run itself, but it fails closed rather than fails silent -- documented in the migration's own
+    docstring as the explicit operator runbook. Full chain `0001`-`0019` upgrades clean against a
+    real local PostgreSQL 16; `0019` alone round-trips `downgrade -1` -> `upgrade head` clean.
+
+    Every clause-level fault confirmed red first against the exact pre-fix code (Law 1): directly
+    reproduced the three validator bugs (`validate_name('   ')`, `validate_grading_logic_version
+    (2147483648)`, `validate_reviewer_id_or_none('  creator-1  ')` returning unstripped) against the
+    pre-fix function bodies, each reproducing the exact predicted defect; then stashed the three
+    production files (`evaluation_suite_schema.py`/`evaluation_suite_crud.py`/
+    `evaluation_suite_routes.py`) and a full re-run of `tests/integration/
+    test_ftf_0601_evaluation_suite.py` against the genuine pre-fix code -- 10 genuine FAILs, including
+    a real crash reproducing the exact original `DataError`/500 on `grading_logic_version=2147483648`
+    PATCH -- then restored the fix and both suites re-ran clean (all checks passed).
+
+    `uv sync --all-packages`; `ruff check .`/`ruff format --check .` clean (373 files, after one
+    self-fixed import-sort/line-length finding on the new migration file). `mypy .` clean (372 source
+    files). `python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`, this
+    sandbox's own pre-existing shallow-clone artifact). `product_truth_check.py --fail-on-unwired`
+    unchanged `26/26`. `status.py` unchanged `101/301` certified (Law 2 -- a resubmission is not a
+    certification). Regression swept `test_ftf_0103.py`/`test_ftf_h003.py` (RBAC/tenant-isolation
+    primitives this task's own new `member_lookup` wiring composes, never reimplements), zero
+    regressions. No `ci.yml` change needed -- the existing `gate`-job step and the existing
+    `evaluation-suite-integration` job already run both files. **Not self-certified (Law 4)** --
+    awaiting independent Control-plane L2 re-review and a real CI run on the opened PR before
+    certification.
   proof_state: L1-PROVEN
   proving_symbol: build_evaluation_suite_router
   proving_test: tests/tasks/test_ftf_0601.py

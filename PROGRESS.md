@@ -1,4 +1,104 @@
 # PROGRESS — Sovra
+## 2026-10-05T04:40:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-7vy5ny` — FTF-0601 round-2 fix-and-resubmit
+
+STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` exactly — no mismatch. `BLOCKER.md` read in full:
+no live entries (all RESOLVED). STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`
+fresh — the freshest entry was Control plane's own 2026-10-05T03:20Z certification of FTF-H007/FTF-04A06
+(#461, merge `eecfa93`), explicitly naming `QUEUE.md` item 0c (FTF-0601) as the next relay item. Confirmed
+no open relay PR already claims FTF-0601 (`list_pull_requests`: only the long-stale #402/#295, neither a
+fresh FTF-0601 fix). STEP 0.2: no `cognee-cli` binary in this sandbox — text-search fallback declared,
+same as every prior shift.
+
+STEP 1: picked **FTF-0601 round-2** — the six findings from the 2026-10-01T13:40Z Control-plane L2
+re-review (`docs/certifications/queue.md`), restated verbatim in `QUEUE.md`'s own "## Active" item 0c.
+
+STEP 2 (PEV): **P** — pulled the real task packet (`python tools/r1_handoff.py packet FTF-0601 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`) and read the real, already-merged implementation in full:
+`apps/api/app/evaluation/evaluation_suite_schema.py`/`evaluation_suite_crud.py`/`evaluation_suite_
+routes.py`, migration `0018_eval_suites_reviewer_fix`, and both existing test files. Read the review's
+own six findings against this exact code: (1) `validate_reviewer_id_or_none` returned the raw, unstripped
+value, and both `EvaluationSuite.__init__`'s and `lock_evaluation_suite`'s independence checks compared
+`reviewer_id == created_by` with a bare `==` — a padded (`" user-o-evaluator"`) or case-variant
+(`"USER-O-EVALUATOR"`) reviewer_id never matched the real creator identity, so a final suite could lock
+with an effectively self-reviewed reviewer; (2) `reviewer_id` was self-asserted free text with no check
+against real organization membership anywhere, and `lock_evaluation_suite` never checked that the calling
+actor was the named reviewer at all — any write-role caller, including the suite's own creator, could lock
+a suite naming any string as `reviewer_id`; (3) `validate_grading_logic_version` had no upper bound, so
+`2147483648` reached the database unvalidated and surfaced the real Postgres `Integer` overflow as an
+opaque 500 (`DataError`) instead of a 400; (4) `validate_name` only checked `not value` (empty), which a
+non-empty whitespace-only string passes; (5)/(6) needed real tests for all of the above plus a migration-
+level data-remediation step for the stricter DB constraints this round adds.
+
+**E** — `apps/api/app/evaluation/evaluation_suite_schema.py`: new `normalize_identity` (strip+casefold),
+used by `EvaluationSuite.__init__`'s independence check; `validate_reviewer_id_or_none` now returns the
+*stripped* value, not the raw input; `validate_name` rejects whitespace-only; `validate_grading_logic_
+version` gains `GRADING_LOGIC_VERSION_MAX = 2147483647` (Postgres `Integer`'s own 4-byte signed range);
+both reviewer-related `CheckConstraint`s in `__table_args__` updated to the same normalized SQL conditions
+migration 0019 applies. `apps/api/app/evaluation/evaluation_suite_crud.py`: new `OrganizationMemberLookup`/
+`default_organization_member_lookup` (fail-closed, same disclosed-gap discipline as `rbac_middleware`'s own
+`default_role_lookup`); new `EvaluationSuiteReviewerNotMemberError` (400) and `EvaluationSuiteLockForbiddenError`
+(403); `create_evaluation_suite`/`update_evaluation_suite` now check `reviewer_id` against real membership
+at assignment time; `lock_evaluation_suite` now checks independence first (normalized), then membership
+(defense-in-depth against a raw-write bypass), then that the calling actor's identity normalizes equal to
+`reviewer_id` before allowing the lock. `apps/api/app/evaluation/evaluation_suite_routes.py`: new
+`_member_lookup_for(ctx, role_lookup)` adapter (membership == holds some real role, resolved against the
+calling request's own authenticated issuer) wired into all three mutating endpoints; new exception handlers
+mapping `EvaluationSuiteLockForbiddenError` to 403 and `EvaluationSuiteReviewerNotMemberError` to 400. New
+migration `apps/api/alembic/versions/0019_eval_suites_reviewer_norm.py`: both
+`ck_evaluation_suites_independent_final_reviewer` and `ck_evaluation_suites_reviewer_present_when_locked`
+recreated with `lower(trim(...))`/`trim(...)` conditions; `upgrade()` queries for any existing row that
+would violate either new condition first and raises `RuntimeError` naming the exact row IDs — a real
+data-remediation guard, not a silent schema change, documented with its own operator runbook in the
+migration's docstring. Updated both shared contracts (`packages/contracts/openapi/06-interface.yaml`,
+`packages/contracts/jsonschema/06-domain.schema.json`): `maximum: 2147483647` on `grading_logic_version`,
+`pattern: '\S'` on the shared `EvaluationSuiteName` definition.
+
+**Law 1, shown able to fail first.** Directly reproduced the three validator bugs by re-implementing the
+exact pre-fix function bodies in a standalone script and calling them: `validate_name("   ")` did not
+raise (bug reproduced); `validate_grading_logic_version(2147483648)` did not raise (bug reproduced);
+`validate_reviewer_id_or_none("  creator-1  ")` returned the unstripped value (bug reproduced). Then
+`git stash` of all three production files (keeping every test change) and a full re-run of
+`tests/integration/test_ftf_0601_evaluation_suite.py` against a real local PostgreSQL 16 running the
+genuine pre-fix code — **10 of the new assertions genuinely failed**, including a real unhandled crash
+reproducing the exact original `DataError`/500 on the `grading_logic_version=2147483648` PATCH case (the
+precise symptom the review named). `git stash pop` restored the fix byte-identical; both suites re-ran
+clean.
+
+**V.** `uv sync --all-packages`; `uv run ruff check .` clean (one import-sort and one line-length finding
+on the new migration file, both self-fixed, confirmed clean after); `uv run ruff format --check .` clean
+(373 files, after reformatting the two touched test files). `uv run mypy .` clean (372 source files).
+`python3 scripts/validate_spec.py --strict` clean (`git fetch --unshallow` first, this sandbox's own
+pre-existing shallow-clone artifact; confirmed the updated `docs/spec-matrix.yaml` prose still parses via
+`python3 -c "import yaml; yaml.safe_load(...)"` before trusting the validator). `product_truth_check.py
+--fail-on-unwired`: unchanged `26/26`. `status.py`: unchanged `101/301` certified (Law 2 — a resubmission
+is not a certification). Regression swept `test_ftf_0103.py`/`test_ftf_h003.py` (the RBAC/tenant-isolation
+primitives this task's own new `member_lookup` composes, never reimplements) — both exit 0, zero
+regressions.
+
+This sandbox has a pre-installed PostgreSQL 16 cluster (unlike the container-registry-egress gap every
+prior integration-tested task disclosed) — started it (`pg_ctlcluster 16 main start`), created the real
+`sovra_migrate` superuser role and `sovra_ftf0601` database matching CI's own `evaluation-suite-integration`
+job exactly (same role name/password/database name), and ran the real integration test directly against
+it: full `0001`-`0019` Alembic chain upgrades clean, `0019` alone round-trips `downgrade -1` -> `upgrade
+head` clean, and `tests/integration/test_ftf_0601_evaluation_suite.py` — "all checks passed" (the existing
+golden-path suite1 scenario was updated to reflect the new, correct business rule: a reviewer_id assignment
+alone no longer suffices to lock — the lock must be performed by that real, assigned reviewer principal).
+Also re-ran `tests/tasks/test_ftf_0601.py` (no-DB unit/fault tests, 12 new checks added) — "all checks
+passed".
+
+Updated `docs/spec-matrix.yaml`'s FTF-0601 entry with a full "L2 round-2 fix-and-resubmit" note, including
+the complete clause-to-test mapping (`certification_state` stays `PROVISIONAL`, `proof_state` stays
+`L1-PROVEN` — Law 2). Appended a full evidence entry to `docs/certifications/queue.md`
+("2026-10-05T04:40Z"). Updated `QUEUE.md`: new top dated log entry; the "## Active" item 0's own 0c line
+updated to mark this round fixed and disclose 0c2 (FTF-0500C round 5) as next for the next shift.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all updated this
+shift, before compaction. STEP 4 stop condition (a): FTF-0601 round-2 now joins the same PROVISIONAL
+backlog awaiting Control-plane L2 certification and the L4 gate (101/301 certified, unchanged). Stopping
+here — one item per shift, per this list's own rule; not picking up 0c2 (FTF-0500C round 5) in the same
+shift. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged: "None currently," both prior asks
+already resolved/closed 2026-10-04). `BLOCKER.md` unchanged — no live entries.
+
 ## 2026-10-06T03:12:00Z — Same shift, branch `claude/wizardly-fermat-3kfw8a` — PR #472 merged; PR #471 now has a tooling-blocked merge conflict, parked
 
 **PR #472 merged** (merge commit `e1f9aae`) after all 44 checks went green, including `gate` and
