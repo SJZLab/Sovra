@@ -375,11 +375,15 @@ def test_allowlist_suppresses_exactly_its_entries(repo: Path) -> None:
     code, out, _ = run_gate(repo, *FILES, "--test", WEAK, "--allowlist", str(allow))
     check(CID, "allowlist entry without a reason is a usage error (2)", code == 2)
     real = ROOT / mg.DEFAULT_ALLOWLIST
-    check(
-        CID,
-        "the committed allowlist exists and parses to an empty list",
-        real.is_file() and mg.load_allowlist(ROOT, mg.DEFAULT_ALLOWLIST) == [],
-    )
+    committed = mg.load_allowlist(ROOT, mg.DEFAULT_ALLOWLIST) if real.is_file() else None
+    check(CID, "the committed allowlist exists and parses", committed is not None)
+    for i, e in enumerate(committed or []):
+        where = f"committed allowlist entry {i} ({e.get('file')}:{e.get('line')})"
+        check(CID, f"{where} names an existing production file", (ROOT / e["file"]).is_file())
+        check(CID, f"{where} is inside the mutation roots", mg.under_source_roots(e["file"]))
+        # Pinned to a line, so the entry goes stale and the survivor resurfaces if the code moves.
+        check(CID, f"{where} is pinned to an exact line", isinstance(e.get("line"), int))
+        check(CID, f"{where} explains why the mutant is equivalent", len(e["reason"]) >= 40)
     check(CID, "guard.py byte-identical after allowlist runs", guard_bytes(repo) == GUARD.encode())
 
 
