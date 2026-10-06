@@ -10030,3 +10030,11 @@ PR is not landed by the next certifier shift.
     model-alias layers have no code.
   - FTF-04A03 and FTF-04A04: the backend routes are live, but the UI selector is unmounted (apps/web has no pages).
     They are wired by FTF-0214 / FTF-H029.
+
+## FTF-H034-F3 — sync_certified_status empty-hash pinned in tasks.json — CERTIFIED (2026-10-06)
+- Follow-up of FTF-H034. PR #517, merge commit 4e469067b57c180f12fe2fd61962ef30f88c3970 (head `58e51d2`).
+  Producer: `session_01GiJi9rC1YARspnfGcZoRaD`. CI: 47/47 passed, including gate and mutation-gate.
+- Verifier: `[evidence_hash]`, `[]`, append, and dropped-write faults at task_claim.py:365 are all RED. The F2 faults
+  are still RED. The whole-file gate leaves 0 survivors in lines 312–396.
+- Follow-up, not blocking: FTF-H034-F4. Twelve pre-existing survivors in the claim registry (lines 80–270:
+  Claim.is_expired, TaskClaimRegistry.__init__, _dependencies_ready_locked, complete, snapshot).
