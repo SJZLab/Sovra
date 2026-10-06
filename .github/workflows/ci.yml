@@ -337,6 +337,8 @@ jobs:
         run: uv run python3 tests/documentation/test_ftf_1807.py
       - name: FTF-H007 negative-test proof (source boundary -- executable hook/dangerous call/escaping symlink detection, no DB required)
         run: uv run python3 tests/tasks/test_ftf_h007.py
+      - name: FTF-0902 negative-test proof (network-policy templates -- render-time endpoint revalidation, metadata/RFC1918/IPv6 rejection, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0902.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool

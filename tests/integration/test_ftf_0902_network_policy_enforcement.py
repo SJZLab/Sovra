@@ -30,6 +30,22 @@ in-Docker) clusters and applies the *identical* rendered
      the one destination this task's own explicit
      `allowed_internal_endpoints` names.
 
+Both clusters also attempt one real DNS resolution from the same
+policy-restricted pod (`dns`, below) -- this task's own acceptance clause
+names "DNS" explicitly ("Install and test actual CNI/firewall/DNS/IPv6/
+metadata restrictions"), and a TCP-only proof cannot show that the
+mandatory kube-dns egress rule (`render_network_policy_manifest`'s own
+`allow_dns=True` carve-out) genuinely lets the workload resolve names under
+real enforcement, rather than merely reach a raw IP it was already told.
+This is a real `nslookup` of a well-known in-cluster Service FQDN
+(`kubernetes.default.svc.cluster.local`, always present on every real
+Kubernetes API server -- queried fully-qualified so the proof depends only
+on the kube-dns egress rule, never on search-list expansion) run from
+inside the `target` pod via `kubectl exec`, asserted on both clusters
+(where a missing/misrendered DNS rule, or a cluster whose CoreDNS was not
+yet actually ready, would make it genuinely fail, same as any other
+non-allow-listed destination).
+
 Both clusters probe three real, distinct TCP destinations from the same
 policy-restricted pod:
   - `allowed`  -- a real in-cluster pod IP named in the template's own
@@ -230,6 +246,12 @@ def create_cluster(name: str, node_image: str, install_calico: bool) -> None:
     else:
         print_kindnet_image(name)
     wait_for_node_ready(name, timeout=180)
+    # CoreDNS starts concurrently with the rest of cluster bootstrap and is
+    # not guaranteed ready just because the node is -- the DNS probe below
+    # runs against both clusters and must never race it (a cold CoreDNS
+    # would make `resolve_dns` fail for every cluster, a probe-methodology
+    # defect rather than an enforcement one).
+    wait_for_rollout(name, "kube-system", "deployment/coredns", timeout=120)
 
 
 def delete_cluster(name: str) -> None:
@@ -446,6 +468,40 @@ def probe_tcp(cluster: str, host: str, port: int, attempts: int = 3) -> bool:
     return False
 
 
+def resolve_dns(cluster: str, name: str) -> bool:
+    """A real DNS resolution attempt from inside the `target` pod, via the
+    mandatory kube-dns egress rule this task's own module always renders
+    when `allow_dns=True`. Uses busybox's own `nslookup` applet (already
+    the `target` pod's image) against the fully-qualified Service name
+    (`name`, expected to be an FQDN like `kubernetes.default.svc.cluster.
+    local` -- always present on every real Kubernetes API server). An FQDN
+    is queried deliberately rather than the bare Service name: it resolves
+    in one direct query with no dependency on the pod's own
+    `/etc/resolv.conf` search-list being honored the same way by whatever
+    resolver this image's `nslookup` applet happens to use, keeping the
+    only thing under test here the kube-dns egress rule itself. Genuinely
+    fails under a NetworkPolicy that blocks UDP/TCP 53 to kube-dns,
+    genuinely succeeds when that rule is actually applied and enforced.
+    `-timeout=5` is deliberately not passed: it is not a real busybox
+    nslookup option (confirmed directly against busybox 1.36, the exact
+    pinned image tag below -- it is silently accepted as a no-op, never
+    rejected, so it was inert rather than load-bearing); the real per-call
+    bound is this function's own `kubectl exec` `timeout=20` below."""
+    result = kubectl(
+        cluster,
+        "-n",
+        NAMESPACE,
+        "exec",
+        "target",
+        "--",
+        "nslookup",
+        name,
+        check=False,
+        timeout=20,
+    )
+    return result.returncode == 0
+
+
 def build_network_policy_yaml(allowed_ip: str) -> str:
     template = NetworkPolicyTemplate(
         schema_version=1,
@@ -536,6 +592,7 @@ def run_scenario(cluster: str, node_image: str, install_calico: bool) -> dict[st
     results: dict[str, bool | str] = {
         "allowed": probe_tcp(cluster, allowed_ip, 8080),
         "denied": probe_tcp(cluster, denied_ip, 8080),
+        "dns": resolve_dns(cluster, "kubernetes.default.svc.cluster.local"),
     }
     if metadata_available:
         results["metadata"] = probe_tcp(cluster, METADATA_ADDRESS, 80)
@@ -629,6 +686,12 @@ def main() -> int:
             "if this fails, the probe methodology itself cannot distinguish enforcement from "
             "network unavailability, and the negative_acceptance proof below would be worthless"
         )
+    if baseline_results.get("dns") is not True:
+        failures.append(
+            "baseline: expected DNS resolution to succeed on a nonenforcing CNI -- if this "
+            "fails, the DNS probe methodology itself is broken before enforcement is even "
+            "relevant, and the enforcing-cluster DNS assertion below would be worthless"
+        )
     if baseline_results.get("metadata") is True:
         print(
             "baseline: fake metadata service reachable with no policy enforcement (expected -- "
@@ -662,6 +725,13 @@ def main() -> int:
         failures.append(
             "enforcing: expected the non-allow-listed internal destination to be BLOCKED under "
             "real Calico enforcement -- this is this task's own core deny-by-default proof"
+        )
+    if enforcing_results.get("dns") is not True:
+        failures.append(
+            "enforcing: expected DNS resolution to succeed under real deny-by-default "
+            "enforcement -- this is the mandatory kube-dns egress carve-out "
+            "(render_network_policy_manifest's own allow_dns=True rule) genuinely working "
+            "under a real enforcing CNI, not merely rendered YAML"
         )
 
     baseline_metadata_reachable = baseline_results.get("metadata") is True
