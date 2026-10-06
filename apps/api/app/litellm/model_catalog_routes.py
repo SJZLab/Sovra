@@ -302,14 +302,24 @@ def build_model_catalog_router(
         ctx: AuthorizedContext = admin_dependency,
     ) -> JSONResponse:
         del organization_id
-        status_filter = request.query_params.get("status")
-        if status_filter is not None and status_filter not in {s.value for s in CatalogEntryStatus}:
-            raise HTTPException(status_code=400, detail="unknown status filter")
-        metadata_filter = request.query_params.get("metadata_status")
-        if metadata_filter is not None and metadata_filter not in {
-            s.value for s in ModelMetadataStatus
-        }:
-            raise HTTPException(status_code=400, detail="unknown metadata_status filter")
+        # Filters are parsed once into their enums (exact, case-sensitive values only);
+        # entries are then matched by enum identity, never by re-comparing strings.
+        status_filter: CatalogEntryStatus | None = None
+        raw_status = request.query_params.get("status")
+        if raw_status is not None:
+            try:
+                status_filter = CatalogEntryStatus(raw_status)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail="unknown status filter") from exc
+        metadata_filter: ModelMetadataStatus | None = None
+        raw_metadata = request.query_params.get("metadata_status")
+        if raw_metadata is not None:
+            try:
+                metadata_filter = ModelMetadataStatus(raw_metadata)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400, detail="unknown metadata_status filter"
+                ) from exc
         raw_project_id = request.query_params.get("project_id")
 
         tenant_context = TenantContext.from_authorized_context(ctx)
@@ -357,7 +367,7 @@ def build_model_catalog_router(
             snapshot, _ = detector.record(catalog_obj, result)
 
             reconciliation = None
-            if result.state == DiscoveryState.DISCOVERED:
+            if result.state is DiscoveryState.DISCOVERED:
                 visible_ids = tuple(model.id for model in result.models)
                 enrichment = enrich_visible_models(
                     base_url=base_url,
@@ -372,9 +382,9 @@ def build_model_catalog_router(
 
         entries = view.entries
         if status_filter is not None:
-            entries = tuple(e for e in entries if e.status.value == status_filter)
+            entries = tuple(e for e in entries if e.status is status_filter)
         if metadata_filter is not None:
-            entries = tuple(e for e in entries if e.metadata_status.value == metadata_filter)
+            entries = tuple(e for e in entries if e.metadata_status is metadata_filter)
 
         groups: dict[str, object] | None = None
         if connection_status != "revoked" and reconciliation is not None:
@@ -473,42 +483,21 @@ def build_model_catalog_router(
         policy = validation_policy_factory()
         approved_model_ids = frozenset({model_id})
 
-        if probe_type == "chat":
-            result: _ProbeResult = probe_chat(
-                base_url=base_url,
-                model_id=model_id,
-                approved_model_ids=approved_model_ids,
-                secret_ref=secret_ref,
-                secret_config=secret_config,
-                policy=policy,
-            )
-        elif probe_type == "streaming":
-            result = probe_stream_chat(
-                base_url=base_url,
-                model_id=model_id,
-                approved_model_ids=approved_model_ids,
-                secret_ref=secret_ref,
-                secret_config=secret_config,
-                policy=policy,
-            )
-        elif probe_type == "tool_call":
-            result = probe_tool_call(
-                base_url=base_url,
-                model_id=model_id,
-                approved_model_ids=approved_model_ids,
-                secret_ref=secret_ref,
-                secret_config=secret_config,
-                policy=policy,
-            )
-        else:
-            result = probe_structured_output(
-                base_url=base_url,
-                model_id=model_id,
-                approved_model_ids=approved_model_ids,
-                secret_ref=secret_ref,
-                secret_config=secret_config,
-                policy=policy,
-            )
+        # Resolved at call time (not import time) from the validated, exact probe kind.
+        probe_functions: dict[str, Callable[..., _ProbeResult]] = {
+            "chat": probe_chat,
+            "streaming": probe_stream_chat,
+            "tool_call": probe_tool_call,
+            "structured_output": probe_structured_output,
+        }
+        result = probe_functions[probe_type](
+            base_url=base_url,
+            model_id=model_id,
+            approved_model_ids=approved_model_ids,
+            secret_ref=secret_ref,
+            secret_config=secret_config,
+            policy=policy,
+        )
 
         return JSONResponse(_serialize_probe_result(probe_type, result))
 

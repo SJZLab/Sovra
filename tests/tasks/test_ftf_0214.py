@@ -1111,6 +1111,49 @@ def test_probe_denial_from_require_model_access_is_surfaced() -> None:
             )
 
 
+def test_filters_and_probe_kind_are_exact_match_never_normalized() -> None:
+    # Negative: the real default code, with a case/whitespace-variant of a valid
+    # value present, must refuse it -- never silently normalize it into a match.
+    with _running_app() as base_url:
+        for variant in ("Callable", " callable", "callable "):
+            r = _request(
+                base_url,
+                "GET",
+                catalog_path(uuid.uuid4(), "?status=" + urllib.parse.quote(variant)),
+                principal="admin",
+            )
+            check(
+                "FTF-0214",
+                f"status filter {variant!r} is not normalized into a valid value (400)",
+                r.status == 400,
+            )
+        for variant in ("Limited", " limited", "limited "):
+            r = _request(
+                base_url,
+                "GET",
+                catalog_path(uuid.uuid4(), "?metadata_status=" + urllib.parse.quote(variant)),
+                principal="admin",
+            )
+            check(
+                "FTF-0214",
+                f"metadata_status filter {variant!r} is not normalized (400)",
+                r.status == 400,
+            )
+        for variant in ("Chat", " chat", "chat ", "TOOL_CALL"):
+            r = _request(
+                base_url,
+                "POST",
+                probe_path(uuid.uuid4(), "model-a", "?project_id=" + str(uuid.uuid4())),
+                principal="admin",
+                payload={"probe_type": variant},
+            )
+            check(
+                "FTF-0214",
+                f"probe_type {variant!r} is not normalized into a valid kind (400)",
+                r.status == 400,
+            )
+
+
 def test_probe_dispatches_each_kind_to_its_own_real_probe_function() -> None:
     def _result_for(kind: str) -> Any:
         usage = ChatUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2)
@@ -1314,6 +1357,7 @@ def main() -> None:
     test_probe_missing_project_is_rejected_before_any_dial()
     test_probe_missing_connection_is_404()
     test_probe_denial_from_require_model_access_is_surfaced()
+    test_filters_and_probe_kind_are_exact_match_never_normalized()
     test_probe_dispatches_each_kind_to_its_own_real_probe_function()
     test_create_app_mounts_the_real_catalog_router_and_resolves_production_flag()
 
