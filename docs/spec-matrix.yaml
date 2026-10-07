@@ -8531,15 +8531,39 @@ FTF-0604:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0604.py
 FTF-0605:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: JSON-schema grader
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0405, FTF-0601
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0405, FTF-0601
+    (both CERTIFIED). Path refined from the packet's generic services/evaluation-worker/
+    evaluators/json_schema_grader.py to workers/evaluation/json_schema_grader.py (this repo's
+    real evaluation-worker SOURCE_ROOT; same convention as the sibling grader tasks).
+
+
+    Built: grade_json_schema grades the model's actual, unmodified text against a schema pinned
+    by a required SHA-256 (a drifted schema is refused, never graded). The candidate is parsed
+    as-is: prose, fenced blocks, trailing text, empty output, duplicate keys, NaN/Infinity and
+    out-of-range floats are failed grades, never repaired. Every object schema must state
+    additionalProperties explicitly (JSON Schema's default silently allows extras). Only local
+    '#/$defs/<name>' references are accepted (remote/file/root/dynamic refs and ref loops are
+    refused), and only a closed keyword set is interpreted; any other keyword is a SchemaError,
+    never ignored. Errors are a sorted tuple of (path, keyword, message) with no candidate values.
+    enum/const/uniqueItems never conflate true with 1. stdlib only, no new dependency.
+
+
+    Disclosed: (1) FTF-0405's validate_instance was inspected and not reused: it accepts true for
+    enum [1], false for const 0, and extra properties when additionalProperties is omitted, all
+    false passes for a grader (finding for Control plane; FTF-0405 is outside this task's files
+    clause). (2) `pattern` and `format` are unsupported and fail closed until a safe regex
+    engine is decided (a new dependency, ask-first). (3) No live caller yet (Section 25's runtime
+    loop is not a dependency-ready task), so proving_symbol stays blank, the same precedent as the
+    sibling graders. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0605.py
 FTF-0606:
   certification_state: CERTIFIED
   criticality: MUST
