@@ -10089,3 +10089,23 @@ PR is not landed by the next certifier shift.
   - the concurrency limits.
 - Follow-up, not blocking: FTF-H034-F5. Pin the default lease TTL (3600s) and DEFAULT_GPU_QUOTA=1. Add a dedicated
   check that complete() frees the slot.
+
+## FTF-0510-F1 — template SecurityError as a row issue; verified digests required — CERTIFIED (2026-10-07)
+- Follow-up of FTF-0510. PR #521, merge commit f8f4c9cbff398be5fee8a227c69444007291566a (head `b0c08a4`). Producer:
+  `session_0188JPWM1UmzFkMpaEF3mh5C`. CI: 48/48 passed.
+- Verifier: 12 faults are RED:
+  - render catch narrowed;
+  - SecurityError re-raised;
+  - digest None accepted, only one digest checked, or `or`;
+  - any string or truthy value accepted;
+  - three regex weakenings;
+  - the check removed.
+  The round-5 regressions are still RED. Whole-file mutation: 98/99 with one allowlisted equivalent, the Protocol
+  stub, now at line 221.
+- The allowlist entry moved from line 220 to 221 in this PR; the gate re-run passes.
+
+## FTF-H034-F5 — default TTL, GPU quota and slot release pinned — CERTIFIED (2026-10-07)
+- Follow-up of FTF-H034. PR #525, merge commit d5cfb3911d2ae0a53a6d11fb430261b60e4b469a (head `686d518`). Tests only.
+  Producer: `session_01Hbvgp8VNkuZHNecVWYHsm1`. CI: 48/48 passed.
+- Verifier: TTL 60, 3599 and 3601, GPU quota 0 and 2, and complete() not releasing the slot are all RED. Whole-file
+  mutation on scripts/task_claim.py: 83/83.

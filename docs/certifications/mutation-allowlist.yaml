@@ -25,5 +25,5 @@ entries:
   - file: workers/data/tokenization_analysis.py
     function: ConversationTokenizer.prefix_token_counts
     operator: M3
-    line: 220
+    line: 221
     reason: "Protocol method stub whose body is `...`; it is never executed (implementations override it), so an inserted `return None` cannot change behavior. Ruled equivalent by the FTF-0510 round-5 L2 verifier, 2026-10-06."
