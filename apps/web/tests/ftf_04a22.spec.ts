@@ -616,9 +616,16 @@ function typeInto(testId: string, value: string) {
   fireEvent.change(screen.getByTestId(testId), { target: { value } });
 }
 
-function lastPatchBody(): Record<string, any> {
+interface PatchBody {
+  mandate_json: Record<string, unknown>;
+  forbidden_actions_json: { actions: Record<string, unknown>[]; [key: string]: unknown };
+}
+
+function lastPatchBody(): PatchBody {
   const patches = callsOf("PATCH", MANIFEST_PATH);
-  return patches[patches.length - 1].body as Record<string, any>;
+  const last = patches[patches.length - 1];
+  if (!last) throw new Error("no PATCH was sent");
+  return last.body as PatchBody;
 }
 
 test("D1: a list input keeps the raw typed text, so 'en,' then 'en,fr' works", async () => {
@@ -673,7 +680,7 @@ test("D2: save never drops unknown mandate keys, entry extras or top-level forbi
   fireEvent.click(screen.getByTestId("mandate-save-button"));
   await waitFor(() => expect(callsOf("PATCH").length).toBe(2));
   expect(lastPatchBody().mandate_json.custom_key).toEqual({ nested: [1, 2] });
-  expect(lastPatchBody().forbidden_actions_json.actions[0].severity).toBe("high");
+  expect(lastPatchBody().forbidden_actions_json.actions[0]?.severity).toBe("high");
 });
 
 test("pure: serialize keeps base keys and entry extras, known fields win", () => {
