@@ -29,6 +29,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(API_ROOT))
 
 from app.services.candidate_ranking import (  # noqa: E402
+    CANDIDATE_KINDS,
     CandidateRankingError,
     CostInterval,
     RankingCandidate,
@@ -403,7 +404,7 @@ def test_overlap_is_inconclusive_and_retains_incumbent() -> None:
     policy = rank_candidates(candidates, min_quality=FLOOR, tie_break_policy_id="policy-7")
     check(
         "FTF-1305-N1",
-        "an independent tie-break policy lets the cheapest base estimate win " "and is recorded",
+        "an independent tie-break policy lets the cheapest base estimate win and is recorded",
         policy.status == "TIE_BREAK_APPLIED"
         and policy.winner_id == "challenger"
         and policy.tie_break_policy_id == "policy-7",
@@ -656,6 +657,187 @@ def test_fault_injection_cost_only_ranking_picks_the_wrong_winner() -> None:
         "fault injection: a cost-only ranking would pick the cheap low-quality "
         "model; the real ranking picks the qualifying one",
         naive_winner == "cheap" and real_winner == "good",
+    )
+
+
+def _order(result: RankingResult) -> list[str]:
+    return [r.candidate_id for r in result.ranked]
+
+
+def test_round2_ranking_order_is_deterministic() -> None:
+    import itertools
+
+    tied = [
+        cand(cid, cost=interval("1", "2", "3"), incumbent=False, params=p)
+        for cid, p in (("m", 5), ("a", 900), ("z", 1))
+    ]
+    for perm in itertools.permutations(tied):
+        result = rank_candidates(list(perm), min_quality=FLOOR)
+        check(
+            "FTF-1305-N1",
+            "equal base and high: id ascending in every input order",
+            _order(result) == ["a", "m", "z"],
+        )
+    by_high = [
+        cand("a", cost=interval("1", "2", "4")),
+        cand("b", cost=interval("1", "2", "3")),
+    ]
+    for pair_h in (by_high, by_high[::-1]):
+        check(
+            "FTF-1305-N1",
+            "equal base: the lower high bound ranks first, ahead of the id",
+            _order(rank_candidates(list(pair_h), min_quality=FLOOR)) == ["b", "a"],
+        )
+    by_low = [
+        cand("z", cost=interval("0.1", "2", "3")),
+        cand("a", cost=interval("1.5", "2", "3")),
+    ]
+    for pair_l in (by_low, by_low[::-1]):
+        check(
+            "FTF-1305-N1",
+            "same base and high: the low bound does not decide, the id does",
+            _order(rank_candidates(list(pair_l), min_quality=FLOOR)) == ["a", "z"],
+        )
+    base_first = [
+        cand("a", cost=interval("1.9", "2.1", "3")),
+        cand("z", cost=interval("0.1", "2.0", "3")),
+    ]
+    for pair_b in (base_first, base_first[::-1]):
+        check(
+            "FTF-1305-N1",
+            "a lower base ranks first even with a higher low bound and a later id",
+            _order(rank_candidates(list(pair_b), min_quality=FLOOR)) == ["z", "a"],
+        )
+    sizes = [
+        cand("b", cost=interval("1", "2", "3"), params=1),
+        cand("a", cost=interval("1", "2", "3"), params=10**12),
+    ]
+    for pair_s in (sizes, sizes[::-1]):
+        check(
+            "FTF-1305-N1",
+            "equal cost, different parameter_count: order fixed by id in both insertion orders",
+            _order(rank_candidates(list(pair_s), min_quality=FLOOR)) == ["a", "b"],
+        )
+
+
+def test_round2_overlap_with_costlier_incumbent_outside_group() -> None:
+    result = rank_candidates(
+        [
+            cand("cheap", cost=interval("1.0", "1.5", "2.0")),
+            cand("close", cost=interval("1.8", "2.2", "2.6")),
+            cand("old", "existing", cost=interval("5", "6", "7"), incumbent=True),
+        ],
+        min_quality=FLOOR,
+    )
+    check(
+        "FTF-1305-N1",
+        "an incumbent outside the overlap group is not retained",
+        result.status == "INCONCLUSIVE_NO_INCUMBENT" and result.winner_id is None,
+    )
+    check(
+        "FTF-1305-N1",
+        "the overlap group holds only the overlapping candidates",
+        result.overlap_group == ("cheap", "close"),
+    )
+
+
+def test_round2_three_way_overlap_group_in_rank_order() -> None:
+    result = rank_candidates(
+        [
+            cand("a", cost=interval("1.4", "2.4", "3.4")),
+            cand("z", cost=interval("1.0", "1.5", "2.0")),
+            cand("m", cost=interval("1.8", "2.0", "2.6")),
+        ],
+        min_quality=FLOOR,
+    )
+    check(
+        "FTF-1305-N1",
+        "three overlapping candidates are all in the group, in rank (not id) order",
+        result.overlap_group == ("z", "m", "a") and result.winner_id is None,
+    )
+    chained = rank_candidates(
+        [
+            cand("a", cost=interval("1", "1.5", "2")),
+            cand("b", cost=interval("1.9", "2.5", "3")),
+            cand("c", cost=interval("2.9", "3.5", "4")),
+        ],
+        min_quality=FLOOR,
+    )
+    check(
+        "FTF-1305-N1",
+        "overlap is judged against the cheapest candidate only, not chained",
+        chained.overlap_group == ("a", "b"),
+    )
+
+
+def test_round2_pending_reconciliation_on_any_scenario_is_provisional() -> None:
+    def scenario(cost: str, pending: str | None = None) -> CostPerSuccessResult:
+        return cost_per_success(
+            [
+                AttemptCost(
+                    request_id="r1",
+                    outcome="pass",
+                    settled_cost=D(cost),
+                    pending_cost=None if pending is None else D(pending),
+                )
+            ]
+        )
+
+    best, expected, worst = scenario("1"), scenario("2"), scenario("4")
+    pending_best, pending_worst = scenario("1", "1"), scenario("4", "1")
+    flags = {
+        "none": (best, expected, worst, False),
+        "best-case only": (pending_best, expected, worst, True),
+        "worst-case only": (best, expected, pending_worst, True),
+    }
+    for label, (b, e, w, want) in flags.items():
+        built = CostInterval.from_scenario_results(best_case=b, expected=e, worst_case=w)
+        winner = rank_candidates([cand("a", cost=built)], min_quality=FLOOR)
+        check(
+            "FTF-1305-A1",
+            f"pending reconciliation ({label}) -> interval flag {want}",
+            built.has_pending_reconciliation is want,
+        )
+        check(
+            "FTF-1305-A1",
+            f"pending reconciliation ({label}) -> winner_economics_provisional {want}",
+            winner.winner_economics_provisional is want,
+        )
+
+
+def test_round2_result_rows_preserve_inputs() -> None:
+    result = rank_candidates(
+        [
+            cand("a", cost=interval("1", "2", "3"), quality="0.85", incumbent=True),
+            cand("b", "existing", cost=interval("5", "6", "7"), quality="0.95"),
+        ],
+        min_quality=FLOOR,
+    )
+    rows = {r.candidate_id: r for r in result.ranked}
+    check(
+        "FTF-1305-A1",
+        "ranked rows keep the input quality_lower_bound",
+        rows["a"].quality_lower_bound == D("0.85") and rows["b"].quality_lower_bound == D("0.95"),
+    )
+    check(
+        "FTF-1305-A1",
+        "ranked rows keep is_incumbent",
+        rows["a"].is_incumbent is True and rows["b"].is_incumbent is False,
+    )
+    none = rank_candidates(
+        [cand("a", cost=interval("1", "2", "3"), quality="0.10")],
+        min_quality=FLOOR,
+        tie_break_policy_id="policy-1",
+    )
+    check(
+        "FTF-1305-N1",
+        "tie_break_policy_id is None when nothing qualifies, even if a policy was named",
+        none.status == "NO_QUALIFYING_CANDIDATE" and none.tie_break_policy_id is None,
+    )
+    check(
+        "FTF-1305-A1",
+        "the candidate kinds are exactly existing, base, tuned",
+        CANDIDATE_KINDS == ("existing", "base", "tuned"),
     )
 
 

@@ -162,9 +162,9 @@ def grade_cost(spec: CostSpec, observations: Sequence[CostObservation]) -> CostR
         _text(obs.request_id, "request_id")
         _text(obs.currency, "currency")
         outcome, source = obs.outcome, obs.source
-        if outcome not in _IS_SUCCESS:
+        if not isinstance(outcome, str) or outcome not in _IS_SUCCESS:
             raise CostGraderError(f"outcome must be one of {tuple(_IS_SUCCESS)}")
-        if source not in _IS_ESTIMATE:
+        if not isinstance(source, str) or source not in _IS_ESTIMATE:
             raise CostGraderError(f"source must be one of {tuple(_IS_ESTIMATE)}")
         _version(obs.policy_version)
         if obs.attempt_id not in expected:
@@ -178,13 +178,16 @@ def grade_cost(spec: CostSpec, observations: Sequence[CostObservation]) -> CostR
             issues.add("unmeasured_price")
         if obs.policy_version != spec.policy_version:
             issues.add("policy_version_mismatch")
+        # Validate the cost before the currency branch so a malformed cost on a
+        # foreign-currency record is refused, never silently skipped.
+        cost = None if obs.cost is None else _decimal(obs.cost, "cost")
         if obs.currency != spec.currency:
             issues.add("currency_mismatch")
             continue
-        if obs.cost is None:
+        if cost is None:
             issues.add("unknown_cost")
             continue
-        total += _decimal(obs.cost, "cost")
+        total += cost
     if expected - seen:
         issues.add("missing_attempt")
     per_success: Fraction | None = None

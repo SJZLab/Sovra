@@ -10315,3 +10315,35 @@ PR is not landed by the next certifier shift.
     190/190.
   - Gaps: the identical-404 body is not asserted for POST and /changes; there is no runtime proof of "no alias→artifact
     inference"; one DELETE check cannot fail. QUEUE 0b.
+
+## 2026-10-07T21:30Z — CERTIFIED: slices FTF-0308-P1 and FTF-0602-P1, follow-ups FTF-0605-F2 and FTF-04A06-F2; RETURNED: FTF-0612, FTF-0613, FTF-1305
+- **Verification method:** independent Control-plane verifiers, each in a detached worktree at the merge commit. Migration
+  slices ran against real Postgres in Docker, matching the CI job (pinned postgres:16 digest, same db/user/env), on a
+  separate port each.
+- **FTF-0308-P1 (child slice of FTF-0308): CERTIFIED**, round 2.
+  - PR #586, merge a59a14ca91c18d450562bc33a75c6423739b6847 (tests only). Production is from #577 (fa31383).
+  - All three return items are RED: identical 404 bodies on POST and /changes, including a foreign-only variant; a guarded
+    name→artifact heuristic in GET and in POST null; GRANT DELETE.
+  - 8 round-1 faults are RED. Mutation 190/190. FTF-0308 (UI) is re-queued.
+- **FTF-0602-P1 (child slice of FTF-0602): CERTIFIED.**
+  - PR #582, merge 1f401a05b5eb0bad10e92d50e2f946e3d9c4564c.
+  - Contract met; every gate clean. Law 18 holds under sovra_app (not superuser, not BYPASSRLS).
+  - 34 faults are RED. Three application-layer faults are also blocked by database backstops, and the task test catches
+    each one. Mutation 267/267. FTF-0602 (UI) is re-queued.
+  - The verifier found a pre-existing hardening gap: require_role reads a chunked body without a cap. It is follow-up
+    FTF-0103-F1.
+- **FTF-0605-F2: CERTIFIED.** PR #587, merge e3f9aabdfdb59c03fe025569d66600cb75d00cd1. The exclusive-bound echo faults are
+  RED.
+- **FTF-04A06-F2: CERTIFIED** (Law 16). PR #588, merge b413ec9d9ede9026c3e9b34b4bdd6f6a411cc49f.
+  - The audit hook (open plus subprocess.Popen, sink scoped to the capture) catches reads through io.FileIO, _io.open,
+    os.open, builtins.open, Path.read_bytes and subprocess cat, as root and as uid 65534.
+- **FTF-0612: RETURNED** (#589, 39eac2c). An unhashable outcome raises TypeError instead of the grader's error (fail-closed
+  defect). Two boundary tests are missing. Mutation 105/105.
+- **FTF-0613: RETURNED** (#590, 1fcb9d3).
+  - Same unhashable-membership defect.
+  - A cost on a record in another currency is never validated.
+  - Malformed-input tests are missing for zero, bytes, non-ASCII digits and trailing newlines.
+  - A dead `_DEFAULT_PRICE` constant remains. Mutation 71/71.
+- **FTF-1305: RETURNED** (#592, a84cb46). Tests only: deterministic tie-breaks, the overlap group and the incumbent, and the
+  reconciliation flag. The module is disclosed UNWIRED. Mutation 133/133.
+- **No spec-matrix flips this round.** Child slices and follow-ups are ledger-only. Status stays at 127/302.
