@@ -19,6 +19,12 @@ Actions API, not estimated. Re-measure at any time with `python3 tools/ci_metric
 | Runs blocked before start by the account spending limit | 18 (2026-09-21, 09-22, 09-30, 10-05, 10-07) |
 | Billed minutes per certified criterion (117) | about 345 |
 
+Current regime only (2026-10-06T13:10Z → 2026-10-07T07:20Z, after the no-shared-file and claim rules;
+`tools/ci_metrics.py --since 2026-10-06T13:10:00Z --until 2026-10-07T07:20:00Z`): 116 runs on 40
+branches (2.9 runs per branch), 5,917 job-minutes executed and 8,620 billed, 951 job-minutes after
+supersession, queue wait median 0.75 / p90 2.85 min, wall time median 8.2 min, and 1 run blocked
+by the spending limit.
+
 ## What actually caused each pattern
 
 1. **Tracker-only PRs ran the whole integration suite.** 320 of 859 runs (37%) changed only
