@@ -1524,7 +1524,7 @@ def test_s9_exactness_edges_and_row_locks() -> None:
         check(
             CID,
             "get_upload_session does not take a row lock",
-            _EXECUTED and not any("FOR UPDATE" in q for q in _EXECUTED),
+            bool(_EXECUTED) and not any("FOR UPDATE" in q for q in _EXECUTED),
         )
         _EXECUTED.clear()
         store.record_upload_rejected(
