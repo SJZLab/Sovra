@@ -94,7 +94,12 @@ by the spending limit.
   - one open PR per item, where the oldest open PR owns it;
   - no edits to Control-plane or governance files;
   - no CERTIFIED flips;
-  - no log-only PRs.
+  - no log-only PRs;
+  - `ci.yml` edits are additive only (new steps, jobs and verdict needs). Replayed on history, 68 of the
+    70 merged relay `ci.yml` edits were additive. The other two (#43 and #207) changed existing lines,
+    which is governance work.
+- **Seen live during this review:** #541 (claimed 07:10Z and parked) and #543 (opened 07:27Z on branch
+  `relay/FTF-0308`, without the `-r1` suffix) are two open PRs for FTF-0308. relay-policy fails the newer one.
 - **`mutation-gate`** now fails, instead of skipping, when production Python changed with no task
   test.
 - **Procedure.** CLAUDE.md, docs/operations/routines.md ("CI contract") and QUEUE.md now define

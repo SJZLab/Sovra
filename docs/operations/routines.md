@@ -43,7 +43,10 @@ CI the same way:
   and code out of tracker PRs, so each gets the scope it needs.
 - **Relay policy is enforced, not just written.** On `[relay]` PRs, the `relay-policy` job fails a
   second open PR for an item that already has an open PR (the oldest owns it), edits to
-  Control-plane/governance files, CERTIFIED flips, and log-only PRs.
+  Control-plane/governance files, CERTIFIED flips, and log-only PRs. In `ci.yml` a relay may only
+  ADD (new steps, new jobs, new `ci-verdict` needs entries); changing or removing an existing line
+  is a `[GOVERNANCE]` change. A new `*-integration` job must carry the same `needs: classify` /
+  `if:` lines as the others and be listed in `ci-verdict` needs (tests/unit/test_ci_policy.py checks).
 - **Iterating on one failing integration job:** add a line `ci-focus: <job-name>` to the PR body.
   Pushes then run the gate plus only that job. Such a run always fails `ci-verdict`, so it cannot be
   merged by mistake. Remove the line and push once to get the real verdict.

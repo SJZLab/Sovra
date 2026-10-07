@@ -124,7 +124,7 @@ def test_empty_claim_commit_is_allowed():
         "docs/certifications/ledger.md",
         "docs/certifications/mutation-allowlist.yaml",
         "CLAUDE.md",
-        ".github/workflows/ci.yml",
+        ".github/workflows/release-gate.yml",
         "scripts/ci_policy.py",
         "scripts/mutation_gate.py",
     ],
@@ -132,6 +132,104 @@ def test_empty_claim_commit_is_allowed():
 def test_relay_may_not_touch_control_plane_files(path):
     problems = _v(files=("tests/tasks/test_ftf_0608.py", path))
     assert len(problems) == 1 and path in problems[0]
+
+
+BASE_CI = """name: CI
+on: [pull_request]
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: lint
+        run: ruff check .
+      - name: proof A
+        run: python3 tests/tasks/test_a.py
+  db-integration:
+    needs: classify
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 tests/integration/test_db.py
+  ci-verdict:
+    if: ${{ !cancelled() }}
+    needs:
+      - gate
+      - db-integration
+    runs-on: ubuntu-latest
+    steps:
+      - run: verdict
+"""
+
+
+def _ci(**edits):
+    text = BASE_CI
+    for old, new in edits.values():
+        assert old in text
+        text = text.replace(old, new, 1)
+    return text
+
+
+def test_relay_may_append_steps_jobs_and_verdict_needs():
+    head = _ci(
+        step=(
+            "        run: python3 tests/tasks/test_a.py\n",
+            "        run: python3 tests/tasks/test_a.py\n      - name: proof B\n"
+            "        run: python3 tests/tasks/test_b.py\n",
+        ),
+        job=(
+            "  ci-verdict:\n",
+            "  new-integration:\n    needs: classify\n    runs-on: ubuntu-latest\n"
+            "    steps:\n      - run: python3 tests/integration/test_new.py\n  ci-verdict:\n",
+        ),
+        needs=("      - db-integration\n", "      - db-integration\n      - new-integration\n"),
+    )
+    assert cp.ci_yml_violations(BASE_CI, head) == []
+    files = ("tests/tasks/test_b.py", ".github/workflows/ci.yml")
+    assert cp.relay_violations("[relay] FTF-1: x", 5, list(files), "", [], (BASE_CI, head)) == []
+
+
+@pytest.mark.parametrize(
+    "old,new,what",
+    [
+        ("        run: ruff check .\n", "        run: ruff check . || true\n", "changed"),
+        ("      - name: lint\n        run: ruff check .\n", "", "changed or removed"),
+        (
+            "        run: ruff check .\n",
+            "        run: ruff check .\n        continue-on-error: true\n",
+            "does not start a new step",
+        ),
+        (
+            "      - name: proof A\n",
+            "      - name: skip\n        run: exit 0\n        if: false\n      - name: proof A\n",
+            None,
+        ),
+        ("    needs: classify\n", "    needs: classify\n    if: false\n", "does not start"),
+        ("on: [pull_request]\n", "on: [push]\n", "header"),
+        ("  db-integration:\n    needs: classify\n    runs-on: ubuntu-latest\n", "", "removed"),
+    ],
+)
+def test_relay_may_not_edit_or_remove_existing_ci(old, new, what):
+    problems = cp.ci_yml_violations(BASE_CI, BASE_CI.replace(old, new, 1))
+    if what is None:  # inserting a whole new step before an existing one is additive
+        assert problems == []
+    else:
+        assert problems and what in " ".join(problems), problems
+
+
+def test_step_inserted_inside_an_existing_step_is_rejected():
+    head = BASE_CI.replace(
+        "      - name: lint\n        run: ruff check .\n",
+        "      - name: lint\n      - name: injected\n        run: true\n"
+        "        run: ruff check .\n",
+        1,
+    )
+    assert any("inside an existing step" in p for p in cp.ci_yml_violations(BASE_CI, head))
+
+
+def test_relay_ci_yml_change_without_texts_is_rejected():
+    assert any(
+        "not provided" in p
+        for p in cp.relay_violations("[relay] FTF-1: x", 5, [".github/workflows/ci.yml"], "", [])
+    )
 
 
 def test_relay_may_park_in_queue_md():
@@ -384,3 +482,11 @@ def test_policy_and_verdict_run_the_base_branch_copy():
     assert text.count('git show "origin/${BASE_REF}:scripts/ci_policy.py"') >= 3
     for job in ("classify", "relay-policy", "ci-verdict"):
         assert "$RUNNER_TEMP/ci_policy.py" in _jobs_block(text, job), job
+
+
+def test_relay_policy_applies_the_ci_yml_rule():
+    head = BASE_CI.replace("        run: ruff check .\n", "        run: true\n", 1)
+    problems = cp.relay_violations(
+        "[relay] FTF-1: x", 5, [".github/workflows/ci.yml"], "", [], (BASE_CI, head)
+    )
+    assert any("existing job 'gate' was modified" in p for p in problems)

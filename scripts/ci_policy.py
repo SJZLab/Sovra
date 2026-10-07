@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import difflib
 import hashlib
 import json
 import os
@@ -39,6 +40,9 @@ import subprocess
 import sys
 import urllib.request
 from pathlib import Path
+
+# Top-level job ids in a workflow file: two-space indented keys under `jobs:`.
+JOB_HEADER = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
 
 # --- classify -------------------------------------------------------------------------------
 
@@ -186,6 +190,9 @@ RELAY_FORBIDDEN_EXACT = {
     "scripts/check_test_harness.py",
 }
 RELAY_FORBIDDEN_PREFIXES = (".github/workflows/",)
+# The relay is told to add its new test as a CI job (Relay STEP 5), so ci.yml alone is allowed,
+# but only additively: see ci_yml_violations.
+CI_WORKFLOW = ".github/workflows/ci.yml"
 LOG_ONLY_PREFIXES = ("docs/progress/", "docs/certifications/submissions/")
 CERT_FLIP = re.compile(
     r"^\+\s*(certification_state:\s*CERTIFIED|proof_state:\s*L2-CERTIFIED)\b", re.M
@@ -200,23 +207,98 @@ def is_relay_title(title: str) -> bool:
     return (title or "").strip().lower().startswith("[relay]")
 
 
+def _job_blocks(text: str) -> tuple[str, dict[str, str]]:
+    """(everything outside `jobs:` entries, {job id: its full text})."""
+    lines = text.splitlines(keepends=True)
+    head: list[str] = []
+    blocks: dict[str, list[str]] = {}
+    current: str | None = None
+    in_jobs = False
+    for line in lines:
+        if line.startswith("jobs:"):
+            in_jobs = True
+            head.append(line)
+            continue
+        if in_jobs and line.strip() and not line.startswith((" ", "#")):
+            in_jobs, current = False, None
+        m = JOB_HEADER.match(line) if in_jobs else None
+        if m:
+            current = m.group(1)
+            blocks[current] = []
+        if current is not None:
+            blocks[current].append(line)
+        else:
+            head.append(line)
+    return "".join(head), {k: "".join(v).rstrip() for k, v in blocks.items()}
+
+
+def _additive_only(before: str, after: str) -> str | None:
+    """None if `after` is `before` plus whole new list items (steps, or `needs` entries) only;
+    otherwise a description of the first non-additive change."""
+    a, b = before.splitlines(), after.splitlines()
+    for op, i1, _i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if op == "equal":
+            continue
+        if op != "insert":
+            return (
+                f"line {i1 + 1} changed or removed: {a[i1].strip()[:80] if i1 < len(a) else ''!r}"
+            )
+        added = b[j1:j2]
+        if not added[0].startswith("      - "):
+            return f"inserted text does not start a new step/list item: {added[0].strip()[:80]!r}"
+        nxt = a[i1] if i1 < len(a) else ""
+        if nxt and not (nxt.startswith("      - ") or re.match(r"^    \S", nxt)):
+            return f"inserted inside an existing step, before: {nxt.strip()[:80]!r}"
+    return None
+
+
+def ci_yml_violations(base_text: str, head_text: str) -> list[str]:
+    """A [relay] PR may only ADD to ci.yml: new jobs, new steps, new `needs` entries. The
+    workflow header (triggers, concurrency) and every existing line stay as they are, so an
+    added step can never edit, weaken or skip an existing check."""
+    problems: list[str] = []
+    base_head, base_jobs = _job_blocks(base_text)
+    head_head, head_jobs = _job_blocks(head_text)
+    if base_head.strip() != head_head.strip():
+        problems.append("ci.yml: the workflow header (on/concurrency/top-level keys) changed")
+    for job, body in base_jobs.items():
+        if job not in head_jobs:
+            problems.append(f"ci.yml: existing job {job!r} was removed")
+            continue
+        why = _additive_only(body, head_jobs[job])
+        if why:
+            problems.append(f"ci.yml: existing job {job!r} was modified, not only extended: {why}")
+    return problems
+
+
 def relay_violations(
     title: str,
     number: int,
     files: list[str],
     spec_matrix_diff: str,
     open_prs: list[dict],
+    ci_yml: tuple[str, str] | None = None,
 ) -> list[str]:
-    """Pure policy: every violation, as text. Empty list = compliant."""
+    """Pure policy: every violation, as text. Empty list = compliant.
+
+    ci_yml = (base text, head text) of .github/workflows/ci.yml when the PR changes it."""
     problems: list[str] = []
     forbidden = [
-        f for f in files if f in RELAY_FORBIDDEN_EXACT or f.startswith(RELAY_FORBIDDEN_PREFIXES)
+        f
+        for f in files
+        if f != CI_WORKFLOW
+        and (f in RELAY_FORBIDDEN_EXACT or f.startswith(RELAY_FORBIDDEN_PREFIXES))
     ]
     if forbidden:
         problems.append(
             "changes Control-plane/governance files a [relay] PR may not touch: "
             + ", ".join(forbidden)
         )
+    if CI_WORKFLOW in files:
+        if ci_yml is None:
+            problems.append("ci.yml changed but its base/head text was not provided")
+        else:
+            problems.extend(ci_yml_violations(*ci_yml))
     if CERT_FLIP.search(spec_matrix_diff or ""):
         problems.append(
             "sets certification_state CERTIFIED / proof_state L2-CERTIFIED "
@@ -269,8 +351,11 @@ def cmd_relay_policy(args: argparse.Namespace) -> int:
     if not token:
         print("::error::relay-policy needs GITHUB_TOKEN to check item ownership")
         return 1
+    ci_yml = None
+    if CI_WORKFLOW in files:
+        ci_yml = (git("show", f"{args.base}:{CI_WORKFLOW}"), Path(CI_WORKFLOW).read_text())
     problems = relay_violations(
-        args.title, args.number, files, spec_diff, fetch_open_prs(args.repo, token)
+        args.title, args.number, files, spec_diff, fetch_open_prs(args.repo, token), ci_yml
     )
     for p in problems:
         print(f"::error::relay-policy: {p}")
@@ -282,8 +367,6 @@ def cmd_relay_policy(args: argparse.Namespace) -> int:
 
 
 # --- verdict --------------------------------------------------------------------------------
-
-JOB_HEADER = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
 
 
 def workflow_jobs(workflow_text: str) -> list[str]:
