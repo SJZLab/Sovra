@@ -139,6 +139,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -460,6 +461,13 @@ class TokenizationAnalysisReport:
     chat_template_sha256: str | None = None
 
 
+_SHA256_HEX = re.compile(r"[0-9a-f]{64}")
+
+
+def _is_verified_digest(value: object) -> bool:
+    return isinstance(value, str) and _SHA256_HEX.fullmatch(value) is not None
+
+
 def _extract_messages(
     candidate: Mapping[str, object],
 ) -> Sequence[Mapping[str, object]] | None:
@@ -602,6 +610,15 @@ def analyze_tokenization(
     if issues:
         certifies_training_fit = False
 
+    tokenizer_json_sha256 = getattr(tokenizer, "tokenizer_json_sha256", None)
+    chat_template_sha256 = getattr(tokenizer, "chat_template_sha256", None)
+    # Exactness is bound to the two pinned digests; a backend that claims `exact` without
+    # carrying both verified sha256 values cannot certify training fit.
+    if not (
+        _is_verified_digest(tokenizer_json_sha256) and _is_verified_digest(chat_template_sha256)
+    ):
+        certifies_training_fit = False
+
     distribution: TokenDistribution | None = None
     totals = sorted(conversation.total_token_count for conversation in conversations)
     if totals:
@@ -620,6 +637,6 @@ def analyze_tokenization(
         distribution=distribution,
         issues=tuple(issues),
         certifies_training_fit=certifies_training_fit,
-        tokenizer_json_sha256=getattr(tokenizer, "tokenizer_json_sha256", None),
-        chat_template_sha256=getattr(tokenizer, "chat_template_sha256", None),
+        tokenizer_json_sha256=tokenizer_json_sha256,
+        chat_template_sha256=chat_template_sha256,
     )
