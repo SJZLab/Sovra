@@ -6142,14 +6142,14 @@ FTF-04A31:
   proving_symbol: ''
   proving_test: ''
 FTF-04A32:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Local repository integration test
-  evidence_hash: ''
+  evidence_hash: bd0ca646890ca31f6b5a6099d0a52b8a8e2c5d09
   implementation_state: IMPLEMENTED
   notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01, FTF-04A06,
     FTF-H007
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a32.py
 FTF-04A33:

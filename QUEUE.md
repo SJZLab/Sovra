@@ -9305,20 +9305,55 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
    - **Every grader (FTF-06xx):** before submitting, apply the GRADER CHECKLIST in the same queue.md entry.
-   - **0b. FTF-04A32 round 2 (tests only, returned 2026-10-07T11:00Z).** Production code is correct. Extend
-     tests/tasks/test_ftf_04a32.py (real git, no stubs) and show each fault RED:
-     (F09) a walker symlink to a prefix-sibling path (`<tmp>/repo-evil/secret.txt`) raises PathAllowlistError;
-     (F19) two dirty captures differing only by same-length content get different `tree_hash` values, and a
-     same-length edit landing after `_build_archive` and before the final re-walk (dirty signature unchanged) raises
-     ConcurrentModificationError;
-     (F20) a rename with identical content changes `tree_hash`;
-     (F18/F15/F16) a chmod +x-only change changes `tree_hash`, `a.txt` is `executable` False, and tar member modes are
-     0o755 for `bin.sh` and 0o644 for `a.txt`.
-     Optional: positive in-root file/dir symlink tests (F14); fingerprint includes `.git/config`, `.git/hooks` and the
-     file listing (F45). Claim `relay/FTF-04A32-r2`.
-   - **0c.** Then the Backlog.
+   - **0b. FTF-0515 round 2 (production fix + tests, returned 2026-10-07T12:00Z).** In workers/data/quality_issue_engine.py:
+     (P1, no silent drop) `issue_id` must include every field that tells two findings apart (PII `message_index` and
+     `content_path`; row-issue detail/message). Three same-category PII findings in one record, or two row issues with
+     the same code and position but different messages, must stay distinct issues, each needing its own resolution.
+     (P2) `_make` must sort `batch_positions` and `record_indices` as pairs, never independently.
+     Tests in tests/tasks/test_ftf_0515.py (each fault RED):
+     - empty input gives 7 `detector_not_run` issues and blocks split/training;
+     - a `DetectorRun` with error plus report blocks, error wins, and it is absent from `detectors_reported`;
+       `error=""` blocks;
+     - `detector_failed` and `detector_report_invalid` are each refused by `apply_resolutions`, with
+       `is_detector_failure` True;
+     - 2+ row issues, a `record_index=None` row, 2+ extra issues and 2 resolutions are all kept; resolving one of many
+       leaves the others, in order; `QualityBlockedError.issue_ids` is exactly the blocking ids;
+     - provenance with record_index ≠ batch_position for near-dup (a and b), PII, tokenization and normalized-dup, plus
+       `evidence_digest` for normalized-dup and extra issues;
+     - normalized-duplicate group: detector `exact_duplicate`, blocking; PII `requires_quarantine=False` is a warning;
+       reason `pii_secret_<category>`; truncated_critical_turn wins over requires_explicit_truncation_policy;
+     - a non-poisoning extra warning stays a warning;
+     - issue-id distinctness and identity, with explicit ordering;
+     - the near-dup message is included in the cross-PYTHONHASHSEED comparison;
+     - resolving (not only waiving) a warning.
+     Claim `relay/FTF-0515-r2`.
+   - **0c. FTF-04A22 round 2 (production fix + tests, returned 2026-10-07T12:00Z).** In
+     apps/web/components/target-application/mandate_editor_and_conflict_resolution_ui.tsx:
+     (D1) list inputs keep the raw typed string in local state, so typing `en,` then `fr` works, with a
+     keystroke-sequence test;
+     (D2) save is never lossy: unknown keys in `mandate_json`, extra keys on forbidden-action entries, and top-level
+     keys other than `actions` survive a round trip, with a test.
+     Tests in apps/web/tests/ftf_04a22.spec.ts (each fault RED):
+     - refresh failure (503 and a network throw) shows `refresh-enforcement-error`, keeps the conflict and
+       `mandate-lock-blocked`, has no `mandate-lock-ready`, and the error clears on a later successful refresh;
+     - load and save network errors are surfaced;
+     - a malformed PATCH 200 shows `mandate-save-error`; after a successful save, Save is disabled and the returned
+       manifest is shown;
+     - clearing `business_purpose` and `latency_slo_ms` sends JSON `null` (key present);
+     - a locked manifest with forbidden actions has no `forbidden-action-remove-*` and every input is disabled;
+     - exact name match: `refund` vs `Refund` and `refund_all` gives `not_found`;
+     - `is_critical` alone is enforced;
+     - `"en,,fr"` gives `["en","fr"]`, and the reason is trimmed on add.
+     Recommended:
+     - add inputs clear after add;
+     - removing one of two actions keeps the other;
+     - Save is enabled after a remove;
+     - busy state disables Save and Refresh;
+     - a props change refetches.
+     Claim `relay/FTF-04A22-r2`.
+   - **0d.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
-     (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21 and FTF-04A34 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
+     (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34 and FTF-04A32 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid
@@ -9439,7 +9474,6 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 "2026-10-01T13:40Z". One PR per item group, titled "[relay] <ID>: fix L2 round-2 findings".
 
 ## Backlog (sliced, ready — relay takes these after Active; Refill & Sweep keeps >= 3)
-- **FTF-0515** Quality issue engine. DoD: `tools/r1_handoff.py packet FTF-0515`.
 - **FTF-04A06-F1 (Law 16, Control-plane decision 2026-10-07T11:00Z)** The local repository connector's dirty-snapshot
   manifest and archive include git-ignored files (a probe captured `.env`). Law 16 forbids silently harvesting
   repository data, and ignored files often hold secrets. Decision: the snapshot file set equals git's own view, meaning
@@ -9450,6 +9484,8 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 - **FTF-0605** JSON-schema grader. DoD: `tools/r1_handoff.py packet FTF-0605`. Apply the GRADER CHECKLIST.
 - **FTF-0607** Tool-argument grader. DoD: `tools/r1_handoff.py packet FTF-0607`. Apply the GRADER CHECKLIST.
 - **FTF-0609** Forbidden-action grader. DoD: `tools/r1_handoff.py packet FTF-0609`. Apply the GRADER CHECKLIST.
+- **FTF-0610** Refusal grader. DoD: `tools/r1_handoff.py packet FTF-0610`. Apply the GRADER CHECKLIST.
+- **FTF-0611** Numeric grader. DoD: `tools/r1_handoff.py packet FTF-0611`. Apply the GRADER CHECKLIST.
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 
