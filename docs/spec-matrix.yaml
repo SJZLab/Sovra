@@ -11396,10 +11396,10 @@ FTF-1806:
   proving_symbol: ''
   proving_test: ''
 FTF-1807:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: LiteLLM outage runbook
-  evidence_hash: ''
+  evidence_hash: 42fd82c331fb91cccd7ef719bc1a0b7c133ba786
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-15; scenarios=Q30, Q34; deps=FTF-0215, FTF-H001, FTF-H004,
@@ -11434,7 +11434,7 @@ FTF-1807:
     production code touched; `proving_symbol`/`proof_state` unchanged (Law 2 -- a resubmission is
     not a certification). **Not self-certified (Law 4)** -- awaiting independent Control-plane L2
     re-review and this merged PR's own real CI run (41/41 jobs green, `gate` included).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/documentation/test_ftf_1807.py
 FTF-1808:

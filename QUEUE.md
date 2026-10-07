@@ -9298,19 +9298,9 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
    - **Every grader (FTF-06xx):** before submitting, apply the GRADER CHECKLIST in the same queue.md entry.
-   - **0b. FTF-1807 round 4 (tests only).** The forbidden-claim scan is a phrase blacklist, so plain-language inversions
-     pass. Pin every paragraph of runbook sections 1–6 exactly (whitespace-normalized text, or a per-section sha256
-     held in the test), keeping the existing structured pins. Add in-suite faults for each checker: wrapped, bold,
-     code-block and upper-case claims; an extra or suffixed table row; renumbered steps; and a heading rename that
-     keeps the count. Same entry.
-   - **0c. FTF-0608-F1 round 2 (tests only, returned 2026-10-07T05:50Z).** Add two tests to tests/tasks/test_ftf_0608.py:
-     (A) the empty string as a bare-str spec is refused: `allowed_orders=""` and `must_precede=""`, each alongside
-     `must_not_call=["x"]`; (B) `required_state={"k1": 1, "k2": 1}, final_state={"k1": 2}` gives
-     `state_mismatches == ("k1", "k2")`, a mismatched key declared before a missing one. Optional: a non-palindromic
-     forbidden_calls expectation, and a vacuous `must_precede=[("a","A")]` pass. Claim `relay/FTF-0608-F1-r2`. Same entry.
-   - **0d.** Then the Backlog.
+   - **0b.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
-     (2026-10-06); FTF-0214, FTF-0604, FTF-0606 and FTF-0608 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5 and FTF-0510-F1 are CERTIFIED.
+     (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608 and FTF-1807 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid
@@ -9431,6 +9421,12 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 "2026-10-01T13:40Z". One PR per item group, titled "[relay] <ID>: fix L2 round-2 findings".
 
 ## Backlog (sliced, ready — relay takes these after Active; Refill & Sweep keeps >= 3)
+- **FTF-0308** Model-to-artifact mapping UI. DoD: `tools/r1_handoff.py packet FTF-0308`. UI starts at `/` (Law 6).
+- **FTF-04A21** Manifest review/edit UI with per-field evidence. DoD: `tools/r1_handoff.py packet FTF-04A21`.
+- **FTF-04A31** Real private GitHub repository integration test. DoD: `tools/r1_handoff.py packet FTF-04A31`. Needs a
+  repository credential: if none is already provisioned in CI, park it as ask-first (secret), never fake the repo.
+- **FTF-04A32** Local repository integration test. DoD: `tools/r1_handoff.py packet FTF-04A32`.
+- **FTF-04A34** Monorepo multi-agent discovery test. DoD: `tools/r1_handoff.py packet FTF-04A34`.
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 

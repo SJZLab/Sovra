@@ -24354,3 +24354,16 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
      `grade(trace("a"), required_state={"k1": 1, "k2": 1}, final_state={"k1": 2}).state_mismatches == ("k1", "k2")`.
   - Optional: make the forbidden_calls expectation non-palindromic (`trace("a","b","c","c")`, `must_not_call=["a","c"]`
     gives ("a","c","c")), and add a vacuous pass for `trace("a")` with `must_precede=[("a","A")]`.
+
+## 2026-10-07T06:45Z — Control plane: Backlog refilled; no Sovra Refill & Sweep routine exists
+- The Backlog was empty after FTF-0608-F1 r2. No enabled or disabled "Sovra refill & sweep" routine exists; the
+  `20 * * * *` entry in docs/operations/routines.md was never created. Until it is, the Control-plane check-ins do the
+  refill using the same rule (dependency-ready frontier in TASK_INDEX order, never invented).
+- Frontier on main: 23 tasks. Added the first 5 in TASK_INDEX order: FTF-0308, FTF-04A21, FTF-04A31, FTF-04A32,
+  FTF-04A34.
+- FTF-1807 round 4 (PR #511, merge 42fd82c) was merged at 2026-10-06T20:45Z and never verified. A verifier is now
+  running on it, together with FTF-0608-F1 round 2 (PR #539, merge db4cb88).
+- **FTF-0608-F1: CERTIFIED** (round 2, PR #539, merge db4cb88). Every round-1 finding is RED, and mutation is 108/108.
+- **FTF-1807: CERTIFIED** (round 4, PR #511, merge 42fd82c). Runbook paragraphs are pinned by literal hashes, 43/44
+  doc faults are RED (the GREEN one is a whitespace-only rewrap), and 29/32 checker faults are RED (the 3 GREEN ones
+  are equivalent). Status: 117/302 certified · 45 product-true.
