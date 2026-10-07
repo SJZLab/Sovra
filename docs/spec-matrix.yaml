@@ -8369,15 +8369,74 @@ FTF-0605:
   proving_symbol: ''
   proving_test: ''
 FTF-0606:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Tool-name grader
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0601
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0601
+    (CERTIFIED, confirmed before relying on it -- this task's own only dependency). Path
+    refined from the packet's own generic suggestion (services/evaluation-worker/evaluators/
+    tool_name_grader.py, a services/ tree that does not exist in this repository) to
+    workers/evaluation/tool_name_grader.py, same convention FTF-0604's own open PR already
+    established for this sibling grader-type task (this repo's real SOURCE_ROOTS, FTF-0001/PR
+    #10, names workers/evaluation as the evaluation-worker root).
+
+    Built for real: grade_tool_name (workers/evaluation/tool_name_grader.py) grades a sequence
+    of real EmittedToolCall records -- a protocol-level dataclass (tool_call_id, name), never a
+    bare string or dict -- against an explicit, required must_call_one_of (any one call
+    satisfies it; empty means no required call) and must_not_call (any one matching call is a
+    blocking violation, even alongside a satisfied required call), grounded in Section 24's own
+    evaluation-case shape. Acceptance ("Tool-name grader verifies emitted tool protocol and
+    allowed/forbidden sets") is met by the EmittedToolCall type/empty-name guard (the
+    "protocol" half) and the must_call_one_of/must_not_call sets (the "allowed/forbidden" half),
+    both required keyword-only with no default.
+
+    negative_acceptance ("Mention of tool in natural language is not an executed valid tool
+    call") is met by construction: emitted_tool_calls only ever accepts real EmittedToolCall
+    instances -- a bare string (including a string equal to a forbidden tool's exact name), a
+    dict, or any other shape is refused with ToolNameGraderError before it can reach the
+    comparison logic at all, so a free-text mention can never be misread as either a satisfied
+    requirement or a forbidden call. Proven by tests/tasks/test_ftf_0606.py (29 checks),
+    including test_fuzzy_bypass_attack_natural_language_mention_never_counted_as_a_call (a real
+    negative test against the shipped default code, not a flipped-guard test) and the no-fuzzy
+    guards (a called name extending or merely containing a required/forbidden name never
+    satisfies/triggers it -- full-string equality only, deliberately no case/whitespace
+    normalization knob since tool identifiers are protocol constants, not natural-language
+    text, unlike FTF-0604's own case_policy/whitespace_policy).
+
+    Real fault injection (Law 1, disclosed), each shown RED then reverted byte-identical
+    (md5sum-confirmed before/after): (1) passed ignoring forbidden_calls -- the
+    forbidden-call-fails-even-with-a-required-call test genuinely FAILed; (2)/(3) forbidden/
+    required membership changed from `in` to a substring scan -- the matching no-fuzzy test
+    genuinely FAILed in each direction; (4) dropped the EmittedToolCall isinstance check -- the
+    fuzzy-bypass and dict-rejection tests genuinely crashed with AttributeError (caught and
+    reported by the harness, not a silent pass); (5)/(9) dropped the str/bytes exclusion on the
+    two independent Sequence checks (emitted_tool_calls and the shared must_call_one_of/
+    must_not_call validator) -- each has its own dedicated test that only that specific guard
+    kills (an empty-string emitted_tool_calls value, and a bare-string must_call_one_of); (6)
+    dropped the empty-name guard; (7) dropped the non-string/empty-string item guard inside the
+    shared name-set validator; (8) an additive backdoor (an early return short-circuiting to
+    passed=True whenever must_not_call is empty, bypassing the required-call check entirely) --
+    7 checks genuinely FAILed. The test harness's own main() runner was hardened to catch and
+    report a per-test exception rather than crash the whole run, isolating each fault's real
+    blast radius instead of masking later tests.
+
+    Host independence: this module reads no git/env/locale/DB/network -- only dataclass
+    construction and Python `==`/`in` on strings -- so no neutral-host rerun was needed.
+
+    Disclosed gap, same "no live caller yet" precedent as
+    FTF-0506/0507/0508/0509/0510/0511/0512/0514/0604: no evaluation-run engine exists yet to
+    call this grader against a real candidate response (Section 25's own runtime loop is not
+    owned by any dependency-ready task yet). proving_symbol stays blank (Law 6/7);
+    product_truth_check.py's product-true count is deliberately unchanged.
+
+    Not self-certified (Law 4): certification_state PROVISIONAL, proof_state L1-PROVEN,
+    awaiting independent Control-plane L2 review and a real CI run on the opened PR.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0606.py
 FTF-0607:
   certification_state: NONE
   criticality: MUST
