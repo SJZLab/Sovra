@@ -75,6 +75,11 @@ def _role(issuer: str, subject: str, organization_id: uuid.UUID) -> Role | None:
     return Role.ML_ENGINEER if (subject, organization_id) == ("member", ORG) else None
 
 
+def _sloppy_role(issuer: str, subject: str, organization_id: uuid.UUID) -> Role | None:
+    """A lookup that returns a mis-cased, padded string instead of a Role member."""
+    return " ML_Engineer " if (subject, organization_id) == ("member", ORG) else None
+
+
 def _build_app() -> FastAPI:
     app = FastAPI()
     guard = Depends(
@@ -91,6 +96,37 @@ def _build_app() -> FastAPI:
             oversize_error=(400, "body_too_large"),
         )
     )
+
+    no_body_guard = Depends(
+        require_role(
+            frozenset({Role.ML_ENGINEER}),
+            principal_resolver=_principal,
+            role_lookup=_role,
+            body_tenant_field=None,
+        )
+    )
+    sloppy_guard = Depends(
+        require_role(
+            frozenset({Role.ML_ENGINEER}),
+            principal_resolver=_principal,
+            role_lookup=_sloppy_role,
+        )
+    )
+
+    @app.post("/api/v1/orgs/{organization_id}/no-body-check")
+    async def no_body_check(request: Request, ctx: AuthorizedContext = no_body_guard) -> dict:
+        HANDLER_RUNS.append(1)
+        return {"bytes": len(await request.body())}
+
+    @app.get("/api/v1/orgs/{organization_id}/things")
+    async def read_things(ctx: AuthorizedContext = guard) -> dict:
+        HANDLER_RUNS.append(1)
+        return {"organization_id": str(ctx.organization_id)}
+
+    @app.post("/api/v1/orgs/{organization_id}/sloppy-role")
+    async def sloppy_role(ctx: AuthorizedContext = sloppy_guard) -> dict:
+        HANDLER_RUNS.append(1)
+        return {"ok": True}
 
     @app.post("/api/v1/orgs/{organization_id}/custom-things")
     async def create_custom(request: Request, ctx: AuthorizedContext = custom_guard) -> dict:
@@ -222,6 +258,44 @@ def test_route_can_keep_its_own_oversize_error_contract() -> None:
         default, _ = _post_chunked(port, _json_payload(CAP + 1))
         check(
             "FTF-0103-F1-N3", f"routes without the option keep 413 (got {default})", default == 413
+        )
+
+
+def test_only_mutating_methods_with_a_body_field_read_the_body() -> None:
+    with _running_app() as port:
+        HANDLER_RUNS.clear()
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+        try:
+            conn.request(
+                "GET",
+                f"/api/v1/orgs/{ORG}/things",
+                body=_json_payload(200, OTHER_ORG),
+                headers={"X-Test-Principal": "member", "Content-Type": "application/json"},
+            )
+            get_status = conn.getresponse().status
+        finally:
+            conn.close()
+        check(
+            "FTF-0103-F1-N4",
+            f"a GET carrying a body naming another tenant is not body-checked (got {get_status})",
+            get_status == 200,
+        )
+        status, _ = _post_chunked(port, _json_payload(CAP + 1), route="no-body-check")
+        check(
+            "FTF-0103-F1-N4",
+            f"a route with body_tenant_field=None never reads the body, so no cap (got {status})",
+            status == 200,
+        )
+
+
+def test_role_strings_are_not_normalised() -> None:
+    with _running_app() as port:
+        HANDLER_RUNS.clear()
+        status, _ = _post_chunked(port, _json_payload(200), route="sloppy-role")
+        check(
+            "FTF-0103-F1-N4",
+            f"a lookup result that is not exactly a Role member is denied (got {status})",
+            status == 403 and HANDLER_RUNS == [],
         )
 
 
