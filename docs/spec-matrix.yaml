@@ -5730,10 +5730,10 @@ FTF-04A20:
   proving_symbol: build_manifest_evidence_router
   proving_test: tests/tasks/test_ftf_04a20.py
 FTF-04A21:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Manifest review/edit UI with per-field evidence
-  evidence_hash: ''
+  evidence_hash: 8e02372950d2f6fbd5d99f6af0cb898fdc2b1d2a
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
@@ -5760,7 +5760,7 @@ FTF-04A21:
     proving_symbol left blank for the same reason (no live caller from a page yet). The mutation
     gate only mutates Python files, so it has no target here; the fault -> RED table in the
     submission file is the substitute evidence. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_04a21.spec.ts
 FTF-04A22:

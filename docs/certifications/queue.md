@@ -24407,3 +24407,11 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 - The test is real (real git, real modules, no stubs). The contract's "prompts" half of N2 is untested and undisclosed.
 - Whole-file mutation on the three modules: 38–43%. Most survivors belong to FTF-04A08/09/10 edge cases; the
   A1/A2/N1/N2 ones are listed in QUEUE 0c.
+
+## 2026-10-07T09:50Z — Control plane: FTF-04A21 CERTIFIED (round 2)
+- **FTF-04A21: CERTIFIED** (PR #550, merge 8e02372). C6, P7, S8 and D3 are all RED, and 38/38 specs pass. UNWIRED
+  (no page). Optional follow-up FTF-04A21-F1 is in the Backlog. Status: 118/302 certified · 45 product-true.
+- **Process note:** #550's ci-verdict was green, but its lane session ended without merging it. The Control plane
+  merged it at 09:41Z (PROVISIONAL). Dispatcher v4 lane prompts now require "never end the session with your own
+  green PR left unmerged". Dispatcher v2 (425k context) was replaced by v4, session_01RE1DMhasFbvrsPaUS5hHJm, with
+  triggers B trig_016YdW3L5F5Gdy15npg9ktM6 and C trig_01Rc1C17Ld1K7Mg4oGyPLXAh; v2 and v3 are disabled.

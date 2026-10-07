@@ -9305,17 +9305,7 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
    - **Every grader (FTF-06xx):** before submitting, apply the GRADER CHECKLIST in the same queue.md entry.
-   - **0b. FTF-04A21 round 2 (tests only, returned 2026-10-07T08:15Z).** Add to apps/web/tests/ftf_04a21.spec.ts and
-     show each fault RED:
-     (C6) a restored stale draft (baseText ≠ server) stays "conflict" after the user types in it, and Lock stays blocked;
-     (P7) a draft stored for manifest A never appears for manifest B, and `draftStorageKey` differs across org,
-     project and manifest ids;
-     (S8) a JSON field edited to `null` is sent as `{field: null}` in the PATCH body;
-     (D3) `lineDiff("a","a\nb")` marks the appended line "added", plus a UI case appending lines after the last
-     server line.
-     Optional: the restore path does not throw when storage throws (P6), and Save stays disabled for a restored draft
-     on a locked manifest (R3). Claim `relay/FTF-04A21-r2`. No production change is needed.
-   - **0c. FTF-04A34 round 2 (tests only, returned 2026-10-07T09:00Z).** Extend tests/tasks/test_ftf_04a34.py (same
+   - **0b. FTF-04A34 round 2 (tests only, returned 2026-10-07T09:00Z).** Extend tests/tasks/test_ftf_04a34.py (same
      real-git fixture, no stubs) and show each fault RED:
      (1) **N2 prompts** (contract says "tools/prompts", untested): give each product its own system prompt, two products
      with same-named template files at different paths (e.g. two `prompts/system.txt`), and two agents' prompts in one
@@ -9332,9 +9322,9 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      (5) **Commit identity**: `capture.commit_sha == git rev-parse HEAD`, then a second commit or uncommitted edit, and
      the evidence follows the captured commit. Claim `relay/FTF-04A34-r2`. No production change is expected; if a fault
      reveals one, fix it in the same PR.
-   - **0d.** Then the Backlog.
+   - **0c.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
-     (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608 and FTF-1807 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
+     (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807 and FTF-04A21 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid
@@ -9455,7 +9445,8 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 "2026-10-01T13:40Z". One PR per item group, titled "[relay] <ID>: fix L2 round-2 findings".
 
 ## Backlog (sliced, ready — relay takes these after Active; Refill & Sweep keeps >= 3)
-- **FTF-04A21** Manifest review/edit UI with per-field evidence. DoD: `tools/r1_handoff.py packet FTF-04A21`.
+- **FTF-04A21-F1 (optional test, low priority)** Add to apps/web/tests/ftf_04a21.spec.ts: a stored draft restored onto a
+  `locked` manifest leaves Save disabled, and clicking it sends no PATCH (kills fault R3). Claim `relay/FTF-04A21-F1-r1`.
 - **FTF-04A31** Real private GitHub repository integration test. DoD: `tools/r1_handoff.py packet FTF-04A31`. Needs a
   repository credential: if none is already provisioned in CI, park it as ask-first (secret), never fake the repo.
 - **FTF-04A32** Local repository integration test. DoD: `tools/r1_handoff.py packet FTF-04A32`.
