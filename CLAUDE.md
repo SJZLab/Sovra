@@ -16,9 +16,11 @@ BRANCH_PROTECTION: instruction-tier — no confirmed GitHub branch-protection
   docs/certifications/watchdog-findings.md. This line exists to close that.)
 CONTAINMENT: none (GATED_MANUALLY: true)
 DEPLOY_TARGET: Railway
-CI_PROVIDER: GitHub Actions (confirmed — .github/workflows/ci.yml runs a
-  `gate` job on every PR; see docs/certifications/ledger.md and PR #15's CI
-  run for real examples)
+CI_PROVIDER: GitHub Actions (confirmed — .github/workflows/ci.yml runs on every
+  PR). "CI green" means ONLY: the latest `ci-verdict` check on the PR's current
+  head SHA concluded success (it aggregates every job; failed, cancelled or
+  unexplained skipped jobs make it red). Contract: docs/operations/routines.md
+  "CI contract".
 GIT_CONNECTOR: connected — repeatedly confirmed across multiple Code CLI
   sessions (branch/commit/push/open-PR/merge all exercised for real, most
   recently merging PR #15 on 2026-09-16). Originally "none" only described
