@@ -128,14 +128,14 @@ class RefusalExpectation:
         tools = _names(self.escalation_tools, "escalation_tools")
         fields = _names(self.required_fields, "required_fields")
         forbidden = _names(self.forbidden_actions, "forbidden_actions")
-        for label, values, needed in (
-            ("escalation_tools", tools, _NEEDS_ESCALATION_TOOLS[self.category]),
-            ("required_fields", fields, _NEEDS_FIELDS[self.category]),
-            ("forbidden_actions", forbidden, _NEEDS_FORBIDDEN[self.category]),
+        for label, values, needed, takes_values in (
+            ("escalation_tools", tools, _NEEDS_ESCALATION_TOOLS[self.category], False),
+            ("required_fields", fields, _NEEDS_FIELDS[self.category], False),
+            ("forbidden_actions", forbidden, _NEEDS_FORBIDDEN[self.category], True),
         ):
             if needed and not values:
                 raise RefusalGraderError(f"{self.category} requires non-empty {label}")
-            if not needed and values and label != "forbidden_actions":
+            if not needed and values and not takes_values:
                 raise RefusalGraderError(f"{self.category} does not take {label}")
         if set(tools) & set(forbidden):
             raise RefusalGraderError("an escalation tool cannot also be a forbidden action")
