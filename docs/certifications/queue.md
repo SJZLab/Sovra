@@ -24230,3 +24230,14 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
   - a test that a sandbox SecurityError (`messages.append(1)` in the template) becomes a `template_render_error` row
     issue;
   - certification requires verified non-None digests.
+
+## 2026-10-07T01:00Z — Control plane: FTF-0214 CERTIFIED (round 2)
+- **FTF-0214: CERTIFIED** (PR #516, merge 9142769). All three round-1 blockers are fixed and every round-1 GREEN
+  fault is RED. Mutation is 72/72, so no allowlist entries were needed: the relay removed the equivalent mutants by
+  refactoring, and behavior is preserved. The 10 catalog units are attested live through `create_app()`.
+- Status: 113/302 certified · 45 product-true.
+- Process note: [relay] PRs keep adding CI steps to `.github/workflows/ci.yml`. These are additive and weaken no gate.
+  This matches established practice since FTF-0103A and stays allowed. Any change that removes or relaxes a step
+  still needs a [GOVERNANCE] PR.
+- **FTF-H034-F4: CERTIFIED** (PR #522, merge 0a1eefa). Whole-file mutation 83/83. New follow-up FTF-H034-F5
+  (Backlog): pin the default TTL and GPU quota constants, and add a re-claim-after-complete check.

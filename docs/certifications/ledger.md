@@ -10054,3 +10054,38 @@ PR is not landed by the next certifier shift.
 - Follow-ups, not blocking (FTF-0510-F1):
   - pin SecurityError and other non-Undefined template errors as row issues;
   - require verified non-None digests before certifying training fit.
+
+## FTF-0214 — Model catalog UI (wires FTF-0205–0213 and FTF-H004) — CERTIFIED (2026-10-07)
+- Criterion: FTF-0214. PR #516, merge commit 914276989fb7d8880bbce4161a8dff3330e51221 (head `78c83bd`). This closes
+  rounds 1–2.
+- Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent: the
+  producers are `session_01T2kdzttC4z7gp3731D8zuC` and `session_01MzAB3vq91RT3DHbJ4gZUN9`.
+- CI: 48/48 passed, including gate, mutation-gate (72/72 killed) and model-catalog-integration.
+- Independent verifier (top tier). Task, live integration (real Postgres 16) and vitest suites all pass (15/15).
+  - Every round-1 GREEN fault is now RED:
+    - revoked catalog shown healthy (route skip, empty snapshot, `_revoked_snapshot` parts);
+    - H004 connection-revoked check skipped;
+    - `{model_id:path}` and encodeURIComponent;
+    - UI U11–U14, connection_status, fields, model_groups and the probe route identity/time/type;
+    - revoked connection disabling the probe.
+  - The M9 refactors (enum identity compares, dict dispatch) preserve behavior: exact-match negative tests return
+    400, and the dispatch-swap faults are RED.
+- Wiring attestation (product-true): `build_model_catalog_router` is mounted in `create_app()` (main.py:213). The 10
+  already-certified units are live through it, each unit fault RED in the composed suites:
+  - enrich_visible_models, enrich_visible_model_groups, reconcile_aliases;
+  - LastKnownGoodCatalog, CatalogAnomalyDetector;
+  - probe_chat, probe_stream_chat, probe_tool_call, probe_structured_output;
+  - require_model_access.
+- Law 6: apps/web has no pages, so the component is unmounted from `/`. This is disclosed in the spec notes and stays
+  BLOCKED until FTF-H029.
+
+## FTF-H034-F4 — claim-registry mutation survivors killed — CERTIFIED (2026-10-07)
+- Follow-up of FTF-H034. PR #522, merge commit 0a1eefa1f37a35fd781ef640d081c8b468a7e51e (head `c9ed1ec`). This is a
+  tests-only change. Producer: `session_0188JPWM1UmzFkMpaEF3mh5C`. CI passed.
+- Verifier: the whole-file gate on scripts/task_claim.py kills 83/83 with no allowlist. Hand faults are RED:
+  - is_expired boundary, and is_expired always false;
+  - the dependency loop skipping a dependency, and a missing dependency treated as ready;
+  - every snapshot field omitted, and live state leaked;
+  - the concurrency limits.
+- Follow-up, not blocking: FTF-H034-F5. Pin the default lease TTL (3600s) and DEFAULT_GPU_QUOTA=1. Add a dedicated
+  check that complete() frees the slot.
