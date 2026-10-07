@@ -369,7 +369,9 @@ def main() -> None:
 
     def audit_count(entry_id: str | None = None) -> int:
         with Session(owner_engine) as s:
-            statement = select(AuditEvent).where(AuditEvent.action == AUDIT_ACTION)
+            statement = select(AuditEvent).where(
+                AuditEvent.action == AUDIT_ACTION, AuditEvent.organization_id == org1_id
+            )
             if entry_id is not None:
                 statement = statement.where(AuditEvent.resource_id == entry_id)
             return len(s.execute(statement).scalars().all())
@@ -417,7 +419,11 @@ def main() -> None:
             entry = s.execute(select(ModelCatalogEntryRecord)).scalars().one()
             change = s.execute(select(ModelCatalogMappingChangeRecord)).scalars().one()
             audit = (
-                s.execute(select(AuditEvent).where(AuditEvent.action == AUDIT_ACTION))
+                s.execute(
+                    select(AuditEvent).where(
+                        AuditEvent.action == AUDIT_ACTION, AuditEvent.organization_id == org1_id
+                    )
+                )
                 .scalars()
                 .one()
             )
