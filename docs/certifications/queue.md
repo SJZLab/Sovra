@@ -24342,4 +24342,5 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-07T05:00Z — Control plane: FTF-0604 CERTIFIED (round 3)
 - **FTF-0604: CERTIFIED** (PR #535, merge def15b0). Mutation is 50/50 with M10 and the dispatch tables.
 - **CI health:** at 04:20Z, PR #536 (FTF-0608-F1) had all 48 jobs die before starting, on both attempts, with no
-  runner and no steps. This looks like an Actions account or billing block, or a GitHub outage. Under investigation.
+  runner and no steps. This was transient: the 04:39Z run for this CERT PR got runners normally. Relay: bring main into
+  #536 and push, so CI re-runs. That is a real code change, not an empty commit.
