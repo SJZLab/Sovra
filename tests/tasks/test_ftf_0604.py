@@ -145,7 +145,7 @@ def test_whitespace_strip_accepts_leading_trailing_whitespace_only() -> None:
     )
     check(
         "FTF-0604",
-        "under an explicit whitespace-strip policy, only leading/trailing " "whitespace is ignored",
+        "under an explicit whitespace-strip policy, only leading/trailing whitespace is ignored",
         result.passed,
     )
     still_internal = grade_exact_match(
@@ -519,7 +519,7 @@ def test_no_unicode_normalization_beyond_the_explicit_policies() -> None:
     )
     check(
         "FTF-0604",
-        "a fullwidth Unicode character is never treated as its ASCII " "look-alike",
+        "a fullwidth Unicode character is never treated as its ASCII look-alike",
         not result_fullwidth.passed,
     )
 
@@ -611,7 +611,7 @@ def test_whitespace_policy_boundaries() -> None:
     )
     check(
         "FTF-0604",
-        "whitespace-strip: the approved side is normalized too, not just the " "candidate",
+        "whitespace-strip: the approved side is normalized too, not just the candidate",
         grade_exact_match(
             "Paris",
             [" Paris "],
@@ -656,8 +656,7 @@ def test_matched_value_is_the_original_approved_string_not_normalized() -> None:
     )
     check(
         "FTF-0604",
-        "matched_value is the original approved string 'PARIS', not the "
-        "casefolded/normalized form",
+        "matched_value is the original approved string 'PARIS', not the casefolded/normalized form",
         result.passed and result.matched_value == "PARIS",
     )
 
@@ -739,7 +738,7 @@ def test_first_match_wins_with_duplicate_normalized_approved_values() -> None:
     )
     check(
         "FTF-0604",
-        "the first approved value whose normalized form matches wins, in " "declared order",
+        "the first approved value whose normalized form matches wins, in declared order",
         result.passed and result.matched_value == "PARIS",
     )
 
@@ -761,6 +760,79 @@ def test_error_is_a_value_error_and_result_is_frozen() -> None:
         pass
     else:
         check("FTF-0604", "ExactMatchResult must be frozen (immutable)", False)
+
+
+def test_normalized_candidate_reflects_real_normalization_on_pass_and_fail() -> None:
+    """Round 3: normalized_candidate is asserted where normalization is NOT the
+    identity, on both a pass and a fail, so returning the raw candidate, or
+    upper-casing instead of casefolding, turns this red."""
+    passed = grade_exact_match(
+        "PARIS",
+        ["paris"],
+        case_policy=CASE_INSENSITIVE,
+        whitespace_policy=WHITESPACE_COLLAPSE,
+    )
+    check(
+        "FTF-0604",
+        "pass under insensitive/collapse reports normalized_candidate == 'paris'",
+        passed.passed and passed.normalized_candidate == "paris",
+    )
+    failed = grade_exact_match(
+        " LONDON  x ",
+        ["paris"],
+        case_policy=CASE_INSENSITIVE,
+        whitespace_policy=WHITESPACE_COLLAPSE,
+    )
+    check(
+        "FTF-0604",
+        "fail under insensitive/collapse reports normalized_candidate == 'london x'",
+        not failed.passed and failed.normalized_candidate == "london x",
+    )
+
+
+def test_exactness_holds_under_every_case_and_whitespace_policy() -> None:
+    """Round 3: no Unicode normalization or invisible-character stripping may
+    be applied under ANY of the 6 case x whitespace policy combinations."""
+    cases = {
+        "NFD vs NFC accented e": ("e\u0301", ["\u00e9"]),
+        "zero-width space inside Paris": ("Pa\u200bris", ["Paris"]),
+        "fullwidth A vs ASCII A": ("\uff21", ["A"]),
+    }
+    for label, (candidate, approved) in cases.items():
+        for case_policy in (CASE_SENSITIVE, CASE_INSENSITIVE):
+            for whitespace_policy in (WHITESPACE_EXACT, WHITESPACE_STRIP, WHITESPACE_COLLAPSE):
+                result = grade_exact_match(
+                    candidate,
+                    approved,
+                    case_policy=case_policy,
+                    whitespace_policy=whitespace_policy,
+                )
+                check(
+                    "FTF-0604",
+                    f"{label} never matches under case_policy={case_policy!r}, "
+                    f"whitespace_policy={whitespace_policy!r}",
+                    not result.passed,
+                )
+
+
+def test_exactness_controls_identical_pairs_still_pass_under_every_policy() -> None:
+    """Positive control for the 6-way exactness test: the same strings DO match
+    themselves under every combination, so the red above is about exactness,
+    not a grader that rejects everything."""
+    for value in ("e\u0301", "Pa\u200bris", "\uff21"):
+        for case_policy in (CASE_SENSITIVE, CASE_INSENSITIVE):
+            for whitespace_policy in (WHITESPACE_EXACT, WHITESPACE_STRIP, WHITESPACE_COLLAPSE):
+                result = grade_exact_match(
+                    value,
+                    [value],
+                    case_policy=case_policy,
+                    whitespace_policy=whitespace_policy,
+                )
+                check(
+                    "FTF-0604",
+                    f"{value!r} matches itself under {case_policy!r}/{whitespace_policy!r}",
+                    result.passed,
+                )
 
 
 def main() -> None:
