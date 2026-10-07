@@ -300,10 +300,13 @@ class RankingResult:
     winner_economics_provisional: bool
 
 
-def _priced(candidate: RankingCandidate) -> CostInterval:
-    # Only candidates that survived the unpriced exclusion reach here.
-    assert candidate.cost is not None
-    return candidate.cost
+@dataclass(frozen=True)
+class _Qualified:
+    """A candidate that cleared every gate, with its narrowed cost/quality."""
+
+    candidate: RankingCandidate
+    cost: CostInterval
+    quality: Decimal
 
 
 def _overlaps(a: CostInterval, b: CostInterval) -> bool:
@@ -337,19 +340,21 @@ def rank_candidates(
     if sum(1 for candidate in candidates if candidate.is_incumbent) > 1:
         raise CandidateRankingError("at most one candidate may be the incumbent")
 
-    qualifying: list[RankingCandidate] = []
+    qualifying: list[_Qualified] = []
     excluded: list[ExcludedCandidate] = []
     for candidate in candidates:
+        cost = candidate.cost
+        quality = candidate.quality_lower_bound
         reasons: list[str] = []
         if not candidate.eligible:
             reasons.append(REASON_INELIGIBLE)
-        if candidate.cost is None:
+        if cost is None:
             reasons.append(REASON_UNPRICED)
-        if candidate.quality_lower_bound is None:
+        if quality is None:
             reasons.append(REASON_QUALITY_UNMEASURED)
-        elif candidate.quality_lower_bound < floor:
+        elif quality < floor:
             reasons.append(REASON_BELOW_QUALITY_FLOOR)
-        if reasons:
+        if cost is None or quality is None or reasons:
             excluded.append(
                 ExcludedCandidate(
                     candidate_id=candidate.candidate_id,
@@ -359,64 +364,52 @@ def rank_candidates(
                 )
             )
         else:
-            qualifying.append(candidate)
+            qualifying.append(_Qualified(candidate, cost, quality))
 
-    def sort_key(candidate: RankingCandidate) -> tuple[Decimal, Decimal, str]:
-        cost = _priced(candidate)
-        return (cost.base, cost.high, candidate.candidate_id)
-
-    qualifying.sort(key=sort_key)
-    ranked: list[RankedCandidate] = []
-    for position, candidate in enumerate(qualifying, start=1):
-        assert candidate.cost is not None and candidate.quality_lower_bound is not None
-        ranked.append(
-            RankedCandidate(
-                rank=position,
-                candidate_id=candidate.candidate_id,
-                kind=candidate.kind,
-                quality_lower_bound=candidate.quality_lower_bound,
-                cost=candidate.cost,
-                economics_basis=candidate.economics_basis,
-                is_incumbent=candidate.is_incumbent,
-            )
+    qualifying.sort(key=lambda q: (q.cost.base, q.cost.high, q.candidate.candidate_id))
+    ranked = tuple(
+        RankedCandidate(
+            rank=position,
+            candidate_id=q.candidate.candidate_id,
+            kind=q.candidate.kind,
+            quality_lower_bound=q.quality,
+            cost=q.cost,
+            economics_basis=q.candidate.economics_basis,
+            is_incumbent=q.candidate.is_incumbent,
         )
+        for position, q in enumerate(qualifying, start=1)
+    )
 
     def result(
         status: str,
-        winner: RankingCandidate | None,
+        winner: _Qualified | None,
         overlap_group: tuple[str, ...] = (),
         policy: str | None = None,
     ) -> RankingResult:
-        cost = winner.cost if winner is not None else None
         return RankingResult(
             status=status,
-            winner_id=winner.candidate_id if winner is not None else None,
+            winner_id=winner.candidate.candidate_id if winner is not None else None,
             claim=CLAIM,
-            ranked=tuple(ranked),
+            ranked=ranked,
             excluded=tuple(excluded),
             overlap_group=overlap_group,
             tie_break_policy_id=policy,
-            winner_economics_estimated=winner is not None and winner.economics_estimated,
-            winner_economics_provisional=cost is not None and cost.has_pending_reconciliation,
+            winner_economics_estimated=winner is not None and winner.candidate.economics_estimated,
+            winner_economics_provisional=winner is not None
+            and winner.cost.has_pending_reconciliation,
         )
 
     if not qualifying:
         return result(STATUS_NO_QUALIFYING_CANDIDATE, None)
 
     lead = qualifying[0]
-    assert lead.cost is not None
-    group = [
-        candidate
-        for candidate in qualifying
-        if candidate is lead
-        or (candidate.cost is not None and _overlaps(lead.cost, candidate.cost))
-    ]
-    group_ids = tuple(candidate.candidate_id for candidate in group)
+    group = [q for q in qualifying if q is lead or _overlaps(lead.cost, q.cost)]
+    group_ids = tuple(q.candidate.candidate_id for q in group)
     if len(group) == 1:
         return result(STATUS_WINNER, lead)
     if tie_break_policy_id is not None:
         return result(STATUS_TIE_BREAK_APPLIED, lead, group_ids, tie_break_policy_id)
-    incumbent = next((candidate for candidate in group if candidate.is_incumbent), None)
+    incumbent = next((q for q in group if q.candidate.is_incumbent), None)
     if incumbent is not None:
         return result(STATUS_INCONCLUSIVE_RETAIN_INCUMBENT, incumbent, group_ids)
     return result(STATUS_INCONCLUSIVE_NO_INCUMBENT, None, group_ids)
