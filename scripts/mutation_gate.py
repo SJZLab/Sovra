@@ -41,7 +41,8 @@ own fault injection uses -- stays byte-identical):
                           bool->not); one mutant per key
   M8 field drop           remove one key from a returned dict literal / one
                           keyword from a returned constructor call
-  M9 normalization bypass `a == b` -> `a.strip().lower() == b` (Name/Attribute
+  M9 normalization bypass `a == b` -> `a.strip().lower() == b`, and
+                          `a in S` -> `a.strip().lower() in S` (Name/Attribute
                           operand), modelling a case/whitespace-tolerant match
 
 Verdicts: KILLED (some --test exited non-zero), TIMEOUT (a --test exceeded
@@ -539,9 +540,15 @@ def generate_mutants(
                 expr_mut("M4", node, qual, ast.Compare(node.left, ops, node.comparators))
             operands = [node.left, *node.comparators]
             for i, cop in enumerate(node.ops):
-                if not isinstance(cop, ast.Eq | ast.NotEq):
+                sides: tuple[tuple[int, int], ...]
+                if isinstance(cop, ast.Eq | ast.NotEq):
+                    sides = ((i, i + 1), (i + 1, i))
+                elif isinstance(cop, ast.In | ast.NotIn):
+                    # `x in S`: only the probe is normalized, the container stays as is.
+                    sides = ((i, i + 1),)
+                else:
                     continue
-                for j, k in ((i, i + 1), (i + 1, i)):
+                for j, k in sides:
                     operand, peer = operands[j], operands[k]
                     if not isinstance(operand, ast.Name | ast.Attribute):
                         continue

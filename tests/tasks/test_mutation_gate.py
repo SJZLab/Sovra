@@ -127,6 +127,8 @@ assert raises(_validate_name, 5)
 assert not raises(_validate_name, "bob")
 assert raises(check_access, "", "r", R, True)
 assert raises(check_access, "bob", "x", R, True)
+assert raises(check_access, "bob", "R", R, True)
+assert raises(check_access, "bob", " r", R, True)
 assert check_access("admin", "r", R, True) == {"ok": True, "name": "admin", "level": 2}
 assert check_access("admin", "r", R, False) == {"ok": False, "name": "admin", "level": 0}
 assert check_access("bob", "r", R, False) == {"ok": False, "name": "bob", "level": 0}
@@ -261,6 +263,11 @@ def test_every_operator_generates_a_localized_parseable_mutant() -> None:
         CID,
         "M9 wraps the compared Name in .strip().lower()",
         any("name.strip().lower()" in s for s in summaries["M9"]),
+    )
+    check(
+        CID,
+        "M9 also normalizes the probe of a membership test (`role not in roles`)",
+        any("role -> role.strip().lower()" in s for s in summaries["M9"]),
     )
     check(
         CID,
