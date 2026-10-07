@@ -8820,16 +8820,34 @@ FTF-0612:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0612.py
 FTF-0613:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Cost grader
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0403, FTF-0601,
-    FTF-1304
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0403, FTF-0601,
+    FTF-1304 (all CERTIFIED). Path refined from the packet's generic
+    services/evaluation-worker/evaluators/cost_grader.py to workers/evaluation/cost_grader.py (this
+    repo's real evaluation-worker SOURCE_ROOT; same convention as the sibling graders).
+
+
+    Built: grade_cost grades the total cost of every attempt (failed ones included) and the cost per
+    unique success (unique by request_id) against a CostSpec naming the policy id and version, the one
+    currency, the expected attempt ids and two exact ceilings (Fraction arithmetic, no binary rounding).
+    The result is pass, fail or insufficient_evidence, never a bare boolean: an unknown cost (None is
+    not zero; the string "0" is a real measured zero), an estimated price, a missing attempt and zero
+    successes are insufficient evidence; an over-ceiling total or per-success cost, a policy-version or
+    currency mismatch (never summed across currencies), a duplicate or unexpected attempt are a fail,
+    which takes precedence. Every applicable issue is reported as a sorted tuple. Malformed spec or
+    record types raise CostGraderError.
+
+
+    Disclosed: no live caller yet (Section 25's runtime loop is not dependency-ready), so
+    proving_symbol stays blank, same precedent as the sibling graders. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0613.py
 FTF-0614:
   certification_state: NONE
   criticality: MUST
