@@ -37,6 +37,7 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator
+from typing import Any
 
 import uvicorn
 from fastapi import Depends, FastAPI, Request
@@ -51,6 +52,7 @@ from app.auth.rbac_middleware import (  # noqa: E402
     Role,
     require_role,
 )
+from app.evaluation.evaluation_case_routes import build_evaluation_case_router  # noqa: E402
 
 FAILURES: list[str] = []
 CAP = 33554432
@@ -75,9 +77,18 @@ def _role(issuer: str, subject: str, organization_id: uuid.UUID) -> Role | None:
     return Role.ML_ENGINEER if (subject, organization_id) == ("member", ORG) else None
 
 
+def _evaluator_role(issuer: str, subject: str, organization_id: uuid.UUID) -> Role | None:
+    return Role.EVALUATOR if (subject, organization_id) == ("member", ORG) else None
+
+
+def _no_database() -> Any:
+    raise AssertionError("an oversized body must be refused before any database session opens")
+
+
 def _sloppy_role(issuer: str, subject: str, organization_id: uuid.UUID) -> Role | None:
     """A lookup that returns a mis-cased, padded string instead of a Role member."""
-    return " ML_Engineer " if (subject, organization_id) == ("member", ORG) else None
+    sloppy: Any = " ML_Engineer "
+    return sloppy if (subject, organization_id) == ("member", ORG) else None
 
 
 def _build_app() -> FastAPI:
@@ -110,6 +121,12 @@ def _build_app() -> FastAPI:
             frozenset({Role.ML_ENGINEER}),
             principal_resolver=_principal,
             role_lookup=_sloppy_role,
+        )
+    )
+
+    app.include_router(
+        build_evaluation_case_router(
+            _no_database, principal_resolver=_principal, role_lookup=_evaluator_role
         )
     )
 
@@ -297,6 +314,70 @@ def test_role_strings_are_not_normalised() -> None:
             f"a lookup result that is not exactly a Role member is denied (got {status})",
             status == 403 and HANDLER_RUNS == [],
         )
+
+
+def test_evaluation_case_route_keeps_its_published_oversize_error() -> None:
+    suite_path = (
+        f"/api/v1/organizations/{ORG}/projects/{uuid.uuid4()}"
+        f"/evaluation-suites/{uuid.uuid4()}/cases"
+    )
+    with _running_app() as port:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
+        try:
+            conn.request(
+                "POST",
+                suite_path,
+                body=_chunks(_json_payload(CAP + 1)),
+                headers={"X-Test-Principal": "member", "Content-Type": "application/json"},
+                encode_chunked=True,
+            )
+            response = conn.getresponse()
+            status, body = response.status, response.read()
+        finally:
+            conn.close()
+        check(
+            "FTF-0103-F1-N3",
+            f"/cases: chunked cap+1 -> 400 body_too_large, no DB session (got {status})",
+            status == 400 and b"body_too_large" in body,
+        )
+
+
+def test_unauthenticated_malformed_tenant_and_empty_roles_still_fail_closed() -> None:
+    with _running_app() as port:
+        HANDLER_RUNS.clear()
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+        try:
+            conn.request(
+                "POST",
+                f"/api/v1/orgs/{ORG}/things",
+                body=b"{}",
+                headers={"Content-Type": "application/json"},
+            )
+            no_principal = conn.getresponse().status
+        finally:
+            conn.close()
+        check("FTF-0103-F1-N4", f"no principal -> 401 (got {no_principal})", no_principal == 401)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+        try:
+            conn.request(
+                "POST",
+                "/api/v1/orgs/not-a-uuid/things",
+                body=b"{}",
+                headers={"X-Test-Principal": "member", "Content-Type": "application/json"},
+            )
+            bad_org = conn.getresponse().status
+        finally:
+            conn.close()
+        check(
+            "FTF-0103-F1-N4", f"malformed organization path -> 400 (got {bad_org})", bad_org == 400
+        )
+        check("FTF-0103-F1-N4", "neither reached a handler", HANDLER_RUNS == [])
+    try:
+        require_role(frozenset())
+    except ValueError:
+        pass
+    else:
+        check("FTF-0103-F1-N4", "require_role refuses an empty role set", False)
 
 
 def test_cap_constant_is_32_mib() -> None:
