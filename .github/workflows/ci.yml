@@ -344,6 +344,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0513.py
       - name: FTF-0514 negative-test proof (PII/secrets detector, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0514.py
+      - name: FTF-0515 negative-test proof (Quality issue engine, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0515.py
       - name: FTF-0509 negative-test proof (Tool argument validator, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0509.py
       - name: FTF-0510 negative-test proof (Tokenization analysis, no DB/network required)
