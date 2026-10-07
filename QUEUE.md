@@ -9315,7 +9315,24 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      server line.
      Optional: the restore path does not throw when storage throws (P6), and Save stays disabled for a restored draft
      on a locked manifest (R3). Claim `relay/FTF-04A21-r2`. No production change is needed.
-   - **0c.** Then the Backlog.
+   - **0c. FTF-04A34 round 2 (tests only, returned 2026-10-07T09:00Z).** Extend tests/tasks/test_ftf_04a34.py (same
+     real-git fixture, no stubs) and show each fault RED:
+     (1) **N2 prompts** (contract says "tools/prompts", untested): give each product its own system prompt, two products
+     with same-named template files at different paths (e.g. two `prompts/system.txt`), and two agents' prompts in one
+     file. Call `run_prompt_source_discovery` and assert per-product `content_sha256`/`referenced_path`/`location`
+     literals, with no cross-product hash or path.
+     (2) **N1**: exact literal key sets for each entrypoint and its model/tool dicts; a recursive walk forbidding
+     selected/default/primary/chosen/recommend/rank/score; a behavioural call of `select_discovered_agent_candidate`
+     without an explicit id that raises (the DB path, if available; otherwise disclose).
+     (3) **A2**: literal `markers`/`languages`, unsorted raw entrypoint order, and `line`/`call`/`resolved`/`reason`
+     literals per language; run twice under different `PYTHONHASHSEED`; the marker check must be exact equality.
+     (4) **N2 tools/models**: a second TS agent in another product with no model/tools (stays `argument_not_present`),
+     a second TS agent in one file with distinct tools, a Python agent with dynamic `model=` and no `tools=` (no
+     inheritance), and two same-basename `package.json` (one express, one not).
+     (5) **Commit identity**: `capture.commit_sha == git rev-parse HEAD`, then a second commit or uncommitted edit, and
+     the evidence follows the captured commit. Claim `relay/FTF-04A34-r2`. No production change is expected; if a fault
+     reveals one, fix it in the same PR.
+   - **0d.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
      (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608 and FTF-1807 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
