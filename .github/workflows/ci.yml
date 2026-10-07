@@ -398,6 +398,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0610.py
       - name: FTF-0611 negative-test proof (Numeric grader, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0611.py
+      - name: FTF-0612 negative-test proof (Latency grader, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0612.py
       - name: FTF-04A02 negative-test proof (GitHub App/token read-only secret integration, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a02.py
       - name: FTF-04A03 negative-test proof (GitHub accessible-repository listing connector, no DB required)

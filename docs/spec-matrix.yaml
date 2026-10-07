@@ -8791,15 +8791,34 @@ FTF-0611:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0611.py
 FTF-0612:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Latency grader
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0006, FTF-0601
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0006, FTF-0601
+    (both CERTIFIED). Path refined from the packet's generic
+    services/evaluation-worker/evaluators/latency_grader.py to workers/evaluation/latency_grader.py
+    (this repo's real evaluation-worker SOURCE_ROOT; same convention as the sibling graders).
+
+
+    Built: grade_latency measures request, queue, TTFT and whole-agent latency (ms) at p50/p95/p99
+    (nearest-rank, integer arithmetic) against explicit LatencyLimit values, under a LatencySpec that
+    declares clock, workload id, cold/warm profile, timeout_ms and the expected case ids. Timed-out,
+    dropped and errored cases, and missing expected cases, are counted at timeout_ms in every metric,
+    never removed and never counted as fast, so they cannot improve p95; an empty run fails. A profile,
+    clock or workload that differs from the spec is its own issue and is never pooled. Duplicates stay
+    counted, an ok case over the timeout or a missing metric is flagged, whole-agent below request
+    latency is flagged, and every applicable issue is reported as a sorted tuple. Malformed spec or
+    record types raise LatencyGraderError.
+
+
+    Disclosed: no live caller yet (Section 25's runtime loop is not dependency-ready), so
+    proving_symbol stays blank, same precedent as the sibling graders. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0612.py
 FTF-0613:
   certification_state: NONE
   criticality: MUST
