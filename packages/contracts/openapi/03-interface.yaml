@@ -218,6 +218,140 @@ paths:
             negative_acceptance: unsafe URI, unknown owner (no accepted
             license) or a mutable/unresolved revision -- named in the
             response detail.
+  /api/v1/organizations/{organization_id}/connections/litellm/{connection_id}/models/{model_name}/training-artifact:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: connection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: model_name
+        in: path
+        required: true
+        description: The public gateway model name (may contain '/'); 1..256 characters.
+        allowEmptyValue: false
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 256
+    get:
+      summary: >-
+        Read the explicit mapping of one gateway alias to a trainable
+        artifact (FTF-0308-P1). Nothing is inferred from the alias name.
+      operationId: getModelTrainingArtifactMapping
+      responses:
+        '200':
+          description: The mapping (`unmapped` when none was ever set).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelTrainingArtifactMapping'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Connection missing or in another organization -- identical.
+    post:
+      summary: >-
+        Map the alias to a ready trainable artifact, or unmap it with a null
+        artifact id. Runs a fresh `/v1/models` discovery first; a change bumps
+        `catalog_version` by one, appends a change row and an audit event.
+        Setting the artifact the alias already has is a 200 no-op.
+      operationId: setModelTrainingArtifactMapping
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelTrainingArtifactMappingRequest'
+      responses:
+        '200':
+          description: The mapping after the call; `changed` says whether it moved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelTrainingArtifactMappingResult'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Connection or artifact missing or in another organization -- identical (`not_found`).
+        '409':
+          description: >-
+            One of `connection_revoked`, `model_not_accessible` (the gateway
+            does not currently list the alias), `artifact_not_ready`,
+            `catalog_version_conflict`.
+        '503':
+          description: >-
+            `gateway_unavailable`: discovery did not return `discovered`; nothing
+            was written.
+  /api/v1/organizations/{organization_id}/connections/litellm/{connection_id}/models/{model_name}/training-artifact/changes:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: connection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: model_name
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 256
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+    get:
+      summary: The append-only mapping change history, newest first.
+      operationId: listModelTrainingArtifactMappingChanges
+      responses:
+        '200':
+          description: The changes (empty when the alias was never mapped).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  changes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ModelTrainingArtifactMappingChange'
+                required: [changes]
+                additionalProperties: false
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Connection missing or in another organization -- identical.
 components:
   responses:
     NotAuthenticated:
@@ -387,4 +521,105 @@ components:
         - status
         - created_at
         - updated_at
+      additionalProperties: false
+    ModelTrainingArtifactMappingRequest:
+      type: object
+      properties:
+        trainable_artifact_id:
+          type: [string, 'null']
+          format: uuid
+          description: The ready artifact to map, or null to unmap. Required.
+        expected_catalog_version:
+          type: [integer, 'null']
+          minimum: 0
+          description: Optimistic check; 0 means "no entry yet". Mismatch is a 409.
+      required: [trainable_artifact_id]
+      additionalProperties: false
+    ModelTrainingArtifactMapping:
+      type: object
+      properties:
+        mapping_state:
+          type: string
+          enum: [unmapped, mapped]
+        model_catalog_entry_id:
+          type: [string, 'null']
+          format: uuid
+        litellm_connection_id:
+          type: string
+          format: uuid
+        public_model_name:
+          type: string
+        trainable_artifact_id:
+          type: [string, 'null']
+          format: uuid
+        catalog_version:
+          type: integer
+          minimum: 0
+        last_verified_accessible_at:
+          type: [string, 'null']
+          format: date-time
+        last_changed_at:
+          type: [string, 'null']
+          format: date-time
+        artifact:
+          oneOf:
+            - $ref: '#/components/schemas/TrainableArtifact'
+            - type: 'null'
+      required:
+        - mapping_state
+        - model_catalog_entry_id
+        - litellm_connection_id
+        - public_model_name
+        - trainable_artifact_id
+        - catalog_version
+        - last_verified_accessible_at
+        - last_changed_at
+        - artifact
+      additionalProperties: false
+    ModelTrainingArtifactMappingResult:
+      allOf:
+        - $ref: '#/components/schemas/ModelTrainingArtifactMapping'
+        - type: object
+          properties:
+            changed:
+              type: boolean
+          required: [changed]
+    ModelTrainingArtifactMappingChange:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        model_catalog_entry_id:
+          type: string
+          format: uuid
+        previous_trainable_artifact_id:
+          type: [string, 'null']
+          format: uuid
+        new_trainable_artifact_id:
+          type: [string, 'null']
+          format: uuid
+        previous_catalog_version:
+          type: integer
+          minimum: 0
+        new_catalog_version:
+          type: integer
+          minimum: 1
+        actor:
+          type: string
+        request_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - model_catalog_entry_id
+        - previous_trainable_artifact_id
+        - new_trainable_artifact_id
+        - previous_catalog_version
+        - new_catalog_version
+        - actor
+        - request_id
+        - created_at
       additionalProperties: false
