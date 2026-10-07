@@ -8426,6 +8426,43 @@ FTF-0604:
     task yet). proving_symbol stays blank (Law 6/7); product_truth_check.py's
     product-true count is deliberately unchanged.
 
+    Round 2 (2026-10-07T03:00Z L2 review, docs/certifications/queue.md): round 1's mutation score
+    hid about 25 hand-injected faults the gate cannot reach (module-level `_CASE_NORMALIZERS`/
+    `_WHITESPACE_NORMALIZERS` lambda-table bodies are not mutated by M9). Production fix: `grade_exact_match("",
+    [""])` was fail-open (an empty approved value silently matched an empty candidate). Reordered validation
+    (case_policy/whitespace_policy checked first) and added: any approved value that is `""`, or whose
+    whitespace_policy-normalized form is `""`, now raises ExactMatchGraderError.
+
+    Fault -> RED table (Law 1, `git stash` the module fix alone, full suite rerun against the real pre-fix
+    code, `git stash pop` restored byte-identical, suite rerun clean):
+    - `grade_exact_match("", [""], case_sensitive, exact)` silently passing -> RED
+      (test_rejects_empty_approved_value).
+    - `grade_exact_match("x", [" "], case_sensitive, strip)` silently passing -> RED
+      (test_rejects_approved_value_blank_under_whitespace_policy, strip case).
+    - `grade_exact_match("x", [" "], case_sensitive, collapse)` silently passing -> RED
+      (test_rejects_approved_value_blank_under_whitespace_policy, collapse case).
+    Every other round-2 clause (reverse-containment/anagram negative_acceptance, Unicode
+    non-normalization, whitespace-policy boundaries, casefold pin, result-field provenance, malformed-input
+    shapes, first-match-wins, ValueError subclass, frozen result) was already correctly implemented by the
+    real default code -- those are new tests only, confirmed passing against the unmodified module, no
+    second production defect found.
+
+    Mutation gate (both modes; 0 survivors, so no allowlist entries needed this round):
+    `uv run python3 scripts/mutation_gate.py --base origin/main --test "uv run python3 tests/tasks/test_ftf_0604.py"`
+    -> 46 run, 46 KILLED, 0 SURVIVED. Whole-file mode (`--files workers/evaluation/exact_match_grader.py`) -> 47
+    run, 47 KILLED, 0 SURVIVED. The gate's own lambda-body blind spot (noted above) is covered instead by the
+    new hand-written tests exercising those code paths directly (casefold pin, whitespace-collapse boundaries),
+    independent of what the gate itself can mutate.
+
+    Verification: `uv run ruff check .` clean; `uv run mypy .` clean for every file this round touched (55
+    pre-existing unrelated errors elsewhere, confirmed none in workers/evaluation/exact_match_grader.py or
+    tests/tasks/test_ftf_0604.py); `python3 scripts/validate_spec.py --strict` clean on the merged tree;
+    `python3 scripts/product_truth_check.py --fail-on-unwired` unchanged 45/45 (still no live caller -- same
+    disclosed precedent); `python3 scripts/data_exposure_check.py --backends postgres_rls,s3_identity
+    --fail-on-exposure` OK (no datastore surface touched). No CI wiring change needed --
+    `.github/workflows/ci.yml` already runs tests/tasks/test_ftf_0604.py and includes this module's test file
+    in the mutation-gate job.
+
     Not self-certified (Law 4): certification_state PROVISIONAL, proof_state
     L1-PROVEN, awaiting independent Control-plane L2 review and a real CI
     run on the opened PR.
