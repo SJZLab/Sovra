@@ -9431,6 +9431,12 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 "2026-10-01T13:40Z". One PR per item group, titled "[relay] <ID>: fix L2 round-2 findings".
 
 ## Backlog (sliced, ready — relay takes these after Active; Refill & Sweep keeps >= 3)
+- **FTF-0308** Model-to-artifact mapping UI. DoD: `tools/r1_handoff.py packet FTF-0308`. UI starts at `/` (Law 6).
+- **FTF-04A21** Manifest review/edit UI with per-field evidence. DoD: `tools/r1_handoff.py packet FTF-04A21`.
+- **FTF-04A31** Real private GitHub repository integration test. DoD: `tools/r1_handoff.py packet FTF-04A31`. Needs a
+  repository credential: if none is already provisioned in CI, park it as ask-first (secret), never fake the repo.
+- **FTF-04A32** Local repository integration test. DoD: `tools/r1_handoff.py packet FTF-04A32`.
+- **FTF-04A34** Monorepo multi-agent discovery test. DoD: `tools/r1_handoff.py packet FTF-04A34`.
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 
