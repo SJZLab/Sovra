@@ -24344,3 +24344,13 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 - **CI health:** at 04:20Z, PR #536 (FTF-0608-F1) had all 48 jobs die before starting, on both attempts, with no
   runner and no steps. This was transient: the 04:39Z run for this CERT PR got runners normally. Relay: bring main into
   #536 and push, so CI re-runs. That is a real code change, not an empty commit.
+
+## 2026-10-07T05:50Z — Control plane: FTF-0608-F1 returned (round 2, tests only)
+- **FTF-0608-F1: NOT CERTIFIED** (PR #536, merge 2c7707a). All six DoD behaviours are pinned, and mutation is 108/108.
+  Two faults the gate does not generate stay GREEN. Tests only, in tests/tasks/test_ftf_0608.py:
+  1. **Empty-string bare-str spec.** `refused(lambda: grade(trace("a"), allowed_orders="", must_not_call=["x"]))` and
+     the same for `must_precede=""`. These pin the outer `isinstance(..., str | bytes)` guards; "ab" alone does not.
+  2. **Mismatch order with a mismatched key before a missing key.**
+     `grade(trace("a"), required_state={"k1": 1, "k2": 1}, final_state={"k1": 2}).state_mismatches == ("k1", "k2")`.
+  - Optional: make the forbidden_calls expectation non-palindromic (`trace("a","b","c","c")`, `must_not_call=["a","c"]`
+    gives ("a","c","c")), and add a vacuous pass for `trace("a")` with `must_precede=[("a","A")]`.
