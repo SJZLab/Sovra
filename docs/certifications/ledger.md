@@ -10251,3 +10251,36 @@ PR is not landed by the next certifier shift.
   - 3 real survivors plus minor pins (tests only). QUEUE 0i.
 - Verifiers were independent Control-plane subagents (the producers are relay lanes). Each ran in a detached
   worktree at the merge commit.
+
+## 2026-10-07T16:00Z — CERTIFIED: FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610; RETURNED: FTF-0609 (round 2), FTF-04A06-F1 (round 2)
+- Verifiers were independent Control-plane subagents; the producers are relay lanes. Each verifier ran in a detached
+  worktree at the merge commit, injected every fault on the round's return list, and spot-checked earlier rounds.
+- **FTF-0515: CERTIFIED** (round 3).
+  - PR #569, merge 33a122671dcb7e2c6bac435e5ffdfe15c0066298. Production from round 2 (#564).
+  - All 50 round-3 faults RED; 6 round-2 spot checks RED. Mutation 112/112.
+  - Follow-up FTF-0515-F1 (tests only): issue_id with batch positions dropped stays green for record_index=None rows.
+- **FTF-04A22: CERTIFIED** (round 3).
+  - PR #570, merge e6019bbaa5b1a1593f19cba69c1f24be9935dd07.
+  - vitest 52/52; lint, format and typecheck clean.
+  - The returned manifest is now shown after save. The R1a/R1b/R2/R3 faults, 4 recommended faults and 10 earlier faults
+    are all RED. The Control plane re-ran R1a itself: 2 failed, then 52/52 after restoring.
+  - The component is still UNWIRED (no page).
+- **FTF-0605: CERTIFIED** (round 2).
+  - PR #572, merge 6aebcf04ca9dda351b3b5d5af7033fd34118901b.
+  - All 8 round-2 items plus the optional ones RED (about 55 faults). Mutation 235/235.
+  - Follow-up FTF-0605-F1 (tests only).
+- **FTF-0607: CERTIFIED** (round 2).
+  - PR #573, merge 9201640c41351cbc6c0da069fe9b8f0a4df008ff.
+  - All 7 survivors plus 2 optional RED; 9 round-1 faults RED. Mutation 141/141.
+- **FTF-0610: CERTIFIED** (round 2).
+  - PR #575, merge ddddbd3de363c24fe17063d4ff85205c0cf0afe3.
+  - All round-2 faults RED; 8 round-1 faults RED. Mutation 136/136.
+- **FTF-0609: RETURNED** (round 2 → 3, tests only).
+  - PR #574, merge 7407c1d.
+  - Round-2 items are RED, but a fresh sweep found 2 real gaps: outcome lookup over all effects (it would launder a denial
+    or execution), and mixed-case forbidden names.
+- **FTF-04A06-F1: RETURNED** (round 2 → 3, tests only).
+  - PR #571, merge 19df19e.
+  - Items 1 and 3–5 RED, including as uid 65534. Diff mutation 23/23.
+  - The required never-read spy does not cover os.open or io.open (Law 16).
+- Graders FTF-0605, 0607 and 0610 are not product-true: they have no live caller yet (same precedent as FTF-0604).

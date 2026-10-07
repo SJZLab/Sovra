@@ -24470,3 +24470,16 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
   plan's card step (3). They are not addenda, so the denominator stays 302.
 - Gate note: CI's mutation gate samples evenly to 200 mutants and prints that cap. L2 verifiers always run it uncapped
   (`--max-mutants 0`).
+
+## 2026-10-07T16:00Z — Control plane: five CERTIFIED; FTF-0609 and FTF-04A06-F1 returned
+- **CERTIFIED:**
+  - FTF-0515 (#569, merge 33a1226)
+  - FTF-04A22 (#570, merge e6019bb)
+  - FTF-0605 (#572, merge 6aebcf0)
+  - FTF-0607 (#573, merge 9201640)
+  - FTF-0610 (#575, merge ddddbd3)
+- **Returned:** FTF-0609 (round 3, QUEUE 0b) and FTF-04A06-F1 (round 3, QUEUE 0c). Both need tests only.
+- **Follow-ups (tests only, in the Backlog):** FTF-0515-F1 and FTF-0605-F1.
+- **Merges:** all 7 relay merges (#569–#575) landed on a green ci-verdict, read from each run's jobs because the
+  check-runs endpoint returned HTTP 500.
+- **Still open:** #576 (FTF-0611 round 2) and #577 (FTF-0308-P1, draft claim).
