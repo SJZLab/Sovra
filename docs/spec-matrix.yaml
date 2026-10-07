@@ -8225,16 +8225,39 @@ FTF-0516:
   proving_symbol: ''
   proving_test: ''
 FTF-0517:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Group-aware split engine
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-23; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0500D,
-    FTF-0515
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-23; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0500D,
+    FTF-0515 (all CERTIFIED). Path refined from the packet's generic
+    services/training-worker/data/group_aware_split_engine.py to
+    workers/data/group_aware_split_engine.py (this repo's real data-worker SOURCE_ROOT; same
+    convention as the sibling data modules).
+
+
+    Built: allocate_splits assigns every record to train, validation, development_eval or
+    final_qualification under strategy sha256_group_hash_v1 and an explicit seed and ratios, and
+    returns an immutable SHA-256-bound SplitManifest. Records that share any linkage key (conversation,
+    template family, customer case, near-duplicate group), directly or through a chain, form one group
+    (union-find) that never crosses roles. A group's role depends only on strategy, seed and its own keys,
+    never on other groups, record order or any outcome (the engine takes no outcome input), so there is no
+    final-driven reshuffling. Temporal cutoff: groups with any record at or after the cutoff go only to the
+    eval roles, earlier groups only to train/validation. Evaluation-preassigned groups stay in their eval
+    role; conflicting preassignments or one that breaks the cutoff are refused. verify_manifest recomputes
+    the hash and independently re-checks group isolation, counts and status, so a tampered manifest is
+    refused. A role with no records makes the manifest insufficient, never silently ready.
+
+
+    Disclosed: near-duplicate resolution happens before this engine and arrives as linkage keys;
+    augmentation and token-packed batches are out of scope; sample-size adequacy is Section 69's job. No
+    live caller yet (the dataset import runtime is not dependency-ready), so proving_symbol stays blank,
+    same precedent as the sibling modules. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0517.py
 FTF-0518:
   certification_state: NONE
   criticality: MUST
