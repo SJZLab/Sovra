@@ -754,6 +754,138 @@ def test_nested_state_semantics() -> None:
     check("FTF-0608", "deeply nested int-vs-float fails", not r.passed)
 
 
+# ---- round-3 follow-up FTF-0608-F1 ------------------------------------
+
+
+def test_f1_strict_prefix_and_extension_traces_fail_the_declared_order() -> None:
+    short = grade(trace("a", "b"), allowed_orders=[["a", "b", "c"]])
+    check(
+        "FTF-0608-F1",
+        "a trace that is a strict prefix of the declared order fails",
+        not short.passed and not short.order_ok and short.matched_order_index is None,
+    )
+    longer = grade(trace("a", "b", "c"), allowed_orders=[["a", "b"]])
+    check(
+        "FTF-0608-F1",
+        "a trace that strictly extends the declared order fails",
+        not longer.passed and not longer.order_ok and longer.matched_order_index is None,
+    )
+    suffix = grade(trace("b", "c"), allowed_orders=[["a", "b", "c"]])
+    check("FTF-0608-F1", "a strict suffix of the declared order fails", not suffix.passed)
+
+
+def test_f1_bare_str_specs_are_refused() -> None:
+    check(
+        "FTF-0608-F1",
+        "allowed_orders given as a bare str is refused",
+        refused(lambda: grade(trace("ab"), allowed_orders="ab")),
+    )
+    check(
+        "FTF-0608-F1",
+        "an allowed order given as a bare str is refused, never split into characters",
+        refused(lambda: grade(trace("a", "b"), allowed_orders=["ab"])),
+    )
+    check(
+        "FTF-0608-F1",
+        "must_precede given as a bare str is refused",
+        refused(lambda: grade(trace("a", "b"), must_precede="ab")),
+    )
+    check(
+        "FTF-0608-F1",
+        "a must_precede pair given as a bare str is refused, never split into characters",
+        refused(lambda: grade(trace("a", "b"), must_precede=["ab"])),
+    )
+    check(
+        "FTF-0608-F1",
+        "must_not_call given as a bare str is refused",
+        refused(lambda: grade(trace("a"), must_not_call="ab")),
+    )
+
+
+def test_f1_duplicate_tool_call_id_detection_is_case_exact_in_both_directions() -> None:
+    for first, second in (("C0", "c0"), ("c0", "C0")):
+        calls = [
+            TracedToolCall(tool_call_id=first, name="a"),
+            TracedToolCall(tool_call_id=second, name="b"),
+        ]
+        r = grade(calls, allowed_orders=[["a", "b"]])
+        check("FTF-0608-F1", f"ids {first!r},{second!r} are distinct and accepted", r.passed)
+    same = [
+        TracedToolCall(tool_call_id="c0", name="a"),
+        TracedToolCall(tool_call_id="c0", name="b"),
+    ]
+    check(
+        "FTF-0608-F1",
+        "an identical repeated id is still refused",
+        refused(lambda: grade(same, allowed_orders=[["a", "b"]])),
+    )
+
+
+def test_f1_pair_names_differing_only_by_case_are_distinct() -> None:
+    ok = grade(trace("a", "A"), must_precede=[("a", "A")])
+    check("FTF-0608-F1", "pair ('a','A') is accepted as two distinct names and passes", ok.passed)
+    bad = grade(trace("A", "a"), must_precede=[("a", "A")])
+    check(
+        "FTF-0608-F1",
+        "pair ('a','A') fails when 'A' is called before 'a'",
+        not bad.passed and bad.precedence_violations == (("a", "A"),),
+    )
+    check(
+        "FTF-0608-F1",
+        "an identical-name pair is still refused",
+        refused(lambda: grade(trace("a"), must_precede=[("a", "a")])),
+    )
+
+
+def test_f1_first_matching_order_index_wins() -> None:
+    r = grade(trace("a", "b"), allowed_orders=[["a", "b"], ["a", "b"]])
+    check("FTF-0608-F1", "duplicate matching orders report index 0", r.matched_order_index == 0)
+    r = grade(trace("a", "b"), allowed_orders=[["b", "a"], ["a", "b"], ["a", "b"]])
+    check("FTF-0608-F1", "the first matching order (index 1) wins", r.matched_order_index == 1)
+
+
+def test_f1_violations_and_mismatches_keep_declared_and_call_order() -> None:
+    pairs = [("x", "y"), ("p", "q")]
+    r = grade(trace("y", "q"), must_precede=pairs)
+    check(
+        "FTF-0608-F1",
+        "precedence violations are reported in declared pair order",
+        r.precedence_violations == (("x", "y"), ("p", "q")),
+    )
+    r = grade(trace("y", "q"), must_precede=list(reversed(pairs)))
+    check(
+        "FTF-0608-F1",
+        "reversing the declared pairs reverses the reported violations",
+        r.precedence_violations == (("p", "q"), ("x", "y")),
+    )
+    r = grade(trace("c", "a", "b", "c"), must_not_call=["a", "c"])
+    check(
+        "FTF-0608-F1",
+        "forbidden calls are reported in call order, duplicates preserved",
+        r.forbidden_calls == ("c", "a", "c"),
+    )
+    r = grade(
+        trace("a"),
+        required_state={"k2": 1, "k1": 1, "k3": 1},
+        final_state={"k1": 2, "k3": 1},
+    )
+    check(
+        "FTF-0608-F1",
+        "state mismatches are reported in required_state order (missing key included)",
+        r.state_mismatches == ("k2", "k1"),
+    )
+    r = grade(
+        trace("a"),
+        required_state={"k1": 1, "k2": 1},
+        final_state={"k1": 2, "k2": 2},
+    )
+    check(
+        "FTF-0608-F1",
+        "mismatch order follows required_state order",
+        r.state_mismatches == ("k1", "k2"),
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
