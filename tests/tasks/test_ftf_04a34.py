@@ -168,6 +168,7 @@ FILES: dict[str, bytes] = {
     "services/static/package.json": json.dumps(
         {"name": "static", "dependencies": {"left-pad": "1"}}
     ).encode(),
+    "services/static/index.js": b"module.exports = () => 1;\n",
     "services/static/app.py": b"def handle(x):\n    return x\n",
     "README.md": b"# monorepo\n",
 }
@@ -275,6 +276,7 @@ def _dump() -> int:
     return 0
 
 
+HASH_SEEDS = ("1", "2", "3", "7", "4242", "99999")
 FORBIDDEN_SELECTION_KEYS = {
     "selected",
     "is_selected",
@@ -330,7 +332,7 @@ def main() -> int:
         dirty = _discover(_refs(repo))
 
     # Re-derive the baseline under two other hash seeds (fresh interpreters).
-    seeded = [_under_hash_seed(seed) for seed in ("1", "4242")]
+    seeded = [_under_hash_seed(seed) for seed in HASH_SEEDS]
 
     entrypoints: list[dict[str, Any]] = first["entrypoints"]
     by_key = {(str(e["relative_path"]), str(e["function_name"])): e for e in entrypoints}
@@ -358,7 +360,7 @@ def main() -> int:
         "FTF-04A34-A1",
         "framework markers and languages are exactly the three products' own",
         first["markers"] == ["express", "fastapi", "flask"]
-        and first["languages"] == ["python", "typescript"],
+        and first["languages"] == ["javascript", "python", "typescript"],
     )
 
     # A2 -- deterministic evidence, independent of input order and hash seed.
@@ -398,7 +400,7 @@ def main() -> int:
             ("services/support/agent.py", "escalate", 12, "litellm.completion"),
         ],
     )
-    for seed, run in zip(("1", "4242"), seeded, strict=True):
+    for seed, run in zip(HASH_SEEDS, seeded, strict=True):
         check(
             "FTF-04A34-A2",
             f"discovery under PYTHONHASHSEED={seed} is identical to the baseline run",
