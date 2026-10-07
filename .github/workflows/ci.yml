@@ -370,7 +370,7 @@ jobs:
   mutation-gate:
     # Law 1 made mechanical for relay submissions: every production function a
     # `[relay]` PR changes (under product_truth_check.SOURCE_ROOTS) is broken one
-    # small way at a time (scripts/mutation_gate.py, operators M1-M9) and the PR's
+    # small way at a time (scripts/mutation_gate.py, operators M1-M10) and the PR's
     # own tests/tasks tests are re-run; any mutant they leave GREEN fails this job
     # and is listed, so the relay sees every surviving mutant before L2 review
     # instead of one returned round at a time. Unit tests only for now: no

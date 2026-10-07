@@ -11,7 +11,7 @@ under product_truth_check.SOURCE_ROOTS) plus two test scripts, and shows:
   mutants and the gate exits 1, naming them;
 * a STRONG test (pins every guard, every returned field, the exact-match
   comparison) kills every mutant and the gate exits 0;
-* every operator M1-M9 produces at least one mutant on suitable code, each
+* every operator M1-M10 produces at least one mutant on suitable code, each
   mutant is one localized edit that still parses;
 * diff mode mutates only functions overlapping the changed hunks, never a
   test file or a file outside SOURCE_ROOTS;
@@ -74,6 +74,16 @@ class Result:
     note: str = "none"
 
 
+_NORMALIZERS = {
+    "trim": lambda v: v.strip(),
+    "fold": str.casefold,
+}
+
+
+def normalize(kind, value):
+    return _NORMALIZERS[kind](value)
+
+
 def _validate_name(name):
     if not isinstance(name, str) or not name:
         raise AccessError("name required")
@@ -100,7 +110,7 @@ GUARD = GUARD_BASE.replace(
 TEST_PRELUDE = """import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "apps" / "api"))
-from guard import AccessError, Result, _validate_name, check_access
+from guard import AccessError, Result, _validate_name, check_access, normalize
 
 def raises(fn, *a):
     try:
@@ -135,6 +145,8 @@ assert check_access("bob", "r", R, False) == {"ok": False, "name": "bob", "level
 assert check_access("bob", "r", R, True) == Result(ok=True, name="bob", level=1, note="role r")
 assert check_access("Admin", "r", R, True) == Result(True, "Admin", 1, "role r")
 assert check_access(" admin", "r", R, True) == Result(True, " admin", 1, "role r")
+assert normalize("trim", " a ") == "a"
+assert normalize("fold", "Stra\u00dfe") == "strasse"
 """
 )
 
@@ -266,6 +278,16 @@ def test_every_operator_generates_a_localized_parseable_mutant() -> None:
     )
     check(
         CID,
+        "M10 reaches a lambda in a module-level table (.strip() -> .lstrip())",
+        any("<lambda@" in m.function and "lstrip" in m.summary for m in by_op["M10"]),
+    )
+    check(
+        CID,
+        "M10 swaps a bare str.casefold table entry for str.lower",
+        any("str.casefold -> str.lower" in m.summary for m in by_op["M10"]),
+    )
+    check(
+        CID,
         "M9 also normalizes the probe of a membership test (`role not in roles`)",
         any("role -> role.strip().lower()" in s for s in summaries["M9"]),
     )
@@ -308,7 +330,7 @@ def test_strong_test_kills_every_mutant(repo: Path) -> None:
     check(CID, "strong test: every mutant KILLED", bool(statuses) and set(statuses) == {"KILLED"})
     check(
         CID,
-        "strong run covered all nine operators",
+        "strong run covered all ten operators",
         {m["operator"] for m in data.get("mutants", [])} == set(mg.OPERATORS),
     )
     check(
@@ -368,15 +390,26 @@ def test_allowlist_suppresses_exactly_its_entries(repo: Path) -> None:
         "full allowlist: survivors still reported, marked allowlisted",
         len(marked) == len(survivors) > 0 and "SURVIVED-allowlisted" in out,
     )
-    allow.write_text(json.dumps({"entries": entries[1:]}), encoding="utf-8")
+
+    # An entry keys on (file, function, operator, line); two survivors can share one key.
+    def key(e: dict) -> tuple:
+        return (e["file"], e["function"], e["operator"], e["line"])
+
+    dropped = key(entries[0])
+    allow.write_text(
+        json.dumps({"entries": [e for e in entries if key(e) != dropped]}), encoding="utf-8"
+    )
     code, _, data3 = run_gate(repo, *FILES, "--test", WEAK, "--allowlist", str(allow))
     unlisted = [
         m for m in data3.get("mutants", []) if m["status"] == "SURVIVED" and not m["allowlisted"]
     ]
+    expected = [m for m in survivors if key(m) == dropped]
     check(
         CID,
-        "partial allowlist: the one unlisted survivor still fails the gate",
-        code == 1 and len(unlisted) == 1,
+        "partial allowlist: exactly the survivors of the dropped entry still fail the gate",
+        code == 1
+        and len(unlisted) == len(expected) >= 1
+        and {key(m) for m in unlisted} == {dropped},
     )
     allow.write_text(json.dumps({"entries": [dict(entries[0], reason="")]}), encoding="utf-8")
     code, out, _ = run_gate(repo, *FILES, "--test", WEAK, "--allowlist", str(allow))
