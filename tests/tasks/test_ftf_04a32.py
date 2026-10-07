@@ -45,10 +45,12 @@ sys.path.insert(0, str(API_ROOT))
 from app.target_connectors import local_repository_connector as _connector  # noqa: E402
 from app.target_connectors.local_repository_connector import (  # noqa: E402
     ConcurrentModificationError,
+    DangerousGitConfigError,
     LocalRepositoryCapture,
     LocalRepositoryConnectorError,
     NotAGitRepositoryError,
     PathAllowlistError,
+    PopulatedSubmoduleError,
     capture_local_repository,
 )
 
@@ -479,6 +481,121 @@ def test_n2_real_concurrent_writer_never_yields_torn_snapshot() -> None:
 
 
 # ------------------------------------------------------------------------ N3
+
+
+def _wrap(name: str, hook: Callable[[Path], object]) -> Callable[[], None]:
+    """Run a REAL filesystem/git action just before the named connector probe."""
+    original = getattr(_connector, name)
+
+    def wrapper(root: Path, *args: object, **kwargs: object) -> object:
+        hook(root)
+        return original(root, *args, **kwargs)
+
+    setattr(_connector, name, wrapper)
+    return lambda: setattr(_connector, name, original)
+
+
+def test_n2_same_length_edit_during_archive_refused() -> None:
+    def body(tmp: Path) -> None:
+        repo = _new_checkout(tmp)
+        (repo / "a.txt").write_text("dirty1\n")
+        restore = _inject_before_archive(lambda r: (r / "a.txt").write_text("dirty2\n"))
+        try:
+            check(
+                "FTF-04A32-N2",
+                "a same-length in-place edit is refused",
+                _refused(
+                    lambda: capture_local_repository(repo, [tmp]), ConcurrentModificationError
+                ),
+            )
+        finally:
+            restore()
+
+    _with_tmp(body)
+
+
+def test_n2_clean_capture_drift_refused() -> None:
+    def untracked(repo: Path) -> None:
+        (repo / "late.txt").write_text("x\n")
+
+    def empty_commit(repo: Path) -> None:
+        _git(repo, "commit", "-q", "--allow-empty", "-m", "moved")
+
+    for label, hook in (("untracked file", untracked), ("HEAD moved", empty_commit)):
+
+        def body(tmp: Path, label: str = label, hook: Callable[[Path], object] = hook) -> None:
+            repo = _new_checkout(tmp)
+            restore = _wrap("_git_head_tree_hash", hook)
+            try:
+                check(
+                    "FTF-04A32-N2",
+                    f"clean capture refused when {label} appears mid-capture",
+                    _refused(
+                        lambda: capture_local_repository(repo, [tmp]), ConcurrentModificationError
+                    ),
+                )
+            finally:
+                restore()
+
+        _with_tmp(body)
+
+
+def test_n2_dirty_capture_status_or_head_drift_refused() -> None:
+    def restage(repo: Path) -> None:  # status " M" -> "M ", manifest unchanged
+        _git(repo, "add", "a.txt")
+
+    def empty_commit(repo: Path) -> None:  # HEAD moves, status and manifest unchanged
+        _git(repo, "commit", "-q", "--allow-empty", "-m", "moved")
+
+    for label, hook in (("index restaged", restage), ("HEAD moved", empty_commit)):
+
+        def body(tmp: Path, label: str = label, hook: Callable[[Path], object] = hook) -> None:
+            repo = _new_checkout(tmp)
+            (repo / "a.txt").write_text("dirty\n")
+            restore = _inject_before_archive(hook)
+            try:
+                check(
+                    "FTF-04A32-N2",
+                    f"dirty capture refused when {label} mid-capture",
+                    _refused(
+                        lambda: capture_local_repository(repo, [tmp]), ConcurrentModificationError
+                    ),
+                )
+            finally:
+                restore()
+
+        _with_tmp(body)
+
+
+def test_n3_dangerous_filter_driver_and_populated_submodule_refused() -> None:
+    def body(tmp: Path) -> None:
+        repo = _new_checkout(tmp)
+        _git(repo, "config", "filter.evil.clean", "true")
+        before = _fingerprint(repo)
+        check(
+            "FTF-04A32-N3",
+            "a repo-defined filter driver is refused before git can run it",
+            _refused(lambda: capture_local_repository(repo, [tmp]), DangerousGitConfigError),
+        )
+        check("FTF-04A32-N3", "refusal wrote nothing to the target", _fingerprint(repo) == before)
+
+        repo2 = _new_checkout(tmp, "repo2")
+        sub = _new_checkout(repo2, "sub")
+        _git(
+            repo2,
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            f"160000,{_git(sub, 'rev-parse', 'HEAD')},sub",
+        )
+        _git(repo2, "commit", "-q", "-m", "gitlink")
+        check(
+            "FTF-04A32-N3",
+            "a populated submodule is refused",
+            _refused(lambda: capture_local_repository(repo2, [tmp]), PopulatedSubmoduleError),
+        )
+
+    _with_tmp(body)
 
 
 def test_n3_unusable_roots_refused_without_writes() -> None:
