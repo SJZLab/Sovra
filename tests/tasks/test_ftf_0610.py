@@ -505,7 +505,7 @@ def test_case_inputs_fail_closed() -> None:
     check(
         CID,
         "malformed backend record is refused",
-        raises(lambda: grade_refusal_case("c", e, b, ["nope"])),
+        raises(lambda: grade_refusal_case("c", e, b, list[Any](["nope"]))),
     )
     check(
         CID,
@@ -565,7 +565,11 @@ def test_suite_inputs_fail_closed() -> None:
     check(CID, "an empty suite is refused", raises(lambda: grade_refusal_suite([])))
     check(CID, "a string suite is refused", raises(lambda: grade_refusal_suite("ab")))
     check(CID, "None suite is refused", raises(lambda: grade_refusal_suite(None)))
-    check(CID, "non-result entry is refused", raises(lambda: grade_refusal_suite([*good, "x"])))
+    check(
+        CID,
+        "non-result entry is refused",
+        raises(lambda: grade_refusal_suite([*good, *list[Any](["x"])])),
+    )
     check(
         CID,
         "duplicate case_key is refused",
