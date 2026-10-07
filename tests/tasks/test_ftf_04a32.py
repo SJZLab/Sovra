@@ -704,6 +704,108 @@ def test_n3_unreadable_root_refused() -> None:
     _with_tmp(body)
 
 
+def test_n4_walker_symlink_and_read_edges() -> None:
+    """Each walker branch gets its own case so a fault in one cannot hide
+    behind another refusal (FTF-04A32-N1/N3 clause-level faults)."""
+
+    def dirty_repo(allowed: Path) -> Path:
+        repo = _new_checkout(allowed)
+        (repo / "a.txt").write_text("dirty\n")
+        return repo
+
+    def body(tmp: Path) -> None:
+        outside = tmp / "outside"
+        outside.mkdir()
+        (outside / "secret.txt").write_text("TOP SECRET\n")
+
+        # Dangling symlink: refused, not skipped.
+        a = tmp / "a"
+        a.mkdir()
+        repo = dirty_repo(a)
+        (repo / "dangling").symlink_to(repo / "missing-target")
+        check(
+            "FTF-04A32-N1",
+            "dangling symlink inside the repo is refused",
+            _refused(lambda: capture_local_repository(repo, [a]), PathAllowlistError),
+        )
+
+        # File symlink alone escaping the root.
+        b = tmp / "b"
+        b.mkdir()
+        repo = dirty_repo(b)
+        (repo / "filelink").symlink_to(outside / "secret.txt")
+        check(
+            "FTF-04A32-N1",
+            "file symlink escaping the root is refused on its own",
+            _refused(lambda: capture_local_repository(repo, [b]), PathAllowlistError),
+        )
+
+        # Directory symlink alone escaping the root.
+        c = tmp / "c"
+        c.mkdir()
+        repo = dirty_repo(c)
+        (repo / "dirlink").symlink_to(outside, target_is_directory=True)
+        check(
+            "FTF-04A32-N1",
+            "directory symlink escaping the root is refused on its own",
+            _refused(lambda: capture_local_repository(repo, [c]), PathAllowlistError),
+        )
+
+        # In-root symlink cycle terminates and is walked exactly once.
+        d = tmp / "d"
+        d.mkdir()
+        repo = dirty_repo(d)
+        (repo / "loop").symlink_to(repo, target_is_directory=True)
+        cycle_ok = True
+        try:
+            cap = capture_local_repository(repo, [d])
+        except RecursionError:
+            cycle_ok = False
+        except Exception:
+            cycle_ok = False
+        else:
+            paths = [e.relative_path for e in cap.manifest_entries]
+            cycle_ok = len(paths) == len(set(paths)) and "a.txt" in paths
+        check("FTF-04A32-N1", "in-root symlink cycle terminates without duplicates", cycle_ok)
+
+        # Only the exact top-level `.git` is excluded: look-alike names are content.
+        e = tmp / "e"
+        e.mkdir()
+        repo = dirty_repo(e)
+        (repo / ".GIT").mkdir()
+        (repo / ".GIT" / "x.txt").write_text("upper\n")
+        (repo / " .git").mkdir()
+        (repo / " .git" / "y.txt").write_text("space\n")
+        cap = capture_local_repository(repo, [e])
+        name_set = {entry.relative_path for entry in cap.manifest_entries}
+        check(
+            "FTF-04A32-A2",
+            "look-alike .git names are captured; the real .git is not",
+            {".GIT/x.txt", " .git/y.txt", "a.txt"} <= name_set
+            and not any(p.startswith(".git/") for p in name_set),
+        )
+
+        if os.geteuid() != 0:  # root bypasses mode bits; CI runs unprivileged
+            f = tmp / "f"
+            f.mkdir()
+            repo = dirty_repo(f)
+            (repo / "secret.bin").write_text("x\n")
+            (repo / "secret.bin").chmod(0o000)
+            try:
+                check(
+                    "FTF-04A32-N3",
+                    "an unreadable file fails with a connector error",
+                    _refused(
+                        lambda: capture_local_repository(repo, [f]),
+                        LocalRepositoryConnectorError,
+                    ),
+                )
+            finally:
+                (repo / "secret.bin").chmod(0o644)
+
+    _with_tmp(body)
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
