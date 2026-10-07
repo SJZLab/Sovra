@@ -24364,3 +24364,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 - FTF-1807 round 4 (PR #511, merge 42fd82c) was merged at 2026-10-06T20:45Z and never verified. A verifier is now
   running on it, together with FTF-0608-F1 round 2 (PR #539, merge db4cb88).
 - **FTF-0608-F1: CERTIFIED** (round 2, PR #539, merge db4cb88). Every round-1 finding is RED, and mutation is 108/108.
+- **FTF-1807: CERTIFIED** (round 4, PR #511, merge 42fd82c). Runbook paragraphs are pinned by literal hashes, 43/44
+  doc faults are RED (the GREEN one is a whitespace-only rewrap), and 29/32 checker faults are RED (the 3 GREEN ones
+  are equivalent). Status: 117/302 certified · 45 product-true.

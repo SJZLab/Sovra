@@ -10135,6 +10135,21 @@ PR is not landed by the next certifier shift.
   - the first matched_order_index wins;
   - the order of violations and mismatches.
 
+## FTF-1807 — LiteLLM outage runbook — CERTIFIED (2026-10-07)
+- Criterion: FTF-1807. Round 4 (tests only): PR #511, merge commit 42fd82c331fb91cccd7ef719bc1a0b7c133ba786 (head
+  `8c571ca`), merged 2026-10-06T20:45Z. This closes rounds 1–4. Producer: `session_011orXE4QeDXVFKcBi6r8awV`.
+  CI step: `uv run python3 tests/documentation/test_ftf_1807.py` (ci.yml:339).
+- Verifier (Sonnet): every paragraph of docs/operations/litellm_outage_runbook.md sections 0–8 (29 paragraphs) is
+  pinned by literal sha256 values; the pins are not computed from the document, and tampering one hash is RED.
+- 43/44 meaning-changing doc faults are RED, including the 15 round-3 inversions, emptied sections 3 and 5, "is
+  dropped entirely"→"is applied", table rows, renumbered steps and count-keeping heading renames. The one GREEN fault
+  is a pure line rewrap inside a paragraph, which the test deliberately normalizes.
+- 29/32 checker faults are RED. The three GREEN ones are equivalent or redundant (8-hex-char hash compare, a looser
+  step regex still caught by the prefix check, and a heading check that the dedicated tests also cover).
+- Not product-true: it is a documentation criterion with no proving_symbol.
+- Same-class follow-up (from round 3, still open): audit the other tests/documentation runbook tests for the
+  phrase-blacklist weakness.
+
 ## FTF-0608-F1 — Tool-sequence grader follow-up tests — CERTIFIED (2026-10-07)
 - Round 2 (tests only): PR #539, merge commit db4cb881bf8b5a320cc6b9639a457172ec687b2c (head `2cb7e13`). This closes
   rounds 1–2. Producer: `session_017ufim7cSr3s5BjwvHDqaFX`. CI: 48/48 passed.
