@@ -6104,16 +6104,16 @@ FTF-04A31:
   proving_symbol: ''
   proving_test: ''
 FTF-04A32:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Local repository integration test
   evidence_hash: ''
-  implementation_state: ABSENT
+  implementation_state: IMPLEMENTED
   notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01, FTF-04A06,
     FTF-H007
-  proof_state: UNPROVEN
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_04a32.py
 FTF-04A33:
   certification_state: NONE
   criticality: MUST
