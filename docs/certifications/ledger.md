@@ -10135,6 +10135,17 @@ PR is not landed by the next certifier shift.
   - the first matched_order_index wins;
   - the order of violations and mismatches.
 
+## FTF-0608-F1 — Tool-sequence grader follow-up tests — RETURNED, round 1 (2026-10-07)
+- PR #536, merge commit 2c7707af9851ebb978e0f3135634dd01bb3dc7e5 (head `f0139cb`). Producers:
+  `session_01LAyzMQEaW7t8CBQgqQ1KEh` and `session_01C5wcUXBr7uqDDpbisFdZrG` (main merge). CI: all checks passed.
+- Verifier: 64 faults injected into workers/evaluation/tool_sequence_grader.py. All six DoD behaviours are pinned.
+  The whole-file mutation gate kills 108/108.
+- Two non-equivalent faults stay GREEN across the whole file:
+  - (A) Dropping the outer bare-str guard on allowed_orders or must_precede. The tests only use "ab", which the
+    inner `_names` check also refuses; with the guard gone, `""` is accepted as "no constraint".
+  - (B) Mismatches as a stable partition with missing keys first. The order [mismatched, missing] is never tested.
+- Returned as QUEUE item 0c (tests only).
+
 ## FTF-0604 — Exact-match grader — CERTIFIED (2026-10-07)
 - Criterion: FTF-0604. Round 3 (tests only): PR #535, merge commit def15b04f8aa732dc1859423e2ec33e5c4907688 (head `125cf8e`). This closes rounds 1–3.
   Production code is from rounds 1–2 (#519, #531). Producer: `session_01LAyzMQEaW7t8CBQgqQ1KEh`. CI: 48/48 passed.
