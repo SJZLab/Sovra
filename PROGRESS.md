@@ -29939,3 +29939,4 @@ Control-plane L2 certification and the L4 gate (101/301 certified, unchanged). S
 per this list's own rule; **FTF-0510, FTF-04A18 and FTF-1807 remain the next-priority items** per the Active
 list's own stated order. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged: "None currently").
 `BLOCKER.md` unchanged — no live entries.
+
