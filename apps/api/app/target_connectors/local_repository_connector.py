@@ -617,6 +617,14 @@ def _build_archive(root: Path, entries: list[ManifestEntry]) -> bytes:
     with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as archive:
         for entry in entries:
             data = (root / entry.relative_path).read_bytes()
+            # A file edited between the manifest walk and this read (an
+            # already-dirty or untracked file keeps the same `git status`
+            # line) would otherwise yield a torn snapshot: archive bytes that
+            # disagree with the manifest/`tree_hash` (FTF-04A32 N2).
+            if len(data) != entry.size or hashlib.sha256(data).hexdigest() != entry.sha256:
+                raise ConcurrentModificationError(
+                    f"{root}: {entry.relative_path} changed while the archive was being built"
+                )
             info = tarfile.TarInfo(name=entry.relative_path)
             info.size = len(data)
             info.mtime = 0
@@ -792,6 +800,12 @@ def capture_local_repository(
     if dirty_after != dirty_before or head_after != commit_sha:
         raise ConcurrentModificationError(
             f"{real_root} changed while this dirty-tree capture was in flight"
+        )
+    # `git status` text cannot see a content edit to an already-dirty or
+    # untracked file; re-walking the content manifest can (FTF-04A32 N2).
+    if _manifest_hash(_iter_repository_files(real_root)) != tree_hash:
+        raise ConcurrentModificationError(
+            f"{real_root} content changed while this dirty-tree capture was in flight"
         )
 
     return LocalRepositoryCapture(
