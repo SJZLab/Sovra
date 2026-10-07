@@ -446,6 +446,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0308_p1.py
       - name: FTF-0602-P1 negative-test proof (evaluation cases -- migration SQL + RLS/GRANT shape + fault injection, real routes over the real store on SQLite, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0602_p1.py
+      - name: FTF-0501-P1 negative-test proof (dataset uploads -- migration SQL + RLS/GRANT/freeze-trigger shape + fault injection, store on SQLite, read routes, mounted app, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0501_p1.py
       - name: FTF-0103A negative-test proof (live session principal + Membership -- every /api/v1 route wired to the real resolver/role lookup, fail-closed resolver, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0103a.py
       - name: FTF-1807 negative-test proof (LiteLLM outage runbook -- doc/code fidelity, no DB required)
@@ -2593,6 +2595,49 @@ jobs:
       - name: Prove the real evaluation case evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0602_p1_evaluation_cases.py
 
+  dataset-upload-integration:
+    # FTF-0501-P1: real Postgres evidence for dataset version + upload-session
+    # persistence (migration 0024): upgrade/downgrade/upgrade with one head,
+    # ENABLE+FORCE RLS and a non-allow-all tenant policy on both tables, the
+    # app role's grants (no DELETE, no table UPDATE, column-limited session
+    # UPDATE), the store lifecycle with every refusal writing nothing, raw
+    # sovra_app SQL refused by the database (dataset on an open / rejected /
+    # expired session, partial size, oversize, hash or content-type mismatch,
+    # finalized after expiry, immutable declared values, a referenced
+    # verified session frozen, raw cross-tenant INSERT, DELETE), and the two
+    # read routes on a real uvicorn server (held-out hidden from
+    # ml_engineer, 404 bodies identical to a random id, pagination, no
+    # storage field in any response) --
+    # tests/integration/test_ftf_0501_p1_dataset_uploads.py.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' dataset-upload-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0501p1
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0501p1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0501p1
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real dataset upload evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_0501_p1_dataset_uploads.py
+
   live-auth-path-integration:
     # FTF-0103A: real OIDC login -> real API call. A real idpyoidc OpenID
     # Provider (FTF-0101's harness), the REAL app.main.create_app() served
@@ -2817,6 +2862,7 @@ jobs:
       - organization-gateway-policy-integration
       - model-catalog-mapping-integration
       - evaluation-case-integration
+      - dataset-upload-integration
       - live-auth-path-integration
       - network-policy-enforcement-integration
       - candidate-selection-integration
