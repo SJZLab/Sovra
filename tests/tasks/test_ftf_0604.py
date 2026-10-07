@@ -391,6 +391,29 @@ def test_rejects_unknown_whitespace_policy() -> None:
         )
 
 
+def test_policy_names_are_matched_exactly_not_normalized() -> None:
+    """A padded or re-cased policy name is an unknown policy: it must raise
+    ExactMatchGraderError (never a KeyError, never be silently accepted)."""
+    for bad in (" case_sensitive", "case_sensitive ", "CASE_SENSITIVE", "Case_Insensitive"):
+        try:
+            grade_exact_match("a", ["a"], case_policy=bad, whitespace_policy=WHITESPACE_EXACT)
+        except ExactMatchGraderError:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            check("FTF-0604", f"case_policy {bad!r} raised {type(exc).__name__}", False)
+        else:
+            check("FTF-0604", f"case_policy {bad!r} must be refused", False)
+    for bad in (" exact", "strip ", "STRIP", "Collapse"):
+        try:
+            grade_exact_match("a", ["a"], case_policy=CASE_SENSITIVE, whitespace_policy=bad)
+        except ExactMatchGraderError:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            check("FTF-0604", f"whitespace_policy {bad!r} raised {type(exc).__name__}", False)
+        else:
+            check("FTF-0604", f"whitespace_policy {bad!r} must be refused", False)
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
