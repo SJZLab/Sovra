@@ -543,8 +543,13 @@ def _iter_repository_files(root: Path) -> list[ManifestEntry]:
             return
         visited_directories.add(real_directory)
 
-        with os.scandir(directory) as scan:
-            children = sorted(scan, key=lambda e: e.name)
+        try:
+            with os.scandir(directory) as scan:
+                children = sorted(scan, key=lambda e: e.name)
+        except OSError as exc:
+            raise LocalRepositoryConnectorError(
+                f"cannot read directory {directory}: {exc}"
+            ) from exc
 
         for entry in children:
             if directory == root and entry.name == _GIT_DIRECTORY_NAME:
@@ -577,7 +582,12 @@ def _iter_repository_files(root: Path) -> list[ManifestEntry]:
             if not target_for_read.is_file():
                 continue
 
-            data = target_for_read.read_bytes()
+            try:
+                data = target_for_read.read_bytes()
+            except OSError as exc:
+                raise LocalRepositoryConnectorError(
+                    f"cannot read file {entry_path}: {exc}"
+                ) from exc
             relative = entry_path.relative_to(root).as_posix()
             mode = target_for_read.stat().st_mode
             entries.append(
