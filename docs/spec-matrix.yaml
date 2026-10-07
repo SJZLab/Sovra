@@ -5730,16 +5730,39 @@ FTF-04A20:
   proving_symbol: build_manifest_evidence_router
   proving_test: tests/tasks/test_ftf_04a20.py
 FTF-04A21:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Manifest review/edit UI with per-field evidence
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01, FTF-04A18,
-    FTF-04A19, FTF-04A20
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
+    FTF-04A18, FTF-04A19, FTF-04A20 (all CERTIFIED). Real component
+    apps/web/components/target-application/manifest_review_edit_ui_with_per_field_evidence.tsx,
+    first live caller of the certified /manifests (FTF-04A19) and /manifests/{id}/evidence
+    (FTF-04A20) routes; no backend change. Acceptance clause 1 ("field evidence/diff/override and
+    persist draft"): each content field lists exactly the evidence rows the live route returned for
+    its leading field_path segment (a field with none says "No recorded evidence"), an edited field
+    renders a line diff against the server value and an "overridden" label, and Save draft PATCHes
+    only the changed fields. Negative acceptance: unsaved edits are mirrored to browser storage and
+    restored on remount (a page refresh does not lose work); a restored draft whose server base
+    changed is a conflict resolved only by explicit keep-mine/take-server's; Lock stays disabled
+    until status is review_required, no field is unsaved/invalid/conflicting, the three
+    CRITICAL_LOCK_FIELDS are present, and current_model_binding_json is resolved and carries an
+    explicit role from Section 0.12's five roles (chosen by the user, stored as the binding's
+    `role` key, never guessed from a LiteLLM alias). The backend's own lock checks remain the
+    authoritative enforcement. Disclosed: the `role` key inside current_model_binding_json is this
+    task's own UI-level convention (the binding JSON is a free object in the certified schema, and
+    FTF-04A12 explicitly defers role assignment); a Control-plane decision on a dedicated persisted
+    role field would supersede it. No Next.js app/ page tree exists yet (FTF-H029), so this is a
+    DOM-level Vitest + React Testing Library + jsdom test with a URL-routed fetch fake, not a
+    browser E2E -- Law 6 (reachability from /) stays disclosed BLOCKED on FTF-H029;
+    proving_symbol left blank for the same reason (no live caller from a page yet). The mutation
+    gate only mutates Python files, so it has no target here; the fault -> RED table in the
+    submission file is the substitute evidence. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: apps/web/tests/ftf_04a21.spec.ts
 FTF-04A22:
   certification_state: NONE
   criticality: MUST
