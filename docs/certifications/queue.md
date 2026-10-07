@@ -24415,3 +24415,18 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
   merged it at 09:41Z (PROVISIONAL). Dispatcher v4 lane prompts now require "never end the session with your own
   green PR left unmerged". Dispatcher v2 (425k context) was replaced by v4, session_01RE1DMhasFbvrsPaUS5hHJm, with
   triggers B trig_016YdW3L5F5Gdy15npg9ktM6 and C trig_01Rc1C17Ld1K7Mg4oGyPLXAh; v2 and v3 are disabled.
+
+## 2026-10-07T11:00Z — Control plane: FTF-04A34 and FTF-04A21-F1 CERTIFIED; FTF-04A32 returned; Law 16 follow-up
+- **FTF-04A34: CERTIFIED** (round 2, #552, merge 1af2d1b). 18/19 round-1 faults are RED; the remaining one (a
+  select body) is disclosed as covered by the 04A18 DB integration test.
+- **FTF-04A21-F1: CERTIFIED** (#554, merge 07fbb5c).
+- **FTF-04A32: NOT CERTIFIED** (#544, merge c3a6cae; producer session_01PLmwxLdJyZhrxDMoF1W91q).
+  - Production code is correct; 53 faults were run. Mutation (diff mode) is 66/68; the 2 survivors are
+    root-only artefacts of OSError wrappers that are RED when the test runs unprivileged.
+  - Non-equivalent GREEN faults inside N1/N2/A3: F09 prefix-sibling symlink; F19 same-length content blind (also
+    after archive); F20 rename blind; F18 chmod blind (plus F15/F16 mode asserts). Exact tests: QUEUE item 0b.
+- **Law 16 finding:** dirty snapshots include git-ignored files (`.env` was captured). The Control-plane decision
+  is to use git's own file set (cached plus others, minus ignored). This is follow-up FTF-04A06-F1 in the Backlog.
+- All three merges happened about 40 s after a green ci-verdict. Lanes FTF-0501 and FTF-0602 were parked as
+  BLOCKED_DEPENDENCY by the relay (missing schema/contract prerequisites, the same pattern as FTF-0308). Backlog
+  refilled with the graders FTF-0605, FTF-0607 and FTF-0609 (pure functions, no schema dependency).

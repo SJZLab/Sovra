@@ -10135,6 +10135,26 @@ PR is not landed by the next certifier shift.
   - the first matched_order_index wins;
   - the order of violations and mismatches.
 
+## FTF-04A34 — Monorepo multi-agent discovery test — CERTIFIED (2026-10-07)
+- Criterion: FTF-04A34. Round 2 (tests only): PR #552, merge commit 1af2d1bde8c24b488e3c402ee229cd6f33a43f16 (head
+  `483adae`). This closes rounds 1–2, and round 1 is #549. Producers: `session_01NbejJngKwSDXx654Aigxou` (r1) and
+  `session_01QeJNarWAKTeSWwsfuVC3dw` (r2). It merged on a green ci-verdict.
+- Verifier (Sonnet):
+  - 18/19 round-1 GREEN faults are RED: prompt template leak; is_default and nested selected; unsorted markers,
+    languages and paths under PYTHONHASHSEED; neighbour inheritance in Python and TS; second TS agent per file;
+    entrypoint line and call; spurious and missed markers; commit sha form.
+  - 5/5 round-1 RED spot checks are still RED.
+  - All DoD clauses (1)–(5) are implemented.
+  - The test is real: real git, real modules, no stubs, literal expectations.
+- Disclosed limit: a `select_*` body that ignores `candidate_id` is not caught here (only the arity is). The behavioural
+  coverage is the DB-backed tests/integration/test_ftf_04a18_candidate_selection.py, which a follow-up check confirms.
+
+## FTF-04A21-F1 — Locked manifest ignores a restored draft — CERTIFIED (2026-10-07)
+- Follow-up test only: PR #554, merge commit 07fbb5c71a6fae7ee9645fe8b2a2f45a8a61eda7. Producer:
+  `session_01KGUZmUdZcoPqm3AmkdVzLV`. Production code is unchanged.
+- Verifier: R3 (Save enabled on a locked manifest) is RED, plus 7 lock and read-only variants. The earlier C6, P7, S8,
+  D3, E1, S1, C1 and R1 faults are still RED, and 39/39 specs pass.
+
 ## FTF-04A21 — Manifest review/edit UI with per-field evidence — CERTIFIED (2026-10-07)
 - Criterion: FTF-04A21. Round 2 (tests only): PR #550, merge commit 8e02372950d2f6fbd5d99f6af0cb898fdc2b1d2a (head
   `8790a01`). This closes rounds 1–2, and round 1 is PR #542 (merge 5db0c2d). Producers:
