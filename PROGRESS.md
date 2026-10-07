@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-07T12:00Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-07T13:40Z. Source: `python3 scripts/status.py` on main.
 - **Status: 120/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
 - **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902,
@@ -10,9 +10,10 @@ Updated: 2026-10-07T12:00Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
-- **Nothing returned or under verification.** FTF-1807 (runbook, round 4) and follow-up FTF-0608-F1 are CERTIFIED. Backlog refilled with 5
-  dependency-ready tasks (FTF-0308, 04A21, 04A31, 04A32, 04A34). The three graders (exact-match, tool-name, tool-sequence)
-  are certified. Graders are now checked against one shared checklist.
+- **Returned (2026-10-07T13:40Z):** eight items. FTF-0515 and FTF-04A22 go to round 3; FTF-04A06-F1, FTF-0605,
+  FTF-0607, FTF-0609, FTF-0610 and FTF-0611 go to round 2. All were green, but bullets in their requirements had no proving test.
+  Nothing is under verification. Parked features FTF-0308, FTF-0501 and FTF-0602 now have
+  prerequisite slices queued (FTF-0308-P1, FTF-0602-P1, FTF-0501-P1).
 - **Product-true 27 → 34 → 45:** an independent verifier proved 7 certified foundations live end to end: config, tenant
   context, RBAC, audit, tenant-scoped queries, secret refs and the outbound guard. The product-truth gate was also
   tightened (#514), so a symbol only counts when real code calls it, not when it is merely mentioned.
