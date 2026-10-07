@@ -1129,6 +1129,24 @@ def test_f1_numeric_bound_messages_never_echo_the_candidate() -> None:
                 CID, f"f1-2 {keyword} message omits the candidate", str(secret) not in issue.message
             )
             check(CID, f"f1-2 {keyword} keyword names the bound", issue.keyword == keyword)
+    # exclusiveMinimum/exclusiveMaximum fail on a candidate equal to the bound (unlike
+    # minimum/maximum, which accept equality) -- the bound and candidate are the same
+    # value here, so an exact-message match is the only way to tell "discloses the bound
+    # (by design)" apart from "also discloses the raw candidate" (an additive leak).
+    for keyword, template in (
+        ("exclusiveMinimum", "number is not above {bound}"),
+        ("exclusiveMaximum", "number is not below {bound}"),
+    ):
+        schema = {keyword: secret}
+        issues = grade(str(secret), schema).issues
+        check(CID, f"f1-2f2 {keyword} equal-to-bound candidate fails", len(issues) == 1)
+        for issue in issues:
+            check(
+                CID,
+                f"f1-2f2 {keyword} message is exactly the templated bound text",
+                issue.message == template.format(bound=secret),
+            )
+            check(CID, f"f1-2f2 {keyword} keyword names the bound", issue.keyword == keyword)
 
 
 def test_f1_same_path_issues_are_ordered_by_keyword_then_message() -> None:
