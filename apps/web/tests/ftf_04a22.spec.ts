@@ -609,3 +609,293 @@ test("URL helpers are reused from the real FTF-04A19/FTF-0407 contract, not rein
   );
   expect(requirementsUrl(API_BASE, ORG_ID, PROJECT_ID)).toBe(`${API_BASE}${REQUIREMENTS_PATH}`);
 });
+
+// -- Round 2: lossless save, raw list typing, error paths ------------------
+
+function typeInto(testId: string, value: string) {
+  fireEvent.change(screen.getByTestId(testId), { target: { value } });
+}
+
+function lastPatchBody(): Record<string, any> {
+  const patches = callsOf("PATCH", MANIFEST_PATH);
+  return patches[patches.length - 1].body as Record<string, any>;
+}
+
+test("D1: a list input keeps the raw typed text, so 'en,' then 'en,fr' works", async () => {
+  await renderLoaded();
+  const input = () => screen.getByTestId("mandate-field-supported_languages") as HTMLInputElement;
+  typeInto("mandate-field-supported_languages", "en,");
+  expect(input().value).toBe("en,");
+  typeInto("mandate-field-supported_languages", "en, ");
+  expect(input().value).toBe("en, ");
+  typeInto("mandate-field-supported_languages", "en,fr");
+  expect(input().value).toBe("en,fr");
+  fireEvent.click(screen.getByTestId("mandate-save-button"));
+  await waitFor(() => expect(callsOf("PATCH").length).toBe(1));
+  expect(lastPatchBody().mandate_json.supported_languages).toEqual(["en", "fr"]);
+});
+
+test("a list with an empty item ('en,,fr') saves as ['en','fr']", async () => {
+  await renderLoaded();
+  typeInto("mandate-field-supported_languages", "en,,fr");
+  fireEvent.click(screen.getByTestId("mandate-save-button"));
+  await waitFor(() => expect(callsOf("PATCH").length).toBe(1));
+  expect(lastPatchBody().mandate_json.supported_languages).toEqual(["en", "fr"]);
+});
+
+test("D2: save never drops unknown mandate keys, entry extras or top-level forbidden keys", async () => {
+  installServer({
+    manifest: manifestRecord({
+      mandate_json: { business_purpose: "old", custom_key: { nested: [1, 2] } },
+      forbidden_actions_json: {
+        actions: [{ name: "refund", reason: "policy", severity: "high" }],
+        policy_version: 3,
+      },
+    }),
+    requirements: [requirement()],
+  });
+  await renderLoaded();
+  typeInto("mandate-field-business_purpose", "new purpose");
+  fireEvent.click(screen.getByTestId("mandate-save-button"));
+  await waitFor(() => expect(callsOf("PATCH").length).toBe(1));
+  const first = lastPatchBody();
+  expect(first.mandate_json.custom_key).toEqual({ nested: [1, 2] });
+  expect(first.mandate_json.business_purpose).toBe("new purpose");
+  expect(first.forbidden_actions_json.policy_version).toBe(3);
+  expect(first.forbidden_actions_json.actions).toEqual([
+    { name: "refund", reason: "policy", severity: "high" },
+  ]);
+  // a second save after the first still carries them
+  await waitFor(() =>
+    expect((screen.getByTestId("mandate-save-button") as HTMLButtonElement).disabled).toBe(true),
+  );
+  typeInto("mandate-field-business_purpose", "third");
+  fireEvent.click(screen.getByTestId("mandate-save-button"));
+  await waitFor(() => expect(callsOf("PATCH").length).toBe(2));
+  expect(lastPatchBody().mandate_json.custom_key).toEqual({ nested: [1, 2] });
+  expect(lastPatchBody().forbidden_actions_json.actions[0].severity).toBe("high");
+});
+
+test("pure: serialize keeps base keys and entry extras, known fields win", () => {
+  const content = parseMandateContent({ business_purpose: "a" });
+  expect(serializeMandateContent(content, { x: 1, business_purpose: "stale" })).toMatchObject({
+    x: 1,
+    business_purpose: "a",
+  });
+  expect(
+    serializeForbiddenActions([{ name: "n", reason: "r", extra: { k: 1 } }], { top: true }),
+  ).toEqual({ top: true, actions: [{ k: 1, name: "n", reason: "r" }] });
+  expect(parseForbiddenActions({ actions: [{ name: "n", reason: "r", k: 1 }] })).toEqual([
+    { name: "n", reason: "r", extra: { k: 1 } },
+  ]);
+});
+
+describe("refresh enforcement failures", () => {
+  const conflicted = () =>
+    installServer({
+      manifest: manifestRecord({
+        forbidden_actions_json: { actions: [{ name: "refund", reason: "x" }] },
+      }),
+      requirements: [requirement({ runtime_enforced: false })],
+    });
+
+  test("a 503 shows the error, keeps the conflict, and clears on a later success", async () => {
+    conflicted();
+    await renderLoaded();
+    server.requirementsStatus = 503;
+    fireEvent.click(screen.getByTestId("refresh-enforcement-button"));
+    await waitFor(() => expect(screen.getByTestId("refresh-enforcement-error")).toBeTruthy());
+    expect(screen.getByTestId("mandate-lock-blocked")).toBeTruthy();
+    expect(screen.queryByTestId("mandate-lock-ready")).toBeNull();
+    server.requirementsStatus = 200;
+    server.requirements = [requirement({ runtime_enforced: true })];
+    fireEvent.click(screen.getByTestId("refresh-enforcement-button"));
+    await waitFor(() => expect(screen.queryByTestId("refresh-enforcement-error")).toBeNull());
+    await waitFor(() => expect(screen.getByTestId("mandate-lock-ready")).toBeTruthy());
+  });
+
+  test("a network throw shows the error and keeps the conflict", async () => {
+    conflicted();
+    await renderLoaded();
+    const real = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    );
+    fireEvent.click(screen.getByTestId("refresh-enforcement-button"));
+    await waitFor(() =>
+      expect(screen.getByTestId("refresh-enforcement-error").textContent).toContain("offline"),
+    );
+    expect(screen.getByTestId("mandate-lock-blocked")).toBeTruthy();
+    expect(screen.queryByTestId("mandate-lock-ready")).toBeNull();
+    vi.stubGlobal("fetch", real);
+  });
+});
+
+test("a load network error is surfaced", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      throw new Error("boom");
+    }),
+  );
+  renderUI();
+  await waitFor(() =>
+    expect(screen.getByTestId("mandate-load-error").textContent).toContain("boom"),
+  );
+});
+
+test("a save network error is surfaced and the draft is kept", async () => {
+  await renderLoaded();
+  typeInto("mandate-field-business_purpose", "draft");
+  const real = globalThis.fetch;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      throw new Error("down");
+    }),
+  );
+  fireEvent.click(screen.getByTestId("mandate-save-button"));
+  await waitFor(() =>
+    expect(screen.getByTestId("mandate-save-error").textContent).toContain("down"),
+  );
+  expect((screen.getByTestId("mandate-field-business_purpose") as HTMLTextAreaElement).value).toBe(
+    "draft",
+  );
+  vi.stubGlobal("fetch", real);
+});
+
+test("a malformed PATCH 200 shows the save error", async () => {
+  await renderLoaded();
+  typeInto("mandate-field-business_purpose", "x");
+  const real = globalThis.fetch as unknown as (u: string, i?: RequestInit) => Promise<unknown>;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (u: string, i?: RequestInit) =>
+      i?.method === "PATCH" ? jsonResponse(200, { nope: true }) : real(u, i),
+    ),
+  );
+  fireEvent.click(screen.getByTestId("mandate-save-button"));
+  await waitFor(() => expect(screen.getByTestId("mandate-save-error")).toBeTruthy());
+});
+
+test("clearing business_purpose and latency_slo_ms sends JSON null with the key present", async () => {
+  installServer({
+    manifest: manifestRecord({ mandate_json: { business_purpose: "p", latency_slo_ms: 5 } }),
+  });
+  await renderLoaded();
+  typeInto("mandate-field-business_purpose", "");
+  typeInto("mandate-field-latency_slo_ms", "");
+  fireEvent.click(screen.getByTestId("mandate-save-button"));
+  await waitFor(() => expect(callsOf("PATCH").length).toBe(1));
+  const body = lastPatchBody().mandate_json;
+  expect("business_purpose" in body && body.business_purpose === null).toBe(true);
+  expect("latency_slo_ms" in body && body.latency_slo_ms === null).toBe(true);
+});
+
+test("a locked manifest has no remove buttons and every input is disabled", async () => {
+  installServer({
+    manifest: manifestRecord({
+      status: "approved",
+      forbidden_actions_json: { actions: [{ name: "refund", reason: "x" }] },
+    }),
+    requirements: [requirement()],
+  });
+  await renderLoaded();
+  expect(screen.queryByTestId("forbidden-action-remove-refund")).toBeNull();
+  expect(screen.queryByTestId("mandate-save-button")).toBeNull();
+  for (const id of ["business_purpose", "supported_languages", "latency_slo_ms"]) {
+    expect((screen.getByTestId(`mandate-field-${id}`) as HTMLInputElement).disabled).toBe(true);
+  }
+});
+
+test("forbidden-action names match exactly: 'Refund' and 'refund_all' do not match 'refund'", () => {
+  const rows = [requirement({ name: "refund" })];
+  expect(evaluateForbiddenAction("Refund", rows).reason).toBe("not_found");
+  expect(evaluateForbiddenAction("refund_all", rows).reason).toBe("not_found");
+  expect(evaluateForbiddenAction("refund", rows).reason).toBe("enforced");
+});
+
+test("is_critical alone (without requires_confirmation) is enforced when observed enforced", () => {
+  const row = requirement({ is_critical: true, requires_confirmation: false });
+  expect(evaluateForbiddenAction("refund", [row]).reason).toBe("enforced");
+  const unenforced = requirement({
+    is_critical: true,
+    requires_confirmation: false,
+    runtime_enforced: false,
+  });
+  expect(evaluateForbiddenAction("refund", [unenforced]).reason).toBe("not_runtime_enforced");
+});
+
+test("adding trims the reason, clears the add inputs; removing one of two keeps the other and enables Save", async () => {
+  installServer({
+    manifest: manifestRecord({
+      forbidden_actions_json: { actions: [{ name: "a", reason: "ra" }] },
+    }),
+  });
+  await renderLoaded();
+  expect((screen.getByTestId("mandate-save-button") as HTMLButtonElement).disabled).toBe(true);
+  typeInto("new-forbidden-action-name", " b ");
+  typeInto("new-forbidden-action-reason", "  rb  ");
+  fireEvent.click(screen.getByTestId("forbidden-action-add-button"));
+  expect((screen.getByTestId("new-forbidden-action-name") as HTMLInputElement).value).toBe("");
+  expect((screen.getByTestId("new-forbidden-action-reason") as HTMLInputElement).value).toBe("");
+  fireEvent.click(screen.getByTestId("forbidden-action-remove-a"));
+  expect(screen.queryByTestId("forbidden-action-row-a")).toBeNull();
+  expect(screen.getByTestId("forbidden-action-row-b")).toBeTruthy();
+  expect((screen.getByTestId("mandate-save-button") as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(screen.getByTestId("mandate-save-button"));
+  await waitFor(() => expect(callsOf("PATCH").length).toBe(1));
+  expect(lastPatchBody().forbidden_actions_json.actions).toEqual([{ name: "b", reason: "rb" }]);
+});
+
+test("while a save is in flight, Save and Refresh are disabled", async () => {
+  await renderLoaded();
+  typeInto("mandate-field-business_purpose", "x");
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const real = globalThis.fetch as unknown as (u: string, i?: RequestInit) => Promise<unknown>;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (u: string, i?: RequestInit) => {
+      if (i?.method === "PATCH") await gate;
+      return real(u, i);
+    }),
+  );
+  fireEvent.click(screen.getByTestId("mandate-save-button"));
+  await waitFor(() =>
+    expect((screen.getByTestId("mandate-save-button") as HTMLButtonElement).disabled).toBe(true),
+  );
+  expect((screen.getByTestId("refresh-enforcement-button") as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  release();
+  await waitFor(() =>
+    expect((screen.getByTestId("refresh-enforcement-button") as HTMLButtonElement).disabled).toBe(
+      false,
+    ),
+  );
+});
+
+test("a props change refetches the manifest", async () => {
+  const view = await renderLoaded();
+  const before = callsOf("GET", MANIFEST_PATH).length;
+  view.rerender(
+    createElement(MandateEditorAndConflictResolutionUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      manifestId: "55555555-5555-5555-5555-555555555555",
+    }),
+  );
+  await waitFor(() =>
+    expect(server.calls.some((c) => c.path.endsWith("55555555-5555-5555-5555-555555555555"))).toBe(
+      true,
+    ),
+  );
+  expect(before).toBeGreaterThan(0);
+});
