@@ -92,7 +92,7 @@ import shutil
 import subprocess
 import tarfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 __all__ = [
     "ConcurrentModificationError",
@@ -559,6 +559,21 @@ def _iter_repository_files(root: Path) -> list[ManifestEntry]:
     entries: list[ManifestEntry] = []
     visited_directories: set[Path] = set()
     visible_files = _git_visible_paths(root)
+    # Every directory that has at least one git-visible path beneath it. A
+    # directory outside this set (an ignored `node_modules/`, `build/`) is
+    # never opened, listed or followed, so an unreadable or hostile ignored
+    # directory can neither break nor influence a capture (Law 16).
+    visible_directories = {
+        parent.as_posix()
+        for path in visible_files
+        for parent in PurePosixPath(path).parents
+        if parent != PurePosixPath(".")
+    }
+
+    def _has_visible_content(real_directory: Path) -> bool:
+        if real_directory == root:
+            return True
+        return real_directory.relative_to(root).as_posix() in visible_directories
 
     def _real_relative(path: Path) -> str:
         return Path(os.path.realpath(path, strict=True)).relative_to(root).as_posix()
@@ -594,14 +609,16 @@ def _iter_repository_files(root: Path) -> list[ManifestEntry]:
                         f"{real_target}"
                     )
                 if real_target.is_dir():
-                    _walk(entry_path)
+                    if _has_visible_content(real_target):
+                        _walk(entry_path)
                     continue
                 target_for_read = real_target
             else:
                 target_for_read = entry_path
 
             if entry.is_dir(follow_symlinks=True) and not entry.is_symlink():
-                _walk(entry_path)
+                if _has_visible_content(entry_path):
+                    _walk(entry_path)
                 continue
 
             if not target_for_read.is_file():
