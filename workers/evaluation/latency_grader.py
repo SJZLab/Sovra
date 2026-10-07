@@ -183,7 +183,7 @@ def grade_latency(spec: LatencySpec, observations: Sequence[LatencyObservation])
             raise LatencyGraderError("observations must contain LatencyObservation values")
         _text(obs.case_id, "case_id")
         outcome = obs.outcome
-        if outcome not in _OUTCOME_ISSUE:
+        if not isinstance(outcome, str) or outcome not in _OUTCOME_ISSUE:
             raise LatencyGraderError(f"outcome must be one of {tuple(_OUTCOME_ISSUE)}")
         if obs.case_id not in expected:
             issues.add("unexpected_case")
