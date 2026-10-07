@@ -140,13 +140,26 @@ export function parseMandateContent(raw: unknown): MandateContent {
   return content;
 }
 
-export function serializeMandateContent(content: MandateContent): Record<string, unknown> {
-  return { ...content };
+/** The raw stored `mandate_json` object (or `{}`), kept so a save never drops a key this
+ * editor does not model. */
+export function mandateBaseOf(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return { ...(raw as Record<string, unknown>) };
+}
+
+/** Known fields come from the editor; every other stored key survives unchanged. */
+export function serializeMandateContent(
+  content: MandateContent,
+  base: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return { ...base, ...content };
 }
 
 export interface ForbiddenActionEntry {
   name: string;
   reason: string;
+  /** Any other keys the stored entry carried; written back unchanged on save. */
+  extra?: Record<string, unknown>;
 }
 
 /** Coerces an unknown `forbidden_actions_json` value (a JSON object, per
@@ -162,16 +175,41 @@ export function parseForbiddenActions(raw: unknown): ForbiddenActionEntry[] {
     const name = (entry as Record<string, unknown>).name;
     const reason = (entry as Record<string, unknown>).reason;
     if (typeof name === "string" && name.length > 0) {
-      out.push({ name, reason: typeof reason === "string" ? reason : "" });
+      const extra: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(entry as Record<string, unknown>)) {
+        if (key !== "name" && key !== "reason") extra[key] = value;
+      }
+      out.push({
+        name,
+        reason: typeof reason === "string" ? reason : "",
+        ...(Object.keys(extra).length > 0 ? { extra } : {}),
+      });
     }
   }
   return out;
 }
 
+/** The raw stored `forbidden_actions_json` object minus `actions` (or `{}`), kept so a save
+ * never drops a top-level key this editor does not model. */
+export function forbiddenBaseOf(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const { actions: _actions, ...rest } = raw as Record<string, unknown>;
+  void _actions;
+  return rest;
+}
+
 export function serializeForbiddenActions(
   entries: ForbiddenActionEntry[],
+  base: Record<string, unknown> = {},
 ): Record<string, unknown> {
-  return { actions: entries };
+  return {
+    ...base,
+    actions: entries.map((entry) => ({
+      ...(entry.extra ?? {}),
+      name: entry.name,
+      reason: entry.reason,
+    })),
+  };
 }
 
 export type ForbiddenActionConflictReason =
@@ -276,6 +314,10 @@ export function MandateEditorAndConflictResolutionUI({
 
   const [mandate, setMandate] = useState<MandateContent>(emptyMandateContent());
   const [forbiddenActions, setForbiddenActions] = useState<ForbiddenActionEntry[]>([]);
+  const [mandateBase, setMandateBase] = useState<Record<string, unknown>>({});
+  const [forbiddenBase, setForbiddenBase] = useState<Record<string, unknown>>({});
+  // Raw text of a list input while the user is typing, so "en," is not collapsed to "en".
+  const [listDrafts, setListDrafts] = useState<Partial<Record<MandateListField, string>>>({});
   const [dirty, setDirty] = useState(false);
 
   const [newActionName, setNewActionName] = useState("");
@@ -323,6 +365,9 @@ export function MandateEditorAndConflictResolutionUI({
         setRequirements(requirementsBody);
         setMandate(parseMandateContent(manifestBody.mandate_json));
         setForbiddenActions(parseForbiddenActions(manifestBody.forbidden_actions_json));
+        setMandateBase(mandateBaseOf(manifestBody.mandate_json));
+        setForbiddenBase(forbiddenBaseOf(manifestBody.forbidden_actions_json));
+        setListDrafts({});
         setDirty(false);
       } catch (caught) {
         if (!cancelled) setLoadError(networkErrorMessage(caught));
@@ -367,6 +412,7 @@ export function MandateEditorAndConflictResolutionUI({
       .split(",")
       .map((item) => item.trim())
       .filter((item) => item.length > 0);
+    setListDrafts((prev) => ({ ...prev, [field]: value }));
     setMandate((prev) => ({ ...prev, [field]: items }));
     setDirty(true);
   }
@@ -397,8 +443,8 @@ export function MandateEditorAndConflictResolutionUI({
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          mandate_json: serializeMandateContent(mandate),
-          forbidden_actions_json: serializeForbiddenActions(forbiddenActions),
+          mandate_json: serializeMandateContent(mandate, mandateBase),
+          forbidden_actions_json: serializeForbiddenActions(forbiddenActions, forbiddenBase),
         }),
       });
       if (!response.ok) {
@@ -417,6 +463,16 @@ export function MandateEditorAndConflictResolutionUI({
       // docstring for why a save must never double as a conflict
       // resolution.
       setManifest(updated);
+      setMandateBase(
+        mandateBaseOf(updated.mandate_json ?? serializeMandateContent(mandate, mandateBase)),
+      );
+      setForbiddenBase(
+        forbiddenBaseOf(
+          updated.forbidden_actions_json ??
+            serializeForbiddenActions(forbiddenActions, forbiddenBase),
+        ),
+      );
+      setListDrafts({});
       setDirty(false);
     } catch (caught) {
       setSaveError(networkErrorMessage(caught));
@@ -494,7 +550,7 @@ export function MandateEditorAndConflictResolutionUI({
             <input
               id={`mandate-${field}`}
               data-testid={`mandate-field-${field}`}
-              value={mandate[field].join(", ")}
+              value={listDrafts[field] ?? mandate[field].join(", ")}
               disabled={!editable}
               onChange={(event) => setListField(field, event.target.value)}
             />
