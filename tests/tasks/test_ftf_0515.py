@@ -940,6 +940,294 @@ def test_non_poisoning_extra_warning_stays_warning_and_a_warning_can_be_resolved
     )
 
 
+# ------------------------------------------------- round 3 (verifier findings)
+
+
+def _one(report: QualityReport, **match: object) -> list:
+    return [i for i in report.issues if all(getattr(i, k) == v for k, v in match.items())]
+
+
+def test_provenance_keeps_record_index_distinct_from_batch_position() -> None:
+    # PII: record_index 10 sits at batch position 0.
+    pii = detect_pii_and_secrets([_record(10, "mail me at jane.doe@example.com")])
+    report = evaluate_quality(_runs({"pii_secrets": pii}))
+    found = _one(report, detector="pii_secrets")
+    check(
+        "FTF-0515",
+        "PII issue: batch_positions==(0,) and record_indices==(10,)",
+        len(found) >= 1
+        and all(i.batch_positions == (0,) and i.record_indices == (10,) for i in found),
+    )
+    # Tokenization: record_index 7 at batch position 0, critical and policy.
+    for critical, code in (
+        (True, "truncated_critical_turn"),
+        (False, "requires_explicit_truncation_policy"),
+    ):
+        conv = ConversationTokenization(
+            batch_position=0,
+            record_index=7,
+            exact=True,
+            message_token_counts=(5,),
+            total_token_count=5,
+            truncated_critical_turn=critical,
+            requires_explicit_truncation_policy=True,
+        )
+        tok = TokenizationAnalysisReport(
+            conversations=(conv,), distribution=None, issues=(), certifies_training_fit=False
+        )
+        found = _one(evaluate_quality(_runs({"tokenization": tok})), reason_code=code)
+        check(
+            "FTF-0515",
+            f"tokenization {code}: position (0,) index (7,)",
+            len(found) == 1
+            and found[0].batch_positions == (0,)
+            and found[0].record_indices == (7,),
+        )
+    # Normalized-duplicate group: indices 10 and 20, digest == the group's.
+    batch = [_record(10, "Hello  World!"), _record(20, "hello world")]
+    nrep = detect_normalized_duplicates(batch)
+    found = _one(
+        evaluate_quality(_runs({"normalized_duplicate": nrep})),
+        detector="normalized_duplicate",
+        reason_code="normalized_duplicate_group",
+    )
+    check(
+        "FTF-0515",
+        "normalized-duplicate group: positions (0,1), indices (10,20), group digest",
+        len(found) == 1
+        and found[0].batch_positions == (0, 1)
+        and found[0].record_indices == (10, 20)
+        and bool(nrep.duplicate_groups)
+        and found[0].evidence_digest == nrep.duplicate_groups[0].digest,
+    )
+
+
+def test_exact_detector_normalized_group_is_blocking_with_provenance() -> None:
+    # equal normalized_sha256, different record_sha256 => only the normalized
+    # hash matches; reported by the exact_duplicate detector.
+    batch = [
+        _record(10, "a", raw="raw-a", norm="same-norm"),
+        _record(20, "b", raw="raw-b", norm="same-norm"),
+    ]
+    rep = detect_exact_duplicates(batch)
+    report = evaluate_quality(_runs({"exact_duplicate": rep}))
+    found = _one(report, detector="exact_duplicate", reason_code="normalized_duplicate_group")
+    check("FTF-0515", "exact-detector normalized group yields one issue", len(found) == 1)
+    check(
+        "FTF-0515",
+        "no raw group exists for a normalized-only match",
+        _one(report, reason_code="raw_duplicate_group") == [],
+    )
+    if found and rep.normalized_duplicate_groups:
+        group = rep.normalized_duplicate_groups[0]
+        issue = found[0]
+        check("FTF-0515", "normalized group is blocking", issue.severity == "blocking")
+        check("FTF-0515", "category is exact_duplicate", issue.category == "exact_duplicate")
+        check("FTF-0515", "batch positions (0,1)", issue.batch_positions == (0, 1))
+        check("FTF-0515", "record indices (10,20)", issue.record_indices == (10, 20))
+        check("FTF-0515", "digest == group digest", issue.evidence_digest == group.digest)
+        check(
+            "FTF-0515",
+            "digest is the shared normalized hash",
+            issue.evidence_digest == _hash("same-norm"),
+        )
+    check("FTF-0515", "it blocks split", report.blocks_split)
+
+
+def test_pii_without_quarantine_is_warning_and_reason_names_category() -> None:
+    from workers.data.pii_secrets_detector import PiiSecretsFinding, PiiSecretsReport
+
+    def finding(category: str, quarantine: bool) -> PiiSecretsFinding:
+        return PiiSecretsFinding(
+            batch_position=0,
+            record_index=10,
+            message_index=0,
+            content_path="content[0].text",
+            category=category,
+            match_length=5,
+            requires_quarantine=quarantine,
+        )
+
+    warn = PiiSecretsReport(findings=(finding("email", False),), issues=())
+    found = _one(evaluate_quality(_runs({"pii_secrets": warn})), detector="pii_secrets")
+    check(
+        "FTF-0515",
+        "requires_quarantine=False => warning, reason pii_secret_email",
+        len(found) == 1
+        and found[0].severity == "warning"
+        and found[0].reason_code == "pii_secret_email",
+    )
+    check(
+        "FTF-0515",
+        "a lone PII warning does not block",
+        not evaluate_quality(_runs({"pii_secrets": warn})).blocks_split,
+    )
+    block = PiiSecretsReport(findings=(finding("phone", True),), issues=())
+    found = _one(evaluate_quality(_runs({"pii_secrets": block})), detector="pii_secrets")
+    check(
+        "FTF-0515",
+        "requires_quarantine=True => blocking, reason pii_secret_phone",
+        len(found) == 1
+        and found[0].severity == "blocking"
+        and found[0].reason_code == "pii_secret_phone",
+    )
+
+
+def test_conversation_with_both_flags_yields_exactly_one_critical_issue() -> None:
+    conv = ConversationTokenization(
+        batch_position=4,
+        record_index=9,
+        exact=True,
+        message_token_counts=(5,),
+        total_token_count=5,
+        truncated_critical_turn=True,
+        requires_explicit_truncation_policy=True,
+    )
+    tok = TokenizationAnalysisReport(
+        conversations=(conv,), distribution=None, issues=(), certifies_training_fit=False
+    )
+    found = _one(evaluate_quality(_runs({"tokenization": tok})), detector="tokenization")
+    check(
+        "FTF-0515",
+        "both flags => exactly one issue, truncated_critical_turn, blocking",
+        len(found) == 1
+        and found[0].reason_code == "truncated_critical_turn"
+        and found[0].severity == "blocking",
+    )
+
+
+_NEAR_TEXT = "Please summarise the attached quarterly financial report for the board."
+
+
+def _near_batch() -> list[dict[str, object]]:
+    return [
+        _record(10, _NEAR_TEXT, purpose="training"),
+        _record(20, _NEAR_TEXT, purpose="held_out_evaluation"),
+    ]
+
+
+def test_near_duplicate_ids_stable_across_hashseed_with_many_methods() -> None:
+    rep = detect_near_duplicates(_near_batch())
+    cands = rep.flagged_candidates
+    check(
+        "FTF-0515",
+        "fixture flags a pair by 2+ methods",
+        len(cands) == 1 and len(cands[0].flagged_methods) >= 2,
+    )
+    ids = [i.issue_id for i in evaluate_quality(_runs({"near_duplicate": rep})).issues]
+    code = "\n".join(
+        [
+            f"import sys; sys.path.insert(0, {str(ROOT)!r})",
+            "from tests.tasks.test_ftf_0515 import (",
+            "    _near_batch, _runs, evaluate_quality, detect_near_duplicates)",
+            "rep = detect_near_duplicates(_near_batch())",
+            "r = evaluate_quality(_runs({'near_duplicate': rep}))",
+            "print([i.issue_id for i in r.issues])",
+        ]
+    )
+    outs = set()
+    for seed in ("0", "1", "2", "77", "12345"):
+        env = dict(os.environ, PYTHONHASHSEED=seed)
+        outs.add(
+            subprocess.run(
+                [sys.executable, "-c", code],
+                capture_output=True,
+                text=True,
+                env=env,
+                cwd=ROOT,
+                check=True,
+            ).stdout
+        )
+    check("FTF-0515", "near-dup issue ids identical across PYTHONHASHSEED", len(outs) == 1)
+    check("FTF-0515", "subprocess near-dup ids equal in-process ids", outs == {str(ids) + "\n"})
+    msgs = [i.message for i in evaluate_quality(_runs({"near_duplicate": rep})).issues]
+    check(
+        "FTF-0515",
+        "flagged methods are listed sorted in the message",
+        len(msgs) == 1 and msgs[0].endswith(",".join(sorted(cands[0].flagged_methods))),
+    )
+
+
+def test_resolving_one_of_many_leaves_others_and_order_unchanged() -> None:
+    from workers.data.record_schema_validator import RecordValidationIssue
+
+    bad = RecordSchemaValidationReport(
+        issues=tuple(
+            RecordValidationIssue(batch_position=n, record_index=n, code="c", message=f"m{n}")
+            for n in range(6)
+        ),
+        accepted_batch_positions=(),
+        rejected_batch_positions=tuple(range(6)),
+    )
+    report = evaluate_quality(_runs({"record_schema": bad}))
+    before = [i.issue_id for i in report.issues]
+    for target in (before[0], before[2], before[-1]):
+        out = apply_resolutions(report, [IssueResolution(target, "resolved", "rev", "why")])
+        check(
+            "FTF-0515", "resolution keeps ids and order", [i.issue_id for i in out.issues] == before
+        )
+        others = [
+            (a, b) for a, b in zip(report.issues, out.issues, strict=True) if a.issue_id != target
+        ]
+        check(
+            "FTF-0515",
+            "every other issue is unchanged (still open)",
+            len(others) == len(before) - 1 and all(a == b for a, b in others),
+        )
+        hit = [i for i in out.issues if i.issue_id == target]
+        check(
+            "FTF-0515",
+            "exactly the named issue is resolved",
+            len(hit) == 1
+            and hit[0].resolution_state == "resolved"
+            and sum(i.resolution_state != "open" for i in out.issues) == 1,
+        )
+
+
+def test_issue_id_identity_depends_on_each_identity_field() -> None:
+    from workers.data.record_schema_validator import RecordValidationIssue
+
+    def row(index: int | None) -> RecordSchemaValidationReport:
+        return RecordSchemaValidationReport(
+            issues=(
+                RecordValidationIssue(batch_position=0, record_index=index, code="c", message="m"),
+            ),
+            accepted_batch_positions=(),
+            rejected_batch_positions=(0,),
+        )
+
+    def ids(rep: RecordSchemaValidationReport) -> list[str]:
+        return [i.issue_id for i in evaluate_quality(_runs({"record_schema": rep})).issues]
+
+    check("FTF-0515", "equal inputs give equal ids", ids(row(5)) == ids(row(5)))
+    check("FTF-0515", "ids differ when only record_index differs", ids(row(5)) != ids(row(6)))
+    check("FTF-0515", "ids differ for None vs an index", ids(row(None)) != ids(row(0)))
+
+    def extra(digest: str | None) -> list[str]:
+        rep = evaluate_quality(
+            _runs(),
+            extra_issues=[
+                QualityIssueInput("x", "pii_secrets", "warning", "w", "m", (0,), (0,), digest)
+            ],
+        )
+        return [i.issue_id for i in rep.issues if i.reason_code == "w"]
+
+    check("FTF-0515", "equal digest gives equal ids", extra("a" * 64) == extra("a" * 64))
+    check("FTF-0515", "ids differ when only the digest differs", extra("a" * 64) != extra("b" * 64))
+    check("FTF-0515", "ids differ for digest vs no digest", extra("a" * 64) != extra(None))
+
+
+def test_invalid_report_detector_is_not_listed_as_reported() -> None:
+    report = evaluate_quality(_runs({"pii_secrets": object()}))
+    check(
+        "FTF-0515",
+        "detector_report_invalid detector absent from detectors_reported",
+        "pii_secrets" not in report.detectors_reported
+        and _one(report, reason_code="detector_report_invalid", detector="pii_secrets") != [],
+    )
+    check("FTF-0515", "and it is not clean", not report.is_clean)
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
