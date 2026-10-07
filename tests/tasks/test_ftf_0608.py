@@ -886,6 +886,37 @@ def test_f1_violations_and_mismatches_keep_declared_and_call_order() -> None:
     )
 
 
+def test_round2_empty_str_specs_and_report_order() -> None:
+    check(
+        "FTF-0608-F1",
+        "empty-string allowed_orders is refused (bare str, not an empty list)",
+        refused(lambda: grade(trace("a"), allowed_orders="", must_not_call=["x"])),
+    )
+    check(
+        "FTF-0608-F1",
+        "empty-string must_precede is refused (bare str, not an empty list)",
+        refused(lambda: grade(trace("a"), must_precede="", must_not_call=["x"])),
+    )
+    r = grade(trace("a"), required_state={"k1": 1, "k2": 1}, final_state={"k1": 2})
+    check(
+        "FTF-0608-F1",
+        "a mismatched key before a missing key is reported in required_state order",
+        r.state_mismatches == ("k1", "k2"),
+    )
+    r = grade(trace("a", "b", "c", "c"), must_not_call=["a", "c"])
+    check(
+        "FTF-0608-F1",
+        "forbidden_calls is non-palindromic: call order with duplicates preserved",
+        r.forbidden_calls == ("a", "c", "c"),
+    )
+    r = grade(trace("a"), must_precede=[("a", "A")])
+    check(
+        "FTF-0608-F1",
+        "precedence is exact-case: an uncalled 'A' leaves the pair vacuously satisfied",
+        r.passed,
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
