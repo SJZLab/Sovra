@@ -519,6 +519,64 @@ def test_models_frozen_and_error_type() -> None:
     check(CID, "replace() on a spec re-validates", raises(lambda: replace(spec(), timeout_ms=0)))
 
 
+def test_round2_unhashable_outcome_fails_closed() -> None:
+    for bad in ([], {}, ["ok"], {"ok": 1}, 1, b"ok"):
+        check(
+            CID,
+            f"outcome {bad!r} raises the grader's own error",
+            raises(lambda b=bad: grade_latency(spec(1), [obs("c1", outcome=b)])),
+        )
+
+
+def test_round2_agent_below_request_boundary() -> None:
+    one_below = grade_latency(spec(1), [obs("c1", 49, request_ms=50)])
+    check(
+        CID,
+        "agent one ms below request is flagged",
+        one_below.issues == ("agent_below_request",),
+    )
+    check(
+        CID,
+        "agent one ms above request is fine",
+        grade_latency(spec(1), [obs("c1", 51, request_ms=50)]).passed,
+    )
+    check(
+        CID,
+        "agent far below request is flagged",
+        grade_latency(spec(1), [obs("c1", 10, request_ms=50)]).issues == ("agent_below_request",),
+    )
+
+
+def test_round2_ok_over_timeout_reported_unclamped() -> None:
+    limits = (LatencyLimit("agent_ms", 95, TIMEOUT * 2),)
+    result = grade_latency(spec(1, limits=limits), [obs("c1", TIMEOUT + 1)])
+    check(
+        CID,
+        "an ok case over the timeout is flagged",
+        result.issues == ("ok_exceeds_timeout",),
+    )
+    check(
+        CID,
+        "its percentile is the raw value, not clamped to the timeout",
+        pct(result, "agent_ms", 95) == TIMEOUT + 1,
+    )
+    well_over = grade_latency(spec(1, limits=limits), [obs("c1", TIMEOUT * 2)])
+    check(CID, "far over the timeout stays raw", pct(well_over, "agent_ms", 95) == TIMEOUT * 2)
+
+
+def test_round2_percentile_independent_of_input_order() -> None:
+    limits = tuple(LatencyLimit("agent_ms", p, 10_000) for p in (50, 95, 99))
+    values = [900, 100, 500, 300, 700, 200, 800, 400, 600, 1000]
+    forward = [obs(f"c{i}", v) for i, v in enumerate(values, 1)]
+    result = grade_latency(spec(10, limits=limits), forward)
+    check(CID, "shuffled p50 is the 5th smallest", pct(result, "agent_ms", 50) == 500)
+    check(CID, "shuffled p95 is the max", pct(result, "agent_ms", 95) == 1000)
+    reverse = grade_latency(spec(10, limits=limits), forward[::-1])
+    check(
+        CID, "reversed order gives the same percentiles", reverse.percentiles == result.percentiles
+    )
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
