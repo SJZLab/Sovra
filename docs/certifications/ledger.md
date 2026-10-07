@@ -10347,3 +10347,15 @@ PR is not landed by the next certifier shift.
 - **FTF-1305: RETURNED** (#592, a84cb46). Tests only: deterministic tie-breaks, the overlap group and the incumbent, and the
   reconciliation flag. The module is disclosed UNWIRED. Mutation 133/133.
 - **No spec-matrix flips this round.** Child slices and follow-ups are ledger-only. Status stays at 127/302.
+
+## 2026-10-07T23:50Z — RETURNED: FTF-0517 (round 1 → 2, tests only)
+- PR #591, merge db26d03. Production is deterministic: SHA-256 buckets, sorted output, input not mutated, exact keys.
+- Mutation: 117/119 killed, 2 timeouts, 0 survived. 60 hand faults; 14 survive, several of them real.
+- Gaps:
+  - No pinned golden manifest. hash() instead of SHA-256, a reversed slot mapping and a ratio off-by-one all survive.
+  - Group counts are never asserted.
+  - The cutoff provenance is never asserted.
+  - A post-cutoff group preassigned to validation is untested.
+  - The hash's sensitivity to group_id and strategy is untested.
+  - A negative non-train ratio is untested.
+- Also required: a docstring line saying the caller must run assert_clear_for_split. QUEUE 0e.

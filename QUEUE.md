@@ -9331,7 +9331,16 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      4. Reconciliation pending only on the best-case or worst-case scenario -> winner_economics_provisional True.
      5. ranked[i].quality_lower_bound equals the input; ranked[i].is_incumbent is preserved; tie_break_policy_id is None on NO_QUALIFYING_CANDIDATE; CANDIDATE_KINDS == ("existing", "base", "tuned").
      Note for the promotion task: FTF-1305 has no critical-regression input (Law 14 is enforced at promotion, not here).
-   - **0e.** Then the Backlog.
+   - **0e. FTF-0517 round 2 (tests + one docstring line).** Work in tests/tasks/test_ftf_0517.py. Claim `relay/FTF-0517-r2`. Verifier findings (each listed fault must go RED):
+     FTF-0517 RETURN -> round 2, tests only (db26d03, #591). Production is deterministic and correct; mutation 117/119 killed, 2 timeouts, 0 survived; 60 hand faults, 14 survive (several real). Tests to add in tests/tasks/test_ftf_0517.py:
+     1. Pinned golden: for a fixed spec and fixed records (e.g. 200 records keyed conv-i plus tmpl-(i%30)), assert the exact manifest_sha256, the exact counts and a few exact (record_id, role, group_id) triples; also run a subprocess under PYTHONHASHSEED=0 and 777 and compare hashes (kills hash() instead of SHA-256, reversed slot mapping, ratio off-by-one, strategy dropped from the bucket input).
+     2. Exact group counts in m.counts (e.g. 30 groups in the template case) - a group count equal to the record count survives today.
+     3. On a cutoff run, m.cutoff == cutoff, and tampering with it is refused.
+     4. A post-cutoff group preassigned `validation` is refused; a pre-cutoff group preassigned `validation` is honoured.
+     5. The manifest hash changes when only group_id values change, and when `strategy` changes.
+     6. A negative ratio in the validation or dev slot, e.g. (70,-10,20,20), is refused.
+     Also (docstring only): state in the module docstring that the caller must call quality_issue_engine.assert_clear_for_split before allocate_splits; the wiring task enforces it.
+   - **0f.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
      (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609 and FTF-0611 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
@@ -9544,7 +9553,7 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
     language/group fields that §68.2/§69.2 and FTF-0602 need, so they are added; the live error convention is
     `{"detail": code}`, not §40's envelope; FTF-0501's "resumable UI" clause is not in its file list and stays with
     FTF-0501's own refinement.
-- FTF-0612, FTF-0613 and FTF-1305 are returned work in item 0 above. FTF-0517 (#591) is merged and under L2.
+- FTF-0612, FTF-0613, FTF-1305 and FTF-0517 are returned work in item 0 above.
   FTF-0501-P1 is claimed (#581).
 - **FTF-0308** Model-to-artifact mapping UI, re-queued: prerequisite FTF-0308-P1 is CERTIFIED (#577, #586). DoD:
   `tools/r1_handoff.py packet FTF-0308`. The UI consumes the frozen GET/POST/changes training-artifact routes in

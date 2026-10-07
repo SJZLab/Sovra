@@ -24506,3 +24506,7 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
   - Refilled with FTF-0616, FTF-0901, FTF-1706 and FTF-1703.
 - **FTF-0517:** #591 merged on a green ci-verdict and is under L2.
 - **ci-verdict:** all 8 relay merges since 18:30Z landed on a green ci-verdict.
+
+## 2026-10-07T23:50Z — Control plane: FTF-0517 returned (QUEUE 0e, tests only)
+- Verifiers are running for FTF-0612, FTF-0613 and FTF-1305 (round 2), FTF-0501-P1 (#581) and FTF-0103-F1 (#597). All
+  five merged on a green ci-verdict.
