@@ -65,7 +65,7 @@ prerequisite") means this module adds no new production database surface.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 __all__ = [
@@ -111,22 +111,25 @@ class ExactMatchResult:
     whitespace_policy: str
 
 
+_WHITESPACE_NORMALIZERS: dict[str, Callable[[str], str]] = {
+    WHITESPACE_EXACT: lambda value: value,
+    WHITESPACE_STRIP: str.strip,
+    WHITESPACE_COLLAPSE: lambda value: " ".join(value.split()),
+}
+_CASE_NORMALIZERS: dict[str, Callable[[str], str]] = {
+    CASE_SENSITIVE: lambda value: value,
+    CASE_INSENSITIVE: str.casefold,
+}
+
+
 def _normalize(value: str, *, case_policy: str, whitespace_policy: str) -> str:
-    """Applies an already-validated policy pair to `value`. `grade_exact_match`
-    is this module's only caller and validates both `case_policy` and
-    `whitespace_policy` against their closed enums before ever calling this
-    (private) helper -- there is deliberately no second validation/raise
-    here, so there is exactly one place in this module that decides whether
-    a policy value is legal, not two redundant ones."""
-    if whitespace_policy == WHITESPACE_STRIP:
-        value = value.strip()
-    elif whitespace_policy == WHITESPACE_COLLAPSE:
-        value = " ".join(value.split())
-    # WHITESPACE_EXACT: no whitespace normalization at all.
-    if case_policy == CASE_INSENSITIVE:
-        value = value.casefold()
-    # CASE_SENSITIVE: no case normalization at all.
-    return value
+    """Applies an already-validated policy pair to `value` through the two
+    closed dispatch tables above. `grade_exact_match` is this module's only
+    caller and validates both policies against their closed enums before
+    ever calling this (private) helper -- there is deliberately no second
+    validation/raise here, so exactly one place decides whether a policy
+    value is legal."""
+    return _CASE_NORMALIZERS[case_policy](_WHITESPACE_NORMALIZERS[whitespace_policy](value))
 
 
 def grade_exact_match(
