@@ -881,6 +881,43 @@ def test_nan_infinity_rejected_even_when_the_schema_would_accept_anything() -> N
     check(CID, "a permissive schema accepts ordinary JSON", grade('{"a": [1, null]}', {}).passed)
 
 
+def test_ref_target_names_are_case_and_whitespace_exact() -> None:
+    defs = {"Node": {"type": "string"}, " pad ": {"type": "integer"}}
+    check(
+        CID,
+        "a mixed-case def is referenced exactly",
+        grade('"a"', {"$defs": defs, "$ref": "#/$defs/Node"}).passed,
+    )
+    check(
+        CID,
+        "a padded def is referenced exactly",
+        grade("1", {"$defs": defs, "$ref": "#/$defs/ pad "}).passed,
+    )
+    check(
+        CID,
+        "a different case is a different (undefined) def",
+        raises(SchemaError, lambda: grade('"a"', {"$defs": defs, "$ref": "#/$defs/node"})),
+    )
+    check(
+        CID,
+        "different padding is a different (undefined) def",
+        raises(SchemaError, lambda: grade("1", {"$defs": defs, "$ref": "#/$defs/pad"})),
+    )
+
+
+def test_validation_depth_boundary_when_the_candidate_walks_the_schema() -> None:
+    check(
+        CID,
+        "a schema walked to exactly the depth limit passes",
+        grade('"a"', _nested_all_of(256)).passed,
+    )
+    check(
+        CID,
+        "one level past the limit is refused",
+        raises(SchemaError, lambda: grade('"a"', _nested_all_of(257))),
+    )
+
+
 def main() -> int:
     tests = [
         (name, fn)

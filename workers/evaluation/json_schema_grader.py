@@ -62,6 +62,7 @@ No third-party dependency is added: the validator is stdlib-only.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import math
 from collections.abc import Callable, Mapping
@@ -82,6 +83,7 @@ __all__ = [
 ]
 
 SUPPORTED_DIALECT = "https://json-schema.org/draft/2020-12/schema"
+_DIALECTS = (SUPPORTED_DIALECT,)
 MAX_OUTPUT_BYTES = 1_000_000
 MAX_INSTANCE_DEPTH = 32
 _MAX_VALIDATION_DEPTH = 256
@@ -157,8 +159,6 @@ def _is_number(value: Any) -> bool:
 
 def _json_equal(left: Any, right: Any) -> bool:
     """JSON-value equality: `true` is never `1`, `1` equals `1.0`, no coercion."""
-    if isinstance(left, bool):
-        return isinstance(right, bool) and left == right
     if _is_number(left):
         return _is_number(right) and bool(left == right)
     if isinstance(left, list):
@@ -173,7 +173,8 @@ def _json_equal(left: Any, right: Any) -> bool:
             and left.keys() == right.keys()
             and all(_json_equal(left[key], right[key]) for key in left)
         )
-    # str and None: same type and equal (a different type never compares equal).
+    # str, None and bool: same exact type and equal (`True` is never `1`: the
+    # number branch above excludes bool and `type(True) is not type(1)`).
     return type(left) is type(right) and bool(left == right)
 
 
@@ -210,11 +211,9 @@ def _check_schema(schema: Any, where: str, defs: Mapping[str, Any], depth: int) 
     if not isinstance(schema, dict):
         raise SchemaError(f"{where}: a schema must be an object, not {type(schema).__name__}")
     for keyword in schema:
-        if not isinstance(keyword, str):
-            raise SchemaError(f"{where}: schema keys must be strings")
         if keyword not in SUPPORTED_KEYWORDS:
             raise SchemaError(f"{where}: unsupported keyword {keyword!r} (fail closed)")
-    if "$schema" in schema and schema["$schema"] != SUPPORTED_DIALECT:
+    if "$schema" in schema and schema["$schema"] not in _DIALECTS:
         raise SchemaError(f"{where}: $schema must be {SUPPORTED_DIALECT!r}")
     if "$ref" in schema:
         ref = schema["$ref"]
@@ -447,7 +446,10 @@ def grade_json_schema(
     if not isinstance(schema, dict):
         raise SchemaError(f"schema must be an object, not {type(schema).__name__}")
     actual_sha256 = schema_fingerprint(schema)
-    if actual_sha256 != expected_schema_sha256:
+    if not isinstance(expected_schema_sha256, str) or not hmac.compare_digest(
+        actual_sha256.encode("ascii"),
+        expected_schema_sha256.encode("utf-8", errors="surrogatepass"),
+    ):
         raise JsonSchemaGraderError(
             "schema does not match the pinned digest "
             f"(expected {expected_schema_sha256!r}, got {actual_sha256})"
