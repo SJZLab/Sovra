@@ -10135,6 +10135,21 @@ PR is not landed by the next certifier shift.
   - the first matched_order_index wins;
   - the order of violations and mismatches.
 
+## FTF-04A21 — Manifest review/edit UI with per-field evidence — CERTIFIED (2026-10-07)
+- Criterion: FTF-04A21. Round 2 (tests only): PR #550, merge commit 8e02372950d2f6fbd5d99f6af0cb898fdc2b1d2a (head
+  `8790a01`). This closes rounds 1–2, and round 1 is PR #542 (merge 5db0c2d). Producers:
+  `session_0158WZxJUHvbjVh2K3Upjr8b` (r1) and `session_01JybGbsbAz1zmGP5Mw8vUY6` (r2). It merged on a green ci-verdict.
+- Verifier (Sonnet):
+  - All four round-1 GREEN faults are RED: C6 conflict erased on edit; P7 storage key unscoped, on each of org,
+    project and manifest; S8 JSON `null` dropped from the PATCH; D3 appended diff lines dropped.
+  - P6 (storage throw) is RED by assertion.
+  - Round-1 spot checks are still RED.
+  - 38/38 specs pass on the pristine tree.
+  - Every endpoint called exists (GET/PATCH manifest, GET evidence, POST submit-for-review, POST lock, all in
+    04A-interface.yaml), there is no fake data, and failures stay visible (Law 17).
+- Not product-true: UNWIRED. No page mounts the component; the packet has no page file. The first page task is FTF-H029.
+- Follow-up, optional: FTF-04A21-F1 (R3, a restored draft on a locked manifest keeps Save disabled).
+
 ## FTF-1807 — LiteLLM outage runbook — CERTIFIED (2026-10-07)
 - Criterion: FTF-1807. Round 4 (tests only): PR #511, merge commit 42fd82c331fb91cccd7ef719bc1a0b7c133ba786 (head
   `8c571ca`), merged 2026-10-06T20:45Z. This closes rounds 1–4. Producer: `session_011orXE4QeDXVFKcBi6r8awV`.
