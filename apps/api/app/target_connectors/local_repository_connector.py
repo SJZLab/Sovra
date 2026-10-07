@@ -564,15 +564,10 @@ def _iter_repository_files(root: Path) -> list[ManifestEntry]:
     # never opened, listed or followed, so an unreadable or hostile ignored
     # directory can neither break nor influence a capture (Law 16).
     visible_directories = {
-        parent.as_posix()
-        for path in visible_files
-        for parent in PurePosixPath(path).parents
-        if parent != PurePosixPath(".")
+        parent.as_posix() for path in visible_files for parent in PurePosixPath(path).parents
     }
 
     def _has_visible_content(real_directory: Path) -> bool:
-        if real_directory == root:
-            return True
         return real_directory.relative_to(root).as_posix() in visible_directories
 
     def _real_relative(path: Path) -> str:

@@ -1306,6 +1306,33 @@ def test_f1_unreadable_visible_file_refused() -> None:
     _with_tmp(body)
 
 
+def test_n3_directory_read_failure_is_a_connector_error_on_any_host() -> None:
+    """Privilege-independent twin of the chmod-000 test: a failing scandir of a
+    visible directory is a connector error, never a skip."""
+
+    def body(tmp: Path) -> None:
+        repo = _new_checkout(tmp)
+        (repo / "a.txt").write_text("dirty\n")
+        os_module: Any = os
+        real_scandir = os_module.scandir
+
+        def failing(path: Any = ".") -> Any:
+            if Path(str(path)).name == "pkg":
+                raise PermissionError(13, "denied")
+            return real_scandir(path)
+
+        os_module.scandir = failing
+        try:
+            refused = _refused(
+                lambda: capture_local_repository(repo, [tmp]), LocalRepositoryConnectorError
+            )
+        finally:
+            os_module.scandir = real_scandir
+        check("FTF-04A32-N3", "a failing directory listing is a connector error", refused)
+
+    _with_tmp(body)
+
+
 def test_n3_unreadable_directory_refused() -> None:
     """The walker's directory-read failure is a connector error, not a crash or a skip."""
 
