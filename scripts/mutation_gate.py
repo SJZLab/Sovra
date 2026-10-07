@@ -44,6 +44,12 @@ own fault injection uses -- stays byte-identical):
   M9 normalization bypass `a == b` -> `a.strip().lower() == b`, and
                           `a in S` -> `a.strip().lower() in S` (Name/Attribute
                           operand), modelling a case/whitespace-tolerant match
+  M10 normalizer swap     `.strip()` -> `.lstrip()` / `.rstrip()`, `.lstrip()` /
+                          `.rstrip()` -> `.strip()`, `.casefold()` -> `.lower()`;
+                          also bare `str.strip` / `str.casefold` references
+
+Lambdas in module- or class-level tables (e.g. a dict of normalizers) are their
+own scope, `<lambda@LINE>`, so operators reach their bodies too.
 
 Verdicts: KILLED (some --test exited non-zero), TIMEOUT (a --test exceeded
 --timeout; counts as killed, reported separately), SURVIVED (every --test
@@ -96,7 +102,13 @@ MUTATION_ROOTS = sorted(set(SOURCE_ROOTS) | {"packages", "scripts"})
 _SELF = "scripts/mutation_gate.py"
 
 DEFAULT_ALLOWLIST = "docs/certifications/mutation-allowlist.yaml"
-OPERATORS = ("M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9")
+OPERATORS = ("M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10")
+_METHOD_SWAPS = {
+    "strip": ("lstrip", "rstrip"),
+    "lstrip": ("strip",),
+    "rstrip": ("strip",),
+    "casefold": ("lower",),
+}
 GUARD_CALL = re.compile(r"^(_?validate|_?check|_?require|_?verify|_?assert|_?ensure|_?guard)")
 _FLIP: dict[type[ast.cmpop], type[ast.cmpop]] = {
     ast.Eq: ast.NotEq,
@@ -113,6 +125,7 @@ _FLIP: dict[type[ast.cmpop], type[ast.cmpop]] = {
 _ATOMS = (ast.Name, ast.Constant, ast.Attribute, ast.Call, ast.Subscript, ast.Dict, ast.List)
 _SIMPLE_TYPES = {"str", "int", "float", "bool"}
 _FuncDef = ast.FunctionDef | ast.AsyncFunctionDef
+_Scope = ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda | ast.Attribute
 
 
 class UsageError(Exception):
@@ -389,19 +402,28 @@ def _early_return_value(func: _FuncDef) -> str:
     return "None"
 
 
+def _is_str_method_ref(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "str"
+        and node.attr in _METHOD_SWAPS
+    )
+
+
 class _Collector:
     """Walk a module, attributing each node to its innermost function."""
 
     def __init__(self, tree: ast.Module) -> None:
-        self.items: list[tuple[ast.AST, _FuncDef, str]] = []
+        self.items: list[tuple[ast.AST, _Scope, str]] = []
         self.funcs: list[tuple[_FuncDef, str]] = []
         self._visit_block(tree.body, [], None)
 
-    def _visit_block(self, nodes: list[ast.stmt], scope: list[str], fn: _FuncDef | None) -> None:
+    def _visit_block(self, nodes: list[ast.stmt], scope: list[str], fn: _Scope | None) -> None:
         for n in nodes:
             self._visit(n, scope, fn)
 
-    def _visit(self, node: ast.AST, scope: list[str], fn: _FuncDef | None) -> None:
+    def _visit(self, node: ast.AST, scope: list[str], fn: _Scope | None) -> None:
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
             for d in node.decorator_list:
                 self._visit(d, scope, fn)
@@ -416,14 +438,24 @@ class _Collector:
             return
         if isinstance(node, ast.JoinedStr):
             return  # f-string internals have unreliable positions on 3.11
+        if fn is None and _is_str_method_ref(node):
+            # `str.strip` used as a value in a module-level table: its own scope.
+            assert isinstance(node, ast.Attribute)
+            self.items.append((node, node, ".".join([*scope, f"<str.{node.attr}@{node.lineno}>"])))
+            return
+        if isinstance(node, ast.Lambda) and fn is None:
+            # A lambda outside any def (a dispatch-table entry) is its own scope.
+            inner = [*scope, f"<lambda@{node.lineno}>"]
+            self._visit(node.body, inner, node)
+            return
         if fn is not None:
             self.items.append((node, fn, ".".join(scope)))
         for child in ast.iter_child_nodes(node):
             self._visit(child, scope, fn)
 
 
-def _func_lines(fn: _FuncDef) -> range:
-    first = min([fn.lineno, *[d.lineno for d in fn.decorator_list]])
+def _func_lines(fn: _Scope) -> range:
+    first = min([fn.lineno, *[d.lineno for d in getattr(fn, "decorator_list", [])]])
     return range(first, (fn.end_lineno or fn.lineno) + 1)
 
 
@@ -435,7 +467,7 @@ def generate_mutants(
     starts = _line_starts(source)
     col = _Collector(tree)
 
-    def in_scope(fn: _FuncDef) -> bool:
+    def in_scope(fn: _Scope) -> bool:
         return lines is None or any(ln in lines for ln in _func_lines(fn))
 
     def span(node: ast.AST) -> tuple[int, int]:
@@ -512,8 +544,8 @@ def generate_mutants(
 
     envs: dict[int, dict[str, str]] = {}
 
-    for node, fn, qual in col.items:
-        if not in_scope(fn):
+    for node, owner, qual in col.items:
+        if not in_scope(owner):
             continue
         if isinstance(node, ast.Raise):
             s, e = span(node)
@@ -597,8 +629,28 @@ def generate_mutants(
                 if GUARD_CALL.match(name):
                     s, e = span(node)
                     add("M6", node, qual, f"{_short(ast.unparse(node), 45)} -> pass", s, e, "pass")
-        elif isinstance(node, ast.Return) and node.value is not None:
-            env = envs.setdefault(id(fn), _type_env(fn))
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            for alt in _METHOD_SWAPS.get(node.func.attr, ()):
+                swapped = ast.Call(
+                    ast.Attribute(node.func.value, alt, ast.Load()), node.args, node.keywords
+                )
+                expr_mut("M10", node, qual, swapped, f".{node.func.attr}() -> .{alt}()")
+        elif _is_str_method_ref(node):
+            assert isinstance(node, ast.Attribute)
+            for alt in _METHOD_SWAPS[node.attr]:
+                expr_mut(
+                    "M10",
+                    node,
+                    qual,
+                    ast.Attribute(node.value, alt, ast.Load()),
+                    f"str.{node.attr} -> str.{alt}",
+                )
+        elif (
+            isinstance(node, ast.Return)
+            and node.value is not None
+            and isinstance(owner, ast.FunctionDef | ast.AsyncFunctionDef)
+        ):
+            env = envs.setdefault(id(owner), _type_env(owner))
             _return_mutants(node.value, qual, env, expr_mut)
 
     out.sort(key=lambda m: (m.file, m.line, m.operator, m.start))
@@ -826,7 +878,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--allowlist", default=None, help=f"default {DEFAULT_ALLOWLIST}")
     ap.add_argument(
-        "--operators", default=",".join(OPERATORS), help="comma-separated subset of M1..M9"
+        "--operators", default=",".join(OPERATORS), help="comma-separated subset of M1..M10"
     )
     ap.add_argument("--json", dest="json_out", default=None, help="write full results here")
     ap.add_argument("--dry-run", action="store_true", help="list mutants, run nothing")
