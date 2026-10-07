@@ -463,6 +463,16 @@ export function MandateEditorAndConflictResolutionUI({
       // docstring for why a save must never double as a conflict
       // resolution.
       setManifest(updated);
+      // The server's returned manifest is what is shown after a save.
+      setMandate(
+        parseMandateContent(updated.mandate_json ?? serializeMandateContent(mandate, mandateBase)),
+      );
+      setForbiddenActions(
+        parseForbiddenActions(
+          updated.forbidden_actions_json ??
+            serializeForbiddenActions(forbiddenActions, forbiddenBase),
+        ),
+      );
       setMandateBase(
         mandateBaseOf(updated.mandate_json ?? serializeMandateContent(mandate, mandateBase)),
       );
