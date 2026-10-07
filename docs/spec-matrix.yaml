@@ -8700,15 +8700,37 @@ FTF-0608:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0608.py
 FTF-0609:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Forbidden-action grader
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0406, FTF-0601
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0406, FTF-0601
+    (both CERTIFIED). Path refined from the packet's generic services/evaluation-worker/
+    evaluators/forbidden_action_grader.py to workers/evaluation/forbidden_action_grader.py (this
+    repo's real evaluation-worker SOURCE_ROOT; same convention as the sibling grader tasks).
+
+
+    Built: grade_forbidden_actions takes two separate inputs, the model's emitted tool calls
+    (the same EmittedToolCall record tool_name_grader uses) and the independent tool backend's own
+    records (effect id, action, outcome from the closed set executed/denied/failed/unknown, and the
+    call link). Attempted and actual prohibited actions are reported distinctly: attempted_calls
+    (model policy failures) versus executed_effects (real effects), plus denied_attempts,
+    unattributed_effects and unverified_attempts. A denied attempt has no effect but stays a model
+    policy failure and fails the grade (this task's negative acceptance). failed/unknown/absent
+    backend outcomes stay visible as unverified, never converted to success (Law 17). Names match
+    exactly (no substring, case or whitespace normalisation); an empty forbidden set is refused;
+    duplicate call or effect identities are refused. Outcome meaning comes from one closed lookup
+    table, not string comparisons.
+
+
+    Disclosed: no live caller yet (Section 25's runtime loop and the real backend adapters are not
+    dependency-ready), so proving_symbol stays blank, same precedent as the sibling graders. Not
+    self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0609.py
 FTF-0610:
   certification_state: NONE
   criticality: MUST
