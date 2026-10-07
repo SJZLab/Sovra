@@ -1380,6 +1380,116 @@ def test_n3_unreadable_directory_refused() -> None:
     _with_tmp(body)
 
 
+# --------------------------------------------------------------- F2 (audit hook)
+
+# `sys.addaudithook` cannot be removed, so one process-wide hook is installed
+# once and records only while a sink is armed. It sees every `open` event
+# (builtins.open, io.open, io.FileIO, os.open, Path.read_bytes) and every
+# `subprocess.Popen`, whichever call site the connector reaches them through,
+# unlike the F1 monkeypatch spies, which only see the names they patch.
+_AUDIT_SINK: list[tuple[str, str]] | None = None
+
+
+def _audit_hook(event: str, args: tuple[Any, ...]) -> None:
+    sink = _AUDIT_SINK
+    if sink is None:
+        return
+    if event == "open" and args and not isinstance(args[0], int):
+        sink.append(("open", os.fsdecode(args[0])))
+    elif event == "subprocess.Popen" and len(args) > 1:
+        argv = args[1] if isinstance(args[1], list | tuple) else [args[1]]
+        sink.append(("popen", "\0".join(os.fsdecode(a) for a in argv)))
+
+
+sys.addaudithook(_audit_hook)
+
+
+def _audited(fn: Callable[[], object]) -> tuple[list[tuple[str, str]], object]:
+    global _AUDIT_SINK
+    events: list[tuple[str, str]] = []
+    _AUDIT_SINK = events
+    try:
+        result = fn()
+    finally:
+        _AUDIT_SINK = None
+    return events, result
+
+
+def _touches(events: list[tuple[str, str]], needles: tuple[str, ...]) -> list[tuple[str, str]]:
+    return [e for e in events if any(n in e[1] for n in needles)]
+
+
+def _audit_repo(tmp: Path) -> tuple[Path, Path, tuple[str, ...]]:
+    allowed, repo = _dirty_ignore_repo(tmp, ".env\nnode_modules/\nlink-to-ignored\n")
+    (repo / ".env").write_text("API_KEY=hunter2\n")
+    (repo / "node_modules" / "deep").mkdir(parents=True)
+    (repo / "node_modules" / "deep" / "x.js").write_text("x\n")
+    (repo / "link-to-ignored").symlink_to(repo / "node_modules" / "deep" / "x.js")
+    return allowed, repo, (".env", "node_modules", "link-to-ignored")
+
+
+def test_f2_audit_ignored_paths_never_opened_or_passed_to_a_subprocess() -> None:
+    """Law 16, independent of call sites: the real default capture, with
+    ignored secrets present, never opens an ignored path by any route and
+    never hands one to a child process."""
+
+    def body(tmp: Path) -> None:
+        allowed, repo, needles = _audit_repo(tmp)
+        events, cap = _audited(lambda: capture_local_repository(repo, [allowed]))
+        check(
+            "FTF-04A06-F2",
+            "the audit hook is live: capture opens a visible file and spawns git",
+            any(k == "open" and p.endswith("a.txt") for k, p in events)
+            and any(k == "popen" and "git" in p for k, p in events),
+        )
+        check(
+            "FTF-04A06-F2",
+            "capture succeeded and holds the visible file",
+            isinstance(cap, LocalRepositoryCapture) and "a.txt" in _manifest_paths(cap),
+        )
+        check(
+            "FTF-04A06-F2",
+            "no ignored path is opened (any route) or passed to a subprocess",
+            not _touches(events, needles),
+        )
+
+    _with_tmp(body)
+
+
+def test_f2_audit_detector_catches_io_fileio_and_subprocess_reads() -> None:
+    """Each bypass of the F1 spies (io.FileIO, a child `cat`) injected at the
+    instant before the archive is built is flagged by the audit assertion."""
+
+    def body(tmp: Path) -> None:
+        allowed, repo, needles = _audit_repo(tmp)
+        secret = str(repo / ".env")
+
+        def via_fileio(_: Path) -> None:
+            with io.FileIO(secret, "r") as handle:
+                handle.read()
+
+        def via_cat(_: Path) -> None:
+            subprocess.run(["cat", secret], check=True, capture_output=True)
+
+        for label, action, kind in (
+            ("io.FileIO", via_fileio, "open"),
+            ("subprocess cat", via_cat, "popen"),
+        ):
+            restore = _inject_before_archive(action)
+            try:
+                events, _ = _audited(lambda: capture_local_repository(repo, [allowed]))
+            finally:
+                restore()
+            hits = _touches(events, needles)
+            check(
+                "FTF-04A06-F2",
+                f"an ignored file read via {label} is flagged by the audit assertion",
+                any(k == kind for k, _p in hits),
+            )
+
+    _with_tmp(body)
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

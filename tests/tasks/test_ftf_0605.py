@@ -1101,6 +1101,96 @@ def test_r2_unicode_whitespace_and_bom_prefix_fail() -> None:
         check(CID, f"r2-opt {label} suffix fails", not grade("{}" + prefix, schema).passed)
 
 
+def test_f1_golden_digest_for_a_multi_key_schema() -> None:
+    schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {"a": {"type": "string"}, "b": {"type": "integer", "minimum": 1}},
+        "required": ["a", "b"],
+        "additionalProperties": False,
+    }
+    check(
+        CID,
+        "f1-1 multi-key golden digest pins the compact separators",
+        schema_fingerprint(schema)
+        == "2a7a90552f2169b27f3fac8832b425c86ea6ba7aa87273f9b1ec8b0e1ce88518",
+    )
+
+
+def test_f1_numeric_bound_messages_never_echo_the_candidate() -> None:
+    secret = 987654321
+    for keyword, schema in (
+        ("minimum", {"minimum": secret + 1}),
+        ("maximum", {"maximum": secret - 1}),
+    ):
+        issues = grade(str(secret), schema).issues
+        check(CID, f"f1-2 {keyword} reports exactly one issue", len(issues) == 1)
+        for issue in issues:
+            check(
+                CID, f"f1-2 {keyword} message omits the candidate", str(secret) not in issue.message
+            )
+            check(CID, f"f1-2 {keyword} keyword names the bound", issue.keyword == keyword)
+    # exclusiveMinimum/exclusiveMaximum fail on a candidate equal to the bound (unlike
+    # minimum/maximum, which accept equality) -- the bound and candidate are the same
+    # value here, so an exact-message match is the only way to tell "discloses the bound
+    # (by design)" apart from "also discloses the raw candidate" (an additive leak).
+    for keyword, template in (
+        ("exclusiveMinimum", "number is not above {bound}"),
+        ("exclusiveMaximum", "number is not below {bound}"),
+    ):
+        schema = {keyword: secret}
+        issues = grade(str(secret), schema).issues
+        check(CID, f"f1-2f2 {keyword} equal-to-bound candidate fails", len(issues) == 1)
+        for issue in issues:
+            check(
+                CID,
+                f"f1-2f2 {keyword} message is exactly the templated bound text",
+                issue.message == template.format(bound=secret),
+            )
+            check(CID, f"f1-2f2 {keyword} keyword names the bound", issue.keyword == keyword)
+
+
+def test_f1_same_path_issues_are_ordered_by_keyword_then_message() -> None:
+    by_keyword: dict[str, Any] = {"type": "string", "minimum": 10}
+    got = [(i.keyword, i.message) for i in grade("5", by_keyword).issues]
+    check(
+        CID,
+        "f1-3 same-path issues sort by keyword (minimum before type) despite check order",
+        got
+        == [
+            ("minimum", "number is below 10"),
+            ("type", "value is not of type ['string']"),
+        ],
+    )
+    by_message: dict[str, Any] = {"allOf": [{"type": "string"}, {"type": ["string", "array"]}]}
+    got_msg = [i.message for i in grade("1", by_message).issues]
+    check(
+        CID,
+        "f1-3 same path and keyword sort by message, not by check order",
+        got_msg
+        == [
+            "value is not of type ['array', 'string']",
+            "value is not of type ['string']",
+        ],
+    )
+
+
+def test_f1_json_equal_object_keys_are_whitespace_exact() -> None:
+    const_schema: dict[str, Any] = {"const": {"a": 1}}
+    enum_schema: dict[str, Any] = {"enum": [{"a": 1}]}
+    check(CID, "f1-4 const exact key passes", grade('{"a": 1}', const_schema).passed)
+    check(CID, "f1-4 enum exact key passes", grade('{"a": 1}', enum_schema).passed)
+    for label, raw in (("trailing", '{"a ": 1}'), ("leading", '{" a": 1}'), ("tab", '{"a\\t": 1}')):
+        check(
+            CID, f"f1-4 const rejects {label}-whitespace key", not grade(raw, const_schema).passed
+        )
+        check(CID, f"f1-4 enum rejects {label}-whitespace key", not grade(raw, enum_schema).passed)
+    padded: dict[str, Any] = {"const": {" a ": 1}}
+    check(CID, "f1-4 padded schema key matches itself only", grade('{" a ": 1}', padded).passed)
+    check(
+        CID, "f1-4 padded schema key rejects the stripped key", not grade('{"a": 1}', padded).passed
+    )
+
+
 def main() -> int:
     tests = [
         (name, fn)

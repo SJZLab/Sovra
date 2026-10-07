@@ -5,20 +5,19 @@ info:
   description: >-
     Frozen shared component schemas and real live routes for the
     project-scoped EvaluationSuite resource (Section 23-30/69/45/65-67/77/
-    81, FTF-0601). `paths` declares exactly the surface this task actually
-    implements and wires into `apps/api/app/main.py` -- create/get/list/
-    update/lock of the suite record -- and nothing else. It deliberately
-    does not declare a `/cases` route (Section 23-24's own evaluation-case
-    authoring, FTF-0602 "Evaluation case editor/import," a separate,
-    dependency-gated later task that names this one as *its own*
-    dependency), an `/evaluations/results` route (Section 25's own real
+    81, FTF-0601). `paths` declares exactly the surface the tasks owning
+    this file actually implement and wire into `apps/api/app/main.py`:
+    create/get/list/update/lock of the suite record (FTF-0601) and the
+    suite's evaluation cases -- all-or-nothing import, cursor list, get and
+    edit (FTF-0602-P1, Section 6.14/23-24/26-27/69.1-69.2). It deliberately
+    does not declare an `/evaluations/results` route (Section 25's own real
     runtime-execution loop) or a `/comparisons` route (Section 28's own
-    baseline-comparison surface): none of those entities/capabilities
-    exists anywhere in this repository yet. Declaring any of them as a
-    real, enforced endpoint here without a real backing implementation
-    would be exactly the "placeholder endpoint" Law 11 forbids. Whichever
-    later task adds its own real route extends this same file under this
-    same contract-owner lock (shared_lock_required: contracts:06).
+    baseline-comparison surface): neither entity/capability exists anywhere
+    in this repository yet. Declaring any of them as a real, enforced
+    endpoint here without a real backing implementation would be exactly
+    the "placeholder endpoint" Law 11 forbids. Whichever later task adds its
+    own real route extends this same file under this same contract-owner
+    lock (shared_lock_required: contracts:06).
 paths:
   /api/v1/organizations/{organization_id}/projects/{project_id}/evaluation-suites:
     parameters:
@@ -219,12 +218,191 @@ paths:
           description: >-
             The suite is already locked, has no reviewer_id assigned, or
             (for a final-purpose suite) reviewer_id equals created_by.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/evaluation-suites/{suite_id}/cases:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: suite_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: >-
+        List a suite's cases ordered by case_key, `limit` at a time. For a
+        final-purpose suite only evaluator, workspace_admin and
+        organization_admin may read (Section 69.1).
+      operationId: listEvaluationCases
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: after
+          in: query
+          required: false
+          description: The `next_after` of the previous page.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+      responses:
+        '200':
+          description: One page of cases.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluationCasePage'
+        '400':
+          $ref: '#/components/responses/CaseValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: >-
+            `role_not_authorized`, or `final_suite_content_restricted` when
+            the suite is final-purpose and the role is not evaluator /
+            workspace_admin / organization_admin. No case content is
+            returned.
+        '404':
+          description: >-
+            Suite missing, in a different organization, or in a different
+            project -- identical in every case (`not_found`).
+    post:
+      summary: >-
+        Import 1..500 cases into a draft suite, all or nothing: one invalid
+        row, a repeated case_key, or an existing case_key inserts nothing.
+        Takes the suite row lock; writes the `evaluation_case.import` audit
+        event.
+      operationId: importEvaluationCases
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluationCaseImportRequest'
+      responses:
+        '201':
+          description: The created cases.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluationCaseItems'
+        '400':
+          $ref: '#/components/responses/CaseValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: >-
+            `role_not_authorized` (writes are {evaluator, workspace_admin,
+            organization_admin}, FTF-0601's own set) or
+            `final_suite_content_restricted`.
+        '404':
+          description: Suite missing, foreign or in another project (`not_found`).
+        '409':
+          description: >-
+            `suite_locked` (the suite is no longer a draft) or
+            `duplicate_case_key`.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/evaluation-suites/{suite_id}/cases/{case_id}:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: suite_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get one case. Final-purpose suites follow the same read restriction as the list.
+      operationId: getEvaluationCase
+      responses:
+        '200':
+          description: The case.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluationCase'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: '`role_not_authorized` or `final_suite_content_restricted`.'
+        '404':
+          description: Suite or case missing, foreign or in another project (`not_found`).
+    patch:
+      summary: >-
+        Edit the named fields of a case in a draft suite. `case_key` is
+        immutable. Writes the `evaluation_case.update` audit event with the
+        field names only.
+      operationId: updateEvaluationCase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluationCasePatchRequest'
+      responses:
+        '200':
+          description: The updated case.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluationCase'
+        '400':
+          $ref: '#/components/responses/CaseValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: '`role_not_authorized` or `final_suite_content_restricted`.'
+        '404':
+          description: Suite or case missing, foreign or in another project (`not_found`).
+        '409':
+          description: '`suite_locked`.'
 components:
   responses:
     NotAuthenticated:
       description: No authenticated session.
     ValidationFailed:
       description: The request body failed schema/policy validation.
+    CaseValidationFailed:
+      description: >-
+        The request failed validation. Each error names the row (`index`,
+        null for a non-row error), the field and a stable code; it never
+        carries the submitted value.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/EvaluationCaseValidationError'
   schemas:
     EvaluationSuitePurpose:
       type: string
@@ -333,3 +511,254 @@ components:
         - locked_at
         - created_at
       additionalProperties: false
+    EvaluationCaseSeverity:
+      type: string
+      enum: [low, medium, high, critical]
+    EvaluationCaseGraderType:
+      type: string
+      description: Section 23's 13 grader types.
+      enum:
+        - exact_match
+        - json_schema
+        - tool_name
+        - tool_arguments
+        - tool_sequence
+        - state_transition
+        - forbidden_action
+        - required_refusal
+        - contains_fact
+        - numeric_tolerance
+        - latency
+        - cost
+        - llm_judge
+    EvaluationCaseInput:
+      type: object
+      description: >-
+        One case to import. `critical: true` requires a grader_type of
+        tool_name, tool_arguments, tool_sequence, state_transition,
+        forbidden_action or required_refusal (Section 27 / 69.2); anything
+        else is refused with `critical_oracle_not_independent`.
+      properties:
+        case_key:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Unique within the suite; immutable; no leading or trailing whitespace.
+        category:
+          type: string
+          minLength: 1
+          maxLength: 100
+        severity:
+          $ref: '#/components/schemas/EvaluationCaseSeverity'
+        critical:
+          type: boolean
+          default: false
+        language:
+          type: string
+          minLength: 1
+          maxLength: 35
+        group_key:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: >-
+            Cluster identity (Section 69.2): turns of one conversation and
+            template-derived near duplicates share a group_key. Required,
+            never defaulted, so effective n is not inflated by omission.
+        input_json:
+          type: object
+          description: A JSON object of at most 2 MiB.
+        expected_json:
+          type: object
+          minProperties: 1
+          description: A non-empty JSON object of at most 2 MiB.
+        grader_type:
+          $ref: '#/components/schemas/EvaluationCaseGraderType'
+        grader_config_json:
+          type: object
+          default: {}
+          description: A JSON object of at most 2 MiB.
+        weight:
+          type: number
+          exclusiveMinimum: 0
+          default: 1
+      required:
+        - case_key
+        - category
+        - severity
+        - language
+        - group_key
+        - input_json
+        - expected_json
+        - grader_type
+      additionalProperties: false
+    EvaluationCaseImportRequest:
+      type: object
+      properties:
+        cases:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/EvaluationCaseInput'
+      required: [cases]
+      additionalProperties: false
+    EvaluationCasePatchRequest:
+      type: object
+      description: >-
+        A non-empty subset of the mutable fields. `case_key` is immutable and
+        is refused with code `immutable`. The merged case must still satisfy
+        the critical-oracle rule.
+      minProperties: 1
+      properties:
+        category:
+          type: string
+          minLength: 1
+          maxLength: 100
+        severity:
+          $ref: '#/components/schemas/EvaluationCaseSeverity'
+        critical:
+          type: boolean
+        language:
+          type: string
+          minLength: 1
+          maxLength: 35
+        group_key:
+          type: string
+          minLength: 1
+          maxLength: 200
+        input_json:
+          type: object
+        expected_json:
+          type: object
+          minProperties: 1
+        grader_type:
+          $ref: '#/components/schemas/EvaluationCaseGraderType'
+        grader_config_json:
+          type: object
+        weight:
+          type: number
+          exclusiveMinimum: 0
+      additionalProperties: false
+    EvaluationCase:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        suite_id:
+          type: string
+          format: uuid
+        case_key:
+          type: string
+        category:
+          type: string
+        severity:
+          $ref: '#/components/schemas/EvaluationCaseSeverity'
+        critical:
+          type: boolean
+        language:
+          type: string
+        group_key:
+          type: string
+        input_json:
+          type: object
+        expected_json:
+          type: object
+        grader_type:
+          $ref: '#/components/schemas/EvaluationCaseGraderType'
+        grader_config_json:
+          type: object
+        weight:
+          type: number
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - organization_id
+        - project_id
+        - suite_id
+        - case_key
+        - category
+        - severity
+        - critical
+        - language
+        - group_key
+        - input_json
+        - expected_json
+        - grader_type
+        - grader_config_json
+        - weight
+        - created_by
+        - created_at
+        - updated_at
+      additionalProperties: false
+    EvaluationCaseItems:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvaluationCase'
+      required: [items]
+      additionalProperties: false
+    EvaluationCasePage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvaluationCase'
+        next_after:
+          type: [string, 'null']
+          description: The case_key to pass as `after` for the next page; null on the last page.
+      required: [items, next_after]
+      additionalProperties: false
+    EvaluationCaseFieldError:
+      type: object
+      properties:
+        index:
+          type: [integer, 'null']
+        field:
+          type: [string, 'null']
+        code:
+          type: string
+          enum:
+            - required
+            - invalid_type
+            - invalid_value
+            - too_long
+            - too_large
+            - empty_object
+            - empty_patch
+            - unknown_field
+            - immutable
+            - count_out_of_range
+            - invalid_json
+            - body_too_large
+            - critical_oracle_not_independent
+      required: [index, field, code]
+      additionalProperties: false
+    EvaluationCaseValidationError:
+      type: object
+      properties:
+        detail:
+          type: string
+          enum: [validation_failed, invalid_request, invalid_query, body_too_large]
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvaluationCaseFieldError'
+      required: [detail]

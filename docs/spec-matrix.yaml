@@ -8225,16 +8225,39 @@ FTF-0516:
   proving_symbol: ''
   proving_test: ''
 FTF-0517:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Group-aware split engine
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-23; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0500D,
-    FTF-0515
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-23; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0500D,
+    FTF-0515 (all CERTIFIED). Path refined from the packet's generic
+    services/training-worker/data/group_aware_split_engine.py to
+    workers/data/group_aware_split_engine.py (this repo's real data-worker SOURCE_ROOT; same
+    convention as the sibling data modules).
+
+
+    Built: allocate_splits assigns every record to train, validation, development_eval or
+    final_qualification under strategy sha256_group_hash_v1 and an explicit seed and ratios, and
+    returns an immutable SHA-256-bound SplitManifest. Records that share any linkage key (conversation,
+    template family, customer case, near-duplicate group), directly or through a chain, form one group
+    (union-find) that never crosses roles. A group's role depends only on strategy, seed and its own keys,
+    never on other groups, record order or any outcome (the engine takes no outcome input), so there is no
+    final-driven reshuffling. Temporal cutoff: groups with any record at or after the cutoff go only to the
+    eval roles, earlier groups only to train/validation. Evaluation-preassigned groups stay in their eval
+    role; conflicting preassignments or one that breaks the cutoff are refused. verify_manifest recomputes
+    the hash and independently re-checks group isolation, counts and status, so a tampered manifest is
+    refused. A role with no records makes the manifest insufficient, never silently ready.
+
+
+    Disclosed: near-duplicate resolution happens before this engine and arrives as linkage keys;
+    augmentation and token-packed batches are out of scope; sample-size adequacy is Section 69's job. No
+    live caller yet (the dataset import runtime is not dependency-ready), so proving_symbol stays blank,
+    same precedent as the sibling modules. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0517.py
 FTF-0518:
   certification_state: NONE
   criticality: MUST
@@ -8700,10 +8723,10 @@ FTF-0608:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0608.py
 FTF-0609:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Forbidden-action grader
-  evidence_hash: ''
+  evidence_hash: e25ca189e665a23647ef034398427ca295e94904
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0406, FTF-0601
@@ -8728,7 +8751,7 @@ FTF-0609:
     Disclosed: no live caller yet (Section 25's runtime loop and the real backend adapters are not
     dependency-ready), so proving_symbol stays blank, same precedent as the sibling graders. Not
     self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0609.py
 FTF-0610:
@@ -8762,10 +8785,10 @@ FTF-0610:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0610.py
 FTF-0611:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Numeric grader
-  evidence_hash: ''
+  evidence_hash: c3e09859debf197e4cfb9fc4e7067f076f4dd6ec
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0601 (CERTIFIED).
@@ -8787,30 +8810,67 @@ FTF-0611:
 
     Disclosed: no live caller yet (Section 25's runtime loop is not dependency-ready), so
     proving_symbol stays blank, same precedent as the sibling graders. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0611.py
 FTF-0612:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Latency grader
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0006, FTF-0601
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0006, FTF-0601
+    (both CERTIFIED). Path refined from the packet's generic
+    services/evaluation-worker/evaluators/latency_grader.py to workers/evaluation/latency_grader.py
+    (this repo's real evaluation-worker SOURCE_ROOT; same convention as the sibling graders).
+
+
+    Built: grade_latency measures request, queue, TTFT and whole-agent latency (ms) at p50/p95/p99
+    (nearest-rank, integer arithmetic) against explicit LatencyLimit values, under a LatencySpec that
+    declares clock, workload id, cold/warm profile, timeout_ms and the expected case ids. Timed-out,
+    dropped and errored cases, and missing expected cases, are counted at timeout_ms in every metric,
+    never removed and never counted as fast, so they cannot improve p95; an empty run fails. A profile,
+    clock or workload that differs from the spec is its own issue and is never pooled. Duplicates stay
+    counted, an ok case over the timeout or a missing metric is flagged, whole-agent below request
+    latency is flagged, and every applicable issue is reported as a sorted tuple. Malformed spec or
+    record types raise LatencyGraderError.
+
+
+    Disclosed: no live caller yet (Section 25's runtime loop is not dependency-ready), so
+    proving_symbol stays blank, same precedent as the sibling graders. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0612.py
 FTF-0613:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Cost grader
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0403, FTF-0601,
-    FTF-1304
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0403, FTF-0601,
+    FTF-1304 (all CERTIFIED). Path refined from the packet's generic
+    services/evaluation-worker/evaluators/cost_grader.py to workers/evaluation/cost_grader.py (this
+    repo's real evaluation-worker SOURCE_ROOT; same convention as the sibling graders).
+
+
+    Built: grade_cost grades the total cost of every attempt (failed ones included) and the cost per
+    unique success (unique by request_id) against a CostSpec naming the policy id and version, the one
+    currency, the expected attempt ids and two exact ceilings (Fraction arithmetic, no binary rounding).
+    The result is pass, fail or insufficient_evidence, never a bare boolean: an unknown cost (None is
+    not zero; the string "0" is a real measured zero), an estimated price, a missing attempt and zero
+    successes are insufficient evidence; an over-ceiling total or per-success cost, a policy-version or
+    currency mismatch (never summed across currencies), a duplicate or unexpected attempt are a fail,
+    which takes precedence. Every applicable issue is reported as a sorted tuple. Malformed spec or
+    record types raise CostGraderError.
+
+
+    Disclosed: no live caller yet (Section 25's runtime loop is not dependency-ready), so
+    proving_symbol stays blank, same precedent as the sibling graders. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0613.py
 FTF-0614:
   certification_state: NONE
   criticality: MUST
@@ -10499,15 +10559,32 @@ FTF-1304:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1304.py
 FTF-1305:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Candidate ranking
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-26; scenarios=Q15, Q19; deps=FTF-0307, FTF-1301, FTF-1304
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-26; scenarios=Q15, Q19; deps=FTF-0307, FTF-1301, FTF-1304
+    (all CERTIFIED). `database_changes` charters no schema change and the packet owns only
+    apps/api/app/services/candidate_ranking.py and its test.
+
+
+    Built: rank_candidates orders existing, base and tuned candidates by base cost per success from a
+    low/base/high interval (built from FTF-1304 results by CostInterval.from_scenario_results) and
+    reports whether the economics are estimated or provisional. Only eligible, priced candidates whose
+    measured development quality lower bound clears a required min_quality floor are ranked; every other
+    candidate is reported with all its reasons, never deleted. Parameter count is recorded and never read.
+    A tuned candidate must carry a training-amortized cost. When the cheapest qualifying interval overlaps
+    another, the result is inconclusive and the incumbent is retained unless a tie_break_policy_id is named
+    (Section 31). The result claims only the lowest-cost qualifying candidate among those tested.
+
+
+    Disclosed: no live caller or route yet (the cost-per-success search route is not dependency-ready), so
+    proving_symbol stays blank, same precedent as FTF-1304. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_1305.py
 FTF-1306:
   certification_state: NONE
   criticality: MUST

@@ -1236,10 +1236,12 @@ def test_r_post_revoked_connection_is_refused() -> None:
             )
             env.connection_statuses = None
             env.connection_missing = True
+            missing_post = _request(base, "POST", _path(), payload=payload)
             check(
                 CID,
                 "a missing/foreign connection is 404 not_found with no discovery",
-                _request(base, "POST", _path(), payload=payload).status == 404
+                missing_post.status == 404
+                and missing_post.json() == {"detail": "not_found"}
                 and len(_DISCOVERY.calls) == 1,
             )
 
@@ -1302,10 +1304,11 @@ def test_r_changes_route() -> None:
                     _request(base, "GET", _path(suffix=f"/changes?limit={bad}")).status == 400,
                 )
             env.connection_missing = True
+            missing_changes = _request(base, "GET", _path(suffix="/changes"))
             check(
                 CID,
-                "a missing/foreign connection is 404",
-                _request(base, "GET", _path(suffix="/changes")).status == 404,
+                "a missing/foreign connection is 404 with the stable not_found body",
+                missing_changes.status == 404 and missing_changes.json() == {"detail": "not_found"},
             )
             check(
                 CID,
