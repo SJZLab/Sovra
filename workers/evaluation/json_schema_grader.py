@@ -79,6 +79,7 @@ __all__ = [
     "SchemaError",
     "ValidationIssue",
     "grade_json_schema",
+    "parse_strict_json",
     "schema_fingerprint",
 ]
 
@@ -199,8 +200,11 @@ def _expect_nonneg_int(schema: Mapping[str, Any], keyword: str, where: str) -> N
 
 
 def _expect_number(schema: Mapping[str, Any], keyword: str, where: str) -> None:
-    if not _is_number(schema[keyword]) or not math.isfinite(schema[keyword]):
-        raise SchemaError(f"{where}: {keyword} must be a finite number")
+    # Non-finite floats never reach here: `schema_fingerprint` (called before
+    # the schema is checked) refuses NaN/Infinity. Deliberately no
+    # `math.isfinite` call: it raises OverflowError on an int beyond float range.
+    if not _is_number(schema[keyword]):
+        raise SchemaError(f"{where}: {keyword} must be a number")
 
 
 def _check_schema(schema: Any, where: str, defs: Mapping[str, Any], depth: int) -> None:
@@ -411,7 +415,7 @@ def _depth_exceeds(value: Any, limit: int) -> bool:
     return False
 
 
-def _parse_candidate(raw_output: str) -> tuple[bool, Any, str]:
+def parse_strict_json(raw_output: str) -> tuple[bool, Any, str]:
     """Returns (ok, value, reason). Never repairs: the text is parsed as-is."""
     if len(raw_output.encode("utf-8", errors="surrogatepass")) > MAX_OUTPUT_BYTES:
         return False, None, "output exceeds the size limit"
@@ -457,7 +461,7 @@ def grade_json_schema(
     defs = schema.get("$defs", {})
     _check_schema(schema, "#", defs if isinstance(defs, dict) else {}, 0)
 
-    ok, value, reason = _parse_candidate(raw_output)
+    ok, value, reason = parse_strict_json(raw_output)
     if not ok:
         return JsonSchemaResult(
             passed=False,

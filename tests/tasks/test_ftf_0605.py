@@ -918,14 +918,35 @@ def test_validation_depth_boundary_when_the_candidate_walks_the_schema() -> None
     )
 
 
+def test_huge_integer_bounds_do_not_crash() -> None:
+    huge = 10**400
+    for keyword in ("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"):
+        schema = {keyword: huge}
+        try:
+            result = grade("1", schema)
+        except Exception as exc:  # noqa: BLE001 -- any crash is the failure being pinned
+            check(CID, f"{keyword}=10**400 must not crash ({type(exc).__name__})", False)
+            continue
+        expected = keyword in ("maximum", "exclusiveMaximum")
+        check(CID, f"{keyword}=10**400 grades without crashing", result.passed is expected)
+    check(
+        CID,
+        "a huge integer candidate grades without crashing",
+        not grade(str(huge), {"maximum": 5}).passed,
+    )
+
+
 def main() -> int:
     tests = [
         (name, fn)
         for name, fn in sorted(globals().items())
         if name.startswith("test_") and callable(fn)
     ]
-    for _name, fn in tests:
-        fn()
+    for name, fn in tests:
+        try:
+            fn()
+        except Exception as exc:  # noqa: BLE001 -- a crash is a failed test, reported by name
+            FAILURES.append(f"FAIL [FTF-0605] {name} raised {type(exc).__name__}: {exc}")
     if FAILURES:
         for failure in FAILURES:
             print(failure)

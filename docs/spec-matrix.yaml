@@ -8634,15 +8634,38 @@ FTF-0606:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0606.py
 FTF-0607:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Tool-argument grader
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0405, FTF-0601
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0405, FTF-0601
+    (both CERTIFIED). Path refined from the packet's generic services/evaluation-worker/
+    evaluators/tool_argument_grader.py to workers/evaluation/tool_argument_grader.py (this repo's
+    real evaluation-worker SOURCE_ROOT; same convention as the sibling grader tasks).
+
+
+    Built: grade_tool_arguments grades one real tool call (call id, exact tool name, the
+    candidate's raw JSON arguments text) against an explicit contract: required and optional
+    parameters, each with one spec from a closed set (Identity, Exact, OneOf, NumberWithin with
+    an explicit absolute tolerance, OfType). allow_extra is a required keyword with no default.
+    Comparison is strictly typed: "5" is not 5, 5 is not 5.0, true is not 1, a numeric string
+    is never inside a tolerance. Each identity is compared with its own expected value, so
+    swapped customer/order IDs fail and the issue names the swap (swapped_identity). Arguments
+    text is parsed with the FTF-0605 strict parser (duplicate keys, NaN/Infinity, prose, a
+    non-object root are failed grades, never repaired). Issues are sorted and never echo values.
+    Malformed contracts and records raise ToolArgumentGraderError at construction.
+
+
+    Also fixed (same-class sweep, FTF-0605's own module): math.isfinite on a huge int raised
+    OverflowError in the JSON-schema grader's schema-bound check; now a real number check, pinned
+    by a test shown RED on the old code. Disclosed: no live caller yet (Section 25's runtime
+    loop is not a dependency-ready task), so proving_symbol stays blank, same precedent as the
+    sibling graders. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0607.py
 FTF-0608:
   certification_state: CERTIFIED
   criticality: MUST
