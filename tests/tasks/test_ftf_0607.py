@@ -747,8 +747,11 @@ def test_arguments_failure_reasons_are_distinguished() -> None:
 
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
-    for _name, fn in tests:
-        fn()
+    for name, fn in tests:
+        try:
+            fn()
+        except Exception as exc:  # noqa: BLE001 -- a crash is a failed test, reported by name
+            FAILURES.append(f"FAIL [FTF-0607] {name} raised {type(exc).__name__}: {exc}")
     if FAILURES:
         for failure in FAILURES:
             print(failure)

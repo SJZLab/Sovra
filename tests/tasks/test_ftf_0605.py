@@ -942,8 +942,11 @@ def main() -> int:
         for name, fn in sorted(globals().items())
         if name.startswith("test_") and callable(fn)
     ]
-    for _name, fn in tests:
-        fn()
+    for name, fn in tests:
+        try:
+            fn()
+        except Exception as exc:  # noqa: BLE001 -- a crash is a failed test, reported by name
+            FAILURES.append(f"FAIL [FTF-0605] {name} raised {type(exc).__name__}: {exc}")
     if FAILURES:
         for failure in FAILURES:
             print(failure)
