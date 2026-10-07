@@ -58,7 +58,9 @@ depends_on = None
 APP_ROLE_NAME = "sovra_app"
 
 _MAX_UPLOAD_BYTES = 10 * 1024**3  # 10 GiB, Section 8.1.
-_PURPOSES = "('training','validation','held_out_evaluation','candidate_development','baseline_only')"
+_PURPOSES = (
+    "('training','validation','held_out_evaluation','candidate_development','baseline_only')"
+)
 _SESSION_UPDATE_COLUMNS = (
     "status, verified_size_bytes, verified_sha256, verified_content_type, "
     "finalized_at, rejection_reason, updated_at"
@@ -78,9 +80,7 @@ def _org_fk(table: str) -> sa.Column:
     return sa.Column(
         "organization_id",
         postgresql.UUID(as_uuid=True),
-        sa.ForeignKey(
-            "organizations.id", ondelete="CASCADE", name=f"fk_{table}_organization_id"
-        ),
+        sa.ForeignKey("organizations.id", ondelete="CASCADE", name=f"fk_{table}_organization_id"),
         nullable=False,
     )
 
@@ -246,7 +246,9 @@ def upgrade() -> None:
             ondelete="RESTRICT",
             name="fk_datasets_verified_upload_session",
         ),
-        sa.UniqueConstraint("project_id", "name", "version", name="uq_datasets_project_name_version"),
+        sa.UniqueConstraint(
+            "project_id", "name", "version", name="uq_datasets_project_name_version"
+        ),
         sa.UniqueConstraint("upload_session_id", name="uq_datasets_upload_session_id"),
         sa.UniqueConstraint("organization_id", "id", name="uq_datasets_org_id_id"),
         sa.CheckConstraint("name <> ''", name="ck_datasets_name_not_blank"),
