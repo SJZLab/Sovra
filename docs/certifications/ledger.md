@@ -10223,3 +10223,25 @@ PR is not landed by the next certifier shift.
   Spot checks of round-1 faults are still RED. The one GREEN fault is provably equivalent (on a pass, the normalized
   candidate equals the normalized approved value). The whole-file gate with M10 and the dispatch tables kills 50/50.
 - Not product-true: there is no live caller yet.
+
+## 2026-10-07T13:40Z — RETURNED: FTF-0515 (round 2), FTF-04A22 (round 2), FTF-04A06-F1, FTF-0605, FTF-0607, FTF-0609
+- FTF-0515 round 2: PR #564, merge d1181590c55e7f00e6e4386719ac81b3f75da64f.
+  - Production P1/P2 are correct. Mutation 112/112.
+  - About 25 hand faults in the round-2 DoD bullets stay GREEN. Tests only: QUEUE 0b.
+- FTF-04A22 round 2: PR #565, merge a09aea81f5d61c8d9880bd80439f62712b120e94.
+  - vitest 47/47.
+  - "Returned manifest shown" is not implemented. Two assertions are missing. QUEUE 0c.
+- FTF-04A06-F1: PR #559, merge 0147eec734197f9770eec2e1078c1c9a2d1e89cf.
+  - F1–F4 and NUL-split faults are RED.
+  - Nested .gitignore, never-read, newline/space/unicode names and ignored-directory pruning are unproven. QUEUE 0d.
+- FTF-0605: PRs #560 and #562, at merge b9e830d0e74c76d855cad5a6fbe0cda3701ff057.
+  - Mutation 235/235.
+  - 20 of 111 hand faults are GREEN. QUEUE 0e.
+- FTF-0607: PR #562, merge b9e830d0e74c76d855cad5a6fbe0cda3701ff057.
+  - Mutation 141/141.
+  - 7 real survivors, including the optional-null fail-open. QUEUE 0f.
+- FTF-0609: PR #563, merge 895499f8b04cd1f6e989fdceb60b7b8ad9114da9.
+  - Mutation 90/90.
+  - 3 survivors: any→all on executed, and empty str/bytes inputs. QUEUE 0g.
+- Verifiers were independent Control-plane subagents (the producers are relay lanes). Each ran in a detached
+  worktree at the merge commit.

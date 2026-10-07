@@ -24445,3 +24445,23 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
   - Two production defects: comma typing is broken in list fields, and save is lossy (it drops unknown keys).
   - Endpoints are real; the component is UNWIRED (no page). Exact fixes and tests: QUEUE item 0c.
 - All three merges happened on a green ci-verdict. Backlog refilled with graders FTF-0610 and FTF-0611.
+
+## 2026-10-07T13:40Z — Control plane: six items returned; three prerequisite slices queued
+- **NOT CERTIFIED, all returned as QUEUE items 0b–0g.** Each was green with 0 mutation survivors, yet independent
+  verifiers found DoD bullets that no test proves:
+  - FTF-0515 round 2 (#564, merge d118159): the P1/P2 production fixes are correct, but about 25 faults survive in the
+    round-2 bullets (provenance, normalized groups, PII, tokenization precedence, ordering, id identity).
+  - FTF-04A22 round 2 (#565, merge a09aea8): D1/D2 are met, but the returned manifest is not shown after save (a
+    production gap), plus two missing assertions, including the unsafe exact-match direction.
+  - FTF-04A06-F1 (#559, merge 0147eec): Law 16 behaviour is correct for the tested cases. Nested `.gitignore`,
+    never-read, odd filenames and real pruning of ignored directories are unproven or missing.
+  - FTF-0605 (#560 + #562, at b9e830d): 20 GREEN of 111 faults; 8 test gaps.
+  - FTF-0607 (#562, merge b9e830d): 7 real survivors, including an optional parameter sent as null that passes
+    (fail-open).
+  - FTF-0609 (#563, merge 895499f): 3 survivors, including empty str/bytes accepted as an empty trace (fail-open).
+- All five relay merges since 11:40 (#559, #560, #562, #563, #564), plus #565, #566 and #567, merged on a green
+  ci-verdict. FTF-0610 (#566) and FTF-0611 (#567) are under L2 now.
+- **Prerequisite child slices** FTF-0308-P1, FTF-0602-P1 and FTF-0501-P1 are now in the Backlog, refined under the
+  plan's card step (3). They are not addenda, so the denominator stays 302.
+- Gate note: CI's mutation gate samples evenly to 200 mutants and prints that cap. L2 verifiers always run it uncapped
+  (`--max-mutants 0`).

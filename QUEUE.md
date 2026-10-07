@@ -9305,53 +9305,60 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
    - **Every grader (FTF-06xx):** before submitting, apply the GRADER CHECKLIST in the same queue.md entry.
-   - **0b. FTF-0515 round 2 (production fix + tests, returned 2026-10-07T12:00Z).** In workers/data/quality_issue_engine.py:
-     (P1, no silent drop) `issue_id` must include every field that tells two findings apart (PII `message_index` and
-     `content_path`; row-issue detail/message). Three same-category PII findings in one record, or two row issues with
-     the same code and position but different messages, must stay distinct issues, each needing its own resolution.
-     (P2) `_make` must sort `batch_positions` and `record_indices` as pairs, never independently.
-     Tests in tests/tasks/test_ftf_0515.py (each fault RED):
-     - empty input gives 7 `detector_not_run` issues and blocks split/training;
-     - a `DetectorRun` with error plus report blocks, error wins, and it is absent from `detectors_reported`;
-       `error=""` blocks;
-     - `detector_failed` and `detector_report_invalid` are each refused by `apply_resolutions`, with
-       `is_detector_failure` True;
-     - 2+ row issues, a `record_index=None` row, 2+ extra issues and 2 resolutions are all kept; resolving one of many
-       leaves the others, in order; `QualityBlockedError.issue_ids` is exactly the blocking ids;
-     - provenance with record_index ≠ batch_position for near-dup (a and b), PII, tokenization and normalized-dup, plus
-       `evidence_digest` for normalized-dup and extra issues;
-     - normalized-duplicate group: detector `exact_duplicate`, blocking; PII `requires_quarantine=False` is a warning;
-       reason `pii_secret_<category>`; truncated_critical_turn wins over requires_explicit_truncation_policy;
-     - a non-poisoning extra warning stays a warning;
-     - issue-id distinctness and identity, with explicit ordering;
-     - the near-dup message is included in the cross-PYTHONHASHSEED comparison;
-     - resolving (not only waiving) a warning.
-     Claim `relay/FTF-0515-r2`.
-   - **0c. FTF-04A22 round 2 (production fix + tests, returned 2026-10-07T12:00Z).** In
-     apps/web/components/target-application/mandate_editor_and_conflict_resolution_ui.tsx:
-     (D1) list inputs keep the raw typed string in local state, so typing `en,` then `fr` works, with a
-     keystroke-sequence test;
-     (D2) save is never lossy: unknown keys in `mandate_json`, extra keys on forbidden-action entries, and top-level
-     keys other than `actions` survive a round trip, with a test.
-     Tests in apps/web/tests/ftf_04a22.spec.ts (each fault RED):
-     - refresh failure (503 and a network throw) shows `refresh-enforcement-error`, keeps the conflict and
-       `mandate-lock-blocked`, has no `mandate-lock-ready`, and the error clears on a later successful refresh;
-     - load and save network errors are surfaced;
-     - a malformed PATCH 200 shows `mandate-save-error`; after a successful save, Save is disabled and the returned
-       manifest is shown;
-     - clearing `business_purpose` and `latency_slo_ms` sends JSON `null` (key present);
-     - a locked manifest with forbidden actions has no `forbidden-action-remove-*` and every input is disabled;
-     - exact name match: `refund` vs `Refund` and `refund_all` gives `not_found`;
-     - `is_critical` alone is enforced;
-     - `"en,,fr"` gives `["en","fr"]`, and the reason is trimmed on add.
-     Recommended:
-     - add inputs clear after add;
-     - removing one of two actions keeps the other;
-     - Save is enabled after a remove;
-     - busy state disables Save and Refresh;
-     - a props change refetches.
-     Claim `relay/FTF-04A22-r2`.
-   - **0d.** Then the Backlog.
+   - **Returned 2026-10-07T13:40Z (Control plane L2, independent verifiers).** All six submissions below were green with
+     0 mutation survivors, and each still had DoD bullets that no test proves: a fault aimed at the bullet stayed GREEN.
+     In the submission, give every DoD bullet its own fault → RED row (the fault named, the CI-way RED output). A bullet
+     with no row is treated as missing. The extended mutation gate is necessary, not sufficient: it does not mutate
+     module-level tables, any/all, iteration shape or provenance fields.
+   - **0b. FTF-0515 round 3 (tests only).** Work in tests/tasks/test_ftf_0515.py. Claim `relay/FTF-0515-r3`. Verifier findings (each listed fault must go RED):
+     FTF-0515 r2 RETURN -> round 3, tests only (d118159, #564). P1/P2 production fixes correct; mutation 112/112 killed; ~85 hand faults, ~25 survive in round-2 DoD bullets that were not actually tested:
+     1. Provenance record_index != batch_position: PII (index 10, position 0 -> batch_positions==(0,), record_indices==(10,)); Tokenization batch_position=0, record_index=7 for both critical-turn and policy issues; normalized-dup indices 10 and 20 -> record_indices==(10,20) and evidence_digest==group.digest.
+     2. Normalized-duplicate group via ExactDuplicateReport (equal normalized_sha256, different record_sha256): detector exact_duplicate, reason normalized_duplicate_group, blocking, provenance, digest.
+     3. PII requires_quarantine=False -> warning, not blocking; reason == f"pii_secret_{category}" (e.g. pii_secret_email).
+     4. One conversation with truncated_critical_turn=True AND requires_explicit_truncation_policy=True -> exactly one issue, truncated_critical_turn (no dict-collapse by code).
+     5. Cross-PYTHONHASHSEED: add a near-dup pair (2+ methods) to in-process and subprocess batches; unsorted-methods fault must go RED.
+     6. Resolve one of many: other issues unchanged and order preserved ([ids] equal before/after); "resolution reorders" fault RED.
+     7. Issue-id identity: ids differ when only record_index differs, and when only digest differs; equal inputs give equal ids.
+     8. (optional) detector_report_invalid absent from detectors_reported.
+   - **0c. FTF-04A22 round 3 (production fix + tests).** Work in apps/web/tests/ftf_04a22.spec.ts and the component. Claim `relay/FTF-04A22-r3`. Verifier findings (each listed fault must go RED):
+     FTF-04A22 r2 RETURN -> round 3 (a09aea8, #565). D1/D2 met; nearly all required bullets RED under fault. Remaining:
+     1. Production + test: "after a successful save, the returned manifest is shown" is not implemented for fields. In handleSave after a successful PATCH also call setMandate(parseMandateContent(updated.mandate_json ?? ...)) and setForbiddenActions(parseForbiddenActions(updated.forbidden_actions_json ?? ...)). Test: PATCH returns changed mandate_json (business_purpose "SERVER") and status "locked" -> field shows the server value, read-only notice, no Save button; Save disabled otherwise.
+     2. D2 second save: assert lastPatchBody().forbidden_actions_json.policy_version === 3 (setForbiddenBase({}) after first save currently passes).
+     3. Exact match, unsafe direction: evaluateForbiddenAction("refund", [requirement({name:"refund_all"})]).reason === "not_found".
+     Recommended: Remove as the only edit enables Save; locked test loops over all MANDATE_* inputs.
+   - **0d. FTF-04A06-F1 round 2 (production pruning fix + tests).** Work in tests/tasks/test_ftf_04a32.py and the connector. Claim `relay/FTF-04A06-F1-r2`. Verifier findings (each listed fault must go RED):
+     FTF-04A06-F1 RETURN (0147eec, #559). Behaviour correct for the cases tested; F1-F4 and F7 (NUL split) RED; prior 04A32 faults still RED. Required:
+     1. Nested .gitignore semantics: pkg/.gitignore with `secret.*` -> pkg/secret.key and pkg/sub/secret.key absent, other/secret.key present; negation `!keep.env` after `*.env` -> keep.env present. (Current nested case is ignored by a top-level pattern, so a top-level-only emulation passes.)
+     2. Never read (Law 16): a read-spy (patch Path.read_bytes/Path.open/builtins.open/os.open in the module) or an ignored chmod-000 file/FIFO tripwire proves no ignored path is opened during capture_local_repository.
+     3. Odd filenames: tracked-modified and untracked files whose names contain a space, non-ASCII (core.quotePath would quote) and an embedded newline appear in manifest and archive; an ignored file with such a name is absent (dropping -z and splitting on \n currently survives).
+     4. Production + test: actually prune ignored directories (do not scandir a directory with no visible path under it). The test named "..._ignored_directory_is_pruned_not_walked" claims this today but the walker lists every ignored dir; an unreadable ignored dir (chmod 000 node_modules, run as non-root) must not break capture.
+     5. Unreadable visible file (read_bytes OSError at the raise near line 615) refused with LocalRepositoryConnectorError, non-root test.
+   - **0e. FTF-0605 round 2 (tests only).** Work in tests/tasks/test_ftf_0605.py. Claim `relay/FTF-0605-r2`. Verifier findings (each listed fault must go RED):
+     FTF-0605 RETURN, tests only (b9e830d, #560+#562). Mutation 235/235 killed (--max-mutants 0); 111 hand faults, 20 GREEN. Required tests in tests/tasks/test_ftf_0605.py:
+     1. Sorted output where raw order differs: {"zzz":1,"qty":99} under additionalProperties:false -> paths ["/qty","/zzz"].
+     2. Required-key case/whitespace exactness with additionalProperties:true: {"name":"a"} and {"Name ":"a"} vs required ["Name"] -> required issue.
+     3. type:null rejects "", 0, false, [], {}.
+     4. const/enum object exactness: instance missing a const key; {"A":1} vs const {"a":1} -> fail without raising.
+     5. $ref with sibling keywords: {"$ref":"#/$defs/a","maxLength":1} with "abc" fails.
+     6. RecursionError fail-closed with permissive schema: grade("["*100000+"]"*100000, {}) -> passed=False.
+     7. Non-ASCII schema (enum ["é"]) grades correctly; golden digest schema_fingerprint({"type":"string"}) == "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96".
+     8. Content-free messages: the candidate literal appears in no message for enum/type/parse/other keyword failures.
+     Optional: allOf with two identical branches keeps two issues; Unicode whitespace/BOM prefix fails.
+   - **0f. FTF-0607 round 2 (tests only).** Work in tests/tasks/test_ftf_0607.py. Claim `relay/FTF-0607-r2`. Verifier findings (each listed fault must go RED):
+     FTF-0607 RETURN (b9e830d, #562). Mutation 141/141 killed; 84 hand faults, 7 real survivors (tests only, no production change needed):
+     1. Optional param present as null/0/""/false/[]/{} passes (fail-open) -> each must fail ("reason","mismatch"); same for optional Identity/Exact.
+     2. Exact has no case/whitespace exactness: Exact("x") must reject " x ", "x ", "X" (incl. nested string).
+     3. arguments_json padded with \xa0, \x0b, \x0c before/after a valid object must fail with an arguments_json issue.
+     4. Two+ undeclared params -> one "extra" issue each.
+     5. Wrong tool name + malformed arguments -> issues sorted (<arguments> before <tool>).
+     6. Three identities, cyclic swap / one value equal to two others' expected -> every swap named.
+     7. OfType([]) and OfType({}) raise ToolArgumentGraderError, not TypeError.
+     Optional: case-variants "Null","Number","Boolean","Object","Array" refused; Identity(" ") legality.
+   - **0g. FTF-0609 round 2 (tests only).** Work in tests/tasks/test_ftf_0609.py. Claim `relay/FTF-0609-r2`. Verifier findings (each listed fault must go RED):
+     FTF-0609 RETURN (895499f, #563). Mutation 90/90 killed; 46 hand faults, 3 real survivors (tests only):
+     1. F26 executed check any->all survives: in test_mixed_denied_and_executed assert unverified_attempts == (); add one call with [executed, failed] and [executed, unknown] -> unverified_attempts == () and executed_effects == (that effect,).
+     2. F37/F38 fail-open malformed input: attempted_calls="" / b"" and backend_effects="" / b"" must raise (str|bytes guard untested; without it an empty string becomes an empty trace and passes). Optionally bytearray().
+   - **0h.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
      (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34 and FTF-04A32 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
@@ -9474,18 +9481,98 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 "2026-10-01T13:40Z". One PR per item group, titled "[relay] <ID>: fix L2 round-2 findings".
 
 ## Backlog (sliced, ready — relay takes these after Active; Refill & Sweep keeps >= 3)
-- **FTF-04A06-F1 (Law 16, Control-plane decision 2026-10-07T11:00Z)** The local repository connector's dirty-snapshot
-  manifest and archive include git-ignored files (a probe captured `.env`). Law 16 forbids silently harvesting
-  repository data, and ignored files often hold secrets. Decision: the snapshot file set equals git's own view, meaning
-  tracked files plus untracked files that are not ignored (`git ls-files --cached --others --exclude-standard`).
-  Ignored files are never read or archived. Fix apps/api/app/target_connectors/local_repository_connector.py and
-  add tests (an ignored `.env` and a nested ignored dir are absent from the manifest, the archive and the tree_hash;
-  an un-ignored untracked file is present), with a fault → RED table. Claim `relay/FTF-04A06-F1-r1`.
-- **FTF-0605** JSON-schema grader. DoD: `tools/r1_handoff.py packet FTF-0605`. Apply the GRADER CHECKLIST.
-- **FTF-0607** Tool-argument grader. DoD: `tools/r1_handoff.py packet FTF-0607`. Apply the GRADER CHECKLIST.
-- **FTF-0609** Forbidden-action grader. DoD: `tools/r1_handoff.py packet FTF-0609`. Apply the GRADER CHECKLIST.
-- **FTF-0610** Refusal grader. DoD: `tools/r1_handoff.py packet FTF-0610`. Apply the GRADER CHECKLIST.
-- **FTF-0611** Numeric grader. DoD: `tools/r1_handoff.py packet FTF-0611`. Apply the GRADER CHECKLIST.
+- **Prerequisite child slices (Control-plane design, 2026-10-07T13:30Z).** FTF-0308, FTF-0602 and FTF-0501 are refined into
+  bounded child IDs under FINE_TUNING_FACTORY_RELEASE_1.md "For each card" step (3) ("refine any oversized item into bounded
+  child IDs whose union covers every parent acceptance criterion"). Each persistence/API child is the "separately claimed
+  migration prerequisite" the packets require, and it sits inside its parent's own acceptance ("changing mapping
+  invalidates related qualification", "case editor/import", "cannot create accepted Dataset version"). These are
+  refinements, not new criteria: the denominator stays 302 and no addendum/ADR applies (ADR 0002/0003 cover new tasks
+  outside the 300). The parent certifies only when its children and its own UI/module half are done. Common rules:
+  - Migrations are serialized on the one Alembic chain: take the next free number at claim time (0022, 0023, 0024 in the
+    order below; renumber if another lands first). Revision ids ≤32 chars.
+  - RLS exactly as 0017/0020: ENABLE + FORCE, policy `tenant_isolation` FOR ALL USING/WITH CHECK
+    `organization_id = NULLIF(current_setting('app.current_organization_id', true), '')::uuid`; `sovra_app` never gets
+    DELETE. Paths `/api/v1/organizations/{organization_id}/...`; errors `{"detail":"<stable_code>"}`; audit via
+    `write_audit_event` in the same transaction.
+  - Each child freezes its own interface section in the phase yaml under that phase's contract lock (serialized
+    ownership transfer from the phase interface owner, per "shared module changes require ownership
+    transfer/serialization"), adds its own additive ci.yml job + verdict `needs`, and never adds UI, runtime deps,
+    secrets or keyed services.
+  - **FTF-0308-P1 ModelCatalogEntry persistence + training-artifact mapping** (§2.2, §3.3, §6.6 subset, §6.24 audit,
+    §39 Models). Migration `00NN_model_catalog_entries`: UQ (organization_id, id) on litellm_connections;
+    `model_catalog_entries` (id, organization_id, litellm_connection_id, public_model_name ≠'', trainable_artifact_id
+    NULL, catalog_version ≥1, first_seen_at, last_verified_accessible_at, mapped_by, timestamps; composite FKs to
+    litellm_connections and trainable_artifacts RESTRICT; UQ (litellm_connection_id, public_model_name));
+    append-only `model_catalog_mapping_changes` (prev/new artifact, prev/new version with new = prev+1, actor,
+    request_id; SELECT/INSERT only). No metadata/cost/supports_* columns (nothing writes them; Law 11).
+    API in 03-interface.yaml, under `.../connections/litellm/{connection_id}/models/{model_name:path}/training-artifact`:
+    GET (ARTIFACT_READ_ROLES) → `{mapping_state unmapped|mapped, model_catalog_entry_id, litellm_connection_id,
+    public_model_name, trainable_artifact_id, catalog_version, last_verified_accessible_at, last_changed_at, artifact:
+    TrainableArtifact|null}`; nothing is inferred from the alias name. POST (§39 fixes POST; ARTIFACT_WRITE_ROLES)
+    body `{trainable_artifact_id uuid|null, expected_catalog_version int|null}`, additionalProperties false; a fresh
+    FTF-0204 discovery on every call; same artifact → 200 unchanged, no event. Errors 400, 401, 403, 404 `not_found`
+    (identical for missing/foreign), 409 `connection_revoked`|`model_not_accessible`|`artifact_not_ready`|
+    `catalog_version_conflict`, 503 `gateway_unavailable` with no write (Law 17). GET `.../training-artifact/changes`
+    (limit ≤100). Store hook `require_current_mapping(session, ctx, entry_id, catalog_version)` raises
+    `MappingChangedError`; a change bumps the version, inserts a change row and writes audit
+    `model_catalog_entry.training_artifact_mapping_change` in one transaction.
+    Tests (each fault RED): cross-tenant GET/POST/changes → identical 404 and a raw org2 INSERT rejected (drop FORCE →
+    RED); app-role UPDATE/DELETE on changes refused; alias absent from fresh discovery → 409, no row; gateway down → 503,
+    no row; artifact not `ready` → 409; remap A→B gives v2, one change row, one audit row, and v1 is rejected by
+    `require_current_mapping`; stale expected version → 409; body with `source_uri`/`model_family` → 400; viewer → 403;
+    data_exposure_check passes. Must not edit model_catalog_routes.py or training_capability_classifier.py, call the
+    LiteLLM management API, or add an alias→artifact heuristic. Builds on certified FTF-0104/0103A/0105/0201/0204/0214/
+    0301/0306/0307. Then FTF-0308 (UI) is re-queued on top. Note for planning: FTF-0309 names `/capabilities`, which
+    nothing persists yet; expect the same pattern.
+  - **FTF-0602-P1 EvaluationCase persistence + create/import/list/edit API** (§6.14, §23-§24, §26-§27, §69.1-§69.2,
+    §78.2, §39 `POST /evaluation-suites/{id}/cases`). Migration `00NN_evaluation_cases`: UQ evaluation_suites
+    (organization_id, project_id, id); `evaluation_cases` (case_key, category, severity low|medium|high|critical,
+    critical bool, language, group_key, input_json/expected_json/grader_config_json JSONB objects, expected ≠ {}, each
+    ≤2 MiB, grader_type in the 13 §23 values, weight >0; FKs to projects and (org, project, suite) RESTRICT; UQ
+    (suite_id, case_key); CHECK `NOT critical OR grader_type IN (tool_name, tool_arguments, tool_sequence,
+    state_transition, forbidden_action, required_refusal)` per §27/§69.2). API in 06-interface.yaml (remove its "does
+    not declare /cases" sentence), base `.../projects/{project_id}/evaluation-suites/{suite_id}/cases`: POST
+    `{cases: [EvaluationCaseInput] 1..500}` all-or-nothing → 201 `{items}`; GET `?limit 1..500&after=<case_key>` →
+    `{items, next_after}`; GET/PATCH `/cases/{case_id}` (case_key immutable). Errors 400 (per-row `{index, field,
+    code}`, never content; `critical_oracle_not_independent`), 403 (`final_suite_content_restricted`: final-suite case
+    reads only evaluator/workspace_admin/organization_admin), 404, 409 `suite_locked`|`duplicate_case_key`. Writes lock
+    the suite row; audit `evaluation_case.import` (ids, count) and `evaluation_case.update` (field names only).
+    Tests (each fault RED): cross-tenant → 404 and raw org2 INSERT rejected; critical case with exact_match/
+    contains_fact/llm_judge → 400 and raw INSERT fails the CHECK; ml_engineer listing a final suite → 403 without
+    content; locked suite → 409; one bad row inserts nothing; duplicate key → 409; 501 rows → 400; data_exposure_check
+    passes. Must not compute suite_sha256 (FTF-0603), run graders, widen FTF-0601's roles, or parse files server-side.
+    Builds on certified FTF-0601/0104/0103A/0105/04A19. Then FTF-0602 (UI) is re-queued on top.
+  - **FTF-0501-P1 Dataset version + upload-session persistence and read API** (§6.10, §7A.10, §8.1 steps 1-4, §65.2,
+    §67.3, §67.5, §39 Datasets). A pure module cannot prove "cannot create accepted Dataset version", so the entity is
+    needed (parked route 1, sized like FTF-1206A). Migration `00NN_dataset_uploads`: UQ dataset_source_connections
+    (organization_id, project_id, id); `dataset_upload_sessions` with CHECKs: object_key =
+    `'tenants/'||organization_id||'/projects/'||project_id||'/uploads/'||id||'/source'`, 0 < declared_size ≤ max_bytes
+    ≤ 10 GiB, expires_at ≤ created_at + 24h, `status <> 'verified' OR (verified size/sha256/content type equal the
+    declared ones AND finalized_at ≤ expires_at)`, `(status='rejected') = (rejection_reason IS NOT NULL)`; `datasets`
+    (one immutable version per row, version ≥1, UQ (project_id, name, version), UQ (upload_session_id), UQ
+    (organization_id, id)) with a composite FK to the session's (org, project, id, status, verified_sha256,
+    verified_size_bytes) and CHECK upload_status = 'verified', so only a verified session can create a version.
+    Column-limited UPDATE grants, no DELETE. API in 05-interface.yaml: GET `.../projects/{project_id}/datasets` (limit
+    ≤200, after) and GET `.../datasets/{dataset_id}`, DATASET_SOURCE_ROLES; held_out_evaluation rows are 404 to
+    ml_engineer (§9, §69.1); responses never include artifact_uri/object_key/bucket. Upload/finalize request and
+    response components are frozen with no paths; FTF-0501 adds those routes with their handlers. Store functions
+    `create_upload_session` (active `upload` connection + FTF-0500 `authorize_dataset_source_purpose`),
+    `record_upload_rejected`, `record_upload_verified_and_create_dataset`, `expire_open_sessions(now)`.
+    Tests on real Postgres with raw sovra_app inserts (each fault RED): a dataset on an open/rejected/expired session
+    fails the FK; marking verified fails on partial size, oversize, hash mismatch, finalized after expiry, or changed
+    object_key; a referenced verified session cannot be modified; cross-tenant → 404 and raw org2 INSERT rejected;
+    ml_engineer cannot see held_out rows; app-role DELETE refused; `data_exposure_check --backends
+    postgres_rls,s3_identity` passes. Must not call S3, presign, add buckets or identities, add upload/finalize paths,
+    or add UI. Builds on certified FTF-0500/0500B/0500D/0104/0103A/0105/R017. Then FTF-0501 (presigned multipart +
+    finalize verification via storage_semantics_client.py's stdlib SigV4; boto3 stays ask-first) is re-queued on top
+    and owns the upload/finalize routes and the contracts:05 lock.
+  - Recorded readings (default-resolution rule): §6 has no DatasetVersion entity, so each `datasets` row is an immutable
+    version (§7A.10); §65.2's ≤5-minute grant applies per part URL, §67.5's 24 h to the session; §6.14 lacks
+    language/group fields that §68.2/§69.2 and FTF-0602 need, so they are added; the live error convention is
+    `{"detail": code}`, not §40's envelope; FTF-0501's "resumable UI" clause is not in its file list and stays with
+    FTF-0501's own refinement.
+- FTF-0610 (#566) and FTF-0611 (#567) are merged and under Control-plane L2; FTF-0605/0607/0609 and FTF-04A06-F1
+  are returned work in item 0 above.
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 
@@ -9497,6 +9584,7 @@ docs/spec-matrix.yaml. It never invents criteria.)
     secret, then re-queue; (2) owner approves using this repository itself (private) with `github.token` as the
     fixture; (3) mark BLOCKED_EXTERNAL per the packet's resource_gate and re-queue when a credential exists.
 - **FTF-0501 Direct object-storage upload: PARKED (BLOCKED_DEPENDENCY), 2026-10-07T10:50Z, lane B.**
+  - **2026-10-07T13:40Z:** prerequisite child slice FTF-0501-P1 is in the Backlog. Re-queue FTF-0501 when FTF-0501-P1 is CERTIFIED.
   - What failed: nothing was attempted. The packet fixes `files` to one module plus its test and says "No independent
     schema change... any required change is a separately claimed migration prerequisite" and "A feature that needs a
     not-yet-frozen interface is BLOCKED_DEPENDENCY". Three things the DoD needs do not exist: (1) no multipart-upload,
@@ -9510,6 +9598,7 @@ docs/spec-matrix.yaml. It never invents criteria.)
     real SeaweedFS S3 integration) and a later wiring task; (3) re-scope the DoD to the module alone and record the
     route/entity half as a disclosed narrowing, the way FTF-0500B did. Recommended: (2).
 - **FTF-0602 Evaluation case editor/import: PARKED (BLOCKED_DEPENDENCY), 2026-10-07T10:50Z, lane B.**
+  - **2026-10-07T13:40Z:** prerequisite child slice FTF-0602-P1 is in the Backlog. Re-queue FTF-0602 when FTF-0602-P1 is CERTIFIED.
   - What failed: nothing was attempted. `06-interface.yaml` states in its own description that it "deliberately does not
     declare a `/cases` route" (and no cases table exists; FTF-0601 persists only the suite record). The packet's
     `files` are the web component and spec only, with "No independent schema change", so there is no API or table for
@@ -9519,6 +9608,7 @@ docs/spec-matrix.yaml. It never invents criteria.)
     (2) fold the backend into FTF-0602 with the migration and contract lock explicitly granted to it; (3) split the
     pure case-validation/import parser (testable now) from the UI. Recommended: (1).
 - **FTF-0308 Model-to-artifact mapping UI: PARKED (BLOCKED_DEPENDENCY), 2026-10-07T08:00Z, Control plane.**
+  - **2026-10-07T13:40Z:** prerequisite child slice FTF-0308-P1 is in the Backlog. Re-queue FTF-0308 when FTF-0308-P1 is CERTIFIED.
   - Lane C's claim record (#541) is right. The contract says to consume a frozen interface, and the negative
     acceptance ("changing mapping invalidates related qualification") needs a persisted mapping plus an
     invalidation hook. Neither exists: there is no `model_catalog_entries` table, and no
