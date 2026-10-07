@@ -37,6 +37,7 @@ import tempfile
 import threading
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 API_ROOT = ROOT / "apps" / "api"
@@ -1083,6 +1084,251 @@ def test_f1_unreadable_git_view_fails_closed() -> None:
                 lambda: _connector._iter_repository_files(not_a_repo), _connector.GitCommandError
             ),
         )
+
+    _with_tmp(body)
+
+
+def _dirty_ignore_repo(tmp: Path, gitignore: str) -> tuple[Path, Path]:
+    allowed = tmp / "allowed"
+    allowed.mkdir()
+    repo = _new_checkout(allowed)
+    (repo / ".gitignore").write_text(gitignore)
+    _git(repo, "add", ".gitignore")
+    _git(repo, "commit", "-qm", "ignore")
+    (repo / "a.txt").write_text("dirty\n")
+    return allowed, repo
+
+
+def _manifest_paths(cap: LocalRepositoryCapture) -> set[str]:
+    return {e.relative_path for e in cap.manifest_entries}
+
+
+def test_f1_nested_gitignore_and_negation_semantics() -> None:
+    """A nested `.gitignore` applies below its own directory only, and a
+    negation re-includes: not a top-level-only emulation."""
+
+    def body(tmp: Path) -> None:
+        allowed, repo = _dirty_ignore_repo(tmp, "*.env\n!keep.env\n")
+        (repo / "pkg" / ".gitignore").write_text("secret.*\n")
+        (repo / "pkg" / "sub").mkdir()
+        (repo / "other").mkdir()
+        for rel in ("pkg/secret.key", "pkg/sub/secret.key", "other/secret.key"):
+            (repo / rel).write_text("S\n")
+        (repo / "x.env").write_text("S\n")
+        (repo / "keep.env").write_text("K\n")
+        cap = capture_local_repository(repo, [allowed])
+        paths = _manifest_paths(cap)
+        files = _archive_files(cap)
+        check(
+            "FTF-04A06-F1",
+            "nested .gitignore hides pkg/secret.key and pkg/sub/secret.key",
+            "pkg/secret.key" not in paths
+            and "pkg/sub/secret.key" not in paths
+            and "pkg/secret.key" not in files
+            and "pkg/sub/secret.key" not in files,
+        )
+        check(
+            "FTF-04A06-F1",
+            "a nested pattern does not leak to a sibling directory",
+            "other/secret.key" in paths and files.get("other/secret.key") == b"S\n",
+        )
+        check(
+            "FTF-04A06-F1",
+            "negation re-includes keep.env while *.env stays ignored",
+            "keep.env" in paths and "x.env" not in paths and "x.env" not in files,
+        )
+
+    _with_tmp(body)
+
+
+def test_f1_ignored_paths_are_never_opened_or_listed() -> None:
+    """Law 16: no ignored file is opened or read, and no ignored directory is
+    even listed (real pruning), including one behind an ignored symlink."""
+
+    def body(tmp: Path) -> None:
+        allowed, repo = _dirty_ignore_repo(tmp, ".env\nnode_modules/\nlink-to-ignored\n")
+        (repo / ".env").write_text("API_KEY=hunter2\n")
+        (repo / "node_modules" / "deep").mkdir(parents=True)
+        (repo / "node_modules" / "deep" / "x.js").write_text("x\n")
+        (repo / "link-to-ignored").symlink_to(repo / "node_modules")
+        touched: list[str] = []
+        listed: list[str] = []
+        builtins_module: Any = sys.modules["builtins"]
+        path_cls: Any = Path
+        os_module: Any = os
+        real_read, real_open = path_cls.read_bytes, path_cls.open
+        real_builtin_open, real_scandir = builtins_module.open, os_module.scandir
+
+        def spy_read(self: Path, *args: Any, **kwargs: Any) -> bytes:
+            touched.append(str(self))
+            result: bytes = real_read(self, *args, **kwargs)
+            return result
+
+        def spy_open(self: Path, *args: Any, **kwargs: Any) -> Any:
+            touched.append(str(self))
+            return real_open(self, *args, **kwargs)
+
+        def spy_builtin(file: Any, *args: Any, **kwargs: Any) -> Any:
+            touched.append(str(file))
+            return real_builtin_open(file, *args, **kwargs)
+
+        def spy_scandir(path: Any = ".") -> Any:
+            listed.append(str(path))
+            return real_scandir(path)
+
+        path_cls.read_bytes, path_cls.open = spy_read, spy_open
+        builtins_module.open, os_module.scandir = spy_builtin, spy_scandir
+        try:
+            cap = capture_local_repository(repo, [allowed])
+        finally:
+            path_cls.read_bytes, path_cls.open = real_read, real_open
+            builtins_module.open, os_module.scandir = real_builtin_open, real_scandir
+        check(
+            "FTF-04A06-F1",
+            "capture still reads the visible files (the spy is live)",
+            any(t.endswith("a.txt") for t in touched) and "a.txt" in _manifest_paths(cap),
+        )
+        check(
+            "FTF-04A06-F1",
+            "no ignored file is ever opened or read",
+            not any(".env" in t or "node_modules" in t or "link-to-ignored" in t for t in touched),
+        )
+        check(
+            "FTF-04A06-F1",
+            "no ignored directory is ever listed (pruned, not walked)",
+            not any("node_modules" in d or "link-to-ignored" in d for d in listed),
+        )
+
+    _with_tmp(body)
+
+
+def test_f1_odd_filenames_captured_and_ignored_odd_names_absent() -> None:
+    """Spaces, non-ASCII and an embedded newline survive git's NUL-separated
+    listing in the manifest and archive; an ignored odd name stays absent."""
+
+    def body(tmp: Path) -> None:
+        allowed, repo = _dirty_ignore_repo(tmp, "ignored *\n")
+        odd = ("with space.txt", "caf\u00e9-\u65e5\u672c.txt", "new\nline.txt")
+        (repo / "pkg" / "tracked name.txt").write_text("t0\n")
+        _git(repo, "add", "pkg/tracked name.txt")
+        _git(repo, "commit", "-qm", "odd")
+        (repo / "pkg" / "tracked name.txt").write_text("t1\n")  # tracked-modified
+        for name in odd:
+            (repo / name).write_text(f"untracked {name!r}\n")  # untracked
+        (repo / "ignored space.txt").write_text("S\n")
+        (repo / "ignored caf\u00e9.txt").write_text("S\n")
+        (repo / "ignored \nx.txt").write_text("S\n")
+        cap = capture_local_repository(repo, [allowed])
+        paths, files = _manifest_paths(cap), _archive_files(cap)
+        check(
+            "FTF-04A06-F1",
+            "untracked odd names are in the manifest and archive with their bytes",
+            all(n in paths and files.get(n) == f"untracked {n!r}\n".encode() for n in odd),
+        )
+        check(
+            "FTF-04A06-F1",
+            "a tracked-modified odd name is captured with its dirty bytes",
+            files.get("pkg/tracked name.txt") == b"t1\n",
+        )
+        check(
+            "FTF-04A06-F1",
+            "ignored odd names are absent from manifest and archive",
+            not any(p.startswith("ignored ") for p in paths)
+            and not any(p.startswith("ignored ") for p in files),
+        )
+        check(
+            "FTF-04A06-F1",
+            "the archive agrees with the manifest for odd names",
+            _archive_agrees_with_manifest(cap),
+        )
+
+    _with_tmp(body)
+
+
+def test_f1_unreadable_ignored_directory_does_not_break_capture() -> None:
+    def body(tmp: Path) -> None:
+        if os.geteuid() == 0:  # root bypasses mode bits; CI runs unprivileged
+            return
+        allowed, repo = _dirty_ignore_repo(tmp, "node_modules/\n")
+        (repo / "node_modules").mkdir()
+        (repo / "node_modules" / "x.js").write_text("x\n")
+        (repo / "node_modules").chmod(0o000)
+        try:
+            cap = capture_local_repository(repo, [allowed])
+            ok = "a.txt" in _manifest_paths(cap)
+        except LocalRepositoryConnectorError:
+            ok = False
+        finally:
+            (repo / "node_modules").chmod(0o755)
+        check("FTF-04A06-F1", "an unreadable ignored dir never breaks the capture", ok)
+
+    _with_tmp(body)
+
+
+def test_f1_unreadable_visible_file_refused() -> None:
+    """A visible file whose read fails is refused, never silently skipped. A
+    read-failure stub covers privileged hosts; a real chmod-000 covers CI."""
+
+    def body(tmp: Path) -> None:
+        allowed, repo = _dirty_ignore_repo(tmp, "")
+        (repo / "pkg" / "locked.txt").write_text("L\n")
+        path_cls: Any = Path
+        real_read = path_cls.read_bytes
+
+        def failing(self: Path, *args: Any, **kwargs: Any) -> bytes:
+            if self.name == "locked.txt":
+                raise PermissionError(13, "denied")
+            result: bytes = real_read(self, *args, **kwargs)
+            return result
+
+        path_cls.read_bytes = failing
+        try:
+            refused = _refused(
+                lambda: capture_local_repository(repo, [allowed]), LocalRepositoryConnectorError
+            )
+        finally:
+            path_cls.read_bytes = real_read
+        check("FTF-04A06-F1", "an unreadable visible file is refused (read error)", refused)
+        if os.geteuid() != 0:
+            (repo / "pkg" / "locked.txt").chmod(0o000)
+            try:
+                check(
+                    "FTF-04A06-F1",
+                    "a chmod-000 visible file is refused, not skipped",
+                    _refused(
+                        lambda: capture_local_repository(repo, [allowed]),
+                        LocalRepositoryConnectorError,
+                    ),
+                )
+            finally:
+                (repo / "pkg" / "locked.txt").chmod(0o644)
+
+    _with_tmp(body)
+
+
+def test_n3_directory_read_failure_is_a_connector_error_on_any_host() -> None:
+    """Privilege-independent twin of the chmod-000 test: a failing scandir of a
+    visible directory is a connector error, never a skip."""
+
+    def body(tmp: Path) -> None:
+        repo = _new_checkout(tmp)
+        (repo / "a.txt").write_text("dirty\n")
+        os_module: Any = os
+        real_scandir = os_module.scandir
+
+        def failing(path: Any = ".") -> Any:
+            if Path(str(path)).name == "pkg":
+                raise PermissionError(13, "denied")
+            return real_scandir(path)
+
+        os_module.scandir = failing
+        try:
+            refused = _refused(
+                lambda: capture_local_repository(repo, [tmp]), LocalRepositoryConnectorError
+            )
+        finally:
+            os_module.scandir = real_scandir
+        check("FTF-04A32-N3", "a failing directory listing is a connector error", refused)
 
     _with_tmp(body)
 
