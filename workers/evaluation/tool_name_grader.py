@@ -130,8 +130,16 @@ def grade_tool_name(
                 "free-text mention of a tool's name is never a valid "
                 "emitted call"
             )
-        if not call.name:
-            raise ToolNameGraderError(f"emitted tool call {call.tool_call_id!r} has an empty name")
+        if not isinstance(call.tool_call_id, str) or not call.tool_call_id:
+            raise ToolNameGraderError(
+                f"emitted tool call has an invalid tool_call_id {call.tool_call_id!r}: "
+                "must be a non-empty string"
+            )
+        if not isinstance(call.name, str) or not call.name:
+            raise ToolNameGraderError(
+                f"emitted tool call {call.tool_call_id!r} has an invalid name "
+                f"{call.name!r}: must be a non-empty string"
+            )
 
     required = _validate_name_set(must_call_one_of, field_name="must_call_one_of")
     forbidden = _validate_name_set(must_not_call, field_name="must_not_call")
