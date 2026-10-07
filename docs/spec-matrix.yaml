@@ -5764,10 +5764,10 @@ FTF-04A21:
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_04a21.spec.ts
 FTF-04A22:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Mandate editor and conflict-resolution UI
-  evidence_hash: ''
+  evidence_hash: e6019bbaa5b1a1593f19cba69c1f24be9935dd07
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-0408,
@@ -5809,7 +5809,7 @@ FTF-04A22:
     product_truth_check.py: proving_symbol stays blank -- disclosed, no Next.js app/ page tree
     exists yet to mount this component (FTF-H029), same class as FTF-0408/FTF-04A21's own
     disclosed scope boundary.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_04a22.spec.ts
 FTF-04A23:
@@ -8204,14 +8204,14 @@ FTF-0514:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0514.py
 FTF-0515:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Quality issue engine
-  evidence_hash: ''
+  evidence_hash: 33a122671dcb7e2c6bac435e5ffdfe15c0066298
   implementation_state: IMPLEMENTED
   notes: kind=retained_feature; requirements=AF-16; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0509,
     FTF-0510, FTF-0511, FTF-0512, FTF-0513, FTF-0514
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0515.py
 FTF-0516:
@@ -8531,10 +8531,10 @@ FTF-0604:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0604.py
 FTF-0605:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: JSON-schema grader
-  evidence_hash: ''
+  evidence_hash: 6aebcf04ca9dda351b3b5d5af7033fd34118901b
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0405, FTF-0601
@@ -8561,7 +8561,7 @@ FTF-0605:
     engine is decided (a new dependency, ask-first). (3) No live caller yet (Section 25's runtime
     loop is not a dependency-ready task), so proving_symbol stays blank, the same precedent as the
     sibling graders. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0605.py
 FTF-0606:
@@ -8634,10 +8634,10 @@ FTF-0606:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0606.py
 FTF-0607:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Tool-argument grader
-  evidence_hash: ''
+  evidence_hash: 9201640c41351cbc6c0da069fe9b8f0a4df008ff
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0405, FTF-0601
@@ -8663,7 +8663,7 @@ FTF-0607:
     by a test shown RED on the old code. Disclosed: no live caller yet (Section 25's runtime
     loop is not a dependency-ready task), so proving_symbol stays blank, same precedent as the
     sibling graders. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0607.py
 FTF-0608:
@@ -8732,10 +8732,10 @@ FTF-0609:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0609.py
 FTF-0610:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Refusal grader
-  evidence_hash: ''
+  evidence_hash: ddddbd3de363c24fe17063d4ff85205c0cf0afe3
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0407, FTF-0601.
@@ -8758,7 +8758,7 @@ FTF-0610:
     Disclosed: no live caller yet (Section 25's runtime loop is not dependency-ready), so
     proving_symbol stays blank, same precedent as the sibling graders. response_kind is a structured
     input from the runtime, not inferred from text. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0610.py
 FTF-0611:

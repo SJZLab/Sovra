@@ -9305,71 +9305,17 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
    - **Every grader (FTF-06xx):** before submitting, apply the GRADER CHECKLIST in the same queue.md entry.
-   - **Returned 2026-10-07T13:40Z (Control plane L2, independent verifiers).** All eight submissions below were green with
-     0 mutation survivors, and each still had DoD bullets that no test proves: a fault aimed at the bullet stayed GREEN.
-     In the submission, give every DoD bullet its own fault → RED row (the fault named, the CI-way RED output). A bullet
-     with no row is treated as missing. The extended mutation gate is necessary, not sufficient: it does not mutate
-     module-level tables, any/all, iteration shape or provenance fields.
-   - **0b. FTF-0515 round 3 (tests only).** Work in tests/tasks/test_ftf_0515.py. Claim `relay/FTF-0515-r3`. Verifier findings (each listed fault must go RED):
-     FTF-0515 r2 RETURN -> round 3, tests only (d118159, #564). P1/P2 production fixes correct; mutation 112/112 killed; ~85 hand faults, ~25 survive in round-2 DoD bullets that were not actually tested:
-     1. Provenance record_index != batch_position: PII (index 10, position 0 -> batch_positions==(0,), record_indices==(10,)); Tokenization batch_position=0, record_index=7 for both critical-turn and policy issues; normalized-dup indices 10 and 20 -> record_indices==(10,20) and evidence_digest==group.digest.
-     2. Normalized-duplicate group via ExactDuplicateReport (equal normalized_sha256, different record_sha256): detector exact_duplicate, reason normalized_duplicate_group, blocking, provenance, digest.
-     3. PII requires_quarantine=False -> warning, not blocking; reason == f"pii_secret_{category}" (e.g. pii_secret_email).
-     4. One conversation with truncated_critical_turn=True AND requires_explicit_truncation_policy=True -> exactly one issue, truncated_critical_turn (no dict-collapse by code).
-     5. Cross-PYTHONHASHSEED: add a near-dup pair (2+ methods) to in-process and subprocess batches; unsorted-methods fault must go RED.
-     6. Resolve one of many: other issues unchanged and order preserved ([ids] equal before/after); "resolution reorders" fault RED.
-     7. Issue-id identity: ids differ when only record_index differs, and when only digest differs; equal inputs give equal ids.
-     8. (optional) detector_report_invalid absent from detectors_reported.
-   - **0c. FTF-04A22 round 3 (production fix + tests).** Work in apps/web/tests/ftf_04a22.spec.ts and the component. Claim `relay/FTF-04A22-r3`. Verifier findings (each listed fault must go RED):
-     FTF-04A22 r2 RETURN -> round 3 (a09aea8, #565). D1/D2 met; nearly all required bullets RED under fault. Remaining:
-     1. Production + test: "after a successful save, the returned manifest is shown" is not implemented for fields. In handleSave after a successful PATCH also call setMandate(parseMandateContent(updated.mandate_json ?? ...)) and setForbiddenActions(parseForbiddenActions(updated.forbidden_actions_json ?? ...)). Test: PATCH returns changed mandate_json (business_purpose "SERVER") and status "locked" -> field shows the server value, read-only notice, no Save button; Save disabled otherwise.
-     2. D2 second save: assert lastPatchBody().forbidden_actions_json.policy_version === 3 (setForbiddenBase({}) after first save currently passes).
-     3. Exact match, unsafe direction: evaluateForbiddenAction("refund", [requirement({name:"refund_all"})]).reason === "not_found".
-     Recommended: Remove as the only edit enables Save; locked test loops over all MANDATE_* inputs.
-   - **0d. FTF-04A06-F1 round 2 (production pruning fix + tests).** Work in tests/tasks/test_ftf_04a32.py and the connector. Claim `relay/FTF-04A06-F1-r2`. Verifier findings (each listed fault must go RED):
-     FTF-04A06-F1 RETURN (0147eec, #559). Behaviour correct for the cases tested; F1-F4 and F7 (NUL split) RED; prior 04A32 faults still RED. Required:
-     1. Nested .gitignore semantics: pkg/.gitignore with `secret.*` -> pkg/secret.key and pkg/sub/secret.key absent, other/secret.key present; negation `!keep.env` after `*.env` -> keep.env present. (Current nested case is ignored by a top-level pattern, so a top-level-only emulation passes.)
-     2. Never read (Law 16): a read-spy (patch Path.read_bytes/Path.open/builtins.open/os.open in the module) or an ignored chmod-000 file/FIFO tripwire proves no ignored path is opened during capture_local_repository.
-     3. Odd filenames: tracked-modified and untracked files whose names contain a space, non-ASCII (core.quotePath would quote) and an embedded newline appear in manifest and archive; an ignored file with such a name is absent (dropping -z and splitting on \n currently survives).
-     4. Production + test: actually prune ignored directories (do not scandir a directory with no visible path under it). The test named "..._ignored_directory_is_pruned_not_walked" claims this today but the walker lists every ignored dir; an unreadable ignored dir (chmod 000 node_modules, run as non-root) must not break capture.
-     5. Unreadable visible file (read_bytes OSError at the raise near line 615) refused with LocalRepositoryConnectorError, non-root test.
-   - **0e. FTF-0605 round 2 (tests only).** Work in tests/tasks/test_ftf_0605.py. Claim `relay/FTF-0605-r2`. Verifier findings (each listed fault must go RED):
-     FTF-0605 RETURN, tests only (b9e830d, #560+#562). Mutation 235/235 killed (--max-mutants 0); 111 hand faults, 20 GREEN. Required tests in tests/tasks/test_ftf_0605.py:
-     1. Sorted output where raw order differs: {"zzz":1,"qty":99} under additionalProperties:false -> paths ["/qty","/zzz"].
-     2. Required-key case/whitespace exactness with additionalProperties:true: {"name":"a"} and {"Name ":"a"} vs required ["Name"] -> required issue.
-     3. type:null rejects "", 0, false, [], {}.
-     4. const/enum object exactness: instance missing a const key; {"A":1} vs const {"a":1} -> fail without raising.
-     5. $ref with sibling keywords: {"$ref":"#/$defs/a","maxLength":1} with "abc" fails.
-     6. RecursionError fail-closed with permissive schema: grade("["*100000+"]"*100000, {}) -> passed=False.
-     7. Non-ASCII schema (enum ["é"]) grades correctly; golden digest schema_fingerprint({"type":"string"}) == "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96".
-     8. Content-free messages: the candidate literal appears in no message for enum/type/parse/other keyword failures.
-     Optional: allOf with two identical branches keeps two issues; Unicode whitespace/BOM prefix fails.
-   - **0f. FTF-0607 round 2 (tests only).** Work in tests/tasks/test_ftf_0607.py. Claim `relay/FTF-0607-r2`. Verifier findings (each listed fault must go RED):
-     FTF-0607 RETURN (b9e830d, #562). Mutation 141/141 killed; 84 hand faults, 7 real survivors (tests only, no production change needed):
-     1. Optional param present as null/0/""/false/[]/{} passes (fail-open) -> each must fail ("reason","mismatch"); same for optional Identity/Exact.
-     2. Exact has no case/whitespace exactness: Exact("x") must reject " x ", "x ", "X" (incl. nested string).
-     3. arguments_json padded with \xa0, \x0b, \x0c before/after a valid object must fail with an arguments_json issue.
-     4. Two+ undeclared params -> one "extra" issue each.
-     5. Wrong tool name + malformed arguments -> issues sorted (<arguments> before <tool>).
-     6. Three identities, cyclic swap / one value equal to two others' expected -> every swap named.
-     7. OfType([]) and OfType({}) raise ToolArgumentGraderError, not TypeError.
-     Optional: case-variants "Null","Number","Boolean","Object","Array" refused; Identity(" ") legality.
-   - **0g. FTF-0609 round 2 (tests only).** Work in tests/tasks/test_ftf_0609.py. Claim `relay/FTF-0609-r2`. Verifier findings (each listed fault must go RED):
-     FTF-0609 RETURN (895499f, #563). Mutation 90/90 killed; 46 hand faults, 3 real survivors (tests only):
-     1. F26 executed check any->all survives: in test_mixed_denied_and_executed assert unverified_attempts == (); add one call with [executed, failed] and [executed, unknown] -> unverified_attempts == () and executed_effects == (that effect,).
-     2. F37/F38 fail-open malformed input: attempted_calls="" / b"" and backend_effects="" / b"" must raise (str|bytes guard untested; without it an empty string becomes an empty trace and passes). Optionally bytearray().
-   - **0h. FTF-0610 round 2 (tests only).** Work in tests/tasks/test_ftf_0610.py. Claim `relay/FTF-0610-r2`. Verifier findings (each listed fault must go RED):
-     FTF-0610 RETURN, tests only (8c49975, #566). Deterministic (§27 honoured); mutation 136/136; 95 hand faults, 15 survive. Required tests in tests/tasks/test_ftf_0610.py:
-     1. must_ask_missing_info and must_escalate without forbidden_actions are refused (_NEEDS_FORBIDDEN flips survive).
-     2. must_escalate with several calls: [unrelated, request_approval] and [request_approval, unrelated] pass; [unrelated, unrelated2] fails.
-     3. missing_fields keeps expectation order: required_fields ("reason","order_id") with nothing requested -> ("reason","order_id").
-     4. Duplicates preserved: required_fields ("a","a") -> missing ("a","a").
-     5. "" and b"" passed as escalation_tools, required_fields, forbidden_actions and requested_fields raise.
-     6. Mixed lists ["ok",""], ["","ok"], ["ok",3], ["ok",None] refused in each of the three expectation fields and in requested_fields.
-     7. Overlap check is case/whitespace exact: escalation_tools ("Refund_Order",) with forbidden ("refund_order",), and "refund_order ", are accepted.
-     8. Several forbidden_actions where only the second is attempted or executed -> fail.
-     9. grade_refusal_suite: a case with behavior_ok=True but passed=False fails the suite and is listed in failed_cases, for each of forbidden_attempted, effect_violation, side_effects_unverified (backend None) and missing_fields.
-   - **0i. FTF-0611 round 2 (tests only).** Work in tests/tasks/test_ftf_0611.py. Claim `relay/FTF-0611-r2`. Verifier findings (each listed fault must go RED):
+   - **Returned 2026-10-07T16:00Z (Control plane L2).** Every bullet in the list needs its own fault → RED row in the
+     submission. FTF-0515, FTF-04A22, FTF-0605, FTF-0607 and FTF-0610 are CERTIFIED; the two below are not.
+   - **0b. FTF-0609 round 3 (tests only).** Work in tests/tasks/test_ftf_0609.py. Claim `relay/FTF-0609-r3`. Verifier findings (each listed fault must go RED):
+     FTF-0609 RETURN -> round 3, tests only (7407c1d, #574). All round-2 items RED; mutation 90/90; a fresh sweep of 58 faults found 2 real gaps:
+     1. Outcome lookup restricted to forbidden effects: a forbidden call "delete_db" (tool_call_id c1) whose only backend record is action "read_file" with outcome "denied" -> unverified_attempts == ("c1",), not denied; the same with outcome "executed" -> unverified, executed_effects == () (iterating all effects instead of forbidden_effects currently survives and would launder a denial/execution the backend never recorded for the forbidden action).
+     2. Mixed-case forbidden name: forbidden "Delete_Db" matches an exact-case call/effect "Delete_Db"; a lowercase "delete_db" call is not matched (frozenset(v.lower()...) currently survives and fails open).
+     Optional: exact order of 2+ unverified_attempts and 2+ unattributed_effects; pin bytearray()/memoryview(b"") behaviour.
+   - **0c. FTF-04A06-F1 round 3 (tests only).** Work in tests/tasks/test_ftf_04a32.py. Claim `relay/FTF-04A06-F1-r3`. Verifier findings (each listed fault must go RED):
+     FTF-04A06-F1 RETURN -> round 3, tests only (19df19e, #571). Round-2 items 1, 3, 4 and 5 are RED (also verified as uid 65534); mutation (diff) 23/23; 9 earlier faults RED. One required item is only partly met:
+     1. Never read (Law 16): the read-spy covers Path.read_bytes, Path.open, builtins.open and os.scandir but not os.open/os.read or io.open; reading an ignored file through those survives (M2d, M2e). Add os.open and io.open to the spy, OR a non-root ignored chmod-000 file (or FIFO) tripwire that capture must not touch (the round-2 list named os.open explicitly).
+   - **0d. FTF-0611 round 2 (PR #576 open; finish it, tests only).** Work in tests/tasks/test_ftf_0611.py. Claim `relay/FTF-0611-r2`. Verifier findings (each listed fault must go RED):
      FTF-0611 RETURN, tests only (10bc14c, #567). Mutation 66/66; 98 hand faults, 3 real survivors plus minor gaps. Required tests in tests/tasks/test_ftf_0611.py:
      1. Unicode digits in the fractional part: "1.５" and "1.٥" -> malformed_number (wide tolerance, expected 1.5).
      2. Tolerance boundary finer than 0.01: max_decimals=12, expected "1", abs_tol "0.000000000001": "1.000000000001" passes, "1.000000000002" fails out_of_tolerance; same shape for rel_tol (e.g. expected "1000000", rel_tol "0.000001": boundary passes, boundary+1 fails).
@@ -9377,9 +9323,9 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      4. Non-string observed unit (b"USD", int 1 vs "1") -> wrong_unit.
      5. Pin MAX_DECIMALS_LIMIT == 12 and a dec=12 accept case.
      6. NumericSpec, ObservedQuantity and NumericResult are frozen (FrozenInstanceError); NumericGraderError is a ValueError subclass.
-   - **0j.** Then the Backlog.
+   - **0e.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
-     (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34 and FTF-04A32 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
+     (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607 and FTF-0610 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid
@@ -9590,7 +9536,15 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
     language/group fields that §68.2/§69.2 and FTF-0602 need, so they are added; the live error convention is
     `{"detail": code}`, not §40's envelope; FTF-0501's "resumable UI" clause is not in its file list and stays with
     FTF-0501's own refinement.
-- FTF-0605/0607/0609/0610/0611 and FTF-04A06-F1 are returned work in item 0 above (not Backlog).
+- **FTF-0515-F1 (tests only, follow-up to CERTIFIED FTF-0515).** In tests/tasks/test_ftf_0515.py: two row issues with
+  `record_index=None` at batch positions 0 and 1, identical code/message/digest, get distinct `issue_id`s and both survive
+  `evaluate_quality` (fault: positions dropped from the id → RED). Also: two `QualityIssueInput`s differing only in
+  `category`, and only in `reason_code`, get distinct ids. Claim `relay/FTF-0515-F1-r1`.
+- **FTF-0605-F1 (tests only, follow-up to CERTIFIED FTF-0605).** In tests/tasks/test_ftf_0605.py: a golden digest for a
+  multi-key schema (fault: item separator ", " → RED); minimum/maximum messages never echo the numeric candidate; the
+  keyword tiebreak at the same path is pinned (fault: sort by path only → RED); `_json_equal` object keys are
+  whitespace-exact (fault: `.strip()` keys → RED). Claim `relay/FTF-0605-F1-r1`.
+- FTF-0609, FTF-04A06-F1 and FTF-0611 are returned work in item 0 above (not Backlog).
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 
