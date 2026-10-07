@@ -9304,7 +9304,7 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      keeps the count. Same entry.
    - **0c.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
-     (2026-10-06); FTF-0214 is CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1, FTF-H034-F2 and FTF-H034-F3 are CERTIFIED.
+     (2026-10-06); FTF-0214 is CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2 and FTF-H034-F1 through F4 are CERTIFIED.
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid
@@ -9428,8 +9428,9 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 - **FTF-0510-F1 (Control plane 2026-10-07T00:00Z):** (a) a test that a sandbox SecurityError from the chat template
   (`messages.append(1)`) becomes a `template_render_error` row issue; (b) `certifies_training_fit` requires verified,
   non-None tokenizer/template digests (production change and test). Claim `relay/FTF-0510-F1-r1`.
-- **FTF-H034-F4 (tests only, Control plane 2026-10-06T23:00Z):** kill or justify the 12 mutation survivors in
-  `scripts/task_claim.py` lines 80–270 (claim registry). Run the gate whole-file with `--files`. Claim `relay/FTF-H034-F4-r1`.
+- **FTF-H034-F5 (tests only, Control plane 2026-10-07T01:00Z):** in tests/tasks/test_ftf_h034.py, pin `claim()`'s
+  default TTL (live at +3599s, expired at +3600s) and DEFAULT_GPU_QUOTA=1 (a second gpu_required claim is denied by
+  default). Add a re-claim-after-complete check that complete() frees the slot. Claim `relay/FTF-H034-F5-r1`.
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 

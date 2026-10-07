@@ -10078,3 +10078,14 @@ PR is not landed by the next certifier shift.
   - require_model_access.
 - Law 6: apps/web has no pages, so the component is unmounted from `/`. This is disclosed in the spec notes and stays
   BLOCKED until FTF-H029.
+
+## FTF-H034-F4 — claim-registry mutation survivors killed — CERTIFIED (2026-10-07)
+- Follow-up of FTF-H034. PR #522, merge commit 0a1eefa1f37a35fd781ef640d081c8b468a7e51e (head `c9ed1ec`). This is a
+  tests-only change. Producer: `session_0188JPWM1UmzFkMpaEF3mh5C`. CI passed.
+- Verifier: the whole-file gate on scripts/task_claim.py kills 83/83 with no allowlist. Hand faults are RED:
+  - is_expired boundary, and is_expired always false;
+  - the dependency loop skipping a dependency, and a missing dependency treated as ready;
+  - every snapshot field omitted, and live state leaked;
+  - the concurrency limits.
+- Follow-up, not blocking: FTF-H034-F5. Pin the default lease TTL (3600s) and DEFAULT_GPU_QUOTA=1. Add a dedicated
+  check that complete() frees the slot.
