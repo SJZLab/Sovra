@@ -82,7 +82,7 @@ def _is_ms(value: object) -> bool:
 
 
 def _text(value: object, name: str) -> str:
-    if not isinstance(value, str) or value == "" or value.isspace():
+    if not isinstance(value, str) or not value or value.isspace():
         raise LatencyGraderError(f"{name} must be a non-empty string")
     return value
 
