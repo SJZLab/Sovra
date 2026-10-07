@@ -32,10 +32,12 @@ from app.services.candidate_ranking import (  # noqa: E402
     CandidateRankingError,
     CostInterval,
     RankingCandidate,
+    RankingResult,
     rank_candidates,
 )
 from app.services.cost_per_success_calculator import (  # noqa: E402
     AttemptCost,
+    CostPerSuccessResult,
     cost_per_success,
 )
 
@@ -154,7 +156,7 @@ def test_estimated_and_provisional_economics_surface() -> None:
 
 
 def test_cost_interval_from_cost_per_success_results() -> None:
-    def scenario(cost: str, pending: str | None = None) -> object:
+    def scenario(cost: str, pending: str | None = None) -> CostPerSuccessResult:
         return cost_per_success(
             [
                 AttemptCost(
@@ -277,7 +279,7 @@ def test_unmeasured_quality_never_qualifies() -> None:
 
 
 def test_parameter_count_cannot_determine_winner() -> None:
-    def run(small_params: int | None, large_params: int | None) -> object:
+    def run(small_params: int | None, large_params: int | None) -> RankingResult:
         return rank_candidates(
             [
                 cand("small", cost=interval("0.50", "0.60", "0.70"), params=small_params),
