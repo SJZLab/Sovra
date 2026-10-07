@@ -301,6 +301,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_04a25.py
       - name: FTF-04A26 negative-test proof (Isolated real tool-backend adapter contract tests, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a26.py
+      - name: FTF-0608 negative-test proof (Tool-sequence grader, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0608.py
       - name: FTF-04A02 negative-test proof (GitHub App/token read-only secret integration, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a02.py
       - name: FTF-04A03 negative-test proof (GitHub accessible-repository listing connector, no DB required)

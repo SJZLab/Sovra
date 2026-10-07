@@ -8448,15 +8448,38 @@ FTF-0607:
   proving_symbol: ''
   proving_test: ''
 FTF-0608:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Tool-sequence grader
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0601
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0601
+    (CERTIFIED). Path refined from the packet's generic services/evaluation-worker/evaluators/
+    tool_sequence_grader.py to workers/evaluation/tool_sequence_grader.py (this repo's real
+    evaluation-worker SOURCE_ROOT; same convention as the sibling grader tasks).
+
+    Built: grade_tool_sequence grades a trace of real TracedToolCall records (never text; a
+    non-record or duplicate tool_call_id is refused) against explicit, required constraints:
+    allowed_orders (every valid exact order predefined; extra, missing or reordered calls fail),
+    must_precede (partial-order pairs; the first call of the later tool needs an earlier call of
+    the former), must_not_call (any call fails the grade outright; an allowed order containing a
+    forbidden name is a refused contradiction), and required_state vs the recorded final_state
+    (type-strict equality, nested). A specification with no constraint is refused, never
+    vacuously passed. Acceptance (sequence/partial-order/state constraints over actual trace and
+    outcome) and negative_acceptance (alternative orders only when predefined; extra forbidden
+    call always fails) are mapped clause-to-test in tests/tasks/test_ftf_0608.py's docstring.
+
+    Evidence: mutation gate 102 run / 102 KILLED / 0 SURVIVED (100%); 11 manual faults including
+    an early-return bypass and an additive allow rule all turn the CI-style run RED. Full table:
+    docs/certifications/submissions/2026-10-07T0135Z-FTF-0608.md.
+
+    Disclosed gap (same "no live caller yet" precedent as the sibling graders): no
+    evaluation-run engine exists yet to call this grader on a real trace; proving_symbol stays
+    blank. Not self-certified (Law 4): awaiting independent Control-plane L2 review and CI.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0608.py
 FTF-0609:
   certification_state: NONE
   criticality: MUST
