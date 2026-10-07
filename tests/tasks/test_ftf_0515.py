@@ -847,6 +847,15 @@ def test_pairs_are_sorted_together_not_independently() -> None:
         "a None index sorts with its position",
         q.batch_positions == (2, 5) and q.record_indices == (None, 9),
     )
+    ties = [
+        QualityIssueInput("poison", "poisoning", "blocking", "t1", "m", (3, 3), (9, 7)),
+        QualityIssueInput("poison", "poisoning", "blocking", "t2", "m", (3, 3), (None, 7)),
+    ]
+    tied = evaluate_quality(_runs(), extra_issues=ties)
+    t1 = [i for i in tied.issues if i.reason_code == "t1"][0]
+    t2 = [i for i in tied.issues if i.reason_code == "t2"][0]
+    check("FTF-0515", "equal positions order by index", t1.record_indices == (7, 9))
+    check("FTF-0515", "a None index sorts after a real one", t2.record_indices == (7, None))
     try:
         evaluate_quality(
             _runs(),
