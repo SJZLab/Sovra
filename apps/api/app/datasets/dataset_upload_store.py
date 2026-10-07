@@ -3,7 +3,7 @@
 
 The persistence half FTF-0501's presigned-multipart and finalize work needs
 ("cannot create accepted Dataset version" without a verified upload). Tables,
-constraints and grants are in `0023_dataset_uploads.py`; the database itself
+constraints and grants are in `0024_dataset_uploads.py`; the database itself
 refuses a dataset on an open/rejected/expired session, a verified session
 whose verified values differ from the declared ones, and any change to a
 session a dataset references. This module adds the lifecycle around them.
@@ -90,6 +90,8 @@ MAX_UPLOAD_BYTES = 10 * 1024**3  # 10 GiB, Section 8.1.
 MAX_UPLOAD_TTL = timedelta(hours=24)  # Section 67.5.
 HELD_OUT_PURPOSE = "held_out_evaluation"
 MAX_PAGE_SIZE = 200
+
+_VERSION_CONSTRAINT = "uq_datasets_project_name_version"
 
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 _REASON_PATTERN = re.compile(r"[a-z][a-z0-9_]*")
@@ -451,6 +453,10 @@ def record_upload_verified_and_create_dataset(
     record.verified_content_type = content_type
     record.finalized_at = finalized
     record.updated_at = finalized
+    # The session UPDATE must reach the database before the dataset INSERT: the
+    # dataset's composite foreign key targets the session's `verified` status
+    # and values, and SQLAlchemy's unit of work would otherwise INSERT first.
+    session.flush()
     dataset = Dataset(
         id=uuid.uuid4(),
         organization_id=context.organization_id,
@@ -469,6 +475,8 @@ def record_upload_verified_and_create_dataset(
     try:
         session.flush()
     except IntegrityError as exc:
+        if _VERSION_CONSTRAINT not in str(exc.orig):
+            raise
         raise DatasetVersionConflictError(
             f"dataset {dataset_name!r} version {version} already exists"
         ) from exc

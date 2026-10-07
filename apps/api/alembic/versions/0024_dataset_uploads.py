@@ -38,8 +38,8 @@ to `dataset_source_connections` for the session's composite foreign key;
 Both new tables ENABLE + FORCE row-level security with the same
 `tenant_isolation` policy every prior migration uses (Section 65.1).
 
-Revision ID: 0023_dataset_uploads
-Revises: 0022_model_catalog_entries
+Revision ID: 0024_dataset_uploads
+Revises: 0023_evaluation_cases
 Create Date: 2026-10-07
 """
 
@@ -50,8 +50,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "0023_dataset_uploads"
-down_revision = "0022_model_catalog_entries"
+revision = "0024_dataset_uploads"
+down_revision = "0023_evaluation_cases"
 branch_labels = None
 depends_on = None
 
@@ -268,6 +268,24 @@ def upgrade() -> None:
         f'GRANT UPDATE ({_SESSION_UPDATE_COLUMNS}) ON dataset_upload_sessions TO "{APP_ROLE_NAME}"'
     )
     op.execute(f'GRANT SELECT, INSERT ON datasets TO "{APP_ROLE_NAME}"')
+    # A verified session is the evidence a dataset version rests on, so no
+    # column of it may change afterwards. The composite foreign key already
+    # pins status / sha256 / size; this trigger also freezes finalized_at,
+    # the verified content type and everything else, for every role.
+    op.execute(
+        "CREATE FUNCTION dataset_upload_sessions_freeze_verified() RETURNS trigger "
+        "LANGUAGE plpgsql AS $$ BEGIN "
+        "IF OLD.status = 'verified' THEN "
+        "RAISE EXCEPTION 'a verified upload session is immutable' "
+        "USING ERRCODE = 'check_violation', "
+        "CONSTRAINT = 'tr_dataset_upload_sessions_freeze_verified'; "
+        "END IF; RETURN NEW; END $$"
+    )
+    op.execute(
+        "CREATE TRIGGER tr_dataset_upload_sessions_freeze_verified "
+        "BEFORE UPDATE ON dataset_upload_sessions "
+        "FOR EACH ROW EXECUTE FUNCTION dataset_upload_sessions_freeze_verified()"
+    )
     tenant_setting = "NULLIF(current_setting('app.current_organization_id', true), '')::uuid"
     for table in ("dataset_upload_sessions", "datasets"):
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
@@ -280,6 +298,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute(
+        "DROP TRIGGER IF EXISTS tr_dataset_upload_sessions_freeze_verified "
+        "ON dataset_upload_sessions"
+    )
+    op.execute("DROP FUNCTION IF EXISTS dataset_upload_sessions_freeze_verified()")
     for table in ("datasets", "dataset_upload_sessions"):
         op.execute(f"DROP POLICY IF EXISTS tenant_isolation ON {table}")
         op.execute(f'REVOKE ALL ON {table} FROM "{APP_ROLE_NAME}"')
