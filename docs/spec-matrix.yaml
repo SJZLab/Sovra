@@ -6126,16 +6126,16 @@ FTF-04A33:
   proving_symbol: ''
   proving_test: ''
 FTF-04A34:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Monorepo multi-agent discovery test
   evidence_hash: ''
-  implementation_state: ABSENT
+  implementation_state: IMPLEMENTED
   notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01, FTF-04A18,
     FTF-H007
-  proof_state: UNPROVEN
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_04a34.py
 FTF-04A35:
   certification_state: NONE
   criticality: MUST
