@@ -718,7 +718,7 @@ def test_whitespace_and_case_are_distinct_values() -> None:
     )
     blank = grade_refusal_case(" ", e, beh("clarification", fields=[" ", "Order_Id"]), [])
     check(CID, "a whitespace-only case_key is accepted as given", blank.case_key == " ")
-    calls = (call(" ", " "), call("A", "x"), call("a", "x"))
+    calls = (call(" ", " "), call("a", "x"), call("A", "x"), call(" a", "x"), call("a ", "x"))
     check(
         CID,
         "whitespace-only call id/name and case-distinct ids are accepted",
