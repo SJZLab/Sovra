@@ -28,6 +28,7 @@ Run directly: python3 tests/tasks/test_ftf_0607.py
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -743,6 +744,149 @@ def test_arguments_failure_reasons_are_distinguished() -> None:
         "both stop before parameter checks",
         all(i.keyword == "arguments_json" for i in parse_failure.issues + root_failure.issues),
     )
+
+
+def test_r2_optional_parameter_present_but_falsy_or_null_is_checked() -> None:
+    """Fail-open guard: an optional parameter that is PRESENT as null/0/""/false/[]/{}
+    is still checked against its spec (never skipped as "empty")."""
+    falsy = ("null", "0", '""', "false", "[]", "{}")
+    specs: dict[str, Any] = {
+        "ident": Identity("x"),
+        "exact": Exact("x"),
+        "num": NumberWithin(5, 0),
+        "one": OneOf(("x", "y")),
+        "typ": OfType("string"),
+    }
+    # Each optional spec is given a falsy value that does NOT satisfy it.
+    bad = {
+        "ident": falsy,
+        "exact": falsy,
+        "num": ("null", '""', "false", "[]", "{}"),  # 0 is a real number, but not within 5+-0
+        "one": falsy,
+        "typ": ("null", "0", "false", "[]", "{}"),  # "" IS a string, so it satisfies OfType
+    }
+    for name, spec in specs.items():
+        contract = ArgumentContract("t", {}, {name: spec})
+        for literal in bad[name]:
+            result = grade_tool_arguments(
+                call(f'{{"{name}": {literal}}}', "t"), contract, allow_extra=False
+            )
+            check(
+                CID,
+                f"optional {name} present as {literal} fails with mismatch",
+                not result.passed and keywords(result) == [(name, "mismatch")],
+            )
+    zero = grade_tool_arguments(
+        call('{"num": 0}', "t"),
+        ArgumentContract("t", {}, {"num": NumberWithin(0, 0)}),
+        allow_extra=False,
+    )
+    check(CID, "an optional present falsy value that satisfies its spec passes", zero.passed)
+
+
+def test_r2_exact_is_case_and_whitespace_exact() -> None:
+    exact = ArgumentContract("t", {"v": Exact("x")}, {})
+    for bad in (" x ", "x ", " x", "X", "x\u00a0"):
+        result = grade_tool_arguments(
+            call('{"v": ' + json.dumps(bad) + "}", "t"), exact, allow_extra=False
+        )
+        check(CID, f"Exact('x') rejects {bad!r}", keywords(result) == [("v", "mismatch")])
+    check(
+        CID,
+        "Exact('x') accepts 'x'",
+        grade_tool_arguments(call('{"v": "x"}', "t"), exact, allow_extra=False).passed,
+    )
+    nested = ArgumentContract("t", {"v": Exact({"k": ["x"]})}, {})
+    for bad_json in ('{"k": ["X"]}', '{"k": [" x"]}', '{"K": ["x"]}', '{"k": ["x "]}'):
+        result = grade_tool_arguments(
+            call('{"v": ' + bad_json + "}", "t"), nested, allow_extra=False
+        )
+        check(CID, f"nested Exact rejects {bad_json}", keywords(result) == [("v", "mismatch")])
+
+
+def test_r2_arguments_json_padded_with_non_json_whitespace_fails() -> None:
+    for pad in ("\xa0", "\x0b", "\x0c"):
+        for text in (pad + GOOD, GOOD + pad, pad + GOOD + pad):
+            result = grade(text)
+            check(
+                CID,
+                f"arguments padded with {pad!r} fail with an arguments_json issue",
+                not result.passed and ("<arguments>", "arguments_json") in keywords(result),
+            )
+    check(CID, "JSON whitespace padding is accepted", grade(" \t\r\n" + GOOD + "\n ").passed)
+
+
+def test_r2_each_undeclared_parameter_gets_its_own_extra_issue() -> None:
+    result = grade(GOOD[:-1] + ', "zzz": 1, "aaa": 2, "mmm": 3}')
+    check(
+        CID,
+        "three undeclared parameters give three extra issues, sorted",
+        keywords(result) == [("aaa", "extra"), ("mmm", "extra"), ("zzz", "extra")],
+    )
+    two = grade(GOOD[:-1] + ', "x1": 1, "x2": 2}')
+    check(CID, "two undeclared parameters give two issues", len(two.issues) == 2)
+    check(
+        CID,
+        "allow_extra=True ignores them all",
+        grade(GOOD[:-1] + ', "x1": 1, "x2": 2}', extra=True).passed,
+    )
+
+
+def test_r2_wrong_tool_and_malformed_arguments_sorted() -> None:
+    result = grade_tool_arguments(call("not json", "other_tool"), REFUND, allow_extra=False)
+    check(
+        CID,
+        "both issues reported, <arguments> sorted before <tool>",
+        keywords(result) == [("<arguments>", "arguments_json"), ("<tool>", "tool_name")],
+    )
+    check(
+        CID,
+        "issues tuple equals its own sorted order",
+        result.issues == tuple(sorted(result.issues)),
+    )
+
+
+def test_r2_three_identity_swaps_all_named() -> None:
+    three = ArgumentContract("t", {"a": Identity("A"), "b": Identity("B"), "c": Identity("C")}, {})
+    cyc = grade_tool_arguments(
+        call('{"a": "B", "b": "C", "c": "A"}', "t"), three, allow_extra=False
+    )
+    got = {(i.parameter, i.message) for i in cyc.issues if i.keyword == "swapped_identity"}
+    check(
+        CID,
+        "a cyclic swap names every parameter's counterpart",
+        got
+        == {
+            ("a", "value is the expected identity of parameter 'b'"),
+            ("b", "value is the expected identity of parameter 'c'"),
+            ("c", "value is the expected identity of parameter 'a'"),
+        },
+    )
+    dup_value = ArgumentContract(
+        "t", {"a": Identity("X"), "b": Identity("X"), "c": Identity("C")}, {}
+    )
+    both = grade_tool_arguments(
+        call('{"a": "Z", "b": "X", "c": "X"}', "t"), dup_value, allow_extra=False
+    )
+    names = {(i.parameter, i.message) for i in both.issues if i.keyword == "swapped_identity"}
+    check(
+        CID,
+        "a value equal to two other identities' expectations names each",
+        ("c", "value is the expected identity of parameter 'a'") in names
+        and ("c", "value is the expected identity of parameter 'b'") in names,
+    )
+
+
+def test_r2_of_type_unhashable_and_case_variants_raise_grader_error() -> None:
+    for bad in ([], {}, ["string"], None, 3):
+        check(
+            CID,
+            f"OfType({bad!r}) raises ToolArgumentGraderError, not TypeError",
+            raises(lambda b=bad: OfType(b)),
+        )
+    for variant in ("Null", "Number", "Boolean", "Object", "Array", "String", "INTEGER", " string"):
+        check(CID, f"OfType({variant!r}) is refused", raises(lambda v=variant: OfType(v)))
+    check(CID, "Identity(' ') is legal (non-empty)", Identity(" ").matches(" "))
 
 
 def main() -> int:
