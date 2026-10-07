@@ -24,6 +24,7 @@ Run directly: python3 tests/tasks/test_ftf_04a32.py
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import io
 import os
@@ -367,13 +368,13 @@ def test_n2_edit_reverted_before_final_walk_still_refused_by_archive_check() -> 
     """The torn archive is only visible to the per-file byte check: the content
     is restored before the manifest re-walk, so a re-walk alone sees nothing."""
 
-    def body(tmp: Path) -> None:
+    def body(tmp: Path, edited: str) -> None:
         repo = _new_checkout(tmp)
         (repo / "a.txt").write_text("dirty1\n")
         original = _connector._build_archive
 
         def torn(root: Path, entries: list[_connector.ManifestEntry]) -> bytes:
-            (root / "a.txt").write_text("dirty2 CHANGED\n")
+            (root / "a.txt").write_text(edited)
             try:
                 return original(root, entries)
             finally:
@@ -391,7 +392,8 @@ def test_n2_edit_reverted_before_final_walk_still_refused_by_archive_check() -> 
         finally:
             _connector._build_archive = original
 
-    _with_tmp(body)
+    for edited in ("dirty2 CHANGED\n", "dirty2\n"):  # different and same length
+        _with_tmp(functools.partial(body, edited=edited))
 
 
 def test_n2_file_added_during_capture_refused() -> None:
