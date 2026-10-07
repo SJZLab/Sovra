@@ -49,6 +49,7 @@ import uvicorn
 import yaml
 from fastapi import FastAPI
 from sqlalchemy import create_engine, event
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -380,7 +381,11 @@ class _Audit:
         return [event_["action"] for event_ in self.events]
 
 
+_EXECUTED: list[str] = []
+
+
 def _passthrough_execute(session: Session, organization_id: uuid.UUID, statement: Any) -> Any:
+    _EXECUTED.append(str(statement.compile(dialect=postgresql.dialect())))
     return session.execute(statement)
 
 
@@ -1352,7 +1357,8 @@ def test_s8_module_constants_and_no_storage_surface() -> None:
     check(
         CID,
         "the version-conflict constraint name matches the migration",
-        store._VERSION_CONSTRAINT == "uq_datasets_project_name_version"
+        '"uq_datasets_project_name_version" not in str(exc.orig)'
+        in Path(store.__file__).read_text()
         and "uq_datasets_project_name_version" in _migration(),
     )
     source = Path(store.__file__).read_text()
@@ -1385,6 +1391,219 @@ def test_s8_module_constants_and_no_storage_surface() -> None:
         CID,
         "the dataset model's columns match the migration's",
         all(f'"{column.name}"' in _migration() for column in store.Dataset.__table__.columns),
+    )
+
+
+def test_s9_exactness_edges_and_row_locks() -> None:
+    # Content type / dataset name: exact, case-preserving, padded either side refused.
+    with _store_env() as (session, _audit, world, _statements):
+        for bad in (" a/b", "a/b ", "\ta/b", "a/b\n", "   "):
+            check(
+                CID,
+                f"content type {bad!r} is refused",
+                _raises(lambda b=bad: _create(session, declared_content_type=b), ValueError),
+            )
+            check(
+                CID,
+                f"dataset name {bad!r} is refused",
+                _raises(
+                    lambda b=bad: _finalize(session, _create(session), dataset_name=b), ValueError
+                ),
+            )
+        edge = _create(session, declared_content_type="x" * 255)
+        check(
+            CID, "a 255-character content type is allowed", len(edge.declared_content_type) == 255
+        )
+        check(
+            CID,
+            "a 256-character content type is refused",
+            _raises(lambda: _create(session, declared_content_type="x" * 256), ValueError),
+        )
+        upper = _create(session, declared_content_type="Application/JSON")
+        check(
+            CID,
+            "an uppercase content type is kept as given",
+            upper.declared_content_type == "Application/JSON",
+        )
+        check(
+            CID,
+            "a verified content type differing only in case is a mismatch",
+            _raises(
+                lambda: _finalize(session, upper, verified_content_type="application/json"),
+                store.UploadVerificationError,
+            ),
+        )
+        named = _finalize(session, _create(session), dataset_name="Support")
+        lower = _finalize(session, _create(session), dataset_name="support")
+        check(
+            CID,
+            "dataset names are case-sensitive: 'Support' and 'support' are different datasets (both version 1)",  # noqa: E501
+            named.name == "Support" and named.version == 1 and lower.version == 1,
+        )
+        # Purpose and source type are matched exactly.
+        for variant in ("Training", " training", "training ", "TRAINING"):
+            check(
+                CID,
+                f"purpose {variant!r} is refused",
+                _raises(lambda v=variant: _create(session, purpose=v), ValueError),
+            )
+        for variant in ("Upload", " upload", "upload ", "UPLOAD"):
+            world.source_type = variant
+            check(
+                CID,
+                f"source type {variant!r} is not an upload source",
+                _raises(lambda: _create(session), store.NotAnUploadSourceError),
+            )
+        world.source_type = "upload"
+        # Session status is matched exactly, in both transitions.
+        for variant in ("Open", "OPEN", " open", "open "):
+            record = _create(session)
+            record.status = variant
+            session.flush()
+            check(
+                CID,
+                f"a session whose status reads {variant!r} is not open (reject)",
+                _raises(
+                    lambda r=record: store.record_upload_rejected(
+                        session,
+                        _CTX,
+                        project_id=_PROJECT,
+                        upload_session_id=r.id,
+                        reason="x",
+                        actor=_ACTOR,
+                    ),
+                    store.UploadStateError,
+                ),
+            )
+            check(
+                CID,
+                f"a session whose status reads {variant!r} is not open (finalize)",
+                _raises(lambda r=record: _finalize(session, r), store.UploadStateError),
+            )
+        # Stored declared values are compared exactly against the verified ones.
+        shaed = _create(session)
+        shaed.declared_sha256 = SHA_A.upper()
+        session.flush()
+        check(
+            CID,
+            "a stored uppercase declared hash does not match the lowercase verified hash",
+            _raises(
+                lambda: _finalize(session, shaed, verified_sha256=SHA_A),
+                store.UploadVerificationError,
+            ),
+        )
+        typed = _create(session)
+        typed.declared_content_type = "Application/Jsonl"
+        session.flush()
+        check(
+            CID,
+            "a stored mixed-case declared content type does not match a lowercase verified one",
+            _raises(
+                lambda: _finalize(session, typed, verified_content_type="application/jsonl"),
+                store.UploadVerificationError,
+            ),
+        )
+        # Held-out is matched exactly on the stored purpose.
+        odd = _finalize(session, _create(session), dataset_name="odd")
+        odd.purpose = "Held_Out_Evaluation"
+        session.flush()
+        got = store.get_dataset(
+            session, _CTX, project_id=_PROJECT, dataset_id=odd.id, include_held_out=False
+        )
+        check(
+            CID,
+            "only the exact purpose 'held_out_evaluation' is hidden from an unprivileged read",
+            got.id == odd.id,
+        )
+
+    # Row locks: lifecycle transitions lock the session row; a plain read does not.
+    with _store_env() as (session, _audit, _world, _statements):
+        record = _create(session)
+        _EXECUTED.clear()
+        store.get_upload_session(session, _CTX, _PROJECT, record.id)
+        check(
+            CID,
+            "get_upload_session does not take a row lock",
+            _EXECUTED and not any("FOR UPDATE" in q for q in _EXECUTED),
+        )
+        _EXECUTED.clear()
+        store.record_upload_rejected(
+            session,
+            _CTX,
+            project_id=_PROJECT,
+            upload_session_id=record.id,
+            reason="x",
+            actor=_ACTOR,
+        )
+        check(
+            CID,
+            "rejecting locks the session row (FOR UPDATE)",
+            any("FOR UPDATE" in q and "dataset_upload_sessions" in q for q in _EXECUTED),
+        )
+        other = _create(session)
+        _EXECUTED.clear()
+        _finalize(session, other)
+        check(
+            CID,
+            "finalizing locks the session row (FOR UPDATE)",
+            any("FOR UPDATE" in q and "dataset_upload_sessions" in q for q in _EXECUTED),
+        )
+        _create(session, ttl=timedelta(minutes=1))
+        _EXECUTED.clear()
+        store.expire_open_sessions(session, _CTX, now=_NOW + timedelta(hours=1), actor=_ACTOR)
+        check(
+            CID,
+            "the expiry sweep locks the rows it moves (FOR UPDATE)",
+            any("FOR UPDATE" in q for q in _EXECUTED),
+        )
+
+
+def test_m4_migration_helper_columns() -> None:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("migration_0024", MIGRATION_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    pk = module._uuid_pk()
+    check(
+        CID,
+        "the id column is the primary key with gen_random_uuid() default",
+        pk.name == "id"
+        and pk.primary_key is True
+        and pk.server_default is not None
+        and "gen_random_uuid()" in str(pk.server_default.arg),
+    )
+    org = module._org_fk("things")
+    foreign_keys = list(org.foreign_keys)
+    check(
+        CID,
+        "organization_id is NOT NULL and cascades from organizations",
+        org.name == "organization_id"
+        and org.nullable is False
+        and len(foreign_keys) == 1
+        and foreign_keys[0].ondelete == "CASCADE"
+        and foreign_keys[0].name == "fk_things_organization_id"
+        and foreign_keys[0].target_fullname == "organizations.id",
+    )
+    stamp = module._now_col("created_at")
+    check(
+        CID,
+        "a required timestamp is NOT NULL with a now() default",
+        stamp.name == "created_at"
+        and stamp.nullable is False
+        and stamp.server_default is not None
+        and "now()" in str(stamp.server_default.arg)
+        and stamp.type.timezone is True,
+    )
+    optional = module._now_col("finalized_at", nullable=True)
+    check(
+        CID,
+        "an optional timestamp is nullable with no default",
+        optional.name == "finalized_at"
+        and optional.nullable is True
+        and optional.server_default is None
+        and optional.type.timezone is True,
     )
 
 
@@ -1783,11 +2002,6 @@ def test_r5_limit_after_and_pagination() -> None:
 
 def test_r6_module_constants() -> None:
     check(CID, "the default page size is 50", routes._DEFAULT_LIMIT == 50)
-    check(
-        CID,
-        "only ml_engineer is blind to held-out data",
-        routes._HELD_OUT_BLIND_ROLES == frozenset({Role.ML_ENGINEER}),
-    )
     check(
         CID,
         "the collection path is exact",

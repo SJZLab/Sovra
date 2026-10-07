@@ -40,6 +40,7 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import TypeGuard
 
 from sqlalchemy import BigInteger, DateTime, Integer, String, func, select
 from sqlalchemy.dialects.postgresql import UUID
@@ -89,9 +90,8 @@ REJECTION_REASON_MAX_LENGTH = 64
 MAX_UPLOAD_BYTES = 10 * 1024**3  # 10 GiB, Section 8.1.
 MAX_UPLOAD_TTL = timedelta(hours=24)  # Section 67.5.
 HELD_OUT_PURPOSE = "held_out_evaluation"
+_HELD_OUT_PURPOSES = frozenset({HELD_OUT_PURPOSE})
 MAX_PAGE_SIZE = 200
-
-_VERSION_CONSTRAINT = "uq_datasets_project_name_version"
 
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 _REASON_PATTERN = re.compile(r"[a-z][a-z0-9_]*")
@@ -213,13 +213,16 @@ def _require_sha256(value: object, name: str) -> str:
     return value
 
 
+def _is_clean_text(value: object, max_length: int) -> TypeGuard[str]:
+    """A non-blank string with no leading or trailing whitespace."""
+    if not isinstance(value, str):
+        return False
+    stripped = value.strip()
+    return bool(stripped) and stripped == value and len(value) <= max_length
+
+
 def _require_content_type(value: object, name: str) -> str:
-    if (
-        not isinstance(value, str)
-        or not value.strip()
-        or value != value.strip()
-        or len(value) > CONTENT_TYPE_MAX_LENGTH
-    ):
+    if not _is_clean_text(value, CONTENT_TYPE_MAX_LENGTH):
         raise ValueError(f"{name} must be a non-blank string of at most 255 characters")
     return value
 
@@ -404,12 +407,7 @@ def record_upload_verified_and_create_dataset(
     from the declared ones), `DatasetSourceAuthorizationError` (the
     connection is revoked or no longer grants the purpose) or
     `DatasetVersionConflictError`; on any raise nothing was written."""
-    if (
-        not isinstance(dataset_name, str)
-        or not dataset_name.strip()
-        or dataset_name != dataset_name.strip()
-        or len(dataset_name) > DATASET_NAME_MAX_LENGTH
-    ):
+    if not _is_clean_text(dataset_name, DATASET_NAME_MAX_LENGTH):
         raise ValueError("dataset_name must be a non-blank string of at most 200 characters")
     size = _require_int(verified_size_bytes, "verified_size_bytes")
     sha = _require_sha256(verified_sha256, "verified_sha256")
@@ -421,15 +419,13 @@ def record_upload_verified_and_create_dataset(
         raise UploadStateError(f"upload session {upload_session_id} is {record.status}, not open")
     if finalized > record.expires_at:
         raise UploadExpiredError(f"upload session {upload_session_id} expired")
-    mismatched = tuple(
-        field
-        for field, differs in (
-            ("size_bytes", size != record.declared_size_bytes),
-            ("sha256", sha != record.declared_sha256),
-            ("content_type", content_type != record.declared_content_type),
-        )
-        if differs
-    )
+    declared = {
+        "size_bytes": record.declared_size_bytes,
+        "sha256": record.declared_sha256,
+        "content_type": record.declared_content_type,
+    }
+    verified = {"size_bytes": size, "sha256": sha, "content_type": content_type}
+    mismatched = tuple(field for field in declared if verified[field] != declared[field])
     if mismatched:
         raise UploadVerificationError(mismatched)
     # Revocation propagates: a source revoked or narrowed after the session
@@ -475,7 +471,7 @@ def record_upload_verified_and_create_dataset(
     try:
         session.flush()
     except IntegrityError as exc:
-        if _VERSION_CONSTRAINT not in str(exc.orig):
+        if "uq_datasets_project_name_version" not in str(exc.orig):
             raise
         raise DatasetVersionConflictError(
             f"dataset {dataset_name!r} version {version} already exists"
@@ -576,6 +572,6 @@ def get_dataset(
         raise DatasetNotFoundError("project_id and dataset_id must be uuid.UUID")
     statement = select(Dataset).where(Dataset.id == dataset_id, Dataset.project_id == project_id)
     row = execute_tenant_scoped(session, context.organization_id, statement).scalars().one_or_none()
-    if row is None or (not include_held_out and row.purpose == HELD_OUT_PURPOSE):
+    if row is None or (not include_held_out and row.purpose in _HELD_OUT_PURPOSES):
         raise DatasetNotFoundError(f"dataset {dataset_id} not found")
     return row

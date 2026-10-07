@@ -52,10 +52,6 @@ _COLLECTION_PATH = "/api/v1/organizations/{organization_id}/projects/{project_id
 _ITEM_PATH = _COLLECTION_PATH + "/{dataset_id}"
 _DEFAULT_LIMIT = 50
 
-# Section 9/69.1: only ml_engineer, among the roles allowed on this surface,
-# may not read held-out evaluation data.
-_HELD_OUT_BLIND_ROLES: frozenset[Role] = frozenset({Role.ML_ENGINEER})
-
 
 def _serialize(dataset: Dataset) -> dict[str, object]:
     return {
@@ -74,7 +70,9 @@ def _serialize(dataset: Dataset) -> dict[str, object]:
 
 
 def _may_see_held_out(ctx: AuthorizedContext) -> bool:
-    return ctx.role not in _HELD_OUT_BLIND_ROLES
+    # Section 9/69.1: only ml_engineer, among the roles allowed on this surface,
+    # may not read held-out evaluation data.
+    return ctx.role is not Role.ML_ENGINEER
 
 
 def _parse_limit(request: Request) -> int:
@@ -138,7 +136,7 @@ def build_dataset_router(
         except (ProjectNotFoundError, TenantContextError) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
         next_after = items[-1]["id"] if len(items) == limit else None
-        return JSONResponse({"items": items, "next_after": next_after}, status_code=200)
+        return JSONResponse({"items": items, "next_after": next_after})
 
     @router.get(_ITEM_PATH)
     async def get_one(
@@ -161,6 +159,6 @@ def build_dataset_router(
                 body = _serialize(row)
         except (DatasetNotFoundError, TenantContextError) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
-        return JSONResponse(body, status_code=200)
+        return JSONResponse(body)
 
     return router
