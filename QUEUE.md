@@ -9274,7 +9274,7 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-None currently (checked 2026-10-06T17:00Z by Control plane).
+- 2026-10-07: FTF-04A31 needs a private-repo test credential (or approval to use this repo with `github.token`). See Parked.
 
 ## Active (decided by Control plane — relay executes, top first)
 **Claim rule (2026-10-06T17:40Z, Control plane):** a `relay/<ID>` branch whose head is already merged into main
@@ -9439,8 +9439,6 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 "2026-10-01T13:40Z". One PR per item group, titled "[relay] <ID>: fix L2 round-2 findings".
 
 ## Backlog (sliced, ready — relay takes these after Active; Refill & Sweep keeps >= 3)
-- **FTF-04A31** Real private GitHub repository integration test. DoD: `tools/r1_handoff.py packet FTF-04A31`. Needs a
-  repository credential: if none is already provisioned in CI, park it as ask-first (secret), never fake the repo.
 - **FTF-0515** Quality issue engine. DoD: `tools/r1_handoff.py packet FTF-0515`.
 - **FTF-04A06-F1 (Law 16, Control-plane decision 2026-10-07T11:00Z)** The local repository connector's dirty-snapshot
   manifest and archive include git-ignored files (a probe captured `.env`). Law 16 forbids silently harvesting
@@ -9456,6 +9454,12 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 docs/spec-matrix.yaml. It never invents criteria.)
 
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
+- **FTF-04A31 Real private GitHub repository integration test: PARKED (ask-first, secret), 2026-10-07T12:15Z, lane C.**
+  - What failed: nothing attempted. The DoD needs a real private repository plus a credential; CI exposes only the
+    workflow `github.token` (scoped to this repo) and no provisioned test-repo secret.
+  - Route options: (1) owner provisions a read-only fine-grained token for a dedicated private test repo as a CI
+    secret, then re-queue; (2) owner approves using this repository itself (private) with `github.token` as the
+    fixture; (3) mark BLOCKED_EXTERNAL per the packet's resource_gate and re-queue when a credential exists.
 - **FTF-0501 Direct object-storage upload: PARKED (BLOCKED_DEPENDENCY), 2026-10-07T10:50Z, lane B.**
   - What failed: nothing was attempted. The packet fixes `files` to one module plus its test and says "No independent
     schema change... any required change is a separately claimed migration prerequisite" and "A feature that needs a

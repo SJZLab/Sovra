@@ -946,6 +946,143 @@ def test_n4_in_root_symlinks_are_followed() -> None:
     _with_tmp(body)
 
 
+def test_f1_git_ignored_files_never_captured() -> None:
+    """FTF-04A06-F1 (Law 16): the snapshot file set is git's own view; ignored
+    files (a `.env`, a nested ignored dir, an ignored symlink) are never read."""
+
+    def body(tmp: Path) -> None:
+        outside = tmp / "outside"
+        outside.mkdir()
+        (outside / "secret.txt").write_text("TOP SECRET\n")
+        allowed = tmp / "allowed"
+        allowed.mkdir()
+        repo = _new_checkout(allowed)
+        (repo / ".gitignore").write_text(".env\nbuild/\nignored-link\n")
+        _git(repo, "add", ".gitignore")
+        _git(repo, "commit", "-qm", "ignore")
+        (repo / "a.txt").write_text("dirty\n")
+        (repo / "pkg" / "new.txt").write_text("untracked, not ignored\n")
+        (repo / ".env").write_text("API_KEY=hunter2\n")
+        (repo / "build" / "deep").mkdir(parents=True)
+        (repo / "build" / "deep" / "out.bin").write_text("artifact\n")
+        (repo / ".git" / "info" / "exclude").write_text("local-only.txt\n")
+        (repo / "local-only.txt").write_text("excluded via info/exclude\n")
+        # An ignored symlink escaping the root is skipped, never followed.
+        (repo / "ignored-link").symlink_to(outside / "secret.txt")
+        before = _fingerprint(repo)
+
+        cap = capture_local_repository(repo, [allowed])
+        paths = {e.relative_path for e in cap.manifest_entries}
+        files = _archive_files(cap)
+        check("FTF-04A06-F1", "dirty snapshot taken", cap.capture_method == "local_dirty_snapshot")
+        check("FTF-04A06-F1", "ignored .env absent from the manifest", ".env" not in paths)
+        check("FTF-04A06-F1", "ignored .env absent from the archive", ".env" not in files)
+        check(
+            "FTF-04A06-F1",
+            "nested ignored dir absent from manifest and archive",
+            not any(p.startswith("build/") for p in paths | set(files)),
+        )
+        check(
+            "FTF-04A06-F1",
+            "info/exclude file absent",
+            "local-only.txt" not in paths and "local-only.txt" not in files,
+        )
+        check(
+            "FTF-04A06-F1",
+            "ignored escaping symlink is neither refused nor followed",
+            "ignored-link" not in paths and "ignored-link" not in files,
+        )
+        check(
+            "FTF-04A06-F1",
+            "no archive byte holds the ignored secret",
+            b"hunter2" not in (cap.source_archive_bytes or b""),
+        )
+        check(
+            "FTF-04A06-F1",
+            "un-ignored untracked file and tracked dirty file are present",
+            files.get("pkg/new.txt") == b"untracked, not ignored\n"
+            and files.get("a.txt") == b"dirty\n"
+            and ".gitignore" in files,
+        )
+        check("FTF-04A06-F1", "capture wrote nothing to the target", _fingerprint(repo) == before)
+
+        # Changing ignored content must not move the tree_hash or archive.
+        (repo / ".env").write_text("API_KEY=rotated\n")
+        (repo / "build" / "deep" / "out.bin").write_text("artifact 2\n")
+        again = capture_local_repository(repo, [allowed])
+        check(
+            "FTF-04A06-F1",
+            "ignored-content edits do not change tree_hash or archive",
+            again.tree_hash == cap.tree_hash
+            and again.source_archive_sha256 == cap.source_archive_sha256,
+        )
+
+        # A symlink that is NOT ignored but points at an ignored in-root file
+        # must not smuggle the ignored bytes in through the link.
+        (repo / "envlink").symlink_to(repo / ".env")
+        linked = capture_local_repository(repo, [allowed])
+        check(
+            "FTF-04A06-F1",
+            "a non-ignored symlink to an ignored file does not leak its bytes",
+            b"rotated" not in (linked.source_archive_bytes or b"")
+            and "envlink" not in {e.relative_path for e in linked.manifest_entries},
+        )
+
+    _with_tmp(body)
+
+
+def test_f1_ignored_directory_is_pruned_not_walked() -> None:
+    """An escaping symlink inside a git-ignored directory is never reached, so
+    the capture is not refused; the same link outside an ignored dir still is."""
+
+    def body(tmp: Path) -> None:
+        outside = tmp / "outside"
+        outside.mkdir()
+        (outside / "secret.txt").write_text("TOP SECRET\n")
+        allowed = tmp / "allowed"
+        allowed.mkdir()
+        repo = _new_checkout(allowed)
+        (repo / ".gitignore").write_text("node_modules/\n")
+        _git(repo, "add", ".gitignore")
+        _git(repo, "commit", "-qm", "ignore")
+        (repo / "a.txt").write_text("dirty\n")
+        (repo / "node_modules").mkdir()
+        (repo / "node_modules" / "esc").symlink_to(outside / "secret.txt")
+        cap = capture_local_repository(repo, [allowed])
+        paths = {e.relative_path for e in cap.manifest_entries}
+        check(
+            "FTF-04A06-F1",
+            "ignored dir with an escaping symlink is pruned, not refused",
+            "a.txt" in paths and not any(p.startswith("node_modules") for p in paths),
+        )
+        (repo / "pkg" / "esc").symlink_to(outside / "secret.txt")
+        check(
+            "FTF-04A06-F1",
+            "the same escaping link in a non-ignored dir is still refused",
+            _refused(lambda: capture_local_repository(repo, [allowed]), PathAllowlistError),
+        )
+
+    _with_tmp(body)
+
+
+def test_f1_unreadable_git_view_fails_closed() -> None:
+    """If git cannot enumerate the file set, nothing is treated as "not ignored"."""
+
+    def body(tmp: Path) -> None:
+        not_a_repo = tmp / "plain"
+        not_a_repo.mkdir()
+        (not_a_repo / ".env").write_text("API_KEY=hunter2\n")
+        check(
+            "FTF-04A06-F1",
+            "a failed git file listing raises instead of capturing everything",
+            _refused(
+                lambda: _connector._iter_repository_files(not_a_repo), _connector.GitCommandError
+            ),
+        )
+
+    _with_tmp(body)
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

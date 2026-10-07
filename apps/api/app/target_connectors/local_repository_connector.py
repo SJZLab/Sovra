@@ -526,15 +526,42 @@ class ManifestEntry:
     executable: bool
 
 
+def _git_visible_paths(root: Path) -> frozenset[str]:
+    """Git's own view of the working tree (Law 16, FTF-04A06-F1): tracked
+    files plus untracked files that are NOT ignored
+    (`git ls-files --cached --others --exclude-standard`). Git-ignored
+    files (`.env`, build output, caches) are never read or archived. Returns
+    the visible file paths. A failed read raises rather than being treated
+    as "nothing ignored"."""
+    result = _run_git(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+    if result.returncode != 0:
+        raise GitCommandError(
+            f"{root}: git ls-files --cached --others --exclude-standard failed "
+            f"(exit {result.returncode}): {result.stderr.strip()}"
+        )
+    files: set[str] = set()
+    for record in result.stdout.split("\0"):
+        if not record:
+            continue
+        files.add(record)
+    return frozenset(files)
+
+
 def _iter_repository_files(root: Path) -> list[ManifestEntry]:
-    """Real, recursive, symlink-safe walk of every regular file under
-    `root`, excluding `.git` itself (git's own internal object store is not
-    source content). A symlink (file or directory) whose real target
-    resolves outside `root` is refused outright; one that resolves inside
-    `root` is followed exactly once (cycle-safe via `_visited_directories`).
+    """Real, recursive, symlink-safe walk of every git-visible regular file
+    under `root` (tracked, or untracked and not git-ignored), excluding
+    `.git` itself (git's own internal object store is not source content).
+    A symlink (file or directory) whose real target resolves outside `root`
+    is refused outright; one that resolves inside `root` is followed exactly
+    once (cycle-safe via `_visited_directories`). A git-ignored path, or a
+    symlink that is itself git-ignored, is never read, followed or archived.
     """
     entries: list[ManifestEntry] = []
     visited_directories: set[Path] = set()
+    visible_files = _git_visible_paths(root)
+
+    def _real_relative(path: Path) -> str:
+        return Path(os.path.realpath(path, strict=True)).relative_to(root).as_posix()
 
     def _walk(directory: Path) -> None:
         real_directory = Path(os.path.realpath(directory, strict=True))
@@ -556,6 +583,8 @@ def _iter_repository_files(root: Path) -> list[ManifestEntry]:
 
             entry_path = Path(entry.path)
             if entry.is_symlink():
+                if entry_path.relative_to(root).as_posix() not in visible_files:
+                    continue  # a git-ignored symlink is never followed
                 try:
                     real_target = Path(os.path.realpath(entry_path, strict=True))
                 except OSError as exc:
@@ -580,6 +609,8 @@ def _iter_repository_files(root: Path) -> list[ManifestEntry]:
 
             if not target_for_read.is_file():
                 continue
+            if _real_relative(target_for_read) not in visible_files:
+                continue  # git-ignored (or not git-visible): never read
 
             try:
                 data = target_for_read.read_bytes()
