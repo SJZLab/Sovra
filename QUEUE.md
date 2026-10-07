@@ -9288,6 +9288,13 @@ docs/certifications/queue.md. Write the submission to docs/certifications/submis
 log to docs/progress/<UTC>-<lane>.md (both new files). Shared edits re-conflicted every open relay PR after each
 merge and cost a shift each time. Do not open docs-only "record this shift" PRs.
 
+**CI contract (2026-10-07, Control plane):** "green" means the latest `ci-verdict` check on the PR's current
+head SHA concluded success, and nothing else (not `gate` alone, not most jobs). The `relay-policy` job now fails
+a second open PR for an already-owned item, Control-plane file edits, CERTIFIED flips and log-only PRs. To
+iterate on one failing integration job, put `ci-focus: <job-name>` in the PR body; remove it before the final
+push. Never re-push or re-run unchanged to see whether a failure goes away. Full rules: docs/operations/routines.md
+"CI contract".
+
 **Every item, every shift (2026-10-06, Control plane):** before submitting, run the PRE-SUBMIT
 SELF-ATTACK in docs/operations/routines.md STEP 5b. Break every protection you added (delete it, and
 add a bypass), run the test file as CI does (`python tests/...`) and show RED, repeat on a neutral host
@@ -9298,7 +9305,17 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
    - **Every grader (FTF-06xx):** before submitting, apply the GRADER CHECKLIST in the same queue.md entry.
-   - **0b.** Then the Backlog.
+   - **0b. FTF-04A21 round 2 (tests only, returned 2026-10-07T08:15Z).** Add to apps/web/tests/ftf_04a21.spec.ts and
+     show each fault RED:
+     (C6) a restored stale draft (baseText ≠ server) stays "conflict" after the user types in it, and Lock stays blocked;
+     (P7) a draft stored for manifest A never appears for manifest B, and `draftStorageKey` differs across org,
+     project and manifest ids;
+     (S8) a JSON field edited to `null` is sent as `{field: null}` in the PATCH body;
+     (D3) `lineDiff("a","a\nb")` marks the appended line "added", plus a UI case appending lines after the last
+     server line.
+     Optional: the restore path does not throw when storage throws (P6), and Save stays disabled for a restored draft
+     on a locked manifest (R3). Claim `relay/FTF-04A21-r2`. No production change is needed.
+   - **0c.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
      (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608 and FTF-1807 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
@@ -9421,17 +9438,30 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 "2026-10-01T13:40Z". One PR per item group, titled "[relay] <ID>: fix L2 round-2 findings".
 
 ## Backlog (sliced, ready — relay takes these after Active; Refill & Sweep keeps >= 3)
-- **FTF-0308** Model-to-artifact mapping UI. DoD: `tools/r1_handoff.py packet FTF-0308`. UI starts at `/` (Law 6).
 - **FTF-04A21** Manifest review/edit UI with per-field evidence. DoD: `tools/r1_handoff.py packet FTF-04A21`.
 - **FTF-04A31** Real private GitHub repository integration test. DoD: `tools/r1_handoff.py packet FTF-04A31`. Needs a
   repository credential: if none is already provisioned in CI, park it as ask-first (secret), never fake the repo.
 - **FTF-04A32** Local repository integration test. DoD: `tools/r1_handoff.py packet FTF-04A32`.
 - **FTF-04A34** Monorepo multi-agent discovery test. DoD: `tools/r1_handoff.py packet FTF-04A34`.
+- **FTF-0501** Direct object-storage upload. DoD: `tools/r1_handoff.py packet FTF-0501`.
+- **FTF-0515** Quality issue engine. DoD: `tools/r1_handoff.py packet FTF-0515`.
+- **FTF-0602** Evaluation case editor/import. DoD: `tools/r1_handoff.py packet FTF-0602`.
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
-None currently. The PR #471 (FTF-0307 round-2 fix) merge-conflict entry below is resolved history.
+- **FTF-0308 Model-to-artifact mapping UI: PARKED (BLOCKED_DEPENDENCY), 2026-10-07T08:00Z, Control plane.**
+  - Lane C's claim record (#541) is right. The contract says to consume a frozen interface, and the negative
+    acceptance ("changing mapping invalidates related qualification") needs a persisted mapping plus an
+    invalidation hook. Neither exists: there is no `model_catalog_entries` table, and no
+    `/api/v1/models/{id}/training-artifact` path in `03-interface.yaml`.
+  - Duplicate #543, which built a request-scoped route not in the contract, is closed.
+  - Route chosen: option 1. Slice a migration + API prerequisite: ModelCatalogEntry persistence with a
+    tenant-composite FK to trainable artifacts and RLS, GET/PUT training-artifact mapping, and a mapping-change
+    audit/invalidation event. Freeze it in `03-interface.yaml`, then re-queue FTF-0308 on top. The Control plane
+    writes the prerequisite contract; no relay action until then.
+
+The PR #471 (FTF-0307 round-2 fix) merge-conflict entry below is resolved history.
 
 **RESOLVED 2026-10-06T04:52Z — PR #471 merge conflict, route option (1).** The prior entry's own
 route option (1) ("a session/user with the needed git permission merges `main` into PR #471's
