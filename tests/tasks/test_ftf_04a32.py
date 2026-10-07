@@ -765,7 +765,11 @@ def test_n4_walker_symlink_and_read_edges() -> None:
             cycle_ok = False
         else:
             paths = [e.relative_path for e in cap.manifest_entries]
-            cycle_ok = len(paths) == len(set(paths)) and "a.txt" in paths
+            cycle_ok = (
+                len(paths) == len(set(paths))
+                and "a.txt" in paths
+                and not any(p.startswith("loop/") for p in paths)
+            )
         check("FTF-04A32-N1", "in-root symlink cycle terminates without duplicates", cycle_ok)
 
         # Only the exact top-level `.git` is excluded: look-alike names are content.

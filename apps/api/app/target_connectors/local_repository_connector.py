@@ -549,8 +549,8 @@ def _git_visible_paths(root: Path) -> frozenset[str]:
 
 def _iter_repository_files(root: Path) -> list[ManifestEntry]:
     """Real, recursive, symlink-safe walk of every git-visible regular file
-    under `root` (tracked, or untracked and not git-ignored), excluding
-    `.git` itself (git's own internal object store is not source content).
+    under `root` (tracked, or untracked and not git-ignored). `.git` itself
+    is never git-visible, so git's internal object store is never captured.
     A symlink (file or directory) whose real target resolves outside `root`
     is refused outright; one that resolves inside `root` is followed exactly
     once (cycle-safe via `_visited_directories`). A git-ignored path, or a
@@ -578,9 +578,6 @@ def _iter_repository_files(root: Path) -> list[ManifestEntry]:
             ) from exc
 
         for entry in children:
-            if directory == root and entry.name == ".git":
-                continue
-
             entry_path = Path(entry.path)
             if entry.is_symlink():
                 if entry_path.relative_to(root).as_posix() not in visible_files:
