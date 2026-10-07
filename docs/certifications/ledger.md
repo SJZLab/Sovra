@@ -10135,6 +10135,13 @@ PR is not landed by the next certifier shift.
   - the first matched_order_index wins;
   - the order of violations and mismatches.
 
+## FTF-0608-F1 — Tool-sequence grader follow-up tests — CERTIFIED (2026-10-07)
+- Round 2 (tests only): PR #539, merge commit db4cb881bf8b5a320cc6b9639a457172ec687b2c (head `2cb7e13`). This closes
+  rounds 1–2. Producer: `session_017ufim7cSr3s5BjwvHDqaFX`. CI: 48/48 passed.
+- Verifier: both round-1 GREEN faults are now RED: the outer bare-str guards on allowed_orders and must_precede, and
+  mismatches listed with missing keys first. The optional faults are RED too: forbidden_calls reversed, and casefolded
+  precedence membership. Six round-1 faults spot-checked are still RED. The whole-file mutation gate kills 108/108.
+
 ## FTF-0608-F1 — Tool-sequence grader follow-up tests — RETURNED, round 1 (2026-10-07)
 - PR #536, merge commit 2c7707af9851ebb978e0f3135634dd01bb3dc7e5 (head `f0139cb`). Producers:
   `session_01LAyzMQEaW7t8CBQgqQ1KEh` and `session_01C5wcUXBr7uqDDpbisFdZrG` (main merge). CI: all checks passed.

@@ -9303,14 +9303,9 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      held in the test), keeping the existing structured pins. Add in-suite faults for each checker: wrapped, bold,
      code-block and upper-case claims; an extra or suffixed table row; renumbered steps; and a heading rename that
      keeps the count. Same entry.
-   - **0c. FTF-0608-F1 round 2 (tests only, returned 2026-10-07T05:50Z).** Add two tests to tests/tasks/test_ftf_0608.py:
-     (A) the empty string as a bare-str spec is refused: `allowed_orders=""` and `must_precede=""`, each alongside
-     `must_not_call=["x"]`; (B) `required_state={"k1": 1, "k2": 1}, final_state={"k1": 2}` gives
-     `state_mismatches == ("k1", "k2")`, a mismatched key declared before a missing one. Optional: a non-palindromic
-     forbidden_calls expectation, and a vacuous `must_precede=[("a","A")]` pass. Claim `relay/FTF-0608-F1-r2`. Same entry.
-   - **0d.** Then the Backlog.
+   - **0c.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
-     (2026-10-06); FTF-0214, FTF-0604, FTF-0606 and FTF-0608 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5 and FTF-0510-F1 are CERTIFIED.
+     (2026-10-06); FTF-0214, FTF-0604, FTF-0606 and FTF-0608 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid
