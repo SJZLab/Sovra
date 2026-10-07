@@ -241,6 +241,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0212.py
       - name: FTF-0213 negative-test proof (Real structured-output probe, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0213.py
+      - name: FTF-0214 negative-test proof (Model catalog UI serializers, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0214.py
       - name: FTF-04A07 negative-test proof (TargetSourceSnapshot schema + immutable provenance, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a07.py
       - name: FTF-04A06 negative-test proof (Local repository connector, no DB required)
@@ -744,6 +746,42 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real authorized-access-guard evidence against the live database
         run: uv run python3 tests/integration/test_ftf_h004_access_guard.py
+
+  model-catalog-integration:
+    # FTF-0214: real Postgres + real local HTTPS gateway evidence for the
+    # composed `GET .../catalog` and `POST .../models/{model_id}/probe`
+    # routes -- this repository's first live caller of FTF-0205/0206/
+    # 0207/0208/0209/0210/0211/0212/0213/H004 (all CERTIFIED, previously
+    # unwired pure-logic modules) --
+    # tests/integration/test_ftf_0214_model_catalog.py. Same real
+    # `services: postgres` container pattern as
+    # litellm-access-guard-integration.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest FTF-0004/FTF-0102/FTF-0104/FTF-0105/FTF-H003/FTF-0106/FTF-0201/FTF-H004 already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0214
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0214"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0214
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real composed catalog/probe evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_0214_model_catalog.py
 
   trainable-artifact-schema-api-integration:
     # FTF-0301: real Postgres TrainableArtifact schema/API evidence -- two
