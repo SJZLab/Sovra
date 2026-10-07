@@ -9428,17 +9428,30 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 "2026-10-01T13:40Z". One PR per item group, titled "[relay] <ID>: fix L2 round-2 findings".
 
 ## Backlog (sliced, ready — relay takes these after Active; Refill & Sweep keeps >= 3)
-- **FTF-0308** Model-to-artifact mapping UI. DoD: `tools/r1_handoff.py packet FTF-0308`. UI starts at `/` (Law 6).
 - **FTF-04A21** Manifest review/edit UI with per-field evidence. DoD: `tools/r1_handoff.py packet FTF-04A21`.
 - **FTF-04A31** Real private GitHub repository integration test. DoD: `tools/r1_handoff.py packet FTF-04A31`. Needs a
   repository credential: if none is already provisioned in CI, park it as ask-first (secret), never fake the repo.
 - **FTF-04A32** Local repository integration test. DoD: `tools/r1_handoff.py packet FTF-04A32`.
 - **FTF-04A34** Monorepo multi-agent discovery test. DoD: `tools/r1_handoff.py packet FTF-04A34`.
+- **FTF-0501** Direct object-storage upload. DoD: `tools/r1_handoff.py packet FTF-0501`.
+- **FTF-0515** Quality issue engine. DoD: `tools/r1_handoff.py packet FTF-0515`.
+- **FTF-0602** Evaluation case editor/import. DoD: `tools/r1_handoff.py packet FTF-0602`.
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
-None currently. The PR #471 (FTF-0307 round-2 fix) merge-conflict entry below is resolved history.
+- **FTF-0308 Model-to-artifact mapping UI: PARKED (BLOCKED_DEPENDENCY), 2026-10-07T08:00Z, Control plane.**
+  - Lane C's claim record (#541) is right. The contract says to consume a frozen interface, and the negative
+    acceptance ("changing mapping invalidates related qualification") needs a persisted mapping plus an
+    invalidation hook. Neither exists: there is no `model_catalog_entries` table, and no
+    `/api/v1/models/{id}/training-artifact` path in `03-interface.yaml`.
+  - Duplicate #543, which built a request-scoped route not in the contract, is closed.
+  - Route chosen: option 1. Slice a migration + API prerequisite: ModelCatalogEntry persistence with a
+    tenant-composite FK to trainable artifacts and RLS, GET/PUT training-artifact mapping, and a mapping-change
+    audit/invalidation event. Freeze it in `03-interface.yaml`, then re-queue FTF-0308 on top. The Control plane
+    writes the prerequisite contract; no relay action until then.
+
+The PR #471 (FTF-0307 round-2 fix) merge-conflict entry below is resolved history.
 
 **RESOLVED 2026-10-06T04:52Z — PR #471 merge conflict, route option (1).** The prior entry's own
 route option (1) ("a session/user with the needed git permission merges `main` into PR #471's
