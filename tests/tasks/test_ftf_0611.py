@@ -25,6 +25,7 @@ Run directly: python3 tests/tasks/test_ftf_0611.py
 from __future__ import annotations
 
 import sys
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,7 @@ sys.path.insert(0, str(ROOT))
 from workers.evaluation.numeric_grader import (  # noqa: E402
     MAX_DECIMALS_LIMIT,
     NumericGraderError,
+    NumericResult,
     NumericSpec,
     ObservedQuantity,
     grade_numeric,
@@ -450,6 +452,137 @@ def test_multi_constraint_everything_reported() -> None:
     )
     clean = grade_numeric(ObservedQuantity("100.00", "USD"), spec())
     check(CID, "a fully correct answer has no issues", clean.passed and clean.issues == ())
+
+
+def test_unicode_digits_in_fraction_are_malformed() -> None:
+    # Round-2 finding 1: a non-ASCII digit in the fractional part must be
+    # malformed, even under a tolerance wide enough that the "intended" value
+    # (1.5) would otherwise pass -- so a widen-then-parse bypass is caught,
+    # not just a narrow digit check.
+    for text in ("1.５", "1.٥"):
+        r = grade(text, abs_tol="0.99999", rel_tol="0.99999", expected="1.5", dec=4)
+        check(
+            CID,
+            f"{text!r} fails malformed_number despite the widest allowed tolerance",
+            r.issues == ("malformed_number",) and not r.passed,
+        )
+
+
+def test_fine_grained_tolerance_boundaries() -> None:
+    # Round-2 finding 2: boundaries finer than 0.01 for both abs_tol and
+    # rel_tol -- a fallback floor on the allowed deviation (a classic "wide
+    # fallback tolerance" bug) would let the just-over-boundary case through.
+    check(
+        CID,
+        "abs_tol 1e-12: the value exactly at the boundary passes",
+        grade(
+            "1.000000000001", expected="1", abs_tol="0.000000000001", rel_tol="0", dec=12
+        ).passed,
+    )
+    r = grade("1.000000000002", expected="1", abs_tol="0.000000000001", rel_tol="0", dec=12)
+    check(
+        CID,
+        "abs_tol 1e-12: one unit past the boundary fails out_of_tolerance",
+        not r.passed and r.issues == ("out_of_tolerance",),
+    )
+    check(
+        CID,
+        "rel_tol 1e-6 against a large expected: the boundary deviation passes",
+        grade(
+            "1000001", expected="1000000", abs_tol="0", rel_tol="0.000001", dec=0
+        ).passed,
+    )
+    r2 = grade("1000002", expected="1000000", abs_tol="0", rel_tol="0.000001", dec=0)
+    check(
+        CID,
+        "rel_tol 1e-6: one unit past the boundary fails out_of_tolerance",
+        not r2.passed and r2.issues == ("out_of_tolerance",),
+    )
+
+
+def test_whitespace_only_unit_matches_only_itself() -> None:
+    # Round-2 finding 3: a whitespace-only unit is a legitimate exact value,
+    # not something to strip -- stripping it would either wrongly accept it
+    # as "missing" or wrongly match a different unit.
+    r = grade_numeric(ObservedQuantity("100", " "), spec(unit=" "))
+    check(CID, "a whitespace-only observed unit matches a whitespace-only spec unit", r.passed)
+    r2 = grade_numeric(ObservedQuantity("100", " "), spec(unit="USD"))
+    check(
+        CID,
+        "a whitespace-only observed unit against a real spec unit fails wrong_unit only",
+        not r2.passed and r2.issues == ("wrong_unit",),
+    )
+
+
+def test_non_string_unit_never_coerced() -> None:
+    # Round-2 finding 4: a non-string observed unit must never be decoded or
+    # stringified into matching the spec's string unit.
+    r = grade_numeric(ObservedQuantity("100", b"USD"), spec(unit="USD"))
+    check(
+        CID,
+        "bytes b'USD' is not decoded to match the string unit 'USD'",
+        r.issues == ("wrong_unit",),
+    )
+    r2 = grade_numeric(ObservedQuantity("100", 1), spec(unit="1"))
+    check(
+        CID,
+        "the int 1 is not stringified to match the spec unit '1'",
+        r2.issues == ("wrong_unit",),
+    )
+
+
+def test_max_decimals_limit_pinned() -> None:
+    # Round-2 finding 5: pin the limit itself, not just that some fixed
+    # number is enforced -- a silent widening of the constant must go RED.
+    check(CID, "MAX_DECIMALS_LIMIT is pinned at 12", MAX_DECIMALS_LIMIT == 12)
+    check(
+        CID,
+        "exactly 12 fractional digits is accepted at the limit",
+        grade("1.000000000000", expected="1", dec=12).passed,
+    )
+    check(
+        CID,
+        "max_decimals above the pinned limit is still refused",
+        raises(lambda: spec(dec=MAX_DECIMALS_LIMIT + 1)),
+    )
+
+
+def test_dataclasses_frozen_and_error_type() -> None:
+    # Round-2 finding 6: every public value type is immutable, and the
+    # grader's own error is a ValueError (so callers that already catch
+    # ValueError for a malformed spec keep working).
+    def mutate(obj: Any, name: str, value: Any) -> None:
+        setattr(obj, name, value)
+
+    def raises_frozen(fn: Any) -> bool:
+        try:
+            fn()
+        except FrozenInstanceError:
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+        return False
+
+    check(
+        CID,
+        "NumericSpec is frozen",
+        raises_frozen(lambda: mutate(spec(), "expected", "999")),
+    )
+    check(
+        CID,
+        "ObservedQuantity is frozen",
+        raises_frozen(lambda: mutate(ObservedQuantity("1", "USD"), "value", "2")),
+    )
+    check(
+        CID,
+        "NumericResult is frozen",
+        raises_frozen(lambda: mutate(NumericResult(passed=True, issues=()), "passed", False)),
+    )
+    check(
+        CID,
+        "NumericGraderError is a ValueError subclass",
+        issubclass(NumericGraderError, ValueError),
+    )
 
 
 def main() -> int:
