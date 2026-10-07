@@ -806,6 +806,146 @@ def test_n4_walker_symlink_and_read_edges() -> None:
     _with_tmp(body)
 
 
+def test_n1_prefix_sibling_symlink_refused() -> None:
+    """F09: `<tmp>/repo-evil` shares a string prefix with the root `<tmp>/repo`
+    but is outside it; a string-prefix containment check would let it through."""
+
+    def body(tmp: Path) -> None:
+        repo = _new_checkout(tmp)
+        evil = tmp / "repo-evil"
+        evil.mkdir()
+        (evil / "secret.txt").write_text("TOP SECRET\n")
+        (repo / "a.txt").write_text("dirty\n")
+        (repo / "sibling").symlink_to(evil / "secret.txt")
+        before = _fingerprint(repo)
+        check(
+            "FTF-04A32-N1",
+            "symlink to a prefix-sibling path is refused",
+            _refused(lambda: capture_local_repository(repo, [tmp]), PathAllowlistError),
+        )
+        check("FTF-04A32-N1", "refusal wrote nothing to the target", _fingerprint(repo) == before)
+
+    _with_tmp(body)
+
+
+def test_a3_same_length_content_and_rename_and_mode_change_tree_hash() -> None:
+    """F19/F20/F18: every manifest dimension (content, path, mode) moves tree_hash."""
+
+    def body(tmp: Path) -> None:
+        repo = _new_checkout(tmp)
+        (repo / "a.txt").write_text("dirty1\n")
+        (repo / "pkg" / "new.txt").write_text("untracked\n")
+        base = capture_local_repository(repo, [tmp])
+        check(
+            "FTF-04A32-A3",
+            "baseline is a dirty snapshot",
+            base.capture_method == "local_dirty_snapshot",
+        )
+
+        # F19: same-length content edit.
+        (repo / "a.txt").write_text("dirty2\n")
+        same_len = capture_local_repository(repo, [tmp])
+        check(
+            "FTF-04A32-A3",
+            "a same-length content edit changes tree_hash",
+            same_len.tree_hash != base.tree_hash,
+        )
+        check(
+            "FTF-04A32-A3",
+            "a same-length content edit changes the archive hash",
+            same_len.source_archive_sha256 != base.source_archive_sha256,
+        )
+        check(
+            "FTF-04A32-A3",
+            "archive holds the new same-length bytes",
+            _archive_files(same_len).get("a.txt") == b"dirty2\n",
+        )
+
+        # F20: rename with identical content.
+        (repo / "pkg" / "new.txt").rename(repo / "pkg" / "renamed.txt")
+        renamed = capture_local_repository(repo, [tmp])
+        check(
+            "FTF-04A32-A3",
+            "a rename with identical content changes tree_hash",
+            renamed.tree_hash != same_len.tree_hash,
+        )
+        check(
+            "FTF-04A32-A3",
+            "renamed path is in the manifest and the old one is not",
+            {e.relative_path for e in renamed.manifest_entries} >= {"pkg/renamed.txt"}
+            and "pkg/new.txt" not in {e.relative_path for e in renamed.manifest_entries},
+        )
+
+        # F18/F15/F16: chmod +x only.
+        before_mode = capture_local_repository(repo, [tmp])
+        (repo / "pkg" / "b.txt").chmod(0o755)
+        after_mode = capture_local_repository(repo, [tmp])
+        check(
+            "FTF-04A32-A3",
+            "a chmod +x-only change changes tree_hash",
+            after_mode.tree_hash != before_mode.tree_hash,
+        )
+        flags = {e.relative_path: e.executable for e in after_mode.manifest_entries}
+        check("FTF-04A32-A3", "a.txt is not executable", flags.get("a.txt") is False)
+        check("FTF-04A32-A3", "bin.sh is executable", flags.get("bin.sh") is True)
+        check("FTF-04A32-A3", "chmod'd pkg/b.txt is executable", flags.get("pkg/b.txt") is True)
+        assert after_mode.source_archive_bytes is not None
+        with tarfile.open(fileobj=io.BytesIO(after_mode.source_archive_bytes)) as archive:
+            modes = {m.name: m.mode for m in archive.getmembers()}
+        check("FTF-04A32-A3", "tar mode of bin.sh is 0o755", modes.get("bin.sh") == 0o755)
+        check("FTF-04A32-A3", "tar mode of a.txt is 0o644", modes.get("a.txt") == 0o644)
+        check("FTF-04A32-A3", "tar mode of chmod'd b.txt is 0o755", modes.get("pkg/b.txt") == 0o755)
+
+    _with_tmp(body)
+
+
+def test_n2_same_length_edit_after_archive_before_final_walk_refused() -> None:
+    """F19 (post-archive half): the dirty signature is unchanged by a content
+    edit to an already-dirty file, so only the final manifest re-walk can see it."""
+
+    def body(tmp: Path) -> None:
+        repo = _new_checkout(tmp)
+        (repo / "a.txt").write_text("dirty1\n")
+        original = _connector._git_dirty_signature
+        calls = {"n": 0}
+
+        def edit_then_probe(root: Path) -> str:
+            calls["n"] += 1
+            if calls["n"] == 2:  # post-archive probe: same-length edit lands just before it
+                (root / "a.txt").write_text("dirty2\n")
+            return original(root)
+
+        _connector._git_dirty_signature = edit_then_probe
+        try:
+            check(
+                "FTF-04A32-N2",
+                "a same-length edit after the archive build is refused",
+                _refused(
+                    lambda: capture_local_repository(repo, [tmp]), ConcurrentModificationError
+                ),
+            )
+        finally:
+            _connector._git_dirty_signature = original
+
+    _with_tmp(body)
+
+
+def test_n4_in_root_symlinks_are_followed() -> None:
+    """F14: a file symlink and a directory symlink that stay inside the root are captured."""
+
+    def body(tmp: Path) -> None:
+        repo = _new_checkout(tmp)
+        (repo / "a.txt").write_text("dirty\n")
+        (repo / "filelink").symlink_to(repo / "pkg" / "b.txt")
+        (repo / "dirlink").symlink_to(repo / "pkg", target_is_directory=True)
+        cap = capture_local_repository(repo, [tmp])
+        paths = {e.relative_path for e in cap.manifest_entries}
+        check("FTF-04A32-N1", "in-root file symlink is captured", "filelink" in paths)
+        check("FTF-04A32-N1", "in-root dir symlink target is captured", "dirlink/b.txt" in paths)
+
+    _with_tmp(body)
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
