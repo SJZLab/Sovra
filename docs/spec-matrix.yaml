@@ -10536,15 +10536,32 @@ FTF-1304:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1304.py
 FTF-1305:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Candidate ranking
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-26; scenarios=Q15, Q19; deps=FTF-0307, FTF-1301, FTF-1304
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-26; scenarios=Q15, Q19; deps=FTF-0307, FTF-1301, FTF-1304
+    (all CERTIFIED). `database_changes` charters no schema change and the packet owns only
+    apps/api/app/services/candidate_ranking.py and its test.
+
+
+    Built: rank_candidates orders existing, base and tuned candidates by base cost per success from a
+    low/base/high interval (built from FTF-1304 results by CostInterval.from_scenario_results) and
+    reports whether the economics are estimated or provisional. Only eligible, priced candidates whose
+    measured development quality lower bound clears a required min_quality floor are ranked; every other
+    candidate is reported with all its reasons, never deleted. Parameter count is recorded and never read.
+    A tuned candidate must carry a training-amortized cost. When the cheapest qualifying interval overlaps
+    another, the result is inconclusive and the incumbent is retained unless a tie_break_policy_id is named
+    (Section 31). The result claims only the lowest-cost qualifying candidate among those tested.
+
+
+    Disclosed: no live caller or route yet (the cost-per-success search route is not dependency-ready), so
+    proving_symbol stays blank, same precedent as FTF-1304. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_1305.py
 FTF-1306:
   certification_state: NONE
   criticality: MUST
