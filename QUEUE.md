@@ -9305,26 +9305,20 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
    - **Every grader (FTF-06xx):** before submitting, apply the GRADER CHECKLIST in the same queue.md entry.
-   - **0b. FTF-04A34 round 2 (tests only, returned 2026-10-07T09:00Z).** Extend tests/tasks/test_ftf_04a34.py (same
-     real-git fixture, no stubs) and show each fault RED:
-     (1) **N2 prompts** (contract says "tools/prompts", untested): give each product its own system prompt, two products
-     with same-named template files at different paths (e.g. two `prompts/system.txt`), and two agents' prompts in one
-     file. Call `run_prompt_source_discovery` and assert per-product `content_sha256`/`referenced_path`/`location`
-     literals, with no cross-product hash or path.
-     (2) **N1**: exact literal key sets for each entrypoint and its model/tool dicts; a recursive walk forbidding
-     selected/default/primary/chosen/recommend/rank/score; a behavioural call of `select_discovered_agent_candidate`
-     without an explicit id that raises (the DB path, if available; otherwise disclose).
-     (3) **A2**: literal `markers`/`languages`, unsorted raw entrypoint order, and `line`/`call`/`resolved`/`reason`
-     literals per language; run twice under different `PYTHONHASHSEED`; the marker check must be exact equality.
-     (4) **N2 tools/models**: a second TS agent in another product with no model/tools (stays `argument_not_present`),
-     a second TS agent in one file with distinct tools, a Python agent with dynamic `model=` and no `tools=` (no
-     inheritance), and two same-basename `package.json` (one express, one not).
-     (5) **Commit identity**: `capture.commit_sha == git rev-parse HEAD`, then a second commit or uncommitted edit, and
-     the evidence follows the captured commit. Claim `relay/FTF-04A34-r2`. No production change is expected; if a fault
-     reveals one, fix it in the same PR.
+   - **0b. FTF-04A32 round 2 (tests only, returned 2026-10-07T11:00Z).** Production code is correct. Extend
+     tests/tasks/test_ftf_04a32.py (real git, no stubs) and show each fault RED:
+     (F09) a walker symlink to a prefix-sibling path (`<tmp>/repo-evil/secret.txt`) raises PathAllowlistError;
+     (F19) two dirty captures differing only by same-length content get different `tree_hash` values, and a
+     same-length edit landing after `_build_archive` and before the final re-walk (dirty signature unchanged) raises
+     ConcurrentModificationError;
+     (F20) a rename with identical content changes `tree_hash`;
+     (F18/F15/F16) a chmod +x-only change changes `tree_hash`, `a.txt` is `executable` False, and tar member modes are
+     0o755 for `bin.sh` and 0o644 for `a.txt`.
+     Optional: positive in-root file/dir symlink tests (F14); fingerprint includes `.git/config`, `.git/hooks` and the
+     file listing (F45). Claim `relay/FTF-04A32-r2`.
    - **0c.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
-     (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807 and FTF-04A21 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
+     (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21 and FTF-04A34 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid
@@ -9445,13 +9439,19 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 "2026-10-01T13:40Z". One PR per item group, titled "[relay] <ID>: fix L2 round-2 findings".
 
 ## Backlog (sliced, ready — relay takes these after Active; Refill & Sweep keeps >= 3)
-- **FTF-04A21-F1 (optional test, low priority)** Add to apps/web/tests/ftf_04a21.spec.ts: a stored draft restored onto a
-  `locked` manifest leaves Save disabled, and clicking it sends no PATCH (kills fault R3). Claim `relay/FTF-04A21-F1-r1`.
 - **FTF-04A31** Real private GitHub repository integration test. DoD: `tools/r1_handoff.py packet FTF-04A31`. Needs a
   repository credential: if none is already provisioned in CI, park it as ask-first (secret), never fake the repo.
-- **FTF-04A32** Local repository integration test. DoD: `tools/r1_handoff.py packet FTF-04A32`.
-- **FTF-04A34** Monorepo multi-agent discovery test. DoD: `tools/r1_handoff.py packet FTF-04A34`.
 - **FTF-0515** Quality issue engine. DoD: `tools/r1_handoff.py packet FTF-0515`.
+- **FTF-04A06-F1 (Law 16, Control-plane decision 2026-10-07T11:00Z)** The local repository connector's dirty-snapshot
+  manifest and archive include git-ignored files (a probe captured `.env`). Law 16 forbids silently harvesting
+  repository data, and ignored files often hold secrets. Decision: the snapshot file set equals git's own view, meaning
+  tracked files plus untracked files that are not ignored (`git ls-files --cached --others --exclude-standard`).
+  Ignored files are never read or archived. Fix apps/api/app/target_connectors/local_repository_connector.py and
+  add tests (an ignored `.env` and a nested ignored dir are absent from the manifest, the archive and the tree_hash;
+  an un-ignored untracked file is present), with a fault → RED table. Claim `relay/FTF-04A06-F1-r1`.
+- **FTF-0605** JSON-schema grader. DoD: `tools/r1_handoff.py packet FTF-0605`. Apply the GRADER CHECKLIST.
+- **FTF-0607** Tool-argument grader. DoD: `tools/r1_handoff.py packet FTF-0607`. Apply the GRADER CHECKLIST.
+- **FTF-0609** Forbidden-action grader. DoD: `tools/r1_handoff.py packet FTF-0609`. Apply the GRADER CHECKLIST.
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 
