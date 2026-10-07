@@ -41,6 +41,7 @@ Run directly: python3 tests/tasks/test_ftf_0604.py
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -412,6 +413,354 @@ def test_policy_names_are_matched_exactly_not_normalized() -> None:
             check("FTF-0604", f"whitespace_policy {bad!r} raised {type(exc).__name__}", False)
         else:
             check("FTF-0604", f"whitespace_policy {bad!r} must be refused", False)
+
+
+def test_rejects_empty_approved_value() -> None:
+    """Round-2 fix: a raw empty-string approved value is refused outright --
+    there is no canonical answer to grade against. Before this fix,
+    `grade_exact_match("", [""], ...)` silently passed (fail-open)."""
+    try:
+        grade_exact_match(
+            "",
+            [""],
+            case_policy=CASE_SENSITIVE,
+            whitespace_policy=WHITESPACE_EXACT,
+        )
+    except ExactMatchGraderError:
+        pass
+    else:
+        check(
+            "FTF-0604",
+            "an empty-string approved value is refused, never silently accepted "
+            "as a match against an empty candidate",
+            False,
+        )
+
+
+def test_rejects_approved_value_blank_under_whitespace_policy() -> None:
+    """A whitespace-only approved value (e.g. a single space) becomes empty
+    once the caller's own whitespace_policy normalizes it -- that is refused
+    exactly like a raw empty string, under both strip and collapse."""
+    for whitespace_policy in (WHITESPACE_STRIP, WHITESPACE_COLLAPSE):
+        try:
+            grade_exact_match(
+                "x",
+                [" "],
+                case_policy=CASE_SENSITIVE,
+                whitespace_policy=whitespace_policy,
+            )
+        except ExactMatchGraderError:
+            pass
+        else:
+            check(
+                "FTF-0604",
+                f"a whitespace-only approved value is refused under "
+                f"whitespace_policy={whitespace_policy!r} (it normalizes to empty)",
+                False,
+            )
+    # Under WHITESPACE_EXACT the same " " approved value does NOT normalize to
+    # empty (no whitespace stripping happens), so it must be accepted as a
+    # legitimate (if unusual) canonical value, not over-rejected.
+    result = grade_exact_match(
+        " ",
+        [" "],
+        case_policy=CASE_SENSITIVE,
+        whitespace_policy=WHITESPACE_EXACT,
+    )
+    check(
+        "FTF-0604",
+        "a whitespace-only approved value is accepted under whitespace_policy="
+        "exact, where it never normalizes to empty",
+        result.passed,
+    )
+
+
+def test_negative_acceptance_reverse_containment_and_near_misses() -> None:
+    """Extended negative_acceptance coverage (round 2): every near-miss shape
+    below must fail, under the policy most favorable to a false positive."""
+    cases: list[tuple[str, list[str]]] = [
+        ("ris", ["Paris"]),  # candidate is a suffix of the approved value
+        ("Par", ["Paris"]),  # candidate is a prefix of the approved value
+        ("42", ["432"]),  # candidate is a substring of the approved value
+        ("Pari", ["Paris"]),  # missing trailing character
+        ("Parisx", ["Paris"]),  # extra trailing character, no separator
+        ("Paris.", ["Paris"]),  # trailing punctuation
+        ("aris", ["Paris"]),  # missing leading character
+        ("PPaaris", ["Paris"]),  # duplicated characters
+        ("Pairs", ["Paris"]),  # anagram
+        ("", ["Paris"]),  # empty candidate against a non-empty approved value
+    ]
+    for candidate, approved in cases:
+        for case_policy in (CASE_SENSITIVE, CASE_INSENSITIVE):
+            for whitespace_policy in (WHITESPACE_EXACT, WHITESPACE_STRIP, WHITESPACE_COLLAPSE):
+                result = grade_exact_match(
+                    candidate,
+                    approved,
+                    case_policy=case_policy,
+                    whitespace_policy=whitespace_policy,
+                )
+                check(
+                    "FTF-0604",
+                    f"{candidate!r} vs {approved!r} must never match "
+                    f"(case_policy={case_policy!r}, whitespace_policy={whitespace_policy!r})",
+                    not result.passed,
+                )
+
+
+def test_no_unicode_normalization_beyond_the_explicit_policies() -> None:
+    """Exactness (round 2): this module applies only the caller's explicit
+    case/whitespace policy -- never an additional Unicode normalization that
+    would silently widen what counts as a match."""
+    result_fullwidth = grade_exact_match(
+        "Ａ",  # fullwidth "A"
+        ["A"],
+        case_policy=CASE_INSENSITIVE,
+        whitespace_policy=WHITESPACE_COLLAPSE,
+    )
+    check(
+        "FTF-0604",
+        "a fullwidth Unicode character is never treated as its ASCII " "look-alike",
+        not result_fullwidth.passed,
+    )
+
+    result_nfd_vs_nfc = grade_exact_match(
+        "é",  # "e" + combining acute accent (NFD)
+        ["é"],  # precomposed "e" with acute accent (NFC)
+        case_policy=CASE_SENSITIVE,
+        whitespace_policy=WHITESPACE_EXACT,
+    )
+    check(
+        "FTF-0604",
+        "an NFD-decomposed accented character is never treated as equal to "
+        "its NFC-precomposed form -- no Unicode normalization is applied",
+        not result_nfd_vs_nfc.passed,
+    )
+
+    result_zero_width = grade_exact_match(
+        "Pa​ris",  # zero-width space inserted inside the word
+        ["Paris"],
+        case_policy=CASE_INSENSITIVE,
+        whitespace_policy=WHITESPACE_COLLAPSE,
+    )
+    check(
+        "FTF-0604",
+        "a zero-width space inside the candidate is never stripped out -- "
+        "it is not ASCII whitespace, so no whitespace_policy touches it",
+        not result_zero_width.passed,
+    )
+
+
+def test_whitespace_policy_boundaries() -> None:
+    """Round-2 boundary coverage for all three whitespace policies."""
+    check(
+        "FTF-0604",
+        "whitespace-exact: leading whitespace matters",
+        not grade_exact_match(
+            " Paris", ["Paris"], case_policy=CASE_SENSITIVE, whitespace_policy=WHITESPACE_EXACT
+        ).passed,
+    )
+    check(
+        "FTF-0604",
+        "whitespace-strip: internal whitespace runs are not collapsed",
+        not grade_exact_match(
+            "New  York",
+            ["New York"],
+            case_policy=CASE_SENSITIVE,
+            whitespace_policy=WHITESPACE_STRIP,
+        ).passed,
+    )
+    check(
+        "FTF-0604",
+        "whitespace-collapse: does not insert whitespace that was never there",
+        not grade_exact_match(
+            "NewYork",
+            ["New York"],
+            case_policy=CASE_SENSITIVE,
+            whitespace_policy=WHITESPACE_COLLAPSE,
+        ).passed,
+    )
+    check(
+        "FTF-0604",
+        "whitespace-collapse: trims the ends",
+        grade_exact_match(
+            " New York ",
+            ["New York"],
+            case_policy=CASE_SENSITIVE,
+            whitespace_policy=WHITESPACE_COLLAPSE,
+        ).passed,
+    )
+    check(
+        "FTF-0604",
+        "whitespace-collapse: a tab run collapses to a single space",
+        grade_exact_match(
+            "New\tYork",
+            ["New York"],
+            case_policy=CASE_SENSITIVE,
+            whitespace_policy=WHITESPACE_COLLAPSE,
+        ).passed,
+    )
+    check(
+        "FTF-0604",
+        "whitespace-collapse: a newline collapses to a single space",
+        grade_exact_match(
+            "New\nYork",
+            ["New York"],
+            case_policy=CASE_SENSITIVE,
+            whitespace_policy=WHITESPACE_COLLAPSE,
+        ).passed,
+    )
+    check(
+        "FTF-0604",
+        "whitespace-strip: the approved side is normalized too, not just the " "candidate",
+        grade_exact_match(
+            "Paris",
+            [" Paris "],
+            case_policy=CASE_SENSITIVE,
+            whitespace_policy=WHITESPACE_STRIP,
+        ).passed,
+    )
+
+
+def test_case_insensitive_pins_casefold_not_lower() -> None:
+    """Case (round 2): case_insensitive uses real Unicode casefold semantics,
+    pinned against a case where casefold and a naive .lower() diverge
+    (German eszett)."""
+    check(
+        "FTF-0604",
+        "case_insensitive normalizes the candidate side too",
+        grade_exact_match(
+            "PARIS", ["paris"], case_policy=CASE_INSENSITIVE, whitespace_policy=WHITESPACE_EXACT
+        ).passed,
+    )
+    check(
+        "FTF-0604",
+        "case_insensitive casefolds 'STRASSE' and 'Straße' (sharp S) equal",
+        grade_exact_match(
+            "STRASSE",
+            ["Straße"],
+            case_policy=CASE_INSENSITIVE,
+            whitespace_policy=WHITESPACE_EXACT,
+        ).passed,
+    )
+
+
+def test_matched_value_is_the_original_approved_string_not_normalized() -> None:
+    """Result fields (round 2): matched_value echoes the approved value
+    exactly as it was supplied, never the normalized form used internally
+    for comparison."""
+    result = grade_exact_match(
+        "paris",
+        ["PARIS"],
+        case_policy=CASE_INSENSITIVE,
+        whitespace_policy=WHITESPACE_EXACT,
+    )
+    check(
+        "FTF-0604",
+        "matched_value is the original approved string 'PARIS', not the "
+        "casefolded/normalized form",
+        result.passed and result.matched_value == "PARIS",
+    )
+
+
+def test_malformed_input_raises_not_crashes() -> None:
+    """Malformed input (round 2): every shape below must raise
+    ExactMatchGraderError, never crash with an unrelated exception and never
+    silently coerce."""
+
+    def expect_raises(label: str, fn: Callable[[], object]) -> None:
+        try:
+            fn()
+        except ExactMatchGraderError:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            check(
+                "FTF-0604",
+                f"{label} raised {type(exc).__name__}, not ExactMatchGraderError",
+                False,
+            )
+        else:
+            check("FTF-0604", f"{label} must raise ExactMatchGraderError", False)
+
+    expect_raises(
+        "a bytes candidate_value",
+        lambda: grade_exact_match(
+            b"Paris",  # type: ignore[arg-type]
+            ["Paris"],
+            case_policy=CASE_SENSITIVE,
+            whitespace_policy=WHITESPACE_EXACT,
+        ),
+    )
+    expect_raises(
+        "a None candidate_value",
+        lambda: grade_exact_match(
+            None,  # type: ignore[arg-type]
+            ["Paris"],
+            case_policy=CASE_SENSITIVE,
+            whitespace_policy=WHITESPACE_EXACT,
+        ),
+    )
+    expect_raises(
+        "approved_values given as a bare str",
+        lambda: grade_exact_match(
+            "Paris",
+            "Paris",
+            case_policy=CASE_SENSITIVE,
+            whitespace_policy=WHITESPACE_EXACT,
+        ),
+    )
+    expect_raises(
+        "approved_values given as bytes",
+        lambda: grade_exact_match(
+            "Paris",
+            b"Paris",  # type: ignore[arg-type]
+            case_policy=CASE_SENSITIVE,
+            whitespace_policy=WHITESPACE_EXACT,
+        ),
+    )
+    expect_raises(
+        "a bytes element inside approved_values",
+        lambda: grade_exact_match(
+            "Paris",
+            ["Paris", b"Berlin"],  # type: ignore[list-item]
+            case_policy=CASE_SENSITIVE,
+            whitespace_policy=WHITESPACE_EXACT,
+        ),
+    )
+
+
+def test_first_match_wins_with_duplicate_normalized_approved_values() -> None:
+    """Low priority (round 2): when two approved values normalize equal, the
+    first one in order is reported as matched_value."""
+    result = grade_exact_match(
+        "paris",
+        ["PARIS", "Paris"],
+        case_policy=CASE_INSENSITIVE,
+        whitespace_policy=WHITESPACE_EXACT,
+    )
+    check(
+        "FTF-0604",
+        "the first approved value whose normalized form matches wins, in " "declared order",
+        result.passed and result.matched_value == "PARIS",
+    )
+
+
+def test_error_is_a_value_error_and_result_is_frozen() -> None:
+    """Low priority (round 2): ExactMatchGraderError subclasses ValueError,
+    and ExactMatchResult is immutable."""
+    check(
+        "FTF-0604",
+        "ExactMatchGraderError subclasses ValueError",
+        issubclass(ExactMatchGraderError, ValueError),
+    )
+    result = grade_exact_match(
+        "Paris", ["Paris"], case_policy=CASE_SENSITIVE, whitespace_policy=WHITESPACE_EXACT
+    )
+    try:
+        result.passed = False  # type: ignore[misc]
+    except Exception:  # dataclasses.FrozenInstanceError  # noqa: BLE001
+        pass
+    else:
+        check("FTF-0604", "ExactMatchResult must be frozen (immutable)", False)
 
 
 def main() -> None:

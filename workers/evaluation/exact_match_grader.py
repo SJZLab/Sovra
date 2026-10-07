@@ -145,6 +145,14 @@ def grade_exact_match(
     matching passes; never partial/substring/fuzzy. Raises
     `ExactMatchGraderError` for a malformed call; otherwise always returns a
     result (a genuine non-match is `passed=False`, not an error)."""
+    if case_policy not in ALLOWED_CASE_POLICIES:
+        raise ExactMatchGraderError(
+            f"case_policy must be one of {ALLOWED_CASE_POLICIES}: {case_policy!r}"
+        )
+    if whitespace_policy not in ALLOWED_WHITESPACE_POLICIES:
+        raise ExactMatchGraderError(
+            f"whitespace_policy must be one of {ALLOWED_WHITESPACE_POLICIES}: {whitespace_policy!r}"
+        )
     if not isinstance(candidate_value, str):
         raise ExactMatchGraderError(
             f"candidate_value must be a string, not {type(candidate_value).__name__}"
@@ -162,14 +170,12 @@ def grade_exact_match(
             raise ExactMatchGraderError(
                 f"every approved value must be a string, not {type(value).__name__}"
             )
-    if case_policy not in ALLOWED_CASE_POLICIES:
-        raise ExactMatchGraderError(
-            f"case_policy must be one of {ALLOWED_CASE_POLICIES}: {case_policy!r}"
-        )
-    if whitespace_policy not in ALLOWED_WHITESPACE_POLICIES:
-        raise ExactMatchGraderError(
-            f"whitespace_policy must be one of {ALLOWED_WHITESPACE_POLICIES}: {whitespace_policy!r}"
-        )
+        if value == "" or _WHITESPACE_NORMALIZERS[whitespace_policy](value) == "":
+            raise ExactMatchGraderError(
+                f"approved value {value!r} is empty, or becomes empty under "
+                f"whitespace_policy={whitespace_policy!r} -- there is no canonical "
+                "value left to grade against"
+            )
 
     normalized_candidate = _normalize(
         candidate_value, case_policy=case_policy, whitespace_policy=whitespace_policy
