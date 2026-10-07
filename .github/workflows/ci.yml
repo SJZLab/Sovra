@@ -295,6 +295,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0500d.py
       - name: FTF-0601 negative-test proof (EvaluationSuite schema/API, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0601.py
+      - name: FTF-0606 negative-test proof (Tool-name grader, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0606.py
       - name: FTF-04A25 negative-test proof (Production-faithful target-agent harness contract, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a25.py
       - name: FTF-04A26 negative-test proof (Isolated real tool-backend adapter contract tests, no DB required)
