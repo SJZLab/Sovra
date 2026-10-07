@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import FrozenInstanceError
+from decimal import Decimal
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
@@ -437,6 +438,92 @@ def test_models_frozen_and_error_type() -> None:
         "CostResult.passed only for pass",
         CostResult("fail", (), Fraction(0), 0, None).passed is False,
     )
+
+
+def test_round2_unhashable_and_wrong_type_enums_fail_closed() -> None:
+    for bad in ([], {}, 1, b"success", ["success"], {"success": 1}):
+        check(
+            CID,
+            f"outcome {bad!r} raises CostGraderError",
+            raises(lambda b=bad: grade_cost(spec(1), [obs("a1", outcome=b)])),
+        )
+    for bad in ([], {}, 1, b"measured", ["measured"], {"measured": 1}):
+        check(
+            CID,
+            f"source {bad!r} raises CostGraderError",
+            raises(lambda b=bad: grade_cost(spec(1), [obs("a1", source=b)])),
+        )
+
+
+def test_round2_foreign_currency_cost_still_validated() -> None:
+    for bad in ("garbage", "-5", "1e3", "", 5, 1.5, b"1"):
+        check(
+            CID,
+            f"EUR record with cost {bad!r} is refused, not skipped",
+            raises(lambda b=bad: grade_cost(spec(1), [obs("a1", b, currency="EUR")])),
+        )
+    ok = grade_cost(spec(1), [obs("a1", "2", currency="EUR")])
+    check(
+        CID,
+        "a valid foreign-currency cost is a currency_mismatch and is never summed",
+        ok.issues == ("currency_mismatch",) and ok.total_cost == 0 and ok.status == "fail",
+    )
+    unknown = grade_cost(spec(1), [obs("a1", None, currency="EUR")])
+    check(
+        CID,
+        "an unknown foreign-currency cost is a currency_mismatch, not unknown_cost",
+        unknown.issues == ("currency_mismatch",),
+    )
+
+
+def test_round2_strict_decimal_and_text_types() -> None:
+    for bad in (0, 0.0, False, b"1", b"", Decimal("1"), "1\n", "\u0661", "\uff11", "1\u0661"):
+        check(
+            CID,
+            f"cost {bad!r} fails closed",
+            raises(lambda b=bad: grade_cost(spec(1), [obs("a1", b)])),
+        )
+    for bad in ("1\n", "\uff11", "\u0661", "1 ", "0x1"):
+        check(
+            CID,
+            f"max_total_cost {bad!r} refused",
+            raises(lambda b=bad: spec(max_total_cost=b)),
+        )
+        check(
+            CID,
+            f"max_cost_per_success {bad!r} refused",
+            raises(lambda b=bad: spec(max_cost_per_success=b)),
+        )
+    for field in ("attempt_id", "request_id", "currency"):
+        for bad in (b"a1", 5):
+            check(
+                CID,
+                f"observation {field}={bad!r} raises",
+                raises(lambda f=field, b=bad: grade_cost(spec(1), [obs("a1", **{f: b})])),
+            )
+    for field in ("policy_id", "currency"):
+        for bad in (b"x", 5):
+            check(
+                CID,
+                f"spec {field}={bad!r} raises",
+                raises(lambda f=field, b=bad: spec(**{f: b})),
+            )
+    for bad in ((b"a",), (5,)):
+        check(
+            CID,
+            f"spec expected_attempt_ids={bad!r} raises",
+            raises(lambda b=bad: spec(expected_attempt_ids=b)),
+        )
+
+
+def test_round2_bad_cost_value_not_echoed() -> None:
+    secret = "leak-me-9137"
+    try:
+        grade_cost(spec(1), [obs("a1", secret)])
+    except CostGraderError as exc:
+        check(CID, "a bad cost value is not echoed in the error", secret not in str(exc))
+    else:
+        check(CID, "a bad cost value raises", False)
 
 
 def main() -> int:
