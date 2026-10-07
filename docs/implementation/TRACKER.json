@@ -933,9 +933,11 @@
       "blockers": []
     },
     "FTF-0606": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "ea6725e5e63b3dc7bb659a54a3d2df38215aa41e"
+      ],
       "independent_review": null,
       "blockers": []
     },

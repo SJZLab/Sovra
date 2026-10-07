@@ -24261,3 +24261,35 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
   which is why gaps 2 and 3 survived the gate. Extend M9 to `x in S` and `x not in S` (normalize the left operand).
 - **Dispatcher replaced** (context reached about 400k): v2 is session_011i4PMFAPsFgHSySDQLTx7s. The old triggers are
   disabled, not deleted. See docs/operations/routines.md.
+
+## 2026-10-07T03:00Z — Control plane: FTF-0606 CERTIFIED; FTF-0608 returned (round 2, tests only)
+- **FTF-0606: CERTIFIED** (PR #529, merge ea6725e). Mutation is 44/44 with the extended M9.
+- **FTF-0608 (tool-sequence grader): NOT CERTIFIED** (PR #526, merge 4449b48; producer session_01DTwo7oGKbLxFVAAqS7jBDc).
+  The tests cover every acceptance clause, but under main's extended gate 6 M9 survivors remain, and 14 production
+  faults stay GREEN. Tests only, no production change needed:
+  1. **Exactness.** "refund_order " and "Refund_Order" must not match in any of these:
+     - forbidden matching (lines 174 and 189);
+     - the allowed-order compare;
+     - the precedence `before` and `after` names (lines 193 and 195);
+     - state keys (line 201);
+     - `tool_call_id` duplicate detection (line 142; "c0" and "C0" are distinct).
+     Assert `called_names` is preserved verbatim.
+  2. **Malformed input fails closed.**
+     - name=123 or a list; `tool_call_id=""`;
+     - a trace of `""` or `b""`;
+     - empty-string items in must_not_call, allowed_orders and must_precede;
+     - a 1-tuple pair, and non-str pair names.
+  3. **Semantics.**
+     - an empty trace with allowed_orders fails; an empty trace with must_not_call passes;
+     - duplicate forbidden calls are all reported;
+     - with several must_precede pairs, every pair is checked (first OK, second violated);
+     - a nested mapping with a missing key fails; a nested list length mismatch fails.
+  4. Main's `scripts/mutation_gate.py` whole-file run must show 0 survivors.
+- **GRADER CHECKLIST (same-class sweep, every FTF-06xx grader).** Each grader must have tests for:
+  - fail-closed handling of malformed records and specs (wrong types, empty strings, None);
+  - case and whitespace exactness of every name and key comparison;
+  - duplicates preserved;
+  - empty-trace semantics;
+  - multi-constraint coverage;
+  - 0 survivors under main's extended mutation gate.
+  FTF-0604 (#519, merged by the relay) is next for L2 against this checklist.
