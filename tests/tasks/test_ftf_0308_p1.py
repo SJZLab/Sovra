@@ -38,8 +38,10 @@ from __future__ import annotations
 import contextlib
 import http.client
 import json
+import os
 import re
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -1435,6 +1437,341 @@ def test_c1_the_module_has_no_alias_heuristic_or_management_api_call() -> None:
         "the store and routes do not edit model_catalog_routes or the classifier",
         "model_catalog_routes import" not in routes_src
         and "training_capability_classifier" not in routes_src + store_src,
+    )
+
+
+# -- Round-1 hardening: boundaries, exactness, mounted app, offline SQL --------
+
+
+def test_x_model_name_length_boundary() -> None:
+    with _running_app() as base:
+        env = _Env()
+        env.entry = _entry_ns(artifact=_ART_ID, version=2)
+        env.changes = [_change_ns(2)]
+        env.set_result = store.MappingOutcome(entry=_entry_ns(artifact=_ART_ID), changed=True)
+        with _patched(env):
+            name256 = "n" * 256
+            check(
+                CID,
+                "GET accepts a 256 character name",
+                _request(base, "GET", _path(name256)).status == 200,
+            )
+            check(CID, "GET refuses 257", _request(base, "GET", _path("n" * 257)).status == 400)
+            check(
+                CID,
+                "changes accepts 256 and refuses 257",
+                _request(base, "GET", _path(name256, "/changes")).status == 200
+                and _request(base, "GET", _path("n" * 257, "/changes")).status == 400,
+            )
+            _DISCOVERY.result = _discovered(name256)
+            ok = _request(base, "POST", _path(name256), payload={"trainable_artifact_id": None})
+            check(
+                CID,
+                "POST accepts a 256 character name that the gateway lists",
+                ok.status == 200 and env.set_calls[-1]["public_model_name"] == name256,
+            )
+
+
+def test_x_change_serialization_is_exact() -> None:
+    with _running_app() as base:
+        env = _Env()
+        env.entry = _entry_ns(artifact=_ART_ID, version=2)
+        change = _change_ns(2)
+        env.changes = [change]
+        with _patched(env):
+            got = _request(base, "GET", _path(suffix="/changes")).json()["changes"]
+            check(
+                CID,
+                "a change is serialized with exactly its ten fields and values",
+                got
+                == [
+                    {
+                        "id": str(change.id),
+                        "model_catalog_entry_id": str(change.model_catalog_entry_id),
+                        "previous_trainable_artifact_id": None,
+                        "new_trainable_artifact_id": str(_ART_ID),
+                        "previous_catalog_version": 1,
+                        "new_catalog_version": 2,
+                        "actor": "ml-1",
+                        "request_id": "r",
+                        "created_at": _NOW.isoformat(),
+                    }
+                ],
+            )
+            change.previous_trainable_artifact_id = uuid.uuid4()
+            again = _request(base, "GET", _path(suffix="/changes")).json()["changes"][0]
+            check(
+                CID,
+                "a previous artifact id is serialized when present",
+                again["previous_trainable_artifact_id"]
+                == str(change.previous_trainable_artifact_id),
+            )
+
+
+def test_x_post_body_error_details_are_specific() -> None:
+    with _running_app() as base:
+        env = _Env()
+        with _patched(env):
+            as_list = _request(base, "POST", _path(), payload=[1])
+            check(
+                CID,
+                "a non-object body is refused as such",
+                as_list.status == 400
+                and as_list.json()["detail"] == "request body must be a JSON object",
+            )
+            broken = _request(base, "POST", _path(), raw=b"{")
+            check(
+                CID,
+                "unparsable JSON is refused as such",
+                broken.json()["detail"] == "request body must be valid JSON",
+            )
+            scalar = _request(base, "POST", _path(), raw=b"7")
+            check(
+                CID,
+                "a scalar body is refused as not an object",
+                scalar.json()["detail"] == "request body must be a JSON object",
+            )
+
+
+def test_x_status_and_alias_comparisons_are_exact() -> None:
+    with _running_app() as base:
+        env = _Env()
+        env.set_result = store.MappingOutcome(entry=_entry_ns(artifact=_ART_ID), changed=True)
+        payload = {"trainable_artifact_id": str(_ART_ID)}
+        with _patched(env):
+            for odd in ("Revoked", " revoked", "REVOKED "):
+                env.connection = SimpleNamespace(
+                    status=odd, base_url="https://gw.example", secret_ref="s"
+                )
+                check(
+                    CID,
+                    f"connection status {odd!r} is not the exact value 'revoked'",
+                    _request(base, "POST", _path(), payload=payload).status == 200,
+                )
+            env.connection = SimpleNamespace(
+                status="active", base_url="https://gw.example", secret_ref="s"
+            )
+            env.connection_statuses = ["active", "Revoked"]
+            check(
+                CID,
+                "the write-transaction revoke check is exact too",
+                _request(base, "POST", _path(), payload=payload).status == 200,
+            )
+            env.connection_statuses = None
+            _DISCOVERY.result = _discovered("gpt-x")
+            for requested in ("GPT-X", "gpt-x%20", "%20gpt-x", "gpt-X"):
+                result = _request(base, "POST", _path(requested), payload=payload)
+                check(
+                    CID,
+                    f"alias {urllib.parse.unquote(requested)!r} does not match the listed 'gpt-x'",
+                    result.status == 409 and result.json() == {"detail": "model_not_accessible"},
+                )
+            env.set_calls.clear()
+            exact = _request(base, "POST", _path("gpt-x"), payload=payload)
+            check(
+                CID,
+                "the exact alias does match and is passed to the store unchanged",
+                exact.status == 200 and env.set_calls[-1]["public_model_name"] == "gpt-x",
+            )
+
+
+def test_x_artifact_status_is_compared_exactly() -> None:
+    odd = {uuid.uuid4(): status for status in ("Ready", "ready ", " ready", "READY")}
+    with _store_env(odd) as (session, audit):
+        for artifact_id, status in odd.items():
+            check(
+                CID,
+                f"artifact status {status!r} is not 'ready'",
+                _raises(lambda a=artifact_id: _map(session, a), store.ArtifactNotReadyError),
+            )
+        check(CID, "nothing was written", not audit.events and not _changes(session))
+
+
+def test_x_post_response_reports_last_changed_at() -> None:
+    with _running_app() as base:
+        env = _Env()
+        payload = {"trainable_artifact_id": str(_ART_ID)}
+        with _patched(env):
+            env.set_result = store.MappingOutcome(
+                entry=_entry_ns(artifact=_ART_ID, version=4), changed=True
+            )
+            env.changes = [_change_ns(4)]
+            body = _request(base, "POST", _path(), payload=payload).json()
+            check(
+                CID,
+                "a changed mapping reports the newest change time and the catalog version",
+                body["last_changed_at"] == _NOW.isoformat()
+                and body["catalog_version"] == 4
+                and body["changed"] is True
+                and body["artifact"]["id"] == str(_ART_ID),
+            )
+            check(
+                CID, "the store was asked for exactly the newest change", env.changes_limit[-1] == 1
+            )
+            env.set_result = store.MappingOutcome(entry=None, changed=False)
+            none = _request(base, "POST", _path(), payload={"trainable_artifact_id": None}).json()
+            check(
+                CID,
+                "unmapping an alias with no entry reports unmapped, version 0, unchanged",
+                none["mapping_state"] == "unmapped"
+                and none["model_catalog_entry_id"] is None
+                and none["catalog_version"] == 0
+                and none["last_changed_at"] is None
+                and none["artifact"] is None
+                and none["changed"] is False,
+            )
+            env.set_result = store.MappingOutcome(
+                entry=_entry_ns(artifact=_ART_ID, version=1), changed=False
+            )
+            env.changes = []
+            same = _request(base, "POST", _path(), payload=payload).json()
+            check(
+                CID,
+                "an unchanged mapping with no history has no last_changed_at",
+                same["changed"] is False and same["last_changed_at"] is None,
+            )
+
+
+def test_x_changes_limit_boundaries() -> None:
+    with _running_app() as base:
+        env = _Env()
+        env.entry = _entry_ns(artifact=_ART_ID, version=3)
+        env.changes = [_change_ns(3), _change_ns(2), _change_ns(1)]
+        with _patched(env):
+            one = _request(base, "GET", _path(suffix="/changes?limit=1"))
+            check(
+                CID,
+                "limit=1 is accepted and reaches the store as 1",
+                one.status == 200
+                and len(one.json()["changes"]) == 1
+                and env.changes_limit[-1] == 1,
+            )
+
+
+def _full_app_env() -> dict[str, str]:
+    return {
+        "SOVRA_ENVIRONMENT": "staging",
+        "SOVRA_DATABASE_URL": "postgresql+psycopg://sovra_app:s3cr3t@db.internal:5432/sovra",
+        "SOVRA_LITELLM_GATEWAY_URL": "https://litellm.internal.example",
+        "SOVRA_PRIVACY_POLICY": "standard",
+        "SOVRA_TLS_VERIFY": "true",
+        "SOVRA_MAX_TRAINING_BUDGET_USD": "500.00",
+        "SOVRA_LITELLM_API_KEY_SECRET_REF": "vault://sovra/litellm-api-key",
+        "SOVRA_DATABASE_PASSWORD_SECRET_REF": "openbao://sovra/db-password",
+        "SOVRA_OIDC_ISSUER": "http://idp.internal.example",
+        "SOVRA_OIDC_CLIENT_ID": "sovra-factory",
+        "SOVRA_OIDC_CLIENT_SECRET_REF": "vault://sovra/oidc-client-secret",
+        "SOVRA_OIDC_REDIRECT_URI": "http://factory.internal.example/auth/callback",
+        "SOVRA_OIDC_AUTHORIZATION_ENDPOINT": "http://idp.internal.example/authorize",
+        "SOVRA_OIDC_TOKEN_ENDPOINT": "http://idp.internal.example/token",
+        "SOVRA_OIDC_JWKS_URI": "http://idp.internal.example/jwks",
+        "SOVRA_SESSION_SIGNING_KEY_SECRET_REF": "vault://sovra/session-signing-key",
+        "SOVRA_OIDC_ALLOWED_ORIGIN": "http://factory.internal.example",
+        "SOVRA_OIDC_CLIENT_SECRET_VALUE": "not-a-real-secret",
+        "SOVRA_SESSION_SIGNING_KEY_VALUE": "not-a-real-signing-key",
+    }
+
+
+def test_x_create_app_mounts_the_mapping_routes() -> None:
+    """Same no-DB env fixture test_ftf_0214 uses: `create_engine` is lazy, and
+    the role gate runs before any session is opened, so no database is needed."""
+    env = _full_app_env()
+    added = set(env) - set(os.environ)
+    old = {k: os.environ[k] for k in env if k in os.environ}
+    os.environ.update(env)
+    try:
+        import app.main as main_module
+
+        app = main_module.create_app()
+    finally:
+        for key in added:
+            os.environ.pop(key, None)
+        os.environ.update(old)
+    check(CID, "create_app returns a real app", app is not None)
+    with _serve(app) as base:
+        for method, suffix in (("GET", ""), ("POST", ""), ("GET", "/changes")):
+            result = _request(base, method, _path(suffix=suffix), principal=None)
+            check(
+                CID,
+                f"{method} .../training-artifact{suffix} is mounted on the real app (401, not 404)",
+                result.status == 401,
+            )
+
+
+@contextlib.contextmanager
+def _serve(app: FastAPI):
+    port = _free_port()
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    for _ in range(200):
+        if server.started:
+            break
+        time.sleep(0.02)
+    try:
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)
+
+
+def _offline_sql(revision_range: str, action: str) -> str:
+    env = dict(os.environ)
+    env["SOVRA_DATABASE_URL"] = "postgresql+psycopg://x:y@localhost:5432/z"
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", action, revision_range, "--sql"],
+        cwd=str(ROOT / "apps" / "api"),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    check(CID, f"alembic {action} {revision_range} --sql exits 0", result.returncode == 0)
+    return result.stdout
+
+
+def test_x_migration_generates_the_expected_sql_offline() -> None:
+    up = _offline_sql("0021_memberships:0022_model_catalog_entries", "upgrade")
+    for needle in (
+        "ALTER TABLE litellm_connections ADD CONSTRAINT uq_litellm_connections_organization_id_id UNIQUE (organization_id, id)",
+        "CREATE TABLE model_catalog_entries",
+        "CREATE TABLE model_catalog_mapping_changes",
+        "ALTER TABLE model_catalog_entries ENABLE ROW LEVEL SECURITY",
+        "ALTER TABLE model_catalog_entries FORCE ROW LEVEL SECURITY",
+        "ALTER TABLE model_catalog_mapping_changes ENABLE ROW LEVEL SECURITY",
+        "ALTER TABLE model_catalog_mapping_changes FORCE ROW LEVEL SECURITY",
+        'GRANT SELECT, INSERT, UPDATE ON model_catalog_entries TO "sovra_app"',
+        'GRANT SELECT, INSERT ON model_catalog_mapping_changes TO "sovra_app"',
+        "CHECK (new_catalog_version = previous_catalog_version + 1)",
+        "FOREIGN KEY(organization_id, litellm_connection_id) REFERENCES litellm_connections (organization_id, id)",
+        "FOREIGN KEY(organization_id, trainable_artifact_id) REFERENCES trainable_artifacts (organization_id, id)",
+        "UPDATE alembic_version SET version_num='0022_model_catalog_entries'",
+    ):
+        check(CID, f"the upgrade SQL contains: {needle[:70]}", needle in up)
+    check(
+        CID,
+        "the upgrade creates one tenant_isolation policy per table, never allow-all",
+        up.count("CREATE POLICY tenant_isolation ON") == 2
+        and "USING (true)" not in up
+        and "UPDATE ON model_catalog_mapping_changes" not in up
+        and "DELETE" not in up.replace("ON DELETE", ""),
+    )
+    down = _offline_sql("0022_model_catalog_entries:0021_memberships", "downgrade")
+    for needle in (
+        "DROP TABLE model_catalog_mapping_changes",
+        "DROP TABLE model_catalog_entries",
+        "DROP POLICY IF EXISTS tenant_isolation ON model_catalog_entries",
+        "DROP POLICY IF EXISTS tenant_isolation ON model_catalog_mapping_changes",
+        'REVOKE ALL ON model_catalog_entries FROM "sovra_app"',
+        'REVOKE ALL ON model_catalog_mapping_changes FROM "sovra_app"',
+        "DROP CONSTRAINT uq_litellm_connections_organization_id_id",
+        "UPDATE alembic_version SET version_num='0021_memberships'",
+    ):
+        check(CID, f"the downgrade SQL contains: {needle[:70]}", needle in down)
+    check(
+        CID,
+        "the downgrade drops the change log before the entries it references",
+        down.index("DROP TABLE model_catalog_mapping_changes")
+        < down.index("DROP TABLE model_catalog_entries"),
     )
 
 

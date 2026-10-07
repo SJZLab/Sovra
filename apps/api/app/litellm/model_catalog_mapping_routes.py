@@ -328,7 +328,7 @@ def build_model_catalog_mapping_router(
             raise HTTPException(status_code=409, detail="artifact_not_ready") from exc
         except CatalogVersionConflictError as exc:
             raise HTTPException(status_code=409, detail="catalog_version_conflict") from exc
-        return JSONResponse(body, status_code=200)
+        return JSONResponse(body)
 
     @router.get(_CHANGES_PATH)
     async def read_changes(
