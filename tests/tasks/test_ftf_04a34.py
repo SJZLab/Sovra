@@ -26,6 +26,7 @@ Run directly: python3 tests/tasks/test_ftf_04a34.py
 
 from __future__ import annotations
 
+import functools
 import inspect
 import json
 import shutil
@@ -45,11 +46,17 @@ from app.target_connectors.local_repository_connector import (  # noqa: E402
     capture_local_repository,
 )
 from app.target_connectors.python_agent_config_tool_discovery import (  # noqa: E402
+    EntrypointCandidate as PyEntry,
+)
+from app.target_connectors.python_agent_config_tool_discovery import (  # noqa: E402
     run_python_agent_config_tool_discovery,
 )
 from app.target_connectors.source_analysis_worker import (  # noqa: E402
     SourceFileRef,
     run_source_analysis,
+)
+from app.target_connectors.typescript_javascript_deterministic_agent_config_tool_discovery import (  # noqa: E402,E501
+    EntrypointCandidate as TsEntry,
 )
 from app.target_connectors.typescript_javascript_deterministic_agent_config_tool_discovery import (  # noqa: E402,E501
     run_typescript_javascript_agent_config_tool_discovery,
@@ -141,7 +148,7 @@ def _refs(repo: Path, reverse: bool = False) -> list[SourceFileRef]:
         SourceFileRef(
             relative_path=rel,
             size=len(_git_out(repo, "show", f"{commit}:{rel}")),
-            read_content=(lambda r=rel: _git_out(repo, "show", f"{commit}:{r}")),
+            read_content=functools.partial(_git_out, repo, "show", f"{commit}:{rel}"),
         )
         for rel in paths
     ]
@@ -151,17 +158,18 @@ def _discover(refs: list[SourceFileRef]) -> dict[str, Any]:
     analysis = run_source_analysis(refs)
     py = run_python_agent_config_tool_discovery(refs)
     ts = run_typescript_javascript_agent_config_tool_discovery(refs)
-    raw = [(e.relative_path, e.line) for e in (*py.entrypoints, *ts.entrypoints)]
-    entrypoints = sorted(
+    found: list[PyEntry | TsEntry] = [*py.entrypoints, *ts.entrypoints]
+    raw = [(e.relative_path, e.line) for e in found]
+    entrypoints: list[dict[str, Any]] = sorted(
         [
             {
                 **e.to_entrypoint_evidence_json(),
                 "model": e.to_model_evidence_json(),
                 "tools": e.to_tool_evidence_json(),
             }
-            for e in (*py.entrypoints, *ts.entrypoints)
+            for e in found
         ],
-        key=lambda d: (str(d["relative_path"]), int(d["line"])),
+        key=lambda d: (str(d["relative_path"]), d["line"]),
     )
     return {
         "markers": list(analysis.detected_framework_markers),
