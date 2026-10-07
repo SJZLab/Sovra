@@ -232,11 +232,13 @@ def _issue_id(
     detector: str,
     category: str,
     reason_code: str,
-    positions: Sequence[int],
+    pairs: Sequence[tuple[int, int | None]],
     digest: str | None,
+    message: str,
+    qualifier: str,
 ) -> str:
     canonical = json.dumps(
-        [detector, category, reason_code, sorted(positions), digest],
+        [detector, category, reason_code, [list(p) for p in pairs], digest, message, qualifier],
         separators=(",", ":"),
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -252,16 +254,28 @@ def _make(
     indices: Sequence[int | None] = (),
     digest: str | None = None,
     is_detector_failure: bool = False,
+    qualifier: str = "",
 ) -> QualityIssue:
+    # positions and indices are sorted as PAIRS so provenance never decouples
+    if indices and len(indices) != len(positions):
+        raise QualityEngineError("record_indices must pair one-to-one with batch_positions")
+    if indices:
+        pairs = sorted(
+            zip(positions, indices, strict=True), key=lambda p: (p[0], p[1] is None, p[1] or 0)
+        )
+    else:
+        pairs = sorted((pos, None) for pos in positions)
+    sorted_positions = tuple(p[0] for p in pairs)
+    sorted_indices = tuple(p[1] for p in pairs) if indices else ()
     return QualityIssue(
-        issue_id=_issue_id(detector, category, reason_code, positions, digest),
+        issue_id=_issue_id(detector, category, reason_code, pairs, digest, message, qualifier),
         detector=detector,
         category=category,
         severity=severity,
         reason_code=reason_code,
         message=message,
-        batch_positions=tuple(sorted(positions)),
-        record_indices=tuple(indices),
+        batch_positions=sorted_positions,
+        record_indices=sorted_indices,
         evidence_digest=digest,
         is_detector_failure=is_detector_failure,
     )
@@ -335,6 +349,7 @@ def _from_report(detector: str, report: object) -> list[QualityIssue]:
                     f"{finding.category} found at {finding.content_path}",
                     (finding.batch_position,),
                     (finding.record_index,),
+                    qualifier=f"{finding.message_index}|{finding.content_path}",
                 )
             )
     elif isinstance(report, TokenizationAnalysisReport):

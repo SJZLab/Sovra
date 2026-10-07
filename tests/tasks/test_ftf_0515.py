@@ -722,6 +722,224 @@ def test_resolution_text_is_stripped_exactly() -> None:
         )
 
 
+# ------------------------------------------------ round 2: ids, pairing, edges
+
+
+def _multi_message_record(index: int, texts: list[str]) -> dict[str, object]:
+    return {
+        "record_index": index,
+        "purpose": "training",
+        "record_sha256": _hash(f"raw-{index}-{texts}"),
+        "normalized_sha256": _hash(f"norm-{index}-{texts}"),
+        "content": {
+            "messages": [{"role": "user", "content": [{"type": "text", "text": t}]} for t in texts],
+            "metadata": {},
+        },
+    }
+
+
+def test_same_category_pii_findings_in_one_record_stay_distinct() -> None:
+    batch = [_multi_message_record(0, ["a@example.com", "b@example.com", "c@example.com"])]
+    pii = detect_pii_and_secrets(batch)
+    report = evaluate_quality(_runs({"pii_secrets": pii}))
+    found = [i for i in report.issues if i.detector == "pii_secrets"]
+    check("FTF-0515", "three same-category PII findings stay three issues", len(found) == 3)
+    check("FTF-0515", "their ids are distinct", len({i.issue_id for i in found}) == 3)
+    if found:
+        out = apply_resolutions(
+            report, [IssueResolution(found[0].issue_id, "resolved", "rev", "why")]
+        )
+        check(
+            "FTF-0515",
+            "resolving one leaves the other two blocking",
+            len(out.unresolved_blocking) == len(report.unresolved_blocking) - 1,
+        )
+
+
+def test_row_issues_with_same_code_and_position_but_different_message_are_distinct() -> None:
+    from workers.data.record_schema_validator import RecordValidationIssue
+
+    bad = RecordSchemaValidationReport(
+        issues=(
+            RecordValidationIssue(batch_position=1, record_index=7, code="bad", message="one"),
+            RecordValidationIssue(batch_position=1, record_index=7, code="bad", message="two"),
+        ),
+        accepted_batch_positions=(0,),
+        rejected_batch_positions=(1,),
+    )
+    report = evaluate_quality(_runs({"record_schema": bad}))
+    found = [i for i in report.issues if i.reason_code == "bad"]
+    check(
+        "FTF-0515",
+        "two row issues differing only in message both survive",
+        len(found) == 2 and {i.message for i in found} == {"one", "two"},
+    )
+
+
+def test_row_issues_without_a_position_and_many_extras_are_all_kept() -> None:
+    from workers.data.record_schema_validator import RecordValidationIssue
+
+    bad = RecordSchemaValidationReport(
+        issues=(
+            RecordValidationIssue(batch_position=0, record_index=None, code="c1", message="m"),
+            RecordValidationIssue(batch_position=1, record_index=1, code="c2", message="m"),
+        ),
+        accepted_batch_positions=(),
+        rejected_batch_positions=(0, 1),
+    )
+    extras = [
+        QualityIssueInput("poison", "poisoning", "blocking", "p1", "m1", (0,), (0,), "d1"),
+        QualityIssueInput("poison", "poisoning", "blocking", "p1", "m2", (0,), (0,), "d2"),
+    ]
+    report = evaluate_quality(_runs({"record_schema": bad}), extra_issues=extras)
+    check(
+        "FTF-0515",
+        "2 row issues and 2 extras all kept",
+        len([i for i in report.issues if i.reason_code in ("c1", "c2")]) == 2
+        and len([i for i in report.issues if i.reason_code == "p1"]) == 2,
+    )
+    ids = [i.issue_id for i in report.issues]
+    check("FTF-0515", "issues sorted by id", ids == sorted(ids))
+    extra = [i for i in report.issues if i.reason_code == "p1"]
+    check(
+        "FTF-0515",
+        "extra issues carry their evidence digest",
+        {i.evidence_digest for i in extra} == {"d1", "d2"},
+    )
+    out = apply_resolutions(
+        report,
+        [
+            IssueResolution(extra[0].issue_id, "resolved", "r", "why"),
+            IssueResolution(extra[1].issue_id, "resolved", "r", "why"),
+        ],
+    )
+    check("FTF-0515", "two resolutions both applied", len(out.unresolved_blocking) == 2)
+    check(
+        "FTF-0515",
+        "QualityBlockedError names exactly the blocking ids",
+        _blocked_ids(out) == tuple(i.issue_id for i in out.unresolved_blocking),
+    )
+
+
+def _blocked_ids(report: QualityReport) -> tuple[str, ...]:
+    try:
+        assert_clear_for_split(report)
+    except QualityBlockedError as exc:
+        return exc.issue_ids
+    return ()
+
+
+def test_pairs_are_sorted_together_not_independently() -> None:
+    items = [
+        QualityIssueInput("poison", "poisoning", "blocking", "p", "m", (5, 2), (50, 20)),
+        QualityIssueInput("poison", "poisoning", "blocking", "q", "m", (2, 5), (None, 9)),
+    ]
+    report = evaluate_quality(_runs(), extra_issues=items)
+    p = [i for i in report.issues if i.reason_code == "p"][0]
+    q = [i for i in report.issues if i.reason_code == "q"][0]
+    check(
+        "FTF-0515",
+        "position/index pairs stay paired after sort",
+        p.batch_positions == (2, 5) and p.record_indices == (20, 50),
+    )
+    check(
+        "FTF-0515",
+        "a None index sorts with its position",
+        q.batch_positions == (2, 5) and q.record_indices == (None, 9),
+    )
+    ties = [
+        QualityIssueInput("poison", "poisoning", "blocking", "t1", "m", (3, 3), (9, 7)),
+        QualityIssueInput("poison", "poisoning", "blocking", "t2", "m", (3, 3), (None, 7)),
+    ]
+    tied = evaluate_quality(_runs(), extra_issues=ties)
+    t1 = [i for i in tied.issues if i.reason_code == "t1"][0]
+    t2 = [i for i in tied.issues if i.reason_code == "t2"][0]
+    check("FTF-0515", "equal positions order by index", t1.record_indices == (7, 9))
+    check("FTF-0515", "a None index sorts after a real one", t2.record_indices == (7, None))
+    try:
+        evaluate_quality(
+            _runs(),
+            extra_issues=[QualityIssueInput("p", "poisoning", "blocking", "x", "m", (1, 2), (1,))],
+        )
+        check("FTF-0515", "unpaired indices refused", False)
+    except QualityEngineError:
+        pass
+
+
+def test_empty_input_reports_all_detectors_not_run_and_blocks() -> None:
+    report = evaluate_quality([])
+    found = [i for i in report.issues if i.reason_code == "detector_not_run"]
+    check("FTF-0515", "empty input => 7 detector_not_run issues", len(found) == 7)
+    check("FTF-0515", "empty input blocks split and training", report.blocks_split)
+    check("FTF-0515", "empty input blocks training", report.blocks_training)
+
+
+def test_detector_error_wins_over_report_and_empty_error_blocks() -> None:
+    clean = _clean_reports()
+    for err in ("ValueError", ""):
+        runs = [
+            DetectorRun(n, report=r, error=err if n == "pii_secrets" else None)
+            for n, r in clean.items()
+        ]
+        report = evaluate_quality(runs)
+        failed = [i for i in report.issues if i.reason_code == "detector_failed"]
+        check("FTF-0515", f"error {err!r} with a report is a detector_failed", len(failed) == 1)
+        check(
+            "FTF-0515",
+            f"error {err!r} detector is absent from detectors_reported",
+            "pii_secrets" not in report.detectors_reported and report.blocks_split,
+        )
+
+
+def test_detector_failure_issues_are_refused_by_apply_resolutions() -> None:
+    report = evaluate_quality(
+        [DetectorRun("pii_secrets", error="Boom"), DetectorRun("exact_duplicate", report=None)]
+    )
+    for code in ("detector_failed", "detector_report_invalid"):
+        issue = [i for i in report.issues if i.reason_code == code][0]
+        check("FTF-0515", f"{code} flagged as detector failure", issue.is_detector_failure)
+        try:
+            apply_resolutions(report, [IssueResolution(issue.issue_id, "resolved", "r", "why")])
+            check("FTF-0515", f"{code} cannot be resolved", False)
+        except QualityEngineError:
+            pass
+
+
+def test_near_duplicate_provenance_keeps_index_distinct_from_position() -> None:
+    batch = [
+        _record(10, "please reset my router password right now", purpose="training"),
+        _record(20, "please reset my router password right now!", purpose="held_out_evaluation"),
+    ]
+    report = evaluate_quality(_runs({"near_duplicate": detect_near_duplicates(batch)}))
+    found = [i for i in report.issues if i.reason_code == "near_duplicate_pair"]
+    check(
+        "FTF-0515",
+        "near-dup pair carries positions and distinct record indices",
+        len(found) == 1
+        and found[0].batch_positions == (0, 1)
+        and found[0].record_indices == (10, 20),
+    )
+
+
+def test_non_poisoning_extra_warning_stays_warning_and_a_warning_can_be_resolved() -> None:
+    report = evaluate_quality(
+        _runs(), extra_issues=[QualityIssueInput("x", "pii_secrets", "warning", "w", "m")]
+    )
+    found = [i for i in report.issues if i.reason_code == "w"]
+    check(
+        "FTF-0515",
+        "a non-poisoning extra warning stays a warning and does not block",
+        len(found) == 1 and found[0].severity == "warning" and not report.blocks_split,
+    )
+    warn = _hand_built("warning")
+    out = apply_resolutions(warn, [IssueResolution("a" * 64, "resolved", "rev", "why")])
+    check(
+        "FTF-0515",
+        "a warning can be resolved (not only waived)",
+        out.issues[0].resolution_state == "resolved" and out.issues[0].resolved_by == "rev",
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
