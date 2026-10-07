@@ -74,6 +74,35 @@ ever narrow the already-authorized entry set `build_access_snapshot`
 returned -- never widen it, never bypass `LastKnownGoodCatalog`'s own
 revocation/freshness checks, and an unrecognized value is rejected (400)
 rather than silently ignored.
+
+`GET .../models/{model_id}/training-capability` (FTF-0308 "Model-to-
+artifact mapping UI", Section 6/13/34/68/77/81) was added to this same
+file by that later task, which only names a frontend `files` list
+(`apps/web/components/artifact-capabilities/model_to_artifact_mapping_ui.tsx`,
+`apps/web/tests/ftf_0308.spec.ts`) -- the same "packet predates the real
+backend composition" refinement this file's own FTF-0214 docstring above
+already applied, and the same `contract_owner: FTF-0301`/no-independent-
+schema-change discipline `training_capability_classifier.py` (FTF-0307)
+already disclosed as its own precondition ("FTF-0308's own future route
+is the eventual caller"). It composes exactly the same discovery/
+enrichment/reconciliation `GET .../catalog` already performs (reused
+verbatim, not reimplemented) with FTF-0301's already-CERTIFIED
+`artifact_crud.get_artifact` and FTF-0307's already-CERTIFIED, pure
+`classify_training_capability` -- never a name/string-based lookup of
+which artifact maps to which alias (Section 0.12's "no guessed weight
+identity"): the caller must pass an explicit, real `artifact_id` query
+parameter for a non-`unknown` capability to ever be possible, the same
+"explicit caller-supplied input, never inferred" discipline that
+module's own docstring already requires of every caller. No new schema:
+there is still no persisted `ModelCatalogEntry.trainable_artifact_id`
+table anywhere in this repository (`training_capability_classifier.py`'s
+own docstring), so "the mapping" is this route's own request-scoped
+`artifact_id` parameter, not a stored row -- changing it on the next call
+is therefore structurally incapable of returning a stale, previously-
+computed classification (this task's own negative_acceptance, "changing
+mapping invalidates related qualification"): every call recomputes the
+full classification fresh from the caller's current `artifact_id`, never
+caching or reusing a prior call's result.
 """
 
 from __future__ import annotations
@@ -82,6 +111,7 @@ import sys
 import uuid
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -97,7 +127,10 @@ from packages.litellm_client.access_guard import (  # noqa: E402
     ModelAccessDeniedError,
     require_model_access,
 )
-from packages.litellm_client.alias_reconciliation import reconcile_aliases  # noqa: E402
+from packages.litellm_client.alias_reconciliation import (  # noqa: E402
+    AliasReconciliationResult,
+    reconcile_aliases,
+)
 from packages.litellm_client.catalog_anomaly_detector import (  # noqa: E402
     AnomalyRecord,
     CatalogAnomalyDetector,
@@ -144,6 +177,15 @@ from packages.model_catalog.access_snapshot import (  # noqa: E402
 )
 from packages.security.url_policy import ConnectionPolicy  # noqa: E402
 
+from app.artifacts.artifact_crud import (  # noqa: E402
+    ArtifactNotFoundError,
+    get_artifact,
+)
+from app.artifacts.artifact_schema import TrainableArtifact  # noqa: E402
+from app.artifacts.training_capability_classifier import (  # noqa: E402
+    TrainingCapabilityClassification,
+    classify_training_capability,
+)
 from app.auth.rbac_middleware import (  # noqa: E402
     AuthorizedContext,
     PrincipalResolver,
@@ -170,6 +212,7 @@ __all__ = ["build_model_catalog_router"]
 _ITEM_PATH = "/api/v1/organizations/{organization_id}/connections/litellm/{connection_id}"
 _CATALOG_PATH = _ITEM_PATH + "/catalog"
 _PROBE_PATH = _ITEM_PATH + "/models/{model_id:path}/probe"
+_TRAINING_CAPABILITY_PATH = _ITEM_PATH + "/models/{model_id:path}/training-capability"
 
 _PROBE_KINDS = frozenset({"chat", "streaming", "tool_call", "structured_output"})
 
@@ -234,6 +277,66 @@ def _serialize_usage(usage: object) -> dict[str, object] | None:
         "prompt_tokens": usage.prompt_tokens,  # type: ignore[attr-defined]
         "completion_tokens": usage.completion_tokens,  # type: ignore[attr-defined]
         "total_tokens": usage.total_tokens,  # type: ignore[attr-defined]
+    }
+
+
+_EMPTY_RECONCILIATION_DETAIL = (
+    "no_live_reconciliation"  # revoked connection, or discovery did not reach DISCOVERED
+)
+
+
+def _empty_reconciliation(*, now: datetime | None = None) -> AliasReconciliationResult:
+    """The real, honest "zero currently-reconciled aliases" value -- used
+    whenever a live reconciliation cannot be attempted (a revoked
+    connection) or did not succeed (discovery did not reach `DISCOVERED`).
+    Never a mock: an empty `AliasReconciliationResult` is indistinguishable,
+    from `classify_training_capability`'s own point of view, from a real
+    reconciliation that genuinely found zero models -- both correctly
+    yield `AccessState.NOT_GRANTED` for every `model_id`."""
+    return AliasReconciliationResult(
+        models=(), model_count=0, reconciled_at=now if now is not None else datetime.now(UTC)
+    )
+
+
+def _serialize_artifact_provenance(artifact: TrainableArtifact) -> dict[str, object]:
+    return {
+        "id": str(artifact.id),
+        "display_name": artifact.display_name,
+        "source_type": artifact.source_type,
+        "source_uri": artifact.source_uri,
+        "model_family": artifact.model_family,
+        "base_model_revision": artifact.base_model_revision,
+        "weights_digest": artifact.weights_digest,
+        "license_id": artifact.license_id,
+        "status": artifact.status,
+        "trust_remote_code_allowed": artifact.trust_remote_code_allowed,
+        "required_python_packages": list(artifact.required_python_packages_json or []),
+        "minimum_gpu_profile": dict(artifact.minimum_gpu_profile_json or {}),
+    }
+
+
+def _serialize_training_capability(
+    classification: TrainingCapabilityClassification,
+    artifact: TrainableArtifact | None,
+) -> dict[str, object]:
+    """Content-free, same convention `_serialize_probe_result` already
+    establishes: every field is read straight from the real classification/
+    artifact, never fabricated or re-derived."""
+    return {
+        "model_id": classification.model_id,
+        "access": classification.access.value,
+        "capability": classification.capability.value,
+        "artifact_id": classification.artifact_id,
+        "artifact_availability": classification.artifact_availability.value,
+        "license_approved": classification.license_approved,
+        "role": classification.role,
+        "evidence_probed_at": (
+            classification.evidence_probed_at.isoformat()
+            if classification.evidence_probed_at
+            else None
+        ),
+        "detail": classification.detail,
+        "artifact": _serialize_artifact_provenance(artifact) if artifact is not None else None,
     }
 
 
@@ -520,5 +623,84 @@ def build_model_catalog_router(
         )
 
         return JSONResponse(_serialize_probe_result(probe_type, result))
+
+    @router.get(_TRAINING_CAPABILITY_PATH)
+    async def training_capability(
+        organization_id: uuid.UUID,
+        connection_id: uuid.UUID,
+        model_id: str,
+        request: Request,
+        ctx: AuthorizedContext = admin_dependency,
+    ) -> JSONResponse:
+        del organization_id
+        raw_artifact_id = request.query_params.get("artifact_id")
+        artifact_uuid: uuid.UUID | None = None
+        if raw_artifact_id is not None:
+            try:
+                artifact_uuid = uuid.UUID(raw_artifact_id)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail="artifact_id must be a UUID") from exc
+
+        tenant_context = TenantContext.from_authorized_context(ctx)
+        try:
+            with tenant_scoped_session_for(session_factory, tenant_context) as session:
+                connection = get_connection(session, tenant_context, connection_id)
+                base_url = connection.base_url
+                secret_ref = connection.secret_ref
+                connection_status = connection.status
+
+                artifact: TrainableArtifact | None = None
+                if artifact_uuid is not None:
+                    try:
+                        artifact = get_artifact(session, tenant_context, artifact_uuid)
+                    except ArtifactNotFoundError as exc:
+                        raise HTTPException(status_code=404, detail="artifact_not_found") from exc
+                    # Detach the already-fully-loaded row before the session
+                    # closes below -- every field this route reads from it
+                    # (`_serialize_artifact_provenance`/`classify_training_
+                    # capability`) is a plain scalar column already fetched
+                    # by `get_artifact`'s own SELECT, so expunging here never
+                    # triggers a lazy reload; it only prevents SQLAlchemy's
+                    # own post-commit expiry from raising `DetachedInstance
+                    # Error` once this `with` block exits (the real defect a
+                    # live-Postgres run, not the no-DB suite, actually
+                    # catches -- an in-memory `SimpleNamespace` fixture never
+                    # expires, so this fix's own negative proof is the real
+                    # database integration test, not the no-DB one).
+                    session.expunge(artifact)
+        except (ConnectionNotFoundError, TenantContextError) as exc:
+            raise HTTPException(status_code=404, detail="not_found") from exc
+
+        if connection_status == "revoked":
+            # Same discipline `_revoked_snapshot`/`GET .../catalog` already
+            # apply: a revoked connection never dials the real gateway again.
+            reconciliation = _empty_reconciliation()
+        else:
+            result: ModelDiscoveryResult = discover_models(
+                base_url=base_url,
+                secret_ref=secret_ref,
+                secret_config=secret_manager_config_factory(),
+                policy=validation_policy_factory(),
+            )
+            if result.state is DiscoveryState.DISCOVERED:
+                visible_ids = tuple(model.id for model in result.models)
+                enrichment = enrich_visible_models(
+                    base_url=base_url,
+                    secret_ref=secret_ref,
+                    secret_config=secret_manager_config_factory(),
+                    policy=validation_policy_factory(),
+                    visible_model_ids=visible_ids,
+                )
+                reconciliation = reconcile_aliases(discovery=result, enrichment=enrichment)
+            else:
+                reconciliation = _empty_reconciliation()
+
+        classification = classify_training_capability(
+            model_id=model_id,
+            organization_id=tenant_context.organization_id,
+            reconciliation=reconciliation,
+            artifact=artifact,
+        )
+        return JSONResponse(_serialize_training_capability(classification, artifact))
 
     return router

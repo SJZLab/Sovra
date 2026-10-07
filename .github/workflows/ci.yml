@@ -349,6 +349,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_h007.py
       - name: FTF-0902 negative-test proof (network-policy templates -- render-time endpoint revalidation, metadata/RFC1918/IPv6 rejection, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0902.py
+      - name: FTF-0308 negative-test proof (Model-to-artifact mapping -- training-capability route composition, IDOR, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0308.py
       - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
         run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check
@@ -835,6 +837,50 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real TrainableArtifact schema/API evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0301_trainable_artifact_schema_api.py
+
+  model-artifact-mapping-integration:
+    # FTF-0308: real Postgres evidence for the new `GET .../models/
+    # {model_id}/training-capability` route (app.litellm.model_catalog_routes)
+    # -- real TrainableArtifact rows driven to `ready` through the real,
+    # already-CERTIFIED FTF-0301 router mounted on the same app, role-
+    # boundary denial, the cross-tenant artifact_id IDOR case (denied
+    # identically to missing), "no artifact selected -> unknown, never
+    # guessed", re-mapping to a different real artifact recomputing fresh
+    # (never a stale reuse), and a revoked connection's independent
+    # access/capability dimensions -- tests/integration/
+    # test_ftf_0308_model_artifact_mapping.py. Same real `services:
+    # postgres` container pattern as trainable-artifact-schema-api-integration
+    # (this repo's interactive dev sandbox has no container-registry
+    # egress; that evidence was instead produced locally against a
+    # directly-installed PostgreSQL 16 -- see this task's
+    # docs/certifications/queue.md entry). No real LiteLLM gateway is
+    # needed (see that test file's own docstring for why).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest FTF-0004/FTF-0102/FTF-0104/FTF-0105/FTF-H003/FTF-0106/FTF-0201/FTF-0301 already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0308
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0308"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0308
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real model-to-artifact mapping/capability evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_0308_model_artifact_mapping.py
 
   project-schema-api-integration:
     # FTF-0401: real Postgres Project schema/API evidence -- two real
