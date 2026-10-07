@@ -24392,3 +24392,18 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
   replaced by dispatcher triggers v3 (B trig_01HCUV3Q952J7svKFuvfgavk, C trig_01GVHHgkLkbKFVYYbRNTYkNP; the v2
   triggers are disabled): ci-verdict as the only green, atomic claim on the exact `relay/<ID>-r<round>` name, the
   repeated-failure rule, ci-focus, and additive-only ci.yml edits.
+
+## 2026-10-07T09:00Z — Control plane: FTF-04A34 returned (round 2, tests only)
+- **FTF-04A34: NOT CERTIFIED** (PR #549, merge fd1ca17; producer session_01NbejJngKwSDXx654Aigxou). It merged on a
+  green ci-verdict (51/51, relay-policy passed, ci.yml edit additive), as the new contract requires.
+- The verifier injected 31 valid faults into the production modules. 15 stayed GREEN, among them:
+  - prompt template leak across products;
+  - `is_default` / nested `selected`;
+  - a `select_*` body that ignores the id;
+  - set-ordered markers, languages and paths;
+  - neighbour inheritance in Python and TS;
+  - entrypoint `line` / `call`;
+  - extra markers.
+- The test is real (real git, real modules, no stubs). The contract's "prompts" half of N2 is untested and undisclosed.
+- Whole-file mutation on the three modules: 38–43%. Most survivors belong to FTF-04A08/09/10 edge cases; the
+  A1/A2/N1/N2 ones are listed in QUEUE 0c.
