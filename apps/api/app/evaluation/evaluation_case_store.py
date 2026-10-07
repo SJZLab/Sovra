@@ -366,7 +366,14 @@ _FIELD_CHECKERS: dict[str, Callable[[object], str | None]] = {
     "grader_config_json": _json_object_problem,
 }
 _MISSING = object()
+# grader_type -> may a critical case use it. A name not listed is neither.
+_CRITICAL_CAPABLE: dict[str, bool] = {g: g in CRITICAL_GRADER_TYPES for g in GRADER_TYPES}
+_PATCH_CONVERTERS: dict[str, Callable[[Any], Any]] = {"weight": float}
 _IMMUTABLE_FIELDS: dict[str, bool] = {"case_key": True}
+
+
+def _same(value: Any) -> Any:
+    return value
 
 
 def _oracle_error(
@@ -375,8 +382,7 @@ def _oracle_error(
     if (
         critical is True
         and isinstance(grader_type, str)
-        and grader_type in GRADER_TYPES
-        and grader_type not in CRITICAL_GRADER_TYPES
+        and _CRITICAL_CAPABLE.get(grader_type) is False
     ):
         return CaseFieldError(index, "grader_type", "critical_oracle_not_independent")
     return None
@@ -443,7 +449,7 @@ def validate_case_patch(raw: object) -> tuple[dict[str, Any], list[CaseFieldErro
             if problem is not None:
                 errors.append(CaseFieldError(None, key, problem))
             else:
-                patch[key] = float(value) if key == "weight" else value
+                patch[key] = _PATCH_CONVERTERS.get(key, _same)(value)
     if not raw:
         errors.append(CaseFieldError(None, None, "empty_patch"))
     return patch, errors

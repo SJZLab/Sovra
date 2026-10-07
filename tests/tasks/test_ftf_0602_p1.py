@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# mypy: disable-error-code="arg-type,attr-defined,return-value,assignment,call-arg,index,union-attr"
+# mypy: disable-error-code="arg-type,attr-defined,return-value,assignment,call-arg,index,union-attr,list-item"
 # ruff: noqa: E501
 """FTF-0602-P1 -- EvaluationCase persistence + create/import/list/edit API
 (no-DB unit/fault tests).
@@ -2199,6 +2199,43 @@ def test_s1_the_race_path_maps_unique_violations_and_nothing_else() -> None:
         "B1",
         "a non-unique integrity error is re-raised, never reported as a duplicate",
         outcome == "integrity",
+    )
+
+
+def test_s1_critical_rule_and_roles_match_exact_names_only() -> None:
+    from types import SimpleNamespace
+
+    for grader in ("Exact_Match", " exact_match", "LLM_JUDGE", "exact_match "):
+        _, errors = store.validate_case_input(_case("x", critical=True, grader_type=grader), 0)
+        check(
+            "C1",
+            f"critical + {grader!r} is only an invalid grader, not an oracle verdict",
+            errors == [store.CaseFieldError(0, "grader_type", "invalid_value")],
+        )
+    final = _seed_suite(purpose="final")
+    ctx: Any = SimpleNamespace(organization_id=_ORG)
+    for role in (" evaluator", "EVALUATOR", "Organization_Admin", "workspace_admin "):
+        with Session(ENGINE) as session:
+            try:
+                store.list_cases(
+                    session,
+                    ctx,
+                    project_id=_PROJECT,
+                    suite_id=final,
+                    role=role,
+                    limit=1,
+                    after=None,
+                )
+                refused = False
+            except store.FinalSuiteContentRestrictedError:
+                refused = True
+        check("F1", f"the role {role!r} (not an exact Role) cannot read a final suite", refused)
+    _, ok = store.validate_case_patch({"weight": 3})
+    patch, _ = store.validate_case_patch({"weight": 3, "category": "k"})
+    check(
+        "E1",
+        "patch stores weight as float and other fields as given",
+        patch == {"weight": 3.0, "category": "k"} and isinstance(patch["weight"], float) and not ok,
     )
 
 
