@@ -32,6 +32,8 @@ extra forbidden tool call always fails"):
 Run directly: python3 tests/tasks/test_ftf_0608.py
 """
 
+# mypy: disable-error-code="arg-type,list-item,dict-item"
+# (round-2 tests pass deliberately malformed input to prove the grader refuses it)
 from __future__ import annotations
 
 import sys
@@ -375,7 +377,7 @@ def test_rejects_non_string_call_id_and_non_sequence_specs() -> None:
     check(
         "FTF-0608",
         "a non-string tool_call_id is refused",
-        refused(lambda: grade([TracedToolCall(5, "a")], must_not_call=["x"])),  # type: ignore[arg-type]
+        refused(lambda: grade([TracedToolCall(5, "a")], must_not_call=["x"])),
     )
     check(
         "FTF-0608",
@@ -395,6 +397,361 @@ def test_rejects_non_string_call_id_and_non_sequence_specs() -> None:
     check(
         "FTF-0608", "int must_precede refused", refused(lambda: grade(trace("a"), must_precede=5))
     )
+
+
+# ---- round 2: exactness (no case / whitespace tolerance anywhere) -----------
+
+
+def accepted(fn) -> bool:
+    """True when `fn` runs without the grader refusing it."""
+    try:
+        fn()
+    except ToolSequenceGraderError:
+        return False
+    return True
+
+
+def test_forbidden_matching_is_exact_for_case_and_whitespace() -> None:
+    for called in ("refund_order ", "Refund_Order", " refund_order", "REFUND_ORDER"):
+        r = grade(trace("lookup", called), must_not_call=["refund_order"])
+        check(
+            "FTF-0608",
+            f"{called!r} is not the forbidden tool 'refund_order'",
+            r.passed and r.forbidden_calls == (),
+        )
+    r = grade(trace("refund_order"), must_not_call=["refund_order "])
+    check("FTF-0608", "a forbidden name with trailing space does not match", r.passed)
+    r = grade(trace("refund_order"), must_not_call=["refund_order"])
+    check(
+        "FTF-0608",
+        "the exact forbidden name still fails",
+        not r.passed and r.forbidden_calls == ("refund_order",),
+    )
+
+
+def test_allowed_order_forbidden_clash_check_is_exact() -> None:
+    for order_name in ("refund_order ", "Refund_Order"):
+        check(
+            "FTF-0608",
+            f"allowed order naming {order_name!r} does not clash with 'refund_order'",
+            accepted(
+                lambda n=order_name: grade(
+                    trace("a"), allowed_orders=[["a", n]], must_not_call=["refund_order"]
+                )
+            ),
+        )
+    check(
+        "FTF-0608",
+        "an allowed order naming the exact forbidden tool is still refused",
+        refused(
+            lambda: grade(
+                trace("a"), allowed_orders=[["a", "refund_order"]], must_not_call=["refund_order"]
+            )
+        ),
+    )
+
+
+def test_allowed_order_compare_is_exact() -> None:
+    for called in ("Lookup", "lookup ", " lookup"):
+        r = grade(trace(called, "refund"), allowed_orders=[["lookup", "refund"]])
+        check(
+            "FTF-0608",
+            f"{called!r} does not match declared 'lookup' in an allowed order",
+            not r.passed and not r.order_ok and r.matched_order_index is None,
+        )
+
+
+def test_precedence_names_are_exact() -> None:
+    # `after` spelled differently from the trace: the pair is vacuous, never matched.
+    r = grade(trace("Refund"), must_precede=[("approve", "refund")])
+    check("FTF-0608", "'Refund' is not the after-name 'refund'", r.passed)
+    r = grade(trace("refund "), must_precede=[("approve", "refund")])
+    check("FTF-0608", "'refund ' is not the after-name 'refund'", r.passed)
+    # `before` spelled differently: it does not satisfy the pair.
+    r = grade(trace("Approve", "refund"), must_precede=[("approve", "refund")])
+    check(
+        "FTF-0608",
+        "'Approve' does not satisfy before-name 'approve'",
+        not r.passed and r.precedence_violations == (("approve", "refund"),),
+    )
+    r = grade(trace("approve ", "refund"), must_precede=[("approve", "refund")])
+    check("FTF-0608", "'approve ' does not satisfy before-name 'approve'", not r.passed)
+    # Declared names with different case/space than the trace.
+    r = grade(trace("approve", "refund"), must_precede=[("Approve", "refund")])
+    check("FTF-0608", "declared before 'Approve' is not satisfied by 'approve'", not r.passed)
+    r = grade(trace("approve", "refund"), must_precede=[("approve", "Refund")])
+    check("FTF-0608", "declared after 'Refund' never matches trace 'refund'", r.passed)
+
+
+def test_state_keys_are_exact() -> None:
+    for required_key, final_key in (
+        ("Status", "status"),
+        ("status ", "status"),
+        ("status", "Status"),
+    ):
+        r = grade(
+            trace("a"),
+            required_state={required_key: "ok"},
+            final_state={final_key: "ok"},
+        )
+        check(
+            "FTF-0608",
+            f"required key {required_key!r} is not satisfied by final key {final_key!r}",
+            not r.passed and r.state_mismatches == (required_key,),
+        )
+
+
+def test_tool_call_id_identity_is_exact() -> None:
+    calls = [TracedToolCall("c0", "a"), TracedToolCall("C0", "b"), TracedToolCall("c0 ", "c")]
+    r = grade(calls, allowed_orders=[["a", "b", "c"]])
+    check("FTF-0608", "'c0', 'C0' and 'c0 ' are three distinct call identities", r.passed)
+    check(
+        "FTF-0608",
+        "the identical id twice is still refused",
+        refused(
+            lambda: grade(
+                [TracedToolCall("c0", "a"), TracedToolCall("c0", "b")], must_not_call=["z"]
+            )
+        ),
+    )
+
+
+def test_called_names_preserved_verbatim() -> None:
+    names = ("Lookup", "lookup ", " lookup", "LOOKUP", "lookup")
+    r = grade(trace(*names), must_not_call=["zzz"])
+    check(
+        "FTF-0608",
+        "called_names keeps case, whitespace and duplicates verbatim",
+        r.called_names == names,
+    )
+
+
+# ---- round 2: malformed input fails closed ---------------------------------
+
+
+def test_round2_malformed_trace_entries_are_refused() -> None:
+    check(
+        "FTF-0608",
+        "int name refused",
+        refused(lambda: grade([TracedToolCall("c0", 123)], must_not_call=["x"])),
+    )
+    check(
+        "FTF-0608",
+        "list name refused",
+        refused(lambda: grade([TracedToolCall("c0", ["a"])], must_not_call=["x"])),
+    )
+    check(
+        "FTF-0608",
+        "None name refused",
+        refused(lambda: grade([TracedToolCall("c0", None)], must_not_call=["x"])),
+    )
+    check(
+        "FTF-0608",
+        "empty tool_call_id refused",
+        refused(lambda: grade([TracedToolCall("", "a")], must_not_call=["x"])),
+    )
+    check(
+        "FTF-0608",
+        "int tool_call_id refused",
+        refused(lambda: grade([TracedToolCall(7, "a")], must_not_call=["x"])),
+    )
+    check(
+        "FTF-0608",
+        "empty-string trace refused",
+        refused(
+            lambda: grade_tool_sequence(
+                "",
+                allowed_orders=[],
+                must_precede=[],
+                must_not_call=["x"],
+                required_state={},
+                final_state={},
+            )
+        ),
+    )
+    check(
+        "FTF-0608",
+        "empty-bytes trace refused",
+        refused(
+            lambda: grade_tool_sequence(
+                b"",
+                allowed_orders=[],
+                must_precede=[],
+                must_not_call=["x"],
+                required_state={},
+                final_state={},
+            )
+        ),
+    )
+    check(
+        "FTF-0608",
+        "None trace refused",
+        refused(
+            lambda: grade_tool_sequence(
+                None,
+                allowed_orders=[],
+                must_precede=[],
+                must_not_call=["x"],
+                required_state={},
+                final_state={},
+            )
+        ),
+    )
+
+
+def test_round2_malformed_specification_items_are_refused() -> None:
+    t = trace("a")
+    check(
+        "FTF-0608",
+        "empty-string must_not_call item refused",
+        refused(lambda: grade(t, must_not_call=[""])),
+    )
+    check(
+        "FTF-0608",
+        "non-str must_not_call item refused",
+        refused(lambda: grade(t, must_not_call=[1])),
+    )
+    check(
+        "FTF-0608",
+        "bare-str must_not_call refused",
+        refused(lambda: grade(t, must_not_call="refund")),
+    )
+    check(
+        "FTF-0608",
+        "empty-string item in an allowed order refused",
+        refused(lambda: grade(t, allowed_orders=[[""]])),
+    )
+    check(
+        "FTF-0608",
+        "empty-string item beside a name refused",
+        refused(lambda: grade(t, allowed_orders=[["a", ""]])),
+    )
+    check("FTF-0608", "empty allowed order refused", refused(lambda: grade(t, allowed_orders=[[]])))
+    check(
+        "FTF-0608",
+        "bare-str allowed order refused",
+        refused(lambda: grade(t, allowed_orders=["abc"])),
+    )
+    check(
+        "FTF-0608",
+        "empty-string before refused",
+        refused(lambda: grade(t, must_precede=[("", "b")])),
+    )
+    check(
+        "FTF-0608",
+        "empty-string after refused",
+        refused(lambda: grade(t, must_precede=[("a", "")])),
+    )
+    check("FTF-0608", "1-tuple pair refused", refused(lambda: grade(t, must_precede=[("a",)])))
+    check(
+        "FTF-0608",
+        "3-tuple pair refused",
+        refused(lambda: grade(t, must_precede=[("a", "b", "c")])),
+    )
+    check(
+        "FTF-0608", "non-str pair names refused", refused(lambda: grade(t, must_precede=[(1, 2)]))
+    )
+    check("FTF-0608", "self-pair refused", refused(lambda: grade(t, must_precede=[("a", "a")])))
+    check("FTF-0608", "bare-str pair refused", refused(lambda: grade(t, must_precede=["ab"])))
+    check(
+        "FTF-0608",
+        "empty required_state key refused",
+        refused(lambda: grade(t, required_state={"": 1}, final_state={"": 1})),
+    )
+    check(
+        "FTF-0608",
+        "non-str required_state key refused",
+        refused(lambda: grade(t, required_state={1: 1}, final_state={1: 1})),
+    )
+    check(
+        "FTF-0608",
+        "non-mapping final_state refused",
+        refused(lambda: grade(t, required_state={"a": 1}, final_state=[("a", 1)])),
+    )
+
+
+# ---- round 2: semantics -----------------------------------------------------
+
+
+def test_empty_trace_semantics() -> None:
+    r = grade([], allowed_orders=[["a"]])
+    check(
+        "FTF-0608",
+        "an empty trace fails a declared order",
+        not r.passed and not r.order_ok and r.called_names == (),
+    )
+    r = grade([], must_not_call=["refund"])
+    check("FTF-0608", "an empty trace passes must_not_call", r.passed and r.forbidden_calls == ())
+    r = grade([], must_precede=[("a", "b")])
+    check("FTF-0608", "an empty trace satisfies precedence vacuously", r.passed)
+    r = grade([], required_state={"k": 1}, final_state={})
+    check(
+        "FTF-0608",
+        "an empty trace still fails a missing required state",
+        not r.passed and r.state_mismatches == ("k",),
+    )
+
+
+def test_duplicate_forbidden_calls_are_all_reported() -> None:
+    r = grade(trace("x", "y", "x", "x"), must_not_call=["x", "y"])
+    check(
+        "FTF-0608",
+        "every forbidden call is reported, duplicates included and in trace order",
+        not r.passed and r.forbidden_calls == ("x", "y", "x", "x"),
+    )
+
+
+def test_every_precedence_pair_is_checked() -> None:
+    pairs = [("a", "b"), ("c", "d")]
+    r = grade(trace("a", "b", "d", "c"), must_precede=pairs)
+    check(
+        "FTF-0608",
+        "first pair satisfied, second violated -> only second reported",
+        not r.passed and r.precedence_violations == (("c", "d"),),
+    )
+    r = grade(trace("b", "a", "c", "d"), must_precede=pairs)
+    check(
+        "FTF-0608",
+        "first pair violated, second satisfied -> only first reported",
+        not r.passed and r.precedence_violations == (("a", "b"),),
+    )
+    r = grade(trace("d", "b"), must_precede=pairs)
+    check(
+        "FTF-0608",
+        "both violated -> both reported in declared order",
+        r.precedence_violations == (("a", "b"), ("c", "d")),
+    )
+    r = grade(trace("a", "c", "b", "d"), must_precede=pairs)
+    check("FTF-0608", "both satisfied passes", r.passed and r.precedence_violations == ())
+
+
+def test_nested_state_semantics() -> None:
+    r = grade(trace("a"), required_state={"o": {"a": 1, "b": 2}}, final_state={"o": {"a": 1}})
+    check(
+        "FTF-0608",
+        "a nested mapping missing a key fails",
+        not r.passed and r.state_mismatches == ("o",),
+    )
+    r = grade(trace("a"), required_state={"o": {"a": 1}}, final_state={"o": {"a": 1, "b": 2}})
+    check("FTF-0608", "a nested mapping with an extra key fails", not r.passed)
+    r = grade(trace("a"), required_state={"o": {"a": 1}}, final_state={"o": {"A": 1}})
+    check("FTF-0608", "nested keys are case-exact", not r.passed)
+    r = grade(trace("a"), required_state={"o": [1, 2, 3]}, final_state={"o": [1, 2]})
+    check("FTF-0608", "a nested list length mismatch fails", not r.passed)
+    r = grade(trace("a"), required_state={"o": [1, 2]}, final_state={"o": [1, 2, 3]})
+    check("FTF-0608", "a longer nested list fails", not r.passed)
+    r = grade(
+        trace("a"),
+        required_state={"o": {"a": [1, {"b": 2}]}},
+        final_state={"o": {"a": [1, {"b": 2}]}},
+    )
+    check("FTF-0608", "deeply nested identical state passes", r.passed)
+    r = grade(
+        trace("a"),
+        required_state={"o": {"a": [1, {"b": 2}]}},
+        final_state={"o": {"a": [1, {"b": 2.0}]}},
+    )
+    check("FTF-0608", "deeply nested int-vs-float fails", not r.passed)
 
 
 def main() -> None:
