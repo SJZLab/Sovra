@@ -689,6 +689,24 @@ test("a locked manifest is read-only: edits are ignored and every action is disa
   expect((screen.getByTestId("model-role-select") as HTMLSelectElement).disabled).toBe(true);
 });
 
+test("R3: a stored draft restored onto a locked manifest leaves Save disabled and sends no PATCH", async () => {
+  storage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({ agent_name: { text: "stale-draft", baseText: "support-agent" } }),
+  );
+  installServer({
+    manifest: manifestRecord({ status: "locked", manifest_sha256: "b".repeat(64) }),
+  });
+  await renderLoaded();
+  expect(screen.getByTestId("manifest-read-only")).toBeTruthy();
+  // the draft is restored (not conflicting), so only the locked status can disable Save
+  expect(screen.getByTestId("draft-restored")).toBeTruthy();
+  expect(screen.getByTestId("field-state-agent_name").textContent).toBe("unsaved");
+  expect(saveButton().disabled).toBe(true);
+  fireEvent.click(saveButton());
+  expect(callsOf("PATCH")).toHaveLength(0);
+});
+
 test("a manifest load failure renders only the error", async () => {
   vi.stubGlobal(
     "fetch",
