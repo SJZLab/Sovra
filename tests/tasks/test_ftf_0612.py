@@ -226,6 +226,18 @@ def test_comparisons_exact_even_for_unvalidated_spec() -> None:
     )
 
 
+def test_case_ids_differing_only_by_case_or_space_are_distinct() -> None:
+    ids = ("c1", "C1", "c1 ")
+    result = grade_latency(spec(expected_case_ids=ids), [obs(i) for i in ids])
+    check(CID, "c1, C1 and 'c1 ' are three distinct cases", result.passed and result.issues == ())
+    for blank in ("\t", "\n", " \t "):
+        check(
+            CID,
+            f"whitespace-only {blank!r} case id refused",
+            raises(lambda b=blank: grade_latency(spec(1), [obs(b)])),
+        )
+
+
 def test_text_and_name_validation_exact() -> None:
     check(CID, "whitespace-only workload refused", raises(lambda: spec(workload_id=" ")))
     check(
