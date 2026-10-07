@@ -295,7 +295,8 @@ def main() -> None:
         art_b = _artifact(org1.id, "artifact-b", "ready")
         art_reg = _artifact(org1.id, "artifact-registered", "registered")
         art_foreign = _artifact(org2.id, "artifact-foreign", "ready")
-        session.add_all([conn1, conn1b, conn2, art_a, art_b, art_reg, art_foreign])
+        art_alias = _artifact(org1.id, "gpt-z", "ready")
+        session.add_all([conn1, conn1b, conn2, art_a, art_b, art_reg, art_foreign, art_alias])
         session.commit()
         org1_id, org2_id = org1.id, org2.id
         conn1_id, conn1b_id, conn2_id = conn1.id, conn1b.id, conn2.id
@@ -715,6 +716,39 @@ def main() -> None:
             ),
         )
 
+        # -- No alias -> artifact inference at runtime ----------------------------------------
+        # A ready org1 artifact is named exactly like a discoverable alias; nothing may map it.
+        discovery.result = _discovered("gpt-z")
+        entries_before_alias = count_entries()
+        alias_get = _request(base, "GET", path(org1_id, conn1_id, model="gpt-z"), principal="ml1")
+        alias_body = alias_get.json() if alias_get.status == 200 else {}
+        check(
+            CID,
+            "an alias named like a ready artifact is still unmapped (no name heuristic)",
+            alias_get.status == 200
+            and alias_body.get("mapping_state") == "unmapped"
+            and alias_body.get("trainable_artifact_id") is None
+            and alias_body.get("artifact") is None,
+        )
+        alias_post = _request(
+            base,
+            "POST",
+            path(org1_id, conn1_id, model="gpt-z"),
+            principal="ml1",
+            payload={"trainable_artifact_id": None},
+        )
+        alias_post_body = alias_post.json() if alias_post.status == 200 else {}
+        check(
+            CID,
+            "POST null on that alias is 200 unmapped, unchanged, and creates no entry",
+            alias_post.status == 200
+            and alias_post_body.get("mapping_state") == "unmapped"
+            and alias_post_body.get("trainable_artifact_id") is None
+            and alias_post_body.get("changed") is False
+            and count_entries() == entries_before_alias,
+        )
+        discovery.result = _discovered("gpt-x", "openai/gpt-4o", "gpt-y")
+
         # -- Cross-tenant ---------------------------------------------------------------------
         random_conn = uuid.uuid4()
         foreign_conn_get = _request(base, "GET", path(org2_id, conn1_id), principal="admin2")
@@ -742,7 +776,30 @@ def main() -> None:
         foreign_changes = _request(
             base, "GET", path(org2_id, conn1_id, suffix="/changes"), principal="admin2"
         )
-        check(CID, "org2 reading org1's history is 404", foreign_changes.status == 404)
+        random_changes = _request(
+            base, "GET", path(org2_id, random_conn, suffix="/changes"), principal="admin2"
+        )
+        check(
+            CID,
+            "org2 reading org1's history is the same 404 not_found as a random connection id",
+            foreign_changes.status == 404
+            and random_changes.status == 404
+            and foreign_changes.json() == random_changes.json() == {"detail": "not_found"},
+        )
+        random_post = _request(
+            base,
+            "POST",
+            path(org2_id, random_conn),
+            principal="admin2",
+            payload={"trainable_artifact_id": None},
+        )
+        check(
+            CID,
+            "org2 POSTing against org1's connection has the same 404 body as a random connection id",
+            foreign_post.status == 404
+            and random_post.status == 404
+            and foreign_post.json() == random_post.json() == {"detail": "not_found"},
+        )
         into_org1 = _request(base, "GET", path(org1_id, conn1_id), principal="admin2")
         check(CID, "org2's user addressing org1's path is 403", into_org1.status == 403)
         discovery.result = _discovered("gpt-x")
@@ -978,11 +1035,11 @@ def main() -> None:
         "the app role cannot DELETE from the change log",
         refused(lambda: as_org(org1_id, "DELETE FROM model_catalog_mapping_changes")),
     )
-    check(
-        CID,
-        "the app role cannot DELETE an entry",
-        refused(lambda: as_org(org1_id, "DELETE FROM model_catalog_entries")),
-    )
+    with Session(owner_engine) as s:
+        can_delete_entries = s.execute(
+            text("SELECT has_table_privilege('sovra_app', 'model_catalog_entries', 'DELETE')")
+        ).scalar_one()
+    check(CID, "the app role has no DELETE privilege on entries", can_delete_entries is False)
     with Session(owner_engine) as s:
         unchanged = s.execute(
             text("SELECT count(*) FROM model_catalog_mapping_changes WHERE actor='tampered'")
