@@ -24241,3 +24241,23 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
   still needs a [GOVERNANCE] PR.
 - **FTF-H034-F4: CERTIFIED** (PR #522, merge 0a1eefa). Whole-file mutation 83/83. New follow-up FTF-H034-F5
   (Backlog): pin the default TTL and GPU quota constants, and add a re-claim-after-complete check.
+
+## 2026-10-07T02:00Z — Control plane: FTF-0510-F1 and FTF-H034-F5 CERTIFIED; FTF-0606 returned (round 2)
+- **FTF-0510-F1: CERTIFIED** (PR #521, merge f8f4c9c). The allowlist line is bumped from 220 to 221.
+- **FTF-H034-F5: CERTIFIED** (PR #525, merge d5cfb39).
+- **FTF-0606 (tool-name grader): NOT CERTIFIED** (PR #524, merge f85c67f; the producer is independent). Mutation is
+  35/35, but hand faults expose gaps the gate's operators do not generate:
+  1. **Fail-open on malformed calls.** `EmittedToolCall("1", 123)`, a list as the name, `tool_call_id=None`, and
+     duplicate empty ids are all accepted (passed=True when must_call_one_of is empty). Fix: require a non-empty str
+     for both name and tool_call_id, else raise ToolNameGraderError. Add tests for name=123, name=list,
+     tool_call_id=None and tool_call_id="".
+  2. **Exactness is not pinned.** Case-folding or stripping the called names, or the forbidden or required match, all
+     stay GREEN. Fix: four tests showing that "Refund_Order" and "refund_order " neither trigger a forbidden call nor
+     satisfy a required one.
+  3. **Two more gaps.** No test that an empty must_not_call plus a satisfied call passes, and no test that duplicate
+     calls are preserved in `called_names`.
+  - Not product-true: no live caller exists. An Inspect AI scorer adapter plus a live caller is a separate task.
+- **Gate gap (Control-plane follow-up):** mutation_gate M9 does not mutate `in` / membership comparisons on strings,
+  which is why gaps 2 and 3 survived the gate. Extend M9 to `x in S` and `x not in S` (normalize the left operand).
+- **Dispatcher replaced** (context reached about 400k): v2 is session_011i4PMFAPsFgHSySDQLTx7s. The old triggers are
+  disabled, not deleted. See docs/operations/routines.md.

@@ -9297,6 +9297,13 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
 0. **2026-10-06T09:45Z (Control plane): highest priority, one item per lane, one PR per item.**
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
+   - **0b0. FTF-0606 round 2 (tool-name grader; 3 blocking): claim `relay/FTF-0606-r2`.**
+     1. Fail closed on malformed calls: name and tool_call_id must be non-empty `str`, else raise ToolNameGraderError.
+        Add tests for name=123, name=list, tool_call_id=None and tool_call_id="".
+     2. Pin exactness: "Refund_Order" and "refund_order " neither trigger a forbidden call nor satisfy a required one
+        (four tests).
+     3. Add tests that an empty must_not_call plus a satisfied call passes, and that duplicate calls stay in
+        `called_names`. See docs/certifications/queue.md "2026-10-07T02:00Z".
    - **0b. FTF-1807 round 4 (tests only).** The forbidden-claim scan is a phrase blacklist, so plain-language inversions
      pass. Pin every paragraph of runbook sections 1–6 exactly (whitespace-normalized text, or a per-section sha256
      held in the test), keeping the existing structured pins. Add in-suite faults for each checker: wrapped, bold,
@@ -9304,7 +9311,7 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      keeps the count. Same entry.
    - **0c.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
-     (2026-10-06); FTF-0214 is CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2 and FTF-H034-F1 through F4 are CERTIFIED.
+     (2026-10-06); FTF-0214 is CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5 and FTF-0510-F1 are CERTIFIED.
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid
@@ -9425,12 +9432,6 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 "2026-10-01T13:40Z". One PR per item group, titled "[relay] <ID>: fix L2 round-2 findings".
 
 ## Backlog (sliced, ready — relay takes these after Active; Refill & Sweep keeps >= 3)
-- **FTF-0510-F1 (Control plane 2026-10-07T00:00Z):** (a) a test that a sandbox SecurityError from the chat template
-  (`messages.append(1)`) becomes a `template_render_error` row issue; (b) `certifies_training_fit` requires verified,
-  non-None tokenizer/template digests (production change and test). Claim `relay/FTF-0510-F1-r1`.
-- **FTF-H034-F5 (tests only, Control plane 2026-10-07T01:00Z):** in tests/tasks/test_ftf_h034.py, pin `claim()`'s
-  default TTL (live at +3599s, expired at +3600s) and DEFAULT_GPU_QUOTA=1 (a second gpu_required claim is denied by
-  default). Add a re-claim-after-complete check that complete() frees the slot. Claim `relay/FTF-H034-F5-r1`.
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 
