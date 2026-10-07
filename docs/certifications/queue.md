@@ -24430,3 +24430,18 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 - All three merges happened about 40 s after a green ci-verdict. Lanes FTF-0501 and FTF-0602 were parked as
   BLOCKED_DEPENDENCY by the relay (missing schema/contract prerequisites, the same pattern as FTF-0308). Backlog
   refilled with the graders FTF-0605, FTF-0607 and FTF-0609 (pure functions, no schema dependency).
+
+## 2026-10-07T12:00Z — Control plane: FTF-04A32 CERTIFIED; FTF-0515 and FTF-04A22 returned
+- **FTF-04A32: CERTIFIED** (round 2, #558, merge bd0ca64).
+- **FTF-0515: NOT CERTIFIED** (#555, merge b9e3e18; producer session_01ULtSVTKm5X86bE3yY4vUZW).
+  - Mutation is 106/106, but 37 non-equivalent semantic faults stay GREEN.
+  - Two production defects: distinct findings collapse into one `issue_id` (silent drop; one resolution clears
+    several), and `record_indices` are not sorted with `batch_positions`.
+  - The PR's QUEUE.md edit was a legitimate park (FTF-0501, FTF-0602). Exact fixes and tests: QUEUE item 0b.
+- **FTF-04A22: NOT CERTIFIED** (#557, merge 5334d10; producer session_01UdWwkU2Yk8VQY91N1i2zWG).
+  - 100 mutants: 63 RED, 37 GREEN.
+  - Law 17 gaps: a refresh failure can show a false "lock ready", and network errors are swallowed.
+  - Also untested: null handling in the PATCH, read-only gating, and exact name matching.
+  - Two production defects: comma typing is broken in list fields, and save is lossy (it drops unknown keys).
+  - Endpoints are real; the component is UNWIRED (no page). Exact fixes and tests: QUEUE item 0c.
+- All three merges happened on a green ci-verdict. Backlog refilled with graders FTF-0610 and FTF-0611.

@@ -10135,6 +10135,16 @@ PR is not landed by the next certifier shift.
   - the first matched_order_index wins;
   - the order of violations and mismatches.
 
+## FTF-04A32 — Local repository integration test — CERTIFIED (2026-10-07)
+- Criterion: FTF-04A32. Round 2 (tests only): PR #558, merge commit bd0ca646890ca31f6b5a6099d0a52b8a8e2c5d09. This
+  closes rounds 1–2, and round 1 is #544 (merge c3a6cae). Producers: `session_01PLmwxLdJyZhrxDMoF1W91q` (r1) and
+  `session_011ChfJg8nYKJzN7bx9di2pW` (r2). It merged on a green ci-verdict.
+- Verifier (Sonnet): all six round-2 faults are RED: F09 prefix-sibling symlink; F19 same-length content (both the
+  capture path and the post-archive path); F20 rename; F18 chmod; F15/F16 executable bit and tar modes. Optional F14
+  is RED. The round-1 spot checks F01/F07/F08/F10/F11/F28/F32/F50 are still RED. The test passes both as root and as an
+  unprivileged uid (the root-skipped checks were exercised).
+- Not product-true (test task). Law 16 follow-up on git-ignored files: FTF-04A06-F1 (#559).
+
 ## FTF-04A34 — Monorepo multi-agent discovery test — CERTIFIED (2026-10-07)
 - Criterion: FTF-04A34. Round 2 (tests only): PR #552, merge commit 1af2d1bde8c24b488e3c402ee229cd6f33a43f16 (head
   `483adae`). This closes rounds 1–2, and round 1 is #549. Producers: `session_01NbejJngKwSDXx654Aigxou` (r1) and
