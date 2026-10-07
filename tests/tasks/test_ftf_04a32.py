@@ -1158,6 +1158,8 @@ def test_f1_ignored_paths_are_never_opened_or_listed() -> None:
         os_module: Any = os
         real_read, real_open = path_cls.read_bytes, path_cls.open
         real_builtin_open, real_scandir = builtins_module.open, os_module.scandir
+        io_module: Any = sys.modules["io"]
+        real_os_open, real_io_open = os_module.open, io_module.open
 
         def spy_read(self: Path, *args: Any, **kwargs: Any) -> bytes:
             touched.append(str(self))
@@ -1176,13 +1178,34 @@ def test_f1_ignored_paths_are_never_opened_or_listed() -> None:
             listed.append(str(path))
             return real_scandir(path)
 
+        def spy_os_open(path: Any, *args: Any, **kwargs: Any) -> Any:
+            touched.append(str(path))
+            return real_os_open(path, *args, **kwargs)
+
+        def spy_io_open(file: Any, *args: Any, **kwargs: Any) -> Any:
+            touched.append(str(file))
+            return real_io_open(file, *args, **kwargs)
+
         path_cls.read_bytes, path_cls.open = spy_read, spy_open
         builtins_module.open, os_module.scandir = spy_builtin, spy_scandir
+        os_module.open, io_module.open = spy_os_open, spy_io_open
         try:
+            # The os.open / io.open spies are live: a direct use is recorded.
+            os_module.close(os_module.open(str(repo / "a.txt"), os_module.O_RDONLY))
+            with io_module.open(str(repo / "a.txt"), "rb"):
+                pass
+            control = list(touched)
+            touched.clear()
             cap = capture_local_repository(repo, [allowed])
         finally:
             path_cls.read_bytes, path_cls.open = real_read, real_open
             builtins_module.open, os_module.scandir = real_builtin_open, real_scandir
+            os_module.open, io_module.open = real_os_open, real_io_open
+        check(
+            "FTF-04A06-F1",
+            "the os.open and io.open spies record direct use (the spies are live)",
+            len(control) == 2 and all(c.endswith("a.txt") for c in control),
+        )
         check(
             "FTF-04A06-F1",
             "capture still reads the visible files (the spy is live)",
