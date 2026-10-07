@@ -41,6 +41,7 @@ from __future__ import annotations
 import json
 import math
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -55,7 +56,7 @@ from app.auth.organization_workspace_schema import Base
 from app.auth.rbac_middleware import Role
 from app.auth.tenant_isolation_query_guards import execute_tenant_scoped
 from app.db.tenant_context import TenantContext
-from app.evaluation.evaluation_suite_schema import PURPOSE_FINAL, EvaluationSuite
+from app.evaluation.evaluation_suite_schema import EvaluationSuite
 
 __all__ = [
     "CASE_FIELD_NAMES",
@@ -149,6 +150,10 @@ _PATCHABLE_FIELDS: frozenset[str] = CASE_FIELD_NAMES - {"case_key"}
 IMPORT_AUDIT_ACTION = "evaluation_case.import"
 UPDATE_AUDIT_ACTION = "evaluation_case.update"
 _UNIQUE_CASE_KEY_CONSTRAINT = "uq_evaluation_cases_suite_id_case_key"
+_DUPLICATE_KEY_CONSTRAINTS = frozenset({_UNIQUE_CASE_KEY_CONSTRAINT})
+# Fail closed: a status or purpose not listed here is treated as locked / sealed.
+_STATUS_ALLOWS_WRITES: dict[str, bool] = {"draft": True, "locked": False}
+_PURPOSE_IS_SEALED: dict[str, bool] = {"development": False, "final": True}
 
 
 @dataclass(frozen=True)
@@ -319,23 +324,49 @@ def _weight_problem(value: object) -> str | None:
     return None
 
 
-def _field_problem(name: str, value: object) -> str | None:
-    if name in _TEXT_FIELDS:
-        return _scalar_text_problem(value, _TEXT_FIELDS[name])
-    if name == "severity":
-        return None if isinstance(value, str) and value in SEVERITIES else "invalid_value"
-    if name == "grader_type":
-        return None if isinstance(value, str) and value in GRADER_TYPES else "invalid_value"
-    if name == "critical":
-        return None if isinstance(value, bool) else "invalid_type"
-    if name == "weight":
-        return _weight_problem(value)
-    if name in _JSON_FIELDS:
-        problem = _json_object_problem(value)
-        if problem is None and name == "expected_json" and not value:
-            return "empty_object"
-        return problem
-    return "unknown_field"
+def _text_checker(max_length: int) -> Callable[[object], str | None]:
+    def check(value: object) -> str | None:
+        return _scalar_text_problem(value, max_length)
+
+    return check
+
+
+def _severity_problem(value: object) -> str | None:
+    return None if isinstance(value, str) and value in SEVERITIES else "invalid_value"
+
+
+def _grader_type_problem(value: object) -> str | None:
+    return None if isinstance(value, str) and value in GRADER_TYPES else "invalid_value"
+
+
+def _critical_problem(value: object) -> str | None:
+    return None if isinstance(value, bool) else "invalid_type"
+
+
+def _expected_problem(value: object) -> str | None:
+    problem = _json_object_problem(value)
+    if problem is None and not value:
+        return "empty_object"
+    return problem
+
+
+# One checker per case field. Dispatch by lookup (not by comparing names) so
+# a field name is only ever an exact key.
+_FIELD_CHECKERS: dict[str, Callable[[object], str | None]] = {
+    "case_key": _text_checker(CASE_KEY_MAX_LENGTH),
+    "category": _text_checker(CATEGORY_MAX_LENGTH),
+    "language": _text_checker(LANGUAGE_MAX_LENGTH),
+    "group_key": _text_checker(GROUP_KEY_MAX_LENGTH),
+    "severity": _severity_problem,
+    "grader_type": _grader_type_problem,
+    "critical": _critical_problem,
+    "weight": _weight_problem,
+    "input_json": _json_object_problem,
+    "expected_json": _expected_problem,
+    "grader_config_json": _json_object_problem,
+}
+_MISSING = object()
+_IMMUTABLE_FIELDS: dict[str, bool] = {"case_key": True}
 
 
 def _oracle_error(
@@ -359,20 +390,18 @@ def validate_case_input(
     if not isinstance(raw, dict):
         return None, [CaseFieldError(index, None, "invalid_type")]
     errors: list[CaseFieldError] = []
-    if any(not isinstance(key, str) or key not in CASE_FIELD_NAMES for key in raw):
+    if any(_FIELD_CHECKERS.get(key) is None for key in raw):
         errors.append(CaseFieldError(index, None, "unknown_field"))
     for name in _REQUIRED_FIELDS:
-        if name not in raw:
-            errors.append(CaseFieldError(index, name, "required"))
-        else:
-            problem = _field_problem(name, raw[name])
-            if problem is not None:
-                errors.append(CaseFieldError(index, name, problem))
+        value = raw.get(name, _MISSING)
+        problem = "required" if value is _MISSING else _FIELD_CHECKERS[name](value)
+        if problem is not None:
+            errors.append(CaseFieldError(index, name, problem))
     for name in _OPTIONAL_FIELDS:
-        if name in raw:
-            problem = _field_problem(name, raw[name])
-            if problem is not None:
-                errors.append(CaseFieldError(index, name, problem))
+        value = raw.get(name, _MISSING)
+        problem = None if value is _MISSING else _FIELD_CHECKERS[name](value)
+        if problem is not None:
+            errors.append(CaseFieldError(index, name, problem))
     oracle = _oracle_error(index, raw.get("critical", False), raw.get("grader_type"))
     if oracle is not None:
         errors.append(oracle)
@@ -404,12 +433,13 @@ def validate_case_patch(raw: object) -> tuple[dict[str, Any], list[CaseFieldErro
     errors: list[CaseFieldError] = []
     patch: dict[str, Any] = {}
     for key, value in raw.items():
-        if key == "case_key":
-            errors.append(CaseFieldError(None, "case_key", "immutable"))
-        elif not isinstance(key, str) or key not in _PATCHABLE_FIELDS:
+        checker = _FIELD_CHECKERS.get(key)
+        if checker is None:
             errors.append(CaseFieldError(None, None, "unknown_field"))
+        elif _IMMUTABLE_FIELDS.get(key, False):
+            errors.append(CaseFieldError(None, key, "immutable"))
         else:
-            problem = _field_problem(key, value)
+            problem = checker(value)
             if problem is not None:
                 errors.append(CaseFieldError(None, key, problem))
             else:
@@ -444,14 +474,14 @@ def _load_suite(
     suite: EvaluationSuite | None = result.scalars().one_or_none()
     if suite is None:
         raise SuiteNotFoundError("evaluation suite not found")
-    if suite.purpose == PURPOSE_FINAL and role not in FINAL_SUITE_CONTENT_ROLES:
+    if _PURPOSE_IS_SEALED.get(suite.purpose, True) and role not in FINAL_SUITE_CONTENT_ROLES:
         raise FinalSuiteContentRestrictedError("final suite content is restricted")
     return suite
 
 
 def _is_duplicate_key_violation(exc: IntegrityError) -> bool:
     diag = getattr(exc.orig, "diag", None)
-    if getattr(diag, "constraint_name", None) == _UNIQUE_CASE_KEY_CONSTRAINT:
+    if getattr(diag, "constraint_name", None) in _DUPLICATE_KEY_CONSTRAINTS:
         return True
     return "evaluation_cases.suite_id, evaluation_cases.case_key" in str(exc.orig)
 
@@ -475,7 +505,7 @@ def import_cases(
     if not 1 <= len(cases) <= MAX_BATCH_SIZE:
         raise ValueError("cases must hold 1..500 entries")
     suite = _load_suite(session, context, project_id, suite_id, role=role, for_update=True)
-    if suite.status != "draft":
+    if not _STATUS_ALLOWS_WRITES.get(suite.status, False):
         raise SuiteLockedError("evaluation suite is locked")
 
     keys = [case.case_key for case in cases]
@@ -627,7 +657,7 @@ def update_case(
     if not patch or not set(patch) <= _PATCHABLE_FIELDS:
         raise ValueError("patch must name 1+ mutable fields")
     suite = _load_suite(session, context, project_id, suite_id, role=role, for_update=True)
-    if suite.status != "draft":
+    if not _STATUS_ALLOWS_WRITES.get(suite.status, False):
         raise SuiteLockedError("evaluation suite is locked")
     case = _fetch_case(session, context, suite_id, case_id, for_update=True)
 

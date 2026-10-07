@@ -1713,6 +1713,594 @@ def test_k1_no_delete_path_exists() -> None:
     )
 
 
+# -- mutation survivors: edges the first round did not pin ------------------------
+
+
+def _chunked(base: str, path: str, body: bytes) -> _Http:
+    parsed = urllib.parse.urlparse(base)
+    conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=60)
+    try:
+        conn.request(
+            "POST",
+            path,
+            body=iter([body[i : i + 65536] for i in range(0, len(body), 65536)]),
+            headers={"X-Test-Principal": "evaluator", "Content-Type": "application/json"},
+            encode_chunked=True,
+        )
+        response = conn.getresponse()
+        return _Http(response.status, response.read())
+    finally:
+        conn.close()
+
+
+def _body_of_size(total: int) -> bytes:
+    head = b'{"cases": [], "pad": "'
+    tail = b'"}'
+    return head + b"a" * (total - len(head) - len(tail)) + tail
+
+
+def test_s1_body_cap_boundary_is_exact_for_declared_and_chunked_bodies() -> None:
+    suite = _seed_suite()
+    cap = routes.MAX_BODY_BYTES
+    path = _path(suite)
+    for label, send in (
+        ("declared length", lambda body: _request(_base(), "POST", path, raw=body)),
+        ("chunked, no length", lambda body: _chunked(_base(), path, body)),
+    ):
+        at = send(_body_of_size(cap))
+        over = send(_body_of_size(cap + 1))
+        check(
+            "N1",
+            f"{label}: a body of exactly the cap is read (refused for its shape, not its size)",
+            at.status == 400 and at.json()["detail"] != "body_too_large",
+        )
+        check(
+            "N1",
+            f"{label}: one byte over the cap -> body_too_large",
+            over.status == 400
+            and over.json()["detail"] in ("body_too_large", "invalid_request")
+            and "body_too_large" in over.body.decode(),
+        )
+
+
+def test_s1_json_null_is_a_legal_value_and_non_finite_floats_are_refused() -> None:
+    result = _single(input_json={"a": None, "b": [None, True, False, 0, 1.5], "c": {"d": None}})
+    check(
+        "V1",
+        "null / booleans / numbers inside a payload are stored",
+        result.status == 201 and result.json()["items"][0]["input_json"]["a"] is None,
+    )
+    for bad in (float("inf"), float("-inf"), float("nan")):
+        case, errors = store.validate_case_input(_case("x", input_json={"a": bad}), 3)
+        check(
+            "V1",
+            f"{bad} inside a payload is invalid_value (direct call)",
+            case is None and errors == [store.CaseFieldError(3, "input_json", "invalid_value")],
+        )
+    case, errors = store.validate_case_input(_case("x", input_json={"a": {1, 2}}), 0)
+    check(
+        "V1",
+        "a non-JSON type inside a payload is invalid_type",
+        errors == [store.CaseFieldError(0, "input_json", "invalid_type")],
+    )
+    case, errors = store.validate_case_input(_case("x", input_json={1: "a"}), 0)
+    check(
+        "V1",
+        "a non-string key is invalid_value",
+        errors == [store.CaseFieldError(0, "input_json", "invalid_value")],
+    )
+
+
+def test_s1_field_names_are_matched_exactly() -> None:
+    suite = _seed_suite()
+    for variant in ("Category", " category", "category ", "CASE_KEY", "Critical"):
+        result = _import(suite, [_case("n1", **{variant: "x"})])
+        check(
+            "V1",
+            f"import key {variant!r} is an unknown field",
+            result.status == 400 and (0, None, "unknown_field") in _errors(result),
+        )
+    check("V1", "nothing was inserted by those", len(_rows(suite)) == 0)
+    check(
+        "V1",
+        "an object with only a variant of case_key still reports case_key missing",
+        (0, "case_key", "required")
+        in _errors(
+            _import(
+                suite,
+                [{k: v for k, v in _case("n2").items() if k != "case_key"} | {"Case_Key": "n2"}],
+            )
+        ),
+    )
+    _import(suite, [_case("p1")])
+    case_id = _rows(suite)[0].id
+    path = _path(suite, f"/{case_id}")
+    for variant in ("Category", " category", "CATEGORY"):
+        result = _request(_base(), "PATCH", path, payload={variant: "x"})
+        check(
+            "E1",
+            f"patch key {variant!r} -> unknown_field",
+            result.status == 400 and _errors(result) == [(None, None, "unknown_field")],
+        )
+    for variant in ("Case_Key", " case_key", "CASE_KEY"):
+        result = _request(_base(), "PATCH", path, payload={variant: "x"})
+        check(
+            "E1",
+            f"patch key {variant!r} is unknown (only the exact name is immutable)",
+            result.status == 400 and _errors(result) == [(None, None, "unknown_field")],
+        )
+    check("E1", "nothing changed", _rows(suite)[0].category == "critical side-effect prevention")
+
+
+def test_s1_patch_accepts_every_mutable_field_at_once() -> None:
+    suite = _seed_suite()
+    _import(suite, [_case("all")])
+    case_id = _rows(suite)[0].id
+    everything = {
+        "category": "c2",
+        "severity": "low",
+        "critical": True,
+        "language": "fr",
+        "group_key": "g2",
+        "input_json": {"i": 1},
+        "expected_json": {"e": 1},
+        "grader_type": "state_transition",
+        "grader_config_json": {"g": 1},
+        "weight": 9,
+    }
+    check(
+        "E1", "the test names every mutable field", set(everything) == set(store._PATCHABLE_FIELDS)
+    )
+    result = _request(_base(), "PATCH", _path(suite, f"/{case_id}"), payload=everything)
+    check(
+        "E1",
+        "patching all mutable fields at once -> 200",
+        result.status == 200 and all(result.json()[k] == v for k, v in everything.items()),
+    )
+
+
+def test_s1_direct_store_guards() -> None:
+    from types import SimpleNamespace
+
+    ctx: Any = SimpleNamespace(organization_id=_ORG)
+    suite = _seed_suite()
+    good, _ = store.validate_case_input(_case("d1"), 0)
+    kwargs = dict(
+        project_id=_PROJECT,
+        suite_id=suite,
+        role=Role.EVALUATOR,
+        actor_type="user",
+        actor_id="a",
+        request_id="r",
+    )
+
+    def raises(fn: Any, error: type[BaseException]) -> bool:
+        with Session(ENGINE) as session:
+            try:
+                fn(session)
+            except error:
+                return True
+            except BaseException:  # noqa: BLE001
+                return False
+            return False
+
+    check(
+        "N1",
+        "import_cases refuses an empty batch",
+        raises(lambda s: store.import_cases(s, ctx, cases=[], **kwargs), ValueError),
+    )
+    check(
+        "N1",
+        "import_cases refuses 501 cases",
+        raises(lambda s: store.import_cases(s, ctx, cases=[good] * 501, **kwargs), ValueError),
+    )
+    check(
+        "X1",
+        "non-UUID ids are a not-found, never a query",
+        raises(
+            lambda s: store.get_case(
+                s,
+                ctx,
+                project_id=_PROJECT,
+                suite_id=str(suite),
+                case_id=uuid.uuid4(),
+                role=Role.EVALUATOR,
+            ),
+            store.SuiteNotFoundError,
+        ),
+    )
+    check(
+        "X1",
+        "non-UUID project id is a not-found",
+        raises(
+            lambda s: store.get_case(
+                s,
+                ctx,
+                project_id=str(_PROJECT),
+                suite_id=suite,
+                case_id=uuid.uuid4(),
+                role=Role.EVALUATOR,
+            ),
+            store.SuiteNotFoundError,
+        ),
+    )
+    check(
+        "X1",
+        "non-UUID case id is a not-found",
+        raises(
+            lambda s: store.get_case(
+                s, ctx, project_id=_PROJECT, suite_id=suite, case_id="nope", role=Role.EVALUATOR
+            ),
+            store.CaseNotFoundError,
+        ),
+    )
+    patch_kwargs = dict(
+        project_id=_PROJECT,
+        suite_id=suite,
+        case_id=uuid.uuid4(),
+        role=Role.EVALUATOR,
+        actor_type="user",
+        actor_id="a",
+        request_id="r",
+    )
+    check(
+        "E1",
+        "update_case refuses an empty patch",
+        raises(lambda s: store.update_case(s, ctx, patch={}, **patch_kwargs), ValueError),
+    )
+    check(
+        "E1",
+        "update_case refuses a non-mutable field (case_key)",
+        raises(
+            lambda s: store.update_case(s, ctx, patch={"case_key": "x"}, **patch_kwargs), ValueError
+        ),
+    )
+    check(
+        "E1",
+        "update_case refuses a mix of mutable and unknown fields",
+        raises(
+            lambda s: store.update_case(
+                s, ctx, patch={"category": "x", "bogus": 1}, **patch_kwargs
+            ),
+            ValueError,
+        ),
+    )
+    check(
+        "P1",
+        "list_cases refuses limit 0 / 501 / bool",
+        all(
+            raises(
+                lambda s, v=v: store.list_cases(
+                    s,
+                    ctx,
+                    project_id=_PROJECT,
+                    suite_id=suite,
+                    role=Role.EVALUATOR,
+                    limit=v,
+                    after=None,
+                ),
+                ValueError,
+            )
+            for v in (0, 501, True)
+        ),
+    )
+    check(
+        "P1",
+        "list_cases accepts limit 1 and 500",
+        not raises(
+            lambda s: store.list_cases(
+                s,
+                ctx,
+                project_id=_PROJECT,
+                suite_id=suite,
+                role=Role.EVALUATOR,
+                limit=1,
+                after=None,
+            ),
+            ValueError,
+        )
+        and not raises(
+            lambda s: store.list_cases(
+                s,
+                ctx,
+                project_id=_PROJECT,
+                suite_id=suite,
+                role=Role.EVALUATOR,
+                limit=500,
+                after=None,
+            ),
+            ValueError,
+        ),
+    )
+
+
+def test_s1_duplicates_are_refused_before_any_insert() -> None:
+    from types import SimpleNamespace
+
+    ctx: Any = SimpleNamespace(organization_id=_ORG)
+    suite = _seed_suite()
+    case_a, _ = store.validate_case_input(_case("same"), 0)
+    kwargs = dict(
+        project_id=_PROJECT,
+        suite_id=suite,
+        role=Role.EVALUATOR,
+        actor_type="user",
+        actor_id="a",
+        request_id="r",
+    )
+
+    class _CountingSession(Session):
+        adds = 0
+
+        def add_all(self, instances: Any) -> None:
+            _CountingSession.adds += 1
+            super().add_all(instances)
+
+    def run(cases: list[Any]) -> str:
+        _CountingSession.adds = 0
+        with _CountingSession(ENGINE) as session:
+            try:
+                store.import_cases(session, ctx, cases=cases, **kwargs)
+                session.commit()
+                return "ok"
+            except store.DuplicateCaseKeyError:
+                return "duplicate"
+            finally:
+                session.rollback()
+
+    check(
+        "B1",
+        "a repeated key inside a batch is refused before add_all",
+        run([case_a, case_a]) == "duplicate" and _CountingSession.adds == 0,
+    )
+    check(
+        "B1",
+        "the first import of that key works",
+        run([case_a]) == "ok" and _CountingSession.adds == 1,
+    )
+    check(
+        "B1",
+        "an existing key is refused before add_all",
+        run([case_a]) == "duplicate" and _CountingSession.adds == 0,
+    )
+    with Session(ENGINE) as session:
+        session.add(
+            store.EvaluationCaseRecord(
+                id=uuid.uuid4(),
+                organization_id=_OTHER_ORG,
+                project_id=_PROJECT,
+                suite_id=suite,
+                case_key="planted",
+                category="c",
+                severity="low",
+                critical=False,
+                language="en",
+                group_key="g",
+                input_json={},
+                expected_json={"a": 1},
+                grader_type="exact_match",
+                grader_config_json={},
+                weight=1.0,
+                created_by="x",
+                created_at=_NOW,
+                updated_at=_NOW,
+            )
+        )
+        session.commit()
+    planted, _ = store.validate_case_input(_case("planted"), 0)
+    check(
+        "X1",
+        "the existing-key lookup is scoped to the caller's organization: another tenant's row with the same key is not 'seen' by it (the unique key then catches it on flush)",
+        run([planted]) == "duplicate" and _CountingSession.adds == 1,
+    )
+
+
+def test_s1_the_race_path_maps_unique_violations_and_nothing_else() -> None:
+    from types import SimpleNamespace
+
+    from sqlalchemy.exc import IntegrityError
+
+    def exc(orig: Any) -> IntegrityError:
+        return IntegrityError("stmt", {}, orig)
+
+    class _Diag:
+        constraint_name = "uq_evaluation_cases_suite_id_case_key"
+
+    class _Pg(Exception):
+        diag = _Diag()
+
+    class _OtherDiag:
+        constraint_name = "ck_something_else"
+
+    class _PgOther(Exception):
+        diag = _OtherDiag()
+
+    check(
+        "B1",
+        "a Postgres unique violation on the case key is a duplicate",
+        store._is_duplicate_key_violation(exc(_Pg())) is True,
+    )
+    check(
+        "B1",
+        "a Postgres violation of another constraint is not",
+        store._is_duplicate_key_violation(exc(_PgOther("x"))) is False,
+    )
+    check(
+        "B1",
+        "a SQLite unique failure on suite_id, case_key is a duplicate",
+        store._is_duplicate_key_violation(
+            exc(
+                Exception(
+                    "UNIQUE constraint failed: evaluation_cases.suite_id, evaluation_cases.case_key"
+                )
+            )
+        )
+        is True,
+    )
+    check(
+        "B1",
+        "an unrelated integrity error is not",
+        store._is_duplicate_key_violation(
+            exc(Exception("NOT NULL constraint failed: evaluation_cases.category"))
+        )
+        is False,
+    )
+
+    ctx: Any = SimpleNamespace(organization_id=_ORG)
+    suite = _seed_suite()
+    kwargs = dict(
+        project_id=_PROJECT,
+        suite_id=suite,
+        role=Role.EVALUATOR,
+        actor_type="user",
+        actor_id="a",
+        request_id="r",
+    )
+    case_a, _ = store.validate_case_input(_case("raced"), 0)
+    with Session(ENGINE) as session:
+        store.import_cases(session, ctx, cases=[case_a], **kwargs)
+        session.commit()
+    original = store.execute_tenant_scoped
+
+    def blind_to_existing(session: Any, organization_id: Any, statement: Any) -> Any:
+        if "case_key IN" in str(statement) or "case_key in" in str(statement).lower():
+            return SimpleNamespace(first=lambda: None)
+        return original(session, organization_id, statement)
+
+    store.execute_tenant_scoped = blind_to_existing
+    try:
+        with Session(ENGINE) as session:
+            try:
+                store.import_cases(session, ctx, cases=[case_a], **kwargs)
+                outcome = "inserted"
+            except store.DuplicateCaseKeyError:
+                outcome = "duplicate"
+            finally:
+                session.rollback()
+    finally:
+        store.execute_tenant_scoped = original
+    check(
+        "B1",
+        "a duplicate that slips past the lookup is still a DuplicateCaseKeyError (race path)",
+        outcome == "duplicate",
+    )
+    bad = store.ValidatedCase(**{**case_a.__dict__, "case_key": "nullcat", "category": None})
+    with Session(ENGINE) as session:
+        try:
+            store.import_cases(session, ctx, cases=[bad], **kwargs)
+            outcome = "inserted"
+        except store.DuplicateCaseKeyError:
+            outcome = "mislabelled-as-duplicate"
+        except IntegrityError:
+            outcome = "integrity"
+        finally:
+            session.rollback()
+    check(
+        "B1",
+        "a non-unique integrity error is re-raised, never reported as a duplicate",
+        outcome == "integrity",
+    )
+
+
+def test_s1_final_restricted_handlers_return_403_even_if_the_store_raises() -> None:
+    suite = _seed_suite()
+    _import(suite, [_case("fr")])
+    case_id = _rows(suite)[0].id
+
+    def boom(*args: Any, **kwargs: Any) -> Any:
+        raise store.FinalSuiteContentRestrictedError("x")
+
+    saved = (routes.import_cases, routes.update_case)
+    routes.import_cases, routes.update_case = boom, boom
+    try:
+        posted = _import(suite, [_case("fr2")])
+        patched = _request(_base(), "PATCH", _path(suite, f"/{case_id}"), payload={"category": "x"})
+    finally:
+        routes.import_cases, routes.update_case = saved
+    check(
+        "F1",
+        "import maps a restricted-content refusal to 403 final_suite_content_restricted",
+        posted.status == 403 and posted.json() == {"detail": "final_suite_content_restricted"},
+    )
+    check(
+        "F1",
+        "patch maps it to 403 final_suite_content_restricted",
+        patched.status == 403 and patched.json() == {"detail": "final_suite_content_restricted"},
+    )
+
+
+def test_s1_write_paths_lock_the_suite_row_and_read_paths_do_not() -> None:
+    """SQLite cannot show a row lock, so the statements the store sends are
+    compiled for Postgres and inspected: writes select the suite (and the case
+    being edited) FOR UPDATE; reads never do."""
+    from types import SimpleNamespace
+
+    from sqlalchemy.dialects import postgresql
+
+    ctx: Any = SimpleNamespace(organization_id=_ORG)
+    suite = _seed_suite()
+    original = store.execute_tenant_scoped
+    seen: list[str] = []
+
+    def spy(session: Any, organization_id: Any, statement: Any) -> Any:
+        seen.append(str(statement.compile(dialect=postgresql.dialect())))
+        return original(session, organization_id, statement)
+
+    def locks(sql: str) -> bool:
+        return "FOR UPDATE" in sql
+
+    store.execute_tenant_scoped = spy
+    try:
+        good, _ = store.validate_case_input(_case("lk"), 0)
+        common = dict(project_id=_PROJECT, suite_id=suite, role=Role.EVALUATOR)
+        with Session(ENGINE) as session:
+            records = store.import_cases(
+                session,
+                ctx,
+                cases=[good],
+                actor_type="user",
+                actor_id="a",
+                request_id="r",
+                **common,
+            )
+            session.commit()
+            case_id = records[0].id
+        suite_sql = [q for q in seen if "FROM evaluation_suites" in q]
+        check(
+            "L1", "import selects the suite FOR UPDATE", len(suite_sql) == 1 and locks(suite_sql[0])
+        )
+        seen.clear()
+        with Session(ENGINE) as session:
+            store.update_case(
+                session,
+                ctx,
+                case_id=case_id,
+                patch={"category": "z"},
+                actor_type="user",
+                actor_id="a",
+                request_id="r",
+                **common,
+            )
+            session.commit()
+        suite_sql = [q for q in seen if "FROM evaluation_suites" in q]
+        case_sql = [q for q in seen if "FROM evaluation_cases" in q]
+        check(
+            "L1", "edit selects the suite FOR UPDATE", len(suite_sql) == 1 and locks(suite_sql[0])
+        )
+        check("L1", "edit selects the case FOR UPDATE", len(case_sql) == 1 and locks(case_sql[0]))
+        seen.clear()
+        with Session(ENGINE) as session:
+            store.get_case(session, ctx, case_id=case_id, **common)
+            store.list_cases(session, ctx, limit=10, after=None, **common)
+        check(
+            "L1",
+            "reads take no row lock at all",
+            len(seen) >= 3 and not any(locks(q) for q in seen),
+        )
+    finally:
+        store.execute_tenant_scoped = original
+
+
 # -- offline migration SQL ---------------------------------------------------------------------------------------
 
 

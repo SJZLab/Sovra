@@ -127,9 +127,6 @@ def _reject_constant(name: str) -> Any:
 
 
 async def _read_json(request: Request) -> object:
-    declared = request.headers.get("content-length")
-    if declared is not None and declared.isdigit() and int(declared) > MAX_BODY_BYTES:
-        raise _BodyError("body_too_large")
     chunks: list[bytes] = []
     total = 0
     async for chunk in request.stream():
