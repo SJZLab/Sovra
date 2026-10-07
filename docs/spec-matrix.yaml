@@ -5764,16 +5764,54 @@ FTF-04A21:
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_04a21.spec.ts
 FTF-04A22:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Mandate editor and conflict-resolution UI
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-0408, FTF-04A01,
-    FTF-04A21
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-0408,
+    FTF-04A01, FTF-04A21 (all CERTIFIED, confirmed before relying on them). Real component
+    apps/web/components/target-application/mandate_editor_and_conflict_resolution_ui.tsx: a
+    structured Section 7A.6 mandate editor (business purpose, allowed responsibilities,
+    critical behaviors, required tools, tool side-effect/confirmation policy, required
+    context/data classes, supported languages, expected outputs/schemas,
+    escalation/abstention behavior, privacy/security profile, latency SLO,
+    throughput/concurrency target, cost-per-success ceiling, critical safety/reliability
+    gates) plus a forbidden-actions conflict view, built on the already-CERTIFIED FTF-04A19
+    mandate_json/forbidden_actions_json columns and FTF-0407's own live /requirements route
+    -- no independent schema change, per this task's own database_changes clause.
+    Desired/observed/enforced (Section 7A.7/66.4): desired = forbidden_actions_json.actions[];
+    observed (repository contract) = the live /requirements view's own
+    is_critical/requires_confirmation; enforced = that same view's own runtime_enforced.
+    evaluateForbiddenAction is a pure function of those two live sources; mandateLockBlockers
+    reports only the two genuinely blocking reasons (not_declared_critical,
+    not_runtime_enforced) and deliberately excludes not_found (no discovered tool to
+    disprove enforcement against yet -- disclosed, not asserted either way) and enforced.
+    Negative acceptance ("User override cannot declare a dangerous runtime safe; unresolved
+    policy conflicts block lock"): no control in the component writes a
+    resolved/acknowledged/safe flag; the conflict is recomputed from `requirements` on every
+    render, saving a mandate edit never touches `requirements`, and the only way a conflict
+    clears is a fresh, explicit, read-only "Refresh enforcement status" GET returning
+    genuinely different data. tests/apps/web/tests/ftf_04a22.spec.ts: 31 tests (pure-function
+    desired/observed/enforced evaluation, component load/edit/save/add/remove forbidden
+    action, read-only gating by manifest status, and the three negative-acceptance tests
+    above). PRE-SUBMIT SELF-ATTACK (docs/operations/routines.md STEP 5b): 5 production faults
+    injected and shown RED, then reverted byte-identical -- (A) mandateLockBlockers always
+    returning [] (4 failed), (B) declaredCritical hardcoded true (3 failed), (C) handleSave
+    additively re-fetching /requirements after a successful PATCH (1 failed, the core
+    negative-acceptance guarantee), (D) editable hardcoded true regardless of manifest status
+    (2 failed), (E) the duplicate-forbidden-action guard removed (1 failed). Full vitest
+    142/142 (0 regressions), typecheck/lint/format:check clean. No .github/workflows/ci.yml
+    change needed -- the existing `pnpm exec vitest run` step already discovers this new spec
+    file. Not self-certified (Law 4): certification_state: PROVISIONAL / proof_state:
+    L1-PROVEN, awaiting independent Control-plane L2 review and a real CI run.
+    product_truth_check.py: proving_symbol stays blank -- disclosed, no Next.js app/ page tree
+    exists yet to mount this component (FTF-H029), same class as FTF-0408/FTF-04A21's own
+    disclosed scope boundary.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: apps/web/tests/ftf_04a22.spec.ts
 FTF-04A23:
   certification_state: NONE
   criticality: MUST
