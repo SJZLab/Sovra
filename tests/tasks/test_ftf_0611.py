@@ -475,9 +475,7 @@ def test_fine_grained_tolerance_boundaries() -> None:
     check(
         CID,
         "abs_tol 1e-12: the value exactly at the boundary passes",
-        grade(
-            "1.000000000001", expected="1", abs_tol="0.000000000001", rel_tol="0", dec=12
-        ).passed,
+        grade("1.000000000001", expected="1", abs_tol="0.000000000001", rel_tol="0", dec=12).passed,
     )
     r = grade("1.000000000002", expected="1", abs_tol="0.000000000001", rel_tol="0", dec=12)
     check(
@@ -488,9 +486,7 @@ def test_fine_grained_tolerance_boundaries() -> None:
     check(
         CID,
         "rel_tol 1e-6 against a large expected: the boundary deviation passes",
-        grade(
-            "1000001", expected="1000000", abs_tol="0", rel_tol="0.000001", dec=0
-        ).passed,
+        grade("1000001", expected="1000000", abs_tol="0", rel_tol="0.000001", dec=0).passed,
     )
     r2 = grade("1000002", expected="1000000", abs_tol="0", rel_tol="0.000001", dec=0)
     check(
