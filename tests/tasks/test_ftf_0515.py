@@ -1217,6 +1217,99 @@ def test_issue_id_identity_depends_on_each_identity_field() -> None:
     check("FTF-0515", "ids differ for digest vs no digest", extra("a" * 64) != extra(None))
 
 
+def test_two_row_issues_with_no_index_at_different_positions_both_survive() -> None:
+    from workers.data.record_schema_validator import RecordValidationIssue
+
+    bad = RecordSchemaValidationReport(
+        issues=(
+            RecordValidationIssue(batch_position=0, record_index=None, code="c", message="m"),
+            RecordValidationIssue(batch_position=1, record_index=None, code="c", message="m"),
+        ),
+        accepted_batch_positions=(),
+        rejected_batch_positions=(0, 1),
+    )
+    report = evaluate_quality(_runs({"record_schema": bad}))
+    found = [i for i in report.issues if i.reason_code == "c"]
+    check(
+        "FTF-0515-F1",
+        "two row issues with the same code/message/digest at different "
+        "positions (no record_index on either) both survive",
+        len(found) == 2,
+    )
+    check("FTF-0515-F1", "their issue ids are distinct", len({i.issue_id for i in found}) == 2)
+    check(
+        "FTF-0515-F1",
+        "each keeps its own batch position",
+        {f.batch_positions for f in found} == {(0,), (1,)},
+    )
+
+
+def test_extra_issues_differing_only_in_category_or_reason_code_get_distinct_ids() -> None:
+    by_category = evaluate_quality(
+        _runs(),
+        extra_issues=[
+            QualityIssueInput(
+                detector="x",
+                category="pii_secrets",
+                severity="warning",
+                reason_code="r",
+                message="m",
+                batch_positions=(0,),
+                record_indices=(0,),
+                evidence_digest="d" * 64,
+            ),
+            QualityIssueInput(
+                detector="x",
+                category="tokenization",
+                severity="warning",
+                reason_code="r",
+                message="m",
+                batch_positions=(0,),
+                record_indices=(0,),
+                evidence_digest="d" * 64,
+            ),
+        ],
+    )
+    found = [i for i in by_category.issues if i.reason_code == "r"]
+    check(
+        "FTF-0515-F1",
+        "two extra issues differing only in category get distinct ids",
+        len(found) == 2 and len({i.issue_id for i in found}) == 2,
+    )
+
+    by_reason = evaluate_quality(
+        _runs(),
+        extra_issues=[
+            QualityIssueInput(
+                detector="x",
+                category="pii_secrets",
+                severity="warning",
+                reason_code="r1",
+                message="m",
+                batch_positions=(0,),
+                record_indices=(0,),
+                evidence_digest="d" * 64,
+            ),
+            QualityIssueInput(
+                detector="x",
+                category="pii_secrets",
+                severity="warning",
+                reason_code="r2",
+                message="m",
+                batch_positions=(0,),
+                record_indices=(0,),
+                evidence_digest="d" * 64,
+            ),
+        ],
+    )
+    found2 = [i for i in by_reason.issues if i.detector == "x" and i.category == "pii_secrets"]
+    check(
+        "FTF-0515-F1",
+        "two extra issues differing only in reason_code get distinct ids",
+        len(found2) == 2 and len({i.issue_id for i in found2}) == 2,
+    )
+
+
 def test_invalid_report_detector_is_not_listed_as_reported() -> None:
     report = evaluate_quality(_runs({"pii_secrets": object()}))
     check(
