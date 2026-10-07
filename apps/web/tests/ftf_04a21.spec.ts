@@ -314,6 +314,76 @@ test("lineDiff marks only the changed lines", () => {
   expect(lineDiff("x", "x").every((line) => line.kind === "same")).toBe(true);
 });
 
+test("D3: lineDiff marks a line appended after the last server line as added, never dropped", () => {
+  expect(lineDiff("a", "a\nb")).toEqual([
+    { kind: "same", text: "a" },
+    { kind: "added", text: "b" },
+  ]);
+  expect(lineDiff("a\nb", "a\nb\nc\nd")).toEqual([
+    { kind: "same", text: "a" },
+    { kind: "same", text: "b" },
+    { kind: "added", text: "c" },
+    { kind: "added", text: "d" },
+  ]);
+});
+
+test("D3 (UI): appending a line after the server's last line shows it as an added diff line", async () => {
+  await renderLoaded();
+  edit("runtime_dependencies_json", JSON.stringify({ python: ">=3.11" }, null, 2) + "\nextra");
+  const diff = screen.getByTestId("field-diff-runtime_dependencies_json");
+  const addedLines = Array.from(diff.querySelectorAll('[data-diff="added"]')).map(
+    (node) => node.textContent,
+  );
+  expect(addedLines.some((text) => text?.includes("extra"))).toBe(true);
+  expect(diff.querySelector('[data-diff="removed"]')).toBeNull();
+});
+
+test("P7: draftStorageKey is unique per organization, project and manifest", () => {
+  const base = draftStorageKey(ORG_ID, PROJECT_ID, MANIFEST_ID);
+  const otherOrg = draftStorageKey("org-2", PROJECT_ID, MANIFEST_ID);
+  const otherProject = draftStorageKey(ORG_ID, "project-2", MANIFEST_ID);
+  const otherManifest = draftStorageKey(ORG_ID, PROJECT_ID, "manifest-2");
+  const keys = new Set([base, otherOrg, otherProject, otherManifest]);
+  expect(keys.size).toBe(4);
+});
+
+test("P7 (UI): a draft stored for one manifest never appears when rendering a different manifest", async () => {
+  const OTHER_MANIFEST_ID = "99999999-9999-9999-9999-999999999999";
+  storage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({ agent_name: { text: "manifest-a-draft", baseText: "support-agent" } }),
+  );
+  const otherManifest = manifestRecord({ id: OTHER_MANIFEST_ID });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const parsed = new URL(url);
+      const method = init?.method ?? "GET";
+      if (parsed.pathname.endsWith("/evidence") && method === "GET") {
+        return jsonResponse(200, []);
+      }
+      if (parsed.pathname.endsWith(`/manifests/${OTHER_MANIFEST_ID}`) && method === "GET") {
+        return jsonResponse(200, otherManifest);
+      }
+      return jsonResponse(404, { detail: "not_found" });
+    }),
+  );
+  render(
+    createElement(ManifestReviewEditUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      manifestId: OTHER_MANIFEST_ID,
+      storage,
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+  expect(screen.queryByTestId("draft-restored")).toBeNull();
+  expect(input("agent_name").value).toBe("support-agent");
+  // the manifest-A draft is untouched in storage, scoped to its own key
+  expect(storage.getItem(STORAGE_KEY)).toContain("manifest-a-draft");
+});
+
 test("Save draft PATCHes only the changed fields with parsed values and clears the draft", async () => {
   await renderLoaded();
   edit("agent_name", "renamed-agent");
@@ -427,6 +497,25 @@ test("a draft based on an older server value is a conflict that blocks save and 
   expect(callsOf("PATCH")).toHaveLength(0);
   expect(saveButton().disabled).toBe(false);
   expect(lockButton().disabled).toBe(true);
+});
+
+test("C6: typing into a conflicting field keeps it a conflict and Lock stays blocked", async () => {
+  storage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({ agent_name: { text: "my-name", baseText: "older-server-name" } }),
+  );
+  await renderLoaded();
+  expect(screen.getByTestId("field-state-agent_name").textContent).toBe("conflict");
+  // the user keeps typing without choosing "keep mine" or "take server's" first
+  edit("agent_name", "my-name-v2");
+  expect(input("agent_name").value).toBe("my-name-v2");
+  expect(screen.getByTestId("field-state-agent_name").textContent).toBe("conflict");
+  expect(screen.getByTestId("field-conflict-mine-agent_name")).toBeTruthy();
+  expect(lockButton().disabled).toBe(true);
+  expect(screen.getByTestId("lock-blockers").textContent).toContain(
+    "agent_name: unresolved conflict",
+  );
+  expect(callsOf("PATCH")).toHaveLength(0);
 });
 
 test("Take server's drops the conflicting draft and clears the lock blocker", async () => {
@@ -629,4 +718,16 @@ test("clearing the agent name saves null, never an empty string", async () => {
   fireEvent.click(saveButton());
   await waitFor(() => expect(callsOf("PATCH")).toHaveLength(1));
   expect(callsOf("PATCH")[0]!.body).toEqual({ agent_name: null });
+});
+
+test("S8: a JSON field edited to the literal null is sent as an explicit null in the PATCH body, not dropped", async () => {
+  await renderLoaded();
+  // runtime_dependencies_json starts non-null ({python: ">=3.11"}), so editing to "null" is a real change
+  edit("runtime_dependencies_json", "null");
+  expect(screen.getByTestId("field-state-runtime_dependencies_json").textContent).toBe("unsaved");
+  fireEvent.click(saveButton());
+  await waitFor(() => expect(callsOf("PATCH")).toHaveLength(1));
+  const body = callsOf("PATCH")[0]!.body as Record<string, unknown>;
+  expect("runtime_dependencies_json" in body).toBe(true);
+  expect(body.runtime_dependencies_json).toBeNull();
 });
