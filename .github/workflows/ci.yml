@@ -1,6 +1,83 @@
 name: CI
 on: [pull_request]
+# One live verification per PR. A newer event on the same PR (new head, or the same head
+# re-delivered) supersedes the older run: its inputs (head, base/merge candidate, workflow)
+# are the current ones, so the older run is cancelled instead of finishing a stale answer.
+# Keyed by PR number, never by SHA: two PRs with the same head but different bases are
+# different merge candidates and keep separate runs. A superseded (cancelled) run gets no
+# ci-verdict at all, so it can never read as a pass; only the newest run's verdict counts.
+# Scope: this workflow only. Release/smoke workflows and Railway deploys are untouched.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
+  classify:
+    # Decides the verification scope from the PR's own change set (scripts/ci_policy.py,
+    # run from the BASE branch copy so the PR cannot rewrite its own scope rule). "tracker"
+    # = only tracker/record files changed (QUEUE.md, PROGRESS.md, docs/certifications/**,
+    # docs/progress/**, spec-matrix/tracker mirrors): the gate job still runs every check;
+    # only the service-backed *-integration jobs are skipped, because no integration test
+    # reads those files. Any other file, any doubt, any error = "full".
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      scope: ${{ steps.classify.outputs.scope }}
+      reason: ${{ steps.classify.outputs.reason }}
+      files_sha256: ${{ steps.classify.outputs.files_sha256 }}
+      focus: ${{ steps.classify.outputs.focus }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Use the base branch's policy script
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if ! git show "origin/${BASE_REF}:scripts/ci_policy.py" > "$RUNNER_TEMP/ci_policy.py" 2>/dev/null; then
+            echo "::warning::base has no scripts/ci_policy.py yet (bootstrap PR); using this PR's copy"
+            cp scripts/ci_policy.py "$RUNNER_TEMP/ci_policy.py"
+          fi
+      - name: Classify the change set
+        id: classify
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          EVENT: ${{ github.event_name }}
+          # Untrusted PR text goes through env, never interpolated into the script. It can only
+          # narrow a run to "focused", which ci-verdict always fails.
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python3 "$RUNNER_TEMP/ci_policy.py" classify --base "origin/${BASE_REF}" --event "$EVENT" --workflow .github/workflows/ci.yml
+
+  relay-policy:
+    # [relay] PRs only: one open PR per item (the oldest open PR owns it), no edits to
+    # Control-plane/governance files, no CERTIFIED flips, no log-only PRs. Base-branch copy.
+    if: startsWith(github.event.pull_request.title, '[relay]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Use the base branch's policy script
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if ! git show "origin/${BASE_REF}:scripts/ci_policy.py" > "$RUNNER_TEMP/ci_policy.py" 2>/dev/null; then
+            echo "::warning::base has no scripts/ci_policy.py yet (bootstrap PR); using this PR's copy"
+            cp scripts/ci_policy.py "$RUNNER_TEMP/ci_policy.py"
+          fi
+      - name: Relay policy
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          BASE_REF: ${{ github.base_ref }}
+          # Untrusted PR text goes through env, never interpolated into the script.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: python3 "$RUNNER_TEMP/ci_policy.py" relay-policy --base "origin/${BASE_REF}" --title "$PR_TITLE" --number "$PR_NUMBER" --repo "$REPO"
+
   gate:
     runs-on: ubuntu-latest
     steps:
@@ -431,7 +508,19 @@ jobs:
           out = pathlib.Path(os.environ["GITHUB_OUTPUT"])
           lst = pathlib.Path(os.environ["RUNNER_TEMP"]) / "mutation-tests.txt"
           if not tests:
-              print("mutation-gate: SKIPPED -- no changed tests/tasks/test_*.py and no tests/tasks/test_ftf_<id>.py for this PR's task ID(s); nothing to run mutants against.")
+              # A skip is only legitimate when there is nothing to mutate. Production Python
+              # changed with no task test to run the mutants against is a missing test, not a pass.
+              import sys
+              sys.path.insert(0, ".")
+              from scripts.mutation_gate import is_test_path, under_source_roots
+              prod = [f for f in git("diff", "--name-only", "--diff-filter=AMR", f"{base}...HEAD").split()
+                      if f.endswith(".py") and under_source_roots(f) and not is_test_path(f)]
+              if prod:
+                  print("::error::mutation-gate: production Python changed but this PR has no tests/tasks/test_*.py "
+                        "(changed, or tests/tasks/test_ftf_<id>.py for its task ID) to kill mutants with: "
+                        + ", ".join(prod) + ". Add the task test that exercises this code.")
+                  raise SystemExit(1)
+              print("mutation-gate: SKIPPED -- no production Python changed and no task tests; nothing to mutate.")
               with out.open("a") as fh:
                   fh.write("skip=true\n")
           else:
@@ -469,6 +558,8 @@ jobs:
     # this repo's interactive dev sandbox does not (Docker Hub's CDN is
     # blocked by that session's egress policy — see
     # docs/certifications/queue.md for FTF-0004's full repro).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' docker-local-stack-integration ')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -486,6 +577,8 @@ jobs:
     # own evidence already documents. That evidence was instead produced
     # locally against a directly-installed PostgreSQL 16 -- see this
     # task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' organization-workspace-schema-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -522,6 +615,8 @@ jobs:
     # dev sandbox has no container-registry egress; that evidence was
     # instead produced locally against a directly-installed PostgreSQL 16
     # -- see this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' audit-event-writer-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -559,6 +654,8 @@ jobs:
     # container-registry egress; that evidence was instead produced
     # locally against a directly-installed PostgreSQL 16 -- see this
     # task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' tenant-isolation-query-guards-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -598,6 +695,8 @@ jobs:
     # dev sandbox has no container-registry egress; that evidence was
     # instead produced locally against a directly-installed PostgreSQL 16
     # -- see this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' ftf-h003-cross-layer-isolation-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -637,6 +736,8 @@ jobs:
     # dev sandbox has no container-registry egress; that evidence was
     # instead produced locally against a directly-installed PostgreSQL 16
     # -- see this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' rbac-idor-security-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -681,6 +782,8 @@ jobs:
     # has no container-registry egress; that evidence was instead
     # produced locally against a directly-installed PostgreSQL 16 -- see
     # this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' litellm-connection-crud-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -726,6 +829,8 @@ jobs:
     # sandbox has no container-registry egress; that evidence was instead
     # produced locally against a directly-installed PostgreSQL 16 -- see
     # this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' litellm-access-guard-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -762,6 +867,8 @@ jobs:
     # tests/integration/test_ftf_0214_model_catalog.py. Same real
     # `services: postgres` container pattern as
     # litellm-access-guard-integration.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' model-catalog-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -809,6 +916,8 @@ jobs:
     # sandbox has no container-registry egress; that evidence was instead
     # produced locally against a directly-installed PostgreSQL 16 -- see
     # this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' trainable-artifact-schema-api-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -859,6 +968,8 @@ jobs:
     # dev sandbox has no container-registry egress; that evidence was
     # instead produced locally against a directly-installed PostgreSQL 16
     # -- see this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' project-schema-api-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -905,6 +1016,8 @@ jobs:
     # has no container-registry egress; this evidence was instead
     # produced locally against a directly-installed PostgreSQL 16 -- see
     # this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' project-security-profile-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -945,6 +1058,8 @@ jobs:
     # this one shells out to the `pg_dump`/`pg_restore`/`psql` client
     # binaries directly, so the runner (not just the service container)
     # needs a matching Postgres client installed.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' postgres-backup-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -983,6 +1098,8 @@ jobs:
     # hosted runner because it has real container-registry egress; this
     # repo's interactive dev sandbox does not (same reproducible 403
     # FTF-0004's own evidence already documents).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' storage-semantics-integration ')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1001,6 +1118,8 @@ jobs:
     # for this task). Same real container pattern as
     # storage-semantics-integration (this repo's interactive dev sandbox
     # has no container-registry egress; see that job's own comment).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' s3-minio-versioned-source-integration ')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1020,6 +1139,8 @@ jobs:
     # tests/tasks/test_ftf_0101.py itself discloses as insufficient for this
     # specific clause. No external service/container needed -- the real OP
     # runs in-process as its own real HTTP server.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' oidc-provider-integration ')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1048,6 +1169,8 @@ jobs:
     # dev sandbox has no container-registry egress; that evidence was
     # instead produced locally against a directly-installed PostgreSQL 16
     # -- see this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' license-acceptance-workflow-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1092,6 +1215,8 @@ jobs:
     # interactive dev sandbox has no container-registry egress; that
     # evidence was instead produced locally against a directly-installed
     # PostgreSQL 16 -- see this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' tool-schema-crud-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1142,6 +1267,8 @@ jobs:
     # FTF-0406/FTF-0407 gate steps above did not exist even though both
     # tasks were already CERTIFIED and merged -- the exact same class of
     # gap FTF-0405 previously fixed for FTF-0404 (commit 2bc435b).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' critical-behavior-requirements-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1191,6 +1318,8 @@ jobs:
     # dev sandbox has no container-registry egress; that evidence was
     # instead produced locally against a directly-installed PostgreSQL 16
     # -- see this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' budget-policy-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1243,6 +1372,8 @@ jobs:
     # egress; that evidence was instead produced locally against a
     # directly-installed PostgreSQL 16 -- see this task's
     # docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' cost-profile-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1282,6 +1413,8 @@ jobs:
     # real network, then starts that binary as a real local -dev server
     # the test itself spawns and tears down (no `services:` container
     # needed -- OpenBao's dev mode is a single self-contained process).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' secret-manager-integration ')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1319,6 +1452,8 @@ jobs:
     # dev sandbox has no container-registry egress; that evidence was
     # instead produced locally against a directly-installed PostgreSQL 16
     # -- see this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' tenant-isolation-suite-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1368,6 +1503,8 @@ jobs:
     # has no container-registry egress; that evidence was instead
     # produced locally against a directly-installed PostgreSQL 16 -- see
     # this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' model-version-schema-api-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1413,6 +1550,8 @@ jobs:
     # has no container-registry egress; that evidence was instead
     # produced locally against a directly-installed PostgreSQL 16 -- see
     # this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' api-load-test-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1463,6 +1602,8 @@ jobs:
     # produced locally against a directly-installed PostgreSQL 16 and a
     # locally-built OpenBao binary -- see this task's
     # docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' dataset-source-connection-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1520,6 +1661,8 @@ jobs:
     # locally against a directly-installed PostgreSQL 16 and a locally-
     # built OpenBao binary -- see this task's docs/certifications/queue.md
     # entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' target-application-connection-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1578,6 +1721,8 @@ jobs:
     # sandbox has no container-registry egress; that evidence was instead
     # produced locally against a directly-installed PostgreSQL 16 -- see
     # this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' target-source-snapshot-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1628,6 +1773,8 @@ jobs:
     # sandbox has no container-registry egress; that evidence was instead
     # produced locally against a directly-installed PostgreSQL 16 -- see
     # this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' github-repository-listing-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1677,6 +1824,8 @@ jobs:
     # sandbox has no container-registry egress; that evidence was instead
     # produced locally against a directly-installed PostgreSQL 16 -- see
     # this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' github-branch-ref-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1724,6 +1873,8 @@ jobs:
     # response body. No OpenBao needed -- this step never persists a
     # credential. Same real `services: postgres` container pattern as
     # github-branch-ref-integration.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' github-source-snapshot-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1769,6 +1920,8 @@ jobs:
     # sandbox has no container-registry egress; that evidence was instead
     # produced locally against a directly-installed PostgreSQL 16 -- see
     # this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' component-bindings-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1824,6 +1977,8 @@ jobs:
     # reachability dimension, not re-proving OpenBao, so a lighter, real
     # (never mocked) HTTP fixture is the right-sized proof here, disclosed
     # rather than silently reusing a heavier build for no added coverage.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' connection-validation-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1866,6 +2021,8 @@ jobs:
     # (409) -- tests/integration/test_ftf_0204_v1_models_discovery.py.
     # Same real-ephemeral-CA convention `connection-validation-
     # integration` immediately above already established.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' model-discovery-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1907,6 +2064,8 @@ jobs:
     # tests/integration/test_ftf_1201_registration_capability.py. Same
     # real-ephemeral-CA convention `connection-validation-integration`
     # above already established.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' litellm-registration-capability-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1947,6 +2106,8 @@ jobs:
     # logic (lockfile parsing, CVSS v3.1 scoring, policy-exception
     # validity) is proven separately, without live network, by the
     # `gate` job's own FTF-1506 step.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' dependency-scanning-integration ')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1980,6 +2141,8 @@ jobs:
     # a Docker Postgres image; that evidence was instead produced locally
     # against a directly-installed PostgreSQL 16 -- see this task's
     # docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' discovered-agent-candidate-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -2032,6 +2195,8 @@ jobs:
     # Docker Postgres image; that evidence was instead produced locally
     # against a directly-installed PostgreSQL 16 -- see this task's
     # docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' agent-manifest-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -2082,6 +2247,8 @@ jobs:
     # image; that evidence was instead produced locally against a
     # directly-installed PostgreSQL 16 -- see this task's
     # docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' manifest-evidence-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -2132,6 +2299,8 @@ jobs:
     # egress; that evidence was instead produced locally against a
     # directly-installed PostgreSQL 16 -- see this task's
     # docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' base-model-revision-digest-resolver-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -2184,6 +2353,8 @@ jobs:
     # Docker Postgres image; that evidence was instead produced locally
     # against a directly-installed PostgreSQL 16 -- see this task's
     # docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' database-api-trace-source-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -2235,6 +2406,8 @@ jobs:
     # Docker Postgres image; that evidence was instead produced locally
     # against a directly-installed PostgreSQL 16 -- see this task's
     # docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' evaluation-suite-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -2280,6 +2453,8 @@ jobs:
     # no container-registry egress for a Docker Postgres image; that
     # evidence was instead produced locally against a directly-installed
     # PostgreSQL 16 -- see this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' organization-gateway-policy-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -2323,6 +2498,8 @@ jobs:
     # repo's interactive dev sandbox has no container-registry egress; that
     # evidence was instead produced locally against a directly-installed
     # PostgreSQL 16 -- see this task's submission file).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' live-auth-path-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -2392,6 +2569,8 @@ jobs:
     # every run rather than trusting the image choice alone -- see
     # docs/spec-matrix.yaml's FTF-0902 entry and docs/certifications/
     # queue.md for the full evidence trail.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' network-policy-enforcement-integration ')
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -2436,6 +2615,8 @@ jobs:
     # image; that evidence was instead produced locally against a
     # directly-installed PostgreSQL 16 -- see this task's
     # docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' candidate-selection-integration ')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -2462,3 +2643,104 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real candidate-selection + persisted-audit evidence against the live database
         run: uv run python3 tests/integration/test_ftf_04a18_candidate_selection.py
+
+  ci-verdict:
+    # THE result to read for "CI is green" (merge-on-green, certification, Control plane).
+    # Fails on any failed or cancelled job, on any skipped job without a documented exemption
+    # (scripts/ci_policy.py skip_exemption: *-integration on a tracker-only change set;
+    # mutation-gate/relay-policy on non-[relay] PRs), and on any job missing from `needs`
+    # below (tests/unit/test_ci_policy.py also fails the gate if a job is left out). Writes an
+    # evidence record bound to merge candidate, head, base, workflow hash, change-set hash,
+    # runner image and every job result. Base-branch copy of the policy script.
+    # !cancelled(): runs after failed/skipped/timed-out jobs (a job timeout is judged here as
+    # a non-pass), but not in a run superseded by the concurrency group -- that run has no
+    # verdict at all, so it can never be read as a pass.
+    if: ${{ !cancelled() }}
+    needs:
+      - classify
+      - relay-policy
+      - gate
+      - mutation-gate
+      - docker-local-stack-integration
+      - organization-workspace-schema-integration
+      - audit-event-writer-integration
+      - tenant-isolation-query-guards-integration
+      - ftf-h003-cross-layer-isolation-integration
+      - rbac-idor-security-integration
+      - litellm-connection-crud-integration
+      - litellm-access-guard-integration
+      - model-catalog-integration
+      - trainable-artifact-schema-api-integration
+      - project-schema-api-integration
+      - project-security-profile-integration
+      - postgres-backup-integration
+      - storage-semantics-integration
+      - s3-minio-versioned-source-integration
+      - oidc-provider-integration
+      - license-acceptance-workflow-integration
+      - tool-schema-crud-integration
+      - critical-behavior-requirements-integration
+      - budget-policy-integration
+      - cost-profile-integration
+      - secret-manager-integration
+      - tenant-isolation-suite-integration
+      - model-version-schema-api-integration
+      - api-load-test-integration
+      - dataset-source-connection-integration
+      - target-application-connection-integration
+      - target-source-snapshot-integration
+      - github-repository-listing-integration
+      - github-branch-ref-integration
+      - github-source-snapshot-integration
+      - component-bindings-integration
+      - connection-validation-integration
+      - model-discovery-integration
+      - litellm-registration-capability-integration
+      - dependency-scanning-integration
+      - discovered-agent-candidate-integration
+      - agent-manifest-integration
+      - manifest-evidence-integration
+      - base-model-revision-digest-resolver-integration
+      - database-api-trace-source-integration
+      - evaluation-suite-integration
+      - organization-gateway-policy-integration
+      - live-auth-path-integration
+      - network-policy-enforcement-integration
+      - candidate-selection-integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Use the base branch's policy script
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if ! git show "origin/${BASE_REF}:scripts/ci_policy.py" > "$RUNNER_TEMP/ci_policy.py" 2>/dev/null; then
+            echo "::warning::base has no scripts/ci_policy.py yet (bootstrap PR); using this PR's copy"
+            cp scripts/ci_policy.py "$RUNNER_TEMP/ci_policy.py"
+          fi
+      - name: Verdict
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          SCOPE: ${{ needs.classify.outputs.scope }}
+          SCOPE_REASON: ${{ needs.classify.outputs.reason }}
+          FILES_SHA256: ${{ needs.classify.outputs.files_sha256 }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          printf '%s' "$NEEDS_JSON" > "$RUNNER_TEMP/needs.json"
+          python3 "$RUNNER_TEMP/ci_policy.py" verdict --needs-json "$RUNNER_TEMP/needs.json" \
+            --workflow .github/workflows/ci.yml --scope "$SCOPE" --scope-reason "$SCOPE_REASON" \
+            --files-sha256 "$FILES_SHA256" --title "$PR_TITLE" --number "$PR_NUMBER" \
+            --head-sha "$HEAD_SHA" --base-sha "$BASE_SHA" --evidence reports/ci-verdict.json
+      - name: Upload verdict evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-verdict-${{ github.event.pull_request.head.sha }}-attempt-${{ github.run_attempt }}
+          path: reports/ci-verdict.json
+          if-no-files-found: error

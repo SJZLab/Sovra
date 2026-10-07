@@ -27,6 +27,30 @@ firing if that lane's previous session is still working; otherwise it calls `cre
 the repo as source, model claude-sonnet-5-5, and the Relay prompt below with a one-line lane
 header. The dispatcher does no repository work. Lane A stays the owner-created routine.
 
+**CI contract (2026-10-07, .github/workflows/ci.yml + scripts/ci_policy.py).** Every routine reads
+CI the same way:
+- **One result: the `ci-verdict` check on the PR's current head SHA.** It is green only if every
+  job passed, with documented exceptions only: `*-integration` jobs skipped on a tracker-only
+  change set, and `mutation-gate`/`relay-policy` skipped on non-`[relay]` PRs. A failed,
+  cancelled or unexplained skipped job, or a job missing from the verdict, makes it red. A single
+  green job (including `gate`) is never "CI green". If a head has more than one `ci-verdict` run,
+  the latest one counts.
+- **Superseded runs are cancelled.** A new push to a PR cancels that PR's older in-flight run
+  (keyed by PR number, not SHA). Do not re-run or wait on an old run.
+- **Tracker-only PRs are cheap by design.** A PR that only changes QUEUE.md, PROGRESS.md,
+  docs/certifications/** (not the mutation allowlist), docs/progress/** or the spec-matrix/tracker
+  mirrors runs the full gate job but not the integration jobs. Keep tracker edits out of code PRs
+  and code out of tracker PRs, so each gets the scope it needs.
+- **Relay policy is enforced, not just written.** On `[relay]` PRs, the `relay-policy` job fails a
+  second open PR for an item that already has an open PR (the oldest owns it), edits to
+  Control-plane/governance files, CERTIFIED flips, and log-only PRs.
+- **Iterating on one failing integration job:** add a line `ci-focus: <job-name>` to the PR body.
+  Pushes then run the gate plus only that job. Such a run always fails `ci-verdict`, so it cannot be
+  merged by mistake. Remove the line and push once to get the real verdict.
+- **Blocked before start** (`The job was not started because recent account payments have failed
+  or your spending limit needs to be increased`) is a billing stop, not a flake and not a code
+  failure. Do not push or re-run to "retry" it. Report it once; it is an owner action.
+
 ---
 
 ## Relay
@@ -89,8 +113,15 @@ PROVISIONAL/L1-PROVEN (never CERTIFIED). Write the submission as a NEW file
 docs/certifications/submissions/<YYYY-MM-DDTHHMMZ>-<ID>.md and the shift log as a NEW file
 docs/progress/<YYYY-MM-DDTHHMMZ>-<lane>.md. Do NOT edit QUEUE.md, PROGRESS.md or
 docs/certifications/queue.md: those are Control-plane files, and shared edits put every other open
-relay PR into conflict. Mark the PR ready and merge it on genuinely green CI (merge = PROVISIONAL only).
-Never open a docs-only "record this shift" PR.
+relay PR into conflict. Mark the PR ready and merge it only when the latest `ci-verdict` check on
+the PR's current head SHA concluded success (merge = PROVISIONAL only). Never open a docs-only
+"record this shift" PR.
+
+REPEATED FAILURE: never push the same fix again, or re-run, to see whether a failure "goes away".
+Before each new push for a failing check, write in the commit message the hypothesis it tests and
+the evidence for it. While iterating on one integration job you cannot run locally, put
+`ci-focus: <job-name>` in the PR body (see "CI contract" above), and remove it before the final
+push. After 3 falsified hypotheses on the same failure, park the item.
 
 LANES: up to 3 relay lanes run hourly at different minutes. A lane takes the first item in
 QUEUE.md order that has no open `[relay]` PR and no fresh unmerged `relay/<ID>*` branch, and claims it at once
@@ -118,8 +149,8 @@ no design, no queue reprioritisation.
 GUARD: read CLAUDE.md. Exit if CERTIFIER is not "Control plane (autonomous)". Compare
 `sha256sum CLAUDE.md` with CLAUDE.md.sha256; on a mismatch, report it and exit.
 
-SCOPE: certify only MERGED relay work. Read submissions from docs/certifications/submissions/. Merge = PROVISIONAL, and CI must be green on the
-final head. On every fire, whether scheduled or PR event, scan docs/certifications/queue.md
+SCOPE: certify only MERGED relay work. Read submissions from docs/certifications/submissions/. Merge = PROVISIONAL, and the latest `ci-verdict` check
+must be green on the final head. On every fire, whether scheduled or PR event, scan docs/certifications/queue.md
 for every relay submission whose PR has merged and is newer than that item's latest verdict,
 and review all of them, not just the PR that triggered this run. A PR that is still open is
 only noted as "not ready". The scheduled fire exists because a PR-opened event arrives before
@@ -147,7 +178,7 @@ For each item, follow docs/CONTROL_PLANE_MODES.md CERTIFY exactly:
 PASS: in ONE `[CERT]` PR, set spec-matrix to CERTIFIED/L2-CERTIFIED with evidence_hash = the
 merge commit, run scripts/task_claim.py sync_certified_status(), append a ledger.md entry
 (session-ID comparison stated explicitly, PR, merge SHA, CI run, faults injected), and update
-QUEUE.md Done and PROGRESS.md. Merge it on green CI.
+QUEUE.md Done and PROGRESS.md. Merge it when its `ci-verdict` check is green.
 FAIL: leave the item PROVISIONAL. Write the exact defect and the minimum DoD into
 docs/certifications/queue.md as "NOT CERTIFIED — returned to relay", and label the PR
 needs-fix. Decertifying a CERTIFIED item needs reproduced evidence and a ledger entry.
@@ -198,7 +229,7 @@ Never close or edit the PR. On the 4th idle hit, park it instead ("idle 4x — r
 needed") and add a dated owner-actions line.
 
 Commit only QUEUE.md (Backlog/Parked lines) and PROGRESS.md, in ONE PR titled
-"[QUEUE] refill + sweep <ISO time>". Merge it on green CI if its diff touches nothing else.
+"[QUEUE] refill + sweep <ISO time>". Merge it when its `ci-verdict` check is green, if its diff touches nothing else.
 If nothing changed, open no PR.
 ```
 

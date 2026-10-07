@@ -9288,6 +9288,13 @@ docs/certifications/queue.md. Write the submission to docs/certifications/submis
 log to docs/progress/<UTC>-<lane>.md (both new files). Shared edits re-conflicted every open relay PR after each
 merge and cost a shift each time. Do not open docs-only "record this shift" PRs.
 
+**CI contract (2026-10-07, Control plane):** "green" means the latest `ci-verdict` check on the PR's current
+head SHA concluded success, and nothing else (not `gate` alone, not most jobs). The `relay-policy` job now fails
+a second open PR for an already-owned item, Control-plane file edits, CERTIFIED flips and log-only PRs. To
+iterate on one failing integration job, put `ci-focus: <job-name>` in the PR body; remove it before the final
+push. Never re-push or re-run unchanged to see whether a failure goes away. Full rules: docs/operations/routines.md
+"CI contract".
+
 **Every item, every shift (2026-10-06, Control plane):** before submitting, run the PRE-SUBMIT
 SELF-ATTACK in docs/operations/routines.md STEP 5b. Break every protection you added (delete it, and
 add a bypass), run the test file as CI does (`python tests/...`) and show RED, repeat on a neutral host

@@ -24367,3 +24367,11 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 - **FTF-1807: CERTIFIED** (round 4, PR #511, merge 42fd82c). Runbook paragraphs are pinned by literal hashes, 43/44
   doc faults are RED (the GREEN one is a whitespace-only rewrap), and 29/32 checker faults are RED (the 3 GREEN ones
   are equivalent). Status: 117/302 certified · 45 product-true.
+
+## 2026-10-07T07:45Z — Control plane: correction to the 05:00Z CI note; CI contract
+- **Correction:** the 04:20Z failure on PR #536 (run 37571017115) was not transient. GitHub's
+  annotation on each job reads "The job was not started because recent account payments have failed
+  or your spending limit needs to be increased". It is the same billing stop as 17 earlier runs (2026-09-21,
+  09-22, 09-30, 10-05). It cleared by itself at 04:39Z. It is an owner (billing) matter, not a code or runner fault.
+- From the [GOVERNANCE] CI-contract PR onward, "green" means the latest `ci-verdict` check on the
+  current head. See docs/operations/routines.md "CI contract" and docs/operations/ci-cost-review-2026-10-07.md.
