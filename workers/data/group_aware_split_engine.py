@@ -217,9 +217,8 @@ def allocate_splits(spec: SplitSpec, records: Sequence[SplitRecord]) -> SplitMan
     for rec in records:
         first = _find(parent, rec.group_keys[0])
         for key in rec.group_keys[1:]:
-            other = _find(parent, key)
-            if other != first:
-                parent[other] = first
+            # Re-pointing a root at itself is a no-op, so no "already joined" test is needed.
+            parent[_find(parent, key)] = first
     members: dict[str, list[SplitRecord]] = {}
     for rec in records:
         members.setdefault(_find(parent, rec.group_keys[0]), []).append(rec)
