@@ -24322,3 +24322,19 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
     result is frozen.
 - **Gate gap (Control-plane follow-up):** mutation_gate does not mutate lambda bodies in module-level dispatch tables.
   Extend the operators to lambda bodies, or require dispatch through named functions.
+
+## 2026-10-07T04:00Z — Control plane: FTF-0608 CERTIFIED; FTF-0604 returned (round 3, tests only)
+- **FTF-0608: CERTIFIED** (PR #532, merge f5f0d1e). Mutation is 108/108. Follow-up FTF-0608-F1 is in the Backlog.
+- **FTF-0604: NOT CERTIFIED** (PR #531, merge c768915; producer session_01KPybVRQ91R7YhKvBhZvtjY). The production
+  empty-approved guard is verified across all six policy combinations, and mutation is 47/47. Two round-2 items are
+  still unmet. Tests only:
+  1. **normalized_candidate on a pass and a fail, with real normalization.** Today the only assertion is under
+     sensitive/exact, where normalization is the identity, so returning the raw candidate stays GREEN.
+     - Pass: "PARIS" vs ["paris"] under insensitive/collapse asserts `normalized_candidate == "paris"`.
+     - Fail: " LONDON  x " under insensitive/collapse asserts the normalized string.
+     These also kill casefold→upper.
+  2. **Exactness under every policy.** Run the NFD-vs-NFC, zero-width-inside-"Paris" and fullwidth "Ａ" vs "A" tests
+     under all 6 combinations of case and whitespace policy. Today NFC added to STRIP, COLLAPSE or CASE_INSENSITIVE
+     stays GREEN, and so does a zero-width strip added to EXACT, STRIP or CASE_SENSITIVE.
+- **Gate gap, second occurrence:** faults in module-level lambda dispatch tables are invisible to mutation_gate. The
+  Control plane will extend the gate (see QUEUE).
