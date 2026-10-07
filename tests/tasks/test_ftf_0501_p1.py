@@ -1433,8 +1433,8 @@ def test_s9_exactness_edges_and_row_locks() -> None:
                 store.UploadVerificationError,
             ),
         )
-        named = _finalize(session, _create(session), dataset_name="Support")
         lower = _finalize(session, _create(session), dataset_name="support")
+        named = _finalize(session, _create(session), dataset_name="Support")
         check(
             CID,
             "dataset names are case-sensitive: 'Support' and 'support' are different datasets (both version 1)",  # noqa: E501

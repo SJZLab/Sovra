@@ -553,7 +553,7 @@ def list_datasets(
     _authorize_project_or_raise(session, context, project_id)
     statement = select(Dataset).where(Dataset.project_id == project_id)
     if not include_held_out:
-        statement = statement.where(Dataset.purpose != HELD_OUT_PURPOSE)
+        statement = statement.where(Dataset.purpose.not_in(_HELD_OUT_PURPOSES))
     if after is not None:
         statement = statement.where(Dataset.id > after)
     statement = statement.order_by(Dataset.id).limit(limit)
