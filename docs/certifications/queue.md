@@ -24293,3 +24293,32 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
   - multi-constraint coverage;
   - 0 survivors under main's extended mutation gate.
   FTF-0604 (#519, merged by the relay) is next for L2 against this checklist.
+- **FTF-0604 (exact-match grader): NOT CERTIFIED** (PR #519, merge 09e0fa5; the producers are independent). Mutation is
+  41/41, but about 25 hand-injected faults stay GREEN. Most sit in the module-level `_CASE_NORMALIZERS` and
+  `_WHITESPACE_NORMALIZERS` lambda tables, which the gate does not mutate. Round 2 (production plus tests):
+  1. **Production fail-open.** `grade_exact_match("", [""])` passes. Raise ExactMatchGraderError when an approved value
+     is `""`, or when its policy-normalized form is `""` (so `" "` under strip or collapse is refused too). Add a test
+     for each case.
+  2. **Negative acceptance.** Each of these must fail:
+     - "ris" (endswith) and "Par" or "42" vs ["Paris"] / ["432"] (reverse containment);
+     - "Pari" and "Parisx"; "Paris.";
+     - "aris" and "PPaaris"; "Pairs" (an anagram);
+     - an empty candidate against ["Paris"] under every policy.
+  3. **Exactness.** No extra Unicode normalization under any policy: "Ａ" vs "A", "é" (NFD) vs "é" (NFC), and a
+     zero-width space inside "Paris" must not match.
+  4. **Whitespace boundaries for all three policies.**
+     - EXACT: leading whitespace matters (" Paris").
+     - STRIP: internal runs are not collapsed ("New  York").
+     - COLLAPSE: does not remove all whitespace ("NewYork"), trims the ends (" New York "), and handles tabs and
+       newlines ("New\tYork").
+     - Whitespace on the approved side is normalized too ([" Paris "] under strip).
+  5. **Case.** The candidate side is normalized ("PARIS" vs ["paris"]). Pin casefold with "STRASSE" vs ["Straße"]
+     (or name the normalization in the contract).
+  6. **Result fields.** matched_value is the ORIGINAL approved string ("paris" vs ["PARIS"] gives "PARIS").
+     normalized_candidate is asserted on both a pass and a fail.
+  7. **Malformed input raises.** A bytes candidate; `approved_values` given as a bare str or bytes; a bytes element in
+     approved_values; a None candidate.
+  - Low priority: the first match wins with duplicates and order; ExactMatchGraderError subclasses ValueError; the
+    result is frozen.
+- **Gate gap (Control-plane follow-up):** mutation_gate does not mutate lambda bodies in module-level dispatch tables.
+  Extend the operators to lambda bodies, or require dispatch through named functions.

@@ -10,7 +10,7 @@ Updated: 2026-10-07T03:00Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
-- **Returned to the relay:** FTF-0608 round 2 (tool-sequence grader, tests only: exactness, malformed input, and
+- **Returned to the relay:** FTF-0604 round 2 (exact-match grader: empty-value fail-open plus boundary tests), FTF-0608 round 2 (tool-sequence grader, tests only: exactness, malformed input, and
   edge cases), and FTF-1807 round 4 (tests only). Graders are now checked against one shared checklist.
 - **Product-true 27 → 34 → 45:** an independent verifier proved 7 certified foundations live end to end: config, tenant
   context, RBAC, audit, tenant-scoped queries, secret refs and the outbound guard. The product-truth gate was also

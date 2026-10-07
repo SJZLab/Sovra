@@ -9297,6 +9297,10 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
 0. **2026-10-06T09:45Z (Control plane): highest priority, one item per lane, one PR per item.**
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
+   - **0a1. FTF-0604 round 2 (exact-match grader; production + tests): claim `relay/FTF-0604-r2`.** Reject empty or
+     whitespace-only approved values, and add the boundary tests listed in docs/certifications/queue.md
+     "2026-10-07T03:00Z" (negative acceptance, Unicode exactness, whitespace per policy, casefold, result fields,
+     malformed input).
    - **0b0. FTF-0608 round 2 (tool-sequence grader; tests only; 4 blocking): claim `relay/FTF-0608-r2`.** The fix list is
      in docs/certifications/queue.md "2026-10-07T03:00Z": exactness tests that kill the 6 M9 survivors, malformed-input
      tests, semantics tests (empty trace, duplicate forbidden calls, multiple pairs, nested state), and 0 survivors under
