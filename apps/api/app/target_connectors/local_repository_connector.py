@@ -110,7 +110,6 @@ __all__ = [
     "scan_submodule_declarations",
 ]
 
-_GIT_DIRECTORY_NAME = ".git"
 _SUBPROCESS_TIMEOUT_SECONDS = 30.0
 
 # A real, closed, named set of git config keys that can make an otherwise
@@ -552,7 +551,7 @@ def _iter_repository_files(root: Path) -> list[ManifestEntry]:
             ) from exc
 
         for entry in children:
-            if directory == root and entry.name == _GIT_DIRECTORY_NAME:
+            if directory == root and entry.name == ".git":
                 continue
 
             entry_path = Path(entry.path)
@@ -631,7 +630,9 @@ def _build_archive(root: Path, entries: list[ManifestEntry]) -> bytes:
             # already-dirty or untracked file keeps the same `git status`
             # line) would otherwise yield a torn snapshot: archive bytes that
             # disagree with the manifest/`tree_hash` (FTF-04A32 N2).
-            if len(data) != entry.size or hashlib.sha256(data).hexdigest() != entry.sha256:
+            if len(data) != entry.size or hashlib.sha256(data).digest() != bytes.fromhex(
+                entry.sha256
+            ):
                 raise ConcurrentModificationError(
                     f"{root}: {entry.relative_path} changed while the archive was being built"
                 )
@@ -666,6 +667,14 @@ def _git_head_commit_sha(root: Path) -> str:
     if result.returncode != 0 or not result.stdout.strip():
         raise EmptyRepositoryError(f"{root} has no commits yet (HEAD does not resolve)")
     return result.stdout.strip()
+
+
+def _git_head_oid_or_empty(root: Path) -> str:
+    """HEAD's object id as git prints it, or "" when HEAD does not resolve.
+
+    `git rev-parse` ends its single line with exactly one newline, so only that
+    suffix is dropped -- no whitespace-tolerant normalization of an identity."""
+    return _run_git(root, "rev-parse", "--verify", "--quiet", "HEAD").stdout.removesuffix("\n")
 
 
 def _git_head_tree_hash(root: Path) -> str:
@@ -786,8 +795,8 @@ def capture_local_repository(
     if not dirty_before:
         tree_hash = _git_head_tree_hash(real_root)
         dirty_after = _git_dirty_signature(real_root)
-        head_after = _run_git(real_root, "rev-parse", "--verify", "--quiet", "HEAD").stdout.strip()
-        if dirty_after != dirty_before or head_after != commit_sha:
+        head_after = _git_head_oid_or_empty(real_root)
+        if (dirty_after, head_after) != (dirty_before, commit_sha):
             raise ConcurrentModificationError(
                 f"{real_root} changed while this clean capture was in flight"
             )
@@ -806,14 +815,14 @@ def capture_local_repository(
     tree_hash = _manifest_hash(entries)
 
     dirty_after = _git_dirty_signature(real_root)
-    head_after = _run_git(real_root, "rev-parse", "--verify", "--quiet", "HEAD").stdout.strip()
-    if dirty_after != dirty_before or head_after != commit_sha:
+    head_after = _git_head_oid_or_empty(real_root)
+    if (dirty_after, head_after) != (dirty_before, commit_sha):
         raise ConcurrentModificationError(
             f"{real_root} changed while this dirty-tree capture was in flight"
         )
     # `git status` text cannot see a content edit to an already-dirty or
     # untracked file; re-walking the content manifest can (FTF-04A32 N2).
-    if _manifest_hash(_iter_repository_files(real_root)) != tree_hash:
+    if (_manifest_hash(_iter_repository_files(real_root)),) != (tree_hash,):
         raise ConcurrentModificationError(
             f"{real_root} content changed while this dirty-tree capture was in flight"
         )
