@@ -731,6 +731,156 @@ def test_json_roundtrip_sanity() -> None:
     )
 
 
+def test_bool_and_null_equality_both_ways() -> None:
+    check(CID, "enum [true] accepts true", grade("true", {"enum": [True]}).passed)
+    check(CID, "const false accepts false", grade("false", {"const": False}).passed)
+    check(CID, "const true rejects false", not grade("false", {"const": True}).passed)
+    check(CID, "const 1 rejects 2", not grade("2", {"const": 1}).passed)
+    check(CID, "const 1.5 accepts 1.5", grade("1.5", {"const": 1.5}).passed)
+    check(CID, "const string rejects a number", not grade("1", {"const": "1"}).passed)
+    check(CID, "const string accepts an equal string", grade('"1"', {"const": "1"}).passed)
+    check(CID, "const [true] accepts [true]", grade("[true]", {"const": [True]}).passed)
+    check(CID, "const {} accepts {}", grade("{}", {"const": {}}).passed)
+
+
+def test_zero_bounds_are_legal_and_enforced() -> None:
+    check(CID, "minItems 0 is legal", grade("[]", {"minItems": 0}).passed)
+    check(CID, "minLength 0 is legal", grade('""', {"minLength": 0}).passed)
+    check(
+        CID,
+        "maxItems 0 admits only the empty array",
+        grade("[]", {"maxItems": 0}).passed and not grade("[1]", {"maxItems": 0}).passed,
+    )
+    check(
+        CID,
+        "maxLength 0 admits only the empty string",
+        grade('""', {"maxLength": 0}).passed and not grade('"a"', {"maxLength": 0}).passed,
+    )
+
+
+def _nested_all_of(levels: int) -> dict[str, Any]:
+    schema: dict[str, Any] = {"type": "string"}
+    for _ in range(levels):
+        schema = {"allOf": [schema]}
+    return schema
+
+
+def test_schema_depth_limit_is_independent_of_the_candidate() -> None:
+    # The deep branch sits behind an anyOf whose first branch the candidate
+    # satisfies, so only the up-front schema check can ever see it.
+    def wrapped(levels: int) -> dict[str, Any]:
+        return {"anyOf": [{"type": "string"}, _nested_all_of(levels)]}
+
+    check(CID, "a schema at exactly the depth limit is accepted", grade('"a"', wrapped(255)).passed)
+    check(
+        CID,
+        "a schema one level past the limit is refused",
+        raises(SchemaError, lambda: grade('"a"', wrapped(256))),
+    )
+    check(
+        CID,
+        "an absurdly deep schema is refused, not a crash",
+        raises(SchemaError, lambda: grade('"a"', _nested_all_of(5000))),
+    )
+
+
+def test_non_string_schema_keys_are_refused() -> None:
+    schema: dict[Any, Any] = {1: "x", "type": "string"}
+    check(
+        CID,
+        "a non-string key in a schema is refused",
+        raises(SchemaError, lambda: grade('"a"', schema)),
+    )
+
+
+def test_dialect_is_exact() -> None:
+    base = "https://json-schema.org/draft/2020-12/schema"
+    check(
+        CID,
+        "the pinned dialect is accepted",
+        grade('"a"', {"$schema": base, "type": "string"}).passed,
+    )
+    for variant in (" " + base, base + " ", base.upper(), base + "#", "", None, 7):
+        schema = {"$schema": variant, "type": "string"}
+        check(
+            CID,
+            f"$schema {variant!r} is refused",
+            raises(SchemaError, lambda schema=schema: grade('"a"', schema)),
+        )
+
+
+def test_type_names_are_case_and_whitespace_exact() -> None:
+    for name in ("String", "STRING", " string", "string ", "Null", "INTEGER", "Object"):
+        schema = {"type": name}
+        check(
+            CID,
+            f"type {name!r} is refused, never normalised",
+            raises(SchemaError, lambda schema=schema: grade('"a"', schema)),
+        )
+    check(
+        CID,
+        "type list members are held to the same rule",
+        raises(SchemaError, lambda: grade('"a"', {"type": ["string", "Null"]})),
+    )
+
+
+def test_property_names_with_whitespace_are_legal_and_exact() -> None:
+    schema = {
+        "type": "object",
+        "properties": {" ": {"type": "string"}},
+        "required": [" "],
+        "additionalProperties": False,
+    }
+    check(
+        CID,
+        "a whitespace-only property name is a legal required name",
+        grade('{" ": "a"}', schema).passed,
+    )
+    check(CID, "...and is not satisfied by a different key", not grade('{"": "a"}', schema).passed)
+
+
+def test_additional_properties_value_is_validated() -> None:
+    extras: list[Any] = [{"type": "str"}, 5, "x", None, []]
+    for extra in extras:
+        schema = {"type": "object", "additionalProperties": extra}
+        try:
+            pin = schema_fingerprint(schema)
+        except SchemaError:
+            continue
+        check(
+            CID,
+            f"additionalProperties {extra!r} is refused",
+            raises(
+                SchemaError,
+                lambda schema=schema, pin=pin: grade_json_schema(
+                    "{}", schema, expected_schema_sha256=pin
+                ),
+            ),
+        )
+
+
+def test_numeric_bounds_values_are_validated() -> None:
+    for keyword in ("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"):
+        for bad in ("1", True, None, [1]):
+            schema = {keyword: bad}
+            check(
+                CID,
+                f"{keyword}={bad!r} is refused",
+                raises(SchemaError, lambda schema=schema: grade("1", schema)),
+            )
+
+
+def test_nan_infinity_rejected_even_when_the_schema_would_accept_anything() -> None:
+    for raw in ("NaN", "Infinity", "-Infinity", "[NaN]", '{"a": Infinity}'):
+        result = grade(raw, {})
+        check(
+            CID,
+            f"{raw} fails under a permissive schema",
+            not result.passed and result.issues[0].keyword == "json",
+        )
+    check(CID, "a permissive schema accepts ordinary JSON", grade('{"a": [1, null]}', {}).passed)
+
+
 def main() -> int:
     tests = [
         (name, fn)

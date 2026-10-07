@@ -64,7 +64,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -86,7 +86,6 @@ MAX_OUTPUT_BYTES = 1_000_000
 MAX_INSTANCE_DEPTH = 32
 _MAX_VALIDATION_DEPTH = 256
 
-_TYPES = ("null", "boolean", "object", "array", "string", "number", "integer")
 _ANNOTATIONS = frozenset({"title", "description", "$comment", "examples", "default"})
 SUPPORTED_KEYWORDS = frozenset(
     {
@@ -147,7 +146,7 @@ def schema_fingerprint(schema: Mapping[str, Any]) -> str:
         canonical = json.dumps(
             schema, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False
         )
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, RecursionError) as exc:
         raise SchemaError(f"schema is not canonical JSON: {exc}") from exc
     return hashlib.sha256(canonical.encode("ascii")).hexdigest()
 
@@ -158,42 +157,38 @@ def _is_number(value: Any) -> bool:
 
 def _json_equal(left: Any, right: Any) -> bool:
     """JSON-value equality: `true` is never `1`, `1` equals `1.0`, no coercion."""
-    if isinstance(left, bool) or isinstance(right, bool):
-        return isinstance(left, bool) and isinstance(right, bool) and left == right
-    if _is_number(left) and _is_number(right):
-        return bool(left == right)
-    if isinstance(left, str) and isinstance(right, str):
-        return left == right
-    if left is None or right is None:
-        return left is None and right is None
-    if isinstance(left, list) and isinstance(right, list):
-        return len(left) == len(right) and all(
-            _json_equal(a, b) for a, b in zip(left, right, strict=True)
+    if isinstance(left, bool):
+        return isinstance(right, bool) and left == right
+    if _is_number(left):
+        return _is_number(right) and bool(left == right)
+    if isinstance(left, list):
+        return (
+            isinstance(right, list)
+            and len(left) == len(right)
+            and all(_json_equal(a, b) for a, b in zip(left, right, strict=True))
         )
-    if isinstance(left, dict) and isinstance(right, dict):
-        return left.keys() == right.keys() and all(_json_equal(left[k], right[k]) for k in left)
-    return False
+    if isinstance(left, dict):
+        return (
+            isinstance(right, dict)
+            and left.keys() == right.keys()
+            and all(_json_equal(left[key], right[key]) for key in left)
+        )
+    # str and None: same type and equal (a different type never compares equal).
+    return type(left) is type(right) and bool(left == right)
 
 
-def _matches_type(value: Any, type_name: str) -> bool:
-    if type_name == "null":
-        return value is None
-    if type_name == "boolean":
-        return isinstance(value, bool)
-    if type_name == "object":
-        return isinstance(value, dict)
-    if type_name == "array":
-        return isinstance(value, list)
-    if type_name == "string":
-        return isinstance(value, str)
-    if type_name == "number":
-        return _is_number(value)
-    # integer: JSON Schema 2020-12 treats 1.0 as an integer.
-    return (
-        isinstance(value, int)
-        and not isinstance(value, bool)
-        or (isinstance(value, float) and math.isfinite(value) and value.is_integer())
-    )
+# One closed dispatch table decides every type name (no per-name comparisons).
+_TYPE_CHECKERS: dict[str, Callable[[Any], bool]] = {
+    "null": lambda value: value is None,
+    "boolean": lambda value: isinstance(value, bool),
+    "object": lambda value: isinstance(value, dict),
+    "array": lambda value: isinstance(value, list),
+    "string": lambda value: isinstance(value, str),
+    "number": _is_number,
+    # JSON Schema 2020-12 treats 1.0 as an integer.
+    "integer": lambda value: (isinstance(value, int) and not isinstance(value, bool))
+    or (isinstance(value, float) and math.isfinite(value) and value.is_integer()),
+}
 
 
 def _expect_nonneg_int(schema: Mapping[str, Any], keyword: str, where: str) -> None:
@@ -226,7 +221,7 @@ def _check_schema(schema: Any, where: str, defs: Mapping[str, Any], depth: int) 
         if not isinstance(ref, str) or not ref.startswith(_REF_PREFIX):
             raise SchemaError(f"{where}: only local '#/$defs/<name>' references are allowed")
         name = ref[len(_REF_PREFIX) :]
-        if name == "" or name not in defs:
+        if name not in defs:
             raise SchemaError(f"{where}: $ref target {ref!r} is not defined in $defs")
     if "$defs" in schema:
         if not isinstance(schema["$defs"], dict):
@@ -241,9 +236,11 @@ def _check_schema(schema: Any, where: str, defs: Mapping[str, Any], depth: int) 
         if (
             not isinstance(names, list)
             or not names
-            or any(not isinstance(n, str) or n not in _TYPES for n in names)
+            or any(not isinstance(n, str) or n not in _TYPE_CHECKERS for n in names)
         ):
-            raise SchemaError(f"{where}: type must be one of {_TYPES} or a non-empty list of them")
+            raise SchemaError(
+                f"{where}: type must be one of {tuple(_TYPE_CHECKERS)} or a non-empty list of them"
+            )
     if "enum" in schema and (not isinstance(schema["enum"], list) or not schema["enum"]):
         raise SchemaError(f"{where}: enum must be a non-empty array")
     if "required" in schema:
@@ -314,7 +311,7 @@ def _validate(
     if "type" in schema:
         declared = schema["type"]
         names = [declared] if isinstance(declared, str) else declared
-        if not any(_matches_type(instance, name) for name in names):
+        if not any(_TYPE_CHECKERS[name](instance) for name in names):
             fail("type", f"value is not of type {sorted(names)}")
     if "enum" in schema and not any(_json_equal(instance, option) for option in schema["enum"]):
         fail("enum", "value is not one of the allowed values")
@@ -449,18 +446,11 @@ def grade_json_schema(
         raise JsonSchemaGraderError(f"raw_output must be a string, not {type(raw_output).__name__}")
     if not isinstance(schema, dict):
         raise SchemaError(f"schema must be an object, not {type(schema).__name__}")
-    if (
-        not isinstance(expected_schema_sha256, str)
-        or len(expected_schema_sha256) != 64
-        or expected_schema_sha256 != expected_schema_sha256.lower()
-        or any(character not in "0123456789abcdef" for character in expected_schema_sha256)
-    ):
-        raise JsonSchemaGraderError("expected_schema_sha256 must be a 64-char lowercase hex digest")
     actual_sha256 = schema_fingerprint(schema)
     if actual_sha256 != expected_schema_sha256:
         raise JsonSchemaGraderError(
             "schema does not match the pinned digest "
-            f"(expected {expected_schema_sha256}, got {actual_sha256})"
+            f"(expected {expected_schema_sha256!r}, got {actual_sha256})"
         )
     defs = schema.get("$defs", {})
     _check_schema(schema, "#", defs if isinstance(defs, dict) else {}, 0)
