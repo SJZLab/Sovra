@@ -51,7 +51,7 @@ genuine, disclosed 0/0, not inflation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 
 from app.services.cost_per_success_calculator import CostPerSuccessResult
@@ -68,8 +68,12 @@ __all__ = [
     "rank_candidates",
 ]
 
-CANDIDATE_KINDS = ("existing", "base", "tuned")
-ECONOMICS_BASES = ("measured", "estimated")
+# One lookup both validates and uses each closed vocabulary, so a value is
+# accepted exactly when it is a key (no second, drift-prone comparison).
+_KIND_IS_TUNED = {"existing": False, "base": False, "tuned": True}
+_BASIS_IS_ESTIMATED = {"measured": False, "estimated": True}
+CANDIDATE_KINDS = tuple(_KIND_IS_TUNED)
+ECONOMICS_BASES = tuple(_BASIS_IS_ESTIMATED)
 
 STATUS_WINNER = "WINNER"
 STATUS_TIE_BREAK_APPLIED = "TIE_BREAK_APPLIED"
@@ -116,6 +120,12 @@ def _bool(value: object, field_name: str) -> bool:
             f"{field_name} must be a bool, not {type(value).__name__}: {value!r}"
         )
     return value
+
+
+def _lookup(table: dict[str, bool], value: object, field_name: str) -> bool:
+    if not isinstance(value, str) or value not in table:
+        raise CandidateRankingError(f"{field_name} must be one of {tuple(table)}: {value!r}")
+    return table[value]
 
 
 def _identifier(value: object, field_name: str) -> str:
@@ -210,17 +220,18 @@ class RankingCandidate:
     is_incumbent: bool = False
     ineligibility_reason: str | None = None
     parameter_count: int | None = None
+    economics_estimated: bool = field(init=False, default=False)
 
     def __post_init__(self) -> None:
         _identifier(self.candidate_id, "candidate_id")
-        if self.kind not in CANDIDATE_KINDS:
-            raise CandidateRankingError(f"kind must be one of {CANDIDATE_KINDS}: {self.kind!r}")
+        is_tuned = _lookup(_KIND_IS_TUNED, self.kind, "kind")
         _bool(self.eligible, "eligible")
         _bool(self.is_incumbent, "is_incumbent")
-        if self.economics_basis not in ECONOMICS_BASES:
-            raise CandidateRankingError(
-                f"economics_basis must be one of {ECONOMICS_BASES}: {self.economics_basis!r}"
-            )
+        object.__setattr__(
+            self,
+            "economics_estimated",
+            _lookup(_BASIS_IS_ESTIMATED, self.economics_basis, "economics_basis"),
+        )
         if self.eligible:
             if self.ineligibility_reason is not None:
                 raise CandidateRankingError(
@@ -239,7 +250,7 @@ class RankingCandidate:
                 raise CandidateRankingError(
                     f"cost must be a CostInterval or None, not {type(self.cost).__name__}"
                 )
-            if self.kind == "tuned" and not self.cost.includes_training_amortization:
+            if is_tuned and not self.cost.includes_training_amortization:
                 raise CandidateRankingError(
                     f"tuned candidate {self.candidate_id!r} must carry a cost interval that "
                     "includes training amortization -- otherwise offline training and "
@@ -287,6 +298,12 @@ class RankingResult:
     tie_break_policy_id: str | None
     winner_economics_estimated: bool
     winner_economics_provisional: bool
+
+
+def _priced(candidate: RankingCandidate) -> CostInterval:
+    # Only candidates that survived the unpriced exclusion reach here.
+    assert candidate.cost is not None
+    return candidate.cost
 
 
 def _overlaps(a: CostInterval, b: CostInterval) -> bool:
@@ -345,8 +362,8 @@ def rank_candidates(
             qualifying.append(candidate)
 
     def sort_key(candidate: RankingCandidate) -> tuple[Decimal, Decimal, str]:
-        assert candidate.cost is not None
-        return (candidate.cost.base, candidate.cost.high, candidate.candidate_id)
+        cost = _priced(candidate)
+        return (cost.base, cost.high, candidate.candidate_id)
 
     qualifying.sort(key=sort_key)
     ranked: list[RankedCandidate] = []
@@ -379,7 +396,7 @@ def rank_candidates(
             excluded=tuple(excluded),
             overlap_group=overlap_group,
             tie_break_policy_id=policy,
-            winner_economics_estimated=winner is not None and winner.economics_basis == "estimated",
+            winner_economics_estimated=winner is not None and winner.economics_estimated,
             winner_economics_provisional=cost is not None and cost.has_pending_reconciliation,
         )
 

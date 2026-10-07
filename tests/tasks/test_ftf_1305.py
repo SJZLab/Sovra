@@ -550,6 +550,95 @@ def test_input_guards() -> None:
     )
 
 
+def _error_text(fn, *args: object, **kwargs: object) -> str:
+    try:
+        fn(*args, **kwargs)
+    except CandidateRankingError as exc:
+        return str(exc)
+    return ""
+
+
+def test_boundaries_and_exact_vocabulary() -> None:
+    check(
+        "FTF-1305-A1",
+        "a trailing-space id is refused (not only a leading one)",
+        _rejects(cand, "a "),
+    )
+    check(
+        "FTF-1305-A1",
+        "equal low/base/high bounds are accepted (a point estimate)",
+        interval("1", "1", "1").low == D("1")
+        and interval("1", "1", "2").base == D("1")
+        and interval("1", "2", "2").high == D("2"),
+    )
+    check(
+        "FTF-1305-A1",
+        "kind is matched exactly: case and whitespace variants are refused",
+        _rejects(cand, "x", "BASE")
+        and _rejects(cand, "x", " base")
+        and _rejects(cand, "x", "Tuned"),
+    )
+    check(
+        "FTF-1305-A1",
+        "economics_basis is matched exactly: variants are refused",
+        _rejects(cand, "x", basis="Measured")
+        and _rejects(cand, "x", basis=" estimated")
+        and _rejects(cand, "x", basis=None),
+    )
+    check(
+        "FTF-1305-A1",
+        "quality bounds 0 and 1 are valid",
+        cand("x", quality="0").quality_lower_bound == D("0")
+        and cand("y", quality="1").quality_lower_bound == D("1"),
+    )
+    check(
+        "FTF-1305-A1",
+        "a parameter count of exactly 1 is valid",
+        cand("x", params=1).parameter_count == 1,
+    )
+    check(
+        "FTF-1305-A1",
+        "min_quality of exactly 1 is valid and 1.0 qualifies only a perfect lower bound",
+        rank_candidates(
+            [
+                cand("p", cost=interval("1", "2", "3"), quality="1"),
+                cand("q", cost=interval("0.1", "0.2", "0.3"), quality="0.99"),
+            ],
+            min_quality=D("1"),
+        ).winner_id
+        == "p",
+    )
+    point = interval("1", "1", "1")
+    twin = rank_candidates([cand("a", cost=point), cand("b", cost=point)], min_quality=FLOOR)
+    check(
+        "FTF-1305-N1",
+        "two identical point-estimate costs overlap and are inconclusive",
+        twin.status == "INCONCLUSIVE_NO_INCUMBENT",
+    )
+    wide = rank_candidates(
+        [cand("a", cost=interval("1", "1", "5")), cand("b", cost=interval("2", "2", "3"))],
+        min_quality=FLOOR,
+    )
+    check(
+        "FTF-1305-N1",
+        "a contained interval overlaps its container",
+        wide.status == "INCONCLUSIVE_NO_INCUMBENT",
+    )
+    best = cost_per_success([AttemptCost(request_id="r", outcome="pass", settled_cost=D("1"))])
+    message = _error_text(
+        CostInterval.from_scenario_results,
+        best_case=best,
+        expected=best,
+        worst_case=best,
+        amortized=True,
+    )
+    check(
+        "FTF-1305-A1",
+        "the missing-amortization refusal names the cause, not a generic error",
+        "no amortized_cost_per_success" in message,
+    )
+
+
 def test_fault_injection_cost_only_ranking_picks_the_wrong_winner() -> None:
     """Own fault injection (Law 1): a cost-only reimplementation (the exact
     failure mode this task's negative_acceptance forbids) picks a cheap
