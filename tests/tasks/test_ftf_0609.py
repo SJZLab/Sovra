@@ -596,6 +596,70 @@ def test_result_ids_are_returned_exactly_as_given() -> None:
     check(CID, "unattributed effect ids are exact", ghost.unattributed_effects == (" Ghost ",))
 
 
+def test_r2_executed_with_failed_or_unknown_sibling_is_not_unverified() -> None:
+    """An attempt with ANY executed effect is an effect violation and never also
+    "unverified" (any, not all): checked beside denied, failed and unknown siblings."""
+    for sibling in ("denied", "failed", "unknown"):
+        for order in ("executed_first", "executed_last"):
+            pair = [
+                effect("e1", "refund_order", "executed", "c1"),
+                effect("e2", "refund_order", sibling, "c1"),
+            ]
+            if order == "executed_last":
+                pair.reverse()
+            result = grade([call("c1", "refund_order")], pair)
+            check(
+                CID,
+                f"executed + {sibling} ({order}): not unverified, not denied, executed effect named",
+                result.unverified_attempts == ()
+                and result.denied_attempts == ()
+                and result.executed_effects == ("e1",)
+                and result.effect_violation
+                and result.attempted_calls == ("c1",),
+            )
+    mixed = grade(
+        [call("c1", "refund_order")],
+        [
+            effect("e1", "refund_order", "denied", "c1"),
+            effect("e2", "refund_order", "executed", "c1"),
+        ],
+    )
+    check(CID, "denied + executed: nothing unverified", mixed.unverified_attempts == ())
+    check(
+        CID,
+        "a lone failed / unknown attempt IS unverified (control)",
+        grade(
+            [call("c1", "refund_order")], [effect("e1", "refund_order", "failed", "c1")]
+        ).unverified_attempts
+        == ("c1",)
+        and grade(
+            [call("c1", "refund_order")], [effect("e1", "refund_order", "unknown", "c1")]
+        ).unverified_attempts
+        == ("c1",),
+    )
+
+
+def test_r2_empty_string_and_bytes_are_not_an_empty_trace() -> None:
+    """Fail-open guard: "" / b"" (falsy, sized, iterable) must raise, never be read
+    as an empty trace that passes."""
+    one_call = [call("c1", "lookup_order")]
+    one_effect = [effect("e1", "lookup_order", "executed", "c1")]
+    for bad in ("", b""):
+        check(CID, f"attempted_calls={bad!r} raises", raises(lambda b=bad: grade(b, [])))
+        check(
+            CID,
+            f"attempted_calls={bad!r} raises beside real effects",
+            raises(lambda b=bad: grade(b, one_effect)),
+        )
+        check(CID, f"backend_effects={bad!r} raises", raises(lambda b=bad: grade([], b)))
+        check(
+            CID,
+            f"backend_effects={bad!r} raises beside real calls",
+            raises(lambda b=bad: grade(one_call, b)),
+        )
+    check(CID, "a genuine empty list is still a valid empty trace", grade([], []).passed)
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
