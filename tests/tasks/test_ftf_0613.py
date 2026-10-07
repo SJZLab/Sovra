@@ -508,11 +508,11 @@ def test_round2_strict_decimal_and_text_types() -> None:
                 f"spec {field}={bad!r} raises",
                 raises(lambda f=field, b=bad: spec(**{f: b})),
             )
-    for bad in ((b"a",), (5,)):
+    for bad_ids in ((b"a",), (5,)):
         check(
             CID,
-            f"spec expected_attempt_ids={bad!r} raises",
-            raises(lambda b=bad: spec(expected_attempt_ids=b)),
+            f"spec expected_attempt_ids={bad_ids!r} raises",
+            raises(lambda b=bad_ids: spec(expected_attempt_ids=b)),
         )
 
 
