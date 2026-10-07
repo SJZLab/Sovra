@@ -10120,3 +10120,17 @@ PR is not landed by the next certifier shift.
   - non-str names, and None, empty or non-str tool_call_ids.
   Whole-file mutation with the extended gate (#528): 44/44, including the M9 `in` mutants.
 - Not product-true: there is no live caller yet; the Inspect AI scorer adapter is a separate task.
+
+## FTF-0608 — Tool-sequence grader — CERTIFIED (2026-10-07)
+- Criterion: FTF-0608. Round 2 (tests only): PR #532, merge commit f5f0d1eeca9d23045111bc41932693038daf449a (head
+  `9b273cf`). This closes rounds 1–2. Producer: `session_019pF6PaHEvyxd4UapcNWJWr`. CI: 48/48 passed.
+- Verifier: all 14 round-1 GREEN faults are RED, and about 91 faults were injected in total. The whole-file extended
+  mutation gate kills 108/108; the six M9 survivors from round 1 are killed.
+- Not product-true: there is no live caller yet.
+- Follow-up, not blocking: FTF-0608-F1. Tests for:
+  - a strict-prefix trace;
+  - bare-str must_precede and allowed_orders;
+  - the case direction of duplicate ids ("C0","c0" and "c0","C0");
+  - pair names that differ only by case;
+  - the first matched_order_index wins;
+  - the order of violations and mismatches.

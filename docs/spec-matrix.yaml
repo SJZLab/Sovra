@@ -8559,10 +8559,10 @@ FTF-0607:
   proving_symbol: ''
   proving_test: ''
 FTF-0608:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Tool-sequence grader
-  evidence_hash: ''
+  evidence_hash: f5f0d1eeca9d23045111bc41932693038daf449a
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0601
@@ -8588,7 +8588,7 @@ FTF-0608:
     Disclosed gap (same "no live caller yet" precedent as the sibling graders): no
     evaluation-run engine exists yet to call this grader on a real trace; proving_symbol stays
     blank. Not self-certified (Law 4): awaiting independent Control-plane L2 review and CI.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0608.py
 FTF-0609:
