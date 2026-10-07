@@ -10284,3 +10284,34 @@ PR is not landed by the next certifier shift.
   - Items 1 and 3–5 RED, including as uid 65534. Diff mutation 23/23.
   - The required never-read spy does not cover os.open or io.open (Law 16).
 - Graders FTF-0605, 0607 and 0610 are not product-true: they have no live caller yet (same precedent as FTF-0604).
+
+## 2026-10-07T18:30Z — CERTIFIED: FTF-0609, FTF-0611; follow-ups FTF-04A06-F1, FTF-0515-F1, FTF-0605-F1; RETURNED: FTF-0308-P1
+- **Verification method:** independent Control-plane verifiers, each in a detached worktree at the merge commit. Every
+  fault on the return list was injected; earlier rounds were spot-checked; the mutation gate ran uncapped.
+- **FTF-0609: CERTIFIED** (round 3).
+  - PR #579, merge e25ca189e665a23647ef034398427ca295e94904. Production from round 1 (#563).
+  - Both round-3 gaps are RED: outcome lookup over all effects, and lower/casefold/strip on the forbidden set and on names.
+  - Mutation 90/90.
+- **FTF-0611: CERTIFIED** (round 2).
+  - PR #576, merge c3e09859debf197e4cfb9fc4e7067f076f4dd6ec.
+  - All round-2 items are RED. Mutation 66/66.
+  - Accepted residual: a 1e-12 slack on the relative term alone stays green. Arithmetic is exact (Fraction), and any slack
+    of 1e-11 or more is killed.
+- **FTF-04A06-F1: CERTIFIED** (round 3, Law 16).
+  - PR #580, merge 87719f37d32fd3581dc40b5899788ff8cf5ba339. Production from round 2 (#571, 19df19e).
+  - Ignored-file reads through os.open, io.open, builtins.open, Path.read_bytes and Path.open are all RED, as root and as
+    uid 65534.
+  - Follow-up FTF-04A06-F2: an audit-hook check that does not depend on call sites (io.FileIO, subprocess).
+- **FTF-0515-F1: CERTIFIED.**
+  - PR #583, merge 59b44a7bcbe8be76675ad2883ae490117e1d2102. Tests only.
+  - Dropping positions, category or reason_code from issue_id is RED. Mutation 112/112.
+- **FTF-0605-F1: CERTIFIED** against its written DoD.
+  - PR #584, merge eb18e69776fd0f0d97a5bb8b50e5a8c7c93cb2e8. Tests only.
+  - All 4 items are RED. Mutation 235/235.
+  - The exclusive-bound message echo is not in the written DoD. It is follow-up FTF-0605-F2.
+- **FTF-0308-P1 (child slice): RETURNED**, round 2, tests only.
+  - PR #577, merge fa31383.
+  - The contract, every gate and the real-Postgres integration test are fine (verifier ran postgres:16 locally). Mutation
+    190/190.
+  - Gaps: the identical-404 body is not asserted for POST and /changes; there is no runtime proof of "no alias→artifact
+    inference"; one DELETE check cannot fail. QUEUE 0b.

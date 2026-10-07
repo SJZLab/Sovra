@@ -24483,3 +24483,11 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 - **Merges:** all 7 relay merges (#569–#575) landed on a green ci-verdict, read from each run's jobs because the
   check-runs endpoint returned HTTP 500.
 - **Still open:** #576 (FTF-0611 round 2) and #577 (FTF-0308-P1, draft claim).
+
+## 2026-10-07T18:30Z — Control plane: FTF-0609 and FTF-0611 CERTIFIED (127/302); FTF-0308-P1 returned
+- **CERTIFIED:** FTF-0609 (#579) and FTF-0611 (#576), plus follow-ups FTF-04A06-F1 (#580), FTF-0515-F1 (#583) and
+  FTF-0605-F1 (#584).
+- **Returned:** FTF-0308-P1, round 2, tests only (QUEUE 0b).
+- **Backlog:** follow-ups FTF-0605-F2 and FTF-04A06-F2 added, and refilled with FTF-0612, FTF-0613, FTF-0517 and
+  FTF-1305 (dependency-ready: every dependency is CERTIFIED).
+- **ci-verdict:** all six relay merges (#576, #577, #579, #580, #583, #584) landed on a green ci-verdict.

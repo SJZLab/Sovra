@@ -9305,27 +9305,17 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
    - **Every grader (FTF-06xx):** before submitting, apply the GRADER CHECKLIST in the same queue.md entry.
-   - **Returned 2026-10-07T16:00Z (Control plane L2).** Every bullet in the list needs its own fault → RED row in the
-     submission. FTF-0515, FTF-04A22, FTF-0605, FTF-0607 and FTF-0610 are CERTIFIED; the two below are not.
-   - **0b. FTF-0609 round 3 (tests only).** Work in tests/tasks/test_ftf_0609.py. Claim `relay/FTF-0609-r3`. Verifier findings (each listed fault must go RED):
-     FTF-0609 RETURN -> round 3, tests only (7407c1d, #574). All round-2 items RED; mutation 90/90; a fresh sweep of 58 faults found 2 real gaps:
-     1. Outcome lookup restricted to forbidden effects: a forbidden call "delete_db" (tool_call_id c1) whose only backend record is action "read_file" with outcome "denied" -> unverified_attempts == ("c1",), not denied; the same with outcome "executed" -> unverified, executed_effects == () (iterating all effects instead of forbidden_effects currently survives and would launder a denial/execution the backend never recorded for the forbidden action).
-     2. Mixed-case forbidden name: forbidden "Delete_Db" matches an exact-case call/effect "Delete_Db"; a lowercase "delete_db" call is not matched (frozenset(v.lower()...) currently survives and fails open).
-     Optional: exact order of 2+ unverified_attempts and 2+ unattributed_effects; pin bytearray()/memoryview(b"") behaviour.
-   - **0c. FTF-04A06-F1 round 3 (tests only).** Work in tests/tasks/test_ftf_04a32.py. Claim `relay/FTF-04A06-F1-r3`. Verifier findings (each listed fault must go RED):
-     FTF-04A06-F1 RETURN -> round 3, tests only (19df19e, #571). Round-2 items 1, 3, 4 and 5 are RED (also verified as uid 65534); mutation (diff) 23/23; 9 earlier faults RED. One required item is only partly met:
-     1. Never read (Law 16): the read-spy covers Path.read_bytes, Path.open, builtins.open and os.scandir but not os.open/os.read or io.open; reading an ignored file through those survives (M2d, M2e). Add os.open and io.open to the spy, OR a non-root ignored chmod-000 file (or FIFO) tripwire that capture must not touch (the round-2 list named os.open explicitly).
-   - **0d. FTF-0611 round 2 (PR #576 open; finish it, tests only).** Work in tests/tasks/test_ftf_0611.py. Claim `relay/FTF-0611-r2`. Verifier findings (each listed fault must go RED):
-     FTF-0611 RETURN, tests only (10bc14c, #567). Mutation 66/66; 98 hand faults, 3 real survivors plus minor gaps. Required tests in tests/tasks/test_ftf_0611.py:
-     1. Unicode digits in the fractional part: "1.５" and "1.٥" -> malformed_number (wide tolerance, expected 1.5).
-     2. Tolerance boundary finer than 0.01: max_decimals=12, expected "1", abs_tol "0.000000000001": "1.000000000001" passes, "1.000000000002" fails out_of_tolerance; same shape for rel_tol (e.g. expected "1000000", rel_tol "0.000001": boundary passes, boundary+1 fails).
-     3. Whitespace-only unit: ObservedQuantity("100", " ") vs spec unit " " passes; " " vs spec "USD" -> ("wrong_unit",).
-     4. Non-string observed unit (b"USD", int 1 vs "1") -> wrong_unit.
-     5. Pin MAX_DECIMALS_LIMIT == 12 and a dec=12 accept case.
-     6. NumericSpec, ObservedQuantity and NumericResult are frozen (FrozenInstanceError); NumericGraderError is a ValueError subclass.
-   - **0e.** Then the Backlog.
+   - **Returned 2026-10-07T18:30Z (Control plane L2).** Every bullet in the list needs its own fault → RED row in the
+     submission. FTF-0609, FTF-0611, FTF-04A06-F1, FTF-0515-F1 and FTF-0605-F1 are CERTIFIED; the item below is not.
+   - **0b. FTF-0308-P1 round 2 (tests only).** Work in tests/integration/test_ftf_0308_p1_model_catalog_mapping.py and
+     tests/tasks/test_ftf_0308_p1.py. Claim `relay/FTF-0308-P1-r2`. Verifier findings (each listed fault must go RED):
+     FTF-0308-P1 RETURN -> round 2, tests only (fa31383, #577). Contract met (migration, RLS, grants, routes, OpenAPI, ci.yml additive); all gates pass; real-Postgres integration passes; mutation 190/190; 27 hand faults, 3 gaps:
+     1. Identical 404: the contract requires an identical `{"detail":"not_found"}` for missing and foreign connections on GET, POST and /changes, but only GET's body is asserted. In the integration test add the random-vs-foreign connection comparison for POST and /changes (foreign.json() == random.json() == {"detail":"not_found"}); assert the body in the task test's changes-route and POST connection-not-found cases.
+     2. No alias->artifact inference at runtime: seed a `ready` org1 artifact whose name equals a listed alias (e.g. "gpt-z"); GET on that alias returns mapping_state unmapped, trainable_artifact_id null, artifact null; POST {"trainable_artifact_id": null} returns 200 unmapped, changed false, and creates no entry. (Today only a static check covers it; a tenant-scoped name heuristic survives.)
+     3. "App role cannot DELETE an entry" cannot fail (the RESTRICT FK from change rows refuses it anyway): assert has_table_privilege('sovra_app','model_catalog_entries','DELETE') is false, or delete an entry that has no change rows.
+   - **0c.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
-     (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607 and FTF-0610 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
+     (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609 and FTF-0611 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid
@@ -9536,15 +9526,20 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
     language/group fields that §68.2/§69.2 and FTF-0602 need, so they are added; the live error convention is
     `{"detail": code}`, not §40's envelope; FTF-0501's "resumable UI" clause is not in its file list and stays with
     FTF-0501's own refinement.
-- **FTF-0515-F1 (tests only, follow-up to CERTIFIED FTF-0515).** In tests/tasks/test_ftf_0515.py: two row issues with
-  `record_index=None` at batch positions 0 and 1, identical code/message/digest, get distinct `issue_id`s and both survive
-  `evaluate_quality` (fault: positions dropped from the id → RED). Also: two `QualityIssueInput`s differing only in
-  `category`, and only in `reason_code`, get distinct ids. Claim `relay/FTF-0515-F1-r1`.
-- **FTF-0605-F1 (tests only, follow-up to CERTIFIED FTF-0605).** In tests/tasks/test_ftf_0605.py: a golden digest for a
-  multi-key schema (fault: item separator ", " → RED); minimum/maximum messages never echo the numeric candidate; the
-  keyword tiebreak at the same path is pinned (fault: sort by path only → RED); `_json_equal` object keys are
-  whitespace-exact (fault: `.strip()` keys → RED). Claim `relay/FTF-0605-F1-r1`.
-- FTF-0609, FTF-04A06-F1 and FTF-0611 are returned work in item 0 above (not Backlog).
+- FTF-0308-P1 is returned work (item 0b). FTF-0602-P1 (#582) and FTF-0501-P1 (#581) are claimed.
+- **FTF-0605-F2 (tests only, follow-up to CERTIFIED FTF-0605).** In tests/tasks/test_ftf_0605.py extend the no-echo test
+  to `exclusiveMinimum` and `exclusiveMaximum` with a candidate that fails each bound (e.g. equal to it); fault: append the
+  instance number to those two messages → RED. Claim `relay/FTF-0605-F2-r1`.
+- **FTF-04A06-F2 (tests only, Law 16, follow-up to CERTIFIED FTF-04A06-F1).** In tests/tasks/test_ftf_04a32.py make the
+  never-read check independent of call sites: install a `sys.addaudithook` that records "open" events (covers io.FileIO,
+  _io.open, os.open) and "subprocess.Popen" args during `capture_local_repository`, and assert no ignored path appears.
+  Faults: an ignored file read via io.FileIO, and via `subprocess.run(["cat", path])` → each RED. Claim `relay/FTF-04A06-F2-r1`.
+- **FTF-0612** Latency grader. DoD: `tools/r1_handoff.py packet FTF-0612`. Apply the GRADER CHECKLIST.
+- **FTF-0613** Cost grader. DoD: `tools/r1_handoff.py packet FTF-0613`. Apply the GRADER CHECKLIST. Never guess a cost
+  (Law 11): a missing price or usage is a failed or unknown result, never zero.
+- **FTF-0517** Group-aware split engine. DoD: `tools/r1_handoff.py packet FTF-0517`. Held-out data rules (Law 12) apply.
+- **FTF-1305** Candidate ranking. DoD: `tools/r1_handoff.py packet FTF-1305`.
+  If any of these four needs a schema or route that is not frozen yet, park it as BLOCKED_DEPENDENCY with what is missing.
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 

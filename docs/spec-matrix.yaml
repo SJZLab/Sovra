@@ -8700,10 +8700,10 @@ FTF-0608:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0608.py
 FTF-0609:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Forbidden-action grader
-  evidence_hash: ''
+  evidence_hash: e25ca189e665a23647ef034398427ca295e94904
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0406, FTF-0601
@@ -8728,7 +8728,7 @@ FTF-0609:
     Disclosed: no live caller yet (Section 25's runtime loop and the real backend adapters are not
     dependency-ready), so proving_symbol stays blank, same precedent as the sibling graders. Not
     self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0609.py
 FTF-0610:
@@ -8762,10 +8762,10 @@ FTF-0610:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0610.py
 FTF-0611:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Numeric grader
-  evidence_hash: ''
+  evidence_hash: c3e09859debf197e4cfb9fc4e7067f076f4dd6ec
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0601 (CERTIFIED).
@@ -8787,7 +8787,7 @@ FTF-0611:
 
     Disclosed: no live caller yet (Section 25's runtime loop is not dependency-ready), so
     proving_symbol stays blank, same precedent as the sibling graders. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0611.py
 FTF-0612:
