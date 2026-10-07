@@ -66,6 +66,10 @@ from fastapi import HTTPException, Request
 
 _MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
+# Largest body `require_role` will read to cross-check the body tenant: the largest existing
+# route-level cap (32 MiB). Lower route-level caps still apply to the route's own read.
+MAX_JSON_BODY_BYTES = 33554432
+
 
 class Role(str, Enum):
     """Section 6.4 `Membership.role` -- the exact allowed role set."""
@@ -163,7 +167,27 @@ def _extract_body_tenant_id(payload: object, field_name: str) -> uuid.UUID | _No
         return None
 
 
+async def _read_capped_body(request: Request) -> None:
+    """Reads the request body into Starlette's own body cache, refusing more than
+    `MAX_JSON_BODY_BYTES`. A declared Content-Length over the cap is refused
+    without reading; a chunked body (no Content-Length) is stopped at the cap
+    while streaming. The cache is filled so a route handler can still read it."""
+    declared = request.headers.get("content-length")
+    if declared is not None and declared.isascii() and declared.isdigit():
+        if int(declared) > MAX_JSON_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="request_too_large")
+    chunks: list[bytes] = []
+    received = 0
+    async for chunk in request.stream():
+        received += len(chunk)
+        if received > MAX_JSON_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="request_too_large")
+        chunks.append(chunk)
+    request._body = b"".join(chunks)  # noqa: SLF001 - Starlette's documented body cache
+
+
 async def _read_json_body(request: Request) -> object:
+    await _read_capped_body(request)
     try:
         return await request.json()
     except Exception:  # noqa: BLE001 - any unparsable/empty body means "no body tenant"
