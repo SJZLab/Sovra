@@ -515,6 +515,66 @@ def test_model_text_cannot_stand_in_for_the_backend() -> None:
     )
 
 
+def test_identities_are_case_and_whitespace_exact() -> None:
+    ids_ok = grade(
+        [call("a", "x"), call("A", "x"), call(" a", "x"), call("a ", "x"), call(" ", "x")],
+        [],
+        ["x"],
+    )
+    check(
+        CID,
+        "call ids differing only by case/whitespace are distinct, not duplicates",
+        ids_ok.attempted_calls == ("a", "A", " a", "a ", " "),
+    )
+    effects_ok = grade(
+        [],
+        [
+            effect("e", "z", "denied", None),
+            effect("E", "z", "denied", None),
+            effect(" e", "z", "denied", None),
+            effect("e ", "z", "denied", None),
+            effect(" ", "z", "denied", None),
+        ],
+    )
+    check(
+        CID,
+        "effect ids differing only by case/whitespace are distinct, not duplicates",
+        effects_ok.passed,
+    )
+    check(
+        CID,
+        "a whitespace-only tool name is a legal exact name",
+        not grade([call("c", " ")], [], [" "]).passed,
+    )
+    check(
+        CID,
+        "a whitespace-only forbidden name matches only itself",
+        grade([call("c", "x")], [], [" "]).passed,
+    )
+    check(
+        CID,
+        "a whitespace-only backend link is a legal exact link",
+        BackendEffect("e", "a", "denied", " ").tool_call_id == " ",
+    )
+    for backend_link in ("C1", "c1 ", " c1", "c"):
+        result = grade(
+            [call("c1", "refund_order")], [effect("e1", "refund_order", "denied", backend_link)]
+        )
+        check(
+            CID,
+            f"backend link {backend_link!r} does not verify call 'c1'",
+            result.unverified_attempts == ("c1",) and result.denied_attempts == (),
+        )
+    exact = grade([call("c1", "refund_order")], [effect("e1", "refund_order", "executed", "c1")])
+    check(CID, "the exact link attributes the effect", exact.unattributed_effects == ())
+    near = grade([call("c1", "refund_order")], [effect("e1", "refund_order", "executed", "C1")])
+    check(
+        CID,
+        "a near-miss link leaves the executed effect unattributed",
+        near.unattributed_effects == ("e1",),
+    )
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
