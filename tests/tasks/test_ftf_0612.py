@@ -24,6 +24,7 @@ Run directly: python3 tests/tasks/test_ftf_0612.py
 
 from __future__ import annotations
 
+import copy
 import sys
 from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
@@ -157,6 +158,104 @@ def test_clock_and_workload_declared() -> None:
     check(CID, "workload compared whitespace-exactly", space.issues == ("workload_mismatch",))
     check(CID, "spec rejects an unknown clock", raises(lambda: spec(clock="gps")))
     check(CID, "spec rejects an empty workload", raises(lambda: spec(workload_id="")))
+
+
+def unvalidated(base: LatencySpec, **over: Any) -> LatencySpec:
+    """A spec that skipped __post_init__ (copy/pickle path): grading must still compare exactly."""
+    clone = copy.copy(base)
+    for name, value in over.items():
+        object.__setattr__(clone, name, value)
+    return clone
+
+
+def test_comparisons_exact_even_for_unvalidated_spec() -> None:
+    check(
+        CID,
+        "spec workload W1 vs observation w1",
+        grade_latency(spec(1, workload_id="W1"), [obs("c1")]).issues == ("workload_mismatch",),
+    )
+    check(
+        CID,
+        "spec workload with a trailing space vs observation",
+        grade_latency(spec(1, workload_id="w1 "), [obs("c1")]).issues == ("workload_mismatch",),
+    )
+    check(
+        CID,
+        "observation clock WALL vs spec wall",
+        grade_latency(spec(1, clock="wall"), [obs("c1", clock="WALL")]).issues
+        == ("clock_mismatch",),
+    )
+    check(
+        CID,
+        "observation clock with a space",
+        grade_latency(spec(1), [obs("c1", clock="monotonic ")]).issues == ("clock_mismatch",),
+    )
+    check(
+        CID,
+        "observation profile Warm vs warm",
+        grade_latency(spec(1), [obs("c1", profile="Warm")]).issues == ("profile_mismatch",),
+    )
+    check(
+        CID,
+        "observation profile with a space",
+        grade_latency(spec(1), [obs("c1", profile="warm ")]).issues == ("profile_mismatch",),
+    )
+    check(
+        CID,
+        "unvalidated spec profile Warm",
+        grade_latency(unvalidated(spec(1), profile="Warm"), [obs("c1")]).issues
+        == ("profile_mismatch",),
+    )
+    check(
+        CID,
+        "unvalidated spec profile with a space",
+        grade_latency(unvalidated(spec(1), profile="warm "), [obs("c1")]).issues
+        == ("profile_mismatch",),
+    )
+    check(
+        CID,
+        "unvalidated spec clock MONOTONIC",
+        grade_latency(unvalidated(spec(1), clock="MONOTONIC"), [obs("c1")]).issues
+        == ("clock_mismatch",),
+    )
+    check(
+        CID,
+        "unvalidated spec clock with a space",
+        grade_latency(unvalidated(spec(1), clock="monotonic "), [obs("c1")]).issues
+        == ("clock_mismatch",),
+    )
+
+
+def test_text_and_name_validation_exact() -> None:
+    check(CID, "whitespace-only workload refused", raises(lambda: spec(workload_id=" ")))
+    check(
+        CID,
+        "whitespace-only expected case id refused",
+        raises(lambda: spec(expected_case_ids=("a", "  "))),
+    )
+    check(
+        CID,
+        "whitespace-only observation case id refused",
+        raises(lambda: grade_latency(spec(1), [obs(" ")])),
+    )
+    check(CID, "clock Wall (case) refused", raises(lambda: spec(clock="Wall")))
+    check(CID, "clock with a space refused", raises(lambda: spec(clock="wall ")))
+    check(CID, "metric AGENT_MS refused", raises(lambda: LatencyLimit("AGENT_MS", 95, 1)))
+    check(CID, "metric with a space refused", raises(lambda: LatencyLimit("agent_ms ", 95, 1)))
+    check(
+        CID, "outcome OK refused", raises(lambda: grade_latency(spec(1), [obs("c1", outcome="OK")]))
+    )
+    check(
+        CID,
+        "outcome with a space refused",
+        raises(lambda: grade_latency(spec(1), [obs("c1", outcome="ok ")])),
+    )
+    check(CID, "1e12 ms accepted as a limit", LatencyLimit("agent_ms", 95, 10**12).max_ms == 10**12)
+    check(
+        CID,
+        "1e12+1 ms refused as a limit",
+        raises(lambda: LatencyLimit("agent_ms", 95, 10**12 + 1)),
+    )
 
 
 def test_timeout_treatment_declared() -> None:

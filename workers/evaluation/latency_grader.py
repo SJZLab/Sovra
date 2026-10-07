@@ -48,7 +48,6 @@ from dataclasses import dataclass
 __all__ = [
     "CLOCKS",
     "METRICS",
-    "OUTCOMES",
     "PERCENTILES",
     "PROFILES",
     "LatencyGraderError",
@@ -63,8 +62,9 @@ METRICS = ("request_ms", "queue_ms", "ttft_ms", "agent_ms")
 PERCENTILES = (50, 95, 99)
 PROFILES = ("cold", "warm")
 CLOCKS = ("monotonic", "wall")
-OUTCOMES = ("ok", "timeout", "dropped", "error")
-_NOT_OK_ISSUE = {
+# None for a measured ("ok") case; the issue code for a case that produced no valid measurement.
+_OUTCOME_ISSUE: dict[str, str | None] = {
+    "ok": None,
     "timeout": "timed_out_case",
     "dropped": "dropped_case",
     "error": "errored_case",
@@ -82,7 +82,7 @@ def _is_ms(value: object) -> bool:
 
 
 def _text(value: object, name: str) -> str:
-    if not isinstance(value, str) or value == "":
+    if not isinstance(value, str) or not value.strip():
         raise LatencyGraderError(f"{name} must be a non-empty string")
     return value
 
@@ -182,8 +182,9 @@ def grade_latency(spec: LatencySpec, observations: Sequence[LatencyObservation])
         if not isinstance(obs, LatencyObservation):
             raise LatencyGraderError("observations must contain LatencyObservation values")
         _text(obs.case_id, "case_id")
-        if obs.outcome not in OUTCOMES:
-            raise LatencyGraderError(f"outcome must be one of {OUTCOMES}")
+        outcome = obs.outcome
+        if outcome not in _OUTCOME_ISSUE:
+            raise LatencyGraderError(f"outcome must be one of {tuple(_OUTCOME_ISSUE)}")
         if obs.case_id not in expected:
             issues.add("unexpected_case")
         if obs.case_id in seen:
@@ -195,8 +196,9 @@ def grade_latency(spec: LatencySpec, observations: Sequence[LatencyObservation])
             issues.add("clock_mismatch")
         if obs.workload_id != spec.workload_id:
             issues.add("workload_mismatch")
-        if obs.outcome != "ok":
-            issues.add(_NOT_OK_ISSUE[obs.outcome])
+        not_ok_issue = _OUTCOME_ISSUE[outcome]
+        if not_ok_issue is not None:
+            issues.add(not_ok_issue)
             counted_at_timeout += 1
             for metric in METRICS:
                 values[metric].append(spec.timeout_ms)
