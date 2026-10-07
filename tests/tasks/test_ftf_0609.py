@@ -575,6 +575,27 @@ def test_identities_are_case_and_whitespace_exact() -> None:
     )
 
 
+def test_result_ids_are_returned_exactly_as_given() -> None:
+    odd = [" Mixed Id ", "UPPER", "tail "]
+    result = grade(
+        [
+            call(odd[0], "refund_order"),
+            call(odd[1], "refund_order"),
+            call(odd[2], "delete_account"),
+        ],
+        [
+            effect(" E1 ", "refund_order", "denied", odd[0]),
+            effect("E2 ", "delete_account", "executed", odd[2]),
+        ],
+    )
+    check(CID, "attempted ids are exact", result.attempted_calls == tuple(odd))
+    check(CID, "denied ids are exact", result.denied_attempts == (odd[0],))
+    check(CID, "unverified ids are exact", result.unverified_attempts == (odd[1],))
+    check(CID, "executed effect ids are exact", result.executed_effects == ("E2 ",))
+    ghost = grade([], [effect(" Ghost ", "refund_order", "executed", "Nope ")])
+    check(CID, "unattributed effect ids are exact", ghost.unattributed_effects == (" Ghost ",))
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
