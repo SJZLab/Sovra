@@ -8349,10 +8349,10 @@ FTF-0603:
   proving_symbol: ''
   proving_test: ''
 FTF-0604:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Exact-match grader
-  evidence_hash: ''
+  evidence_hash: def15b04f8aa732dc1859423e2ec33e5c4907688
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18;
@@ -8466,7 +8466,7 @@ FTF-0604:
     Not self-certified (Law 4): certification_state PROVISIONAL, proof_state
     L1-PROVEN, awaiting independent Control-plane L2 review and a real CI
     run on the opened PR.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0604.py
 FTF-0605:

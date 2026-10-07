@@ -24338,3 +24338,8 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
      stays GREEN, and so does a zero-width strip added to EXACT, STRIP or CASE_SENSITIVE.
 - **Gate gap, second occurrence:** faults in module-level lambda dispatch tables are invisible to mutation_gate. The
   Control plane will extend the gate (see QUEUE).
+
+## 2026-10-07T05:00Z — Control plane: FTF-0604 CERTIFIED (round 3)
+- **FTF-0604: CERTIFIED** (PR #535, merge def15b0). Mutation is 50/50 with M10 and the dispatch tables.
+- **CI health:** at 04:20Z, PR #536 (FTF-0608-F1) had all 48 jobs die before starting, on both attempts, with no
+  runner and no steps. This looks like an Actions account or billing block, or a GitHub outage. Under investigation.
