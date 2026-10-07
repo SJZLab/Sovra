@@ -24261,3 +24261,64 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
   which is why gaps 2 and 3 survived the gate. Extend M9 to `x in S` and `x not in S` (normalize the left operand).
 - **Dispatcher replaced** (context reached about 400k): v2 is session_011i4PMFAPsFgHSySDQLTx7s. The old triggers are
   disabled, not deleted. See docs/operations/routines.md.
+
+## 2026-10-07T03:00Z — Control plane: FTF-0606 CERTIFIED; FTF-0608 returned (round 2, tests only)
+- **FTF-0606: CERTIFIED** (PR #529, merge ea6725e). Mutation is 44/44 with the extended M9.
+- **FTF-0608 (tool-sequence grader): NOT CERTIFIED** (PR #526, merge 4449b48; producer session_01DTwo7oGKbLxFVAAqS7jBDc).
+  The tests cover every acceptance clause, but under main's extended gate 6 M9 survivors remain, and 14 production
+  faults stay GREEN. Tests only, no production change needed:
+  1. **Exactness.** "refund_order " and "Refund_Order" must not match in any of these:
+     - forbidden matching (lines 174 and 189);
+     - the allowed-order compare;
+     - the precedence `before` and `after` names (lines 193 and 195);
+     - state keys (line 201);
+     - `tool_call_id` duplicate detection (line 142; "c0" and "C0" are distinct).
+     Assert `called_names` is preserved verbatim.
+  2. **Malformed input fails closed.**
+     - name=123 or a list; `tool_call_id=""`;
+     - a trace of `""` or `b""`;
+     - empty-string items in must_not_call, allowed_orders and must_precede;
+     - a 1-tuple pair, and non-str pair names.
+  3. **Semantics.**
+     - an empty trace with allowed_orders fails; an empty trace with must_not_call passes;
+     - duplicate forbidden calls are all reported;
+     - with several must_precede pairs, every pair is checked (first OK, second violated);
+     - a nested mapping with a missing key fails; a nested list length mismatch fails.
+  4. Main's `scripts/mutation_gate.py` whole-file run must show 0 survivors.
+- **GRADER CHECKLIST (same-class sweep, every FTF-06xx grader).** Each grader must have tests for:
+  - fail-closed handling of malformed records and specs (wrong types, empty strings, None);
+  - case and whitespace exactness of every name and key comparison;
+  - duplicates preserved;
+  - empty-trace semantics;
+  - multi-constraint coverage;
+  - 0 survivors under main's extended mutation gate.
+  FTF-0604 (#519, merged by the relay) is next for L2 against this checklist.
+- **FTF-0604 (exact-match grader): NOT CERTIFIED** (PR #519, merge 09e0fa5; the producers are independent). Mutation is
+  41/41, but about 25 hand-injected faults stay GREEN. Most sit in the module-level `_CASE_NORMALIZERS` and
+  `_WHITESPACE_NORMALIZERS` lambda tables, which the gate does not mutate. Round 2 (production plus tests):
+  1. **Production fail-open.** `grade_exact_match("", [""])` passes. Raise ExactMatchGraderError when an approved value
+     is `""`, or when its policy-normalized form is `""` (so `" "` under strip or collapse is refused too). Add a test
+     for each case.
+  2. **Negative acceptance.** Each of these must fail:
+     - "ris" (endswith) and "Par" or "42" vs ["Paris"] / ["432"] (reverse containment);
+     - "Pari" and "Parisx"; "Paris.";
+     - "aris" and "PPaaris"; "Pairs" (an anagram);
+     - an empty candidate against ["Paris"] under every policy.
+  3. **Exactness.** No extra Unicode normalization under any policy: "Ａ" vs "A", "é" (NFD) vs "é" (NFC), and a
+     zero-width space inside "Paris" must not match.
+  4. **Whitespace boundaries for all three policies.**
+     - EXACT: leading whitespace matters (" Paris").
+     - STRIP: internal runs are not collapsed ("New  York").
+     - COLLAPSE: does not remove all whitespace ("NewYork"), trims the ends (" New York "), and handles tabs and
+       newlines ("New\tYork").
+     - Whitespace on the approved side is normalized too ([" Paris "] under strip).
+  5. **Case.** The candidate side is normalized ("PARIS" vs ["paris"]). Pin casefold with "STRASSE" vs ["Straße"]
+     (or name the normalization in the contract).
+  6. **Result fields.** matched_value is the ORIGINAL approved string ("paris" vs ["PARIS"] gives "PARIS").
+     normalized_candidate is asserted on both a pass and a fail.
+  7. **Malformed input raises.** A bytes candidate; `approved_values` given as a bare str or bytes; a bytes element in
+     approved_values; a None candidate.
+  - Low priority: the first match wins with duplicates and order; ExactMatchGraderError subclasses ValueError; the
+    result is frozen.
+- **Gate gap (Control-plane follow-up):** mutation_gate does not mutate lambda bodies in module-level dispatch tables.
+  Extend the operators to lambda bodies, or require dispatch through named functions.

@@ -8443,10 +8443,10 @@ FTF-0605:
   proving_symbol: ''
   proving_test: ''
 FTF-0606:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Tool-name grader
-  evidence_hash: ''
+  evidence_hash: ea6725e5e63b3dc7bb659a54a3d2df38215aa41e
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0601
@@ -8508,7 +8508,7 @@ FTF-0606:
 
     Not self-certified (Law 4): certification_state PROVISIONAL, proof_state L1-PROVEN,
     awaiting independent Control-plane L2 review and a real CI run on the opened PR.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0606.py
 FTF-0607:

@@ -10109,3 +10109,14 @@ PR is not landed by the next certifier shift.
   Producer: `session_01Hbvgp8VNkuZHNecVWYHsm1`. CI: 48/48 passed.
 - Verifier: TTL 60, 3599 and 3601, GPU quota 0 and 2, and complete() not releasing the slot are all RED. Whole-file
   mutation on scripts/task_claim.py: 83/83.
+
+## FTF-0606 — Tool-name grader — CERTIFIED (2026-10-07)
+- Criterion: FTF-0606. Round 2: PR #529, merge commit ea6725e5e63b3dc7bb659a54a3d2df38215aa41e (head `7de2dcf`). This
+  closes rounds 1–2. Producer: `session_01MARAig3Nze5ZfEZ1FXTvtQ`. CI: 51/51 passed.
+- Verifier: every round-1 GREEN fault is now RED:
+  - case-folding or stripping of called names, forbidden matches and required matches;
+  - a deduped called_names;
+  - an empty forbidden set treating every call as forbidden;
+  - non-str names, and None, empty or non-str tool_call_ids.
+  Whole-file mutation with the extended gate (#528): 44/44, including the M9 `in` mutants.
+- Not product-true: there is no live caller yet; the Inspect AI scorer adapter is a separate task.
