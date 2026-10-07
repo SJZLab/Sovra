@@ -49,8 +49,6 @@ from dataclasses import dataclass
 from fractions import Fraction
 
 __all__ = [
-    "OUTCOMES",
-    "PRICE_SOURCES",
     "CostGraderError",
     "CostObservation",
     "CostResult",
@@ -58,8 +56,9 @@ __all__ = [
     "grade_cost",
 ]
 
-OUTCOMES = ("success", "failure")
-PRICE_SOURCES = ("measured", "estimated")
+# outcome -> counts as a success; source -> is only an estimate.
+_IS_SUCCESS = {"success": True, "failure": False}
+_IS_ESTIMATE = {"measured": False, "estimated": True}
 _DECIMAL = re.compile(r"(0|[1-9][0-9]*)(\.[0-9]+)?")
 _MAX_TEXT = 64
 _FAIL_ISSUES = frozenset(
@@ -163,19 +162,19 @@ def grade_cost(spec: CostSpec, observations: Sequence[CostObservation]) -> CostR
         _text(obs.request_id, "request_id")
         _text(obs.currency, "currency")
         outcome, source = obs.outcome, obs.source
-        if outcome not in OUTCOMES:
-            raise CostGraderError(f"outcome must be one of {OUTCOMES}")
-        if source not in PRICE_SOURCES:
-            raise CostGraderError(f"source must be one of {PRICE_SOURCES}")
+        if outcome not in _IS_SUCCESS:
+            raise CostGraderError(f"outcome must be one of {tuple(_IS_SUCCESS)}")
+        if source not in _IS_ESTIMATE:
+            raise CostGraderError(f"source must be one of {tuple(_IS_ESTIMATE)}")
         _version(obs.policy_version)
         if obs.attempt_id not in expected:
             issues.add("unexpected_attempt")
         if obs.attempt_id in seen:
             issues.add("duplicate_attempt")
         seen.add(obs.attempt_id)
-        if outcome == "success":
+        if _IS_SUCCESS[outcome]:
             successes.add(obs.request_id)
-        if source == "estimated":
+        if _IS_ESTIMATE[source]:
             issues.add("unmeasured_price")
         if obs.policy_version != spec.policy_version:
             issues.add("policy_version_mismatch")

@@ -271,6 +271,29 @@ def test_empty_observations_never_pass() -> None:
     check(CID, "empty expected ids refused at spec", raises(lambda: spec(0)))
 
 
+def test_ids_differing_only_by_case_or_space_are_distinct() -> None:
+    ids = ("a1", "A1", "a1 ")
+    result = grade_cost(
+        spec(expected_attempt_ids=ids), [obs(i, request_id=f"r{n}") for n, i in enumerate(ids)]
+    )
+    check(
+        CID, "a1, A1 and 'a1 ' are three distinct attempts", result.passed and result.issues == ()
+    )
+    check(
+        CID,
+        "64-character cost accepted",
+        grade_cost(spec(1, max_total_cost="9" * 64), [obs("a1", "1" * 64)]).total_cost
+        == Fraction("1" * 64),
+    )
+    for status in ("PASS", "pass ", " pass", "Pass"):
+        check(
+            CID,
+            f"status {status!r} is not a pass",
+            CostResult(status, (), Fraction(0), 0, None).passed is False,
+        )
+    check(CID, "status pass is a pass", CostResult("pass", (), Fraction(0), 0, None).passed is True)
+
+
 def test_duplicates_and_unexpected_preserved() -> None:
     dup = grade_cost(spec(1), [obs("a1", "2"), obs("a1", "3", request_id="r2")])
     check(
