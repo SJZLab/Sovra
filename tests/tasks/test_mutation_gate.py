@@ -127,6 +127,8 @@ assert raises(_validate_name, 5)
 assert not raises(_validate_name, "bob")
 assert raises(check_access, "", "r", R, True)
 assert raises(check_access, "bob", "x", R, True)
+assert raises(check_access, "bob", "R", R, True)
+assert raises(check_access, "bob", " r", R, True)
 assert check_access("admin", "r", R, True) == {"ok": True, "name": "admin", "level": 2}
 assert check_access("admin", "r", R, False) == {"ok": False, "name": "admin", "level": 0}
 assert check_access("bob", "r", R, False) == {"ok": False, "name": "bob", "level": 0}
@@ -264,6 +266,11 @@ def test_every_operator_generates_a_localized_parseable_mutant() -> None:
     )
     check(
         CID,
+        "M9 also normalizes the probe of a membership test (`role not in roles`)",
+        any("role -> role.strip().lower()" in s for s in summaries["M9"]),
+    )
+    check(
+        CID,
         "M6 drops the _validate_name(...) call",
         any("_validate_name" in s for s in summaries["M6"]),
     )
@@ -375,11 +382,15 @@ def test_allowlist_suppresses_exactly_its_entries(repo: Path) -> None:
     code, out, _ = run_gate(repo, *FILES, "--test", WEAK, "--allowlist", str(allow))
     check(CID, "allowlist entry without a reason is a usage error (2)", code == 2)
     real = ROOT / mg.DEFAULT_ALLOWLIST
-    check(
-        CID,
-        "the committed allowlist exists and parses to an empty list",
-        real.is_file() and mg.load_allowlist(ROOT, mg.DEFAULT_ALLOWLIST) == [],
-    )
+    committed = mg.load_allowlist(ROOT, mg.DEFAULT_ALLOWLIST) if real.is_file() else None
+    check(CID, "the committed allowlist exists and parses", committed is not None)
+    for i, e in enumerate(committed or []):
+        where = f"committed allowlist entry {i} ({e.get('file')}:{e.get('line')})"
+        check(CID, f"{where} names an existing production file", (ROOT / e["file"]).is_file())
+        check(CID, f"{where} is inside the mutation roots", mg.under_source_roots(e["file"]))
+        # Pinned to a line, so the entry goes stale and the survivor resurfaces if the code moves.
+        check(CID, f"{where} is pinned to an exact line", isinstance(e.get("line"), int))
+        check(CID, f"{where} explains why the mutant is equivalent", len(e["reason"]) >= 40)
     check(CID, "guard.py byte-identical after allowlist runs", guard_bytes(repo) == GUARD.encode())
 
 

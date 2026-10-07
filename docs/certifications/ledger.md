@@ -10038,3 +10038,74 @@ PR is not landed by the next certifier shift.
   are still RED. The whole-file gate leaves 0 survivors in lines 312–396.
 - Follow-up, not blocking: FTF-H034-F4. Twelve pre-existing survivors in the claim registry (lines 80–270:
   Claim.is_expired, TaskClaimRegistry.__init__, _dependencies_ready_locked, complete, snapshot).
+
+## FTF-0510 — Tokenization analysis — CERTIFIED (2026-10-06)
+- Criterion: FTF-0510. Production code: PR #488 (merge fb82208). Round-5 tests: PR #513, merge commit
+  777ecc020c71ab3b3a8b6f2132d9508488da41b5 (head `5a9e643`). This closes rounds 1–5.
+- Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent: the
+  producer is `session_01GiJi9rC1YARspnfGcZoRaD` (round 5).
+- CI: 47/47 passed, including gate and mutation-gate.
+- Independent verifier (mid-tier):
+  - All 22 faults that stayed GREEN in round 4 are RED. They cover distribution pins, the policy key, silent row
+    drops, mixed-batch count, trim/lstrip blocks, tool_call_id and name, AddedToken specials,
+    add_generation_prompt and TemplateError wrapping.
+  - The recorded oracle values were re-derived with transformers 4.46.3 `apply_chat_template` and match.
+  - Whole-file mutation gate: 93/94, with one equivalent Protocol-stub survivor (allowlisted in this PR).
+- Follow-ups, not blocking (FTF-0510-F1):
+  - pin SecurityError and other non-Undefined template errors as row issues;
+  - require verified non-None digests before certifying training fit.
+
+## FTF-0214 — Model catalog UI (wires FTF-0205–0213 and FTF-H004) — CERTIFIED (2026-10-07)
+- Criterion: FTF-0214. PR #516, merge commit 914276989fb7d8880bbce4161a8dff3330e51221 (head `78c83bd`). This closes
+  rounds 1–2.
+- Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent: the
+  producers are `session_01T2kdzttC4z7gp3731D8zuC` and `session_01MzAB3vq91RT3DHbJ4gZUN9`.
+- CI: 48/48 passed, including gate, mutation-gate (72/72 killed) and model-catalog-integration.
+- Independent verifier (top tier). Task, live integration (real Postgres 16) and vitest suites all pass (15/15).
+  - Every round-1 GREEN fault is now RED:
+    - revoked catalog shown healthy (route skip, empty snapshot, `_revoked_snapshot` parts);
+    - H004 connection-revoked check skipped;
+    - `{model_id:path}` and encodeURIComponent;
+    - UI U11–U14, connection_status, fields, model_groups and the probe route identity/time/type;
+    - revoked connection disabling the probe.
+  - The M9 refactors (enum identity compares, dict dispatch) preserve behavior: exact-match negative tests return
+    400, and the dispatch-swap faults are RED.
+- Wiring attestation (product-true): `build_model_catalog_router` is mounted in `create_app()` (main.py:213). The 10
+  already-certified units are live through it, each unit fault RED in the composed suites:
+  - enrich_visible_models, enrich_visible_model_groups, reconcile_aliases;
+  - LastKnownGoodCatalog, CatalogAnomalyDetector;
+  - probe_chat, probe_stream_chat, probe_tool_call, probe_structured_output;
+  - require_model_access.
+- Law 6: apps/web has no pages, so the component is unmounted from `/`. This is disclosed in the spec notes and stays
+  BLOCKED until FTF-H029.
+
+## FTF-H034-F4 — claim-registry mutation survivors killed — CERTIFIED (2026-10-07)
+- Follow-up of FTF-H034. PR #522, merge commit 0a1eefa1f37a35fd781ef640d081c8b468a7e51e (head `c9ed1ec`). This is a
+  tests-only change. Producer: `session_0188JPWM1UmzFkMpaEF3mh5C`. CI passed.
+- Verifier: the whole-file gate on scripts/task_claim.py kills 83/83 with no allowlist. Hand faults are RED:
+  - is_expired boundary, and is_expired always false;
+  - the dependency loop skipping a dependency, and a missing dependency treated as ready;
+  - every snapshot field omitted, and live state leaked;
+  - the concurrency limits.
+- Follow-up, not blocking: FTF-H034-F5. Pin the default lease TTL (3600s) and DEFAULT_GPU_QUOTA=1. Add a dedicated
+  check that complete() frees the slot.
+
+## FTF-0510-F1 — template SecurityError as a row issue; verified digests required — CERTIFIED (2026-10-07)
+- Follow-up of FTF-0510. PR #521, merge commit f8f4c9cbff398be5fee8a227c69444007291566a (head `b0c08a4`). Producer:
+  `session_0188JPWM1UmzFkMpaEF3mh5C`. CI: 48/48 passed.
+- Verifier: 12 faults are RED:
+  - render catch narrowed;
+  - SecurityError re-raised;
+  - digest None accepted, only one digest checked, or `or`;
+  - any string or truthy value accepted;
+  - three regex weakenings;
+  - the check removed.
+  The round-5 regressions are still RED. Whole-file mutation: 98/99 with one allowlisted equivalent, the Protocol
+  stub, now at line 221.
+- The allowlist entry moved from line 220 to 221 in this PR; the gate re-run passes.
+
+## FTF-H034-F5 — default TTL, GPU quota and slot release pinned — CERTIFIED (2026-10-07)
+- Follow-up of FTF-H034. PR #525, merge commit d5cfb3911d2ae0a53a6d11fb430261b60e4b469a (head `686d518`). Tests only.
+  Producer: `session_01Hbvgp8VNkuZHNecVWYHsm1`. CI: 48/48 passed.
+- Verifier: TTL 60, 3599 and 3601, GPU quota 0 and 2, and complete() not releasing the slot are all RED. Whole-file
+  mutation on scripts/task_claim.py: 83/83.

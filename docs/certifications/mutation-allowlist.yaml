@@ -21,4 +21,9 @@
 #       operator: M4                         # M1..M9
 #       line: 42                             # optional
 #       reason: "x is an int >= 1 here, so `x > 0` and `x >= 0` are equivalent"
-entries: []
+entries:
+  - file: workers/data/tokenization_analysis.py
+    function: ConversationTokenizer.prefix_token_counts
+    operator: M3
+    line: 221
+    reason: "Protocol method stub whose body is `...`; it is never executed (implementations override it), so an inserted `return None` cannot change behavior. Ruled equivalent by the FTF-0510 round-5 L2 verifier, 2026-10-06."

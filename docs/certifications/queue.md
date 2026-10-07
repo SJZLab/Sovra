@@ -24220,3 +24220,44 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
     - The integration "viewer cannot probe" check passes for the wrong reason (no discovery yet). Assert the role-gate
       detail instead.
     - Add a route-level test that admin metadata (api_key/api_base) never reaches the response.
+
+## 2026-10-07T00:00Z — Control plane: FTF-0510 CERTIFIED (round 5)
+- **FTF-0510: CERTIFIED** (PR #513, merge 777ecc0). Every round-4 GREEN fault is RED, the oracle was re-derived from
+  transformers, and whole-file mutation is 93/94 with one equivalent survivor.
+- **Allowlist:** one equivalent added: `ConversationTokenizer.prefix_token_counts` M3 at line 220, a Protocol `...`
+  stub that is never executed.
+- **Follow-up FTF-0510-F1 (Backlog):**
+  - a test that a sandbox SecurityError (`messages.append(1)` in the template) becomes a `template_render_error` row
+    issue;
+  - certification requires verified non-None digests.
+
+## 2026-10-07T01:00Z — Control plane: FTF-0214 CERTIFIED (round 2)
+- **FTF-0214: CERTIFIED** (PR #516, merge 9142769). All three round-1 blockers are fixed and every round-1 GREEN
+  fault is RED. Mutation is 72/72, so no allowlist entries were needed: the relay removed the equivalent mutants by
+  refactoring, and behavior is preserved. The 10 catalog units are attested live through `create_app()`.
+- Status: 113/302 certified · 45 product-true.
+- Process note: [relay] PRs keep adding CI steps to `.github/workflows/ci.yml`. These are additive and weaken no gate.
+  This matches established practice since FTF-0103A and stays allowed. Any change that removes or relaxes a step
+  still needs a [GOVERNANCE] PR.
+- **FTF-H034-F4: CERTIFIED** (PR #522, merge 0a1eefa). Whole-file mutation 83/83. New follow-up FTF-H034-F5
+  (Backlog): pin the default TTL and GPU quota constants, and add a re-claim-after-complete check.
+
+## 2026-10-07T02:00Z — Control plane: FTF-0510-F1 and FTF-H034-F5 CERTIFIED; FTF-0606 returned (round 2)
+- **FTF-0510-F1: CERTIFIED** (PR #521, merge f8f4c9c). The allowlist line is bumped from 220 to 221.
+- **FTF-H034-F5: CERTIFIED** (PR #525, merge d5cfb39).
+- **FTF-0606 (tool-name grader): NOT CERTIFIED** (PR #524, merge f85c67f; the producer is independent). Mutation is
+  35/35, but hand faults expose gaps the gate's operators do not generate:
+  1. **Fail-open on malformed calls.** `EmittedToolCall("1", 123)`, a list as the name, `tool_call_id=None`, and
+     duplicate empty ids are all accepted (passed=True when must_call_one_of is empty). Fix: require a non-empty str
+     for both name and tool_call_id, else raise ToolNameGraderError. Add tests for name=123, name=list,
+     tool_call_id=None and tool_call_id="".
+  2. **Exactness is not pinned.** Case-folding or stripping the called names, or the forbidden or required match, all
+     stay GREEN. Fix: four tests showing that "Refund_Order" and "refund_order " neither trigger a forbidden call nor
+     satisfy a required one.
+  3. **Two more gaps.** No test that an empty must_not_call plus a satisfied call passes, and no test that duplicate
+     calls are preserved in `called_names`.
+  - Not product-true: no live caller exists. An Inspect AI scorer adapter plus a live caller is a separate task.
+- **Gate gap (Control-plane follow-up):** mutation_gate M9 does not mutate `in` / membership comparisons on strings,
+  which is why gaps 2 and 3 survived the gate. Extend M9 to `x in S` and `x not in S` (normalize the left operand).
+- **Dispatcher replaced** (context reached about 400k): v2 is session_011i4PMFAPsFgHSySDQLTx7s. The old triggers are
+  disabled, not deleted. See docs/operations/routines.md.

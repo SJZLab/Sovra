@@ -142,6 +142,7 @@ from app.datasets.dataset_source_connection_routes import (
 )
 from app.evaluation.evaluation_suite_routes import build_evaluation_suite_router
 from app.litellm.connection_routes import build_litellm_connection_router
+from app.litellm.model_catalog_routes import build_model_catalog_router
 from app.model_versions.model_version_routes import build_model_version_router
 from app.projects.project_routes import build_project_router
 from app.target_connectors.agent_manifest_routes import build_agent_manifest_router
@@ -205,6 +206,11 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         build_litellm_connection_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_model_catalog_router(
             session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
         )
     )

@@ -1225,6 +1225,81 @@ def test_missing_or_null_special_tokens_render_empty_like_transformers() -> None
         )
 
 
+_SECURITY_ERROR_TEMPLATE = "{% for message in messages %}{{ messages.append(1) }}{% endfor %}"
+
+
+def test_sandbox_security_error_is_a_row_issue() -> None:
+    tokenizer = _tokenizer_for(_SECURITY_ERROR_TEMPLATE)
+    report = analyze_tokenization(
+        [_candidate([_text_message("user", "hi"), _text_message("assistant", "ok")])],
+        tokenizer=tokenizer,
+        max_sequence_length=1000,
+    )
+    check(
+        "FTF-0510-F1",
+        "a sandbox SecurityError (messages.append(1)) is reported as one template_render_error "
+        f"row issue, not a crash (got {[(i.batch_position, i.code) for i in report.issues]})",
+        [(i.batch_position, i.code) for i in report.issues] == [(0, "template_render_error")]
+        and not report.conversations
+        and not report.certifies_training_fit,
+    )
+
+
+class _ExactTokenizerWithDigests:
+    """A stand-in `exact=True` backend whose digest attributes are controlled by the test."""
+
+    exact = True
+
+    def __init__(self, tok_digest: object, tpl_digest: object) -> None:
+        self.tokenizer_json_sha256 = tok_digest
+        self.chat_template_sha256 = tpl_digest
+
+    def prefix_token_counts(self, messages: object) -> tuple[int, ...]:
+        return (1,)
+
+
+class _ExactTokenizerWithoutDigestAttrs:
+    exact = True
+
+    def prefix_token_counts(self, messages: object) -> tuple[int, ...]:
+        return (1,)
+
+
+def test_certification_requires_verified_non_none_digests() -> None:
+    good = "a" * 64
+    cases: list[tuple[str, object, bool]] = [
+        ("both real digests", _ExactTokenizerWithDigests(good, good), True),
+        ("no digest attributes", _ExactTokenizerWithoutDigestAttrs(), False),
+        ("tokenizer digest None", _ExactTokenizerWithDigests(None, good), False),
+        ("template digest None", _ExactTokenizerWithDigests(good, None), False),
+        ("tokenizer digest empty", _ExactTokenizerWithDigests("", good), False),
+        ("template digest not hex", _ExactTokenizerWithDigests(good, "z" * 64), False),
+        ("template digest short", _ExactTokenizerWithDigests(good, "a" * 63), False),
+        ("tokenizer digest non-str", _ExactTokenizerWithDigests(123, good), False),
+    ]
+    for label, tokenizer, expected in cases:
+        report = analyze_tokenization(
+            [_candidate([_text_message("user", "hi")])],
+            tokenizer=tokenizer,  # type: ignore[arg-type]
+            max_sequence_length=1000,
+        )
+        check(
+            "FTF-0510-F1",
+            f"{label}: certifies_training_fit is {expected}",
+            report.certifies_training_fit is expected,
+        )
+    real = analyze_tokenization(
+        [_candidate([_text_message("user", "hi")])],
+        tokenizer=_exact_tokenizer(),
+        max_sequence_length=1000,
+    )
+    check(
+        "FTF-0510-F1",
+        "the real ChatTemplateFastTokenizer (verified digests) still certifies",
+        real.certifies_training_fit is True,
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
