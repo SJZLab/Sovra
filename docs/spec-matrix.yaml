@@ -8762,15 +8762,34 @@ FTF-0610:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0610.py
 FTF-0611:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Numeric grader
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0601
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0601 (CERTIFIED).
+    Path refined from the packet's generic services/evaluation-worker/evaluators/numeric_grader.py
+    to workers/evaluation/numeric_grader.py (this repo's real evaluation-worker SOURCE_ROOT; same
+    convention as the sibling grader tasks).
+
+
+    Built: grade_numeric grades one answered quantity (decimal string plus unit) against a
+    NumericSpec whose every rule is explicit and undefaulted: exact expected value, exact unit or
+    currency code, absolute and relative tolerance (deviation <= max(abs_tol, rel_tol*|expected|),
+    rel_tol must be below 1 so no 100% tolerance can be declared) and a max_decimals rule on the
+    written text. Arithmetic is exact (fractions), so there is no binary rounding at a boundary.
+    NaN/Infinity in any spelling, a missing value, malformed text (exponents, separators,
+    whitespace, leading plus or zeros), a non-string (float/int/bool, possibly already lossy), a
+    missing or wrong unit and too many decimals each fail with their own issue code and are never
+    coerced to zero. All issues are reported together as a sorted tuple.
+
+
+    Disclosed: no live caller yet (Section 25's runtime loop is not dependency-ready), so
+    proving_symbol stays blank, same precedent as the sibling graders. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0611.py
 FTF-0612:
   certification_state: NONE
   criticality: MUST
