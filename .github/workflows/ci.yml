@@ -211,6 +211,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0101.py
       - name: FTF-0103 negative-test proof (RBAC middleware catches real defects, real local sockets, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0103.py
+      - name: FTF-0103-F1 negative-test proof (RBAC middleware body cap catches real defects, real local sockets, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0103_f1.py
       - name: FTF-0105 negative-test proof (tenant-isolation query guards catch real defects, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0105.py
       - name: FTF-H003 negative-test proof (cross-layer tenant isolation catches real defects, no DB required)
