@@ -1,4 +1,12 @@
 # QUEUE — Sovra (Model Factory)
+
+CERTIFIER NOTE 2026-10-07 (session_012rPVouR2qk5mBzNpLj6tpo): FTF-04A34 (PR #549, head 7c20b99) NOT CERTIFIED
+  -- stays PROVISIONAL/L1-PROVEN. Reason: PR is unmerged and CI is red on the current head: job `gate`
+  failed on mypy in tests/tasks/test_ftf_04a34.py (line 144 "Cannot infer type of lambda"; line 154
+  `object` has no attribute relative_path/line; lines 158-160 `object` has no attribute
+  to_entrypoint_evidence_json/to_model_evidence_json/to_tool_evidence_json). Relay: type the test
+  helpers, get ci-verdict green, merge, then re-request certification. Session IDs are independent
+  (relay: session_01NbejJngKwSDXx654Aigxou); fault-injection/DoD review deferred until CI is green.
 Updated: 2026-10-05T23:30:00Z (scheduled relay shift, branch `claude/wizardly-fermat-shlvk5`) --
   STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly, no mismatch.
   STEP 0.1: this branch was restarted from `origin/main` at `01d298d` (PR #469 merged -- the
