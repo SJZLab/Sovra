@@ -24375,3 +24375,20 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
   09-22, 09-30, 10-05). It cleared by itself at 04:39Z. It is an owner (billing) matter, not a code or runner fault.
 - From the [GOVERNANCE] CI-contract PR onward, "green" means the latest `ci-verdict` check on the
   current head. See docs/operations/routines.md "CI contract" and docs/operations/ci-cost-review-2026-10-07.md.
+
+## 2026-10-07T08:15Z — Control plane: FTF-04A21 returned (round 2, tests only); CI contract live
+- **FTF-04A21: NOT CERTIFIED** (PR #542, merge 5db0c2d; producer session_0158WZxJUHvbjVh2K3Upjr8b).
+  - An independent verifier injected 50 faults: 43 RED, 7 GREEN. Every endpoint the component calls exists in
+    the API and in 04A-interface.yaml, failures stay visible (Law 17), and there is no fake data.
+  - Non-equivalent GREEN faults: C6 baseText reset on edit (erases the conflict); P7 storage key not scoped by
+    manifest; S8 a JSON `null` dropped from the PATCH; D3 appended diff lines dropped. Exact tests: QUEUE item 0b.
+  - Reachability: UNWIRED. No page mounts it; the packet has no page file. Disclosed, BLOCKED on FTF-H029.
+- **CI contract (PR #545) is live and tested on real PR events:**
+  - tracker-only #546 ran 3 jobs (gate full), about 7 billed min, verdict green;
+  - superseded runs on #545 and #547 were cancelled, and their ci-verdict reads `cancelled`, never a pass;
+  - probe #547: relay-policy rejected the duplicate item, the log-only change and the PROGRESS.md edit; the
+    ci-focus run executed only the named integration job, and ci-verdict failed with the focused-run reason.
+- **Duplicate FTF-0308 PRs (#541, #543)** were resolved: the item is parked (QUEUE "## Parked"). Lane prompts are
+  replaced by dispatcher triggers v3 (B trig_01HCUV3Q952J7svKFuvfgavk, C trig_01GVHHgkLkbKFVYYbRNTYkNP; the v2
+  triggers are disabled): ci-verdict as the only green, atomic claim on the exact `relay/<ID>-r<round>` name, the
+  repeated-failure rule, ci-focus, and additive-only ci.yml edits.
