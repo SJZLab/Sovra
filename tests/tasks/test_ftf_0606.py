@@ -455,6 +455,105 @@ def test_rejects_must_call_one_of_as_bare_string() -> None:
         )
 
 
+def _refused(calls: object, desc: str) -> None:
+    try:
+        grade_tool_name(calls, must_call_one_of=[], must_not_call=[])  # type: ignore[arg-type]
+    except ToolNameGraderError:
+        return
+    check("FTF-0606", desc, False)
+
+
+def test_rejects_non_string_name_int() -> None:
+    _refused([EmittedToolCall("1", 123)], "name=123 is refused")  # type: ignore[arg-type]
+
+
+def test_rejects_non_string_name_list() -> None:
+    _refused([EmittedToolCall("1", ["a"])], "name=list is refused")  # type: ignore[arg-type]
+
+
+def test_rejects_none_tool_call_id() -> None:
+    _refused([EmittedToolCall(None, "a")], "tool_call_id=None is refused")  # type: ignore[arg-type]
+
+
+def test_rejects_empty_tool_call_id() -> None:
+    _refused([EmittedToolCall("", "a")], "tool_call_id='' is refused")
+
+
+def test_rejects_non_string_tool_call_id() -> None:
+    _refused([EmittedToolCall(7, "a")], "tool_call_id=7 is refused")  # type: ignore[arg-type]
+
+
+def test_case_differing_called_name_does_not_trigger_forbidden() -> None:
+    r = grade_tool_name(
+        [EmittedToolCall("1", "Refund_Order")],
+        must_call_one_of=[],
+        must_not_call=["refund_order"],
+    )
+    check("FTF-0606", "Refund_Order is not forbidden refund_order", r.passed)
+    check("FTF-0606", "no forbidden calls reported", r.forbidden_calls == ())
+
+
+def test_whitespace_differing_called_name_does_not_trigger_forbidden() -> None:
+    r = grade_tool_name(
+        [EmittedToolCall("1", "refund_order ")],
+        must_call_one_of=[],
+        must_not_call=["refund_order"],
+    )
+    check("FTF-0606", "'refund_order ' is not forbidden refund_order", r.passed)
+    check("FTF-0606", "called name preserved verbatim", r.called_names == ("refund_order ",))
+
+
+def test_case_differing_called_name_does_not_satisfy_required() -> None:
+    r = grade_tool_name(
+        [EmittedToolCall("1", "Refund_Order")],
+        must_call_one_of=["refund_order"],
+        must_not_call=[],
+    )
+    check("FTF-0606", "Refund_Order does not satisfy refund_order", not r.passed)
+    check("FTF-0606", "required not satisfied", not r.satisfied_required_one_of)
+    check("FTF-0606", "called name preserved verbatim", r.called_names == ("Refund_Order",))
+
+
+def test_whitespace_differing_called_name_does_not_satisfy_required() -> None:
+    r = grade_tool_name(
+        [EmittedToolCall("1", "refund_order ")],
+        must_call_one_of=["refund_order"],
+        must_not_call=[],
+    )
+    check("FTF-0606", "'refund_order ' does not satisfy refund_order", not r.passed)
+    check("FTF-0606", "required not satisfied", not r.satisfied_required_one_of)
+
+
+def test_empty_must_not_call_with_satisfied_call_passes() -> None:
+    r = grade_tool_name(
+        [EmittedToolCall("1", "ask_user")],
+        must_call_one_of=["ask_user"],
+        must_not_call=[],
+    )
+    check("FTF-0606", "satisfied call with empty must_not_call passes", r.passed)
+    check("FTF-0606", "satisfied flag set", r.satisfied_required_one_of)
+    check("FTF-0606", "no forbidden calls", r.forbidden_calls == ())
+
+
+def test_duplicate_calls_preserved_in_called_names() -> None:
+    r = grade_tool_name(
+        [EmittedToolCall("1", "a"), EmittedToolCall("2", "a"), EmittedToolCall("3", "b")],
+        must_call_one_of=[],
+        must_not_call=[],
+    )
+    check("FTF-0606", "duplicates kept in order", r.called_names == ("a", "a", "b"))
+
+
+def test_duplicate_forbidden_calls_all_reported() -> None:
+    r = grade_tool_name(
+        [EmittedToolCall("1", "x"), EmittedToolCall("2", "x")],
+        must_call_one_of=[],
+        must_not_call=["x"],
+    )
+    check("FTF-0606", "both forbidden calls reported", r.forbidden_calls == ("x", "x"))
+    check("FTF-0606", "forbidden fails", not r.passed)
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
