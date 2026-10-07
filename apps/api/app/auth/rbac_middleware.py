@@ -167,7 +167,7 @@ def _extract_body_tenant_id(payload: object, field_name: str) -> uuid.UUID | _No
         return None
 
 
-async def _read_capped_body(request: Request) -> None:
+async def _read_capped_body(request: Request, oversize: tuple[int, str]) -> None:
     """Reads the request body into Starlette's own body cache, refusing more than
     `MAX_JSON_BODY_BYTES`. A declared Content-Length over the cap is refused
     without reading; a chunked body (no Content-Length) is stopped at the cap
@@ -175,19 +175,19 @@ async def _read_capped_body(request: Request) -> None:
     declared = request.headers.get("content-length")
     if declared is not None and declared.isascii() and declared.isdigit():
         if int(declared) > MAX_JSON_BODY_BYTES:
-            raise HTTPException(status_code=413, detail="request_too_large")
+            raise HTTPException(status_code=oversize[0], detail=oversize[1])
     chunks: list[bytes] = []
     received = 0
     async for chunk in request.stream():
         received += len(chunk)
         if received > MAX_JSON_BODY_BYTES:
-            raise HTTPException(status_code=413, detail="request_too_large")
+            raise HTTPException(status_code=oversize[0], detail=oversize[1])
         chunks.append(chunk)
     request._body = b"".join(chunks)  # noqa: SLF001 - Starlette's documented body cache
 
 
-async def _read_json_body(request: Request) -> object:
-    await _read_capped_body(request)
+async def _read_json_body(request: Request, oversize: tuple[int, str]) -> object:
+    await _read_capped_body(request, oversize)
     try:
         return await request.json()
     except Exception:  # noqa: BLE001 - any unparsable/empty body means "no body tenant"
@@ -201,11 +201,14 @@ def require_role(
     principal_resolver: PrincipalResolver = default_principal_resolver,
     role_lookup: RoleLookup = default_role_lookup,
     body_tenant_field: str | None = "organization_id",
+    oversize_error: tuple[int, str] = (413, "request_too_large"),
 ) -> Callable[[Request], Awaitable[AuthorizedContext]]:
     """Returns a FastAPI dependency enforcing `allowed_roles`, scoped to the
     organization named in the URL path, for one route/operation -- this
     task's own acceptance clause 1 ("every route/operation maps to
-    explicit role and scoped project policy on server")."""
+    explicit role and scoped project policy on server"). `oversize_error` is the
+    (status, detail) returned when the body exceeds `MAX_JSON_BODY_BYTES`; a route
+    with its own published error contract for that case passes it here."""
     allowed = frozenset(allowed_roles)
     if not allowed:
         raise ValueError("require_role needs at least one allowed role")
@@ -222,7 +225,7 @@ def require_role(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         if body_tenant_field is not None and request.method in _MUTATING_METHODS:
-            body = await _read_json_body(request)
+            body = await _read_json_body(request, oversize_error)
             body_tenant = _extract_body_tenant_id(body, body_tenant_field)
             if body_tenant is not _NO_BODY_TENANT and body_tenant != organization_id:
                 raise HTTPException(status_code=403, detail="tenant_mismatch")

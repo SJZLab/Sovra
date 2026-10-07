@@ -16,6 +16,9 @@ Clause -> test mapping:
 * F1-N1 the cap is not a way to skip the tenant check; a normal body still goes through the
   tenant cross-check and a route can read the body afterwards:
   test_small_bodies_still_cross_checked_and_readable
+* F1-N3 a route with its own published oversize error contract (FTF-0602-P1: 400 `body_too_large`)
+  keeps it via `oversize_error`; routes without the option keep 413:
+  test_route_can_keep_its_own_oversize_error_contract
 * F1-N2 the constant is the documented 32 MiB: test_cap_constant_is_32_mib
 
 Real uvicorn server over a real local socket (the pattern of tests/tasks/test_ftf_0103.py).
@@ -80,6 +83,20 @@ def _build_app() -> FastAPI:
         )
     )
 
+    custom_guard = Depends(
+        require_role(
+            frozenset({Role.ML_ENGINEER}),
+            principal_resolver=_principal,
+            role_lookup=_role,
+            oversize_error=(400, "body_too_large"),
+        )
+    )
+
+    @app.post("/api/v1/orgs/{organization_id}/custom-things")
+    async def create_custom(request: Request, ctx: AuthorizedContext = custom_guard) -> dict:
+        HANDLER_RUNS.append(1)
+        return {"organization_id": str(ctx.organization_id)}
+
     @app.post("/api/v1/orgs/{organization_id}/things")
     async def create(request: Request, ctx: AuthorizedContext = guard) -> dict:
         HANDLER_RUNS.append(1)
@@ -130,12 +147,14 @@ def _chunks(payload: bytes, size: int = 1 << 20) -> Iterator[bytes]:
         yield payload[start : start + size]
 
 
-def _post_chunked(port: int, payload: bytes, org: uuid.UUID = ORG) -> tuple[int, bytes]:
+def _post_chunked(
+    port: int, payload: bytes, org: uuid.UUID = ORG, route: str = "things"
+) -> tuple[int, bytes]:
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
     try:
         conn.request(
             "POST",
-            f"/api/v1/orgs/{org}/things",
+            f"/api/v1/orgs/{org}/{route}",
             body=_chunks(payload),
             headers={"X-Test-Principal": "member", "Content-Type": "application/json"},
             encode_chunked=True,
@@ -185,6 +204,25 @@ def _post_lying_length(port: int, declared: int) -> tuple[int, bytes]:
         return status, data
     finally:
         sock.close()
+
+
+def test_route_can_keep_its_own_oversize_error_contract() -> None:
+    with _running_app() as port:
+        HANDLER_RUNS.clear()
+        status, body = _post_chunked(port, _json_payload(CAP + 1), route="custom-things")
+        check("FTF-0103-F1-N3", f"custom oversize_error status (got {status})", status == 400)
+        check(
+            "FTF-0103-F1-N3",
+            "custom oversize_error detail",
+            status != 400 or json.loads(body) == {"detail": "body_too_large"},
+        )
+        check("FTF-0103-F1-N3", "the handler never ran", HANDLER_RUNS == [])
+        status, _ = _post_chunked(port, _json_payload(CAP), route="custom-things")
+        check("FTF-0103-F1-N3", f"exactly the cap is still accepted (got {status})", status == 200)
+        default, _ = _post_chunked(port, _json_payload(CAP + 1))
+        check(
+            "FTF-0103-F1-N3", f"routes without the option keep 413 (got {default})", default == 413
+        )
 
 
 def test_cap_constant_is_32_mib() -> None:
