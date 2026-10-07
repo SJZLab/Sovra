@@ -1087,6 +1087,30 @@ def test_f1_unreadable_git_view_fails_closed() -> None:
     _with_tmp(body)
 
 
+def test_n3_unreadable_directory_refused() -> None:
+    """The walker's directory-read failure is a connector error, not a crash or a skip."""
+
+    def body(tmp: Path) -> None:
+        if os.geteuid() == 0:  # root bypasses mode bits; CI runs unprivileged
+            return
+        repo = _new_checkout(tmp)
+        (repo / "a.txt").write_text("dirty\n")
+        (repo / "pkg").chmod(0o000)
+        try:
+            check(
+                "FTF-04A32-N3",
+                "an unreadable directory fails with a connector error",
+                _refused(
+                    lambda: capture_local_repository(repo, [tmp]),
+                    LocalRepositoryConnectorError,
+                ),
+            )
+        finally:
+            (repo / "pkg").chmod(0o755)
+
+    _with_tmp(body)
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
