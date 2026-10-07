@@ -406,6 +406,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0517.py
       - name: FTF-1305 negative-test proof (Candidate ranking, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1305.py
+      - name: FTF-0616 negative-test proof (LLM judge adapter, no DB required; real local gateway over HTTPS)
+        run: uv run python3 tests/tasks/test_ftf_0616.py
       - name: FTF-04A02 negative-test proof (GitHub App/token read-only secret integration, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a02.py
       - name: FTF-04A03 negative-test proof (GitHub accessible-repository listing connector, no DB required)
