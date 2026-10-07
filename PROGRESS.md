@@ -10,9 +10,9 @@ Updated: 2026-10-07T13:40Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
-- **Returned (2026-10-07T13:40Z):** six items. FTF-0515 and FTF-04A22 go to round 3; FTF-04A06-F1, FTF-0605,
-  FTF-0607 and FTF-0609 go to round 2. All were green, but bullets in their requirements had no proving test.
-  Under verification: FTF-0610 and FTF-0611. Parked features FTF-0308, FTF-0501 and FTF-0602 now have
+- **Returned (2026-10-07T13:40Z):** eight items. FTF-0515 and FTF-04A22 go to round 3; FTF-04A06-F1, FTF-0605,
+  FTF-0607, FTF-0609, FTF-0610 and FTF-0611 go to round 2. All were green, but bullets in their requirements had no proving test.
+  Nothing is under verification. Parked features FTF-0308, FTF-0501 and FTF-0602 now have
   prerequisite slices queued (FTF-0308-P1, FTF-0602-P1, FTF-0501-P1).
 - **Product-true 27 → 34 → 45:** an independent verifier proved 7 certified foundations live end to end: config, tenant
   context, RBAC, audit, tenant-scoped queries, secret refs and the outbound guard. The product-truth gate was also

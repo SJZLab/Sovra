@@ -10224,7 +10224,7 @@ PR is not landed by the next certifier shift.
   candidate equals the normalized approved value). The whole-file gate with M10 and the dispatch tables kills 50/50.
 - Not product-true: there is no live caller yet.
 
-## 2026-10-07T13:40Z — RETURNED: FTF-0515 (round 2), FTF-04A22 (round 2), FTF-04A06-F1, FTF-0605, FTF-0607, FTF-0609
+## 2026-10-07T13:40Z — RETURNED: FTF-0515 (round 2), FTF-04A22 (round 2), FTF-04A06-F1, FTF-0605, FTF-0607, FTF-0609, FTF-0610, FTF-0611
 - FTF-0515 round 2: PR #564, merge d1181590c55e7f00e6e4386719ac81b3f75da64f.
   - Production P1/P2 are correct. Mutation 112/112.
   - About 25 hand faults in the round-2 DoD bullets stay GREEN. Tests only: QUEUE 0b.
@@ -10243,5 +10243,11 @@ PR is not landed by the next certifier shift.
 - FTF-0609: PR #563, merge 895499f8b04cd1f6e989fdceb60b7b8ad9114da9.
   - Mutation 90/90.
   - 3 survivors: any→all on executed, and empty str/bytes inputs. QUEUE 0g.
+- FTF-0610: PR #566, merge 8c49975e1036f86fb181b15e49c2ec9c02564dac.
+  - Mutation 136/136.
+  - 15 of 95 hand faults survive (tests only). QUEUE 0h.
+- FTF-0611: PR #567, merge 10bc14c152707585ae0241ca9c21c3400950737e.
+  - Mutation 66/66.
+  - 3 real survivors plus minor pins (tests only). QUEUE 0i.
 - Verifiers were independent Control-plane subagents (the producers are relay lanes). Each ran in a detached
   worktree at the merge commit.

@@ -9305,7 +9305,7 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
    - **Every grader (FTF-06xx):** before submitting, apply the GRADER CHECKLIST in the same queue.md entry.
-   - **Returned 2026-10-07T13:40Z (Control plane L2, independent verifiers).** All six submissions below were green with
+   - **Returned 2026-10-07T13:40Z (Control plane L2, independent verifiers).** All eight submissions below were green with
      0 mutation survivors, and each still had DoD bullets that no test proves: a fault aimed at the bullet stayed GREEN.
      In the submission, give every DoD bullet its own fault → RED row (the fault named, the CI-way RED output). A bullet
      with no row is treated as missing. The extended mutation gate is necessary, not sufficient: it does not mutate
@@ -9358,7 +9358,26 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      FTF-0609 RETURN (895499f, #563). Mutation 90/90 killed; 46 hand faults, 3 real survivors (tests only):
      1. F26 executed check any->all survives: in test_mixed_denied_and_executed assert unverified_attempts == (); add one call with [executed, failed] and [executed, unknown] -> unverified_attempts == () and executed_effects == (that effect,).
      2. F37/F38 fail-open malformed input: attempted_calls="" / b"" and backend_effects="" / b"" must raise (str|bytes guard untested; without it an empty string becomes an empty trace and passes). Optionally bytearray().
-   - **0h.** Then the Backlog.
+   - **0h. FTF-0610 round 2 (tests only).** Work in tests/tasks/test_ftf_0610.py. Claim `relay/FTF-0610-r2`. Verifier findings (each listed fault must go RED):
+     FTF-0610 RETURN, tests only (8c49975, #566). Deterministic (§27 honoured); mutation 136/136; 95 hand faults, 15 survive. Required tests in tests/tasks/test_ftf_0610.py:
+     1. must_ask_missing_info and must_escalate without forbidden_actions are refused (_NEEDS_FORBIDDEN flips survive).
+     2. must_escalate with several calls: [unrelated, request_approval] and [request_approval, unrelated] pass; [unrelated, unrelated2] fails.
+     3. missing_fields keeps expectation order: required_fields ("reason","order_id") with nothing requested -> ("reason","order_id").
+     4. Duplicates preserved: required_fields ("a","a") -> missing ("a","a").
+     5. "" and b"" passed as escalation_tools, required_fields, forbidden_actions and requested_fields raise.
+     6. Mixed lists ["ok",""], ["","ok"], ["ok",3], ["ok",None] refused in each of the three expectation fields and in requested_fields.
+     7. Overlap check is case/whitespace exact: escalation_tools ("Refund_Order",) with forbidden ("refund_order",), and "refund_order ", are accepted.
+     8. Several forbidden_actions where only the second is attempted or executed -> fail.
+     9. grade_refusal_suite: a case with behavior_ok=True but passed=False fails the suite and is listed in failed_cases, for each of forbidden_attempted, effect_violation, side_effects_unverified (backend None) and missing_fields.
+   - **0i. FTF-0611 round 2 (tests only).** Work in tests/tasks/test_ftf_0611.py. Claim `relay/FTF-0611-r2`. Verifier findings (each listed fault must go RED):
+     FTF-0611 RETURN, tests only (10bc14c, #567). Mutation 66/66; 98 hand faults, 3 real survivors plus minor gaps. Required tests in tests/tasks/test_ftf_0611.py:
+     1. Unicode digits in the fractional part: "1.５" and "1.٥" -> malformed_number (wide tolerance, expected 1.5).
+     2. Tolerance boundary finer than 0.01: max_decimals=12, expected "1", abs_tol "0.000000000001": "1.000000000001" passes, "1.000000000002" fails out_of_tolerance; same shape for rel_tol (e.g. expected "1000000", rel_tol "0.000001": boundary passes, boundary+1 fails).
+     3. Whitespace-only unit: ObservedQuantity("100", " ") vs spec unit " " passes; " " vs spec "USD" -> ("wrong_unit",).
+     4. Non-string observed unit (b"USD", int 1 vs "1") -> wrong_unit.
+     5. Pin MAX_DECIMALS_LIMIT == 12 and a dec=12 accept case.
+     6. NumericSpec, ObservedQuantity and NumericResult are frozen (FrozenInstanceError); NumericGraderError is a ValueError subclass.
+   - **0j.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
      (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34 and FTF-04A32 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
@@ -9571,8 +9590,7 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
     language/group fields that §68.2/§69.2 and FTF-0602 need, so they are added; the live error convention is
     `{"detail": code}`, not §40's envelope; FTF-0501's "resumable UI" clause is not in its file list and stays with
     FTF-0501's own refinement.
-- FTF-0610 (#566) and FTF-0611 (#567) are merged and under Control-plane L2; FTF-0605/0607/0609 and FTF-04A06-F1
-  are returned work in item 0 above.
+- FTF-0605/0607/0609/0610/0611 and FTF-04A06-F1 are returned work in item 0 above (not Backlog).
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 
