@@ -294,6 +294,16 @@ def test_empty_reconciliation_is_a_real_zero_model_result() -> None:
         and result.models == ()
         and result.model_count == 0,
     )
+    check(
+        "FTF-0308",
+        "_empty_reconciliation honors an explicit `now`, never silently re-deriving the clock",
+        result.reconciled_at == _NOW,
+    )
+    check(
+        "FTF-0308",
+        "_empty_reconciliation falls back to the real clock when `now` is omitted",
+        mcr._empty_reconciliation().reconciled_at != _NOW,
+    )
 
 
 def test_serialize_artifact_provenance_round_trips_real_fields() -> None:
@@ -301,14 +311,20 @@ def test_serialize_artifact_provenance_round_trips_real_fields() -> None:
     body = mcr._serialize_artifact_provenance(artifact)  # type: ignore[arg-type]
     check(
         "FTF-0308",
-        "artifact provenance serializer carries display_name/source/family/revision/digest/license",
-        body["display_name"] == artifact.display_name
+        "artifact provenance serializer carries id/display_name/source/family/revision/digest",
+        body["id"] == str(artifact.id)
+        and body["display_name"] == artifact.display_name
         and body["source_type"] == artifact.source_type
         and body["source_uri"] == artifact.source_uri
         and body["model_family"] == artifact.model_family
         and body["base_model_revision"] == artifact.base_model_revision
         and body["weights_digest"] == artifact.weights_digest
         and body["license_id"] == artifact.license_id,
+    )
+    check(
+        "FTF-0308",
+        "artifact provenance serializer carries status/trust_remote_code_allowed, never fabricated",
+        body["status"] == artifact.status and body["trust_remote_code_allowed"] is False,
     )
     check(
         "FTF-0308",
@@ -323,7 +339,11 @@ def test_serialize_training_capability_null_artifact_when_none_given() -> None:
     from app.artifacts.training_capability_classifier import classify_training_capability
 
     classification = classify_training_capability(
-        model_id="model-a", organization_id=_ORG_ID, reconciliation=reconciliation, artifact=None
+        model_id="model-a",
+        organization_id=_ORG_ID,
+        reconciliation=reconciliation,
+        artifact=None,
+        assigned_role="candidate",
     )
     body = mcr._serialize_training_capability(classification, None)
     check(
@@ -335,6 +355,14 @@ def test_serialize_training_capability_null_artifact_when_none_given() -> None:
         "FTF-0308",
         "no artifact given -> capability is unknown (fail-closed default)",
         body["capability"] == "unknown" and body["artifact_availability"] == "none",
+    )
+    check(
+        "FTF-0308",
+        "the serializer carries model_id/role/evidence_probed_at/detail verbatim, never dropped",
+        body.get("model_id") == "model-a"
+        and body.get("role") == "candidate"
+        and "evidence_probed_at" in body
+        and body.get("detail") == classification.detail,
     )
 
 
@@ -435,6 +463,29 @@ def test_revoked_connection_never_calls_discover_models() -> None:
                 "FTF-0308",
                 "a revoked connection's reconciliation is empty -> access not_granted",
                 body["access"] == "not_granted",
+            )
+
+
+def test_connection_status_check_is_exact_never_normalized() -> None:
+    # Negative: a case/whitespace variant of "revoked" is not the real
+    # ('active','revoked') DB CHECK-constrained value, but this no-DB
+    # fixture can still hand the route one directly -- proving the real
+    # comparison is exact equality, never a normalized (strip/lower) match.
+    with _patched(
+        tenant_scoped_session_for=_fake_tenant_scoped_session_for,
+        get_connection=lambda *a, **k: _fake_connection(status="Revoked"),
+        discover_models=lambda **k: _discovery_result(("model-a",)),
+        enrich_visible_models=lambda **k: _empty_enrichment(),
+    ):
+        with _running_app() as base_url:
+            r = _request(
+                base_url, "GET", capability_path(uuid.uuid4(), "model-a"), principal="admin"
+            )
+            check(
+                "FTF-0308",
+                "a 'Revoked' (capitalized) status is not treated as revoked -- the real "
+                "comparison is exact, so discover_models is genuinely dialed (DISCOVERED here)",
+                r.status == 200 and r.json()["access"] == "granted",
             )
 
 
@@ -642,6 +693,7 @@ def main() -> None:
     test_malformed_artifact_id_is_rejected()
     test_foreign_artifact_id_is_404_same_as_missing()
     test_revoked_connection_never_calls_discover_models()
+    test_connection_status_check_is_exact_never_normalized()
     test_no_artifact_id_given_is_unknown_capability()
     test_ready_artifact_with_valid_digest_and_license_is_trainable()
     test_archived_artifact_is_never_trainable_even_if_a_digest_is_present()

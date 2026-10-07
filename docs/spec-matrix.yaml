@@ -2236,15 +2236,125 @@ FTF-0307:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0307.py
 FTF-0308:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Model-to-artifact mapping UI
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-14; scenarios=Q07, Q10; deps=FTF-0214, FTF-0301, FTF-0307
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-14; scenarios=Q07, Q10; deps=FTF-0214, FTF-0301, FTF-0307
+    (all CERTIFIED, confirmed before relying on them). This task's own packet names a
+    frontend-only `files` list (`apps/web/components/artifact-capabilities/
+    model_to_artifact_mapping_ui.tsx`, `apps/web/tests/ftf_0308.spec.ts`); the real backend
+    composition it needs did not yet exist -- the same "packet predates the real backend
+    composition" refinement FTF-0214's own docstring already applied for an identical gap
+    (Section 84.3's own "reuse an existing compatible module" allowance). FTF-0307's own
+    docstring already named this precisely: "There is today no persisted alias-to-artifact
+    binding anywhere in this repository's schema... which `TrainableArtifact`, if any,
+    corresponds to a given `model_id` is therefore an explicit caller-supplied input... never
+    a name-based or metadata-based lookup." This task's own `database_changes` clause ("No
+    independent schema change... any required change is a separately claimed migration
+    prerequisite") is honored exactly: no new table/column/migration was added.
+
+    Built for real as a new `GET .../connections/litellm/{connection_id}/models/{model_id}/
+    training-capability` route added to the existing, already-CERTIFIED
+    `apps/api/app/litellm/model_catalog_routes.py` (FTF-0214's own file;
+    `build_model_catalog_router` gains one more endpoint, same injection/role-gate convention,
+    no new router-build function) plus the real frontend component. The route reuses FTF-0214's
+    own exact discovery/enrichment/reconciliation composition verbatim (never reimplemented) with
+    FTF-0301's already-CERTIFIED `artifact_crud.get_artifact` (tenant-scoped; a cross-tenant
+    `artifact_id` denies identically to missing, 404, same IDOR precedent FTF-0301 itself
+    established) and FTF-0307's already-CERTIFIED, pure `classify_training_capability`. A revoked
+    connection, or discovery that never reaches `DISCOVERED`, falls back to a real, honest empty
+    `AliasReconciliationResult` (`_empty_reconciliation`) rather than skipping the call -- `access`
+    then correctly reports `not_granted` while `capability` (an independent dimension, Section
+    0.12) is still computed from the artifact alone.
+
+    Acceptance clause 1 ("UI maps explicit accessible alias to verified trainable artifact and
+    displays provenance/limits") is met for real: the frontend
+    (`model_to_artifact_mapping_ui.tsx`) never free-types a model alias or an artifact -- both are
+    selected from the real, live `GET .../catalog` (FTF-0214) and `GET .../artifacts` (FTF-0301)
+    responses, never pre-selected (same "no automatic selection" convention `model_catalog_ui.tsx`
+    already established); "verified" and "provenance/limits" are the live route's own real
+    `capability`/`artifact_availability`/`license_approved` classification and real
+    `display_name`/`source_type`/`source_uri`/`model_family`/`base_model_revision`/
+    `weights_digest`/`license_id`/`required_python_packages`/`minimum_gpu_profile` fields,
+    rendered directly, never fabricated or re-derived client-side.
+
+    Negative_acceptance ("Changing mapping invalidates related qualification; no guessed weight
+    identity from LiteLLM alias") is met structurally and proven by fault injection (Law 1): there
+    is no persisted mapping to go stale (the explicit `artifact_id` query parameter IS the
+    mapping), so the route recomputes the full classification fresh on every call -- proven by
+    `tests/tasks/test_ftf_0308.py`'s own
+    `test_changing_the_mapping_recomputes_fresh_never_reuses_a_stale_result` (two calls, two
+    different real artifacts, two independently-correct results) and by
+    `tests/integration/test_ftf_0308_model_artifact_mapping.py`'s own real-Postgres equivalent (a
+    real `ready` artifact vs. a real still-`registered` one). Client-side, `selectModel`/
+    `selectArtifact` both call `setCapability(null)` before issuing the new request, and the
+    results section is gated on `capability && !loadingCapability`, so a stale result is never
+    shown while the new mapping's own result is still loading -- proven in
+    `apps/web/tests/ftf_0308.spec.ts`'s own
+    "changing the mapped artifact clears the stale result" test, which also asserts the in-flight
+    request itself carries the NEW artifact id (a real, caught stale-closure fault: reusing the
+    prior `selectedArtifactId` instead of the new selection broke this exact assertion, reverted
+    byte-identical). "No guessed weight identity": `classify_training_capability` itself never
+    reads a name/alias field when deciding `capability` (FTF-0307's own docstring); this route
+    requires an explicit `artifact_id` for a non-`unknown` capability, and the frontend never
+    matches an artifact to an alias by string similarity -- both are independent, explicit user
+    selections.
+
+    Real relevant integration (Law 1, fault shown able to fail first): a real Postgres run via
+    `tests/integration/test_ftf_0308_model_artifact_mapping.py` caught a genuine defect this
+    task's own no-DB suite could not -- `get_artifact`'s returned `TrainableArtifact` row was read
+    (`classify_training_capability`/`_serialize_artifact_provenance`) *after* the
+    `tenant_scoped_session_for` context manager had already closed the session, raising a real
+    `sqlalchemy.orm.exc.DetachedInstanceError` on the live database (a `SimpleNamespace` fixture in
+    the no-DB suite never expires, so that suite could not have caught this). Fixed with
+    `session.expunge(artifact)` immediately after the fetch, before the `with` block exits;
+    re-verified against the same live PostgreSQL 16 database, all checks passed. Role gate reuses
+    `CONNECTION_ADMIN_ROLES` (`organization_admin`-only), the same gate `GET .../catalog` already
+    uses for any route that can trigger `discover_models`.
+
+    `tests/tasks/test_ftf_0308.py` (no-DB, 13 checks): role-boundary denial, missing connection
+    404, malformed/foreign `artifact_id` (400/404, the IDOR case), a revoked connection never
+    calling `discover_models` (an injected additive fault -- `if False:` replacing the revoked
+    check -- confirmed RED, reverted byte-identical), no-artifact-given unknown capability, a real
+    ready+license-accepted+digest-resolved artifact classifying `trainable_open_weight`, an
+    archived artifact never trainable, a `ready` artifact with no valid digest failing closed
+    (defense in depth), a non-`DISCOVERED` result never crashing, and the stale-reuse proof above.
+    A second fault injection (dropping `artifact=artifact` to `artifact=None` before the
+    `classify_training_capability` call) was independently confirmed RED across 6 of these checks,
+    then reverted byte-identical.
+
+    Disclosed, not hidden: (1) UI reachability from `/` stays BLOCKED -- same FTF-H029 gap
+    `model_catalog_ui.tsx` itself already discloses; this is a real, DOM-tested component with no
+    live browser path yet. (2) No independent `proving_symbol` is claimed here:
+    `build_model_catalog_router` is already proven live-wired under FTF-0214's own entry, and this
+    task adds one more endpoint to that same already-wired function rather than a new, separately
+    nameable router-build symbol -- claiming the identical symbol again here would restate an
+    already-proven fact under a second task ID rather than prove this task's own new code.
+
+    Verification: `uv run ruff check .` / `uv run ruff format --check .` / `uv run mypy .` clean
+    (396 source files). `pnpm run lint` / `pnpm run format:check` / `pnpm run typecheck` clean.
+    `pnpm exec vitest run`: 12/12 files, 79/79 tests. `python3 scripts/validate_spec.py --strict`
+    clean. `product_truth_check.py --fail-on-unwired`: unchanged 45/45 (no new/changed
+    `proving_symbol`, per the disclosed note above). `scripts/status.py`: unchanged 117/302
+    certified / 45 product-true (Law 2 -- a submission is not a certification). New CI: gate step
+    "FTF-0308 negative-test proof" (`tests/tasks/test_ftf_0308.py`) and job
+    `model-artifact-mapping-integration` (`tests/integration/test_ftf_0308_model_artifact_mapping.py`,
+    real `services: postgres`, no live LiteLLM gateway required -- see that file's own docstring
+    for why). PRE-SUBMIT SELF-ATTACK mutation gate (diff-scoped to this PR's own changed hunks in
+    `model_catalog_routes.py`): first run `44 run | 34 KILLED | 10 SURVIVED | score 77.3%`; all
+    ten killed by strengthening `test_ftf_0308.py` (full per-mutant table and the fixes in
+    `docs/certifications/submissions/2026-10-07T0715Z-FTF-0308.md`). Second run:
+    `44 run | 44 KILLED | 0 SURVIVED | score 100.0%` -- PASS.
+
+    Not self-certified (Law 4): `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN`,
+    awaiting independent Control-plane L2 review and a real CI run (including the new
+    `model-artifact-mapping-integration` job) before certification.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0308.py
 FTF-0309:
   certification_state: NONE
   criticality: MUST
