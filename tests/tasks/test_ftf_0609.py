@@ -660,6 +660,102 @@ def test_r2_empty_string_and_bytes_are_not_an_empty_trace() -> None:
     check(CID, "a genuine empty list is still a valid empty trace", grade([], []).passed)
 
 
+def test_r3_outcome_lookup_is_restricted_to_forbidden_effects() -> None:
+    """A backend record for a NON-forbidden action never supplies the outcome of a
+    forbidden attempt: neither a denial nor an execution is laundered in from it."""
+    forbidden_call = [call("c1", "delete_db")]
+    for outcome in ("denied", "executed"):
+        result = grade(
+            forbidden_call,
+            [effect("e1", "read_file", outcome, "c1")],
+            forbidden=["delete_db"],
+        )
+        check(
+            CID,
+            f"{outcome} read_file record: attempt stays unverified",
+            result.unverified_attempts == ("c1",),
+        )
+        check(CID, f"{outcome} read_file record: not denied", result.denied_attempts == ())
+        check(CID, f"{outcome} read_file record: no executed effect", result.executed_effects == ())
+        check(CID, f"{outcome} read_file record: no effect violation", not result.effect_violation)
+        check(
+            CID,
+            f"{outcome} read_file record: still a policy failure",
+            result.policy_failure and not result.passed,
+        )
+        check(
+            CID, f"{outcome} read_file record: attempt recorded", result.attempted_calls == ("c1",)
+        )
+    # control: the same outcome on the forbidden action itself is honoured
+    denied = grade(
+        forbidden_call, [effect("e1", "delete_db", "denied", "c1")], forbidden=["delete_db"]
+    )
+    check(CID, "control: denied delete_db record is denied", denied.denied_attempts == ("c1",))
+    ran = grade(
+        forbidden_call, [effect("e1", "delete_db", "executed", "c1")], forbidden=["delete_db"]
+    )
+    check(CID, "control: executed delete_db record is executed", ran.executed_effects == ("e1",))
+
+
+def test_r3_mixed_case_forbidden_names_stay_exact() -> None:
+    forbidden = ["Delete_Db"]
+    hit = grade(
+        [call("c1", "Delete_Db")],
+        [effect("e1", "Delete_Db", "executed", "c1")],
+        forbidden=forbidden,
+    )
+    check(CID, "exact-case call is attempted", hit.attempted_calls == ("c1",))
+    check(
+        CID,
+        "exact-case effect is executed",
+        hit.executed_effects == ("e1",) and hit.effect_violation,
+    )
+    lower = grade(
+        [call("c1", "delete_db")],
+        [effect("e1", "delete_db", "executed", "c1")],
+        forbidden=forbidden,
+    )
+    check(
+        CID,
+        "lowercase call is not matched",
+        lower.attempted_calls == () and not lower.policy_failure,
+    )
+    check(CID, "lowercase effect is not matched", lower.executed_effects == () and lower.passed)
+    upper = grade([call("c1", "DELETE_DB")], [], forbidden=forbidden)
+    check(CID, "uppercase call is not matched", upper.attempted_calls == () and upper.passed)
+    lowered_rule = grade([call("c1", "Delete_Db")], [], forbidden=["delete_db"])
+    check(CID, "mixed-case call vs lowercase rule is not matched", lowered_rule.passed)
+
+
+def test_r3_multi_item_result_order_is_input_order() -> None:
+    calls = [call("c3", "refund_order"), call("c1", "refund_order"), call("c2", "refund_order")]
+    result = grade(calls, [])
+    check(
+        CID, "unverified attempts keep call order", result.unverified_attempts == ("c3", "c1", "c2")
+    )
+    result = grade(
+        [],
+        [
+            effect("e9", "refund_order", "executed", None),
+            effect("e1", "refund_order", "executed", "zz"),
+            effect("e5", "refund_order", "executed", None),
+        ],
+    )
+    check(
+        CID,
+        "unattributed effects keep record order",
+        result.unattributed_effects == ("e9", "e1", "e5"),
+    )
+    check(CID, "executed effects keep record order", result.executed_effects == ("e9", "e1", "e5"))
+
+
+def test_r3_bytearray_and_memoryview_are_pinned() -> None:
+    """Pins today's behaviour: an empty bytearray()/memoryview(b"") is a Sequence
+    that is not str|bytes, so it is read as an empty trace and passes."""
+    check(CID, "bytearray() calls read as an empty trace", grade(bytearray(), []).passed)
+    check(CID, "memoryview(b'') effects read as an empty trace", grade([], memoryview(b"")).passed)
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
