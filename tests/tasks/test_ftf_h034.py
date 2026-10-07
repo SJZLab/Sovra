@@ -54,6 +54,7 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.spec_verification import TaskNode  # noqa: E402
 from scripts.task_claim import (  # noqa: E402
+    DEFAULT_GPU_QUOTA,
     Claim,
     ClaimDenied,
     TaskClaimRegistry,
@@ -1106,6 +1107,74 @@ def test_snapshot_reports_the_exact_real_state():
         "FTF-H034-F4",
         "an expired claim is dropped from the snapshot",
         registry.snapshot()["active_claims"] == {},
+    )
+
+
+def test_default_ttl_is_exactly_3600_seconds():
+    fake_time = {"now": 10_000.0}
+    registry = TaskClaimRegistry(
+        tasks=_free_nodes("T-A", "T-B"), certification_states={}, clock=lambda: fake_time["now"]
+    )
+    claim = registry.claim("T-A", "alice")
+    registry.claim("T-B", "bob")
+    check("FTF-H034-F5", "claim() default ttl_seconds is 3600", claim.ttl_seconds == 3600.0)
+    fake_time["now"] = 10_000.0 + 3599.0
+    code, _ = _denial_code(lambda: registry.complete("T-A", "alice", "reviewer"))
+    check(
+        "FTF-H034-F5",
+        "a default-TTL claim is still live at +3599s (completion accepted)",
+        code is None and registry.active_count() == 1,
+    )
+    fake_time["now"] = 10_000.0 + 3600.0
+    code, _ = _denial_code(lambda: registry.complete("T-B", "bob", "reviewer"))
+    check(
+        "FTF-H034-F5",
+        "a default-TTL claim is expired at +3600s (CLAIM_EXPIRED)",
+        code == "CLAIM_EXPIRED" and registry.active_count() == 0,
+    )
+
+
+def test_default_gpu_quota_is_exactly_one():
+    check("FTF-H034-F5", "DEFAULT_GPU_QUOTA is 1", DEFAULT_GPU_QUOTA == 1)
+    registry = TaskClaimRegistry(tasks=_free_nodes("T-A", "T-B"), certification_states={})
+    registry.claim("T-A", "alice", write_set={"a"}, gpu_required=True)
+    check(
+        "FTF-H034-F5",
+        "the first gpu_required claim is admitted under the default quota",
+        registry.active_count() == 1,
+    )
+    code, _ = _denial_code(lambda: registry.claim("T-B", "bob", write_set={"b"}, gpu_required=True))
+    check(
+        "FTF-H034-F5",
+        "a second gpu_required claim is denied by default (GPU_QUOTA_EXCEEDED)",
+        code == "GPU_QUOTA_EXCEEDED" and registry.active_count() == 1,
+    )
+
+
+def test_complete_frees_the_slot_for_reclaim():
+    registry = TaskClaimRegistry(
+        tasks=_free_nodes("T-A", "T-B"), certification_states={}, max_concurrency=1
+    )
+    registry.claim("T-A", "alice", write_set={"a"}, locks={"mig"}, gpu_required=True)
+    code, _ = _denial_code(
+        lambda: registry.claim("T-B", "bob", write_set={"a"}, locks={"mig"}, gpu_required=True)
+    )
+    check("FTF-H034-F5", "a second claim is denied while the first is active", code is not None)
+    registry.complete("T-A", "alice", "reviewer")
+    check("FTF-H034-F5", "complete() empties the active set", registry.active_count() == 0)
+    code, _ = _denial_code(
+        lambda: registry.claim("T-B", "bob", write_set={"a"}, locks={"mig"}, gpu_required=True)
+    )
+    check(
+        "FTF-H034-F5",
+        "after complete(), the concurrency slot, GPU quota, write-set and lock are all free",
+        code is None and registry.active_count() == 1,
+    )
+    code, _ = _denial_code(lambda: registry.claim("T-A", "alice"))
+    check(
+        "FTF-H034-F5",
+        "a completed task can be claimed again once a slot is free",
+        code == "CONCURRENCY_LIMIT_EXCEEDED",
     )
 
 
