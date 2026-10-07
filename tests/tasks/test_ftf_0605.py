@@ -936,6 +936,171 @@ def test_huge_integer_bounds_do_not_crash() -> None:
     )
 
 
+def test_r2_issues_are_sorted_when_raw_instance_order_differs() -> None:
+    schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {"qty": {"type": "integer", "maximum": 10}},
+        "additionalProperties": False,
+    }
+    result = grade('{"zzz":1,"qty":99}', schema)
+    check(CID, "r2-1 instance with zzz before qty fails", not result.passed)
+    check(
+        CID,
+        "r2-1 issues are sorted by path, not in instance order",
+        [issue.path for issue in result.issues] == ["/qty", "/zzz"],
+    )
+    check(
+        CID,
+        "r2-1 issues equal their own sorted form",
+        list(result.issues) == sorted(result.issues),
+    )
+
+
+def test_r2_required_is_case_and_whitespace_exact_with_extras_allowed() -> None:
+    schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {"Name": {"type": "string"}},
+        "required": ["Name"],
+        "additionalProperties": True,
+    }
+    check(CID, "r2-2 exact key passes", grade('{"Name":"a"}', schema).passed)
+    for raw in ('{"name":"a"}', '{"Name ":"a"}', '{" Name":"a"}', '{"NAME":"a"}'):
+        result = grade(raw, schema)
+        check(CID, f"r2-2 {raw} fails required", not result.passed)
+        check(
+            CID,
+            f"r2-2 {raw} reports a required issue",
+            any(issue.keyword == "required" for issue in result.issues),
+        )
+
+
+def test_r2_type_null_rejects_every_falsy_lookalike() -> None:
+    schema: dict[str, Any] = {"type": "null"}
+    check(CID, "r2-3 null passes", grade("null", schema).passed)
+    for raw in ('""', "0", "false", "[]", "{}", "0.0", '"null"'):
+        result = grade(raw, schema)
+        check(CID, f"r2-3 {raw} fails type null", not result.passed)
+        check(
+            CID,
+            f"r2-3 {raw} reports a type issue",
+            [issue.keyword for issue in result.issues] == ["type"],
+        )
+
+
+def test_r2_const_and_enum_object_exactness_never_raises() -> None:
+    const_schema: dict[str, Any] = {"const": {"a": 1, "b": 2}}
+    check(CID, "r2-4 equal object passes const", grade('{"b":2,"a":1}', const_schema).passed)
+    check(CID, "r2-4 instance missing a const key fails", not grade('{"a":1}', const_schema).passed)
+    check(
+        CID,
+        "r2-4 instance with an extra key fails",
+        not grade('{"a":1,"b":2,"c":3}', const_schema).passed,
+    )
+    case_schema: dict[str, Any] = {"const": {"a": 1}}
+    check(CID, "r2-4 {A:1} does not equal const {a:1}", not grade('{"A":1}', case_schema).passed)
+    check(
+        CID,
+        "r2-4 const {A:1} does not accept {a:1}",
+        not grade('{"a":1}', {"const": {"A": 1}}).passed,
+    )
+    enum_schema: dict[str, Any] = {"enum": [{"a": 1, "b": 2}, [1, 2]]}
+    check(CID, "r2-4 enum object member passes", grade('{"a":1,"b":2}', enum_schema).passed)
+    check(CID, "r2-4 enum object missing a key fails", not grade('{"a":1}', enum_schema).passed)
+    check(
+        CID,
+        "r2-4 enum object key case differs fails",
+        not grade('{"A":1,"b":2}', enum_schema).passed,
+    )
+    check(CID, "r2-4 enum list prefix fails", not grade("[1]", enum_schema).passed)
+
+
+def test_r2_ref_with_sibling_keywords_applies_both() -> None:
+    schema: dict[str, Any] = {
+        "$defs": {"a": {"type": "string"}},
+        "$ref": "#/$defs/a",
+        "maxLength": 1,
+    }
+    check(CID, "r2-5 short string passes", grade('"a"', schema).passed)
+    long_result = grade('"abc"', schema)
+    check(CID, "r2-5 $ref sibling maxLength fails 'abc'", not long_result.passed)
+    check(
+        CID,
+        "r2-5 the failure is the sibling maxLength",
+        [issue.keyword for issue in long_result.issues] == ["maxLength"],
+    )
+    check(CID, "r2-5 $ref target type still applies", not grade("1", schema).passed)
+
+
+def test_r2_deep_nesting_fails_closed_under_a_permissive_schema() -> None:
+    result = grade("[" * 100000 + "]" * 100000, {})
+    check(CID, "r2-6 100000-deep nesting fails under {}", not result.passed)
+    check(
+        CID, "r2-6 the failure is reported as json", [i.keyword for i in result.issues] == ["json"]
+    )
+    check(CID, "r2-6 a shallow array passes under {}", grade("[[]]", {}).passed)
+
+
+def test_r2_non_ascii_schema_and_golden_digest() -> None:
+    schema: dict[str, Any] = {"enum": ["\u00e9"]}
+    check(CID, "r2-7 non-ASCII enum member passes", grade('"\u00e9"', schema).passed)
+    check(CID, "r2-7 non-ASCII enum rejects plain e", not grade('"e"', schema).passed)
+    check(
+        CID,
+        "r2-7 non-ASCII enum rejects decomposed form",
+        not grade('"e\u0301"', schema).passed,
+    )
+    check(
+        CID,
+        "r2-7 golden schema digest is pinned",
+        schema_fingerprint({"type": "string"})
+        == "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96",
+    )
+    check(
+        CID,
+        "r2-7 non-ASCII digest is stable ASCII-escaped canonical form",
+        schema_fingerprint({"enum": ["\u00e9"]}) == schema_fingerprint({"enum": ["\u00e9"]})
+        and schema_fingerprint({"enum": ["\u00e9"]}) != schema_fingerprint({"enum": ["e"]}),
+    )
+
+
+def test_r2_messages_never_echo_the_candidate() -> None:
+    secret = "ZQX-SECRET-7731"
+    cases: list[tuple[str, dict[str, Any], str]] = [
+        ("enum", {"enum": ["ok"]}, json.dumps(secret)),
+        ("const", {"const": "ok"}, json.dumps(secret)),
+        ("type", {"type": "integer"}, json.dumps(secret)),
+        ("maxLength", {"type": "string", "maxLength": 3}, json.dumps(secret)),
+        ("minLength", {"type": "string", "minLength": 99}, json.dumps(secret)),
+        ("anyOf", {"anyOf": [{"type": "integer"}, {"enum": ["ok"]}]}, json.dumps(secret)),
+        ("uniqueItems", {"type": "array", "uniqueItems": True}, json.dumps([secret, secret])),
+        ("parse", {}, "not json " + secret),
+        ("parse-dup", {}, '{"k":1,"k":"' + secret + '"}'),
+        ("parse-nan", {}, "NaN " + secret),
+    ]
+    for label, schema, raw in cases:
+        result = grade(raw, schema)
+        check(CID, f"r2-8 {label} candidate fails", not result.passed)
+        check(CID, f"r2-8 {label} has at least one issue", len(result.issues) >= 1)
+        for issue in result.issues:
+            check(CID, f"r2-8 {label} message omits the candidate", secret not in issue.message)
+            check(CID, f"r2-8 {label} keyword omits the candidate", secret not in issue.keyword)
+
+
+def test_r2_all_of_identical_branches_keep_both_issues() -> None:
+    schema: dict[str, Any] = {"allOf": [{"type": "string"}, {"type": "string"}]}
+    result = grade("1", schema)
+    check(CID, "r2-opt identical allOf branches both report", len(result.issues) == 2)
+    check(CID, "r2-opt both issues are the same type issue", len({*result.issues}) == 1)
+
+
+def test_r2_unicode_whitespace_and_bom_prefix_fail() -> None:
+    schema: dict[str, Any] = {"type": "object", "properties": {}, "additionalProperties": True}
+    check(CID, "r2-opt plain object passes", grade("{}", schema).passed)
+    for label, prefix in (("BOM", "\ufeff"), ("NBSP", "\u00a0"), ("VT", "\x0b"), ("FF", "\x0c")):
+        check(CID, f"r2-opt {label} prefix fails", not grade(prefix + "{}", schema).passed)
+        check(CID, f"r2-opt {label} suffix fails", not grade("{}" + prefix, schema).passed)
+
+
 def main() -> int:
     tests = [
         (name, fn)
