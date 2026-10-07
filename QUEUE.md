@@ -9297,29 +9297,14 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
 0. **2026-10-06T09:45Z (Control plane): highest priority, one item per lane, one PR per item.**
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
-   - **0c. FTF-1807 round 4 (tests only).** The forbidden-claim scan is a phrase blacklist, so plain-language inversions
+   - **0b. FTF-1807 round 4 (tests only).** The forbidden-claim scan is a phrase blacklist, so plain-language inversions
      pass. Pin every paragraph of runbook sections 1–6 exactly (whitespace-normalized text, or a per-section sha256
      held in the test), keeping the existing structured pins. Add in-suite faults for each checker: wrapped, bold,
      code-block and upper-case claims; an extra or suffixed table row; renumbered steps; and a heading rename that
      keeps the count. Same entry.
-   - **0b. FTF-0214 round 2 (3 blocking): push to the OPEN PR #516 (branch `relay/FTF-0214`), merging main in first.**
-     The backend wiring of all 10 units is proven live. Fix these three:
-     1. A revoked connection's catalog reads `access_state: healthy` with entries `callable`
-        (model_catalog_routes.py:339-349 returns the snapshot unchanged). On revocation, mark entries stale, set
-        access_state to revoked, and render `connection_status` in the UI. Integration test: discover an ACTIVE
-        connection, revoke it in the DB, then assert the catalog shows revoked/stale and the probe returns 403
-        `model_access_denied:connection_revoked` with no gateway call.
-     2. The UI must render capability `fields`, `model_groups`, the probe's `route_identity_state`, `probed_at` and
-        `probe_type`. Add vitest assertions using non-healthy, alert, anomaly and non-chat fixtures; hardcoding
-        "healthy", hiding alert/anomaly, or always sending `chat` must turn RED.
-     3. Model IDs containing "/" (`openai/gpt-4o`) return 404 on probe. Use `{model_id:path}` and `encodeURIComponent`
-        in the UI, and add a test.
-     Mutation gate: the 8 M9 survivors (lines 360/375/377/476/485/494) are confirmed EQUIVALENT. List their new line
-     numbers in the submission and Control plane adds re-pinned allowlist entries. Do not add tests for them. See
-     docs/certifications/queue.md "2026-10-06T23:00Z".
-   - **0e.** Then the Backlog.
+   - **0c.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
-     (2026-10-06); follow-ups FTF-1206A-F2, FTF-H034-F1, FTF-H034-F2 and FTF-H034-F3 are CERTIFIED.
+     (2026-10-06); FTF-0214 is CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1, FTF-H034-F2 and FTF-H034-F3 are CERTIFIED.
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid

@@ -1468,10 +1468,10 @@ FTF-0213:
   proving_symbol: probe_structured_output
   proving_test: tests/tasks/test_ftf_0213.py
 FTF-0214:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Model catalog UI
-  evidence_hash: ''
+  evidence_hash: 914276989fb7d8880bbce4161a8dff3330e51221
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-02; scenarios=Q02, Q21; deps=FTF-0201, FTF-0207,
@@ -1605,7 +1605,7 @@ FTF-0214:
     Not self-certified (Law 4): `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN`,
     awaiting independent Control-plane L2 review and a real CI run (including the new
     `model-catalog-integration` job) before certification.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: build_model_catalog_router
   proving_test: tests/tasks/test_ftf_0214.py
 FTF-0215:
