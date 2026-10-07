@@ -669,6 +669,82 @@ def test_a_mention_in_prose_is_not_a_call() -> None:
     check(CID, "prose describing the right arguments never passes", not grade(prose).passed)
 
 
+def test_whitespace_and_case_in_names_are_exact_everywhere() -> None:
+    check(
+        CID,
+        "a whitespace-only tool_call_id is a legal exact id",
+        ToolCallArguments(" ", "t", "{}").tool_call_id == " ",
+    )
+    check(
+        CID,
+        "a whitespace-only call name is a legal exact name",
+        ToolCallArguments("c", " ", "{}").name == " ",
+    )
+    spaced = ArgumentContract(" ", {}, {})
+    check(
+        CID,
+        "a whitespace-only contract tool name is legal and exact",
+        grade_tool_arguments(call("{}", " "), spaced, allow_extra=False).passed,
+    )
+    check(
+        CID,
+        "...and does not match a different name",
+        not grade_tool_arguments(call("{}", "t"), spaced, allow_extra=False).passed,
+    )
+    upper = ArgumentContract("Refund_Order", {}, {})
+    check(
+        CID,
+        "a mixed-case contract name rejects the lower-case call",
+        not grade_tool_arguments(call("{}", "refund_order"), upper, allow_extra=False).passed,
+    )
+    padded = ArgumentContract(" t", {}, {})
+    check(
+        CID,
+        "a padded contract name rejects the unpadded call",
+        not grade_tool_arguments(call("{}", "t"), padded, allow_extra=False).passed,
+    )
+    optional = ArgumentContract("t", {}, {"Reason": OfType("string")})
+    check(
+        CID,
+        "an optional parameter name is case-exact when present",
+        keywords(grade_tool_arguments(call('{"Reason": 5}', "t"), optional, allow_extra=False))
+        == [("Reason", "mismatch")],
+    )
+    check(
+        CID,
+        "a different-case key is an extra, not the optional parameter",
+        keywords(grade_tool_arguments(call('{"reason": 5}', "t"), optional, allow_extra=False))
+        == [("reason", "extra")],
+    )
+    pair = ArgumentContract("t", {"id": Identity("X"), "ID": Identity("Y")}, {})
+    swapped = grade_tool_arguments(call('{"id": "Y", "ID": "X"}', "t"), pair, allow_extra=False)
+    check(
+        CID,
+        "swap detection treats id and ID as different parameters",
+        {("id", "swapped_identity"), ("ID", "swapped_identity")} <= set(keywords(swapped)),
+    )
+
+
+def test_arguments_failure_reasons_are_distinguished() -> None:
+    parse_failure = grade("not json")
+    check(
+        CID,
+        "unparseable text reports the parse reason",
+        parse_failure.issues[0].message != "arguments are not an object",
+    )
+    root_failure = grade("[1]")
+    check(
+        CID,
+        "a non-object root reports that it is not an object",
+        root_failure.issues[0].message == "arguments are not an object",
+    )
+    check(
+        CID,
+        "both stop before parameter checks",
+        all(i.keyword == "arguments_json" for i in parse_failure.issues + root_failure.issues),
+    )
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for _name, fn in tests:

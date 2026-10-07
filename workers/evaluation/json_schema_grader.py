@@ -200,10 +200,11 @@ def _expect_nonneg_int(schema: Mapping[str, Any], keyword: str, where: str) -> N
 
 
 def _expect_number(schema: Mapping[str, Any], keyword: str, where: str) -> None:
-    if not _is_number(schema[keyword]) or (
-        isinstance(schema[keyword], float) and not math.isfinite(schema[keyword])
-    ):
-        raise SchemaError(f"{where}: {keyword} must be a finite number")
+    # Non-finite floats never reach here: `schema_fingerprint` (called before
+    # the schema is checked) refuses NaN/Infinity. Deliberately no
+    # `math.isfinite` call: it raises OverflowError on an int beyond float range.
+    if not _is_number(schema[keyword]):
+        raise SchemaError(f"{where}: {keyword} must be a number")
 
 
 def _check_schema(schema: Any, where: str, defs: Mapping[str, Any], depth: int) -> None:

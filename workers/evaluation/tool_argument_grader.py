@@ -309,11 +309,12 @@ def grade_tool_arguments(
     if call.name != contract.tool_name:
         issues.append(ArgumentIssue("<tool>", "tool_name", "call is to a different tool"))
     ok, parsed, reason = parse_strict_json(call.arguments_json)
-    if not ok:
-        issues.append(ArgumentIssue("<arguments>", "arguments_json", reason))
-        return ToolArgumentResult(False, tuple(sorted(issues)), call.tool_call_id)
-    if not isinstance(parsed, dict):
-        issues.append(ArgumentIssue("<arguments>", "arguments_json", "arguments are not an object"))
+    if not ok or not isinstance(parsed, dict):
+        issues.append(
+            ArgumentIssue(
+                "<arguments>", "arguments_json", reason if not ok else "arguments are not an object"
+            )
+        )
         return ToolArgumentResult(False, tuple(sorted(issues)), call.tool_call_id)
 
     failed: set[str] = set()
