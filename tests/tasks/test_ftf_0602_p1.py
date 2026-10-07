@@ -643,7 +643,7 @@ def test_n1_oversized_body_is_refused_before_it_is_parsed() -> None:
     check(
         "N1",
         "a body under the cap is parsed (and then refused for its shape, not its size)",
-        result.status == 400 and result.json()["detail"] != "body_too_large",
+        result.status == 400 and "body_too_large" not in result.body.decode(),
     )
 
 
@@ -1752,7 +1752,7 @@ def test_s1_body_cap_boundary_is_exact_for_declared_and_chunked_bodies() -> None
         check(
             "N1",
             f"{label}: a body of exactly the cap is read (refused for its shape, not its size)",
-            at.status == 400 and at.json()["detail"] != "body_too_large",
+            at.status == 400 and "body_too_large" not in at.body.decode(),
         )
         check(
             "N1",

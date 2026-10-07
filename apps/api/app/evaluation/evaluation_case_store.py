@@ -372,10 +372,6 @@ _PATCH_CONVERTERS: dict[str, Callable[[Any], Any]] = {"weight": float}
 _IMMUTABLE_FIELDS: dict[str, bool] = {"case_key": True}
 
 
-def _same(value: Any) -> Any:
-    return value
-
-
 def _oracle_error(
     index: int | None, critical: object, grader_type: object
 ) -> CaseFieldError | None:
@@ -449,7 +445,8 @@ def validate_case_patch(raw: object) -> tuple[dict[str, Any], list[CaseFieldErro
             if problem is not None:
                 errors.append(CaseFieldError(None, key, problem))
             else:
-                patch[key] = _PATCH_CONVERTERS.get(key, _same)(value)
+                convert = _PATCH_CONVERTERS.get(key)
+                patch[key] = value if convert is None else convert(value)
     if not raw:
         errors.append(CaseFieldError(None, None, "empty_patch"))
     return patch, errors
