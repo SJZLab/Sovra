@@ -593,6 +593,135 @@ def test_unknown_or_duplicate_detector_runs_refused() -> None:
         pass
 
 
+# ------------------------------------------- exact-match / fail-closed edges
+
+
+def test_vocabulary_is_exact_match_not_case_or_whitespace_tolerant() -> None:
+    report = _blocking_report()
+    iid = report.unresolved_blocking[0].issue_id
+    for decision in (" resolved", "Resolved", "RESOLVED ", " waived", "WAIVED"):
+        try:
+            apply_resolutions(report, [IssueResolution(iid, decision, "r", "why")])
+            check("FTF-0515", f"decision {decision!r} refused", False)
+        except QualityEngineError:
+            pass
+    for variant in (iid.upper(), f" {iid}", f"{iid} "):
+        try:
+            apply_resolutions(report, [IssueResolution(variant, "resolved", "r", "why")])
+            check("FTF-0515", f"issue id variant {variant!r} refused", False)
+        except QualityEngineError:
+            pass
+    for name in (" pii_secrets", "PII_SECRETS", "pii_secrets "):
+        try:
+            run_detector(name, lambda: None)
+            check("FTF-0515", f"run_detector name {name!r} refused", False)
+        except QualityEngineError:
+            pass
+        try:
+            evaluate_quality([DetectorRun(name, None)])
+            check("FTF-0515", f"DetectorRun name {name!r} refused", False)
+        except QualityEngineError:
+            pass
+    for category, severity in (
+        (" poisoning", "blocking"),
+        ("Poisoning", "blocking"),
+        ("poisoning", " blocking"),
+        ("poisoning", "Warning"),
+        ("detector_failure", "blocking"),
+    ):
+        try:
+            evaluate_quality(
+                _runs(),
+                extra_issues=[QualityIssueInput("x", category, severity, "c", "m")],
+            )
+            check("FTF-0515", f"extra issue {category!r}/{severity!r} refused", False)
+        except QualityEngineError:
+            pass
+
+
+def test_run_detector_returns_report_under_its_own_name() -> None:
+    ok = run_detector("exact_duplicate", lambda: detect_exact_duplicates(CLEAN_BATCH))
+    check(
+        "FTF-0515",
+        "successful run keeps detector name and report",
+        ok.detector == "exact_duplicate"
+        and ok.error is None
+        and isinstance(ok.report, type(detect_exact_duplicates(CLEAN_BATCH))),
+    )
+    failed = run_detector("near_duplicate", lambda: 1 / 0)
+    check("FTF-0515", "failed run keeps detector name", failed.detector == "near_duplicate")
+
+
+def _hand_built(severity: str, state: str = "open", failure: bool = False) -> QualityReport:
+    from workers.data.quality_issue_engine import QualityIssue
+
+    issue = QualityIssue(
+        issue_id="a" * 64,
+        detector="exact_duplicate",
+        category="exact_duplicate",
+        severity=severity,
+        reason_code="x",
+        message="m",
+        batch_positions=(0,),
+        record_indices=(0,),
+        evidence_digest=None,
+        resolution_state=state,
+        is_detector_failure=failure,
+    )
+    return QualityReport(issues=(issue,), detectors_reported=REQUIRED_DETECTORS)
+
+
+def test_unrecognised_severity_or_state_fails_closed() -> None:
+    for severity in ("Warning", " warning", "WARNING", "critical", ""):
+        check(
+            "FTF-0515",
+            f"severity {severity!r} is treated as blocking",
+            _hand_built(severity).blocks_split,
+        )
+    for state in ("Resolved", " resolved", "WAIVED", "done", ""):
+        check(
+            "FTF-0515",
+            f"resolution state {state!r} does not clear a blocking issue",
+            _hand_built("blocking", state).blocks_training,
+        )
+    check("FTF-0515", "exact warning does not block", not _hand_built("warning").blocks_split)
+    check(
+        "FTF-0515",
+        "exact resolved/waived clear",
+        not _hand_built("blocking", "resolved").blocks_split
+        and not _hand_built("warning", "waived").blocks_split,
+    )
+    for severity in ("Warning", " warning"):
+        try:
+            apply_resolutions(
+                _hand_built(severity), [IssueResolution("a" * 64, "waived", "r", "why")]
+            )
+            check("FTF-0515", f"waiver of unrecognised severity {severity!r} refused", False)
+        except QualityEngineError:
+            pass
+    try:
+        apply_resolutions(
+            _hand_built("warning", failure=True),
+            [IssueResolution("a" * 64, "waived", "r", "why")],
+        )
+        check("FTF-0515", "a flagged detector failure cannot be waived", False)
+    except QualityEngineError:
+        pass
+
+
+def test_resolution_text_is_stripped_exactly() -> None:
+    report = _blocking_report()
+    iid = report.unresolved_blocking[0].issue_id
+    for reviewer, reason in (("  rev  ", "  why  "), ("\trev", "why\n")):
+        out = apply_resolutions(report, [IssueResolution(iid, "resolved", reviewer, reason)])
+        after = [i for i in out.issues if i.issue_id == iid][0]
+        check(
+            "FTF-0515",
+            "reviewer and reason stored fully stripped",
+            after.resolved_by == "rev" and after.resolution_reason == "why",
+        )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

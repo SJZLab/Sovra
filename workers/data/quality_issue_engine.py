@@ -82,7 +82,16 @@ __all__ = [
 ]
 
 SEVERITIES = frozenset({"blocking", "warning"})
-DECISIONS = frozenset({"resolved", "waived"})
+# decision -> severities it may be applied to (a blocking issue is resolved,
+# never waived).
+_DECISION_SEVERITIES: Mapping[str, frozenset[str]] = {
+    "resolved": frozenset({"blocking", "warning"}),
+    "waived": frozenset({"warning"}),
+}
+# Categories whose severity the reporter cannot choose.
+_FORCED_SEVERITY: Mapping[str, str] = {"poisoning": "blocking"}
+DECISIONS = frozenset(_DECISION_SEVERITIES)
+_RESOLVED_STATES = DECISIONS
 
 # detector name -> the real report type it must produce.
 _EXPECTED_REPORT_TYPES: Mapping[str, type] = {
@@ -98,6 +107,9 @@ REQUIRED_DETECTORS = frozenset(_EXPECTED_REPORT_TYPES)
 
 _DETECTOR_FAILURE_CATEGORY = "detector_failure"
 CATEGORIES = frozenset({*REQUIRED_DETECTORS, "poisoning", _DETECTOR_FAILURE_CATEGORY})
+# What a detector this module does not wrap may report. `detector_failure` is
+# produced only by this module itself.
+_EXTRA_CATEGORIES = CATEGORIES - {_DETECTOR_FAILURE_CATEGORY}
 
 RESIDUAL_RISK_DISCLOSURE = (
     "A clean quality report means only that every required detector ran and "
@@ -138,10 +150,13 @@ class QualityIssue:
     resolution_state: str = "open"  # open | resolved | waived
     resolved_by: str | None = None
     resolution_reason: str | None = None
+    is_detector_failure: bool = False
 
     @property
     def is_unresolved_blocking(self) -> bool:
-        return self.severity == "blocking" and self.resolution_state == "open"
+        # Fail closed: anything that is not exactly a warning is blocking, and
+        # anything that is not exactly a recorded resolution is still open.
+        return self.severity != "warning" and self.resolution_state not in _RESOLVED_STATES
 
 
 @dataclass(frozen=True)
@@ -236,6 +251,7 @@ def _make(
     positions: Sequence[int] = (),
     indices: Sequence[int | None] = (),
     digest: str | None = None,
+    is_detector_failure: bool = False,
 ) -> QualityIssue:
     return QualityIssue(
         issue_id=_issue_id(detector, category, reason_code, positions, digest),
@@ -247,6 +263,7 @@ def _make(
         batch_positions=tuple(sorted(positions)),
         record_indices=tuple(indices),
         evidence_digest=digest,
+        is_detector_failure=is_detector_failure,
     )
 
 
@@ -357,7 +374,10 @@ def evaluate_quality(
     """Merge every detector's outcome into one deterministic ledger."""
     issues: dict[str, QualityIssue] = {}
     reported: set[str] = set()
-    seen: set[str] = set()
+    names = [run.detector for run in runs]
+    seen = set(names)
+    if len(seen) != len(names):
+        raise QualityEngineError("more than one run for the same detector")
 
     def add(issue: QualityIssue) -> None:
         issues[issue.issue_id] = issue
@@ -365,9 +385,6 @@ def evaluate_quality(
     for run in runs:
         if run.detector not in REQUIRED_DETECTORS:
             raise QualityEngineError(f"unknown detector {run.detector!r}")
-        if run.detector in seen:
-            raise QualityEngineError(f"duplicate run for detector {run.detector!r}")
-        seen.add(run.detector)
         if run.error is not None:
             add(
                 _make(
@@ -376,6 +393,7 @@ def evaluate_quality(
                     "blocking",
                     "detector_failed",
                     f"detector raised {run.error}",
+                    is_detector_failure=True,
                 )
             )
         elif not isinstance(run.report, _EXPECTED_REPORT_TYPES[run.detector]):
@@ -386,6 +404,7 @@ def evaluate_quality(
                     "blocking",
                     "detector_report_invalid",
                     "detector returned no report of the expected type",
+                    is_detector_failure=True,
                 )
             )
         else:
@@ -401,13 +420,14 @@ def evaluate_quality(
                 "blocking",
                 "detector_not_run",
                 "required detector produced no report",
+                is_detector_failure=True,
             )
         )
 
     for item in extra_issues:
-        if item.category not in CATEGORIES or item.severity not in SEVERITIES:
+        if item.category not in _EXTRA_CATEGORIES or item.severity not in SEVERITIES:
             raise QualityEngineError("unknown category or severity on extra issue")
-        severity = "blocking" if item.category == "poisoning" else item.severity
+        severity = _FORCED_SEVERITY.get(item.category, item.severity)
         add(
             _make(
                 item.detector,
@@ -432,26 +452,30 @@ def apply_resolutions(
     blank reviewer/reason, a waiver of a blocking issue, and any resolution
     of a detector-failure issue are all refused (raised)."""
     by_id = {i.issue_id: i for i in report.issues}
+    wanted = [res.issue_id for res in resolutions]
+    if len(set(wanted)) != len(wanted):
+        raise QualityEngineError("more than one resolution for the same issue")
     decided: dict[str, QualityIssue] = {}
     for res in resolutions:
         issue = by_id.get(res.issue_id)
         if issue is None:
             raise QualityEngineError("resolution names an unknown issue id")
-        if res.issue_id in decided:
-            raise QualityEngineError("more than one resolution for the same issue")
-        if res.decision not in DECISIONS:
+        allowed_severities = _DECISION_SEVERITIES.get(res.decision)
+        if allowed_severities is None:
             raise QualityEngineError("decision must be 'resolved' or 'waived'")
-        if not res.reviewer_id.strip() or not res.reason.strip():
+        reviewer = res.reviewer_id.strip()
+        reason = res.reason.strip()
+        if not reviewer or not reason:
             raise QualityEngineError("a resolution needs a reviewer id and a reason")
-        if issue.category == _DETECTOR_FAILURE_CATEGORY:
+        if issue.is_detector_failure:
             raise QualityEngineError("a detector failure is cleared only by a clean re-run")
-        if res.decision == "waived" and issue.severity != "warning":
+        if issue.severity not in allowed_severities:
             raise QualityEngineError("only a warning may be waived")
         decided[res.issue_id] = replace(
             issue,
             resolution_state=res.decision,
-            resolved_by=res.reviewer_id.strip(),
-            resolution_reason=res.reason.strip(),
+            resolved_by=reviewer,
+            resolution_reason=reason,
         )
     merged = tuple(decided.get(i.issue_id, i) for i in report.issues)
     return replace(report, issues=merged)
