@@ -24491,3 +24491,18 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 - **Backlog:** follow-ups FTF-0605-F2 and FTF-04A06-F2 added, and refilled with FTF-0612, FTF-0613, FTF-0517 and
   FTF-1305 (dependency-ready: every dependency is CERTIFIED).
 - **ci-verdict:** all six relay merges (#576, #577, #579, #580, #583, #584) landed on a green ci-verdict.
+
+## 2026-10-07T21:30Z — Control plane: two prerequisite slices certified; FTF-0308 and FTF-0602 re-queued
+- **CERTIFIED:** FTF-0308-P1 (round 2, #586) and FTF-0602-P1 (#582), both on real Postgres; follow-ups FTF-0605-F2 (#587)
+  and FTF-04A06-F2 (#588).
+- **Returned:**
+  - FTF-0612 (QUEUE 0b): production fix plus tests.
+  - FTF-0613 (QUEUE 0c): production fix plus tests.
+  - FTF-1305 (QUEUE 0d): tests only.
+- **New GRADER CHECKLIST line:** never test dict/set membership of a raw input before checking its type.
+- **Backlog:**
+  - FTF-0308 and FTF-0602 (UI) re-queued on their certified backends.
+  - FTF-0103-F1 added: body cap in require_role.
+  - Refilled with FTF-0616, FTF-0901, FTF-1706 and FTF-1703.
+- **FTF-0517:** #591 merged on a green ci-verdict and is under L2.
+- **ci-verdict:** all 8 relay merges since 18:30Z landed on a green ci-verdict.
