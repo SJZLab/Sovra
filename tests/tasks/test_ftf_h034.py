@@ -54,6 +54,7 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.spec_verification import TaskNode  # noqa: E402
 from scripts.task_claim import (  # noqa: E402
+    Claim,
     ClaimDenied,
     TaskClaimRegistry,
     certified_ids_missing_from_tasks_json,
@@ -912,6 +913,200 @@ def test_sync_certified_status_tasks_json_empty_hash_never_writes_empty_evidence
             updated == ["T-KEEP", "T-MISSING", "T-NONE"]
             and all("" not in t.get("evidence", []) for t in by_id.values()),
         )
+
+
+def _free_nodes(*ids):
+    return {
+        i: TaskNode(id=i, dependencies=[], qualification_scenarios=[], required=True) for i in ids
+    }
+
+
+def _denial_code(fn):
+    try:
+        fn()
+    except ClaimDenied as exc:
+        return exc.reason_code, str(exc)
+    return None, ""
+
+
+def test_claim_is_expired_exactly_at_its_expiry_instant():
+    claim = Claim(
+        task_id="T-A",
+        claimant="alice",
+        created_at=100.0,
+        ttl_seconds=10.0,
+        write_set=frozenset(),
+        locks=frozenset(),
+    )
+    check(
+        "FTF-H034-F4", "a claim is not expired just before expires_at", not claim.is_expired(109.5)
+    )
+    check(
+        "FTF-H034-F4",
+        "a claim is expired exactly at expires_at (>=, not >)",
+        claim.is_expired(110.0),
+    )
+    check("FTF-H034-F4", "a claim is expired after expires_at", claim.is_expired(110.5))
+
+    fake_time = {"now": 1_000.0}
+    registry = TaskClaimRegistry(
+        tasks=_free_nodes("T-A"), certification_states={}, clock=lambda: fake_time["now"]
+    )
+    registry.claim("T-A", "alice", ttl_seconds=60)
+    fake_time["now"] = 1_060.0  # exactly the expiry instant
+    code, _ = _denial_code(lambda: registry.complete("T-A", "alice", "reviewer"))
+    check(
+        "FTF-H034-F4",
+        "completing exactly at the expiry instant is denied CLAIM_EXPIRED",
+        code == "CLAIM_EXPIRED" and registry.active_count() == 0,
+    )
+
+
+def test_constructor_concurrency_bounds_are_exact():
+    for value in (1, 4, 6):
+        try:
+            TaskClaimRegistry(tasks={}, certification_states={}, max_concurrency=value)
+            ok = True
+        except ValueError:
+            ok = False
+        check("FTF-H034-F4", f"max_concurrency={value} (within 1..6) is accepted", ok)
+    for value in (7, 100):
+        try:
+            TaskClaimRegistry(tasks={}, certification_states={}, max_concurrency=value)
+            rejected = False
+        except ValueError as exc:
+            rejected = "hard ceiling" in str(exc)
+        check("FTF-H034-F4", f"max_concurrency={value} is refused as above the ceiling", rejected)
+    for value in (0, -1, -100):
+        try:
+            TaskClaimRegistry(tasks={}, certification_states={}, max_concurrency=value)
+            rejected = False
+        except ValueError as exc:
+            rejected = "at least 1" in str(exc)
+        check("FTF-H034-F4", f"max_concurrency={value} is refused as below 1", rejected)
+
+    registry = TaskClaimRegistry(
+        tasks=_free_nodes("T-A", "T-B"), certification_states={}, max_concurrency=1
+    )
+    registry.claim("T-A", "alice", write_set={"a.py"})
+    code, _ = _denial_code(lambda: registry.claim("T-B", "bob", write_set={"b.py"}))
+    check(
+        "FTF-H034-F4",
+        "max_concurrency=1 admits exactly one claim and denies the second",
+        code == "CONCURRENCY_LIMIT_EXCEEDED",
+    )
+
+
+def test_unknown_task_claim_is_denied_not_crashed():
+    registry = TaskClaimRegistry(tasks=_free_nodes("T-A"), certification_states={})
+    try:
+        registry.claim("T-NOPE", "alice")
+        outcome = "claimed"
+    except ClaimDenied as exc:
+        outcome = (exc.reason_code, "unknown task T-NOPE" in str(exc))
+    except Exception as exc:  # a crash (AttributeError on None) is the failure
+        outcome = type(exc).__name__
+    check(
+        "FTF-H034-F4",
+        f"claiming a task absent from the index is DEPENDENCY_NOT_READY 'unknown task' ({outcome})",
+        outcome == ("DEPENDENCY_NOT_READY", True),
+    )
+    check("FTF-H034-F4", "no claim was recorded for the unknown task", registry.active_count() == 0)
+
+
+def test_claimant_identity_is_compared_exactly():
+    for label, other in (
+        ("different case", "Alice"),
+        ("surrounding whitespace", " alice "),
+        ("case and whitespace", " ALICE\t"),
+    ):
+        registry = TaskClaimRegistry(tasks=_free_nodes("T-A"), certification_states={})
+        registry.claim("T-A", "alice")
+        code, _ = _denial_code(lambda r=registry, o=other: r.complete("T-A", o, "reviewer"))
+        check(
+            "FTF-H034-F4",
+            f"completion by a claimant differing only by {label} is CLAIMANT_MISMATCH",
+            code == "CLAIMANT_MISMATCH" and registry.active_count() == 1,
+        )
+    registry = TaskClaimRegistry(tasks=_free_nodes("T-A"), certification_states={})
+    registry.claim("T-A", "Alice")
+    code, _ = _denial_code(lambda: registry.complete("T-A", "alice", "reviewer"))
+    check(
+        "FTF-H034-F4",
+        "a claim made as 'Alice' cannot be completed as 'alice' (normalising the stored name "
+        "is also a mismatch)",
+        code == "CLAIMANT_MISMATCH",
+    )
+    done = registry.complete("T-A", "Alice", "reviewer")
+    check("FTF-H034-F4", "the exact claimant can complete", done.claimant == "Alice")
+
+
+def test_snapshot_reports_the_exact_real_state():
+    fake_time = {"now": 1_000.0}
+    registry = TaskClaimRegistry(
+        tasks=_free_nodes("T-A", "T-B", "T-C"),
+        certification_states={},
+        clock=lambda: fake_time["now"],
+    )
+    empty = registry.snapshot()
+    check(
+        "FTF-H034-F4",
+        f"an empty registry snapshots to empty claims/order/stale ({empty})",
+        empty == {"active_claims": {}, "merge_order": [], "stale_verification": []},
+    )
+
+    registry.claim("T-A", "alice", write_set={"shared.py"})
+    fake_time["now"] = 1_010.0
+    registry.claim("T-B", "bob", ttl_seconds=60, write_set={"b.py", "a.py"}, locks={"mig"})
+    registry.complete("T-A", "alice", "reviewer")
+    registry.complete("T-B", "bob", "reviewer")
+    fake_time["now"] = 1_020.0
+    registry.claim(
+        "T-C",
+        "carol",
+        ttl_seconds=100,
+        write_set={"z.py", "shared.py"},
+        locks={"b-lock", "a-lock"},
+        gpu_required=True,
+    )
+    # T-A and T-B share no file, so nothing is stale yet; T-C is still active.
+    snap = registry.snapshot()
+    expected = {
+        "active_claims": {
+            "T-C": {
+                "claimant": "carol",
+                "claimed_at": 1_020.0,
+                "expires_at": 1_120.0,
+                "write_set": ["shared.py", "z.py"],
+                "locks": ["a-lock", "b-lock"],
+                "gpu_required": True,
+            }
+        },
+        "merge_order": ["T-A", "T-B"],
+        "stale_verification": [],
+    }
+    check("FTF-H034-F4", f"snapshot equals the exact real state ({snap})", snap == expected)
+
+    registry.complete("T-C", "carol", "reviewer")
+    snap = registry.snapshot()
+    check(
+        "FTF-H034-F4",
+        f"completing T-C (overlaps T-A on shared.py) makes T-A stale and empties active ({snap})",
+        snap
+        == {
+            "active_claims": {},
+            "merge_order": ["T-A", "T-B", "T-C"],
+            "stale_verification": ["T-A"],
+        },
+    )
+
+    registry.claim("T-A", "alice", ttl_seconds=5)
+    fake_time["now"] = 2_000.0
+    check(
+        "FTF-H034-F4",
+        "an expired claim is dropped from the snapshot",
+        registry.snapshot()["active_claims"] == {},
+    )
 
 
 def main():
