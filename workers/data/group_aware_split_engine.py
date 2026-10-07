@@ -64,8 +64,16 @@ __all__ = [
 ]
 
 STRATEGY = "sha256_group_hash_v1"
+_SUPPORTED_STRATEGIES = (STRATEGY,)
 ROLES = ("train", "validation", "development_eval", "final_qualification")
 _EVAL_ROLES = ROLES[2:]
+# role -> is an evaluation role (never used for fitting).
+_IS_EVAL = {
+    "train": False,
+    "validation": False,
+    "development_eval": True,
+    "final_qualification": True,
+}
 _MAX_SEED = 128
 _MAX_TIME = 10**13
 
@@ -94,7 +102,7 @@ class SplitSpec:
     cutoff: int | None = None
 
     def __post_init__(self) -> None:
-        if self.strategy != STRATEGY:
+        if self.strategy not in _SUPPORTED_STRATEGIES:
             raise SplitEngineError(f"strategy must be {STRATEGY!r}")
         _text(self.seed, "seed")
         if len(self.seed) > _MAX_SEED:
@@ -154,13 +162,9 @@ def _bucket(spec: SplitSpec, group_id: str, weights: int) -> int:
 
 
 def _pick(spec: SplitSpec, group_id: str, roles: tuple[str, ...]) -> str:
-    weights = [spec.ratios[ROLES.index(role)] for role in roles]
-    point = _bucket(spec, group_id, sum(weights))
-    for role, weight in zip(roles, weights, strict=True):
-        if point < weight:
-            return role
-        point -= weight
-    raise AssertionError("unreachable: point is below the total weight")
+    # One slot per unit of weight, so the digest picks a slot and no boundary comparison exists.
+    slots = [role for role in roles for _ in range(spec.ratios[ROLES.index(role)])]
+    return slots[_bucket(spec, group_id, len(slots))]
 
 
 def _find(parent: dict[str, str], key: str) -> str:
@@ -177,11 +181,12 @@ def _status(counts: tuple[tuple[str, int, int], ...]) -> str:
 def _counts(
     roles_by_record: dict[str, str], group_by_record: dict[str, str]
 ) -> tuple[tuple[str, int, int], ...]:
-    out = []
-    for role in ROLES:
-        members = [r for r, assigned in roles_by_record.items() if assigned == role]
-        out.append((role, len(members), len({group_by_record[r] for r in members})))
-    return tuple(out)
+    tally: dict[str, tuple[list[str], set[str]]] = {role: ([], set()) for role in ROLES}
+    for record_id, role in roles_by_record.items():
+        members, groups = tally[role]
+        members.append(record_id)
+        groups.add(group_by_record[record_id])
+    return tuple((role, len(tally[role][0]), len(tally[role][1])) for role in ROLES)
 
 
 def allocate_splits(spec: SplitSpec, records: Sequence[SplitRecord]) -> SplitManifest:
@@ -203,7 +208,7 @@ def allocate_splits(spec: SplitSpec, records: Sequence[SplitRecord]) -> SplitMan
         for key in rec.group_keys:
             _text(key, "group key")
             parent.setdefault(key, key)
-        if rec.preassigned_role is not None and rec.preassigned_role not in ROLES:
+        if rec.preassigned_role is not None and rec.preassigned_role not in _IS_EVAL:
             raise SplitEngineError(f"preassigned_role must be None or one of {ROLES}")
         if rec.event_time is not None:
             _int(rec.event_time, "event_time", 0, _MAX_TIME)
@@ -231,7 +236,7 @@ def allocate_splits(spec: SplitSpec, records: Sequence[SplitRecord]) -> SplitMan
         )
         if pinned:
             (role,) = pinned
-            if post_cutoff and role not in _EVAL_ROLES:
+            if post_cutoff and not _IS_EVAL[role]:
                 raise SplitEngineError(
                     "a post-cutoff group cannot be preassigned to train or validation"
                 )
@@ -270,16 +275,17 @@ def verify_manifest(manifest: SplitManifest) -> None:
         raise SplitEngineError("manifest must be a SplitManifest")
     if manifest.manifest_sha256 != compute_manifest_sha256(manifest):
         raise SplitEngineError("manifest hash does not match its content")
-    role_by_group: dict[str, str] = {}
+    roles_in_group: dict[str, set[str]] = {}
     role_by_record: dict[str, str] = {}
     group_by_record: dict[str, str] = {}
     for record_id, role, group_id in manifest.assignments:
-        if role not in ROLES:
+        if role not in _IS_EVAL:
             raise SplitEngineError("manifest has an unknown role")
-        if role_by_group.setdefault(group_id, role) != role:
-            raise SplitEngineError("a group crosses a split boundary")
+        roles_in_group.setdefault(group_id, set()).add(role)
         role_by_record[record_id] = role
         group_by_record[record_id] = group_id
+    if any(len(roles) > 1 for roles in roles_in_group.values()):
+        raise SplitEngineError("a group crosses a split boundary")
     if len(role_by_record) != len(manifest.assignments):
         raise SplitEngineError("manifest has a duplicate record_id")
     counts = _counts(role_by_record, group_by_record)

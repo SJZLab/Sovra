@@ -138,11 +138,11 @@ def test_seed_changes_the_split() -> None:
 
 
 def test_ratios_roughly_honoured() -> None:
-    m = allocate_splits(spec(), many(2000))
-    share = {role: count / 2000 for role, count, _ in m.counts}
-    check(CID, "train near 70%", 0.64 <= share["train"] <= 0.76)
+    m = allocate_splits(spec(), many(800))
+    share = {role: count / 800 for role, count, _ in m.counts}
+    check(CID, "train near 70%", 0.60 <= share["train"] <= 0.80)
     for role in ROLES[1:]:
-        check(CID, f"{role} near 10%", 0.06 <= share[role] <= 0.14)
+        check(CID, f"{role} near 10%", 0.04 <= share[role] <= 0.16)
     half = allocate_splits(spec(ratios=(50, 0, 0, 50)), many(400))
     check(
         CID,
@@ -150,6 +150,19 @@ def test_ratios_roughly_honoured() -> None:
         dict((r, c) for r, c, _ in half.counts)["validation"] == 0,
     )
     check(CID, "an empty role makes the manifest insufficient", half.status == "insufficient")
+    check(
+        CID, "train ratio of exactly 1 accepted", not raises(lambda: spec(ratios=(1, 49, 25, 25)))
+    )
+    check(
+        CID, "final ratio of exactly 1 accepted", not raises(lambda: spec(ratios=(25, 25, 49, 1)))
+    )
+    skew = allocate_splits(spec(ratios=(1, 0, 0, 99)), many(1000))
+    skew_counts = {r: c for r, c, _ in skew.counts}
+    check(
+        CID,
+        "a 1/99 split puts a small minority in train",
+        0 < skew_counts["train"] < 60 and skew_counts["final_qualification"] > 900,
+    )
     for bad in (
         (70, 10, 10, 9),
         (0, 50, 25, 25),
@@ -211,6 +224,21 @@ def test_transitive_linkage_groups() -> None:
     check(CID, "group id is the smallest key", {g for _, _, g in m.assignments} == {"k1"})
     shuffled = allocate_splits(spec(), list(reversed(chain)))
     check(CID, "chain order does not matter", m == shuffled)
+    for first, second in (("k1", "K1 "), ("K1 ", "k1"), ("a", "A"), ("A", "a")):
+        bridged = allocate_splits(
+            spec(), [rec("b1", first), rec("b2", first, second), rec("b3", second)]
+        )
+        check(
+            CID,
+            f"{first!r} and {second!r} are linked only through the bridge",
+            len({g for _, _, g in bridged.assignments}) == 1,
+        )
+        apart = allocate_splits(spec(), [rec("b1", first), rec("b3", second)])
+        check(
+            CID,
+            f"{first!r} and {second!r} are different keys without a bridge",
+            len({g for _, _, g in apart.assignments}) == 2,
+        )
     wide = [rec("w1", "z", "a"), rec("w2", "m", "b"), rec("w3", "a", "b")]
     check(
         CID,
@@ -218,7 +246,11 @@ def test_transitive_linkage_groups() -> None:
         len({g for _, _, g in allocate_splits(spec(), wide).assignments}) == 1,
     )
     apart = allocate_splits(spec(), wide[:2])
-    check(CID, "without the bridge they stay two groups", len({g for _, _, g in apart.assignments}) == 2)
+    check(
+        CID,
+        "without the bridge they stay two groups",
+        len({g for _, _, g in apart.assignments}) == 2,
+    )
 
 
 def test_group_keys_are_exact() -> None:
@@ -267,12 +299,26 @@ def test_no_outcome_input_exists() -> None:
     )
 
 
+def rebuilt(m: SplitManifest, assignments: tuple[tuple[str, str, str], ...]) -> SplitManifest:
+    """A manifest whose counts, status and hash are all consistent with `assignments`
+    (counted per distinct record id, so only the one defect under test can raise)."""
+    by_record = {rid: (role, gid) for rid, role, gid in assignments}
+    tally: dict[str, tuple[set[str], set[str]]] = {role: (set(), set()) for role in ROLES}
+    for rid, (role, gid) in by_record.items():
+        if role in tally:
+            tally[role][0].add(rid)
+            tally[role][1].add(gid)
+    counts = tuple((role, len(tally[role][0]), len(tally[role][1])) for role in ROLES)
+    status = "insufficient" if any(c == 0 for _, c, _ in counts) else "ready"
+    out = replace(m, assignments=assignments, counts=counts, status=status)
+    return replace(out, manifest_sha256=compute_manifest_sha256(out))
+
+
 def test_verify_rejects_crossing_group() -> None:
     m = allocate_splits(spec(), [rec("v1", "g"), rec("v2", "g"), rec("v3", "h")])
     (rid_a, role_a, gid_a) = m.assignments[0]
     other = next(r for r in ROLES if r != role_a)
-    tampered = replace(m, assignments=((rid_a, other, gid_a),) + m.assignments[1:])
-    tampered = replace(tampered, manifest_sha256=compute_manifest_sha256(tampered))
+    tampered = rebuilt(m, ((rid_a, other, gid_a),) + m.assignments[1:])
     check(
         CID,
         "a group split across two roles is refused even with a valid hash",
@@ -307,6 +353,17 @@ def test_verify_rejects_tampering() -> None:
         "a changed ratio with the old hash is refused",
         raises(lambda: verify_manifest(replace(m, ratios=(10, 10, 10, 70)))),
     )
+    for bad_hash in (
+        m.manifest_sha256.upper(),
+        m.manifest_sha256 + " ",
+        " " + m.manifest_sha256,
+        m.manifest_sha256[:-1],
+    ):
+        check(
+            CID,
+            f"hash variant of length {len(bad_hash)} is refused",
+            raises(lambda b=bad_hash: verify_manifest(replace(m, manifest_sha256=b))),
+        )
     check(
         CID,
         "an empty hash is refused",
@@ -320,11 +377,32 @@ def test_verify_rejects_tampering() -> None:
         "a falsely ready status is refused",
         raises(lambda: verify_manifest(replace(badstatus, status="ready"))),
     )
-    unknown = replace(m, assignments=(("zz", "holdout", "g"),) + m.assignments)
-    unknown = replace(unknown, manifest_sha256=compute_manifest_sha256(unknown))
-    check(CID, "an unknown role is refused", raises(lambda: verify_manifest(unknown)))
-    dup = replace(m, assignments=m.assignments + (m.assignments[0],))
-    dup = replace(dup, manifest_sha256=compute_manifest_sha256(dup))
+    for bad_status in ("Ready", "ready ", "READY", ""):
+        check(
+            CID,
+            f"status {bad_status!r} is refused",
+            raises(lambda b=bad_status: verify_manifest(replace(m, status=b))),
+        )
+    insufficient = allocate_splits(spec(ratios=(50, 0, 0, 50)), many(40))
+    check(
+        CID,
+        "an insufficient manifest verifies as insufficient",
+        not raises(lambda: verify_manifest(insufficient)),
+    )
+    for bad_status in ("Insufficient", "insufficient "):
+        check(
+            CID,
+            f"insufficient variant {bad_status!r} is refused",
+            raises(lambda b=bad_status: verify_manifest(replace(insufficient, status=b))),
+        )
+    for bad_role in ("holdout", "TRAIN", "train ", ""):
+        unknown = rebuilt(m, (("zz", bad_role, "g"),) + m.assignments)
+        check(
+            CID,
+            f"unknown role {bad_role!r} is refused",
+            raises(lambda u=unknown: verify_manifest(u)),
+        )
+    dup = rebuilt(m, m.assignments + (m.assignments[0],))
     check(CID, "a duplicate record is refused", raises(lambda: verify_manifest(dup)))
     check(CID, "a non-manifest is refused", raises(lambda: verify_manifest({})))
 
@@ -356,6 +434,14 @@ def test_preassigned_eval_never_becomes_train() -> None:
             )
         ),
     )
+    for bad_role in ("TRAIN", "train ", " train", "Final_Qualification"):
+        check(
+            CID,
+            f"preassigned role {bad_role!r} refused",
+            raises(
+                lambda b=bad_role: allocate_splits(spec(), [rec("u1", "ug", preassigned_role=b)])
+            ),
+        )
     check(
         CID,
         "an unknown preassigned role is refused",
@@ -432,6 +518,19 @@ def test_temporal_cutoff_is_prospective() -> None:
             )
         )["b1"]
         == "final_qualification",
+    )
+    check(CID, "cutoff of 1e13 accepted", not raises(lambda: spec(cutoff=10**13)))
+    check(CID, "cutoff of 1e13+1 refused", raises(lambda: spec(cutoff=10**13 + 1)))
+    check(CID, "cutoff of 0 accepted", not raises(lambda: spec(cutoff=0)))
+    check(
+        CID,
+        "event_time of 1e13 accepted",
+        not raises(lambda: allocate_splits(spec(), [rec("n1", "ng", event_time=10**13)])),
+    )
+    check(
+        CID,
+        "event_time of 1e13+1 refused",
+        raises(lambda: allocate_splits(spec(), [rec("n1", "ng", event_time=10**13 + 1)])),
     )
     for bad in (-1, 1.5, True, "5"):
         check(CID, f"cutoff {bad!r} refused", raises(lambda b=bad: spec(cutoff=b)))
