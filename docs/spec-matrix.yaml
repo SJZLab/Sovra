@@ -8166,16 +8166,16 @@ FTF-0514:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0514.py
 FTF-0515:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Quality issue engine
   evidence_hash: ''
-  implementation_state: ABSENT
+  implementation_state: IMPLEMENTED
   notes: kind=retained_feature; requirements=AF-16; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0509,
     FTF-0510, FTF-0511, FTF-0512, FTF-0513, FTF-0514
-  proof_state: UNPROVEN
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0515.py
 FTF-0516:
   certification_state: NONE
   criticality: MUST

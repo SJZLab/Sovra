@@ -9451,13 +9451,33 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
   repository credential: if none is already provisioned in CI, park it as ask-first (secret), never fake the repo.
 - **FTF-04A32** Local repository integration test. DoD: `tools/r1_handoff.py packet FTF-04A32`.
 - **FTF-04A34** Monorepo multi-agent discovery test. DoD: `tools/r1_handoff.py packet FTF-04A34`.
-- **FTF-0501** Direct object-storage upload. DoD: `tools/r1_handoff.py packet FTF-0501`.
 - **FTF-0515** Quality issue engine. DoD: `tools/r1_handoff.py packet FTF-0515`.
-- **FTF-0602** Evaluation case editor/import. DoD: `tools/r1_handoff.py packet FTF-0602`.
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
+- **FTF-0501 Direct object-storage upload: PARKED (BLOCKED_DEPENDENCY), 2026-10-07T10:50Z, lane B.**
+  - What failed: nothing was attempted. The packet fixes `files` to one module plus its test and says "No independent
+    schema change... any required change is a separately claimed migration prerequisite" and "A feature that needs a
+    not-yet-frozen interface is BLOCKED_DEPENDENCY". Three things the DoD needs do not exist: (1) no multipart-upload,
+    grant, finalize or Dataset-version route in `05-interface.yaml` (it declares only `dataset-sources`, `{id}` and
+    `{id}/authorize`); (2) no Dataset / Dataset-version entity or table anywhere (FTF-0500's own notes say the Dataset
+    entity is "FTF-0501-and-later's job"); (3) the negative acceptance ("cannot create accepted Dataset version")
+    has nothing to assert against without (2).
+  - Route options: (1) Control plane slices a prerequisite: Dataset + DatasetVersion migration (tenant-composite FK, FORCE
+    RLS) and the freeze of upload/finalize/grant routes in `05-interface.yaml`, then re-queue FTF-0501 on top;
+    (2) split FTF-0501 into a pure presigned-multipart + finalize-verification module (no route, no table, unit +
+    real SeaweedFS S3 integration) and a later wiring task; (3) re-scope the DoD to the module alone and record the
+    route/entity half as a disclosed narrowing, the way FTF-0500B did. Recommended: (2).
+- **FTF-0602 Evaluation case editor/import: PARKED (BLOCKED_DEPENDENCY), 2026-10-07T10:50Z, lane B.**
+  - What failed: nothing was attempted. `06-interface.yaml` states in its own description that it "deliberately does not
+    declare a `/cases` route" (and no cases table exists; FTF-0601 persists only the suite record). The packet's
+    `files` are the web component and spec only, with "No independent schema change", so there is no API or table for
+    the editor/import to call, and a UI over a route that does not exist would be the placeholder Law 11 forbids.
+  - Route options: (1) Control plane slices an EvaluationCase migration + API prerequisite (cases table with FORCE RLS,
+    create/import/list routes, frozen in `06-interface.yaml` under `contracts:06`), then re-queue FTF-0602 on top;
+    (2) fold the backend into FTF-0602 with the migration and contract lock explicitly granted to it; (3) split the
+    pure case-validation/import parser (testable now) from the UI. Recommended: (1).
 - **FTF-0308 Model-to-artifact mapping UI: PARKED (BLOCKED_DEPENDENCY), 2026-10-07T08:00Z, Control plane.**
   - Lane C's claim record (#541) is right. The contract says to consume a frozen interface, and the negative
     acceptance ("changing mapping invalidates related qualification") needs a persisted mapping plus an
