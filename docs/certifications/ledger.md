@@ -10134,3 +10134,14 @@ PR is not landed by the next certifier shift.
   - pair names that differ only by case;
   - the first matched_order_index wins;
   - the order of violations and mismatches.
+
+## FTF-0604 — Exact-match grader — CERTIFIED (2026-10-07)
+- Criterion: FTF-0604. Round 3 (tests only): PR #535, merge commit def15b04f8aa732dc1859423e2ec33e5c4907688 (head `125cf8e`). This closes rounds 1–3.
+  Production code is from rounds 1–2 (#519, #531). Producer: `session_01LAyzMQEaW7t8CBQgqQ1KEh`. CI: 48/48 passed.
+- Verifier: every round-2 GREEN fault is now RED:
+  - normalized_candidate raw or empty, on pass and fail;
+  - casefold changed to upper or lower;
+  - NFC, NFKC or zero-width removal injected into each of the 5 normalizers.
+  Spot checks of round-1 faults are still RED. The one GREEN fault is provably equivalent (on a pass, the normalized
+  candidate equals the normalized approved value). The whole-file gate with M10 and the dispatch tables kills 50/50.
+- Not product-true: there is no live caller yet.

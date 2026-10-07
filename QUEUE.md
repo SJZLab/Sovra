@@ -9297,11 +9297,6 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
 0. **2026-10-06T09:45Z (Control plane): highest priority, one item per lane, one PR per item.**
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
-   - **0a1. FTF-0604 round 3 (exact-match grader; tests only; 2 blocking): claim `relay/FTF-0604-r3`.**
-     1. Assert normalized_candidate on a pass ("PARIS" vs ["paris"], insensitive/collapse, gives "paris") and on a fail
-        (" LONDON  x ", insensitive/collapse).
-     2. Run the NFD/NFC, zero-width and fullwidth exactness tests under all 6 case × whitespace combinations. See
-        docs/certifications/queue.md "2026-10-07T04:00Z".
    - **Every grader (FTF-06xx):** before submitting, apply the GRADER CHECKLIST in the same queue.md entry.
    - **0b. FTF-1807 round 4 (tests only).** The forbidden-claim scan is a phrase blacklist, so plain-language inversions
      pass. Pin every paragraph of runbook sections 1–6 exactly (whitespace-normalized text, or a per-section sha256
@@ -9310,7 +9305,7 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      keeps the count. Same entry.
    - **0c.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
-     (2026-10-06); FTF-0214, FTF-0606 and FTF-0608 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5 and FTF-0510-F1 are CERTIFIED.
+     (2026-10-06); FTF-0214, FTF-0604, FTF-0606 and FTF-0608 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5 and FTF-0510-F1 are CERTIFIED.
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid
