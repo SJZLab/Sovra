@@ -567,14 +567,9 @@ def main() -> int:
             for name, p in params.items()
         ),
     )
+    select_candidate: Any = _selection.select_discovered_agent_candidate
     try:
-        _selection.select_discovered_agent_candidate(
-            None,
-            None,
-            None,
-            None,
-            actor=None,
-        )
+        select_candidate(None, None, None, None, actor=None)
         selected_without_id = True
     except TypeError:
         selected_without_id = False
