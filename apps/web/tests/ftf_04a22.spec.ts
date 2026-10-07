@@ -30,6 +30,9 @@ import {
 } from "../components/project-mandate/requirements_ui";
 import {
   BLOCKING_FORBIDDEN_ACTION_REASONS,
+  MANDATE_LIST_FIELDS,
+  MANDATE_NUMBER_FIELDS,
+  MANDATE_TEXT_FIELDS,
   MandateEditorAndConflictResolutionUI,
   evaluateForbiddenAction,
   evaluateForbiddenActions,
@@ -89,6 +92,7 @@ interface Server {
   requirementsStatus: number;
   manifestStatus: number;
   patchStatus: number;
+  patchResponse?: Record<string, unknown>;
   calls: { method: string; path: string; body: unknown }[];
 }
 
@@ -129,7 +133,11 @@ function installServer(partial: Partial<Server> = {}) {
         if (server.patchStatus !== 200) {
           return jsonResponse(server.patchStatus, { detail: "manifest is locked" });
         }
-        server.manifest = { ...server.manifest, ...(body as Record<string, unknown>) };
+        server.manifest = {
+          ...server.manifest,
+          ...(body as Record<string, unknown>),
+          ...(server.patchResponse ?? {}),
+        };
         return jsonResponse(200, server.manifest);
       }
       return jsonResponse(404, { detail: "not_found" });
@@ -288,6 +296,12 @@ describe("evaluateForbiddenAction (desired vs. observed vs. enforced)", () => {
     });
     const status = evaluateForbiddenAction("refund", [tool]);
     expect(status.reason).toBe("enforced");
+  });
+
+  test("exact match, unsafe direction: a longer tool name never satisfies a shorter forbidden action", () => {
+    const status = evaluateForbiddenAction("refund", [requirement({ name: "refund_all" })]);
+    expect(status.reason).toBe("not_found");
+    expect(status.tool).toBeNull();
   });
 
   test("matches by exact name only -- a differently-named tool is not_found, never assumed equivalent", () => {
@@ -681,6 +695,8 @@ test("D2: save never drops unknown mandate keys, entry extras or top-level forbi
   await waitFor(() => expect(callsOf("PATCH").length).toBe(2));
   expect(lastPatchBody().mandate_json.custom_key).toEqual({ nested: [1, 2] });
   expect(lastPatchBody().forbidden_actions_json.actions[0]?.severity).toBe("high");
+  // the second save still carries the top-level key (setForbiddenBase({}) would drop it)
+  expect(lastPatchBody().forbidden_actions_json.policy_version).toBe(3);
 });
 
 test("pure: serialize keeps base keys and entry extras, known fields win", () => {
@@ -905,4 +921,63 @@ test("a props change refetches the manifest", async () => {
     ),
   );
   expect(before).toBeGreaterThan(0);
+});
+
+// -- Round 3: the server's returned manifest is what is shown after a save --
+
+test("after a successful save the returned manifest is shown (fields, lock state, no Save)", async () => {
+  installServer({
+    patchResponse: {
+      status: "locked",
+      mandate_json: { business_purpose: "SERVER" },
+      forbidden_actions_json: { actions: [{ name: "server_action", reason: "from server" }] },
+    },
+  });
+  await renderLoaded();
+  typeInto("mandate-field-business_purpose", "local edit");
+  fireEvent.click(screen.getByTestId("mandate-save-button"));
+  await waitFor(() => expect(callsOf("PATCH").length).toBe(1));
+  await waitFor(() => expect(screen.queryByTestId("mandate-save-button")).toBeNull());
+  const field = screen.getByTestId("mandate-field-business_purpose") as HTMLTextAreaElement;
+  expect(field.value).toBe("SERVER");
+  expect(field.disabled).toBe(true);
+  expect(screen.getByTestId("mandate-readonly-notice")).toBeTruthy();
+  expect(screen.getByTestId("forbidden-action-name-server_action")).toBeTruthy();
+  expect(screen.queryByTestId("forbidden-action-add-form")).toBeNull();
+});
+
+test("after a successful save that stays editable, Save is disabled again and the server value shows", async () => {
+  installServer({
+    patchResponse: { mandate_json: { business_purpose: "SERVER" } },
+  });
+  await renderLoaded();
+  typeInto("mandate-field-business_purpose", "local edit");
+  fireEvent.click(screen.getByTestId("mandate-save-button"));
+  await waitFor(() =>
+    expect((screen.getByTestId("mandate-save-button") as HTMLButtonElement).disabled).toBe(true),
+  );
+  expect((screen.getByTestId("mandate-field-business_purpose") as HTMLTextAreaElement).value).toBe(
+    "SERVER",
+  );
+});
+
+test("removing a forbidden action is itself an edit that enables Save", async () => {
+  installServer({
+    manifest: manifestRecord({
+      forbidden_actions_json: { actions: [{ name: "refund", reason: "policy" }] },
+    }),
+  });
+  await renderLoaded();
+  expect((screen.getByTestId("mandate-save-button") as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByTestId("forbidden-action-remove-refund"));
+  expect((screen.getByTestId("mandate-save-button") as HTMLButtonElement).disabled).toBe(false);
+});
+
+test("a locked manifest disables every mandate input", async () => {
+  installServer({ manifest: manifestRecord({ status: "locked" }) });
+  await renderLoaded();
+  for (const field of [...MANDATE_TEXT_FIELDS, ...MANDATE_LIST_FIELDS, ...MANDATE_NUMBER_FIELDS]) {
+    const input = screen.getByTestId(`mandate-field-${field}`) as HTMLInputElement;
+    expect(input.disabled, field).toBe(true);
+  }
 });
