@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Sovra Phase 05 Interface (DatasetSourceConnection)
+  title: Sovra Phase 05 Interface (DatasetSourceConnection, Dataset)
   version: 0.1.0
   description: >-
     Frozen shared component schemas and real live routes for the
@@ -15,6 +15,13 @@ info:
     later task adds its own real route (dataset import, source
     validation) extends this same file under this same contract-owner
     lock (shared_lock_required: contracts:05).
+
+    FTF-0501-P1 adds the read surface of dataset versions (`GET
+    .../datasets`, `GET .../datasets/{dataset_id}`) and freezes the
+    upload-session request/response components (`UploadSessionCreateRequest`,
+    `UploadSession`, `UploadFinalizeRequest`) with no paths: FTF-0501 adds the
+    upload and finalize routes with their handlers under this same lock.
+    Responses never carry an object key, bucket or storage URI.
 paths:
   /api/v1/organizations/{organization_id}/projects/{project_id}/dataset-sources:
     parameters:
@@ -219,6 +226,96 @@ paths:
             the connection's own secret material.
         '404':
           description: Missing, wrong organization, or wrong project -- identical.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/datasets:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: >-
+        List the project's dataset versions, ordered by id (FTF-0501-P1).
+        A `held_out_evaluation` dataset is omitted for `ml_engineer`
+        (Section 9/69.1).
+      operationId: listDatasets
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: after
+          in: query
+          required: false
+          description: The `next_after` of the previous page.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: One page of dataset versions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPage'
+        '400':
+          description: '`invalid_limit` or `invalid_after`.'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: '`not_found` -- project missing or in another organization.'
+  /api/v1/organizations/{organization_id}/projects/{project_id}/datasets/{dataset_id}:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: dataset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get one dataset version (FTF-0501-P1).
+      operationId: getDataset
+      responses:
+        '200':
+          description: The dataset version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            `not_found` -- identical for a missing id, another organization's
+            id, another project's id, and a `held_out_evaluation` dataset read
+            by `ml_engineer`.
 components:
   responses:
     NotAuthenticated:
@@ -369,4 +466,106 @@ components:
         - created_by
         - created_at
         - updated_at
+      additionalProperties: false
+    Dataset:
+      type: object
+      description: One immutable dataset version (Section 7A.10).
+      properties:
+        id: {type: string, format: uuid}
+        organization_id: {type: string, format: uuid}
+        project_id: {type: string, format: uuid}
+        name: {type: string, minLength: 1, maxLength: 200}
+        version: {type: integer, minimum: 1}
+        purpose:
+          $ref: '#/components/schemas/DatasetSourcePurpose'
+        upload_session_id: {type: string, format: uuid}
+        verified_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        verified_size_bytes: {type: integer, minimum: 1}
+        created_by: {type: string}
+        created_at: {type: string, format: date-time}
+      required:
+        - id
+        - organization_id
+        - project_id
+        - name
+        - version
+        - purpose
+        - upload_session_id
+        - verified_sha256
+        - verified_size_bytes
+        - created_by
+        - created_at
+      additionalProperties: false
+    DatasetPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Dataset'
+        next_after:
+          type: [string, 'null']
+          format: uuid
+      required: [items, next_after]
+      additionalProperties: false
+    UploadSessionStatus:
+      type: string
+      enum: [open, verified, rejected, expired]
+    UploadSessionCreateRequest:
+      type: object
+      description: >-
+        Frozen for FTF-0501 (no path yet). The source connection must be an
+        active `upload` connection granting `purpose`.
+      properties:
+        dataset_source_connection_id: {type: string, format: uuid}
+        purpose:
+          $ref: '#/components/schemas/DatasetSourcePurpose'
+        declared_size_bytes: {type: integer, minimum: 1, maximum: 10737418240}
+        declared_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        declared_content_type: {type: string, minLength: 1, maxLength: 255}
+      required:
+        - dataset_source_connection_id
+        - purpose
+        - declared_size_bytes
+        - declared_sha256
+        - declared_content_type
+      additionalProperties: false
+    UploadSession:
+      type: object
+      description: Frozen for FTF-0501 (no path yet). Never carries the object key.
+      properties:
+        id: {type: string, format: uuid}
+        project_id: {type: string, format: uuid}
+        dataset_source_connection_id: {type: string, format: uuid}
+        purpose:
+          $ref: '#/components/schemas/DatasetSourcePurpose'
+        status:
+          $ref: '#/components/schemas/UploadSessionStatus'
+        declared_size_bytes: {type: integer, minimum: 1}
+        declared_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        declared_content_type: {type: string}
+        rejection_reason: {type: [string, 'null']}
+        created_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        finalized_at: {type: [string, 'null'], format: date-time}
+      required:
+        - id
+        - project_id
+        - dataset_source_connection_id
+        - purpose
+        - status
+        - declared_size_bytes
+        - declared_sha256
+        - declared_content_type
+        - rejection_reason
+        - created_at
+        - expires_at
+        - finalized_at
+      additionalProperties: false
+    UploadFinalizeRequest:
+      type: object
+      description: Frozen for FTF-0501 (no path yet).
+      properties:
+        dataset_name: {type: string, minLength: 1, maxLength: 200}
+      required: [dataset_name]
       additionalProperties: false
