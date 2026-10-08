@@ -10669,3 +10669,28 @@ OK). No producer session matches the certifier.
   fixes P-17 (uncalibrated approved echo) and P-18 (None in the approved set) hold and are RED-proven; #637 closed
   unmerged. GREEN: dropping the candidate-id clause lets a candidate that is also a calibration alias judge itself
   (F9, R5f); case/whitespace-normalised alias matching lets an uncalibrated model certify (R5n).
+
+## 2026-10-08T22:02Z — CERTIFIED: FTF-0905; RETURNED: FTF-0903 (r6), FTF-1703 (r4), FTF-H010-P1 (r2)
+Independent verifiers, one per PR, each on the merge commit; CI on each PR head green (ci-verdict success; proving
+test log lines read through the GitHub MCP); gates clean (product_truth 45/45, validate_spec --strict,
+data_exposure OK).
+- **FTF-0905: CERTIFIED** (round 4; tests only; PR #653, merge 0dfce99276ffa7b2dd5d69fe6790bdda997cb708, head
+  ca5c595). Session comparison: producer session_01QYenfH8kYCjedbkhSrrirQ ≠ certifier session_01QVznorVMjnmcttUhyDnoGR;
+  the certifier appears nowhere on the PR. CI: ci-verdict 113526706452; gate job 113523609561 logged
+  "FTF-0905 Canary-secret generator tests: all checks passed". Local: 2 passing runs. Probes: 54, 0 violations
+  (sticky leak across 35 pairs, 50 repeated completes, 16 threads, clean runs complete). Faults: F27 and variants b-f
+  RED via FTF-0905-R4-1; all earlier faults still RED. Production module unchanged (sha256 3eb4992c). UNWIRED
+  (proving_symbol blank, no live caller; FTF-0901/0902 precedent). Open optional items: P24, P25, draw-sequence pin.
+- **FTF-0903: RETURNED** (round 5 → 6; tests only; #652, 8f131c59eb33136a5bd9e67baf7aa4ed40917ba3). Round-5 faults
+  RED. GREEN: a refusal raised inside `except ValueError` carries the caller text in `__context__` (C3, fully green);
+  explicit cause, notes and attribute echoes (C1, C4, C5) go RED only through meta checks. Fix the whole class in the
+  echo helpers.
+- **FTF-1703: RETURNED** (round 3 → 4; #654, a9c802c75d347dcd0d8406f5403b2cecf2b957b9). Round-3 items fixed. Reproduced:
+  an instance-attribute `to_dict` override on an exact-type trace passes provenance and the secret scan (P4) and
+  admits a trace whose group, title and answer hash are reserved (P5, held-out leakage); one generator index admitted
+  three times (P6); review str/decision subclasses bypass the generator-reviewer refusal and give pending -1 (P8).
+- **FTF-H010-P1: RETURNED** (round 1 → 2; #644, 1288391468e00ca67e56e2d932bf660238175159). Reproduced on PG16 as
+  sovra_app: a job can be inserted at succeeded and moved queued→succeeded→queued. GREEN: the imported-adapter and
+  external-endpoint CHECKs, the sha256 pattern and a permissive cross-tenant INSERT policy (bypass tests refused for
+  the wrong reason; immutability check is a SQL syntax error). Four bad POSTs accepted; origin↔import_kind unenforced.
+- Pending: FTF-0616 r6 (#657), FTF-1602 r4 (#655).
