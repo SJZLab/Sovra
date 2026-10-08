@@ -692,8 +692,9 @@ def verify_trace_provenance(trace: TrainingTrace) -> None:
     """Regenerate the trace from `GENERATOR_ID` and `provenance.index` and
     require the recorded trace to equal it exactly; raise otherwise."""
     _require_trace_shape(trace)
+    producer = trace.provenance.get("producer")
     index = trace.provenance.get("index")
-    if trace.provenance.get("producer") != GENERATOR_ID or type(index) is not int or index < 0:
+    if producer not in (GENERATOR_ID,) or type(index) is not int or index < 0:
         raise TraceVerificationError(
             f"{trace.trace_id}: provenance does not name a generator index"
         )

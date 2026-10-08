@@ -1476,6 +1476,183 @@ def test_secret_scan_covers_dict_keys() -> None:
     )
 
 
+def _msg_any(fn, *args: object, **kwargs: object) -> str:
+    """The message of whichever module error `fn` raises ('' if it does not raise)."""
+    try:
+        fn(*args, **kwargs)
+    except TrainingDatasetError as exc:
+        return str(exc)
+    return ""
+
+
+def test_guards_name_their_own_cause() -> None:
+    import evals.reference.training_dataset as td
+
+    t = TRACES[0]
+    note = _kind_trace("note")
+    i = _step_index(note, "tool_call", "create_note")
+    denied = _kind_trace("approval_denied")
+    j = _step_index(denied, "approver_decision")
+
+    # approver ref must match an issued ref exactly (no strip/casefold)
+    for ref in (" appr-0", "APPR-0", "appr-0 ", "Appr-0"):
+        forged = _replace_step(denied, j, {**denied.steps[j], "approval_id": ref})
+        check(
+            "FTF-1703-R2-4",
+            f"approver ref {ref!r} is not the issued ref 'appr-0'",
+            "unknown approval ref" in _msg_any(verify_trace_replay, forged),
+        )
+
+    # each malformed known step names its own field problem
+    for label, step, text in (
+        ("message without a role", {"type": "message", "content": "x"}, "message step"),
+        (
+            "message with a numeric role",
+            {"type": "message", "role": 7, "content": "x"},
+            "message step",
+        ),
+        (
+            "message with list content",
+            {"type": "message", "role": "user", "content": []},
+            "message step",
+        ),
+        ("tool_call without a tool", {"type": "tool_call", "arguments": {}}, "tool_call step"),
+        (
+            "tool_call with list arguments",
+            {"type": "tool_call", "tool": "x", "arguments": []},
+            "tool_call step",
+        ),
+        ("approver step without fields", {"type": "approver_decision"}, "approver_decision step"),
+    ):
+        check(
+            "FTF-1703-R2-4",
+            f"{label} is refused by the step parser, naming the step type",
+            text in _msg_any(verify_trace_replay, _replace_step(note, i, step)),
+        )
+
+    # canonical JSON: key order never matters, non-JSON content names itself
+    def reorder(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {k: reorder(v) for k, v in reversed(list(value.items()))}
+        if isinstance(value, list):
+            return [reorder(v) for v in value]
+        return value
+
+    for kind in ("lookup", "approval_approved", "note_retry"):
+        base = _kind_trace(kind)
+        shuffled = dataclasses.replace(
+            base,
+            steps=tuple(reorder(step) for step in base.steps),
+            provenance=reorder(base.provenance),
+        )
+        verify_trace_provenance(shuffled)
+        verify_trace_replay(shuffled)
+    check(
+        "FTF-1703-R2-2",
+        "dict key order does not affect provenance or replay equality",
+        True,
+    )
+    odd = _replace_step(t, 0, {"type": "message", "role": "user", "content": object()})
+    r = _step_index(t, "tool_result", "search_records")
+    odd_result = _replace_step(
+        t, r, {"type": "tool_result", "tool": "search_records", "result": {"x": object()}}
+    )
+    check(
+        "FTF-1703-R2-2",
+        "non-JSON content is refused naming plain JSON data (provenance and replay)",
+        "plain JSON data" in _msg_any(verify_trace_provenance, odd)
+        and "plain JSON data" in _msg_any(verify_trace_replay, odd_result),
+    )
+
+    # the producer must be exactly the generator id
+    for producer in (
+        " " + GENERATOR_ID,
+        GENERATOR_ID.upper(),
+        GENERATOR_ID + " ",
+        "",
+        "human:carol",
+    ):
+        forged = dataclasses.replace(t, provenance={**t.provenance, "producer": producer})
+        check(
+            "FTF-1703-R2-2",
+            f"producer {producer!r} is refused as not naming the generator",
+            "does not name a generator index" in _msg_any(verify_trace_provenance, forged),
+        )
+
+    # the early builder guards each name their own cause
+    check(
+        "FTF-1703-N1",
+        "a non-trace element is refused by the type guard",
+        "must be TrainingTrace" in _msg_any(build_training_dataset, ["x"]),
+    )
+    for purpose in ("validation", "Training", " training", "TRAINING "):
+        bad = dataclasses.replace(t, purpose=purpose)
+        check(
+            "FTF-1703-N1",
+            f"purpose {purpose!r} is refused by the purpose guard",
+            "purpose must be 'training'" in _msg_any(build_training_dataset, [bad]),
+        )
+    for label, provenance in (
+        ("wrong origin", {**t.provenance, "origin": "repository"}),
+        ("re-cased origin", {**t.provenance, "origin": "Synthetic_Generator"}),
+        ("wrong label", {**t.provenance, "label": "real"}),
+        ("missing label", {k: v for k, v in t.provenance.items() if k != "label"}),
+        ("missing producer", {k: v for k, v in t.provenance.items() if k != "producer"}),
+        ("empty producer", {**t.provenance, "producer": ""}),
+        ("numeric producer", {**t.provenance, "producer": 5}),
+    ):
+        bad = dataclasses.replace(t, provenance=provenance)
+        check(
+            "FTF-1703-N1",
+            f"{label} is refused by the provenance guard",
+            "provenance must be synthetic generator output"
+            in _msg_any(build_training_dataset, [bad]),
+        )
+    for label, change in (
+        ("group outside the train namespace", {"group_id": "final-grp-0001"}),
+        ("template outside the train namespace", {"template_id": "final-tmpl-lookup-v0"}),
+        ("both outside", {"group_id": "x", "template_id": "y"}),
+    ):
+        bad = dataclasses.replace(t, **cast(dict[str, Any], change))
+        check(
+            "FTF-1703-N1",
+            f"{label} is refused by the namespace guard",
+            "outside the training namespace" in _msg_any(build_training_dataset, [bad]),
+        )
+
+    # reviews must name an exact trace id
+    for trace_id in (" train-0000", "TRAIN-0000", "train-0000 "):
+        check(
+            "FTF-1703-A2",
+            f"a review for {trace_id!r} is not a review of 'train-0000'",
+            "unknown trace"
+            in _msg_any(
+                build_training_dataset, [t], [ReviewDecision(trace_id, "reviewer:a", "approved")]
+            ),
+        )
+
+    # replay stays on the admission path as defence in depth: a generator regression
+    # (declared outcome that does not hold) is refused even though the trace equals it
+    regressed = dataclasses.replace(TRACES[0], expected_outcome="action_executed")
+    original = td._generate_one
+    td._generate_one = lambda index: regressed  # type: ignore[assignment]
+    try:
+        provenance_ok = not _raises(TraceVerificationError, verify_trace_provenance, regressed)
+        refused = _msg_any(build_training_dataset, [regressed], _approve([regressed]))
+    finally:
+        td._generate_one = original
+    check(
+        "FTF-1703-R2-2",
+        "setup: provenance equality alone accepts a regressed generator's own output",
+        provenance_ok,
+    )
+    check(
+        "FTF-1703-R2-2",
+        "the builder still replays and refuses an outcome that does not hold",
+        "does not hold" in refused,
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
