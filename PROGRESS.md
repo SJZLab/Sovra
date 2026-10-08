@@ -1,8 +1,8 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-08T14:20Z. Source: `python3 scripts/status.py` on main.
-- **Status: 134/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
+Updated: 2026-10-08T22:02Z. Source: `python3 scripts/status.py` on main.
+- **Status: 135/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
 - **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902,
   FTF-0500D, FTF-1002, FTF-0103A, FTF-0510, FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613, FTF-1305, FTF-0308, FTF-0602, FTF-0901 and FTF-1706 (2026-10-07/08), plus follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1, FTF-0608-F1 and FTF-04A21-F1.
@@ -10,6 +10,13 @@ Updated: 2026-10-08T14:20Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-08T22:02Z:**
+  - CERTIFIED: FTF-0905 (canary-secret generator). It is UNWIRED.
+  - Returned:
+    - FTF-0903 r6, tests only: refusals must carry no cause, context, notes or attributes.
+    - FTF-1703 r4: no method calls on caller input (held-out leakage reproduced), one admission per generator index, exact review types.
+    - FTF-H010-P1 r2: DB-enforced job state machine, pinned CHECKs and cross-tenant writes, POST shape, origin/import-kind CHECK.
+  - Under verification: FTF-0616 r6 (#657) and FTF-1602 r4 (#655).
 - **2026-10-08T14:20Z:**
   - Returned:
     - FTF-0903 r3, tests only: value-echo, str-subclass and unhashable name tests.
