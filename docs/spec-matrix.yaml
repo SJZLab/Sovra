@@ -8424,15 +8424,26 @@ FTF-0601:
   proving_symbol: build_evaluation_suite_router
   proving_test: tests/tasks/test_ftf_0601.py
 FTF-0602:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Evaluation case editor/import
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0601
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0601 (CERTIFIED)
+    and FTF-0602-P1 (CERTIFIED). apps/web/components/evaluation-factory/evaluation_case_editor_import.tsx
+    consumes only the frozen FTF-0602-P1 routes in 06-interface.yaml (GET/POST cases, PATCH case).
+    Import parses a JSON array or JSON Lines file in the browser and sends one all-or-nothing POST
+    with nothing defaulted; the editor patches only changed fields and never case_key; a critical
+    case on a model-self-report grader is blocked before any request and the route's
+    critical_oracle_not_independent 400 is shown (row, field, code, never the value); a 403
+    final_suite_content_restricted clears all case content from the screen. Disclosed UNWIRED
+    (Law 6/7): no Next.js page tree exists (FTF-H029), so proof is a DOM-level Vitest spec with
+    mocked fetch (30 tests); proving_symbol stays blank. Fault -> RED table:
+    docs/certifications/submissions/2026-10-08T0030Z-FTF-0602.md. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: apps/web/tests/ftf_0602.spec.ts
 FTF-0603:
   certification_state: NONE
   criticality: MUST
