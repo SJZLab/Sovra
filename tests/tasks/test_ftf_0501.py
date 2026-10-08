@@ -2966,6 +2966,44 @@ def test_m1f_an_unsupported_declared_type_is_rejected_before_anything_is_read() 
             check(f"{CID}-M1", f"({declared!r}) nothing is left in storage", _gone(fake, target))
 
 
+def test_m1g_a_failing_head_is_an_outage_and_a_missing_object_is_incomplete() -> None:
+    body = _jsonl(3000)
+    for label, error in (
+        ("OSError", OSError("reset")),
+        ("URLError", urllib.error.URLError("refused")),
+        ("TimeoutError", TimeoutError("slow")),
+        ("S3 500", s3.S3Error(500, "InternalError", "boom")),
+        ("S3 403", s3.S3Error(403, "AccessDenied", "no")),
+    ):
+        with FakeS3() as fake:
+            target = _target(body)
+            _stored(fake, target, body)
+
+            def failing_head(bucket: str, key: str, _error: Exception = error) -> dict[str, str]:
+                raise _error
+
+            got = _verify_with(fake, target, head_object=failing_head)
+            check(
+                f"{CID}-M1",
+                f"{label} on the HEAD is an outage naming head_object",
+                isinstance(got, dos.UploadStorageUnavailableError) and "head_object" in str(got),
+            )
+            check(f"{CID}-M1", f"({label}) the object was not read", not fake.called("get"))
+            check(
+                f"{CID}-M1",
+                f"({label}) nothing was deleted on an outage",
+                target.object_key in fake.objects,
+            )
+    with FakeS3() as fake:
+        target = _target(body)
+        got = _verify_with(fake, target)
+        check(
+            f"{CID}-M1",
+            "no object at all (HEAD 404) -> UploadIncomplete naming part 1",
+            isinstance(got, dos.UploadIncomplete) and got.missing_parts == (1,),
+        )
+
+
 def test_m2_content_types_are_normalized_exactly_and_sniffed_by_table() -> None:
     cases = {
         "  Application/JSONL ; charset=utf-8": "application/jsonl",
