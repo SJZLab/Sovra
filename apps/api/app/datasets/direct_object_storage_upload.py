@@ -101,6 +101,7 @@ SUPPORTED_CONTENT_TYPES = frozenset(
 
 _BINARY_MAGIC = (b"PK\x03\x04", b"%PDF", b"\x1f\x8b", b"\x89PNG", b"GIF8", b"\x7fELF", b"MZ")
 _UTF8_BOM = codecs.BOM_UTF8
+_DEFAULT_PORT_BY_SCHEME = {"http": 80, "https": 443}
 _ZIP_MAGIC_BY_TYPE = {XLSX_CONTENT_TYPE: b"PK\x03\x04"}
 # Closed lookup tables rather than comparisons: a type is matched exactly, with
 # no tolerance for case or whitespace once it has been normalized.
@@ -169,9 +170,10 @@ class UploadStorageSettings:
         if missing:
             raise ValueError(f"upload storage is partly configured; missing {sorted(missing)}")
         parts = urlsplit(values["SOVRA_UPLOAD_S3_ENDPOINT"])
-        if parts.scheme not in {"http", "https"} or not parts.hostname:
+        default_port = _DEFAULT_PORT_BY_SCHEME.get(parts.scheme)
+        if default_port is None or not parts.hostname:
             raise ValueError("SOVRA_UPLOAD_S3_ENDPOINT must be an http(s) URL with a host")
-        port = parts.port or (443 if parts.scheme == "https" else 80)
+        port = parts.port or default_port
         region = source.get("SOVRA_UPLOAD_S3_REGION", "").strip() or "us-east-1"
         return cls(
             endpoint=S3Endpoint(parts.scheme, parts.hostname, port, region),

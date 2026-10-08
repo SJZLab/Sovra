@@ -2840,6 +2840,22 @@ def test_m1_storage_settings_are_trimmed_on_both_sides() -> None:
     )
 
 
+def test_m1b_default_ports_follow_the_scheme() -> None:
+    for endpoint, scheme, port in (
+        ("https://s3.example", "https", 443),
+        ("http://s3.example", "http", 80),
+        ("HTTPS://s3.example", "https", 443),
+        ("https://s3.example:8443", "https", 8443),
+        ("http://s3.example:443", "http", 443),
+    ):
+        got = dos.UploadStorageSettings.from_env(_storage_env(SOVRA_UPLOAD_S3_ENDPOINT=endpoint))
+        check(
+            f"{CID}-M1",
+            f"{endpoint} -> {scheme} port {port}",
+            got is not None and got.endpoint.scheme == scheme and got.endpoint.port == port,
+        )
+
+
 def test_m2_content_types_are_normalized_exactly_and_sniffed_by_table() -> None:
     cases = {
         "  Application/JSONL ; charset=utf-8": "application/jsonl",
