@@ -11651,7 +11651,7 @@ FTF-1703:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Training dataset
-  evidence_hash: aab98f605e9924867aec9cf38c4e5cf36a1023f9
+  evidence_hash: 9f89a8a46f953e92ce4d7276caec9883cf95ef1b
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0506, FTF-1701,
@@ -11671,6 +11671,19 @@ FTF-1703:
     RED table in docs/certifications/submissions/2026-10-08T0700Z-FTF-1703.md (15 production
     faults, all RED). No route, schema or live caller yet, so proving_symbol stays blank (same
     disclosed precedent as FTF-1706).
+    Round 2 (QUEUE 0g): independent groups are template families, not traces (Section 67): the
+    1,200 traces are 21 families (7 kinds x 3 variants), so group_count is 21, meets_floor stays
+    False even with 1,000+ approved traces and review_status names BLOCKED_independent_group_floor.
+    Provenance is verified, not self-declared: verify_trace_provenance regenerates each trace from
+    GENERATOR_ID and provenance.index and requires canonical-JSON equality (user turns, free-text
+    tool arguments, results, kind, critical, template and group ids), and only generator output is
+    admitted. ReservedFinalSuite and the builder's reserved argument fail closed (frozensets of
+    exact str only; {} and a bare string are refused, None is the explicit default). Malformed trace
+    fields, malformed steps and a forged approver ref raise TraceVerificationError; the secret scan
+    covers dict keys. Mutation gate 188/188 killed. Disclosed, not a return reason: reviewer
+    identity is an unauthenticated string until the BLOCKED_EXTERNAL Argilla review step binds real
+    review records, and held-out matching is exact after strip/casefold (no near-duplicate
+    detection).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1703.py
