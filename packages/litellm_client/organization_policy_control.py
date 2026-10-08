@@ -92,7 +92,13 @@ class RouteChangeNotAuthorizedError(GatewayPolicyError):
 
 
 def validate_namespace(value: object) -> str:
-    if not isinstance(value, str) or not _IDENTIFIER_PATTERN.fullmatch(value):
+    # `type(value) is str`, never `isinstance`: a `str` subclass can override
+    # `__hash__`/`__eq__` to alias a different, already-authorized value (so a
+    # frozenset membership or set-difference check against it would compare
+    # equal to the wrong string) while still carrying its own, unauthorized
+    # literal content. Rejecting every subclass closes that gap at the one
+    # point every namespace enters this module.
+    if type(value) is not str or not _IDENTIFIER_PATTERN.fullmatch(value):
         raise InvalidNamespaceError(
             "namespace must be a non-empty, safe identifier "
             f"(letters/digits/._:- , no leading/trailing separator): {value!r}"
@@ -101,7 +107,8 @@ def validate_namespace(value: object) -> str:
 
 
 def validate_approver_identity(value: object) -> str:
-    if not isinstance(value, str) or not _IDENTIFIER_PATTERN.fullmatch(value):
+    # Same `type(value) is str` reasoning as `validate_namespace` above.
+    if type(value) is not str or not _IDENTIFIER_PATTERN.fullmatch(value):
         raise InvalidNamespaceError(
             "approver identity must be a non-empty, safe identifier "
             f"(letters/digits/._:- , no leading/trailing separator): {value!r}"
