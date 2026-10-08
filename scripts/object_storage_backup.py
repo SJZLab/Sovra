@@ -568,7 +568,7 @@ def restore_backup(
         if not _is_text(new_version):
             raise ObjectStorageBackupError(f"{entry.key}: destination returned no version id")
         stored = destination.get_version(entry.key, new_version)
-        if len(stored) != entry.size_bytes or _digest(stored) != entry.sha256:
+        if _blob_issue(stored, entry.sha256, entry.size_bytes) is not None:
             raise ObjectStorageBackupError(f"{entry.key}: restored bytes differ from the backup")
         if destination.version_metadata(entry.key, new_version) != dict(entry.metadata):
             raise ObjectStorageBackupError(f"{entry.key}: restored metadata differs from backup")
