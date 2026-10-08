@@ -9571,6 +9571,17 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 docs/spec-matrix.yaml. It never invents criteria.)
 
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
+- **FTF-0516 Dataset issue resolution UI: PARKED (BLOCKED_DEPENDENCY), 2026-10-08T07:40Z, lane B.**
+  - What failed: nothing attempted. The packet's acceptance ("UI resolves record issue via exclusion/correction/new
+    version with before/after evidence and audit") needs a frozen resolution API over the certified FTF-0515 engine.
+    Checked every packages/contracts/openapi/*-interface.yaml: none declares an issue list or resolution route, and no
+    table persists issues or resolutions (FTF-0515 is a pure module, workers/data/group_aware_split_engine.py and
+    quality_issue_engine). A UI would have nothing real to call (Law 11).
+  - Missing: an issue-resolution persistence migration plus routes (list issues for a dataset version; resolve by
+    exclude | correct | new-version with before/after evidence and an audit event) in 05-interface.yaml.
+  - Route options: (1) Control plane slices FTF-0516-P1 (persistence + API) like FTF-0501-P1, then FTF-0516 is re-queued
+    on top; (2) fold the API into FTF-0516 as one oversized item (not recommended, mixes migration and UI);
+    (3) mark BLOCKED_DEPENDENCY in the matrix and defer until FTF-0501 certifies the Dataset version entity.
 - **FTF-04A31 Real private GitHub repository integration test: PARKED (ask-first, secret), 2026-10-07T12:15Z, lane C.**
   - What failed: nothing attempted. The DoD needs a real private repository plus a credential; CI exposes only the
     workflow `github.token` (scoped to this repo) and no provisioned test-repo secret.
