@@ -52,6 +52,9 @@ _API = "/api/2.0/mlflow"
 _SAFE_VALUE = re.compile(r"^[A-Za-z0-9._:/-]{1,256}$")
 _SAFE_KEY = re.compile(r"^[A-Za-z0-9._/-]{1,250}$")
 _RUN_ID = re.compile(r"^[0-9a-f]{32}$")
+# Whitespace, control characters (incl. DEL) and backslashes never appear in an
+# approved internal artifact location.
+_UNSAFE_SOURCE_CHARS = re.compile(r"[\x00-\x20\x7f\\]")
 _MAX_METRICS, _MAX_PARAMS, _MAX_TAGS = 1000, 100, 100
 
 
@@ -190,7 +193,9 @@ class MlflowClient:
                 raise MlflowNotFoundError(f"HTTP {status} {code}")
             if code == "RESOURCE_ALREADY_EXISTS":
                 raise MlflowAlreadyExistsError(f"HTTP {status} {code}")
-            raise TrackingRejectedError(f"MLflow returned HTTP {status} {code}".strip())
+            raise TrackingRejectedError(
+                f"MLflow returned HTTP {status}" + (f" {code}" if code else "")
+            )
         return parse_strict_json(response.body)
 
     # -- experiments -------------------------------------------------------
@@ -419,7 +424,7 @@ def is_approved_source(source: object, prefixes: Sequence[str]) -> bool:
     and carries no traversal, userinfo, query or fragment."""
     if not isinstance(source, str) or not source or not prefixes:
         return False
-    if any(ord(c) < 0x21 or c == "\\" for c in source):
+    if _UNSAFE_SOURCE_CHARS.search(source):
         return False
     parts = urlsplit(source)
     if parts.query or parts.fragment or parts.username is not None:

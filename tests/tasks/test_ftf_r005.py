@@ -1206,6 +1206,89 @@ def test_mutation_closers() -> None:
     )
 
 
+def test_mutation_closers_2() -> None:
+    stub = Stub()
+    c = stub.client()
+    stub.reply(400, {"error_code": "BAD_THING"})
+    try:
+        c.get_run(RUN_ID)
+    except TrackingRejectedError as exc:
+        check(
+            "R005-C",
+            "error message carries status and code",
+            str(exc) == "MLflow returned HTTP 400 BAD_THING",
+        )
+    stub.reply(200, {"runs": [1]})
+    check(
+        "R005-C",
+        "non-object run in a page refused",
+        raises(TrackingRejectedError, c.search_runs_by_tag, "1", "k", "v"),
+    )
+    stub.reply(200, {"runs": [], "next_page_token": "t"})
+    stub.reply(200, {"runs": [], "next_page_token": "T"})
+    stub.reply(200, {"runs": []})
+    check("R005-C", "case-distinct page tokens advance", c.search_runs_by_tag("1", "k", "v") == [])
+    n = len(stub.seen)
+    check(
+        "R005-C",
+        "log_batch refuses a bad run id before any request",
+        raises(TrackingRejectedError, c.log_batch, "zz", tags={"a": "b"}) and len(stub.seen) == n,
+    )
+    check(
+        "R005-C",
+        "finish_run refuses a bad run id before any request",
+        raises(TrackingRejectedError, c.finish_run, "zz", status="FINISHED", end_time_ms=1)
+        and len(stub.seen) == n,
+    )
+    stub.reply(200, {})
+    check(
+        "R005-C",
+        "100 params is the allowed boundary",
+        not raises(
+            TrackingRejectedError, c.log_batch, RUN_ID, params={f"p{i}": "v" for i in range(100)}
+        ),
+    )
+    for bad in (" FINISHED", "finished", "FINISHED ", "Failed"):
+        check(
+            "R005-C",
+            f"status {bad!r} refused",
+            raises(TrackingRejectedError, c.finish_run, RUN_ID, status=bad, end_time_ms=1),
+        )
+    for good in ("FINISHED", "FAILED", "KILLED"):
+        stub.reply(200, {})
+        check(
+            "R005-C",
+            f"status {good} accepted",
+            not raises(TrackingRejectedError, c.finish_run, RUN_ID, status=good, end_time_ms=1),
+        )
+    stub.reply(200, {"model_versions": [{"version": "1", "tags": [{"key": "k", "value": "V"}]}]})
+    check(
+        "R005-C",
+        "tag value match is exact and case-sensitive",
+        [v["version"] for v in c.search_model_versions_by_tag("m", "k", "V")] == ["1"],
+    )
+    stub.server.shutdown()
+    root = "s3://sovra-model-artifacts/"
+    check("R005-C", "bang is a legal path character", is_approved_source(root + "a!b/", PREFIXES))
+    for bad in (
+        root + "a/ ",
+        root + "a/\n",
+        root + "a/\t",
+        root + "a\x7f/",
+        root + "a\x00/",
+        root + "a\x1f/",
+        root + "a\x20b/",
+    ):
+        check("R005-C", f"source {bad!r} refused", not is_approved_source(bad, PREFIXES))
+    check("R005-C", "tilde is a legal path character", is_approved_source(root + "a~b/", PREFIXES))
+    for purpose in (" train", "TRAIN", "train\n", "Validation", "development_eval "):
+        check(
+            "R005-R",
+            f"purpose {purpose!r} must match exactly",
+            raises(SealedExportRefusedError, make_run, data_purpose=purpose),
+        )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
