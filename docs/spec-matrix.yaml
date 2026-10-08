@@ -8916,15 +8916,33 @@ FTF-0615:
   proving_symbol: ''
   proving_test: ''
 FTF-0616:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: LLM judge adapter through LiteLLM
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-25; scenarios=Q16, Q17, Q18; deps=FTF-0210, FTF-0601
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-25; scenarios=Q16, Q17, Q18; deps=FTF-0210, FTF-0601.
+    Path: workers/evaluation/llm_judge_grader.py (same convention as the sibling graders). Round 2:
+    critical=True is refused outright (Sections 27/69.5; 06-interface.yaml
+    critical_oracle_not_independent), the corroboration argument is gone. CalibrationRecord is bound to
+    the exact (rubric_id, rubric version, judge model) triple and meets Section 69.5: >= 100 examples,
+    two distinct reviewers, >= 90% agreement, Cohen's kappa >= 0.70 (exact integer arithmetic; an
+    undefined kappa is refused). The verdict carries one score per locked rubric criterion (exact ids,
+    none missing, none extra); confidence and scores lie in [0, 1]. LlmJudgeResult records rubric id,
+    version, requested and resolved model; a resolved model outside the approved set (or the candidate)
+    is MODEL_MISMATCH, never a verdict. Model output is strict JSON (no duplicate keys, NaN/Infinity or
+    overflow, no repair of truncated JSON, deep nesting is refused, not a crash); exactly one choice;
+    only HTTP 200 is a response; a 400 is sent once. Fault -> RED table:
+    docs/certifications/submissions/2026-10-08T0500Z-FTF-0616.md.
+
+    BLOCKED_EXTERNAL (packet resource_gate, owner action): the clause "Call approved real judge through
+    LiteLLM" is proven only against a local TLS gateway stand-in. It needs a real gateway key and an
+    approved judge model, which do not exist yet. Disclosed: no live caller yet (Section 25's runtime
+    loop is not dependency-ready), so proving_symbol stays blank. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0616.py
 FTF-0617:
   certification_state: NONE
   criticality: MUST
