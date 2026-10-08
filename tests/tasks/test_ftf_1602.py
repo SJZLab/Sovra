@@ -2125,10 +2125,10 @@ def test_storage_failures_are_typed_errors() -> None:
 class Text(str):
     """A str subclass whose overridden methods lie, as a hostile caller could build."""
 
-    def startswith(self, *args: Any, **kwargs: Any) -> bool:  # type: ignore[override]
+    def startswith(self, *args: Any, **kwargs: Any) -> bool:
         return True
 
-    def split(self, *args: Any, **kwargs: Any) -> list[str]:  # type: ignore[override]
+    def split(self, *args: Any, **kwargs: Any) -> list[str]:
         return ["ok"]
 
     def __eq__(self, other: object) -> bool:
@@ -2158,7 +2158,7 @@ def test_exact_types_close_the_tenant_guard() -> None:
     )
     for field in ("key", "version_id", "artifact_id", "organization_id", "encryption_key_ref"):
         target = MemStore()
-        changed = dataclasses.replace(refs[0], **{field: Text(getattr(refs[0], field) or "x")})
+        changed = bad(refs[0], **{field: Text(getattr(refs[0], field) or "x")})
         err = outcome(run, source, [changed, *refs[1:]], target)
         check(
             "FTF-1602-N3",
@@ -2174,9 +2174,10 @@ def test_exact_types_close_the_tenant_guard() -> None:
         "a str subclass for sha256 is refused and nothing is written",
         typed(err, "sha256") and nothing_written(target),
     )
-    for kind in ([], {}, Text("dataset"), None, 5):
+    kinds: list[Any] = [[], {}, Text("dataset"), None, 5]
+    for kind in kinds:
         target = MemStore()
-        err = outcome(run, source, [dataclasses.replace(refs[0], kind=kind), *refs[1:]], target)
+        err = outcome(run, source, [bad(refs[0], kind=kind), *refs[1:]], target)
         check(
             "FTF-1602-N1",
             f"kind {kind!r} raises this module's error (never a raw TypeError)",
@@ -2201,7 +2202,7 @@ def test_exact_types_close_the_tenant_guard() -> None:
         typed(err, "known_key_refs") and nothing_written(target),
     )
 
-    class Frozen(frozenset):  # type: ignore[type-arg]
+    class Frozen(frozenset):
         def __contains__(self, item: object) -> bool:
             return True
 
