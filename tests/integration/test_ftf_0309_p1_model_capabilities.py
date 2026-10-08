@@ -435,9 +435,7 @@ def main() -> None:
             cased = _request(
                 base,
                 "GET",
-                cap_path(
-                    org1_id, conn1_id, urllib.parse.quote(variant, safe=""), proj1_id
-                ),
+                cap_path(org1_id, conn1_id, urllib.parse.quote(variant, safe=""), proj1_id),
                 principal="viewer1",
             )
             check(
