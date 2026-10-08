@@ -73,9 +73,11 @@ ENCODINGS: tuple[str, ...] = ("literal", "base64", "hex", "url", "fragmented")
 _CANARY_PREFIX = "CANARY-DO-NOT-USE-"
 _MARKER_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,98}")
 _TOKEN_NBYTES = 16
+_MIN_TOKEN_NBYTES = 16  # 128 bits: the floor below which a canary is guessable
 _STRING_MAX_LENGTH = 200
 _MIN_FRAGMENTS = 2
 _MAX_FRAGMENTS = 8
+assert _TOKEN_NBYTES >= _MIN_TOKEN_NBYTES, "canary token must carry >= 128 bits of entropy"
 assert _MAX_FRAGMENTS < len(_CANARY_PREFIX), "fragment_canary relies on this to never overrun"
 
 
@@ -111,25 +113,26 @@ class IncompleteLeakCoverageError(CanarySecretGeneratorError):
 
 
 def _present(value: object) -> bool:
-    return isinstance(value, str) and bool(value) and not value.isspace()
+    return type(value) is str and bool(value) and not value.isspace()
 
 
 def _text(value: object, what: str) -> str:
-    if not isinstance(value, str) or not _present(value) or len(value) > _STRING_MAX_LENGTH:
+    if type(value) is not str or not _present(value) or len(value) > _STRING_MAX_LENGTH:
         raise InvalidCanaryRequestError(f"{what} must be a non-empty string")
     return value
 
 
 def _member(value: object, allowed: tuple[str, ...], what: str) -> str:
-    # Type check before membership: an unhashable value must raise our own
-    # error rather than a bare TypeError from `in`.
-    if not isinstance(value, str) or value not in allowed:
+    # Exact-type check before membership: an unhashable value must raise our
+    # own error rather than a bare TypeError from `in`, and a str subclass
+    # with a lying __eq__ must not pass the membership test.
+    if type(value) is not str or value not in allowed:
         raise InvalidCanaryRequestError(f"{what} must be one of {allowed}")
     return value
 
 
 def _marker_id(value: object, what: str) -> str:
-    if not isinstance(value, str) or not _MARKER_ID_RE.fullmatch(value):
+    if type(value) is not str or not _MARKER_ID_RE.fullmatch(value):
         raise InvalidCanaryRequestError(f"{what} is not a bounded id")
     return value
 
@@ -177,7 +180,10 @@ def generate_canary(known_real_secrets: Collection[object] = ()) -> CanaryMarker
     token = secrets.token_hex(_TOKEN_NBYTES)
     value = f"{_CANARY_PREFIX}{token}"
     _reject_if_known_real_secret(value, known_real_secrets)
-    canary_id = f"canary-{token[:32]}"
+    # The id is drawn independently of the token: it appears in ledgers and
+    # error text, so deriving it from the token would let the canary be
+    # rebuilt from the id.
+    canary_id = f"canary-{secrets.token_hex(_TOKEN_NBYTES)}"
     return CanaryMarker(canary_id, value)
 
 
@@ -262,9 +268,30 @@ class CanaryPlacementLedger:
     partial check.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, required_coverage: Collection[object] | None = None) -> None:
+        """`required_coverage` is the declared plan: the (sink, encoding)
+        pairs every placed canary must be placed *and* checked at before
+        the test can be called complete. Default: every sink under every
+        encoding (Section 12). A narrower plan must be declared
+        explicitly; it can never be empty."""
+        if required_coverage is None:
+            plan = {(sink, encoding) for sink in SINKS for encoding in ENCODINGS}
+        else:
+            if not isinstance(required_coverage, Collection) or isinstance(
+                required_coverage, str | bytes
+            ):
+                raise InvalidCanaryRequestError("required_coverage must be a collection of pairs")
+            plan = set()
+            for pair in required_coverage:
+                if type(pair) is not tuple or len(pair) != 2:
+                    raise InvalidCanaryRequestError("each required coverage item must be a pair")
+                plan.add((_member(pair[0], SINKS, "sink"), _member(pair[1], ENCODINGS, "encoding")))
+            if not plan:
+                raise InvalidCanaryRequestError("required_coverage must not be empty")
+        self._required: frozenset[tuple[str, str]] = frozenset(plan)
         self._placements: dict[tuple[str, str, str], PlacementRecord] = {}
         self._checked: set[tuple[str, str, str]] = set()
+        self._leaked: set[tuple[str, str, str]] = set()
 
     def record_placement(self, record: PlacementRecord) -> None:
         if not isinstance(record, PlacementRecord):
@@ -294,17 +321,33 @@ class CanaryPlacementLedger:
             raise InvalidCanaryRequestError("found must be a bool")
         self._checked.add(key)
         if found:
-            raise CanaryLeakedError(
-                f"canary {canary_id!r} was recovered at sink {sink!r} ({encoding})"
-            )
+            # Recorded before raising: catching the error does not erase
+            # the leak, `assert_leak_test_complete` still refuses.
+            self._leaked.add(key)
+            raise CanaryLeakedError(f"a canary was recovered at sink {key[1]!r} ({key[2]})")
 
     def assert_leak_test_complete(self) -> None:
-        """Raise unless every recorded placement has also been checked.
-        An empty ledger (nothing was ever placed) is vacuously complete --
-        there is nothing it could be asserting safety about."""
+        """Raise unless the test is demonstrably complete and clean: no
+        leak was ever recorded; something was actually placed and checked;
+        every placement was checked; and every placed canary was placed and
+        checked at every (sink, encoding) pair of the declared plan. An
+        empty ledger is never complete -- nothing checked proves nothing."""
+        if self._leaked:
+            raise CanaryLeakedError(
+                f"{len(self._leaked)} confirmed leak(s) were recorded; the test cannot be complete"
+            )
+        if not self._checked:
+            raise IncompleteLeakCoverageError("nothing was placed and checked")
         missing = set(self._placements) - self._checked
         if missing:
             raise IncompleteLeakCoverageError(
                 f"{len(missing)} of {len(self._placements)} placements were never checked; "
                 "absence at one sink is not evidence of safety at the rest"
             )
+        for canary_id in {key[0] for key in self._placements}:
+            short = {pair for pair in self._required if (canary_id, *pair) not in self._checked}
+            if short:
+                raise IncompleteLeakCoverageError(
+                    f"{len(short)} of {len(self._required)} required (sink, encoding) "
+                    "pairs were not placed and checked for a canary"
+                )
