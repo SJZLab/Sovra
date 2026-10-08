@@ -3888,6 +3888,17 @@ def test_m14_client_response_shapes_ranges_and_streaming() -> None:
             )
 
 
+def test_m14b_a_failed_stream_carries_the_status_and_the_reason() -> None:
+    for status, reason in ((404, "Not Found"), (500, "Internal Server Error"), (403, "Forbidden")):
+        with _RawS3(lambda r, st=status: (st, {}, b"")) as raw:
+            got = _capture(lambda: list(raw.client().stream_object("b", "k")))
+        check(
+            f"{CID}-M14",
+            f"a {status} while streaming is an S3Error with that status and reason {reason!r}",
+            isinstance(got, s3.S3Error) and got.status_code == status and got.message == reason,
+        )
+
+
 def _parts_xml(numbers: list[int], *, truncated: Any = None, marker: Any = None) -> str:
     items = "".join(
         f'<Part><PartNumber>{n}</PartNumber><ETag>"e{n}"</ETag><Size>5</Size></Part>'
