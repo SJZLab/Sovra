@@ -76,6 +76,7 @@ _TOKEN_NBYTES = 16
 _STRING_MAX_LENGTH = 200
 _MIN_FRAGMENTS = 2
 _MAX_FRAGMENTS = 8
+assert _MAX_FRAGMENTS < len(_CANARY_PREFIX), "fragment_canary relies on this to never overrun"
 
 
 class CanarySecretGeneratorError(Exception):
@@ -217,16 +218,16 @@ def fragment_canary(marker: CanaryMarker, parts: int) -> tuple[str, ...]:
         raise InvalidCanaryRequestError(
             f"parts must be between {_MIN_FRAGMENTS} and {_MAX_FRAGMENTS}"
         )
+    # No "parts > len(value)" guard: every CanaryMarker's value starts with
+    # _CANARY_PREFIX, which alone is already longer than _MAX_FRAGMENTS, so
+    # this can never be true -- a defensive check for an impossible input
+    # is not added (and the slice arithmetic below always reassembles
+    # exactly, so no post-hoc reassembly check is added either).
     value = marker.value
-    if parts > len(value):
-        raise InvalidCanaryRequestError("parts cannot exceed the marker length")
     size = len(value) // parts
     fragments = [value[i * size : (i + 1) * size] for i in range(parts - 1)]
     fragments.append(value[(parts - 1) * size :])
-    result = tuple(fragments)
-    if "".join(result) != value:  # pragma: no cover -- arithmetic invariant
-        raise InvalidCanaryRequestError("fragments failed to reassemble")
-    return result
+    return tuple(fragments)
 
 
 @dataclass(frozen=True)

@@ -233,10 +233,16 @@ def test_encode_canary_fail_closed() -> None:
         "an unknown encoding is refused",
         _raises(InvalidCanaryRequestError, encode_canary, marker, "rot13"),
     )
+    try:
+        encode_canary(marker, "fragmented")
+        fragmented_message = None
+    except InvalidCanaryRequestError as exc:
+        fragmented_message = str(exc)
     check(
         "FTF-0905-A2",
-        "'fragmented' is refused by encode_canary (use fragment_canary instead)",
-        _raises(InvalidCanaryRequestError, encode_canary, marker, "fragmented"),
+        "'fragmented' is refused by encode_canary with its own specific message "
+        "(not just the generic 'unsupported encoding' fallback)",
+        fragmented_message is not None and "fragment_canary" in fragmented_message,
     )
 
 
@@ -290,7 +296,7 @@ def test_fragment_canary_fail_closed() -> None:
     )
     check(
         "FTF-0905-A2",
-        "parts exceeding the marker's own length is refused",
+        "a very large parts count is still refused by the same maximum bound",
         _raises(InvalidCanaryRequestError, fragment_canary, marker, 10_000),
     )
 
@@ -354,6 +360,11 @@ def test_ledger_rejects_duplicate_placement_and_unplaced_check() -> None:
     ledger = CanaryPlacementLedger()
     marker = generate_canary()
     record = PlacementRecord(marker.canary_id, "trace", "literal", "reviewer-1")
+    check(
+        "FTF-0905-A2",
+        "recording a non-PlacementRecord placement is refused",
+        _raises(InvalidCanaryRequestError, ledger.record_placement, "not-a-record"),
+    )
     ledger.record_placement(record)
     check(
         "FTF-0905-A1",
@@ -407,6 +418,23 @@ def test_placement_record_fail_closed() -> None:
         "an empty authorized_by is refused",
         _raises(
             InvalidCanaryRequestError, PlacementRecord, marker.canary_id, "trace", "literal", ""
+        ),
+    )
+    check(
+        "FTF-0905-A2",
+        "authorized_by of exactly the max length (200) is the boundary and is accepted",
+        _no_raise(PlacementRecord, marker.canary_id, "trace", "literal", "r" * 200),
+    )
+    check(
+        "FTF-0905-A2",
+        "authorized_by one char past the max length is refused",
+        _raises(
+            InvalidCanaryRequestError,
+            PlacementRecord,
+            marker.canary_id,
+            "trace",
+            "literal",
+            "r" * 201,
         ),
     )
     check(
