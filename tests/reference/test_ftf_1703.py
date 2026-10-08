@@ -31,6 +31,7 @@ sys.path.insert(0, str(API_ROOT))
 from evals.reference.training_dataset import (  # noqa: E402
     GENERATOR_ID,
     MIN_APPROVED_TRACES,
+    MIN_INDEPENDENT_GROUPS,
     HeldOutLeakageError,
     ReservedFinalSuite,
     ReviewDecision,
@@ -239,7 +240,12 @@ def test_floor_requires_independent_review() -> None:
     )
     full = build_training_dataset(TRACES, _approve(TRACES))
     check(
-        "FTF-1703-A2", "all approved => floor met", full.meets_floor and full.approved_count == 1200
+        "FTF-1703-A2",
+        "all 1200 approved, but only 21 template families => group floor NOT met",
+        full.approved_count == 1200
+        and full.group_count == 21
+        and not full.meets_floor
+        and full.review_status == "BLOCKED_independent_group_floor",
     )
     check(
         "FTF-1703-A2",
@@ -249,8 +255,11 @@ def test_floor_requires_independent_review() -> None:
     exact = build_training_dataset(TRACES[:1000], _approve(TRACES[:1000]))
     check(
         "FTF-1703-A2",
-        "exactly 1000 approved meets floor",
-        exact.meets_floor and MIN_APPROVED_TRACES == 1000,
+        "exactly 1000 approved traces still do not meet the independent-group floor",
+        exact.approved_count == 1000
+        and not exact.meets_floor
+        and MIN_APPROVED_TRACES == 1000
+        and MIN_INDEPENDENT_GROUPS == 1000,
     )
     short = build_training_dataset(TRACES[:1000], _approve(TRACES[:999]))
     check(
@@ -270,15 +279,54 @@ def test_floor_requires_independent_review() -> None:
 
 
 def test_floor_counts_groups_not_traces() -> None:
-    dup_group = [
-        dataclasses.replace(t, group_id="train-grp-0000") if t.trace_id != "train-0000" else t
-        for t in TRACES[:1000]
-    ]
-    ds = build_training_dataset(dup_group, _approve(dup_group))
+    ds = build_training_dataset(TRACES[:1000], _approve(TRACES[:1000]))
     check(
         "FTF-1703-A2",
-        "1000 traces in one group do not meet the independent-group floor",
-        ds.approved_count == 1000 and ds.group_count == 1 and not ds.meets_floor,
+        "1000 approved traces are 21 template-family groups, not 1000 groups",
+        ds.approved_count == 1000 and ds.group_count == 21 and not ds.meets_floor,
+    )
+    one_kind = [t for t in TRACES if t.template_id == "train-tmpl-lookup-v0"]
+    only = build_training_dataset(one_kind, _approve(one_kind))
+    check(
+        "FTF-1703-A2",
+        "many traces of one template family are one group",
+        only.approved_count == len(one_kind) > 50 and only.group_count == 1,
+    )
+    check(
+        "FTF-1703-A2",
+        "no reviews => no approved traces => zero groups",
+        build_training_dataset(TRACES[:30]).group_count == 0,
+    )
+    check(
+        "FTF-1703-A2",
+        "the generator's 1200 traces fall into exactly 21 template families",
+        len({t.template_id for t in TRACES}) == 21,
+    )
+
+
+def test_floor_status_boundaries() -> None:
+    import evals.reference.training_dataset as td
+
+    fs = td._floor_status
+    check(
+        "FTF-1703-A2",
+        "999 approved: review-blocked",
+        fs(999, 5000) == (False, "BLOCKED_EXTERNAL_independent_review"),
+    )
+    check(
+        "FTF-1703-A2",
+        "1000 approved, 999 groups: group-blocked",
+        fs(1000, 999) == (False, "BLOCKED_independent_group_floor"),
+    )
+    check(
+        "FTF-1703-A2",
+        "1000 approved, 1000 groups: floor met",
+        fs(1000, 1000) == (True, "independently_approved"),
+    )
+    check(
+        "FTF-1703-A2",
+        "both short: the review blocker is named first",
+        fs(0, 0) == (False, "BLOCKED_EXTERNAL_independent_review"),
     )
 
 
@@ -464,12 +512,17 @@ def test_determinism() -> None:
     check("FTF-1703-D1", "regenerated dataset hash identical", a == b)
     shuffled = build_training_dataset(list(reversed(TRACES)), _approve(TRACES)).dataset_sha256
     check("FTF-1703-D1", "hash independent of input order", a == shuffled)
+    c = build_training_dataset([TRACES[1]], _approve([TRACES[1]])).dataset_sha256
+    d = build_training_dataset([TRACES[0]], _approve([TRACES[0]])).dataset_sha256
+    check("FTF-1703-D1", "different approved traces give a different dataset hash", c != d)
     changed = _replace_step(
         TRACES[0], 0, {"type": "message", "role": "user", "content": "different"}
     )
-    c = build_training_dataset([changed], _approve([changed])).dataset_sha256
-    d = build_training_dataset([TRACES[0]], _approve([TRACES[0]])).dataset_sha256
-    check("FTF-1703-D1", "a one-message user-text change changes the dataset hash", c != d)
+    check(
+        "FTF-1703-D1",
+        "a one-message user-text change is refused, so it can never change the hash",
+        _raises(TraceVerificationError, build_training_dataset, [changed], _approve([changed])),
+    )
     code = (
         f"import sys; sys.path.insert(0, {str(ROOT)!r}); sys.path.insert(0, {str(API_ROOT)!r});"
         "from evals.reference.training_dataset import *;"
@@ -761,12 +814,16 @@ def test_input_shape_guards() -> None:
             ],
         ),
     )
-    a = dataclasses.replace(TRACES[0], trace_id="Train-X")
-    b = dataclasses.replace(TRACES[1], trace_id=" train-x ")
+    b = dataclasses.replace(TRACES[0], trace_id=" TRAIN-0000 ")
+    try:
+        build_training_dataset([TRACES[0], b])
+        dup_message = ""
+    except TrainingDatasetError as exc:
+        dup_message = str(exc)
     check(
         "FTF-1703-N1",
-        "case/whitespace-variant duplicate trace id refused",
-        _raises(TrainingDatasetError, build_training_dataset, [a, b]),
+        "case/whitespace-variant duplicate trace id refused by the duplicate guard",
+        "duplicate trace_id" in dup_message,
     )
 
 
@@ -786,30 +843,22 @@ def test_normalized_reserved_and_reviewers() -> None:
             f"re-cased/padded sealed {name} id still refused",
             _raises(HeldOutLeakageError, build_training_dataset, [t], [], reserved=reserved),
         )
-    # reviewer == producer, under case/whitespace/casefold variants, for a non-generator producer
-    for producer, reviewer in (
-        ("human:carol ", "human:carol"),
-        (" human:carol", "human:carol"),
-        ("human:carol", " HUMAN:CAROL "),
-        ("human:strasse", "human:straße"),
-        ("human:carol", "human:carol "),
-    ):
+    # Only generator output is admitted, so a non-generator producer never reaches review.
+    for producer in ("human:carol", " " + GENERATOR_ID, GENERATOR_ID.upper(), GENERATOR_ID + " "):
         tr = dataclasses.replace(
             TRACES[0], provenance={**TRACES[0].provenance, "producer": producer}
         )
         check(
             "FTF-1703-A2",
-            f"reviewer {reviewer!r} == producer {producer!r} refused",
+            f"producer {producer!r} other than the generator is refused at admission",
             _raises(
-                ReviewIndependenceError,
+                TraceVerificationError,
                 build_training_dataset,
                 [tr],
-                [ReviewDecision(tr.trace_id, reviewer, "approved")],
+                [ReviewDecision(tr.trace_id, "human:dave", "approved")],
             ),
         )
-    ok = dataclasses.replace(
-        TRACES[0], provenance={**TRACES[0].provenance, "producer": "human:carol"}
-    )
+    ok = TRACES[0]
     good = build_training_dataset([ok], [ReviewDecision(ok.trace_id, "human:dave", "approved")])
     check("FTF-1703-A2", "a genuinely different reviewer is accepted", good.approved_count == 1)
     check(
