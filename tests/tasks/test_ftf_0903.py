@@ -31,6 +31,7 @@ import math
 import re
 import subprocess
 import sys
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -892,13 +893,14 @@ print(outcome(lambda: emit_event("workflow", {{**wf, "failure_ref": object.__new
 """
 
 
-def _probe(source: str | None) -> list[str]:
+def _probe(source: str | None, script: str | None = None) -> list[str]:
     original = MODULE.read_bytes()
+    code = script if script is not None else _PROBE.format(root=str(ROOT))
     try:
         if source is not None:
             MODULE.write_text(source, encoding="utf-8")
         result = subprocess.run(
-            [sys.executable, "-c", _PROBE.format(root=str(ROOT))],
+            [sys.executable, "-c", code],
             capture_output=True,
             text=True,
             timeout=60,
@@ -979,6 +981,197 @@ def test_fault_injection_each_guard_is_load_bearing() -> None:
             "FTF-0903-FAULT",
             f"mutation turns the probe RED: {description}",
             len(out) == len(BASELINE) and out[index] != BASELINE[index],
+        )
+
+
+# --- FTF-0903 round 3: behavioural value-echo and field-name tests. ---
+
+_MARK = "ZZMARK-secret traceback!"
+
+
+def _echo_report(fn) -> str:
+    """'clean' if fn is refused without the marker anywhere in the error,
+    'LEAK' if the marker reached str(exc)/repr(exc.args), else 'allowed'."""
+    try:
+        fn()
+    except ContentFreeTelemetryError as exc:
+        return "LEAK" if "ZZMARK" in str(exc) + repr(exc.args) else "clean"
+    return "allowed"
+
+
+class _SubclassedName(str):
+    pass
+
+
+class _OddMapping(Mapping):
+    def __init__(self, pairs: list) -> None:
+        self._pairs = pairs
+
+    def __getitem__(self, key: object) -> object:
+        raise KeyError(key)
+
+    def __iter__(self):
+        return iter(())
+
+    def __len__(self) -> int:
+        return len(self._pairs)
+
+    def items(self):
+        return self._pairs
+
+
+def test_rejected_values_are_never_echoed_for_every_field_kind() -> None:
+    from packages.security import content_free_telemetry as m
+
+    traceback = 'Traceback (most recent call last):\n  File "x.py"\n' + _MARK
+    cases = {
+        "id": lambda: emit_event("workflow", {**_WF, "request_id": _MARK}),
+        "code": lambda: emit_event("log", {**_LOG, "message_code": _MARK}),
+        "enum level": lambda: emit_event("log", {**_LOG, "level": _MARK}),
+        "enum status": lambda: emit_event("span", {"span_id": "s", "name": "n", "status": _MARK}),
+        "number cost_usd": lambda: emit_event("workflow", {**_WF, "cost_usd": _MARK}),
+        "content_ref failure_ref": lambda: emit_event(
+            "workflow", {**_WF, "failure_ref": traceback}
+        ),
+        "count": lambda: m._validate_field("x", m._FieldSpec("count"), _MARK),
+        "timestamp": lambda: m._validate_field("x", m._FieldSpec("timestamp"), _MARK),
+        "bool": lambda: m._validate_field("x", m._FieldSpec("bool"), _MARK),
+    }
+    for label, fn in cases.items():
+        check(
+            "FTF-0903-R3-1",
+            f"a rejected {label} value is refused and never echoed",
+            _echo_report(fn) == "clean",
+        )
+
+
+def test_field_name_must_be_an_exact_str_and_hashable() -> None:
+    check(
+        "FTF-0903-R3-2",
+        "a str subclass of a real schema name is refused",
+        _raises(
+            DisallowedFieldError,
+            emit_event,
+            "workflow",
+            {**_WF, _SubclassedName("job_id"): "j-1"},
+        ),
+    )
+    check(
+        "FTF-0903-R3-3",
+        "an unhashable field name raises DisallowedFieldError, never TypeError",
+        _raises(DisallowedFieldError, emit_event, "workflow", _OddMapping([([], "x")])),
+    )
+
+
+_PROBE_R3 = """
+import sys
+from collections.abc import Mapping
+sys.path.insert(0, __ROOT__)
+from packages.security import content_free_telemetry as m
+from packages.security.content_free_telemetry import emit_event, ContentFreeTelemetryError
+
+M = "ZZMARK-secret traceback!"
+WF = {"workflow_id": "w", "task_id": "t", "state": "queued"}
+LOG = {"level": "info", "message_code": "ok"}
+
+class S(str):
+    pass
+
+class Odd(Mapping):
+    def __getitem__(self, k): raise KeyError(k)
+    def __iter__(self): return iter(())
+    def __len__(self): return 1
+    def items(self): return [([], "x")]
+
+def outcome(fn):
+    try:
+        fn()
+        return "allowed"
+    except ContentFreeTelemetryError as exc:
+        if "ZZMARK" in str(exc) + repr(exc.args):
+            return "LEAK"
+        return exc.code
+    except Exception as exc:
+        return "ERROR:" + type(exc).__name__
+
+spec = m._FieldSpec
+print(outcome(lambda: emit_event("workflow", {**WF, "request_id": M})))
+print(outcome(lambda: emit_event("log", {**LOG, "message_code": M})))
+print(outcome(lambda: emit_event("log", {**LOG, "level": M})))
+print(outcome(lambda: emit_event("span", {"span_id": "s", "name": "n", "status": M})))
+print(outcome(lambda: emit_event("workflow", {**WF, "cost_usd": M})))
+print(outcome(lambda: emit_event("workflow", {**WF, "failure_ref": M})))
+print(outcome(lambda: m._validate_field("x", spec("count"), M)))
+print(outcome(lambda: m._validate_field("x", spec("timestamp"), M)))
+print(outcome(lambda: m._validate_field("x", spec("bool"), M)))
+print(outcome(lambda: emit_event("workflow", {**WF, S("job_id"): "j"})))
+print(outcome(lambda: emit_event("workflow", Odd())))
+"""
+
+_REFUSED = "content_free_telemetry_content_refused"
+_DISALLOWED = "content_free_telemetry_disallowed_field"
+BASELINE_R3 = [_REFUSED] * 9 + [_DISALLOWED] * 2 + [""]
+
+
+def _echo_mutations() -> list[tuple[str, str, str, int]]:
+    funcs = [
+        ("_id_value", 0),
+        ("_code_value", 1),
+        ("_enum_value", 2),
+        ("_number_value", 4),
+        ("_content_ref_value", 5),
+        ("_count_value", 6),
+        ("_timestamp_value", 7),
+        ("_bool_value", 8),
+    ]
+    out = []
+    for fn, index in funcs:
+        for label, expr in (("repr", "{value!r}"), ("truncated str", "{str(value)[:40]}")):
+            out.append(
+                (
+                    f"{fn} echoes the rejected value ({label}) in its message",
+                    rf'(def {fn}\(.*?raise ContentRefusedError\(f"[^"]*)"\)',
+                    rf'\1 {expr}")',
+                    index,
+                )
+            )
+    return out
+
+
+MUTATIONS_R3 = _echo_mutations() + [
+    (
+        "field-name check uses isinstance (str subclass accepted)",
+        r"if type\(name\) is not str or name not in schema:",
+        "if not isinstance(name, str) or name not in schema:",
+        9,
+    ),
+    (
+        "field-name membership tested before the type (unhashable name -> TypeError)",
+        r"if type\(name\) is not str or name not in schema:",
+        "if name not in schema or type(name) is not str:",
+        10,
+    ),
+]
+
+
+def test_round3_faults_each_turn_the_probe_red() -> None:
+    script = _PROBE_R3.replace("__ROOT__", repr(str(ROOT)))
+    check(
+        "FTF-0903-R3-FAULT",
+        "unmutated r3 probe matches baseline",
+        _probe(None, script) == BASELINE_R3,
+    )
+    text = MODULE.read_text(encoding="utf-8")
+    for description, pattern, replacement, index in MUTATIONS_R3:
+        mutated, count = re.subn(pattern, replacement, text, count=1, flags=re.DOTALL)
+        check("FTF-0903-R3-FAULT", f"mutation pattern matches once: {description}", count == 1)
+        if count != 1:
+            continue
+        out = _probe(mutated, script)
+        check(
+            "FTF-0903-R3-FAULT",
+            f"mutation turns the probe RED: {description}",
+            len(out) == len(BASELINE_R3) and out[index] != BASELINE_R3[index],
         )
 
 
