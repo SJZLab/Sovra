@@ -74,6 +74,7 @@ from app.auth.rbac_middleware import AuthenticatedPrincipal, Role  # noqa: E402
 from app.model_versions import model_import_crud as crud  # noqa: E402
 from app.model_versions import model_import_routes as mir  # noqa: E402
 from app.model_versions import model_import_schema as schema  # noqa: E402
+from app.model_versions import model_version_schema as mv_schema  # noqa: E402
 
 FAILURES: list[str] = []
 CID = "FTF-H010-P1"
@@ -829,6 +830,103 @@ def test_s9_origin_branch_comparisons_are_exact_never_normalized() -> None:
         check(CID, "neither probe wrote a job", not _jobs(session) and not audit.events)
 
 
+_MV_ORG = uuid.uuid4()
+_MV_PROJECT = uuid.uuid4()
+_MV_ARTIFACT = uuid.uuid4()
+_MV_DIGEST = "sha256:" + "a" * 64
+
+
+def _mv(**overrides: object) -> mv_schema.ModelVersion:
+    kwargs: dict[str, object] = {
+        "organization_id": _MV_ORG,
+        "project_id": _MV_PROJECT,
+        "version_number": 1,
+        "import_kind": "endpoint",
+        "endpoint_reference": "https://models.example.com/v1/production",
+        "created_by": "user-1",
+        "created_at": _NOW,
+    }
+    kwargs.update(overrides)
+    return mv_schema.ModelVersion(**kwargs)
+
+
+def test_m2_model_version_new_field_defaulting() -> None:
+    endpoint = _mv()
+    check(
+        CID,
+        "an unmodified endpoint import (no new fields passed) is auto-classified "
+        "origin=external_endpoint with external_provider_model_ref copied from "
+        "endpoint_reference, lineage_completeness=unknown, adapter_only=False",
+        endpoint.origin == "external_endpoint"
+        and endpoint.external_provider_model_ref == "https://models.example.com/v1/production"
+        and endpoint.lineage_completeness == "unknown"
+        and endpoint.adapter_only is False,
+    )
+    full_weight = _mv(
+        import_kind="full_weight",
+        trainable_artifact_id=_MV_ARTIFACT,
+        weights_digest=_MV_DIGEST,
+        base_model_revision="a1b2c3d4",
+        endpoint_reference=None,
+    )
+    check(
+        CID,
+        "an unmodified full_weight import is auto-classified origin=imported_weights, "
+        "adapter_only=False",
+        full_weight.origin == "imported_weights" and full_weight.adapter_only is False,
+    )
+    adapter = _mv(
+        import_kind="adapter",
+        trainable_artifact_id=_MV_ARTIFACT,
+        weights_digest=_MV_DIGEST,
+        base_model_revision="a1b2c3d4",
+        endpoint_reference=None,
+    )
+    check(
+        CID,
+        "an unmodified adapter import is auto-classified origin=imported_adapter, "
+        "adapter_only=True (satisfying the new ck_model_versions_imported_adapter_consistency)",
+        adapter.origin == "imported_adapter" and adapter.adapter_only is True,
+    )
+    check(
+        CID,
+        "an explicit origin always wins over the derived one",
+        _mv(origin="factory_trained").origin == "factory_trained",
+    )
+    check(
+        CID,
+        "an explicit external_provider_model_ref always wins over the copied endpoint_reference",
+        _mv(external_provider_model_ref="provider://explicit").external_provider_model_ref
+        == "provider://explicit",
+    )
+    check(
+        CID,
+        "an explicit lineage_completeness/adapter_only always wins over the default",
+        _mv(lineage_completeness="complete").lineage_completeness == "complete"
+        and _mv(
+            import_kind="full_weight",
+            trainable_artifact_id=_MV_ARTIFACT,
+            weights_digest=_MV_DIGEST,
+            base_model_revision="a1b2c3d4",
+            endpoint_reference=None,
+            adapter_only=True,
+        ).adapter_only
+        is True,
+    )
+    check(
+        CID,
+        "an invalid explicit origin is refused",
+        _raises(lambda: _mv(origin="bogus"), mv_schema.ModelVersionValidationError),
+    )
+    check(
+        CID,
+        "an invalid explicit lineage_completeness is refused",
+        _raises(
+            lambda: _mv(lineage_completeness="bogus"), mv_schema.ModelVersionValidationError
+        ),
+    )
+
+
 # -- R*: routes, driven over real HTTP with the DB-touching seams replaced ----
 
 _ISSUER = "https://issuer.example"
@@ -1007,6 +1105,7 @@ def test_r1_post_body_validation() -> None:
                 ("a non-uuid parent_model_version_id", {"requested_origin": "imported_adapter", "parent_model_version_id": "nope"}),
                 ("a numeric parent_model_version_id", {"requested_origin": "imported_adapter", "parent_model_version_id": 7}),
                 ("a non-uuid trainable_artifact_id", {"requested_origin": "imported_weights", "trainable_artifact_id": "nope"}),
+                ("a numeric trainable_artifact_id", {"requested_origin": "imported_weights", "trainable_artifact_id": 7}),
                 ("a numeric external_provider_model_ref", {"requested_origin": "external_endpoint", "external_provider_model_ref": 7}),
             ]
             for label, payload in cases:
