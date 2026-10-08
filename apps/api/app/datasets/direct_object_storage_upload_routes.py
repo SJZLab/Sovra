@@ -97,6 +97,13 @@ _PARTS_PATH = _ITEM_PATH + "/parts"
 _PART_URLS_PATH = _ITEM_PATH + "/part-urls"
 _FINALIZE_PATH = _ITEM_PATH + "/finalize"
 _MAX_BODY_BYTES = 64 * 1024
+_HELD_OUT_ONLY = frozenset({HELD_OUT_PURPOSE})
+
+
+def _is_held_out(purpose: str) -> bool:
+    """Fail closed: anything that reads as the held-out purpose, whatever its
+    case or surrounding whitespace, is treated as held-out."""
+    return purpose.strip().lower() in _HELD_OUT_ONLY
 
 _CREATE_FIELDS = frozenset(
     {
@@ -217,7 +224,7 @@ def build_direct_upload_router(
                 session.expunge(record)
         except (UploadSessionNotFoundError, TenantContextError) as exc:
             raise _not_found() from exc
-        if record.purpose == HELD_OUT_PURPOSE and not _may_see_held_out(ctx):
+        if _is_held_out(record.purpose) and not _may_see_held_out(ctx):
             raise _not_found()
         return record
 
@@ -274,7 +281,7 @@ def build_direct_upload_router(
             raise HTTPException(status_code=400, detail="invalid_body")
         if normalize_content_type(content_type) is None:
             raise HTTPException(status_code=400, detail="unsupported_content_type")
-        if purpose == HELD_OUT_PURPOSE and not _may_see_held_out(ctx):
+        if _is_held_out(purpose) and not _may_see_held_out(ctx):
             raise HTTPException(status_code=403, detail="purpose_forbidden")
         tenant_context = TenantContext.from_authorized_context(ctx)
         try:
@@ -415,13 +422,11 @@ def build_direct_upload_router(
         dataset_name = payload["dataset_name"]
         # Validated before any storage work: a name the store would refuse must
         # not leave a completed-but-unrecorded object behind.
-        if (
-            not isinstance(dataset_name, str)
-            or not dataset_name.strip()
-            or len(dataset_name.strip()) > DATASET_NAME_MAX_LENGTH
-        ):
+        if not isinstance(dataset_name, str):
             raise HTTPException(status_code=400, detail="invalid_body")
         dataset_name = dataset_name.strip()
+        if not dataset_name or len(dataset_name) > DATASET_NAME_MAX_LENGTH:
+            raise HTTPException(status_code=400, detail="invalid_body")
         record = load(ctx, project_id, upload_session_id)
         if record.status != "open":
             raise HTTPException(status_code=409, detail="upload_session_not_open")

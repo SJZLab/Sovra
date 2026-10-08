@@ -218,7 +218,7 @@ def presign_url(
         or not isinstance(expires_seconds, int)
         or isinstance(max_expires_seconds, bool)
         or not isinstance(max_expires_seconds, int)
-        or not 0 < max_expires_seconds <= 604800
+        or max_expires_seconds > 604800
         or not 0 < expires_seconds <= max_expires_seconds
     ):
         raise ValueError(f"expires_seconds must be an int in 1..{max_expires_seconds}")
@@ -592,13 +592,17 @@ class S3Client:
     def list_parts(self, bucket: str, key: str, upload_id: str) -> list[dict[str, str]]:
         """Every part uploaded so far (paged through `part-number-marker`)."""
         parts: list[dict[str, str]] = []
-        marker = "0"
+        marker = 0
         while True:
             _, _, body = self._request(
                 "GET",
                 bucket,
                 key,
-                query={"uploadId": upload_id, "part-number-marker": marker, "max-parts": "1000"},
+                query={
+                    "uploadId": upload_id,
+                    "part-number-marker": str(marker),
+                    "max-parts": "1000",
+                },
             )
             parsed = _xml_to_dict(ET.fromstring(body))  # noqa: S314
             if not isinstance(parsed, dict):
@@ -609,7 +613,12 @@ class S3Client:
             parts.extend(p for p in page if isinstance(p, dict))
             if str(parsed.get("IsTruncated", "false")).lower() != "true":
                 return parts
-            next_marker = str(parsed.get("NextPartNumberMarker", ""))
-            if not next_marker or next_marker == marker:
+            # The marker is a part number: it must strictly advance, or a storage
+            # server that repeats (or rewinds) it would keep this loop paging forever.
+            try:
+                next_marker = int(str(parsed.get("NextPartNumberMarker", "")))
+            except ValueError as exc:
+                raise S3Error(0, "MalformedResponse", "ListParts gave no usable marker") from exc
+            if next_marker <= marker:
                 raise S3Error(0, "MalformedResponse", "ListParts did not advance")
             marker = next_marker

@@ -2741,6 +2741,368 @@ def test_r10_nothing_leaks_the_storage_location() -> None:
 # -- C: contract and wiring ----------------------------------------------------------
 
 
+# -- M: pins for the behaviours the mutation gate found unpinned -----------------
+
+
+class _RawS3:
+    """A scripted HTTP server: every request is answered by `respond(request)`
+    as `(status, headers, body)`; the requests are recorded for assertions."""
+
+    def __init__(self, respond: Any) -> None:
+        self.requests: list[SimpleNamespace] = []
+        raw = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args: Any) -> None:
+                pass
+
+            def _handle(self) -> None:
+                parts = urllib.parse.urlsplit(self.path)
+                length = int(self.headers.get("Content-Length") or 0)
+                request = SimpleNamespace(
+                    method=self.command,
+                    path=parts.path,
+                    query=dict(urllib.parse.parse_qsl(parts.query, keep_blank_values=True)),
+                    headers={k.lower(): v for k, v in self.headers.items()},
+                    body=self.rfile.read(length) if length else b"",
+                )
+                raw.requests.append(request)
+                status, headers, body = respond(request)
+                self.send_response(status)
+                for name, value in headers.items():
+                    self.send_header(name, value)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                if self.command != "HEAD":
+                    self.wfile.write(body)
+
+            do_GET = do_PUT = do_POST = do_DELETE = do_HEAD = _handle  # noqa: N815
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(
+            target=lambda: self.server.serve_forever(poll_interval=0.01), daemon=True
+        )
+
+    def __enter__(self) -> _RawS3:
+        self.thread.start()
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+    def client(self) -> s3.S3Client:
+        return s3.S3Client(
+            s3.S3Endpoint("http", "127.0.0.1", self.port),
+            s3.S3Credentials("AK", "SK"),
+            timeout_seconds=5.0,
+        )
+
+
+def _xml(body: str) -> tuple[int, dict[str, str], bytes]:
+    return 200, {"Content-Type": "application/xml"}, body.encode()
+
+
+def _storage_env(**over: str) -> dict[str, str]:
+    env = {
+        "SOVRA_UPLOAD_S3_ENDPOINT": "http://s3.example:9000",
+        "SOVRA_UPLOAD_S3_BUCKET": "uploads",
+        "SOVRA_UPLOAD_S3_ACCESS_KEY": "AK",
+        "SOVRA_UPLOAD_S3_SECRET_KEY": "SK",
+    }
+    env.update(over)
+    return env
+
+
+def test_m1_storage_settings_are_trimmed_on_both_sides() -> None:
+    padded = {k: f"  {v}  " for k, v in _storage_env(SOVRA_UPLOAD_S3_REGION="eu-west-1").items()}
+    got = dos.UploadStorageSettings.from_env(padded)
+    check(
+        f"{CID}-M1",
+        "every value is trimmed on both sides",
+        got is not None
+        and got.bucket == "uploads"
+        and got.credentials == s3.S3Credentials("AK", "SK")
+        and got.endpoint == s3.S3Endpoint("http", "s3.example", 9000, "eu-west-1"),
+    )
+    blank_region = dos.UploadStorageSettings.from_env(_storage_env(SOVRA_UPLOAD_S3_REGION="   \t "))
+    check(
+        f"{CID}-M1",
+        "a blank region is the default region",
+        blank_region is not None and blank_region.endpoint.region == "us-east-1",
+    )
+    trailing = dos.UploadStorageSettings.from_env(_storage_env(SOVRA_UPLOAD_S3_REGION="us-west-2 "))
+    check(
+        f"{CID}-M1",
+        "trailing whitespace on the region is dropped",
+        trailing is not None and trailing.endpoint.region == "us-west-2",
+    )
+
+
+def test_m2_content_types_are_normalized_exactly_and_sniffed_by_table() -> None:
+    cases = {
+        "  Application/JSONL ; charset=utf-8": "application/jsonl",
+        "\ttext/csv\t": "text/csv",
+        " text/csv": "text/csv",
+        "text/csv ": "text/csv",
+        "APPLICATION/JSON": "application/json",
+        "application/x-ndjson;x=1": "application/x-ndjson",
+        dos.XLSX_CONTENT_TYPE.upper(): dos.XLSX_CONTENT_TYPE,
+        "text/csvx": None,
+        "text/ csv": None,
+        "": None,
+        "application/pdf": None,
+    }
+    for raw, want in cases.items():
+        check(
+            f"{CID}-M2",
+            f"normalize_content_type({raw!r}) is {want!r}",
+            dos.normalize_content_type(raw) == want,
+        )
+    check(
+        f"{CID}-M2",
+        "a non-string declared type is unsupported",
+        dos.normalize_content_type(None) is None
+        and dos.normalize_content_type(b"text/csv") is None,
+    )
+
+    bom = b"\xef\xbb\xbf"
+    sniff = [
+        ("application/jsonl", b'  \r\n\t\x0b\x0c{"a":1}\n', True, None),
+        ("application/jsonl", bom + b'  {"a":1}\n', True, None),
+        ("application/jsonl", b"[1,2]\n", True, "content_type_mismatch"),
+        ("application/x-ndjson", b'{"a":1}\n', True, None),
+        ("application/x-ndjson", b"[1]\n", True, "content_type_mismatch"),
+        ("application/json", b" \n[1,2]", True, None),
+        ("application/json", b'{"a":1}', True, None),
+        ("application/json", b"a,b\n", True, "content_type_mismatch"),
+        ("text/csv", b"a,b\n1,2\n", True, None),
+        ("text/csv", bom + b"  a,b\n", True, None),
+        ("text/csv", b' {"a":1}\n', True, "content_type_mismatch"),
+        ("text/csv", b" [1,2]\n", True, "content_type_mismatch"),
+        ("text/csv", b" \n\t \r\n", True, "content_type_mismatch"),
+        ("text/csv", b"", True, "content_type_mismatch"),
+        ("application/jsonl", bom, True, "content_type_mismatch"),
+        (dos.XLSX_CONTENT_TYPE, b"PK\x03\x04rest", False, None),
+        (dos.XLSX_CONTENT_TYPE, b" PK\x03\x04", False, "content_type_mismatch"),
+        ("TEXT/CSV", b"a,b\n", True, None),
+        ("application/pdf", b"a,b\n", True, "unsupported_content_type"),
+    ]
+    for declared, head, complete, want in sniff:
+        got = dos.sniff_content(declared, head, complete=complete)
+        check(
+            f"{CID}-M2",
+            f"sniff {declared} over {head[:12]!r} is {want!r}, got {got!r}",
+            got == want,
+        )
+
+
+def test_m3_the_declared_hash_is_compared_exactly() -> None:
+    body = _jsonl(3000)
+    for label, declared in (
+        ("upper-case", _sha(body).upper()),
+        ("padded", f" {_sha(body)} "),
+        ("trailing newline", _sha(body) + "\n"),
+    ):
+        with FakeS3() as fake:
+            target = _target(body, sha=declared)
+            _open_and_upload(fake, target, body)
+            got = _outcome(fake, target)
+            check(
+                f"{CID}-M3",
+                f"a {label} declared hash is a mismatch, never a normalized match",
+                isinstance(got, dos.UploadRejection) and got.reason == "sha256_mismatch",
+            )
+            check(f"{CID}-M3", f"({label}) nothing is left in storage", _gone(fake, target))
+    with FakeS3() as fake:
+        target = _target(body)
+        _open_and_upload(fake, target, body)
+        got = _verify(fake, target)
+        check(
+            f"{CID}-M3",
+            "the verified hash is the hash storage holds",
+            got.sha256 == _sha(body) and got.size_bytes == len(body),
+        )
+
+
+def _client_with(fake: FakeS3, **overrides: Any) -> s3.S3Client:
+    client = fake.settings().client()
+    for name, fn in overrides.items():
+        setattr(client, name, fn)
+    return client
+
+
+def _stored(fake: FakeS3, target: dos.UploadTarget, body: bytes) -> None:
+    fake.objects[target.object_key] = {"body": body, "content_type": target.declared_content_type}
+
+
+def _verify_with(fake: FakeS3, target: dos.UploadTarget, **overrides: Any) -> Any:
+    settings = fake.settings()
+    client = _client_with(fake, **overrides)
+    try:
+        return dos.verify_and_complete(client, settings, target)
+    except Exception as exc:  # noqa: BLE001 - the type is the result under test
+        return exc
+
+
+def test_m4_a_failed_cleanup_is_an_outage_never_a_rejection() -> None:
+    body = _jsonl(3000)
+    wrong = _sha(b"not the body")
+    for label, error in (
+        ("OSError", OSError("reset")),
+        ("URLError", urllib.error.URLError("refused")),
+        ("TimeoutError", TimeoutError("slow")),
+        ("S3 500", s3.S3Error(500, "InternalError", "boom")),
+    ):
+        with FakeS3() as fake:
+            target = _target(body, sha=wrong)
+            _stored(fake, target, body)
+
+            def failing_delete(bucket: str, key: str, _error: Exception = error) -> None:
+                raise _error
+
+            got = _verify_with(fake, target, delete_object=failing_delete)
+            check(
+                f"{CID}-M4",
+                f"{label} while deleting a rejected object is an outage",
+                isinstance(got, dos.UploadStorageUnavailableError) and "delete_object" in str(got),
+            )
+    with FakeS3() as fake:
+        target = _target(body, sha=wrong)
+        _stored(fake, target, body)
+
+        def missing_delete(bucket: str, key: str) -> None:
+            raise s3.S3Error(404, "NoSuchKey", "gone already")
+
+        got = _verify_with(fake, target, delete_object=missing_delete)
+        check(
+            f"{CID}-M4",
+            "a 404 while deleting is fine: the rejection stands",
+            isinstance(got, dos.UploadRejection) and got.reason == "sha256_mismatch",
+        )
+
+
+def test_m5_head_and_stream_failures_are_outages_and_reading_stops_at_the_declared_size() -> None:
+    body = _jsonl(3000)
+    for label, head in (
+        ("non-numeric", {"content-length": "abc"}),
+        ("missing", {}),
+        ("empty", {"content-length": ""}),
+    ):
+        with FakeS3() as fake:
+            target = _target(body)
+            _stored(fake, target, body)
+            got = _verify_with(fake, target, head_object=lambda b, k, _h=head: _h)
+            check(
+                f"{CID}-M5",
+                f"a {label} content-length is an outage naming head_object",
+                isinstance(got, dos.UploadStorageUnavailableError) and "head_object" in str(got),
+            )
+            check(f"{CID}-M5", f"({label}) the object was not read", not fake.called("get"))
+
+    for label, error in (
+        ("OSError", OSError("reset")),
+        ("URLError", urllib.error.URLError("refused")),
+        ("TimeoutError", TimeoutError("slow")),
+        ("S3Error", s3.S3Error(500, "InternalError", "boom")),
+    ):
+        with FakeS3() as fake:
+            target = _target(body)
+            _stored(fake, target, body)
+
+            def dropping_stream(bucket: str, key: str, _error: Exception = error, _body=body):
+                yield _body[:1000]
+                raise _error
+
+            got = _verify_with(fake, target, stream_object=dropping_stream)
+            check(
+                f"{CID}-M5",
+                f"{label} while reading is an outage naming get_object",
+                isinstance(got, dos.UploadStorageUnavailableError) and "get_object" in str(got),
+            )
+            check(f"{CID}-M5", f"({label}) the object is kept", target.object_key in fake.objects)
+
+    with FakeS3() as fake:
+        target = _target(body, size=3000)
+        _stored(fake, target, body)
+        pulled: list[int] = []
+
+        def endless_stream(bucket: str, key: str):
+            for _ in range(300):
+                pulled.append(1)
+                yield b"x" * 1000
+
+        got = _verify_with(
+            fake,
+            target,
+            head_object=lambda b, k: {"content-length": "3000"},
+            stream_object=endless_stream,
+        )
+        check(
+            f"{CID}-M5",
+            "an object longer than declared is rejected as size_mismatch",
+            isinstance(got, dos.UploadRejection) and got.reason == "size_mismatch",
+        )
+        check(
+            f"{CID}-M5",
+            f"reading stops right after the declared size ({len(pulled)} chunks pulled)",
+            len(pulled) <= 4,
+        )
+        check(f"{CID}-M5", "the oversize object was removed", target.object_key not in fake.objects)
+
+
+def test_m6_the_sniff_window_is_assembled_from_the_leading_chunks_only() -> None:
+    def verify_chunks(content_type: str, chunks: list[bytes]) -> Any:
+        whole = b"".join(chunks)
+        with FakeS3() as fake:
+            target = _target(whole, content_type=content_type)
+            _stored(fake, target, whole)
+            return _verify_with(fake, target, stream_object=lambda b, k: iter(chunks))
+
+    got = verify_chunks("application/jsonl", [b"   ", b'{"k":1}\n', b'{"k":2}\n'])
+    check(
+        f"{CID}-M6",
+        "a leading chunk of only whitespace is completed from the next chunk",
+        isinstance(got, dos.VerifiedObject),
+    )
+    got = verify_chunks("text/csv", [b"a,b\n", b'{"looks":"like json"}\n', b"3,4\n"])
+    check(
+        f"{CID}-M6",
+        "only the leading bytes decide: a later chunk starting with { does not",
+        isinstance(got, dos.VerifiedObject),
+    )
+    got = verify_chunks("application/jsonl", [b"a,b\n", b'{"k":1}\n'])
+    check(
+        f"{CID}-M6",
+        "a later chunk that looks right cannot rescue a wrong start",
+        isinstance(got, dos.UploadRejection) and got.reason == "content_type_mismatch",
+    )
+    window = dos.SNIFF_BYTES
+    got = verify_chunks("application/jsonl", [b" " * (window - 1), b'{"k":1}\n'])
+    check(
+        f"{CID}-M6",
+        "the last byte of the window still counts",
+        isinstance(got, dos.VerifiedObject),
+    )
+    got = verify_chunks("application/jsonl", [b" " * window, b'{"k":1}\n'])
+    check(
+        f"{CID}-M6",
+        "a { just beyond the window does not count",
+        isinstance(got, dos.UploadRejection) and got.reason == "content_type_mismatch",
+    )
+    big = _jsonl(2_500_000)
+    with FakeS3() as fake:
+        target = _target(b"c" + big[1:])
+        _stored(fake, target, b"c" + big[1:])
+        got = _outcome(fake, target)
+        check(
+            f"{CID}-M6",
+            "on a real multi-chunk read the first chunk decides the type",
+            isinstance(got, dos.UploadRejection) and got.reason == "content_type_mismatch",
+        )
+
+
 def test_c1_interface_contract() -> None:
     spec = yaml.safe_load(INTERFACE_PATH.read_text())
     paths = spec["paths"]

@@ -36,6 +36,7 @@ from __future__ import annotations
 import codecs
 import hashlib
 import os
+import re
 import urllib.error
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -100,6 +101,17 @@ SUPPORTED_CONTENT_TYPES = frozenset(
 
 _BINARY_MAGIC = (b"PK\x03\x04", b"%PDF", b"\x1f\x8b", b"\x89PNG", b"GIF8", b"\x7fELF", b"MZ")
 _UTF8_BOM = codecs.BOM_UTF8
+_ZIP_MAGIC_BY_TYPE = {XLSX_CONTENT_TYPE: b"PK\x03\x04"}
+# Closed lookup tables rather than comparisons: a type is matched exactly, with
+# no tolerance for case or whitespace once it has been normalized.
+_SUPPORTED_BY_NAME = {name: name for name in SUPPORTED_CONTENT_TYPES}
+_MUST_START_WITH = {
+    "application/jsonl": frozenset({b"{"}),
+    "application/x-ndjson": frozenset({b"{"}),
+    "application/json": frozenset({b"{", b"["}),
+}
+_MUST_NOT_START_WITH = {"text/csv": frozenset({b"{", b"["})}
+_LEADING_WHITESPACE_THEN_BYTE = re.compile(rb"\s*(\S)")
 
 
 _T = TypeVar("_T")
@@ -249,8 +261,7 @@ def normalize_content_type(value: object) -> str | None:
     supported import types; otherwise `None`."""
     if not isinstance(value, str):
         return None
-    base = value.split(";", 1)[0].strip().lower()
-    return base if base in SUPPORTED_CONTENT_TYPES else None
+    return _SUPPORTED_BY_NAME.get(value.split(";", 1)[0].strip().lower())
 
 
 def _decodes_as_utf8(head: bytes, *, complete: bool) -> bool:
@@ -262,6 +273,12 @@ def _decodes_as_utf8(head: bytes, *, complete: bool) -> bool:
     return True
 
 
+def _first_significant_byte(text: bytes) -> bytes:
+    """The first byte that is not ASCII whitespace, or `b""` when there is none."""
+    found = _LEADING_WHITESPACE_THEN_BYTE.match(text)
+    return found.group(1) if found else b""
+
+
 def sniff_content(declared_content_type: str, head: bytes, *, complete: bool) -> str | None:
     """Checks the leading bytes of an object against its declared type
     (Section 8.1 step 3). Returns `None` when they agree, else a stable reason:
@@ -270,22 +287,22 @@ def sniff_content(declared_content_type: str, head: bytes, *, complete: bool) ->
     base = normalize_content_type(declared_content_type)
     if base is None:
         return "unsupported_content_type"
-    if base == XLSX_CONTENT_TYPE:
-        return None if head.startswith(b"PK\x03\x04") else "content_type_mismatch"
+    zip_magic = _ZIP_MAGIC_BY_TYPE.get(base)
+    if zip_magic is not None:
+        return None if head.startswith(zip_magic) else "content_type_mismatch"
     if any(head.startswith(magic) for magic in _BINARY_MAGIC) or b"\x00" in head:
         return "content_type_mismatch"
     if not _decodes_as_utf8(head, complete=complete):
         return "content_type_mismatch"
     text = head[len(_UTF8_BOM) :] if head.startswith(_UTF8_BOM) else head
-    first = text.lstrip()[:1]
+    first = _first_significant_byte(text)
     if not first:
         return "content_type_mismatch"
-    if base in {"application/jsonl", "application/x-ndjson"}:
-        return None if first == b"{" else "content_type_mismatch"
-    if base == "application/json":
-        return None if first in {b"{", b"["} else "content_type_mismatch"
+    starts = _MUST_START_WITH.get(base)
+    if starts is not None:
+        return None if starts.issuperset((first,)) else "content_type_mismatch"
     # text/csv: a leading JSON structure is ambiguous (Section 8.1 step 4).
-    return "content_type_mismatch" if first in {b"{", b"["} else None
+    return None if _MUST_NOT_START_WITH[base].isdisjoint((first,)) else "content_type_mismatch"
 
 
 # -- storage calls -------------------------------------------------------------
@@ -506,10 +523,7 @@ def verify_and_complete(
     seen = 0
     try:
         for chunk in client.stream_object(settings.bucket, target.object_key):
-            if not first:
-                first = chunk[:SNIFF_BYTES]
-            elif len(first) < SNIFF_BYTES:
-                first += chunk[: SNIFF_BYTES - len(first)]
+            first += chunk[: SNIFF_BYTES - len(first)]
             digest.update(chunk)
             seen += len(chunk)
             if seen > target.declared_size_bytes:
@@ -520,12 +534,13 @@ def verify_and_complete(
         raise _storage_error("get_object", exc) from exc
     if seen != target.declared_size_bytes:
         raise _reject(client, settings, target, "size_mismatch")
-    sha256 = digest.hexdigest()
-    if sha256 != target.declared_sha256:
+    if digest.hexdigest() != target.declared_sha256:
         raise _reject(client, settings, target, "sha256_mismatch")
     reason = sniff_content(
         target.declared_content_type, first, complete=target.declared_size_bytes <= SNIFF_BYTES
     )
     if reason is not None:
         raise _reject(client, settings, target, reason)
-    return VerifiedObject(size_bytes=seen, sha256=sha256, content_type=target.declared_content_type)
+    return VerifiedObject(
+        size_bytes=seen, sha256=digest.hexdigest(), content_type=target.declared_content_type
+    )
