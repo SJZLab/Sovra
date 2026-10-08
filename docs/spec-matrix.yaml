@@ -9594,6 +9594,19 @@ FTF-0903:
     workflows, worker logs, serving spans) are separate, dependency-gated tasks that will call
     `emit_event`; proving_symbol stays blank, same precedent as FTF-0901/FTF-0902. Not
     self-certified (Law 4).
+
+    Round 6 (L2 return, tests only): every shared echo helper (`_echo_report`, `_r4_echo_report`,
+    `_message_of`, and the R3/R4 subprocess probes' own `outcome`/`report`) now also requires
+    `exc.__cause__ is None`, `exc.__context__ is None`, no `__notes__`, and `vars(exc) == {}` for
+    every refusal -- str(exc)/repr(exc.args) alone misses a chained `raise ... from
+    ValueError(value)`, an `err.add_note(str(value))`, or the caller value stored as an exception
+    attribute before raise. A new subprocess probe and four fault mutations (C1 `_id_value`
+    chained from a ValueError holding the ContentRef id; C3 `_number_value` calling `float()` on
+    a non-numeric string inside `except ValueError`, so the caller text reaches `__context__`; C4
+    `_code_value` via `add_note`; C5 `_enum_value` via a stored attribute) each turn exactly their
+    own case LEAK while the other three stay clean; a negative test confirms today's unmutated
+    production stays clean/meta-free on all four paths. Production unchanged (no new leak existed
+    on str(exc)/repr(exc.args); these four are new leak channels the old checks could not see).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0903.py
