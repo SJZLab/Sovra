@@ -169,7 +169,9 @@ class FakeS3:
 
         self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.port = self.server.server_address[1]
-        self.thread = threading.Thread(target=lambda: self.server.serve_forever(poll_interval=0.01), daemon=True)
+        self.thread = threading.Thread(
+            target=lambda: self.server.serve_forever(poll_interval=0.01), daemon=True
+        )
 
     def __enter__(self) -> FakeS3:
         self.thread.start()
@@ -1931,6 +1933,25 @@ def test_r3_create_refusals_write_nothing() -> None:
             "invalid_body",
             _call(env.base, "POST", _col(), {**good, "purpose": "pretraining"}),
         )
+        for label, weird in (("list", []), ("dict", {}), ("int", 5), ("null", None)):
+            refused(
+                f"hash is a {label}",
+                400,
+                "invalid_body",
+                _call(env.base, "POST", _col(), {**good, "declared_sha256": weird}),
+            )
+            refused(
+                f"purpose is a {label}",
+                400,
+                "invalid_body",
+                _call(env.base, "POST", _col(), {**good, "purpose": weird}),
+            )
+            refused(
+                f"content type is a {label}",
+                400,
+                "invalid_body",
+                _call(env.base, "POST", _col(), {**good, "declared_content_type": weird}),
+            )
         refused(
             "hash too short",
             400,
@@ -2107,6 +2128,11 @@ def test_r4_part_urls_and_listing() -> None:
             ("string", {"part_numbers": ["1"]}),
             ("not a list", {"part_numbers": 1}),
             ("101 parts", {"part_numbers": list(range(1, 102))}),
+            ("nested list", {"part_numbers": [[1]]}),
+            ("object element", {"part_numbers": [{}]}),
+            ("null element", {"part_numbers": [None]}),
+            ("float element", {"part_numbers": [1.0]}),
+            ("object", {"part_numbers": {"1": 1}}),
         ]
         for label, payload in bad_lists:
             reply = _call(env.base, "POST", item + "/part-urls", payload)
