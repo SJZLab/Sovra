@@ -81,6 +81,11 @@ class MemStore:
         self.versions.setdefault(key, []).append((version_id, body))
         return version_id
 
+    def replace_only(self, key: str, body: bytes) -> None:
+        """Swap the content of the key's single version (a forged record that is still the
+        only version -- the stored retention is kept, as COMPLIANCE would)."""
+        self.versions[key] = [("v-forged", body)]
+
     def list_versions(self, key: str) -> list[VersionInfo]:
         entries = self.versions.get(key, [])
         return [
@@ -693,7 +698,7 @@ def test_hex_case_is_compared_exactly() -> None:
     upper_digest = record.blobs[0][0].upper()
     data["blobs"] = [[upper_digest, 1]]
     forged = MemStore()
-    forged.add("backups/o/b1/backup-record.json", json.dumps(data).encode())
+    forged.replace_only("backups/o/b1/backup-record.json", json.dumps(data).encode())
     forged.add(f"backups/o/b1/blobs/{upper_digest}", b"x")
     forged.retention = {k: v for k, v in target.retention.items()}
     forged.retention[f"backups/o/b1/blobs/{upper_digest}"] = NOW + timedelta(days=30)
@@ -798,7 +803,7 @@ def test_verify_backup() -> None:
         err is not None and "record" in str(err),
     )
     garbled = MemStore()
-    garbled.add("backups/o/b1/backup-record.json", b"not json")
+    garbled.replace_only("backups/o/b1/backup-record.json", b"not json")
     check(
         "FTF-1602-N1",
         "verify refuses an unreadable record",
@@ -825,11 +830,11 @@ def test_verify_backup() -> None:
         is not None,
     )
     for bad_blob in (["ABCDEF", 3], [record.blobs[0][0], -1], ["x" * 64, 1]):
-        malformed = MemStore()
+        malformed = clone(target)
         data = json.loads(target.get_latest("backups/o/b1/backup-record.json"))
         data["blobs"] = [bad_blob]
         data["blob_count"] = 1
-        malformed.add("backups/o/b1/backup-record.json", json.dumps(data).encode())
+        malformed.replace_only("backups/o/b1/backup-record.json", json.dumps(data).encode())
         check(
             "FTF-1602-N1",
             f"verify refuses a record listing blob {bad_blob!r}",
@@ -839,7 +844,7 @@ def test_verify_backup() -> None:
     data = json.loads(target.get_latest("backups/o/b1/backup-record.json"))
     data["blob_count"] = 99
     miscounted.versions = {k: list(v) for k, v in target.versions.items()}
-    miscounted.add("backups/o/b1/backup-record.json", json.dumps(data).encode())
+    miscounted.replace_only("backups/o/b1/backup-record.json", json.dumps(data).encode())
     miscounted.retention = dict(target.retention)
     err = raises(
         BackupIncompleteError, verify_backup, miscounted, "b1", organization_id="o", now=NOW
@@ -1173,7 +1178,7 @@ def with_record(target: MemStore, change: Any, org: str = "o") -> MemStore:
     key = f"backups/{org}/b1/backup-record.json"
     data = json.loads(target.get_latest(key))
     change(data)
-    twin.add(key, json.dumps(data).encode())
+    twin.replace_only(key, json.dumps(data).encode())
     return twin
 
 
