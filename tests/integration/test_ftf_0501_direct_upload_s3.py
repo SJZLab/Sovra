@@ -135,13 +135,31 @@ def _jsonl(size: int) -> bytes:
     return (line * (size // len(line) + 1))[:size]
 
 
+DROPPED = -1
+
+
 def _put(url: str, data: bytes) -> int:
+    """The HTTP status of a PUT, or `DROPPED` when the server closed the
+    connection while the body was still being sent. A server that refuses a
+    tampered request from its headers alone (the signature covers them) may
+    answer 403 and close before reading a multi-megabyte body, so the client
+    sees a reset instead of the 403. Only a refusal check may accept that, and
+    each such check is backed by "nothing was stored"."""
     request = urllib.request.Request(url, data=data, method="PUT")  # noqa: S310
     try:
         with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
             return response.status
     except urllib.error.HTTPError as exc:
         return exc.code
+    except (urllib.error.URLError, ConnectionError) as exc:
+        reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+        if isinstance(reason, BrokenPipeError | ConnectionResetError | ConnectionAbortedError):
+            return DROPPED
+        raise  # e.g. connection refused: an outage is never a refusal
+
+
+def _refused(status: int) -> bool:
+    return status in (403, DROPPED)
 
 
 def _target(
@@ -269,36 +287,43 @@ def test_a_presigned_url_is_bound_to_what_it_was_issued_for(lab: Lab) -> None:
             return body[(n - 1) * 5 * MIB : n * 5 * MIB]
 
         check(
-            CID, "a part body one byte short is refused", _put(grants[2].url, piece(2)[:-1]) == 403
+            CID,
+            "a part body one byte short is refused",
+            _refused(_put(grants[2].url, piece(2)[:-1])),
         )
         check(
-            CID, "a part body one byte long is refused", _put(grants[2].url, piece(2) + b"x") == 403
+            CID,
+            "a part body one byte long is refused",
+            _refused(_put(grants[2].url, piece(2) + b"x")),
         )
         check(
             CID,
             "another part number is refused",
-            _put(grants[2].url.replace("partNumber=2", "partNumber=3"), piece(2)) == 403,
+            _refused(_put(grants[2].url.replace("partNumber=2", "partNumber=3"), piece(2))),
         )
         check(
             CID,
             "another key is refused",
-            _put(grants[2].url.replace(target.object_key, target.object_key + "x"), piece(2))
-            == 403,
+            _refused(
+                _put(grants[2].url.replace(target.object_key, target.object_key + "x"), piece(2))
+            ),
         )
         check(
             CID,
             "a longer lifetime is refused",
-            _put(grants[2].url.replace("X-Amz-Expires=300", "X-Amz-Expires=900"), piece(2)) == 403,
+            _refused(
+                _put(grants[2].url.replace("X-Amz-Expires=300", "X-Amz-Expires=900"), piece(2))
+            ),
         )
         check(
             CID,
             "an unsigned request is refused",
-            _put(grants[2].url.split("X-Amz-Signature=")[0].rstrip("&"), piece(2)) == 403,
+            _refused(_put(grants[2].url.split("X-Amz-Signature=")[0].rstrip("&"), piece(2))),
         )
         stale = dos.presign_part_urls(
             lab.settings, target, upload_id, [2], now=datetime.now(UTC) - timedelta(seconds=600)
         )
-        check(CID, "an expired grant is refused", _put(stale[0].url, piece(2)) == 403)
+        check(CID, "an expired grant is refused", _refused(_put(stale[0].url, piece(2))))
         parts = dos.list_uploaded_parts(lab.client, lab.settings, target, upload_id)
         check(CID, "none of the refused requests stored anything", parts == [])
         check(CID, "the untouched grant still works", _put(grants[2].url, piece(2)) == 200)
@@ -316,7 +341,7 @@ def test_a_grant_for_one_session_cannot_write_another(lab: Lab) -> None:
     other_id = lab.open(other)
     (grant,) = dos.presign_part_urls(lab.settings, mine, mine_id, [1])
     swapped = grant.url.replace(mine.object_key, other.object_key).replace(mine_id, other_id)
-    check(CID, "a grant for key A cannot write key B", _put(swapped, body) == 403)
+    check(CID, "a grant for key A cannot write key B", _refused(_put(swapped, body)))
     check(
         CID,
         "key B received nothing",
