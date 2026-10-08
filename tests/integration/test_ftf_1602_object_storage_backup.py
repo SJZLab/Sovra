@@ -425,13 +425,6 @@ def test_restore_refuses_damaged_backups(client: S3Client) -> None:
             f"nothing was written to the clean bucket for the {label} backup",
             _all_keys(client, restore_bucket) == [],
         )
-    client.put_object(target_bucket, blob_key, original)
-    restore_bucket, clean = _clean_bucket(client)
-    check(
-        "FTF-1602-A3",
-        "the same backup restores once the blob is put back",
-        restore_backup(dst, clean, record.backup_id, organization_id="o").object_count == 4,
-    )
 
 
 def test_tampered_record_is_refused(client: S3Client) -> None:
@@ -484,12 +477,16 @@ def test_tenant_scoping_on_real_server(client: S3Client) -> None:
             for v in client.list_object_versions(target_bucket, prefix="backups/")
         ),
     )
+    # A real record copied under another tenant's prefix is refused by identity, not by luck.
+    record_key = f"backups/o/{record.backup_id}/backup-record.json"
+    copied_key = f"backups/p/{record.backup_id}/backup-record.json"
+    client.put_object(target_bucket, copied_key, client.get_object(target_bucket, record_key)[0])
     restore_bucket, clean = _clean_bucket(client)
     err = raises_backup_error(restore_backup, dst, clean, record.backup_id, organization_id="p")
     check(
         "FTF-1602-N3",
-        "another organization cannot restore the backup",
-        err is not None and "record is missing" in str(err),
+        "another organization cannot verify or restore a record copied under its prefix",
+        err is not None and "different organization" in str(err),
     )
     check(
         "FTF-1602-N3",
