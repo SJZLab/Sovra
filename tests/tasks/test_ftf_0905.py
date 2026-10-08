@@ -951,12 +951,34 @@ def token_only_draw():
     ok = moved.canary_id == base.canary_id and moved.value == PREFIX + D
     return "value-follows-its-own-draw" if ok else "token-leaks-into-id"
 
+def repeated_assert():
+    marker = gen.generate_canary()
+    pairs = [(s, e) for s in gen.SINKS for e in gen.ENCODINGS]
+    ledger = gen.CanaryPlacementLedger()
+    for index, (sink, encoding) in enumerate(pairs):
+        ledger.record_placement(gen.PlacementRecord(marker.canary_id, sink, encoding, OPERATOR))
+        try:
+            ledger.record_checked(marker.canary_id, sink, encoding, found=index == 7)
+        except gen.CanaryLeakedError:
+            pass
+    outcomes = []
+    for _ in range(4):
+        try:
+            ledger.assert_leak_test_complete()
+            outcomes.append("completed")
+        except gen.CanaryLeakedError:
+            outcomes.append("leak")
+        except gen.CanarySecretGeneratorError as exc:
+            outcomes.append(exc.code)
+    return "leak-stays-x4" if outcomes == ["leak"] * 4 else "+".join(outcomes)
+
 print(default_minus_one())
 print(literal_only())
 print(sticky(False, True))
 print(sticky(True, False))
 print(id_only_draw())
 print(token_only_draw())
+print(repeated_assert())
 """
 
 R3_BASELINE = [
@@ -966,6 +988,7 @@ R3_BASELINE = [
     "leak-stays",
     "id-follows-its-own-draw",
     "value-follows-its-own-draw",
+    "leak-stays-x4",
     "",
 ]
 
@@ -1009,6 +1032,12 @@ def test_r3_default_plan_sticky_leak_and_id_independence() -> None:
         "FTF-0905-R3-3",
         f"canary_id and token come from independent draws ({out[4:6]})",
         out[4:6] == R3_BASELINE[4:6],
+    )
+    check(
+        "FTF-0905-R4-1",
+        f"default 35-pair plan: one leak, then assert_leak_test_complete x4 always raises "
+        f"CanaryLeakedError ({out[6:7]})",
+        out[6:7] == R3_BASELINE[6:7],
     )
     check("FTF-0905-R3-ALL", "whole R3 probe matches baseline", out == R3_BASELINE)
 
@@ -1063,6 +1092,14 @@ R3_MUTATIONS = [
         _ID_LINE,
         'canary_id = "canary-" + "".join(format(15 - int(c, 16), "x") for c in token)',
         4,
+    ),
+    (
+        "F27 assert_leak_test_complete clears the recorded leak set after raising once",
+        r"        if self\._leaked:\n",
+        "        if self._leaked:\n            self._leaked.clear()\n"
+        "            raise CanaryLeakedError('confirmed leak(s) were recorded')\n"
+        "        if False:\n",
+        6,
     ),
 ]
 
