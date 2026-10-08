@@ -9356,7 +9356,13 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      3. Fail closed on malformed reserved input: ReservedFinalSuite(group_ids="...") as a bare string, reserved={} and non-ReservedFinalSuite/non-string members raise the module's typed error (today a bare string is split into characters and the sealed group is admitted).
      4. Typed errors for malformed trace fields (int trace_id, unhashable kind/expected_outcome, non-dict steps, None group_id) and the forged approver ref (TraceVerificationError); the secret scan covers dict keys (survivor).
      Disclosed, not a return reason: reviewer identity is an unauthenticated string until the BLOCKED_EXTERNAL Argilla review step binds real review records; held-out matching is exact (no near-duplicate detection) - state it in spec-matrix notes.
-   - **0h.** Then the Backlog.
+   - **0h. FTF-1206 round 3 (small production fix + tests).** Work in packages/litellm_client/organization_policy_control.py and tests/tasks/test_ftf_1206.py. Claim `relay/FTF-1206-r3`. The persistence half is now FTF-1206A (certified); the 2026-10-01 DoD is otherwise met. Verifier findings (each listed fault must go RED):
+     FTF-1206 RETURN -> round 3 (verifier at 89f1aeb; module from #412). 28/28 checks; 16 of 18 faults RED; mutation 32/36. Required:
+     1. Kill the 4 mutation survivors: request validation skipped; target `validate_namespace` replaced by `pass`; strip/lower applied to the target namespace; strip/lower applied to the actor. Add exact-case/whitespace tests for target namespace and actor identity (" ns", "NS" vs "ns", "jane " are refused or never matched).
+     2. Fail closed on malformed inputs with the module's typed error, never TypeError and never a partial grant: a bare str for any namespace/approver set (today "jane" becomes {j,a,n,e}), int/None in place of a set, an unhashable actor, a non-bool `route_change_requires_approval` (today None switches approval off).
+     3. negative_acceptance ("project-level permission cannot widen"): a route change must also check the target against the organization's CURRENT policy (`allowed_deployment_namespaces`), so a stale grant issued before the org narrowed its policy cannot be used. Test: narrow the policy, keep the old grant, route change refused.
+     4. Update FTF-1206's spec-matrix notes: cite FTF-1206A (store + migration 0020) for persistence; keep UNWIRED disclosed (no live caller composes get-policy -> enforce -> record yet).
+   - **0i.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
      (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613, FTF-1305, FTF-0308, FTF-0602, FTF-0901 and FTF-1706 are CERTIFIED (2026-10-07/08); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
@@ -9569,7 +9575,7 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
     language/group fields that §68.2/§69.2 and FTF-0602 need, so they are added; the live error convention is
     `{"detail": code}`, not §40's envelope; FTF-0501's "resumable UI" clause is not in its file list and stays with
     FTF-0501's own refinement.
-- FTF-0616, FTF-0903, FTF-1602, FTF-R005, FTF-0517 and FTF-1703 are returned work in item 0 above. FTF-0501 (#610) and
+- FTF-0616, FTF-0903, FTF-1602, FTF-R005, FTF-0517, FTF-1703 and FTF-1206 are returned work in item 0 above. FTF-0501 (#610) and
   FTF-0905 (#625) are claimed.
 - **FTF-0516-P1 Dataset quality report, issue and resolution persistence + API** (child slice of FTF-0516; Control-plane design 2026-10-08T11:00Z; §6.10, §6.12, §6.24, §7A.10, §8.1 steps 16-18, §8.2, §9, Screen F, §39 Datasets `GET /datasets/{id}/issues` + `POST /datasets/{id}/resolve-issue`, §67.2, §67.4, §69.1, §77, §78.4). FTF-0516's negative acceptance ("cannot edit locked data in place or mark a detector false positive without recorded authorized rationale") needs persisted issues and decisions; FTF-0515 is pure.
   - Migration `0026_dataset_quality_issues` (next free; renumber if taken). UQ datasets (organization_id, project_id, id, name, purpose, version, verified_sha256) as the lineage FK target.
@@ -9592,6 +9598,96 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
   as in CI. Negative acceptance: an oversize, partial, wrong-key, wrong-hash or expired upload cannot create an accepted
   Dataset version.
   If any of these needs a schema or route that is not frozen yet, park it as BLOCKED_DEPENDENCY with what is missing.
+- **FTF-0908 External provider denial** (§11.1–11.3, §12, §65, §66, §70, §77, §81; deps FTF-0203, FTF-0901, FTF-0902,
+  all CERTIFIED). Ready now. Files are closed to `packages/security/external_provider_denial.py` and
+  `tests/tasks/test_ftf_0908.py`, with no schema change. Contract: `python tools/r1_handoff.py packet FTF-0908 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`. Build on FTF-0901's `enforce_effect`/`effective_profile` (compose them, do not
+  re-implement the profile ordering).
+  - DoD:
+    - When the project privacy profile forbids external managed training or inference, the request is denied with a stable,
+      coded policy error, never success. That means `zero_egress` and `air_gapped`, and also `standard` with no explicit
+      org route authorization for that exact provider and purpose.
+    - The denial writes a content-free audit reason: profile, surface, purpose and code only, never host, path, prompt or
+      account text.
+    - The audit goes through the certified FTF-0104 `write_audit_event` when a session is given; otherwise the decision
+      object carries the reason and the module docstring discloses that it has no live caller.
+    - §11.2: a managed provider is allowed only with an explicit approval that records provider, account, region,
+      training/inference terms, retention and permitted purposes. Any missing field is a denial.
+  - negative_acceptance tests:
+    - A "private cloud account" label (e.g. a provider marked as the org's own cloud account or a private endpoint) does
+      not auto-approve third-party processing or unrestricted egress. It is still denied without the §11.2 approval.
+    - A weaker project setting or an omitted job profile cannot lower the effective profile (FTF-0901 rule, asserted
+      through this module).
+    - Inference and training each need their own purpose approval; an inference approval never authorizes training.
+    - Unknown provider, purpose or profile values, a str subclass and unhashable values each raise the module's typed
+      error, never TypeError and never allow.
+  - Every DoD bullet needs its own behavioural fault→RED row.
+  - Mutation gate passes at 0 survivors.
+  - Disclose UNWIRED in spec-matrix notes; no caller yet.
+  - "Real relevant integration" is satisfied by the pure decision module plus the FTF-0901/0902 composition. A real managed
+    provider is not needed to prove a denial: no network call is made, so prove it with a counting outbound-guard stub
+    showing zero fetches.
+- **FTF-0309-P1 Training-capability read API** (child slice of FTF-0309; Control-plane design 2026-10-08T12:50Z; §6, §13,
+  §34, §68, §3.5). FTF-0309's UI names `/capabilities`, but no route exposes the certified FTF-0307 classifier. Its only
+  callers are tests and evals/reference.
+  - Add `GET /api/v1/organizations/{org}/connections/litellm/{conn}/models/{model_name:path}/capabilities?project_id=`
+    next to the FTF-0308-P1 mapping routes (new file `apps/api/app/litellm/model_capability_routes.py` plus
+    `tests/tasks/test_ftf_0309_p1.py`). Freeze it in `packages/contracts/openapi/03-interface.yaml`.
+  - No migration.
+  - The route composes certified pieces only:
+    - fresh FTF-0204 discovery + FTF-0207 reconciliation;
+    - the FTF-0308-P1 mapping and its artifact (tenant-scoped `get_artifact`);
+    - the latest FTF-0212 tool-call probe result the catalog already holds for that exact model and route identity,
+      with its `checked_at` date. Pass None when there is none; never run a probe from a GET.
+  - It calls `classify_training_capability` and never re-implements it.
+  - Response: the four dimensions with dated evidence, plus explicit `"unknown"` (with a reason code) for `method_support`,
+    `min_gpu_vram_gb`/tested VRAM and `chat_template`. Nothing backs those today.
+  - The artifact's declared `minimum_gpu_profile` is labelled `declared`, never `tested`.
+  - DoD:
+    - A ready mapped artifact gives a trainable classification with the artifact id and digest.
+    - An unmapped model gives `not_trainable`/`unknown`, never inferred from the alias (§2.2).
+    - A probe for a different model or route identity is ignored.
+    - A cross-org artifact or connection, and a foreign project, return 404 identical to a missing one.
+    - Viewer reads are allowed and use no admin dependency. The route needs the project and is otherwise 400.
+    - A revoked connection is shown as revoked, never trainable.
+    - The provider is called only through the existing discovery client, at most once per request (counting test).
+    - A live caller test on real Postgres; product_truth_check gets the route as the proving symbol.
+  - Every DoD bullet needs its own behavioural fault→RED row. Mutation gate at 0 survivors.
+  - Must not edit the training_capability_classifier.py or model_catalog_mapping_* modules.
+  - Then FTF-0309 (UI) is queued on top. Its Train button is disabled whenever a dimension is `unknown`.
+- **FTF-H010-P1 Model import fields + import-validation jobs (migration)** (child slice of FTF-H010; Control-plane design
+  2026-10-08T12:50Z; §6.17, §58A, §68.1). This slice needs the `migration:application` single-writer lock.
+  - Extend `model_versions` (migration 0009, `apps/api/app/model_versions/`) with the §6.17 import fields it lacks:
+    - `origin` in {factory_trained, imported_weights, imported_adapter, external_endpoint}, mapped from the existing
+      `import_kind`. Do not drop `import_kind` in this slice.
+    - `parent_model_version_id` (same-tenant FK).
+    - `external_provider_model_ref` and `observed_deployment_fingerprint`.
+    - `lineage_completeness` in {complete, partial, unknown}.
+    - `tokenizer_revision`, `chat_template_sha256`, `serving_config_sha256`.
+    - `adapter_only`.
+  - Add CHECK constraints:
+    - external_endpoint: artifact digest and URI must be NULL and `external_provider_model_ref` NOT NULL. No fictitious
+      hash; this is the negative_acceptance.
+    - imported_adapter: requires an exact base revision and `adapter_only=true`.
+    - Every sha256 column matches `^[0-9a-f]{64}$`.
+  - New `model_import_jobs` table, RLS ENABLE+FORCE with a tenant policy: id, org, project, requested origin, state in
+    {queued, validating, failed, succeeded, blocked_external}, failure code, created_by, timestamps.
+  - Freeze `POST/GET /api/v1/organizations/{org}/projects/{project}/model-imports[/{id}]` in
+    `packages/contracts/openapi/10-interface.yaml`.
+  - POST validates the shape and enqueues; it never claims success synchronously.
+  - A job whose real provider endpoint, weights or GPU are unavailable ends `blocked_external`, never `succeeded` (Law 17).
+  - `compatibility_tuple_id` and the ModelVersion `status` lifecycle are out of scope (owned by promotion/compatibility
+    tasks); say so in notes.
+  - DoD (real Postgres):
+    - The migration upgrades and downgrades cleanly, and data_exposure_check passes.
+    - A cross-org read/write is denied the same as a missing row.
+    - Each CHECK refusal is tested.
+    - An endpoint import with an artifact hash is refused (400).
+    - An adapter import without a base is refused.
+    - Viewer POST gives 403. Job states never jump to succeeded without validation.
+    - Every DoD bullet needs its own behavioural fault→RED row. Mutation 0 survivors.
+  - Then FTF-H010 builds on top. Its real endpoint fine-tune, weights, GPU and continuation clauses stay BLOCKED_EXTERNAL
+    and are disclosed.
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 

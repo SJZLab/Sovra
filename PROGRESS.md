@@ -18,7 +18,9 @@ Updated: 2026-10-08T12:20Z. Source: `python3 scripts/status.py` on main.
     - FTF-1602: restore not proven, tenant scoping.
     - FTF-R005: run drift, Law 17 statuses, durable outbox.
     - FTF-1703: template-family grouping, verified provenance.
-  - FTF-0516 is parked; prerequisite slice FTF-0516-P1 is queued.
+    - FTF-1206 r3: survivors, typed fail-closed inputs, stale grant. Its persistence is now FTF-1206A.
+  - FTF-0516 is parked; prerequisite slice FTF-0516-P1 is queued. Also queued: FTF-0908, FTF-0309-P1 and FTF-H010-P1.
+  - CI: fixed a clock time bomb in the FTF-0501-P1 test that turned every gate red from 12:00Z.
   - In progress: FTF-0501 (#610) and FTF-0905 (#625).
 - **2026-10-08T07:00Z:**
   - CERTIFIED: FTF-0308 (model→artifact mapping UI) and FTF-0602 (evaluation case editor/import), the first UIs built

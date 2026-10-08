@@ -10460,7 +10460,7 @@ PR is not landed by the next certifier shift.
   - The evidence_hash is stale.
 - **Governance:** #616 merged. evals/reference is now under the mutation and product-truth gates.
 
-## 2026-10-08T12:20Z — CERTIFIED: FTF-1706; RETURNED: FTF-0616 (r3), FTF-0903, FTF-1602, FTF-R005, FTF-1703; SLICE: FTF-0516-P1
+## 2026-10-08T12:20Z — CERTIFIED: FTF-1706; RETURNED: FTF-0616 (r3), FTF-0903, FTF-1602, FTF-R005, FTF-1703, FTF-1206 (r3); SLICES: FTF-0516-P1, FTF-0309-P1, FTF-H010-P1
 - **Verification method:** independent Control-plane verifiers in detached worktrees at each merge commit. Faults were
   behavioural only. Real SeaweedFS (FTF-1602) and a real MLflow 3.1.1 server (FTF-R005) ran in Docker on unique ports.
   Mutation runs were uncapped (`--max-mutants 0`).
@@ -10516,5 +10516,30 @@ PR is not landed by the next certifier shift.
 - **FTF-0516 (parked by the relay, #622):** prerequisite slice FTF-0516-P1 has been designed and queued. It covers the
   quality report, the issue and resolution tables, and their API.
   - Gap recorded: no task owns running the detectors on dataset artifacts (likely an FTF-0502 refinement).
+- **FTF-1206: RETURNED** (re-review after FTF-1206A; round 2 → 3; small production fix plus tests). It had been
+  PROVISIONAL since 2026-10-02, waiting on its persistence half, which FTF-1206A (certified 2026-10-06) now supplies.
+  - Verifier ran at 89f1aeb; the module is from #412 (d489936).
+  - 28/28 checks; the real PG16 test for FTF-1206A passes. 16 of 18 faults RED; uncapped mutation 32/36.
+  - The verifier recommended CERTIFY. It is returned under the standing bar (0 survivors; typed fail-closed input):
+    - 4 survivors.
+    - A bare str for a set is split into characters.
+    - `route_change_requires_approval=None` turns approval off.
+    - A stale grant is still honoured after the org narrows its policy (negative_acceptance).
+  - Notes still say there is no backing table.
+  - Repo-wide observation, not a return reason: under plain `pytest`, the `tests/tasks` check-collector files report pass
+    even when checks fail, because only `main()` exits non-zero. CI runs them as scripts, so CI evidence is sound.
+- **CI fix (test only, FTF-0501-P1):** `test_s3_finalize_creates_versions_in_order_and_audits` mixed clocks. It
+  created a session at the fixed `_NOW` (2026-10-07T12:00Z, 24h TTL) and finalized it with the real clock (`now=None`),
+  so it expired, and every branch's gate went red from 2026-10-08T12:00Z.
+  - The session in that check is now created on the real clock too.
+  - The assertion and the production code are unchanged, and FTF-0501-P1's certification is unaffected.
+  - The remaining gate steps that CI skipped after it pass locally.
+- **Backlog refill** (frontier recomputed from spec/tasks.json). Added:
+  - FTF-0908 (ready).
+  - FTF-0309-P1, a capabilities read API, because no route exposes the FTF-0307 classifier.
+  - FTF-H010-P1, the import fields and import-validation jobs migration. FTF-H010's real clauses are BLOCKED_EXTERNAL.
+  - FTF-R004 is not queued. It needs an `inspect_ai` pin in workers/evaluation (Inspect AI is a fixed reused component
+    per REFERENCE_REPOSITORIES.md, so it is not a fresh owner ask) and EvaluationRun/case-result persistence. Its real
+    target/runtime clauses are BLOCKED_EXTERNAL. It will be sliced once FTF-0616 and FTF-1705 land.
 - **ci-verdict:** all 7 relay merges since 06:02Z (#618, #620, #613, #619, #622, #621, #624) landed on a green
   ci-verdict.
