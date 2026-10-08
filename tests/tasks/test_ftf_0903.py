@@ -271,6 +271,48 @@ def test_timestamp_count_bool_kinds() -> None:
         "a number far past the bound is refused",
         _raises(ContentRefusedError, _validate_field, "n", _FieldSpec("number"), 1e18),
     )
+    check(
+        "FTF-0903-A1",
+        "a count of exactly zero is the boundary and is accepted (< 0, not <= 0)",
+        _validate_field("c", _FieldSpec("count"), 0) == 0,
+    )
+    check(
+        "FTF-0903-A1",
+        "a count of exactly the max bound is accepted (> max, not >= max)",
+        _validate_field("c", _FieldSpec("count"), 1_000_000_000) == 1_000_000_000,
+    )
+    check(
+        "FTF-0903-A1",
+        "a count one past the max bound is refused",
+        _raises(ContentRefusedError, _validate_field, "c", _FieldSpec("count"), 1_000_000_001),
+    )
+
+
+def test_field_kind_dispatch_is_an_exact_closed_match() -> None:
+    """`spec.kind` is an internal dispatch key, never derived from
+    untrusted input, but the dispatch itself must still be an exact,
+    case- and whitespace-sensitive match: a malformed internal spec
+    (never produced by this module's own schemas) must raise, never
+    silently normalise to a real kind and dispatch anyway."""
+    from packages.security.content_free_telemetry import _FieldSpec, _validate_field
+
+    for weird_kind in (
+        " ID ",
+        " CODE ",
+        " ENUM ",
+        " COUNT ",
+        " NUMBER ",
+        " TIMESTAMP ",
+        " BOOL ",
+        " CONTENT_REF ",
+    ):
+        check(
+            "FTF-0903-A2",
+            f"a non-exact field kind {weird_kind!r} raises, never dispatches by a normalised match",
+            _raises(
+                InvalidEventError, _validate_field, "f", _FieldSpec(weird_kind, enum=("x",)), "x"
+            ),
+        )
 
 
 def test_raw_content_is_refused_whatever_field_it_is_attached_to() -> None:
@@ -344,6 +386,11 @@ def test_fail_closed_input_handling() -> None:
         "FTF-0903-A2",
         "an unknown event kind raises InvalidEventError",
         _raises(InvalidEventError, emit_event, "trace", {}),
+    )
+    check(
+        "FTF-0903-A2",
+        "an event kind with different case/whitespace is refused, never normalised",
+        _raises(InvalidEventError, emit_event, " WORKFLOW ", {}),
     )
     check(
         "FTF-0903-A2",
