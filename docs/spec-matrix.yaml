@@ -9265,7 +9265,7 @@ FTF-0901:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Security profile enforcement
-  evidence_hash: 4877c2e927457f1e327084094b909f3f0112efd1
+  evidence_hash: 1be584d051d36951822f3044ef820cf6bb219e98
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0103, FTF-0202,
@@ -9279,9 +9279,18 @@ FTF-0901:
     `security_profile_route_not_authorized`. Unknown or malformed input raises
     `security_profile_invalid_request`. Negative acceptance (private job cannot switch to a managed
     route by a weaker project setting) is pinned for org, project and job taking turns as the
-    private source. Disclosed gap: pure library with no live caller yet (datasets, workers, judges
+    private source. Round 2 (tests only, 2026-10-08): added behavioural, fault-injection-backed
+    tests that an authorization provider must match exactly -- a case-variant ("ACME"/"Acme"),
+    padded ("  acme  ") or near-miss ("acme2"/"acm") provider against an authorization for "acme"
+    all give `security_profile_route_not_authorized`, never `allowed` -- and that `approved_by`
+    (Section 11.2) is required: blank, whitespace-only and non-str values each raise
+    `InvalidEffectRequestError` at `RouteAuthorization` construction. Also pins the exact 8-member
+    `SURFACES` tuple. Disclosed gap: pure library with no live caller yet (datasets, workers, judges
     and serving are later tasks) -- blank proving_symbol, same precedent as FTF-0902. Evidence:
-    tests/tasks/test_ftf_0901.py (CI step added), mutation 66/66 killed. Not self-certified.
+    tests/tasks/test_ftf_0901.py (CI step already present), mutation 66/66 killed (whole-file,
+    `--max-mutants 0`); both new guards independently confirmed load-bearing by hand-breaking the
+    real module (normalizing the provider comparison; removing the approved_by `_text` guard) and
+    showing the suite goes RED, then restoring byte-identical. Not self-certified.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0901.py
