@@ -137,3 +137,58 @@ still fails any skipped required check) are unchanged.
 - **Spending limit.** 18 runs were stopped by "recent account payments have failed or your spending
   limit needs to be increased". This is a billing setting. The changes above reduce the minutes
   needed, but do not change the limit.
+
+## After (measured, 24 h each side of the CI contract merge at 2026-10-07T07:57Z)
+
+Measured with `tools/ci_metrics.py` against the real GitHub Actions history. Windows:
+- **Before:** 2026-10-06T07:57Z → 2026-10-07T07:57Z.
+- **After:** 2026-10-07T07:57Z → 2026-10-08T07:57Z.
+
+Certified criteria per window are the count of `certification_state: CERTIFIED` in docs/spec-matrix.yaml on main at
+each boundary: 101 → 117 → 130.
+
+| Measure | Before | After | Change |
+|---|---|---|---|
+| CI runs | 145 | 128 | −12% |
+| PRs (branches) with runs | 50 | 63 | +26% (more work went through CI) |
+| Runs per PR | 2.90 | 2.03 | −30% |
+| Job-minutes executed | 7,322 | 5,927 | −19% |
+| Billed job-minutes | 10,641 | 8,720 | −18% |
+| Billed job-minutes per PR | 213 | 138 | −35% |
+| Job-minutes spent after a newer run superseded the run | 1,049 | 134 | −87% |
+| Same-head duplicate runs | 0 | 0 | — |
+| Integration jobs skipped by scope (tracker-only or focused) | 0 | 1,437 | new |
+| Superseded runs cancelled (by design) | 1 | 30 | new behaviour |
+| Re-run attempts | 1 | 4 | **worse** (see below) |
+| Runs blocked before start by the spending limit | 1 | 0 | better |
+| Queue wait, job created → started, median / p90 | 0.85 / 3.42 min | 0.48 / 1.27 min | better |
+| Run wall time, median / p90 | 8.2 / 11.2 min | 8.3 / 12.5 min | **slightly worse at p90** |
+| ci-verdict outcomes | 2 success, 1 cancelled (#545 only) | 77 success, 21 failure, 33 cancelled | — |
+| Criteria certified in the window | 16 | 13 | −3 |
+| Billed job-minutes per certified criterion | 665 | 671 | **flat (+1%)** |
+
+**What the numbers say.**
+- **Waste per change fell sharply.** Supersession waste is down 87%, runs per PR are down 30%, and billed minutes per
+  PR are down 35%. Tracker-only PRs now skip 46 integration jobs: 1,437 job skips, while `gate` still ran on every
+  one.
+- **Total spend fell less (−18%), because 26% more PRs ran.** Relay lanes and review rounds produced more work.
+- **Cost per certified criterion did not improve (665 → 671).** The cause is not CI. Most submissions failed
+  independent L2 on test strength and needed 2–3 rounds: fault-injected bullets that no test proved. CI correctly let
+  them through as green, so the extra minutes were review rounds, not waste.
+  - The after window also certified 10 items that the 302 denominator does not count: 4 prerequisite slices and 6
+    follow-ups.
+  - The lever for cost per criterion is first-pass quality, not CI configuration. These were added during the window:
+    behavioural fault rows required in submissions, the GRADER CHECKLIST additions, and verifiers running the
+    mutation gate uncapped.
+- **Re-runs got worse (1 → 4)**, all on relay PRs:
+  - FTF-0308-P1 r1 and r2: attempt 2 each.
+  - FTF-0611 r2: attempt 2.
+  - FTF-0602-P1: attempt 3.
+  - The attempt-3 run breaks the "at most one re-run, and only for a confirmed infra failure" rule. The routine prompt
+    already forbids re-running to see whether a failure goes away; the relay did not follow it. This is recorded as a
+    finding, not fixed by config.
+- **p90 wall time rose 1.3 min.** That is more integration jobs: three new Postgres jobs, for FTF-0308-P1, 0602-P1 and
+  0501-P1/P2.
+- **One measurement caveat.** Run 37571017115 (the 2026-10-07 04:20Z spending-limit run, with 2 attempts) returns HTTP
+  502 for `filter=all`. The tool now retries with backoff, then falls back to the latest attempt and reports the run
+  as `partial_job_history_runs: 1` (before window) instead of failing or dropping it.

@@ -26,6 +26,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -33,10 +34,11 @@ REPO = "SJZLab/Sovra"
 
 
 def api(path: str) -> dict | list:
-    for _ in range(4):
+    for attempt in range(4):
         r = subprocess.run(["gh", "api", path], capture_output=True, text=True)
         if r.returncode == 0:
             return json.loads(r.stdout)
+        time.sleep(2**attempt)
     raise RuntimeError(f"gh api {path} failed: {r.stderr[:300]}")
 
 
@@ -72,16 +74,26 @@ def collect(since: str, until: str | None) -> list[dict]:
             break
         page += 1
 
-    def jobs(run: dict) -> list[dict]:
+    def jobs_for(run: dict, flt: str) -> list[dict]:
         out: list[dict] = []
         p = 1
         while True:
-            d = api(f"repos/{REPO}/actions/runs/{run['id']}/jobs?per_page=100&filter=all&page={p}")
+            path = f"repos/{REPO}/actions/runs/{run['id']}/jobs?per_page=100&filter={flt}&page={p}"
+            d = api(path)
             assert isinstance(d, dict)
             out += d["jobs"]
             if len(d["jobs"]) < 100:
                 return out
             p += 1
+
+    def jobs(run: dict) -> list[dict]:
+        # GitHub sometimes 502s on filter=all for a re-run run. Fall back to the latest attempt
+        # and say so (partial_job_history_runs) instead of failing or silently dropping the run.
+        try:
+            return jobs_for(run, "all")
+        except RuntimeError:
+            run["_partial_jobs"] = True
+            return jobs_for(run, "latest")
 
     with cf.ThreadPoolExecutor(8) as ex:
         for run, js in zip(runs, ex.map(jobs, runs), strict=True):
@@ -143,6 +155,7 @@ def report(runs: list[dict], certified_in_window: int | None = None) -> dict:
         "prs_with_runs": len(prs),
         "runs_per_pr": round(len(runs) / len(prs), 2) if prs else 0,
         "rerun_attempts": sum(1 for r in runs if (r.get("run_attempt") or 1) > 1),
+        "partial_job_history_runs": sum(1 for r in runs if r.get("_partial_jobs")),
         "conclusions": dict(Counter(r["conclusion"] or "none" for r in runs)),
         "blocked_before_start_runs": blocked,
         "job_minutes_actual": round(act),
