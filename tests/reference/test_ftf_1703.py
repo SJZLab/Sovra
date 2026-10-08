@@ -827,6 +827,11 @@ def test_normalized_reserved_and_reviewers() -> None:
 def test_helper_exactness() -> None:
     import evals.reference.training_dataset as td
 
+    check(
+        "FTF-1703-A1",
+        "foreign record title is derived from the entity title",
+        td._foreign_title("Draft report TRN-0001") == "Other Draft report TRN-0001",
+    )
     refs = td._Refs()
     real = "11111111-1111-1111-1111-111111111111"
     ref = refs.register("record_id", real)
