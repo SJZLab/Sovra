@@ -340,9 +340,8 @@ def build_dataset_quality_router(
         except (DatasetNotFoundError, TenantContextError) as exc:
             raise _not_found() from exc
         except QualityStoreError as exc:
-            if exc.status == 404:
-                raise _not_found() from exc
-            raise HTTPException(status_code=exc.status, detail=exc.code) from exc
+            # get_issue refuses only with a 404 (no report / no such issue).
+            raise _not_found() from exc
         return JSONResponse(body)
 
     @router.post(_BASE_PATH + "/resolve-issue")

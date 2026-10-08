@@ -42,12 +42,15 @@ object keys.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import re
 import uuid
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import NamedTuple
 
 from sqlalchemy import JSON, DateTime, Integer, String, Text, and_, select
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
@@ -117,7 +120,6 @@ MAX_PAGE_SIZE = 200
 MAX_RESOLUTIONS_PER_REQUEST = 100
 ADMIN_ROLES = frozenset({"workspace_admin", "organization_admin"})
 ALL_ACTIONS = ("exclude", "correct", "new_version", "waive")
-_NEW_DATA_ACTIONS = frozenset({"correct", "new_version"})
 _STATES = frozenset({"open", "resolved", "waived"})
 _SEVERITIES = frozenset({"blocking", "warning"})
 _REASON_MAX_LENGTH = 2000
@@ -692,15 +694,18 @@ def list_issues(
     if after is not None:
         statement = statement.where(DatasetQualityIssue.issue_id > after)
     if severity is not None:
-        statement = statement.where(DatasetQualityIssue.severity == severity)
+        statement = statement.where(DatasetQualityIssue.severity.in_((severity,)))
     if detector is not None:
-        statement = statement.where(DatasetQualityIssue.detector == detector)
+        statement = statement.where(DatasetQualityIssue.detector.in_((detector,)))
     if category is not None:
-        statement = statement.where(DatasetQualityIssue.category == category)
-    if state == "open":
-        statement = statement.where(DatasetIssueResolution.id.is_(None))
-    elif state is not None:
-        statement = statement.where(DatasetIssueResolution.engine_decision == state)
+        statement = statement.where(DatasetQualityIssue.category.in_((category,)))
+    if state is not None:
+        state_filters = {
+            "open": DatasetIssueResolution.id.is_(None),
+            "resolved": DatasetIssueResolution.engine_decision.in_(("resolved",)),
+            "waived": DatasetIssueResolution.engine_decision.in_(("waived",)),
+        }
+        statement = statement.where(state_filters[state])
     statement = statement.order_by(DatasetQualityIssue.issue_id).limit(limit)
     rows = execute_tenant_scoped(session, context.organization_id, statement).all()
     return [IssueView(issue=i, state=_issue_state(r), resolution=r) for i, r in rows]
@@ -726,11 +731,11 @@ def get_issue(
         include_held_out=include_held_out,
     )
     issues, resolutions = _report_rows(session, context, report)
-    for row in issues:
-        if row.issue_id == issue_id:
-            resolution = resolutions.get(issue_id)
-            return IssueView(issue=row, state=_issue_state(resolution), resolution=resolution)
-    raise IssueNotFoundError()
+    row = {r.issue_id: r for r in issues}.get(issue_id)
+    if row is None:
+        raise IssueNotFoundError()
+    resolution = resolutions.get(issue_id)
+    return IssueView(issue=row, state=_issue_state(resolution), resolution=resolution)
 
 
 def list_resolutions(
@@ -819,6 +824,7 @@ def record_quality_report(
         dataset.verified_sha256, previous_sha, quality.issues, reported, versions
     )
 
+    severities = Counter(i.severity for i in quality.issues)
     report = DatasetQualityReport(
         id=uuid.uuid4(),
         organization_id=context.organization_id,
@@ -833,8 +839,8 @@ def record_quality_report(
         detector_versions=versions,
         detectors_reported=reported,
         issue_count=len(quality.issues),
-        blocking_count=sum(1 for i in quality.issues if i.severity == "blocking"),
-        warning_count=sum(1 for i in quality.issues if i.severity == "warning"),
+        blocking_count=severities["blocking"],
+        warning_count=severities["warning"],
         resolution_version=0,
         created_by=actor.actor_id,
         created_at=recorded_at,
@@ -930,18 +936,37 @@ def _validate_request(
     return expected_resolution_version, str(idempotency_key), tuple(resolutions)
 
 
+class _ActionRule(NamedTuple):
+    takes_positions: bool
+    takes_successor: bool
+    needs_issue_positions: bool
+    decision: str
+
+
+# Per action: whether it carries exclusion positions, whether it carries a
+# successor dataset, whether the issue must name batch positions, and the
+# decision FTF-0515's engine applies. Table lookups, not string comparisons.
+_ACTION_RULES: dict[str, _ActionRule] = {
+    "exclude": _ActionRule(True, False, True, "resolved"),
+    "correct": _ActionRule(False, True, True, "resolved"),
+    "new_version": _ActionRule(False, True, False, "resolved"),
+    "waive": _ActionRule(False, False, False, "waived"),
+}
+
+
 def _check_shape(item: ResolutionRequest, issue: DatasetQualityIssue) -> None:
+    rule = _ACTION_RULES[item.action]
     positions = item.excluded_batch_positions
-    if item.action == "exclude":
+    if rule.takes_positions:
         if not positions or list(positions) != sorted(set(positions)):
             raise InvalidResolutionRequestError()
         if not set(positions) <= set(issue.batch_positions):
             raise PositionsNotInIssueError()
     elif positions:
         raise InvalidResolutionRequestError()
-    if item.action in {"exclude", "correct"} and not issue.has_positions:
+    if rule.needs_issue_positions and not issue.has_positions:
         raise PositionsNotInIssueError()
-    if (item.action in _NEW_DATA_ACTIONS) != (item.successor_dataset_id is not None):
+    if rule.takes_successor != (item.successor_dataset_id is not None):
         raise InvalidResolutionRequestError()
 
 
@@ -1062,7 +1087,7 @@ def submit_resolutions(
             raise IssueNotFoundError()
         if item.issue_id in decided:
             raise IssueAlreadyDecidedError()
-        if item.expected_before_evidence_sha256 != issue.evidence_sha256:
+        if not hmac.compare_digest(item.expected_before_evidence_sha256, issue.evidence_sha256):
             raise EvidenceMismatchError()
 
     engine_report = _rebuild_quality_report(report, issues, decided)
@@ -1072,7 +1097,7 @@ def submit_resolutions(
             [
                 IssueResolution(
                     issue_id=item.issue_id,
-                    decision="waived" if item.action == "waive" else "resolved",
+                    decision=_ACTION_RULES[item.action].decision,
                     reviewer_id=actor.actor_id,
                     reason=item.reason,
                 )
@@ -1099,7 +1124,7 @@ def submit_resolutions(
         successor = (
             None if item.successor_dataset_id is None else successors[item.successor_dataset_id]
         )
-        if item.action == "exclude":
+        if _ACTION_RULES[item.action].takes_positions:
             after: str | None = exclude_after_evidence(
                 dataset.verified_sha256, item.excluded_batch_positions
             )
@@ -1124,7 +1149,7 @@ def submit_resolutions(
                 has_positions=issue.has_positions,
                 before_evidence_sha256=issue.evidence_sha256,
                 action=item.action,
-                engine_decision="waived" if item.action == "waive" else "resolved",
+                engine_decision=_ACTION_RULES[item.action].decision,
                 excluded_batch_positions=list(item.excluded_batch_positions),
                 successor_dataset_id=None if successor is None else successor.id,
                 successor_version=None if successor is None else successor.version,

@@ -50,6 +50,8 @@ import uvicorn
 import yaml
 from fastapi import FastAPI
 from sqlalchemy import create_engine
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -465,7 +467,11 @@ class _Audit:
         return [event_["action"] for event_ in self.events]
 
 
+_EXECUTED: list[str] = []
+
+
 def _passthrough_execute(session: Session, organization_id: uuid.UUID, statement: Any) -> Any:
+    _EXECUTED.append(str(statement.compile(dialect=postgresql.dialect())))
     return session.execute(statement)
 
 
@@ -3278,6 +3284,250 @@ def _full_app_env() -> dict[str, str]:
         "SOVRA_OIDC_CLIENT_SECRET_VALUE": "not-a-real-secret",
         "SOVRA_SESSION_SIGNING_KEY_VALUE": "not-a-real-signing-key",
     }
+
+
+def test_s8_survivor_kills_and_locking() -> None:
+    # canonical JSON hashes non-ASCII as escapes (stable across platforms)
+    rid = uuid.UUID(int=7)
+    item = store.ResolutionRequest(_sha("i"), "exclude", "résumé", _sha("e"), (1,), None)
+    expected = hashlib.sha256(
+        json.dumps(
+            {
+                "quality_report_id": str(rid),
+                "expected_resolution_version": 0,
+                "resolutions": [
+                    {
+                        "issue_id": _sha("i"),
+                        "action": "exclude",
+                        "reason": "résumé",
+                        "expected_before_evidence_sha256": _sha("e"),
+                        "excluded_batch_positions": [1],
+                        "successor_dataset_id": None,
+                    }
+                ],
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode()
+    ).hexdigest()
+    check(
+        CID,
+        "request_digest hashes canonical ASCII-escaped JSON",
+        store.request_digest(rid, 0, [item]) == expected,
+    )
+
+    with _env() as (session, audit):
+        d1 = _dataset(session, "support")
+        r1 = _record(session, d1, extra=(_extra("w_a", (0, 1)), _extra("w_b", (0, 1))))
+        wa = _issue(session, r1, "w_a")
+        pii = _issue(session, r1, "pii_secret_email")
+
+        def listing(**kw: Any) -> None:
+            store.list_issues(
+                session,
+                _CTX,
+                project_id=_PROJECT,
+                dataset_id=d1.id,
+                include_held_out=False,
+                limit=5,
+                **kw,
+            )
+
+        for label, kw in (
+            ("a capitalised severity", {"severity": "Blocking"}),
+            ("a padded severity", {"severity": " blocking"}),
+            ("a capitalised state", {"state": "Open"}),
+            ("a padded state", {"state": "open "}),
+            ("a capitalised category", {"category": "POISONING"}),
+            ("a padded category", {"category": " poisoning"}),
+        ):
+            try:
+                listing(**kw)
+                raised = False
+            except ValueError:
+                raised = True
+            check(CID, f"list_issues refuses {label}", raised)
+        for label, bad in (("uppercase", wa.issue_id.upper()), ("padded", " " + wa.issue_id)):
+            try:
+                store.get_issue(
+                    session,
+                    _CTX,
+                    project_id=_PROJECT,
+                    dataset_id=d1.id,
+                    issue_id=bad,
+                    include_held_out=False,
+                )
+                missing = False
+            except store.IssueNotFoundError:
+                missing = True
+            check(CID, f"get_issue refuses an {label} id", missing)
+
+        # 100 distinct resolutions pass validation; 101 do not
+        many = [
+            store.ResolutionRequest(_sha(f"x{n}"), "exclude", "why", _sha("e"), (0,), None)
+            for n in range(100)
+        ]
+        _, error = _resolve(session, d1, r1, many)
+        check(
+            CID,
+            "exactly 100 resolutions pass request validation",
+            isinstance(error, store.IssueNotFoundError),
+        )
+        _, error = _resolve(
+            session,
+            d1,
+            r1,
+            many + [store.ResolutionRequest(_sha("x100"), "exclude", "why", _sha("e"), (0,), None)],
+        )
+        check(CID, "101 resolutions are invalid_body", _refused(error, "invalid_body", 400))
+
+        # the report row is locked and the lookup is compiled as FOR UPDATE
+        _EXECUTED.clear()
+        done, error = _resolve(session, d1, r1, [_req(wa, "exclude")], key="lock-1")
+        check(CID, f"a plain exclude succeeds ({error!r})", error is None)
+        locking = [
+            q
+            for q in _EXECUTED
+            if "FROM dataset_quality_reports" in q
+            and "dataset_quality_issues" not in q
+            and "WHERE dataset_quality_reports.id" in q
+        ]
+        check(
+            CID,
+            "the report lookup in submit_resolutions is SELECT ... FOR UPDATE",
+            bool(locking) and all("FOR UPDATE" in q for q in locking[:1]),
+        )
+        check(
+            CID,
+            "no other statement in the request takes a row lock",
+            sum("FOR UPDATE" in q for q in _EXECUTED) == 1,
+        )
+
+        # an already-decided issue is refused with its own code
+        _, error = _resolve(session, d1, r1, [_req(wa, "exclude")], version=1)
+        check(
+            CID,
+            "deciding a decided issue is issue_already_decided",
+            _refused(error, "issue_already_decided", 409),
+        )
+        check(CID, "... and writes nothing more", _counts(session, audit)[2] == 1)
+
+        # replay compares digests exactly: a tampered (upper-cased) stored digest is a reuse
+        row = done.resolutions[0] if done else None
+        assert row is not None
+        row.request_sha256 = row.request_sha256.upper()
+        session.flush()
+        _, error = _resolve(session, d1, r1, [_req(wa, "exclude")], version=0, key="lock-1")
+        check(
+            CID,
+            "a stored digest that differs only by case is idempotency_key_reused",
+            _refused(error, "idempotency_key_reused", 409),
+        )
+        row.request_sha256 = row.request_sha256.lower()
+        session.flush()
+
+        # integrity-error mapping: only the one-decision constraint maps; anything else propagates
+        real_flush = session.flush
+        for message, expected_code in (
+            (
+                "duplicate key value violates unique constraint uq_dataset_issue_resolutions_one_decision",  # noqa: E501
+                "issue_already_decided",
+            ),
+            ("duplicate key value violates unique constraint something_else", None),
+        ):
+            dn = _dataset(session, f"flaky-{expected_code}")
+            rn = _record(session, dn, extra=(_extra("fl", (0, 1)),))
+            issue_n = _issue(session, rn, "fl")
+
+            def flaky(*a: Any, _msg: str = message, _rn: Any = rn, **k: Any) -> None:
+                # The final flush is the only one after the counter was bumped.
+                if _rn.resolution_version == 1:
+                    raise IntegrityError("stmt", {}, Exception(_msg))
+                return real_flush(*a, **k)
+
+            session.flush = flaky
+            try:
+                _, error = _resolve(session, dn, rn, [_req(issue_n, "exclude")], version=0)
+            finally:
+                session.flush = real_flush
+            if expected_code is None:
+                check(
+                    CID,
+                    f"an unrelated IntegrityError propagates unmapped ({error!r})",
+                    isinstance(error, IntegrityError),
+                )
+            else:
+                check(
+                    CID,
+                    f"the one-decision violation maps to issue_already_decided ({error!r})",
+                    _refused(error, expected_code, 409),
+                )
+
+        # lineage compares exactly: a successor differing only by case is not the same name/purpose
+        d2 = _dataset(session, "Support")
+        _record(session, d2, _full_runs(clean=True))
+        d3 = _dataset(session, "support", purpose="Training")
+        _record(session, d3, _full_runs(clean=True))
+        for label, successor in (("name case", d2), ("purpose case", d3)):
+            _, error = _resolve(
+                session,
+                d1,
+                r1,
+                [_req(pii, "new_version", successor_dataset_id=successor.id)],
+                version=1,
+            )
+            check(
+                CID,
+                f"a successor differing by {label} is invalid_body",
+                _refused(error, "invalid_body", 400),
+            )
+
+
+def test_r7_route_values_and_minimal_items() -> None:
+    env = _RouteEnv()
+    env.view = store.IssueView(issue=_issue_ns(), state="resolved", resolution=_resolution_ns())
+    env.outcome = store.ResolveOutcome(
+        report=_report_ns(), resolutions=(_resolution_ns(),), replayed=False
+    )
+    with _patched(env), _running_app() as base:
+        resolution: Any = env.view.resolution
+        body = _call(base, "GET", _base() + f"/issues/{_sha('issue')}").json()
+        check(
+            CID,
+            "the resolution id is serialised from the row",
+            body["resolution"]["id"] == str(resolution.id),
+        )
+        minimal = {
+            "quality_report_id": str(uuid.uuid4()),
+            "expected_resolution_version": 0,
+            "idempotency_key": "k",
+            "resolutions": [
+                {
+                    "issue_id": _sha("i"),
+                    "action": "waive",
+                    "reason": "why",
+                    "expected_before_evidence_sha256": _sha("e"),
+                }
+            ],
+        }
+        result = _call(base, "POST", _base() + "/resolve-issue", "admin", minimal)
+        check(CID, "an item with exactly the required fields is accepted", result.status == 201)
+        first = env.last("submit_resolutions")["resolutions"][0]
+        check(
+            CID,
+            "... with empty positions and no successor",
+            first.excluded_batch_positions == () and first.successor_dataset_id is None,
+        )
+        for error in (store.QualityReportNotFoundError(), ustore.DatasetNotFoundError("x")):
+            env.raise_with = error
+            check(
+                CID,
+                "the issue route maps every store refusal to 404 not_found",
+                _call(base, "GET", _base() + f"/issues/{_sha('issue')}").json()
+                == {"detail": "not_found"},
+            )
+        env.raise_with = None
 
 
 def main() -> None:
