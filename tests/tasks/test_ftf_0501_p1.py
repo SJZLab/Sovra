@@ -367,7 +367,7 @@ def test_m3_single_alembic_head() -> None:
         cursor = parents.get(cursor)
     check(
         CID,
-        f"exactly one Alembic head and 0024_dataset_uploads is on its chain (heads: {sorted(heads)})",
+        f"exactly one Alembic head, 0024_dataset_uploads on its chain (heads: {sorted(heads)})",
         len(heads) == 1 and "0024_dataset_uploads" in chain,
     )
 
