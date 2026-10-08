@@ -336,6 +336,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_04a32.py
       - name: FTF-R002 negative-test proof (Authenticated internal component bindings, no DB required)
         run: uv run python3 tests/tasks/test_ftf_r002.py
+      - name: FTF-R005 negative-test proof (MLflow projection adapter, no network required)
+        run: uv run python3 tests/tasks/test_ftf_r005.py
       - name: FTF-1506 negative-test proof (Dependency scanning, no network required)
         run: uv run python3 tests/tasks/test_ftf_1506.py
       - name: FTF-04A17 negative-test proof (DiscoveredAgentCandidate schema/API, no DB required)
@@ -1195,6 +1197,26 @@ jobs:
         run: pip install pyyaml --quiet
       - name: Prove the real object-storage backup evidence against the live S3 fixture
         run: python3 tests/integration/test_ftf_1602_object_storage_backup.py
+
+  mlflow-projection-integration:
+    # FTF-R005: real MLflow run/model reconciliation, outage-pending restore,
+    # forged-tag/alias refusal and tenant isolation against a live
+    # `mlflow server` (SQLite backend, loopback only). MLflow is installed
+    # only inside this job (the reused component itself, never a runtime
+    # dependency of the Factory); SQLAlchemy is held below 2.1 because
+    # mlflow 3.1.1 imports a symbol 2.1 removed.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' mlflow-projection-integration ')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install the pinned MLflow server
+        run: pip install --quiet 'mlflow==3.1.1' 'sqlalchemy>=2.0,<2.1'
+      - name: Prove the real MLflow projection against a live server
+        run: python3 tests/integration/test_mlflow_projection.py
 
   oidc-provider-integration:
     # FTF-0101 acceptance clause 1 ("Real OIDC provider login/refresh/logout
@@ -2940,6 +2962,7 @@ jobs:
       - live-auth-path-integration
       - network-policy-enforcement-integration
       - object-storage-backup-integration
+      - mlflow-projection-integration
       - candidate-selection-integration
     runs-on: ubuntu-latest
     timeout-minutes: 5
