@@ -2047,8 +2047,18 @@ def test_c1_interface_contract() -> None:
     check(CID, "the item path is GET only", set(paths[item]) - {"parameters"} == {"get"})
     check(
         CID,
-        "no upload or finalize path exists yet (FTF-0501 owns those)",
-        not any("upload" in p or "finalize" in p for p in paths),
+        "the only upload / finalize paths are the five FTF-0501 owns (upload-sessions...)",
+        {p for p in paths if "upload" in p or "finalize" in p}
+        == {
+            f"{collection.rsplit('/', 1)[0]}/upload-sessions{suffix}"
+            for suffix in (
+                "",
+                "/{upload_session_id}",
+                "/{upload_session_id}/parts",
+                "/{upload_session_id}/part-urls",
+                "/{upload_session_id}/finalize",
+            )
+        },
     )
     schemas = spec["components"]["schemas"]
     dataset = schemas["Dataset"]
