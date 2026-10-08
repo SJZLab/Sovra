@@ -7300,15 +7300,23 @@ FTF-0500D:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500d.py
 FTF-0501:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Direct object-storage upload
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-02, AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0500D
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-02, AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500,
+    FTF-0500D, FTF-0501-P1, FTF-0501-P2 (certified). Built on those slices: SigV4 query
+    presigning (the AWS published vector, 5-minute ceiling), the part plan, UploadStorageSettings
+    from the environment, finalize verification (size, SHA-256, content type from the bytes) with
+    storage cleaned on every rejection, and the five routes under
+    /api/v1/organizations/{organization_id}/projects/{project_id}/upload-sessions. Wired into
+    apps/api/app/main.py. Not self-certified (Law 4): independent Control-plane L2 re-review
+    and a green ci-verdict on the PR are required; `certification_state` stays PROVISIONAL.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0501.py
 FTF-0502:
   certification_state: NONE
   criticality: MUST
