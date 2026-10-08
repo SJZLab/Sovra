@@ -898,7 +898,7 @@ def test_s3_adapter_shape() -> None:
         {"Key": "a", "VersionId": "3", "IsLatest": "false", "IsDeleteMarker": True},
         "junk",
     ]
-    store = S3ObjectStore(stub, "bkt")
+    store = S3ObjectStore(stub, "bkt")  # type: ignore[arg-type]
     versions = store.list_versions("a")
     check(
         "FTF-1602-A1",
@@ -1523,7 +1523,7 @@ def _entries_from(data: Any) -> list[Any]:
 
 def test_s3_adapter_metadata_and_restore_write() -> None:
     stub = StubS3Client()
-    store = S3ObjectStore(stub, "bkt")
+    store = S3ObjectStore(stub, "bkt")  # type: ignore[arg-type]
     stub.headers = {
         "content-type": "application/jsonl",
         "x-amz-meta-owner": "team-a",
@@ -1862,7 +1862,7 @@ def test_restore_record_names_its_backup() -> None:
 
 def test_s3_header_names_are_exact() -> None:
     stub = StubS3Client()
-    store = S3ObjectStore(stub, "bkt")
+    store = S3ObjectStore(stub, "bkt")  # type: ignore[arg-type]
     stub.headers = {
         "Content-Type": "text/evil",
         "X-Amz-Meta-Owner": "x",
