@@ -9412,7 +9412,13 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      3. §67.5 24 h abort of unfinalized multipart uploads: the code comment cites a bucket lifecycle rule nothing configures, and nothing sweeps abandoned sessions. Configure and test the lifecycle rule or a bounded sweeper that aborts expired uploads, remove the unbacked claim, and document `SOVRA_UPLOAD_S3_*` as a deploy dependency.
      4. CI: a job running the real routes on PG16 as `sovra_app` against SeaweedFS covering the E1-E10 cases (hash, partial, oversize, wrong key, expiry, concurrent finalize, cross-tenant), and set `proving_symbol` to the wired router (`build_direct_upload_router`).
      The "resumable UI" clause is sliced out as FTF-0501-UI (Backlog). FTF-0501 is CERTIFIED only when this round and FTF-0501-UI both pass.
-   - **0k.** Then the Backlog.
+   - **0k. FTF-0309-P1 round 2 (production + tests).** Work in the FTF-0309-P1 capability read route and its tests (unit and real-Postgres). Claim `relay/FTF-0309-P1-r2`. Verifier findings (ab71b1c, #642: cross-tenant, role, revoke, single-discovery and labelling checks hold on PG16 as sovra_app; mutation 70/70; 8 faults RED; each listed fault must go RED):
+     FTF-0309-P1 RETURN -> round 2. Required:
+     1. Provider called only through the existing discovery client, at most once per request: today the route also calls `enrich_visible_models`, so one GET makes 3 gateway requests (`/v1/models`, `/model/info` x2) and 2 secret resolutions. Drop the enrichment call and build the reconciliation from discovery alone (no invented enrichment content). Add a counting test at the `guarded_fetch` layer with the real clients. Fault: call a second gateway client (FA, GREEN today). The "discovery only" reading in the submission is not accepted.
+     2. Exact alias matching in the mapping lookup: with only `alias-a` mapped, `Alias-A`, `ALIAS-A` and `alias-a ` are unknown with a null artifact (unit and Postgres). Faults: `.lower()` (FB, GREEN today: `Alias-A` reports alias-a's artifact as trainable), `.strip()`, `.casefold()`.
+     3. DoD bullet: register the route as the spec-matrix `proving_symbol` so product_truth_check shows its live caller and a fault that reddens it.
+     4. Re-run the mutation gate (0 survivors) and keep all existing faults RED.
+   - **0l.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
      (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613, FTF-1305, FTF-0308, FTF-0602, FTF-0901 and FTF-1706 are CERTIFIED (2026-10-07/08); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
@@ -9734,6 +9740,184 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
     and are disclosed.
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
+
+- **FTF-R004 child slices: Inspect AI behind the real target runtime** (Control-plane design 2026-10-08; FINE_TUNING_FACTORY_RELEASE_1.md
+  §25, §26, §28, §30, §66.3-66.5, §69.1-69.2, §77.3-77.6, §78.2; Q16, Q17, Q18, Q35). These refine FTF-R004 under "For each card" step (3).
+  They add no new criteria: the denominator stays 302 and no ADR applies. FTF-R004's deps are all CERTIFIED: R002, 0601, 04A25, 04A26 and
+  0210. Contract: `python tools/r1_handoff.py packet FTF-R004 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+  Common rules:
+  - Path refinement, recorded: the packet's `services/evaluation-worker/adapters/inspect/` becomes `workers/evaluation/adapters/inspect_adapter/`.
+    `workers/evaluation` is the real SOURCE_ROOT, and the leaf is not named `inspect`, so it cannot shadow the stdlib module.
+  - No slice adds a migration, an OpenAPI path, UI, a secret or a keyed service.
+  - Each slice adds its proof as an additive `gate` step in ci.yml, like the 0604-0613 grader steps.
+  - Every DoD bullet needs its own behavioural fault→RED row. The mutation gate must reach 0 survivors.
+  - Must not edit:
+    - `apps/api/app/target_connectors/*` (04A25/04A26 are frozen; compose them);
+    - `workers/evaluation/llm_judge_grader.py` (open PR #645);
+    - `packages/security/external_provider_denial.py` (open PR #640);
+    - any grader module.
+  - Held-out/final suite content is never loaded by P1-P4 (Law 12). The final-purpose path fails closed until FTF-H020's CandidateFreeze exists.
+  - **FTF-R004-P1 Bridge generation-config parity comparator** (§78.2 "Explicit Inspect bridge parity", §66.4-66.5, Q35). Ready now.
+    - Owns this acceptance clause: "Compare effective target generation settings before and after the Inspect bridge; preserve the approved
+      temperature/top_p/token/reasoning settings or record an explicit candidate configuration change in the locked compatibility tuple.
+      Do not silently inherit bridge defaults."
+    - Owns the negative clause "Reject silent generation-config dropping".
+    - Files: `workers/evaluation/adapters/__init__.py`, `.../inspect_adapter/__init__.py`, `.../inspect_adapter/generation_config_parity.py`
+      and `tests/tasks/test_ftf_r004_p1.py`.
+    - Module API:
+      - `capture_effective_generation_settings(request_body: Mapping)`: reads only the settings keys of an OpenAI-compatible
+        chat/responses body, never messages or tools. Fields:
+        - temperature, top_p;
+        - max_tokens, max_completion_tokens and max_output_tokens, keeping the raw key names;
+        - reasoning_effort, reasoning;
+        - seed, stop, presence_penalty, frequency_penalty;
+        - tool_choice, parallel_tool_calls, response_format;
+        - any unknown settings key, kept verbatim.
+      - `compare_generation_parity(approved, observed_before, observed_after, declared_change=None)`, which returns `preserved`,
+        `declared_change` or `blocked`.
+      - `declared_change` carries `compatibility_tuple_sha256` (hex64) and the exact key→value changes.
+    - Rules:
+      - A key in approved or before that is missing or different after gives `blocked` with `generation_config_dropped` or
+        `generation_config_changed`.
+      - A key that appears only after gives `bridge_default_inherited`.
+      - A declared change passes only if the after value equals it exactly. Every other difference still blocks.
+      - Values are compared exactly. 0.7 ≠ "0.7", and True ≠ 1.
+      - A missing observation gives `insufficient_evidence`, never `preserved`.
+      - The result holds key names and sha256 digests only, never prompt content.
+      - Unknown or malformed input raises the module's typed error, never TypeError and never allow.
+    - DoD and faults (each RED):
+      - a bridge drops temperature;
+      - a bridge renames max_tokens to a default value;
+      - a bridge adds top_p;
+      - a declared change whose value differs from the observed value;
+      - a declared change without a tuple digest;
+      - one observation missing;
+      - a canary prompt string appears in the result.
+    - Disclose UNWIRED (no caller until P3). The approved-settings source and persisting the tuple are not in this slice. AgentManifest
+      has no generation fields, and no compatibility-tuple table exists yet.
+  - **FTF-R004-P2 Provider-side execution boundary + pre-filter attempt evidence** (§78.2 "Provider-side execution is a separate boundary",
+    §66.2, §66.4, §69.2, §30 "attempted prohibited calls reported separately", Q16, Q35). Ready now, and independent of P1.
+    - Owns this acceptance clause: "Block provider-side hosted tools, remote media dereferences and unapproved bridged host tools outside
+      the privacy boundary; capture attempted forbidden tool calls before approval filtering can replace model output."
+    - Owns the negative clause "Reject ... undeclared provider-side web/code/MCP execution or remote-media fetch, and lost pre-filter
+      forbidden-action evidence in the bridge".
+    - Files: `.../inspect_adapter/provider_boundary.py` and `tests/tasks/test_ftf_r004_p2.py`.
+    - `screen_outbound_model_request(body, policy)`:
+      - Default deny. The only tools allowed are `type:"function"` tools whose name is in the approved manifest tool set.
+      - These are denied with stable codes (`hosted_tool_denied`, `mcp_denied`, `unapproved_bridged_tool`):
+        - hosted or server tool types (web_search*, code_interpreter, file_search, computer_use*, image_generation, `*code_execution*`);
+        - `mcp` entries;
+        - `web_search_options` and plugin keys.
+      - Any `image_url`, `input_image`, `file` or `input_audio` part that is not an inline `data:` URI is denied as `remote_media_dereference`.
+        URLs are classified by FTF-H006 `url_policy`, never by substring.
+      - An unknown part or tool shape is denied (`unknown_request_shape`).
+      - The profile comes from FTF-0901 `effective_profile`/`enforce_effect`. Do not re-implement profile ordering. zero_egress and
+        air_gapped deny every hosted capability even when it is approved.
+    - `capture_response_attempts(response_body) -> AttemptEvidence`:
+      - Captures every function call and hosted-call item (web_search_call, code_interpreter_call, mcp_call, ...) with its id, name,
+        args sha256 and response sha256.
+      - Exposes them as FTF-0606 `EmittedToolCall` records for FTF-0609 `grade_forbidden_actions`.
+    - `apply_approval_filter(response_body, evidence)` refuses to run unless `evidence.response_sha256` matches that exact body. Filtering
+      can therefore never come before capture.
+    - DoD and faults (each RED):
+      - each hosted tool type, an MCP entry, an http/https/file media URL and an unapproved function tool is allowed;
+      - zero_egress allows an "approved" hosted tool;
+      - the filter runs without evidence or with evidence from another body;
+      - a denied attempt disappears from the evidence;
+      - a counting outbound-guard stub shows any fetch during screening. Screening must make 0 network calls (FTF-0908 precedent);
+      - a str subclass or unhashable value gets through, or raises TypeError.
+    - Composition test: a filtered forbidden attempt still grades as a policy failure in `grade_forbidden_actions`.
+    - Disclose UNWIRED until P3.
+    - Real upstream-route enforcement at the org LiteLLM gateway is BLOCKED_EXTERNAL. It needs the same gateway key as the 2026-10-08
+      FTF-0616 owner action.
+  - **FTF-R004-P3 Pinned Inspect worker + case adapter + actual-runtime bridge** (§78.2 paragraphs 1-2 and 5, §66.3-66.4, §77.3, §77.5,
+    §28, Q16, Q35). Deps: P1 and P2.
+    - **Owner-approved dependency (live owner answer, 2026-10-08):** add `inspect_ai` to `workers/evaluation/pyproject.toml` and
+      `uv.lock`, matching REFERENCE_REPOSITORIES.md ("Pinned evaluation worker package"). Pin an exact release at least 2 weeks old,
+      chosen at claim, with remote log destinations and telemetry off; record the version and its transitive additions in the PR. Do not
+      vendor, fork or re-implement Inspect, or use a look-alike harness.
+    - Owns this acceptance clause: "Use qualified Agent Bridge or actual-runtime adapter; execute original orchestration and real isolated
+      dependencies with identity pinning."
+    - Owns the negative clause "A reconstructed generic agent ... cannot pass".
+    - Owns the Inspect-side half of P1 and P2: the pinned release's `forward_generation_config` behaviour is captured and compared, not
+      assumed.
+    - Files:
+      - the pyproject and lockfile pin (single lockfile writer);
+      - `.../inspect_adapter/case_adapter.py`;
+      - `.../inspect_adapter/runtime_bridge.py`;
+      - `tests/integration/test_inspect_target_bridge.py` (packet name);
+      - `tests/tasks/test_ftf_r004_p3.py`.
+    - `case_adapter`:
+      - Maps the cases of a **locked development-purpose** suite (FTF-0602-P1 `evaluation_cases`, read through its tenant-scoped store) to
+        Inspect `Sample`s.
+      - Each Sample gets a stable id = case_key, and metadata for case_id, category, severity, critical, group_key, language, grader_type
+        and the suite/manifest ids.
+      - These are refused: a draft suite (`suite_not_locked`), a final suite (`final_suite_requires_freeze`, until FTF-H020) and duplicate
+        ids.
+    - `runtime_bridge`:
+      - Builds an Inspect `Task` whose solver calls a registered native `RuntimeAdapterProtocol` adapter. Each case goes through
+        `preflight`, `invoke` (immutable `ModelBinding` checked by `validate_model_binding_override`, with a deadline and an idempotency
+        key), then `collect_outcome`.
+      - It never uses a generic Inspect agent such as `react()` or `basic_agent()`.
+      - `evaluate_target_runtime_qualification` must return QUALIFIED, otherwise the run is refused with `integration_required`.
+      - `attest()` is pinned before the run and re-checked after it. Any changed fingerprint gives `runtime_identity_changed`.
+      - The log dir is a private temp workspace. No remote log or eval destination is set, and Inspect telemetry is off. The run passes
+        under network denial.
+      - For model-less native adapters, use the pinned release's model-less mode. `mockllm` is test-only and never on a production path.
+    - Real services in tests: the pinned Inspect package, the FTF-04A26 `IsolatedToolBackendAdapter` over the real FTF-1702 tool
+      backend, and real Postgres for the case read.
+    - DoD and faults (each RED):
+      - the solver is swapped for a generic agent;
+      - the reconstructed-adapter declaration is missing parity categories;
+      - the attestation changes mid-run;
+      - an unsupported binding key is used;
+      - a draft or final suite is used;
+      - P1 or P2 is bypassed in the bridge hook;
+      - an outbound call happens during a run.
+    - Disclose BLOCKED_EXTERNAL: a real model route through the org LiteLLM gateway with H005 route pinning (same key as the FTF-0616
+      owner action). A real customer target app beyond the reference backend is FTF-H008/0614's.
+  - **FTF-R004-P4 Inspect log normalization, complete accounting and sealed-data guard** (§69.1-69.2, §78.2 paragraphs 3-5, §30
+    "Final-test protection", §27, Q16, Q17, Q18). Deps: P3.
+    - Owns this acceptance clause: "Normalize complete Inspect case/log results, protect sealed final data and independently verify
+      business-state outcome and statistics."
+    - Owns the negative clause "edited score log, missing/cancelled cases, unapproved judge or final content in normal MLflow/Argilla cannot
+      pass".
+    - Files: `.../inspect_adapter/result_reader.py` and `tests/tasks/test_ftf_r004_p4.py`, plus additions to
+      `tests/integration/test_inspect_target_bridge.py`.
+    - Read logs only through Inspect's own log API (`read_eval_log`), never a hand parser.
+    - Normalization:
+      - Each scheduled case maps to exactly one of pass, model_fail, tool_fail, infra_error, timeout, cancelled, not_run.
+      - Any missing, cancelled or not_run case gives `incomplete_run` and blocks.
+      - A critical model or tool effect can never be relabelled infra_error.
+    - Integrity: P3 records the log's sha256 when it is written. A changed hash gives `score_log_tampered`.
+    - Business state:
+      - Every Inspect score is re-checked against the adapter's independent `collect_outcome` business state. A disagreement gives
+        `outcome_mismatch`.
+      - Never trust the Inspect summary metrics. The numerator and denominator are recomputed from per-case rows; the Wilson/bootstrap
+        gates stay with FTF-H021/0618.
+    - A model-graded score whose judge route identity is not the approved one passed in gives `unapproved_judge` (default deny; judge
+      approval itself is 0616/0617).
+    - The output is a redacted, content-free summary of case ids, statuses, counts and digests. The raw log is referenced only by path and
+      hash.
+    - DoD and faults (each RED):
+      - one score is edited in the log;
+      - a sample is deleted;
+      - a case is cancelled;
+      - an infra_error relabel is applied to a critical effect;
+      - an Inspect score disagrees with the backend state;
+      - the judge is unapproved;
+      - a canary input/expected string appears in the summary;
+      - a final-purpose run gets through without a freeze.
+    - Disclose BLOCKED_DEPENDENCY on FTF-H020 for the sealed final worker, with its distinct identity, queue, storage and log destination.
+  - Parent FTF-R004 remainder, certified only after P1-P4 plus its own integration evidence:
+    - the `/evaluations/{id}/engine-evidence` restricted read view and its EvaluationRun binding. No EvaluationRun entity or contract
+      exists yet, despite the packet's "existing EvaluationRun" wording, so this is BLOCKED_DEPENDENCY;
+    - the sealed final worker run after the H020 CandidateFreeze;
+    - the real model route and gateway-side enforcement (BLOCKED_EXTERNAL);
+    - the inspect_ai ComponentVersionLock row (R002 deferred that table);
+    - the Q35 composed journey (R010).
+
+---
 
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
 - **FTF-0516 Dataset issue resolution UI: PARKED (BLOCKED_DEPENDENCY), 2026-10-08T07:40Z, lane B.**
