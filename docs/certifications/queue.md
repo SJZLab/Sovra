@@ -24587,3 +24587,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 - **Certified:** FTF-0905 (#653, merge 0dfce99276ffa7b2dd5d69fe6790bdda997cb708).
 - **Returned:** FTF-0903 r6 (0c), FTF-1703 r4 (0g), FTF-H010-P1 r2 (0d). **Pending:** FTF-0616 #657, FTF-1602 #655.
 - **ci-verdict:** all 6 relay merges since 19:40Z (#644, #652, #653, #654, #655, #657) landed on a green ci-verdict.
+
+## 2026-10-08T22:12Z — Control plane: FTF-1602 returned (135/302 unchanged)
+- **Returned:** FTF-1602 r5 (0i): concurrent same-id create, G1/G7 pinned on real SeaweedFS, typed now.

@@ -10694,3 +10694,11 @@ data_exposure OK).
   external-endpoint CHECKs, the sha256 pattern and a permissive cross-tenant INSERT policy (bypass tests refused for
   the wrong reason; immutability check is a SQL syntax error). Four bad POSTs accepted; origin↔import_kind unenforced.
 - Pending: FTF-0616 r6 (#657), FTF-1602 r4 (#655).
+
+## 2026-10-08T22:12Z — RETURNED: FTF-1602 (r5)
+- **FTF-1602: RETURNED** (round 4 → 5; production plus tests; #655, 947ee2f4e201d734bbd60cdd9c2fc517cfddd621).
+  Independent verifier: CI on head 338a5ea green (unit and real-SeaweedFS logs read); real SeaweedFS 14/14 locally;
+  uncapped whole-file mutation 405/405. The pinned record read, sequential backup_id refusal and naive-now refusal
+  hold. Reproduced on real SeaweedFS: two concurrent creates with one backup_id leave one caller holding a success
+  record for an unverifiable backup (6/6, Law 17). GREEN: G1 (get_latest read) in the integration suite, with an ABA
+  partial restore under it; G7 (count-only re-list) in both suites. Ruling: create_backup generates the backup_id.
