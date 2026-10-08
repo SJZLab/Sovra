@@ -332,6 +332,13 @@ class FakeS3:
         obj = self.objects.get(key)
         if obj is None:
             return h._error(404, "NoSuchKey")
+        spec = h.headers.get("Range")
+        if spec:
+            first_text, _, last_text = spec.removeprefix("bytes=").partition("-")
+            first, last = int(first_text), min(int(last_text), len(obj["body"]) - 1)
+            return h._send(
+                206, obj["body"][first : last + 1], {"Content-Type": obj["content_type"]}
+            )
         h._send(200, obj["body"], {"Content-Type": obj["content_type"]})
 
     # -- test helpers -----------------------------------------------------------
@@ -1224,7 +1231,7 @@ def test_v6_content_type_is_checked_against_the_bytes() -> None:
             got.content_type == "text/csv; charset=utf-8",
         )
     with FakeS3() as fake:
-        body = b"PK\x03\x04" + b"\x00" * 200
+        body = _xlsx()
         target = _target(body, content_type=dos.XLSX_CONTENT_TYPE)
         _open_and_upload(fake, target, body)
         check(
@@ -3997,6 +4004,208 @@ def test_m15_list_parts_pages_forward_only() -> None:
             f"{CID}-M15", "a marker that goes backwards is a MalformedResponse", _is_malformed(got)
         )
         check(f"{CID}-M15", "the walk stopped on the backwards marker", len(raw.requests) == 2)
+
+
+# -- X: XLSX container check (Section 8.1 steps 3-4, 67.3) ---------------------------
+
+_XLSX_MAIN = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
+_DOCX_MAIN = "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
+_MACRO_MAIN = "application/vnd.ms-excel.sheet.macroEnabled.main+xml"
+
+
+def _content_types(part: str = "/xl/workbook.xml", content_type: str = _XLSX_MAIN) -> bytes:
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        f'<Override PartName="{part}" ContentType="{content_type}"/></Types>'
+    ).encode()
+
+
+def _zip(members: list[tuple[str, bytes]]) -> bytes:
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in members:
+            archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+def _xlsx(*, content_types: bytes | None = None, extra: list[tuple[str, bytes]] | None = None):
+    return _zip(
+        [
+            ("[Content_Types].xml", content_types or _content_types()),
+            ("xl/workbook.xml", b"<workbook/>"),
+            *(extra or []),
+        ]
+    )
+
+
+def _xlsx_outcome(body: bytes) -> Any:
+    with FakeS3() as fake:
+        target = _target(body, content_type=dos.XLSX_CONTENT_TYPE)
+        _open_and_upload(fake, target, body)
+        got = _outcome(fake, target)
+        gone = _gone(fake, target)
+    return got, gone
+
+
+def test_x1_xlsx_must_be_a_spreadsheet_package() -> None:
+    import io
+    import zipfile
+
+    docx = _zip(
+        [
+            ("[Content_Types].xml", _content_types("/word/document.xml", _DOCX_MAIN)),
+            ("word/document.xml", b"<document/>"),
+        ]
+    )
+    only_word = _zip([("word/document.xml", b"<document/>")])
+    plain_zip = _zip([("a.txt", b"hello")])
+    no_workbook_part = _zip([("[Content_Types].xml", _content_types()), ("xl/other.xml", b"<a/>")])
+    wrong_declared = _xlsx(content_types=_content_types(content_type=_DOCX_MAIN))
+    undeclared = _xlsx(content_types=_content_types(part="/xl/other.xml"))
+    not_xml = _xlsx(content_types=b"this is not xml")
+    good = _xlsx()
+    cases = [
+        ("a docx", docx, "content_type_mismatch"),
+        ("a zip holding only word/document.xml", only_word, "content_type_mismatch"),
+        ("a plain zip", plain_zip, "content_type_mismatch"),
+        ("PK-prefixed zero bytes", b"PK\x03\x04" + b"\x00" * 200, "content_type_mismatch"),
+        ("PK-prefixed junk", b"PK\x03\x04" + b"junk" * 100, "content_type_mismatch"),
+        ("a truncated xlsx", good[: len(good) // 2], "content_type_mismatch"),
+        ("an xlsx cut before its directory", good[:-30], "content_type_mismatch"),
+        (
+            "[Content_Types].xml without the workbook part",
+            no_workbook_part,
+            "content_type_mismatch",
+        ),
+        ("a workbook declared as another type", wrong_declared, "content_type_mismatch"),
+        ("a workbook part never declared", undeclared, "content_type_mismatch"),
+        ("[Content_Types].xml that is not XML", not_xml, "content_type_mismatch"),
+        (
+            "a macro-enabled workbook",
+            _xlsx(content_types=_content_types(content_type=_MACRO_MAIN)),
+            "unsafe_archive",
+        ),
+        (
+            "an entity declaration",
+            _xlsx(content_types=b'<!DOCTYPE t [<!ENTITY a "aaaa">]>' + _content_types()),
+            "unsafe_archive",
+        ),
+        ("a path-traversal member", _xlsx(extra=[("../evil.xml", b"x")]), "unsafe_archive"),
+        ("an absolute member", _xlsx(extra=[("/abs.xml", b"x")]), "unsafe_archive"),
+        ("a backslash member", _xlsx(extra=[("a\\..\\b.xml", b"x")]), "unsafe_archive"),
+    ]
+    for label, body, reason in cases:
+        got, gone = _xlsx_outcome(body)
+        check(
+            f"{CID}-X1",
+            f"{label} is refused as {reason}",
+            isinstance(got, dos.UploadRejection) and got.reason == reason,
+        )
+        check(f"{CID}-X1", f"({label}) nothing is left in storage", gone)
+    got, _ = _xlsx_outcome(good)
+    check(
+        f"{CID}-X1",
+        "a real spreadsheet package verifies",
+        isinstance(got, dos.VerifiedObject) and got.size_bytes == len(good),
+    )
+    # A multi-sheet package with many members still verifies.
+    many = _xlsx(extra=[(f"xl/worksheets/sheet{i}.xml", b"<w/>") for i in range(200)])
+    got, _ = _xlsx_outcome(many)
+    check(f"{CID}-X1", "a package with 200 sheets verifies", isinstance(got, dos.VerifiedObject))
+    # Duplicate member names are refused (the reader would use the last one).
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("[Content_Types].xml", _content_types())
+        archive.writestr("xl/workbook.xml", b"<workbook/>")
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            archive.writestr("[Content_Types].xml", _content_types(content_type=_DOCX_MAIN))
+    got, _ = _xlsx_outcome(buffer.getvalue())
+    check(
+        f"{CID}-X1",
+        "duplicate member names are refused",
+        isinstance(got, dos.UploadRejection) and got.reason == "unsafe_archive",
+    )
+
+
+def test_x2_xlsx_bounds_and_storage_outage() -> None:
+    saved = (
+        dos.MAX_XLSX_ENTRIES,
+        dos.MAX_XLSX_UNCOMPRESSED_BYTES,
+        dos.MAX_XLSX_CONTENT_TYPES_BYTES,
+    )
+    try:
+        dos.MAX_XLSX_ENTRIES = 5
+        got, _ = _xlsx_outcome(_xlsx(extra=[(f"xl/s{i}.xml", b"<w/>") for i in range(4)]))
+        check(
+            f"{CID}-X2",
+            "more members than the bound is refused",
+            isinstance(got, dos.UploadRejection) and got.reason == "unsafe_archive",
+        )
+        got, _ = _xlsx_outcome(_xlsx(extra=[(f"xl/s{i}.xml", b"<w/>") for i in range(3)]))
+        check(
+            f"{CID}-X2",
+            "exactly the bound verifies",
+            isinstance(got, dos.VerifiedObject),
+        )
+        dos.MAX_XLSX_ENTRIES = saved[0]
+        dos.MAX_XLSX_UNCOMPRESSED_BYTES = 100
+        got, _ = _xlsx_outcome(_xlsx(extra=[("xl/big.xml", b"a" * 5000)]))
+        check(
+            f"{CID}-X2",
+            "a decompressed size over the bound is refused",
+            isinstance(got, dos.UploadRejection) and got.reason == "unsafe_archive",
+        )
+        dos.MAX_XLSX_UNCOMPRESSED_BYTES = saved[1]
+        dos.MAX_XLSX_CONTENT_TYPES_BYTES = 100
+        got, _ = _xlsx_outcome(_xlsx())
+        check(
+            f"{CID}-X2",
+            "an oversized [Content_Types].xml is refused",
+            isinstance(got, dos.UploadRejection) and got.reason == "unsafe_archive",
+        )
+    finally:
+        (
+            dos.MAX_XLSX_ENTRIES,
+            dos.MAX_XLSX_UNCOMPRESSED_BYTES,
+            dos.MAX_XLSX_CONTENT_TYPES_BYTES,
+        ) = saved
+    # A ranged read failing is an outage, never a rejection or a success.
+    body = _xlsx()
+    with FakeS3() as fake:
+        target = _target(body, content_type=dos.XLSX_CONTENT_TYPE)
+        _open_and_upload(fake, target, body)
+        settings = fake.settings()
+        client = settings.client()
+        original = client.get_object_range
+
+        def failing(*args: Any, **kwargs: Any) -> bytes:
+            raise s3.S3Error(503, "SlowDown", "slow down")
+
+        client.get_object_range = failing  # type: ignore[method-assign]
+        try:
+            dos.verify_and_complete(client, settings, target)
+            got: Any = None
+        except Exception as exc:  # noqa: BLE001
+            got = exc
+        client.get_object_range = original  # type: ignore[method-assign]
+        check(
+            f"{CID}-X2",
+            "a failing ranged read is a storage outage",
+            isinstance(got, dos.UploadStorageUnavailableError),
+        )
+        check(
+            f"{CID}-X2",
+            "the object is kept on an outage (the session stays open)",
+            target.object_key in fake.objects,
+        )
 
 
 def test_c1_interface_contract() -> None:
