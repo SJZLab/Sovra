@@ -24516,3 +24516,11 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 - **Returned:** FTF-1305, round 3 (QUEUE 0b), and FTF-0103-F1, round 2 (QUEUE 0c). Both are tests only.
 - **Backlog:** FTF-0501-P2 (hardening migration) is added, then FTF-0501 is re-queued on top of P1 and P2.
 - **ci-verdict:** all 5 relay merges since 21:55Z landed on a green ci-verdict.
+
+## 2026-10-08T03:30Z — Control plane: FTF-1305 CERTIFIED (130/302); FTF-0501 ready; four returns
+- **CERTIFIED:** FTF-1305 (#603), FTF-0103-F1 (#605, follow-up) and FTF-0501-P2 (#606, slice).
+- **Returned:** FTF-0308 (0b, tests), FTF-0602 (0c, tests), FTF-0616 (0d, production plus tests) and FTF-0901 (0e, tests).
+  FTF-0517 is still 0f.
+- **Owner action:** FTF-0616 needs a gateway key and an approved judge model for its real-judge clause.
+- **Backlog:** FTF-0501 (ready), FTF-1703, FTF-1602, FTF-R005 and FTF-0516 (park it if no resolution API exists).
+- **ci-verdict:** all 7 relay merges since 23:40Z landed on a green ci-verdict. FTF-1706 (#608) is under L2.

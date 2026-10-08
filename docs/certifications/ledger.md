@@ -10386,3 +10386,40 @@ PR is not landed by the next certifier shift.
 - **FTF-0103-F1: RETURNED**, round 2, tests only (#597, d6b7381).
   - The fix is correct and bounds memory at cap plus one chunk.
   - No test proves the read stops at the cap: a read-everything-then-check fault passes every test.
+
+## 2026-10-08T03:30Z — CERTIFIED: FTF-1305, follow-up FTF-0103-F1, slice FTF-0501-P2; RETURNED: FTF-0308, FTF-0602, FTF-0616, FTF-0901
+- **Verification method:** independent Control-plane verifiers in detached worktrees at the merge commits. FTF-0501-P2 ran
+  on real Postgres in Docker.
+- **FTF-1305: CERTIFIED** (round 3).
+  - PR #603, merge 00a095b6bce633a3f0081650fee663b7ed2b7417. Tests only; production is from #592.
+  - The sort key, the unhashable guard and the id tiebreak (against incumbent, kind and quality) are RED. Mutation 133/133.
+  - Disclosed UNWIRED.
+  - Note: PR #603 came from a relay session on a non-standard branch name (claude/wizardly-fermat-lejoey). Its content is
+    a valid round-3 submission.
+- **FTF-0103-F1: CERTIFIED** (round 2, security hardening).
+  - PR #605, merge 81835757efb373922baa7222f7f379b03c8e3dc6. Production is from #597 (d6b7381).
+  - A real-socket test with an unterminated chunked body, plus a byte-counting ASGI receive, kill the
+    read-everything-then-check fault.
+  - Timeouts are bounded. 9 runs, no flakes.
+- **FTF-0501-P2 (child slice): CERTIFIED.**
+  - PR #606, merge cbc49064f4dbff2e81d671ab4b4e2f56c49f0695.
+  - Real Postgres: terminal sessions are fully frozen, and the insert guard requires status open and created_at within
+    ±60 s.
+  - 14 faults RED. The app role cannot bypass it. FTF-0501 is ready.
+- **FTF-0308: RETURNED** (tests only; #598, caf52ae).
+  - The §2.2 exact-name non-inference rule is untested.
+  - A malformed POST 200 is untested.
+- **FTF-0602: RETURNED** (tests only; #602, a824d6a).
+  - A viewer's 403 role_not_authorized on POST or PATCH can be shown as success (Law 17); this is untested.
+- **FTF-0616: RETURNED** (production plus tests; #604, a5b86ae).
+  - §27: a critical case can pass on the judge alone. The test locks this in.
+  - Calibration is not bound to the rubric/judge triple, and the §69.5 thresholds are not applied.
+  - There are no criterion-level scores, and rubric/judge identity is not recorded.
+  - Duplicate JSON keys, NaN and an out-of-range confidence are accepted.
+  - The resolved-model switch is not detected.
+  - spec-matrix was not updated.
+  - The real-judge clause is BLOCKED_EXTERNAL (owner action recorded).
+- **FTF-0901: RETURNED** (tests only; #607, 6f841c6).
+  - Provider exactness was proven only by regex self-checks; prefix, case-fold and strip faults survive behaviourally.
+  - The approved_by requirement is untested.
+- **New rule:** a fault row must be behavioural; a regex check that guard text is present is not evidence.
