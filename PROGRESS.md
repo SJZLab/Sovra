@@ -1,18 +1,21 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-08T00:30Z. Source: `python3 scripts/status.py` on main.
-- **Status: 129/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
+Updated: 2026-10-08T03:30Z. Source: `python3 scripts/status.py` on main.
+- **Status: 130/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
 - **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902,
-  FTF-0500D, FTF-1002, FTF-0103A, FTF-0510, FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612 and FTF-0613 (2026-10-07/08), plus follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1, FTF-0608-F1 and FTF-04A21-F1.
+  FTF-0500D, FTF-1002, FTF-0103A, FTF-0510, FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613 and FTF-1305 (2026-10-07/08), plus follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1, FTF-0608-F1 and FTF-04A21-F1.
 - **FTF-0103A (live login + Membership): CERTIFIED.** Every /api/v1 route now authorizes real logged-in members, and
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
-- **2026-10-08T00:30Z:** all three prerequisite slices (FTF-0308-P1, 0602-P1 and 0501-P1) are certified on real
-  Postgres. FTF-0308 and FTF-0602 (UIs) are in progress. FTF-0501 is re-queued after a small hardening migration
-  (FTF-0501-P2). Returned: FTF-1305 (round 3) and FTF-0103-F1 (round 2), both tests only.
+- **2026-10-08T03:30Z:** FTF-1305 (candidate ranking) is CERTIFIED. The body-size hardening (FTF-0103-F1) and the
+  upload-session hardening (FTF-0501-P2) are certified, so FTF-0501 is ready. Returned:
+  - FTF-0308 and FTF-0602 (UIs, tests only).
+  - FTF-0616 (LLM judge: §27 critical-case rule, calibration thresholds, strict JSON).
+  - FTF-0901 (tests only).
+  Owner action: a gateway key and an approved judge model for FTF-0616's real-judge clause.
 - **Product-true 27 → 34 → 45:** an independent verifier proved 7 certified foundations live end to end: config, tenant
   context, RBAC, audit, tenant-scoped queries, secret refs and the outbound guard. The product-truth gate was also
   tightened (#514), so a symbol only counts when real code calls it, not when it is merely mentioned.

@@ -10595,10 +10595,10 @@ FTF-1304:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1304.py
 FTF-1305:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Candidate ranking
-  evidence_hash: ''
+  evidence_hash: 00a095b6bce633a3f0081650fee663b7ed2b7417
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-26; scenarios=Q15, Q19; deps=FTF-0307, FTF-1301, FTF-1304
@@ -10618,7 +10618,7 @@ FTF-1305:
 
     Disclosed: no live caller or route yet (the cost-per-success search route is not dependency-ready), so
     proving_symbol stays blank, same precedent as FTF-1304. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1305.py
 FTF-1306:
