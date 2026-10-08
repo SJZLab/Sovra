@@ -174,6 +174,7 @@ def build_evaluation_case_router(
             EVALUATION_SUITE_WRITE_ROLES,
             principal_resolver=principal_resolver,
             role_lookup=role_lookup,
+            oversize_error=(400, "body_too_large"),
         )
     )
 

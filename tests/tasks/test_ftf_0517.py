@@ -19,12 +19,16 @@ test_no_outcome_input_exists.
 GRADER-style checklist: malformed input fails closed, case/whitespace exact keys, duplicate ids
 refused, empty input refused, multi-constraint (temporal) coverage.
 
+FTF-0517 round 2 additions: pinned golden, PYTHONHASHSEED, group counts, cutoff binding.
+
 Run directly: python3 tests/tasks/test_ftf_0517.py
 """
 
 from __future__ import annotations
 
 import inspect
+import os
+import subprocess
 import sys
 from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
@@ -582,6 +586,143 @@ def test_malformed_inputs_fail_closed() -> None:
     check(CID, "SplitEngineError is a ValueError", issubclass(SplitEngineError, ValueError))
     check(CID, "SplitSpec frozen", raises_frozen(lambda: setattr(spec(), "seed", "x")))
     check(CID, "SplitRecord frozen", raises_frozen(lambda: setattr(rec("a"), "record_id", "x")))
+
+
+GOLDEN_SHA = "ead1a66d97f34d46aca7263b7f0dc2d771dcbfb6651dfb0fccdf8481ce247b3c"
+GOLDEN_COUNTS = (
+    ("train", 146, 22),
+    ("validation", 14, 2),
+    ("development_eval", 20, 3),
+    ("final_qualification", 20, 3),
+)
+GOLDEN_TRIPLES = (
+    ("r000", "train", "conv-0"),
+    ("r001", "final_qualification", "conv-1"),
+    ("r007", "train", "conv-127"),
+    ("r029", "train", "conv-119"),
+    ("r030", "train", "conv-0"),
+    ("r100", "train", "conv-10"),
+    ("r199", "train", "conv-109"),
+)
+
+
+def golden_records() -> list[SplitRecord]:
+    return [rec(f"r{i:03d}", f"conv-{i}", f"tmpl-{i % 30}") for i in range(200)]
+
+
+def golden_spec() -> SplitSpec:
+    return spec(seed="golden-seed")
+
+
+def test_pinned_golden_manifest() -> None:
+    m = allocate_splits(golden_spec(), golden_records())
+    check(CID, "golden manifest hash is pinned", m.manifest_sha256 == GOLDEN_SHA)
+    check(CID, "golden per-role record and group counts are pinned", m.counts == GOLDEN_COUNTS)
+    check(CID, "golden status is ready", m.status == "ready")
+    by_id = {a[0]: a for a in m.assignments}
+    for triple in GOLDEN_TRIPLES:
+        check(CID, f"golden triple {triple[0]} is pinned", by_id[triple[0]] == triple)
+    check(
+        CID,
+        "template families collapse 200 records into exactly 30 groups",
+        sum(g for _, _, g in m.counts) == 30,
+    )
+
+
+def test_hash_is_independent_of_pythonhashseed() -> None:
+    code = (
+        "import sys; sys.path.insert(0, sys.argv[1])\n"
+        "from tests.tasks.test_ftf_0517 import golden_records, golden_spec\n"
+        "from workers.data.group_aware_split_engine import allocate_splits\n"
+        "print(allocate_splits(golden_spec(), golden_records()).manifest_sha256)\n"
+    )
+    for hash_seed in ("0", "777"):
+        env = {**os.environ, "PYTHONHASHSEED": hash_seed}
+        out = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+            [sys.executable, "-c", code, str(ROOT)],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        check(
+            CID,
+            f"hash under PYTHONHASHSEED={hash_seed} equals the golden SHA-256 ({out.stderr[-200:]})",
+            out.stdout.strip() == GOLDEN_SHA,
+        )
+
+
+def test_group_counts_are_group_counts_not_record_counts() -> None:
+    m = allocate_splits(spec(), [rec(f"x{i}", "one-family") for i in range(5)])
+    check(CID, "five records in one family are one group", sum(g for _, _, g in m.counts) == 1)
+    check(CID, "and five records", sum(c for _, c, _ in m.counts) == 5)
+    two = allocate_splits(spec(), [rec("a1", "ga"), rec("a2", "ga"), rec("b1", "gb")])
+    check(CID, "two groups, three records", sum(g for _, _, g in two.counts) == 2)
+
+
+def test_cutoff_is_recorded_and_tamper_refused() -> None:
+    m = allocate_splits(spec(cutoff=1000), [rec("c1", "cg", event_time=1)])
+    check(CID, "manifest.cutoff equals the spec cutoff", m.cutoff == 1000)
+    check(CID, "no-cutoff run records None", allocate_splits(spec(), many(3)).cutoff is None)
+    for forged in (999, 1001, None):
+        tampered = replace(m, cutoff=forged)
+        check(
+            CID,
+            f"cutoff edited to {forged!r} is refused",
+            raises(lambda t=tampered: verify_manifest(t)),
+        )
+    resealed = replace(m, cutoff=999)
+    resealed = replace(resealed, manifest_sha256=compute_manifest_sha256(resealed))
+    check(
+        CID,
+        "a cutoff change changes the manifest hash",
+        resealed.manifest_sha256 != m.manifest_sha256,
+    )
+
+
+def test_preassigned_validation_follows_the_cutoff() -> None:
+    check(
+        CID,
+        "a post-cutoff group preassigned validation is refused",
+        raises(
+            lambda: allocate_splits(
+                spec(cutoff=1000), [rec("p1", "pg", preassigned_role="validation", event_time=1000)]
+            )
+        ),
+    )
+    ok = allocate_splits(
+        spec(cutoff=1000), [rec("p1", "pg", preassigned_role="validation", event_time=999)]
+    )
+    check(
+        CID,
+        "a pre-cutoff group preassigned validation is honoured",
+        roles_of(ok)["p1"] == "validation",
+    )
+
+
+def test_manifest_hash_binds_group_ids_and_strategy() -> None:
+    m = allocate_splits(spec(), [rec("h1", "ga"), rec("h2", "gb")])
+    first = m.assignments[0]
+    regrouped = rebuilt(m, ((first[0], first[1], "renamed-group"),) + m.assignments[1:])
+    check(
+        CID,
+        "changing only a group_id changes the hash",
+        regrouped.manifest_sha256 != m.manifest_sha256,
+    )
+    other = replace(m, strategy="other_strategy")
+    check(
+        CID,
+        "changing only the strategy changes the hash",
+        compute_manifest_sha256(other) != m.manifest_sha256,
+    )
+    check(
+        CID, "a strategy edit with the old hash is refused", raises(lambda: verify_manifest(other))
+    )
+
+
+def test_negative_ratio_in_any_slot_refused() -> None:
+    for ratios in ((70, -10, 20, 20), (70, 10, -10, 30), (110, -5, -5, 0), (70, 20, 20, -10)):
+        check(CID, f"ratios {ratios} refused", raises(lambda r=ratios: spec(ratios=r)))
 
 
 def main() -> int:

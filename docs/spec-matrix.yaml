@@ -2236,15 +2236,27 @@ FTF-0307:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0307.py
 FTF-0308:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Model-to-artifact mapping UI
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-14; scenarios=Q07, Q10; deps=FTF-0214, FTF-0301, FTF-0307
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-14; scenarios=Q07, Q10; deps=FTF-0214, FTF-0301,
+    FTF-0307 (CERTIFIED) and FTF-0308-P1 (CERTIFIED). apps/web/components/artifact-capabilities/
+    model_to_artifact_mapping_ui.tsx consumes only the frozen FTF-0308-P1 routes in
+    03-interface.yaml (GET/POST training-artifact, GET changes) and the artifacts list. The user
+    names the artifact (no preselection, no alias matching, only ready artifacts selectable);
+    provenance and limits come from the server record ("not recorded" when absent); every write
+    carries expected_catalog_version; changing or removing a mapping needs a confirmation naming
+    the invalidation; 409/503 are errors, never success (Law 17). Disclosed UNWIRED (Law 6/7): no
+    Next.js page tree exists (FTF-H029), so proof is a DOM-level Vitest spec with mocked fetch
+    (23 tests); proving_symbol stays blank. The packet's /capabilities path is not frozen in
+    03-interface.yaml and is not consumed here. Fault -> RED table:
+    docs/certifications/submissions/2026-10-08T0000Z-FTF-0308.md. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: apps/web/tests/ftf_0308.spec.ts
 FTF-0309:
   certification_state: NONE
   criticality: MUST
@@ -8412,15 +8424,26 @@ FTF-0601:
   proving_symbol: build_evaluation_suite_router
   proving_test: tests/tasks/test_ftf_0601.py
 FTF-0602:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Evaluation case editor/import
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0601
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0601 (CERTIFIED)
+    and FTF-0602-P1 (CERTIFIED). apps/web/components/evaluation-factory/evaluation_case_editor_import.tsx
+    consumes only the frozen FTF-0602-P1 routes in 06-interface.yaml (GET/POST cases, PATCH case).
+    Import parses a JSON array or JSON Lines file in the browser and sends one all-or-nothing POST
+    with nothing defaulted; the editor patches only changed fields and never case_key; a critical
+    case on a model-self-report grader is blocked before any request and the route's
+    critical_oracle_not_independent 400 is shown (row, field, code, never the value); a 403
+    final_suite_content_restricted clears all case content from the screen. Disclosed UNWIRED
+    (Law 6/7): no Next.js page tree exists (FTF-H029), so proof is a DOM-level Vitest spec with
+    mocked fetch (30 tests); proving_symbol stays blank. Fault -> RED table:
+    docs/certifications/submissions/2026-10-08T0030Z-FTF-0602.md. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: apps/web/tests/ftf_0602.spec.ts
 FTF-0603:
   certification_state: NONE
   criticality: MUST
@@ -8814,10 +8837,10 @@ FTF-0611:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0611.py
 FTF-0612:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Latency grader
-  evidence_hash: ''
+  evidence_hash: 79567c0921851bbf4e3b99db563c357dbd59c925
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0006, FTF-0601
@@ -8839,14 +8862,14 @@ FTF-0612:
 
     Disclosed: no live caller yet (Section 25's runtime loop is not dependency-ready), so
     proving_symbol stays blank, same precedent as the sibling graders. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0612.py
 FTF-0613:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Cost grader
-  evidence_hash: ''
+  evidence_hash: 6b9b759ac378d5678d24b71315689a711b5e02f4
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0403, FTF-0601,
@@ -8868,7 +8891,7 @@ FTF-0613:
 
     Disclosed: no live caller yet (Section 25's runtime loop is not dependency-ready), so
     proving_symbol stays blank, same precedent as the sibling graders. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0613.py
 FTF-0614:
