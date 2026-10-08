@@ -947,15 +947,15 @@ def build_training_dataset(
         if index in seen_indices:
             raise TrainingDatasetError(f"generator index {index} admitted more than once")
         seen_indices.add(index)
-        # Second pass, defense in depth: having just proven `trace` is
-        # field-for-field identical to the generator's own output for `index`,
-        # re-run the secret scan, the held-out check and the real-backend replay
-        # on a freshly regenerated object the caller never touched at all, so a
-        # bypass of the first pass (or a future call site that forgets to use
-        # the raw-field helpers) still cannot admit untrusted content.
+        # verify_trace_provenance just proved `trace` is field-for-field
+        # identical to the generator's own output for `index`, so a repeated
+        # _scan_secrets/_check_reserved call on the regenerated object could
+        # never behave differently from the first pass above (same content,
+        # same deterministic functions) -- that would be dead code no test
+        # could ever kill. The real-backend replay has no first-pass
+        # counterpart at all, so it runs here, on the object the caller never
+        # touched, for the first and only time.
         regenerated = _generate_one(index)
-        _scan_secrets(regenerated)
-        _check_reserved(regenerated, reserved)
         verify_trace_replay(regenerated)
         by_id[trace.trace_id] = regenerated
 

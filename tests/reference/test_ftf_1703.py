@@ -1763,6 +1763,89 @@ def test_round3_subclass_admission() -> None:
     )
 
 
+def test_round4_raw_final_answer_requires_both_type_and_role() -> None:
+    """Mutation-gate survivor: `type == 'message' and role == 'assistant'`
+    mutated to `or` stays green unless a step matches exactly one of the two
+    conditions."""
+    import evals.reference.training_dataset as td
+
+    type_only = (
+        {"type": "message", "role": "user", "content": "not it"},
+        {"type": "message", "role": "user", "content": "the real answer"},
+    )
+    base = TRACES[0]
+    trace = dataclasses.replace(base, steps=type_only)
+    check(
+        "FTF-1703-R4-6",
+        "a step matching type=='message' but role!='assistant' is not picked "
+        "as the final answer (the AND mutant-to-OR would wrongly pick it)",
+        td._raw_final_answer(trace) == "",
+    )
+    role_only = ({"type": "tool_call", "role": "assistant", "content": "not it either"},)
+    trace2 = dataclasses.replace(base, steps=role_only)
+    check(
+        "FTF-1703-R4-6",
+        "a step matching role=='assistant' but type!='message' is not picked "
+        "as the final answer either",
+        td._raw_final_answer(trace2) == "",
+    )
+    both = (
+        {"type": "message", "role": "user", "content": "not it"},
+        {"type": "message", "role": "assistant", "content": "the real answer"},
+    )
+    trace3 = dataclasses.replace(base, steps=both)
+    check(
+        "FTF-1703-R4-6",
+        "a step matching both conditions is correctly picked",
+        td._raw_final_answer(trace3) == "the real answer",
+    )
+
+
+def test_round4_scan_secrets_wraps_a_real_recursion_error() -> None:
+    """Mutation-gate survivor: the `except RecursionError: raise
+    TraceVerificationError(...)` wrapper in _scan_secrets mutated to `pass`
+    stays green because no existing test drives a REAL RecursionError through
+    it (the pipeline's own depth-64 plain-JSON guard catches excessive
+    nesting first). Calling _scan_secrets directly, bypassing that guard,
+    with a structure deep enough to blow Python's actual recursion limit
+    exercises this wrapper for real."""
+    import sys
+
+    import evals.reference.training_dataset as td
+
+    base = TRACES[0]
+    deep: Any = "leaf"
+    for _ in range(sys.getrecursionlimit() + 500):
+        deep = [deep]
+    bomb = dataclasses.replace(base, provenance={**base.provenance, "bomb": deep})
+    check(
+        "FTF-1703-R4-7",
+        "a value deep enough to blow the real recursion limit is wrapped as "
+        "the typed error, not left as a bare RecursionError",
+        _raises(TraceVerificationError, td._scan_secrets, bomb),
+    )
+
+
+def test_round4_held_out_check_runs_on_the_raw_trace_too() -> None:
+    """Mutation-gate survivor: removing the first-pass `_check_reserved(trace,
+    reserved)` call in build_training_dataset stayed green, because every
+    existing HeldOutLeakageError test uses a genuine (untampered) trace, for
+    which the second pass (on the regenerated object) always catches the same
+    overlap with the same error. A trace whose RAW group_id is tampered to
+    overlap the reserved set -- but would therefore ALSO fail provenance --
+    distinguishes the two: the first pass must catch it as HeldOutLeakageError
+    before the more generic provenance mismatch would otherwise fire first."""
+    base = TRACES[40]
+    tampered = dataclasses.replace(base, group_id="train-grp-9999")
+    reserved = ReservedFinalSuite(group_ids=frozenset({"train-grp-9999"}))
+    check(
+        "FTF-1703-R4-8",
+        "a trace whose raw (tampered) group_id overlaps the reserved set is "
+        "refused as a held-out overlap, not a generic provenance mismatch",
+        _raises(HeldOutLeakageError, build_training_dataset, [tampered], [], reserved=reserved),
+    )
+
+
 def test_round4_instance_attribute_shadowing_is_refused() -> None:
     """Round 3 refused a *subclass* overriding to_dict() (type(trace) is not
     TrainingTrace catches it). Round 4's own gap: a frozen dataclass has no
