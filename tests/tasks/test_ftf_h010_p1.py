@@ -46,6 +46,7 @@ from __future__ import annotations
 import contextlib
 import http.client
 import json
+import os
 import re
 import socket
 import sys
@@ -444,6 +445,12 @@ def test_s1_each_origin_creates_a_queued_job_with_one_audit_event() -> None:
             and event["request_id"] == "req-1"
             and event["details"]["requested_origin"] == "imported_weights",
         )
+        check(
+            CID,
+            "audit details carry the real artifact id (present) and None for the absent parent",
+            event["details"]["trainable_artifact_id"] == str(artifact)
+            and event["details"]["parent_model_version_id"] is None,
+        )
 
         job2 = crud.create_model_import_job(
             session,
@@ -459,6 +466,13 @@ def test_s1_each_origin_creates_a_queued_job_with_one_audit_event() -> None:
             CID,
             "imported_adapter with a real base is queued",
             job2.state == "queued" and job2.parent_model_version_id == adapter_base,
+        )
+        event2 = audit.events[-1]
+        check(
+            CID,
+            "audit details carry the real parent id (present) and None for the absent artifact",
+            event2["details"]["parent_model_version_id"] == str(adapter_base)
+            and event2["details"]["trainable_artifact_id"] is None,
         )
 
         job3 = crud.create_model_import_job(
@@ -713,6 +727,108 @@ def test_s7_get_and_list_are_scoped_to_the_exact_project() -> None:
         )
 
 
+def test_s8_schema_level_validators_are_exact_and_independent() -> None:
+    check(
+        CID,
+        "validate_origin refuses a case/whitespace variant of a real origin "
+        "(never normalized, even at the schema layer's own entry point)",
+        _raises(lambda: schema.validate_origin(" External_Endpoint "), schema.ModelImportValidationError)
+        and _raises(lambda: schema.validate_origin("FACTORY_TRAINED"), schema.ModelImportValidationError),
+    )
+    f = schema.validate_external_provider_model_ref
+    check(CID, "an empty external_provider_model_ref is refused", _raises(lambda: f(""), schema.ModelImportValidationError))
+    check(CID, "a None external_provider_model_ref is refused", _raises(lambda: f(None), schema.ModelImportValidationError))
+    check(CID, "a non-string external_provider_model_ref is refused", _raises(lambda: f(7), schema.ModelImportValidationError))
+    check(
+        CID,
+        "a value over the max length is refused, exactly at the max is accepted",
+        _raises(lambda: f("x" * (schema.EXTERNAL_PROVIDER_MODEL_REF_MAX_LENGTH + 1)), schema.ModelImportValidationError)
+        and f("x" * schema.EXTERNAL_PROVIDER_MODEL_REF_MAX_LENGTH) == "x" * schema.EXTERNAL_PROVIDER_MODEL_REF_MAX_LENGTH,
+    )
+    check(CID, "a normal value round-trips unchanged", f("provider://m") == "provider://m")
+
+    def _bad_job() -> Any:
+        return schema.ModelImportJob(
+            id=uuid.uuid4(),
+            organization_id=_ORG,
+            project_id=_PROJECT,
+            requested_origin="bogus-origin",
+            parent_model_version_id=None,
+            trainable_artifact_id=None,
+            external_provider_model_ref=None,
+            state="queued",
+            failure_code=None,
+            created_by="x",
+            created_at=_NOW,
+            updated_at=_NOW,
+        )
+
+    check(
+        CID,
+        "ModelImportJob.__init__ re-validates requested_origin itself, independent of crud.py "
+        "(defense in depth: constructing the ORM object directly with a bad origin still refuses)",
+        _raises(_bad_job, schema.ModelImportValidationError),
+    )
+
+
+def test_s9_origin_branch_comparisons_are_exact_never_normalized() -> None:
+    """crud.create_model_import_job's own `requested_origin == "external_endpoint"`/
+    `== "imported_adapter"` branch guards must use exact string equality, never a
+    case/whitespace-tolerant match -- probed by bypassing the module's own
+    validate_origin (which already refuses any such variant) to show the
+    *comparison itself* does not quietly normalize one through."""
+    with _store_env() as (session, audit):
+        original = crud.validate_origin
+        crud.validate_origin = lambda v: v  # identity: let an un-normalized value through
+        try:
+            endpoint_message: str | None = None
+            try:
+                crud.create_model_import_job(
+                    session,
+                    _CTX,
+                    project_id=_PROJECT,
+                    requested_origin=" External_Endpoint ",
+                    parent_model_version_id=None,
+                    trainable_artifact_id=None,
+                    external_provider_model_ref=None,
+                    actor=_ACTOR,
+                )
+            except schema.ModelImportValidationError as exc:
+                endpoint_message = str(exc)
+            check(
+                CID,
+                "a padded/cased 'external_endpoint' variant never matches the exact == guard -- "
+                "its own external_provider_model_ref requirement never fires for it",
+                endpoint_message is not None
+                and "requires a real external_provider_model_ref" not in endpoint_message,
+            )
+
+            adapter_message: str | None = None
+            try:
+                crud.create_model_import_job(
+                    session,
+                    _CTX,
+                    project_id=_PROJECT,
+                    requested_origin=" Imported_Adapter ",
+                    parent_model_version_id=None,
+                    trainable_artifact_id=None,
+                    external_provider_model_ref=None,
+                    actor=_ACTOR,
+                )
+            except schema.ModelImportValidationError as exc:
+                adapter_message = str(exc)
+            check(
+                CID,
+                "a padded/cased 'imported_adapter' variant never matches the exact == guard -- "
+                "its own parent_model_version_id (base) requirement never fires for it",
+                adapter_message is not None
+                and "requires parent_model_version_id" not in adapter_message,
+            )
+        finally:
+            crud.validate_origin = original
+        check(CID, "neither probe wrote a job", not _jobs(session) and not audit.events)
+
+
 # -- R*: routes, driven over real HTTP with the DB-touching seams replaced ----
 
 _ISSUER = "https://issuer.example"
@@ -819,14 +935,16 @@ def _job_ns(
     job_id: uuid.UUID = _JOB_ID,
     origin: str = "factory_trained",
     state: str = "queued",
+    parent_model_version_id: uuid.UUID | None = None,
+    trainable_artifact_id: uuid.UUID | None = None,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         id=job_id,
         organization_id=_ORG_ID,
         project_id=_PROJECT_ID,
         requested_origin=origin,
-        parent_model_version_id=None,
-        trainable_artifact_id=None,
+        parent_model_version_id=parent_model_version_id,
+        trainable_artifact_id=trainable_artifact_id,
         external_provider_model_ref=None,
         state=state,
         failure_code=None,
@@ -895,6 +1013,13 @@ def test_r1_post_body_validation() -> None:
                 result = _request(base, "POST", _collection_path(), payload=payload)
                 check(CID, f"{label} -> 400", result.status == 400)
             check(CID, "a list body -> 400", _request(base, "POST", _collection_path(), payload=[1]).status == 400)
+            check(
+                CID,
+                "a list body containing only a valid body-key string is still 400 "
+                "(the is-a-dict check runs first; proves it is never skipped)",
+                _request(base, "POST", _collection_path(), payload=["requested_origin"]).status
+                == 400,
+            )
             check(CID, "broken JSON -> 400", _request(base, "POST", _collection_path(), raw=b"{").status == 400)
             check(CID, "no body -> 400", _request(base, "POST", _collection_path()).status == 400)
             check(CID, "no refused request reached the store", not env.create_calls)
@@ -1010,12 +1135,51 @@ def test_r_get_list_and_item() -> None:
             one = _request(base, "GET", _item_path()).json()
             check(
                 CID,
-                "a single job is serialized with every contract field",
+                "a single job is serialized with exactly the contract's own key set",
+                set(one)
+                == {
+                    "id",
+                    "organization_id",
+                    "project_id",
+                    "requested_origin",
+                    "parent_model_version_id",
+                    "trainable_artifact_id",
+                    "external_provider_model_ref",
+                    "state",
+                    "failure_code",
+                    "created_by",
+                    "created_at",
+                    "updated_at",
+                },
+            )
+            check(
+                CID,
+                "a single job is serialized with every contract field's real value "
+                "(organization_id/project_id are the real ids, never a placeholder)",
                 one["id"] == str(_JOB_ID)
+                and one["organization_id"] == str(_ORG_ID)
+                and one["project_id"] == str(_PROJECT_ID)
                 and one["requested_origin"] == "external_endpoint"
+                and one["parent_model_version_id"] is None
+                and one["trainable_artifact_id"] is None
                 and one["state"] == "queued"
                 and one["failure_code"] is None
-                and one["created_at"] == _NOW.isoformat(),
+                and one["created_by"] == "ml-1"
+                and one["created_at"] == _NOW.isoformat()
+                and one["updated_at"] == _NOW.isoformat(),
+            )
+
+            real_parent, real_artifact = uuid.uuid4(), uuid.uuid4()
+            env.get_result = _job_ns(
+                parent_model_version_id=real_parent, trainable_artifact_id=real_artifact
+            )
+            with_ids = _request(base, "GET", _item_path()).json()
+            check(
+                CID,
+                "when the real row carries a parent/artifact id, serialization carries "
+                "the exact same id as a string, never None and never a different value",
+                with_ids["parent_model_version_id"] == str(real_parent)
+                and with_ids["trainable_artifact_id"] == str(real_artifact),
             )
 
             env.get_error = crud.ModelImportJobNotFoundError("gone")
@@ -1124,6 +1288,83 @@ def test_c1_module_never_moves_a_job_past_queued() -> None:
         "the routes module never calls session.execute/update directly (grant stays a future worker's job)",
         "UPDATE model_import_jobs" not in routes_src and "UPDATE model_import_jobs" not in crud_src,
     )
+
+
+def _full_app_env() -> dict[str, str]:
+    return {
+        "SOVRA_ENVIRONMENT": "staging",
+        "SOVRA_DATABASE_URL": "postgresql+psycopg://sovra_app:s3cr3t@db.internal:5432/sovra",
+        "SOVRA_LITELLM_GATEWAY_URL": "https://litellm.internal.example",
+        "SOVRA_PRIVACY_POLICY": "standard",
+        "SOVRA_TLS_VERIFY": "true",
+        "SOVRA_MAX_TRAINING_BUDGET_USD": "500.00",
+        "SOVRA_LITELLM_API_KEY_SECRET_REF": "vault://sovra/litellm-api-key",
+        "SOVRA_DATABASE_PASSWORD_SECRET_REF": "openbao://sovra/db-password",
+        "SOVRA_OIDC_ISSUER": "http://idp.internal.example",
+        "SOVRA_OIDC_CLIENT_ID": "sovra-factory",
+        "SOVRA_OIDC_CLIENT_SECRET_REF": "vault://sovra/oidc-client-secret",
+        "SOVRA_OIDC_REDIRECT_URI": "http://factory.internal.example/auth/callback",
+        "SOVRA_OIDC_AUTHORIZATION_ENDPOINT": "http://idp.internal.example/authorize",
+        "SOVRA_OIDC_TOKEN_ENDPOINT": "http://idp.internal.example/token",
+        "SOVRA_OIDC_JWKS_URI": "http://idp.internal.example/jwks",
+        "SOVRA_SESSION_SIGNING_KEY_SECRET_REF": "vault://sovra/session-signing-key",
+        "SOVRA_OIDC_ALLOWED_ORIGIN": "http://factory.internal.example",
+        "SOVRA_OIDC_CLIENT_SECRET_VALUE": "not-a-real-secret",
+        "SOVRA_SESSION_SIGNING_KEY_VALUE": "not-a-real-signing-key",
+    }
+
+
+def test_x_create_app_mounts_the_model_import_routes() -> None:
+    """Same no-DB env fixture test_ftf_0308_p1/test_ftf_0214 use:
+    `create_engine` is lazy and the role gate runs before any session is
+    opened, so no database is needed. Exercises the real, unmodified
+    `create_app()` -- the only way to kill the two mutants a diff anywhere
+    inside that one large function makes reachable (an inserted fail-open
+    `return None` at its very top, and a flipped `SOVRA_ENVIRONMENT ==
+    "production"` comparison), neither of which this file's other,
+    narrower router-level tests exercise."""
+    env = _full_app_env()
+    added = set(env) - set(os.environ)
+    old = {k: os.environ[k] for k in env if k in os.environ}
+    os.environ.update(env)
+    try:
+        import app.main as main_module
+
+        app = main_module.create_app()
+    finally:
+        for key in added:
+            os.environ.pop(key, None)
+        os.environ.update(old)
+    check(CID, "create_app returns a real app", app is not None)
+    with _running_app_from(app) as base:
+        for method, path in (
+            ("GET", _collection_path()),
+            ("POST", _collection_path()),
+            ("GET", _item_path()),
+        ):
+            result = _request(base, method, path, principal=None)
+            check(
+                CID,
+                f"{method} {path} is mounted on the real app (401, not 404)",
+                result.status == 401,
+            )
+
+
+@contextlib.contextmanager
+def _running_app_from(app: FastAPI):
+    port = _free_port()
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    for _ in range(200):
+        if server.started:
+            break
+        time.sleep(0.02)
+    try:
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)
 
 
 def main() -> int:

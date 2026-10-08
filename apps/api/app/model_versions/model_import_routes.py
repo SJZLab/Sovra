@@ -112,9 +112,20 @@ async def _read_post_body(request: Request) -> dict[str, Any]:
         raise HTTPException(
             status_code=400, detail="requested_origin is required and must be a string"
         )
-    for key in ("parent_model_version_id", "trainable_artifact_id"):
-        if key in payload and payload[key] is not None and not isinstance(payload[key], str):
-            raise HTTPException(status_code=400, detail=f"{key} must be a uuid or null")
+    if (
+        "parent_model_version_id" in payload
+        and payload["parent_model_version_id"] is not None
+        and not isinstance(payload["parent_model_version_id"], str)
+    ):
+        raise HTTPException(
+            status_code=400, detail="parent_model_version_id must be a uuid or null"
+        )
+    if (
+        "trainable_artifact_id" in payload
+        and payload["trainable_artifact_id"] is not None
+        and not isinstance(payload["trainable_artifact_id"], str)
+    ):
+        raise HTTPException(status_code=400, detail="trainable_artifact_id must be a uuid or null")
     if "external_provider_model_ref" in payload and payload[
         "external_provider_model_ref"
     ] is not None and not isinstance(payload["external_provider_model_ref"], str):
@@ -205,7 +216,7 @@ def build_model_import_router(
         with tenant_scoped_session_for(session_factory, tenant_context) as session:
             jobs = list_model_import_jobs(session, tenant_context, project_id)
             body = [_serialize(j) for j in jobs]
-        return JSONResponse(body, status_code=200)
+        return JSONResponse(body)
 
     @router.get(_ITEM_PATH)
     async def get_one(
@@ -222,6 +233,6 @@ def build_model_import_router(
                 body = _serialize(job)
         except (ModelImportJobNotFoundError, TenantContextError) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
-        return JSONResponse(body, status_code=200)
+        return JSONResponse(body)
 
     return router
