@@ -49,8 +49,9 @@ never a soft warning folded into the result:
 
 Every result records the locked rubric id/version, the requested judge model
 and the model the gateway says it actually resolved; a resolved model that
-is not in the approved set (or is the candidate itself) is
-`MODEL_MISMATCH`, never a verdict ("must not silently switch"). The verdict
+is not in the approved set (or is the candidate itself), or a response that
+never echoes which model served it at all, is `MODEL_MISMATCH`, never a
+verdict ("must not silently switch" covers silence, not only disagreement). The verdict
 carries one score per rubric criterion (exactly the locked rubric's ids).
 Model output is parsed as strict JSON: duplicate keys, `NaN`/`Infinity` and
 non-finite numbers are refused, `confidence` and every score must lie in
@@ -774,17 +775,25 @@ def grade_llm_judge(
         RouteIdentityState.VERIFIED if resolved_model is not None else RouteIdentityState.UNVERIFIED
     )
 
-    if resolved_model is not None and (
-        resolved_model not in approved_judge_model_ids or resolved_model == candidate_model_id
+    if (
+        resolved_model is None
+        or resolved_model not in approved_judge_model_ids
+        or resolved_model == candidate_model_id
     ):
-        # The gateway served a different model than the approved judge --
-        # never a verdict, and never silently accepted (Section 69.5).
+        # A gateway that never echoes which model served the request is
+        # exactly as unverifiable as one that echoes a different model --
+        # neither can ever become a verdict (Section 69.5: "must not
+        # silently switch" covers silence, not only open disagreement).
         return make(
             LlmJudgeState.MODEL_MISMATCH,
             resolved_model=resolved_model,
             usage=usage,
             latency_ms=latency_ms,
-            detail="gateway resolved the request to a model outside the approved judge set",
+            detail=(
+                "gateway resolved the request to a model outside the approved judge set"
+                if resolved_model is not None
+                else "gateway response never echoed which model served the request"
+            ),
         )
 
     try:
