@@ -398,7 +398,12 @@ class S3ObjectStore:
         return result["version_id"]
 
     def retention_until(self, key: str) -> datetime | None:
-        info = self._client.get_object_retention(self._bucket, key)
+        try:
+            info = self._client.get_object_retention(self._bucket, key)
+        except S3Error as exc:
+            if exc.status_code == 404:  # no retention configured on this object version
+                return None
+            raise
         raw = info.get("RetainUntilDate")
         if info.get("Mode") != "COMPLIANCE" or not isinstance(raw, str):
             return None

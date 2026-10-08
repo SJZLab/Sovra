@@ -806,6 +806,7 @@ class StubS3Client:
         self.entries: list[Any] = []
         self.retention: dict[str, dict[str, str]] = {}
         self.calls: list[tuple[str, str]] = []
+        self.failing: dict[str, int] = {}
 
     def list_object_versions(self, bucket: str, *, prefix: str = "") -> list[dict]:
         return [
@@ -828,6 +829,8 @@ class StubS3Client:
         self.retention[key] = {"Mode": mode, "RetainUntilDate": retain_until_date}
 
     def get_object_retention(self, bucket: str, key: str) -> dict[str, str]:
+        if key in self.failing:
+            raise S3Error(self.failing[key], "Any", "forced")
         return self.retention.get(key, {})
 
 
@@ -897,6 +900,18 @@ def test_s3_adapter_shape() -> None:
         store.retention_until("bad") is None,
     )
     check("FTF-1602-N1", "no retention is None", store.retention_until("none") is None)
+    stub.failing["nolock"] = 404
+    check(
+        "FTF-1602-N1",
+        "a 404 from the retention read means no retention, not a crash",
+        store.retention_until("nolock") is None,
+    )
+    stub.failing["boom"] = 500
+    check(
+        "FTF-1602-N1",
+        "any other S3 error on the retention read propagates",
+        raises(S3Error, store.retention_until, "boom") is not None,
+    )
     offset = {"Mode": "COMPLIANCE", "RetainUntilDate": "2026-11-01T02:00:00+02:00"}
     stub.retention["tz"] = offset
     check(
