@@ -1,6 +1,54 @@
 # BLOCKER.md
 
-_No open blockers. The entries below are resolved history._
+## LIVE 2026-10-08T23:41Z — GitHub Actions runner-provisioning outage recurrence (same class as
+## the 2026-09-30/10-01 occurrences below)
+
+**What failed:** on PR #663 (`relay/FTF-0903-r6`), the `gate`, `classify`, `mutation-gate` and
+`relay-policy` jobs failed identically on three separate attempts (the original run and two
+re-runs: `created_at`→`completed_at` deltas of 2-3 seconds each time, `runner_id: 0`,
+`runner_name: ""` on every attempt — never scheduled, before any test body ran). Confirmed this is
+not specific to this PR or this one workflow run: at the exact same moment (23:41:18Z-23:41:20Z),
+an unrelated, independent PR (#662, `claude/zealous-brown-verta8`, a `[CERT]` run, re-run attempt
+2) showed the identical signature on its own `gate`/`classify` jobs — 2 seconds, `runner_id: 0`.
+Two different runs, two different branches, two different sessions' work, failing identically at
+the same instant rules out anything specific to PR #663's own diff (a tests-only change to
+`tests/tasks/test_ftf_0903.py`) or to one cursed workflow-run id.
+
+**What was tried:** re-ran the failed jobs once (the sanctioned single retry for "died before any
+test body ran") — identical failure. Checked whether this was narrower than repo-wide (e.g.
+GitHub Actions concurrency contention from PR #658's own ~61-job run in the same window) by
+re-running again after that PR's load should have cleared — identical failure a third time, and
+by then PR #658's own batch had already mostly completed, weakening the concurrency-contention
+theory. The cross-PR correlation at the same timestamp is the strongest evidence: this is an
+account/platform-level condition, not something a further push or retry from inside this
+sandbox can fix.
+
+**Why this is escalated now rather than retried again:** per `docs/operations/routines.md` CI-red
+rules, the one-re-run cap for this failure class is already spent, and "a second failure is real"
+— a third identical occurrence, now cross-PR-confirmed, is not something to keep probing from
+inside the sandbox. Per Law 17 ("provider failure/outage/unknown state stays visible as blocked
+... never converted to success") and this repo's own precedent for this exact failure class
+(2026-09-21, 2026-09-27, 2026-09-30/10-01 below), this is recorded here rather than left implicit
+in PR comments, and PR #663 is not merged (merge requires a green `ci-verdict`, which cannot be
+exercised while this holds).
+
+**Scope — this does not block all relay work:** per the 2026-09-30 precedent's own resolution,
+code-level work (implementing, committing, pushing, opening draft PRs) does not require CI and
+can continue; only *merging* (which needs a green `ci-verdict` on the final head) is blocked for
+any PR caught by this outage. This session continued other relay-owned work (FTF-1703 round 4)
+on a separate branch while this held.
+
+**Three route options for whoever picks this up next (same as the 2026-09-30 precedent):**
+1. Check GitHub Actions account/org-level limits (Settings → Billing and plans → Actions, or
+   Settings → Actions → General → concurrent job limits) for a spending cap or concurrency ceiling
+   hit by today's volume of parallel automated PR pushes.
+2. Check the GitHub Actions status/incident page directly (this sandbox's egress cannot reach it)
+   for a live platform-wide incident.
+3. Do nothing and let it clear on its own, as all three prior occurrences did (2026-09-21,
+   2026-09-27, 2026-09-30/10-01) — re-check one fresh run before re-diagnosing from scratch; if
+   still `runner_id: 0`, this entry already covers it.
+
+_No further re-run on PR #663 from this session until this is confirmed cleared on a fresh run._
 
 ## RESOLVED 2026-10-04 by owner decision (option 1): FTF-1206 entry below
 The owner approved adding FTF-1206A (Organization gateway policy persistence) as a Release 1
