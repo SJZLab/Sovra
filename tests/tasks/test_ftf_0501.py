@@ -424,7 +424,13 @@ AWS_DOC_SECRET = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 AWS_DOC_SIGNATURE = "aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404"
 _EP = s3.S3Endpoint("http", "storage.internal", 9000)
 _CR = s3.S3Credentials("AK", "SK")
-_T0 = datetime(2026, 10, 8, 12, 0, 0, tzinfo=UTC)
+# Anchored to the real clock when the file loads, never to a calendar date: the
+# in-process server checks presigned URLs against the real clock, and the
+# product refuses to presign for a session whose expiry has already passed.
+# `_T0` is one hour ahead so `expires_at=_T0` is still in the future when a test
+# presigns with the real clock; the tests that use it only compare it to other
+# values derived from it.
+_T0 = (datetime.now(UTC) + timedelta(hours=1)).replace(microsecond=0)
 
 
 def _presign(**over: Any) -> str:
@@ -763,7 +769,7 @@ def test_g1_grants_lifetime_and_bounds() -> None:
         body = _jsonl(12 * MIB)
         target = _target(body)
         uid = dos.start_multipart(settings.client(), settings, target)
-        grants = dos.presign_part_urls(settings, target, uid, [3, 1], now=_T0.replace(year=2026))
+        grants = dos.presign_part_urls(settings, target, uid, [3, 1], now=_T0)
         check(
             f"{CID}-G1",
             "one grant per requested part, in request order",
@@ -1490,7 +1496,9 @@ _ORG_ID = uuid.uuid4()
 _PROJECT = uuid.uuid4()
 _OTHER_PROJECT = uuid.uuid4()
 _CONN = uuid.uuid4()
-_NOW = datetime(2026, 10, 8, 12, 0, 0, tzinfo=UTC)
+# The route tests sign URLs at `_NOW` and the in-process server checks them
+# against the real clock, so it is the real time at load, not a fixed date.
+_NOW = datetime.now(UTC).replace(microsecond=0)
 _PRINCIPALS = {
     name: AuthenticatedPrincipal(issuer="https://issuer.example", subject=name)
     for name in ("ml", "admin", "orgadmin", "viewer", "evaluator", "approver")
