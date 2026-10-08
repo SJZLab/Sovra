@@ -12776,16 +12776,52 @@ FTF-R004:
   proving_symbol: ''
   proving_test: ''
 FTF-R005:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Integrate internal MLflow tracking and model registry projection
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=reuse_architecture; requirements=CAP-12, CAP-19, CAP-21; scenarios=Q35, Q38, Q40; deps=FTF-R002,
-    FTF-1001, FTF-1002
-  proof_state: UNPROVEN
+  evidence_hash: 6fc6d4544829291e54f5bdd634d0057ad7580104
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=reuse_architecture; requirements=CAP-12, CAP-19, CAP-21; scenarios=Q35, Q38, Q40;
+    deps=FTF-R002, FTF-1001, FTF-1002 (all CERTIFIED).
+    Built (packages/integrations/mlflow/, stdlib only, no new runtime dependency): client.py is a
+    versioned REST 2.0 adapter that sends every request through the shared FTF-H006
+    outbound_guard.guarded_fetch (caller-supplied ConnectionPolicy, no redirects, pinned address),
+    maps outcomes to distinct errors (TrackingUnavailableError for network/5xx,
+    TrackingRejectedError for refusals, NotFound/AlreadyExists), parses strict JSON (duplicate
+    keys, NaN/Infinity, oversize and non-objects refused), interpolates only identifier-shaped
+    values into filters, bounds batches and pagination, refuses any model source outside the
+    approved internal artifact prefixes before a byte is sent, and exposes no alias or stage
+    write at all. reconcile.py derives a deterministic SHA-256 logical run key from
+    (organization_id, job_id) and an experiment per organization, searches by that key before it
+    creates (an ambiguous create is adopted, two claimants are AMBIGUOUS, a run tagged for another
+    tenant is refused), logs results with the caller's own timestamps and a completion tag holding
+    the payload hash (replay writes nothing, a different payload for a completed run is a conflict),
+    and runs an outbox state machine: outage keeps TRACKING_SYNC_PENDING with the measured result
+    intact, a refusal is FAILED, an ambiguity AMBIGUOUS, never SYNCED. TrackedRun refuses any data
+    purpose outside the closed allowlist train/validation/development_eval (so final_qualification
+    and any spelling variant of it never leave) and any export class other than metrics_only or
+    redacted_metadata. registry_binding.py binds one external version per Factory ModelVersion
+    (name derived from organization and ModelVersion ids), re-verifies the live record field by
+    field against the Factory envelope (organization, ModelVersion, artifact digest, run, source,
+    name) and projects a fixed read-only field set with approval_authority factory; tags,
+    aliases and stages read from MLflow carry no authority and cannot cause or mask drift.
+    Clause to test: acceptance 1 (real run/model ids reconciled, hashes stay authoritative) is
+    R005-A1/A1b and R005-N1 in tests/integration/test_mlflow_projection.py against a live
+    mlflow 3.1.1 server; acceptance 2 (outage buffers and reports pending, exact lineage
+    restored) is R005-A2; negative forged tags/aliases is R005-N1, cross-tenant is R005-N2, sealed
+    export is R005-N3, ambiguous replay is R005-A1/N4, unapproved source is R005-N5. The no-network
+    suite tests/tasks/test_ftf_r005.py covers every guard in all three modules and is
+    mutation-gated.
+    Disclosed narrowings: the durable outbox store (a table) and the GET
+    /model-versions/{id}/registry-binding route are the wiring task's, this task ships the state
+    machine against an OutboxStore protocol (in-memory store used in tests) and the projection
+    function the route will call; proving_symbol stays blank because no live route calls it yet.
+    The CI job installs mlflow 3.1.1 with sqlalchemy below 2.1 inside the job only (3.1.1 imports a
+    symbol SQLAlchemy 2.1 removed, reproduced locally).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_r005.py
 FTF-R006:
   certification_state: NONE
   criticality: MUST
