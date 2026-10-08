@@ -22,15 +22,31 @@ key reference is absent from the caller's recoverable set) raises
 `BackupIncompleteError` naming every issue, before anything is written. Issue
 text never contains object content or key material.
 
+The record is self-sufficient (Section 48: a backup that has never been restored does
+not count): it carries every manifest entry (key, version_id, kind, artifact_id, shard
+layout, encryption key reference, tenant, object metadata), so `restore_backup` can
+rebuild the objects into a clean bucket from the backup alone and prove bytes, sha256,
+key/version mapping and metadata. A corrupted, partial or same-size-swapped backup is
+refused before anything is written (Law 17).
+
+Tenant scoping: every `BlobRef` names its `organization_id`; one backup holds exactly one
+tenant, every key must live under `tenants/<organization_id>/`, backups are stored under
+`<prefix>/<organization_id>/<backup_id>`, and verify/restore refuse a record of another
+tenant and never write outside the tenant's own key prefix.
+
 Scope, disclosed: the BackupRecord/RestoreRecord JSON Schemas in
 `packages/contracts/jsonschema/16-domain.schema.json` are FTF-1601's and frozen
 (`shared_lock_required` is empty here), so this task does not extend them; the
-record below is this module's own typed output. Restore automation is FTF-1603.
+records below are this module's own typed output. Restore *automation* (scheduling,
+runbooks) is FTF-1603.
 
 CLI:
     python scripts/object_storage_backup.py backup --manifest m.json \\
         --source-bucket src --target-bucket dst --known-key-ref kms/a ...
-    python scripts/object_storage_backup.py verify --target-bucket dst --backup-id <id>
+    python scripts/object_storage_backup.py verify --target-bucket dst --backup-id <id> \\
+        --organization-id <org>
+    python scripts/object_storage_backup.py restore --target-bucket dst --restore-bucket clean \\
+        --backup-id <id> --organization-id <org>
 Endpoint and credentials come from the SOVRA_STORAGE_S3_* variables named in
 infra/internal/storage-profile.yaml.
 """
@@ -68,9 +84,11 @@ __all__ = [
     "BlobRef",
     "ObjectStorageBackupError",
     "ObjectStore",
+    "RestoreRecord",
     "S3ObjectStore",
     "VersionInfo",
     "create_backup",
+    "restore_backup",
     "verify_backup",
 ]
 
@@ -79,6 +97,7 @@ MAX_RETENTION_DAYS = 3650
 _SHA256 = re.compile(r"[0-9a-fA-F]{64}")
 _TEXT = re.compile(r"\S(?:.*\S)?", re.DOTALL)
 RECORD_NAME = "backup-record.json"
+_USER_METADATA = "x-amz-meta-"
 
 
 class ObjectStorageBackupError(RuntimeError):
@@ -103,6 +122,7 @@ class BlobRef:
     sha256: str
     size_bytes: int
     artifact_id: str
+    organization_id: str
     shard_index: int = 0
     shard_count: int = 1
     encrypted: bool = False
@@ -121,7 +141,11 @@ class ObjectStore(Protocol):
 
     def get_version(self, key: str, version_id: str) -> bytes: ...
 
+    def version_metadata(self, key: str, version_id: str) -> dict[str, str]: ...
+
     def put_retained(self, key: str, body: bytes, *, retain_until: datetime) -> str: ...
+
+    def put_restored(self, key: str, body: bytes, *, metadata: Mapping[str, str]) -> str: ...
 
     def get_latest(self, key: str) -> bytes: ...
 
@@ -129,8 +153,27 @@ class ObjectStore(Protocol):
 
 
 @dataclasses.dataclass(frozen=True)
+class BackupEntry:
+    """One manifest entry exactly as backed up, with the source object's metadata."""
+
+    kind: str
+    key: str
+    version_id: str
+    sha256: str
+    size_bytes: int
+    artifact_id: str
+    organization_id: str
+    shard_index: int
+    shard_count: int
+    encrypted: bool
+    encryption_key_ref: str | None
+    metadata: tuple[tuple[str, str], ...]  # sorted (name, value)
+
+
+@dataclasses.dataclass(frozen=True)
 class BackupRecord:
     backup_id: str
+    organization_id: str
     created_at: str
     retain_until: str
     manifest_sha256: str
@@ -138,6 +181,23 @@ class BackupRecord:
     blob_count: int
     total_bytes: int
     blobs: tuple[tuple[str, int], ...]  # (sha256, size_bytes), sorted
+    entries: tuple[BackupEntry, ...]  # sorted by (key, version_id)
+
+    def to_json(self) -> str:
+        return json.dumps(dataclasses.asdict(self), sort_keys=True, separators=(",", ":"))
+
+
+@dataclasses.dataclass(frozen=True)
+class RestoreRecord:
+    """Proof of a restore into a clean bucket: `restored` maps every backed-up
+    `(key, version_id)` to the version id the restored object now has."""
+
+    backup_id: str
+    organization_id: str
+    manifest_sha256: str
+    object_count: int
+    total_bytes: int
+    restored: tuple[tuple[str, str, str], ...]  # (key, backed-up version, restored version)
 
     def to_json(self) -> str:
         return json.dumps(dataclasses.asdict(self), sort_keys=True, separators=(",", ":"))
@@ -155,14 +215,24 @@ def _is_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
+def _tenant_prefix(organization_id: str) -> str:
+    return f"tenants/{organization_id}/"
+
+
 def _validate_ref(ref: object) -> BlobRef:
     if not isinstance(ref, BlobRef):
         raise ObjectStorageBackupError("manifest entries must be BlobRef")
     if ref.kind not in KINDS:
         raise ObjectStorageBackupError("blob kind must be dataset, model or result")
-    for name in ("key", "version_id", "artifact_id"):
+    for name in ("key", "version_id", "artifact_id", "organization_id"):
         if not _is_text(getattr(ref, name)):
             raise ObjectStorageBackupError(f"blob {name} must be a non-empty trimmed string")
+    if "/" in ref.organization_id:
+        raise ObjectStorageBackupError("blob organization_id must be a plain path segment")
+    if any(part in ("", ".", "..") for part in ref.key.split("/")):
+        raise ObjectStorageBackupError("blob key must not contain empty or dot path segments")
+    if not ref.key.startswith(_tenant_prefix(ref.organization_id)):
+        raise ObjectStorageBackupError("blob key is outside its organization's tenant prefix")
     if not isinstance(ref.sha256, str) or _SHA256.fullmatch(ref.sha256) is None:
         raise ObjectStorageBackupError("blob sha256 must be 64 hex characters")
     if not _is_int(ref.size_bytes) or ref.size_bytes < 0:
@@ -184,6 +254,8 @@ def _validate_manifest(refs: object) -> tuple[BlobRef, ...]:
     checked = tuple(_validate_ref(ref) for ref in refs)
     if not checked:
         raise ObjectStorageBackupError("manifest must reference at least one blob")
+    if len({ref.organization_id for ref in checked}) != 1:
+        raise ObjectStorageBackupError("a backup must hold exactly one organization's blobs")
     seen: set[tuple[str, str]] = set()
     for ref in checked:
         identity = (ref.key, ref.version_id)
@@ -193,9 +265,9 @@ def _validate_manifest(refs: object) -> tuple[BlobRef, ...]:
     return checked
 
 
-def _manifest_sha256(refs: Sequence[BlobRef]) -> str:
+def _manifest_sha256(entries: Sequence[BackupEntry]) -> str:
     canonical = json.dumps(
-        sorted((dataclasses.asdict(r) for r in refs), key=lambda d: (d["key"], d["version_id"])),
+        sorted((dataclasses.asdict(e) for e in entries), key=lambda d: (d["key"], d["version_id"])),
         sort_keys=True,
         separators=(",", ":"),
     )
@@ -272,6 +344,7 @@ def create_backup(
 
     issues = [*_shard_issues(refs), *_key_issues(refs, known_key_refs)]
     fetched: dict[str, bytes] = {}
+    entries: list[BackupEntry] = []
     for ref in refs:
         issue = _version_issue(ref, source.list_versions(ref.key))
         if issue is not None:
@@ -284,25 +357,51 @@ def create_backup(
             issues.append(f"{ref.key}@{ref.version_id}: sha256 differs from the manifest")
         else:
             fetched[_digest(body)] = body
+            entries.append(_entry(ref, source.version_metadata(ref.key, ref.version_id)))
     if issues:
         raise BackupIncompleteError(issues)
 
+    organization_id = refs[0].organization_id
     retain_until = created + timedelta(days=retain_days)
-    base = f"{prefix}/{identity}"
+    base = f"{prefix}/{organization_id}/{identity}"
     for digest, body in sorted(fetched.items()):
         _put_verified(target, f"{base}/blobs/{digest}", body, retain_until)
+    ordered = tuple(sorted(entries, key=lambda e: (e.key, e.version_id)))
     record = BackupRecord(
         backup_id=identity,
+        organization_id=organization_id,
         created_at=created.strftime("%Y-%m-%dT%H:%M:%SZ"),
         retain_until=retain_until.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        manifest_sha256=_manifest_sha256(refs),
-        object_count=len(refs),
+        manifest_sha256=_manifest_sha256(ordered),
+        object_count=len(ordered),
         blob_count=len(fetched),
         total_bytes=sum(len(b) for b in fetched.values()),
         blobs=tuple(sorted((d, len(b)) for d, b in fetched.items())),
+        entries=ordered,
     )
     _put_verified(target, f"{base}/{RECORD_NAME}", record.to_json().encode(), retain_until)
     return record
+
+
+def _entry(ref: BlobRef, metadata: Mapping[str, str]) -> BackupEntry:
+    if not isinstance(metadata, Mapping) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in metadata.items()
+    ):
+        raise ObjectStorageBackupError("object metadata must be a mapping of strings")
+    return BackupEntry(
+        kind=ref.kind,
+        key=ref.key,
+        version_id=ref.version_id,
+        sha256=ref.sha256.lower(),
+        size_bytes=ref.size_bytes,
+        artifact_id=ref.artifact_id,
+        organization_id=ref.organization_id,
+        shard_index=ref.shard_index,
+        shard_count=ref.shard_count,
+        encrypted=ref.encrypted,
+        encryption_key_ref=ref.encryption_key_ref,
+        metadata=tuple(sorted(metadata.items())),
+    )
 
 
 def _put_verified(target: ObjectStore, key: str, body: bytes, retain_until: datetime) -> None:
@@ -314,31 +413,90 @@ def _put_verified(target: ObjectStore, key: str, body: bytes, retain_until: date
         raise ObjectStorageBackupError(f"{key}: retention was not applied")
 
 
+def _parse_record(raw: bytes) -> BackupRecord:
+    data = json.loads(raw)
+    entries = tuple(
+        BackupEntry(
+            **{
+                **item,
+                "metadata": tuple((str(k), str(v)) for k, v in item["metadata"]),
+            }
+        )
+        for item in data["entries"]
+    )
+    return BackupRecord(
+        **{
+            **data,
+            "blobs": tuple((str(d), int(s)) for d, s in data["blobs"]),
+            "entries": entries,
+        }
+    )
+
+
+def _load_record(
+    target: ObjectStore, organization_id: str, backup_id: str, prefix: str
+) -> tuple[BackupRecord, str]:
+    if not _is_text(backup_id) or "/" in backup_id:
+        raise ObjectStorageBackupError("backup_id must be a plain path segment")
+    if not _is_text(organization_id) or "/" in organization_id:
+        raise ObjectStorageBackupError("organization_id must be a plain path segment")
+    base = f"{prefix}/{organization_id}/{backup_id}"
+    try:
+        record = _parse_record(target.get_latest(f"{base}/{RECORD_NAME}"))
+    except (S3Error, ValueError, TypeError, KeyError, AttributeError) as exc:
+        raise ObjectStorageBackupError("backup record is missing or unreadable") from exc
+    if record.backup_id != backup_id:
+        raise ObjectStorageBackupError("backup record belongs to a different backup")
+    if record.organization_id != organization_id:
+        raise ObjectStorageBackupError("backup record belongs to a different organization")
+    return record, base
+
+
+def _record_issues(record: BackupRecord) -> list[str]:
+    """Internal-consistency checks: the record's counts, bytes, blob list and manifest hash."""
+    if not all(isinstance(d, str) and _SHA256.fullmatch(d) and s >= 0 for d, s in record.blobs):
+        raise ObjectStorageBackupError("backup record lists a malformed blob")
+    issues: list[str] = []
+    for entry in record.entries:
+        if entry.organization_id != record.organization_id or not entry.key.startswith(
+            _tenant_prefix(record.organization_id)
+        ):
+            issues.append(f"{entry.key}@{entry.version_id}: entry is outside the record's tenant")
+        if any(part in ("", ".", "..") for part in entry.key.split("/")):
+            issues.append(f"{entry.key}@{entry.version_id}: entry key has dot path segments")
+    blob_sizes = dict(record.blobs)
+    if len(blob_sizes) != len(record.blobs):
+        issues.append("record lists the same blob twice")
+    entry_blobs = {e.sha256: e.size_bytes for e in record.entries}
+    if entry_blobs != blob_sizes:
+        issues.append("record blob list disagrees with its manifest entries")
+    if len(record.blobs) != record.blob_count:
+        issues.append("record blob_count disagrees with its blob list")
+    if len(record.entries) != record.object_count:
+        issues.append("record object_count disagrees with its manifest entries")
+    if sum(size for _, size in record.blobs) != record.total_bytes:
+        issues.append("record total_bytes disagrees with its blob list")
+    if _manifest_sha256(record.entries) != record.manifest_sha256:
+        issues.append("record manifest_sha256 disagrees with its manifest entries")
+    return issues
+
+
 def verify_backup(
     target: ObjectStore,
     backup_id: str,
     *,
+    organization_id: str,
+    expected_manifest_sha256: str | None = None,
     prefix: str = "backups",
     now: datetime | None = None,
 ) -> BackupRecord:
-    """Re-read a backup and prove every blob is present, hashed as recorded and still retained."""
-    if not _is_text(backup_id) or "/" in backup_id:
-        raise ObjectStorageBackupError("backup_id must be a plain path segment")
-    base = f"{prefix}/{backup_id}"
-    try:
-        raw = target.get_latest(f"{base}/{RECORD_NAME}")
-        data = json.loads(raw)
-        record = BackupRecord(
-            **{**data, "blobs": tuple((str(d), int(s)) for d, s in data["blobs"])}
-        )
-    except (S3Error, ValueError, TypeError, KeyError) as exc:
-        raise ObjectStorageBackupError("backup record is missing or unreadable") from exc
-    if not all(isinstance(d, str) and _SHA256.fullmatch(d) and s >= 0 for d, s in record.blobs):
-        raise ObjectStorageBackupError("backup record lists a malformed blob")
-    if record.backup_id != backup_id:
-        raise ObjectStorageBackupError("backup record belongs to a different backup")
+    """Re-read a backup and prove its record is consistent and every blob is present,
+    hashed as recorded and still retained."""
+    record, base = _load_record(target, organization_id, backup_id, prefix)
     current = now if now is not None else datetime.now(UTC)
-    issues: list[str] = []
+    issues = _record_issues(record)
+    if expected_manifest_sha256 is not None and record.manifest_sha256 != expected_manifest_sha256:
+        issues.append("record manifest_sha256 differs from the expected manifest")
     for digest, size in record.blobs:
         key = f"{base}/blobs/{digest}"
         try:
@@ -351,11 +509,70 @@ def verify_backup(
         held = target.retention_until(key)
         if held is None or held <= current:
             issues.append(f"{digest}: blob is not under retention")
-    if len(record.blobs) != record.blob_count:
-        issues.append("record blob_count disagrees with its blob list")
     if issues:
         raise BackupIncompleteError(issues)
     return record
+
+
+def restore_backup(
+    backup: ObjectStore,
+    destination: ObjectStore,
+    backup_id: str,
+    *,
+    organization_id: str,
+    expected_manifest_sha256: str | None = None,
+    prefix: str = "backups",
+    now: datetime | None = None,
+) -> RestoreRecord:
+    """Rebuild every backed-up object into a clean `destination` from the backup alone.
+
+    Everything is verified before the first write (nothing is restored from a corrupted,
+    partial or swapped backup), the destination must hold none of the keys, and each
+    restored object is read back and compared on bytes, sha256 and metadata."""
+    record = verify_backup(
+        backup,
+        backup_id,
+        organization_id=organization_id,
+        expected_manifest_sha256=expected_manifest_sha256,
+        prefix=prefix,
+        now=now,
+    )
+    base = f"{prefix}/{organization_id}/{backup_id}"
+    issues: list[str] = []
+    bodies: dict[str, bytes] = {}
+    for digest, size in record.blobs:
+        body = backup.get_latest(f"{base}/blobs/{digest}")
+        if len(body) != size or hashlib.sha256(body).hexdigest() != digest:
+            issues.append(f"{digest}: blob changed between verification and restore")
+        bodies[digest] = body
+    for entry in record.entries:
+        if destination.list_versions(entry.key):
+            issues.append(f"{entry.key}: destination is not clean")
+    if issues:
+        raise BackupIncompleteError(issues)
+
+    restored: list[tuple[str, str, str]] = []
+    for entry in record.entries:
+        body = bodies[entry.sha256]
+        new_version = destination.put_restored(entry.key, body, metadata=dict(entry.metadata))
+        if not _is_text(new_version):
+            raise ObjectStorageBackupError(f"{entry.key}: destination returned no version id")
+        stored = destination.get_version(entry.key, new_version)
+        if len(stored) != entry.size_bytes or _digest(stored) != entry.sha256:
+            raise ObjectStorageBackupError(f"{entry.key}: restored bytes differ from the backup")
+        if destination.version_metadata(entry.key, new_version) != dict(entry.metadata):
+            raise ObjectStorageBackupError(
+                f"{entry.key}: restored metadata differs from the backup"
+            )
+        restored.append((entry.key, entry.version_id, new_version))
+    return RestoreRecord(
+        backup_id=backup_id,
+        organization_id=organization_id,
+        manifest_sha256=record.manifest_sha256,
+        object_count=record.object_count,
+        total_bytes=sum(e.size_bytes for e in record.entries),
+        restored=tuple(restored),
+    )
 
 
 class S3ObjectStore:
@@ -383,9 +600,31 @@ class S3ObjectStore:
         body, _ = self._client.get_object(self._bucket, key, version_id=version_id)
         return body
 
+    def version_metadata(self, key: str, version_id: str) -> dict[str, str]:
+        """Content type and user metadata (`x-amz-meta-*`) of one object version."""
+        _, headers = self._client.get_object(self._bucket, key, version_id=version_id)
+        kept = {
+            name: value
+            for name, value in headers.items()
+            if name == "content-type" or name.startswith(_USER_METADATA)
+        }
+        return dict(sorted(kept.items()))
+
     def get_latest(self, key: str) -> bytes:
         body, _ = self._client.get_object(self._bucket, key)
         return body
+
+    def put_restored(self, key: str, body: bytes, *, metadata: Mapping[str, str]) -> str:
+        allowed = {
+            name: value
+            for name, value in metadata.items()
+            if name == "content-type" or name.startswith(_USER_METADATA)
+        }
+        if allowed.keys() != metadata.keys():
+            raise ObjectStorageBackupError(f"{key}: metadata has headers that cannot be restored")
+        # `retention_headers` is the client's generic extra-request-header mapping.
+        result = self._client.put_object(self._bucket, key, body, retention_headers=allowed)
+        return result["version_id"]
 
     def put_retained(self, key: str, body: bytes, *, retain_until: datetime) -> str:
         result = self._client.put_object(self._bucket, key, body)
@@ -455,7 +694,20 @@ def _run_backup(args: argparse.Namespace, client: S3Client) -> BackupRecord:
 
 
 def _run_verify(args: argparse.Namespace, client: S3Client) -> BackupRecord:
-    return verify_backup(S3ObjectStore(client, args.target_bucket), args.backup_id)
+    return verify_backup(
+        S3ObjectStore(client, args.target_bucket),
+        args.backup_id,
+        organization_id=args.organization_id,
+    )
+
+
+def _run_restore(args: argparse.Namespace, client: S3Client) -> RestoreRecord:
+    return restore_backup(
+        S3ObjectStore(client, args.target_bucket),
+        S3ObjectStore(client, args.restore_bucket),
+        args.backup_id,
+        organization_id=args.organization_id,
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -472,6 +724,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     verify.set_defaults(run=_run_verify)
     verify.add_argument("--target-bucket", required=True)
     verify.add_argument("--backup-id", required=True)
+    verify.add_argument("--organization-id", required=True)
+    restore = sub.add_parser("restore")
+    restore.set_defaults(run=_run_restore)
+    restore.add_argument("--target-bucket", required=True)
+    restore.add_argument("--restore-bucket", required=True)
+    restore.add_argument("--backup-id", required=True)
+    restore.add_argument("--organization-id", required=True)
     args = parser.parse_args(argv)
     try:
         record = args.run(args, _client_from_env())

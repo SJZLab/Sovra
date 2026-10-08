@@ -69,6 +69,7 @@ class MemStore:
     ) -> None:
         self.versions: dict[str, list[tuple[str, bytes | None]]] = {}
         self.retention: dict[str, datetime] = {}
+        self.metadata: dict[tuple[str, str], dict[str, str]] = {}
         self.corrupt_readback = corrupt_readback
         self.skip_retention = skip_retention
         self.short_by_s = short_by_s
@@ -92,6 +93,14 @@ class MemStore:
             if vid == version_id and body is not None:
                 return body
         raise S3Error(404, "NoSuchVersion", "no such version")
+
+    def version_metadata(self, key: str, version_id: str) -> dict[str, str]:
+        return dict(self.metadata.get((key, version_id), {}))
+
+    def put_restored(self, key: str, body: bytes, *, metadata: Any) -> str:
+        version_id = self.add(key, body)
+        self.metadata[(key, version_id)] = dict(metadata)
+        return version_id
 
     def get_latest(self, key: str) -> bytes:
         entries = self.versions.get(key, [])
@@ -137,6 +146,7 @@ def fixture(**overrides: object) -> tuple[MemStore, list[BlobRef]]:
                 sha256=sha(body),
                 size_bytes=len(body),
                 artifact_id=artifact,
+                organization_id="o",
                 shard_index=index,
                 shard_count=count,
             )
@@ -194,7 +204,7 @@ def test_complete_backup_is_verified_and_retained() -> None:
         record.retain_until == "2026-11-07T12:00:00Z",
     )
     for ref in refs:
-        key = f"backups/b1/blobs/{ref.sha256}"
+        key = f"backups/o/b1/blobs/{ref.sha256}"
         check(
             "FTF-1602-A1",
             f"{ref.key}: blob stored under its sha256",
@@ -205,7 +215,7 @@ def test_complete_backup_is_verified_and_retained() -> None:
             f"{ref.key}: blob is under retention until the record date",
             target.retention.get(key) == NOW + timedelta(days=30),
         )
-    stored = json.loads(target.get_latest("backups/b1/backup-record.json"))
+    stored = json.loads(target.get_latest("backups/o/b1/backup-record.json"))
     check(
         "FTF-1602-A1",
         "the record is written and matches the returned one",
@@ -214,17 +224,17 @@ def test_complete_backup_is_verified_and_retained() -> None:
     check(
         "FTF-1602-A1",
         "the record itself is retained",
-        "backups/b1/backup-record.json" in target.retention,
+        "backups/o/b1/backup-record.json" in target.retention,
     )
-    verified = verify_backup(target, "b1", now=NOW)
+    verified = verify_backup(target, "b1", organization_id="o", now=NOW)
     check("FTF-1602-A1", "verify_backup accepts an intact backup", verified == record)
 
 
 def test_exact_version_is_backed_up_not_latest() -> None:
     source = MemStore()
-    old = source.add("k", b"old-bytes")
-    ref = BlobRef("dataset", "k", old, sha(b"old-bytes"), 9, "d")
-    source.add("k", b"new-bytes")
+    old = source.add("tenants/o/k", b"old-bytes")
+    ref = BlobRef("dataset", "tenants/o/k", old, sha(b"old-bytes"), 9, "d", "o")
+    source.add("tenants/o/k", b"new-bytes")
     err = raises(BackupIncompleteError, run, source, [ref])
     check(
         "FTF-1602-N1",
@@ -232,8 +242,8 @@ def test_exact_version_is_backed_up_not_latest() -> None:
         err is not None and "stale" in str(err),
     )
     only_latest = MemStore()
-    v = only_latest.add("k", b"new-bytes")
-    ok = run(only_latest, [BlobRef("dataset", "k", v, sha(b"new-bytes"), 9, "d")])
+    v = only_latest.add("tenants/o/k", b"new-bytes")
+    ok = run(only_latest, [BlobRef("dataset", "tenants/o/k", v, sha(b"new-bytes"), 9, "d", "o")])
     check("FTF-1602-A1", "the latest recorded version backs up", ok.blob_count == 1)
 
 
@@ -281,12 +291,12 @@ def test_negative_completeness() -> None:
         err is not None and "does not exist" in str(err),
     )
     source = MemStore()
-    marker_version = source.add("k", None)
+    marker_version = source.add("tenants/o/k", None)
     err = raises(
         BackupIncompleteError,
         run,
         source,
-        [BlobRef("dataset", "k", marker_version, sha(b""), 0, "d")],
+        [BlobRef("dataset", "tenants/o/k", marker_version, sha(b""), 0, "d", "o")],
     )
     check(
         "FTF-1602-N1",
@@ -297,7 +307,7 @@ def test_negative_completeness() -> None:
         BackupIncompleteError,
         run,
         MemStore(),
-        [BlobRef("dataset", "absent", "v1", sha(b""), 0, "d")],
+        [BlobRef("dataset", "tenants/o/absent", "v1", sha(b""), 0, "d", "o")],
     )
     check("FTF-1602-N1", "a key absent from the source fails completeness", err is not None)
 
@@ -383,11 +393,11 @@ def test_negative_completeness() -> None:
 
 def test_dedupe_and_ordering() -> None:
     source = MemStore()
-    v1 = source.add("a", b"same")
-    v2 = source.add("b", b"same")
+    v1 = source.add("tenants/o/a", b"same")
+    v2 = source.add("tenants/o/b", b"same")
     refs = [
-        BlobRef("dataset", "a", v1, sha(b"same"), 4, "x"),
-        BlobRef("result", "b", v2, sha(b"same"), 4, "y"),
+        BlobRef("dataset", "tenants/o/a", v1, sha(b"same"), 4, "x", "o"),
+        BlobRef("result", "tenants/o/b", v2, sha(b"same"), 4, "y", "o"),
     ]
     record = run(source, refs)
     check(
@@ -471,8 +481,8 @@ def test_input_validation() -> None:
 
 def test_exactness_and_boundaries() -> None:
     source = MemStore()
-    source.add("k", b"x", "abc")
-    ref = BlobRef("dataset", "k", "abc", sha(b"x"), 1, "d")
+    source.add("tenants/o/k", b"x", "abc")
+    ref = BlobRef("dataset", "tenants/o/k", "abc", sha(b"x"), 1, "d", "o")
     check("FTF-1602-A1", "an exact version id backs up", run(source, [ref]).blob_count == 1)
     err = raises(BackupIncompleteError, run, source, [bad(ref, version_id="ABC")])
     check(
@@ -481,15 +491,15 @@ def test_exactness_and_boundaries() -> None:
         err is not None and "does not exist" in str(err),
     )
     mixed = MemStore()
-    mixed.add("k", b"x", "ABC")
+    mixed.add("tenants/o/k", b"x", "ABC")
     check(
         "FTF-1602-A1",
         "an upper-case version id is matched exactly",
         run(mixed, [bad(ref, version_id="ABC")]).blob_count == 1,
     )
     twin = MemStore()
-    twin.add("k", b"x", "ABC")
-    twin.add("k", b"x", "abc")
+    twin.add("tenants/o/k", b"x", "ABC")
+    twin.add("tenants/o/k", b"x", "abc")
     err = raises(BackupIncompleteError, run, twin, [bad(ref, version_id="ABC")])
     check(
         "FTF-1602-N1",
@@ -594,7 +604,7 @@ def test_exactness_and_boundaries() -> None:
     check(
         "FTF-1602-A1",
         "a mixed-case backup id verifies under the same id",
-        verify_backup(target, "Bk-1", now=NOW) == record,
+        verify_backup(target, "Bk-1", organization_id="o", now=NOW) == record,
     )
     keys = list(json.loads(record.to_json()))
     check("FTF-1602-A1", "the record JSON is canonically key-sorted", keys == sorted(keys))
@@ -608,28 +618,42 @@ def test_exactness_and_boundaries() -> None:
         check(
             "FTF-1602-N1",
             f"verify refuses backup id {bad_id!r} by its guard",
-            refused("backup_id must be a plain path segment", verify_backup, target, bad_id),
+            refused(
+                "backup_id must be a plain path segment",
+                verify_backup,
+                target,
+                bad_id,
+                organization_id="o",
+            ),
         )
     check(
-        "FTF-1602-N1", "verify refuses a padded backup id", invalid(verify_backup, target, " Bk-1")
+        "FTF-1602-N1",
+        "verify refuses a padded backup id",
+        invalid(verify_backup, target, " Bk-1", organization_id="o"),
     )
     at_expiry = NOW + timedelta(days=30)
     check(
         "FTF-1602-N1",
         "retention that ends exactly now is no longer retention",
-        raises(BackupIncompleteError, verify_backup, target, "Bk-1", now=at_expiry) is not None,
+        raises(
+            BackupIncompleteError, verify_backup, target, "Bk-1", organization_id="o", now=at_expiry
+        )
+        is not None,
     )
     check(
         "FTF-1602-A1",
         "retention one second from ending still counts",
-        verify_backup(target, "Bk-1", now=at_expiry - timedelta(seconds=1)) == record,
+        verify_backup(target, "Bk-1", organization_id="o", now=at_expiry - timedelta(seconds=1))
+        == record,
     )
     same_len = MemStore()
     same_len.versions = {k: list(v) for k, v in target.versions.items()}
     same_len.retention = dict(target.retention)
-    blob_key = f"backups/Bk-1/blobs/{record.blobs[0][0]}"
+    blob_key = f"backups/o/Bk-1/blobs/{record.blobs[0][0]}"
     same_len.add(blob_key, b"y")
-    err = raises(BackupIncompleteError, verify_backup, same_len, "Bk-1", now=NOW)
+    err = raises(
+        BackupIncompleteError, verify_backup, same_len, "Bk-1", organization_id="o", now=NOW
+    )
     check(
         "FTF-1602-N1",
         "verify catches a same-length blob with a different hash",
@@ -639,7 +663,9 @@ def test_exactness_and_boundaries() -> None:
     shorter.versions = {k: list(v) for k, v in target.versions.items()}
     shorter.retention = dict(target.retention)
     shorter.add(blob_key, b"")
-    err = raises(BackupIncompleteError, verify_backup, shorter, "Bk-1", now=NOW)
+    err = raises(
+        BackupIncompleteError, verify_backup, shorter, "Bk-1", organization_id="o", now=NOW
+    )
     check(
         "FTF-1602-N1",
         "verify catches a truncated blob",
@@ -649,8 +675,10 @@ def test_exactness_and_boundaries() -> None:
 
 def test_hex_case_is_compared_exactly() -> None:
     source = MemStore()
-    version = source.add("k", b"x")
-    upper = bad(BlobRef("dataset", "k", version, sha(b"x"), 1, "d"), sha256=sha(b"x").upper())
+    version = source.add("tenants/o/k", b"x")
+    upper = bad(
+        BlobRef("dataset", "tenants/o/k", version, sha(b"x"), 1, "d", "o"), sha256=sha(b"x").upper()
+    )
     err = raises(BackupIncompleteError, run, source, [upper])
     check(
         "FTF-1602-N1",
@@ -658,16 +686,18 @@ def test_hex_case_is_compared_exactly() -> None:
         err is not None and "sha256 differs" in str(err),
     )
     target = MemStore()
-    record = run(source, [BlobRef("dataset", "k", version, sha(b"x"), 1, "d")], target)
-    data = json.loads(target.get_latest("backups/b1/backup-record.json"))
+    record = run(
+        source, [BlobRef("dataset", "tenants/o/k", version, sha(b"x"), 1, "d", "o")], target
+    )
+    data = json.loads(target.get_latest("backups/o/b1/backup-record.json"))
     upper_digest = record.blobs[0][0].upper()
     data["blobs"] = [[upper_digest, 1]]
     forged = MemStore()
-    forged.add("backups/b1/backup-record.json", json.dumps(data).encode())
-    forged.add(f"backups/b1/blobs/{upper_digest}", b"x")
+    forged.add("backups/o/b1/backup-record.json", json.dumps(data).encode())
+    forged.add(f"backups/o/b1/blobs/{upper_digest}", b"x")
     forged.retention = {k: v for k, v in target.retention.items()}
-    forged.retention[f"backups/b1/blobs/{upper_digest}"] = NOW + timedelta(days=30)
-    err = raises(BackupIncompleteError, verify_backup, forged, "b1", now=NOW)
+    forged.retention[f"backups/o/b1/blobs/{upper_digest}"] = NOW + timedelta(days=30)
+    err = raises(BackupIncompleteError, verify_backup, forged, "b1", organization_id="o", now=NOW)
     check(
         "FTF-1602-N1",
         "a record digest in the wrong case does not verify against the real digest",
@@ -677,13 +707,16 @@ def test_hex_case_is_compared_exactly() -> None:
 
 def test_empty_blob_round_trips() -> None:
     source = MemStore()
-    version = source.add("empty", b"")
+    version = source.add("tenants/o/empty", b"")
     target = MemStore()
-    record = run(source, [BlobRef("result", "empty", version, sha(b""), 0, "r")], target)
+    record = run(
+        source, [BlobRef("result", "tenants/o/empty", version, sha(b""), 0, "r", "o")], target
+    )
     check(
         "FTF-1602-A1",
         "a zero-byte blob backs up and verifies",
-        verify_backup(target, "b1", now=NOW) == record and record.blobs == ((sha(b""), 0),),
+        verify_backup(target, "b1", organization_id="o", now=NOW) == record
+        and record.blobs == ((sha(b""), 0),),
     )
 
 
@@ -708,7 +741,7 @@ def test_write_side_verification() -> None:
     check(
         "FTF-1602-N1",
         "no record is written when a blob failed verification",
-        "backups/b1/backup-record.json" not in target.versions,
+        "backups/o/b1/backup-record.json" not in target.versions,
     )
 
 
@@ -717,13 +750,13 @@ def test_verify_backup() -> None:
     target = MemStore()
     record = run(source, refs, target)
     digest = record.blobs[0][0]
-    key = f"backups/b1/blobs/{digest}"
+    key = f"backups/o/b1/blobs/{digest}"
 
     tampered = MemStore()
     tampered.versions = {k: list(v) for k, v in target.versions.items()}
     tampered.retention = dict(target.retention)
     tampered.add(key, b"tampered")
-    err = raises(BackupIncompleteError, verify_backup, tampered, "b1", now=NOW)
+    err = raises(BackupIncompleteError, verify_backup, tampered, "b1", organization_id="o", now=NOW)
     check(
         "FTF-1602-N1",
         "verify detects a blob that no longer matches its hash",
@@ -733,10 +766,17 @@ def test_verify_backup() -> None:
     missing = MemStore()
     missing.versions = {k: list(v) for k, v in target.versions.items() if k != key}
     missing.retention = dict(target.retention)
-    err = raises(BackupIncompleteError, verify_backup, missing, "b1", now=NOW)
+    err = raises(BackupIncompleteError, verify_backup, missing, "b1", organization_id="o", now=NOW)
     check("FTF-1602-N1", "verify detects a missing blob", err is not None and "missing" in str(err))
 
-    err = raises(BackupIncompleteError, verify_backup, target, "b1", now=NOW + timedelta(days=31))
+    err = raises(
+        BackupIncompleteError,
+        verify_backup,
+        target,
+        "b1",
+        organization_id="o",
+        now=NOW + timedelta(days=31),
+    )
     check(
         "FTF-1602-N1",
         "verify detects retention that has lapsed",
@@ -744,28 +784,35 @@ def test_verify_backup() -> None:
     )
     unretained = MemStore()
     unretained.versions = {k: list(v) for k, v in target.versions.items()}
-    err = raises(BackupIncompleteError, verify_backup, unretained, "b1", now=NOW)
+    err = raises(
+        BackupIncompleteError, verify_backup, unretained, "b1", organization_id="o", now=NOW
+    )
     check("FTF-1602-N1", "verify detects blobs that were never retained", err is not None)
 
-    err = raises(ObjectStorageBackupError, verify_backup, MemStore(), "b1", now=NOW)
+    err = raises(
+        ObjectStorageBackupError, verify_backup, MemStore(), "b1", organization_id="o", now=NOW
+    )
     check(
         "FTF-1602-N1",
         "verify refuses a backup without a record",
         err is not None and "record" in str(err),
     )
     garbled = MemStore()
-    garbled.add("backups/b1/backup-record.json", b"not json")
+    garbled.add("backups/o/b1/backup-record.json", b"not json")
     check(
         "FTF-1602-N1",
         "verify refuses an unreadable record",
-        raises(ObjectStorageBackupError, verify_backup, garbled, "b1") is not None,
+        raises(ObjectStorageBackupError, verify_backup, garbled, "b1", organization_id="o")
+        is not None,
     )
     wrong_id = MemStore()
     wrong_id.versions = {k: list(v) for k, v in target.versions.items()}
-    wrong_id.versions["backups/b2/backup-record.json"] = wrong_id.versions.pop(
-        "backups/b1/backup-record.json"
+    wrong_id.versions["backups/o/b2/backup-record.json"] = wrong_id.versions.pop(
+        "backups/o/b1/backup-record.json"
     )
-    err = raises(ObjectStorageBackupError, verify_backup, wrong_id, "b2", now=NOW)
+    err = raises(
+        ObjectStorageBackupError, verify_backup, wrong_id, "b2", organization_id="o", now=NOW
+    )
     check(
         "FTF-1602-N1",
         "verify refuses a record that belongs to another backup",
@@ -774,26 +821,29 @@ def test_verify_backup() -> None:
     check(
         "FTF-1602-N1",
         "verify refuses a path-like backup id",
-        raises(ObjectStorageBackupError, verify_backup, target, "../x") is not None,
+        raises(ObjectStorageBackupError, verify_backup, target, "../x", organization_id="o")
+        is not None,
     )
     for bad_blob in (["ABCDEF", 3], [record.blobs[0][0], -1], ["x" * 64, 1]):
         malformed = MemStore()
-        data = json.loads(target.get_latest("backups/b1/backup-record.json"))
+        data = json.loads(target.get_latest("backups/o/b1/backup-record.json"))
         data["blobs"] = [bad_blob]
         data["blob_count"] = 1
-        malformed.add("backups/b1/backup-record.json", json.dumps(data).encode())
+        malformed.add("backups/o/b1/backup-record.json", json.dumps(data).encode())
         check(
             "FTF-1602-N1",
             f"verify refuses a record listing blob {bad_blob!r}",
-            refused("malformed blob", verify_backup, malformed, "b1", now=NOW),
+            refused("malformed blob", verify_backup, malformed, "b1", organization_id="o", now=NOW),
         )
     miscounted = MemStore()
-    data = json.loads(target.get_latest("backups/b1/backup-record.json"))
+    data = json.loads(target.get_latest("backups/o/b1/backup-record.json"))
     data["blob_count"] = 99
     miscounted.versions = {k: list(v) for k, v in target.versions.items()}
-    miscounted.add("backups/b1/backup-record.json", json.dumps(data).encode())
+    miscounted.add("backups/o/b1/backup-record.json", json.dumps(data).encode())
     miscounted.retention = dict(target.retention)
-    err = raises(BackupIncompleteError, verify_backup, miscounted, "b1", now=NOW)
+    err = raises(
+        BackupIncompleteError, verify_backup, miscounted, "b1", organization_id="o", now=NOW
+    )
     check(
         "FTF-1602-N1",
         "verify detects a record whose blob_count disagrees with its list",
@@ -965,7 +1015,15 @@ def test_cli_commands() -> None:
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 vcode = osb.main(
-                    ["verify", "--target-bucket", "dst", "--backup-id", printed["backup_id"]]
+                    [
+                        "verify",
+                        "--target-bucket",
+                        "dst",
+                        "--backup-id",
+                        printed["backup_id"],
+                        "--organization-id",
+                        "o",
+                    ]
                 )
             check(
                 "FTF-1602-A1",
@@ -973,12 +1031,20 @@ def test_cli_commands() -> None:
                 vcode == 0 and json.loads(out.getvalue()) == printed,
             )
             stores["dst"].add(
-                f"backups/{printed['backup_id']}/blobs/{printed['blobs'][0][0]}", b"tampered"
+                f"backups/o/{printed['backup_id']}/blobs/{printed['blobs'][0][0]}", b"tampered"
             )
             err = io.StringIO()
             with contextlib.redirect_stderr(err):
                 bad = osb.main(
-                    ["verify", "--target-bucket", "dst", "--backup-id", printed["backup_id"]]
+                    [
+                        "verify",
+                        "--target-bucket",
+                        "dst",
+                        "--backup-id",
+                        printed["backup_id"],
+                        "--organization-id",
+                        "o",
+                    ]
                 )
             check(
                 "FTF-1602-N1",
@@ -1037,7 +1103,8 @@ def test_cli_guards() -> None:
                 [
                     {
                         "kind": "dataset",
-                        "key": "k",
+                        "key": "tenants/o/k",
+                        "organization_id": "o",
                         "version_id": "1",
                         "sha256": "a" * 64,
                         "size_bytes": 1,
@@ -1050,7 +1117,7 @@ def test_cli_guards() -> None:
         check(
             "FTF-1602-A1",
             "a well-formed manifest file loads into BlobRefs",
-            len(loaded) == 1 and loaded[0].key == "k",
+            len(loaded) == 1 and loaded[0].key == "tenants/o/k",
         )
         import os
 
@@ -1058,7 +1125,9 @@ def test_cli_guards() -> None:
         for name in saved:
             del os.environ[name]
         try:
-            code = osb.main(["verify", "--target-bucket", "b", "--backup-id", "x"])
+            code = osb.main(
+                ["verify", "--target-bucket", "b", "--backup-id", "x", "--organization-id", "o"]
+            )
         finally:
             os.environ.update(saved)
         check("FTF-1602-N1", "the CLI fails closed without storage credentials", code == 1)
