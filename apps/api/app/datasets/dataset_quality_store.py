@@ -119,6 +119,8 @@ __all__ = [
 MAX_PAGE_SIZE = 200
 MAX_RESOLUTIONS_PER_REQUEST = 100
 ADMIN_ROLES = frozenset({"workspace_admin", "organization_admin"})
+# actor role -> may it waive. A role not listed here may not use the surface at all.
+_ROLE_MAY_WAIVE = {"ml_engineer": False, "workspace_admin": True, "organization_admin": True}
 ALL_ACTIONS = ("exclude", "correct", "new_version", "waive")
 _STATES = frozenset({"open", "resolved", "waived"})
 _SEVERITIES = frozenset({"blocking", "warning"})
@@ -721,8 +723,6 @@ def get_issue(
     include_held_out: bool,
 ) -> IssueView:
     """One issue of the latest report; `IssueNotFoundError` when it is not one."""
-    if not _is_hex64(issue_id):
-        raise IssueNotFoundError()
     report = get_latest_report(
         session,
         context,
@@ -930,8 +930,6 @@ def _validate_request(
             )
         ):
             raise InvalidResolutionRequestError()
-    if len({r.issue_id for r in resolutions}) != len(resolutions):
-        raise InvalidResolutionRequestError()
     return expected_resolution_version, str(idempotency_key), tuple(resolutions)
 
 
@@ -1048,9 +1046,10 @@ def submit_resolutions(
     if not isinstance(quality_report_id, uuid.UUID):
         raise QualityReportNotFoundError()
     decided_at = _require_now(now)
-    if actor.role not in {"ml_engineer", *ADMIN_ROLES}:
+    may_waive = _ROLE_MAY_WAIVE.get(actor.role)
+    if may_waive is None:
         raise InvalidResolutionRequestError()
-    if any(_ACTION_RULES[r.action].admin_only for r in requests) and actor.role not in ADMIN_ROLES:
+    if any(_ACTION_RULES[r.action].admin_only for r in requests) and not may_waive:
         raise WaiveNotPermittedError()
 
     dataset = _visible_dataset(session, context, project_id, dataset_id, include_held_out)

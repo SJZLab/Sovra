@@ -3574,6 +3574,69 @@ def test_r8_issue_report_id_value() -> None:
         )
 
 
+def test_s10_final_survivors() -> None:
+    with _env() as (session, audit):
+        d1 = _dataset(session, "support")
+        r1 = _record(session, d1, extra=(_extra("w_a", (0, 1)),))
+        wa = _issue(session, r1, "w_a")
+        before = _counts(session, audit)
+        for action in ("Exclude", " exclude", "EXCLUDE", "exclude "):
+            _, error = _resolve(session, d1, r1, [_req(wa, action)])
+            check(CID, f"action {action!r} is invalid_body", _refused(error, "invalid_body", 400))
+        for role in ("WORKSPACE_ADMIN", " workspace_admin", "Ml_Engineer", "viewer", ""):
+            actor = store.QualityActor("user", "u", role, "r")
+            _, error = _resolve(session, d1, r1, [_req(wa, "exclude")], actor=actor)
+            check(CID, f"role {role!r} is invalid_body", _refused(error, "invalid_body", 400))
+        dup = _req(wa, "exclude")
+        _, error = _resolve(session, d1, r1, [dup, dup])
+        check(
+            CID,
+            "the same issue twice is refused (the engine owns that rule)",
+            _refused(error, "invalid_body", 400),
+        )
+        check(CID, "all of those wrote nothing", _counts(session, audit) == before)
+        org_admin = store.QualityActor("user", "oa", "organization_admin", "r")
+        ok, error = _resolve(session, d1, r1, [_req(wa, "waive")], actor=org_admin)
+        check(CID, f"organization_admin may waive ({error!r})", error is None)
+
+        # purpose compared exactly the other way round
+        up = _dataset(session, "purp", purpose="Training")
+        ru = _record(session, up, extra=(_extra("pw", (0, 1)),))
+        low = _dataset(session, "purp", purpose="training")
+        _record(session, low, _full_runs(clean=True))
+        item = _req(_issue(session, ru, "pw"), "new_version", successor_dataset_id=low.id)
+        _, error = _resolve(session, up, ru, [item])
+        check(
+            CID,
+            "a purpose differing only by case is invalid_body",
+            _refused(error, "invalid_body", 400),
+        )
+
+
+def test_r9_values_and_body_cap_edge() -> None:
+    shown: Any = _resolution_ns()
+    env = _RouteEnv()
+    env.view = store.IssueView(issue=_issue_ns(), state="resolved", resolution=shown)
+    env.outcome = store.ResolveOutcome(
+        report=_report_ns(), resolutions=(_resolution_ns(),), replayed=False
+    )
+    with _patched(env), _running_app() as base:
+        body = _call(base, "GET", _base() + f"/issues/{_sha('issue')}").json()
+        check(
+            CID,
+            "the resolution's quality_report_id is serialised from the row",
+            body["resolution"]["quality_report_id"] == str(shown.quality_report_id),
+        )
+        at_cap = _call(base, "POST", _base() + "/resolve-issue", "ml", b" " * (1024 * 1024))
+        check(
+            CID,
+            "a body of exactly 1 MiB is read (invalid_body), not refused as too large",
+            at_cap.status == 400 and at_cap.json() == {"detail": "invalid_body"},
+        )
+        over = _call(base, "POST", _base() + "/resolve-issue", "ml", b" " * (1024 * 1024 + 1))
+        check(CID, "one byte more is 413", over.status == 413)
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
