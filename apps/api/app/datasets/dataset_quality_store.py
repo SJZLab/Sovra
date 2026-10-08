@@ -228,7 +228,7 @@ _ENGINE_REFUSALS: tuple[tuple[str, type[QualityStoreError]], ...] = (
 
 def _map_engine_error(exc: QualityEngineError) -> QualityStoreError:
     for fragment, error_type in _ENGINE_REFUSALS:
-        if fragment in str(exc):
+        if str(exc).count(fragment):
             return error_type()
     return InvalidResolutionRequestError()
 
@@ -915,12 +915,10 @@ def _validate_request(
         or not 1 <= len(resolutions) <= MAX_RESOLUTIONS_PER_REQUEST
     ):
         raise InvalidResolutionRequestError()
-    seen: set[str] = set()
     for item in resolutions:
         if (
             not isinstance(item, ResolutionRequest)
             or not _is_hex64(item.issue_id)
-            or item.issue_id in seen
             or item.action not in ALL_ACTIONS
             or not _is_clean_text(item.reason, _REASON_MAX_LENGTH)
             or not _is_hex64(item.expected_before_evidence_sha256)
@@ -932,7 +930,8 @@ def _validate_request(
             )
         ):
             raise InvalidResolutionRequestError()
-        seen.add(item.issue_id)
+    if len({r.issue_id for r in resolutions}) != len(resolutions):
+        raise InvalidResolutionRequestError()
     return expected_resolution_version, str(idempotency_key), tuple(resolutions)
 
 
@@ -941,16 +940,17 @@ class _ActionRule(NamedTuple):
     takes_successor: bool
     needs_issue_positions: bool
     decision: str
+    admin_only: bool
 
 
 # Per action: whether it carries exclusion positions, whether it carries a
 # successor dataset, whether the issue must name batch positions, and the
 # decision FTF-0515's engine applies. Table lookups, not string comparisons.
 _ACTION_RULES: dict[str, _ActionRule] = {
-    "exclude": _ActionRule(True, False, True, "resolved"),
-    "correct": _ActionRule(False, True, True, "resolved"),
-    "new_version": _ActionRule(False, True, False, "resolved"),
-    "waive": _ActionRule(False, False, False, "waived"),
+    "exclude": _ActionRule(True, False, True, "resolved", False),
+    "correct": _ActionRule(False, True, True, "resolved", False),
+    "new_version": _ActionRule(False, True, False, "resolved", False),
+    "waive": _ActionRule(False, False, False, "waived", True),
 }
 
 
@@ -1009,13 +1009,16 @@ def _replay(
             session,
             context.organization_id,
             select(DatasetIssueResolution)
-            .where(DatasetIssueResolution.idempotency_key == idempotency_key)
+            .where(DatasetIssueResolution.idempotency_key.in_((idempotency_key,)))
             .order_by(DatasetIssueResolution.issue_id),
         ).scalars()
     )
     if not rows:
         return None
-    if any(r.request_sha256 != digest or r.quality_report_id != report.id for r in rows):
+    if any(
+        not hmac.compare_digest(r.request_sha256, digest) or r.quality_report_id != report.id
+        for r in rows
+    ):
         raise IdempotencyKeyReusedError()
     return ResolveOutcome(report=report, resolutions=tuple(rows), replayed=True)
 
@@ -1047,7 +1050,7 @@ def submit_resolutions(
     decided_at = _require_now(now)
     if actor.role not in {"ml_engineer", *ADMIN_ROLES}:
         raise InvalidResolutionRequestError()
-    if any(r.action == "waive" for r in requests) and actor.role not in ADMIN_ROLES:
+    if any(_ACTION_RULES[r.action].admin_only for r in requests) and actor.role not in ADMIN_ROLES:
         raise WaiveNotPermittedError()
 
     dataset = _visible_dataset(session, context, project_id, dataset_id, include_held_out)
@@ -1085,7 +1088,7 @@ def submit_resolutions(
         issue = by_id.get(item.issue_id)
         if issue is None:
             raise IssueNotFoundError()
-        if item.issue_id in decided:
+        if decided.get(item.issue_id) is not None:
             raise IssueAlreadyDecidedError()
         if not hmac.compare_digest(item.expected_before_evidence_sha256, issue.evidence_sha256):
             raise EvidenceMismatchError()

@@ -3530,6 +3530,50 @@ def test_r7_route_values_and_minimal_items() -> None:
         env.raise_with = None
 
 
+def test_s9_exact_keys_and_lineage_case() -> None:
+    with _env() as (session, _audit):
+        dk = _dataset(session, "keys")
+        rk = _record(session, dk, extra=(_extra("ka", (0, 1)), _extra("kb", (0, 1))))
+        ka, kb = _issue(session, rk, "ka"), _issue(session, rk, "kb")
+        _, error = _resolve(session, dk, rk, [_req(ka, "exclude")], version=0, key="Key-Mixed")
+        check(CID, f"a mixed-case key is accepted ({error!r})", error is None)
+        again, error = _resolve(session, dk, rk, [_req(ka, "exclude")], version=0, key="Key-Mixed")
+        check(
+            CID,
+            "... and replays itself exactly",
+            error is None and again is not None and again.replayed,
+        )
+        other, error = _resolve(session, dk, rk, [_req(kb, "exclude")], version=1, key="KEY-MIXED")
+        check(
+            CID,
+            f"a key differing only by case is a different key ({error!r})",
+            error is None and other is not None and not other.replayed,
+        )
+        up = _dataset(session, "Upper")
+        ru = _record(session, up, extra=(_extra("uw", (0, 1)),))
+        low = _dataset(session, "upper")
+        _record(session, low, _full_runs(clean=True))
+        item = _req(_issue(session, ru, "uw"), "new_version", successor_dataset_id=low.id)
+        _, error = _resolve(session, up, ru, [item])
+        check(
+            CID,
+            "a successor whose name differs from the dataset's only by case is invalid_body",
+            _refused(error, "invalid_body", 400),
+        )
+
+
+def test_r8_issue_report_id_value() -> None:
+    env = _RouteEnv()
+    env.view = store.IssueView(issue=_issue_ns(), state="open", resolution=None)
+    with _patched(env), _running_app() as base:
+        body = _call(base, "GET", _base() + f"/issues/{_sha('issue')}").json()
+        check(
+            CID,
+            "the issue's report_id is serialised from the row",
+            body["report_id"] == str(env.view.issue.report_id),
+        )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
