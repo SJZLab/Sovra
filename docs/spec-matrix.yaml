@@ -11430,16 +11430,34 @@ FTF-1602:
     Round 2 (QUEUE 0d): the record now carries every manifest entry (key, version id, kind, artifact
     id, shard layout, encryption key reference, tenant, object metadata) so `restore_backup`
     rebuilds the objects into a clean bucket from the backup alone and proves bytes, sha256,
-    key/version mapping and metadata; a corrupted, truncated, same-size-swapped, record-tampered or
-    unretained backup is refused before any write, and a dirty destination is refused. BlobRef
+    key/version mapping and metadata; a corrupted, truncated, same-size-swapped or unretained
+    backup blob, or a record whose own totals/hash do not match its entries, is refused before any
+    write, and a dirty destination is refused (a record that was RE-HASHED to stay consistent was
+    NOT caught in round 2; see round 3). BlobRef
     carries organization_id: one tenant per backup, keys must sit under tenants/<org>/ with no dot
     segments, backups live under <prefix>/<org>/<id>, and verify/restore refuse another tenant's
     record. verify_backup re-checks object_count, blob_count, total_bytes and manifest_sha256, and
-    optionally a caller-held expected manifest hash. Mutation gate 200/200 killed. Disclosed:
+    optionally a caller-held expected manifest hash. Round-2 mutation gate (diff-scoped) was
+    200/200; the round-3 figure is below. Disclosed:
     metadata is content type plus x-amz-meta-* only; a blob swapped mid-restore aborts it after
     earlier objects were written (visible, never success); the SeaweedFS integration additions
     (restore, damaged backups, tenant scoping) have their first real run in CI. Restore
     automation (scheduling, runbooks) is FTF-1603. Pure library/CLI: no live caller, proving_symbol stays blank.
+    Round 3 (QUEUE 0i): the backup record is pinned. verify/restore refuse a record key that has
+    more than one version, whose version is a delete marker, or whose latest version is not
+    COMPLIANCE-retained until at least the record's own retain_until and beyond now, so a newer,
+    shrunk, re-hashed record version (3 of 4 objects, consistent totals) is refused; a
+    single-version forged record is stopped only by a caller-held hash, now exposed as
+    --expected-manifest-sha256 on the verify and restore CLI. Inputs are exact types (a str
+    subclass, BlobRef subclass or frozenset subclass is refused; an unhashable kind raises this
+    module's error). Every storage read failure in verify/restore (TimeoutError, OSError, S3Error)
+    is this module's own error naming the S3 status, never the server's message. A parsed record
+    is validated field by field (exact types, exact field set, timestamp format) and a malformed
+    one raises ObjectStorageBackupError. New real-SeaweedFS tests (first run in CI): shrunk record
+    version refused, backup lacking a listed blob refused with nothing written, tenants/p/ key
+    refused at backup and in a re-hashed record at restore. Disclosed, still true: a record that is
+    the only version and internally consistent but shrunk is accepted unless the caller supplies
+    the expected manifest hash; the CLI does not require it.
     Not self-certified (Law 4).
   proof_state: L1-PROVEN
   proving_symbol: ''

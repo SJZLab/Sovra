@@ -2299,6 +2299,82 @@ def test_malformed_records_raise_the_modules_error() -> None:
     )
 
 
+def test_survivor_kills_passthrough_blob_retention_and_list_shape() -> None:
+    _, target, _, record = backed_up()
+    blob_key = f"backups/o/b1/blobs/{record.blobs[0][0]}"
+    # A typed error from a store is passed through unchanged, never re-wrapped.
+    own = ObjectStorageBackupError("marker-from-store")
+    for operation, only, caller in (
+        ("get_latest", "backup-record", "verify"),
+        ("list_versions", "backup-record", "verify"),
+        ("get_latest", "/blobs/", "verify"),
+        ("retention_until", "/blobs/", "verify"),
+        ("retention_until", "backup-record", "verify"),
+    ):
+        store = flaky_copy(target, operation, own, only)
+        err = outcome(verify_backup, store, "b1", organization_id="o", now=NOW)
+        check(
+            "FTF-1602-N2",
+            f"a typed error from {operation}({only!r}) reaches the caller unchanged ({caller})",
+            typed(err, "marker-from-store") and "storage request failed" not in str(err),
+        )
+    for operation in ("put_restored", "get_version", "version_metadata", "list_versions"):
+        err = outcome(restore, target, flaky_copy(MemStore(), operation, own))
+        check(
+            "FTF-1602-N2",
+            f"a typed error from the destination's {operation} is not re-wrapped",
+            typed(err, "marker-from-store") and "storage request failed" not in str(err),
+        )
+    err = outcome(restore, flaky_copy(target, "get_latest", own, "/blobs/"), MemStore())
+    check(
+        "FTF-1602-N2",
+        "a typed error from the backup-blob read during restore is not re-wrapped",
+        typed(err, "marker-from-store") and "storage request failed" not in str(err),
+    )
+    # The record read answering "not found" while one version is listed is unreadable.
+    raced = flaky_copy(target, "get_latest", S3Error(404, "NoSuchKey", "gone"), "backup-record")
+    check(
+        "FTF-1602-N2",
+        "a record whose read is a 404 is reported missing or unreadable",
+        typed(outcome(verify_backup, raced, "b1", organization_id="o", now=NOW), "unreadable"),
+    )
+    # Blob retention is checked on its own: the record stays retained throughout.
+    for label, change in (
+        ("absent", lambda t: t.retention.pop(blob_key)),
+        ("ending exactly now", lambda t: t.retention.__setitem__(blob_key, NOW)),
+    ):
+        weak = clone(target)
+        change(weak)
+        check(
+            "FTF-1602-N1",
+            f"a blob whose retention is {label} is refused while the record is retained",
+            typed(
+                outcome(verify_backup, weak, "b1", organization_id="o", now=NOW),
+                "not under retention",
+            ),
+        )
+    ok = clone(target)
+    ok.retention[blob_key] = NOW + timedelta(seconds=1)
+    check(
+        "FTF-1602-A1",
+        "a blob whose retention ends one second after now is accepted",
+        outcome(verify_backup, ok, "b1", organization_id="o", now=NOW) is None,
+    )
+    # The lists of a record are checked as lists, with their own message.
+    for label, edit in (
+        ("entries as an empty dict", lambda d: d.__setitem__("entries", {})),
+        ("entries as an empty string", lambda d: d.__setitem__("entries", "")),
+        ("blobs as an empty dict", lambda d: d.__setitem__("blobs", {})),
+        ("blobs as an empty string", lambda d: d.__setitem__("blobs", "")),
+    ):
+        err = outcome(verify_backup, with_record(target, edit), "b1", organization_id="o", now=NOW)
+        check(
+            "FTF-1602-N2",
+            f"a record with {label} names the list rule",
+            typed(err, "must be lists"),
+        )
+
+
 def edit_entry_raw(data: Any, **changes: Any) -> None:
     """Edit entry 0 without re-hashing (the type check must fire before any hash check)."""
     data["entries"][0].update(changes)
