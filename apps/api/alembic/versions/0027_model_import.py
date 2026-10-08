@@ -92,17 +92,13 @@ Two things, in one migration under the `migration:application` lock:
    `record_quality_report` gap already carries.
 
 Revision ID: 0027_model_import
-Revises: 0025_dataset_upload_hardening
+Revises: 0026_dataset_quality_issues
 Create Date: 2026-10-08
 
-Chained onto the current `main` head (`0025_dataset_upload_hardening`) at
-claim time, per QUEUE.md's own migration-serialization rule ("take the
-next free number at claim time ... renumber if another lands first"):
-`0026_dataset_quality_issues` (FTF-0516-P1, PR #639) was still open, not
-yet merged into `main`, when this migration was authored. If `0026` merges
-first, this file's own `down_revision` is rebased onto it before merge
-(two real Alembic heads otherwise) -- see this task's own submission entry
-for which actually happened.
+Chained onto the current `main` head (`0026_dataset_quality_issues`,
+FTF-0516-P1, PR #639). It was first authored on `0025_dataset_upload_hardening`
+while 0026 was still open; 0026 merged first, so `down_revision` was rebased
+onto it (two real Alembic heads otherwise).
 """
 
 from __future__ import annotations
@@ -113,7 +109,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision = "0027_model_import"
-down_revision = "0025_dataset_upload_hardening"
+down_revision = "0026_dataset_quality_issues"
 branch_labels = None
 depends_on = None
 

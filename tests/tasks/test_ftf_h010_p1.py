@@ -345,7 +345,7 @@ def _offline_sql(revision_range: str, action: str) -> str:
 
 
 def test_m1_offline_upgrade_sql_actually_runs() -> None:
-    up = _offline_sql("0025_dataset_upload_hardening:0027_model_import", "upgrade")
+    up = _offline_sql("0026_dataset_quality_issues:0027_model_import", "upgrade")
     for needle in (
         "ALTER TABLE model_versions ADD COLUMN origin",
         "ALTER TABLE model_versions ALTER COLUMN origin SET NOT NULL",
@@ -359,12 +359,12 @@ def test_m1_offline_upgrade_sql_actually_runs() -> None:
 
 
 def test_m1_offline_downgrade_sql_actually_runs() -> None:
-    down = _offline_sql("0027_model_import:0025_dataset_upload_hardening", "downgrade")
+    down = _offline_sql("0027_model_import:0026_dataset_quality_issues", "downgrade")
     for needle in (
         "DROP TABLE model_import_jobs",
         "ALTER TABLE model_versions DROP COLUMN origin",
         "ALTER TABLE model_versions DROP CONSTRAINT ck_model_versions_origin_values",
-        "version_num='0025_dataset_upload_hardening'",
+        "version_num='0026_dataset_quality_issues'",
     ):
         check(CID, f"the real downgrade SQL contains {needle!r}", needle in down)
 
