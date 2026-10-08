@@ -185,6 +185,88 @@ def sign_request(
     return SignedRequest(method=method.upper(), url=url, headers=final_headers, body=body)
 
 
+PRESIGN_MAX_EXPIRES_SECONDS = 300  # Section 65.2: a pre-signed grant lives <= 5 minutes.
+_UNSIGNED_PAYLOAD = "UNSIGNED-PAYLOAD"
+
+
+def presign_url(
+    *,
+    method: str,
+    endpoint: S3Endpoint,
+    credentials: S3Credentials,
+    canonical_uri: str,
+    expires_seconds: int,
+    query: Mapping[str, str] | None = None,
+    signed_headers: Mapping[str, str] | None = None,
+    now: datetime | None = None,
+    max_expires_seconds: int = PRESIGN_MAX_EXPIRES_SECONDS,
+    service: str = _SERVICE,
+) -> str:
+    """AWS Signature Version 4 *query-string* presigned URL (the published
+    "Authenticating Requests: Using Query Parameters" algorithm). The method,
+    path, query and every header in `signed_headers` are bound into the
+    signature, so the holder cannot change the object key, the part number
+    or the signed `content-length`. The payload is `UNSIGNED-PAYLOAD`: the
+    object's digest is verified by the server after upload, not by the URL.
+
+    `expires_seconds` must be 1..`max_expires_seconds`; the default ceiling is
+    five minutes (Section 65.2) and a caller can only lower it in practice --
+    raising the ceiling is only for reproducing the AWS documentation vector.
+    """
+    if (
+        isinstance(expires_seconds, bool)
+        or not isinstance(expires_seconds, int)
+        or isinstance(max_expires_seconds, bool)
+        or not isinstance(max_expires_seconds, int)
+        or not 0 < max_expires_seconds <= 604800
+        or not 0 < expires_seconds <= max_expires_seconds
+    ):
+        raise ValueError(f"expires_seconds must be an int in 1..{max_expires_seconds}")
+    moment = now if now is not None else datetime.now(UTC)
+    amz_date = moment.strftime("%Y%m%dT%H%M%SZ")
+    date_stamp = moment.strftime("%Y%m%d")
+    credential_scope = f"{date_stamp}/{endpoint.region}/{service}/{_AWS4_REQUEST}"
+
+    headers: dict[str, str] = {k.lower(): v.strip() for k, v in (signed_headers or {}).items()}
+    headers["host"] = endpoint.host_header
+    header_names = sorted(headers)
+    signed_header_list = ";".join(header_names)
+
+    full_query = dict(query or {})
+    full_query.update(
+        {
+            "X-Amz-Algorithm": _ALGORITHM,
+            "X-Amz-Credential": f"{credentials.access_key}/{credential_scope}",
+            "X-Amz-Date": amz_date,
+            "X-Amz-Expires": str(expires_seconds),
+            "X-Amz-SignedHeaders": signed_header_list,
+        }
+    )
+    canonical_query = _canonical_query_string(full_query)
+    canonical_headers = "".join(f"{name}:{headers[name]}\n" for name in header_names)
+    canonical_request = "\n".join(
+        [
+            method.upper(),
+            _uri_encode_path(canonical_uri) or "/",
+            canonical_query,
+            canonical_headers,
+            signed_header_list,
+            _UNSIGNED_PAYLOAD,
+        ]
+    )
+    string_to_sign = "\n".join(
+        [
+            _ALGORITHM,
+            amz_date,
+            credential_scope,
+            _sha256_hex(canonical_request.encode("utf-8")),
+        ]
+    )
+    signing_key = _signing_key(credentials.secret_key, date_stamp, endpoint.region, service)
+    signature = hmac.new(signing_key, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{endpoint.base_url}{canonical_uri}?{canonical_query}&X-Amz-Signature={signature}"
+
+
 def _strip_ns(tag: str) -> str:
     return tag.split("}", 1)[1] if "}" in tag else tag
 
@@ -412,8 +494,11 @@ class S3Client:
 
     # -- Multipart upload -----------------------------------------------------
 
-    def create_multipart_upload(self, bucket: str, key: str) -> str:
-        _, _, body = self._request("POST", bucket, key, query={"uploads": ""})
+    def create_multipart_upload(
+        self, bucket: str, key: str, *, content_type: str | None = None
+    ) -> str:
+        headers = {"content-type": content_type} if content_type else None
+        _, _, body = self._request("POST", bucket, key, query={"uploads": ""}, headers=headers)
         root = ET.fromstring(body)  # noqa: S314
         parsed = _xml_to_dict(root)
         if not isinstance(parsed, dict) or "UploadId" not in parsed:
@@ -453,3 +538,78 @@ class S3Client:
 
     def abort_multipart_upload(self, bucket: str, key: str, upload_id: str) -> None:
         self._request("DELETE", bucket, key, query={"uploadId": upload_id})
+
+    def head_object(self, bucket: str, key: str) -> dict[str, str]:
+        """Lower-cased response headers of a HEAD (`content-length`,
+        `content-type`, `etag`, ...). A missing object raises `S3Error` 404."""
+        _, headers, _ = self._request("HEAD", bucket, key)
+        return headers
+
+    def get_object_range(self, bucket: str, key: str, first: int, last: int) -> bytes:
+        """The inclusive byte range `first..last` of an object."""
+        if not 0 <= first <= last:
+            raise ValueError("require 0 <= first <= last")
+        _, _, body = self._request("GET", bucket, key, headers={"range": f"bytes={first}-{last}"})
+        return body
+
+    def stream_object(self, bucket: str, key: str, *, chunk_size: int = 1024 * 1024):
+        """Yields the object's bytes in `chunk_size` pieces without holding the
+        whole object in memory (uploads can be 10 GiB)."""
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be positive")
+        signed = sign_request(
+            method="GET",
+            endpoint=self._endpoint,
+            credentials=self._credentials,
+            canonical_uri=f"/{bucket}/{key}",
+        )
+        request = urllib.request.Request(  # noqa: S310
+            signed.url, headers=signed.headers, method="GET"
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self._timeout) as resp:  # noqa: S310
+                while True:
+                    chunk = resp.read(chunk_size)
+                    if not chunk:
+                        return
+                    yield chunk
+        except urllib.error.HTTPError as exc:
+            raise S3Error(exc.code, "Unknown", exc.reason or "", "") from exc
+
+    def list_multipart_uploads(self, bucket: str, *, prefix: str) -> list[dict[str, str]]:
+        """In-progress multipart uploads whose key starts with `prefix`."""
+        _, _, body = self._request(
+            "GET", bucket, query={"uploads": "", "prefix": prefix, "max-uploads": "1000"}
+        )
+        parsed = _xml_to_dict(ET.fromstring(body))  # noqa: S314
+        if not isinstance(parsed, dict):
+            return []
+        uploads = parsed.get("Upload", [])
+        if isinstance(uploads, dict):
+            uploads = [uploads]
+        return [u for u in uploads if isinstance(u, dict)]
+
+    def list_parts(self, bucket: str, key: str, upload_id: str) -> list[dict[str, str]]:
+        """Every part uploaded so far (paged through `part-number-marker`)."""
+        parts: list[dict[str, str]] = []
+        marker = "0"
+        while True:
+            _, _, body = self._request(
+                "GET",
+                bucket,
+                key,
+                query={"uploadId": upload_id, "part-number-marker": marker, "max-parts": "1000"},
+            )
+            parsed = _xml_to_dict(ET.fromstring(body))  # noqa: S314
+            if not isinstance(parsed, dict):
+                return parts
+            page = parsed.get("Part", [])
+            if isinstance(page, dict):
+                page = [page]
+            parts.extend(p for p in page if isinstance(p, dict))
+            if str(parsed.get("IsTruncated", "false")).lower() != "true":
+                return parts
+            next_marker = str(parsed.get("NextPartNumberMarker", ""))
+            if not next_marker or next_marker == marker:
+                raise S3Error(0, "MalformedResponse", "ListParts did not advance")
+            marker = next_marker
