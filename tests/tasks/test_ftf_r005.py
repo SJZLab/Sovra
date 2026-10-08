@@ -1289,6 +1289,52 @@ def test_mutation_closers_2() -> None:
         )
 
 
+def test_mutation_closers_3() -> None:
+    pol = ConnectionPolicy(name="p")
+    for bad in ("https://h/ ", "https://h/%20", "https://h/ /"):
+        check("R005-C", f"base_url {bad!r} refused", raises(ValueError, MlflowClient, bad, pol))
+    stub = Stub()
+    c = stub.client()
+    stub.reply(404, {"error_code": "RESOURCE_DOES_NOT_EXIST"})
+    stub.reply(200, {})
+    try:
+        c.get_or_create_experiment("sovra/new")
+        check("R005-C", "created experiment without an id is refused", False)
+    except TrackingRejectedError as exc:
+        check("R005-C", "created experiment id is named", "experiment_id" in str(exc))
+    stub.server.shutdown()
+    f = Fake()
+    b = make_binding(f)
+    for label, name in (
+        ("upper", b.registered_model_name.upper()),
+        ("padded", b.registered_model_name + " "),
+    ):
+        renamed = RegistryBinding(**{**b.__dict__, "registered_model_name": name})
+        check(
+            "R005-B",
+            f"{label} name variant is drift",
+            raises(
+                RegistryDriftError, verify_binding, f, renamed, approved_source_prefixes=PREFIXES
+            ),
+        )
+    f2 = Fake()
+    upper_source = f"s3://sovra-model-artifacts/{ORG_A}/MixedCase/"
+    bound = bind_model_version(
+        f2,
+        organization_id=ORG_A,
+        model_version_id=MV,
+        run_id=RUN_ID,
+        artifact_sha256="c" * 64,
+        source_uri=upper_source,
+        approved_source_prefixes=PREFIXES,
+    )
+    check(
+        "R005-B",
+        "case-sensitive source is bound and verified exactly",
+        bound.source_uri == upper_source,
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

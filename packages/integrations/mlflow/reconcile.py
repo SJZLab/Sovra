@@ -255,10 +255,9 @@ def sync_run(client: MlflowClient, entry: OutboxEntry) -> OutboxEntry:
     try:
         run_id, tags = _find_or_create_run(client, run)
         entry.mlflow_run_id = run_id
-        digest = run.payload_sha256()
         completed = tags.get(TAG_PAYLOAD)
         if completed is not None:
-            if completed != digest:
+            if completed != run.payload_sha256():
                 raise RunConflictError("completed MLflow run holds a different payload")
         else:
             client.log_batch(
@@ -268,7 +267,7 @@ def sync_run(client: MlflowClient, entry: OutboxEntry) -> OutboxEntry:
                 tags={f"factory.hash.{k}": v for k, v in run.hashes},
             )
             client.finish_run(run_id, status=run.status, end_time_ms=run.completed_at_ms)
-            client.log_batch(run_id, tags={TAG_PAYLOAD: digest})
+            client.log_batch(run_id, tags={TAG_PAYLOAD: run.payload_sha256()})
         entry.state = SyncState.SYNCED
         entry.last_error = None
     except TrackingUnavailableError as exc:
