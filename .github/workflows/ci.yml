@@ -205,6 +205,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0104.py
       - name: FTF-1601 negative-test proof (postgres backup catches real defects, no DB required)
         run: python3 tests/tasks/test_ftf_1601.py
+      - name: FTF-1602 negative-test proof (object storage backup catches real defects, no network required)
+        run: python3 tests/tasks/test_ftf_1602.py
       - name: FTF-0101 negative-test proof (OIDC login catches real defects, real local sockets, no DB required)
         # uv run: this is the first task requiring FastAPI/authlib/itsdangerous/uvicorn
         # (owner-approved 2026-09-19), the same reason FTF-0102 first needed `uv run`.
@@ -1173,6 +1175,24 @@ jobs:
         run: pip install pyyaml --quiet
       - name: Prove the real versioned S3/MinIO source evidence against the live S3 fixture
         run: python3 tests/integration/test_ftf_0500b_s3_minio_versioned_source.py
+
+  object-storage-backup-integration:
+    # FTF-1602: real object-storage backup evidence against the live SeaweedFS
+    # S3-API container (versioned source bucket, object-lock target bucket,
+    # real COMPLIANCE retention, stale/missing-shard/lost-key refusals).
+    # Same real container pattern as s3-minio-versioned-source-integration.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' object-storage-backup-integration ')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install gate deps
+        run: pip install pyyaml --quiet
+      - name: Prove the real object-storage backup evidence against the live S3 fixture
+        run: python3 tests/integration/test_ftf_1602_object_storage_backup.py
 
   oidc-provider-integration:
     # FTF-0101 acceptance clause 1 ("Real OIDC provider login/refresh/logout
@@ -2917,6 +2937,7 @@ jobs:
       - dataset-upload-hardening-integration
       - live-auth-path-integration
       - network-policy-enforcement-integration
+      - object-storage-backup-integration
       - candidate-selection-integration
     runs-on: ubuntu-latest
     timeout-minutes: 5
