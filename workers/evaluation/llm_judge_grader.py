@@ -770,15 +770,13 @@ def grade_llm_judge(
             detail="gateway response was not a valid chat completion",
         )
     content, resolved_model, usage = parsed
-    route_identity_state = (
-        RouteIdentityState.VERIFIED if resolved_model is not None else RouteIdentityState.UNVERIFIED
-    )
-
-    if resolved_model is not None and (
-        resolved_model not in approved_judge_model_ids or resolved_model == candidate_model_id
-    ):
-        # The gateway served a different model than the approved judge --
-        # never a verdict, and never silently accepted (Section 69.5).
+    # An absent or non-string `model` echo is `resolved_model is None`, which is
+    # never in the approved set: the route cannot be verified, so no verdict is
+    # accepted (Section 69.5: the route must not silently switch).
+    route_identity_state = RouteIdentityState.VERIFIED
+    if resolved_model not in approved_judge_model_ids or resolved_model == candidate_model_id:
+        # The gateway served a different (or unverifiable) model than the approved
+        # judge -- never a verdict, and never silently accepted (Section 69.5).
         return make(
             LlmJudgeState.MODEL_MISMATCH,
             resolved_model=resolved_model,
