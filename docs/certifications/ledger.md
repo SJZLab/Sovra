@@ -10662,3 +10662,10 @@ OK). No producer session matches the certifier.
   raises untyped errors. Control-plane ruling: round 2 also adds the §11.2 agreement, subprocessor and
   deletion-behaviour fields and account/region matching, which the original DoD left out.
 - Pending: FTF-0616 r5 (#645) verification still running.
+
+## 2026-10-08T21:01Z — RETURNED: FTF-0616 (r6)
+- **FTF-0616: RETURNED** (round 5 → 6; tests only; #645, 6c22d586f4937f4e7823519b373baaeeafe8e969). Independent
+  verifier: CI on head 44a68cb green (live HTTPS gateway path ran); gates clean; whole-file mutation 324/324. Round-5
+  fixes P-17 (uncalibrated approved echo) and P-18 (None in the approved set) hold and are RED-proven; #637 closed
+  unmerged. GREEN: dropping the candidate-id clause lets a candidate that is also a calibration alias judge itself
+  (F9, R5f); case/whitespace-normalised alias matching lets an uncalibrated model certify (R5n).
