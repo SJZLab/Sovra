@@ -8936,6 +8936,17 @@ FTF-0616:
     only HTTP 200 is a response; a 400 is sent once. Fault -> RED table:
     docs/certifications/submissions/2026-10-08T0500Z-FTF-0616.md.
 
+    Round 3 (production fix + tests, docs/certifications/submissions/2026-10-08T1510Z-FTF-0616-r3.md):
+    a gateway response that never echoes which model served the request (missing or non-string
+    `model`) is now MODEL_MISMATCH too, never fabricated as a PASSED/FAILED verdict just because
+    route_identity is UNVERIFIED (closes the round-2 fail-open). The self-judging guard's own
+    behavioural test now uses a calibration record valid for the self-judging model itself, so
+    removing the guard reaches the calibration check instead of being masked by it -- the exact
+    mutation survivor at llm_judge_grader.py:681 a prior round left uncaught. Added a behavioural
+    injection-obeying test (a fail verdict with reasoning text saying "PASS" stays FAILED) and
+    secret-fetch-count-zero assertions on every structural pre-network-call refusal (self-judging,
+    unapproved model, critical, delimiter-forgery, all four uncalibrated shapes).
+
     BLOCKED_EXTERNAL (packet resource_gate, owner action): the clause "Call approved real judge through
     LiteLLM" is proven only against a local TLS gateway stand-in. It needs a real gateway key and an
     approved judge model, which do not exist yet. Disclosed: no live caller yet (Section 25's runtime
