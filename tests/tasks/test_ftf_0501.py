@@ -3004,6 +3004,70 @@ def test_m1g_a_failing_head_is_an_outage_and_a_missing_object_is_incomplete() ->
         )
 
 
+def test_m1h_the_sniff_window_boundary_decides_whether_a_cut_character_is_an_error() -> None:
+    window = dos.SNIFF_BYTES
+    head = b'{"k":"'
+    cases = (
+        # (label, bytes, expected): the whole object is inside the window, so a
+        # character cut at its very end is a real error ...
+        (
+            "exactly the window, cut character at the end",
+            head + b"x" * (window - len(head) - 1) + b"\xc3",
+            "content_type_mismatch",
+        ),
+        # ... but when the object goes on past the window, a character straddling
+        # the window's edge is only an artefact of where we stopped reading.
+        (
+            "one byte past the window, character straddling the edge",
+            head + b"x" * (window - len(head) - 1) + "\u00e9".encode(),
+            None,
+        ),
+        (
+            "exactly the window, whole characters",
+            head + b"x" * (window - len(head) - 3) + b'"}\n',
+            None,
+        ),
+    )
+    for label, body, want in cases:
+        with FakeS3() as fake:
+            target = _target(body)
+            _stored(fake, target, body)
+            got = _outcome(fake, target)
+            if want is None:
+                check(f"{CID}-M1", f"{label}: verifies", isinstance(got, dos.VerifiedObject))
+            else:
+                check(
+                    f"{CID}-M1",
+                    f"{label}: {want}",
+                    isinstance(got, dos.UploadRejection) and got.reason == want,
+                )
+
+
+def test_m11b_the_request_body_limit_is_inclusive() -> None:
+    with _routes_env() as env:
+        body = _jsonl(2000)
+        sid = _open_session(env, body)["id"]
+        item = f"{_col()}/{sid}"
+        limit = routes._MAX_BODY_BYTES
+
+        def padded(total: int) -> bytes:
+            core = json.dumps({"dataset_name": "x"}).encode()
+            return core + b" " * (total - len(core))
+
+        at = _call(env.base, "POST", item + "/finalize", padded(limit))
+        over = _call(env.base, "POST", item + "/finalize", padded(limit + 1))
+        check(
+            f"{CID}-M11",
+            "a body of exactly the limit is read, not refused as too large",
+            at.status != 413 and at.detail == "upload_incomplete",
+        )
+        check(
+            f"{CID}-M11",
+            "one byte more is 413 request_too_large",
+            over.status == 413 and over.detail == "request_too_large",
+        )
+
+
 def test_m2_content_types_are_normalized_exactly_and_sniffed_by_table() -> None:
     cases = {
         "  Application/JSONL ; charset=utf-8": "application/jsonl",
