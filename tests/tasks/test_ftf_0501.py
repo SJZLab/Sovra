@@ -2935,6 +2935,29 @@ def test_m1e_malformed_part_entries_from_storage_are_an_outage() -> None:
         )
 
 
+def test_m1f_an_unsupported_declared_type_is_rejected_before_anything_is_read() -> None:
+    body = b"%PDF-1.4 " * 400
+    for declared in ("application/pdf", "", "text/csvx", " "):
+        with FakeS3() as fake:
+            target = _target(body, content_type=declared)
+            settings = fake.settings()
+            dos.start_multipart(settings.client(), settings, target)
+            fake.inject_part(next(iter(fake.uploads)), 1, body)
+            fake.reset_calls()
+            got = _outcome(fake, target)
+            check(
+                f"{CID}-M1",
+                f"declared type {declared!r} -> unsupported_content_type",
+                isinstance(got, dos.UploadRejection) and got.reason == "unsupported_content_type",
+            )
+            check(
+                f"{CID}-M1",
+                f"({declared!r}) the upload was never completed, probed or read",
+                not any(fake.called(op) for op in ("complete", "head", "get", "list_parts")),
+            )
+            check(f"{CID}-M1", f"({declared!r}) nothing is left in storage", _gone(fake, target))
+
+
 def test_m2_content_types_are_normalized_exactly_and_sniffed_by_table() -> None:
     cases = {
         "  Application/JSONL ; charset=utf-8": "application/jsonl",
