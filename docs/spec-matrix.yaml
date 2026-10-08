@@ -2236,10 +2236,10 @@ FTF-0307:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0307.py
 FTF-0308:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Model-to-artifact mapping UI
-  evidence_hash: ''
+  evidence_hash: f8270c8b4e48b8a567978b33b50b61a674356118
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-14; scenarios=Q07, Q10; deps=FTF-0214, FTF-0301,
@@ -2254,7 +2254,7 @@ FTF-0308:
     (23 tests); proving_symbol stays blank. The packet's /capabilities path is not frozen in
     03-interface.yaml and is not consumed here. Fault -> RED table:
     docs/certifications/submissions/2026-10-08T0000Z-FTF-0308.md. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_0308.spec.ts
 FTF-0309:
@@ -8424,10 +8424,10 @@ FTF-0601:
   proving_symbol: build_evaluation_suite_router
   proving_test: tests/tasks/test_ftf_0601.py
 FTF-0602:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Evaluation case editor/import
-  evidence_hash: ''
+  evidence_hash: 5cd3c5c1131bcdec92a5c70a38e010318d0ab708
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0601 (CERTIFIED)
@@ -8441,7 +8441,7 @@ FTF-0602:
     (Law 6/7): no Next.js page tree exists (FTF-H029), so proof is a DOM-level Vitest spec with
     mocked fetch (30 tests); proving_symbol stays blank. Fault -> RED table:
     docs/certifications/submissions/2026-10-08T0030Z-FTF-0602.md. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_0602.spec.ts
 FTF-0603:
@@ -9262,10 +9262,10 @@ FTF-0810:
   proving_symbol: ''
   proving_test: ''
 FTF-0901:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Security profile enforcement
-  evidence_hash: 1be584d051d36951822f3044ef820cf6bb219e98
+  evidence_hash: 6e66492713a62ff3676c84a223cc6f41a649546c
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0103, FTF-0202,
@@ -9291,7 +9291,7 @@ FTF-0901:
     `--max-mutants 0`); both new guards independently confirmed load-bearing by hand-breaking the
     real module (normalizing the provider comparison; removing the approved_by `_text` guard) and
     showing the suite goes RED, then restoring byte-identical. Not self-certified.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0901.py
 FTF-0902:

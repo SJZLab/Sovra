@@ -1741,8 +1741,10 @@
     },
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "f8270c8b4e48b8a567978b33b50b61a674356118"
+      ],
       "ready": false,
       "security": "Apply tenant, purpose, privacy, least privilege, secret redaction and signed resource identity; no effect authorized solely by a UI control or model answer.",
       "observability": "Structured content-free state/error/timing/cost events with task/job/request identity; no fabricated counters. Evidence contains actual commands, exit codes and expected test counts.",
@@ -5452,8 +5454,10 @@
     },
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "5cd3c5c1131bcdec92a5c70a38e010318d0ab708"
+      ],
       "ready": false,
       "security": "Apply tenant, purpose, privacy, least privilege, secret redaction and signed resource identity; no effect authorized solely by a UI control or model answer.",
       "observability": "Structured content-free state/error/timing/cost events with task/job/request identity; no fabricated counters. Evidence contains actual commands, exit codes and expected test counts.",
@@ -7786,8 +7790,10 @@
     },
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "6e66492713a62ff3676c84a223cc6f41a649546c"
+      ],
       "ready": false,
       "security": "Apply tenant, purpose, privacy, least privilege, secret redaction and signed resource identity; no effect authorized solely by a UI control or model answer.",
       "observability": "Structured content-free state/error/timing/cost events with task/job/request identity; no fabricated counters. Evidence contains actual commands, exit codes and expected test counts.",
