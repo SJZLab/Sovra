@@ -1728,6 +1728,40 @@ def test_round3_subclass_admission() -> None:
         "sequence of dicts" in _msg_any(verify_trace_provenance, sub_step),
     )
 
+    # Boundaries of the plain-JSON walk, each with its own message.
+    def nest(n: int) -> Any:
+        v: Any = []
+        for _ in range(n - 1):
+            v = [v]
+        return v
+
+    check(
+        "FTF-1703-R3-2",
+        "nesting exactly at the depth limit is accepted",
+        not _raises(TraceVerificationError, td._require_plain_json, nest(65), "t"),
+    )
+    check(
+        "FTF-1703-R3-2",
+        "nesting one past the depth limit is refused as too deep",
+        "too deep" in _msg_any(td._require_plain_json, nest(66), "t"),
+    )
+    check(
+        "FTF-1703-R3-2",
+        "a non-string key is refused by name",
+        "non-string key" in _msg_any(td._require_plain_json, {1: "x"}, "t"),
+    )
+    check(
+        "FTF-1703-R3-2",
+        "an unsupported value type is refused by name",
+        "unsupported type" in _msg_any(td._require_plain_json, {"a": {1, 2}}, "t"),
+    )
+    forged_prov = dataclasses.replace(base, provenance={**base.provenance, "x": Liar({"a": 1})})
+    check(
+        "FTF-1703-R3-2",
+        "a dict subclass nested in provenance is refused",
+        "unsupported type" in _msg_any(td._require_trace_shape, forged_prov),
+    )
+
 
 def main() -> None:
     for name, fn in sorted(globals().items()):

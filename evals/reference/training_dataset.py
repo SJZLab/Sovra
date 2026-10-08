@@ -696,10 +696,14 @@ def _require_plain_json(value: Any, trace_id: str, depth: int = 0) -> None:
     if kind is dict:
         for key, item in value.items():
             if type(key) is not str:
-                raise TraceVerificationError(f"{trace_id}: trace content is not plain JSON data")
+                raise TraceVerificationError(
+                    f"{trace_id}: trace content is not plain JSON data (non-string key)"
+                )
             _require_plain_json(item, trace_id, depth + 1)
         return
-    raise TraceVerificationError(f"{trace_id}: trace content is not plain JSON data")
+    raise TraceVerificationError(
+        f"{trace_id}: trace content is not plain JSON data (unsupported type)"
+    )
 
 
 def _canonical(value: Any) -> str:
