@@ -2872,6 +2872,34 @@ def test_m1b_default_ports_follow_the_scheme() -> None:
         )
 
 
+def test_m1d_an_upload_is_found_by_its_exact_key_only() -> None:
+    with FakeS3() as fake:
+        settings = fake.settings()
+        client = settings.client()
+        body = _jsonl(3000)
+        mixed = _target(body, key="tenants/AbC/projects/P/uploads/Source")
+        lower = _target(body, key="tenants/abc/projects/p/uploads/source")
+        mixed_id = dos.start_multipart(client, settings, mixed)
+        check(
+            f"{CID}-M1",
+            "a key with upper-case letters finds its own upload",
+            dos.find_upload_id(client, settings, mixed) == mixed_id,
+        )
+        check(
+            f"{CID}-M1",
+            "the lower-cased spelling of that key finds nothing",
+            dos.find_upload_id(client, settings, lower) is None,
+        )
+        lower_id = dos.start_multipart(client, settings, lower)
+        check(
+            f"{CID}-M1",
+            "two keys differing only by case keep their own uploads",
+            dos.find_upload_id(client, settings, lower) == lower_id
+            and dos.find_upload_id(client, settings, mixed) == mixed_id
+            and lower_id != mixed_id,
+        )
+
+
 def test_m2_content_types_are_normalized_exactly_and_sniffed_by_table() -> None:
     cases = {
         "  Application/JSONL ; charset=utf-8": "application/jsonl",
