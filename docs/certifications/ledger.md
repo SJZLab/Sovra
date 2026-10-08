@@ -10571,3 +10571,18 @@ PR is not landed by the next certifier shift.
   is under verification.
 - **Observation, not a finding:** data_exposure_check without arguments prints "no datastore backends declared". CI runs
   it with `--backends postgres_rls,s3_identity --fail-on-exposure`, so the gate is intact.
+
+## 2026-10-08T14:30Z — RETURNED: FTF-1602 (r3)
+- **FTF-1602: RETURNED** (round 2 → 3; production plus tests; #629, 7d28d4c90e3657911788bdf348d760c01e683aaa).
+  Independent verifier on real SeaweedFS with a bounded fixture.
+  - Item 3 holds: verify re-checks counts, bytes and the manifest hash, RED in unit and integration.
+  - Unit faults all RED.
+  - Open findings:
+    - A shrunk, re-hashed latest version of the backup record restores as success. Partial backup accepted (Law 17).
+    - At integration level, a missing blob and a foreign-tenant prefix are not proven (faults GREEN).
+    - Typed input: a membership test runs before the type check, and a str subclass bypasses the tenant guard.
+    - A malformed record raises untyped errors.
+    - Whole-file mutation 297/299. The PR's 200/200 was diff-scoped.
+    - Notes overclaim.
+  - The first fault pass was discarded after the verifier's unbounded SeaweedFS fixture filled the disk. All rows come
+    from a second, bounded pass with the module sha256-verified after each row.

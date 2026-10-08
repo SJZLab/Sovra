@@ -770,6 +770,68 @@ def test_error_types_are_distinct_and_specific() -> None:
     )
 
 
+def test_route_change_authority_refuses_case_and_whitespace_variants() -> None:
+    # Round-4 return, findings 1-3: every variant below must be refused when
+    # the grant AND the organization policy BOTH hold the exact canonical
+    # value and the actor is a real approver, so only exact-string matching
+    # inside `enforce_route_change_authority` can refuse it. A
+    # `.strip()`/`.lower()` normalization of the input before validation
+    # would turn each variant into the canonical value and authorize it.
+    org_policy = _policy()
+    grant = enforce_project_gateway_permission_request(
+        org_policy,
+        ProjectGatewayPermissionRequest(
+            registration_namespaces=frozenset(),
+            deployment_namespaces=frozenset({"factory-production"}),
+            approvers=frozenset({"user:jane"}),
+        ),
+    )
+    check(
+        "FTF-1206",
+        "control: the canonical target and a real approver are authorized",
+        _accepts(
+            enforce_route_change_authority,
+            org_policy,
+            grant,
+            actor="user:jane",
+            target_deployment_namespace="factory-production",
+        )
+        is None,
+    )
+    for variant in (
+        "FACTORY-PRODUCTION",
+        "Factory-Production",
+        " factory-production",
+        "factory-production ",
+        "\tfactory-production",
+        "factory-production\n",
+    ):
+        check(
+            "FTF-1206",
+            f"target {variant!r} is refused although the canonical value is in "
+            "both the grant and the organization policy",
+            _rejects(
+                enforce_route_change_authority,
+                org_policy,
+                grant,
+                actor="user:jane",
+                target_deployment_namespace=variant,
+            ),
+        )
+    for variant in ("user:jane ", " user:jane", "USER:JANE", "user:jane\n"):
+        check(
+            "FTF-1206",
+            f"actor {variant!r} is refused against approvers {{'user:jane'}}",
+            _rejects(
+                enforce_route_change_authority,
+                org_policy,
+                grant,
+                actor=variant,
+                target_deployment_namespace="factory-production",
+            ),
+        )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
