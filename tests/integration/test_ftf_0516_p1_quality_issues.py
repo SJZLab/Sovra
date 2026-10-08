@@ -48,7 +48,6 @@ import time
 import urllib.parse
 import uuid
 from collections.abc import Callable, Iterator
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -63,18 +62,6 @@ from fastapi import FastAPI  # noqa: E402
 from sqlalchemy import create_engine, text  # noqa: E402
 from sqlalchemy.exc import DBAPIError  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
-
-from app.auth.organization_workspace_schema import (  # noqa: E402
-    APP_ROLE_NAME,
-    Organization,
-    Workspace,
-)
-from app.auth.rbac_middleware import AuthenticatedPrincipal, Role  # noqa: E402
-from app.datasets import dataset_quality_store as qstore  # noqa: E402
-from app.datasets import dataset_upload_store as ustore  # noqa: E402
-from app.datasets.dataset_quality_routes import build_dataset_quality_router  # noqa: E402
-from app.db.tenant_context import TenantContext, tenant_scoped_session_for  # noqa: E402
-from app.projects.project_schema import Project  # noqa: E402
 from workers.data.exact_duplicate_detector import detect_exact_duplicates  # noqa: E402
 from workers.data.near_duplicate_detector import detect_near_duplicates  # noqa: E402
 from workers.data.normalized_duplicate_detector import detect_normalized_duplicates  # noqa: E402
@@ -90,6 +77,18 @@ from workers.data.quality_issue_engine import (  # noqa: E402
 from workers.data.record_schema_validator import RecordSchemaValidationReport  # noqa: E402
 from workers.data.tokenization_analysis import TokenizationAnalysisReport  # noqa: E402
 from workers.data.tool_argument_validator import ToolCallValidationReport  # noqa: E402
+
+from app.auth.organization_workspace_schema import (  # noqa: E402
+    APP_ROLE_NAME,
+    Organization,
+    Workspace,
+)
+from app.auth.rbac_middleware import AuthenticatedPrincipal, Role  # noqa: E402
+from app.datasets import dataset_quality_store as qstore  # noqa: E402
+from app.datasets import dataset_upload_store as ustore  # noqa: E402
+from app.datasets.dataset_quality_routes import build_dataset_quality_router  # noqa: E402
+from app.db.tenant_context import TenantContext, tenant_scoped_session_for  # noqa: E402
+from app.projects.project_schema import Project  # noqa: E402
 
 FAILURES: list[str] = []
 CID = "FTF-0516-P1"
@@ -292,12 +291,12 @@ def main() -> None:
         (["downgrade", "-1"], "alembic downgrade -1"),
         (["upgrade", "head"], "alembic upgrade head after downgrade -1"),
     ):
-        result = _alembic(args, migration_url)
+        migrated = _alembic(args, migration_url)
         check(
-            f"{label} runs cleanly (exit {result.returncode})\n{result.stdout}\n{result.stderr}",
-            result.returncode == 0,
+            f"{label} runs cleanly (exit {migrated.returncode})\n{migrated.stdout}\n{migrated.stderr}",  # noqa: E501
+            migrated.returncode == 0,
         )
-        if result.returncode != 0:
+        if migrated.returncode != 0:
             _finish()
     heads = _alembic(["heads"], migration_url)
     check(f"exactly one Alembic head: {heads.stdout!r}", heads.stdout.count("(head)") == 1)
@@ -356,8 +355,8 @@ def main() -> None:
             )
         return connection_id
 
-    conn1, conn2 = seed_connection(org1_id, p1_id), seed_connection(org2_id, p2_id)
-    ctx1, ctx2 = TenantContext(organization_id=org1_id), TenantContext(organization_id=org2_id)
+    conn1, conn2 = seed_connection(org1_id, p1_id), seed_connection(org2_id, p2_id)  # noqa: F841
+    ctx1, ctx2 = TenantContext(organization_id=org1_id), TenantContext(organization_id=org2_id)  # noqa: F841
     actor_ml = qstore.QualityActor("user", "user-org1-ml_engineer", "ml_engineer", "req-ml")
     actor_admin = qstore.QualityActor("user", "user-org1-workspace_admin", "workspace_admin", "r-a")
     upload_actor = ustore.UploadActor("user", "seed-user", "req-upload")
@@ -658,9 +657,9 @@ def main() -> None:
     )
 
     d_other = make_dataset("other-name")
-    d_other_report = record(d_other, _full_runs(clean=True))
+    d_other_report = record(d_other, _full_runs(clean=True))  # noqa: F841
 
-    pii_req = req(pii, "exclude")  # positions (2,)
+    pii_req = req(pii, "exclude")  # positions (2,)  # noqa: F841
     snapshot = datasets_fingerprint()
     # -- refusals: each writes nothing
     before = counts()
@@ -1249,7 +1248,7 @@ def main() -> None:
         params.setdefault("evidence", _sha(f"{params['issue']}:{params['dsha']}"))
         return raw(
             org1_id,
-            f"INSERT INTO dataset_quality_issues ({issue_columns}) VALUES (gen_random_uuid(), :org, "
+            f"INSERT INTO dataset_quality_issues ({issue_columns}) VALUES (gen_random_uuid(), :org, "  # noqa: E501
             ":report, :dsha, :issue, :detector, :category, :severity, :reason, :msg, "
             "CAST(:pos AS integer[]), CAST(:idx AS integer[]), :digest, :isdf, :haspos, :evidence)",
             **params,
@@ -1328,7 +1327,7 @@ def main() -> None:
         "resolution_version +2 is refused by the trigger",
         report_update(
             org1_id,
-            "UPDATE dataset_quality_reports SET resolution_version = resolution_version + 2 WHERE id=:r",
+            "UPDATE dataset_quality_reports SET resolution_version = resolution_version + 2 WHERE id=:r",  # noqa: E501
             r=attack.id,
         ),
         "resolution_version must rise by exactly 1",
@@ -1337,7 +1336,7 @@ def main() -> None:
         "resolution_version going backwards is refused",
         report_update(
             org1_id,
-            "UPDATE dataset_quality_reports SET resolution_version = resolution_version - 1 WHERE id=:r",
+            "UPDATE dataset_quality_reports SET resolution_version = resolution_version - 1 WHERE id=:r",  # noqa: E501
             r=r1.id,
         ),
         "resolution_version must rise by exactly 1",
@@ -1354,7 +1353,7 @@ def main() -> None:
     )
     ok, message = report_update(
         org1_id,
-        "UPDATE dataset_quality_reports SET resolution_version = resolution_version + 1, updated_at = now() WHERE id=:r",
+        "UPDATE dataset_quality_reports SET resolution_version = resolution_version + 1, updated_at = now() WHERE id=:r",  # noqa: E501
         r=attack.id,
     )
     check(f"positive control: resolution_version +1 is accepted ({message[:120]})", ok)
@@ -1394,8 +1393,8 @@ def main() -> None:
     # cross-tenant raw access
     cross_ok, cross_msg = raw(
         org2_id,
-        "INSERT INTO dataset_quality_reports (id, organization_id, project_id, dataset_id, dataset_name, "
-        "dataset_purpose, dataset_version, dataset_sha256, report_seq, report_sha256, detector_versions, "
+        "INSERT INTO dataset_quality_reports (id, organization_id, project_id, dataset_id, dataset_name, "  # noqa: E501
+        "dataset_purpose, dataset_version, dataset_sha256, report_seq, report_sha256, detector_versions, "  # noqa: E501
         "detectors_reported, issue_count, blocking_count, warning_count, created_by) "
         "VALUES (gen_random_uuid(), :o1, :p, :d, 'attack', 'training', 1, :sha, 9, :rsha, "
         "CAST(:dv AS jsonb), ARRAY[]::text[], 0, 0, 0, 'x')",
@@ -1845,7 +1844,7 @@ def main() -> None:
         )
         after_report = _http(url, "GET", b + "/quality-report", ml).json()
         check(
-            "quality-report reflects the decisions: version 2, still blocked by nothing blocking left",
+            "quality-report reflects the decisions: version 2, still blocked by nothing blocking left",  # noqa: E501
             after_report["resolution_version"] == 2 and after_report["blocks_split"] is False,
         )
         states = {
@@ -1919,7 +1918,7 @@ def _check_catalog(owner_engine: Any) -> None:
             "sovra_app has no UPDATE on any column of issues or resolutions",
             conn.execute(
                 text(
-                    "SELECT count(*) FROM information_schema.column_privileges WHERE grantee='sovra_app' "
+                    "SELECT count(*) FROM information_schema.column_privileges WHERE grantee='sovra_app' "  # noqa: E501
                     "AND privilege_type='UPDATE' AND table_name IN "
                     "('dataset_quality_issues','dataset_issue_resolutions')"
                 )
