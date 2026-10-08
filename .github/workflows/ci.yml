@@ -466,6 +466,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0501_p2.py
       - name: FTF-0501 negative-test proof (direct object-storage upload -- SigV4 presign vector + tamper, part plan, content sniffing, finalize verification against an in-process S3, real routes over the real store on SQLite, contract, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0501.py
+      - name: FTF-0516-P1 negative-test proof (dataset quality issues -- migration SQL + RLS/GRANT/CHECK shape + fault injection, store on SQLite with the real detectors and engine, five routes, contract, mounted app, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0516_p1.py
       - name: FTF-0103A negative-test proof (live session principal + Membership -- every /api/v1 route wired to the real resolver/role lookup, fail-closed resolver, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0103a.py
       - name: FTF-1807 negative-test proof (LiteLLM outage runbook -- doc/code fidelity, no DB required)
@@ -2803,6 +2805,50 @@ jobs:
       - name: Prove the real upload hardening evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0501_p2_dataset_upload_hardening.py
 
+  dataset-quality-issues-integration:
+    # FTF-0516-P1: real Postgres evidence for dataset quality report / issue /
+    # resolution persistence (migration 0026): upgrade/downgrade/upgrade with one
+    # head, ENABLE+FORCE RLS and a non-allow-all tenant policy on all three tables,
+    # the app role's grants (no DELETE, no UPDATE on issues or resolutions, a
+    # column-limited UPDATE on reports), the store over the real FTF-0508..0514
+    # detector reports, raw sovra_app SQL refused by the database (wrong evidence
+    # hash or flag, waiver of a blocking issue or by a role that may not waive,
+    # resolution of a detector failure, before-evidence mismatch, successor of
+    # another purpose or not later, unsorted or foreign positions, a second
+    # decision, resolution_version +2, any other report column, raw cross-tenant
+    # INSERT, DELETE), and the five routes on a real uvicorn server (every stable
+    # code, idempotent replay, all-or-nothing, held-out hidden from ml_engineer,
+    # one audit row per resolution, datasets untouched) --
+    # tests/integration/test_ftf_0516_p1_quality_issues.py.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' dataset-quality-issues-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0516p1
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0516p1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0516p1
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real dataset quality evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_0516_p1_quality_issues.py
+
   live-auth-path-integration:
     # FTF-0103A: real OIDC login -> real API call. A real idpyoidc OpenID
     # Provider (FTF-0101's harness), the REAL app.main.create_app() served
@@ -3076,6 +3122,7 @@ jobs:
       - evaluation-case-integration
       - dataset-upload-integration
       - dataset-upload-hardening-integration
+      - dataset-quality-issues-integration
       - live-auth-path-integration
       - network-policy-enforcement-integration
       - object-storage-backup-integration

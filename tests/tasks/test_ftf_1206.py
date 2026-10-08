@@ -24,6 +24,13 @@ without any database or network call:
    approvers is denied; a bypass attempt is denied; an organization that
    does not require approval authorizes any actor.
 
+Round-5 return additions: `type(value) is str`, never `isinstance`, so a
+`str` subclass that overrides `__hash__`/`__eq__` to alias an authorized
+value (while carrying its own, different literal content) can never pass
+`validate_namespace`/`validate_approver_identity`; and every identifier
+pattern edge case the round-5 review named, tested directly against both
+validators and through both dataclasses' own construction.
+
 Run directly: python3 tests/tasks/test_ftf_1206.py
 """
 
@@ -828,6 +835,207 @@ def test_route_change_authority_refuses_case_and_whitespace_variants() -> None:
                 grant,
                 actor=variant,
                 target_deployment_namespace="factory-production",
+            ),
+        )
+
+
+class _AliasStr(str):
+    """A `str` subclass whose `__hash__`/`__eq__` alias a different
+    (authorized) canonical value than its own literal content -- so any
+    `frozenset`/set-membership or set-difference check against it would
+    compare equal to the canonical value, while the object itself still
+    carries its own, different, unauthorized string content."""
+
+    def __new__(cls, literal: str, canonical: str) -> _AliasStr:
+        return str.__new__(cls, literal)
+
+    def __init__(self, literal: str, canonical: str) -> None:
+        super().__init__()
+        self._canonical = canonical
+
+    def __hash__(self) -> int:
+        return hash(self._canonical)
+
+    def __eq__(self, other: object) -> bool:
+        return self._canonical == other
+
+
+def test_round5_type_is_str_rejects_aliasing_subclass() -> None:
+    # Round-5 return, finding 1: `isinstance(value, str)` let a `str`
+    # subclass through, so an aliasing subclass whose hash/eq compare equal
+    # to an authorized value -- while its own literal content is a
+    # different, unauthorized string -- was accepted and that unauthorized
+    # literal ended up granted/authorized. `type(value) is str` closes this;
+    # reverting to `isinstance` must turn every check below RED.
+    org_policy = _policy()
+
+    check(
+        "FTF-1206",
+        "validate_namespace itself refuses a str subclass, even one that is "
+        "not aliasing anything (plain subclass, canonical==literal)",
+        _rejects(validate_namespace, _AliasStr("factory-candidates", "factory-candidates")),
+    )
+    check(
+        "FTF-1206",
+        "validate_approver_identity itself refuses a str subclass",
+        _rejects(validate_approver_identity, _AliasStr("user:jane", "user:jane")),
+    )
+
+    # "a request namespace Alias('someone-elses-ns') aliasing
+    # 'factory-candidates' got a grant for 'someone-elses-ns'": a project
+    # must never be able to smuggle an unauthorized literal namespace into a
+    # grant by wrapping it in a subclass whose hash/eq equal an authorized
+    # one. The dataclass's own construction-time validation must refuse it
+    # before it can ever reach `enforce_project_gateway_permission_request`.
+    mallory_namespace = _AliasStr("someone-elses-ns", "factory-candidates")
+    check(
+        "FTF-1206",
+        "a ProjectGatewayPermissionRequest holding an aliasing-subclass "
+        "registration namespace is refused at construction, never granted "
+        "the subclass's own unauthorized literal content",
+        _rejects(
+            ProjectGatewayPermissionRequest,
+            registration_namespaces=frozenset({mallory_namespace}),
+            deployment_namespaces=frozenset(),
+            approvers=frozenset(),
+        ),
+    )
+    check(
+        "FTF-1206",
+        "the same aliasing-subclass namespace is refused by "
+        "OrganizationGatewayPolicy construction too",
+        _rejects(
+            OrganizationGatewayPolicy,
+            allowed_registration_namespaces=frozenset({mallory_namespace}),
+            allowed_deployment_namespaces=frozenset(),
+            approvers=frozenset(),
+        ),
+    )
+
+    # "an actor Who('user:mallory') aliasing 'user:jane' ... were
+    # authorized": a route-change actor wrapped in an aliasing subclass must
+    # never be authorized as the organization's real 'user:jane' approver.
+    grant = enforce_project_gateway_permission_request(
+        org_policy,
+        ProjectGatewayPermissionRequest(
+            registration_namespaces=frozenset(),
+            deployment_namespaces=frozenset({"factory-production"}),
+            approvers=frozenset(),
+        ),
+    )
+    mallory_actor = _AliasStr("user:mallory", "user:jane")
+    check(
+        "FTF-1206",
+        "an aliasing-subclass actor is refused by enforce_route_change_authority, "
+        "never authorized as the organization's real approver it aliases",
+        _rejects(
+            enforce_route_change_authority,
+            org_policy,
+            grant,
+            actor=mallory_actor,
+            target_deployment_namespace="factory-production",
+        ),
+    )
+
+    # "a subclass target aliasing 'factory-production' ... were authorized":
+    # a route-change target wrapped in an aliasing subclass must never be
+    # authorized as the project's real granted 'factory-production' namespace.
+    alias_target = _AliasStr("not-really-granted", "factory-production")
+    check(
+        "FTF-1206",
+        "an aliasing-subclass target namespace is refused by "
+        "enforce_route_change_authority, never authorized as the project's "
+        "real granted namespace it aliases",
+        _rejects(
+            enforce_route_change_authority,
+            org_policy,
+            grant,
+            actor="user:jane",
+            target_deployment_namespace=alias_target,
+        ),
+    )
+
+
+def test_round5_identifier_pattern_edge_cases() -> None:
+    # Round-5 return, finding 2: every edge case named by the review,
+    # exercised directly against both validators AND through both
+    # dataclasses' own construction (not only through
+    # enforce_route_change_authority, which already covers plain
+    # case/whitespace variants in test_route_change_authority_refuses_
+    # case_and_whitespace_variants).
+    refused_namespaces = (
+        "factory-production\n",  # fault: fullmatch -> match
+        "factory-",  # fault: trailing separator allowed
+        "factory.",
+        "factory:",
+        "factory/production",  # fault: '/' allowed
+        "é",  # fault: \w used in place of [A-Za-z0-9]
+        "İstanbul",
+        "１２",  # fullwidth digits
+        "factory-prоduction",  # Cyrillic 'о' homoglyph, not ASCII 'o'
+        "a" * 129,  # fault: length bound widened past 128
+    )
+    accepted_namespaces = (
+        "factory-production",
+        "a" * 128,
+    )
+
+    for bad in refused_namespaces:
+        check(
+            "FTF-1206",
+            f"validate_namespace itself refuses {bad!r}",
+            _rejects(validate_namespace, bad),
+        )
+        check(
+            "FTF-1206",
+            f"validate_approver_identity itself refuses {bad!r}",
+            _rejects(validate_approver_identity, bad),
+        )
+        check(
+            "FTF-1206",
+            f"OrganizationGatewayPolicy refuses {bad!r} as a registration namespace",
+            _rejects(
+                OrganizationGatewayPolicy,
+                allowed_registration_namespaces=frozenset({bad}),
+                allowed_deployment_namespaces=frozenset(),
+                approvers=frozenset(),
+            ),
+        )
+        check(
+            "FTF-1206",
+            f"OrganizationGatewayPolicy refuses {bad!r} as an approver identity",
+            _rejects(
+                OrganizationGatewayPolicy,
+                allowed_registration_namespaces=frozenset(),
+                allowed_deployment_namespaces=frozenset(),
+                approvers=frozenset({bad}),
+            ),
+        )
+        check(
+            "FTF-1206",
+            f"ProjectGatewayPermissionRequest refuses {bad!r} as a deployment namespace",
+            _rejects(
+                ProjectGatewayPermissionRequest,
+                registration_namespaces=frozenset(),
+                deployment_namespaces=frozenset({bad}),
+                approvers=frozenset(),
+            ),
+        )
+
+    for good in accepted_namespaces:
+        check(
+            "FTF-1206",
+            f"validate_namespace itself accepts {good!r}",
+            validate_namespace(good) == good,
+        )
+        check(
+            "FTF-1206",
+            f"OrganizationGatewayPolicy accepts {good!r} as a registration namespace",
+            not _rejects(
+                OrganizationGatewayPolicy,
+                allowed_registration_namespaces=frozenset({good}),
+                allowed_deployment_namespaces=frozenset(),
+                approvers=frozenset(),
             ),
         )
 
