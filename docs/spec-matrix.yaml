@@ -9639,6 +9639,14 @@ FTF-0905:
     (a `str` subclass with a lying `__eq__` is refused). The earlier "empty ledger is vacuously
     complete" test was removed.
 
+    Round 3 (tests only, production unchanged): behavioural tests pin the DEFAULT plan (every
+    34-of-35 (sink, encoding) subset and every-sink-literal-only raise `IncompleteLeakCoverageError`),
+    a leak on the same key stays sticky under a later clean or found re-check, and `canary_id`
+    comes from its own `secrets.token_hex` draw (patched draw sequences; changing only one draw
+    changes only that field). Seven faults (default plan literal-only / two pairs / minus one pair,
+    re-check ignored, clean re-check clears a leak, id = reversed token, id = hex-complemented
+    token) each turn the probe RED; submission 2026-10-08T1900Z-FTF-0905.md.
+
     Disclosed: this module is a pure library with no live caller yet -- the producers that will
     actually place a canary in a real error path/trace/artifact (training/evaluation workers) are
     separate, dependency-gated tasks; proving_symbol stays blank, same precedent as
