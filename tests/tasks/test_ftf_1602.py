@@ -1889,6 +1889,540 @@ def test_s3_header_names_are_exact() -> None:
         )
 
 
+# ---------------------------------------------------------------------------
+# Round 3: record pin, typed input/storage errors, strict record parse, mutation survivors
+# ---------------------------------------------------------------------------
+
+RECORD_KEY = "backups/o/b1/backup-record.json"
+
+
+def outcome(fn, *args: object, **kwargs: object) -> BaseException | None:
+    """Whatever `fn` raises, of any type (a raw TypeError/TimeoutError must be visible)."""
+    try:
+        fn(*args, **kwargs)
+    except BaseException as exc:  # noqa: BLE001
+        return exc
+    return None
+
+
+def typed(exc: BaseException | None, message: str = "") -> bool:
+    """`exc` is this module's own error (not a raw built-in) and names `message`."""
+    return (
+        exc is not None
+        and type(exc) in (ObjectStorageBackupError, BackupIncompleteError)
+        and message in str(exc)
+    )
+
+
+def shrunk_record(target: MemStore, *, rehash_totals: bool = True) -> bytes:
+    """The stored record minus its first entry and that entry's blob, totals re-hashed so it
+    is internally consistent (the attack in the round-3 return)."""
+    data = json.loads(target.get_latest(RECORD_KEY))
+    dropped = data["entries"].pop(0)
+    data["blobs"] = [b for b in data["blobs"] if b[0] != dropped["sha256"]]
+    data["object_count"] = len(data["entries"])
+    data["blob_count"] = len(data["blobs"])
+    data["total_bytes"] = sum(size for _, size in data["blobs"])
+    if rehash_totals:
+        rehash(data)
+    return json.dumps(data).encode()
+
+
+def test_record_is_pinned_to_one_retained_version() -> None:
+    _, target, _, record = backed_up()
+    # The attack: a NEW latest version of the record, shrunk and re-hashed, blob dropped.
+    attacked = clone(target)
+    attacked.add(RECORD_KEY, shrunk_record(target))
+    for label, call in (
+        ("verify", lambda: verify_backup(attacked, "b1", organization_id="o", now=NOW)),
+        ("restore", lambda: restore(attacked, MemStore())),
+    ):
+        err = outcome(call)
+        check(
+            "FTF-1602-N2",
+            f"{label} refuses a record that has a newer, re-hashed version",
+            typed(err, "more than one version"),
+        )
+    destination = MemStore()
+    check(
+        "FTF-1602-N2",
+        "nothing is written to the clean bucket for the shrunk record",
+        typed(outcome(restore, attacked, destination)) and nothing_written(destination),
+    )
+    # Negative: the same shrunk record as the ONLY version is self-consistent, so only the
+    # caller-held manifest hash (and the pin on the original) stops it.
+    only = clone(target)
+    only.replace_only(RECORD_KEY, shrunk_record(target))
+    check(
+        "FTF-1602-N2",
+        "a caller-held manifest hash refuses a shrunk, re-hashed single-version record",
+        typed(
+            outcome(restore, only, MemStore(), expected_manifest_sha256=record.manifest_sha256),
+            "differs from the expected manifest",
+        ),
+    )
+    check(
+        "FTF-1602-A3",
+        "the genuine single-version record restores under the pin and the expected hash",
+        outcome(restore, target, MemStore(), expected_manifest_sha256=record.manifest_sha256)
+        is None,
+    )
+    deleted = clone(target)
+    deleted.versions[RECORD_KEY] = [("dm", None)]
+    check(
+        "FTF-1602-N2",
+        "a record whose only version is a delete marker is refused",
+        typed(outcome(restore, deleted, MemStore()), "delete marker"),
+    )
+    missing_versions = clone(target)
+    del missing_versions.versions[RECORD_KEY]
+    check(
+        "FTF-1602-N2",
+        "a record with no version at all is refused as missing",
+        typed(outcome(restore, missing_versions, MemStore()), "missing or unreadable"),
+    )
+    declared = datetime.strptime(record.retain_until, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    for label, change, message in (
+        ("no retention", lambda t: t.retention.pop(RECORD_KEY), "not under retention"),
+        (
+            "retention one second short of the record's own retain_until",
+            lambda t: t.retention.__setitem__(RECORD_KEY, declared - timedelta(seconds=1)),
+            "not under retention",
+        ),
+    ):
+        weak = clone(target)
+        change(weak)
+        check(
+            "FTF-1602-N2",
+            f"a record with {label} is refused at verify and restore",
+            typed(outcome(verify_backup, weak, "b1", organization_id="o", now=NOW), message)
+            and typed(outcome(restore, weak, MemStore()), message),
+        )
+    exact = clone(target)
+    exact.retention[RECORD_KEY] = declared
+    check(
+        "FTF-1602-A1",
+        "retention exactly equal to the record's retain_until is accepted",
+        outcome(verify_backup, exact, "b1", organization_id="o", now=NOW) is None,
+    )
+    # held == now is no retention (the record's own retain_until is already in the past).
+    past = clone(target)
+    data = json.loads(target.get_latest(RECORD_KEY))
+    data["retain_until"] = NOW.strftime("%Y-%m-%dT%H:%M:%SZ")
+    past.replace_only(RECORD_KEY, json.dumps(data).encode())
+    past.retention[RECORD_KEY] = NOW
+    check(
+        "FTF-1602-N2",
+        "record retention that ends exactly now is refused even when blobs are still retained",
+        typed(outcome(verify_backup, past, "b1", organization_id="o", now=NOW), "under retention"),
+    )
+    past.retention[RECORD_KEY] = NOW + timedelta(seconds=1)
+    check(
+        "FTF-1602-A1",
+        "record retention one second past now is accepted",
+        outcome(verify_backup, past, "b1", organization_id="o", now=NOW) is None,
+    )
+
+
+class FlakyStore(MemStore):
+    """A MemStore whose chosen operation raises `error` (optionally only for keys containing
+    `only`), as a timed-out or erroring real server would."""
+
+    def __init__(self, operation: str, error: BaseException, only: str = "") -> None:
+        super().__init__()
+        self.operation, self.error, self.only = operation, error, only
+
+    def _maybe(self, operation: str, key: str) -> None:
+        if operation == self.operation and self.only in key:
+            raise self.error
+
+
+def _flaky(operation: str):
+    def wrapped(self: FlakyStore, key: str, *args: Any, **kwargs: Any) -> Any:
+        self._maybe(operation, key)
+        return getattr(MemStore, operation)(self, key, *args, **kwargs)
+
+    return wrapped
+
+
+for _op in ("list_versions", "get_version", "version_metadata", "put_restored", "get_latest"):
+    setattr(FlakyStore, _op, _flaky(_op))
+FlakyStore.retention_until = _flaky("retention_until")  # type: ignore[method-assign]
+
+
+def flaky_copy(source: MemStore, operation: str, error: BaseException, only: str = "") -> Any:
+    twin = FlakyStore(operation, error, only)
+    twin.versions = {k: list(v) for k, v in source.versions.items()}
+    twin.retention = dict(source.retention)
+    twin.metadata = {k: dict(v) for k, v in source.metadata.items()}
+    return twin
+
+
+def test_storage_failures_are_typed_errors() -> None:
+    _, target, _, record = backed_up()
+    blob = f"/blobs/{record.blobs[0][0]}"
+    for operation, only, error in (
+        ("list_versions", "backup-record", TimeoutError("read timed out")),
+        ("get_latest", "backup-record", OSError("connection reset")),
+        ("get_latest", blob, TimeoutError("read timed out")),
+        ("retention_until", blob, S3Error(500, "InternalError", "boom")),
+        ("retention_until", "backup-record", S3Error(403, "AccessDenied", "no")),
+    ):
+        store = flaky_copy(target, operation, error, only)
+        err = outcome(verify_backup, store, "b1", organization_id="o", now=NOW)
+        check(
+            "FTF-1602-N2",
+            f"verify maps {type(error).__name__} from {operation}({only!r}) to its own error",
+            typed(err, "storage request failed"),
+        )
+        err = outcome(restore, store, MemStore())
+        check(
+            "FTF-1602-N2",
+            f"restore maps {type(error).__name__} from {operation}({only!r}) to its own error",
+            typed(err, "storage request failed"),
+        )
+    status = outcome(
+        verify_backup,
+        flaky_copy(target, "retention_until", S3Error(503, "SlowDown", "x"), blob),
+        "b1",
+        organization_id="o",
+        now=NOW,
+    )
+    check(
+        "FTF-1602-N2",
+        "the S3 status is named and the server's message is not echoed",
+        typed(status, "S3 status 503") and "SlowDown" not in str(status),
+    )
+    # A genuinely absent blob stays a visible completeness issue, not a storage failure.
+    gone = clone(target)
+    del gone.versions[f"backups/o/b1{blob}"]
+    check(
+        "FTF-1602-N1",
+        "an absent backup blob is still reported as missing",
+        typed(outcome(verify_backup, gone, "b1", organization_id="o", now=NOW), "blob is missing"),
+    )
+    for operation, error in (
+        ("list_versions", TimeoutError("t")),
+        ("put_restored", TimeoutError("t")),
+        ("get_version", OSError("x")),
+        ("version_metadata", S3Error(500, "InternalError", "x")),
+    ):
+        destination = flaky_copy(MemStore(), operation, error)
+        err = outcome(restore, target, destination)
+        check(
+            "FTF-1602-N2",
+            f"restore maps a destination {operation} failure to its own error",
+            typed(err, "storage request failed"),
+        )
+    blob_read = flaky_copy(target, "get_latest", TimeoutError("t"), blob)
+    check(
+        "FTF-1602-N2",
+        "restore maps a backup-blob read failure to its own error",
+        typed(outcome(restore, blob_read, MemStore()), "storage request failed"),
+    )
+
+
+class Text(str):
+    """A str subclass whose overridden methods lie, as a hostile caller could build."""
+
+    def startswith(self, *args: Any, **kwargs: Any) -> bool:  # type: ignore[override]
+        return True
+
+    def split(self, *args: Any, **kwargs: Any) -> list[str]:  # type: ignore[override]
+        return ["ok"]
+
+    def __eq__(self, other: object) -> bool:
+        return True
+
+    __hash__ = str.__hash__
+
+
+def test_exact_types_close_the_tenant_guard() -> None:
+    source, refs = fixture()
+    target = MemStore()
+    secret = b"tenant p secret"
+    key = "tenants/p/secret"
+    version = source.add(key, secret)
+    hostile = dataclasses.replace(
+        refs[0],
+        key=Text(key),
+        version_id=version,
+        sha256=sha(secret),
+        size_bytes=len(secret),
+    )
+    err = outcome(run, source, [hostile, *refs[1:]], target)
+    check(
+        "FTF-1602-N3",
+        "a str-subclass key that lies about startswith/split cannot back up another tenant",
+        typed(err) and nothing_written(target),
+    )
+    for field in ("key", "version_id", "artifact_id", "organization_id", "encryption_key_ref"):
+        target = MemStore()
+        changed = dataclasses.replace(refs[0], **{field: Text(getattr(refs[0], field) or "x")})
+        err = outcome(run, source, [changed, *refs[1:]], target)
+        check(
+            "FTF-1602-N3",
+            f"a str subclass for {field} is refused and nothing is written",
+            typed(err) and nothing_written(target),
+        )
+    target = MemStore()
+    err = outcome(
+        run, source, [dataclasses.replace(refs[0], sha256=Text(refs[0].sha256)), *refs[1:]], target
+    )
+    check(
+        "FTF-1602-N3",
+        "a str subclass for sha256 is refused and nothing is written",
+        typed(err, "sha256") and nothing_written(target),
+    )
+    for kind in ([], {}, Text("dataset"), None, 5):
+        target = MemStore()
+        err = outcome(run, source, [dataclasses.replace(refs[0], kind=kind), *refs[1:]], target)
+        check(
+            "FTF-1602-N1",
+            f"kind {kind!r} raises this module's error (never a raw TypeError)",
+            typed(err, "blob kind") and nothing_written(target),
+        )
+
+    class Ref(BlobRef):
+        pass
+
+    target = MemStore()
+    err = outcome(run, source, [Ref(**dataclasses.asdict(refs[0])), *refs[1:]], target)
+    check(
+        "FTF-1602-N1",
+        "a BlobRef subclass is refused",
+        typed(err, "must be BlobRef") and nothing_written(target),
+    )
+    target = MemStore()
+    err = outcome(run, source, refs, target, known_key_refs=frozenset({Text("kms/a")}))
+    check(
+        "FTF-1602-N1",
+        "a str-subclass key reference is refused",
+        typed(err, "known_key_refs") and nothing_written(target),
+    )
+
+    class Frozen(frozenset):  # type: ignore[type-arg]
+        def __contains__(self, item: object) -> bool:
+            return True
+
+    target = MemStore()
+    err = outcome(run, source, refs, target, known_key_refs=Frozen({"kms/a"}))
+    check(
+        "FTF-1602-N1",
+        "a frozenset subclass that claims every key is recoverable is refused",
+        typed(err, "known_key_refs") and nothing_written(target),
+    )
+    _, good, _, _ = backed_up()
+    for label, org, backup in (
+        ("organization_id", Text("o"), "b1"),
+        ("backup_id", "o", Text("b1")),
+    ):
+        err = outcome(verify_backup, good, backup, organization_id=org, now=NOW)
+        check(
+            "FTF-1602-N3",
+            f"verify refuses a str-subclass {label}",
+            typed(err, "plain path segment"),
+        )
+        err = outcome(osb.restore_backup, good, MemStore(), backup, organization_id=org, now=NOW)
+        check(
+            "FTF-1602-N3",
+            f"restore refuses a str-subclass {label}",
+            typed(err, "plain path segment"),
+        )
+
+
+def test_malformed_records_raise_the_modules_error() -> None:
+    _, target, _, _ = backed_up()
+    edits = {
+        "entry key int": lambda d: edit_entry_raw(d, key=5),
+        "entry key null": lambda d: edit_entry_raw(d, key=None),
+        "entry organization_id list": lambda d: edit_entry_raw(d, organization_id=["o"]),
+        "entry sha256 int": lambda d: edit_entry_raw(d, sha256=1),
+        "entry size str": lambda d: edit_entry_raw(d, size_bytes="3"),
+        "entry size bool": lambda d: edit_entry_raw(d, size_bytes=True),
+        "entry shard_count float": lambda d: edit_entry_raw(d, shard_count=1.5),
+        "entry encrypted str": lambda d: edit_entry_raw(d, encrypted="yes"),
+        "entry key ref int": lambda d: edit_entry_raw(d, encryption_key_ref=3),
+        "entry metadata int": lambda d: edit_entry_raw(d, metadata=3),
+        "entry metadata pair int": lambda d: edit_entry_raw(d, metadata=[1]),
+        "entry metadata short pair": lambda d: edit_entry_raw(d, metadata=[["a"]]),
+        "entry metadata value int": lambda d: edit_entry_raw(d, metadata=[["a", 1]]),
+        "entry extra field": lambda d: edit_entry_raw(d, surprise=1),
+        "entry missing field": lambda d: d["entries"][0].pop("kind"),
+        "entry is a string": lambda d: d["entries"].__setitem__(0, "x"),
+        "entries not a list": lambda d: d.__setitem__("entries", "x"),
+        "blobs not a list": lambda d: d.__setitem__("blobs", "x"),
+        "blob pair int": lambda d: d["blobs"].__setitem__(0, 5),
+        "blob size str": lambda d: d["blobs"].__setitem__(0, [d["blobs"][0][0], "3"]),
+        "blob digest int": lambda d: d["blobs"].__setitem__(0, [1, 3]),
+        "record extra field": lambda d: d.__setitem__("surprise", 1),
+        "record missing field": lambda d: d.pop("total_bytes"),
+        "backup_id int": lambda d: d.__setitem__("backup_id", 5),
+        "organization_id null": lambda d: d.__setitem__("organization_id", None),
+        "manifest_sha256 list": lambda d: d.__setitem__("manifest_sha256", []),
+        "object_count str": lambda d: d.__setitem__("object_count", "4"),
+        "blob_count bool": lambda d: d.__setitem__("blob_count", True),
+        "total_bytes float": lambda d: d.__setitem__("total_bytes", 1.5),
+        "retain_until garbage": lambda d: d.__setitem__("retain_until", "garbage"),
+        "created_at int": lambda d: d.__setitem__("created_at", 5),
+    }
+    for label, edit in edits.items():
+        forged = with_record(target, edit)
+        destination = MemStore()
+        for name, call in (
+            ("verify", lambda f=forged: verify_backup(f, "b1", organization_id="o", now=NOW)),
+            ("restore", lambda f=forged, d=destination: restore(f, d)),
+        ):
+            err = outcome(call)
+            check(
+                "FTF-1602-N2",
+                f"{name} turns a record with {label} into this module's own error",
+                typed(err, "malformed"),
+            )
+        check(
+            "FTF-1602-N2",
+            f"nothing is restored from a record with {label}",
+            nothing_written(destination),
+        )
+    for label, raw in (("a JSON list", b"[]"), ("a JSON string", b'"x"'), ("null", b"null")):
+        garbled = clone(target)
+        garbled.replace_only(RECORD_KEY, raw)
+        check(
+            "FTF-1602-N2",
+            f"a record that is {label} is refused with this module's error",
+            typed(outcome(verify_backup, garbled, "b1", organization_id="o", now=NOW), "malformed"),
+        )
+    check(
+        "FTF-1602-A1",
+        "the genuine record still parses",
+        outcome(verify_backup, target, "b1", organization_id="o", now=NOW) is None,
+    )
+
+
+def edit_entry_raw(data: Any, **changes: Any) -> None:
+    """Edit entry 0 without re-hashing (the type check must fire before any hash check)."""
+    data["entries"][0].update(changes)
+
+
+def test_verify_and_restore_cli_take_the_expected_manifest_hash() -> None:
+    import contextlib
+    import io
+
+    source, refs = meta_fixture()
+    stores = {"src": source, "dst": MemStore(), "clean": MemStore(), "clean2": MemStore()}
+    patches: list[Any] = [
+        mock.patch.object(osb, "S3ObjectStore", lambda client, bucket: stores[bucket]),
+        mock.patch.object(osb, "_client_from_env", lambda: None),
+    ]
+    for patch in patches:
+        patch.start()
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "m.json"
+            path.write_text(json.dumps([dataclasses.asdict(r) for r in refs]))
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                osb.main(
+                    [
+                        "backup",
+                        "--manifest",
+                        str(path),
+                        "--source-bucket",
+                        "src",
+                        "--target-bucket",
+                        "dst",
+                    ]
+                )
+            printed = json.loads(out.getvalue())
+        good = printed["manifest_sha256"]
+        base = [
+            "--target-bucket",
+            "dst",
+            "--backup-id",
+            printed["backup_id"],
+            "--organization-id",
+            "o",
+        ]
+        for command, extra in (("verify", []), ("restore", ["--restore-bucket", "clean2"])):
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+                wrong = osb.main([command, *base, *extra, "--expected-manifest-sha256", "0" * 64])
+            check(
+                "FTF-1602-N2",
+                f"{command} --expected-manifest-sha256 with a different hash exits 1",
+                wrong == 1 and "differs from the expected manifest" in err.getvalue(),
+            )
+        check(
+            "FTF-1602-N2",
+            "a refused restore wrote nothing to the clean bucket",
+            nothing_written(stores["clean2"]),
+        )
+        for command, extra in (("verify", []), ("restore", ["--restore-bucket", "clean"])):
+            with contextlib.redirect_stdout(io.StringIO()):
+                ok = osb.main([command, *base, *extra, "--expected-manifest-sha256", good])
+            check("FTF-1602-A3", f"{command} with the matching hash exits 0", ok == 0)
+        check(
+            "FTF-1602-A3",
+            "the matching-hash restore rebuilt the objects",
+            len(stores["clean"].versions) == 4,
+        )
+    finally:
+        for patch in patches:
+            patch.stop()
+
+
+def test_restore_record_json_is_canonical_and_env_client_is_built_from_env() -> None:
+    import contextlib
+    import io
+
+    _, target, _, _ = backed_up()
+    done = restore(target)
+    raw = done.to_json()
+    check(
+        "FTF-1602-A3",
+        "RestoreRecord.to_json is canonical: sorted keys, compact separators",
+        raw == json.dumps(json.loads(raw), sort_keys=True, separators=(",", ":"))
+        and list(json.loads(raw)) == sorted(json.loads(raw)),
+    )
+    env = {
+        "SOVRA_STORAGE_S3_SCHEME": "http",
+        "SOVRA_STORAGE_S3_HOST": "s3.example.test",
+        "SOVRA_STORAGE_S3_PORT": "8333",
+        "SOVRA_STORAGE_S3_REGION": "eu-test-1",
+        "SOVRA_STORAGE_S3_ACCESS_KEY": "AK-TEST-ACCESS",
+        "SOVRA_STORAGE_S3_SECRET_KEY": "SK-TEST-SECRET-VALUE",
+    }
+    out, err = io.StringIO(), io.StringIO()
+    with mock.patch.dict(osb.os.environ, env, clear=False):
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            client = osb._client_from_env()
+    endpoint, credentials = client._endpoint, client._credentials
+    check(
+        "FTF-1602-A1",
+        "the env client carries the endpoint and credentials it was given",
+        (endpoint.scheme, endpoint.host, endpoint.port, endpoint.region)
+        == ("http", "s3.example.test", 8333, "eu-test-1")
+        and (credentials.access_key, credentials.secret_key)
+        == ("AK-TEST-ACCESS", "SK-TEST-SECRET-VALUE"),
+    )
+    check(
+        "FTF-1602-A1",
+        "building the client never prints the secret",
+        "SK-TEST-SECRET-VALUE" not in out.getvalue() + err.getvalue(),
+    )
+    for name in env:
+        partial = {k: v for k, v in env.items() if k != name}
+        with mock.patch.dict(osb.os.environ, partial, clear=False):
+            os_env = osb.os.environ
+            os_env.pop(name, None)
+            exc = outcome(osb._client_from_env)
+        check(
+            "FTF-1602-N1",
+            f"a missing {name} is refused by name",
+            typed(exc, name),
+        )
+
+
 def main() -> int:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
