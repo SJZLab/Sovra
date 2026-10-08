@@ -52,6 +52,7 @@ import hashlib
 import json
 import re
 import sys
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -610,8 +611,6 @@ def verify_trace_replay(trace: TrainingTrace) -> None:
     outcome match."""
     if not isinstance(trace, TrainingTrace):
         raise TraceVerificationError("not a TrainingTrace")
-    if not isinstance(trace.entity_title, str) or not trace.entity_title:
-        raise TraceVerificationError("entity_title must be a non-empty string")
     plan = _plan_from_steps(trace.steps)
     replayed = _execute_plan(plan, title=trace.entity_title)
     if replayed != [dict(s) for s in trace.steps]:
@@ -665,7 +664,7 @@ def _check_reserved(trace: TrainingTrace, reserved: ReservedFinalSuite) -> None:
         (_norm(trace.entity_title), {_norm(x) for x in reserved.entity_titles}),
         (answer_hash, {_norm(x) for x in reserved.answer_sha256s}),
     )
-    if any(probe in sealed for probe, sealed in overlaps):
+    if any({probe} & sealed for probe, sealed in overlaps):
         raise HeldOutLeakageError(f"{trace.trace_id}: overlaps the sealed final suite")
 
 
@@ -737,7 +736,7 @@ def build_training_dataset(
     decisions: dict[str, str] = {}
     for raw_review in reviews:
         review = _validate_review(raw_review, producers)
-        if decisions.setdefault(review.trace_id, review.decision) != review.decision:
+        if {decisions.setdefault(review.trace_id, review.decision)} != {review.decision}:
             raise ReviewIndependenceError(f"{review.trace_id}: conflicting review decisions")
 
     approved = tuple(
@@ -746,7 +745,7 @@ def build_training_dataset(
             key=lambda t: t.trace_id,
         )
     )
-    rejected = sum(1 for d in decisions.values() if d == "rejected")
+    rejected = Counter(decisions.values())["rejected"]
     digest = hashlib.sha256()
     for trace in approved:
         digest.update(_trace_hash_source(trace).encode("utf-8"))

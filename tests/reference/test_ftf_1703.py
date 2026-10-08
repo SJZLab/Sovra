@@ -824,6 +824,82 @@ def test_normalized_reserved_and_reviewers() -> None:
     )
 
 
+def test_helper_exactness() -> None:
+    import evals.reference.training_dataset as td
+
+    refs = td._Refs()
+    real = "11111111-1111-1111-1111-111111111111"
+    ref = refs.register("record_id", real)
+    check(
+        "FTF-1703-A1",
+        "normalize ignores re-cased key",
+        refs.normalize({" Record_ID ": real}) == {" Record_ID ": real},
+    )
+    check(
+        "FTF-1703-A1",
+        "resolve_args ignores re-cased key",
+        refs.resolve_args({" Record_ID ": ref}) == {" Record_ID ": ref},
+    )
+    steps = [_res("get_record", status="open"), _err("get_record", "E")]
+    check(
+        "FTF-1703-A1",
+        "_results matches the exact tool name only",
+        len(td._results(steps, "get_record")) == 1 and td._results(steps, "GET_RECORD") == [],
+    )
+    check(
+        "FTF-1703-A1",
+        "_error_types matches the exact tool name only",
+        td._error_types(steps, "get_record") == ["E"]
+        and td._error_types(steps, " Get_Record") == [],
+    )
+    a = dataclasses.replace(TRACES[0], steps=({"type": "message", "role": "user", "content": "x"},))
+    b = dataclasses.replace(TRACES[0], steps=({"content": "x", "role": "user", "type": "message"},))
+    check(
+        "FTF-1703-D1",
+        "hash source independent of dict key order",
+        td._trace_hash_source(a) == td._trace_hash_source(b),
+    )
+    check(
+        "FTF-1703-D1",
+        "hash source keys are sorted",
+        td._trace_hash_source(a).index('"content"') < td._trace_hash_source(a).index('"role"'),
+    )
+    t = TRACES[0]
+    for bad in (" approved", "APPROVED", "Rejected ", "approve"):
+        check(
+            "FTF-1703-A2",
+            f"decision {bad!r} refused",
+            _raises(
+                ReviewIndependenceError,
+                build_training_dataset,
+                [t],
+                [ReviewDecision(t.trace_id, "reviewer:a", bad)],
+            ),
+        )
+    rj = build_training_dataset(
+        TRACES[:3],
+        [
+            ReviewDecision(TRACES[0].trace_id, "reviewer:a", "rejected"),
+            ReviewDecision(TRACES[1].trace_id, "reviewer:a", "approved"),
+        ],
+    )
+    check(
+        "FTF-1703-A2",
+        "rejected counted exactly",
+        (rj.rejected_count, rj.approved_count, rj.pending_count) == (1, 1, 1),
+    )
+    same = build_training_dataset(
+        [t],
+        [
+            ReviewDecision(t.trace_id, "reviewer:a", "approved"),
+            ReviewDecision(t.trace_id, "reviewer:b", "approved"),
+        ],
+    )
+    check(
+        "FTF-1703-A2", "repeated identical decisions are not a conflict", same.approved_count == 1
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
