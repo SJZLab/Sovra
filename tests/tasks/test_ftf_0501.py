@@ -53,7 +53,7 @@ from typing import Any
 
 import uvicorn
 import yaml
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import set_committed_value
@@ -3101,6 +3101,583 @@ def test_m6_the_sniff_window_is_assembled_from_the_leading_chunks_only() -> None
             "on a real multi-chunk read the first chunk decides the type",
             isinstance(got, dos.UploadRejection) and got.reason == "content_type_mismatch",
         )
+
+
+_STORAGE_ENV_NAMES = (
+    "SOVRA_UPLOAD_S3_ENDPOINT",
+    "SOVRA_UPLOAD_S3_BUCKET",
+    "SOVRA_UPLOAD_S3_ACCESS_KEY",
+    "SOVRA_UPLOAD_S3_SECRET_KEY",
+    "SOVRA_UPLOAD_S3_REGION",
+)
+
+
+def test_m7_default_storage_factory_and_the_audit_actor() -> None:
+    saved = {name: os.environ.get(name) for name in _STORAGE_ENV_NAMES}
+    try:
+        for name in _STORAGE_ENV_NAMES:
+            os.environ.pop(name, None)
+        check(
+            f"{CID}-M7",
+            "nothing configured: the default factory says so with None",
+            routes._default_storage_factory() is None,
+        )
+        os.environ["SOVRA_UPLOAD_S3_BUCKET"] = "uploads"
+        try:
+            routes._default_storage_factory()
+            partly: HTTPException | None = None
+        except HTTPException as exc:
+            partly = exc
+        check(
+            f"{CID}-M7",
+            "partly configured: 503 storage_not_configured, never a half-working client",
+            partly is not None
+            and partly.status_code == 503
+            and partly.detail == "storage_not_configured",
+        )
+        for name, value in _storage_env().items():
+            os.environ[name] = value
+        full = routes._default_storage_factory()
+        check(
+            f"{CID}-M7",
+            "fully configured: the settings from the environment",
+            full is not None and full.bucket == "uploads",
+        )
+    finally:
+        for key, previous in saved.items():
+            if previous is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = previous
+
+    with _routes_env() as env:
+        body = _jsonl(2000)
+        sid = _open_session(env, body)["id"]
+        _put_all(env, sid, body)
+        reply = _call(env.base, "POST", f"{_col()}/{sid}/finalize", _finalize_body())
+        check(f"{CID}-M7", "finalized", reply.status == 201)
+        events = env.audit.events
+        check(f"{CID}-M7", "two audit events were written", len(events) == 2)
+        check(
+            f"{CID}-M7",
+            "every event is a user action by the authenticated subject",
+            all(e["actor_type"] == "user" and e["actor_id"] == "ml" for e in events),
+        )
+        ids = [e["request_id"] for e in events]
+        check(
+            f"{CID}-M7",
+            "each request carries its own 32-hex request id",
+            all(re.fullmatch(r"[0-9a-f]{32}", i) for i in ids) and len(set(ids)) == len(ids),
+        )
+
+
+@contextlib.contextmanager
+def _tampered(**fields: Any):
+    """Serves the real record with some fields replaced -- values the database
+    constraints would never hold, to show the route trusts only exact values."""
+    real = routes.get_upload_session
+
+    def patched(session: Any, context: Any, project_id: Any, upload_session_id: Any) -> Any:
+        record = real(session, context, project_id, upload_session_id)
+        for name, value in fields.items():
+            set_committed_value(record, name, value)
+        return record
+
+    routes.get_upload_session = patched
+    try:
+        yield
+    finally:
+        routes.get_upload_session = real
+
+
+def test_m8_only_an_exact_open_status_is_open_and_held_out_fails_closed() -> None:
+    with _routes_env() as env:
+        body = _jsonl(2000)
+        sid = _open_session(env, body)["id"]
+        item = f"{_col()}/{sid}"
+        for status in (" open", "open ", "OPEN", "Open", "opened", ""):
+            with _tampered(status=status):
+                env.fake.reset_calls()
+                urls = _call(env.base, "POST", item + "/part-urls", {"part_numbers": [1]})
+                listing = _call(env.base, "GET", item + "/parts", None)
+                fin = _call(env.base, "POST", item + "/finalize", _finalize_body())
+            check(
+                f"{CID}-M8",
+                f"status {status!r} is not open: part-urls, listing and finalize -> 409",
+                urls.status == 409
+                and listing.status == 409
+                and fin.status == 409
+                and urls.detail == listing.detail == fin.detail == "upload_session_not_open",
+            )
+            check(f"{CID}-M8", f"status {status!r}: storage was not touched", not env.fake.calls)
+            check(f"{CID}-M8", f"status {status!r}: no dataset", not env.datasets())
+
+        for purpose in (" held_out_evaluation", "held_out_evaluation ", "HELD_OUT_EVALUATION"):
+            with _tampered(purpose=purpose):
+                hidden = _call(env.base, "GET", item, None, "ml")
+                shown = _call(env.base, "GET", item, None, "admin")
+            check(
+                f"{CID}-M8",
+                f"purpose {purpose!r} reads as held-out: hidden from an ML engineer",
+                hidden.status == 404 and hidden.detail == "not_found",
+            )
+            check(
+                f"{CID}-M8", f"purpose {purpose!r} stays visible to an admin", shown.status == 200
+            )
+        with _tampered(purpose="training"):
+            check(
+                f"{CID}-M8",
+                "an ordinary purpose stays visible to an ML engineer",
+                _call(env.base, "GET", item, None, "ml").status == 200,
+            )
+
+        for purpose in (" held_out_evaluation", "held_out_evaluation ", "HELD_OUT_EVALUATION"):
+            env.fake.reset_calls()
+            reply = _call(env.base, "POST", _col(), _create_body(body, purpose=purpose), "ml")
+            check(
+                f"{CID}-M8",
+                f"creating with purpose {purpose!r} as an ML engineer -> 403 purpose_forbidden",
+                reply.status == 403 and reply.detail == "purpose_forbidden",
+            )
+            check(f"{CID}-M8", f"({purpose!r}) nothing reached storage", not env.fake.calls)
+        check(f"{CID}-M8", "no session was created by those refusals", len(env.sessions()) == 1)
+
+
+def test_m9_dataset_names_are_trimmed_once_and_bounded() -> None:
+    longest = store.DATASET_NAME_MAX_LENGTH
+    with _routes_env() as env:
+        body = _jsonl(2000)
+        sid = _open_session(env, body)["id"]
+        item = f"{_col()}/{sid}"
+        bad_names: list[Any] = [
+            "",
+            "   ",
+            "\t\n ",
+            "x" * (longest + 1),
+            "  " + "x" * (longest + 1) + "  ",
+            123,
+            None,
+            ["a"],
+            {"a": 1},
+            True,
+        ]
+        for name in bad_names:
+            env.fake.reset_calls()
+            reply = _call(env.base, "POST", item + "/finalize", {"dataset_name": name})
+            check(
+                f"{CID}-M9",
+                f"dataset_name {str(name)[:12]!r}.. -> 400 invalid_body before any storage work",
+                reply.status == 400 and reply.detail == "invalid_body" and not env.fake.calls,
+            )
+        check(f"{CID}-M9", "no dataset after the refusals", not env.datasets())
+
+        _put_all(env, sid, body)
+        padded = "  " + "x" * longest + "  "
+        reply = _call(env.base, "POST", item + "/finalize", {"dataset_name": padded})
+        check(
+            f"{CID}-M9",
+            "a name of the longest length survives padding on both sides, trimmed",
+            reply.status == 201 and reply.json()["name"] == "x" * longest,
+        )
+    for raw, want in ((" lead", "lead"), ("trail ", "trail"), ("\tboth\n", "both")):
+        with _routes_env() as env:
+            body = _jsonl(2000)
+            sid = _open_session(env, body)["id"]
+            _put_all(env, sid, body)
+            reply = _call(env.base, "POST", f"{_col()}/{sid}/finalize", {"dataset_name": raw})
+            check(
+                f"{CID}-M9",
+                f"{raw!r} is stored as {want!r}",
+                reply.status == 201 and reply.json()["name"] == want,
+            )
+
+
+def test_m10_a_closed_session_never_reaches_storage() -> None:
+    with _routes_env() as env:
+        body = _jsonl(2000)
+        sid = _open_session(env, body)["id"]
+        _put_all(env, sid, body)
+        item = f"{_col()}/{sid}"
+        check(
+            f"{CID}-M10",
+            "finalized once",
+            _call(env.base, "POST", item + "/finalize", _finalize_body()).status == 201,
+        )
+        env.fake.reset_calls()
+        urls = _call(env.base, "POST", item + "/part-urls", {"part_numbers": [1]})
+        listing = _call(env.base, "GET", item + "/parts", None)
+        again = _call(env.base, "POST", item + "/finalize", _finalize_body("second"))
+        check(
+            f"{CID}-M10",
+            "a verified session: part-urls, listing and a second finalize -> 409",
+            urls.status == listing.status == again.status == 409,
+        )
+        check(f"{CID}-M10", "none of them touched storage", not env.fake.calls)
+        check(f"{CID}-M10", "still exactly one dataset", len(env.datasets()) == 1)
+
+    with _routes_env() as env:
+        body = _jsonl(2000)
+        sid = _open_session(env, body)["id"]
+        item = f"{_col()}/{sid}"
+        env.clock[0] = _NOW + timedelta(hours=25)
+        first = _call(env.base, "POST", item + "/part-urls", {"part_numbers": [1]})
+        check(f"{CID}-M10", "the first request after expiry answers 410", first.status == 410)
+        env.fake.reset_calls()
+        urls = _call(env.base, "POST", item + "/part-urls", {"part_numbers": [1]})
+        fin = _call(env.base, "POST", item + "/finalize", _finalize_body())
+        check(
+            f"{CID}-M10",
+            "an expired session: part-urls and finalize -> 409 without touching storage",
+            urls.status == fin.status == 409 and not env.fake.calls,
+        )
+
+
+def test_m11_the_route_refuses_bad_sizes_before_the_store_is_called() -> None:
+    created: list[dict[str, Any]] = []
+    real = routes.create_upload_session
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        created.append(kwargs)
+        return real(*args, **kwargs)
+
+    routes.create_upload_session = spy
+    try:
+        with _routes_env() as env:
+            body = _jsonl(2000)
+            limit = routes.MAX_UPLOAD_BYTES
+            for label, size in (
+                ("zero", 0),
+                ("negative", -1),
+                ("one past the limit", limit + 1),
+                ("a bool", True),
+                ("a string", "2000"),
+                ("a float", 2000.0),
+            ):
+                env.fake.reset_calls()
+                reply = _call(
+                    env.base, "POST", _col(), _create_body(body, declared_size_bytes=size)
+                )
+                check(
+                    f"{CID}-M11",
+                    f"declared size {label} -> 400 invalid_body",
+                    reply.status == 400 and reply.detail == "invalid_body",
+                )
+                check(f"{CID}-M11", f"({label}) the store was not called", not created)
+                check(f"{CID}-M11", f"({label}) storage was not touched", not env.fake.calls)
+            exact = _call(env.base, "POST", _col(), _create_body(body, declared_size_bytes=limit))
+            check(
+                f"{CID}-M11",
+                "exactly the limit is accepted",
+                exact.status == 201 and len(created) == 1,
+            )
+            one = _call(env.base, "POST", _col(), _create_body(b"x", declared_size_bytes=1))
+            check(f"{CID}-M11", "one byte is accepted", one.status == 201)
+    finally:
+        routes.create_upload_session = real
+
+
+class _SeqClock:
+    """`env.clock[0]` answers each value in turn, then repeats the last one."""
+
+    def __init__(self, *values: datetime) -> None:
+        self.values = list(values)
+
+    def __getitem__(self, index: int) -> datetime:
+        return self.values.pop(0) if len(self.values) > 1 else self.values[0]
+
+
+def test_m12_finalize_maps_store_outcomes_after_storage_has_verified() -> None:
+    with _routes_env() as env:
+        body = _jsonl(2000)
+        sid = _open_session(env, body)["id"]
+        _put_all(env, sid, body)
+        env.clock = _SeqClock(_NOW, _NOW + timedelta(hours=25))
+        reply = _call(env.base, "POST", f"{_col()}/{sid}/finalize", _finalize_body())
+        check(
+            f"{CID}-M12",
+            "expiring between the storage check and the database write -> 410",
+            reply.status == 410 and reply.detail == "upload_expired",
+        )
+        check(
+            f"{CID}-M12",
+            "no dataset, the session is expired and storage is cleaned",
+            not env.datasets()
+            and env.sessions()[0].status == "expired"
+            and not env.fake.uploads
+            and not env.fake.objects,
+        )
+
+    with _routes_env() as env:
+        body = _jsonl(2000)
+        sid = _open_session(env, body)["id"]
+        _put_all(env, sid, body)
+        real = routes.verify_and_complete
+
+        def closing_after_verify(*args: Any, **kwargs: Any) -> Any:
+            verified = real(*args, **kwargs)
+            with Session(env.engine) as other:
+                other.query(store.DatasetUploadSession).update({"status": "rejected"})
+                other.commit()
+            return verified
+
+        routes.verify_and_complete = closing_after_verify
+        try:
+            reply = _call(env.base, "POST", f"{_col()}/{sid}/finalize", _finalize_body())
+        finally:
+            routes.verify_and_complete = real
+        check(
+            f"{CID}-M12",
+            "another request closing the session first -> 409 upload_session_not_open",
+            reply.status == 409 and reply.detail == "upload_session_not_open",
+        )
+        check(f"{CID}-M12", "and no dataset appears", not env.datasets())
+
+    with _routes_env() as env:
+        body = _jsonl(2000)
+        sid = _open_session(env, body)["id"]
+        _put_all(env, sid, body)
+        real_store = routes.record_upload_verified_and_create_dataset
+
+        def refusing(*args: Any, **kwargs: Any) -> Any:
+            raise ValueError("refused by the store")
+
+        routes.record_upload_verified_and_create_dataset = refusing
+        try:
+            reply = _call(env.base, "POST", f"{_col()}/{sid}/finalize", _finalize_body())
+        finally:
+            routes.record_upload_verified_and_create_dataset = real_store
+        check(
+            f"{CID}-M12",
+            "a value the store refuses -> 400 invalid_body, never a 500",
+            reply.status == 400 and reply.detail == "invalid_body" and not env.datasets(),
+        )
+
+
+def test_m13_presign_bounds_and_signed_header_values_are_trimmed() -> None:
+    check(
+        f"{CID}-M13",
+        "the 7-day maximum is allowed at its boundary",
+        _signature(_presign(expires_seconds=604800, max_expires_seconds=604800)) != "",
+    )
+    for label, kw in (
+        ("a ceiling above 7 days", {"expires_seconds": 1, "max_expires_seconds": 604801}),
+        ("a zero ceiling", {"expires_seconds": 1, "max_expires_seconds": 0}),
+        ("a zero lifetime", {"expires_seconds": 0, "max_expires_seconds": 300}),
+        ("a lifetime above the ceiling", {"expires_seconds": 301, "max_expires_seconds": 300}),
+        ("a negative ceiling", {"expires_seconds": 1, "max_expires_seconds": -1}),
+        ("a bool lifetime", {"expires_seconds": True, "max_expires_seconds": 300}),
+        ("a bool ceiling", {"expires_seconds": 1, "max_expires_seconds": True}),
+    ):
+        check(
+            f"{CID}-M13", f"{label} is refused", _raises(lambda kw=kw: _presign(**kw), ValueError)
+        )
+    check(
+        f"{CID}-M13",
+        "the lifetime may equal the ceiling",
+        _signature(_presign(expires_seconds=300, max_expires_seconds=300)) != "",
+    )
+    plain = _signature(_presign())
+    for value in (" 100", "100 ", "\t100\t", "  100  "):
+        check(
+            f"{CID}-M13",
+            f"a signed header value {value!r} signs as '100'",
+            _signature(_presign(signed_headers={"content-length": value})) == plain,
+        )
+    check(
+        f"{CID}-M13",
+        "a signed header name is case-insensitive",
+        _signature(_presign(signed_headers={"Content-Length": "100"})) == plain,
+    )
+    check(
+        f"{CID}-M13",
+        "a different value signs differently",
+        _signature(_presign(signed_headers={"content-length": "101"})) != plain,
+    )
+
+
+def _is_malformed(exc: Any) -> bool:
+    return isinstance(exc, s3.S3Error) and exc.code == "MalformedResponse"
+
+
+def _capture(fn: Any) -> Any:
+    try:
+        fn()
+    except Exception as exc:  # noqa: BLE001 - the type is the result under test
+        return exc
+    return None
+
+
+def test_m14_client_response_shapes_ranges_and_streaming() -> None:
+    shapes = {
+        "no UploadId": (
+            "<InitiateMultipartUploadResult><Other>1</Other></InitiateMultipartUploadResult>"
+        ),
+        "text only": "<InitiateMultipartUploadResult>nope</InitiateMultipartUploadResult>",
+        "empty": "<InitiateMultipartUploadResult/>",
+    }
+    for label, xml in shapes.items():
+        with _RawS3(lambda r, xml=xml: _xml(xml)) as raw:
+            got = _capture(lambda: raw.client().create_multipart_upload("b", "k"))
+        check(
+            f"{CID}-M14", f"a create answer with {label} is a MalformedResponse", _is_malformed(got)
+        )
+    with _RawS3(
+        lambda r: _xml(
+            "<InitiateMultipartUploadResult><UploadId>u-1</UploadId></InitiateMultipartUploadResult>"
+        )
+    ) as raw:
+        check(
+            f"{CID}-M14",
+            "a well-formed answer gives the upload id",
+            raw.client().create_multipart_upload("b", "k", content_type="text/csv") == "u-1"
+            and raw.requests[0].headers.get("content-type") == "text/csv",
+        )
+
+    with _RawS3(lambda r: (200, {}, b"cdef")) as raw:
+        client = raw.client()
+        got = client.get_object_range("b", "k", 2, 5)
+        check(
+            f"{CID}-M14",
+            "a range read returns the bytes and asks for exactly that range",
+            got == b"cdef" and raw.requests[-1].headers.get("range") == "bytes=2-5",
+        )
+        client.get_object_range("b", "k", 0, 0)
+        check(
+            f"{CID}-M14",
+            "the first byte alone is a valid range",
+            raw.requests[-1].headers.get("range") == "bytes=0-0",
+        )
+        before = len(raw.requests)
+        for first, last in ((3, 2), (-1, 4), (-5, -1)):
+            check(
+                f"{CID}-M14",
+                f"range {first}-{last} is refused before any request",
+                _raises(
+                    lambda f=first, la=last: client.get_object_range("b", "k", f, la), ValueError
+                ),
+            )
+        check(f"{CID}-M14", "no request was sent for those", len(raw.requests) == before)
+
+    with _RawS3(lambda r: (200, {}, b"0123456789")) as raw:
+        client = raw.client()
+        check(
+            f"{CID}-M14",
+            "streaming yields chunk_size pieces and a short tail",
+            list(client.stream_object("b", "k", chunk_size=4)) == [b"0123", b"4567", b"89"],
+        )
+        check(
+            f"{CID}-M14",
+            "a chunk size of one is allowed",
+            len(list(client.stream_object("b", "k", chunk_size=1))) == 10,
+        )
+        for size in (0, -1):
+            check(
+                f"{CID}-M14",
+                f"chunk_size {size} is refused, never an empty stream",
+                _raises(
+                    lambda n=size: list(client.stream_object("b", "k", chunk_size=n)), ValueError
+                ),
+            )
+
+
+def _parts_xml(numbers: list[int], *, truncated: Any = None, marker: Any = None) -> str:
+    items = "".join(
+        f'<Part><PartNumber>{n}</PartNumber><ETag>"e{n}"</ETag><Size>5</Size></Part>'
+        for n in numbers
+    )
+    tail = ""
+    if truncated is not None:
+        tail += f"<IsTruncated>{truncated}</IsTruncated>"
+    if marker is not None:
+        tail += f"<NextPartNumberMarker>{marker}</NextPartNumberMarker>"
+    return f"<ListPartsResult>{items}{tail}</ListPartsResult>"
+
+
+def test_m15_list_parts_pages_forward_only() -> None:
+    with _RawS3(lambda r: _xml("<ListPartsResult/>")) as raw:
+        check(
+            f"{CID}-M15",
+            "a list answer with no parts is an empty list",
+            raw.client().list_parts("b", "k", "u") == [],
+        )
+
+    def paged(request: SimpleNamespace) -> Any:
+        marker = request.query.get("part-number-marker")
+        if marker == "0":
+            return _xml(_parts_xml([1, 2], truncated="true", marker=2))
+        return _xml(_parts_xml([3], truncated="false"))
+
+    with _RawS3(paged) as raw:
+        got = raw.client().list_parts("b", "k", "u-9")
+        check(
+            f"{CID}-M15",
+            "two pages are joined in order",
+            [p["PartNumber"] for p in got] == ["1", "2", "3"],
+        )
+        check(
+            f"{CID}-M15",
+            "the second page is requested from the marker the first gave",
+            [r.query.get("part-number-marker") for r in raw.requests] == ["0", "2"]
+            and all(r.query.get("uploadId") == "u-9" for r in raw.requests)
+            and all(r.query.get("max-parts") == "1000" for r in raw.requests),
+        )
+
+    with _RawS3(
+        lambda r: _xml(_parts_xml([1], truncated="True", marker=1))
+        if r.query.get("part-number-marker") == "0"
+        else _xml(_parts_xml([2], truncated="FALSE", marker=2))
+    ) as raw:
+        got = raw.client().list_parts("b", "k", "u")
+        check(
+            f"{CID}-M15",
+            "IsTruncated is read case-insensitively and a final page ends the walk",
+            [p["PartNumber"] for p in got] == ["1", "2"] and len(raw.requests) == 2,
+        )
+
+    bad_markers = {
+        "repeats the start": ("0", None),
+        "missing": (None, None),
+        "empty": ("", None),
+        "not a number": ("abc", None),
+        "negative": ("-3", None),
+    }
+    for label, (marker, _) in bad_markers.items():
+        seen: list[int] = []
+
+        def never_ending(
+            request: SimpleNamespace, marker: Any = marker, seen: list[int] = seen
+        ) -> Any:
+            seen.append(1)
+            if len(seen) > 6:  # a client that keeps paging is stopped here, and fails the test
+                return _xml(_parts_xml([9], truncated="false"))
+            return _xml(_parts_xml([1], truncated="true", marker=marker))
+
+        with _RawS3(never_ending) as raw:
+            got = _capture(lambda: raw.client().list_parts("b", "k", "u"))
+            check(
+                f"{CID}-M15", f"a marker that is {label} is a MalformedResponse", _is_malformed(got)
+            )
+            check(
+                f"{CID}-M15",
+                f"({label}) the walk stopped after the first page",
+                len(raw.requests) == 1,
+            )
+
+    def rewinding(request: SimpleNamespace) -> Any:
+        if request.query.get("part-number-marker") == "0":
+            return _xml(_parts_xml([1], truncated="true", marker=5))
+        if len(rewound) > 5:
+            return _xml(_parts_xml([9], truncated="false"))
+        rewound.append(1)
+        return _xml(_parts_xml([2], truncated="true", marker=3))
+
+    rewound: list[int] = []
+    with _RawS3(rewinding) as raw:
+        got = _capture(lambda: raw.client().list_parts("b", "k", "u"))
+        check(
+            f"{CID}-M15", "a marker that goes backwards is a MalformedResponse", _is_malformed(got)
+        )
+        check(f"{CID}-M15", "the walk stopped on the backwards marker", len(raw.requests) == 2)
 
 
 def test_c1_interface_contract() -> None:
