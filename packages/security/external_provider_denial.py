@@ -47,11 +47,9 @@ from app.auth.audit_event_writer import write_audit_event
 from packages.security.security_profile_enforcement import (
     Destination,
     EffectRequest,
-    InvalidEffectRequestError,
     RouteAuthorization,
     RouteBlockedByProfileError,
     RouteNotAuthorizedError,
-    SecurityProfileEnforcementError,
     effective_profile,
     enforce_effect,
 )
@@ -277,12 +275,9 @@ def authorize_external_provider(
     if audit is not None and not isinstance(audit, AuditContext):
         raise InvalidProviderRequestError("audit must be an AuditContext")
     surface = PURPOSE_SURFACE[request.purpose]
-    try:
-        profile = effective_profile(
-            request.organization_profile, request.project_profile, request.job_profile
-        )
-    except InvalidEffectRequestError as exc:
-        raise InvalidProviderRequestError(str(exc)) from exc
+    profile = effective_profile(
+        request.organization_profile, request.project_profile, request.job_profile
+    )
 
     gap = _approval_gap(approval, request)
     authorization = None
@@ -308,8 +303,6 @@ def authorize_external_provider(
         code = "external_provider_profile_blocked"
     except RouteNotAuthorizedError:
         code = gap or "external_provider_not_approved"
-    except SecurityProfileEnforcementError as exc:
-        raise InvalidProviderRequestError(str(exc)) from exc
     else:
         return ExternalProviderDecision(True, profile, request.purpose, surface)
     raise _deny(code, AuditReason(profile, surface, request.purpose, code), audit)

@@ -339,6 +339,38 @@ class _Str(str):
     pass
 
 
+def test_string_length_boundary_is_exactly_200() -> None:
+    ok, too_long = "p" * 200, "p" * 201
+    check(
+        "FTF-0908-NEG4",
+        "a 200-character provider is accepted",
+        _outcome(_request(provider=ok), _approval(provider=ok)) == "allowed",
+    )
+    check(
+        "FTF-0908-NEG4",
+        "a 201-character provider is refused",
+        _outcome(_request(provider=too_long), _approval()) == "external_provider_invalid_request",
+    )
+    check(
+        "FTF-0908-NEG4",
+        "a 200-character account is accepted",
+        _outcome(_request(), _approval(account=ok)) == "allowed",
+    )
+    check(
+        "FTF-0908-NEG4",
+        "a 201-character account is refused",
+        _approval_build_error(account=too_long),
+    )
+
+
+def _approval_build_error(**overrides: Any) -> bool:
+    try:
+        _approval(**overrides)
+    except InvalidProviderRequestError:
+        return True
+    return False
+
+
 def test_malformed_values_raise_the_typed_error() -> None:
     bad_values: list[Any] = ["", "   ", "x" * 500, 7, None, [], {}, _Str("acme")]
     for value in bad_values:
