@@ -9262,16 +9262,29 @@ FTF-0810:
   proving_symbol: ''
   proving_test: ''
 FTF-0901:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Security profile enforcement
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0103, FTF-0202,
-    FTF-0402, FTF-0902
-  proof_state: UNPROVEN
+  evidence_hash: 4877c2e927457f1e327084094b909f3f0112efd1
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0103, FTF-0202,
+    FTF-0402, FTF-0902 (all CERTIFIED). Path: `packages/security/security_profile_enforcement.py`.
+    `enforce_effect` decides each effect on the eight surfaces (source, data, model, judge,
+    storage, browser, history, serving) from the most restrictive of organization default, project
+    selection and the job's frozen profile (`effective_profile`). zero_egress/air_gapped allow only
+    internal destinations (managed provider and external are refused with
+    `security_profile_route_blocked`); standard needs an explicit provider- and surface-scoped
+    `RouteAuthorization` (managed providers also account/region/retention), else
+    `security_profile_route_not_authorized`. Unknown or malformed input raises
+    `security_profile_invalid_request`. Negative acceptance (private job cannot switch to a managed
+    route by a weaker project setting) is pinned for org, project and job taking turns as the
+    private source. Disclosed gap: pure library with no live caller yet (datasets, workers, judges
+    and serving are later tasks) -- blank proving_symbol, same precedent as FTF-0902. Evidence:
+    tests/tasks/test_ftf_0901.py (CI step added), mutation 66/66 killed. Not self-certified.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0901.py
 FTF-0902:
   certification_state: CERTIFIED
   criticality: MUST
