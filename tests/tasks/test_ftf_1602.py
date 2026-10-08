@@ -2554,6 +2554,29 @@ class ExtraRecordVersion(MemStore):
         return version_id
 
 
+class MixedIdStore(MemStore):
+    """Version ids are mixed case, as a real server's are; ids are compared exactly."""
+
+    def add(self, key: str, body: bytes | None, version_id: str | None = None) -> str:
+        return super().add(key, body, version_id or f"Ver{self._n + 1}-Xa")
+
+
+def test_round4_version_ids_are_compared_exactly() -> None:
+    source, refs = meta_fixture()
+    target = MixedIdStore()
+    record = run(source, refs, target, backup_id="b1")
+    check(
+        "FTF-1602-R4-1",
+        "a mixed-case record version id is the same id before and after the read",
+        outcome(verify_backup, target, "b1", organization_id="o", now=NOW) is None,
+    )
+    check(
+        "FTF-1602-R4-2",
+        "a mixed-case record version id is accepted as the only version after the write",
+        record.object_count == len(refs) and outcome(restore, target, MemStore()) is None,
+    )
+
+
 def test_round4_record_pin_race_overwrite_and_naive_now() -> None:
     _, target, _, record = backed_up()
     shrunk = shrunk_record(target)
