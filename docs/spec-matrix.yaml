@@ -9547,16 +9547,36 @@ FTF-0902:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0902.py
 FTF-0903:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Content-free telemetry
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0006, FTF-0901,
-    FTF-0902
-  proof_state: UNPROVEN
+  evidence_hash: 60828d14111064813c742c4a30616b0b2b4a4b8d
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0006, FTF-0901,
+    FTF-0902 (all CERTIFIED). Path: packages/security/content_free_telemetry.py.
+
+    Built: `emit_event(kind, fields)` validates a workflow/log/span event against that kind's
+    frozen, closed field schema (`EVENT_SCHEMAS`) and returns an immutable `TelemetryEvent`. A
+    field name outside the schema, or a missing required field, is refused
+    (`DisallowedFieldError`). A present field's value must match its own bounded shape -- a short
+    `fullmatch`-checked id/code pattern, a closed enum, a non-negative bounded count/number, a
+    timezone-aware timestamp, a bool, or an opaque `ContentRef` (two bounded ids, never inline
+    content) -- else `ContentRefusedError` (Section 11.4/12 "encrypted private content stored by
+    reference"). No field anywhere accepts unbounded free text, so a source snippet, exception
+    traceback or raw prompt is refused by the shape check alone, whatever field name it is
+    attached to (Section 12 "a malicious worker cannot send arbitrary payloads to an otherwise
+    permitted collector"). Every string pattern uses `fullmatch`, never `match`, so a value that
+    is otherwise legal plus one trailing newline (the classic `$`-anchor bypass) is refused too.
+    Error messages name the rejected field, never its value (Section 65.4).
+
+    Disclosed: this module is a pure library with no live caller yet -- the producers (Temporal
+    workflows, worker logs, serving spans) are separate, dependency-gated tasks that will call
+    `emit_event`; proving_symbol stays blank, same precedent as FTF-0901/FTF-0902. Not
+    self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0903.py
 FTF-0904:
   certification_state: NONE
   criticality: MUST

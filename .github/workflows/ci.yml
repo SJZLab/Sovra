@@ -472,6 +472,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0902.py
       - name: FTF-0901 negative-test proof (security profile enforcement -- profile x surface x destination matrix, no private-to-managed switch, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0901.py
+      - name: FTF-0903 negative-test proof (content-free telemetry -- bounded workflow/log/span schemas, no snippet/traceback/prompt leak, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0903.py
       - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
         run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check
