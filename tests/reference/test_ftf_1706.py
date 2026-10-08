@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import sys
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
 
@@ -45,6 +45,7 @@ from packages.litellm_client.alias_reconciliation import (  # noqa: E402
     ReconciledModel,
 )
 from packages.litellm_client.last_known_good_catalog import (  # noqa: E402
+    DEFAULT_FRESHNESS_TTL,
     AccessState,
     CatalogSnapshot,
 )
@@ -85,6 +86,15 @@ def _raises(exc_type: type[BaseException], fn, *args: object, **kwargs: object) 
         return False
     except exc_type:
         return True
+
+
+def _refuses(message_part: str, fn, *args: object, **kwargs: object) -> bool:
+    """True only when fn raises CandidateDiscoveryError whose message names the refusal."""
+    try:
+        fn(*args, **kwargs)
+        return False
+    except CandidateDiscoveryError as exc:
+        return message_part in str(exc)
 
 
 def recon(*ids: str) -> AliasReconciliationResult:
@@ -205,7 +215,9 @@ def run(models, **kw):
         artifacts_by_model={},
         probes_by_model={},
         attestations_by_model=(
-            {k: scoped(v) for k, v in atts.items()} if isinstance(atts, dict) else atts
+            {k: (v if isinstance(v, ScopedEvidence) else scoped(v)) for k, v in atts.items()}
+            if isinstance(atts, dict)
+            else atts
         ),
         security_profile="standard",
         approved_license_ids=frozenset({"apache-2.0"}),
@@ -604,12 +616,15 @@ def test_tenant_and_connection_binding() -> None:
         _raises(CandidateDiscoveryError, run, ["m"], sync_cycle=scoped(cycle(), conn=other_conn)),
     )
     for label, kw in (("organization", {"org": other_org}), ("connection", {"conn": other_conn})):
+        # Single-wrapped: run() leaves ScopedEvidence values alone, so the refusal
+        # asserted here is the scope refusal itself, not a wrong-type one.
         att = {"m": scoped(attestation("m"), **kw)}
+        scope_word = "organization" if label == "organization" else "gateway connection"
         check(
             "FTF-1706-A2",
-            f"an attestation from another {label} is refused (zero_egress)",
-            _raises(
-                CandidateDiscoveryError,
+            f"an attestation from another {label} is refused for its scope (zero_egress)",
+            _refuses(
+                f"attestation belongs to another {scope_word}",
                 run,
                 ["m"],
                 security_profile="zero_egress",
@@ -636,6 +651,36 @@ def test_tenant_and_connection_binding() -> None:
             ["m"],
             attestations_by_model={"ghost": scoped(attestation("ghost"), org=other_org)},
         ),
+    )
+    check(
+        "FTF-1706-A1",
+        "the unlisted-model attestation is refused for its scope, not its type",
+        _refuses(
+            "attestation belongs to another organization",
+            run,
+            ["m"],
+            attestations_by_model={"ghost": scoped(attestation("ghost"), org=other_org)},
+        ),
+    )
+    check(
+        "FTF-1706-A1",
+        "a non-str attestation key is refused",
+        _refuses(
+            "attestations_by_model keys must be strings",
+            run,
+            ["m"],
+            attestations_by_model={1: scoped(attestation("m"))},
+        ),
+    )
+    check(
+        "FTF-1706-A1",
+        "an organization_id that is not a UUID is refused by its guard",
+        _refuses("organization_id must be a real uuid.UUID", run, ["m"], organization_id=str(ORG)),
+    )
+    check(
+        "FTF-1706-A1",
+        "a connection_id that is not a UUID is refused by its guard",
+        _refuses("connection_id must be a real uuid.UUID", run, ["m"], connection_id=str(CONN)),
     )
     check(
         "FTF-1706-A1",
@@ -692,6 +737,16 @@ def test_fail_closed_input_types() -> None:
         "a non-attestation value raises CandidateDiscoveryError",
         _raises(
             CandidateDiscoveryError,
+            run,
+            ["m"],
+            attestations_by_model={"m": scoped("x")},
+        ),
+    )
+    check(
+        "FTF-1706-A1",
+        "a non-attestation value is refused for its type, not its scope",
+        _refuses(
+            "attestation must wrap a RouteAttestationResult",
             run,
             ["m"],
             attestations_by_model={"m": scoped("x")},
@@ -804,6 +859,126 @@ def test_counts_are_actual() -> None:
         "FTF-1706-A1",
         "model_count equals reconciled count",
         res.model_count == 3 and res.security_profile == "standard",
+    )
+
+
+def test_round3_survivors() -> None:
+    # Law 17: a failed gateway reports exactly zero of every count.
+    for bad in (cycle(access=AccessState.REVOKED), cycle(status=SyncCycleStatus.RETRY_SCHEDULED)):
+        res = run(["a", "b"], artifacts_by_model={"a": artifact()}, sync_cycle=scoped(bad))
+        check(
+            "FTF-1706-N1",
+            "a failed gateway has exactly zero model/tunable/comparator/blocked counts",
+            (res.model_count, res.tunable_count, res.comparator_count, res.blocked_count)
+            == (0, 0, 0, 0),
+        )
+    # Exact comparison of resolved_model, license_id and source_type.
+    for resolved in ("M", " m", "m ", "m\n"):
+        res = run(
+            ["m"],
+            security_profile="zero_egress",
+            probes_by_model={"m": probe("m")},
+            attestations_by_model={"m": attestation("m", resolved=resolved)},
+        )
+        check(
+            "FTF-1706-A2",
+            f"resolved model {resolved!r} is not the candidate (exact, case- and strip-sensitive)",
+            by_id(res, "m").kind is CandidateKind.BLOCKED
+            and by_id(res, "m").privacy is PrivacyState.UNVERIFIED,
+        )
+    for exact in ("Model-A", "m ", " m"):
+        res = run(
+            [exact],
+            security_profile="zero_egress",
+            probes_by_model={exact: probe(exact)},
+            attestations_by_model={exact: attestation(exact)},
+        )
+        check(
+            "FTF-1706-A2",
+            f"an id {exact!r} attested under exactly that resolved id is not normalised away",
+            by_id(res, exact).kind is CandidateKind.UNTUNED_COMPARATOR
+            and by_id(res, exact).privacy is PrivacyState.AVAILABLE,
+        )
+    for lic in ("Apache-2.0", "apache-2.0 ", " apache-2.0", "APACHE-2.0"):
+        res = run(["m"], artifacts_by_model={"m": artifact(license_id=lic)})
+        check(
+            "FTF-1706-A2",
+            f"license id {lic!r} is not the approved apache-2.0 (exact)",
+            by_id(res, "m").license is LicenseState.NOT_APPROVED
+            and by_id(res, "m").kind is CandidateKind.BLOCKED,
+        )
+    for source in ("HuggingFace", "huggingface ", " huggingface", "HUGGINGFACE"):
+        art = artifact()
+        object.__setattr__(art, "source_type", source)  # a row loaded around the constructor
+        res = run(
+            ["m"],
+            security_profile="air_gapped",
+            artifacts_by_model={"m": art},
+            attestations_by_model={"m": attestation("m")},
+        )
+        check(
+            "FTF-1706-A2",
+            f"source_type {source!r} is not the exact public registry id: no source refusal",
+            by_id(res, "m").privacy is PrivacyState.AVAILABLE,
+        )
+    art = artifact(source_type="huggingface")
+    res = run(
+        ["m"],
+        security_profile="air_gapped",
+        artifacts_by_model={"m": art},
+        attestations_by_model={"m": attestation("m")},
+    )
+    check(
+        "FTF-1706-A2",
+        "the exact huggingface source is refused under air_gapped",
+        by_id(res, "m").privacy is PrivacyState.ARTIFACT_SOURCE_NOT_ALLOWED,
+    )
+    # Zero VRAM boundary: 0 is a declared, finite, non-negative requirement.
+    c = by_id(run(["m"], artifacts_by_model={"m": artifact(gpu={"min_gpu_vram_gb": 0})}), "m")
+    check(
+        "FTF-1706-A2",
+        "a zero VRAM requirement is declared and satisfiable",
+        c.method is MethodState.AVAILABLE and c.kind is CandidateKind.TUNABLE,
+    )
+    c = by_id(
+        run(
+            ["m"],
+            artifacts_by_model={"m": artifact(gpu={"min_gpu_vram_gb": 0})},
+            available_gpu_vram_gb=0,
+        ),
+        "m",
+    )
+    check(
+        "FTF-1706-A2",
+        "zero available VRAM meets a zero requirement",
+        c.method is MethodState.AVAILABLE,
+    )
+    c = by_id(
+        run(["m"], artifacts_by_model={"m": artifact()}, available_gpu_vram_gb=0),
+        "m",
+    )
+    check(
+        "FTF-1706-A2",
+        "zero available VRAM is a budget, not an unspecified one",
+        c.method is MethodState.GPU_INSUFFICIENT,
+    )
+    negative = artifact()
+    negative.minimum_gpu_profile_json = {"min_gpu_vram_gb": -1}  # row loaded from the database
+    c = by_id(run(["m"], artifacts_by_model={"m": negative}), "m")
+    check(
+        "FTF-1706-A2",
+        "a negative VRAM requirement is undeclared",
+        c.method is MethodState.GPU_REQUIREMENT_UNDECLARED,
+    )
+    # Freshness exactly at the TTL is still fresh; one second over is stale.
+    edge = NOW - DEFAULT_FRESHNESS_TTL
+    res = run(["m"], sync_cycle=scoped(cycle(checked=edge)))
+    check("FTF-1706-N1", "a catalog checked exactly TTL ago is fresh", res.succeeded)
+    res = run(["m"], sync_cycle=scoped(cycle(checked=edge - timedelta(seconds=1))))
+    check(
+        "FTF-1706-N1",
+        "a catalog checked TTL + 1s ago is stale",
+        res.state is GatewayState.CATALOG_STALE,
     )
 
 

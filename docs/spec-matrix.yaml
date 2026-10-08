@@ -11519,7 +11519,7 @@ FTF-1706:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Candidate discovery from org LiteLLM
-  evidence_hash: 994620bed542b1f35b416d59db7f064c607a542f
+  evidence_hash: 4f16be7a198891c6874b5840b05bd88f35a570e2
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-18; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0215, FTF-0307,
@@ -11537,6 +11537,9 @@ FTF-1706:
     must match, else CandidateDiscoveryError) and returns a non-DISCOVERED GatewayState with no
     candidates for a non-applied cycle or a revoked, unknown, degraded, never-discovered or stale
     catalog; NaN/inf VRAM is refused; wrong-typed maps, values, roles and license ids fail closed.
+    Round 3 (tests only, no production change): the attestation cross-org/cross-connection
+    tests now pass single-wrapped ScopedEvidence and assert the scope refusal message; mutation
+    survivors pinned; evidence_hash re-bound to the round-2 source commit (Law 15).
     Not self-certified (Law 4).
   proof_state: L1-PROVEN
   proving_symbol: ''
