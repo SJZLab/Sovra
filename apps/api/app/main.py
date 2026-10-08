@@ -141,9 +141,11 @@ from app.datasets.dataset_routes import build_dataset_router
 from app.datasets.dataset_source_connection_routes import (
     build_dataset_source_connection_router,
 )
+from app.datasets.direct_object_storage_upload_routes import build_direct_upload_router
 from app.evaluation.evaluation_case_routes import build_evaluation_case_router
 from app.evaluation.evaluation_suite_routes import build_evaluation_suite_router
 from app.litellm.connection_routes import build_litellm_connection_router
+from app.litellm.model_capability_routes import build_model_capability_router
 from app.litellm.model_catalog_mapping_routes import build_model_catalog_mapping_router
 from app.litellm.model_catalog_routes import build_model_catalog_router
 from app.model_versions.model_version_routes import build_model_version_router
@@ -223,6 +225,11 @@ def create_app() -> FastAPI:
         )
     )
     app.include_router(
+        build_model_capability_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
         build_trainable_artifact_router(
             session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
         )
@@ -264,6 +271,11 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         build_dataset_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_direct_upload_router(
             session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
         )
     )

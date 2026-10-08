@@ -24547,3 +24547,31 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 - **CI fix:** a time bomb in the FTF-0501-P1 test (mixed fixed and real clocks) turned every gate red from 12:00Z. It is
   fixed in the test only.
 - **ci-verdict:** all 7 relay merges since 06:02Z landed on a green ci-verdict.
+
+## 2026-10-08T14:20Z — Control plane: 3 returned (134/302 unchanged)
+- **Returned:**
+  - FTF-0903 r3, tests only (0c)
+  - FTF-0905 r2 (0d)
+  - FTF-1206 r4, tests only (0h)
+- **Under verification:** FTF-1602 r2 (#629).
+- **ci-verdict:** all 4 relay merges since 12:35Z landed on a green ci-verdict.
+
+## 2026-10-08T14:30Z — Control plane: FTF-1602 returned (134/302 unchanged)
+- **Returned:** FTF-1602 r3 (0i): pin the record version and retention, integration tests for the partial and
+  foreign-tenant cases, typed input, 0 mutation survivors.
+
+## 2026-10-08T16:25Z — Control plane: 5 returned, FTF-0501-UI sliced (134/302 unchanged)
+- **Returned:** FTF-0903 r4 (0c), FTF-0905 r3 (0d), FTF-1703 r3 (0g), FTF-1206 r5 (0h), FTF-0501 r2 (0j).
+- **Sliced:** FTF-0501-UI (Backlog). **Pending:** FTF-0616 #636.
+- **ci-verdict:** all 6 relay merges since 13:40Z (#610, #630, #632, #634, #635, #636) landed on a green ci-verdict.
+
+## 2026-10-08T17:00Z — Control plane: FTF-0616 returned (134/302 unchanged)
+- **Returned:** FTF-0616 r5 (0b): None in the approved set fails open; the resolved model must be the calibrated judge. #637 superseded.
+
+## 2026-10-08T17:52Z — Control plane: FTF-0309-P1 returned, FTF-R004 sliced (134/302 unchanged)
+- **Returned:** FTF-0309-P1 r2 (0k): single gateway call per GET, exact alias matching, proving_symbol.
+- **Sliced:** FTF-R004-P1..P4 (P1 and P2 ready now). `inspect_ai` pin owner-approved 2026-10-08.
+- **ci-verdict:** both relay merges since 15:40Z (#638, #642) landed on a green ci-verdict. **Pending:** FTF-1602 #638.
+
+## 2026-10-08T18:12Z — Control plane: FTF-1602 returned (134/302 unchanged)
+- **Returned:** FTF-1602 r4 (0i): pinned-version read with re-list, refuse an existing backup_id, tz-aware now.

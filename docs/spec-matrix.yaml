@@ -7300,15 +7300,23 @@ FTF-0500D:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500d.py
 FTF-0501:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Direct object-storage upload
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-02, AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0500D
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-02, AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500,
+    FTF-0500D, FTF-0501-P1, FTF-0501-P2 (certified). Built on those slices: SigV4 query
+    presigning (the AWS published vector, 5-minute ceiling), the part plan, UploadStorageSettings
+    from the environment, finalize verification (size, SHA-256, content type from the bytes) with
+    storage cleaned on every rejection, and the five routes under
+    /api/v1/organizations/{organization_id}/projects/{project_id}/upload-sessions. Wired into
+    apps/api/app/main.py. Not self-certified (Law 4): independent Control-plane L2 re-review
+    and a green ci-verdict on the PR are required; `certification_state` stays PROVISIONAL.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0501.py
 FTF-0502:
   certification_state: NONE
   criticality: MUST
@@ -8931,10 +8939,10 @@ FTF-0616:
     undefined kappa is refused). The verdict carries one score per locked rubric criterion (exact ids,
     none missing, none extra); confidence and scores lie in [0, 1]. LlmJudgeResult records rubric id,
     version, requested and resolved model; a resolved model outside the approved set (or the candidate)
-    is MODEL_MISMATCH, never a verdict. Model output is strict JSON (no duplicate keys, NaN/Infinity or
+    is MODEL_MISMATCH, never a verdict. Round 5: a missing model echo is its own MODEL_MISMATCH; approved_judge_model_ids members must be exact non-empty str (LlmJudgeGraderError before any call); the echo must equal the requested judge id or an exact alias named by its CalibrationRecord.judge_model_aliases (an approved but uncalibrated echo is MODEL_MISMATCH). Model output is strict JSON (no duplicate keys, NaN/Infinity or
     overflow, no repair of truncated JSON, deep nesting is refused, not a crash); exactly one choice;
     only HTTP 200 is a response; a 400 is sent once. Fault -> RED table:
-    docs/certifications/submissions/2026-10-08T0500Z-FTF-0616.md.
+    docs/certifications/submissions/2026-10-08T0500Z-FTF-0616.md; round 5: docs/certifications/submissions/2026-10-08T1800Z-FTF-0616.md.
 
     BLOCKED_EXTERNAL (packet resource_gate, owner action): the clause "Call approved real judge through
     LiteLLM" is proven only against a local TLS gateway stand-in. It needs a real gateway key and an
@@ -9622,6 +9630,23 @@ FTF-0905:
     complete. A confirmed leak (`found=True`) raises `CanaryLeakedError` immediately, never
     deferred.
 
+    Round 2 (Control-plane return): a recorded leak stays recorded (`assert_leak_test_complete`
+    raises `CanaryLeakedError` even after the error was caught); an empty ledger is never complete;
+    completion needs every placed canary placed AND checked at every pair of the declared
+    `required_coverage` plan (default: all sinks x encodings; a narrower plan is explicit and never
+    empty); `canary_id` is drawn independently of the token; the token is pinned at >= 128 bits;
+    `record_checked` raises typed errors for unhashable ids, and sinks/ids/encodings are exact `str`
+    (a `str` subclass with a lying `__eq__` is refused). The earlier "empty ledger is vacuously
+    complete" test was removed.
+
+    Round 3 (tests only, production unchanged): behavioural tests pin the DEFAULT plan (every
+    34-of-35 (sink, encoding) subset and every-sink-literal-only raise `IncompleteLeakCoverageError`),
+    a leak on the same key stays sticky under a later clean or found re-check, and `canary_id`
+    comes from its own `secrets.token_hex` draw (patched draw sequences; changing only one draw
+    changes only that field). Seven faults (default plan literal-only / two pairs / minus one pair,
+    re-check ignored, clean re-check clears a leak, id = reversed token, id = hex-complemented
+    token) each turn the probe RED; submission 2026-10-08T1900Z-FTF-0905.md.
+
     Disclosed: this module is a pure library with no live caller yet -- the producers that will
     actually place a canary in a real error path/trace/artifact (training/evaluation workers) are
     separate, dependency-gated tasks; proving_symbol stays blank, same precedent as
@@ -9651,15 +9676,28 @@ FTF-0907:
   proving_symbol: ''
   proving_test: ''
 FTF-0908:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: External provider denial
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-14; scenarios=Q23, Q25; deps=FTF-0203, FTF-0901, FTF-0902
-  proof_state: UNPROVEN
+  evidence_hash: 7ab132f7704339adb87c00aeec5bb19c1b12cb85
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-14; scenarios=Q23, Q25; deps=FTF-0203, FTF-0901,
+    FTF-0902. Path: `packages/security/external_provider_denial.py`. `authorize_external_provider`
+    composes FTF-0901 `effective_profile`/`enforce_effect` (training -> model surface, inference ->
+    serving surface): zero_egress/air_gapped deny every managed route
+    (`external_provider_profile_blocked`); standard needs a `ProviderApproval` for the exact
+    provider and purpose recording approver, account, region, retention and that purpose's terms
+    (`external_provider_not_approved`, `external_provider_purpose_not_approved`,
+    `external_provider_approval_incomplete`). A "private cloud account" label is data only and never
+    approves. The denial audit reason is content-free (profile, surface, purpose, code) and is
+    written through FTF-0104 `write_audit_event` when an AuditContext is given. Unknown, str-subclass
+    or unhashable values raise `external_provider_invalid_request`. No network call (counting
+    socket test shows zero). UNWIRED: no live caller yet (training/inference submit paths are later
+    tasks) -- blank proving_symbol, same precedent as FTF-0901/FTF-0902. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0908.py
 FTF-0909:
   certification_state: NONE
   criticality: MUST
@@ -11402,7 +11440,7 @@ FTF-1602:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Object storage backup
-  evidence_hash: b18c456289f75b189ebed4995f6071cc7f3f8a06
+  evidence_hash: a68682cbb9c3ddac67c866a163cfba6d10d72fc2
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-32; scenarios=Q29, Q30; deps=FTF-0004, FTF-1002, FTF-1601
@@ -11418,7 +11456,37 @@ FTF-1602:
     delete refused, stale/deleted/missing-shard/lost-key refusals leave the target empty, a replaced
     blob is caught). No-DB unit/fault suite tests/tasks/test_ftf_1602.py; mutation gate 191/191
     killed. The frozen 16-domain contract is FTF-1601's and was not extended (no contract lock held).
-    Restore automation is FTF-1603. Pure library/CLI: no live caller, proving_symbol stays blank.
+    Round 2 (QUEUE 0d): the record now carries every manifest entry (key, version id, kind, artifact
+    id, shard layout, encryption key reference, tenant, object metadata) so `restore_backup`
+    rebuilds the objects into a clean bucket from the backup alone and proves bytes, sha256,
+    key/version mapping and metadata; a corrupted, truncated, same-size-swapped or unretained
+    backup blob, or a record whose own totals/hash do not match its entries, is refused before any
+    write, and a dirty destination is refused (a record that was RE-HASHED to stay consistent was
+    NOT caught in round 2; see round 3). BlobRef
+    carries organization_id: one tenant per backup, keys must sit under tenants/<org>/ with no dot
+    segments, backups live under <prefix>/<org>/<id>, and verify/restore refuse another tenant's
+    record. verify_backup re-checks object_count, blob_count, total_bytes and manifest_sha256, and
+    optionally a caller-held expected manifest hash. Round-2 mutation gate (diff-scoped) was
+    200/200; the round-3 figure is below. Disclosed:
+    metadata is content type plus x-amz-meta-* only; a blob swapped mid-restore aborts it after
+    earlier objects were written (visible, never success); the SeaweedFS integration additions
+    (restore, damaged backups, tenant scoping) have their first real run in CI. Restore
+    automation (scheduling, runbooks) is FTF-1603. Pure library/CLI: no live caller, proving_symbol stays blank.
+    Round 3 (QUEUE 0i): the backup record is pinned. verify/restore refuse a record key that has
+    more than one version, whose version is a delete marker, or whose latest version is not
+    COMPLIANCE-retained until at least the record's own retain_until and beyond now, so a newer,
+    shrunk, re-hashed record version (3 of 4 objects, consistent totals) is refused; a
+    single-version forged record is stopped only by a caller-held hash, now exposed as
+    --expected-manifest-sha256 on the verify and restore CLI. Inputs are exact types (a str
+    subclass, BlobRef subclass or frozenset subclass is refused; an unhashable kind raises this
+    module's error). Every storage read failure in verify/restore (TimeoutError, OSError, S3Error)
+    is this module's own error naming the S3 status, never the server's message. A parsed record
+    is validated field by field (exact types, exact field set, timestamp format) and a malformed
+    one raises ObjectStorageBackupError. New real-SeaweedFS tests (first run in CI): shrunk record
+    version refused, backup lacking a listed blob refused with nothing written, tenants/p/ key
+    refused at backup and in a re-hashed record at restore. Disclosed, still true: a record that is
+    the only version and internally consistent but shrunk is accepted unless the caller supplies
+    the expected manifest hash; the CLI does not require it.
     Not self-certified (Law 4).
   proof_state: L1-PROVEN
   proving_symbol: ''
@@ -11639,7 +11707,7 @@ FTF-1703:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Training dataset
-  evidence_hash: aab98f605e9924867aec9cf38c4e5cf36a1023f9
+  evidence_hash: 9f89a8a46f953e92ce4d7276caec9883cf95ef1b
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0506, FTF-1701,
@@ -11659,6 +11727,19 @@ FTF-1703:
     RED table in docs/certifications/submissions/2026-10-08T0700Z-FTF-1703.md (15 production
     faults, all RED). No route, schema or live caller yet, so proving_symbol stays blank (same
     disclosed precedent as FTF-1706).
+    Round 2 (QUEUE 0g): independent groups are template families, not traces (Section 67): the
+    1,200 traces are 21 families (7 kinds x 3 variants), so group_count is 21, meets_floor stays
+    False even with 1,000+ approved traces and review_status names BLOCKED_independent_group_floor.
+    Provenance is verified, not self-declared: verify_trace_provenance regenerates each trace from
+    GENERATOR_ID and provenance.index and requires canonical-JSON equality (user turns, free-text
+    tool arguments, results, kind, critical, template and group ids), and only generator output is
+    admitted. ReservedFinalSuite and the builder's reserved argument fail closed (frozensets of
+    exact str only; {} and a bare string are refused, None is the explicit default). Malformed trace
+    fields, malformed steps and a forged approver ref raise TraceVerificationError; the secret scan
+    covers dict keys. Mutation gate 188/188 killed. Disclosed, not a return reason: reviewer
+    identity is an unauthenticated string until the BLOCKED_EXTERNAL Argilla review step binds real
+    review records, and held-out matching is exact after strip/casefold (no near-duplicate
+    detection).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1703.py

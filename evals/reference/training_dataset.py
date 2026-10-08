@@ -33,6 +33,23 @@ its own output. A trace counts as *approved* only when an independent
 acceptance clause "reviewed ... independent review" stays BLOCKED_EXTERNAL
 (a human/Argilla step, `resource_gate`) and no review is minted here.
 
+Provenance is verified, not self-declared: `verify_trace_provenance`
+regenerates a trace from `GENERATOR_ID` and `provenance.index` and requires
+the recorded trace to equal it exactly (user turns, free-text tool arguments,
+tool results, kind, critical, template and group ids), so a replaced user turn
+or note, a harvested row or a forged `critical` flag is refused.
+
+Independent groups are template families, not traces (Section 67: "keep
+synthetic seed/template families in one split"; template-derived near
+duplicates are not independent tasks): `group_count` counts distinct
+normalised template families among approved traces. This generator emits 21
+families (7 scenario kinds x 3 variants), so the independent-group floor is
+reported NOT met whatever the approved count; `meets_floor` never claims it.
+
+Disclosed, not hidden: reviewer identity is an unauthenticated string until the
+BLOCKED_EXTERNAL Argilla review step binds real review records, and held-out
+matching is exact after strip/casefold (no near-duplicate detection).
+
 Held-out safety (Section 0 rule 14, negative_acceptance): training
 templates, groups and entities live in the `train-` namespace;
 `ReservedFinalSuite` lets the caller state the sealed final suite's group
@@ -71,6 +88,7 @@ from evals.reference.tool_environment import (  # noqa: E402
 __all__ = [
     "GENERATOR_ID",
     "MIN_APPROVED_TRACES",
+    "MIN_INDEPENDENT_GROUPS",
     "HeldOutLeakageError",
     "ReservedFinalSuite",
     "ReviewDecision",
@@ -82,11 +100,13 @@ __all__ = [
     "TrainingTrace",
     "build_training_dataset",
     "generate_training_traces",
+    "verify_trace_provenance",
     "verify_trace_replay",
 ]
 
 GENERATOR_ID = "generator:ftf-1703-v1"
 MIN_APPROVED_TRACES = 1000
+MIN_INDEPENDENT_GROUPS = 1000
 _TENANT = "tenant-t"
 _OWNER = "subject-t1"
 _OTHER = "subject-t2"
@@ -181,6 +201,9 @@ class ReservedFinalSuite:
     entity_titles: frozenset[str] = frozenset()
     answer_sha256s: frozenset[str] = frozenset()
 
+    def __post_init__(self) -> None:
+        _check_reserved_shape(self)
+
 
 @dataclass(frozen=True)
 class TrainingDataset:
@@ -189,7 +212,7 @@ class TrainingDataset:
     approved_count: int
     pending_count: int
     rejected_count: int
-    group_count: int
+    group_count: int  # distinct template families among approved traces
     critical_count: int
     dataset_sha256: str
     meets_floor: bool
@@ -326,6 +349,9 @@ class _Refs:
     def real(self, ref: str) -> str:
         return self._ref_to_real.get(ref, ref)
 
+    def knows(self, ref: str) -> bool:
+        return ref in self._ref_to_real
+
     def normalize(self, value: Any) -> Any:
         if isinstance(value, dict):
             out: dict[str, Any] = {}
@@ -413,12 +439,19 @@ def _execute_plan(plan: list[_PlanItem], *, title: str) -> list[dict[str, Any]]:
                     {"type": "tool_result", "tool": item.tool, "result": refs.normalize(result)}
                 )
         else:
-            env.server.decide_approval(
-                tenant_id=_TENANT,
-                approver_subject_id=_APPROVER,
-                approval_id=refs.real(item.approval_ref),
-                decision=item.decision,
-            )
+            if not refs.knows(item.approval_ref):
+                raise TraceVerificationError("approver decision names an unknown approval ref")
+            try:
+                env.server.decide_approval(
+                    tenant_id=_TENANT,
+                    approver_subject_id=_APPROVER,
+                    approval_id=refs.real(item.approval_ref),
+                    decision=item.decision,
+                )
+            except Exception as exc:  # noqa: BLE001 - re-raised as the typed, content-free error
+                raise TraceVerificationError(
+                    f"approver decision refused ({type(exc).__name__})"
+                ) from exc
             steps.append(
                 {
                     "type": "approver_decision",
@@ -496,20 +529,32 @@ def _plan_for(kind: str, *, title: str, tok: str, variant: int, idem: str) -> li
     return [_Say("user", user), *_BODIES[kind](tok, variant, idem), _Say("assistant", final)]
 
 
-def _plan_from_steps(steps: tuple[dict[str, Any], ...]) -> list[_PlanItem]:
+def _plan_from_steps(steps: tuple[dict[str, Any], ...] | list[dict[str, Any]]) -> list[_PlanItem]:
     """Recover the agent-side actions from a recorded trace. Recorded
     results/errors are dropped; a step type this function does not know is
     dropped too, and the replay comparison then refuses the trace because the
-    replayed steps no longer equal the recorded ones."""
+    replayed steps no longer equal the recorded ones. A known step with a
+    malformed field is refused with the typed error."""
     plan: list[_PlanItem] = []
     for step in steps:
         t = step.get("type")
         if t == "message":
-            plan.append(_Say(step["role"], step["content"]))
+            role, content = step.get("role"), step.get("content")
+            if type(role) is not str or type(content) is not str:
+                raise TraceVerificationError("message step needs string role and content")
+            plan.append(_Say(role, content))
         elif t == "tool_call":
-            plan.append(_Call(step["tool"], dict(step["arguments"])))
+            tool, arguments = step.get("tool"), step.get("arguments")
+            if type(tool) is not str or type(arguments) is not dict:
+                raise TraceVerificationError(
+                    "tool_call step needs a string tool and dict arguments"
+                )
+            plan.append(_Call(tool, dict(arguments)))
         elif t == "approver_decision":
-            plan.append(_Approver(step["decision"], step["approval_id"]))
+            decision, ref = step.get("decision"), step.get("approval_id")
+            if type(decision) is not str or type(ref) is not str:
+                raise TraceVerificationError("approver_decision step needs string fields")
+            plan.append(_Approver(decision, ref))
     return plan
 
 
@@ -570,50 +615,103 @@ def _trace_hash_source(trace: TrainingTrace) -> str:
     return json.dumps(trace.to_dict(), sort_keys=True, separators=(",", ":"))
 
 
+def _generate_one(i: int) -> TrainingTrace:
+    kind, critical, outcome = _KINDS[i % len(_KINDS)]
+    variant = (i // len(_KINDS)) % 3
+    adj = _ADJECTIVES[i % len(_ADJECTIVES)]
+    noun = _NOUNS[(i // len(_ADJECTIVES)) % len(_NOUNS)]
+    tok = f"TRN-{i:04d}"
+    title = f"{adj} {noun} {tok}"
+    plan = _plan_for(kind, title=title, tok=tok, variant=variant, idem=f"idem-{i:04d}")
+    return TrainingTrace(
+        trace_id=f"train-{i:04d}",
+        group_id=f"{_GROUP_PREFIX}{i:04d}",
+        template_id=_template_id(kind, variant),
+        kind=kind,
+        critical=critical,
+        entity_title=title,
+        expected_outcome=outcome,
+        steps=tuple(_execute_plan(plan, title=title)),
+        provenance={
+            "origin": _ORIGIN,
+            "producer": GENERATOR_ID,
+            "label": "synthetic",
+            "index": i,
+        },
+    )
+
+
 def generate_training_traces(*, count: int = 1200) -> tuple[TrainingTrace, ...]:
     """Deterministically generate `count` synthetic traces, each executed on
-    its own disposable real backend, one independent entity group per trace."""
+    its own disposable real backend, one entity group per trace (the
+    independent-group count is by template family, see `build_training_dataset`)."""
     if isinstance(count, bool) or not isinstance(count, int) or count < 1:
         raise TrainingDatasetError("count must be a positive integer")
-    traces: list[TrainingTrace] = []
-    for i in range(count):
-        kind, critical, outcome = _KINDS[i % len(_KINDS)]
-        variant = (i // len(_KINDS)) % 3
-        adj = _ADJECTIVES[i % len(_ADJECTIVES)]
-        noun = _NOUNS[(i // len(_ADJECTIVES)) % len(_NOUNS)]
-        tok = f"TRN-{i:04d}"
-        title = f"{adj} {noun} {tok}"
-        plan = _plan_for(kind, title=title, tok=tok, variant=variant, idem=f"idem-{i:04d}")
-        steps = _execute_plan(plan, title=title)
-        trace = TrainingTrace(
-            trace_id=f"train-{i:04d}",
-            group_id=f"{_GROUP_PREFIX}{i:04d}",
-            template_id=_template_id(kind, variant),
-            kind=kind,
-            critical=critical,
-            entity_title=title,
-            expected_outcome=outcome,
-            steps=tuple(steps),
-            provenance={
-                "origin": _ORIGIN,
-                "producer": GENERATOR_ID,
-                "label": "synthetic",
-                "index": i,
-            },
+    return tuple(_generate_one(i) for i in range(count))
+
+
+_STR_FIELDS = (
+    "trace_id",
+    "group_id",
+    "template_id",
+    "kind",
+    "entity_title",
+    "expected_outcome",
+    "purpose",
+)
+
+
+def _require_trace_shape(trace: Any) -> TrainingTrace:
+    """Exact-type field checks, so a malformed trace raises the typed error and
+    never a bare TypeError/AttributeError/KeyError further down."""
+    if not isinstance(trace, TrainingTrace):
+        raise TraceVerificationError("not a TrainingTrace")
+    for name in _STR_FIELDS:
+        value = getattr(trace, name)
+        if type(value) is not str or not value:
+            raise TraceVerificationError(f"trace field {name} must be a non-empty string")
+    if type(trace.critical) is not bool:
+        raise TraceVerificationError(f"{trace.trace_id}: critical must be a bool")
+    if type(trace.steps) not in (tuple, list) or not all(type(s) is dict for s in trace.steps):
+        raise TraceVerificationError(f"{trace.trace_id}: steps must be a sequence of dicts")
+    if type(trace.provenance) is not dict:
+        raise TraceVerificationError(f"{trace.trace_id}: provenance must be a dict")
+    return trace
+
+
+def _canonical(value: Any) -> str:
+    """Canonical JSON text compared instead of `==`, so a str/int subclass with a
+    rigged `__eq__` cannot make a forged value look equal."""
+    try:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise TraceVerificationError("trace content is not plain JSON data") from exc
+
+
+def verify_trace_provenance(trace: TrainingTrace) -> None:
+    """Regenerate the trace from `GENERATOR_ID` and `provenance.index` and
+    require the recorded trace to equal it exactly; raise otherwise."""
+    _require_trace_shape(trace)
+    producer = trace.provenance.get("producer")
+    index = trace.provenance.get("index")
+    if producer not in (GENERATOR_ID,) or type(index) is not int or index < 0:
+        raise TraceVerificationError(
+            f"{trace.trace_id}: provenance does not name a generator index"
         )
-        traces.append(trace)
-    return tuple(traces)
+    if _canonical(_generate_one(index).to_dict()) != _canonical(trace.to_dict()):
+        raise TraceVerificationError(
+            f"{trace.trace_id}: trace differs from what the generator produces for its index"
+        )
 
 
 def verify_trace_replay(trace: TrainingTrace) -> None:
     """Re-execute the trace's recorded agent actions on a fresh real
     environment; raise unless every recorded result and the declared
     outcome match."""
-    if not isinstance(trace, TrainingTrace):
-        raise TraceVerificationError("not a TrainingTrace")
+    _require_trace_shape(trace)
     plan = _plan_from_steps(trace.steps)
     replayed = _execute_plan(plan, title=trace.entity_title)
-    if replayed != [dict(s) for s in trace.steps]:
+    if _canonical(replayed) != _canonical([dict(s) for s in trace.steps]):
         raise TraceVerificationError(
             f"{trace.trace_id}: recorded results do not replay against the real backend"
         )
@@ -644,7 +742,11 @@ def _strings(value: Any) -> list[str]:
 
 
 def _scan_secrets(trace: TrainingTrace) -> None:
-    for text in _strings(trace.to_dict()):
+    try:
+        texts = _strings(trace.to_dict())
+    except RecursionError as exc:
+        raise TraceVerificationError(f"{trace.trace_id}: trace nesting is too deep") from exc
+    for text in texts:
         for pattern in _SECRET_PATTERNS:
             if pattern.search(text):
                 raise SecretInTraceError(f"{trace.trace_id}: secret-shaped content refused")
@@ -652,6 +754,21 @@ def _scan_secrets(trace: TrainingTrace) -> None:
 
 def _norm(value: str) -> str:
     return value.strip().casefold()
+
+
+_RESERVED_FIELDS = ("group_ids", "template_ids", "entity_titles", "answer_sha256s")
+
+
+def _check_reserved_shape(reserved: Any) -> ReservedFinalSuite:
+    """A reserved set must be real frozensets of strings: a bare string would be
+    split into characters (admitting the sealed id) and `{}` would read as 'none'."""
+    if not isinstance(reserved, ReservedFinalSuite):
+        raise TrainingDatasetError("reserved must be a ReservedFinalSuite")
+    for name in _RESERVED_FIELDS:
+        members = getattr(reserved, name)
+        if type(members) is not frozenset or not all(type(m) is str for m in members):
+            raise TrainingDatasetError(f"reserved.{name} must be a frozenset of strings")
+    return reserved
 
 
 def _check_reserved(trace: TrainingTrace, reserved: ReservedFinalSuite) -> None:
@@ -671,6 +788,7 @@ def _check_reserved(trace: TrainingTrace, reserved: ReservedFinalSuite) -> None:
 def _validate_trace_shape(trace: Any) -> TrainingTrace:
     if not isinstance(trace, TrainingTrace):
         raise TrainingDatasetError("traces must be TrainingTrace instances")
+    _require_trace_shape(trace)
     if trace.purpose not in (_PURPOSE,):
         raise TrainingDatasetError(f"{trace.trace_id}: purpose must be 'training'")
     if (
@@ -692,7 +810,7 @@ def _validate_trace_shape(trace: Any) -> TrainingTrace:
     return trace
 
 
-def _validate_review(review: Any, producers: dict[str, str]) -> ReviewDecision:
+def _validate_review(review: Any, trace_ids: set[str]) -> ReviewDecision:
     if not isinstance(review, ReviewDecision):
         raise ReviewIndependenceError("reviews must be ReviewDecision instances")
     for name in ("trace_id", "reviewer_id", "decision"):
@@ -700,14 +818,23 @@ def _validate_review(review: Any, producers: dict[str, str]) -> ReviewDecision:
             raise ReviewIndependenceError(f"review.{name} must be a non-empty string")
     if review.decision not in _DECISIONS:
         raise ReviewIndependenceError(f"unknown review decision: {review.decision!r}")
-    producer = producers.get(review.trace_id)
-    if producer is None:
+    if review.trace_id not in trace_ids:
         raise ReviewIndependenceError(f"review for unknown trace: {review.trace_id!r}")
-    if _norm(review.reviewer_id).startswith("generator:") or _norm(review.reviewer_id) == _norm(
-        producer
-    ):
+    # Admitted traces are all produced by GENERATOR_ID ("generator:..."), so a reviewer
+    # carrying a generator identity is the producer reviewing its own output.
+    if _norm(review.reviewer_id).startswith("generator:"):
         raise ReviewIndependenceError(f"{review.trace_id}: reviewer is not independent of producer")
     return review
+
+
+def _floor_status(approved_count: int, family_count: int) -> tuple[bool, str]:
+    """The floor needs both enough independently approved traces and enough
+    independent groups (template families); the status names the first blocker."""
+    if approved_count < MIN_APPROVED_TRACES:
+        return False, "BLOCKED_EXTERNAL_independent_review"
+    if family_count < MIN_INDEPENDENT_GROUPS:
+        return False, "BLOCKED_independent_group_floor"
+    return True, "independently_approved"
 
 
 def build_training_dataset(
@@ -719,7 +846,7 @@ def build_training_dataset(
     """Verify every trace, then admit only independently approved ones."""
     if not isinstance(traces, tuple | list) or not isinstance(reviews, tuple | list):
         raise TrainingDatasetError("traces and reviews must be sequences")
-    reserved = reserved or ReservedFinalSuite()
+    reserved = _check_reserved_shape(ReservedFinalSuite() if reserved is None else reserved)
     by_id: dict[str, TrainingTrace] = {}
     seen_ids: set[str] = set()
     for raw in traces:
@@ -729,13 +856,14 @@ def build_training_dataset(
         seen_ids.add(_norm(trace.trace_id))
         _scan_secrets(trace)
         _check_reserved(trace, reserved)
+        verify_trace_provenance(trace)
         verify_trace_replay(trace)
         by_id[trace.trace_id] = trace
 
-    producers = {tid: t.provenance["producer"] for tid, t in by_id.items()}
+    trace_ids = set(by_id)
     decisions: dict[str, str] = {}
     for raw_review in reviews:
-        review = _validate_review(raw_review, producers)
+        review = _validate_review(raw_review, trace_ids)
         if {decisions.setdefault(review.trace_id, review.decision)} != {review.decision}:
             raise ReviewIndependenceError(f"{review.trace_id}: conflicting review decisions")
 
@@ -750,17 +878,17 @@ def build_training_dataset(
     for trace in approved:
         digest.update(_trace_hash_source(trace).encode("utf-8"))
         digest.update(b"\n")
-    groups = {t.group_id for t in approved}
-    meets = len(approved) >= MIN_APPROVED_TRACES and len(groups) >= MIN_APPROVED_TRACES
+    families = {t.template_id for t in approved}
+    meets, status = _floor_status(len(approved), len(families))
     return TrainingDataset(
         traces=approved,
         generated_count=len(by_id),
         approved_count=len(approved),
         pending_count=len(by_id) - len(approved) - rejected,
         rejected_count=rejected,
-        group_count=len(groups),
+        group_count=len(families),
         critical_count=sum(1 for t in approved if t.critical),
         dataset_sha256=digest.hexdigest(),
         meets_floor=meets,
-        review_status="independently_approved" if meets else "BLOCKED_EXTERNAL_independent_review",
+        review_status=status,
     )

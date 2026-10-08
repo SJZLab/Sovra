@@ -10543,3 +10543,102 @@ PR is not landed by the next certifier shift.
     target/runtime clauses are BLOCKED_EXTERNAL. It will be sliced once FTF-0616 and FTF-1705 land.
 - **ci-verdict:** all 7 relay merges since 06:02Z (#618, #620, #613, #619, #622, #621, #624) landed on a green
   ci-verdict.
+
+## 2026-10-08T14:20Z — RETURNED: FTF-0903 (r3), FTF-1206 (r4), FTF-0905 (r2)
+- **Verification method:** independent Control-plane verifiers in detached worktrees at each merge commit. Faults were
+  behavioural only; mutation runs were uncapped (`--max-mutants 0`).
+- **FTF-0903: RETURNED** (round 2 → 3, tests only; #627, e054e34f9af90cb02bde29151070c8f6a3908119).
+  - The code behaves correctly. About 60 behavioural faults were run; mutation 99/99.
+  - Items 3, 4, 6 and 7 hold.
+  - Three round-1 items have no behaviour test that goes RED:
+    - a rejected value echoed into the error message, for every field kind (7 faults GREEN);
+    - a str-subclass field name;
+    - an unhashable field name.
+  - Two of these went RED only through the test file's guard-text regex, which is not evidence.
+- **FTF-1206: RETURNED** (round 3 → 4, tests only; #628, 0d0df9f9891cf8665ff332b9eb445f840c392eba).
+  - Round-3 items 2–4 hold: typed fail-closed inputs, the current-policy recheck and the notes. Mutation 47/47.
+  - Item 1 holds only in part. Normalising the target or actor (strip/lower) before validation stays GREEN, because no
+    test puts the variant in both the grant and the org policy, or uses whitespace variants.
+- **FTF-0905: RETURNED** (round 1 → 2; production plus tests; #625, 0f4aa2170edcd2219a2e0964eab5e0c73808fb1e).
+  - Mutation 88/88, but its operators never reach the defects below.
+  - Fail-open: a confirmed leak can be followed by "complete".
+  - An empty ledger, or one with one clean check, is "complete".
+  - canary_id embeds the token, so the canary is reconstructible.
+  - Entropy is not pinned: 4 bytes stays GREEN.
+  - Untyped errors on record_checked input.
+  - The spec-matrix L1-PROVEN overstates NEG-1b.
+- **ci-verdict:** relay merges #625, #627, #628 and #629 all landed on a green ci-verdict. FTF-1602 r2 (#629, 7d28d4c)
+  is under verification.
+- **Observation, not a finding:** data_exposure_check without arguments prints "no datastore backends declared". CI runs
+  it with `--backends postgres_rls,s3_identity --fail-on-exposure`, so the gate is intact.
+
+## 2026-10-08T14:30Z — RETURNED: FTF-1602 (r3)
+- **FTF-1602: RETURNED** (round 2 → 3; production plus tests; #629, 7d28d4c90e3657911788bdf348d760c01e683aaa).
+  Independent verifier on real SeaweedFS with a bounded fixture.
+  - Item 3 holds: verify re-checks counts, bytes and the manifest hash, RED in unit and integration.
+  - Unit faults all RED.
+  - Open findings:
+    - A shrunk, re-hashed latest version of the backup record restores as success. Partial backup accepted (Law 17).
+    - At integration level, a missing blob and a foreign-tenant prefix are not proven (faults GREEN).
+    - Typed input: a membership test runs before the type check, and a str subclass bypasses the tenant guard.
+    - A malformed record raises untyped errors.
+    - Whole-file mutation 297/299. The PR's 200/200 was diff-scoped.
+    - Notes overclaim.
+  - The first fault pass was discarded after the verifier's unbounded SeaweedFS fixture filled the disk. All rows come
+    from a second, bounded pass with the module sha256-verified after each row.
+
+## 2026-10-08T16:25Z — RETURNED: FTF-0903 (r4), FTF-0905 (r3), FTF-1703 (r3), FTF-1206 (r5), FTF-0501 (r2); SLICE: FTF-0501-UI
+Independent verifiers, one per PR, each on the merge commit, CI on the PR head green (ci-verdict success) and gates
+clean (product_truth 45/45, validate_spec --strict, data_exposure OK). No producer session matches the certifier.
+- **FTF-0903: RETURNED** (round 3 → 4; tests only; #632, d37e6b18a43f87399d7ed7775dcfc35543439f2a). Round-3 fixes 2-3
+  hold; mutation 99/99. Open: ContentRef echo (X5) stays GREEN with a raw traceback in str(exc); X4 and the
+  out-of-range number/count/timestamp/bool echoes (X1-X3, X7) go RED only through guard text; the test leaves a mutant
+  .pyc so a second run in one checkout fails.
+- **FTF-0905: RETURNED** (round 2 → 3; tests only; #634, f6b99cea69406e523e15ed6edebca6cdb008cf68). All five round-2
+  production fixes hold; 17 faults RED. GREEN: default-plan contents (F6, F7, F7b), sticky leak on the same key (F8,
+  F9), canary_id independence (F11, F12).
+- **FTF-1703: RETURNED** (round 2 → 3; production plus tests; #630, 6bc52597920aabb45130f9705a83ebc1120b57f7). Items
+  1, 3, 4 hold. Reproduced: a TrainingTrace subclass with an overridden to_dict() and a nested dict subclass are
+  admitted carrying a sealed final-suite prompt, a forged critical flag and an sk- secret. G4 (exact step type) GREEN.
+- **FTF-1206: RETURNED** (round 4 → 5; production plus tests; #635, 77812afaa364acbd963af1a46375e8e493a56555). All
+  round-3 items hold. Reproduced negative acceptance: a str subclass aliasing an allowed value widens a grant to a
+  namespace the org never allowed and authorizes a non-approver. Seven identifier-pattern faults GREEN.
+- **FTF-0501: RETURNED** (round 1 → 2; #610, 4154b96da3c02d05e3cd93006e803790693944b0). P1/P2 hold; 77 of 78
+  real-route probes pass on PG16 + SeaweedFS; 18 faults RED. Open: XLSX check accepts any ZIP (E8b reproduced); a flaky
+  unsigned-request check (400 vs 403); §67.5 24 h multipart abort claimed but not implemented; no route-level PG + S3
+  CI job and blank proving_symbol; no resumable UI.
+- **SLICE FTF-0501-UI:** the "resumable UI" clause becomes a Backlog child slice on the FTF-0501 routes. FTF-0501 is
+  certified only when round 2 and FTF-0501-UI both pass.
+- Pending: FTF-0616 (#636) verification still running.
+
+## 2026-10-08T17:00Z — RETURNED: FTF-0616 (r5)
+- **FTF-0616: RETURNED** (round 4 → 5; small production fix plus tests; #636, a9c2f3eef132). Independent verifier:
+  CI on head 87b7f17 green (ci-verdict success); gates clean; whole-file mutation 302/302. Round-3 items 1, 2 and 4
+  fixed; item 3 fixed for every gateway echo shape. Reproduced: an approved set holding None with no echo gives
+  PASSED/VERIFIED (P-18); an echo of another approved but uncalibrated judge gives PASSED/VERIFIED (P-17), against the
+  negative acceptance "an uncalibrated result cannot certify". Control-plane ruling: P-17 is blocking and overrides the
+  round-3 acceptance of any approved model. Open #637 is superseded; its None clause is ported into round 5.
+
+## 2026-10-08T17:52Z — RETURNED: FTF-0309-P1 (r2); SLICES: FTF-R004-P1..P4
+- **FTF-0309-P1: RETURNED** (round 1 → 2; production plus tests; #642, ab71b1c0fca1e998a1ef4b40d1d740d85732282f).
+  Independent verifier: CI on head f4f9f9a green (ci-verdict success, real-Postgres job ran); gates clean; mutation
+  70/70; cross-tenant, role, revoke and single-discovery checks hold on PG16 as sovra_app. Reproduced: one GET makes a
+  second gateway call through `enrich_visible_models` (3 requests, 2 secret reads), against "provider called only
+  through the existing discovery client, at most once per request" (fault FA GREEN). Unpinned: exact alias matching
+  (`.lower()` fault FB GREEN; a different unmapped alias reports another alias's artifact). DoD proving_symbol bullet
+  not done.
+- **SLICES FTF-R004-P1..P4** (Backlog): P1 generation-config fidelity and P2 provider-tool/MCP denial are ready now; P3
+  (pinned Inspect worker + actual-runtime bridge) depends on P1 and P2; P4 (log normalization, complete accounting,
+  sealed-data guard) depends on P3. Pinning `inspect_ai` in the evaluation worker is owner-approved (live answer,
+  2026-10-08), matching REFERENCE_REPOSITORIES.md "Pinned evaluation worker package". Left with the parent: the
+  engine-evidence read view (no EvaluationRun contract yet), the sealed final-suite worker (FTF-H020), the real
+  gateway route (same key as the FTF-0616 owner action), the component version-lock row and the Q35 journey.
+- Pending: FTF-1602 r3 (#638) verification still running.
+
+## 2026-10-08T18:12Z — RETURNED: FTF-1602 (r4)
+- **FTF-1602: RETURNED** (round 3 → 4; production plus tests; #638, 99fa4c05605be3b6cfe10f1034d864b9038b0224).
+  Independent verifier: CI on head f8e776d green (unit and real-SeaweedFS integration logs read); real SeaweedFS
+  13/13 locally on a bounded fixture; uncapped whole-file mutation 383/383. All round-3 findings fixed. Reproduced:
+  the record pin reads the latest version after listing, so a shrunk, re-hashed, retained record PUT in between
+  restores 3 of 4 objects as success (Law 17). Also: create_backup with an existing backup_id succeeds and loses the
+  original backup; a naive `now` raises a raw TypeError; notes lack the mutation figure.

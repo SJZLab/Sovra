@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-08T12:20Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-08T14:20Z. Source: `python3 scripts/status.py` on main.
 - **Status: 134/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
 - **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902,
@@ -10,6 +10,12 @@ Updated: 2026-10-08T12:20Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-08T14:20Z:**
+  - Returned:
+    - FTF-0903 r3, tests only: value-echo, str-subclass and unhashable name tests.
+    - FTF-1206 r4, tests only: case/whitespace variants in both sets.
+    - FTF-0905 r2: a leak stays recorded, no vacuous "complete", id not derived from the token, entropy ≥128 bits.
+  - FTF-1602 r2 (#629) is under verification. In progress: FTF-0501 (#610).
 - **2026-10-08T12:20Z:**
   - CERTIFIED: FTF-1706 (candidate discovery from the org LiteLLM). It is UNWIRED.
   - Returned with exact fault lists:

@@ -11,7 +11,17 @@ Boots the same live SeaweedFS S3 fixture as FTF-R017 / FTF-0500B
   N1 a retained backup blob version cannot be deleted from the real target;
   N1 an overwritten (stale) version, a deleted key, a missing shard and a lost encryption key
      reference each fail completeness and leave the real target bucket empty;
-  N1 a blob replaced on the real target after the backup is caught by verify_backup.
+  N1 a blob replaced on the real target after the backup is caught by verify_backup;
+  A3 restore into a clean versioned bucket from the backup alone: bytes, sha256, key/version
+     mapping and object metadata are proven on the real server;
+  N2 a corrupted, truncated, same-size-swapped or record-tampered backup is refused at restore
+     and nothing is written to the clean bucket; a dirty destination is refused;
+  N3 a backup of two tenants is refused, and another organization can neither verify nor
+     restore the backup;
+  N2 (round 3) a newer, shrunk and re-hashed record version is refused (the record is pinned
+     to one retained version); a backup that lacks a blob its record lists is refused at
+     restore and writes nothing; a key under another tenant's prefix is refused both at
+     backup and in a re-hashed record at restore, and nothing appears under that prefix.
 
 Requires a Docker daemon with container-registry egress (GitHub Actions has it; the
 interactive dev sandbox does not -- same documented limit as FTF-0004 / FTF-R017). CI job:
@@ -22,8 +32,10 @@ Run directly: python3 tests/integration/test_ftf_1602_object_storage_backup.py
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import http.client
+import json
 import os
 import pathlib
 import subprocess
@@ -40,11 +52,14 @@ sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 import yaml  # noqa: E402
 from scripts.object_storage_backup import (  # noqa: E402
+    BackupEntry,
     BackupIncompleteError,
     BlobRef,
     ObjectStorageBackupError,
     S3ObjectStore,
+    _manifest_sha256,
     create_backup,
+    restore_backup,
     verify_backup,
 )
 
@@ -57,6 +72,7 @@ from app.services.storage_semantics_client import (  # noqa: E402
 
 COMPOSE_FILE = "infra/docker/docker-compose.yml"
 PROFILE_PATH = ROOT / "infra" / "internal" / "storage-profile.yaml"
+META = {"content-type": "application/jsonl", "x-amz-meta-owner": "team-a"}
 FAILURES: list[str] = []
 
 
@@ -152,7 +168,7 @@ def _seed(client: S3Client, bucket: str) -> list[BlobRef]:
         ("model", "tenants/o/models/m1/shard-1", b"weights-shard-one" * 100, "m1", 1, 2),
         ("result", "tenants/o/results/r1.json", b'{"pass":true}', "r1", 0, 1),
     ):
-        put = client.put_object(bucket, key, body)
+        put = client.put_object(bucket, key, body, retention_headers=dict(META))
         refs.append(
             BlobRef(
                 kind=kind,
@@ -161,6 +177,7 @@ def _seed(client: S3Client, bucket: str) -> list[BlobRef]:
                 sha256=_sha(body),
                 size_bytes=len(body),
                 artifact_id=artifact,
+                organization_id="o",
                 shard_index=index,
                 shard_count=count,
             )
@@ -195,7 +212,7 @@ def test_complete_backup_is_hash_verified_and_retained(client: S3Client) -> None
     check("FTF-1602-A1", "the record counts all four objects", record.object_count == 4)
     for ref in refs:
         stored, _ = client.get_object(
-            target_bucket, f"backups/{record.backup_id}/blobs/{ref.sha256}"
+            target_bucket, f"backups/o/{record.backup_id}/blobs/{ref.sha256}"
         )
         check(
             "FTF-1602-A1",
@@ -203,7 +220,7 @@ def test_complete_backup_is_hash_verified_and_retained(client: S3Client) -> None
             _sha(stored) == ref.sha256 and len(stored) == ref.size_bytes,
         )
         held = client.get_object_retention(
-            target_bucket, f"backups/{record.backup_id}/blobs/{ref.sha256}"
+            target_bucket, f"backups/o/{record.backup_id}/blobs/{ref.sha256}"
         )
         check(
             "FTF-1602-A1",
@@ -211,7 +228,7 @@ def test_complete_backup_is_hash_verified_and_retained(client: S3Client) -> None
             held.get("Mode") == "COMPLIANCE",
         )
     record_held = client.get_object_retention(
-        target_bucket, f"backups/{record.backup_id}/backup-record.json"
+        target_bucket, f"backups/o/{record.backup_id}/backup-record.json"
     )
     check("FTF-1602-A1", "the record is retained too", record_held.get("Mode") == "COMPLIANCE")
     until = datetime.fromisoformat(record_held["RetainUntilDate"].replace("Z", "+00:00"))
@@ -219,10 +236,10 @@ def test_complete_backup_is_hash_verified_and_retained(client: S3Client) -> None
     check(
         "FTF-1602-A1",
         "verify_backup accepts the real backup",
-        verify_backup(dst, record.backup_id) == record,
+        verify_backup(dst, record.backup_id, organization_id="o") == record,
     )
 
-    first_blob = f"backups/{record.backup_id}/blobs/{record.blobs[0][0]}"
+    first_blob = f"backups/o/{record.backup_id}/blobs/{record.blobs[0][0]}"
     versions = [
         v
         for v in client.list_object_versions(target_bucket, prefix=first_blob)
@@ -317,17 +334,310 @@ def test_lost_encryption_key_reference_fails(client: S3Client) -> None:
 def test_replaced_backup_blob_is_caught_by_verify(client: S3Client) -> None:
     source_bucket, target_bucket, src, dst = _setup(client)
     record = _backup(src, dst, _seed(client, source_bucket))
-    blob_key = f"backups/{record.backup_id}/blobs/{record.blobs[0][0]}"
+    blob_key = f"backups/o/{record.backup_id}/blobs/{record.blobs[0][0]}"
     client.put_object(target_bucket, blob_key, b"replaced after the backup")
     err: Exception | None = None
     try:
-        verify_backup(dst, record.backup_id)
+        verify_backup(dst, record.backup_id, organization_id="o")
     except ObjectStorageBackupError as exc:
         err = exc
     check(
         "FTF-1602-N1",
         "verify_backup catches a replaced blob on the real target",
         err is not None and "no longer matches" in str(err),
+    )
+
+
+def _clean_bucket(client: S3Client) -> tuple[str, S3ObjectStore]:
+    name = _bucket("restore")
+    client.create_bucket(name)
+    client.put_bucket_versioning(name, enabled=True)
+    return name, S3ObjectStore(client, name)
+
+
+def _all_keys(client: S3Client, bucket: str) -> list[dict]:
+    return client.list_object_versions(bucket, prefix="")
+
+
+def test_restore_into_clean_bucket_is_proven(client: S3Client) -> None:
+    source_bucket, _, src, dst = _setup(client)
+    refs = _seed(client, source_bucket)
+    record = _backup(src, dst, refs)
+    restore_bucket, clean = _clean_bucket(client)
+    restored = restore_backup(dst, clean, record.backup_id, organization_id="o")
+    check("FTF-1602-A3", "restore reports all four objects", restored.object_count == 4)
+    by_key = {key: (old, new) for key, old, new in restored.restored}
+    for ref in refs:
+        old, new = by_key.get(ref.key, ("", ""))
+        check(
+            "FTF-1602-A3",
+            f"{ref.key}: the restore maps the backed-up version to a real new version",
+            old == ref.version_id and bool(new) and new != old,
+        )
+        body, headers = client.get_object(restore_bucket, ref.key, version_id=new)
+        check(
+            "FTF-1602-A3",
+            f"{ref.key}: restored bytes on the real server equal the manifest sha256 and size",
+            _sha(body) == ref.sha256 and len(body) == ref.size_bytes,
+        )
+        check(
+            "FTF-1602-A3",
+            f"{ref.key}: restored content type and user metadata equal the source's",
+            headers.get("content-type") == META["content-type"]
+            and headers.get("x-amz-meta-owner") == META["x-amz-meta-owner"],
+        )
+    check(
+        "FTF-1602-A3",
+        "the clean bucket holds exactly the four restored objects",
+        len([v for v in _all_keys(client, restore_bucket) if "VersionId" in v]) == 4,
+    )
+    again = raises_backup_error(restore_backup, dst, clean, record.backup_id, organization_id="o")
+    check(
+        "FTF-1602-N2",
+        "a second restore into the now-dirty bucket is refused",
+        again is not None and "not clean" in str(again),
+    )
+
+
+def raises_backup_error(fn, *args: object, **kwargs: object) -> ObjectStorageBackupError | None:
+    try:
+        fn(*args, **kwargs)
+    except ObjectStorageBackupError as exc:
+        return exc
+    return None
+
+
+def test_restore_refuses_damaged_backups(client: S3Client) -> None:
+    source_bucket, target_bucket, src, dst = _setup(client)
+    record = _backup(src, dst, _seed(client, source_bucket))
+    base = f"backups/o/{record.backup_id}"
+    digest, size = record.blobs[0]
+    blob_key = f"{base}/blobs/{digest}"
+    original, _ = client.get_object(target_bucket, blob_key)
+    damages = (
+        ("same-size swapped", b"x" * size),
+        ("truncated", original[: size // 2]),
+        ("corrupted", b"\0" + original[1:]),
+    )
+    for label, bad_bytes in damages:
+        client.put_object(target_bucket, blob_key, bad_bytes)
+        restore_bucket, clean = _clean_bucket(client)
+        err = raises_backup_error(restore_backup, dst, clean, record.backup_id, organization_id="o")
+        check(
+            "FTF-1602-N2",
+            f"a {label} backup blob is refused at restore",
+            err is not None and "no longer matches" in str(err),
+        )
+        check(
+            "FTF-1602-N2",
+            f"nothing was written to the clean bucket for the {label} backup",
+            _all_keys(client, restore_bucket) == [],
+        )
+
+
+def _rehash(data: dict) -> None:
+    entries = [
+        BackupEntry(**{**e, "metadata": tuple((str(k), str(v)) for k, v in e["metadata"])})
+        for e in data["entries"]
+    ]
+    data["manifest_sha256"] = _manifest_sha256(entries)
+
+
+def _forge_backup(
+    client: S3Client, bucket: str, record, mutate, *, keep_blobs: int | None = None
+) -> str:
+    """Write a NEW backup (new id) on the real target whose record is `mutate(data)` applied to
+    the genuine one, as that backup's ONLY record version, COMPLIANCE-retained like a real one.
+    `keep_blobs` copies only that many of the genuine blobs. Returns the new backup id."""
+    store = S3ObjectStore(client, bucket)
+    old_base = f"backups/o/{record.backup_id}"
+    new_id = uuid.uuid4().hex
+    new_base = f"backups/o/{new_id}"
+    data = json.loads(client.get_object(bucket, f"{old_base}/backup-record.json")[0])
+    retain = datetime.strptime(data["retain_until"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    blobs = data["blobs"] if keep_blobs is None else data["blobs"][:keep_blobs]
+    for digest, _ in blobs:
+        body, _ = client.get_object(bucket, f"{old_base}/blobs/{digest}")
+        store.put_retained(f"{new_base}/blobs/{digest}", body, retain_until=retain)
+    data["backup_id"] = new_id
+    mutate(data)
+    store.put_retained(
+        f"{new_base}/backup-record.json", json.dumps(data).encode(), retain_until=retain
+    )
+    return new_id
+
+
+def test_tampered_record_is_refused(client: S3Client) -> None:
+    source_bucket, target_bucket, src, dst = _setup(client)
+    record = _backup(src, dst, _seed(client, source_bucket))
+    for field in ("object_count", "total_bytes", "manifest_sha256"):
+
+        def tamper(data: dict, field: str = field) -> None:
+            data[field] = data[field] + 1 if isinstance(data[field], int) else "0" * 64
+
+        forged_id = _forge_backup(client, target_bucket, record, tamper)
+        err = raises_backup_error(verify_backup, dst, forged_id, organization_id="o")
+        check(
+            "FTF-1602-N2",
+            f"verify catches a real record whose {field} was changed",
+            err is not None and field in str(err),
+        )
+
+
+def test_shrunk_rehashed_record_version_is_refused(client: S3Client) -> None:
+    source_bucket, target_bucket, src, dst = _setup(client)
+    record = _backup(src, dst, _seed(client, source_bucket))
+    record_key = f"backups/o/{record.backup_id}/backup-record.json"
+    data = json.loads(client.get_object(target_bucket, record_key)[0])
+    dropped = data["entries"].pop(0)
+    data["blobs"] = [b for b in data["blobs"] if b[0] != dropped["sha256"]]
+    data["object_count"] = len(data["entries"])
+    data["blob_count"] = len(data["blobs"])
+    data["total_bytes"] = sum(size for _, size in data["blobs"])
+    _rehash(data)
+    # The attack: a new latest version of the record that is internally consistent.
+    client.put_object(target_bucket, record_key, json.dumps(data).encode())
+    versions = [
+        v for v in client.list_object_versions(target_bucket, prefix=record_key) if "VersionId" in v
+    ]
+    check(
+        "FTF-1602-N2",
+        "setup: the real record key now has two versions (the attack is in place)",
+        len(versions) == 2,
+    )
+    restore_bucket, clean = _clean_bucket(client)
+    err = raises_backup_error(restore_backup, dst, clean, record.backup_id, organization_id="o")
+    check(
+        "FTF-1602-N2",
+        "restore refuses the shrunk, re-hashed record version (3 of 4 objects)",
+        err is not None and "more than one version" in str(err),
+    )
+    check(
+        "FTF-1602-N2",
+        "the clean bucket stays empty for the shrunk record",
+        _all_keys(client, restore_bucket) == [],
+    )
+    err = raises_backup_error(verify_backup, dst, record.backup_id, organization_id="o")
+    check(
+        "FTF-1602-N2",
+        "verify refuses it too",
+        err is not None and "more than one version" in str(err),
+    )
+
+
+def test_backup_missing_a_listed_blob_is_refused_at_restore(client: S3Client) -> None:
+    source_bucket, target_bucket, src, dst = _setup(client)
+    record = _backup(src, dst, _seed(client, source_bucket))
+    partial_id = _forge_backup(client, target_bucket, record, lambda d: None, keep_blobs=3)
+    restore_bucket, clean = _clean_bucket(client)
+    err = raises_backup_error(restore_backup, dst, clean, partial_id, organization_id="o")
+    check(
+        "FTF-1602-N2",
+        f"a backup whose record lists a blob the backup lacks is refused at restore (got {err!r})",
+        isinstance(err, BackupIncompleteError) and "blob is missing" in str(err),
+    )
+    check(
+        "FTF-1602-N2",
+        "nothing is written to the clean bucket for the partial backup",
+        _all_keys(client, restore_bucket) == [],
+    )
+    err = raises_backup_error(verify_backup, dst, "no-such-backup", organization_id="o")
+    check(
+        "FTF-1602-N2",
+        "verifying a backup id that does not exist is this module's own error",
+        err is not None and "missing or unreadable" in str(err),
+    )
+
+
+def test_key_under_another_tenants_prefix_is_refused(client: S3Client) -> None:
+    source_bucket, target_bucket, src, dst = _setup(client)
+    refs = _seed(client, source_bucket)
+    body = b"belongs to tenant p"
+    put = client.put_object(source_bucket, "tenants/p/datasets/x", body)
+    # (a) the backup side: organization "o" naming a key under tenants/p/.
+    foreign = dataclasses.replace(
+        refs[0],
+        key="tenants/p/datasets/x",
+        version_id=put["version_id"],
+        sha256=_sha(body),
+        size_bytes=len(body),
+    )
+    err = raises_backup_error(_backup, src, dst, [foreign, *refs[1:]])
+    check(
+        "FTF-1602-N3",
+        "create_backup refuses a key under tenants/p/ for organization 'o'",
+        err is not None and "outside its organization's tenant prefix" in str(err),
+    )
+    check("FTF-1602-N3", "the real target stays empty", _empty(client, target_bucket))
+    # (b) the restore side: a re-hashed, otherwise valid record naming a tenants/p/ key.
+    record = _backup(src, dst, refs)
+
+    def escape(data: dict) -> None:
+        data["entries"][0]["key"] = "tenants/p/datasets/x"
+        _rehash(data)
+
+    forged_id = _forge_backup(client, target_bucket, record, escape)
+    restore_bucket, clean = _clean_bucket(client)
+    err = raises_backup_error(restore_backup, dst, clean, forged_id, organization_id="o")
+    check(
+        "FTF-1602-N3",
+        "restore refuses a re-hashed record whose entry key is under tenants/p/",
+        err is not None and "outside the record's tenant" in str(err),
+    )
+    check(
+        "FTF-1602-N3",
+        "nothing at all, and nothing under tenants/p/, appears in the clean bucket",
+        _all_keys(client, restore_bucket) == []
+        and client.list_object_versions(restore_bucket, prefix="tenants/p/") == [],
+    )
+
+
+def test_tenant_scoping_on_real_server(client: S3Client) -> None:
+    import dataclasses
+
+    source_bucket, target_bucket, src, dst = _setup(client)
+    refs = _seed(client, source_bucket)
+    body = b"belongs to tenant p"
+    put = client.put_object(source_bucket, "tenants/p/datasets/x", body)
+    foreign = dataclasses.replace(
+        refs[0],
+        key="tenants/p/datasets/x",
+        version_id=put["version_id"],
+        sha256=_sha(body),
+        size_bytes=len(body),
+        organization_id="p",
+    )
+    err = raises_backup_error(_backup, src, dst, [*refs, foreign])
+    check(
+        "FTF-1602-N3",
+        "a backup mixing two tenants is refused",
+        err is not None and "exactly one organization" in str(err),
+    )
+    check("FTF-1602-N3", "nothing was written to the real target", _empty(client, target_bucket))
+    record = _backup(src, dst, refs)
+    check(
+        "FTF-1602-N3",
+        "the backup lives only under its own tenant's prefix",
+        all(
+            v["Key"].startswith(f"backups/o/{record.backup_id}/")
+            for v in client.list_object_versions(target_bucket, prefix="backups/")
+        ),
+    )
+    # A real record copied under another tenant's prefix is refused by identity, not by luck.
+    record_key = f"backups/o/{record.backup_id}/backup-record.json"
+    copied_key = f"backups/p/{record.backup_id}/backup-record.json"
+    client.put_object(target_bucket, copied_key, client.get_object(target_bucket, record_key)[0])
+    restore_bucket, clean = _clean_bucket(client)
+    err = raises_backup_error(restore_backup, dst, clean, record.backup_id, organization_id="p")
+    check(
+        "FTF-1602-N3",
+        "another organization cannot verify or restore a record copied under its prefix",
+        err is not None and "different organization" in str(err),
+    )
+    check(
+        "FTF-1602-N3",
+        "nothing was restored for the other tenant",
+        _all_keys(client, restore_bucket) == [],
     )
 
 

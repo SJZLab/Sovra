@@ -19,8 +19,9 @@ info:
     FTF-0501-P1 adds the read surface of dataset versions (`GET
     .../datasets`, `GET .../datasets/{dataset_id}`) and freezes the
     upload-session request/response components (`UploadSessionCreateRequest`,
-    `UploadSession`, `UploadFinalizeRequest`) with no paths: FTF-0501 adds the
-    upload and finalize routes with their handlers under this same lock.
+    `UploadSession`, `UploadFinalizeRequest`); FTF-0501 adds the upload-session,
+    part-listing, part-URL and finalize routes with their handlers under this
+    same lock.
     Responses never carry an object key, bucket or storage URI.
 paths:
   /api/v1/organizations/{organization_id}/projects/{project_id}/dataset-sources:
@@ -316,6 +317,250 @@ paths:
             `not_found` -- identical for a missing id, another organization's
             id, another project's id, and a `held_out_evaluation` dataset read
             by `ml_engineer`.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/upload-sessions:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: >-
+        Open a direct-upload session (FTF-0501). Requires an active `upload`
+        connection granting `purpose`; creates the multipart upload in private
+        storage under a server-generated key. `ml_engineer` may not open a
+        `held_out_evaluation` upload (403 `purpose_forbidden`).
+      operationId: createUploadSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadSessionCreateRequest'
+      responses:
+        '201':
+          description: The open session and its part layout.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSessionWithPlan'
+        '400':
+          description: '`invalid_body` or `unsupported_content_type`.'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: '`role_not_authorized`, `purpose_forbidden` or `purpose_not_granted`.'
+        '404':
+          description: '`not_found` -- project or connection missing or foreign.'
+        '409':
+          description: '`not_an_upload_source`.'
+        '413':
+          description: '`request_too_large`.'
+        '503':
+          description: '`storage_unavailable` or `storage_not_configured`.'
+  /api/v1/organizations/{organization_id}/projects/{project_id}/upload-sessions/{upload_session_id}:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: upload_session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Read one upload session (never carries the object key).
+      operationId: getUploadSession
+      responses:
+        '200':
+          description: The session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSessionWithPlan'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: '`not_found` (identical for a missing, foreign or hidden id).'
+  /api/v1/organizations/{organization_id}/projects/{project_id}/upload-sessions/{upload_session_id}/parts:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: upload_session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: The parts storage already holds, so an interrupted upload resumes.
+      operationId: listUploadedParts
+      responses:
+        '200':
+          description: Parts stored so far.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadedParts'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: '`not_found`.'
+        '409':
+          description: '`upload_session_not_open`.'
+        '503':
+          description: '`storage_unavailable` or `storage_not_configured`.'
+  /api/v1/organizations/{organization_id}/projects/{project_id}/upload-sessions/{upload_session_id}/part-urls:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: upload_session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: >-
+        Short-lived (<= 5 minutes, never past the session expiry) presigned
+        PUT URLs for the requested parts. Each URL binds the method, the
+        server-generated key, the part number, the multipart upload id and the
+        exact part `content-length`. This is the only response that carries a
+        storage URL.
+      operationId: createPartUrls
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartUrlsRequest'
+      responses:
+        '200':
+          description: One grant per requested part.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartUrls'
+        '400':
+          description: '`invalid_body` or `invalid_part_numbers`.'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: '`not_found`.'
+        '409':
+          description: '`upload_session_not_open`.'
+        '410':
+          description: '`upload_expired` -- the session is now `expired`.'
+        '503':
+          description: '`storage_unavailable` or `storage_not_configured`.'
+  /api/v1/organizations/{organization_id}/projects/{project_id}/upload-sessions/{upload_session_id}/finalize:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: upload_session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: >-
+        Complete the multipart upload and verify the stored object's size,
+        server-computed SHA-256 and content-sniffed type against the session's
+        declared values. Only a full match creates the immutable Dataset
+        version. A mismatch deletes the object and rejects the session.
+      operationId: finalizeUpload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadFinalizeRequest'
+      responses:
+        '201':
+          description: The new Dataset version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+        '400':
+          description: '`invalid_body`.'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: '`not_found`.'
+        '409':
+          description: >-
+            `upload_session_not_open`, `upload_incomplete` (parts missing; the
+            session stays open) or `dataset_version_conflict`.
+        '410':
+          description: '`upload_expired` -- the session is now `expired`.'
+        '422':
+          description: >-
+            Rejected; the session is now `rejected` and the object deleted.
+            `detail` is one of `size_mismatch`, `sha256_mismatch`,
+            `content_type_mismatch`, `unsupported_content_type`,
+            `part_size_mismatch`, `unexpected_part`, `verification_mismatch`,
+            `source_revoked`.
+        '503':
+          description: >-
+            `storage_unavailable` or `storage_not_configured`; the session
+            stays open (an outage is never reported as a rejection).
 components:
   responses:
     NotAuthenticated:
@@ -568,4 +813,87 @@ components:
       properties:
         dataset_name: {type: string, minLength: 1, maxLength: 200}
       required: [dataset_name]
+      additionalProperties: false
+    UploadSessionWithPlan:
+      type: object
+      description: >-
+        An `UploadSession` plus the deterministic part layout: every part but
+        the last is `part_size_bytes`; the last holds the remainder. Never
+        carries the object key.
+      properties:
+        id: {type: string, format: uuid}
+        project_id: {type: string, format: uuid}
+        dataset_source_connection_id: {type: string, format: uuid}
+        purpose:
+          $ref: '#/components/schemas/DatasetSourcePurpose'
+        status:
+          $ref: '#/components/schemas/UploadSessionStatus'
+        declared_size_bytes: {type: integer, minimum: 1}
+        declared_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        declared_content_type: {type: string}
+        rejection_reason: {type: [string, 'null']}
+        created_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        finalized_at: {type: [string, 'null'], format: date-time}
+        part_size_bytes: {type: integer, minimum: 5242880}
+        part_count: {type: integer, minimum: 1, maximum: 10000}
+      required:
+        - id
+        - project_id
+        - dataset_source_connection_id
+        - purpose
+        - status
+        - declared_size_bytes
+        - declared_sha256
+        - declared_content_type
+        - rejection_reason
+        - created_at
+        - expires_at
+        - finalized_at
+        - part_size_bytes
+        - part_count
+      additionalProperties: false
+    UploadedParts:
+      type: object
+      properties:
+        part_size_bytes: {type: integer, minimum: 5242880}
+        part_count: {type: integer, minimum: 1, maximum: 10000}
+        parts:
+          type: array
+          items:
+            type: object
+            properties:
+              part_number: {type: integer, minimum: 1, maximum: 10000}
+              size_bytes: {type: integer, minimum: 1}
+            required: [part_number, size_bytes]
+            additionalProperties: false
+      required: [part_size_bytes, part_count, parts]
+      additionalProperties: false
+    PartUrlsRequest:
+      type: object
+      properties:
+        part_numbers:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: {type: integer, minimum: 1, maximum: 10000}
+      required: [part_numbers]
+      additionalProperties: false
+    PartUrls:
+      type: object
+      properties:
+        parts:
+          type: array
+          items:
+            type: object
+            properties:
+              part_number: {type: integer, minimum: 1, maximum: 10000}
+              method: {type: string, enum: [PUT]}
+              url: {type: string}
+              content_length: {type: integer, minimum: 1}
+              expires_at: {type: string, format: date-time}
+            required: [part_number, method, url, content_length, expires_at]
+            additionalProperties: false
+      required: [parts]
       additionalProperties: false

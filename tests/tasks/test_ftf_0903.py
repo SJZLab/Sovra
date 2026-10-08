@@ -27,10 +27,14 @@ Run directly: python3 tests/tasks/test_ftf_0903.py
 
 from __future__ import annotations
 
+import marshal
 import math
+import os
 import re
 import subprocess
 import sys
+import tempfile
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -892,20 +896,45 @@ print(outcome(lambda: emit_event("workflow", {{**wf, "failure_ref": object.__new
 """
 
 
-def _probe(source: str | None) -> list[str]:
+def _invalidate_pycache() -> None:
+    """The fault blocks rewrite MODULE in quick succession. CPython validates a cached .pyc by
+    source mtime+size, not content, so a restored original that has the same byte length and
+    lands in the same mtime tick as the last mutant can silently load the MUTANT's bytecode
+    (round 3 left such a .pyc behind, so a second run failed and every import in that checkout
+    ran the mutant). Delete any cached bytecode for the module after every write."""
+    cache_dir = MODULE.parent / "__pycache__"
+    if not cache_dir.is_dir():
+        return
+    for cached in cache_dir.glob(f"{MODULE.stem}.*.pyc"):
+        cached.unlink(missing_ok=True)
+
+
+def _probe(source: str | None, script: str | None = None) -> list[str]:
     original = MODULE.read_bytes()
+    code = script if script is not None else _PROBE.format(root=str(ROOT))
     try:
-        if source is not None:
-            MODULE.write_text(source, encoding="utf-8")
-        result = subprocess.run(
-            [sys.executable, "-c", _PROBE.format(root=str(ROOT))],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-        )
+        with tempfile.TemporaryDirectory(prefix="ftf0903-pyc-") as pyc_prefix:
+            # No bytecode is written next to the source, and the probe reads/writes bytecode
+            # only under a private, empty prefix, so it can never load a stale mutant .pyc.
+            env = {
+                **os.environ,
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONPYCACHEPREFIX": pyc_prefix,
+            }
+            if source is not None:
+                MODULE.write_text(source, encoding="utf-8")
+                _invalidate_pycache()
+            result = subprocess.run(
+                [sys.executable, "-c", code],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+                env=env,
+            )
     finally:
         MODULE.write_bytes(original)
+        _invalidate_pycache()
     if MODULE.read_bytes() != original:
         raise RuntimeError("module not restored")
     return (
@@ -980,6 +1009,449 @@ def test_fault_injection_each_guard_is_load_bearing() -> None:
             f"mutation turns the probe RED: {description}",
             len(out) == len(BASELINE) and out[index] != BASELINE[index],
         )
+
+
+# --- FTF-0903 round 3: behavioural value-echo and field-name tests. ---
+
+_MARK = "ZZMARK-secret traceback!"
+
+
+def _echo_report(fn) -> str:
+    """'clean' if fn is refused without the marker anywhere in the error,
+    'LEAK' if the marker reached str(exc)/repr(exc.args), else 'allowed'."""
+    try:
+        fn()
+    except ContentFreeTelemetryError as exc:
+        return "LEAK" if "ZZMARK" in str(exc) + repr(exc.args) else "clean"
+    return "allowed"
+
+
+class _SubclassedName(str):
+    pass
+
+
+class _OddMapping(Mapping):
+    def __init__(self, pairs: list) -> None:
+        self._pairs = pairs
+
+    def __getitem__(self, key: object) -> object:
+        raise KeyError(key)
+
+    def __iter__(self):
+        return iter(())
+
+    def __len__(self) -> int:
+        return len(self._pairs)
+
+    def items(self):
+        return self._pairs
+
+
+def test_rejected_values_are_never_echoed_for_every_field_kind() -> None:
+    from packages.security import content_free_telemetry as m
+
+    traceback = 'Traceback (most recent call last):\n  File "x.py"\n' + _MARK
+    cases = {
+        "id": lambda: emit_event("workflow", {**_WF, "request_id": _MARK}),
+        "code": lambda: emit_event("log", {**_LOG, "message_code": _MARK}),
+        "enum level": lambda: emit_event("log", {**_LOG, "level": _MARK}),
+        "enum status": lambda: emit_event("span", {"span_id": "s", "name": "n", "status": _MARK}),
+        "number cost_usd": lambda: emit_event("workflow", {**_WF, "cost_usd": _MARK}),
+        "content_ref failure_ref": lambda: emit_event(
+            "workflow", {**_WF, "failure_ref": traceback}
+        ),
+        "count": lambda: m._validate_field("x", m._FieldSpec("count"), _MARK),
+        "timestamp": lambda: m._validate_field("x", m._FieldSpec("timestamp"), _MARK),
+        "bool": lambda: m._validate_field("x", m._FieldSpec("bool"), _MARK),
+    }
+    for label, fn in cases.items():
+        check(
+            "FTF-0903-R3-1",
+            f"a rejected {label} value is refused and never echoed",
+            _echo_report(fn) == "clean",
+        )
+
+
+def test_field_name_must_be_an_exact_str_and_hashable() -> None:
+    check(
+        "FTF-0903-R3-2",
+        "a str subclass of a real schema name is refused",
+        _raises(
+            DisallowedFieldError,
+            emit_event,
+            "workflow",
+            {**_WF, _SubclassedName("job_id"): "j-1"},
+        ),
+    )
+    check(
+        "FTF-0903-R3-3",
+        "an unhashable field name raises DisallowedFieldError, never TypeError",
+        _raises(DisallowedFieldError, emit_event, "workflow", _OddMapping([([], "x")])),
+    )
+
+
+_PROBE_R3 = """
+import sys
+from collections.abc import Mapping
+sys.path.insert(0, __ROOT__)
+from packages.security import content_free_telemetry as m
+from packages.security.content_free_telemetry import emit_event, ContentFreeTelemetryError
+
+M = "ZZMARK-secret traceback!"
+WF = {"workflow_id": "w", "task_id": "t", "state": "queued"}
+LOG = {"level": "info", "message_code": "ok"}
+
+class S(str):
+    pass
+
+class Odd(Mapping):
+    def __getitem__(self, k): raise KeyError(k)
+    def __iter__(self): return iter(())
+    def __len__(self): return 1
+    def items(self): return [([], "x")]
+
+def outcome(fn):
+    try:
+        fn()
+        return "allowed"
+    except ContentFreeTelemetryError as exc:
+        if "ZZMARK" in str(exc) + repr(exc.args):
+            return "LEAK"
+        return exc.code
+    except Exception as exc:
+        return "ERROR:" + type(exc).__name__
+
+spec = m._FieldSpec
+print(outcome(lambda: emit_event("workflow", {**WF, "request_id": M})))
+print(outcome(lambda: emit_event("log", {**LOG, "message_code": M})))
+print(outcome(lambda: emit_event("log", {**LOG, "level": M})))
+print(outcome(lambda: emit_event("span", {"span_id": "s", "name": "n", "status": M})))
+print(outcome(lambda: emit_event("workflow", {**WF, "cost_usd": M})))
+print(outcome(lambda: emit_event("workflow", {**WF, "failure_ref": M})))
+print(outcome(lambda: m._validate_field("x", spec("count"), M)))
+print(outcome(lambda: m._validate_field("x", spec("timestamp"), M)))
+print(outcome(lambda: m._validate_field("x", spec("bool"), M)))
+print(outcome(lambda: emit_event("workflow", {**WF, S("job_id"): "j"})))
+print(outcome(lambda: emit_event("workflow", Odd())))
+"""
+
+_REFUSED = "content_free_telemetry_content_refused"
+_DISALLOWED = "content_free_telemetry_disallowed_field"
+BASELINE_R3 = [_REFUSED] * 9 + [_DISALLOWED] * 2 + [""]
+
+
+def _echo_mutations() -> list[tuple[str, str, str, int]]:
+    funcs = [
+        ("_id_value", 0),
+        ("_code_value", 1),
+        ("_enum_value", 2),
+        ("_number_value", 4),
+        ("_content_ref_value", 5),
+        ("_count_value", 6),
+        ("_timestamp_value", 7),
+        ("_bool_value", 8),
+    ]
+    out = []
+    for fn, index in funcs:
+        for label, expr in (("repr", "{value!r}"), ("truncated str", "{str(value)[:40]}")):
+            out.append(
+                (
+                    f"{fn} echoes the rejected value ({label}) in its message",
+                    rf'(def {fn}\(.*?raise ContentRefusedError\(f"[^"]*)"\)',
+                    rf'\1 {expr}")',
+                    index,
+                )
+            )
+    return out
+
+
+MUTATIONS_R3 = _echo_mutations() + [
+    (
+        "field-name check uses isinstance (str subclass accepted)",
+        r"if type\(name\) is not str or name not in schema:",
+        "if not isinstance(name, str) or name not in schema:",
+        9,
+    ),
+    (
+        "field-name membership tested before the type (unhashable name -> TypeError)",
+        r"if type\(name\) is not str or name not in schema:",
+        "if name not in schema or type(name) is not str:",
+        10,
+    ),
+]
+
+
+def test_round3_faults_each_turn_the_probe_red() -> None:
+    script = _PROBE_R3.replace("__ROOT__", repr(str(ROOT)))
+    check(
+        "FTF-0903-R3-FAULT",
+        "unmutated r3 probe matches baseline",
+        _probe(None, script) == BASELINE_R3,
+    )
+    text = MODULE.read_text(encoding="utf-8")
+    for description, pattern, replacement, index in MUTATIONS_R3:
+        mutated, count = re.subn(pattern, replacement, text, count=1, flags=re.DOTALL)
+        check("FTF-0903-R3-FAULT", f"mutation pattern matches once: {description}", count == 1)
+        if count != 1:
+            continue
+        out = _probe(mutated, script)
+        check(
+            "FTF-0903-R3-FAULT",
+            f"mutation turns the probe RED: {description}",
+            len(out) == len(BASELINE_R3) and out[index] != BASELINE_R3[index],
+        )
+
+
+# --- FTF-0903 round 4: ContentRef echo, out-of-range values, re-runnable fault blocks. ---
+
+_R4_TB = 'Traceback (most recent call last):\n  File "x.py"\n' + _MARK
+_R4_NUM = -987654321.5
+_R4_COUNT = -987654321
+_R4_DT = datetime(1999, 1, 2)
+_R4_BOOL = 987654321
+
+
+def _forged_ref(**attrs: str) -> ContentRef:
+    ref = object.__new__(ContentRef)
+    for name, value in attrs.items():
+        object.__setattr__(ref, name, value)
+    return ref
+
+
+def _r4_echo_report(fn, markers: tuple[str, ...]) -> str:
+    try:
+        fn()
+    except ContentFreeTelemetryError as exc:
+        text = str(exc) + repr(exc.args)
+        return "LEAK" if any(marker in text for marker in markers) else "clean"
+    return "allowed"
+
+
+def test_r4_content_ref_values_are_never_echoed() -> None:
+    ok = {"ref_id": "ref-1", "encryption_key_id": "key-1"}
+    cases = {
+        "ContentRef(ref_id=<traceback>)": lambda: ContentRef(_R4_TB, "key-1"),
+        "ContentRef(encryption_key_id=<traceback>)": lambda: ContentRef("ref-1", _R4_TB),
+        "forged ref (object.__new__) with a traceback ref_id": lambda: emit_event(
+            "workflow", {**_WF, "failure_ref": _forged_ref(**{**ok, "ref_id": _R4_TB})}
+        ),
+        "forged ref with a traceback encryption_key_id": lambda: emit_event(
+            "workflow", {**_WF, "failure_ref": _forged_ref(**{**ok, "encryption_key_id": _R4_TB})}
+        ),
+    }
+    for label, fn in cases.items():
+        check(
+            "FTF-0903-R4-1",
+            f"{label} is refused with the marker absent from str(exc) and repr(exc.args)",
+            _r4_echo_report(fn, ("ZZMARK",)) == "clean",
+        )
+    mutated = ContentRef("ref-1", "key-1")
+    object.__setattr__(mutated, "ref_id", _R4_TB)
+    check(
+        "FTF-0903-R4-1",
+        "a validly built ref mutated with object.__setattr__ is refused without echo",
+        _r4_echo_report(lambda: emit_event("log", {**_LOG, "detail_ref": mutated}), ("ZZMARK",))
+        == "clean",
+    )
+
+
+def test_r4_out_of_range_values_are_never_echoed() -> None:
+    from packages.security import content_free_telemetry as m
+
+    cases = {
+        "cost_usd": (lambda: emit_event("workflow", {**_WF, "cost_usd": _R4_NUM}), "987654321"),
+        "timing_ms": (lambda: emit_event("workflow", {**_WF, "timing_ms": _R4_NUM}), "987654321"),
+        "duration_ms": (
+            lambda: emit_event(
+                "span", {"span_id": "s", "name": "n", "status": "ok", "duration_ms": _R4_NUM}
+            ),
+            "987654321",
+        ),
+        "count": (lambda: m._validate_field("x", m._FieldSpec("count"), _R4_COUNT), "987654321"),
+        "naive timestamp": (
+            lambda: m._validate_field("x", m._FieldSpec("timestamp"), _R4_DT),
+            "1999",
+        ),
+        "bool": (lambda: m._validate_field("x", m._FieldSpec("bool"), _R4_BOOL), "987654321"),
+    }
+    for label, (fn, marker) in cases.items():
+        check(
+            "FTF-0903-R4-2",
+            f"an out-of-range {label} is refused and its value never appears in the error",
+            _r4_echo_report(fn, (marker,)) == "clean",
+        )
+
+
+_PROBE_R4 = """
+import sys
+from datetime import datetime
+sys.path.insert(0, __ROOT__)
+from packages.security import content_free_telemetry as m
+from packages.security.content_free_telemetry import (
+    emit_event, ContentFreeTelemetryError, ContentRef,
+)
+
+TB = "Traceback (most recent call last):\\n  File x.py\\nZZMARK-secret traceback!"
+WF = {"workflow_id": "w", "task_id": "t", "state": "queued"}
+
+def forged(**attrs):
+    ref = object.__new__(ContentRef)
+    for k, v in attrs.items():
+        object.__setattr__(ref, k, v)
+    return ref
+
+def report(fn, *markers):
+    try:
+        fn()
+    except ContentFreeTelemetryError as exc:
+        text = str(exc) + repr(exc.args)
+        return "LEAK" if any(x in text for x in markers) else "clean"
+    except Exception as exc:
+        return "ERROR:" + type(exc).__name__
+    return "allowed"
+
+spec = m._FieldSpec
+print(report(lambda: ContentRef(TB, "key-1"), "ZZMARK"))
+print(report(lambda: ContentRef("ref-1", TB), "ZZMARK"))
+F1 = {**WF, "failure_ref": forged(ref_id=TB, encryption_key_id="key-1")}
+F2 = {**WF, "failure_ref": forged(ref_id="ref-1", encryption_key_id=TB)}
+print(report(lambda: emit_event("workflow", F1), "ZZMARK"))
+print(report(lambda: emit_event("workflow", F2), "ZZMARK"))
+print(report(lambda: emit_event("workflow", {**WF, "cost_usd": -987654321.5}), "987654321"))
+print(report(lambda: emit_event("workflow", {**WF, "timing_ms": -987654321.5}), "987654321"))
+print(report(lambda: m._validate_field("x", spec("count"), -987654321), "987654321"))
+print(report(lambda: m._validate_field("x", spec("timestamp"), datetime(1999, 1, 2)), "1999"))
+print(report(lambda: m._validate_field("x", spec("bool"), 987654321), "987654321"))
+"""
+
+BASELINE_R4 = ["clean"] * 9 + [""]
+
+_ECHO_GUARD = '    {guard}\n        raise ContentRefusedError(f"{{what}} {{value!r}}")\n'
+
+
+def _r4_mutations() -> list[tuple[str, str, str, tuple[int, ...]]]:
+    def after(anchor: str, insert: str) -> str:
+        return anchor + insert
+
+    ref_guard = (
+        "        if type(self.{a}) is not str or not _ID_RE.fullmatch(self.{a}):\n"
+        '            raise ContentRefusedError(f"content ref id {{self.{a}!r}}")\n'
+    )
+    emit_guard = (
+        "    if type({a}) is not str or not _ID_RE.fullmatch({a}):\n"
+        '        raise ContentRefusedError(f"content ref id {{{a}!r}}")\n'
+    )
+    val_guard = '    if {cond}:\n        raise ContentRefusedError(f"{{what}} {{value!r}}")\n'
+    key_line = '        _id_value(self.encryption_key_id, "encryption key id")\n'
+    ref_line = '        _id_value(self.ref_id, "content ref id")\n'
+    getattr_pair = (
+        '    ref_id = getattr(value, "ref_id", None)\n'
+        '    key_id = getattr(value, "encryption_key_id", None)\n'
+    )
+    return [
+        (
+            "X5a ContentRef.__post_init__ echoes ref_id",
+            ref_line,
+            ref_guard.format(a="ref_id") + ref_line,
+            (0,),
+        ),
+        (
+            "X5b ContentRef.__post_init__ echoes encryption_key_id",
+            key_line,
+            ref_guard.format(a="encryption_key_id") + key_line,
+            (1,),
+        ),
+        (
+            "X4a _content_ref_value re-validation echoes ref_id",
+            getattr_pair,
+            after(getattr_pair, emit_guard.format(a="ref_id")),
+            (2,),
+        ),
+        (
+            "X4b _content_ref_value re-validation echoes encryption_key_id",
+            getattr_pair,
+            after(getattr_pair, emit_guard.format(a="key_id")),
+            (3,),
+        ),
+        (
+            "X1 _number_value split guard echoes an out-of-range number",
+            "def _number_value(value: object, what: str) -> float:\n",
+            "def _number_value(value: object, what: str) -> float:\n"
+            + val_guard.format(
+                cond="type(value) in (int, float) and not (0 <= value <= _MAX_NUMBER)"
+            ),
+            (4, 5),
+        ),
+        (
+            "X3 _count_value split guard echoes an out-of-range count",
+            "def _count_value(value: object, what: str) -> int:\n",
+            "def _count_value(value: object, what: str) -> int:\n"
+            + val_guard.format(cond="type(value) is int and value < 0"),
+            (6,),
+        ),
+        (
+            "X2 _timestamp_value split guard echoes a naive datetime",
+            "def _timestamp_value(value: object, what: str) -> datetime:\n",
+            "def _timestamp_value(value: object, what: str) -> datetime:\n"
+            + val_guard.format(cond="type(value) is datetime and value.tzinfo is None"),
+            (7,),
+        ),
+        (
+            "X7 _bool_value split guard echoes a wrong-typed int",
+            "def _bool_value(value: object, what: str) -> bool:\n",
+            "def _bool_value(value: object, what: str) -> bool:\n"
+            + val_guard.format(cond="type(value) is int"),
+            (8,),
+        ),
+    ]
+
+
+def test_r4_echo_faults_each_turn_the_probe_red() -> None:
+    script = _PROBE_R4.replace("__ROOT__", repr(str(ROOT)))
+    check(
+        "FTF-0903-R4-FAULT",
+        "unmutated r4 probe matches baseline",
+        _probe(None, script) == BASELINE_R4,
+    )
+    text = MODULE.read_text(encoding="utf-8")
+    for description, anchor, replacement, indices in _r4_mutations():
+        check(
+            "FTF-0903-R4-FAULT",
+            f"mutation anchor matches once: {description}",
+            text.count(anchor) == 1,
+        )
+        if text.count(anchor) != 1:
+            continue
+        out = _probe(text.replace(anchor, replacement, 1), script)
+        check(
+            "FTF-0903-R4-FAULT",
+            f"mutation turns the probe LEAK on exactly its case: {description}",
+            len(out) == len(BASELINE_R4)
+            and all(out[i] == "LEAK" for i in indices)
+            and all(out[i] == "clean" for i in range(9) if i not in indices),
+        )
+
+
+def test_zz_r4_fresh_import_after_the_fault_blocks_is_the_original() -> None:
+    # Default environment, default bytecode handling: exactly what any other import in this
+    # checkout sees after the fault blocks above. A stale mutant .pyc would fail this.
+    script = _PROBE.format(root=str(ROOT))
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, timeout=60, check=False
+    )
+    check(
+        "FTF-0903-R4-3",
+        "a fresh default import after the fault blocks behaves as the original module",
+        result.returncode == 0 and result.stdout.split("\n") == BASELINE,
+    )
+    cache_dir = MODULE.parent / "__pycache__"
+    source = MODULE.read_text(encoding="utf-8")
+    stale = []
+    for cached in cache_dir.glob(f"{MODULE.stem}.*.pyc") if cache_dir.is_dir() else []:
+        code = marshal.loads(cached.read_bytes()[16:])
+        if code != compile(source, code.co_filename, "exec", dont_inherit=True):
+            stale.append(cached.name)
+    check("FTF-0903-R4-3", "no mutant bytecode is left in __pycache__", not stale)
 
 
 def main() -> None:

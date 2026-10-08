@@ -458,12 +458,16 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_1206a.py
       - name: FTF-0308-P1 negative-test proof (model catalog mapping -- migration SQL + RLS/GRANT shape + fault injection, store on SQLite, route seams, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0308_p1.py
+      - name: FTF-0309-P1 negative-test proof (training-capability read API -- route seams over real HTTP, contract, mounted app, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0309_p1.py
       - name: FTF-0602-P1 negative-test proof (evaluation cases -- migration SQL + RLS/GRANT shape + fault injection, real routes over the real store on SQLite, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0602_p1.py
       - name: FTF-0501-P1 negative-test proof (dataset uploads -- migration SQL + RLS/GRANT/freeze-trigger shape + fault injection, store on SQLite, read routes, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0501_p1.py
       - name: FTF-0501-P2 negative-test proof (upload-session hardening migration 0025 -- trigger shape, offline upgrade/downgrade SQL, shape-fault table, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0501_p2.py
+      - name: FTF-0501 negative-test proof (direct object-storage upload -- SigV4 presign vector + tamper, part plan, content sniffing, finalize verification against an in-process S3, real routes over the real store on SQLite, contract, mounted app, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0501.py
       - name: FTF-0103A negative-test proof (live session principal + Membership -- every /api/v1 route wired to the real resolver/role lookup, fail-closed resolver, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0103a.py
       - name: FTF-1807 negative-test proof (LiteLLM outage runbook -- doc/code fidelity, no DB required)
@@ -474,6 +478,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0902.py
       - name: FTF-0901 negative-test proof (security profile enforcement -- profile x surface x destination matrix, no private-to-managed switch, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0901.py
+      - name: FTF-0908 negative-test proof (external provider denial -- profile/purpose/approval matrix, label never approves, content-free audit, zero network, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0908.py
       - name: FTF-0903 negative-test proof (content-free telemetry -- bounded workflow/log/span schemas, no snippet/traceback/prompt leak, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0903.py
       - name: FTF-0905 negative-test proof (canary-secret generator -- unique prefixed markers, no real-secret collision, full-coverage leak ledger, no DB required)
@@ -1185,6 +1191,27 @@ jobs:
         run: pip install pyyaml --quiet
       - name: Prove the real versioned S3/MinIO source evidence against the live S3 fixture
         run: python3 tests/integration/test_ftf_0500b_s3_minio_versioned_source.py
+
+  direct-upload-s3-integration:
+    # FTF-0501: presigned multipart upload and finalize verification against
+    # the live SeaweedFS S3-API container: a presigned PUT is accepted, every
+    # tampered variant is refused by the real server, and a wrong hash / wrong
+    # type / oversize / extra / partial / wrong-key upload never becomes a
+    # verified object. Same real container pattern as
+    # s3-minio-versioned-source-integration (this repo's interactive dev
+    # sandbox has no container-registry egress; see that job's comment).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' direct-upload-s3-integration ')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install gate deps
+        run: pip install pyyaml --quiet
+      - name: Prove the real direct-upload evidence against the live S3 fixture
+        run: python3 tests/integration/test_ftf_0501_direct_upload_s3.py
 
   object-storage-backup-integration:
     # FTF-1602: real object-storage backup evidence against the live SeaweedFS
@@ -2657,6 +2684,43 @@ jobs:
       - name: Prove the real model catalog mapping evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0308_p1_model_catalog_mapping.py
 
+  model-capabilities-integration:
+    # FTF-0309-P1: real Postgres evidence for the training-capability read API:
+    # the real mapping router + capability router on a real uvicorn server --
+    # mapped ready artifact -> trainable, unmapped -> unknown, revoked connection
+    # shown revoked and not dialed, foreign project/connection identical 404,
+    # one discovery per GET, 503 on a non-discovered state and on the real
+    # default discover_models, and no row written by a GET --
+    # tests/integration/test_ftf_0309_p1_model_capabilities.py.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' model-capabilities-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0309p1
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0309p1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0309p1
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real training-capability read API evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_0309_p1_model_capabilities.py
+
   evaluation-case-integration:
     # FTF-0602-P1: real Postgres evidence for EvaluationCase persistence
     # (migration 0023): upgrade/downgrade/upgrade, ENABLE+FORCE RLS and a
@@ -2973,6 +3037,7 @@ jobs:
       - postgres-backup-integration
       - storage-semantics-integration
       - s3-minio-versioned-source-integration
+      - direct-upload-s3-integration
       - oidc-provider-integration
       - license-acceptance-workflow-integration
       - tool-schema-crud-integration
@@ -3002,6 +3067,7 @@ jobs:
       - evaluation-suite-integration
       - organization-gateway-policy-integration
       - model-catalog-mapping-integration
+      - model-capabilities-integration
       - evaluation-case-integration
       - dataset-upload-integration
       - dataset-upload-hardening-integration

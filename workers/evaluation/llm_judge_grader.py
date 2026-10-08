@@ -276,6 +276,10 @@ class CalibrationRecord:
     judge_pass_label_fail: int
     judge_fail_label_pass: int
     judge_fail_label_fail: int
+    # Exact gateway-echoed model ids this calibration was measured under besides
+    # `judge_model_id` itself (e.g. a dated snapshot behind the alias). Section 69.5:
+    # models are locked, so an echo outside this set is not the calibrated judge.
+    judge_model_aliases: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.rubric_id, str) or not self.rubric_id:
@@ -288,6 +292,11 @@ class CalibrationRecord:
             raise LlmJudgeGraderError("rubric_version must be an integer >= 1")
         if not isinstance(self.judge_model_id, str) or not self.judge_model_id:
             raise LlmJudgeGraderError("judge_model_id must be a non-empty string")
+        if not isinstance(self.judge_model_aliases, tuple):
+            raise LlmJudgeGraderError("judge_model_aliases must be a tuple of model ids")
+        for alias in self.judge_model_aliases:
+            if type(alias) is not str or not alias:
+                raise LlmJudgeGraderError("every judge model alias must be a non-empty string")
         if not isinstance(self.reviewer_ids, tuple) or len(self.reviewer_ids) != 2:
             raise LlmJudgeGraderError("reviewer_ids must be a tuple of exactly two reviewer ids")
         for reviewer in self.reviewer_ids:
@@ -645,6 +654,12 @@ def grade_llm_judge(
         raise LlmJudgeGraderError("candidate_model_id must be a non-empty string")
     if not isinstance(approved_judge_model_ids, frozenset):
         raise LlmJudgeGraderError("approved_judge_model_ids must be a frozenset")
+    for approved_id in approved_judge_model_ids:
+        # A None or non-string member would otherwise match a missing `model` echo.
+        if type(approved_id) is not str or not approved_id:
+            raise LlmJudgeGraderError(
+                "every approved_judge_model_ids member must be a non-empty string"
+            )
     if not isinstance(rubric, JudgeRubric):
         raise LlmJudgeGraderError("rubric must be a JudgeRubric")
     if not isinstance(candidate_response, str):
@@ -770,15 +785,29 @@ def grade_llm_judge(
             detail="gateway response was not a valid chat completion",
         )
     content, resolved_model, usage = parsed
-    route_identity_state = (
-        RouteIdentityState.VERIFIED if resolved_model is not None else RouteIdentityState.UNVERIFIED
-    )
-
-    if resolved_model is not None and (
-        resolved_model not in approved_judge_model_ids or resolved_model == candidate_model_id
+    # An absent or non-string `model` echo is `resolved_model is None`: the route
+    # cannot be verified, so no verdict is accepted (Section 69.5: the route must
+    # not silently switch). The echo must also be the calibrated judge itself (or a
+    # snapshot id its CalibrationRecord names): an approved but uncalibrated model is
+    # not the judge the calibration measured.
+    route_identity_state = RouteIdentityState.VERIFIED
+    if resolved_model is None:
+        return make(
+            LlmJudgeState.MODEL_MISMATCH,
+            usage=usage,
+            latency_ms=latency_ms,
+            detail="gateway response carried no model echo; the route identity is unverifiable",
+        )
+    if (
+        resolved_model not in approved_judge_model_ids
+        or resolved_model == candidate_model_id
+        or (
+            resolved_model != judge_model_id
+            and resolved_model not in calibration.judge_model_aliases
+        )
     ):
-        # The gateway served a different model than the approved judge --
-        # never a verdict, and never silently accepted (Section 69.5).
+        # The gateway served a different (or unverifiable) model than the approved
+        # judge -- never a verdict, and never silently accepted (Section 69.5).
         return make(
             LlmJudgeState.MODEL_MISMATCH,
             resolved_model=resolved_model,
