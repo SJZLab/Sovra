@@ -137,6 +137,7 @@ from app.budget.budget_policy_routes import build_budget_policy_router
 from app.component_bindings.component_binding_routes import build_component_binding_router
 from app.config.configuration_system import Settings
 from app.costs.cost_profile_routes import build_cost_profile_router
+from app.datasets.dataset_quality_routes import build_dataset_quality_router
 from app.datasets.dataset_routes import build_dataset_router
 from app.datasets.dataset_source_connection_routes import (
     build_dataset_source_connection_router,
@@ -265,6 +266,11 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         build_dataset_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_dataset_quality_router(
             session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
         )
     )
