@@ -104,8 +104,12 @@ class RouteNotAuthorizedError(SecurityProfileEnforcementError):
     code = "security_profile_route_not_authorized"
 
 
+def _present(value: object) -> bool:
+    return isinstance(value, str) and bool(value) and not value.isspace()
+
+
 def _text(value: object, what: str) -> str:
-    if not isinstance(value, str) or not value.strip() or len(value) > _STRING_MAX_LENGTH:
+    if not isinstance(value, str) or not _present(value) or len(value) > _STRING_MAX_LENGTH:
         raise InvalidEffectRequestError(f"{what} must be a non-empty string")
     return value
 
@@ -192,7 +196,7 @@ def _covers(authorization: RouteAuthorization, request: EffectRequest) -> bool:
         return False
     if destination.kind == "managed_provider":
         return all(
-            isinstance(field, str) and field.strip()
+            _present(field)
             for field in (
                 authorization.account,
                 authorization.region,

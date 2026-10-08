@@ -285,6 +285,78 @@ def test_error_codes_are_stable_and_decision_is_content_free() -> None:
     )
 
 
+def test_exact_boundaries_and_non_normalized_names() -> None:
+    long_ok, long_bad = "p" * 200, "p" * 201
+    check(
+        "FTF-0901-ACC1",
+        "a 200-char provider is accepted, 201 refused",
+        _outcome(Destination, "external", long_ok) == "allowed"
+        and _outcome(Destination, "external", long_bad) == "invalid",
+    )
+    for variant in (" standard", "standard ", "STANDARD", "Zero_Egress"):
+        check(
+            "FTF-0901-ACC1",
+            f"profile {variant!r} is not normalized into a valid name",
+            _outcome(effective_profile, variant, "standard") == "invalid",
+        )
+        check(
+            "FTF-0901-ACC1",
+            f"surface {variant!r} is not normalized into a valid name",
+            _outcome(
+                enforce_effect,
+                EffectRequest(variant, Destination("internal"), "standard", "standard"),
+            )
+            == "invalid",
+        )
+    for variant in (" internal", "Internal", "internal ", "external "):
+        check(
+            "FTF-0901-ACC1",
+            f"destination kind {variant!r} is refused at construction",
+            _outcome(Destination, variant, None if "internal" in variant.lower() else "acme")
+            == "invalid",
+        )
+        # A Destination whose kind is mutated after construction is still not
+        # treated as internal by enforce_effect.
+        dest = Destination("external", "acme")
+        object.__setattr__(dest, "kind", variant)
+        check(
+            "FTF-0901-NEG1",
+            f"post-construction kind {variant!r} is never treated as internal",
+            _outcome(
+                enforce_effect,
+                EffectRequest("data", dest, "zero_egress", "zero_egress"),
+            )
+            == "blocked",
+        )
+    check(
+        "FTF-0901-ACC1",
+        "a non-Destination destination is refused",
+        _outcome(
+            enforce_effect,
+            EffectRequest("data", "internal", "standard", "standard"),  # type: ignore[arg-type]
+        )
+        == "invalid",
+    )
+    request = _request("data", "managed_provider", "standard", "standard")
+    for blank in ("\t", "  "):
+        auth = RouteAuthorization(
+            "acme", frozenset({"data"}), "a", account="x", region=blank, retention_terms="t"
+        )
+        check(
+            "FTF-0901-ACC1",
+            f"managed region {blank!r} is refused",
+            _outcome(enforce_effect, request, auth) == "not_authorized",
+        )
+    padded = RouteAuthorization(
+        "acme", frozenset({"data"}), "a", account=" x ", region=" r", retention_terms="t "
+    )
+    check(
+        "FTF-0901-ACC1",
+        "a padded but non-blank managed term is accepted",
+        _outcome(enforce_effect, request, padded) == "allowed",
+    )
+
+
 _PROBE = """
 import sys
 sys.path.insert(0, {root!r}); sys.path.insert(0, {api!r})
@@ -297,7 +369,7 @@ def run(profile, kind, job=None, auth=None):
     except SecurityProfileEnforcementError as exc:
         return exc.code
 RA = RouteAuthorization
-a = RouteAuthorization("acme", frozenset({{"model"}}), "x", account="a", region="r", retention_terms="t")
+a = RA("acme", frozenset({{"model"}}), "x", account="a", region="r", retention_terms="t")
 print(run("zero_egress", "managed_provider", None, a))
 print(run("standard", "managed_provider", "air_gapped", a))
 print(run("standard", "external", None, None))
