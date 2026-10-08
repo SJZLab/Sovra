@@ -16,7 +16,7 @@ It composes certified pieces only and never re-implements the classifier:
 
 Nothing in the repository persists a probe result yet (the probe route in
 `model_catalog_routes.py` returns it and forgets it), so the default
-`probe_lookup` returns None. `inference_only` is therefore unreachable on the
+absent `probe_lookup` means no probe evidence. `inference_only` is therefore unreachable on the
 live path until a probe store exists; the classifier still ignores a probe for
 a different model or an unverified route identity if one is ever supplied.
 
@@ -104,12 +104,6 @@ _CAPABILITIES_PATH = (
 )
 
 
-def _no_probe_store(organization_id: uuid.UUID, connection_id: uuid.UUID, model_name: str) -> None:
-    """No probe result is persisted anywhere yet; see the module docstring."""
-    del organization_id, connection_id, model_name
-    return None
-
-
 def _not_found() -> HTTPException:
     return HTTPException(status_code=404, detail="not_found")
 
@@ -185,7 +179,7 @@ def build_model_capability_router(
     ] = default_connection_validation_policy,
     discovery_function: Callable[..., ModelDiscoveryResult] = discover_models,
     enrichment_function: Callable[..., Any] = enrich_visible_models,
-    probe_lookup: ProbeLookup = _no_probe_store,
+    probe_lookup: ProbeLookup | None = None,
 ) -> APIRouter:
     """`discovery_function`, `enrichment_function` and `probe_lookup` default
     to the real implementations; they are seams so a test can supply results
@@ -280,9 +274,11 @@ def build_model_capability_router(
                         artifact = get_artifact(
                             session, tenant_context, entry.trainable_artifact_id
                         )
+                # No probe result is persisted anywhere yet (module docstring):
+                # without a lookup there is no probe evidence.
                 probe = (
                     None
-                    if revoked
+                    if revoked or probe_lookup is None
                     else probe_lookup(tenant_context.organization_id, connection_id, model_name)
                 )
                 classification = classify_training_capability(
