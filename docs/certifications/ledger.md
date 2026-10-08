@@ -10543,3 +10543,31 @@ PR is not landed by the next certifier shift.
     target/runtime clauses are BLOCKED_EXTERNAL. It will be sliced once FTF-0616 and FTF-1705 land.
 - **ci-verdict:** all 7 relay merges since 06:02Z (#618, #620, #613, #619, #622, #621, #624) landed on a green
   ci-verdict.
+
+## 2026-10-08T14:20Z — RETURNED: FTF-0903 (r3), FTF-1206 (r4), FTF-0905 (r2)
+- **Verification method:** independent Control-plane verifiers in detached worktrees at each merge commit. Faults were
+  behavioural only; mutation runs were uncapped (`--max-mutants 0`).
+- **FTF-0903: RETURNED** (round 2 → 3, tests only; #627, e054e34f9af90cb02bde29151070c8f6a3908119).
+  - The code behaves correctly. About 60 behavioural faults were run; mutation 99/99.
+  - Items 3, 4, 6 and 7 hold.
+  - Three round-1 items have no behaviour test that goes RED:
+    - a rejected value echoed into the error message, for every field kind (7 faults GREEN);
+    - a str-subclass field name;
+    - an unhashable field name.
+  - Two of these went RED only through the test file's guard-text regex, which is not evidence.
+- **FTF-1206: RETURNED** (round 3 → 4, tests only; #628, 0d0df9f9891cf8665ff332b9eb445f840c392eba).
+  - Round-3 items 2–4 hold: typed fail-closed inputs, the current-policy recheck and the notes. Mutation 47/47.
+  - Item 1 holds only in part. Normalising the target or actor (strip/lower) before validation stays GREEN, because no
+    test puts the variant in both the grant and the org policy, or uses whitespace variants.
+- **FTF-0905: RETURNED** (round 1 → 2; production plus tests; #625, 0f4aa2170edcd2219a2e0964eab5e0c73808fb1e).
+  - Mutation 88/88, but its operators never reach the defects below.
+  - Fail-open: a confirmed leak can be followed by "complete".
+  - An empty ledger, or one with one clean check, is "complete".
+  - canary_id embeds the token, so the canary is reconstructible.
+  - Entropy is not pinned: 4 bytes stays GREEN.
+  - Untyped errors on record_checked input.
+  - The spec-matrix L1-PROVEN overstates NEG-1b.
+- **ci-verdict:** relay merges #625, #627, #628 and #629 all landed on a green ci-verdict. FTF-1602 r2 (#629, 7d28d4c)
+  is under verification.
+- **Observation, not a finding:** data_exposure_check without arguments prints "no datastore backends declared". CI runs
+  it with `--backends postgres_rls,s3_identity --fail-on-exposure`, so the gate is intact.

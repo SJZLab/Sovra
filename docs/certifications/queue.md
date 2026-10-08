@@ -24547,3 +24547,11 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 - **CI fix:** a time bomb in the FTF-0501-P1 test (mixed fixed and real clocks) turned every gate red from 12:00Z. It is
   fixed in the test only.
 - **ci-verdict:** all 7 relay merges since 06:02Z landed on a green ci-verdict.
+
+## 2026-10-08T14:20Z — Control plane: 3 returned (134/302 unchanged)
+- **Returned:**
+  - FTF-0903 r3, tests only (0c)
+  - FTF-0905 r2 (0d)
+  - FTF-1206 r4, tests only (0h)
+- **Under verification:** FTF-1602 r2 (#629).
+- **ci-verdict:** all 4 relay merges since 12:35Z landed on a green ci-verdict.
