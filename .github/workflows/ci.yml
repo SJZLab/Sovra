@@ -474,6 +474,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0902.py
       - name: FTF-0901 negative-test proof (security profile enforcement -- profile x surface x destination matrix, no private-to-managed switch, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0901.py
+      - name: FTF-0908 negative-test proof (external provider denial -- profile/purpose/approval matrix, label never approves, content-free audit, zero network, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0908.py
       - name: FTF-0903 negative-test proof (content-free telemetry -- bounded workflow/log/span schemas, no snippet/traceback/prompt leak, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0903.py
       - name: FTF-0905 negative-test proof (canary-secret generator -- unique prefixed markers, no real-secret collision, full-coverage leak ledger, no DB required)
