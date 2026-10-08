@@ -215,8 +215,8 @@ def main() -> None:
             _finish()
     heads = _alembic(["heads"], migration_url)
     check(
-        f"exactly one Alembic head, 0024_dataset_uploads: {heads.stdout!r}",
-        heads.stdout.count("(head)") == 1 and "0024_dataset_uploads" in heads.stdout,
+        f"exactly one Alembic head: {heads.stdout!r}",
+        heads.stdout.count("(head)") == 1,
     )
 
     owner_engine = create_engine(migration_url)
@@ -300,6 +300,12 @@ def main() -> None:
     ctx2 = TenantContext(organization_id=org2_id)
     actor = store.UploadActor(actor_type="user", actor_id="user-org1", request_id="req-0501")
     now = datetime.now(UTC)
+
+    def fresh() -> datetime:
+        # FTF-0501-P2: the database refuses a session whose created_at is more than
+        # 60 seconds from its own clock, so every session the test opens is stamped
+        # with the current time, never a start-of-run constant or a backdated value.
+        return datetime.now(UTC)
 
     def counts() -> tuple[int, int, int]:
         with owner_engine.connect() as conn:
@@ -386,7 +392,8 @@ def main() -> None:
 
     # ---- create_upload_session -----------------------------------------------
     before = counts()
-    s1 = open_session(at=now)
+    s1_at = fresh()
+    s1 = open_session(at=s1_at)
     check(
         "created session is open with the id-derived object key",
         s1.status == "open"
@@ -394,7 +401,7 @@ def main() -> None:
     )
     check(
         "session lifetime is bounded to the requested ttl",
-        s1.expires_at == now + timedelta(hours=1),
+        s1.expires_at == s1_at + timedelta(hours=1),
     )
     check(
         "creating a session writes exactly one session and one audit event",
@@ -680,12 +687,12 @@ def main() -> None:
         and set(error.mismatched) == {"size_bytes", "sha256", "content_type"},
     )
 
-    old = open_session(sha=_sha("e"), ttl=timedelta(hours=1), at=now - timedelta(hours=3))
+    old = open_session(sha=_sha("e"), ttl=timedelta(hours=1))
     before = counts()
-    _, error = finalize(old, at=now)
+    _, error = finalize(old, at=old.expires_at + timedelta(hours=2))
     check("finalizing after expiry is refused", isinstance(error, store.UploadExpiredError))
     check("an expired finalize wrote nothing", counts() == before)
-    edge = open_session(sha=_sha("e"), ttl=timedelta(hours=1), at=now - timedelta(hours=1))
+    edge = open_session(sha=_sha("e"), ttl=timedelta(hours=1))
     edge_dataset, error = finalize(edge, name="edge", at=edge.expires_at)
     check(
         "finalizing exactly at expires_at is allowed", error is None and edge_dataset.version == 1
@@ -823,10 +830,11 @@ def main() -> None:
         _, error = run_store(ctx1, reject_with(bad_reason))
         check(f"reason {bad_reason[:8]!r} is refused", isinstance(error, ValueError))
 
-    stale = open_session(sha=_sha("4"), ttl=timedelta(hours=1), at=now - timedelta(hours=5))
-    fresh = open_session(sha=_sha("5"), ttl=timedelta(hours=1), at=now)
+    stale = open_session(sha=_sha("4"), ttl=timedelta(minutes=1))
+    fresh_session = open_session(sha=_sha("5"), ttl=timedelta(hours=1))
+    sweep_at = fresh() + timedelta(minutes=5)
     expired_count, error = run_store(
-        ctx1, lambda s: store.expire_open_sessions(s, ctx1, now=now, actor=actor)
+        ctx1, lambda s: store.expire_open_sessions(s, ctx1, now=sweep_at, actor=actor)
     )
     check(
         "expire_open_sessions reports at least the stale session",
@@ -835,7 +843,7 @@ def main() -> None:
     check(
         "only the past-expiry open session expired; fresh, verified and rejected are untouched",
         _session_status(owner_engine, stale.id) == "expired"
-        and _session_status(owner_engine, fresh.id) == "open"
+        and _session_status(owner_engine, fresh_session.id) == "open"
         and _session_status(owner_engine, s1.id) == "verified"
         and _session_status(owner_engine, to_reject.id) == "rejected",
     )
@@ -847,7 +855,7 @@ def main() -> None:
     )
     check(
         "org2's expiry sweep never touches org1 sessions",
-        other_org_count == 0 and _session_status(owner_engine, fresh.id) == "open",
+        other_org_count == 0 and _session_status(owner_engine, fresh_session.id) == "open",
     )
 
     # ---- raw sovra_app SQL against the database constraints ------------------------
@@ -866,6 +874,7 @@ def main() -> None:
     def raw_insert_session(
         org: uuid.UUID = org1_id, project_id: uuid.UUID = p1_id, **over: Any
     ) -> tuple[uuid.UUID, bool, str]:
+        created_now = fresh()
         values: dict[str, Any] = {
             "id": uuid.uuid4(),
             "org": org,
@@ -877,8 +886,8 @@ def main() -> None:
             "sha": _sha("9"),
             "ctype": "application/jsonl",
             "status": "open",
-            "created": now,
-            "expires": now + timedelta(hours=1),
+            "created": created_now,
+            "expires": created_now + timedelta(hours=1),
         }
         values.update(over)
         values.setdefault(
@@ -1080,7 +1089,7 @@ def main() -> None:
     expect(
         "a session inserted already verified is refused",
         raw_insert_session(status="verified")[1:],
-        "ck_dataset_upload_sessions_",
+        "a new upload session must be open",  # FTF-0501-P2 guard fires before the CHECKs
     )
     expect(
         "a session for a project of another organization is refused",
@@ -1233,7 +1242,7 @@ def main() -> None:
     del cross_id
 
     # ---- read routes on a real server ----------------------------------------------
-    held_session = open_session(purpose="held_out_evaluation", sha=_sha("a"), at=now)
+    held_session = open_session(purpose="held_out_evaluation", sha=_sha("a"), at=fresh())
     held, error = finalize(held_session, name="held-set")
     check(f"seed: a held_out_evaluation dataset exists ({error!r})", error is None)
     if error is not None:

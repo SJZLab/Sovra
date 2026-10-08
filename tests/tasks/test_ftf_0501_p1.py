@@ -360,10 +360,15 @@ def test_m3_single_alembic_head() -> None:
         if rev:
             parents[rev.group(1)] = down.group(1) if down else None
     heads = set(parents) - {p for p in parents.values() if p}
+    chain: set[str] = set()
+    cursor = next(iter(heads)) if len(heads) == 1 else None
+    while cursor is not None and cursor not in chain:
+        chain.add(cursor)
+        cursor = parents.get(cursor)
     check(
         CID,
-        f"exactly one Alembic head and it is 0024_dataset_uploads (heads: {sorted(heads)})",
-        heads == {"0024_dataset_uploads"},
+        f"exactly one Alembic head and 0024_dataset_uploads is on its chain (heads: {sorted(heads)})",
+        len(heads) == 1 and "0024_dataset_uploads" in chain,
     )
 
 
