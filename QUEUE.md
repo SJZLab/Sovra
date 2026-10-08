@@ -9344,7 +9344,15 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      5. The manifest hash changes when only group_id values change, and when `strategy` changes.
      6. A negative ratio in the validation or dev slot, e.g. (70,-10,20,20), is refused.
      Also (docstring only): state in the module docstring that the caller must call quality_issue_engine.assert_clear_for_split before allocate_splits; the wiring task enforces it.
-   - **0g.** Then the Backlog.
+   - **0g. FTF-1706 round 2 (production fixes + tests).** Work in evals/reference/candidate_discovery_from_org_litellm.py and tests/reference/test_ftf_1706.py. Claim `relay/FTF-1706-r2`. Verifier findings (each listed fault must go RED):
+     FTF-1706 RETURN -> round 2, production fixes + tests (12137d0, #608). Placement under evals/reference is correct (packet files; FTF-1701/1702 precedent) and reuses FTF-0307/0402. 27 faults, 15 RED, 8 real survivors. Required:
+     1. Law 17 (production): a failed gateway must not look like an empty organisation. Consume the declared dependency FTF-0215 SyncCycleResult / the catalog AccessState (UNKNOWN/HEALTHY/REVOKED/DEGRADED) and return a non-success state for anything but a healthy, discovered catalog. Tests: invalid token, revoked, unknown, degraded/stale each give a non-success state, never `model_count=0, candidates=()`; replace test N1's empty-success assertion with an explicit healthy-and-empty case.
+     2. Fail-open (production): NaN/inf in min_gpu_vram_gb or available_gpu_vram_gb must be refused (math.isfinite in _as_non_negative and input validation); tests for NaN, inf and -inf.
+     3. Tenant/connection binding (production): reject a reconciliation or attestation from another organization/connection than organization_id; test the cross-org pairing.
+     4. Fail closed (production): unhashable license_id, non-Mapping artifacts_by_model/probes_by_model, non-artifact values and non-string roles raise CandidateDiscoveryError (or a blocked verdict), never TypeError/AttributeError.
+     5. Tests for the survivors: trainability never inferred from gateway metadata (fields.supports_fine_tuning); model ids case-exact; no evidence-first ordering; full list with more than 2 models; exact-key artifact binding (no prefix/case-insensitive match); comparator_count excludes blocked models under zero_egress; no role inference for comparators; closed reason-code vocabulary without URI/detail text; a string VRAM value is refused.
+     Note: evals/ is outside MUTATION_ROOTS and SOURCE_ROOTS; the Control plane fixes the gate coverage in a governance PR.
+   - **0h.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
      (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613 and FTF-1305 are CERTIFIED (2026-10-07/08); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
@@ -9557,7 +9565,7 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
     language/group fields that §68.2/§69.2 and FTF-0602 need, so they are added; the live error convention is
     `{"detail": code}`, not §40's envelope; FTF-0501's "resumable UI" clause is not in its file list and stays with
     FTF-0501's own refinement.
-- FTF-0308, FTF-0602, FTF-0616, FTF-0901 and FTF-0517 are returned work in item 0 above. FTF-1706 (#608) is under L2.
+- FTF-0308, FTF-0602, FTF-0616, FTF-0901, FTF-0517 and FTF-1706 are returned work in item 0 above.
 - **FTF-0501** Direct object-storage upload, ready now: FTF-0501-P1 (#581) and FTF-0501-P2 (#606) are CERTIFIED. Let
   the database stamp `created_at` (or keep each request transaction short): the P2 insert guard refuses a session whose
   created_at is more than 60 s from the database's now(), so app/database clock skew must not reach it. DoD: `tools/r1_handoff.py packet FTF-0501`. Presigned multipart (≤5 min per part URL, §65.2) plus finalize

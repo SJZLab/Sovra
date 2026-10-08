@@ -10422,4 +10422,12 @@ PR is not landed by the next certifier shift.
 - **FTF-0901: RETURNED** (tests only; #607, 6f841c6).
   - Provider exactness was proven only by regex self-checks; prefix, case-fold and strip faults survive behaviourally.
   - The approved_by requirement is untested.
+- **FTF-1706: RETURNED** (production plus tests; #608, 12137d0).
+  - Law 17: a failed or revoked gateway is indistinguishable from an empty organisation. It must consume FTF-0215
+    SyncCycleResult / AccessState.
+  - NaN/inf VRAM fails open.
+  - There is no tenant/connection binding.
+  - Malformed inputs raise TypeError/AttributeError instead of the typed error.
+  - 8 behavioural survivors.
+  - Gate gap: evals/ is outside MUTATION_ROOTS and SOURCE_ROOTS; to be fixed in a governance PR.
 - **New rule:** a fault row must be behavioural; a regex check that guard text is present is not evidence.
