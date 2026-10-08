@@ -213,6 +213,24 @@ def outbox_row(owner_url: str, org: uuid.UUID, job: uuid.UUID) -> dict[str, obje
         engine.dispose()
 
 
+def tamper_idempotency_key(owner_url: str, org: uuid.UUID, job: uuid.UUID, how: str) -> None:
+    """Owner-side rewrite of the stored admission key (what a corrupted or
+    hand-edited row would look like)."""
+    engine = create_engine(owner_url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE component_sync_outbox SET idempotency_key = "
+                    + {"upper": "upper(idempotency_key)", "pad": "idempotency_key || ' '"}[how]
+                    + " WHERE organization_id = :o AND factory_job_id = :j"
+                ),
+                {"o": org, "j": job},
+            )
+    finally:
+        engine.dispose()
+
+
 def now_ms() -> int:
     return int(time.time() * 1000)
 
@@ -558,6 +576,26 @@ def main() -> int:
                 "R2-D5",
                 f"a result for {label} fails the row as result_mismatch",
                 row["status"] == "failed" and "result_mismatch" in str(row["last_error"]),
+            )
+
+        # R2-D5c: an admission key that differs from the evidence's only by
+        # case or padding is still a different key (exact comparison).
+        for how in ("upper", "pad"):
+            job_k = uuid.uuid4()
+            run_k = make_run(a_id, job_k)
+            results.save(run_k)
+            env_a.outbox.add(run_k)
+            tamper_idempotency_key(owner_url, a_id, job_k, how)
+            check(
+                "R2-D5",
+                f"a {how}-case/padded stored key is not offered for sync",
+                env_a.outbox.pending() == [],
+            )
+            row = outbox_row(owner_url, a_id, job_k)
+            check(
+                "R2-D5",
+                f"a {how}-case/padded stored key fails the row as result_changed",
+                row["status"] == "failed" and "result_changed" in str(row["last_error"]),
             )
 
         # R2-D6: ambiguous logical run -> failed row.

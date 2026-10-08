@@ -257,10 +257,9 @@ class OutboxStore(Protocol):
 
     def add(self, run: TrackedRun) -> OutboxEntry: ...
     def pending(self) -> list[OutboxEntry]: ...
-    def record(self, entry: OutboxEntry) -> None:
-        """Persists the outcome of one `sync_run` (state, attempts, error,
-        next retry time, external id)."""
-        ...
+    # Persists the outcome of one `sync_run` (state, attempts, error, next
+    # retry time, external id).
+    def record(self, entry: OutboxEntry) -> None: ...
 
 
 @dataclass
