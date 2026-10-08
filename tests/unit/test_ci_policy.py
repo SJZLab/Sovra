@@ -490,3 +490,19 @@ def test_relay_policy_applies_the_ci_yml_rule():
         "[relay] FTF-1: x", 5, [".github/workflows/ci.yml"], "", [], (BASE_CI, head)
     )
     assert any("existing job 'gate' was modified" in p for p in problems)
+
+
+def test_reference_code_is_under_the_mutation_and_product_truth_gates():
+    from scripts import mutation_gate as mg
+
+    assert mg.under_source_roots("evals/reference/candidate_discovery_from_org_litellm.py")
+    assert not mg.is_test_path("evals/reference/candidate_discovery_from_org_litellm.py")
+    assert mg.is_test_path("tests/reference/test_ftf_1706.py")
+
+
+def test_mutation_gate_selects_reference_tests():
+    block = _jobs_block(CI.read_text(), "mutation-gate")
+    assert '"tests/tasks/", "tests/reference/"' in block
+    assert r"tests/(tasks|reference)/test_[^/]+\.py" in block
+    assert 'pathlib.Path(f"tests/reference/test_ftf_{i}.py")' in block
+    assert '"workers", "packages", "evals")' in block

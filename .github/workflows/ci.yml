@@ -205,6 +205,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0104.py
       - name: FTF-1601 negative-test proof (postgres backup catches real defects, no DB required)
         run: python3 tests/tasks/test_ftf_1601.py
+      - name: FTF-1602 negative-test proof (object storage backup catches real defects, no network required)
+        run: python3 tests/tasks/test_ftf_1602.py
       - name: FTF-0101 negative-test proof (OIDC login catches real defects, real local sockets, no DB required)
         # uv run: this is the first task requiring FastAPI/authlib/itsdangerous/uvicorn
         # (owner-approved 2026-09-19), the same reason FTF-0102 first needed `uv run`.
@@ -265,6 +267,8 @@ jobs:
         run: uv run python3 tests/reference/test_ftf_1702.py
       - name: FTF-1706 negative-test proof (Candidate discovery catches real defects, no DB required)
         run: uv run python3 tests/reference/test_ftf_1706.py
+      - name: FTF-1703 negative-test proof (Training dataset catches real defects, no DB required)
+        run: uv run python3 tests/reference/test_ftf_1703.py
       - name: FTF-1302 negative-test proof (Local compute costing catches real defects, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1302.py
       - name: FTF-1303 negative-test proof (Provider token costing catches real defects, no DB required)
@@ -332,6 +336,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_04a32.py
       - name: FTF-R002 negative-test proof (Authenticated internal component bindings, no DB required)
         run: uv run python3 tests/tasks/test_ftf_r002.py
+      - name: FTF-R005 negative-test proof (MLflow projection adapter, no network required)
+        run: uv run python3 tests/tasks/test_ftf_r005.py
       - name: FTF-1506 negative-test proof (Dependency scanning, no network required)
         run: uv run python3 tests/tasks/test_ftf_1506.py
       - name: FTF-04A17 negative-test proof (DiscoveredAgentCandidate schema/API, no DB required)
@@ -468,6 +474,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0902.py
       - name: FTF-0901 negative-test proof (security profile enforcement -- profile x surface x destination matrix, no private-to-managed switch, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0901.py
+      - name: FTF-0903 negative-test proof (content-free telemetry -- bounded workflow/log/span schemas, no snippet/traceback/prompt leak, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0903.py
       - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
         run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check
@@ -530,15 +538,15 @@ jobs:
           base = "origin/" + os.environ["BASE_REF"]
           def git(*args):
               return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout
-          changed = git("diff", "--name-only", "--diff-filter=AMR", f"{base}...HEAD", "--", "tests/tasks/").split()
-          tests = sorted({f for f in changed if re.fullmatch(r"tests/tasks/test_[^/]+\.py", f)
+          changed = git("diff", "--name-only", "--diff-filter=AMR", f"{base}...HEAD", "--", "tests/tasks/", "tests/reference/").split()
+          tests = sorted({f for f in changed if re.fullmatch(r"tests/(tasks|reference)/test_[^/]+\.py", f)
                           and f != "tests/tasks/test_mutation_gate.py"})
           if not tests:
               print("No tests/tasks/test_*.py changed; deriving task IDs instead.")
               text = os.environ.get("PR_TITLE", "") + "\n" + os.environ.get("HEAD_REF", "")
               ids = re.findall(r"FTF-[0-9A-Z]+", text, flags=re.I)
               if not ids:
-                  added = git("diff", "-U0", f"{base}...HEAD", "--", "apps/web", "apps/api", "workers", "packages")
+                  added = git("diff", "-U0", f"{base}...HEAD", "--", "apps/web", "apps/api", "workers", "packages", "evals")
                   ids = re.findall(r"FTF-[0-9A-Z]+", "\n".join(l for l in added.splitlines() if l.startswith("+")), flags=re.I)
               found = set()
               for i in {x.lower().removeprefix("ftf-") for x in ids}:
@@ -546,6 +554,9 @@ jobs:
                   if exact.is_file():
                       found.add(str(exact))
                   found.update(str(p) for p in pathlib.Path("tests/tasks").glob(f"test_ftf_{i}_*.py"))
+                  ref = pathlib.Path(f"tests/reference/test_ftf_{i}.py")
+                  if ref.is_file():
+                      found.add(str(ref))
               tests = sorted(found)
           out = pathlib.Path(os.environ["GITHUB_OUTPUT"])
           lst = pathlib.Path(os.environ["RUNNER_TEMP"]) / "mutation-tests.txt"
@@ -558,7 +569,7 @@ jobs:
               prod = [f for f in git("diff", "--name-only", "--diff-filter=AMR", f"{base}...HEAD").split()
                       if f.endswith(".py") and under_source_roots(f) and not is_test_path(f)]
               if prod:
-                  print("::error::mutation-gate: production Python changed but this PR has no tests/tasks/test_*.py "
+                  print("::error::mutation-gate: production Python changed but this PR has no tests/tasks/test_*.py or tests/reference/test_*.py "
                         "(changed, or tests/tasks/test_ftf_<id>.py for its task ID) to kill mutants with: "
                         + ", ".join(prod) + ". Add the task test that exercises this code.")
                   raise SystemExit(1)
@@ -1193,6 +1204,44 @@ jobs:
         run: pip install pyyaml --quiet
       - name: Prove the real direct-upload evidence against the live S3 fixture
         run: python3 tests/integration/test_ftf_0501_direct_upload_s3.py
+
+  object-storage-backup-integration:
+    # FTF-1602: real object-storage backup evidence against the live SeaweedFS
+    # S3-API container (versioned source bucket, object-lock target bucket,
+    # real COMPLIANCE retention, stale/missing-shard/lost-key refusals).
+    # Same real container pattern as s3-minio-versioned-source-integration.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' object-storage-backup-integration ')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install gate deps
+        run: pip install pyyaml --quiet
+      - name: Prove the real object-storage backup evidence against the live S3 fixture
+        run: python3 tests/integration/test_ftf_1602_object_storage_backup.py
+
+  mlflow-projection-integration:
+    # FTF-R005: real MLflow run/model reconciliation, outage-pending restore,
+    # forged-tag/alias refusal and tenant isolation against a live
+    # `mlflow server` (SQLite backend, loopback only). MLflow is installed
+    # only inside this job (the reused component itself, never a runtime
+    # dependency of the Factory); SQLAlchemy is held below 2.1 because
+    # mlflow 3.1.1 imports a symbol 2.1 removed.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' mlflow-projection-integration ')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install the pinned MLflow server
+        run: pip install --quiet 'mlflow==3.1.1' 'sqlalchemy>=2.0,<2.1'
+      - name: Prove the real MLflow projection against a live server
+        run: python3 tests/integration/test_mlflow_projection.py
 
   oidc-provider-integration:
     # FTF-0101 acceptance clause 1 ("Real OIDC provider login/refresh/logout
@@ -2938,6 +2987,8 @@ jobs:
       - dataset-upload-hardening-integration
       - live-auth-path-integration
       - network-policy-enforcement-integration
+      - object-storage-backup-integration
+      - mlflow-projection-integration
       - candidate-selection-integration
     runs-on: ubuntu-latest
     timeout-minutes: 5

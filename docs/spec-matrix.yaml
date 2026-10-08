@@ -2236,10 +2236,10 @@ FTF-0307:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0307.py
 FTF-0308:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Model-to-artifact mapping UI
-  evidence_hash: ''
+  evidence_hash: f8270c8b4e48b8a567978b33b50b61a674356118
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-14; scenarios=Q07, Q10; deps=FTF-0214, FTF-0301,
@@ -2254,7 +2254,7 @@ FTF-0308:
     (23 tests); proving_symbol stays blank. The packet's /capabilities path is not frozen in
     03-interface.yaml and is not consumed here. Fault -> RED table:
     docs/certifications/submissions/2026-10-08T0000Z-FTF-0308.md. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_0308.spec.ts
 FTF-0309:
@@ -8424,10 +8424,10 @@ FTF-0601:
   proving_symbol: build_evaluation_suite_router
   proving_test: tests/tasks/test_ftf_0601.py
 FTF-0602:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Evaluation case editor/import
-  evidence_hash: ''
+  evidence_hash: 5cd3c5c1131bcdec92a5c70a38e010318d0ab708
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0601 (CERTIFIED)
@@ -8441,7 +8441,7 @@ FTF-0602:
     (Law 6/7): no Next.js page tree exists (FTF-H029), so proof is a DOM-level Vitest spec with
     mocked fetch (30 tests); proving_symbol stays blank. Fault -> RED table:
     docs/certifications/submissions/2026-10-08T0030Z-FTF-0602.md. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_0602.spec.ts
 FTF-0603:
@@ -8916,15 +8916,33 @@ FTF-0615:
   proving_symbol: ''
   proving_test: ''
 FTF-0616:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: LLM judge adapter through LiteLLM
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-25; scenarios=Q16, Q17, Q18; deps=FTF-0210, FTF-0601
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-25; scenarios=Q16, Q17, Q18; deps=FTF-0210, FTF-0601.
+    Path: workers/evaluation/llm_judge_grader.py (same convention as the sibling graders). Round 2:
+    critical=True is refused outright (Sections 27/69.5; 06-interface.yaml
+    critical_oracle_not_independent), the corroboration argument is gone. CalibrationRecord is bound to
+    the exact (rubric_id, rubric version, judge model) triple and meets Section 69.5: >= 100 examples,
+    two distinct reviewers, >= 90% agreement, Cohen's kappa >= 0.70 (exact integer arithmetic; an
+    undefined kappa is refused). The verdict carries one score per locked rubric criterion (exact ids,
+    none missing, none extra); confidence and scores lie in [0, 1]. LlmJudgeResult records rubric id,
+    version, requested and resolved model; a resolved model outside the approved set (or the candidate)
+    is MODEL_MISMATCH, never a verdict. Model output is strict JSON (no duplicate keys, NaN/Infinity or
+    overflow, no repair of truncated JSON, deep nesting is refused, not a crash); exactly one choice;
+    only HTTP 200 is a response; a 400 is sent once. Fault -> RED table:
+    docs/certifications/submissions/2026-10-08T0500Z-FTF-0616.md.
+
+    BLOCKED_EXTERNAL (packet resource_gate, owner action): the clause "Call approved real judge through
+    LiteLLM" is proven only against a local TLS gateway stand-in. It needs a real gateway key and an
+    approved judge model, which do not exist yet. Disclosed: no live caller yet (Section 25's runtime
+    loop is not dependency-ready), so proving_symbol stays blank. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0616.py
 FTF-0617:
   certification_state: NONE
   criticality: MUST
@@ -9262,10 +9280,10 @@ FTF-0810:
   proving_symbol: ''
   proving_test: ''
 FTF-0901:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Security profile enforcement
-  evidence_hash: 4877c2e927457f1e327084094b909f3f0112efd1
+  evidence_hash: 6e66492713a62ff3676c84a223cc6f41a649546c
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0103, FTF-0202,
@@ -9279,10 +9297,19 @@ FTF-0901:
     `security_profile_route_not_authorized`. Unknown or malformed input raises
     `security_profile_invalid_request`. Negative acceptance (private job cannot switch to a managed
     route by a weaker project setting) is pinned for org, project and job taking turns as the
-    private source. Disclosed gap: pure library with no live caller yet (datasets, workers, judges
+    private source. Round 2 (tests only, 2026-10-08): added behavioural, fault-injection-backed
+    tests that an authorization provider must match exactly -- a case-variant ("ACME"/"Acme"),
+    padded ("  acme  ") or near-miss ("acme2"/"acm") provider against an authorization for "acme"
+    all give `security_profile_route_not_authorized`, never `allowed` -- and that `approved_by`
+    (Section 11.2) is required: blank, whitespace-only and non-str values each raise
+    `InvalidEffectRequestError` at `RouteAuthorization` construction. Also pins the exact 8-member
+    `SURFACES` tuple. Disclosed gap: pure library with no live caller yet (datasets, workers, judges
     and serving are later tasks) -- blank proving_symbol, same precedent as FTF-0902. Evidence:
-    tests/tasks/test_ftf_0901.py (CI step added), mutation 66/66 killed. Not self-certified.
-  proof_state: L1-PROVEN
+    tests/tasks/test_ftf_0901.py (CI step already present), mutation 66/66 killed (whole-file,
+    `--max-mutants 0`); both new guards independently confirmed load-bearing by hand-breaking the
+    real module (normalizing the provider comparison; removing the approved_by `_text` guard) and
+    showing the suite goes RED, then restoring byte-identical. Not self-certified.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0901.py
 FTF-0902:
@@ -9520,16 +9547,36 @@ FTF-0902:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0902.py
 FTF-0903:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Content-free telemetry
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0006, FTF-0901,
-    FTF-0902
-  proof_state: UNPROVEN
+  evidence_hash: 60828d14111064813c742c4a30616b0b2b4a4b8d
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0006, FTF-0901,
+    FTF-0902 (all CERTIFIED). Path: packages/security/content_free_telemetry.py.
+
+    Built: `emit_event(kind, fields)` validates a workflow/log/span event against that kind's
+    frozen, closed field schema (`EVENT_SCHEMAS`) and returns an immutable `TelemetryEvent`. A
+    field name outside the schema, or a missing required field, is refused
+    (`DisallowedFieldError`). A present field's value must match its own bounded shape -- a short
+    `fullmatch`-checked id/code pattern, a closed enum, a non-negative bounded count/number, a
+    timezone-aware timestamp, a bool, or an opaque `ContentRef` (two bounded ids, never inline
+    content) -- else `ContentRefusedError` (Section 11.4/12 "encrypted private content stored by
+    reference"). No field anywhere accepts unbounded free text, so a source snippet, exception
+    traceback or raw prompt is refused by the shape check alone, whatever field name it is
+    attached to (Section 12 "a malicious worker cannot send arbitrary payloads to an otherwise
+    permitted collector"). Every string pattern uses `fullmatch`, never `match`, so a value that
+    is otherwise legal plus one trailing newline (the classic `$`-anchor bypass) is refused too.
+    Error messages name the rejected field, never its value (Section 65.4).
+
+    Disclosed: this module is a pure library with no live caller yet -- the producers (Temporal
+    workflows, worker logs, serving spans) are separate, dependency-gated tasks that will call
+    `emit_event`; proving_symbol stays blank, same precedent as FTF-0901/FTF-0902. Not
+    self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0903.py
 FTF-0904:
   certification_state: NONE
   criticality: MUST
@@ -10595,10 +10642,10 @@ FTF-1304:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1304.py
 FTF-1305:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Candidate ranking
-  evidence_hash: ''
+  evidence_hash: 00a095b6bce633a3f0081650fee663b7ed2b7417
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-26; scenarios=Q15, Q19; deps=FTF-0307, FTF-1301, FTF-1304
@@ -10618,7 +10665,7 @@ FTF-1305:
 
     Disclosed: no live caller or route yet (the cost-per-success search route is not dependency-ready), so
     proving_symbol stays blank, same precedent as FTF-1304. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1305.py
 FTF-1306:
@@ -11252,15 +11299,30 @@ FTF-1601:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1601.py
 FTF-1602:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Object storage backup
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-32; scenarios=Q29, Q30; deps=FTF-0004, FTF-1002, FTF-1601
-  proof_state: UNPROVEN
+  evidence_hash: b18c456289f75b189ebed4995f6071cc7f3f8a06
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-32; scenarios=Q29, Q30; deps=FTF-0004, FTF-1002, FTF-1601
+    (all CERTIFIED). Path: `scripts/object_storage_backup.py` (stdlib; reuses the FTF-R017 SigV4
+    S3Client). `create_backup` takes dataset/model/result blob refs exactly as manifests record them
+    (key, version id, sha256, size, shard n of m, encryption key reference), refuses with
+    BackupIncompleteError before writing anything on a missing shard, a stale version (not the key's
+    current one, deleted, or never existing), a lost encryption key reference, or a hash/size
+    mismatch; otherwise writes content-addressed blobs and a record to a target bucket, reads each
+    back, and requires COMPLIANCE retention to be read back too. `verify_backup` re-hashes blobs
+    and re-reads retention. Real SeaweedFS evidence: tests/integration/test_ftf_1602_object_storage_backup.py
+    (CI job object-storage-backup-integration: versioned source, object-lock target, retained blob
+    delete refused, stale/deleted/missing-shard/lost-key refusals leave the target empty, a replaced
+    blob is caught). No-DB unit/fault suite tests/tasks/test_ftf_1602.py; mutation gate 191/191
+    killed. The frozen 16-domain contract is FTF-1601's and was not extended (no contract lock held).
+    Restore automation is FTF-1603. Pure library/CLI: no live caller, proving_symbol stays blank.
+    Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_1602.py
 FTF-1603:
   certification_state: NONE
   criticality: MUST
@@ -11474,16 +11536,32 @@ FTF-1702:
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1702.py
 FTF-1703:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Training dataset
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0506, FTF-1701,
-    FTF-1702
-  proof_state: UNPROVEN
+  evidence_hash: aab98f605e9924867aec9cf38c4e5cf36a1023f9
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0506, FTF-1701,
+    FTF-1702. PROVISIONAL / L1-PROVEN, not certified (Law 4). evals/reference/training_dataset.py
+    generates 1,200 synthetic reference traces (7 scenario kinds, 3 of them critical), each in its
+    own independent entity group, every tool result produced by executing the call on a fresh real
+    FTF-1702 ToolEnvironment (server UUIDs normalized to per-trace refs, so the dataset hash is
+    deterministic, also across PYTHONHASHSEED). verify_trace_replay re-executes a trace on the real
+    backend and refuses forged results, a contradicting final answer or a wrong declared outcome.
+    build_training_dataset admits a trace only with an independent ReviewDecision (reviewer is not
+    the producer / any generator identity), so with no reviews approved_count is 0 and meets_floor
+    is False. Acceptance clause "reviewed ... independent review" is therefore BLOCKED_EXTERNAL
+    (human/Argilla review, resource_gate) until real reviewers supply decisions; no review is minted
+    here. Negative acceptance: purpose must be training, origin synthetic_generator (nothing
+    harvested), secret-shaped strings refused (SecretInTraceError), and ReservedFinalSuite overlap
+    on group, template, entity or final-answer hash is refused (HeldOutLeakageError). Fault ->
+    RED table in docs/certifications/submissions/2026-10-08T0700Z-FTF-1703.md (15 production
+    faults, all RED). No route, schema or live caller yet, so proving_symbol stays blank (same
+    disclosed precedent as FTF-1706).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/reference/test_ftf_1703.py
 FTF-1704:
   certification_state: NONE
   criticality: MUST
@@ -11510,7 +11588,7 @@ FTF-1706:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Candidate discovery from org LiteLLM
-  evidence_hash: 994620bed542b1f35b416d59db7f064c607a542f
+  evidence_hash: 4f16be7a198891c6874b5840b05bd88f35a570e2
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-18; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0215, FTF-0307,
@@ -11523,7 +11601,15 @@ FTF-1706:
     check passes; inference-only endpoints are untuned comparators; anything else is blocked with
     stable reason codes. Nothing is hardcoded or inferred from a name. Pure library: no live caller
     yet, so proving_symbol stays blank (same disclosed precedent as FTF-0901). No schema, route,
-    dependency or secret added. Not self-certified (Law 4).
+    dependency or secret added. Round 2 (Law 17): discovery now requires ScopedEvidence for the
+    FTF-0215 SyncCycleResult, the reconciliation and every attestation (organization and connection
+    must match, else CandidateDiscoveryError) and returns a non-DISCOVERED GatewayState with no
+    candidates for a non-applied cycle or a revoked, unknown, degraded, never-discovered or stale
+    catalog; NaN/inf VRAM is refused; wrong-typed maps, values, roles and license ids fail closed.
+    Round 3 (tests only, no production change): the attestation cross-org/cross-connection
+    tests now pass single-wrapped ScopedEvidence and assert the scope refusal message; mutation
+    survivors pinned; evidence_hash re-bound to the round-2 source commit (Law 15).
+    Not self-certified (Law 4).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1706.py
@@ -12726,16 +12812,52 @@ FTF-R004:
   proving_symbol: ''
   proving_test: ''
 FTF-R005:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Integrate internal MLflow tracking and model registry projection
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=reuse_architecture; requirements=CAP-12, CAP-19, CAP-21; scenarios=Q35, Q38, Q40; deps=FTF-R002,
-    FTF-1001, FTF-1002
-  proof_state: UNPROVEN
+  evidence_hash: 6fc6d4544829291e54f5bdd634d0057ad7580104
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=reuse_architecture; requirements=CAP-12, CAP-19, CAP-21; scenarios=Q35, Q38, Q40;
+    deps=FTF-R002, FTF-1001, FTF-1002 (all CERTIFIED).
+    Built (packages/integrations/mlflow/, stdlib only, no new runtime dependency): client.py is a
+    versioned REST 2.0 adapter that sends every request through the shared FTF-H006
+    outbound_guard.guarded_fetch (caller-supplied ConnectionPolicy, no redirects, pinned address),
+    maps outcomes to distinct errors (TrackingUnavailableError for network/5xx,
+    TrackingRejectedError for refusals, NotFound/AlreadyExists), parses strict JSON (duplicate
+    keys, NaN/Infinity, oversize and non-objects refused), interpolates only identifier-shaped
+    values into filters, bounds batches and pagination, refuses any model source outside the
+    approved internal artifact prefixes before a byte is sent, and exposes no alias or stage
+    write at all. reconcile.py derives a deterministic SHA-256 logical run key from
+    (organization_id, job_id) and an experiment per organization, searches by that key before it
+    creates (an ambiguous create is adopted, two claimants are AMBIGUOUS, a run tagged for another
+    tenant is refused), logs results with the caller's own timestamps and a completion tag holding
+    the payload hash (replay writes nothing, a different payload for a completed run is a conflict),
+    and runs an outbox state machine: outage keeps TRACKING_SYNC_PENDING with the measured result
+    intact, a refusal is FAILED, an ambiguity AMBIGUOUS, never SYNCED. TrackedRun refuses any data
+    purpose outside the closed allowlist train/validation/development_eval (so final_qualification
+    and any spelling variant of it never leave) and any export class other than metrics_only or
+    redacted_metadata. registry_binding.py binds one external version per Factory ModelVersion
+    (name derived from organization and ModelVersion ids), re-verifies the live record field by
+    field against the Factory envelope (organization, ModelVersion, artifact digest, run, source,
+    name) and projects a fixed read-only field set with approval_authority factory; tags,
+    aliases and stages read from MLflow carry no authority and cannot cause or mask drift.
+    Clause to test: acceptance 1 (real run/model ids reconciled, hashes stay authoritative) is
+    R005-A1/A1b and R005-N1 in tests/integration/test_mlflow_projection.py against a live
+    mlflow 3.1.1 server; acceptance 2 (outage buffers and reports pending, exact lineage
+    restored) is R005-A2; negative forged tags/aliases is R005-N1, cross-tenant is R005-N2, sealed
+    export is R005-N3, ambiguous replay is R005-A1/N4, unapproved source is R005-N5. The no-network
+    suite tests/tasks/test_ftf_r005.py covers every guard in all three modules and is
+    mutation-gated.
+    Disclosed narrowings: the durable outbox store (a table) and the GET
+    /model-versions/{id}/registry-binding route are the wiring task's, this task ships the state
+    machine against an OutboxStore protocol (in-memory store used in tests) and the projection
+    function the route will call; proving_symbol stays blank because no live route calls it yet.
+    The CI job installs mlflow 3.1.1 with sqlalchemy below 2.1 inside the job only (3.1.1 imports a
+    symbol SQLAlchemy 2.1 removed, reproduced locally).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_r005.py
 FTF-R006:
   certification_state: NONE
   criticality: MUST

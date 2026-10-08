@@ -571,3 +571,38 @@ test("a malformed save response is an error and the listed case is untouched", a
   expect(screen.queryByTestId("notice")).toBeNull();
   expect(screen.getByTestId(`case-row-${CASE_A}`).textContent).toContain("high");
 });
+
+// ---- round 2 (Control-plane L2 return, tests only): Law 17, a denied write is never shown as success ----
+
+test("a 403 role_not_authorized on import is an error: no success notice, list unchanged", async () => {
+  renderUI();
+  await loadCases([evalCase(CASE_A, "a-case")]);
+  enqueue("POST", LIST_URL, fail(403, { detail: "role_not_authorized" }));
+  typeImport(JSON.stringify([importRow("c1")]));
+  clickImport();
+  await waitFor(() => expect(screen.getByTestId("import-error")).toBeTruthy());
+  expect(screen.getByTestId("import-error").textContent).toContain("role");
+  expect(screen.queryByTestId("notice")).toBeNull();
+  expect(screen.queryByTestId("restricted-notice")).toBeNull();
+  expect(calls("POST", LIST_URL).length).toBe(1);
+  const rows = screen.getByTestId("case-list").querySelectorAll("li, tr");
+  expect(rows.length).toBe(1);
+  expect(screen.getByTestId(`case-row-${CASE_A}`)).toBeTruthy();
+  expect(screen.queryByText(/Imported/)).toBeNull();
+});
+
+test("a 403 role_not_authorized on save is an error: no 'Saved', row unchanged", async () => {
+  renderUI();
+  await loadCases([evalCase(CASE_A, "a-case")]);
+  await openEditor(CASE_A);
+  const url = caseUrl(API_BASE, ORG, PROJECT, SUITE, CASE_A);
+  enqueue("PATCH", url, fail(403, { detail: "role_not_authorized" }));
+  setField("field-severity", "low");
+  clickSave();
+  await waitFor(() => expect(screen.getByTestId("edit-error")).toBeTruthy());
+  expect(screen.getByTestId("edit-error").textContent).toContain("role");
+  expect(screen.queryByTestId("notice")).toBeNull();
+  expect(screen.queryByTestId("restricted-notice")).toBeNull();
+  expect(screen.queryByText(/Saved/)).toBeNull();
+  expect(screen.getByTestId(`case-row-${CASE_A}`).textContent).toContain("high");
+});

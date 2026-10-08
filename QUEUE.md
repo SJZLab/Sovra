@@ -9274,6 +9274,7 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
+- 2026-10-08: FTF-0616 (LLM judge) needs a real judge call through the org LiteLLM gateway for its acceptance clause: a CI secret holding a gateway virtual key, plus the approved judge model id. Until then that clause stays BLOCKED_EXTERNAL; the rest of FTF-0616 continues.
 - 2026-10-07: FTF-04A31 needs a private-repo test credential (or approval to use this repo with `github.token`). See Parked.
 
 ## Active (decided by Control plane — relay executes, top first)
@@ -9305,20 +9306,21 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
    - **Every grader (FTF-06xx):** before submitting, apply the GRADER CHECKLIST in the same queue.md entry.
-   - **Returned 2026-10-08T00:30Z (Control plane L2).** Every bullet in the list needs its own fault → RED row in the
-     submission. FTF-0612, FTF-0613 and FTF-0501-P1 are CERTIFIED; the items below are not.
+   - **Returned 2026-10-08T03:30Z (Control plane L2).** Every bullet in the list needs its own fault → RED row in the
+     submission, and the row must be behavioural (a regex self-check that the guard text is present is not evidence).
+     FTF-1305, FTF-0103-F1, FTF-0501-P2, FTF-0308, FTF-0602 and FTF-0901 are CERTIFIED; the items below are not.
    - **GRADER CHECKLIST addition (same-class sweep):** never test membership of a raw input in a dict or set before
      checking its type. An unhashable value ([] or {}) must raise the module's own error, not TypeError.
-   - **0b. FTF-1305 round 3 (tests only).** Work in tests/tasks/test_ftf_1305.py. Claim `relay/FTF-1305-r3`. Verifier findings (each listed fault must go RED):
-     FTF-1305 RETURN -> round 3, tests only (f21f1ec, #596). All 5 round-2 items RED; mutation 133/133. Remaining (the round-2 list missed the first one, Control-plane error; the second is the checklist line in effect since #593):
-     1. Primary sort key not pinned: key=(high, base, id) survives. Add (base=1, high=9) ranked ahead of (base=2, high=3), in both input orders.
-     2. GRADER CHECKLIST (unhashable membership): RankingCandidate(kind=...) and economics_basis=... each raise CandidateRankingError for [], {}, 1 and b"base" / b"measured" (dropping the isinstance guard in _lookup survives).
-     3. When base and high are equal, vary the incumbent flag, kind and quality; order is still by id in every input permutation (faults that put not is_incumbent, kind or -quality before id survive).
-   - **0c. FTF-0103-F1 round 2 (tests only).** Work in tests/tasks/test_ftf_0103_f1.py. Claim `relay/FTF-0103-F1-r2`. Verifier findings (each listed fault must go RED):
-     FTF-0103-F1 RETURN -> round 2, tests only (d6b7381, #597). The production fix is correct (a probe shows memory is bounded at cap plus one chunk; a lying Content-Length cannot bypass it; the /cases override is needed and safe). 14 faults; 13 RED. Missing:
-     1. Prove reading stops at the cap (the decision says "streaming the body and stopping at the cap"). Replacing the loop with `body = await request.body(); if len(body) > MAX_JSON_BODY_BYTES: raise ...` passes every test today. Add a test that sends a chunked body of more than the cap over a real socket, never sends the terminating 0-chunk, and asserts 413 request_too_large within a few seconds (the read-everything fault then times out). Or use an ASGI receive that counts bytes pulled and assert no more than cap plus one chunk is consumed.
-     2. Correct the submission's fault table: "old behaviour (read before cap)" does not cover read-everything-then-check.
-   - **0d. FTF-0517 round 2 (tests + one docstring line).** Work in tests/tasks/test_ftf_0517.py. Claim `relay/FTF-0517-r2`. Verifier findings (each listed fault must go RED):
+   - **0d. FTF-0616 round 2 (production fixes + tests).** Work in workers/evaluation/llm_judge_grader.py, its test and docs/spec-matrix.yaml. Claim `relay/FTF-0616-r2`. Verifier findings (each listed fault must go RED):
+     FTF-0616 RETURN -> round 2, production fixes + tests (a5b86ae, #604). Gateway-only, blind, fail-to-unknown, no retries: good; mutation 212/212; real TLS gateway stand-in. Required:
+     1. §27 (production): refuse critical=True outright with a typed error (06-interface.yaml already forbids llm_judge as a critical case's grader: critical_oracle_not_independent). Delete the test that asserts critical + corroboration=False gives PASSED; add one that critical=True is refused before any network call.
+     2. Calibration (production): CalibrationRecord binds rubric_id, rubric version and judge_model_id and is accepted only for that exact triple; thresholds from §69.5: >= 100 examples labelled by two reviewers, >= 90% agreement, Cohen's kappa >= 0.70. Tests at each boundary and for a record from another triple.
+     3. Criterion-level scores (§27, §69.5): the verdict schema carries a score per rubric criterion (exact criterion ids from the locked rubric, no extras, none missing); tests.
+     4. LlmJudgeResult records rubric_id, rubric version, the requested judge_model_id and the gateway's resolved model; a resolved model outside the approved set is a mismatch state, never PASSED (§69.5 "must not silently switch").
+     5. Strict JSON: reject duplicate keys (object_pairs_hook), reject NaN/Infinity, bound confidence to [0, 1], never repair truncated JSON. Tests for each.
+     6. Tests: case-variant judge id against the approved set (behavioural, not a guard-text check); one request only on a 400; a non-200 2xx status is not success; expired and access-denied secret states stay unknown/failed; multiple choices (first choice only, or refuse).
+     7. spec-matrix: set FTF-0616 to IMPLEMENTED / L1-PROVEN / PROVISIONAL with proving_test, like the sibling graders, and record the real-judge acceptance clause as BLOCKED_EXTERNAL (packet resource_gate) until a gateway key and approved judge exist (owner action).
+   - **0f. FTF-0517 round 2 (tests + one docstring line).** Work in tests/tasks/test_ftf_0517.py. Claim `relay/FTF-0517-r2`. Verifier findings (each listed fault must go RED):
      FTF-0517 RETURN -> round 2, tests only (db26d03, #591). Production is deterministic and correct; mutation 117/119 killed, 2 timeouts, 0 survived; 60 hand faults, 14 survive (several real). Tests to add in tests/tasks/test_ftf_0517.py:
      1. Pinned golden: for a fixed spec and fixed records (e.g. 200 records keyed conv-i plus tmpl-(i%30)), assert the exact manifest_sha256, the exact counts and a few exact (record_id, role, group_id) triples; also run a subprocess under PYTHONHASHSEED=0 and 777 and compare hashes (kills hash() instead of SHA-256, reversed slot mapping, ratio off-by-one, strategy dropped from the bucket input).
      2. Exact group counts in m.counts (e.g. 30 groups in the template case) - a group count equal to the record count survives today.
@@ -9327,9 +9329,15 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      5. The manifest hash changes when only group_id values change, and when `strategy` changes.
      6. A negative ratio in the validation or dev slot, e.g. (70,-10,20,20), is refused.
      Also (docstring only): state in the module docstring that the caller must call quality_issue_engine.assert_clear_for_split before allocate_splits; the wiring task enforces it.
-   - **0e.** Then the Backlog.
+   - **0g. FTF-1706 round 3 (tests only).** Work in tests/reference/test_ftf_1706.py (and the spec-matrix evidence_hash). Claim `relay/FTF-1706-r3`. Verifier findings (each listed fault must go RED):
+     FTF-1706 RETURN -> round 3, tests only (402102a, #615). All four production fixes are correct (gateway state from FTF-0215, isfinite, org/connection scoping, typed guards); about 40 faults RED. Remaining:
+     1. The attestation cross-org/connection test is vacuous: run() re-wraps every dict-form attestation value in scoped(...), so a single-wrapped cross-org attestation becomes double-wrapped and is refused for the wrong reason. Pass single-wrapped cross-org and cross-connection attestations (e.g. through a non-dict Mapping, or stop run() re-wrapping ScopedEvidence) and assert the scope refusal message itself; same for the "unscoped attestation for an unlisted model" case.
+     2. Mutation survivors (evals/ is now under the gate after the governance PR, so the next PR is gated): on failure, model_count, comparator_count and blocked_count are exactly 0 (Law 17); non-str attestation keys refused; resolved_model, license_id and source_type compared case- and strip-exactly; zero VRAM boundary (<0 vs <=0); freshness exactly at the TTL (> vs >=); organization_id/connection_id uuid guards tested directly.
+     3. Update the FTF-1706 spec-matrix evidence_hash for the round-2 source (Law 15).
+     Optional: a naive or non-datetime `now` raises CandidateDiscoveryError; a future last_successful_check_at is not fresh.
+   - **0h.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
-     (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612 and FTF-0613 are CERTIFIED (2026-10-07/08); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
+     (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613, FTF-1305, FTF-0308, FTF-0602 and FTF-0901 are CERTIFIED (2026-10-07/08); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid
@@ -9540,51 +9548,40 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
     language/group fields that §68.2/§69.2 and FTF-0602 need, so they are added; the live error convention is
     `{"detail": code}`, not §40's envelope; FTF-0501's "resumable UI" clause is not in its file list and stays with
     FTF-0501's own refinement.
-- FTF-1305, FTF-0103-F1 and FTF-0517 are returned work in item 0 above.
-- **FTF-0501-P2 (hardening migration, prerequisite for FTF-0501).** Raw `sovra_app` SQL can move a rejected or expired
-  upload session back to `open`, insert a session directly as `verified`, or forward-date `created_at` (the store never
-  does any of this, but the database should refuse it). Next free migration: extend the 0024 freeze trigger so a status
-  change is allowed only from `open` (open→verified|rejected|expired|aborted), and add a BEFORE INSERT check that
-  `status = 'open'` and `created_at` is within 60 s of `now()`. Tests on real Postgres as sovra_app: reopening a
-  rejected/expired/aborted session fails; inserting as verified fails; a forward-dated created_at fails; the normal
-  store path still works. Faults (trigger dropped, transition check dropped, insert check dropped) → RED. Claim
-  `relay/FTF-0501-P2-r1`.
-- **FTF-0501** Direct object-storage upload, re-queued on top of CERTIFIED FTF-0501-P1 (#581) and FTF-0501-P2 once it is
-  certified. DoD: `tools/r1_handoff.py packet FTF-0501`. Presigned multipart (≤5 min per part URL, §65.2) plus finalize
+- FTF-0616, FTF-0517 and FTF-1706 are returned work in item 0 above. FTF-0501 is claimed (#610).
+- **FTF-0501** Direct object-storage upload, ready now: FTF-0501-P1 (#581) and FTF-0501-P2 (#606) are CERTIFIED. Let
+  the database stamp `created_at` (or keep each request transaction short): the P2 insert guard refuses a session whose
+  created_at is more than 60 s from the database's now(), so app/database clock skew must not reach it. DoD: `tools/r1_handoff.py packet FTF-0501`. Presigned multipart (≤5 min per part URL, §65.2) plus finalize
   verification (size, SHA-256, content type; §8.1, §67.3, §67.5), using storage_semantics_client.py's stdlib SigV4
   (boto3 stays ask-first). FTF-0501 owns the upload/finalize routes and the contracts:05 lock; it implements the frozen
   components in 05-interface.yaml with their handlers and uses the P1 store functions. Real SeaweedFS S3 integration
   as in CI. Negative acceptance: an oversize, partial, wrong-key, wrong-hash or expired upload cannot create an accepted
   Dataset version.
-- **FTF-0308** Model-to-artifact mapping UI, re-queued: prerequisite FTF-0308-P1 is CERTIFIED (#577, #586). DoD:
-  `tools/r1_handoff.py packet FTF-0308`. The UI consumes the frozen GET/POST/changes training-artifact routes in
-  03-interface.yaml only; no new backend. Its negative acceptance ("changing mapping invalidates related qualification")
-  uses `require_current_mapping` / `catalog_version`. A real browser path is required (Law 6/7: reachable from /, or
-  disclosed UNWIRED with the page mount named).
-- **FTF-0602** Evaluation case editor/import, re-queued: prerequisite FTF-0602-P1 is CERTIFIED (#582). DoD:
-  `tools/r1_handoff.py packet FTF-0602`. The UI parses files client-side and calls the frozen /cases routes in
-  06-interface.yaml only; final-suite content stays hidden from ml_engineer. Same Law 6/7 rule as above.
-- **FTF-0103-F1 (security hardening, follow-up to CERTIFIED FTF-0103).** `require_role` in
-  apps/api/app/auth/rbac_middleware.py reads the whole request body (`_read_json_body`) for mutating methods before
-  any route-level cap, so a chunked body with no Content-Length is read without limit. Decision: cap the read in
-  `_read_json_body` at a module constant MAX_JSON_BODY_BYTES = 33554432 (32 MiB, the largest existing route cap),
-  streaming the body and stopping at the cap with 413 `{"detail":"request_too_large"}`; route-level caps that are
-  lower still apply. Tests: a chunked body one byte over the cap → 413 and no route handler runs; exactly the cap →
-  accepted; a Content-Length over the cap → 413 without reading; faults (cap removed, `>` vs `>=`) → RED. No new
-  dependency. Claim `relay/FTF-0103-F1-r1`.
-- **FTF-0616** LLM judge adapter through LiteLLM. DoD: `tools/r1_handoff.py packet FTF-0616`. Through the existing
-  LiteLLM gateway only (reused component; never call a provider directly). §27: a critical safety decision never rests
-  on the judge alone. Unknown or failed judge calls stay visible (Law 17). Apply the GRADER CHECKLIST.
-- **FTF-0901** Security profile enforcement. DoD: `tools/r1_handoff.py packet FTF-0901`.
-- **FTF-1706** Candidate discovery from org LiteLLM. DoD: `tools/r1_handoff.py packet FTF-1706`. Discovery only through
-  the gateway (FTF-0204/0214 paths); never infer trainability from a model name (§2.2).
 - **FTF-1703** Training dataset. DoD: `tools/r1_handoff.py packet FTF-1703`. Law 12 (held-out never used for training).
+- **FTF-1602** Object storage backup. DoD: `tools/r1_handoff.py packet FTF-1602`. Real SeaweedFS S3 as in CI; no new
+  bucket or identity without an access-control test (Law 18); restore must be proven, not only backup.
+- **FTF-R005** Integrate internal MLflow tracking and model-registry projection. DoD: `tools/r1_handoff.py packet
+  FTF-R005`. MLflow is a reused component: integration form exactly as docs/architecture/REFERENCE_REPOSITORIES.md
+  (adapter only, never fork or replace it; a change of form is ask-first).
+- **FTF-0516** Dataset issue resolution UI. DoD: `tools/r1_handoff.py packet FTF-0516`. It needs a frozen resolution API
+  over the certified FTF-0515 engine; if none exists, park it as BLOCKED_DEPENDENCY naming the missing route (the
+  Control plane will slice a prerequisite, as for FTF-0308/0602/0501).
   If any of these needs a schema or route that is not frozen yet, park it as BLOCKED_DEPENDENCY with what is missing.
-  If any of these four needs a schema or route that is not frozen yet, park it as BLOCKED_DEPENDENCY with what is missing.
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
+- **FTF-0516 Dataset issue resolution UI: PARKED (BLOCKED_DEPENDENCY), 2026-10-08T07:40Z, lane B.**
+  - What failed: nothing attempted. The packet's acceptance ("UI resolves record issue via exclusion/correction/new
+    version with before/after evidence and audit") needs a frozen resolution API over the certified FTF-0515 engine.
+    Checked every packages/contracts/openapi/*-interface.yaml: none declares an issue list or resolution route, and no
+    table persists issues or resolutions (FTF-0515 is a pure module, workers/data/group_aware_split_engine.py and
+    quality_issue_engine). A UI would have nothing real to call (Law 11).
+  - Missing: an issue-resolution persistence migration plus routes (list issues for a dataset version; resolve by
+    exclude | correct | new-version with before/after evidence and an audit event) in 05-interface.yaml.
+  - Route options: (1) Control plane slices FTF-0516-P1 (persistence + API) like FTF-0501-P1, then FTF-0516 is re-queued
+    on top; (2) fold the API into FTF-0516 as one oversized item (not recommended, mixes migration and UI);
+    (3) mark BLOCKED_DEPENDENCY in the matrix and defer until FTF-0501 certifies the Dataset version entity.
 - **FTF-04A31 Real private GitHub repository integration test: PARKED (ask-first, secret), 2026-10-07T12:15Z, lane C.**
   - What failed: nothing attempted. The DoD needs a real private repository plus a credential; CI exposes only the
     workflow `github.token` (scoped to this repo) and no provisioned test-repo secret.
