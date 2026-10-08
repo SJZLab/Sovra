@@ -1515,7 +1515,7 @@ def test_criterion_scores_are_returned_in_rubric_order() -> None:
 def test_criterion_scores_must_be_exactly_the_locked_criteria() -> None:
     if _PORT == 0:
         return
-    bad_scores = (
+    bad_scores: tuple[tuple[str, object], ...] = (
         ("a missing criterion", {"no_refund_tool": 1.0}),
         ("an extra criterion", {"no_refund_tool": 1.0, "tone": 0.5, "bonus": 1.0}),
         ("a renamed criterion", {"no_refund_tool": 1.0, "Tone": 0.5}),
@@ -1725,7 +1725,8 @@ def test_unhashable_or_wrongly_typed_verdict_values_are_schema_violations() -> N
             result.state is judge.LlmJudgeState.SCHEMA_VIOLATION,
         )
     # a non-string / non-hashable `model` in the envelope is treated as unresolved, never a crash
-    for model in ([], {}, 7):
+    odd_models: list[object] = [[], {}, 7]
+    for model in odd_models:
         _reset_gateway()
         _GATEWAY.body = json.dumps(
             {
