@@ -81,6 +81,7 @@ from packages.security.url_policy import ConnectionPolicy  # noqa: E402
 
 FAILURES: list[str] = []
 PREFIXES = ("s3://sovra-model-artifacts/",)
+LATER_MS = 10**15  # a retry time that is certainly due
 
 
 def check(criterion_id: str, description: str, condition: bool) -> None:
@@ -249,7 +250,7 @@ def main() -> int:
         except TrackingUnavailableError:
             pass
         server.start()
-        restored = sync_pending(client, outbox)
+        restored = sync_pending(client, outbox, now_ms=LATER_MS)
         check(
             "R005-A2",
             "restored entry is SYNCED",

@@ -34,8 +34,12 @@ from packages.integrations.mlflow.client import (
 
 __all__ = [
     "PROJECTION_FIELDS",
+    "READY",
     "RegistryBinding",
     "RegistryDriftError",
+    "RegistryFailedError",
+    "RegistryPendingError",
+    "inspect_binding",
     "bind_model_version",
     "project_registry_binding",
     "registered_model_name",
@@ -56,12 +60,26 @@ PROJECTION_FIELDS = (
     "run_id",
     "artifact_sha256",
     "approval_authority",
+    "registration_state",
     "drift",
 )
+
+READY = "READY"
+PENDING_REGISTRATION = "PENDING_REGISTRATION"
+FAILED_REGISTRATION = "FAILED_REGISTRATION"
 
 
 class RegistryDriftError(MlflowClientError):
     """The MLflow record disagrees with the Factory envelope."""
+
+
+class RegistryPendingError(MlflowClientError):
+    """The external version is not READY yet (Law 17: pending stays pending;
+    a missing or unknown status is treated the same, never as success)."""
+
+
+class RegistryFailedError(MlflowClientError):
+    """MLflow reports FAILED_REGISTRATION for the external version."""
 
 
 @dataclass(frozen=True)
@@ -129,7 +147,13 @@ def bind_model_version(
         source_uri=source_uri,
         artifact_sha256=artifact_sha256,
     )
-    verify_binding(client, binding, approved_source_prefixes=approved_source_prefixes)
+    try:
+        verify_binding(client, binding, approved_source_prefixes=approved_source_prefixes)
+    except (RegistryPendingError, RegistryFailedError):
+        # The binding handle is still correct (identity and digest verified
+        # before the status check). Registration state is never cached here:
+        # `inspect_binding` reports it, un-clean, on every read.
+        pass
     return binding
 
 
@@ -161,11 +185,41 @@ def verify_binding(
             raise RegistryDriftError(f"registry {label} differs from the Factory envelope")
     if not is_approved_source(record.get("source"), approved_source_prefixes):
         raise RegistryDriftError("registry source is outside the approved artifact prefixes")
+    state = record.get("status")
+    if state == FAILED_REGISTRATION:
+        raise RegistryFailedError("registry version registration failed")
+    if state != READY:
+        raise RegistryPendingError(f"registry version is not READY (status {state!r})")
 
 
-def project_registry_binding(binding: RegistryBinding, *, drift: str | None) -> dict[str, Any]:
+def inspect_binding(
+    client: MlflowClient,
+    binding: RegistryBinding,
+    *,
+    approved_source_prefixes: Sequence[str],
+) -> tuple[str, str | None]:
+    """Non-raising form of `verify_binding` for the read-only route:
+    returns `(registration_state, drift)`. `drift` is None only when the
+    version is READY and matches the Factory envelope; a pending, failed or
+    unknown registration is never reported as clean."""
+    try:
+        verify_binding(client, binding, approved_source_prefixes=approved_source_prefixes)
+    except RegistryDriftError as exc:
+        return "DRIFT", str(exc)
+    except RegistryFailedError as exc:
+        return FAILED_REGISTRATION, str(exc)
+    except RegistryPendingError as exc:
+        return PENDING_REGISTRATION, str(exc)
+    return READY, None
+
+
+def project_registry_binding(
+    binding: RegistryBinding, *, drift: str | None, registration_state: str = READY
+) -> dict[str, Any]:
     """The read-only response body. Fixed field set; carries no tags,
     aliases, stages or approval state from MLflow."""
+    if registration_state != READY and drift is None:
+        raise ValueError("a registration that is not READY must carry a drift/reason string")
     return {
         "model_version_id": str(binding.model_version_id),
         "registry": "mlflow",
@@ -174,5 +228,6 @@ def project_registry_binding(binding: RegistryBinding, *, drift: str | None) -> 
         "run_id": binding.run_id,
         "artifact_sha256": binding.artifact_sha256,
         "approval_authority": "factory",
+        "registration_state": registration_state,
         "drift": drift,
     }
