@@ -481,6 +481,12 @@ def _record_issues(record: BackupRecord) -> list[str]:
     return issues
 
 
+def _blob_issue(body: bytes, digest: str, size: int) -> str | None:
+    if len(body) != size or _digest(body) != digest:
+        return f"{digest}: blob no longer matches its recorded hash"
+    return None
+
+
 def verify_backup(
     target: ObjectStore,
     backup_id: str,
@@ -504,8 +510,9 @@ def verify_backup(
         except S3Error:
             issues.append(f"{digest}: blob is missing")
             continue
-        if len(body) != size or hashlib.sha256(body).hexdigest() != digest:
-            issues.append(f"{digest}: blob no longer matches its recorded hash")
+        mismatch = _blob_issue(body, digest, size)
+        if mismatch is not None:
+            issues.append(mismatch)
         held = target.retention_until(key)
         if held is None or held <= current:
             issues.append(f"{digest}: blob is not under retention")
@@ -526,9 +533,11 @@ def restore_backup(
 ) -> RestoreRecord:
     """Rebuild every backed-up object into a clean `destination` from the backup alone.
 
-    Everything is verified before the first write (nothing is restored from a corrupted,
-    partial or swapped backup), the destination must hold none of the keys, and each
-    restored object is read back and compared on bytes, sha256 and metadata."""
+    The whole backup is verified before the first write (nothing is restored from a
+    corrupted, partial or swapped backup), the destination must hold none of the keys, each
+    blob is re-checked as it is read, and each restored object is read back and compared on
+    bytes, sha256 and metadata. A blob swapped mid-restore aborts it (objects already
+    written stay, visibly; there is no silent success)."""
     record = verify_backup(
         backup,
         backup_id,
@@ -538,22 +547,23 @@ def restore_backup(
         now=now,
     )
     base = f"{prefix}/{organization_id}/{backup_id}"
-    issues: list[str] = []
-    bodies: dict[str, bytes] = {}
-    for digest, size in record.blobs:
-        body = backup.get_latest(f"{base}/blobs/{digest}")
-        if len(body) != size or hashlib.sha256(body).hexdigest() != digest:
-            issues.append(f"{digest}: blob changed between verification and restore")
-        bodies[digest] = body
-    for entry in record.entries:
-        if destination.list_versions(entry.key):
-            issues.append(f"{entry.key}: destination is not clean")
-    if issues:
-        raise BackupIncompleteError(issues)
+    dirty = [
+        f"{entry.key}: destination is not clean"
+        for entry in record.entries
+        if destination.list_versions(entry.key)
+    ]
+    if dirty:
+        raise BackupIncompleteError(dirty)
 
     restored: list[tuple[str, str, str]] = []
     for entry in record.entries:
-        body = bodies[entry.sha256]
+        # Re-read each blob just before its write: a blob swapped after verification is
+        # refused here (blobs are COMPLIANCE-retained, so this is a defence in depth).
+        body = backup.get_latest(f"{base}/blobs/{entry.sha256}")
+        if _blob_issue(body, entry.sha256, entry.size_bytes) is not None:
+            raise ObjectStorageBackupError(
+                f"{entry.key}: backup blob changed between verification and restore"
+            )
         new_version = destination.put_restored(entry.key, body, metadata=dict(entry.metadata))
         if not _is_text(new_version):
             raise ObjectStorageBackupError(f"{entry.key}: destination returned no version id")
@@ -561,9 +571,7 @@ def restore_backup(
         if len(stored) != entry.size_bytes or _digest(stored) != entry.sha256:
             raise ObjectStorageBackupError(f"{entry.key}: restored bytes differ from the backup")
         if destination.version_metadata(entry.key, new_version) != dict(entry.metadata):
-            raise ObjectStorageBackupError(
-                f"{entry.key}: restored metadata differs from the backup"
-            )
+            raise ObjectStorageBackupError(f"{entry.key}: restored metadata differs from backup")
         restored.append((entry.key, entry.version_id, new_version))
     return RestoreRecord(
         backup_id=backup_id,

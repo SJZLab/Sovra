@@ -1167,10 +1167,10 @@ def clone(store: MemStore) -> MemStore:
     return twin
 
 
-def with_record(target: MemStore, change: Any) -> MemStore:
+def with_record(target: MemStore, change: Any, org: str = "o") -> MemStore:
     """A copy of `target` whose stored record JSON was edited by `change(data)`."""
     twin = clone(target)
-    key = "backups/o/b1/backup-record.json"
+    key = f"backups/{org}/b1/backup-record.json"
     data = json.loads(target.get_latest(key))
     change(data)
     twin.add(key, json.dumps(data).encode())
@@ -1633,6 +1633,255 @@ def test_restore_cli() -> None:
     finally:
         for patch in patches:
             patch.stop()
+
+
+# ---------------------------------------------------------------------------
+# Round 2 mutation survivors: exactness of ids, hashes and header names
+# ---------------------------------------------------------------------------
+
+
+def rehash(data: Any) -> None:
+    data["manifest_sha256"] = osb._manifest_sha256(_entries_from(data))
+
+
+def edit_entry(data: Any, **changes: Any) -> None:
+    data["entries"][0].update(changes)
+    rehash(data)
+
+
+def test_empty_manifest_and_org_segment_guards() -> None:
+    source, refs = meta_fixture()
+    check(
+        "FTF-1602-N3",
+        "an empty manifest is refused",
+        refused("at least one blob", run, source, []),
+    )
+    slashed = bad(refs[0], organization_id="o/p", key="tenants/o/p/datasets/x")
+    check(
+        "FTF-1602-N3",
+        "an organization id with a slash is refused by its own guard",
+        refused("organization_id must be a plain path segment", run, source, [slashed]),
+    )
+    _, good, _, _ = backed_up()
+    for org in ("", " o", "o ", "o/p"):
+        check(
+            "FTF-1602-N3",
+            f"verify names the organization id guard for {org!r}",
+            refused(
+                "organization_id must be a plain path segment",
+                verify_backup,
+                good,
+                "b1",
+                organization_id=org,
+            ),
+        )
+
+
+def test_organization_identity_is_compared_exactly() -> None:
+    _, good, _, _ = backed_up()
+    # A record stored under a differently-cased tenant path is another tenant's.
+    cased = clone(good)
+    for key in list(cased.versions):
+        cased.versions[key.replace("backups/o/", "backups/O/")] = cased.versions.pop(key)
+    cased.retention = {k.replace("backups/o/", "backups/O/"): v for k, v in good.retention.items()}
+    check(
+        "FTF-1602-N3",
+        "a record under backups/O/ is not accepted for organization 'O'",
+        refuses_restore(cased, "different organization", organization_id="O"),
+    )
+    for variant in ("o ", "O", " o"):
+        forged = with_record(good, lambda d, v=variant: d.update(organization_id=v))
+        check(
+            "FTF-1602-N3",
+            f"a record claiming organization {variant!r} is not tenant 'o'",
+            refuses_restore(forged, "different organization"),
+        )
+    for variant in ("O", "o ", " o"):
+        wrong_entry = with_record(
+            good,
+            lambda d, v=variant: edit_entry(d, organization_id=v),
+        )
+        check(
+            "FTF-1602-N3",
+            f"a re-hashed entry claiming organization {variant!r} is refused",
+            refuses_restore(wrong_entry, "outside the record's tenant"),
+        )
+
+
+def test_mixed_case_organization_round_trip() -> None:
+    source = MemStore()
+    version = source.add("tenants/Acme/datasets/d", b"acme-data")
+    ref = BlobRef("dataset", "tenants/Acme/datasets/d", version, sha(b"acme-data"), 9, "d", "Acme")
+    target = MemStore()
+    record = run(source, [ref], target, backup_id="b1")
+    destination = MemStore()
+    done = osb.restore_backup(target, destination, "b1", organization_id="Acme", now=NOW)
+    check(
+        "FTF-1602-A3",
+        "a mixed-case organization id backs up, verifies and restores exactly",
+        record.organization_id == "Acme"
+        and done.organization_id == "Acme"
+        and verify_backup(target, "b1", organization_id="Acme", now=NOW) == record
+        and list(destination.versions) == ["tenants/Acme/datasets/d"],
+    )
+    check(
+        "FTF-1602-N3",
+        "a differently-cased organization id cannot reach that tenant's backup",
+        refuses_restore(target, "record is missing", organization_id="acme"),
+    )
+    upper_entry = with_record(target, lambda d: edit_entry(d, organization_id="acme"), org="Acme")
+    check(
+        "FTF-1602-N3",
+        "an entry whose organization only differs in case is refused",
+        refuses_restore(upper_entry, "outside the record's tenant", organization_id="Acme"),
+    )
+
+
+def test_dot_segment_guard_is_exact() -> None:
+    source = MemStore()
+    key = "tenants/o/ ../datasets/spaced"
+    version = source.add(key, b"spaced")
+    ref = BlobRef("dataset", key, version, sha(b"spaced"), 6, "d", "o")
+    target = MemStore()
+    run(source, [ref], target, backup_id="b1")
+    destination = MemStore()
+    done = osb.restore_backup(target, destination, "b1", organization_id="o", now=NOW)
+    check(
+        "FTF-1602-A3",
+        "a key segment that merely contains dots and a space is not a dot segment",
+        done.object_count == 1 and key in destination.versions,
+    )
+
+
+def test_manifest_hash_is_compared_exactly() -> None:
+    _, target, _, record = backed_up()
+    upper = with_record(target, lambda d: d.update(manifest_sha256=d["manifest_sha256"].upper()))
+    err = raises(BackupIncompleteError, verify_backup, upper, "b1", organization_id="o", now=NOW)
+    check(
+        "FTF-1602-N2",
+        "an upper-case manifest hash in the record is not the computed hash",
+        err is not None and "manifest_sha256 disagrees" in str(err),
+    )
+    err = raises(
+        BackupIncompleteError,
+        verify_backup,
+        upper,
+        "b1",
+        organization_id="o",
+        expected_manifest_sha256=record.manifest_sha256,
+        now=NOW,
+    )
+    check(
+        "FTF-1602-N2",
+        "an upper-case record hash also differs from the caller's expected hash",
+        err is not None and "expected manifest" in str(err),
+    )
+    err = raises(
+        BackupIncompleteError,
+        verify_backup,
+        target,
+        "b1",
+        organization_id="o",
+        expected_manifest_sha256=record.manifest_sha256.upper(),
+        now=NOW,
+    )
+    check(
+        "FTF-1602-N2",
+        "an upper-case expected hash is not the record's lower-case hash",
+        err is not None and "expected manifest" in str(err),
+    )
+
+
+def test_blob_digest_is_compared_exactly() -> None:
+    _, target, _, record = backed_up()
+    upper_digest = record.blobs[0][0].upper()
+    old_key = f"backups/o/b1/blobs/{record.blobs[0][0]}"
+
+    def to_upper(data: Any) -> None:
+        low = record.blobs[0][0]
+        data["blobs"] = [[d.upper() if d == low else d, n] for d, n in data["blobs"]]
+        for entry in data["entries"]:
+            if entry["sha256"] == low:
+                entry["sha256"] = low.upper()
+        rehash(data)
+
+    forged = with_record(target, to_upper)
+    forged.versions[f"backups/o/b1/blobs/{upper_digest}"] = list(forged.versions[old_key])
+    forged.retention[f"backups/o/b1/blobs/{upper_digest}"] = forged.retention[old_key]
+    err = raises(BackupIncompleteError, verify_backup, forged, "b1", organization_id="o", now=NOW)
+    check(
+        "FTF-1602-N2",
+        "a blob recorded under an upper-case digest does not match its lower-case hash",
+        err is not None and "no longer matches" in str(err),
+    )
+
+
+def test_restore_rechecks_each_blob_as_it_is_read() -> None:
+    _, target, _, record = backed_up()
+    blob_key = f"backups/o/b1/blobs/{record.blobs[0][0]}"
+    size = record.blobs[0][1]
+
+    class SwapAfterVerify(MemStore):
+        def __init__(self, replacement: bytes) -> None:
+            super().__init__()
+            self.replacement = replacement
+            self.reads = 0
+
+        def get_latest(self, key: str) -> bytes:
+            body = super().get_latest(key)
+            if key == blob_key:
+                self.reads += 1
+                if self.reads >= 2:  # the first read is verify_backup's
+                    return self.replacement
+            return body
+
+    for label, replacement in (("same-size", b"z" * size), ("shorter", b"z")):
+        swapping = SwapAfterVerify(replacement)
+        swapping.versions = {k: list(v) for k, v in target.versions.items()}
+        swapping.retention = dict(target.retention)
+        destination = MemStore()
+        exc = raises(ObjectStorageBackupError, restore, swapping, destination)
+        check(
+            "FTF-1602-N2",
+            f"a {label} blob swapped between verification and restore aborts the restore",
+            exc is not None
+            and "changed between verification and restore" in str(exc)
+            and swapping.reads >= 2,
+        )
+
+
+def test_restore_record_names_its_backup() -> None:
+    _, target, _, _ = backed_up()
+    done = restore(target)
+    check(
+        "FTF-1602-A3",
+        "the restore record names the backup it restored",
+        done.backup_id == "b1" and json.loads(done.to_json())["backup_id"] == "b1",
+    )
+
+
+def test_s3_header_names_are_exact() -> None:
+    stub = StubS3Client()
+    store = S3ObjectStore(stub, "bkt")
+    stub.headers = {
+        "Content-Type": "text/evil",
+        "X-Amz-Meta-Owner": "x",
+        " content-type": "text/evil",
+        "content-type": "application/jsonl",
+    }
+    check(
+        "FTF-1602-N2",
+        "only exact lower-case header names are captured as metadata",
+        store.version_metadata("k", "1") == {"content-type": "application/jsonl"},
+    )
+    for name in ("Content-Type", "X-Amz-Meta-Owner", " content-type"):
+        stub.calls.clear()
+        exc = raises(ObjectStorageBackupError, store.put_restored, "k", b"x", metadata={name: "v"})
+        check(
+            "FTF-1602-N2",
+            f"put_restored refuses the non-canonical header name {name!r}",
+            exc is not None and ("put", "k") not in stub.calls,
+        )
 
 
 def main() -> int:
