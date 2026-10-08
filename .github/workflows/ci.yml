@@ -456,6 +456,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0501_p1.py
       - name: FTF-0501-P2 negative-test proof (upload-session hardening migration 0025 -- trigger shape, offline upgrade/downgrade SQL, shape-fault table, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0501_p2.py
+      - name: FTF-0501 negative-test proof (direct object-storage upload -- SigV4 presign vector + tamper, part plan, content sniffing, finalize verification against an in-process S3, real routes over the real store on SQLite, contract, mounted app, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0501.py
       - name: FTF-0103A negative-test proof (live session principal + Membership -- every /api/v1 route wired to the real resolver/role lookup, fail-closed resolver, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0103a.py
       - name: FTF-1807 negative-test proof (LiteLLM outage runbook -- doc/code fidelity, no DB required)
@@ -1170,6 +1172,27 @@ jobs:
         run: pip install pyyaml --quiet
       - name: Prove the real versioned S3/MinIO source evidence against the live S3 fixture
         run: python3 tests/integration/test_ftf_0500b_s3_minio_versioned_source.py
+
+  direct-upload-s3-integration:
+    # FTF-0501: presigned multipart upload and finalize verification against
+    # the live SeaweedFS S3-API container: a presigned PUT is accepted, every
+    # tampered variant is refused by the real server, and a wrong hash / wrong
+    # type / oversize / extra / partial / wrong-key upload never becomes a
+    # verified object. Same real container pattern as
+    # s3-minio-versioned-source-integration (this repo's interactive dev
+    # sandbox has no container-registry egress; see that job's comment).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' direct-upload-s3-integration ')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install gate deps
+        run: pip install pyyaml --quiet
+      - name: Prove the real direct-upload evidence against the live S3 fixture
+        run: python3 tests/integration/test_ftf_0501_direct_upload_s3.py
 
   oidc-provider-integration:
     # FTF-0101 acceptance clause 1 ("Real OIDC provider login/refresh/logout
@@ -2880,6 +2903,7 @@ jobs:
       - postgres-backup-integration
       - storage-semantics-integration
       - s3-minio-versioned-source-integration
+      - direct-upload-s3-integration
       - oidc-provider-integration
       - license-acceptance-workflow-integration
       - tool-schema-crud-integration
