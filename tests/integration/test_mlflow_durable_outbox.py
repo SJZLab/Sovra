@@ -615,12 +615,12 @@ def main() -> int:
             "/runs/set-tag",
             {"run_id": pre.mlflow_run_id, "key": "factory.hash.manifest_sha256", "value": "9" * 64},
         )
-        sweep = sync_pending(client, env_a.outbox, now_ms=now_ms())
+        drift_sweep = sync_pending(client, env_a.outbox, now_ms=now_ms())
         row = outbox_row(owner_url, a_id, job10)
         check(
             "R2-D7",
             "drift fails the real row with run drift",
-            [e.state for e in sweep] == [SyncState.FAILED]
+            [e.state for e in drift_sweep] == [SyncState.FAILED]
             and row["status"] == "failed"
             and str(row["last_error"]).startswith("run drift:"),
         )
