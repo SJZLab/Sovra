@@ -10610,3 +10610,11 @@ clean (product_truth 45/45, validate_spec --strict, data_exposure OK). No produc
 - **SLICE FTF-0501-UI:** the "resumable UI" clause becomes a Backlog child slice on the FTF-0501 routes. FTF-0501 is
   certified only when round 2 and FTF-0501-UI both pass.
 - Pending: FTF-0616 (#636) verification still running.
+
+## 2026-10-08T17:00Z — RETURNED: FTF-0616 (r5)
+- **FTF-0616: RETURNED** (round 4 → 5; small production fix plus tests; #636, a9c2f3eef132). Independent verifier:
+  CI on head 87b7f17 green (ci-verdict success); gates clean; whole-file mutation 302/302. Round-3 items 1, 2 and 4
+  fixed; item 3 fixed for every gateway echo shape. Reproduced: an approved set holding None with no echo gives
+  PASSED/VERIFIED (P-18); an echo of another approved but uncalibrated judge gives PASSED/VERIFIED (P-17), against the
+  negative acceptance "an uncalibrated result cannot certify". Control-plane ruling: P-17 is blocking and overrides the
+  round-3 acceptance of any approved model. Open #637 is superseded; its None clause is ported into round 5.
