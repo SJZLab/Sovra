@@ -1847,6 +1847,103 @@ def test_resolved_model_outside_the_approved_set_is_a_mismatch_never_a_verdict()
     )
 
 
+def test_reviewer_identity_comparison_is_casefold_and_strip() -> None:
+    for label, reviewers in (
+        ("sharp-s vs ss (casefold, not lower)", ("Straße", "STRASSE")),
+        ("trailing space on the first", ("alice ", "alice")),
+        ("trailing space on the second", ("alice", "alice ")),
+        ("leading space on the second", ("alice", " alice")),
+        ("leading space on the first", (" alice", "alice")),
+    ):
+        try:
+            _calibration(reviewer_ids=reviewers)
+            check("C1", f"reviewers {label} are one identity and are refused", False)
+        except judge.LlmJudgeGraderError:
+            pass
+    _calibration(reviewer_ids=("alice", "alicia"))  # genuinely distinct: accepted
+
+
+def test_calibration_triple_comparison_is_exact_not_normalised() -> None:
+    # a rubric / judge id that differs from the record only by case or padding
+    for rid in ("Refund-Safety-V1", " refund-safety-v1", "refund-safety-v1 "):
+        rubric = judge.JudgeRubric(rubric_id=rid, version=3, instructions="x", criteria=_CRITERIA)
+        check(
+            "C1",
+            f"a record for 'refund-safety-v1' is not calibration for rubric id {rid!r}",
+            not _calibration().is_calibrated_for(rubric, "judge-model-v1"),
+        )
+    for jid in ("Judge-Model-V1", " judge-model-v1", "judge-model-v1 "):
+        check(
+            "C1",
+            f"a record for 'judge-model-v1' is not calibration for judge {jid!r}",
+            not _calibration().is_calibrated_for(_RUBRIC, jid),
+        )
+    check(
+        "C1",
+        "the exact triple is calibrated",
+        _calibration().is_calibrated_for(_RUBRIC, "judge-model-v1"),
+    )
+    if _PORT == 0:
+        return
+    _refused_before_network(
+        "C1",
+        "a case-variant rubric id against an approved, otherwise good record",
+        judge.LlmJudgeNotAuthorizedError,
+        rubric=judge.JudgeRubric(
+            rubric_id="Refund-Safety-V1", version=3, instructions="x", criteria=_CRITERIA
+        ),
+    )
+    _refused_before_network(
+        "C1",
+        "a case-variant judge id approved by name but calibrated under another casing",
+        judge.LlmJudgeNotAuthorizedError,
+        judge_model_id="Judge-Model-V1",
+        approved_judge_model_ids=frozenset({"Judge-Model-V1"}),
+    )
+
+
+def test_duplicate_key_detection_is_exact_not_normalised() -> None:
+    # "verdict" and "Verdict" are different keys: not a duplicate (NOT_JSON) but an
+    # unknown property (SCHEMA_VIOLATION).
+    for extra in ("Verdict", " verdict", "verdict "):
+        doc = json.loads(_GOOD_CONTENT)
+        text = json.dumps(doc)[:-1] + ", " + json.dumps(extra) + ': "fail"}'
+        try:
+            parsed = judge._strict_json_loads(text)
+            check("J1", f"keys 'verdict' and {extra!r} are distinct", extra in parsed)
+        except ValueError:
+            check("J1", f"keys 'verdict' and {extra!r} are not duplicates", False)
+        if _PORT != 0:
+            result = _grade_with_content(text)
+            check(
+                "J1",
+                f"an extra key {extra!r} is SCHEMA_VIOLATION, not NOT_JSON",
+                result.state is judge.LlmJudgeState.SCHEMA_VIOLATION,
+            )
+
+
+def test_candidate_model_equality_is_exact_and_mismatch_detail_is_pinned() -> None:
+    if _PORT == 0:
+        return
+    approved = frozenset({"judge-model-v1", "CANDIDATE-MODEL-V1"})
+    _reset_gateway()
+    _GATEWAY.body = _success_body(_verdict_json(), model="CANDIDATE-MODEL-V1")
+    result = _grade(_PORT, approved_judge_model_ids=approved)
+    check(
+        "R1",
+        "an approved model that differs from the candidate only by case is not 'the candidate'",
+        result.passed is True and result.resolved_model == "CANDIDATE-MODEL-V1",
+    )
+    _reset_gateway()
+    _GATEWAY.body = _success_body(_verdict_json(), model="some-other-model")
+    result = _grade(_PORT)
+    check(
+        "R1",
+        "the mismatch detail names the approved-set violation",
+        result.detail == "gateway resolved the request to a model outside the approved judge set",
+    )
+
+
 # -- PRE-SUBMIT SELF-ATTACK: each guard above must be load-bearing -------------------
 
 
