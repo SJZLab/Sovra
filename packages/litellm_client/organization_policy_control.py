@@ -109,7 +109,20 @@ def validate_approver_identity(value: object) -> str:
     return value
 
 
-def _validated_set(values: frozenset[str], *, validator: object) -> frozenset[str]:
+def _validated_set(values: object, *, validator: object) -> frozenset[str]:
+    # Type check before iteration: a bare `str` is itself iterable (its own
+    # characters), and `None`/an `int` would raise a bare `TypeError` rather
+    # than this module's own typed error. Mirrors the same
+    # isinstance-before-membership discipline `security_profile_enforcement.
+    # RouteAuthorization.__post_init__` already established for its own
+    # `surfaces: frozenset[str]` field (FTF-0402, this task's own cited
+    # precedent) -- confirmed by reading that module before writing this
+    # fix, not assumed.
+    if not isinstance(values, frozenset | set):
+        raise InvalidNamespaceError(
+            "expected a set or frozenset of identifiers, got "
+            f"{type(values).__name__}: {values!r}"
+        )
     return frozenset(validator(value) for value in values)  # type: ignore[operator]
 
 
@@ -132,6 +145,16 @@ class OrganizationGatewayPolicy:
     route_change_requires_approval: bool = True
 
     def __post_init__(self) -> None:
+        # Exact type, never truthiness: `None`/`0`/`[]` are all falsy and
+        # would otherwise silently switch approval off (`not None` is
+        # `True`, the opposite of what a missing/malformed flag should mean
+        # for a fail-closed approval gate).
+        if type(self.route_change_requires_approval) is not bool:
+            raise InvalidNamespaceError(
+                "route_change_requires_approval must be a bool, got "
+                f"{type(self.route_change_requires_approval).__name__}: "
+                f"{self.route_change_requires_approval!r}"
+            )
         object.__setattr__(
             self,
             "allowed_registration_namespaces",
@@ -252,7 +275,26 @@ def enforce_route_change_authority(
     organization's own real `approvers` set, never merely against the
     project's own (already-narrower-or-equal, per
     `enforce_project_gateway_permission_request`) grant, since a project
-    cannot be trusted to enumerate its own valid approvers."""
+    cannot be trusted to enumerate its own valid approvers.
+
+    `actor` and `target_deployment_namespace` are each re-validated here,
+    defensively, even though a grant's and an `OrganizationGatewayPolicy`'s
+    own members are already validated at construction: this function is the
+    one real enforcement point every future live route must call, so it
+    must never trust a caller-supplied value's shape, and never silently
+    tolerate a case/whitespace variant of an already-granted or
+    already-approved identifier as if it were the same value (exact-string
+    match only -- Section 38's own namespace/approver identifiers are never
+    case- or whitespace-insensitive).
+
+    (3) `target_deployment_namespace` is also checked against the
+    organization's own CURRENT `allowed_deployment_namespaces`, not only
+    against `grant`: a grant issued before the organization narrowed its own
+    policy must never still authorize a route change into a namespace the
+    organization no longer allows at all -- this task's own
+    negative_acceptance applies to the organization's policy at the moment
+    of the route change, not only at the moment the grant was issued."""
+    validate_approver_identity(actor)
     validate_namespace(target_deployment_namespace)
     if target_deployment_namespace not in grant.deployment_namespaces:
         raise RouteChangeNotAuthorizedError(
@@ -260,6 +302,13 @@ def enforce_route_change_authority(
             "project's own grant includes -- a route change may never target a "
             "namespace outside what this project was actually granted, "
             "regardless of organization approval policy"
+        )
+    if target_deployment_namespace not in org_policy.allowed_deployment_namespaces:
+        raise RouteChangeNotAuthorizedError(
+            f"{target_deployment_namespace!r} is not in this organization's own "
+            "CURRENT allowed_deployment_namespaces -- a grant issued before the "
+            "organization narrowed its policy can never still authorize a route "
+            "change the organization no longer allows"
         )
     if not org_policy.route_change_requires_approval:
         return

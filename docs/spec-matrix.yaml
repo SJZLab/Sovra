@@ -10162,8 +10162,8 @@ FTF-1206:
   evidence_hash: ''
   implementation_state: IMPLEMENTED
   notes: >-
-    kind=retained_feature; requirements=CAP-02; scenarios=Q21, Q22; deps=FTF-0402, FTF-1201 (both
-    CERTIFIED, confirmed before relying on them). This task's own `database_changes` clause ("No
+    kind=retained_feature; requirements=CAP-02; scenarios=Q21, Q22; deps=FTF-0402, FTF-1201, FTF-1206A
+    (all CERTIFIED, confirmed before relying on them). This task's own `database_changes` clause ("No
     independent schema change... any required change is a separately claimed migration
     prerequisite") and empty `shared_lock_required` (it does not hold the phase-12 contract lock
     FTF-1201 owns) mean it adds no live route, table or column -- the same disclosed-gap posture
@@ -10239,6 +10239,74 @@ FTF-1206:
     task's own `certification_state` stays `PROVISIONAL` and this entry stays NOT CERTIFIED on the
     persistence half until Control plane resolves that scope question; the route-change-against-
     grant half above is ready for re-review on its own.
+
+    2026-10-08 round-3 fix-and-resubmit (QUEUE 0h, re-reviewed after FTF-1206A): the persistence
+    half above is now closed by FTF-1206A (CERTIFIED 2026-10-06), which added the real forward
+    migration `apps/api/alembic/versions/0020_org_gateway_policies.py` (`organization_gateway_
+    policies`, one row per organization, UNIQUE (organization_id), ENABLE+FORCE RLS; and the
+    append-only `organization_gateway_route_changes`) -- FTF-1206 now depends on FTF-1206A for that
+    half rather than carrying it as an open gap. Not re-wired by this round: no live caller yet
+    composes get-policy -> enforce_project_gateway_permission_request/enforce_route_change_
+    authority -> record-route-change into one real request path, so this module stays honestly
+    disclosed UNWIRED (Law 6/7); `proving_symbol` stays blank.
+
+    This round fixes the L2 verifier's three remaining findings on the route-change-authority half
+    (verifier run at 89f1aeb; module from PR #412):
+    1. Killed the 4 surviving mutants from `scripts/mutation_gate.py --files packages/litellm_client/
+    organization_policy_control.py --test "python3 tests/tasks/test_ftf_1206.py"` (36 mutants, 32
+    killed / 4 survived pre-fix -- reproduced directly before any fix): (a) `ProjectGatewayPermission
+    Request.__post_init__`'s own construction-time validation had no test of its own (an `insert
+    return None first` mutant survived -- added `test_project_gateway_permission_request_validates_
+    every_member`, symmetric to the existing `OrganizationGatewayPolicy` test); (b) `enforce_route_
+    change_authority`'s own `validate_namespace(target_deployment_namespace)` call being dropped
+    (replaced by `pass`) survived -- added a defense-in-depth test that tampers a grant/policy
+    directly (via `object.__setattr__`, bypassing construction-time validation) so only the
+    function's own re-validation can catch a malformed value; (c)/(d) a `.strip().lower()`
+    normalization-bypass mutant on `target_deployment_namespace` and on `actor` each survived --
+    added exact-case mismatch tests (`"FACTORY-PRODUCTION"` vs `"factory-production"`) for both.
+    Re-run post-fix: 47 mutants (11 new, from the round's own added checks), 47/47 KILLED, 0
+    survived, score 100.0%.
+    2. Fail-closed on malformed inputs (today: TypeError, or a silent wrong result, never this
+    module's own typed error): `_validated_set` now rejects any `values` that is not a `frozenset`
+    or `set` before iterating (previously a bare `str` like `"jane"` was iterated into its own
+    characters -- `{j,a,n,e}` -- and `None`/an `int` raised a bare `TypeError`); `enforce_route_
+    change_authority` now calls `validate_approver_identity(actor)` before any membership check (an
+    unhashable `actor`, e.g. a `list`/`dict`, previously raised `TypeError` from `in
+    org_policy.approvers`); `OrganizationGatewayPolicy.__post_init__` now requires `type(self.route_
+    change_requires_approval) is bool` (previously `None`/`0` were falsy and silently disabled
+    approval via `not None is True`). Same-class sweep of this module's own package
+    (`packages/litellm_client/`): `_validated_set` is the only generator-over-a-caller-supplied-
+    container site in the package; checked the cited sibling precedent
+    `packages/security/security_profile_enforcement.py`'s `RouteAuthorization.__post_init__`
+    (`surfaces: frozenset[str]`) directly -- it already guards `isinstance(self.surfaces, frozenset)`
+    before iterating and its own `_member` helper already type-checks before a membership test, so
+    no fix was needed there; this module's own two dataclasses were the only gap.
+    3. negative_acceptance, now also checked against the organization's CURRENT policy:
+    `enforce_route_change_authority` now additionally refuses when `target_deployment_namespace` is
+    not in `org_policy.allowed_deployment_namespaces` (previously only `grant.deployment_namespaces`
+    was consulted), so a grant issued before the organization narrowed its own policy can never
+    still authorize a route change the organization no longer allows at all. New test
+    `test_route_change_authority_rechecks_current_organization_policy`.
+    Fault -> RED table (every listed fault reproduced against the pre-fix module before any
+    production change, via `git stash`/`git stash pop` on the module alone with the new tests
+    already in place): `_validated_set(None, ...)` -> unhandled `TypeError: 'NoneType' object is not
+    iterable` (not this module's own error) -- RED, now typed `InvalidNamespaceError`; bare-str
+    namespace set -> accepted as per-character membership -- RED, now refused; unhashable actor ->
+    unhandled `TypeError` from frozenset membership -- RED, now typed; non-bool `route_change_
+    requires_approval=None` -> silently accepted, approval disabled -- RED, now refused; case-
+    mismatched target/actor -> silently authorized -- RED (both directions: grant-exact/policy-
+    mismatch and policy-exact/grant-mismatch), now refused; narrowed-policy/stale-grant -> silently
+    authorized -- RED, now refused; malformed target/actor already present (tampered) in grant/
+    policy sets -> silently authorized (validate_namespace/validate_approver_identity's own call
+    site dropped) -- RED, now refused.
+    `tests/tasks/test_ftf_1206.py`: 19 -> 46 checks. `uv run ruff check`/`mypy .` clean; `uv run
+    python3 scripts/validate_spec.py --strict` clean; `uv run python3 scripts/product_truth_check.py
+    --fail-on-unwired` unchanged 45/45; `uv run python3 scripts/status.py` unchanged 134/302; `uv run
+    python3 scripts/data_exposure_check.py --backends postgres_rls,s3_identity --fail-on-exposure`
+    OK (no datastore touched by this module). Regression swept `test_ftf_1206a.py` (new persistence
+    dependency) and `test_ftf_0402.py` (existing dependency) via `uv run python3` -- both pass
+    unmodified, zero regressions. Not self-certified (Law 4) -- `certification_state` stays
+    `PROVISIONAL`, `proof_state` stays `L1-PROVEN`.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1206.py
