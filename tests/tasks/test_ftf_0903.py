@@ -545,7 +545,7 @@ def test_error_messages_never_echo_caller_text() -> None:
         msg is not None and len(msg) < 300 and "ffff" not in msg,
     )
     _ReprKey.called = False
-    bad_key_fields: dict[object, object] = dict(_WF)
+    bad_key_fields: dict[object, object] = {k: v for k, v in _WF.items()}
     bad_key_fields[_ReprKey()] = "x"
     msg = _message_of(emit_event, "workflow", bad_key_fields)
     check(
