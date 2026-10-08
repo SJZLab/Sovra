@@ -488,19 +488,22 @@ test.each([
   ["mapping without changed flag", mappingBody(1, ART_READY)],
   ["non-boolean changed", { ...mappingBody(1, ART_READY), changed: "false" }],
   ["array body", []],
-])("a malformed 200 reply to the write (%s) is an error, never 'No change' or mapped", async (_n, body) => {
-  renderUI();
-  await loadMapping(mappingBody(0, null));
-  await loadArtifacts();
-  fireEvent.click(screen.getByTestId(`artifact-select-button-${ART_READY}`));
-  enqueue("POST", MAP_URL, ok(body));
-  fireEvent.click(screen.getByTestId("map-button"));
-  await waitFor(() => expect(screen.getByTestId("write-error")).toBeTruthy());
-  expect(screen.getByTestId("write-error").textContent).toBe("malformed mapping response");
-  expect(screen.queryByTestId("mapping-notice")).toBeNull();
-  expect(screen.getByTestId("mapping-state-label").textContent).toContain("Not mapped");
-  expect(screen.getByTestId("mapping-catalog-version").textContent).toContain("0");
-});
+])(
+  "a malformed 200 reply to the write (%s) is an error, never 'No change' or mapped",
+  async (_n, body) => {
+    renderUI();
+    await loadMapping(mappingBody(0, null));
+    await loadArtifacts();
+    fireEvent.click(screen.getByTestId(`artifact-select-button-${ART_READY}`));
+    enqueue("POST", MAP_URL, ok(body));
+    fireEvent.click(screen.getByTestId("map-button"));
+    await waitFor(() => expect(screen.getByTestId("write-error")).toBeTruthy());
+    expect(screen.getByTestId("write-error").textContent).toBe("malformed mapping response");
+    expect(screen.queryByTestId("mapping-notice")).toBeNull();
+    expect(screen.getByTestId("mapping-state-label").textContent).toContain("Not mapped");
+    expect(screen.getByTestId("mapping-catalog-version").textContent).toContain("0");
+  },
+);
 
 test("the GET mapping request sends credentials", async () => {
   renderUI();
