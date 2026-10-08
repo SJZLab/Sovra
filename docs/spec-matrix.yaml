@@ -11261,15 +11261,30 @@ FTF-1601:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1601.py
 FTF-1602:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Object storage backup
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-32; scenarios=Q29, Q30; deps=FTF-0004, FTF-1002, FTF-1601
-  proof_state: UNPROVEN
+  evidence_hash: b18c456289f75b189ebed4995f6071cc7f3f8a06
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-32; scenarios=Q29, Q30; deps=FTF-0004, FTF-1002, FTF-1601
+    (all CERTIFIED). Path: `scripts/object_storage_backup.py` (stdlib; reuses the FTF-R017 SigV4
+    S3Client). `create_backup` takes dataset/model/result blob refs exactly as manifests record them
+    (key, version id, sha256, size, shard n of m, encryption key reference), refuses with
+    BackupIncompleteError before writing anything on a missing shard, a stale version (not the key's
+    current one, deleted, or never existing), a lost encryption key reference, or a hash/size
+    mismatch; otherwise writes content-addressed blobs and a record to a target bucket, reads each
+    back, and requires COMPLIANCE retention to be read back too. `verify_backup` re-hashes blobs
+    and re-reads retention. Real SeaweedFS evidence: tests/integration/test_ftf_1602_object_storage_backup.py
+    (CI job object-storage-backup-integration: versioned source, object-lock target, retained blob
+    delete refused, stale/deleted/missing-shard/lost-key refusals leave the target empty, a replaced
+    blob is caught). No-DB unit/fault suite tests/tasks/test_ftf_1602.py; mutation gate 191/191
+    killed. The frozen 16-domain contract is FTF-1601's and was not extended (no contract lock held).
+    Restore automation is FTF-1603. Pure library/CLI: no live caller, proving_symbol stays blank.
+    Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_1602.py
 FTF-1603:
   certification_state: NONE
   criticality: MUST
