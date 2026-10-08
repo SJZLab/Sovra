@@ -78,6 +78,7 @@ def check(criterion_id: str, description: str, condition: bool) -> None:
 _SECRET_MOUNT = "secret"
 _SECRET_PATH = "litellm/judge-org"
 _SECRET_FIELD = "api_key"
+_EXPIRED_SECRET_PATH = "litellm/judge-expired"
 _SECRET_VALUE = "sk-real-judge-key-0616"
 _SECRET_TOKEN = "test-vault-token"
 
@@ -99,7 +100,20 @@ class _SecretBackendHandler(BaseHTTPRequestHandler):
         if token != _SECRET_TOKEN:
             self._json(403, {"errors": ["permission denied"]})
             return
-        if self.path == f"/v1/{_SECRET_MOUNT}/data/{_SECRET_PATH}":
+        if self.path == f"/v1/{_SECRET_MOUNT}/data/{_EXPIRED_SECRET_PATH}":
+            self._json(
+                200,
+                {
+                    "data": {
+                        "data": {_SECRET_FIELD: _SECRET_VALUE},
+                        "metadata": {
+                            "version": 1,
+                            "custom_metadata": {"expires_at": "2020-01-01T00:00:00Z"},
+                        },
+                    }
+                },
+            )
+        elif self.path == f"/v1/{_SECRET_MOUNT}/data/{_SECRET_PATH}":
             self._json(
                 200,
                 {"data": {"data": {_SECRET_FIELD: _SECRET_VALUE}, "metadata": {"version": 1}}},
@@ -1314,6 +1328,521 @@ def test_invalid_credential_is_not_fabricated() -> None:
         "N1",
         "a secret that resolves to no live data is SECRET_NOT_FOUND, never fabricated",
         result.state is judge.LlmJudgeState.SECRET_NOT_FOUND and result.passed is None,
+    )
+
+
+# -- Round 2: behavioural tests (each fault in the submission's table turns one RED) --
+
+
+def _content_body(content: str, *, model: str | None = "judge-model-v1") -> bytes:
+    """A gateway envelope whose `message.content` is exactly `content` (raw text,
+    so malformed / non-standard JSON can be sent byte-for-byte)."""
+    envelope: dict[str, object] = {
+        "id": "chatcmpl-real",
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": content}}],
+        "usage": {"prompt_tokens": 40, "completion_tokens": 20, "total_tokens": 60},
+    }
+    if model is not None:
+        envelope["model"] = model
+    return json.dumps(envelope).encode("utf-8")
+
+
+_GOOD_CONTENT = json.dumps(_verdict_json())
+
+
+def _grade_with_content(content: str, **overrides: object):
+    _reset_gateway()
+    _GATEWAY.body = _content_body(content)
+    return _grade(_PORT, **overrides)
+
+
+def test_judge_model_id_must_match_the_approved_set_exactly() -> None:
+    if _PORT == 0:
+        return
+    for variant in (
+        "Judge-Model-V1",
+        "JUDGE-MODEL-V1",
+        " judge-model-v1",
+        "judge-model-v1 ",
+        "judge-model-v",
+    ):
+        _reset_gateway()
+        try:
+            _grade(
+                _PORT,
+                judge_model_id=variant,
+                calibration=_calibration(judge_model_id=variant),
+            )
+            check("S1", f"judge id {variant!r} against approved 'judge-model-v1' is refused", False)
+        except judge.LlmJudgeNotAuthorizedError:
+            pass
+        check("S1", f"no request was sent for judge id {variant!r}", _GATEWAY.request_count == 0)
+    # the approved set may hold several ids; the exact one still works
+    _reset_gateway()
+    result = _grade(_PORT, approved_judge_model_ids=frozenset({"a", "judge-model-v1", "z"}))
+    check("S1", "an exact member of a larger approved set is accepted", result.passed is True)
+
+
+def test_a_400_is_sent_exactly_once_and_never_retried() -> None:
+    if _PORT == 0:
+        return
+    _reset_gateway()
+    _GATEWAY.status = 400
+    _GATEWAY.body = json.dumps(
+        {"error": {"type": "invalid_request_error", "param": "response_format"}}
+    ).encode()
+    result = _grade(_PORT)
+    check(
+        "N1",
+        "a 400 gives UNSUPPORTED_PARAMETER",
+        result.state is judge.LlmJudgeState.UNSUPPORTED_PARAMETER and result.passed is None,
+    )
+    check(
+        "N1",
+        "exactly one request reached the gateway (no retry, no fallback)",
+        _GATEWAY.request_count == 1,
+    )
+
+
+def test_a_2xx_other_than_200_is_never_a_verdict() -> None:
+    if _PORT == 0:
+        return
+    for status in (201, 202, 203, 206):
+        _reset_gateway()
+        _GATEWAY.status = status  # the body is a perfectly valid pass verdict
+        result = _grade(_PORT)
+        check(
+            "N1",
+            f"a valid pass verdict body behind HTTP {status} is not a verdict",
+            result.state is judge.LlmJudgeState.UNREACHABLE
+            and result.passed is None
+            and str(status) in result.detail
+            and result.reasoning is None
+            and result.criterion_scores is None,
+        )
+    _reset_gateway()
+    _GATEWAY.status = 204
+    _GATEWAY.body = b""
+    result = _grade(_PORT)
+    check("N1", "HTTP 204 is not a verdict", result.passed is None)
+    check("N1", "each status was requested exactly once", _GATEWAY.request_count == 1)
+
+
+def test_expired_and_denied_and_unusable_secrets_never_reach_the_gateway() -> None:
+    if _PORT == 0:
+        return
+    cases = (
+        (
+            "an expired secret",
+            {"secret_ref": f"openbao://{_SECRET_MOUNT}/{_EXPIRED_SECRET_PATH}/{_SECRET_FIELD}"},
+            judge.LlmJudgeState.SECRET_EXPIRED,
+        ),
+        (
+            "a token the secret backend denies",
+            {"secret_config": OpenBaoConfig(address=_SECRET_CONFIG.address, token="wrong-token")},
+            judge.LlmJudgeState.SECRET_ACCESS_DENIED,
+        ),
+        (
+            "a secret backend that cannot be reached",
+            {"secret_config": OpenBaoConfig(address="http://127.0.0.1:1", token=_SECRET_TOKEN)},
+            judge.LlmJudgeState.SECRET_BACKEND_ERROR,
+        ),
+        (
+            "a malformed secret reference",
+            {"secret_ref": "openbao://nofield"},
+            judge.LlmJudgeState.SECRET_BACKEND_UNSUPPORTED,
+        ),
+    )
+    for label, overrides, expected in cases:
+        _reset_gateway()
+        result = _grade(_PORT, **overrides)
+        check(
+            "E1",
+            f"{label} is {expected.value}, never a verdict",
+            result.state is expected and result.passed is None and result.reasoning is None,
+        )
+        check("E1", f"{label}: the gateway was never contacted", _GATEWAY.request_count == 0)
+
+
+def test_more_than_one_choice_is_refused_never_first_choice_wins() -> None:
+    if _PORT == 0:
+        return
+    for first, second in (("pass", "fail"), ("fail", "pass"), ("pass", "pass")):
+        _reset_gateway()
+        _GATEWAY.body = json.dumps(
+            {
+                "model": "judge-model-v1",
+                "choices": [
+                    {
+                        "index": i,
+                        "message": {"role": "assistant", "content": json.dumps(_verdict_json(v))},
+                    }
+                    for i, v in enumerate((first, second))
+                ],
+            }
+        ).encode()
+        result = _grade(_PORT)
+        check(
+            "N1",
+            f"two choices ({first}, {second}) are MALFORMED_RESPONSE, not a verdict",
+            result.state is judge.LlmJudgeState.MALFORMED_RESPONSE and result.passed is None,
+        )
+
+
+def test_criterion_scores_are_returned_in_rubric_order() -> None:
+    if _PORT == 0:
+        return
+    swapped = json.dumps(_verdict_json(criterion_scores={"tone": 0.25, "no_refund_tool": 0.75}))
+    result = _grade_with_content(swapped)
+    check(
+        "Q1",
+        "scores are reported per criterion, in the locked rubric's order",
+        result.criterion_scores == (("no_refund_tool", 0.75), ("tone", 0.25)),
+    )
+    sent = json.loads(_GATEWAY.last_request_body)
+    schema = sent["response_format"]["json_schema"]["schema"]["properties"]["criterion_scores"]
+    check(
+        "Q1",
+        "the request's schema requires exactly the rubric's criterion ids",
+        schema["required"] == list(_CRITERIA)
+        and sorted(schema["properties"]) == sorted(_CRITERIA)
+        and schema["additionalProperties"] is False,
+    )
+    system = sent["messages"][0]["content"]
+    check("Q1", "the system message names every criterion", all(c in system for c in _CRITERIA))
+
+
+def test_criterion_scores_must_be_exactly_the_locked_criteria() -> None:
+    if _PORT == 0:
+        return
+    bad_scores = (
+        ("a missing criterion", {"no_refund_tool": 1.0}),
+        ("an extra criterion", {"no_refund_tool": 1.0, "tone": 0.5, "bonus": 1.0}),
+        ("a renamed criterion", {"no_refund_tool": 1.0, "Tone": 0.5}),
+        ("an empty object", {}),
+        ("a list", [1.0, 0.5]),
+        ("null", None),
+        ("a string score", {"no_refund_tool": "1.0", "tone": 0.5}),
+        ("a boolean score", {"no_refund_tool": True, "tone": 0.5}),
+        ("a score above 1", {"no_refund_tool": 1.0001, "tone": 0.5}),
+        ("a score below 0", {"no_refund_tool": 1.0, "tone": -0.0001}),
+    )
+    for label, scores in bad_scores:
+        result = _grade_with_content(json.dumps(_verdict_json(criterion_scores=scores)))
+        check(
+            "Q1",
+            f"{label} is SCHEMA_VIOLATION, never a verdict",
+            result.state is judge.LlmJudgeState.SCHEMA_VIOLATION
+            and result.passed is None
+            and result.criterion_scores is None,
+        )
+    absent = {k: v for k, v in _verdict_json().items() if k != "criterion_scores"}
+    result = _grade_with_content(json.dumps(absent))
+    check(
+        "Q1",
+        "absent criterion_scores is SCHEMA_VIOLATION",
+        result.state is judge.LlmJudgeState.SCHEMA_VIOLATION,
+    )
+    edge = json.dumps(_verdict_json(criterion_scores={"no_refund_tool": 0, "tone": 1}))
+    result = _grade_with_content(edge)
+    check(
+        "Q1",
+        "scores of exactly 0 and 1 are accepted (inclusive bounds)",
+        result.passed is True
+        and result.criterion_scores == (("no_refund_tool", 0.0), ("tone", 1.0)),
+    )
+
+
+def test_confidence_must_lie_in_the_unit_interval() -> None:
+    if _PORT == 0:
+        return
+    for bad in (1.0001, -0.0001, 2, -1, 100):
+        result = _grade_with_content(json.dumps(_verdict_json(confidence=bad)))
+        check(
+            "J1",
+            f"confidence {bad} is SCHEMA_VIOLATION",
+            result.state is judge.LlmJudgeState.SCHEMA_VIOLATION and result.passed is None,
+        )
+    for good in (0, 1, 0.0, 1.0, 0.5):
+        result = _grade_with_content(json.dumps(_verdict_json(confidence=good)))
+        check(
+            "J1",
+            f"confidence {good} is accepted",
+            result.passed is True and result.confidence == float(good),
+        )
+
+
+def test_non_strict_json_content_is_never_a_verdict() -> None:
+    if _PORT == 0:
+        return
+    scores = '"criterion_scores":{"no_refund_tool":1.0,"tone":0.5}'
+    cases = (
+        (
+            "a duplicate verdict key (last-wins would pass)",
+            '{"verdict":"fail","verdict":"pass","reasoning":"ok","confidence":0.9,' + scores + "}",
+        ),
+        (
+            "a duplicate verdict key (first-wins would pass)",
+            '{"verdict":"pass","verdict":"fail","reasoning":"ok","confidence":0.9,' + scores + "}",
+        ),
+        (
+            "a duplicate key inside criterion_scores",
+            '{"verdict":"pass","reasoning":"ok","confidence":0.9,"criterion_scores":{"no_refund_tool":0.0,"no_refund_tool":1.0,"tone":0.5}}',
+        ),
+        ("NaN confidence", '{"verdict":"pass","reasoning":"ok","confidence":NaN,' + scores + "}"),
+        (
+            "Infinity confidence",
+            '{"verdict":"pass","reasoning":"ok","confidence":Infinity,' + scores + "}",
+        ),
+        (
+            "-Infinity confidence",
+            '{"verdict":"pass","reasoning":"ok","confidence":-Infinity,' + scores + "}",
+        ),
+        (
+            "a number that overflows to infinity",
+            '{"verdict":"pass","reasoning":"ok","confidence":1e999,' + scores + "}",
+        ),
+        (
+            "NaN as a criterion score",
+            '{"verdict":"pass","reasoning":"ok","confidence":0.9,"criterion_scores":{"no_refund_tool":NaN,"tone":0.5}}',
+        ),
+        (
+            "truncated JSON that is one brace short",
+            '{"verdict":"pass","reasoning":"ok","confidence":0.9,' + scores,
+        ),
+        (
+            "truncated JSON mid-object",
+            '{"verdict":"pass","reasoning":"ok","confidence":0.9,"criterion_scores":{"no_refund_tool":1.0,',
+        ),
+        ("trailing garbage after a valid object", _GOOD_CONTENT + " pass"),
+        ("a pathologically nested document", "[" * 200000),
+    )
+    for label, content in cases:
+        result = _grade_with_content(content)
+        check(
+            "J1",
+            f"{label} is NOT_JSON, never a verdict",
+            result.state is judge.LlmJudgeState.NOT_JSON
+            and result.passed is None
+            and result.reasoning is None
+            and result.confidence is None,
+        )
+    result = _grade_with_content(_GOOD_CONTENT)
+    check("J1", "the identical well-formed content is a verdict", result.passed is True)
+
+
+def test_strict_loader_unit_behaviour() -> None:
+    for label, text in (
+        ("duplicate keys", '{"a":1,"a":2}'),
+        ("NaN", "NaN"),
+        ("Infinity", "Infinity"),
+        ("-Infinity", "-Infinity"),
+        ("1e999", "1e999"),
+        ("-1e999", "-1e999"),
+        ("truncated", '{"a":'),
+        ("deep nesting", "[" * 200000 + "]" * 200000),
+    ):
+        try:
+            judge._strict_json_loads(text)
+            check("J1", f"strict loader refuses {label}", False)
+        except ValueError:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            check(
+                "J1",
+                f"strict loader refuses {label} with ValueError, not {type(exc).__name__}",
+                False,
+            )
+    check(
+        "J1",
+        "strict loader still parses ordinary JSON",
+        judge._strict_json_loads('{"a":[1,2.5,{"b":null}]}') == {"a": [1, 2.5, {"b": None}]},
+    )
+    check("J1", "strict loader accepts bytes", judge._strict_json_loads(b'{"a":1}') == {"a": 1})
+
+
+def test_malformed_gateway_envelopes_are_not_verdicts() -> None:
+    if _PORT == 0:
+        return
+    cases = (
+        (
+            "a duplicate choices key",
+            '{"model":"judge-model-v1","choices":[],"choices":[{"index":0,"message":{"role":"assistant","content":'
+            + json.dumps(_GOOD_CONTENT)
+            + "}}]}",
+        ),
+        (
+            "NaN in usage",
+            '{"model":"judge-model-v1","usage":{"prompt_tokens":NaN},"choices":[{"index":0,"message":{"role":"assistant","content":'
+            + json.dumps(_GOOD_CONTENT)
+            + "}}]}",
+        ),
+        ("a nested-too-deep body", "[" * 200000),
+    )
+    for label, raw in cases:
+        _reset_gateway()
+        _GATEWAY.body = raw.encode()
+        result = _grade(_PORT)
+        check(
+            "J1",
+            f"{label} is MALFORMED_RESPONSE",
+            result.state is judge.LlmJudgeState.MALFORMED_RESPONSE and result.passed is None,
+        )
+    _reset_gateway()
+    _GATEWAY.status = 400
+    _GATEWAY.body = ("[" * 200000).encode()
+    result = _grade(_PORT)
+    check(
+        "J1",
+        "a pathologically nested 400 body is MALFORMED_RESPONSE, not a crash",
+        result.state is judge.LlmJudgeState.MALFORMED_RESPONSE,
+    )
+
+
+def test_unhashable_or_wrongly_typed_verdict_values_are_schema_violations() -> None:
+    if _PORT == 0:
+        return
+    for bad in ([], {}, [1], {"a": 1}, 1, 0, None, True, "PASS", "pass ", ""):
+        result = _grade_with_content(json.dumps(_verdict_json(bad)))
+        check(
+            "N1",
+            f"verdict {bad!r} is SCHEMA_VIOLATION (no TypeError, no verdict)",
+            result.state is judge.LlmJudgeState.SCHEMA_VIOLATION and result.passed is None,
+        )
+    for field in ("reasoning",):
+        for bad in ([], {}, 1, None):
+            result = _grade_with_content(json.dumps(_verdict_json(**{field: bad})))
+            check(
+                "N1",
+                f"{field} {bad!r} is SCHEMA_VIOLATION",
+                result.state is judge.LlmJudgeState.SCHEMA_VIOLATION,
+            )
+    for content in ("[]", "null", "1", '"pass"', "true"):
+        result = _grade_with_content(content)
+        check(
+            "N1",
+            f"content {content} is SCHEMA_VIOLATION",
+            result.state is judge.LlmJudgeState.SCHEMA_VIOLATION,
+        )
+    # a non-string / non-hashable `model` in the envelope is treated as unresolved, never a crash
+    for model in ([], {}, 7):
+        _reset_gateway()
+        _GATEWAY.body = json.dumps(
+            {
+                "model": model,
+                "choices": [
+                    {"index": 0, "message": {"role": "assistant", "content": _GOOD_CONTENT}}
+                ],
+            }
+        ).encode()
+        result = _grade(_PORT)
+        check(
+            "N1",
+            f"envelope model {model!r} is UNVERIFIED identity, no crash",
+            result.route_identity_state is judge.RouteIdentityState.UNVERIFIED
+            and result.resolved_model is None,
+        )
+
+
+def test_result_records_rubric_version_requested_and_resolved_model() -> None:
+    if _PORT == 0:
+        return
+    _reset_gateway()
+    result = _grade(_PORT)
+    check(
+        "R1",
+        "a verdict records the locked rubric id/version, requested and resolved judge model",
+        result.rubric_id == "refund-safety-v1"
+        and result.rubric_version == 3
+        and result.requested_judge_model_id == "judge-model-v1"
+        and result.resolved_model == "judge-model-v1",
+    )
+    # the same identity fields are recorded on every non-verdict outcome
+    for label, status, body, secret_overrides in (
+        ("a 500", 500, b"", {}),
+        ("a 401", 401, b"{}", {}),
+        ("a 400", 400, b'{"error":{"param":"response_format"}}', {}),
+        (
+            "an expired secret",
+            200,
+            None,
+            {"secret_ref": f"openbao://{_SECRET_MOUNT}/{_EXPIRED_SECRET_PATH}/{_SECRET_FIELD}"},
+        ),
+    ):
+        _reset_gateway()
+        _GATEWAY.status = status
+        if body is not None:
+            _GATEWAY.body = body
+        result = _grade(_PORT, **secret_overrides)
+        check(
+            "R1",
+            f"{label} still records rubric id/version and the requested model",
+            result.passed is None
+            and result.rubric_id == "refund-safety-v1"
+            and result.rubric_version == 3
+            and result.requested_judge_model_id == "judge-model-v1",
+        )
+
+
+def test_resolved_model_outside_the_approved_set_is_a_mismatch_never_a_verdict() -> None:
+    if _PORT == 0:
+        return
+    for label, resolved in (
+        ("an unapproved model", "some-other-model"),
+        ("a case-variant of the approved model", "Judge-Model-V1"),
+        ("the approved model plus a suffix", "judge-model-v1-silently-switched"),
+    ):
+        _reset_gateway()
+        _GATEWAY.body = _success_body(_verdict_json(), model=resolved)
+        result = _grade(_PORT)
+        check(
+            "R1",
+            f"a gateway that resolved to {label} is MODEL_MISMATCH, not PASSED",
+            result.state is judge.LlmJudgeState.MODEL_MISMATCH
+            and result.passed is None
+            and result.resolved_model == resolved
+            and result.requested_judge_model_id == "judge-model-v1"
+            and result.reasoning is None
+            and result.criterion_scores is None,
+        )
+        _reset_gateway()
+        _GATEWAY.body = _success_body(_verdict_json("fail"), model=resolved)
+        result = _grade(_PORT)
+        check(
+            "R1",
+            f"a FAIL verdict from {label} is MODEL_MISMATCH too",
+            result.state is judge.LlmJudgeState.MODEL_MISMATCH,
+        )
+    # the mismatch is reported even when the content is garbage
+    _reset_gateway()
+    _GATEWAY.body = _content_body("not json", model="some-other-model")
+    check(
+        "R1",
+        "a mismatch wins over unparseable content",
+        _grade(_PORT).state is judge.LlmJudgeState.MODEL_MISMATCH,
+    )
+    # the candidate itself answering is a mismatch even if (mis)configured as approved
+    _reset_gateway()
+    _GATEWAY.body = _success_body(_verdict_json(), model="candidate-model-v1")
+    result = _grade(
+        _PORT,
+        approved_judge_model_ids=frozenset({"judge-model-v1", "candidate-model-v1"}),
+    )
+    check(
+        "R1",
+        "a gateway that resolved to the candidate model is MODEL_MISMATCH even if approved",
+        result.state is judge.LlmJudgeState.MODEL_MISMATCH,
+    )
+    # another model in the approved set is recorded, not hidden
+    _reset_gateway()
+    _GATEWAY.body = _success_body(_verdict_json(), model="judge-model-v2")
+    result = _grade(_PORT, approved_judge_model_ids=frozenset({"judge-model-v1", "judge-model-v2"}))
+    check(
+        "R1",
+        "a different model from the approved set is a verdict with both ids recorded",
+        result.passed is True
+        and result.resolved_model == "judge-model-v2"
+        and result.requested_judge_model_id == "judge-model-v1",
     )
 
 
