@@ -1878,17 +1878,137 @@ def test_resolved_model_outside_the_approved_set_is_a_mismatch_never_a_verdict()
         "a gateway that resolved to the candidate model is MODEL_MISMATCH even if approved",
         result.state is judge.LlmJudgeState.MODEL_MISMATCH,
     )
-    # another model in the approved set is recorded, not hidden
+    # P-17 (round 5): an approved model with no calibration for this rubric is not the judge
+    for verdict in ("pass", "fail"):
+        _reset_gateway()
+        _GATEWAY.body = _success_body(_verdict_json(verdict), model="judge-model-v2")
+        result = _grade(
+            _PORT, approved_judge_model_ids=frozenset({"judge-model-v1", "judge-model-v2"})
+        )
+        check(
+            "R5-2",
+            f"an approved but uncalibrated echoed model ({verdict}) is MODEL_MISMATCH, not a verdict",
+            result.state is judge.LlmJudgeState.MODEL_MISMATCH
+            and result.passed is None
+            and result.resolved_model == "judge-model-v2"
+            and result.route_identity_state is judge.RouteIdentityState.UNVERIFIED,
+        )
+    # an alias the CalibrationRecord itself names is the calibrated judge
+    _reset_gateway()
+    _GATEWAY.body = _success_body(_verdict_json(), model="judge-model-v1-2026-01")
+    result = _grade(
+        _PORT,
+        approved_judge_model_ids=frozenset({"judge-model-v1", "judge-model-v1-2026-01"}),
+        calibration=_calibration(judge_model_aliases=("judge-model-v1-2026-01",)),
+    )
+    check(
+        "R5-2",
+        "an echo the calibration names as an alias is a verdict with both ids recorded",
+        result.passed is True
+        and result.resolved_model == "judge-model-v1-2026-01"
+        and result.requested_judge_model_id == "judge-model-v1"
+        and result.route_identity_state is judge.RouteIdentityState.VERIFIED,
+    )
+    # an alias must still be approved
+    _reset_gateway()
+    _GATEWAY.body = _success_body(_verdict_json(), model="judge-model-v1-2026-01")
+    result = _grade(
+        _PORT, calibration=_calibration(judge_model_aliases=("judge-model-v1-2026-01",))
+    )
+    check(
+        "R5-2",
+        "a calibration alias outside the approved set is still MODEL_MISMATCH",
+        result.state is judge.LlmJudgeState.MODEL_MISMATCH,
+    )
+    # an alias of a different rubric's calibration is irrelevant: only this record counts
     _reset_gateway()
     _GATEWAY.body = _success_body(_verdict_json(), model="judge-model-v2")
-    result = _grade(_PORT, approved_judge_model_ids=frozenset({"judge-model-v1", "judge-model-v2"}))
-    check(
-        "R1",
-        "a different model from the approved set is a verdict with both ids recorded",
-        result.passed is True
-        and result.resolved_model == "judge-model-v2"
-        and result.requested_judge_model_id == "judge-model-v1",
+    result = _grade(
+        _PORT,
+        approved_judge_model_ids=frozenset({"judge-model-v1", "judge-model-v2"}),
+        calibration=_calibration(judge_model_aliases=("judge-model-v3",)),
     )
+    check(
+        "R5-2",
+        "an alias list that does not name the echo does not authorise it",
+        result.state is judge.LlmJudgeState.MODEL_MISMATCH,
+    )
+
+
+def test_approved_set_members_must_be_non_empty_strings_before_any_call() -> None:
+    for label, member in (
+        ("None", None),
+        ("an int", 7),
+        ("an empty string", ""),
+        ("a bytes id", b"judge-model-v1"),
+        ("a str subclass", type("S", (str,), {})("judge-model-v2")),
+    ):
+        _reset_gateway()
+        before = _SECRET_REQUESTS[0]
+        try:
+            _grade(_PORT, approved_judge_model_ids=frozenset({"judge-model-v1", member}))
+            check("R5-1", f"an approved set holding {label} is refused", False)
+        except judge.LlmJudgeGraderError as exc:
+            check(
+                "R5-1",
+                f"an approved set holding {label} is refused with the base grader error",
+                type(exc) is judge.LlmJudgeGraderError,
+            )
+        check(
+            "R5-1",
+            f"no network or secret call for an approved set holding {label}",
+            _GATEWAY.request_count == 0 and _SECRET_REQUESTS[0] == before,
+        )
+
+
+def test_missing_model_echo_is_mismatch_even_if_the_approved_set_is_poisoned() -> None:
+    # Negative test on the real default code: the approved set is valid (strings only), the
+    # echo is absent, so only the explicit `resolved_model is None` clause can refuse it.
+    if _PORT == 0:
+        return
+    _reset_gateway()
+    _GATEWAY.body = json.dumps(
+        {
+            "id": "x",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": json.dumps(_verdict_json())},
+                }
+            ],
+        }
+    ).encode()
+    result = _grade(_PORT, approved_judge_model_ids=frozenset({"judge-model-v1"}))
+    check(
+        "R5-1",
+        "an absent model echo is MODEL_MISMATCH with no verdict and UNVERIFIED route",
+        result.state is judge.LlmJudgeState.MODEL_MISMATCH
+        and result.passed is None
+        and result.resolved_model is None
+        and result.route_identity_state is judge.RouteIdentityState.UNVERIFIED,
+    )
+    check(
+        "R5-1",
+        "an absent echo has its own refusal detail, not the approved-set one",
+        result.detail
+        == "gateway response carried no model echo; the route identity is unverifiable",
+    )
+
+
+def test_calibration_aliases_are_validated() -> None:
+    for label, value in (
+        ("a list", ["a"]),
+        ("a None member", (None,)),
+        ("an empty member", ("",)),
+        ("an int member", (7,)),
+        ("a str subclass", (type("S", (str,), {})("a"),)),
+    ):
+        try:
+            _calibration(judge_model_aliases=value)
+            check("R5-2", f"aliases holding {label} are refused", False)
+        except judge.LlmJudgeGraderError:
+            check("R5-2", f"aliases holding {label} are refused", True)
+    check("R5-2", "no aliases is the default", _calibration().judge_model_aliases == ())
 
 
 def test_reviewer_identity_comparison_is_casefold_and_strip() -> None:
@@ -1973,7 +2093,11 @@ def test_candidate_model_equality_is_exact_and_mismatch_detail_is_pinned() -> No
     approved = frozenset({"judge-model-v1", "CANDIDATE-MODEL-V1"})
     _reset_gateway()
     _GATEWAY.body = _success_body(_verdict_json(), model="CANDIDATE-MODEL-V1")
-    result = _grade(_PORT, approved_judge_model_ids=approved)
+    result = _grade(
+        _PORT,
+        approved_judge_model_ids=approved,
+        calibration=_calibration(judge_model_aliases=("CANDIDATE-MODEL-V1",)),
+    )
     check(
         "R1",
         "an approved model that differs from the candidate only by case is not 'the candidate'",
@@ -1986,6 +2110,7 @@ def test_candidate_model_equality_is_exact_and_mismatch_detail_is_pinned() -> No
         _PORT,
         candidate_model_id="CANDIDATE-Model-V1",
         approved_judge_model_ids=frozenset({"judge-model-v1", "candidate-model-v1"}),
+        calibration=_calibration(judge_model_aliases=("candidate-model-v1",)),
     )
     check(
         "R1",
