@@ -1163,6 +1163,29 @@ def test_v5_wrong_hash_wrong_size_and_lying_head() -> None:
         )
 
 
+def test_v5b_size_is_checked_before_reading_and_outages_are_described() -> None:
+    with FakeS3() as fake:
+        body = _jsonl(3000)
+        target = _target(body, size=2999)
+        fake.objects[target.object_key] = {"body": body, "content_type": "application/jsonl"}
+        got = _outcome(fake, target)
+        check(
+            f"{CID}-V5",
+            "a HEAD size mismatch rejects without reading the object",
+            isinstance(got, dos.UploadRejection) and not fake.called("get"),
+        )
+    with FakeS3() as fake:
+        fake.fail.add("list_uploads")
+        got = _outcome(fake, _target(_jsonl(3000)))
+        check(
+            f"{CID}-V9",
+            "the outage error names the operation and the storage status",
+            isinstance(got, dos.UploadStorageUnavailableError)
+            and "list_multipart_uploads" in str(got)
+            and "500" in str(got),
+        )
+
+
 def test_v6_content_type_is_checked_against_the_bytes() -> None:
     cases = [
         ("text/csv", _jsonl(3000), "content_type_mismatch"),
