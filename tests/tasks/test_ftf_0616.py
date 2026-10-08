@@ -272,6 +272,12 @@ class _JudgeGatewayHandler(BaseHTTPRequestHandler):
         if self.path != "/v1/chat/completions":
             self._respond(404, b"")
             return
+        if _GATEWAY.status in (401, 403):
+            # The gateway itself can reject even a genuinely valid
+            # credential (e.g. a revoked key) -- distinct from this
+            # handler's own "wrong bearer token" check below.
+            self._respond(_GATEWAY.status, _GATEWAY.body)
+            return
         auth = self.headers.get("Authorization", "")
         if auth != f"Bearer {_SECRET_VALUE}":
             self._respond(401, b'{"error":{"type":"invalid_request_error","message":"no key"}}')
@@ -544,6 +550,15 @@ def test_is_calibrated_boundary_is_exactly_one_golden_case_each_side() -> None:
     )
 
 
+def test_judge_rubric_version_boundary_is_exactly_one() -> None:
+    rubric = judge.JudgeRubric(rubric_id="r", version=1, instructions="x")
+    check(
+        "V1",
+        "version exactly 1 is accepted (the boundary, not rejected off-by-one)",
+        rubric.version == 1,
+    )
+
+
 # -- Schema validator unit checks (no network) ---------------------------------------
 
 
@@ -622,6 +637,54 @@ def test_schema_validator_never_coerces() -> None:
                 "properties": {"a": {"type": "string"}},
                 "additionalProperties": False,
             },
+        ),
+    )
+    check(
+        "V1",
+        "schema_type matching is exact for 'string' too (a whitespace/case variant never matches)",
+        judge._validate_against_schema(123, {"type": " String "}),
+    )
+    check(
+        "V1",
+        "schema_type matching is exact for 'object' too (a whitespace/case variant never matches)",
+        judge._validate_against_schema([1, 2], {"type": " Object "}),
+    )
+    check(
+        "V1",
+        "the properties block only ever runs for a real 'object' schema_type -- a dict instance under a "
+        "differently-typed (or untyped) schema is never silently checked against required/properties",
+        judge._validate_against_schema({"a": 1}, {"properties": {}, "required": ["b"]}),
+    )
+    check(
+        "V1",
+        "required-key matching is exact: a differently-cased required key is genuinely absent, not satisfied "
+        "by a same-letters-different-case key that happens to be present",
+        not judge._validate_against_schema(
+            {"a": "x"},
+            {"type": "object", "required": ["A"], "properties": {"a": {"type": "string"}}},
+        ),
+    )
+    check(
+        "V1",
+        "additionalProperties matching is exact: an extra key that only matches a known property after "
+        "lower-casing is still rejected as unknown",
+        not judge._validate_against_schema(
+            {"a": "x", "A": "y"},
+            {
+                "type": "object",
+                "required": ["a"],
+                "properties": {"a": {"type": "string"}},
+                "additionalProperties": False,
+            },
+        ),
+    )
+    check(
+        "V1",
+        "nested sub-schema dispatch keys off the schema's own property name exactly, never a normalized "
+        "variant of it -- a property name with surrounding whitespace is never treated as the plain key "
+        "actually present on the instance",
+        judge._validate_against_schema(
+            {"a": "x"}, {"type": "object", "properties": {" A ": {"type": "string"}}}
         ),
     )
 
@@ -819,6 +882,16 @@ def test_secret_resolution_failure_states() -> None:
         "a non-string secret_ref fails closed as unsupported, not a crash",
         key is None and state is judge.LlmJudgeState.SECRET_BACKEND_UNSUPPORTED,
     )
+    # With *both* the ref and the backend config missing, the ref-shape
+    # check must win (run first) -- otherwise this would report
+    # SECRET_BACKEND_ERROR instead, hiding the real problem (an
+    # unsupported ref) behind a less specific one.
+    key, state, _ = judge._resolve_inference_key(None, secret_config=None, now=now)  # type: ignore[arg-type]
+    check(
+        "E1",
+        "a non-string secret_ref is reported even when secret_config is also missing (checked first)",
+        key is None and state is judge.LlmJudgeState.SECRET_BACKEND_UNSUPPORTED,
+    )
 
 
 # -- Real round trip over HTTPS (skipped and disclosed if no local CA tooling) -------
@@ -942,6 +1015,27 @@ def test_route_identity_is_unverified_when_the_gateway_echoes_no_model() -> None
         "the verdict itself is unaffected by a missing model echo",
         result.state is judge.LlmJudgeState.PASSED,
     )
+
+
+def test_a_credential_the_gateway_itself_rejects_is_not_fabricated() -> None:
+    """Distinct from `test_invalid_credential_is_not_fabricated` (a secret
+    reference this adapter can't even resolve): here the secret resolves
+    fine, but the gateway's own real response for this exact request is
+    401/403 -- e.g. a credential it has since revoked."""
+    if _PORT == 0:
+        return
+    for status in (401, 403):
+        _reset_gateway()
+        _GATEWAY.status = status
+        _GATEWAY.body = b'{"error":{"type":"invalid_request_error","message":"revoked"}}'
+        result = _grade(_PORT)
+        check(
+            f"N1 ({status})",
+            "a 401/403 from the real gateway is INVALID_TOKEN, never fabricated",
+            result.state is judge.LlmJudgeState.INVALID_TOKEN
+            and result.passed is None
+            and result.detail == "gateway rejected the inference credential",
+        )
 
 
 def test_unexpected_status_code_is_not_fabricated() -> None:
