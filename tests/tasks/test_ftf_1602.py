@@ -857,6 +857,8 @@ class StubS3Client:
         self.retention: dict[str, dict[str, str]] = {}
         self.calls: list[tuple[str, str]] = []
         self.failing: dict[str, int] = {}
+        self.headers: dict[str, str] = {}
+        self.put_headers: dict[str, str] = {}
 
     def list_object_versions(self, bucket: str, *, prefix: str = "") -> list[dict]:
         return [
@@ -867,10 +869,13 @@ class StubS3Client:
 
     def get_object(self, bucket: str, key: str, *, version_id: str | None = None):
         self.calls.append(("get", version_id or ""))
-        return b"body", {}
+        return b"body", dict(self.headers)
 
-    def put_object(self, bucket: str, key: str, body: bytes) -> dict[str, str]:
+    def put_object(
+        self, bucket: str, key: str, body: bytes, *, retention_headers: Any = None
+    ) -> dict[str, str]:
         self.calls.append(("put", key))
+        self.put_headers = dict(retention_headers or {})
         return {"version_id": "vv"}
 
     def put_object_retention(
@@ -893,7 +898,7 @@ def test_s3_adapter_shape() -> None:
         {"Key": "a", "VersionId": "3", "IsLatest": "false", "IsDeleteMarker": True},
         "junk",
     ]
-    store = S3ObjectStore(stub, "bkt")  # type: ignore[arg-type]
+    store = S3ObjectStore(stub, "bkt")
     versions = store.list_versions("a")
     check(
         "FTF-1602-A1",
@@ -1131,6 +1136,503 @@ def test_cli_guards() -> None:
         finally:
             os.environ.update(saved)
         check("FTF-1602-N1", "the CLI fails closed without storage credentials", code == 1)
+
+
+# ---------------------------------------------------------------------------
+# Round 2: restore proof, tenant scoping, verify re-checks
+# ---------------------------------------------------------------------------
+
+META = {"content-type": "application/jsonl", "x-amz-meta-owner": "team-a"}
+
+
+def meta_fixture() -> tuple[MemStore, list[BlobRef]]:
+    source, refs = fixture()
+    for ref in refs:
+        source.metadata[(ref.key, ref.version_id)] = dict(META)
+    return source, refs
+
+
+def backed_up(**kw: object) -> tuple[MemStore, MemStore, list[BlobRef], Any]:
+    source, refs = meta_fixture()
+    target = MemStore()
+    record = run(source, refs, target, backup_id="b1", **kw)
+    return source, target, refs, record
+
+
+def clone(store: MemStore) -> MemStore:
+    twin = MemStore()
+    twin.versions = {k: list(v) for k, v in store.versions.items()}
+    twin.retention = dict(store.retention)
+    twin.metadata = {k: dict(v) for k, v in store.metadata.items()}
+    return twin
+
+
+def with_record(target: MemStore, change: Any) -> MemStore:
+    """A copy of `target` whose stored record JSON was edited by `change(data)`."""
+    twin = clone(target)
+    key = "backups/o/b1/backup-record.json"
+    data = json.loads(target.get_latest(key))
+    change(data)
+    twin.add(key, json.dumps(data).encode())
+    return twin
+
+
+def restore(target: MemStore, destination: MemStore | None = None, **kw: object) -> Any:
+    destination = destination if destination is not None else MemStore()
+    args: dict[str, object] = {"organization_id": "o", "now": NOW}
+    args.update(kw)
+    return osb.restore_backup(target, destination, "b1", **args)  # type: ignore[arg-type]
+
+
+def refuses_restore(target: MemStore, message: str, **kw: object) -> bool:
+    destination = MemStore()
+    exc = raises(ObjectStorageBackupError, restore, target, destination, **kw)
+    return exc is not None and message in str(exc) and nothing_written(destination)
+
+
+def test_restore_round_trip_is_proven() -> None:
+    source, target, refs, record = backed_up()
+    check(
+        "FTF-1602-A3",
+        "the record carries every manifest entry with its metadata",
+        len(record.entries) == 4
+        and all(dict(e.metadata) == META for e in record.entries)
+        and {(e.key, e.version_id) for e in record.entries} == {(r.key, r.version_id) for r in refs}
+        and {e.artifact_id for e in record.entries} == {"d1", "m1", "r1"}
+        and sorted((e.shard_index, e.shard_count) for e in record.entries if e.kind == "model")
+        == [(0, 2), (1, 2)],
+    )
+    destination = MemStore()
+    destination._n = 100  # restored version ids must be the destination's own
+    restored = restore(target, destination)
+    check(
+        "FTF-1602-A3",
+        "restore maps every backed-up key/version to a new restored version",
+        restored.object_count == 4
+        and {(k, v) for k, v, _ in restored.restored} == {(r.key, r.version_id) for r in refs}
+        and all(new and new != old for _, old, new in restored.restored),
+    )
+    for ref, (key, _, new) in zip(
+        sorted(refs, key=lambda r: (r.key, r.version_id)), restored.restored, strict=True
+    ):
+        body = destination.get_version(key, new)
+        check(
+            "FTF-1602-A3",
+            f"{key}: restored bytes equal the manifest size and sha256",
+            key == ref.key and len(body) == ref.size_bytes and sha(body) == ref.sha256,
+        )
+        check(
+            "FTF-1602-A3",
+            f"{key}: restored object metadata equals the source's",
+            destination.version_metadata(key, new) == META,
+        )
+    check(
+        "FTF-1602-A3",
+        "the restore record binds the backup's manifest hash and total bytes",
+        restored.manifest_sha256 == record.manifest_sha256
+        and restored.total_bytes == sum(r.size_bytes for r in refs)
+        and restored.organization_id == "o",
+    )
+    check(
+        "FTF-1602-A3",
+        "restore needs only the backup bucket (the source is not consulted)",
+        restore(clone(target)).object_count == 4,
+    )
+
+
+def test_restore_refuses_bad_backups_and_writes_nothing() -> None:
+    _, target, _, record = backed_up()
+    digest = record.blobs[0][0]
+    key = f"backups/o/b1/blobs/{digest}"
+    size = record.blobs[0][1]
+
+    swapped = clone(target)
+    swapped.add(key, b"x" * size)
+    check(
+        "FTF-1602-N2",
+        "a same-size swapped blob is refused and nothing is written",
+        refuses_restore(swapped, "no longer matches"),
+    )
+    corrupted = clone(target)
+    corrupted.add(key, b"\0" + corrupted.get_latest(key)[1:])
+    check(
+        "FTF-1602-N2",
+        "a corrupted blob is refused and nothing is written",
+        refuses_restore(corrupted, "no longer matches"),
+    )
+    partial = clone(target)
+    partial.add(key, partial.get_latest(key)[: size // 2])
+    check(
+        "FTF-1602-N2",
+        "a truncated blob is refused and nothing is written",
+        refuses_restore(partial, "no longer matches"),
+    )
+    gone = clone(target)
+    del gone.versions[key]
+    check(
+        "FTF-1602-N2",
+        "a missing blob is refused and nothing is written",
+        refuses_restore(gone, "blob is missing"),
+    )
+    no_record = clone(target)
+    del no_record.versions["backups/o/b1/backup-record.json"]
+    check(
+        "FTF-1602-N2",
+        "a backup without its record is refused",
+        refuses_restore(no_record, "record is missing"),
+    )
+    unretained = clone(target)
+    unretained.retention.clear()
+    check(
+        "FTF-1602-N2",
+        "a backup whose retention is gone is refused",
+        refuses_restore(unretained, "not under retention"),
+    )
+    forged = with_record(target, lambda d: d["entries"][0].update(sha256="f" * 64))
+    check(
+        "FTF-1602-N2",
+        "a record whose entry hash was forged is refused",
+        refuses_restore(forged, "disagrees"),
+    )
+    shrunk = with_record(target, lambda d: d.update(entries=d["entries"][:-1]))
+    check(
+        "FTF-1602-N2",
+        "a record with a dropped manifest entry is refused",
+        refuses_restore(shrunk, "disagrees"),
+    )
+
+
+def test_restore_destination_must_be_clean() -> None:
+    _, target, refs, _ = backed_up()
+    dirty = MemStore()
+    dirty.add(refs[0].key, b"already here")
+    exc = raises(BackupIncompleteError, restore, target, dirty)
+    check(
+        "FTF-1602-N2",
+        "a destination that already holds a key is refused and keeps only its own object",
+        exc is not None
+        and "not clean" in str(exc)
+        and list(dirty.versions) == [refs[0].key]
+        and len(dirty.versions[refs[0].key]) == 1,
+    )
+    marker = MemStore()
+    marker.add(refs[1].key, None)
+    check(
+        "FTF-1602-N2",
+        "a destination key that only has a delete marker is not clean either",
+        raises(BackupIncompleteError, restore, target, marker) is not None,
+    )
+
+
+def test_restore_read_back_is_verified() -> None:
+    _, target, _, _ = backed_up()
+
+    class FlippingDestination(MemStore):
+        def get_version(self, key: str, version_id: str) -> bytes:
+            return super().get_version(key, version_id)[:-1] + b"?"
+
+    exc = raises(ObjectStorageBackupError, restore, target, FlippingDestination())
+    check(
+        "FTF-1602-N2",
+        "restored bytes that differ on read-back fail the restore",
+        exc is not None and "restored bytes differ" in str(exc),
+    )
+
+    class DroppingDestination(MemStore):
+        def put_restored(self, key: str, body: bytes, *, metadata: Any) -> str:
+            return super().put_restored(key, body, metadata={})
+
+    exc = raises(ObjectStorageBackupError, restore, target, DroppingDestination())
+    check(
+        "FTF-1602-N2",
+        "restored metadata that differs from the source's fails the restore",
+        exc is not None and "metadata differs" in str(exc),
+    )
+
+    class VersionlessDestination(MemStore):
+        def put_restored(self, key: str, body: bytes, *, metadata: Any) -> str:
+            super().put_restored(key, body, metadata=metadata)
+            return ""
+
+    exc = raises(ObjectStorageBackupError, restore, target, VersionlessDestination())
+    check(
+        "FTF-1602-N2",
+        "a destination that returns no version id fails the restore",
+        exc is not None and "no version id" in str(exc),
+    )
+
+
+def test_verify_rechecks_record_totals_and_manifest_hash() -> None:
+    _, target, _, record = backed_up()
+    cases = (
+        ("object_count", lambda d: d.update(object_count=d["object_count"] + 1), "object_count"),
+        ("blob_count", lambda d: d.update(blob_count=d["blob_count"] - 1), "blob_count"),
+        ("total_bytes", lambda d: d.update(total_bytes=d["total_bytes"] + 1), "total_bytes"),
+        ("manifest_sha256", lambda d: d.update(manifest_sha256="0" * 64), "manifest_sha256"),
+        (
+            "entry metadata",
+            lambda d: d["entries"][0].update(metadata=[["content-type", "text/evil"]]),
+            "manifest_sha256",
+        ),
+        (
+            "entry key",
+            lambda d: d["entries"][0].update(key="tenants/o/other"),
+            "manifest_sha256",
+        ),
+    )
+    for label, change, word in cases:
+        err = raises(
+            BackupIncompleteError,
+            verify_backup,
+            with_record(target, change),
+            "b1",
+            organization_id="o",
+            now=NOW,
+        )
+        check(
+            "FTF-1602-N2",
+            f"verify catches a record whose {label} was changed",
+            err is not None and word in str(err),
+        )
+    err = raises(
+        BackupIncompleteError,
+        verify_backup,
+        target,
+        "b1",
+        organization_id="o",
+        expected_manifest_sha256="1" * 64,
+        now=NOW,
+    )
+    check(
+        "FTF-1602-N2",
+        "verify refuses a record that differs from the manifest hash the caller holds",
+        err is not None and "expected manifest" in str(err),
+    )
+    check(
+        "FTF-1602-A3",
+        "verify accepts the matching expected manifest hash",
+        verify_backup(
+            target,
+            "b1",
+            organization_id="o",
+            expected_manifest_sha256=record.manifest_sha256,
+            now=NOW,
+        )
+        == record,
+    )
+    dup = with_record(target, lambda d: d["blobs"].append(d["blobs"][0]))
+    err = raises(BackupIncompleteError, verify_backup, dup, "b1", organization_id="o", now=NOW)
+    check("FTF-1602-N2", "verify catches a blob listed twice", err is not None)
+
+
+def test_tenant_scoping() -> None:
+    source, refs = meta_fixture()
+    other = source.add("tenants/p/datasets/x", b"other-tenant")
+    foreign = BlobRef("dataset", "tenants/p/datasets/x", other, sha(b"other-tenant"), 12, "x", "p")
+    target = MemStore()
+    check(
+        "FTF-1602-N3",
+        "a backup mixing two tenants is refused before anything is written",
+        refused("exactly one organization", run, source, [*refs, foreign], target)
+        and nothing_written(target),
+    )
+    outside = bad(refs[0], key="tenants/p/datasets/d1.jsonl")
+    check(
+        "FTF-1602-N3",
+        "a key outside the blob's own tenant prefix is refused",
+        refused("outside its organization", run, source, [outside, *refs[1:]], target)
+        and nothing_written(target),
+    )
+    sibling = bad(refs[0], organization_id="o2")
+    check(
+        "FTF-1602-N3",
+        "tenant ids that are only a string prefix of each other do not match",
+        refused("outside its organization", run, source, [sibling], target),
+    )
+    for key in ("tenants/o/../p/x", "tenants/o//x", "tenants/o/./x"):
+        check(
+            "FTF-1602-N3",
+            f"key {key!r} with dot or empty segments is refused",
+            refused("dot path segments", run, source, [bad(refs[0], key=key)], target),
+        )
+    for org in ("", " o", "o/p", "o "):
+        check(
+            "FTF-1602-N3",
+            f"organization id {org!r} is refused",
+            invalid(run, source, [bad(refs[0], organization_id=org)], target),
+        )
+
+    _, good, _, record = backed_up()
+    check(
+        "FTF-1602-N3",
+        "the backup is stored under its tenant's own prefix, nowhere else",
+        all(k.startswith("backups/o/b1/") for k in good.versions) and record.organization_id == "o",
+    )
+    check(
+        "FTF-1602-N3",
+        "restoring as another organization finds no backup",
+        refuses_restore(good, "record is missing", organization_id="p"),
+    )
+    moved = clone(good)
+    for key in list(moved.versions):
+        moved.versions[key.replace("backups/o/", "backups/p/")] = moved.versions.pop(key)
+    moved.retention = {k.replace("backups/o/", "backups/p/"): v for k, v in good.retention.items()}
+    check(
+        "FTF-1602-N3",
+        "a record copied under another tenant's prefix is refused",
+        refuses_restore(moved, "different organization", organization_id="p"),
+    )
+    escaping = with_record(
+        good,
+        lambda d: (
+            d["entries"][0].update(key="tenants/p/escape"),
+            d.update(manifest_sha256=osb._manifest_sha256(_entries_from(d))),
+        ),
+    )
+    check(
+        "FTF-1602-N3",
+        "restore never writes outside the tenant's key prefix, even for a re-hashed record",
+        refuses_restore(escaping, "outside the record's tenant"),
+    )
+    dotted = with_record(
+        good,
+        lambda d: (
+            d["entries"][0].update(key="tenants/o/../p/x"),
+            d.update(manifest_sha256=osb._manifest_sha256(_entries_from(d))),
+        ),
+    )
+    check(
+        "FTF-1602-N3",
+        "restore refuses a re-hashed record whose key escapes through dot segments",
+        refuses_restore(dotted, "dot path segments"),
+    )
+    for bad_org in ("", "o/p", " o"):
+        check(
+            "FTF-1602-N3",
+            f"verify refuses organization id {bad_org!r}",
+            invalid(verify_backup, good, "b1", organization_id=bad_org),
+        )
+
+
+def _entries_from(data: Any) -> list[Any]:
+    return [
+        osb.BackupEntry(**{**e, "metadata": tuple((str(k), str(v)) for k, v in e["metadata"])})
+        for e in data["entries"]
+    ]
+
+
+def test_s3_adapter_metadata_and_restore_write() -> None:
+    stub = StubS3Client()
+    store = S3ObjectStore(stub, "bkt")
+    stub.headers = {
+        "content-type": "application/jsonl",
+        "x-amz-meta-owner": "team-a",
+        "etag": '"abc"',
+        "x-amz-version-id": "7",
+        "server": "seaweed",
+    }
+    check(
+        "FTF-1602-A3",
+        "version_metadata keeps content type and user metadata only",
+        store.version_metadata("k", "1")
+        == {"content-type": "application/jsonl", "x-amz-meta-owner": "team-a"},
+    )
+    version = store.put_restored("k", b"x", metadata=META)
+    check(
+        "FTF-1602-A3",
+        "put_restored sends the metadata and returns the new version id",
+        version == "vv" and stub.put_headers == META,
+    )
+    exc = raises(ObjectStorageBackupError, store.put_restored, "k", b"x", metadata={"x-evil": "1"})
+    check(
+        "FTF-1602-N2",
+        "put_restored refuses headers that are not content type or user metadata",
+        exc is not None and ("put", "k") == stub.calls[-1],
+    )
+    check(
+        "FTF-1602-N2",
+        "put_restored sends nothing for a refused header",
+        stub.calls.count(("put", "k")) == 1,
+    )
+    cases = [{"a": 1}, {1: "a"}, "x"]
+    for meta in cases:
+        source, refs = fixture()
+
+        class Odd(MemStore):
+            def version_metadata(self, key: str, version_id: str, m: Any = meta) -> Any:
+                return m
+
+        odd = Odd()
+        odd.versions = source.versions
+        check(
+            "FTF-1602-N2",
+            f"non-string object metadata {meta!r} is refused",
+            refused("metadata must be a mapping of strings", run, odd, refs),
+        )
+
+
+def test_restore_cli() -> None:
+    import contextlib
+    import io
+
+    source, refs = meta_fixture()
+    stores = {"src": source, "dst": MemStore(), "clean": MemStore()}
+    patches: list[Any] = [
+        mock.patch.object(osb, "S3ObjectStore", lambda client, bucket: stores[bucket]),
+        mock.patch.object(osb, "_client_from_env", lambda: None),
+    ]
+    for patch in patches:
+        patch.start()
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "m.json"
+            path.write_text(json.dumps([dataclasses.asdict(r) for r in refs]))
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = osb.main(
+                    [
+                        "backup",
+                        "--manifest",
+                        str(path),
+                        "--source-bucket",
+                        "src",
+                        "--target-bucket",
+                        "dst",
+                    ]
+                )
+            printed = json.loads(out.getvalue())
+            check("FTF-1602-A3", "the backup command succeeds", code == 0)
+            argv = [
+                "restore",
+                "--target-bucket",
+                "dst",
+                "--restore-bucket",
+                "clean",
+                "--backup-id",
+                printed["backup_id"],
+                "--organization-id",
+                "o",
+            ]
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = osb.main(argv)
+            done = json.loads(out.getvalue())
+            check(
+                "FTF-1602-A3",
+                "the restore command rebuilds every object into the clean bucket",
+                code == 0 and done["object_count"] == 4 and len(stores["clean"].versions) == 4,
+            )
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                again = osb.main(argv)
+            check(
+                "FTF-1602-N2",
+                "restoring a second time into the now-dirty bucket exits 1",
+                again == 1 and "FAIL" in err.getvalue(),
+            )
+    finally:
+        for patch in patches:
+            patch.stop()
 
 
 def main() -> int:
