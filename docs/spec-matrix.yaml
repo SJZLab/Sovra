@@ -10345,6 +10345,45 @@ FTF-1206:
     dependency) and `test_ftf_0402.py` (existing dependency) via `uv run python3` -- both pass
     unmodified, zero regressions. Not self-certified (Law 4) -- `certification_state` stays
     `PROVISIONAL`, `proof_state` stays `L1-PROVEN`.
+
+    2026-10-08T1903Z round-5 return, finding 1: `validate_namespace`/`validate_approver_identity`
+    used `isinstance(value, str)`, so a `str` subclass overriding `__hash__`/`__eq__` to alias an
+    authorized value -- while carrying its own, different, unauthorized literal content -- was
+    accepted; an authorization grant/route-change could then hold that unauthorized literal.
+    Reproduced interactively before any fix: a hand-built aliasing subclass aliasing
+    `"factory-candidates"` but literally `"someone-elses-ns"` passed
+    `enforce_project_gateway_permission_request` and the returned grant held the literal
+    `"someone-elses-ns"`. Fixed: both validators now require `type(value) is str`. New test
+    `test_round5_type_is_str_rejects_aliasing_subclass` covers both validators directly, both
+    dataclasses' construction, and `enforce_route_change_authority`'s actor/target parameters.
+    Finding 2: identifier-pattern edge cases (trailing newline, trailing separator, `/`, non-ASCII
+    letters/digits including a Cyrillic homoglyph, 129 vs 128 chars) were only reachable indirectly
+    through `enforce_route_change_authority`'s own case/whitespace suite; production was already
+    correct for all of them (confirmed interactively before writing any test) -- new test
+    `test_round5_identifier_pattern_edge_cases` now exercises each case directly against both
+    validators and through both dataclasses. Fault -> RED (every fault applied to the real on-disk
+    module, `__pycache__` cleared and `PYTHONDONTWRITEBYTECODE=1` throughout to rule out a stale-pyc
+    false reading, file restored byte-identical via `diff` before the next fault): reverting to
+    `isinstance` -- 6 FAILs; `fullmatch` -> `match` -- 5 FAILs; length bound widened to `{0,600}` --
+    5 FAILs; length bound narrowed to `{0,125}` (rejects the legitimate 128-char case) -- 1 FAIL;
+    `\w` in place of `[A-Za-z0-9]` -- 20 FAILs; `/` allowed in the separator class -- 5 FAILs;
+    trailing-alnum requirement dropped -- 15 FAILs. `tests/tasks/test_ftf_1206.py`: 46 -> 60+
+    checks. `mutation_gate.py --files packages/litellm_client/organization_policy_control.py
+    --test "python3 tests/tasks/test_ftf_1206.py" --max-mutants 0`: 47/47 KILLED, 0 SURVIVED, score
+    100.0%. `ruff check`/`mypy` clean on both changed files. `uv run python3 tests/tasks/
+    test_ftf_1206a.py` (sibling task consuming both validators directly): unmodified, zero
+    regressions. `uv run python3 -m pytest tests/unit/test_ci_policy.py`: 71 passed.
+    `python3 scripts/data_exposure_check.py`: N/A, no datastore touched.
+    `python3 scripts/product_truth_check.py --fail-on-unwired`: unchanged 45/45.
+    `python3 scripts/validate_spec.py --strict`: exits 1 on `stale_commit` warnings for ~20
+    unrelated task IDs, confirmed identical before and after this commit (`git checkout HEAD~1 --
+    <files>`, re-run, byte-identical `diff`) -- this sandbox's shallow git clone
+    (`git rev-parse --is-shallow-repository` -> `true`), not this change; CI runs on a full
+    checkout. Disclosed, not required by this round: `ProjectGatewayGrant` does not independently
+    validate its own fields; `bypass_requested` is not type-checked; a grant carries no
+    `organization_id`. Not self-certified (Law 4) -- `certification_state` stays `PROVISIONAL`,
+    `proof_state` stays `L1-PROVEN`. Full evidence:
+    `docs/certifications/submissions/2026-10-08T1903Z-FTF-1206.md`.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1206.py
