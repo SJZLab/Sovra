@@ -1850,6 +1850,7 @@ def test_resolved_model_outside_the_approved_set_is_a_mismatch_never_a_verdict()
 def test_reviewer_identity_comparison_is_casefold_and_strip() -> None:
     for label, reviewers in (
         ("sharp-s vs ss (casefold, not lower)", ("Straße", "STRASSE")),
+        ("ss vs sharp-s (casefold on the second, not lower)", ("STRASSE", "Straße")),
         ("trailing space on the first", ("alice ", "alice")),
         ("trailing space on the second", ("alice", "alice ")),
         ("leading space on the second", ("alice", " alice")),
@@ -1933,6 +1934,19 @@ def test_candidate_model_equality_is_exact_and_mismatch_detail_is_pinned() -> No
         "R1",
         "an approved model that differs from the candidate only by case is not 'the candidate'",
         result.passed is True and result.resolved_model == "CANDIDATE-MODEL-V1",
+    )
+    # the other direction: candidate id has capitals, the resolved id is its lowercase form
+    _reset_gateway()
+    _GATEWAY.body = _success_body(_verdict_json(), model="candidate-model-v1")
+    result = _grade(
+        _PORT,
+        candidate_model_id="CANDIDATE-Model-V1",
+        approved_judge_model_ids=frozenset({"judge-model-v1", "candidate-model-v1"}),
+    )
+    check(
+        "R1",
+        "a resolved id that is only the lowercase of the candidate id is not 'the candidate'",
+        result.passed is True,
     )
     _reset_gateway()
     _GATEWAY.body = _success_body(_verdict_json(), model="some-other-model")
