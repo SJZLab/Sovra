@@ -28,6 +28,8 @@ from __future__ import annotations
 import ipaddress
 import sys
 import uuid
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -42,8 +44,14 @@ from packages.integrations.mlflow.client import (  # noqa: E402
     MlflowClient,
     TrackingRejectedError,
     TrackingUnavailableError,
+    run_metrics,
+    run_params,
 )
-from packages.integrations.mlflow.durable_outbox import client_from_binding  # noqa: E402
+from packages.integrations.mlflow.durable_outbox import (  # noqa: E402
+    DurableOutbox,
+    _utcnow,
+    client_from_binding,
+)
 from packages.integrations.mlflow.reconcile import (  # noqa: E402
     DEFAULT_RETRY_POLICY,
     InMemoryOutbox,
@@ -66,10 +74,12 @@ from packages.integrations.mlflow.registry_binding import (  # noqa: E402
 )
 from packages.security.url_policy import ConnectionPolicy  # noqa: E402
 
+from app.component_bindings.component_binding_crud import ActorInfo  # noqa: E402
 from app.component_bindings.component_binding_schema import (  # noqa: E402
     DEFAULT_SECURITY_ZONE_SCOPE,
     ComponentBinding,
 )
+from app.db.tenant_context import TenantContext  # noqa: E402
 
 Fake, Stub, make_run, tag_list = base.Fake, base.Stub, base.make_run, base.tag_list
 make_binding, raises = base.make_binding, base.raises
@@ -707,6 +717,234 @@ def test_client_from_binding() -> None:
         "the token is not in the client's repr",
         TOKEN not in repr(with_token) and ref not in repr(with_token),
     )
+
+
+# -- R2-7 exact matching, exact types, sweep bookkeeping ---------------------
+
+
+def test_exact_key_and_value_matching() -> None:
+    """Keys and values are compared exactly: no case or whitespace folding."""
+    run = make_run(
+        metrics=(("Eval/Acc", 1.0), ("eval/acc", 2.0)),
+        params=(("Mixed.Key", "V"), ("mixed.key", "v")),
+        hashes=(("Art.Sha", "c" * 64),),
+    )
+    fake = Fake()
+    entry = InMemoryOutbox().add(run)
+    check("R2-7", "mixed-case keys sync", sync_run(fake, entry).state == SyncState.SYNCED)
+    check(
+        "R2-7",
+        "mixed-case keys and values are a clean replay (no drift)",
+        compute_run_drift(fake.runs[0], run) == (),
+    )
+
+    def with_data(**kinds: list[dict[str, Any]]) -> tuple[str, ...]:
+        base_record = {k: list(v) for k, v in fake.runs[0]["data"].items()}
+        base_record.update(kinds)
+        return compute_run_drift({"info": fake.runs[0].get("info", {}), "data": base_record}, run)
+
+    good_params = [{"key": "Mixed.Key", "value": "V"}, {"key": "mixed.key", "value": "v"}]
+    for label, params, want in (
+        (
+            "param value case",
+            [{"key": "Mixed.Key", "value": "v"}, good_params[1]],
+            "param_changed:Mixed.Key",
+        ),
+        (
+            "param value padding",
+            [{"key": "Mixed.Key", "value": "V "}, good_params[1]],
+            "param_changed:Mixed.Key",
+        ),
+        (
+            "param key case",
+            [{"key": "MIXED.KEY", "value": "V"}, good_params[1]],
+            "param_extra:MIXED.KEY",
+        ),
+        (
+            "param key padding",
+            [{"key": " Mixed.Key", "value": "V"}, good_params[1]],
+            "param_extra: Mixed.Key",
+        ),
+    ):
+        got = with_data(params=params)
+        check("R2-7", f"{label} is drift {want}", want in got)
+        if "key" in label:
+            check(
+                "R2-7",
+                f"{label} also reports the missing exact key",
+                "param_missing:Mixed.Key" in got,
+            )
+    good_metrics = [{"key": "Eval/Acc", "value": 1.0}, {"key": "eval/acc", "value": 2.0}]
+    got = with_data(metrics=[{"key": "EVAL/ACC", "value": 1.0}, good_metrics[1]])
+    check(
+        "R2-7",
+        "metric key case is drift",
+        "metric_extra:EVAL/ACC" in got and "metric_missing:Eval/Acc" in got,
+    )
+    got = with_data(metrics=[{"key": "Eval/Acc ", "value": 1.0}, good_metrics[1]])
+    check("R2-7", "metric key padding is drift", "metric_extra:Eval/Acc " in got)
+    base_tags = list(fake.runs[0]["data"]["tags"])
+    upper = [dict(t) for t in base_tags]
+    for t in upper:
+        if t["key"] == "factory.hash.Art.Sha":
+            t["value"] = "C" * 64
+    check(
+        "R2-7",
+        "hash value case is drift",
+        "hash_changed:factory.hash.Art.Sha" in with_data(tags=upper),
+    )
+    padded = [dict(t) for t in base_tags]
+    for t in padded:
+        if t["key"] == "factory.hash.Art.Sha":
+            t["value"] = "c" * 64 + " "
+    check(
+        "R2-7",
+        "hash value padding is drift",
+        "hash_changed:factory.hash.Art.Sha" in with_data(tags=padded),
+    )
+    check("R2-7", "unchanged data stays clean", with_data() == ())
+    check(
+        "R2-7",
+        "run_params reads exact keys",
+        run_params(fake.runs[0]) == {"Mixed.Key": "V", "mixed.key": "v"},
+    )
+
+
+def test_malformed_run_data_items_are_skipped() -> None:
+    record = {
+        "data": {
+            "metrics": ["key", ["key"], 5, None, {"value": 1.0}, {"key": "m", "value": 2}],
+            "params": ["key", ["key"], 5, {"value": "x"}, {"key": "p", "value": "v"}],
+        }
+    }
+    check(
+        "R2-7", "non-dict metric items are skipped, not indexed", run_metrics(record) == {"m": 2.0}
+    )
+    check("R2-7", "non-dict param items are skipped, not indexed", run_params(record) == {"p": "v"})
+
+
+def test_cursor_comparison_is_exact() -> None:
+    stub = Stub()
+    stub.reply(200, {"model_versions": [version(1, True)], "next_page_token": "abc"})
+    stub.reply(200, {"model_versions": [version(2, True)], "next_page_token": "ABC"})
+    stub.reply(200, {"model_versions": [version(3, True)]})
+    got = stub.client().search_model_versions_by_tag("m", "factory.model_version_id", "x")
+    check(
+        "R2-7",
+        "cursors that differ only by case are different cursors",
+        [v["version"] for v in got] == ["1", "2", "3"] and len(stub.seen) == 3,
+    )
+    padded = Stub()
+    padded.reply(200, {"model_versions": [], "next_page_token": "abc"})
+    padded.reply(200, {"model_versions": [], "next_page_token": "abc "})
+    padded.reply(200, {"model_versions": []})
+    padded.client().search_model_versions_by_tag("m", "k", "x")
+    check("R2-7", "a padded cursor is a different cursor", len(padded.seen) == 3)
+    # Same class, sibling method: run search pages by the same cursor rule.
+    runs = Stub()
+    runs.reply(200, {"runs": [{"info": {"run_id": "1"}}], "next_page_token": "abc"})
+    runs.reply(200, {"runs": [{"info": {"run_id": "2"}}], "next_page_token": "ABC"})
+    runs.reply(200, {"runs": [{"info": {"run_id": "3"}}], "next_page_token": "ABC "})
+    runs.reply(200, {"runs": [{"info": {"run_id": "4"}}]})
+    found = runs.client().search_runs_by_tag("1", "k", "v")
+    check(
+        "R2-7",
+        "run-search cursors that differ by case or padding are different cursors",
+        [r["info"]["run_id"] for r in found] == ["1", "2", "3", "4"] and len(runs.seen) == 4,
+    )
+    stuck = Stub()
+    stuck.reply(200, {"runs": [], "next_page_token": "abc"})
+    stuck.reply(200, {"runs": [], "next_page_token": "abc"})
+    check(
+        "R2-7",
+        "a run-search cursor that does not advance is refused",
+        raises(TrackingRejectedError, stuck.client().search_runs_by_tag, "1", "k", "v"),
+    )
+
+
+def test_retry_policy_bounds() -> None:
+    equal = RetryPolicy(max_attempts=3, base_delay_ms=1000, max_delay_ms=1000)
+    check(
+        "R2-7",
+        "max delay equal to base delay is allowed",
+        equal.delay_ms(1) == equal.delay_ms(9) == 1000,
+    )
+    check(
+        "R2-7",
+        "max delay below base delay is refused",
+        raises(ValueError, RetryPolicy, 3, 1000, 999),
+    )
+
+
+def test_inmemory_store_records_what_it_is_given() -> None:
+    store = InMemoryOutbox()
+    entry = store.add(make_run())
+    store.record(replace(entry, state=SyncState.FAILED, last_error="x"))
+    check(
+        "R2-7",
+        "record() replaces the stored entry",
+        store.entries[entry.entry_id].state == SyncState.FAILED
+        and store.entries[entry.entry_id].last_error == "x",
+    )
+
+
+def test_durable_outbox_construction_and_clock() -> None:
+    now = _utcnow()
+    check(
+        "R2-7",
+        "the default clock is a timezone-aware current UTC time",
+        isinstance(now, datetime)
+        and now.tzinfo is not None
+        and abs(datetime.now(UTC) - now) < timedelta(seconds=5),
+    )
+    ctx = TenantContext(organization_id=ORG_A)
+    actor = ActorInfo(actor_type="user", actor_id="u", request_id="r")
+
+    def build(binding_id: object) -> DurableOutbox:
+        return DurableOutbox(
+            lambda: None,  # type: ignore[arg-type, return-value]
+            ctx,
+            binding_id=binding_id,  # type: ignore[arg-type]
+            results=None,  # type: ignore[arg-type]
+            actor=actor,
+        )
+
+    for bad in (str(uuid.uuid4()), None, 5):
+        check("R2-7", f"binding_id {bad!r} must be a uuid.UUID", raises(ValueError, build, bad))
+    good = build(uuid.uuid4())
+    check(
+        "R2-7",
+        "a uuid binding id builds with the default policy",
+        good.policy is DEFAULT_RETRY_POLICY,
+    )
+
+
+def test_binding_must_be_the_internal_mlflow_service() -> None:
+    policy = ConnectionPolicy(
+        name="p", explicit_private_allowlist=(ipaddress.ip_network("10.0.0.0/8"),)
+    )
+    cases = (
+        ("component key case", {"component_key": "MLflow"}),
+        ("component key padding", {"component_key": "mlflow "}),
+        ("deployment mode case", {"deployment_mode": "Internal_Service"}),
+        ("deployment mode padding", {"deployment_mode": "internal_service "}),
+        ("deployment mode with an endpoint", {"deployment_mode": "worker_package"}),
+        ("no approved endpoint", {"approved_endpoint": None}),
+        ("empty approved endpoint", {"approved_endpoint": ""}),
+    )
+    for label, over in cases:
+        # Set after construction: the ORM validators would reject some of
+        # these values up front; the adapter must not depend on that.
+        binding = mlflow_binding()
+        for field_name, value in over.items():
+            setattr(binding, field_name, value)
+        try:
+            client_from_binding(binding, policy=policy)
+            check("R2-7", f"{label} is refused", False)
+        except TrackingRejectedError:
+            pass
+    built = client_from_binding(mlflow_binding(), policy=policy, timeout=3.5)
+    check("R2-7", "the caller's timeout reaches the client", built._timeout == 3.5)
 
 
 def main() -> None:

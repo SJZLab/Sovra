@@ -45,8 +45,9 @@ import math
 import re
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
 from packages.integrations.mlflow.client import (
     MlflowClient,
@@ -251,10 +252,8 @@ class OutboxEntry:
 
 
 class OutboxStore(Protocol):
-    @property
-    def policy(self) -> RetryPolicy:
-        """The retry bound this store's entries are held to."""
-        ...
+    # The retry bound this store's entries are held to.
+    policy: RetryPolicy
 
     def add(self, run: TrackedRun) -> OutboxEntry: ...
     def pending(self) -> list[OutboxEntry]: ...
@@ -287,36 +286,27 @@ class InMemoryOutbox:
         self.entries[entry.entry_id] = entry
 
 
+def _field_drift(label: str, expected: Mapping[str, Any], actual: Mapping[str, Any]) -> list[str]:
+    """Missing, changed and extra keys of one field family, by exact key and
+    exact value (no case or whitespace folding)."""
+    drift = [f"{label}_missing:{k}" for k in expected if k not in actual]
+    drift += [f"{label}_changed:{k}" for k, v in expected.items() if k in actual and actual[k] != v]
+    drift += [f"{label}_extra:{k}" for k in actual if k not in expected]
+    return drift
+
+
 def compute_run_drift(record: dict[str, object], run: TrackedRun) -> tuple[str, ...]:
     """Field-level comparison of a completed MLflow run with the Factory
     payload (Section 78.3: never rely solely on mutable tags). Returns sorted
     drift codes; empty means the run still equals what was projected."""
-    drift: list[str] = []
     tags = run_tags(record)
-    expected_hashes = {f"factory.hash.{k}": v for k, v in run.hashes}
-    actual_hashes = {k: v for k, v in tags.items() if k.startswith("factory.hash.")}
-    for key, value in expected_hashes.items():
-        if key not in actual_hashes:
-            drift.append(f"hash_missing:{key}")
-        elif actual_hashes[key] != value:
-            drift.append(f"hash_changed:{key}")
-    drift.extend(f"hash_extra:{k}" for k in actual_hashes if k not in expected_hashes)
-    params = run_params(record)
-    expected_params = dict(run.params)
-    for pkey, pvalue in expected_params.items():
-        if pkey not in params:
-            drift.append(f"param_missing:{pkey}")
-        elif params[pkey] != pvalue:
-            drift.append(f"param_changed:{pkey}")
-    drift.extend(f"param_extra:{k}" for k in params if k not in expected_params)
-    metrics = run_metrics(record)
-    expected_metrics = {k: float(v) for k, v in run.metrics}
-    for mkey, mvalue in expected_metrics.items():
-        if mkey not in metrics:
-            drift.append(f"metric_missing:{mkey}")
-        elif metrics[mkey] != mvalue:
-            drift.append(f"metric_changed:{mkey}")
-    drift.extend(f"metric_extra:{k}" for k in metrics if k not in expected_metrics)
+    drift = _field_drift(
+        "hash",
+        {f"factory.hash.{k}": v for k, v in run.hashes},
+        {k: v for k, v in tags.items() if k.startswith("factory.hash.")},
+    )
+    drift += _field_drift("param", dict(run.params), run_params(record))
+    drift += _field_drift("metric", {k: float(v) for k, v in run.metrics}, run_metrics(record))
     info = record.get("info")
     status = info.get("status") if isinstance(info, dict) else None
     if status != run.status:

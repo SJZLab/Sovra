@@ -336,6 +336,12 @@ def main() -> int:
             and row["attempt_count"] == 1,
         )
         check("R2-D1", "a resolved row is no longer pending", env_a.outbox.pending() == [])
+        replay = env_a.outbox.add(run1)
+        check(
+            "R2-D1",
+            "a replayed admission of a resolved job carries the stored MLflow run id",
+            replay.mlflow_run_id == done[0].mlflow_run_id and replay.next_retry_at_ms is None,
+        )
         exp_a = client.get_or_create_experiment(experiment_name(a_id))
         record = client.get_run(done[0].mlflow_run_id or "")
         check(
@@ -526,6 +532,33 @@ def main() -> int:
             [e.run.metrics for e in env_a.outbox.pending()] == [run7.metrics],
         )
         sync_pending(client, env_a.outbox, now_ms=now_ms())  # settle job7
+
+        # R2-D5b: the evidence source must hand back the result for exactly the
+        # (organization, job) asked for; either identity differing fails the row.
+        for label, make_wrong in (
+            ("another job", lambda j: make_run(a_id, uuid.uuid4())),
+            ("another organization", lambda j: make_run(b_id, j)),
+        ):
+            job_x = uuid.uuid4()
+            run_x = make_run(a_id, job_x)
+            results.save(run_x)
+            env_a.outbox.add(run_x)
+            wrong = make_wrong(job_x)
+            results.save(wrong)
+            results._path(a_id, job_x).write_text(
+                results._path(wrong.organization_id, wrong.job_id).read_text()
+            )
+            check(
+                "R2-D5",
+                f"a result for {label} is not offered for sync",
+                env_a.outbox.pending() == [],
+            )
+            row = outbox_row(owner_url, a_id, job_x)
+            check(
+                "R2-D5",
+                f"a result for {label} fails the row as result_mismatch",
+                row["status"] == "failed" and "result_mismatch" in str(row["last_error"]),
+            )
 
         # R2-D6: ambiguous logical run -> failed row.
         job8 = uuid.uuid4()

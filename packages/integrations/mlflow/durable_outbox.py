@@ -114,14 +114,10 @@ class DurableOutbox:
         self._binding_id = binding_id
         self._results = results
         self._actor = actor
-        self._policy = policy
+        self.policy = policy
         self._clock = clock
 
     # -- OutboxStore -------------------------------------------------------
-
-    @property
-    def policy(self) -> RetryPolicy:
-        return self._policy
 
     def add(self, run: TrackedRun) -> OutboxEntry:
         if run.organization_id != self._context.organization_id:
@@ -138,7 +134,7 @@ class DurableOutbox:
                 )
             except SyncOutboxConflictError as exc:
                 raise RunConflictError("a different result is already queued for this job") from exc
-            return self._entry(row, run)
+            return self._entry(row, run, due_tracking=False)
 
     def pending(self) -> list[OutboxEntry]:
         entries: list[OutboxEntry] = []
@@ -154,7 +150,7 @@ class DurableOutbox:
                 row = self._row(session, job_id)
                 changed = row.idempotency_key != idempotency_key_for(run)
                 if not changed:
-                    entries.append(self._entry(row, run))
+                    entries.append(self._entry(row, run, due_tracking=True))
             if changed:
                 self._fail_unloadable(job_id, "result_changed: evidence differs from admission")
         return entries
@@ -239,14 +235,17 @@ class DurableOutbox:
                 actor=self._actor,
             )
 
-    def _entry(self, row: ComponentSyncOutbox, run: TrackedRun) -> OutboxEntry:
+    def _entry(
+        self, row: ComponentSyncOutbox, run: TrackedRun, *, due_tracking: bool
+    ) -> OutboxEntry:
+        # Only the pending sweep (`pending()`, which reads pending rows alone)
+        # tracks when the next attempt is due; an admission replay never does.
         next_retry = None
-        if row.attempt_count > 0 and row.status == "pending":
-            next_retry = _ms(row.updated_at) + self._policy.delay_ms(row.attempt_count)
+        if due_tracking and row.attempt_count > 0:
+            next_retry = _ms(row.updated_at) + self.policy.delay_ms(row.attempt_count)
         return OutboxEntry(
             entry_id=logical_run_key(run.organization_id, run.job_id),
             run=run,
-            state=SyncState.PENDING,
             attempts=row.attempt_count,
             mlflow_run_id=row.external_id,
             last_error=row.last_error,
