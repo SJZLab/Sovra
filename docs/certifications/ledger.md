@@ -10610,3 +10610,27 @@ clean (product_truth 45/45, validate_spec --strict, data_exposure OK). No produc
 - **SLICE FTF-0501-UI:** the "resumable UI" clause becomes a Backlog child slice on the FTF-0501 routes. FTF-0501 is
   certified only when round 2 and FTF-0501-UI both pass.
 - Pending: FTF-0616 (#636) verification still running.
+
+## 2026-10-08T17:00Z — RETURNED: FTF-0616 (r5)
+- **FTF-0616: RETURNED** (round 4 → 5; small production fix plus tests; #636, a9c2f3eef132). Independent verifier:
+  CI on head 87b7f17 green (ci-verdict success); gates clean; whole-file mutation 302/302. Round-3 items 1, 2 and 4
+  fixed; item 3 fixed for every gateway echo shape. Reproduced: an approved set holding None with no echo gives
+  PASSED/VERIFIED (P-18); an echo of another approved but uncalibrated judge gives PASSED/VERIFIED (P-17), against the
+  negative acceptance "an uncalibrated result cannot certify". Control-plane ruling: P-17 is blocking and overrides the
+  round-3 acceptance of any approved model. Open #637 is superseded; its None clause is ported into round 5.
+
+## 2026-10-08T17:52Z — RETURNED: FTF-0309-P1 (r2); SLICES: FTF-R004-P1..P4
+- **FTF-0309-P1: RETURNED** (round 1 → 2; production plus tests; #642, ab71b1c0fca1e998a1ef4b40d1d740d85732282f).
+  Independent verifier: CI on head f4f9f9a green (ci-verdict success, real-Postgres job ran); gates clean; mutation
+  70/70; cross-tenant, role, revoke and single-discovery checks hold on PG16 as sovra_app. Reproduced: one GET makes a
+  second gateway call through `enrich_visible_models` (3 requests, 2 secret reads), against "provider called only
+  through the existing discovery client, at most once per request" (fault FA GREEN). Unpinned: exact alias matching
+  (`.lower()` fault FB GREEN; a different unmapped alias reports another alias's artifact). DoD proving_symbol bullet
+  not done.
+- **SLICES FTF-R004-P1..P4** (Backlog): P1 generation-config fidelity and P2 provider-tool/MCP denial are ready now; P3
+  (pinned Inspect worker + actual-runtime bridge) depends on P1 and P2; P4 (log normalization, complete accounting,
+  sealed-data guard) depends on P3. Pinning `inspect_ai` in the evaluation worker is owner-approved (live answer,
+  2026-10-08), matching REFERENCE_REPOSITORIES.md "Pinned evaluation worker package". Left with the parent: the
+  engine-evidence read view (no EvaluationRun contract yet), the sealed final-suite worker (FTF-H020), the real
+  gateway route (same key as the FTF-0616 owner action), the component version-lock row and the Q35 journey.
+- Pending: FTF-1602 r3 (#638) verification still running.
