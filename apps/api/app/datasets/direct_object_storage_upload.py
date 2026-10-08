@@ -114,9 +114,6 @@ MAX_XLSX_UNCOMPRESSED_BYTES = 10 * 1024**3  # the 10 GiB source-object default
 MAX_XLSX_CONTENT_TYPES_BYTES = 1024**2
 _XLSX_CONTENT_TYPES_PART = "[Content_Types].xml"
 _XLSX_WORKBOOK_PART = "xl/workbook.xml"
-_XLSX_WORKBOOK_CONTENT_TYPE = (
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
-)
 _XLSX_RANGE_READ_BYTES = 64 * 1024
 # Closed lookup tables rather than comparisons: a type is matched exactly, with
 # no tolerance for case or whitespace once it has been normalized.
@@ -375,8 +372,6 @@ class _StoredObjectFile(io.RawIOBase):
 
     def read(self, size: int = -1) -> bytes:
         end = self._size if size is None or size < 0 else min(self._size, self._pos + size)
-        if self._pos >= end:
-            return b""
         out = bytearray()
         while self._pos < end:
             offset = self._pos - self._window_start
@@ -417,12 +412,9 @@ def inspect_xlsx(
                 return "unsafe_archive"
             if sum(info.file_size for info in infos) > MAX_XLSX_UNCOMPRESSED_BYTES:
                 return "unsafe_archive"
-            if _XLSX_CONTENT_TYPES_PART not in names or _XLSX_WORKBOOK_PART not in names:
+            if "[Content_Types].xml" not in names or "xl/workbook.xml" not in names:
                 return "content_type_mismatch"
-            declared = archive.getinfo(_XLSX_CONTENT_TYPES_PART)
-            if declared.file_size > MAX_XLSX_CONTENT_TYPES_BYTES:
-                return "unsafe_archive"
-            with archive.open(declared) as handle:
+            with archive.open(_XLSX_CONTENT_TYPES_PART) as handle:
                 document = handle.read(MAX_XLSX_CONTENT_TYPES_BYTES + 1)
     except UploadStorageUnavailableError:
         raise
@@ -451,7 +443,9 @@ def inspect_xlsx(
             "/" + _XLSX_WORKBOOK_PART
         ):
             content_type = element.get("ContentType")
-            if content_type == _XLSX_WORKBOOK_CONTENT_TYPE:
+            if content_type == (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
+            ):
                 return None
             if content_type and "macroenabled" in content_type.lower():
                 return "unsafe_archive"
@@ -673,7 +667,10 @@ def verify_and_complete(
     reason = sniff_content(
         target.declared_content_type, first, complete=target.declared_size_bytes <= SNIFF_BYTES
     )
-    if reason is None and normalize_content_type(target.declared_content_type) == XLSX_CONTENT_TYPE:
+    if (
+        reason is None
+        and normalize_content_type(target.declared_content_type) in _ZIP_MAGIC_BY_TYPE
+    ):
         reason = inspect_xlsx(client, settings, target)
     if reason is not None:
         raise _reject(client, settings, target, reason)

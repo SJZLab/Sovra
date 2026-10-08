@@ -4442,6 +4442,162 @@ def test_s3_the_sweeper_entry_point_reports_through_its_exit_code() -> None:
                 os.environ[name] = value
 
 
+def test_x4_stored_object_file_and_xlsx_boundaries() -> None:
+    body = _xlsx()
+    with FakeS3() as fake:
+        target = _target(body, content_type=dos.XLSX_CONTENT_TYPE)
+        _open_and_upload(fake, target, body)
+        _verify(fake, target)  # completes the multipart upload
+        settings = fake.settings()
+        client = settings.client()
+        fetches: list[tuple[int, int]] = []
+        original = client.get_object_range
+
+        def counting(bucket: str, key: str, first: int, last: int) -> bytes:
+            fetches.append((first, last))
+            return original(bucket, key, first, last)
+
+        client.get_object_range = counting  # type: ignore[method-assign]
+        saved_window = dos._XLSX_RANGE_READ_BYTES
+        dos._XLSX_RANGE_READ_BYTES = 16
+        try:
+            stored = dos._StoredObjectFile(client, settings, target.object_key, len(body))
+            check(
+                f"{CID}-X4",
+                "the stored view is readable and seekable",
+                stored.readable() and stored.seekable(),
+            )
+            check(f"{CID}-X4", "a new view starts at 0", stored.tell() == 0)
+            check(
+                f"{CID}-X4",
+                "read(0) is empty and fetches nothing",
+                stored.read(0) == b"" and fetches == [],
+            )
+            check(
+                f"{CID}-X4",
+                "read(4) returns the first 4 bytes",
+                stored.read(4) == body[:4] and stored.tell() == 4,
+            )
+            check(f"{CID}-X4", "one 16-byte window was fetched", fetches == [(0, 15)])
+            stored.seek(0)
+            check(
+                f"{CID}-X4",
+                "re-reading inside the window does not refetch",
+                stored.read(8) == body[:8] and len(fetches) == 1,
+            )
+            stored.seek(10)
+            check(
+                f"{CID}-X4",
+                "a read across the window end is exact",
+                stored.read(20) == body[10:30] and stored.tell() == 30,
+            )
+            stored.seek(16)
+            check(
+                f"{CID}-X4",
+                "a read starting exactly at the window end refetches",
+                stored.read(3) == body[16:19],
+            )
+            stored.seek(0)
+            check(f"{CID}-X4", "read(-1) reads to the end", stored.read(-1) == body)
+            stored.seek(0)
+            check(f"{CID}-X4", "read(None) reads to the end", stored.read(None) == body)  # type: ignore[arg-type]
+            check(
+                f"{CID}-X4",
+                "a read at the end is empty",
+                stored.read(5) == b"" and stored.seek(0, 2) == len(body) and stored.read() == b"",
+            )
+            stored.seek(-3, 2)
+            check(f"{CID}-X4", "seek from the end", stored.read() == body[-3:])
+            stored.seek(2)
+            stored.seek(3, 1)
+            check(f"{CID}-X4", "seek relative to the position", stored.tell() == 5)
+            check(
+                f"{CID}-X4",
+                "a read past the end is clipped",
+                dos._StoredObjectFile(client, settings, target.object_key, len(body)).read(
+                    len(body) + 100
+                )
+                == body,
+            )
+        finally:
+            dos._XLSX_RANGE_READ_BYTES = saved_window
+
+    import io as _io
+    import zipfile as _zf
+
+    sizes = sum(i.file_size for i in _zf.ZipFile(_io.BytesIO(body)).infolist())
+    ct_len = len(_content_types())
+    saved = (dos.MAX_XLSX_UNCOMPRESSED_BYTES, dos.MAX_XLSX_CONTENT_TYPES_BYTES)
+    try:
+        dos.MAX_XLSX_UNCOMPRESSED_BYTES = sizes
+        got, _ = _xlsx_outcome(body)
+        check(
+            f"{CID}-X4",
+            "exactly the uncompressed bound verifies",
+            isinstance(got, dos.VerifiedObject),
+        )
+        dos.MAX_XLSX_UNCOMPRESSED_BYTES = sizes - 1
+        got, _ = _xlsx_outcome(body)
+        check(
+            f"{CID}-X4",
+            "one byte over the uncompressed bound is refused",
+            isinstance(got, dos.UploadRejection) and got.reason == "unsafe_archive",
+        )
+        dos.MAX_XLSX_UNCOMPRESSED_BYTES = saved[0]
+        dos.MAX_XLSX_CONTENT_TYPES_BYTES = ct_len
+        got, _ = _xlsx_outcome(body)
+        check(
+            f"{CID}-X4",
+            "a [Content_Types].xml exactly at its bound verifies",
+            isinstance(got, dos.VerifiedObject),
+        )
+        dos.MAX_XLSX_CONTENT_TYPES_BYTES = ct_len - 1
+        got, _ = _xlsx_outcome(body)
+        check(
+            f"{CID}-X4",
+            "one byte over the [Content_Types].xml bound is refused",
+            isinstance(got, dos.UploadRejection) and got.reason == "unsafe_archive",
+        )
+    finally:
+        dos.MAX_XLSX_UNCOMPRESSED_BYTES, dos.MAX_XLSX_CONTENT_TYPES_BYTES = saved
+    for label, prefix in (
+        ("a DOCTYPE alone", b"<!DOCTYPE t>"),
+        ("an ENTITY alone", b'<!ENTITY a "b">'),
+    ):
+        got, _ = _xlsx_outcome(_xlsx(content_types=prefix + _content_types()))
+        check(
+            f"{CID}-X4",
+            f"{label} is refused as unsafe_archive",
+            isinstance(got, dos.UploadRejection) and got.reason == "unsafe_archive",
+        )
+    for label, declared in (
+        ("a trailing space", _XLSX_MAIN + " "),
+        ("an upper-cased type", _XLSX_MAIN.upper()),
+        ("a leading space", " " + _XLSX_MAIN),
+    ):
+        got, _ = _xlsx_outcome(_xlsx(content_types=_content_types(content_type=declared)))
+        check(
+            f"{CID}-X4",
+            f"{label} on the workbook content type is refused",
+            isinstance(got, dos.UploadRejection) and got.reason == "content_type_mismatch",
+        )
+
+
+def test_s4_the_sweeper_parses_a_padded_initiation_time() -> None:
+    now = datetime(2026, 10, 8, 12, 0, 0, tzinfo=UTC)
+    stale = _iso(now - timedelta(days=2))
+    for label, text in (("a leading space", " " + stale), ("a trailing space", stale + " ")):
+        with FakeS3() as fake:
+            upload = _open_aged(fake, text)
+            settings = fake.settings()
+            result = sweeper.sweep_abandoned_uploads(settings.client(), settings, now=now)
+            check(
+                f"{CID}-S4",
+                f"an initiation time with {label} is dated and aborted",
+                result.aborted == 1 and result.undated == 0 and upload not in fake.uploads,
+            )
+
+
 def test_c1_interface_contract() -> None:
     spec = yaml.safe_load(INTERFACE_PATH.read_text())
     paths = spec["paths"]
