@@ -3703,6 +3703,64 @@ def test_m12_finalize_maps_store_outcomes_after_storage_has_verified() -> None:
         )
 
 
+def test_m12b_a_rejection_for_a_session_someone_else_already_closed_is_a_conflict() -> None:
+    with _routes_env() as env:
+        body = _jsonl(2000)
+        sid = _open_session(env, body, declared_sha256=_sha(b"not the body"))["id"]
+        _put_all(env, sid, body)
+        real = routes.verify_and_complete
+
+        def closing_first(*args: Any, **kwargs: Any) -> Any:
+            with Session(env.engine) as other:
+                other.query(store.DatasetUploadSession).update({"status": "rejected"})
+                other.commit()
+            return real(*args, **kwargs)  # then raises the wrong-hash rejection
+
+        routes.verify_and_complete = closing_first
+        try:
+            reply = _call(env.base, "POST", f"{_col()}/{sid}/finalize", _finalize_body())
+        finally:
+            routes.verify_and_complete = real
+        check(
+            f"{CID}-M12",
+            "a rejection that cannot be recorded because the session is already closed -> 409",
+            reply.status == 409 and reply.detail == "upload_session_not_open",
+        )
+        check(f"{CID}-M12", "no dataset appears", not env.datasets())
+        check(
+            f"{CID}-M12",
+            "the other request's verdict stands",
+            env.sessions()[0].status == "rejected" and env.sessions()[0].rejection_reason is None,
+        )
+
+
+def test_m12c_a_session_that_vanishes_before_the_database_write_is_not_found() -> None:
+    with _routes_env() as env:
+        body = _jsonl(2000)
+        sid = _open_session(env, body)["id"]
+        _put_all(env, sid, body)
+        real = routes.verify_and_complete
+
+        def deleting_after_verify(*args: Any, **kwargs: Any) -> Any:
+            verified = real(*args, **kwargs)
+            with Session(env.engine) as other:
+                other.query(store.DatasetUploadSession).delete()
+                other.commit()
+            return verified
+
+        routes.verify_and_complete = deleting_after_verify
+        try:
+            reply = _call(env.base, "POST", f"{_col()}/{sid}/finalize", _finalize_body())
+        finally:
+            routes.verify_and_complete = real
+        check(
+            f"{CID}-M12",
+            "a session gone before the write -> 404 not_found, never a 500",
+            reply.status == 404 and reply.detail == "not_found",
+        )
+        check(f"{CID}-M12", "and no dataset appears", not env.datasets())
+
+
 def test_m13_presign_bounds_and_signed_header_values_are_trimmed() -> None:
     check(
         f"{CID}-M13",
