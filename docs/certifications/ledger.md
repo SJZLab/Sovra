@@ -10634,3 +10634,11 @@ clean (product_truth 45/45, validate_spec --strict, data_exposure OK). No produc
   engine-evidence read view (no EvaluationRun contract yet), the sealed final-suite worker (FTF-H020), the real
   gateway route (same key as the FTF-0616 owner action), the component version-lock row and the Q35 journey.
 - Pending: FTF-1602 r3 (#638) verification still running.
+
+## 2026-10-08T18:12Z — RETURNED: FTF-1602 (r4)
+- **FTF-1602: RETURNED** (round 3 → 4; production plus tests; #638, 99fa4c05605be3b6cfe10f1034d864b9038b0224).
+  Independent verifier: CI on head f8e776d green (unit and real-SeaweedFS integration logs read); real SeaweedFS
+  13/13 locally on a bounded fixture; uncapped whole-file mutation 383/383. All round-3 findings fixed. Reproduced:
+  the record pin reads the latest version after listing, so a shrunk, re-hashed, retained record PUT in between
+  restores 3 of 4 objects as success (Law 17). Also: create_backup with an existing backup_id succeeds and loses the
+  original backup; a naive `now` raises a raw TypeError; notes lack the mutation figure.

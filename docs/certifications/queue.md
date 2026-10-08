@@ -24572,3 +24572,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 - **Returned:** FTF-0309-P1 r2 (0k): single gateway call per GET, exact alias matching, proving_symbol.
 - **Sliced:** FTF-R004-P1..P4 (P1 and P2 ready now). `inspect_ai` pin owner-approved 2026-10-08.
 - **ci-verdict:** both relay merges since 15:40Z (#638, #642) landed on a green ci-verdict. **Pending:** FTF-1602 #638.
+
+## 2026-10-08T18:12Z — Control plane: FTF-1602 returned (134/302 unchanged)
+- **Returned:** FTF-1602 r4 (0i): pinned-version read with re-list, refuse an existing backup_id, tz-aware now.

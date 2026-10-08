@@ -8939,10 +8939,10 @@ FTF-0616:
     undefined kappa is refused). The verdict carries one score per locked rubric criterion (exact ids,
     none missing, none extra); confidence and scores lie in [0, 1]. LlmJudgeResult records rubric id,
     version, requested and resolved model; a resolved model outside the approved set (or the candidate)
-    is MODEL_MISMATCH, never a verdict. Model output is strict JSON (no duplicate keys, NaN/Infinity or
+    is MODEL_MISMATCH, never a verdict. Round 5: a missing model echo is its own MODEL_MISMATCH; approved_judge_model_ids members must be exact non-empty str (LlmJudgeGraderError before any call); the echo must equal the requested judge id or an exact alias named by its CalibrationRecord.judge_model_aliases (an approved but uncalibrated echo is MODEL_MISMATCH). Model output is strict JSON (no duplicate keys, NaN/Infinity or
     overflow, no repair of truncated JSON, deep nesting is refused, not a crash); exactly one choice;
     only HTTP 200 is a response; a 400 is sent once. Fault -> RED table:
-    docs/certifications/submissions/2026-10-08T0500Z-FTF-0616.md.
+    docs/certifications/submissions/2026-10-08T0500Z-FTF-0616.md; round 5: docs/certifications/submissions/2026-10-08T1800Z-FTF-0616.md.
 
     BLOCKED_EXTERNAL (packet resource_gate, owner action): the clause "Call approved real judge through
     LiteLLM" is proven only against a local TLS gateway stand-in. It needs a real gateway key and an
@@ -9638,6 +9638,14 @@ FTF-0905:
     `record_checked` raises typed errors for unhashable ids, and sinks/ids/encodings are exact `str`
     (a `str` subclass with a lying `__eq__` is refused). The earlier "empty ledger is vacuously
     complete" test was removed.
+
+    Round 3 (tests only, production unchanged): behavioural tests pin the DEFAULT plan (every
+    34-of-35 (sink, encoding) subset and every-sink-literal-only raise `IncompleteLeakCoverageError`),
+    a leak on the same key stays sticky under a later clean or found re-check, and `canary_id`
+    comes from its own `secrets.token_hex` draw (patched draw sequences; changing only one draw
+    changes only that field). Seven faults (default plan literal-only / two pairs / minus one pair,
+    re-check ignored, clean re-check clears a leak, id = reversed token, id = hex-complemented
+    token) each turn the probe RED; submission 2026-10-08T1900Z-FTF-0905.md.
 
     Disclosed: this module is a pure library with no live caller yet -- the producers that will
     actually place a canary in a real error path/trace/artifact (training/evaluation workers) are
