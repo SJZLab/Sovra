@@ -9363,7 +9363,52 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      3. Actor "user:jane " and " user:jane" against approvers {"user:jane"}: refused.
      4. Faults that must go RED, inserted at the top of `enforce_route_change_authority`: target `.strip().lower()`, target `.lower()`, target `.strip()`, type-guarded actor `.strip()`. Record the results in the submission.
      Optional: ProjectGatewayGrant does not validate its fields (a str makes the grant check substring matching); bypass_requested is not type-checked; remove the stale "no backing table yet" sentence from the notes.
-   - **0i.** Then the Backlog.
+   - **0i. FTF-1602 round 3 (production + tests).** Work in scripts/object_storage_backup.py, tests/tasks/test_ftf_1602.py and tests/integration/test_ftf_1602_object_storage_backup.py. Claim `relay/FTF-1602-r3`. Verifier findings (7d28d4c, #629: item 3 holds; unit faults all RED; real SeaweedFS passes; whole-file mutation 297/299; each listed fault must go RED, at integration level where stated):
+     FTF-1602 RETURN -> round 3.
+     1. **Partial backup via a re-hashed record (Law 17, item 1).** Reproduced on real SeaweedFS:
+        - The attack: PUT a new latest version of `backups/o/<id>/backup-record.json` with one entry and its blob dropped, and
+          with object_count, blob_count, total_bytes and manifest_sha256 recomputed.
+        - The result: `restore_backup(..., organization_id="o")` returns a RestoreRecord with object_count 3 of 4, and the
+          CLI `verify` exits 0.
+        - Why: verify reads the record with get_latest and never checks the record's own version or retention.
+          `expected_manifest_sha256` is optional and is not exposed on the CLI.
+        - Fix: pin the record. Refuse when the record key has more than one version, when the version is a delete marker, or
+          when its latest version is not COMPLIANCE-retained until ≥ record.retain_until and beyond now. Add
+          `--expected-manifest-sha256` to the verify and restore CLI.
+        - Integration test: the shrunk, re-hashed record version is refused at restore, and the clean bucket stays empty.
+        - Fault: remove the record pin -> RED.
+     2. **Partial backup at integration level (item 1).** Add a real-SeaweedFS test where the backup lacks a blob its record
+        lists: restore is refused and nothing is written. Fault F1c (drop the "blob is missing" issue) must go RED in the
+        integration (it is GREEN now). Also make verify and restore map any read failure to ObjectStorageBackupError (only
+        S3Error is caught today). Under F2d and F2e, real-server reads of absent backup keys reached the caller as a raw
+        TimeoutError.
+     3. **Tenant prefix on real SeaweedFS (item 2).** Add integration tests for both of these:
+        (a) create_backup with key `tenants/p/...` and organization_id "o" is refused, and the target stays empty;
+        (b) a record re-hashed for org "o" with an entry key under `tenants/p/` is refused at restore, and nothing appears
+        under `tenants/p/` in the clean bucket.
+        F2b and F2c must go RED in the integration (both are GREEN now).
+     4. **Grader checklist: typed input.**
+        - `ref.kind not in KINDS` runs before any type check, so kind=[] or kind={} raises a raw TypeError.
+        - `_is_text` accepts str subclasses. A subclass whose startswith/split are overridden backed up `tenants/p/secret`
+          under org "o", which is a tenant-guard bypass. Str subclasses are also accepted for sha256 and for verify's
+          organization_id and backup_id.
+        - Fix: require `type(x) is str` before any membership test or string method.
+        - Tests: unhashable kind, and a str-subclass key/org/sha, each raise ObjectStorageBackupError with nothing written.
+        - Fault: revert to isinstance -> RED.
+     5. **Untyped errors from a malformed record.**
+        - A record entry with `"key": 5` raises a raw AttributeError from `_record_issues`, which sits outside the try.
+        - Fix: validate every parsed entry and blob field with exact types inside `_parse_record`, and raise
+          ObjectStorageBackupError.
+        - Test + fault: removing that validation -> RED.
+     6. **Mutation, 0 survivors.**
+        - Test that RestoreRecord.to_json has sorted, canonical keys (kills L203).
+        - Test that `_client_from_env()` with all SOVRA_STORAGE_S3_* set returns an S3Client carrying that endpoint and those
+          credentials, without printing the secret (kills L664).
+        - Re-run the uncapped whole-file gate.
+     7. **spec-matrix notes.** The notes say "record-tampered … backup is refused before any write", which is false for a
+        re-hashed record, and "Mutation gate 200/200", which is diff-scoped. Correct both to the post-fix evidence.
+     Optional (not a return reason): name the S3 status (e.g. 403) in CLI errors; bound the SeaweedFS fixture (`WEED_MASTER_VOLUME_GROWTH_COPY_1=1`, `-volume.max`) - an unbounded verifier fixture grew to 25G.
+   - **0j.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
      (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613, FTF-1305, FTF-0308, FTF-0602, FTF-0901 and FTF-1706 are CERTIFIED (2026-10-07/08); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
@@ -9576,7 +9621,7 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
     language/group fields that §68.2/§69.2 and FTF-0602 need, so they are added; the live error convention is
     `{"detail": code}`, not §40's envelope; FTF-0501's "resumable UI" clause is not in its file list and stays with
     FTF-0501's own refinement.
-- FTF-0616, FTF-0903, FTF-R005, FTF-0517, FTF-1703, FTF-1206 and FTF-0905 are returned work in item 0 above (FTF-1602 r2 #629 is under verification). FTF-0501 (#610) and
+- FTF-0616, FTF-0903, FTF-R005, FTF-0517, FTF-1703, FTF-1206, FTF-0905 and FTF-1602 are returned work in item 0 above. FTF-0501 (#610) and
   FTF-0905 (#625) are claimed.
 - **FTF-0516-P1 Dataset quality report, issue and resolution persistence + API** (child slice of FTF-0516; Control-plane design 2026-10-08T11:00Z; §6.10, §6.12, §6.24, §7A.10, §8.1 steps 16-18, §8.2, §9, Screen F, §39 Datasets `GET /datasets/{id}/issues` + `POST /datasets/{id}/resolve-issue`, §67.2, §67.4, §69.1, §77, §78.4). FTF-0516's negative acceptance ("cannot edit locked data in place or mark a detector false positive without recorded authorized rationale") needs persisted issues and decisions; FTF-0515 is pure.
   - Migration `0026_dataset_quality_issues` (next free; renumber if taken). UQ datasets (organization_id, project_id, id, name, purpose, version, verified_sha256) as the lineage FK target.

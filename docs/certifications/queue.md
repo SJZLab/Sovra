@@ -24555,3 +24555,7 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
   - FTF-1206 r4, tests only (0h)
 - **Under verification:** FTF-1602 r2 (#629).
 - **ci-verdict:** all 4 relay merges since 12:35Z landed on a green ci-verdict.
+
+## 2026-10-08T15:20Z — Control plane: FTF-1602 returned (134/302 unchanged)
+- **Returned:** FTF-1602 r3 (0i): pin the record version and retention, integration tests for the partial and
+  foreign-tenant cases, typed input, 0 mutation survivors.
