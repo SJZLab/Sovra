@@ -25,8 +25,23 @@ string is, because every pattern here is matched with `fullmatch`, never
 argument, a field name absent from the schema, a missing required field, or
 any present field whose value fails its own kind's check all raise one of
 this module's own coded errors -- never a silently dropped field, a
-coerced value, or a partially-built event. Error messages name the
-rejected field, never its value (Section 65.4 "no secrets ... in log").
+coerced value, or a partially-built event. Error messages are constant
+strings: they never echo caller-supplied text -- not a value, not an event
+kind and not a field name (Section 65.4 "no secrets ... in log"); a caller
+can tell refusals apart by the error class and its stable `code`.
+
+Types are exact. A `str`/`int`/`float`/`datetime` subclass is refused
+(`type(x) is str`, never `isinstance`): a subclass can lie in `__eq__`
+(passing an enum check it should fail) or in `__str__`/`__repr__` (storing
+one value and serialising another). `ContentRef` is re-validated at
+`emit_event` and stored as a fresh copy, so a ref forged with
+`object.__new__`, one whose `__post_init__` was skipped by a subclass, or
+one mutated with `object.__setattr__` is refused, and a caller mutating its
+own ref afterwards cannot change an emitted event.
+
+Disclosed (shape-only): id and code values are checked for shape and bound,
+not scanned for secret or PII look-alikes -- a well-formed short id that
+happens to be a secret still passes.
 
 This module is a pure library with no live caller yet: the producers
 (Temporal workflows, worker logs, serving spans) are separate,
@@ -77,6 +92,7 @@ SPAN_STATUSES: tuple[str, ...] = ("ok", "error")
 _ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,98}")
 _CODE_RE = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _MAX_NUMBER = 1_000_000_000
+_ABSENT = object()
 
 
 class ContentFreeTelemetryError(Exception):
@@ -126,63 +142,65 @@ class TelemetryEvent:
 
 
 def _id_value(value: object, what: str) -> str:
-    if not isinstance(value, str) or not _ID_RE.fullmatch(value):
+    if type(value) is not str or not _ID_RE.fullmatch(value):
         raise ContentRefusedError(f"{what} is not a bounded id")
     return value
 
 
 def _code_value(value: object, what: str) -> str:
-    if not isinstance(value, str) or not _CODE_RE.fullmatch(value):
+    if type(value) is not str or not _CODE_RE.fullmatch(value):
         raise ContentRefusedError(f"{what} is not a bounded code")
     return value
 
 
 def _enum_value(value: object, allowed: tuple[str, ...], what: str) -> str:
-    # Type check before membership: an unhashable value must raise our
-    # own error, never a bare TypeError from `in`.
-    if not isinstance(value, str) or value not in allowed:
+    # Exact-type check before membership: an unhashable value must raise
+    # our own error (never a bare TypeError from `in`), and a str subclass
+    # with a lying __eq__ must not pass the membership test.
+    if type(value) is not str or value not in allowed:
         raise ContentRefusedError(f"{what} is not one of the closed set {allowed}")
     return value
 
 
 def _count_value(value: object, what: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0 or value > _MAX_NUMBER:
+    if type(value) is not int or value < 0 or value > _MAX_NUMBER:
         raise ContentRefusedError(f"{what} is not a bounded non-negative count")
     return value
 
 
-def _finite(value: float) -> bool:
-    return value == value and value not in (float("inf"), float("-inf"))
-
-
 def _number_value(value: object, what: str) -> float:
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, int | float)
-        or not _finite(float(value))
-        or value < 0
-        or value > _MAX_NUMBER
-    ):
+    # Exact int/float only. The bound is checked on the value itself, before
+    # any float() conversion: float(10**400) raises a bare OverflowError.
+    # NaN fails every comparison, so `not (0 <= value <= max)` refuses it,
+    # and +/-inf fall outside the bound.
+    if type(value) not in (int, float) or not (0 <= value <= _MAX_NUMBER):  # type: ignore[operator]
         raise ContentRefusedError(f"{what} is not a bounded non-negative number")
-    return float(value)
+    # `+ 0.0` normalises -0.0 to +0.0 (accepted, stored as +0.0).
+    return float(value) + 0.0  # type: ignore[arg-type]
 
 
 def _timestamp_value(value: object, what: str) -> datetime:
-    if not isinstance(value, datetime) or value.tzinfo is None:
+    if type(value) is not datetime or value.tzinfo is None or value.utcoffset() is None:
         raise ContentRefusedError(f"{what} must be a timezone-aware datetime")
     return value
 
 
 def _bool_value(value: object, what: str) -> bool:
-    if not isinstance(value, bool):
+    if type(value) is not bool:
         raise ContentRefusedError(f"{what} must be a bool")
     return value
 
 
 def _content_ref_value(value: object, what: str) -> ContentRef:
-    if not isinstance(value, ContentRef):
+    if type(value) is not ContentRef:
         raise ContentRefusedError(f"{what} must be a ContentRef, never inline content")
-    return value
+    # Re-validate both ids: `__post_init__` only ran at construction, and a
+    # frozen dataclass can still be forged (object.__new__) or mutated
+    # (object.__setattr__). A fresh copy is stored, so the caller's own ref
+    # cannot be mutated into the emitted event afterwards.
+    ref_id = getattr(value, "ref_id", None)
+    key_id = getattr(value, "encryption_key_id", None)
+    return ContentRef(_id_value(ref_id, "content ref id"), _id_value(key_id, "encryption key id"))
 
 
 @dataclass(frozen=True)
@@ -210,7 +228,7 @@ def _validate_field(name: str, spec: _FieldSpec, value: object) -> object:
         return _bool_value(value, name)
     if spec.kind == "content_ref":
         return _content_ref_value(value, name)
-    raise InvalidEventError(f"unknown field kind {spec.kind!r}")  # pragma: no cover
+    raise InvalidEventError("unknown field kind")  # pragma: no cover
 
 
 _WORKFLOW_SCHEMA: Mapping[str, _FieldSpec] = MappingProxyType(
@@ -265,17 +283,23 @@ def emit_event(kind: object, fields: object) -> TelemetryEvent:
     immutable, content-free `TelemetryEvent`. Fail closed on anything
     unrecognised, missing or out of bound -- never drop or coerce a field.
     """
-    if not isinstance(kind, str) or kind not in EVENT_SCHEMAS:
-        raise InvalidEventError(f"unknown event kind {kind!r}; must be one of {EVENT_KINDS}")
+    if type(kind) is not str or kind not in EVENT_SCHEMAS:
+        raise InvalidEventError("event kind is not one of the permitted kinds")
     if not isinstance(fields, Mapping):
         raise InvalidEventError("fields must be a mapping")
     schema = EVENT_SCHEMAS[kind]
-    validated: dict[str, object] = {}
+    given: dict[str, object] = {}
     for name, value in fields.items():
-        if not isinstance(name, str) or name not in schema:
-            raise DisallowedFieldError(f"field {name!r} is not permitted on a {kind!r} event")
-        validated[name] = _validate_field(name, schema[name], value)
+        if type(name) is not str or name not in schema:
+            raise DisallowedFieldError("field is not permitted on this event kind")
+        given[name] = value
     for name, spec in schema.items():
-        if spec.required and name not in validated:
-            raise DisallowedFieldError(f"required field {name!r} is missing on a {kind!r} event")
+        if spec.required and name not in given:
+            raise DisallowedFieldError(f"required field {name!r} is missing on this event kind")
+    # Schema order, whatever the caller's order: same input, same event.
+    validated = {
+        name: _validate_field(name, spec, value)
+        for name, spec in schema.items()
+        if (value := given.get(name, _ABSENT)) is not _ABSENT
+    }
     return TelemetryEvent(kind, MappingProxyType(validated))
