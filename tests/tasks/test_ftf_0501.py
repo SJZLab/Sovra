@@ -2900,6 +2900,42 @@ def test_m1d_an_upload_is_found_by_its_exact_key_only() -> None:
         )
 
 
+def test_m1e_malformed_part_entries_from_storage_are_an_outage() -> None:
+    good = {"PartNumber": "1", "Size": "10", "ETag": '"abc"'}
+    bad_entries = {
+        "non-numeric part number": {**good, "PartNumber": "x"},
+        "non-numeric size": {**good, "Size": "big"},
+        "missing part number": {k: v for k, v in good.items() if k != "PartNumber"},
+        "missing size": {k: v for k, v in good.items() if k != "Size"},
+        "missing etag": {k: v for k, v in good.items() if k != "ETag"},
+        "null size": {**good, "Size": None},
+    }
+    for label, entry in bad_entries.items():
+        with FakeS3() as fake:
+            target = _target(_jsonl(3000))
+            client = _client_with(fake, list_parts=lambda b, k, u, _e=entry: [good, _e])
+            got = _capture(
+                lambda c=client, t=target, st=fake.settings(): dos.list_uploaded_parts(
+                    c, st, t, "u"
+                )
+            )
+            check(
+                f"{CID}-M1",
+                f"a part entry with a {label} is an outage naming the problem",
+                isinstance(got, dos.UploadStorageUnavailableError) and "malformed" in str(got),
+            )
+    with FakeS3() as fake:
+        target = _target(_jsonl(3000))
+        two = {"PartNumber": "2", "Size": "5", "ETag": '"b"'}
+        client = _client_with(fake, list_parts=lambda b, k, u: [two, good])
+        got = dos.list_uploaded_parts(client, fake.settings(), target, "u")
+        check(
+            f"{CID}-M1",
+            "well-formed entries come back sorted by part number with the quotes stripped",
+            [(p.part_number, p.size_bytes, p.etag) for p in got] == [(1, 10, "abc"), (2, 5, "b")],
+        )
+
+
 def test_m2_content_types_are_normalized_exactly_and_sniffed_by_table() -> None:
     cases = {
         "  Application/JSONL ; charset=utf-8": "application/jsonl",
