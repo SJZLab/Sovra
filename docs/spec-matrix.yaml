@@ -11507,16 +11507,26 @@ FTF-1705:
   proving_symbol: ''
   proving_test: ''
 FTF-1706:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Candidate discovery from org LiteLLM
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-18; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0215, FTF-0307,
-    FTF-1701
-  proof_state: UNPROVEN
+  evidence_hash: 994620bed542b1f35b416d59db7f064c607a542f
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-18; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0215, FTF-0307,
+    FTF-1701 (all CERTIFIED). Path: `evals/reference/candidate_discovery_from_org_litellm.py`.
+    `discover_candidates` returns one verdict per model in the organization's reconciled alias set
+    (FTF-0207), ordered by id, with capability from FTF-0307's classifier, and artifact, license
+    (accepted and on the organization's approved list), method (declared min_gpu_vram_gb against
+    available VRAM) and privacy (zero_egress/air_gapped need a verified route attestation;
+    air_gapped refuses a huggingface artifact) checked per model. A model is tunable only when every
+    check passes; inference-only endpoints are untuned comparators; anything else is blocked with
+    stable reason codes. Nothing is hardcoded or inferred from a name. Pure library: no live caller
+    yet, so proving_symbol stays blank (same disclosed precedent as FTF-0901). No schema, route,
+    dependency or secret added. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/reference/test_ftf_1706.py
 FTF-1707:
   certification_state: NONE
   criticality: MUST
