@@ -27,6 +27,7 @@ Run directly: python3 tests/tasks/test_ftf_0903.py
 
 from __future__ import annotations
 
+import math
 import re
 import subprocess
 import sys
@@ -113,7 +114,7 @@ def test_workflow_event_accepts_only_its_bounded_schema() -> None:
     check(
         "FTF-0903-A1",
         "the content_ref field holds the ref object, not a string",
-        ev.fields["failure_ref"] is ref,
+        ev.fields["failure_ref"] == ref and ev.fields["failure_ref"] is not ref,
     )
 
     minimal = emit_event(
@@ -456,11 +457,393 @@ def test_decision_is_itself_content_free() -> None:
 
 # --- Fault injection (Law 1): mutate the real module, prove each guard is load-bearing. ---
 
+
+class _EqStr(str):
+    """A str subclass whose __eq__ is always True and whose hash is a
+    fixed schema value: sails through `in`/dict lookups unless the exact
+    type is required."""
+
+    def __eq__(self, other: object) -> bool:
+        return True
+
+    def __hash__(self) -> int:
+        return hash("log")
+
+
+class _LeakStr(str):
+    """A str subclass that passes a shape check by value but serialises as
+    something else (its own __str__/__repr__)."""
+
+    def __str__(self) -> str:
+        return "LEAKED-SECRET"
+
+    def __repr__(self) -> str:
+        return "LEAKED-SECRET"
+
+
+class _LeakInt(int):
+    def __repr__(self) -> str:
+        return "LEAKED-SECRET"
+
+
+class _LeakFloat(float):
+    def __repr__(self) -> str:
+        return "LEAKED-SECRET"
+
+
+class _LeakDatetime(datetime):
+    def isoformat(self, *args: object, **kwargs: object) -> str:  # type: ignore[override]
+        return "LEAKED-SECRET"
+
+
+class _ReprKey:
+    called = False
+
+    def __repr__(self) -> str:
+        _ReprKey.called = True
+        return "LEAKED-SECRET-KEY"
+
+
+_WF = {"workflow_id": "wf-1", "task_id": "t-1", "state": "queued"}
+_LOG = {"level": "info", "message_code": "ok"}
+
+
+def _message_of(fn, *args: object) -> str | None:
+    try:
+        fn(*args)
+    except ContentFreeTelemetryError as exc:
+        return str(exc) + "|" + repr(exc.args)
+    return None
+
+
+def test_error_messages_never_echo_caller_text() -> None:
+    long_kind = "k" * 5000
+    msg = _message_of(emit_event, long_kind, {})
+    check("FTF-0903-R2-1", "a 5000-char kind is refused", msg is not None)
+    check(
+        "FTF-0903-R2-1",
+        "the refusal message is bounded (kind text is not echoed)",
+        msg is not None and len(msg) < 300 and "kkkk" not in msg,
+    )
+    secret_kind = "sk-live-SECRET123"
+    msg = _message_of(emit_event, secret_kind, {})
+    check(
+        "FTF-0903-R2-1",
+        "a secret-looking kind is not echoed in the message",
+        msg is not None and "SECRET123" not in msg,
+    )
+    msg = _message_of(emit_event, "workflow", {**_WF, "sk-live-SECRET123": "x"})
+    check(
+        "FTF-0903-R2-1",
+        "a secret-looking field NAME is not echoed in the message",
+        msg is not None and "SECRET123" not in msg,
+    )
+    msg = _message_of(emit_event, "workflow", {**_WF, "f" * 5000: "x"})
+    check(
+        "FTF-0903-R2-1",
+        "a 5000-char field name is not echoed and the message stays bounded",
+        msg is not None and len(msg) < 300 and "ffff" not in msg,
+    )
+    _ReprKey.called = False
+    msg = _message_of(emit_event, "workflow", {**_WF, _ReprKey(): "x"})
+    check(
+        "FTF-0903-R2-1",
+        "a non-str key's own __repr__ is never run nor echoed",
+        msg is not None and not _ReprKey.called and "LEAKED" not in msg,
+    )
+    msg = _message_of(emit_event, "workflow", {"task_id": "t", "state": "queued", "zz": 1})
+    check(
+        "FTF-0903-R2-1",
+        "every refusal still carries a stable machine code on the class",
+        msg is not None and DisallowedFieldError.code.startswith("content_free_telemetry_"),
+    )
+    msg = _message_of(emit_event, "log", {**_LOG, "message_code": "sk-live-SECRET123 and more"})
+    check(
+        "FTF-0903-R2-1",
+        "a rejected VALUE is not echoed either",
+        msg is not None and "SECRET123" not in msg,
+    )
+
+
+def test_exact_types_only() -> None:
+    check(
+        "FTF-0903-R2-2",
+        "a str subclass with __eq__ always True is refused as an enum value",
+        _raises(
+            ContentRefusedError,
+            emit_event,
+            "log",
+            {"level": _EqStr("bogus"), **{"message_code": "x"}},
+        ),
+    )
+    check(
+        "FTF-0903-R2-2",
+        "a str subclass (hash/eq of 'log') is refused as the event kind",
+        _raises(InvalidEventError, emit_event, _EqStr("bogus"), {}),
+    )
+    check(
+        "FTF-0903-R2-2",
+        "a str subclass is refused as a field NAME",
+        _raises(DisallowedFieldError, emit_event, "log", {**_LOG, _EqStr("level"): "info"}),
+    )
+    for field, value in (("workflow_id", _LeakStr("wf-1")), ("task_id", _LeakStr("t-1"))):
+        check(
+            "FTF-0903-R2-2",
+            f"a leaking str subclass is refused for id field {field}",
+            _raises(ContentRefusedError, emit_event, "workflow", {**_WF, field: value}),
+        )
+    check(
+        "FTF-0903-R2-2",
+        "a leaking str subclass is refused for a code field",
+        _raises(ContentRefusedError, emit_event, "log", {**_LOG, "message_code": _LeakStr("ok")}),
+    )
+    check(
+        "FTF-0903-R2-2",
+        "a leaking str subclass is refused for an enum field",
+        _raises(ContentRefusedError, emit_event, "log", {**_LOG, "level": _LeakStr("info")}),
+    )
+    check(
+        "FTF-0903-R2-2",
+        "an int subclass is refused for a number field",
+        _raises(ContentRefusedError, emit_event, "workflow", {**_WF, "timing_ms": _LeakInt(5)}),
+    )
+    check(
+        "FTF-0903-R2-2",
+        "a float subclass is refused for a number field",
+        _raises(ContentRefusedError, emit_event, "workflow", {**_WF, "cost_usd": _LeakFloat(1.5)}),
+    )
+    from packages.security.content_free_telemetry import _FieldSpec, _validate_field
+
+    check(
+        "FTF-0903-R2-2",
+        "an int subclass is refused for a count field",
+        _raises(ContentRefusedError, _validate_field, "c", _FieldSpec("count"), _LeakInt(3)),
+    )
+    check(
+        "FTF-0903-R2-2",
+        "a datetime subclass is refused for a timestamp field",
+        _raises(
+            ContentRefusedError,
+            _validate_field,
+            "t",
+            _FieldSpec("timestamp"),
+            _LeakDatetime(2026, 1, 1, tzinfo=UTC),
+        ),
+    )
+    ev = emit_event("workflow", {**_WF, "timing_ms": 5, "cost_usd": 2})
+    check(
+        "FTF-0903-R2-2",
+        "accepted numbers are stored as exact float",
+        all(type(ev.fields[k]) is float for k in ("timing_ms", "cost_usd")),
+    )
+    check(
+        "FTF-0903-R2-2",
+        "accepted strings and the kind are stored as exact str",
+        type(ev.kind) is str and all(type(ev.fields[k]) is str for k in _WF),
+    )
+
+
+def test_content_ref_is_revalidated_at_emit() -> None:
+    wf = {**_WF, "state": "failed"}
+    forged = object.__new__(ContentRef)
+    check(
+        "FTF-0903-R2-3",
+        "a ContentRef forged with object.__new__ (no attributes) is refused",
+        _raises(ContentRefusedError, emit_event, "workflow", {**wf, "failure_ref": forged}),
+    )
+    forged2 = object.__new__(ContentRef)
+    object.__setattr__(forged2, "ref_id", "bad id with spaces and\nnewline")
+    object.__setattr__(forged2, "encryption_key_id", "key-1")
+    check(
+        "FTF-0903-R2-3",
+        "a forged ContentRef with an unbounded ref_id is refused",
+        _raises(ContentRefusedError, emit_event, "workflow", {**wf, "failure_ref": forged2}),
+    )
+
+    class _Skip(ContentRef):
+        def __post_init__(self) -> None:
+            return None
+
+    check(
+        "FTF-0903-R2-3",
+        "a ContentRef subclass that skips __post_init__ is refused",
+        _raises(
+            ContentRefusedError,
+            emit_event,
+            "workflow",
+            {**wf, "failure_ref": _Skip("bad id", "key-1")},
+        ),
+    )
+    mutated = ContentRef("blob-1", "key-1")
+    object.__setattr__(mutated, "encryption_key_id", "x" * 500)
+    check(
+        "FTF-0903-R2-3",
+        "a ContentRef mutated after construction (object.__setattr__) is refused",
+        _raises(ContentRefusedError, emit_event, "workflow", {**wf, "failure_ref": mutated}),
+    )
+    nonstr = ContentRef("blob-1", "key-1")
+    object.__setattr__(nonstr, "ref_id", 123)
+    check(
+        "FTF-0903-R2-3",
+        "a ContentRef whose ref_id was swapped to a non-str is refused",
+        _raises(ContentRefusedError, emit_event, "workflow", {**wf, "failure_ref": nonstr}),
+    )
+    good = ContentRef("blob-1", "key-1")
+    ev = emit_event("workflow", {**wf, "failure_ref": good})
+    stored = ev.fields["failure_ref"]
+    check(
+        "FTF-0903-R2-3",
+        "a valid ContentRef is accepted and equal",
+        isinstance(stored, ContentRef) and stored == good,
+    )
+    object.__setattr__(good, "ref_id", "tampered after emit")
+    check(
+        "FTF-0903-R2-3",
+        "the stored ref is a copy: mutating the caller's ref after emit changes nothing",
+        isinstance(stored, ContentRef) and stored.ref_id == "blob-1",
+    )
+
+
+def test_number_overflow_and_negative_zero() -> None:
+    from packages.security.content_free_telemetry import _FieldSpec, _validate_field
+
+    for what, value in (("10**400", 10**400), ("-10**400", -(10**400))):
+        for kind in ("number", "count"):
+            check(
+                "FTF-0903-R2-4",
+                f"{what} in a {kind} field raises the coded refusal, not OverflowError",
+                _raises(ContentRefusedError, _validate_field, "n", _FieldSpec(kind), value),
+            )
+    check(
+        "FTF-0903-R2-4",
+        "10**400 through emit_event is a coded refusal",
+        _raises(ContentRefusedError, emit_event, "workflow", {**_WF, "timing_ms": 10**400}),
+    )
+    out = _validate_field("n", _FieldSpec("number"), -0.0)
+    check(
+        "FTF-0903-R2-4",
+        "-0.0 is normalised to +0.0 (decision: accept and normalise)",
+        out == 0.0 and math.copysign(1.0, out) == 1.0,
+    )
+
+
+def test_exact_key_matching_and_enum_case() -> None:
+    for name in ("State", "Workflow_ID", "state_extra", "x_anything", "prompt_text", "Prompt"):
+        check(
+            "FTF-0903-R2-5",
+            f"field name {name!r} is refused (exact-key matching, no normalisation)",
+            _raises(DisallowedFieldError, emit_event, "workflow", {**_WF, name: "x"}),
+        )
+    for bad in ("INFO", "Info", " info", "info "):
+        check(
+            "FTF-0903-R2-5",
+            f"enum value {bad!r} is refused (case/whitespace exact)",
+            _raises(ContentRefusedError, emit_event, "log", {**_LOG, "level": bad}),
+        )
+    check(
+        "FTF-0903-R2-5",
+        "an unhashable kind ([]) raises the typed error, not TypeError",
+        _raises(InvalidEventError, emit_event, [], {}),
+    )
+    check(
+        "FTF-0903-R2-5",
+        "an unhashable kind ({}) raises the typed error, not TypeError",
+        _raises(InvalidEventError, emit_event, {}, {}),
+    )
+
+
+def _assign_state(event: TelemetryEvent) -> None:
+    event.fields["state"] = "failed"  # type: ignore[index]
+
+
+def _delete_state(event: TelemetryEvent) -> None:
+    del event.fields["state"]  # type: ignore[attr-defined]
+
+
+def test_bounds_types_immutability_determinism() -> None:
+    ok99 = "a" * 99
+    ev = emit_event("workflow", {**_WF, "workflow_id": ok99})
+    check(
+        "FTF-0903-R2-6",
+        "an id of length 99 (the cap) is accepted unchanged, never truncated",
+        ev.fields["workflow_id"] == ok99,
+    )
+    check(
+        "FTF-0903-R2-6",
+        "an id of length 100 is refused",
+        _raises(ContentRefusedError, emit_event, "workflow", {**_WF, "workflow_id": "a" * 100}),
+    )
+    code64 = "a" * 64
+    ev = emit_event("log", {**_LOG, "message_code": code64})
+    check(
+        "FTF-0903-R2-6",
+        "a code of length 64 is accepted unchanged",
+        ev.fields["message_code"] == code64,
+    )
+    check(
+        "FTF-0903-R2-6",
+        "a code of length 65 is refused",
+        _raises(ContentRefusedError, emit_event, "log", {**_LOG, "message_code": "a" * 65}),
+    )
+    check(
+        "FTF-0903-R2-6",
+        "an uppercase code is refused",
+        _raises(ContentRefusedError, emit_event, "log", {**_LOG, "message_code": "Ok"}),
+    )
+    from packages.security.content_free_telemetry import _FieldSpec, _validate_field
+
+    check(
+        "FTF-0903-R2-6",
+        "a float is refused as a count",
+        _raises(ContentRefusedError, _validate_field, "c", _FieldSpec("count"), 3.0),
+    )
+    for junk in (b"wf-1", ValueError("wf-1"), object(), 7, None):
+        check(
+            "FTF-0903-R2-6",
+            f"{type(junk).__name__} is refused for an id field",
+            _raises(ContentRefusedError, emit_event, "workflow", {**_WF, "workflow_id": junk}),
+        )
+        check(
+            "FTF-0903-R2-6",
+            f"{type(junk).__name__} is refused for a code field",
+            _raises(ContentRefusedError, emit_event, "log", {**_LOG, "message_code": junk}),
+        )
+    ev = emit_event("workflow", _WF)
+    check(
+        "FTF-0903-R2-6",
+        "event.fields cannot be assigned",
+        _raises(TypeError, _assign_state, ev),
+    )
+    check(
+        "FTF-0903-R2-6",
+        "event.fields cannot be deleted from",
+        _raises(TypeError, _delete_state, ev),
+    )
+    check(
+        "FTF-0903-R2-6",
+        "the event itself is frozen",
+        _raises(AttributeError, lambda: setattr(ev, "kind", "log")),
+    )
+    forward = emit_event("workflow", {"workflow_id": "w", "task_id": "t", "state": "queued"})
+    backward = emit_event("workflow", {"state": "queued", "task_id": "t", "workflow_id": "w"})
+    check("FTF-0903-R2-6", "the same input gives an equal event", forward == backward)
+    check(
+        "FTF-0903-R2-6",
+        "field order is the schema order whatever the input order",
+        list(forward.fields) == list(backward.fields) == ["workflow_id", "task_id", "state"],
+    )
+    check(
+        "FTF-0903-R2-6",
+        "repeated emission is deterministic",
+        emit_event("workflow", _WF) == emit_event("workflow", dict(_WF)),
+    )
+
+
 _PROBE = """
 import sys
 sys.path.insert(0, {root!r})
 from packages.security.content_free_telemetry import (
-    emit_event, ContentFreeTelemetryError,
+    emit_event, ContentFreeTelemetryError, ContentRef,
 )
 
 def outcome(fn):
@@ -479,6 +862,7 @@ print(outcome(lambda: emit_event("workflow", {{"task_id": "t", "state": "queued"
 print(outcome(lambda: emit_event("workflow", {{**wf, "extra": "x"}})))
 print(outcome(lambda: emit_event("workflow", {{**wf, "cost_usd": -1}})))
 print(outcome(lambda: emit_event("workflow", {{**wf, "failure_ref": "raw text"}})))
+print(outcome(lambda: emit_event("workflow", {{**wf, "failure_ref": object.__new__(ContentRef)}})))
 """
 
 
@@ -510,6 +894,7 @@ BASELINE = [
     "content_free_telemetry_disallowed_field",  # undeclared field "extra"
     "content_free_telemetry_content_refused",  # negative cost
     "content_free_telemetry_content_refused",  # raw string as content_ref
+    "content_free_telemetry_content_refused",  # forged ContentRef (no attributes)
     "",
 ]
 
@@ -517,7 +902,7 @@ BASELINE = [
 MUTATIONS = [
     (
         "enum membership check removed (any string level accepted)",
-        r"if not isinstance\(value, str\) or value not in allowed:",
+        r"if type\(value\) is not str or value not in allowed:",
         "if False:",
         0,
     ),
@@ -529,27 +914,27 @@ MUTATIONS = [
     ),
     (
         "required-field check removed",
-        r"if spec\.required and name not in validated:",
-        "if False:",
+        r"elif spec\.required:",
+        "elif False:",
         2,
     ),
     (
         "undeclared field names silently accepted",
-        r"if not isinstance\(name, str\) or name not in schema:",
+        r"if type\(name\) is not str or name not in schema:",
         "if False:",
         3,
     ),
     (
         "negative/overflowing numbers accepted (bound dropped from _number_value only)",
-        r"not _finite\(float\(value\)\)\n        or value < 0\n        or value > _MAX_NUMBER",
-        "not _finite(float(value))",
+        r"or not \(0 <= value <= _MAX_NUMBER\)",
+        "",
         4,
     ),
     (
-        "content_ref type check removed (raw string accepted as a reference)",
-        r"if not isinstance\(value, ContentRef\):",
-        "if False:",
-        5,
+        "ContentRef re-validation at emit removed (a forged ref is stored as given)",
+        r"return ContentRef\(_id_value\(ref_id, \"content ref id\"\), _id_value\(key_id, \"encryption key id\"\)\)",
+        "return value",
+        6,
     ),
 ]
 
