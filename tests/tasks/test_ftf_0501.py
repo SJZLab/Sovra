@@ -2914,10 +2914,9 @@ def test_m1e_malformed_part_entries_from_storage_are_an_outage() -> None:
         with FakeS3() as fake:
             target = _target(_jsonl(3000))
             client = _client_with(fake, list_parts=lambda b, k, u, _e=entry: [good, _e])
+            settings = fake.settings()
             got = _capture(
-                lambda c=client, t=target, st=fake.settings(): dos.list_uploaded_parts(
-                    c, st, t, "u"
-                )
+                lambda c=client, t=target, st=settings: dos.list_uploaded_parts(c, st, t, "u")
             )
             check(
                 f"{CID}-M1",
