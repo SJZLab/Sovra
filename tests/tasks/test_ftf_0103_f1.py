@@ -20,6 +20,11 @@ Clause -> test mapping:
   keeps it via `oversize_error`; routes without the option keep 413:
   test_route_can_keep_its_own_oversize_error_contract
 * F1-N2 the constant is the documented 32 MiB: test_cap_constant_is_32_mib
+* F1-A4 reading STOPS at the cap (never reads on to the end of the stream): a chunked body that
+  exceeds the cap and never sends its terminating 0-chunk is refused 413 over a real socket, and
+  an ASGI receive that counts pulled bytes is read no further than cap + one chunk:
+  test_reading_stops_at_the_cap_over_a_real_socket,
+  test_reading_stops_at_the_cap_on_an_endless_stream
 
 Real uvicorn server over a real local socket (the pattern of tests/tasks/test_ftf_0103.py).
 Run directly: python3 tests/tasks/test_ftf_0103_f1.py
@@ -378,6 +383,97 @@ def test_unauthenticated_malformed_tenant_and_empty_roles_still_fail_closed() ->
         pass
     else:
         check("FTF-0103-F1-N4", "require_role refuses an empty role set", False)
+
+
+def test_reading_stops_at_the_cap_over_a_real_socket() -> None:
+    """Chunked body larger than the cap, terminating 0-chunk NEVER sent. A guard that reads the
+    whole body and checks afterwards waits for the terminator forever; the real one answers 413
+    as soon as the cap is crossed."""
+    with _running_app() as port:
+        HANDLER_RUNS.clear()
+        sock = socket.create_connection(("127.0.0.1", port), timeout=15)
+        try:
+            sock.sendall(
+                (
+                    f"POST /api/v1/orgs/{ORG}/things HTTP/1.1\r\nHost: x\r\n"
+                    "X-Test-Principal: member\r\nContent-Type: application/json\r\n"
+                    "Transfer-Encoding: chunked\r\n\r\n"
+                ).encode()
+            )
+            # One declared chunk of 2x cap; only cap + 1 bytes of it are ever sent, no 0-chunk.
+            sock.sendall(b"%x\r\n" % (CAP * 2))
+            piece = b"a" * (1 << 20)
+            sent = 0
+            try:
+                while sent < CAP + 1:
+                    part = piece[: min(len(piece), CAP + 1 - sent)]
+                    sock.sendall(part)
+                    sent += len(part)
+            except (TimeoutError, ConnectionError):
+                pass  # the server already answered and closed: also a refusal
+            sock.settimeout(10)
+            data = b""
+            try:
+                while b"\r\n\r\n" not in data:
+                    got = sock.recv(65536)
+                    if not got:
+                        break
+                    data += got
+            except (TimeoutError, ConnectionError):
+                pass
+        finally:
+            sock.close()
+        status = int(data.split(b" ", 2)[1]) if data.startswith(b"HTTP/") else -1
+        check(
+            "FTF-0103-F1-A4",
+            f"cap+1 bytes sent, stream never terminated -> 413 within 10 s (got {status})",
+            status == 413,
+        )
+        check("FTF-0103-F1-A4", "the handler never ran", HANDLER_RUNS == [])
+
+
+def test_reading_stops_at_the_cap_on_an_endless_stream() -> None:
+    import asyncio
+
+    from fastapi import HTTPException
+    from starlette.requests import Request
+
+    chunk = 1 << 20
+    pulled = [0]
+    limit = CAP + 2 * chunk  # a reader that goes past this has not stopped at the cap
+
+    async def receive() -> dict[str, Any]:
+        pulled[0] += chunk
+        if pulled[0] > limit:
+            raise AssertionError("reader kept pulling past the cap")
+        return {"type": "http.request", "body": b"a" * chunk, "more_body": True}
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/x",
+            "headers": [(b"transfer-encoding", b"chunked")],
+        },
+        receive,
+    )
+    outcome = "no error"
+    try:
+        asyncio.run(rbac_middleware._read_capped_body(request, (413, "request_too_large")))
+    except HTTPException as exc:
+        outcome = f"{exc.status_code} {exc.detail}"
+    except AssertionError as exc:
+        outcome = f"over-read: {exc}"
+    check(
+        "FTF-0103-F1-A4",
+        f"an endless stream is refused 413 request_too_large (got {outcome})",
+        outcome == "413 request_too_large",
+    )
+    check(
+        "FTF-0103-F1-A4",
+        f"no more than cap + one chunk is pulled (pulled {pulled[0]})",
+        CAP < pulled[0] <= CAP + chunk,
+    )
 
 
 def test_cap_constant_is_32_mib() -> None:
