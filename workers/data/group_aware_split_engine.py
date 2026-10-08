@@ -36,6 +36,9 @@ cannot drive a reshuffle; changing the seed or strategy is a new manifest, not
 an edit. A role with no records makes the manifest `insufficient` (never
 silently "ready"); sample-size adequacy is Section 69's job, not claimed here.
 
+Caller contract: the caller must call `quality_issue_engine.assert_clear_for_split` before
+`allocate_splits`; this engine does not call it, and the wiring task enforces the order.
+
 Scope (disclosed): near-duplicate resolution happens before this engine and
 reaches it as linkage keys; no augmentation, tokenization or token-packed
 batches are handled here. Malformed input raises `SplitEngineError`. No live
