@@ -478,6 +478,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0903.py
       - name: FTF-0905 negative-test proof (canary-secret generator -- unique prefixed markers, no real-secret collision, full-coverage leak ledger, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0905.py
+      - name: FTF-H010-P1 negative-test proof (model import fields + import-validation jobs -- migration SQL + RLS/GRANT shape + fault injection, store on SQLite, route seams, mounted app, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h010_p1.py
       - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
         run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check
@@ -2922,6 +2924,51 @@ jobs:
       - name: Prove the real candidate-selection + persisted-audit evidence against the live database
         run: uv run python3 tests/integration/test_ftf_04a18_candidate_selection.py
 
+  model-import-integration:
+    # FTF-H010-P1: real Postgres evidence for the model import fields +
+    # import-validation jobs slice (migration 0027): upgrade/downgrade/upgrade,
+    # ENABLE+FORCE RLS and a non-allow-all tenant policy on model_import_jobs,
+    # the enqueue/list/get routes on a real uvicorn server (every origin
+    # enqueues queued, external_endpoint+artifact and imported_adapter-with-
+    # no-base refused 400, a foreign/missing parent or artifact 404, viewer
+    # 403), cross-tenant/cross-project 404s identical to missing, the
+    # restricted sovra_app role's column-limited UPDATE (state/failure_code/
+    # updated_at only, never requested_origin) and no DELETE, RLS rejecting a
+    # raw cross-tenant INSERT, and the FTF-1001 regression proof: its own
+    # already-certified ModelVersion creation keeps working completely
+    # unchanged, with the new origin/adapter_only/external_provider_model_ref
+    # columns correctly auto-derived, plus the two new structural CHECK
+    # constraints refusing a raw bypass INSERT --
+    # tests/integration/test_ftf_h010_p1_model_import.py.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' model-import-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftfh010p1
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftfh010p1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfh010p1
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real model import fields + import-validation jobs evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_h010_p1_model_import.py
+
   ci-verdict:
     # THE result to read for "CI is green" (merge-on-green, certification, Control plane).
     # Fails on any failed or cancelled job, on any skipped job without a documented exemption
@@ -2991,6 +3038,7 @@ jobs:
       - network-policy-enforcement-integration
       - object-storage-backup-integration
       - mlflow-projection-integration
+      - model-import-integration
       - candidate-selection-integration
     runs-on: ubuntu-latest
     timeout-minutes: 5
