@@ -10572,7 +10572,7 @@ PR is not landed by the next certifier shift.
 - **Observation, not a finding:** data_exposure_check without arguments prints "no datastore backends declared". CI runs
   it with `--backends postgres_rls,s3_identity --fail-on-exposure`, so the gate is intact.
 
-## 2026-10-08T15:20Z — RETURNED: FTF-1602 (r3)
+## 2026-10-08T14:30Z — RETURNED: FTF-1602 (r3)
 - **FTF-1602: RETURNED** (round 2 → 3; production plus tests; #629, 7d28d4c90e3657911788bdf348d760c01e683aaa).
   Independent verifier on real SeaweedFS with a bounded fixture.
   - Item 3 holds: verify re-checks counts, bytes and the manifest hash, RED in unit and integration.
