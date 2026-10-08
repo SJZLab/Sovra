@@ -474,6 +474,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0901.py
       - name: FTF-0903 negative-test proof (content-free telemetry -- bounded workflow/log/span schemas, no snippet/traceback/prompt leak, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0903.py
+      - name: FTF-0905 negative-test proof (canary-secret generator -- unique prefixed markers, no real-secret collision, full-coverage leak ledger, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0905.py
       - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
         run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check

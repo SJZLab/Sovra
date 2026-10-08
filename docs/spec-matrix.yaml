@@ -9588,15 +9588,35 @@ FTF-0904:
   proving_symbol: ''
   proving_test: ''
 FTF-0905:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Canary-secret generator
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-14; scenarios=Q23, Q25; deps=FTF-0901, FTF-0902
-  proof_state: UNPROVEN
+  evidence_hash: PENDING_FINAL_COMMIT
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-14; scenarios=Q23, Q25; deps=FTF-0901, FTF-0902 (both
+    CERTIFIED). Path: packages/security/canary_secret_generator.py.
+
+    Built: `generate_canary()` returns a unique `CanaryMarker` whose value is a fixed, unmistakable
+    `CANARY-DO-NOT-USE-` prefix in front of a `secrets.token_hex` random token -- never caller
+    material -- checked against any disclosed real secret before being returned
+    (`RealSecretCollisionError`). `encode_canary`/`fragment_canary` cover Section 12's literal,
+    encoded (base64/hex/url) and fragmented canary cases. `CanaryPlacementLedger` records each
+    authorized placement (`PlacementRecord`: canary id, one of Section 12's seven sinks, encoding,
+    approver) and requires every recorded placement to be explicitly marked checked
+    (`record_checked`) before `assert_leak_test_complete` will pass (`IncompleteLeakCoverageError`
+    otherwise) -- the negative_acceptance ("never equate one absent marker with proof of all
+    content safety") made executable: checking some but not all planted sinks can never be called
+    complete. A confirmed leak (`found=True`) raises `CanaryLeakedError` immediately, never
+    deferred.
+
+    Disclosed: this module is a pure library with no live caller yet -- the producers that will
+    actually place a canary in a real error path/trace/artifact (training/evaluation workers) are
+    separate, dependency-gated tasks; proving_symbol stays blank, same precedent as
+    FTF-0901/FTF-0902/FTF-0903. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0905.py
 FTF-0906:
   certification_state: NONE
   criticality: MUST
