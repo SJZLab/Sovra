@@ -49,6 +49,7 @@ import json
 import os
 import re
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -318,6 +319,54 @@ def test_fault_injection_against_the_migration_file_on_disk() -> None:
             src.replace("WHEN 'adapter' THEN 'imported_adapter'", "WHEN 'adapter' THEN 'imported_weights'")
         ),
     )
+
+
+def _offline_sql(revision_range: str, action: str) -> str:
+    """Runs the real, unmodified alembic `action` in `--sql` (offline) mode:
+    real Python migration code executes and every real `op.*` call renders
+    its DDL, but nothing connects to a database. The only way (short of a
+    live Postgres) to prove `upgrade()`/`downgrade()` themselves are not
+    short-circuited -- the source-text shape checks above never actually
+    call them."""
+    env = {**os.environ, "SOVRA_DATABASE_URL": "postgresql+psycopg://x:y@localhost:5432/z"}
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", action, revision_range, "--sql"],
+        cwd=str(ROOT / "apps" / "api"),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    check(
+        CID,
+        f"alembic {action} {revision_range} --sql exits 0 ({result.stderr[-300:]})",
+        result.returncode == 0,
+    )
+    return result.stdout
+
+
+def test_m1_offline_upgrade_sql_actually_runs() -> None:
+    up = _offline_sql("0025_dataset_upload_hardening:0027_model_import", "upgrade")
+    for needle in (
+        "ALTER TABLE model_versions ADD COLUMN origin",
+        "ALTER TABLE model_versions ALTER COLUMN origin SET NOT NULL",
+        "ck_model_versions_external_endpoint_consistency",
+        "ck_model_versions_imported_adapter_consistency",
+        "CREATE TABLE model_import_jobs",
+        "UPDATE model_versions SET origin = CASE import_kind",
+        "version_num='0027_model_import'",
+    ):
+        check(CID, f"the real upgrade SQL contains {needle!r}", needle in up)
+
+
+def test_m1_offline_downgrade_sql_actually_runs() -> None:
+    down = _offline_sql("0027_model_import:0025_dataset_upload_hardening", "downgrade")
+    for needle in (
+        "DROP TABLE model_import_jobs",
+        "ALTER TABLE model_versions DROP COLUMN origin",
+        "ALTER TABLE model_versions DROP CONSTRAINT ck_model_versions_origin_values",
+        "version_num='0025_dataset_upload_hardening'",
+    ):
+        check(CID, f"the real downgrade SQL contains {needle!r}", needle in down)
 
 
 # -- S*: store against SQLite, with the reused DB-touching seams replaced ----
@@ -925,6 +974,41 @@ def test_m2_model_version_new_field_defaulting() -> None:
             lambda: _mv(lineage_completeness="bogus"), mv_schema.ModelVersionValidationError
         ),
     )
+
+
+def test_m2_import_kind_branch_comparisons_are_exact_never_normalized() -> None:
+    """model_version_schema.py's own `kind == "endpoint"`/`kind in
+    _ARTIFACT_ONLY_KINDS` guards (pre-existing, FTF-1001) must use exact
+    matching -- probed the same way as test_s9, by bypassing the module's
+    own validate_import_kind (which already refuses any case/whitespace
+    variant) to show the comparisons themselves never quietly normalize."""
+    original = mv_schema.validate_import_kind
+    mv_schema.validate_import_kind = lambda v: v
+    try:
+        check(
+            CID,
+            "a padded/cased 'endpoint' variant never matches kind == 'endpoint' -- an "
+            "artifact id that the real endpoint branch would forbid is let through "
+            "uninspected (neither branch recognizes the kind at all)",
+            _mv(
+                import_kind=" Endpoint ", trainable_artifact_id=_MV_ARTIFACT, origin="factory_trained"
+            ).import_kind
+            == " Endpoint ",
+        )
+        check(
+            CID,
+            "a padded/cased 'adapter' variant never matches kind in _ARTIFACT_ONLY_KINDS -- "
+            "an endpoint_reference that branch would forbid is let through uninspected",
+            _mv(
+                import_kind=" Adapter ",
+                endpoint_reference="https://x.example.com",
+                trainable_artifact_id=None,
+                origin="factory_trained",
+            ).import_kind
+            == " Adapter ",
+        )
+    finally:
+        mv_schema.validate_import_kind = original
 
 
 # -- R*: routes, driven over real HTTP with the DB-touching seams replaced ----
