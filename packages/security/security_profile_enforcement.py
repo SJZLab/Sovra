@@ -132,8 +132,7 @@ class Destination:
     provider: str | None = None
 
     def __post_init__(self) -> None:
-        _member(self.kind, DESTINATION_KINDS, "destination kind")
-        if self.kind == "internal":
+        if _member(self.kind, DESTINATION_KINDS, "destination kind") == "internal":
             if self.provider is not None:
                 raise InvalidEffectRequestError("an internal destination has no provider")
         else:
