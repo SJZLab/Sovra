@@ -22,8 +22,10 @@ Run directly: python3 tests/tasks/test_ftf_0309_p1.py
 
 from __future__ import annotations
 
+import atexit
 import contextlib
 import http.client
+import ipaddress
 import json
 import os
 import socket
@@ -33,6 +35,7 @@ import time
 import urllib.parse
 import uuid
 from datetime import UTC, datetime
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -50,16 +53,14 @@ from packages.litellm_client.real_tool_call_probe import (  # noqa: E402
     ToolCallProbeResult,
     ToolCallProbeState,
 )
-from packages.litellm_client.v1_model_info_enrichment import (  # noqa: E402
-    EnrichmentState,
-    ModelInfoEnrichmentResult,
-)
+from packages.litellm_client.secret_manager_integration import OpenBaoConfig  # noqa: E402
 from packages.litellm_client.v1_models_discovery import (  # noqa: E402
     DiscoveredModel,
     DiscoveryState,
     ModelDiscoveryResult,
     ModelMetadataStatus,
 )
+from packages.security.url_policy import ConnectionPolicy  # noqa: E402
 
 from app.artifacts.artifact_crud import ArtifactNotFoundError  # noqa: E402
 from app.auth.rbac_middleware import AuthenticatedPrincipal, Role  # noqa: E402
@@ -137,6 +138,90 @@ def _probe(model: str | None, *, verified: bool = True, state=ToolCallProbeState
     )
 
 
+# -- Real local secret-backend fixture (OpenBao KV v2 read subset), same
+# convention tests/tasks/test_ftf_0204.py/test_ftf_0207.py already established.
+# No TLS needed here -- OpenBaoConfig's own client is not scheme-policy-gated
+# by `packages.security.url_policy` (that gate is for the caller-supplied
+# LiteLLM gateway `base_url` only), so plain loopback HTTP is the real
+# convention every one of those tests already uses. ---------------------
+
+_SECRET_MOUNT = "secret"
+_SECRET_PATH = "litellm/ftf-0309-p1"
+_SECRET_FIELD = "api_key"
+_SECRET_VALUE = "sk-real-gateway-key-0309"
+_SECRET_TOKEN = "test-vault-token-0309"
+
+
+class _SecretBackendHandler(BaseHTTPRequestHandler):
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        pass
+
+    def _json(self, status: int, payload: dict[str, object] | None) -> None:
+        body = json.dumps(payload).encode("utf-8") if payload is not None else b""
+        self.send_response(status)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
+    def do_GET(self) -> None:  # noqa: N802
+        if self.headers.get("X-Vault-Token") != _SECRET_TOKEN:
+            self._json(403, {"errors": ["permission denied"]})
+            return
+        if self.path == f"/v1/{_SECRET_MOUNT}/data/{_SECRET_PATH}":
+            self._json(
+                200,
+                {"data": {"data": {_SECRET_FIELD: _SECRET_VALUE}, "metadata": {"version": 1}}},
+            )
+        else:
+            self._json(404, {"errors": []})
+
+
+_SECRET_SERVER = ThreadingHTTPServer(("127.0.0.1", 0), _SecretBackendHandler)
+_SECRET_PORT = _SECRET_SERVER.server_address[1]
+threading.Thread(target=_SECRET_SERVER.serve_forever, daemon=True).start()
+atexit.register(_SECRET_SERVER.shutdown)
+_SECRET_CONFIG = OpenBaoConfig(address=f"http://127.0.0.1:{_SECRET_PORT}", token=_SECRET_TOKEN)
+_SECRET_REF = f"openbao://{_SECRET_MOUNT}/{_SECRET_PATH}/{_SECRET_FIELD}"
+
+
+def _counting_gateway_handler(calls: list[str]) -> type[BaseHTTPRequestHandler]:
+    """A real, minimal LiteLLM gateway. `discover_models` (FTF-0204, CERTIFIED,
+    out of this task's own scope) already makes its own real `/v1/models`
+    call followed by its own real `/model/info` call to decide each model's
+    `metadata_status` -- two real requests is this route's genuine floor.
+    The old FTF-0205 `enrich_visible_models` round trip this round removed
+    was a THIRD request on top of those two, re-fetching `/model/info` a
+    second time for content this route never consumed. Every request,
+    whatever its path, is still counted and served (never a 404 that could
+    mask a regression as a discovery failure instead of an extra call)."""
+
+    class _Handler(BaseHTTPRequestHandler):
+        def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+            pass
+
+        def do_GET(self) -> None:  # noqa: N802
+            calls.append(self.path)
+            if self.headers.get("Authorization") != f"Bearer {_SECRET_VALUE}":
+                body = b'{"error":"invalid token"}'
+                self.send_response(401)
+            elif self.path == "/v1/models":
+                body = json.dumps({"data": [{"id": "llama-trainable"}]}).encode("utf-8")
+                self.send_response(200)
+            elif self.path == "/model/info":
+                body = json.dumps({"data": []}).encode("utf-8")
+                self.send_response(200)
+            else:
+                body = b""
+                self.send_response(404)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if body:
+                self.wfile.write(body)
+
+    return _Handler
+
+
 class _Discovery:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
@@ -145,12 +230,6 @@ class _Discovery:
     def __call__(self, **kwargs: Any) -> ModelDiscoveryResult:
         self.calls.append(kwargs)
         return self.result
-
-
-def _enrichment(**kwargs: Any) -> ModelInfoEnrichmentResult:
-    return ModelInfoEnrichmentResult(
-        state=EnrichmentState.COMPLETED, entries=(), detail="", checked_at=_NOW
-    )
 
 
 class _Env:
@@ -239,7 +318,6 @@ def _running(env: _Env):
             secret_manager_config_factory=lambda: None,
             validation_policy_factory=lambda: SimpleNamespace(),
             discovery_function=env.discovery,
-            enrichment_function=_enrichment,
             probe_lookup=env.probe_lookup,
         )
     )
@@ -636,6 +714,142 @@ def test_x_connection_status_is_compared_exactly() -> None:
         CID,
         "X the in-transaction re-read also compares exactly",
         body["connection_status"] == "active" and body["trainable"] is True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Round 2 (QUEUE 0k): single real gateway call per GET, exact alias matching
+# ---------------------------------------------------------------------------
+
+
+@contextlib.contextmanager
+def _running_with_real_gateway(env: _Env, *, base_url: str, policy: ConnectionPolicy):
+    """Same seam-replacement as `_running`, but `discovery_function` is left at
+    its real default (`discover_models`) and `secret_manager_config_factory`/
+    `validation_policy_factory` point at the real local fixtures above --
+    proving the route makes at most one real network call per GET, not a
+    fake-discovery count."""
+    names = {
+        "tenant_scoped_session_for": _session_cm,
+        "get_project": env.get_project,
+        "get_connection": lambda session, ctx, connection_id: SimpleNamespace(
+            status=env.connection_statuses.pop(0) if env.connection_statuses else "active",
+            base_url=base_url,
+            secret_ref=_SECRET_REF,
+        ),
+        "get_entry": env.get_entry,
+        "get_artifact": env.get_artifact,
+    }
+    originals = {name: getattr(mcr, name) for name in names}
+    for name, value in names.items():
+        setattr(mcr, name, value)
+    app = FastAPI()
+    app.include_router(
+        mcr.build_model_capability_router(
+            lambda: None,
+            principal_resolver=_principal_resolver,
+            role_lookup=_role_lookup,
+            secret_manager_config_factory=lambda: _SECRET_CONFIG,
+            validation_policy_factory=lambda: policy,
+            probe_lookup=env.probe_lookup,
+        )
+    )
+    port = _free_port()
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    for _ in range(200):
+        if server.started:
+            break
+        time.sleep(0.02)
+    try:
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)
+        for name, value in originals.items():
+            setattr(mcr, name, value)
+
+
+def test_x_single_real_gateway_call_per_get() -> None:
+    calls: list[str] = []
+    gateway = ThreadingHTTPServer(("127.0.0.1", 0), _counting_gateway_handler(calls))
+    gateway_port = gateway.server_address[1]
+    threading.Thread(target=gateway.serve_forever, daemon=True).start()
+    try:
+        policy = ConnectionPolicy(
+            name="test-ftf-0309-p1-gateway",
+            allowed_schemes=frozenset({"http"}),
+            allowed_ports=frozenset({gateway_port}),
+            explicit_private_allowlist=(ipaddress.ip_network("127.0.0.0/8"),),
+        )
+        env = _Env()
+        env.entry, env.artifact = _entry(), _artifact()
+        with _running_with_real_gateway(
+            env, base_url=f"http://127.0.0.1:{gateway_port}", policy=policy
+        ) as base:
+            status, body = _get(base)
+        check(
+            CID,
+            "a real gateway's /v1/models alone is enough to classify (no invented enrichment)",
+            status == 200
+            and body["access"] == "granted"
+            and body["capability"] == "trainable_open_weight",
+        )
+        check(
+            CID,
+            "exactly the discovery client's own two real requests reached the gateway for one "
+            "GET (/v1/models, /model/info) -- the old enrichment round trip's extra /model/info "
+            "and extra secret resolution never happen",
+            calls == ["/v1/models", "/model/info"],
+        )
+    finally:
+        gateway.shutdown()
+
+
+def test_x_exact_alias_matching_in_the_mapping_lookup() -> None:
+    """Pins that no normalisation is ever applied to `model_name` before the
+    mapping lookup, end to end through the route: `env.get_entry` models the
+    real store's own exact, case-sensitive SQL equality (only the one
+    originally-mapped spelling, "alias-a", has an entry) and records every
+    `public_model_name` it was actually called with."""
+    seen_names: list[str] = []
+
+    env = _Env()
+    env.entry, env.artifact = _entry(), _artifact()
+    env.discovery.result = _discovered("alias-a", "Alias-A", "ALIAS-A", "alias-a ")
+
+    def _recording_get_entry(session: Any, ctx: Any, **kwargs: Any) -> Any:
+        name = kwargs.get("public_model_name")
+        seen_names.append(name)
+        return env.entry if name == "alias-a" else None
+
+    env.get_entry = _recording_get_entry  # type: ignore[method-assign]
+
+    for variant in ("Alias-A", "ALIAS-A", "alias-a "):
+        env.connection_statuses = ["active", "active"]
+        with _running(env) as base:
+            status, body = _get(base, urllib.parse.quote(variant, safe=""))
+        check(
+            CID,
+            f"X model_name {variant!r} is not matched to the mapped 'alias-a': unknown, "
+            "null artifact",
+            status == 200
+            and body["capability"] == "unknown"
+            and body["artifact"]["artifact_id"] is None,
+        )
+    env.connection_statuses = ["active", "active"]
+    with _running(env) as base:
+        status, body = _get(base, "alias-a")
+    check(
+        CID,
+        "X the exact original spelling 'alias-a' still matches",
+        status == 200 and body["capability"] == "trainable_open_weight",
+    )
+    check(
+        CID,
+        "X every one of the four lookups used the model_name verbatim, no normalisation",
+        seen_names == ["Alias-A", "ALIAS-A", "alias-a ", "alias-a"],
     )
 
 
