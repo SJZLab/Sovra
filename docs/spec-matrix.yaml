@@ -2236,10 +2236,10 @@ FTF-0307:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0307.py
 FTF-0308:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Model-to-artifact mapping UI
-  evidence_hash: ''
+  evidence_hash: f8270c8b4e48b8a567978b33b50b61a674356118
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-14; scenarios=Q07, Q10; deps=FTF-0214, FTF-0301,
@@ -2254,7 +2254,7 @@ FTF-0308:
     (23 tests); proving_symbol stays blank. The packet's /capabilities path is not frozen in
     03-interface.yaml and is not consumed here. Fault -> RED table:
     docs/certifications/submissions/2026-10-08T0000Z-FTF-0308.md. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_0308.spec.ts
 FTF-0309:
@@ -8424,10 +8424,10 @@ FTF-0601:
   proving_symbol: build_evaluation_suite_router
   proving_test: tests/tasks/test_ftf_0601.py
 FTF-0602:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Evaluation case editor/import
-  evidence_hash: ''
+  evidence_hash: 5cd3c5c1131bcdec92a5c70a38e010318d0ab708
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0601 (CERTIFIED)
@@ -8441,7 +8441,7 @@ FTF-0602:
     (Law 6/7): no Next.js page tree exists (FTF-H029), so proof is a DOM-level Vitest spec with
     mocked fetch (30 tests); proving_symbol stays blank. Fault -> RED table:
     docs/certifications/submissions/2026-10-08T0030Z-FTF-0602.md. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_0602.spec.ts
 FTF-0603:
@@ -9280,10 +9280,10 @@ FTF-0810:
   proving_symbol: ''
   proving_test: ''
 FTF-0901:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Security profile enforcement
-  evidence_hash: 4877c2e927457f1e327084094b909f3f0112efd1
+  evidence_hash: 6e66492713a62ff3676c84a223cc6f41a649546c
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0103, FTF-0202,
@@ -9297,10 +9297,19 @@ FTF-0901:
     `security_profile_route_not_authorized`. Unknown or malformed input raises
     `security_profile_invalid_request`. Negative acceptance (private job cannot switch to a managed
     route by a weaker project setting) is pinned for org, project and job taking turns as the
-    private source. Disclosed gap: pure library with no live caller yet (datasets, workers, judges
+    private source. Round 2 (tests only, 2026-10-08): added behavioural, fault-injection-backed
+    tests that an authorization provider must match exactly -- a case-variant ("ACME"/"Acme"),
+    padded ("  acme  ") or near-miss ("acme2"/"acm") provider against an authorization for "acme"
+    all give `security_profile_route_not_authorized`, never `allowed` -- and that `approved_by`
+    (Section 11.2) is required: blank, whitespace-only and non-str values each raise
+    `InvalidEffectRequestError` at `RouteAuthorization` construction. Also pins the exact 8-member
+    `SURFACES` tuple. Disclosed gap: pure library with no live caller yet (datasets, workers, judges
     and serving are later tasks) -- blank proving_symbol, same precedent as FTF-0902. Evidence:
-    tests/tasks/test_ftf_0901.py (CI step added), mutation 66/66 killed. Not self-certified.
-  proof_state: L1-PROVEN
+    tests/tasks/test_ftf_0901.py (CI step already present), mutation 66/66 killed (whole-file,
+    `--max-mutants 0`); both new guards independently confirmed load-bearing by hand-breaking the
+    real module (normalizing the provider comparison; removing the approved_by `_text` guard) and
+    showing the suite goes RED, then restoring byte-identical. Not self-certified.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0901.py
 FTF-0902:
@@ -11528,7 +11537,7 @@ FTF-1706:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Candidate discovery from org LiteLLM
-  evidence_hash: 994620bed542b1f35b416d59db7f064c607a542f
+  evidence_hash: 4f16be7a198891c6874b5840b05bd88f35a570e2
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-18; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0215, FTF-0307,
@@ -11541,7 +11550,15 @@ FTF-1706:
     check passes; inference-only endpoints are untuned comparators; anything else is blocked with
     stable reason codes. Nothing is hardcoded or inferred from a name. Pure library: no live caller
     yet, so proving_symbol stays blank (same disclosed precedent as FTF-0901). No schema, route,
-    dependency or secret added. Not self-certified (Law 4).
+    dependency or secret added. Round 2 (Law 17): discovery now requires ScopedEvidence for the
+    FTF-0215 SyncCycleResult, the reconciliation and every attestation (organization and connection
+    must match, else CandidateDiscoveryError) and returns a non-DISCOVERED GatewayState with no
+    candidates for a non-applied cycle or a revoked, unknown, degraded, never-discovered or stale
+    catalog; NaN/inf VRAM is refused; wrong-typed maps, values, roles and license ids fail closed.
+    Round 3 (tests only, no production change): the attestation cross-org/cross-connection
+    tests now pass single-wrapped ScopedEvidence and assert the scope refusal message; mutation
+    survivors pinned; evidence_hash re-bound to the round-2 source commit (Law 15).
+    Not self-certified (Law 4).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1706.py

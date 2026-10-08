@@ -10431,3 +10431,31 @@ PR is not landed by the next certifier shift.
   - 8 behavioural survivors.
   - Gate gap: evals/ is outside MUTATION_ROOTS and SOURCE_ROOTS; to be fixed in a governance PR.
 - **New rule:** a fault row must be behavioural; a regex check that guard text is present is not evidence.
+
+## 2026-10-08T07:00Z — CERTIFIED: FTF-0308, FTF-0602, FTF-0901; RETURNED: FTF-1706 (round 2 → 3)
+- **Verification method:** independent Control-plane verifiers in detached worktrees at the merge commits. Faults were
+  behavioural only: the guard text was kept in place so regex self-checks could not satisfy them.
+- **FTF-0308: CERTIFIED** (round 2).
+  - PR #611, merge f8270c8b4e48b8a567978b33b50b61a674356118 (tests only). The component is from #598 (caf52ae).
+  - vitest 222/222. The §2.2 exact-alias non-inference faults (preselect, auto-POST, "Mapped"), the malformed POST 200
+    and the GET credentials are all RED.
+  - 6 round-1 faults RED.
+  - UNWIRED: the page tree is FTF-H029's. It is built on certified slice FTF-0308-P1.
+- **FTF-0602: CERTIFIED** (round 2).
+  - PR #612, merge 5cd3c5c1131bcdec92a5c70a38e010318d0ab708 (tests only). The component is from #602 (a824d6a).
+  - vitest 224/224. A viewer's 403 on import and on PATCH is never shown as success, and the list is unchanged (7 faults
+    RED).
+  - 7 round-1 faults RED.
+  - UNWIRED (FTF-H029). It is built on certified slice FTF-0602-P1.
+- **FTF-0901: CERTIFIED** (round 2).
+  - PR #614, merge 6e66492713a62ff3676c84a223cc6f41a649546c (tests only). Production is from #607; module blob 1be584d is
+    unchanged.
+  - Behavioural provider exactness (prefix, case and strip) and the approved_by requirement are RED.
+  - 6 round-1 faults RED. Mutation 66/66. UNWIRED disclosed.
+- **FTF-1706: RETURNED** (round 2 → 3, tests only; #615, 402102a).
+  - All four production fixes are correct: the FTF-0215 gateway state, isfinite, org/connection scoping and typed
+    guards. About 40 faults RED.
+  - The cross-org attestation test is vacuous: double-wrapping makes it fail for the wrong reason.
+  - A mutation run on a copy left 15 survivors, including failure-path counts (Law 17).
+  - The evidence_hash is stale.
+- **Governance:** #616 merged. evals/reference is now under the mutation and product-truth gates.

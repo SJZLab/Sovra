@@ -9308,18 +9308,9 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
    - **Every grader (FTF-06xx):** before submitting, apply the GRADER CHECKLIST in the same queue.md entry.
    - **Returned 2026-10-08T03:30Z (Control plane L2).** Every bullet in the list needs its own fault → RED row in the
      submission, and the row must be behavioural (a regex self-check that the guard text is present is not evidence).
-     FTF-1305, FTF-0103-F1 and FTF-0501-P2 are CERTIFIED; the items below are not.
+     FTF-1305, FTF-0103-F1, FTF-0501-P2, FTF-0308, FTF-0602 and FTF-0901 are CERTIFIED; the items below are not.
    - **GRADER CHECKLIST addition (same-class sweep):** never test membership of a raw input in a dict or set before
      checking its type. An unhashable value ([] or {}) must raise the module's own error, not TypeError.
-   - **0b. FTF-0308 round 2 (tests only).** Work in apps/web/tests/ftf_0308.spec.ts. Claim `relay/FTF-0308-r2b`. Verifier findings (each listed fault must go RED):
-     FTF-0308 RETURN -> round 2, tests only (caf52ae, #598). Component correct; vitest 186/186; honest UNWIRED disclosure (page tree owned by FTF-H029). 28 faults, 23 RED. Missing:
-     1. §2.2 "never infer from the alias name": add a test where an artifact's display_name equals the alias exactly; assert the label says "Not mapped", nothing is preselected, Map is disabled and no POST is sent (exact-name preselect, auto-POST and "Mapped" faults pass today; only a similar-name case is tested).
-     2. A malformed 200 reply to the POST is surfaced as an error, never as "No change" or mapped.
-     Optional: pin credentials on the GET mapping request.
-   - **0c. FTF-0602 round 2 (tests only).** Work in apps/web/tests/ftf_0602.spec.ts. Claim `relay/FTF-0602-r2`. Verifier findings (each listed fault must go RED):
-     FTF-0602 RETURN -> round 2, tests only (a824d6a, #602). Component correct; vitest 216/216; honest UNWIRED disclosure (FTF-H029). 34 faults, 32 RED. Missing (Law 17: a denied write is never shown as success):
-     1. POST import gets 403 {"detail":"role_not_authorized"}: assert the error is shown, no success notice appears, and the list is unchanged.
-     2. PATCH gets 403 {"detail":"role_not_authorized"}: same assertions (today "Imported 1 case." / "Saved." on a viewer 403 pass, because only the final-suite 403 is tested).
    - **0d. FTF-0616 round 2 (production fixes + tests).** Work in workers/evaluation/llm_judge_grader.py, its test and docs/spec-matrix.yaml. Claim `relay/FTF-0616-r2`. Verifier findings (each listed fault must go RED):
      FTF-0616 RETURN -> round 2, production fixes + tests (a5b86ae, #604). Gateway-only, blind, fail-to-unknown, no retries: good; mutation 212/212; real TLS gateway stand-in. Required:
      1. §27 (production): refuse critical=True outright with a typed error (06-interface.yaml already forbids llm_judge as a critical case's grader: critical_oracle_not_independent). Delete the test that asserts critical + corroboration=False gives PASSED; add one that critical=True is refused before any network call.
@@ -9329,12 +9320,6 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      5. Strict JSON: reject duplicate keys (object_pairs_hook), reject NaN/Infinity, bound confidence to [0, 1], never repair truncated JSON. Tests for each.
      6. Tests: case-variant judge id against the approved set (behavioural, not a guard-text check); one request only on a 400; a non-200 2xx status is not success; expired and access-denied secret states stay unknown/failed; multiple choices (first choice only, or refuse).
      7. spec-matrix: set FTF-0616 to IMPLEMENTED / L1-PROVEN / PROVISIONAL with proving_test, like the sibling graders, and record the real-judge acceptance clause as BLOCKED_EXTERNAL (packet resource_gate) until a gateway key and approved judge exist (owner action).
-   - **0e. FTF-0901 round 2 (tests only).** Work in tests/tasks/test_ftf_0901.py. Claim `relay/FTF-0901-r2`. Verifier findings (each listed fault must go RED):
-     FTF-0901 RETURN -> round 2, tests only (6f841c6, #607). Production correct (default deny, most-restrictive wins, boundary profiles block managed and external, exact authorization); mutation 66/66; honest UNWIRED. Missing (behavioural, not regex self-checks):
-     1. Provider exactness: destinations "ACME", " acme", "acme ", "acme2" and "acm" against an authorization for "acme" all give not_authorized (prefix, case-fold and strip faults survive behaviourally).
-     2. approved_by is required (§11.2): blank, whitespace-only and non-str approved_by each give invalid.
-     Optional: pin the exact SURFACES set.
-     Note for the wiring task: RouteAuthorization has no organization/project binding, purpose or expiry; the caller must scope it.
    - **0f. FTF-0517 round 2 (tests + one docstring line).** Work in tests/tasks/test_ftf_0517.py. Claim `relay/FTF-0517-r2`. Verifier findings (each listed fault must go RED):
      FTF-0517 RETURN -> round 2, tests only (db26d03, #591). Production is deterministic and correct; mutation 117/119 killed, 2 timeouts, 0 survived; 60 hand faults, 14 survive (several real). Tests to add in tests/tasks/test_ftf_0517.py:
      1. Pinned golden: for a fixed spec and fixed records (e.g. 200 records keyed conv-i plus tmpl-(i%30)), assert the exact manifest_sha256, the exact counts and a few exact (record_id, role, group_id) triples; also run a subprocess under PYTHONHASHSEED=0 and 777 and compare hashes (kills hash() instead of SHA-256, reversed slot mapping, ratio off-by-one, strategy dropped from the bucket input).
@@ -9344,17 +9329,15 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      5. The manifest hash changes when only group_id values change, and when `strategy` changes.
      6. A negative ratio in the validation or dev slot, e.g. (70,-10,20,20), is refused.
      Also (docstring only): state in the module docstring that the caller must call quality_issue_engine.assert_clear_for_split before allocate_splits; the wiring task enforces it.
-   - **0g. FTF-1706 round 2 (production fixes + tests).** Work in evals/reference/candidate_discovery_from_org_litellm.py and tests/reference/test_ftf_1706.py. Claim `relay/FTF-1706-r2`. Verifier findings (each listed fault must go RED):
-     FTF-1706 RETURN -> round 2, production fixes + tests (12137d0, #608). Placement under evals/reference is correct (packet files; FTF-1701/1702 precedent) and reuses FTF-0307/0402. 27 faults, 15 RED, 8 real survivors. Required:
-     1. Law 17 (production): a failed gateway must not look like an empty organisation. Consume the declared dependency FTF-0215 SyncCycleResult / the catalog AccessState (UNKNOWN/HEALTHY/REVOKED/DEGRADED) and return a non-success state for anything but a healthy, discovered catalog. Tests: invalid token, revoked, unknown, degraded/stale each give a non-success state, never `model_count=0, candidates=()`; replace test N1's empty-success assertion with an explicit healthy-and-empty case.
-     2. Fail-open (production): NaN/inf in min_gpu_vram_gb or available_gpu_vram_gb must be refused (math.isfinite in _as_non_negative and input validation); tests for NaN, inf and -inf.
-     3. Tenant/connection binding (production): reject a reconciliation or attestation from another organization/connection than organization_id; test the cross-org pairing.
-     4. Fail closed (production): unhashable license_id, non-Mapping artifacts_by_model/probes_by_model, non-artifact values and non-string roles raise CandidateDiscoveryError (or a blocked verdict), never TypeError/AttributeError.
-     5. Tests for the survivors: trainability never inferred from gateway metadata (fields.supports_fine_tuning); model ids case-exact; no evidence-first ordering; full list with more than 2 models; exact-key artifact binding (no prefix/case-insensitive match); comparator_count excludes blocked models under zero_egress; no role inference for comparators; closed reason-code vocabulary without URI/detail text; a string VRAM value is refused.
-     Note: evals/ is outside MUTATION_ROOTS and SOURCE_ROOTS; the Control plane fixes the gate coverage in a governance PR.
+   - **0g. FTF-1706 round 3 (tests only).** Work in tests/reference/test_ftf_1706.py (and the spec-matrix evidence_hash). Claim `relay/FTF-1706-r3`. Verifier findings (each listed fault must go RED):
+     FTF-1706 RETURN -> round 3, tests only (402102a, #615). All four production fixes are correct (gateway state from FTF-0215, isfinite, org/connection scoping, typed guards); about 40 faults RED. Remaining:
+     1. The attestation cross-org/connection test is vacuous: run() re-wraps every dict-form attestation value in scoped(...), so a single-wrapped cross-org attestation becomes double-wrapped and is refused for the wrong reason. Pass single-wrapped cross-org and cross-connection attestations (e.g. through a non-dict Mapping, or stop run() re-wrapping ScopedEvidence) and assert the scope refusal message itself; same for the "unscoped attestation for an unlisted model" case.
+     2. Mutation survivors (evals/ is now under the gate after the governance PR, so the next PR is gated): on failure, model_count, comparator_count and blocked_count are exactly 0 (Law 17); non-str attestation keys refused; resolved_model, license_id and source_type compared case- and strip-exactly; zero VRAM boundary (<0 vs <=0); freshness exactly at the TTL (> vs >=); organization_id/connection_id uuid guards tested directly.
+     3. Update the FTF-1706 spec-matrix evidence_hash for the round-2 source (Law 15).
+     Optional: a naive or non-datetime `now` raises CandidateDiscoveryError; a future last_successful_check_at is not fresh.
    - **0h.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
-     (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613 and FTF-1305 are CERTIFIED (2026-10-07/08); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
+     (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613, FTF-1305, FTF-0308, FTF-0602 and FTF-0901 are CERTIFIED (2026-10-07/08); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid
@@ -9565,7 +9548,7 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
     language/group fields that §68.2/§69.2 and FTF-0602 need, so they are added; the live error convention is
     `{"detail": code}`, not §40's envelope; FTF-0501's "resumable UI" clause is not in its file list and stays with
     FTF-0501's own refinement.
-- FTF-0308, FTF-0602, FTF-0616, FTF-0901, FTF-0517 and FTF-1706 are returned work in item 0 above.
+- FTF-0616, FTF-0517 and FTF-1706 are returned work in item 0 above. FTF-0501 is claimed (#610).
 - **FTF-0501** Direct object-storage upload, ready now: FTF-0501-P1 (#581) and FTF-0501-P2 (#606) are CERTIFIED. Let
   the database stamp `created_at` (or keep each request transaction short): the P2 insert guard refuses a session whose
   created_at is more than 60 s from the database's now(), so app/database clock skew must not reach it. DoD: `tools/r1_handoff.py packet FTF-0501`. Presigned multipart (≤5 min per part URL, §65.2) plus finalize

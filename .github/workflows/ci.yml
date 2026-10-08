@@ -528,15 +528,15 @@ jobs:
           base = "origin/" + os.environ["BASE_REF"]
           def git(*args):
               return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout
-          changed = git("diff", "--name-only", "--diff-filter=AMR", f"{base}...HEAD", "--", "tests/tasks/").split()
-          tests = sorted({f for f in changed if re.fullmatch(r"tests/tasks/test_[^/]+\.py", f)
+          changed = git("diff", "--name-only", "--diff-filter=AMR", f"{base}...HEAD", "--", "tests/tasks/", "tests/reference/").split()
+          tests = sorted({f for f in changed if re.fullmatch(r"tests/(tasks|reference)/test_[^/]+\.py", f)
                           and f != "tests/tasks/test_mutation_gate.py"})
           if not tests:
               print("No tests/tasks/test_*.py changed; deriving task IDs instead.")
               text = os.environ.get("PR_TITLE", "") + "\n" + os.environ.get("HEAD_REF", "")
               ids = re.findall(r"FTF-[0-9A-Z]+", text, flags=re.I)
               if not ids:
-                  added = git("diff", "-U0", f"{base}...HEAD", "--", "apps/web", "apps/api", "workers", "packages")
+                  added = git("diff", "-U0", f"{base}...HEAD", "--", "apps/web", "apps/api", "workers", "packages", "evals")
                   ids = re.findall(r"FTF-[0-9A-Z]+", "\n".join(l for l in added.splitlines() if l.startswith("+")), flags=re.I)
               found = set()
               for i in {x.lower().removeprefix("ftf-") for x in ids}:
@@ -544,6 +544,9 @@ jobs:
                   if exact.is_file():
                       found.add(str(exact))
                   found.update(str(p) for p in pathlib.Path("tests/tasks").glob(f"test_ftf_{i}_*.py"))
+                  ref = pathlib.Path(f"tests/reference/test_ftf_{i}.py")
+                  if ref.is_file():
+                      found.add(str(ref))
               tests = sorted(found)
           out = pathlib.Path(os.environ["GITHUB_OUTPUT"])
           lst = pathlib.Path(os.environ["RUNNER_TEMP"]) / "mutation-tests.txt"
@@ -556,7 +559,7 @@ jobs:
               prod = [f for f in git("diff", "--name-only", "--diff-filter=AMR", f"{base}...HEAD").split()
                       if f.endswith(".py") and under_source_roots(f) and not is_test_path(f)]
               if prod:
-                  print("::error::mutation-gate: production Python changed but this PR has no tests/tasks/test_*.py "
+                  print("::error::mutation-gate: production Python changed but this PR has no tests/tasks/test_*.py or tests/reference/test_*.py "
                         "(changed, or tests/tasks/test_ftf_<id>.py for its task ID) to kill mutants with: "
                         + ", ".join(prod) + ". Add the task test that exercises this code.")
                   raise SystemExit(1)

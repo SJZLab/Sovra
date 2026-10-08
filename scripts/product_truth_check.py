@@ -31,6 +31,7 @@ SOURCE_ROOTS = [
     "workers/data",  # Argilla-backed data/review worker
     "workers/deploy",  # deployment controller (vLLM/LiteLLM)
     "packages/shared",  # shared schema/adapter contracts
+    "evals/reference",  # reference agent/tools/discovery (FTF-17xx), imported by apps/api
 ]
 
 TEST_PATTERNS = ["/test/", "/tests/", ".test.", ".spec.", "_test.", "_tests.", "test_"]
