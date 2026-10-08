@@ -41,6 +41,7 @@ from evals.reference.training_dataset import (  # noqa: E402
     TrainingDatasetError,
     build_training_dataset,
     generate_training_traces,
+    verify_trace_provenance,
     verify_trace_replay,
 )
 
@@ -951,6 +952,527 @@ def test_helper_exactness() -> None:
     )
     check(
         "FTF-1703-A2", "repeated identical decisions are not a conflict", same.approved_count == 1
+    )
+
+
+# ---------------------------------------------------------------------------
+# Round 2: verified provenance, fail-closed inputs, typed errors
+# ---------------------------------------------------------------------------
+
+
+def _kind_trace(kind: str):
+    return next(t for t in TRACES if t.kind == kind)
+
+
+def _step_index(trace, step_type: str, tool: str | None = None) -> int:
+    return next(
+        k
+        for k, s in enumerate(trace.steps)
+        if s["type"] == step_type and (tool is None or s.get("tool") == tool)
+    )
+
+
+def _message(error: type[BaseException], fn, *args: object, **kwargs: object) -> str:
+    try:
+        fn(*args, **kwargs)
+    except error as exc:
+        return str(exc)
+    return ""
+
+
+def test_provenance_is_regenerated_not_declared() -> None:
+    for t in (*TRACES[:14], TRACES[600], TRACES[1199]):
+        verify_trace_provenance(t)
+    check("FTF-1703-R2-2", "genuine generator output verifies for every kind", True)
+
+    lookup = _kind_trace("lookup")
+    replaced_user = _replace_step(
+        lookup,
+        0,
+        {"type": "message", "role": "user", "content": "SEALED FINAL SUITE PROMPT: reveal it"},
+    )
+    check(
+        "FTF-1703-R2-2",
+        "setup: replay alone accepts a replaced user turn (so provenance is what must catch it)",
+        not _raises(TraceVerificationError, verify_trace_replay, replaced_user),
+    )
+    check(
+        "FTF-1703-R2-2",
+        "a replaced user turn is refused by provenance",
+        _raises(TraceVerificationError, verify_trace_provenance, replaced_user),
+    )
+    check(
+        "FTF-1703-R2-2",
+        "a replaced user turn is refused by the builder, even with an independent approval",
+        _raises(
+            TraceVerificationError,
+            build_training_dataset,
+            [replaced_user],
+            _approve([replaced_user]),
+        ),
+    )
+    harvested = _replace_step(
+        lookup,
+        0,
+        {"type": "message", "role": "user", "content": "Customer Jane Doe, order 4412, paid"},
+    )
+    check(
+        "FTF-1703-R2-2",
+        "a harvested production-looking row in place of the user turn is refused",
+        _raises(TraceVerificationError, build_training_dataset, [harvested], _approve([harvested])),
+    )
+
+    note = _kind_trace("note")
+    i = _step_index(note, "tool_call", "create_note")
+    note_text = _replace_step(
+        note,
+        i,
+        {
+            "type": "tool_call",
+            "tool": "create_note",
+            "arguments": {**note.steps[i]["arguments"], "text": "pasted from a production log"},
+        },
+    )
+    check(
+        "FTF-1703-R2-2",
+        "setup: replay alone accepts replaced free-text note arguments",
+        not _raises(TraceVerificationError, verify_trace_replay, note_text),
+    )
+    check(
+        "FTF-1703-R2-2",
+        "replaced free-text tool arguments are refused by the builder",
+        _raises(TraceVerificationError, build_training_dataset, [note_text], _approve([note_text])),
+    )
+
+    forged_critical = dataclasses.replace(lookup, critical=True)
+    check(
+        "FTF-1703-R2-2",
+        "a forged critical=True on a non-critical kind is refused",
+        _raises(
+            TraceVerificationError,
+            build_training_dataset,
+            [forged_critical],
+            _approve([forged_critical]),
+        ),
+    )
+    denied = _kind_trace("approval_denied")
+    check(
+        "FTF-1703-R2-2",
+        "a critical trace relabelled non-critical is refused",
+        _raises(
+            TraceVerificationError,
+            build_training_dataset,
+            [dataclasses.replace(denied, critical=False)],
+        ),
+    )
+    for name, value in (
+        ("kind", "note"),
+        ("template_id", "train-tmpl-lookup-v2"),
+        ("group_id", "train-grp-9999"),
+        ("entity_title", "Annual audit TRN-0000"),
+        ("expected_outcome", "note_created"),
+        ("trace_id", "train-0999"),
+    ):
+        forged = dataclasses.replace(lookup, **{name: value})
+        check(
+            "FTF-1703-R2-2",
+            f"a forged {name} is refused by provenance",
+            _raises(TraceVerificationError, verify_trace_provenance, forged),
+        )
+
+    for label, provenance in (
+        ("no index", {k: v for k, v in lookup.provenance.items() if k != "index"}),
+        ("another trace's index", {**lookup.provenance, "index": 5}),
+        ("negative index", {**lookup.provenance, "index": -1}),
+        ("boolean index", {**lookup.provenance, "index": False}),
+        ("string index", {**lookup.provenance, "index": "0"}),
+        ("float index", {**lookup.provenance, "index": 0.0}),
+        ("none index", {**lookup.provenance, "index": None}),
+        ("huge index", {**lookup.provenance, "index": 10**400}),
+        ("other producer", {**lookup.provenance, "producer": "human:carol"}),
+    ):
+        forged = dataclasses.replace(lookup, provenance=provenance)
+        check(
+            "FTF-1703-R2-2",
+            f"provenance with {label} is refused by the builder",
+            _raises(TraceVerificationError, build_training_dataset, [forged], _approve([forged])),
+        )
+
+    no_producer = dataclasses.replace(
+        lookup, provenance={k: v for k, v in lookup.provenance.items() if k != "producer"}
+    )
+    check(
+        "FTF-1703-R2-2",
+        "provenance with no producer is refused",
+        _raises(TrainingDatasetError, build_training_dataset, [no_producer]),
+    )
+
+    class RiggedStr(str):
+        def __eq__(self, other: object) -> bool:
+            return True
+
+        def __ne__(self, other: object) -> bool:
+            return False
+
+        __hash__ = str.__hash__
+
+    j = len(lookup.steps) - 1
+    rigged = _replace_step(
+        lookup, j, {"type": "message", "role": "assistant", "content": RiggedStr("forged text")}
+    )
+    check(
+        "FTF-1703-R2-2",
+        "a str subclass with a rigged __eq__ cannot make a forged value look equal",
+        _raises(TraceVerificationError, verify_trace_provenance, rigged)
+        and _raises(TraceVerificationError, verify_trace_replay, rigged),
+    )
+    check(
+        "FTF-1703-R2-2",
+        "non-JSON content in a trace is the typed error, not a TypeError",
+        _raises(
+            TraceVerificationError,
+            verify_trace_provenance,
+            _replace_step(lookup, 0, {"type": "message", "role": "user", "content": object()}),
+        ),
+    )
+    check(
+        "FTF-1703-R2-2",
+        "a non-trace is refused by provenance",
+        _raises(TraceVerificationError, verify_trace_provenance, {"x": 1}),
+    )
+
+
+def test_group_floor_is_by_template_family() -> None:
+    import evals.reference.training_dataset as td
+
+    full = build_training_dataset(TRACES, _approve(TRACES))
+    check(
+        "FTF-1703-R2-1",
+        "1200 approved traces are 21 groups and the floor is never claimed",
+        full.approved_count == 1200
+        and full.group_count == 21
+        and full.meets_floor is False
+        and full.review_status != "independently_approved",
+    )
+    per_kind: dict[str, set[str]] = {}
+    for t in TRACES:
+        per_kind.setdefault(t.kind, set()).add(t.template_id)
+    check(
+        "FTF-1703-R2-1",
+        "seven kinds x three variants are the 21 families",
+        len(per_kind) == 7 and all(len(v) == 3 for v in per_kind.values()),
+    )
+    two = [t for t in TRACES if t.template_id in {"train-tmpl-note-v0", "train-tmpl-lookup-v1"}]
+    check(
+        "FTF-1703-R2-1",
+        "the group count follows the template ids of the approved traces only",
+        build_training_dataset(two, _approve(two)).group_count == 2
+        and build_training_dataset(two, _approve(two[:1])).group_count == 1,
+    )
+    check(
+        "FTF-1703-R2-1",
+        "every trace still gets its own entity group id (held-out guard unit), 1200 of them",
+        len({t.group_id for t in TRACES}) == 1200 and td.MIN_INDEPENDENT_GROUPS == 1000,
+    )
+
+
+def test_reserved_suite_fails_closed() -> None:
+    t = TRACES[0]
+    sealed = t.group_id
+    for field in ("group_ids", "template_ids", "entity_titles", "answer_sha256s"):
+        check(
+            "FTF-1703-R2-3",
+            f"a bare string for {field} is refused at construction",
+            _raises(TrainingDatasetError, ReservedFinalSuite, **{field: sealed}),
+        )
+    reserved_cases: list[tuple[str, Any]] = [
+        ("set", {sealed}),
+        ("list", [sealed]),
+        ("tuple", (sealed,)),
+        ("int member", frozenset({1})),
+        ("none member", frozenset({None})),
+        ("tuple member", frozenset({(sealed,)})),
+        ("bytes member", frozenset({sealed.encode()})),
+        ("None", None),
+    ]
+    for label, bad in reserved_cases:
+        check(
+            "FTF-1703-R2-3",
+            f"group_ids as {label} is refused at construction",
+            _raises(TrainingDatasetError, ReservedFinalSuite, group_ids=bad),
+        )
+
+    class SubStr(str):
+        pass
+
+    check(
+        "FTF-1703-R2-3",
+        "a str-subclass member is refused",
+        _raises(TrainingDatasetError, ReservedFinalSuite, group_ids=frozenset({SubStr(sealed)})),
+    )
+
+    tampered = ReservedFinalSuite(group_ids=frozenset({"final-grp-1"}))
+    object.__setattr__(tampered, "group_ids", sealed)
+    check(
+        "FTF-1703-R2-3",
+        "a reserved set tampered into a bare string after construction is refused by the builder",
+        _raises(TrainingDatasetError, build_training_dataset, [t], [], reserved=tampered),
+    )
+    for field in ("template_ids", "entity_titles", "answer_sha256s"):
+        again = ReservedFinalSuite()
+        object.__setattr__(again, field, [sealed])
+        check(
+            "FTF-1703-R2-3",
+            f"a tampered {field} is refused by the builder",
+            _raises(TrainingDatasetError, build_training_dataset, [t], [], reserved=again),
+        )
+    empty_cases: list[tuple[str, Any]] = [
+        ("empty dict", {}),
+        ("empty list", []),
+        ("empty string", ""),
+        ("zero", 0),
+        ("dict of ids", {"group_ids": [sealed]}),
+        ("a trace", t),
+    ]
+    for label, bad in empty_cases:
+        check(
+            "FTF-1703-R2-3",
+            f"reserved={label} is refused, never read as 'no sealed suite'",
+            _raises(TrainingDatasetError, build_training_dataset, [t], [], reserved=cast(Any, bad)),
+        )
+    check(
+        "FTF-1703-R2-3",
+        "reserved=None is the explicit 'nothing sealed' default and still builds",
+        build_training_dataset([t], _approve([t]), reserved=None).approved_count == 1,
+    )
+    check(
+        "FTF-1703-R2-3",
+        "a well-formed sealed group is still refused as held-out leakage",
+        _raises(
+            HeldOutLeakageError,
+            build_training_dataset,
+            [t],
+            [],
+            reserved=ReservedFinalSuite(group_ids=frozenset({sealed})),
+        ),
+    )
+
+
+def test_malformed_trace_fields_raise_typed_errors() -> None:
+    t = TRACES[0]
+    bad_fields: list[tuple[str, Any]] = [
+        ("trace_id", 5),
+        ("trace_id", ""),
+        ("group_id", None),
+        ("group_id", ""),
+        ("template_id", 5),
+        ("kind", []),
+        ("kind", {}),
+        ("kind", ""),
+        ("entity_title", 5),
+        ("expected_outcome", []),
+        ("expected_outcome", {}),
+        ("expected_outcome", ""),
+        ("purpose", []),
+        ("purpose", None),
+        ("critical", "yes"),
+        ("critical", 1),
+        ("critical", None),
+        ("steps", "abc"),
+        ("steps", None),
+        ("steps", ("x",)),
+        ("steps", [1]),
+        ("steps", ({"type": "message"}, None)),
+        ("provenance", None),
+        ("provenance", []),
+    ]
+    for name, value in bad_fields:
+        trace = dataclasses.replace(t, **cast(dict[str, Any], {name: value}))
+        check(
+            "FTF-1703-R2-4",
+            f"{name}={value!r} raises the typed error from the builder",
+            _raises(TraceVerificationError, build_training_dataset, [trace]),
+        )
+        check(
+            "FTF-1703-R2-4",
+            f"{name}={value!r} raises the typed error from replay and provenance",
+            _raises(TraceVerificationError, verify_trace_replay, trace)
+            and _raises(TraceVerificationError, verify_trace_provenance, trace),
+        )
+
+    class SubStr(str):
+        pass
+
+    check(
+        "FTF-1703-R2-4",
+        "a str-subclass kind is refused",
+        _raises(
+            TraceVerificationError,
+            build_training_dataset,
+            [dataclasses.replace(t, kind=SubStr("lookup"))],
+        ),
+    )
+    list_steps = dataclasses.replace(t, steps=cast(Any, list(t.steps)))
+    check(
+        "FTF-1703-R2-4",
+        "steps held in a list are still a valid sequence of dicts",
+        build_training_dataset([list_steps], _approve([list_steps])).approved_count == 1,
+    )
+    note = _kind_trace("note")
+    i = _step_index(note, "tool_call", "create_note")
+    for label, step in (
+        ("message without a role", {"type": "message", "content": "x"}),
+        ("message with a numeric role", {"type": "message", "role": 7, "content": "x"}),
+        ("message with list content", {"type": "message", "role": "user", "content": []}),
+        ("tool_call without a tool", {"type": "tool_call", "arguments": {}}),
+        ("tool_call with a list tool", {"type": "tool_call", "tool": [], "arguments": {}}),
+        ("tool_call with list arguments", {"type": "tool_call", "tool": "x", "arguments": []}),
+        ("tool_call with no arguments", {"type": "tool_call", "tool": "create_note"}),
+        ("approver step without fields", {"type": "approver_decision"}),
+        (
+            "approver step with a list decision",
+            {"type": "approver_decision", "decision": [], "approval_id": "appr-0"},
+        ),
+    ):
+        bad = _replace_step(note, i, step)
+        check(
+            "FTF-1703-R2-4",
+            f"{label} raises the typed error",
+            _raises(TraceVerificationError, verify_trace_replay, bad)
+            and _raises(TraceVerificationError, build_training_dataset, [bad]),
+        )
+    check(
+        "FTF-1703-R2-4",
+        "an unknown step type is dropped and the replay comparison refuses the trace",
+        _raises(TraceVerificationError, verify_trace_replay, _replace_step(note, i, {"type": "x"})),
+    )
+    deep: list = []
+    for _ in range(5000):
+        deep = [deep]
+    nested = _replace_step(
+        note,
+        i,
+        {"type": "tool_call", "tool": "create_note", "arguments": {"text": deep}},
+    )
+    check(
+        "FTF-1703-R2-4",
+        "absurdly deep nesting is the typed error, not a RecursionError",
+        _raises(TraceVerificationError, build_training_dataset, [nested]),
+    )
+
+
+def test_forged_approver_ref_is_typed() -> None:
+    denied = _kind_trace("approval_denied")
+    j = _step_index(denied, "approver_decision")
+    for label, ref in (
+        ("an unissued ref", "appr-9"),
+        ("a real-looking uuid", "00000000-0000-0000-0000-000000000000"),
+        ("the record's ref", "rec-0"),
+        ("an empty ref", ""),
+        ("a numeric ref", 5),
+        ("an unhashable ref", []),
+    ):
+        forged = _replace_step(denied, j, {**denied.steps[j], "approval_id": ref})
+        msg = _message(TraceVerificationError, verify_trace_replay, forged)
+        check(
+            "FTF-1703-R2-4",
+            f"{label} as the approver's target raises TraceVerificationError",
+            msg != "",
+        )
+        check(
+            "FTF-1703-R2-4",
+            f"{label} is refused by the builder too",
+            _raises(TraceVerificationError, build_training_dataset, [forged], _approve([forged])),
+        )
+    unknown = _message(
+        TraceVerificationError,
+        verify_trace_replay,
+        _replace_step(denied, j, {**denied.steps[j], "approval_id": "appr-9"}),
+    )
+    check(
+        "FTF-1703-R2-4",
+        "the unissued-ref refusal names the cause",
+        "unknown approval ref" in unknown,
+    )
+    before = dataclasses.replace(
+        denied, steps=(denied.steps[j], *denied.steps[:j], *denied.steps[j + 1 :])
+    )
+    check(
+        "FTF-1703-R2-4",
+        "an approver decision before any approval was requested is refused",
+        _raises(TraceVerificationError, verify_trace_replay, before),
+    )
+    for label, decision in (("an unknown decision", "maybe"), ("a list decision", [])):
+        bad = _replace_step(denied, j, {**denied.steps[j], "decision": decision})
+        check(
+            "FTF-1703-R2-4",
+            f"{label} raises TraceVerificationError",
+            _raises(TraceVerificationError, verify_trace_replay, bad),
+        )
+    twice = dataclasses.replace(
+        denied, steps=(*denied.steps[: j + 1], denied.steps[j], *denied.steps[j + 1 :])
+    )
+    refused = _message(TraceVerificationError, verify_trace_replay, twice)
+    check(
+        "FTF-1703-R2-4",
+        "deciding the same approval twice is the typed error naming the real cause",
+        "approver decision refused" in refused,
+    )
+    check(
+        "FTF-1703-R2-4",
+        "the genuine denied and approved traces still verify",
+        not _raises(TraceVerificationError, verify_trace_replay, denied)
+        and not _raises(
+            TraceVerificationError, verify_trace_replay, _kind_trace("approval_approved")
+        ),
+    )
+
+
+def test_secret_scan_covers_dict_keys() -> None:
+    note = _kind_trace("note")
+    i = _step_index(note, "tool_call", "create_note")
+    for secret in ("token=abcdefgh12345678", "sk-abcdefghijklmnopqrstuvwx", "AKIAABCDEFGHIJKLMNOP"):
+        in_key = _replace_step(
+            note,
+            i,
+            {
+                "type": "tool_call",
+                "tool": "create_note",
+                "arguments": {**note.steps[i]["arguments"], secret: "harmless value"},
+            },
+        )
+        check(
+            "FTF-1703-N1",
+            f"a secret-shaped dict KEY {secret[:8]!r} is refused (not only values)",
+            _raises(SecretInTraceError, build_training_dataset, [in_key]),
+        )
+        nested = _replace_step(
+            note,
+            i,
+            {
+                "type": "tool_call",
+                "tool": "create_note",
+                "arguments": {"outer": [{secret: 1}]},
+            },
+        )
+        check(
+            "FTF-1703-N1",
+            f"a secret-shaped key nested inside a list is refused ({secret[:8]!r})",
+            _raises(SecretInTraceError, build_training_dataset, [nested]),
+        )
+    harmless = _replace_step(
+        note,
+        i,
+        {
+            "type": "tool_call",
+            "tool": "create_note",
+            "arguments": {**note.steps[i]["arguments"], "color": "blue"},
+        },
+    )
+    check(
+        "FTF-1703-N1",
+        "a harmless extra key is not a secret (it is refused later, as non-generator content)",
+        _raises(TraceVerificationError, build_training_dataset, [harmless]),
     )
 
 
