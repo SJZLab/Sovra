@@ -259,6 +259,62 @@ def test_fail_closed_input_handling() -> None:
     )
 
 
+def test_provider_matching_is_exact_no_normalization() -> None:
+    # Round 2 (QUEUE 0e): a real-looking case/padding/prefix variant of an
+    # authorized provider must still be refused -- _covers compares with
+    # plain `!=`, never casefold/strip/startswith.
+    request = _request("data", "external", "standard", "standard")
+    for variant in ("ACME", " acme", "acme ", "acme2", "acm", "Acme"):
+        mismatched = RouteAuthorization(variant, frozenset({"data"}), "approver")
+        check(
+            "FTF-0901-ACC1",
+            f"authorization provider {variant!r} does not cover destination provider 'acme'",
+            _outcome(enforce_effect, request, mismatched) == "not_authorized",
+        )
+    check(
+        "FTF-0901-ACC1",
+        "the exact provider 'acme' does cover it",
+        _outcome(enforce_effect, request, _auth("external", "data")) == "allowed",
+    )
+
+
+def test_approved_by_is_required() -> None:
+    # Round 2 (QUEUE 0e, Section 11.2): an authorization with no real
+    # approver identity is invalid, never silently accepted.
+    bad_values: list[Any] = ["", " ", "\t", "  \n ", None, 1, [], {}]
+    for bad in bad_values:
+        check(
+            "FTF-0901-ACC1",
+            f"approved_by {bad!r} raises InvalidEffectRequestError",
+            _outcome(RouteAuthorization, "acme", frozenset({"data"}), bad) == "invalid",
+        )
+    check(
+        "FTF-0901-ACC1",
+        "a real approver identity is accepted",
+        _outcome(RouteAuthorization, "acme", frozenset({"data"}), "reviewer@org") == "allowed",
+    )
+
+
+def test_surfaces_set_is_pinned() -> None:
+    # Optional (QUEUE 0e): pin the exact SURFACES set from the acceptance
+    # clause so a sibling task cannot silently add or drop a surface.
+    check(
+        "FTF-0901-ACC1",
+        "SURFACES is the exact 8-surface set the acceptance clause names",
+        SURFACES
+        == (
+            "source",
+            "data",
+            "model",
+            "judge",
+            "storage",
+            "browser",
+            "history",
+            "serving",
+        ),
+    )
+
+
 def test_error_codes_are_stable_and_decision_is_content_free() -> None:
     codes = {}
     for profile, kind in (("zero_egress", "external"), ("standard", "external")):
@@ -455,6 +511,99 @@ def test_fault_injection_each_guard_is_load_bearing() -> None:
             "FTF-0901-FAULT",
             f"mutation turns the probe RED: {description}",
             len(out) == len(BASELINE) and out[index] != BASELINE[index],
+        )
+
+
+_PROVIDER_PROBE = """
+import sys
+sys.path.insert(0, {root!r}); sys.path.insert(0, {api!r})
+from packages.security.security_profile_enforcement import *
+d = Destination("external", "ACME")
+req = EffectRequest("data", d, "standard", "standard")
+auth = RouteAuthorization("acme", frozenset({{"data"}}), "approver")
+try:
+    enforce_effect(req, auth)
+    print("allowed")
+except SecurityProfileEnforcementError as exc:
+    print(exc.code)
+"""
+
+_APPROVED_BY_PROBE = """
+import sys
+sys.path.insert(0, {root!r}); sys.path.insert(0, {api!r})
+from packages.security.security_profile_enforcement import *
+try:
+    RouteAuthorization("acme", frozenset({{"data"}}), "   ")
+    print("allowed")
+except SecurityProfileEnforcementError as exc:
+    print(exc.code)
+"""
+
+
+def _run_probe(template: str, source: str | None) -> str:
+    original = MODULE.read_bytes()
+    try:
+        if source is not None:
+            MODULE.write_text(source, encoding="utf-8")
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                template.format(root=str(ROOT), api=str(ROOT / "apps" / "api")),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    finally:
+        MODULE.write_bytes(original)
+    if MODULE.read_bytes() != original:
+        raise RuntimeError("module not restored")
+    return result.stdout.strip() if result.returncode == 0 else "ERROR:" + result.stderr[-300:]
+
+
+def test_provider_and_approved_by_guards_are_load_bearing() -> None:
+    # Round 2 (QUEUE 0e): each new behavioural guard above must be
+    # load-bearing, not merely untested-but-incidentally-true.
+    check(
+        "FTF-0901-FAULT",
+        "unmutated probe refuses a mismatched-case provider",
+        _run_probe(_PROVIDER_PROBE, None) == "security_profile_route_not_authorized",
+    )
+    text = MODULE.read_text(encoding="utf-8")
+    normalized, count = re.subn(
+        r"if authorization\.provider != destination\.provider:\n        return False",
+        "if authorization.provider.strip().lower() != destination.provider.strip().lower():"
+        "\n        return False",
+        text,
+        count=1,
+    )
+    check("FTF-0901-FAULT", "provider-normalization mutation pattern matches once", count == 1)
+    if count == 1:
+        check(
+            "FTF-0901-FAULT",
+            "normalizing the provider comparison turns the mismatched-case probe GREEN",
+            _run_probe(_PROVIDER_PROBE, normalized) == "allowed",
+        )
+
+    check(
+        "FTF-0901-FAULT",
+        "unmutated probe refuses a whitespace-only approved_by",
+        _run_probe(_APPROVED_BY_PROBE, None) == "security_profile_invalid_request",
+    )
+    unguarded, count2 = re.subn(
+        r'_text\(self\.approved_by, "authorization approver"\)',
+        "self.approved_by",
+        text,
+        count=1,
+    )
+    check("FTF-0901-FAULT", "approved_by-guard-removal mutation pattern matches once", count2 == 1)
+    if count2 == 1:
+        check(
+            "FTF-0901-FAULT",
+            "removing the approved_by guard turns the whitespace-only probe GREEN",
+            _run_probe(_APPROVED_BY_PROBE, unguarded) == "allowed",
         )
 
 
