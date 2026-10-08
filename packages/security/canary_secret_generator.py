@@ -38,7 +38,7 @@ from __future__ import annotations
 import base64
 import re
 import secrets
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from urllib.parse import quote
 
@@ -185,24 +185,30 @@ def encode_canary(marker: CanaryMarker, encoding: str) -> str:
     """Return the marker's value under one declared, non-fragmented
     encoding. Section 12 requires testing encoded canaries too, since a
     scanner that only substring-matches the literal value would miss a
-    base64/hex/url-encoded leak."""
+    base64/hex/url-encoded leak.
+
+    Dispatch is by dict lookup, not a chain of `kind == "..."` checks: by
+    this point `kind` has already passed through `_member` against the
+    exact same closed tuple used as this dict's keys, so a second
+    case/whitespace-tolerant re-check of an already-canonical value would
+    be pure redundancy, not a real guard.
+    """
     if not isinstance(marker, CanaryMarker):
         raise InvalidCanaryRequestError("marker must be a CanaryMarker")
     kind = _member(encoding, ENCODINGS, "encoding")
-    if kind == "fragmented":
-        raise InvalidCanaryRequestError(
-            "fragmented is produced by fragment_canary, not encode_canary"
-        )
     raw = marker.value.encode("utf-8")
-    if kind == "literal":
-        return marker.value
-    if kind == "base64":
-        return base64.b64encode(raw).decode("ascii")
-    if kind == "hex":
-        return raw.hex()
-    if kind == "url":
-        return quote(marker.value, safe="")
-    raise InvalidCanaryRequestError(f"unsupported encoding {kind!r}")  # pragma: no cover
+    encoders: dict[str, Callable[[], str]] = {
+        "literal": lambda: marker.value,
+        "base64": lambda: base64.b64encode(raw).decode("ascii"),
+        "hex": lambda: raw.hex(),
+        "url": lambda: quote(marker.value),
+    }
+    encoder = encoders.get(kind)
+    if encoder is None:
+        raise InvalidCanaryRequestError(
+            f"{kind!r} is not supported by encode_canary (use fragment_canary for 'fragmented')"
+        )
+    return encoder()
 
 
 def fragment_canary(marker: CanaryMarker, parts: int) -> tuple[str, ...]:
