@@ -1204,7 +1204,8 @@ def test_round3_faults_each_turn_the_probe_red() -> None:
 
 # --- FTF-0903 round 4: ContentRef echo, out-of-range values, re-runnable fault blocks. ---
 
-_R4_TB = 'Traceback (most recent call last):\n  File "x.py"\n' + _MARK
+# Marker at the START as well as the tail: an echo of only a 40-char prefix must still show it.
+_R4_TB = _MARK + '\nTraceback (most recent call last):\n  File "x.py"\n' + _MARK
 _R4_NUM = -987654321.5
 _R4_COUNT = -987654321
 _R4_DT = datetime(1999, 1, 2)
@@ -1243,14 +1244,16 @@ def test_r4_content_ref_values_are_never_echoed() -> None:
         check(
             "FTF-0903-R4-1",
             f"{label} is refused with the marker absent from str(exc) and repr(exc.args)",
-            _r4_echo_report(fn, ("ZZMARK",)) == "clean",
+            _r4_echo_report(fn, ("ZZMARK", "Traceback")) == "clean",
         )
     mutated = ContentRef("ref-1", "key-1")
     object.__setattr__(mutated, "ref_id", _R4_TB)
     check(
         "FTF-0903-R4-1",
         "a validly built ref mutated with object.__setattr__ is refused without echo",
-        _r4_echo_report(lambda: emit_event("log", {**_LOG, "detail_ref": mutated}), ("ZZMARK",))
+        _r4_echo_report(
+            lambda: emit_event("log", {**_LOG, "detail_ref": mutated}), ("ZZMARK", "Traceback")
+        )
         == "clean",
     )
 
@@ -1291,7 +1294,10 @@ from packages.security.content_free_telemetry import (
     emit_event, ContentFreeTelemetryError, ContentRef,
 )
 
-TB = "Traceback (most recent call last):\\n  File x.py\\nZZMARK-secret traceback!"
+TB = (
+    "ZZMARK-secret traceback!\\nTraceback (most recent call last):\\n  File x.py\\n"
+    "ZZMARK-secret traceback!"
+)
 WF = {"workflow_id": "w", "task_id": "t", "state": "queued"}
 
 def forged(**attrs):
@@ -1305,7 +1311,7 @@ def report(fn, *markers):
         fn()
     except ContentFreeTelemetryError as exc:
         text = str(exc) + repr(exc.args)
-        return "LEAK" if any(x in text for x in markers) else "clean"
+        return "LEAK" if any(x in text for x in markers) or "Traceback" in text else "clean"
     except Exception as exc:
         return "ERROR:" + type(exc).__name__
     return "allowed"
@@ -1371,6 +1377,40 @@ def _r4_mutations() -> list[tuple[str, str, str, tuple[int, ...]]]:
             "X4b _content_ref_value re-validation echoes encryption_key_id",
             getattr_pair,
             after(getattr_pair, emit_guard.format(a="key_id")),
+            (3,),
+        ),
+        (
+            "V5e ContentRef.__post_init__ echoes a 40-char prefix of ref_id",
+            ref_line,
+            "        if type(self.ref_id) is not str or not _ID_RE.fullmatch(self.ref_id):\n"
+            "            raise ContentRefusedError("
+            '"content ref id is not a bounded id: " + self.ref_id[:40])\n' + ref_line,
+            (0,),
+        ),
+        (
+            "V5f _id_value echoes a 40-char prefix of a ContentRef id",
+            '        raise ContentRefusedError(f"{what} is not a bounded id")\n',
+            '        raise ContentRefusedError(f"{what} is not a bounded id: " + str(value)[:40])\n',  # noqa: E501
+            (0, 1, 2, 3),
+        ),
+        (
+            "V4d _content_ref_value re-validation echoes a prefix of ref_id",
+            getattr_pair,
+            after(
+                getattr_pair,
+                "    if type(ref_id) is not str or not _ID_RE.fullmatch(ref_id):\n"
+                '        raise ContentRefusedError("ref " + str(ref_id)[:40])\n',
+            ),
+            (2,),
+        ),
+        (
+            "V4d2 _content_ref_value re-validation echoes a prefix of encryption_key_id",
+            getattr_pair,
+            after(
+                getattr_pair,
+                "    if type(key_id) is not str or not _ID_RE.fullmatch(key_id):\n"
+                '        raise ContentRefusedError("key " + str(key_id)[:40])\n',
+            ),
             (3,),
         ),
         (
