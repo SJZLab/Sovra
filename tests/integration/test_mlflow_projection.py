@@ -166,7 +166,7 @@ def run_for(org: uuid.UUID, job: uuid.UUID, **overrides: object) -> TrackedRun:
         "data_purpose": "development_eval",
     }
     fields.update(overrides)
-    return TrackedRun(**fields)  # type: ignore[arg-type]
+    return TrackedRun(**fields)
 
 
 def runs_in(port: int, experiment_id: str) -> list[dict]:
@@ -253,7 +253,7 @@ def main() -> int:
         check(
             "R005-A2",
             "restored entry is SYNCED",
-            restored and restored[0].state == SyncState.SYNCED,
+            bool(restored) and restored[0].state == SyncState.SYNCED,
         )
         rec = client.get_run(pending.mlflow_run_id or "")
         got = {m["key"]: m["value"] for m in rec["data"]["metrics"]}
