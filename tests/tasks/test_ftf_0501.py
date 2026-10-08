@@ -2840,6 +2840,22 @@ def test_m1_storage_settings_are_trimmed_on_both_sides() -> None:
     )
 
 
+def test_m1c_the_storage_client_is_built_from_the_settings_with_a_long_timeout() -> None:
+    settings = dos.UploadStorageSettings.from_env(_storage_env())
+    assert settings is not None
+    client = settings.client()
+    check(
+        f"{CID}-M1",
+        "the client uses the configured endpoint and credentials",
+        client._endpoint == settings.endpoint and client._credentials == settings.credentials,
+    )
+    check(
+        f"{CID}-M1",
+        "reads of a large object get a 30 s timeout, not the 10 s client default",
+        client._timeout == 30.0,
+    )
+
+
 def test_m1b_default_ports_follow_the_scheme() -> None:
     for endpoint, scheme, port in (
         ("https://s3.example", "https", 443),
