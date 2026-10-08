@@ -2159,6 +2159,79 @@ def test_candidate_model_equality_is_exact_and_mismatch_detail_is_pinned() -> No
     )
 
 
+def test_r6_candidate_reached_through_a_calibration_alias_is_still_self_judging() -> None:
+    if _PORT == 0:
+        return
+    # R6-1: the candidate id is approved AND named as a calibration alias; an echo of the
+    # candidate must still be MODEL_MISMATCH (the alias must not bypass the candidate check).
+    for verdict in ("pass", "fail"):
+        _reset_gateway()
+        _GATEWAY.body = _success_body(_verdict_json(verdict), model="candidate-model-v1")
+        result = _grade(
+            _PORT,
+            approved_judge_model_ids=frozenset({"judge-model-v1", "candidate-model-v1"}),
+            calibration=_calibration(judge_model_aliases=("candidate-model-v1",)),
+        )
+        check(
+            "R6-1",
+            f"a candidate echo named as a calibration alias ({verdict}) is MODEL_MISMATCH",
+            result.state is judge.LlmJudgeState.MODEL_MISMATCH
+            and result.passed is None
+            and result.resolved_model == "candidate-model-v1"
+            and result.reasoning is None
+            and result.criterion_scores is None,
+        )
+
+
+def test_r6_calibration_alias_matching_is_exact_not_normalised() -> None:
+    if _PORT == 0:
+        return
+    alias = "judge-model-v1-2026-01"
+    # control: the exact alias is a verdict
+    _reset_gateway()
+    _GATEWAY.body = _success_body(_verdict_json(), model=alias)
+    result = _grade(
+        _PORT,
+        approved_judge_model_ids=frozenset({"judge-model-v1", alias}),
+        calibration=_calibration(judge_model_aliases=(alias,)),
+    )
+    check("R6-2", "control: the exact calibrated alias echo is a verdict", result.passed is True)
+    for label, echo in (
+        ("an upper-cased alias", "JUDGE-MODEL-V1-2026-01"),
+        ("an alias with a trailing space", alias + " "),
+        ("an alias with a leading space", " " + alias),
+    ):
+        for verdict in ("pass", "fail"):
+            _reset_gateway()
+            _GATEWAY.body = _success_body(_verdict_json(verdict), model=echo)
+            result = _grade(
+                _PORT,
+                approved_judge_model_ids=frozenset({"judge-model-v1", alias, echo}),
+                calibration=_calibration(judge_model_aliases=(alias,)),
+            )
+            check(
+                "R6-2",
+                f"{label} ({verdict}) is not the calibrated alias: MODEL_MISMATCH",
+                result.state is judge.LlmJudgeState.MODEL_MISMATCH
+                and result.passed is None
+                and result.resolved_model == echo,
+            )
+
+
+def test_r6_a_5xx_is_sent_exactly_once() -> None:
+    if _PORT == 0:
+        return
+    _reset_gateway()
+    _GATEWAY.status = 503
+    _GATEWAY.body = b"{}"
+    result = _grade(_PORT)
+    check(
+        "R6-opt",
+        "a 5xx is never a verdict and is sent exactly once",
+        result.passed is None and _GATEWAY.request_count == 1,
+    )
+
+
 # -- PRE-SUBMIT SELF-ATTACK: each guard above must be load-bearing -------------------
 
 
