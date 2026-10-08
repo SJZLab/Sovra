@@ -9550,7 +9550,7 @@ FTF-0903:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Content-free telemetry
-  evidence_hash: 60828d14111064813c742c4a30616b0b2b4a4b8d
+  evidence_hash: e90e40fe3bcfea78f6399fdeb9fa284427666ea9
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0006, FTF-0901,
@@ -9568,7 +9568,19 @@ FTF-0903:
     attached to (Section 12 "a malicious worker cannot send arbitrary payloads to an otherwise
     permitted collector"). Every string pattern uses `fullmatch`, never `match`, so a value that
     is otherwise legal plus one trailing newline (the classic `$`-anchor bypass) is refused too.
-    Error messages name the rejected field, never its value (Section 65.4).
+    Error messages are constant strings and never echo caller text -- no value, event kind or
+    field name (Section 65.4); callers tell refusals apart by error class and stable `code`.
+
+    Round 2 (L2 return at 89f1aeb): exact types everywhere (`type(x) is str/int/float/datetime/
+    bool`; a subclass with a lying `__eq__` or `__str__`/`__repr__` is refused); `ContentRef` is
+    re-validated at `emit_event` and stored as a fresh copy (forged, `__post_init__`-skipping,
+    mutated and subclassed refs are refused); numbers are bound-checked before `float()` (10**400
+    is a coded refusal, never OverflowError); -0.0 is accepted and normalised to +0.0; fields are
+    stored in schema order, so equal input gives an equal event. Exact-key matching, case-exact
+    enums, id (99) / code (64) boundaries, immutability and determinism are pinned by tests.
+
+    Disclosed: shape-only checks -- id and code values are checked for shape and bound, not
+    scanned for secret/PII look-alikes, so a well-formed short id that is itself a secret passes.
 
     Disclosed: this module is a pure library with no live caller yet -- the producers (Temporal
     workflows, worker logs, serving spans) are separate, dependency-gated tasks that will call
