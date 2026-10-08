@@ -76,7 +76,8 @@ __all__ = [
 
 KINDS = frozenset({"dataset", "model", "result"})
 MAX_RETENTION_DAYS = 3650
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_SHA256 = re.compile(r"[0-9a-fA-F]{64}")
+_TEXT = re.compile(r"\S(?:.*\S)?", re.DOTALL)
 RECORD_NAME = "backup-record.json"
 
 
@@ -142,8 +143,12 @@ class BackupRecord:
         return json.dumps(dataclasses.asdict(self), sort_keys=True, separators=(",", ":"))
 
 
+def _digest(body: bytes) -> str:
+    return hashlib.sha256(body).hexdigest()
+
+
 def _is_text(value: object) -> bool:
-    return isinstance(value, str) and value.strip() == value and value != ""
+    return isinstance(value, str) and _TEXT.fullmatch(value) is not None
 
 
 def _is_int(value: object) -> bool:
@@ -158,8 +163,8 @@ def _validate_ref(ref: object) -> BlobRef:
     for name in ("key", "version_id", "artifact_id"):
         if not _is_text(getattr(ref, name)):
             raise ObjectStorageBackupError(f"blob {name} must be a non-empty trimmed string")
-    if not isinstance(ref.sha256, str) or not _SHA256.match(ref.sha256):
-        raise ObjectStorageBackupError("blob sha256 must be 64 lowercase hex characters")
+    if not isinstance(ref.sha256, str) or _SHA256.fullmatch(ref.sha256) is None:
+        raise ObjectStorageBackupError("blob sha256 must be 64 hex characters")
     if not _is_int(ref.size_bytes) or ref.size_bytes < 0:
         raise ObjectStorageBackupError("blob size_bytes must be a non-negative integer")
     if not _is_int(ref.shard_count) or ref.shard_count < 1:
@@ -275,10 +280,10 @@ def create_backup(
         body = source.get_version(ref.key, ref.version_id)
         if len(body) != ref.size_bytes:
             issues.append(f"{ref.key}@{ref.version_id}: size differs from the manifest")
-        elif hashlib.sha256(body).hexdigest() != ref.sha256:
+        elif _digest(body) != ref.sha256:
             issues.append(f"{ref.key}@{ref.version_id}: sha256 differs from the manifest")
         else:
-            fetched[ref.sha256] = body
+            fetched[_digest(body)] = body
     if issues:
         raise BackupIncompleteError(issues)
 
@@ -328,7 +333,7 @@ def verify_backup(
         )
     except (S3Error, ValueError, TypeError, KeyError) as exc:
         raise ObjectStorageBackupError("backup record is missing or unreadable") from exc
-    if not all(isinstance(d, str) and _SHA256.match(d) and s >= 0 for d, s in record.blobs):
+    if not all(isinstance(d, str) and _SHA256.fullmatch(d) and s >= 0 for d, s in record.blobs):
         raise ObjectStorageBackupError("backup record lists a malformed blob")
     if record.backup_id != backup_id:
         raise ObjectStorageBackupError("backup record belongs to a different backup")
@@ -434,31 +439,37 @@ def _manifest_from_file(path: Path) -> tuple[BlobRef, ...]:
         raise ObjectStorageBackupError("manifest entry has unknown or missing fields") from exc
 
 
+def _run_backup(args: argparse.Namespace, client: S3Client) -> BackupRecord:
+    return create_backup(
+        _manifest_from_file(args.manifest),
+        source=S3ObjectStore(client, args.source_bucket),
+        target=S3ObjectStore(client, args.target_bucket),
+        known_key_refs=frozenset(args.known_key_ref),
+        retain_days=args.retain_days,
+    )
+
+
+def _run_verify(args: argparse.Namespace, client: S3Client) -> BackupRecord:
+    return verify_backup(S3ObjectStore(client, args.target_bucket), args.backup_id)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0] if __doc__ else "")
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(required=True)
     backup = sub.add_parser("backup")
+    backup.set_defaults(run=_run_backup)
     backup.add_argument("--manifest", type=Path, required=True)
     backup.add_argument("--source-bucket", required=True)
     backup.add_argument("--target-bucket", required=True)
     backup.add_argument("--known-key-ref", action="append", default=[])
     backup.add_argument("--retain-days", type=int, default=30)
     verify = sub.add_parser("verify")
+    verify.set_defaults(run=_run_verify)
     verify.add_argument("--target-bucket", required=True)
     verify.add_argument("--backup-id", required=True)
     args = parser.parse_args(argv)
     try:
-        client = _client_from_env()
-        if args.command == "backup":
-            record = create_backup(
-                _manifest_from_file(args.manifest),
-                source=S3ObjectStore(client, args.source_bucket),
-                target=S3ObjectStore(client, args.target_bucket),
-                known_key_refs=frozenset(args.known_key_ref),
-                retain_days=args.retain_days,
-            )
-        else:
-            record = verify_backup(S3ObjectStore(client, args.target_bucket), args.backup_id)
+        record = args.run(args, _client_from_env())
     except ObjectStorageBackupError as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1

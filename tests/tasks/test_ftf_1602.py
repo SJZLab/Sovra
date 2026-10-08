@@ -421,7 +421,7 @@ def test_input_validation() -> None:
         ("padded key", [bad(good, key=" k")]),
         ("non-str version", [bad(good, version_id=1)]),
         ("empty artifact", [bad(good, artifact_id="")]),
-        ("upper-case sha", [bad(good, sha256="A" * 64)]),
+        ("non-hex sha", [bad(good, sha256="g" * 64)]),
         ("short sha", [bad(good, sha256="a" * 63)]),
         ("bool size", [bad(good, size_bytes=True)]),
         ("negative size", [bad(good, size_bytes=-1)]),
@@ -520,7 +520,7 @@ def test_exactness_and_boundaries() -> None:
             f"artifact {bad_artifact!r} is refused",
             invalid(run, source, [bad(ref, artifact_id=bad_artifact)]),
         )
-    for bad_sha in (sha(b"x").upper(), " " + sha(b"x")[1:], sha(b"x") + "0"):
+    for bad_sha in (" " + sha(b"x")[1:], sha(b"x") + "0"):
         check(
             "FTF-1602-N1",
             f"sha256 {bad_sha[:8]!r} form is refused up front",
@@ -643,6 +643,34 @@ def test_exactness_and_boundaries() -> None:
     check(
         "FTF-1602-N1",
         "verify catches a truncated blob",
+        err is not None and "no longer matches" in str(err),
+    )
+
+
+def test_hex_case_is_compared_exactly() -> None:
+    source = MemStore()
+    version = source.add("k", b"x")
+    upper = bad(BlobRef("dataset", "k", version, sha(b"x"), 1, "d"), sha256=sha(b"x").upper())
+    err = raises(BackupIncompleteError, run, source, [upper])
+    check(
+        "FTF-1602-N1",
+        "an upper-case manifest sha256 is not silently equal to the real digest",
+        err is not None and "sha256 differs" in str(err),
+    )
+    target = MemStore()
+    record = run(source, [BlobRef("dataset", "k", version, sha(b"x"), 1, "d")], target)
+    data = json.loads(target.get_latest("backups/b1/backup-record.json"))
+    upper_digest = record.blobs[0][0].upper()
+    data["blobs"] = [[upper_digest, 1]]
+    forged = MemStore()
+    forged.add("backups/b1/backup-record.json", json.dumps(data).encode())
+    forged.add(f"backups/b1/blobs/{upper_digest}", b"x")
+    forged.retention = {k: v for k, v in target.retention.items()}
+    forged.retention[f"backups/b1/blobs/{upper_digest}"] = NOW + timedelta(days=30)
+    err = raises(BackupIncompleteError, verify_backup, forged, "b1", now=NOW)
+    check(
+        "FTF-1602-N1",
+        "a record digest in the wrong case does not verify against the real digest",
         err is not None and "no longer matches" in str(err),
     )
 
