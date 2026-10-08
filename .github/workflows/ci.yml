@@ -1214,6 +1214,12 @@ jobs:
         run: pip install pyyaml --quiet
       - name: Prove the real direct-upload evidence against the live S3 fixture
         run: python3 tests/integration/test_ftf_0501_direct_upload_s3.py
+      - name: Repeat the direct-upload evidence 10 times against the pinned image (FTF-0501 flake guard)
+        run: |
+          for run in 1 2 3 4 5 6 7 8 9 10; do
+            echo "== consecutive run $run of 10"
+            python3 tests/integration/test_ftf_0501_direct_upload_s3.py
+          done
 
   object-storage-backup-integration:
     # FTF-1602: real object-storage backup evidence against the live SeaweedFS
@@ -2767,6 +2773,44 @@ jobs:
       - name: Prove the real dataset upload evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0501_p1_dataset_uploads.py
 
+  direct-upload-routes-integration:
+    # FTF-0501: the real upload routes (build_direct_upload_router, as mounted in
+    # apps/api/app/main.py) on a real uvicorn server, over PostgreSQL 16 as the
+    # restricted sovra_app role, against the live SeaweedFS S3 API: happy path, wrong
+    # hash, partial upload and resume, oversize part, wrong key, expiry, concurrent
+    # finalize, cross-tenant access (HTTP and raw sovra_app SQL), content type from
+    # the bytes (docx / junk declared XLSX), and role gating --
+    # tests/integration/test_ftf_0501_routes_postgres_s3.py. The test boots the
+    # compose `s3` service itself when nothing answers.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' direct-upload-routes-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0501r
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0501r"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0501r
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real upload routes against PostgreSQL 16 and SeaweedFS
+        run: uv run python3 tests/integration/test_ftf_0501_routes_postgres_s3.py
+
   dataset-upload-hardening-integration:
     # FTF-0501-P2: real Postgres evidence for migration 0025: a closed
     # (rejected / expired / verified) upload session cannot be reopened or
@@ -3089,6 +3133,7 @@ jobs:
       - storage-semantics-integration
       - s3-minio-versioned-source-integration
       - direct-upload-s3-integration
+      - direct-upload-routes-integration
       - oidc-provider-integration
       - license-acceptance-workflow-integration
       - tool-schema-crud-integration

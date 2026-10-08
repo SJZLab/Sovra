@@ -67,6 +67,7 @@ from app.auth.rbac_middleware import AuthenticatedPrincipal, Role  # noqa: E402
 from app.datasets import dataset_upload_store as store  # noqa: E402
 from app.datasets import direct_object_storage_upload as dos  # noqa: E402
 from app.datasets import direct_object_storage_upload_routes as routes  # noqa: E402
+from app.datasets import upload_sweeper as sweeper  # noqa: E402
 from app.datasets.dataset_source_connection_crud import (  # noqa: E402
     DatasetSourceAuthorizationError,
     DatasetSourceConnectionNotFoundError,
@@ -248,6 +249,7 @@ class FakeS3:
             "key": key,
             "content_type": h.headers.get("Content-Type", ""),
             "parts": {},
+            "initiated": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
         }
         xml = (
             "<InitiateMultipartUploadResult>"
@@ -258,7 +260,9 @@ class FakeS3:
     def op_list_uploads(self, h: Any, key: str, query: dict[str, str], body: bytes) -> None:
         prefix = query.get("prefix", "")
         items = "".join(
-            f"<Upload><Key>{u['key']}</Key><UploadId>{uid}</UploadId></Upload>"
+            f"<Upload><Key>{u['key']}</Key><UploadId>{uid}</UploadId>"
+            + (f"<Initiated>{u['initiated']}</Initiated>" if u.get("initiated") else "")
+            + "</Upload>"
             for uid, u in self.uploads.items()
             if u["key"].startswith(prefix)
         )
@@ -4192,20 +4196,250 @@ def test_x2_xlsx_bounds_and_storage_outage() -> None:
         client.get_object_range = failing  # type: ignore[method-assign]
         try:
             dos.verify_and_complete(client, settings, target)
-            got: Any = None
+            outage: Any = None
         except Exception as exc:  # noqa: BLE001
-            got = exc
+            outage = exc
         client.get_object_range = original  # type: ignore[method-assign]
         check(
             f"{CID}-X2",
             "a failing ranged read is a storage outage",
-            isinstance(got, dos.UploadStorageUnavailableError),
+            isinstance(outage, dos.UploadStorageUnavailableError),
         )
         check(
             f"{CID}-X2",
             "the object is kept on an outage (the session stays open)",
             target.object_key in fake.objects,
         )
+
+
+def test_x3_the_unsigned_refusal_check_accepts_only_400_403_or_a_drop() -> None:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "ftf0501_s3_integration",
+        ROOT / "tests" / "integration" / "test_ftf_0501_direct_upload_s3.py",
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    for status in (400, 403, module.DROPPED):
+        check(
+            f"{CID}-X3",
+            f"an unsigned request answered {status} is a refusal",
+            module._refused_unsigned(status),
+        )
+    for status in (200, 204, 404, 500, 503):
+        check(
+            f"{CID}-X3",
+            f"an unsigned request answered {status} is not a refusal",
+            not module._refused_unsigned(status),
+        )
+    check(f"{CID}-X3", "every other refusal stays strict: 400 is not one", not module._refused(400))
+    check(
+        f"{CID}-X3",
+        "403 and a dropped connection stay refusals",
+        module._refused(403) and module._refused(module.DROPPED),
+    )
+
+
+# -- S: abandoned multipart upload sweeper (Section 67.5, 24 h) -----------------------
+
+
+def _open_aged(fake: FakeS3, initiated: str | None, *, key: str | None = None) -> str:
+    target = _target(b"x", key=key)
+    settings = fake.settings()
+    upload_id = dos.start_multipart(settings.client(), settings, target)
+    if initiated is None:
+        fake.uploads[upload_id].pop("initiated", None)
+    else:
+        fake.uploads[upload_id]["initiated"] = initiated
+    return upload_id
+
+
+def _iso(moment: datetime) -> str:
+    return moment.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def _listing_of(count: int) -> Any:
+    def listing(bucket: str, prefix: str) -> list[dict[str, str]]:
+        return [{"Key": f"x/{i}", "UploadId": str(i)} for i in range(count)]
+
+    return listing
+
+
+def test_s1_the_sweeper_aborts_only_uploads_older_than_24_hours() -> None:
+    now = datetime(2026, 10, 8, 12, 0, 0, tzinfo=UTC)
+    with FakeS3() as fake:
+        old = _open_aged(fake, _iso(now - timedelta(hours=25)))
+        very_old = _open_aged(fake, _iso(now - timedelta(days=30)))
+        edge = _open_aged(fake, _iso(now - timedelta(hours=24)))
+        fresh = _open_aged(fake, _iso(now - timedelta(hours=23, minutes=59)))
+        undated = _open_aged(fake, None)
+        garbage = _open_aged(fake, "yesterday-ish")
+        naive = _open_aged(fake, "2026-10-01T00:00:00")
+        foreign = _open_aged(fake, _iso(now - timedelta(days=9)), key="tenants/not-a-session/x")
+        other = _open_aged(
+            fake, _iso(now - timedelta(days=9)), key=f"tenants/{uuid.uuid4()}/projects/p/source"
+        )
+        settings = fake.settings()
+        result = sweeper.sweep_abandoned_uploads(settings.client(), settings, now=now)
+        check(f"{CID}-S1", "two stale uploads are aborted", result.aborted == 2)
+        check(
+            f"{CID}-S1",
+            "the report counts every other upload exactly",
+            (result.listed, result.kept, result.undated, result.foreign) == (9, 2, 3, 2)
+            and not result.more_may_remain,
+        )
+        left = set(fake.uploads)
+        check(
+            f"{CID}-S1",
+            "the 25 h and 30 day uploads are gone, all others remain",
+            old not in left
+            and very_old not in left
+            and {edge, fresh, undated, garbage, naive, foreign, other} <= left,
+        )
+        check(
+            f"{CID}-S1",
+            "exactly 24 h old is kept (older than, not at)",
+            edge in left,
+        )
+        again = sweeper.sweep_abandoned_uploads(settings.client(), settings, now=now)
+        check(f"{CID}-S1", "a second sweep has nothing left to abort", again.aborted == 0)
+        smaller = sweeper.sweep_abandoned_uploads(
+            settings.client(), settings, now=now, max_age=timedelta(hours=1)
+        )
+        check(
+            f"{CID}-S1",
+            "a shorter max_age ages out the uploads inside 24 h",
+            smaller.aborted == 2 and edge not in fake.uploads and fresh not in fake.uploads,
+        )
+    # Negative on the real default clock: an upload that was just started survives.
+    with FakeS3() as fake:
+        started = _open_aged(fake, _iso(datetime.now(UTC)))
+        settings = fake.settings()
+        result = sweeper.sweep_abandoned_uploads(settings.client(), settings)
+        check(
+            f"{CID}-S1",
+            "with the default clock a brand-new upload is never aborted",
+            result.aborted == 0 and started in fake.uploads,
+        )
+
+
+def test_s2_the_sweeper_validates_arguments_and_never_hides_an_outage() -> None:
+    now = datetime(2026, 10, 8, 12, 0, 0, tzinfo=UTC)
+    with FakeS3() as fake:
+        settings = fake.settings()
+        client = settings.client()
+        for label, kwargs, error in (
+            ("a naive now", {"now": datetime(2026, 10, 8, 12, 0, 0)}, ValueError),
+            ("a zero max_age", {"now": now, "max_age": timedelta(0)}, ValueError),
+            ("a negative max_age", {"now": now, "max_age": timedelta(hours=-1)}, ValueError),
+            ("a max_age over 24 h", {"now": now, "max_age": timedelta(hours=25)}, ValueError),
+        ):
+            try:
+                sweeper.sweep_abandoned_uploads(client, settings, **kwargs)
+                got: Any = None
+            except Exception as exc:  # noqa: BLE001
+                got = exc
+            check(f"{CID}-S2", f"{label} is refused", isinstance(got, error))
+        # max_age of exactly 24 h is allowed.
+        sweeper.sweep_abandoned_uploads(client, settings, now=now, max_age=timedelta(hours=24))
+
+        _open_aged(fake, _iso(now - timedelta(days=2)))
+        fake.fail.add("list_uploads")
+        try:
+            sweeper.sweep_abandoned_uploads(client, settings, now=now)
+            got = None
+        except Exception as exc:  # noqa: BLE001
+            got = exc
+        check(
+            f"{CID}-S2",
+            "a failing listing is a storage outage, not an empty sweep",
+            isinstance(got, dos.UploadStorageUnavailableError),
+        )
+        fake.fail.clear()
+        fake.fail.add("abort")
+        try:
+            sweeper.sweep_abandoned_uploads(client, settings, now=now)
+            got = None
+        except Exception as exc:  # noqa: BLE001
+            got = exc
+        check(
+            f"{CID}-S2",
+            "a failing abort is a storage outage, never counted as aborted",
+            isinstance(got, dos.UploadStorageUnavailableError) and len(fake.uploads) == 1,
+        )
+        fake.fail.clear()
+
+        def vanished(*args: Any, **kwargs: Any) -> None:
+            raise s3.S3Error(404, "NoSuchUpload", "gone")
+
+        client.abort_multipart_upload = vanished  # type: ignore[method-assign]
+        result = sweeper.sweep_abandoned_uploads(client, settings, now=now)
+        check(
+            f"{CID}-S2",
+            "an upload that vanished before its abort (404) counts as already gone",
+            result.aborted == 1,
+        )
+
+        def unreachable(*args: Any, **kwargs: Any) -> None:
+            raise ConnectionResetError("reset")
+
+        client.abort_multipart_upload = unreachable  # type: ignore[method-assign]
+        try:
+            sweeper.sweep_abandoned_uploads(client, settings, now=now)
+            got = None
+        except Exception as exc:  # noqa: BLE001
+            got = exc
+        check(
+            f"{CID}-S2",
+            "a connection failure during an abort is a storage outage",
+            isinstance(got, dos.UploadStorageUnavailableError),
+        )
+        for count, expected in ((999, False), (1000, True)):
+            client.list_multipart_uploads = _listing_of(count)  # type: ignore[method-assign]
+            result = sweeper.sweep_abandoned_uploads(client, settings, now=now)
+            check(
+                f"{CID}-S2",
+                f"{count} listed uploads -> more_may_remain is {expected}",
+                result.more_may_remain is expected and result.foreign == count,
+            )
+
+
+def test_s3_the_sweeper_entry_point_reports_through_its_exit_code() -> None:
+    now_old = _iso(datetime.now(UTC) - timedelta(days=3))
+    names = (
+        "SOVRA_UPLOAD_S3_ENDPOINT",
+        "SOVRA_UPLOAD_S3_BUCKET",
+        "SOVRA_UPLOAD_S3_ACCESS_KEY",
+        "SOVRA_UPLOAD_S3_SECRET_KEY",
+        "SOVRA_UPLOAD_S3_REGION",
+    )
+    saved = {name: os.environ.get(name) for name in names}
+    try:
+        for name in names:
+            os.environ.pop(name, None)
+        check(f"{CID}-S3", "an unconfigured sweeper exits 2", sweeper.main() == 2)
+        with FakeS3() as fake:
+            os.environ["SOVRA_UPLOAD_S3_ENDPOINT"] = f"http://127.0.0.1:{fake.port}"
+            os.environ["SOVRA_UPLOAD_S3_BUCKET"] = fake.BUCKET
+            os.environ["SOVRA_UPLOAD_S3_ACCESS_KEY"] = fake.ACCESS
+            os.environ["SOVRA_UPLOAD_S3_SECRET_KEY"] = fake.SECRET
+            stale = _open_aged(fake, now_old)
+            fake.fail.add("list_uploads")
+            check(f"{CID}-S3", "a storage failure exits 1", sweeper.main() == 1)
+            fake.fail.clear()
+            check(
+                f"{CID}-S3",
+                "a completed sweep exits 0 and aborts the stale upload",
+                sweeper.main() == 0 and stale not in fake.uploads,
+            )
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 def test_c1_interface_contract() -> None:

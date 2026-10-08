@@ -7312,10 +7312,18 @@ FTF-0501:
     from the environment, finalize verification (size, SHA-256, content type from the bytes) with
     storage cleaned on every rejection, and the five routes under
     /api/v1/organizations/{organization_id}/projects/{project_id}/upload-sessions. Wired into
-    apps/api/app/main.py. Not self-certified (Law 4): independent Control-plane L2 re-review
+    apps/api/app/main.py. Round 2 (Control-plane return #610): XLSX finalize now reads the zip
+    directory and [Content_Types].xml by ranged GETs (docx, plain zip, PK-prefixed junk, truncated
+    archive, macro-enabled, traversal, duplicate-name and entity-declaration packages are refused);
+    the unsigned-request refusal check accepts 400 or 403 only there; abandoned multipart uploads are
+    aborted after 24 h by app.datasets.upload_sweeper (implemented and tested, UNWIRED in deployment
+    until a scheduler runs `python -m app.datasets.upload_sweeper`, see
+    docs/operations/direct-upload-storage.md); the real routes run on PG16 as sovra_app against
+    SeaweedFS in CI job direct-upload-routes-integration. The resumable-UI clause is FTF-0501-UI.
+    Not self-certified (Law 4): independent Control-plane L2 re-review
     and a green ci-verdict on the PR are required; `certification_state` stays PROVISIONAL.
   proof_state: L1-PROVEN
-  proving_symbol: ''
+  proving_symbol: build_direct_upload_router
   proving_test: tests/tasks/test_ftf_0501.py
 FTF-0502:
   certification_state: NONE

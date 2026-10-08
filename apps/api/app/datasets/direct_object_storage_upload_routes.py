@@ -186,7 +186,8 @@ def _not_found() -> HTTPException:
 def _abort_best_effort(client: Any, settings: UploadStorageSettings, target: UploadTarget) -> None:
     """Cleanup after the session is already closed in the database. A storage
     outage here must not change the answer; the unfinalized multipart upload
-    then ages out under the bucket lifecycle rule (Section 67.5, 24 h)."""
+    is aborted by `upload_sweeper` once it is 24 h old (Section 67.5); no bucket
+    lifecycle rule is configured by this repository."""
     try:
         abort_upload(client, settings, target)
     except UploadStorageUnavailableError:
