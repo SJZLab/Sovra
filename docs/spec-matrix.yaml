@@ -11479,7 +11479,7 @@ FTF-1602:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Object storage backup
-  evidence_hash: a68682cbb9c3ddac67c866a163cfba6d10d72fc2
+  evidence_hash: 47ca830e452409b12a3a30d7a9ae8728dd1db791
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-32; scenarios=Q29, Q30; deps=FTF-0004, FTF-1002, FTF-1601
@@ -11526,6 +11526,16 @@ FTF-1602:
     refused at backup and in a re-hashed record at restore. Disclosed, still true: a record that is
     the only version and internally consistent but shrunk is accepted unless the caller supplies
     the expected manifest hash; the CLI does not require it.
+    Round 4 (QUEUE 0i): the record is read from the pinned version (`get_version` of the one listed
+    version id, never `get_latest`) and the key is re-listed after the reads; a record version that
+    lands between the listing and the read is refused ("changed while it was being read"), so it
+    can no longer restore 3 of 4 objects as success. `create_backup` refuses an existing backup_id
+    before writing anything and confirms the new record is the only version of its key, so the
+    first backup stays verifiable. verify/restore require a timezone-aware `now` and raise
+    ObjectStorageBackupError otherwise. Whole-file mutation figure from round 3 (383/383) is
+    unchanged in kind; the round-4 diff-scoped gate figure is in the submission. Real-SeaweedFS
+    race and reuse tests have their first run in CI. Disclosed, not a return reason: a forged
+    record that is the only version, with no expected hash supplied, is still accepted.
     Not self-certified (Law 4).
   proof_state: L1-PROVEN
   proving_symbol: ''
