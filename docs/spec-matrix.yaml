@@ -11532,7 +11532,12 @@ FTF-1706:
     check passes; inference-only endpoints are untuned comparators; anything else is blocked with
     stable reason codes. Nothing is hardcoded or inferred from a name. Pure library: no live caller
     yet, so proving_symbol stays blank (same disclosed precedent as FTF-0901). No schema, route,
-    dependency or secret added. Not self-certified (Law 4).
+    dependency or secret added. Round 2 (Law 17): discovery now requires ScopedEvidence for the
+    FTF-0215 SyncCycleResult, the reconciliation and every attestation (organization and connection
+    must match, else CandidateDiscoveryError) and returns a non-DISCOVERED GatewayState with no
+    candidates for a non-applied cycle or a revoked, unknown, degraded, never-discovered or stale
+    catalog; NaN/inf VRAM is refused; wrong-typed maps, values, roles and license ids fail closed.
+    Not self-certified (Law 4).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1706.py
