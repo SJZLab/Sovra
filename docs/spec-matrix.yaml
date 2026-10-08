@@ -9591,7 +9591,7 @@ FTF-0905:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Canary-secret generator
-  evidence_hash: PENDING_FINAL_COMMIT
+  evidence_hash: 25166ce5c426a019881f005086377463b4787c5a
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-14; scenarios=Q23, Q25; deps=FTF-0901, FTF-0902 (both
