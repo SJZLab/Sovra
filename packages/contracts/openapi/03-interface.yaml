@@ -352,6 +352,59 @@ paths:
           $ref: '#/components/responses/RoleNotAuthorized'
         '404':
           description: Connection missing or in another organization -- identical.
+  /api/v1/organizations/{organization_id}/connections/litellm/{connection_id}/models/{model_name}/capabilities:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: connection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: model_name
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 256
+      - name: project_id
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: >-
+        Read the training-capability dimensions of one gateway alias
+        (FTF-0309-P1): access, capability, artifact availability, role, with
+        dated evidence. Runs one fresh discovery; never runs a probe.
+      operationId: getModelCapabilities
+      responses:
+        '200':
+          description: >-
+            The classification. `method_support`, `min_gpu_vram_gb` and
+            `chat_template` are explicit `unknown` with a reason code.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelCapabilities'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Connection, artifact or project missing or in another organization -- identical (`not_found`).
+        '503':
+          description: '`gateway_unavailable`: discovery did not return `discovered`.'
+
 components:
   responses:
     NotAuthenticated:
@@ -365,6 +418,52 @@ components:
     ValidationFailed:
       description: The request body failed schema/policy validation.
   schemas:
+    ModelCapabilities:
+      type: object
+      additionalProperties: false
+      required: [litellm_connection_id, project_id, public_model_name, connection_status, access, capability, trainable, artifact, catalog_version, method_support, min_gpu_vram_gb, chat_template, evidence]
+      properties:
+        litellm_connection_id: {type: string, format: uuid}
+        project_id: {type: string, format: uuid}
+        public_model_name: {type: string}
+        connection_status: {type: string}
+        access: {type: string, enum: [granted, not_granted]}
+        capability: {type: string, enum: [trainable_open_weight, managed_fine_tunable, inference_only, unknown]}
+        trainable: {type: boolean}
+        capability_detail: {type: string}
+        capability_reason: {type: [string, 'null']}
+        role: {type: [string, 'null']}
+        artifact:
+          type: object
+          required: [artifact_id, availability, license_approved, weights_digest]
+          properties:
+            artifact_id: {type: [string, 'null']}
+            availability: {type: string, enum: [none, registered, ready, archived]}
+            license_approved: {type: boolean}
+            weights_digest: {type: [string, 'null']}
+        catalog_version: {type: integer, minimum: 0}
+        method_support: {$ref: '#/components/schemas/ModelCapabilityUnknown'}
+        min_gpu_vram_gb:
+          allOf:
+            - $ref: '#/components/schemas/ModelCapabilityUnknown'
+            - type: object
+              properties:
+                declared_minimum_gpu_profile: {}
+                declared_evidence: {type: string, enum: [declared]}
+        chat_template: {$ref: '#/components/schemas/ModelCapabilityUnknown'}
+        evidence:
+          type: object
+          required: [discovery_checked_at, tool_call_probe_checked_at, tool_call_probe_present]
+          properties:
+            discovery_checked_at: {type: [string, 'null'], format: date-time}
+            tool_call_probe_checked_at: {type: [string, 'null'], format: date-time}
+            tool_call_probe_present: {type: boolean}
+    ModelCapabilityUnknown:
+      type: object
+      required: [state, reason]
+      properties:
+        state: {type: string, enum: [unknown]}
+        reason: {type: string}
     ArtifactStatus:
       type: string
       enum: [registered, ready, archived]
