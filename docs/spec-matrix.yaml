@@ -11483,16 +11483,32 @@ FTF-1702:
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1702.py
 FTF-1703:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Training dataset
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0506, FTF-1701,
-    FTF-1702
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0506, FTF-1701,
+    FTF-1702. PROVISIONAL / L1-PROVEN, not certified (Law 4). evals/reference/training_dataset.py
+    generates 1,200 synthetic reference traces (7 scenario kinds, 3 of them critical), each in its
+    own independent entity group, every tool result produced by executing the call on a fresh real
+    FTF-1702 ToolEnvironment (server UUIDs normalized to per-trace refs, so the dataset hash is
+    deterministic, also across PYTHONHASHSEED). verify_trace_replay re-executes a trace on the real
+    backend and refuses forged results, a contradicting final answer or a wrong declared outcome.
+    build_training_dataset admits a trace only with an independent ReviewDecision (reviewer is not
+    the producer / any generator identity), so with no reviews approved_count is 0 and meets_floor
+    is False. Acceptance clause "reviewed ... independent review" is therefore BLOCKED_EXTERNAL
+    (human/Argilla review, resource_gate) until real reviewers supply decisions; no review is minted
+    here. Negative acceptance: purpose must be training, origin synthetic_generator (nothing
+    harvested), secret-shaped strings refused (SecretInTraceError), and ReservedFinalSuite overlap
+    on group, template, entity or final-answer hash is refused (HeldOutLeakageError). Fault ->
+    RED table in docs/certifications/submissions/2026-10-08T0700Z-FTF-1703.md (15 production
+    faults, all RED). No route, schema or live caller yet, so proving_symbol stays blank (same
+    disclosed precedent as FTF-1706).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/reference/test_ftf_1703.py
 FTF-1704:
   certification_state: NONE
   criticality: MUST
