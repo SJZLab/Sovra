@@ -462,6 +462,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_h007.py
       - name: FTF-0902 negative-test proof (network-policy templates -- render-time endpoint revalidation, metadata/RFC1918/IPv6 rejection, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0902.py
+      - name: FTF-0901 negative-test proof (security profile enforcement -- profile x surface x destination matrix, no private-to-managed switch, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0901.py
       - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
         run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check
