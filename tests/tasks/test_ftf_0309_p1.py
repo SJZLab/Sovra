@@ -25,6 +25,7 @@ from __future__ import annotations
 import contextlib
 import http.client
 import json
+import os
 import socket
 import sys
 import threading
@@ -554,6 +555,142 @@ def test_c1_contract_and_mount() -> None:
         "build_model_capability_router(" in main_src
         and "from app.litellm.model_capability_routes import" in main_src,
     )
+
+
+def test_x_body_echoes_identifiers_and_has_the_exact_key_set() -> None:
+    env = _Env()
+    env.entry, env.artifact = _entry(), _artifact()
+    with _running(env) as base:
+        _, body = _get(base)
+    check(
+        CID,
+        "X the body echoes connection, project and model name",
+        body["litellm_connection_id"] == str(_CONN_ID)
+        and body["project_id"] == str(_PROJECT_ID)
+        and body["public_model_name"] == "llama-trainable",
+    )
+    check(
+        CID,
+        "X the body has exactly the frozen key set (role present as null, detail non-empty)",
+        set(body)
+        == {
+            "litellm_connection_id",
+            "project_id",
+            "public_model_name",
+            "connection_status",
+            "access",
+            "capability",
+            "trainable",
+            "capability_detail",
+            "capability_reason",
+            "role",
+            "artifact",
+            "catalog_version",
+            "method_support",
+            "min_gpu_vram_gb",
+            "chat_template",
+            "evidence",
+        }
+        and body["role"] is None
+        and isinstance(body["capability_detail"], str)
+        and body["capability_detail"] != ""
+        and body["capability_reason"] is None,
+    )
+    check(
+        CID,
+        "X evidence carries the dated discovery check",
+        body["evidence"]["discovery_checked_at"] == _NOW.isoformat(),
+    )
+
+
+def test_x_model_name_length_boundary() -> None:
+    env = _Env()
+    with _running(env) as base:
+        check(CID, "X a 256-character model name is accepted", _get(base, "n" * 256)[0] == 200)
+        check(CID, "X a 257-character model name is 400", _get(base, "n" * 257)[0] == 400)
+
+
+def test_x_connection_status_is_compared_exactly() -> None:
+    for statuses in ([" revoked", " revoked"], ["Revoked", "Revoked"], ["revoked ", "revoked "]):
+        env = _Env()
+        env.connection_statuses = list(statuses)
+        env.entry, env.artifact = _entry(), _artifact()
+        with _running(env) as base:
+            _, body = _get(base)
+        check(
+            CID,
+            f"X status {statuses[0]!r} is not 'revoked': it is not normalised into revoked",
+            body["connection_status"] == statuses[0] and body["trainable"] is True,
+        )
+        check(
+            CID,
+            f"X status {statuses[0]!r} reaches discovery (only the exact string revokes)",
+            len(env.discovery.calls) == 1,
+        )
+    env = _Env()
+    env.connection_statuses = ["active", " revoked"]
+    env.entry, env.artifact = _entry(), _artifact()
+    with _running(env) as base:
+        _, body = _get(base)
+    check(
+        CID,
+        "X the in-transaction re-read also compares exactly",
+        body["connection_status"] == "active" and body["trainable"] is True,
+    )
+
+
+def _full_app_env() -> dict[str, str]:
+    return {
+        "SOVRA_ENVIRONMENT": "staging",
+        "SOVRA_DATABASE_URL": "postgresql+psycopg://sovra_app:s3cr3t@db.internal:5432/sovra",
+        "SOVRA_LITELLM_GATEWAY_URL": "https://litellm.internal.example",
+        "SOVRA_PRIVACY_POLICY": "standard",
+        "SOVRA_TLS_VERIFY": "true",
+        "SOVRA_MAX_TRAINING_BUDGET_USD": "500.00",
+        "SOVRA_LITELLM_API_KEY_SECRET_REF": "vault://sovra/litellm-api-key",
+        "SOVRA_DATABASE_PASSWORD_SECRET_REF": "openbao://sovra/db-password",
+        "SOVRA_OIDC_ISSUER": "http://idp.internal.example",
+        "SOVRA_OIDC_CLIENT_ID": "sovra-factory",
+        "SOVRA_OIDC_CLIENT_SECRET_REF": "vault://sovra/oidc-client-secret",
+        "SOVRA_OIDC_REDIRECT_URI": "http://factory.internal.example/auth/callback",
+        "SOVRA_OIDC_AUTHORIZATION_ENDPOINT": "http://idp.internal.example/authorize",
+        "SOVRA_OIDC_TOKEN_ENDPOINT": "http://idp.internal.example/token",
+        "SOVRA_OIDC_JWKS_URI": "http://idp.internal.example/jwks",
+        "SOVRA_SESSION_SIGNING_KEY_SECRET_REF": "vault://sovra/session-signing-key",
+        "SOVRA_OIDC_ALLOWED_ORIGIN": "http://factory.internal.example",
+        "SOVRA_OIDC_CLIENT_SECRET_VALUE": "not-a-real-secret",
+        "SOVRA_SESSION_SIGNING_KEY_VALUE": "not-a-real-signing-key",
+    }
+
+
+def test_x_create_app_mounts_the_capabilities_route() -> None:
+    env = _full_app_env()
+    added = set(env) - set(os.environ)
+    old = {k: os.environ[k] for k in env if k in os.environ}
+    os.environ.update(env)
+    try:
+        import app.main as main_module
+
+        app = main_module.create_app()
+    finally:
+        for key in added:
+            os.environ.pop(key, None)
+        os.environ.update(old)
+    check(CID, "X create_app returns a real FastAPI app", isinstance(app, FastAPI))
+    port = _free_port()
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    for _ in range(200):
+        if server.started:
+            break
+        time.sleep(0.02)
+    try:
+        status, _ = _get(f"http://127.0.0.1:{port}", principal=None)
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)
+    check(CID, "X .../capabilities is mounted on the real app (401, not 404)", status == 401)
 
 
 def main() -> None:
