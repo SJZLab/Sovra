@@ -426,6 +426,23 @@ def test_construction_rejects_malformed_weights_digest_shape() -> None:
     )
 
 
+def test_construction_rejects_malformed_base_model_revision_shape() -> None:
+    # A *present but malformed* value, not only the already-covered missing
+    # case above -- found via FTF-H010-P1's own mutation run against this
+    # same __init__ (a swallowed TrainableArtifactValidationError in the
+    # base_model_revision except-block went undetected until then).
+    check(
+        "FTF-1001",
+        "a base_model_revision that is blank is refused, never silently accepted",
+        _rejects(_make_full_weight_version, base_model_revision=""),
+    )
+    check(
+        "FTF-1001",
+        "a base_model_revision over the real max length is refused",
+        _rejects(_make_full_weight_version, base_model_revision="x" * 300),
+    )
+
+
 def test_construction_rejects_unknown_import_kind() -> None:
     check(
         "FTF-1001",

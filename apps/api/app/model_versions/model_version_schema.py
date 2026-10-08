@@ -87,6 +87,30 @@ this chain already established, and adds two real composite foreign keys
 `trainable_artifacts` table (trivially always true, since `id` is already
 a globally-unique primary key, so this cannot invalidate FTF-0301's own
 certified evidence).
+
+FTF-H010-P1 extension (Section 6.17/58A/68.1, `0027_model_import.py`):
+eight new columns -- `origin` (a finer classification than `import_kind`),
+`lineage_completeness`, `adapter_only`, `parent_model_version_id`,
+`external_provider_model_ref`, `observed_deployment_fingerprint`,
+`tokenizer_revision`, `chat_template_sha256`, `serving_config_sha256`.
+`origin`/`lineage_completeness`/`adapter_only` are NOT NULL at the
+database level with two new structural CHECK constraints (an
+`external_endpoint` row needs a real `external_provider_model_ref` and no
+local artifact/digest; an `imported_adapter` row needs `adapter_only` and
+a real `base_model_revision`). Every existing caller of this constructor
+(`model_version_crud.py`'s own `create_model_version`, every already-
+certified FTF-1001 test) passes only the original five fields -- `__init__`
+below defaults `origin`/`lineage_completeness`/`adapter_only` from
+`import_kind`, and copies `endpoint_reference` into
+`external_provider_model_ref` for an `endpoint` import, so those existing
+callers keep working unchanged and still satisfy the two new CHECKs; an
+explicit value always wins over a derived one. The two new `*_sha256`
+format CHECKs (Postgres `~` regex) are enforced only by the migration,
+never mirrored into this class's own `__table_args__` -- SQLite (used by
+several sibling modules' own pure in-memory unit fixtures) rejects `~` at
+`CREATE TABLE` parse time, so mirroring them here would be a real, novel
+hazard for no behavioral gain (the real Postgres table is what every
+actual write goes through).
 """
 
 from __future__ import annotations
@@ -96,6 +120,7 @@ from datetime import datetime
 from urllib.parse import urlsplit
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
@@ -117,6 +142,7 @@ from app.auth.organization_workspace_schema import Base
 
 __all__ = [
     "ALLOWED_IMPORT_KINDS",
+    "ALLOWED_ORIGINS",
     "ENDPOINT_REFERENCE_MAX_LENGTH",
     "ModelVersion",
     "ModelVersionValidationError",
@@ -134,6 +160,15 @@ ENDPOINT_REFERENCE_MAX_LENGTH = 2048
 ALLOWED_IMPORT_KINDS = ("endpoint", "full_weight", "adapter")
 
 _ARTIFACT_ONLY_KINDS = frozenset({"full_weight", "adapter"})
+
+# FTF-H010-P1 (Section 6.17): a finer classification than ALLOWED_IMPORT_KINDS.
+ALLOWED_ORIGINS = ("factory_trained", "imported_weights", "imported_adapter", "external_endpoint")
+_ALLOWED_LINEAGE_COMPLETENESS = ("complete", "partial", "unknown")
+_ORIGIN_FROM_IMPORT_KIND = {
+    "endpoint": "external_endpoint",
+    "adapter": "imported_adapter",
+    "full_weight": "imported_weights",
+}
 
 
 class ModelVersionValidationError(ValueError):
@@ -207,6 +242,23 @@ class ModelVersion(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
+    # FTF-H010-P1 (Section 6.17) -- see module docstring for the backward-
+    # compatible defaulting `__init__` below applies.
+    origin: Mapped[str] = mapped_column(String(32), nullable=False)
+    lineage_completeness: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'unknown'")
+    )
+    adapter_only: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    parent_model_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    external_provider_model_ref: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    observed_deployment_fingerprint: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    tokenizer_revision: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    chat_template_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    serving_config_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     __table_args__ = (
         UniqueConstraint(
@@ -230,6 +282,28 @@ class ModelVersion(Base):
             "AND weights_digest IS NOT NULL AND base_model_revision IS NOT NULL "
             "AND endpoint_reference IS NULL)",
             name="ck_model_versions_kind_consistency",
+        ),
+        # FTF-H010-P1: mirrored from 0027_model_import.py's own plain
+        # (non-regex) CHECKs -- see module docstring for why the two
+        # *_sha256 format CHECKs are not mirrored here.
+        CheckConstraint(
+            "origin in ('factory_trained','imported_weights','imported_adapter',"
+            "'external_endpoint')",
+            name="ck_model_versions_origin_values",
+        ),
+        CheckConstraint(
+            "lineage_completeness in ('complete','partial','unknown')",
+            name="ck_model_versions_lineage_completeness_values",
+        ),
+        CheckConstraint(
+            "origin <> 'external_endpoint' OR ("
+            "trainable_artifact_id IS NULL AND weights_digest IS NULL "
+            "AND external_provider_model_ref IS NOT NULL)",
+            name="ck_model_versions_external_endpoint_consistency",
+        ),
+        CheckConstraint(
+            "origin <> 'imported_adapter' OR " "(base_model_revision IS NOT NULL AND adapter_only)",
+            name="ck_model_versions_imported_adapter_consistency",
         ),
         ForeignKeyConstraint(
             ["organization_id"],
@@ -314,5 +388,28 @@ class ModelVersion(Base):
                     raise ModelVersionValidationError(
                         f"a {kind!r} import requires base_model_revision"
                     )
+
+        # FTF-H010-P1: backward-compatible defaulting (see module docstring)
+        # -- an explicit value always wins over a derived one.
+        if "origin" not in kwargs and "import_kind" in kwargs:
+            kwargs["origin"] = _ORIGIN_FROM_IMPORT_KIND[str(kwargs["import_kind"])]
+        if kwargs.get("origin") is not None and kwargs["origin"] not in ALLOWED_ORIGINS:
+            raise ModelVersionValidationError(
+                f"origin must be one of {ALLOWED_ORIGINS}: {kwargs['origin']!r}"
+            )
+        if "lineage_completeness" not in kwargs:
+            kwargs["lineage_completeness"] = "unknown"
+        elif kwargs["lineage_completeness"] not in _ALLOWED_LINEAGE_COMPLETENESS:
+            raise ModelVersionValidationError(
+                f"lineage_completeness must be one of {_ALLOWED_LINEAGE_COMPLETENESS}: "
+                f"{kwargs['lineage_completeness']!r}"
+            )
+        if "adapter_only" not in kwargs:
+            kwargs["adapter_only"] = kwargs.get("import_kind") == "adapter"
+        if (
+            kwargs.get("origin") == "external_endpoint"
+            and kwargs.get("external_provider_model_ref") is None
+        ):
+            kwargs["external_provider_model_ref"] = kwargs.get("endpoint_reference")
 
         super().__init__(**kwargs)
