@@ -24575,3 +24575,10 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-08T18:12Z — Control plane: FTF-1602 returned (134/302 unchanged)
 - **Returned:** FTF-1602 r4 (0i): pinned-version read with re-list, refuse an existing backup_id, tz-aware now.
+
+## 2026-10-08T19:59Z — Control plane: 4 returned (134/302 unchanged)
+- **Returned:** FTF-0903 r5 (0c), FTF-0905 r4 (0d), FTF-0516-P1 r2 (0l), FTF-0908 r2 (0m). **Pending:** FTF-0616 #645.
+- **ci-verdict:** all 5 relay merges since 17:40Z (#639, #640, #645, #648, #649) landed on a green ci-verdict.
+
+## 2026-10-08T21:01Z — Control plane: FTF-0616 returned (134/302 unchanged)
+- **Returned:** FTF-0616 r6 (0b), tests only: pin the self-judging alias case and exact alias matching.

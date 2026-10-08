@@ -1,0 +1,208 @@
+openapi: 3.1.0
+info:
+  title: Sovra Phase 10 Interface (ModelImportJob)
+  version: 0.1.0
+  description: >-
+    Frozen shared phase interface for Phase 10 (model import provenance and
+    asynchronous import validation, Section 6.17/58A/68.1), owned by
+    FTF-H010-P1 (child slice of FTF-H010, Control-plane design
+    2026-10-08T12:50Z; `shared_lock_required: ["migration:application"]`).
+
+    Disclosed scope (Law 11 -- no placeholder route): this file declares
+    enqueue (`POST`) and read (`GET`) only. Nothing behind it runs a real
+    provider/endpoint probe, transfers weights, or touches a GPU budget --
+    FTF-H010's own real endpoint fine-tune, weights, GPU and continuation
+    clauses stay `BLOCKED_EXTERNAL`, and no worker that would ever advance a
+    job past `queued` exists in this repository yet (see
+    `app/model_versions/model_import_routes.py`'s own module docstring).
+
+    This is additive to, and does not replace, FTF-1001's own
+    `09-interface.yaml`-adjacent synchronous `model-versions` surface in
+    `03-interface.yaml`/`05-interface.yaml`-style sibling phase files --
+    `model_version_routes.py`'s own docstring explicitly declined to build
+    a separate asynchronous import-job surface for the three shapes it
+    itself resolves synchronously; this phase adds exactly the surface
+    that declaration named as out of its own scope.
+paths:
+  /api/v1/organizations/{organization_id}/projects/{project_id}/model-imports:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: >-
+        Validate the shape of an import request and enqueue a
+        ModelImportJob (FTF-H010-P1). Never claims success synchronously --
+        the response is always `state: queued`.
+      operationId: enqueueModelImportJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelImportJobCreateRequest'
+      responses:
+        '201':
+          description: The enqueued job, at state `queued`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelImportJob'
+        '400':
+          description: >-
+            Malformed body, an unknown field, a missing/invalid
+            `requested_origin`, an `external_endpoint` request carrying
+            `trainable_artifact_id`, or an `imported_adapter` request with
+            no `parent_model_version_id` (the base).
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            `not_found` -- identical for a missing/foreign project,
+            `parent_model_version_id` or `trainable_artifact_id`.
+    get:
+      summary: List the project's own import jobs, oldest first (FTF-H010-P1).
+      operationId: listModelImportJobs
+      responses:
+        '200':
+          description: The project's import jobs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ModelImportJob'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: '`not_found` -- project missing or in another organization.'
+  /api/v1/organizations/{organization_id}/projects/{project_id}/model-imports/{model_import_job_id}:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: model_import_job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get one import job (FTF-H010-P1).
+      operationId: getModelImportJob
+      responses:
+        '200':
+          description: The import job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelImportJob'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            `not_found` -- identical for a missing id, another
+            organization's id, and another project's id.
+components:
+  responses:
+    NotAuthenticated:
+      description: No authenticated session.
+    RoleNotAuthorized:
+      description: >-
+        The authenticated principal's role in this organization does not
+        permit this operation (Section 45: reads are open to every role;
+        writes are `{ml_engineer, organization_admin}`, the same split
+        `model_version_routes.py`'s own `MODEL_VERSION_READ_ROLES`/
+        `MODEL_VERSION_WRITE_ROLES` already establish for this exact
+        resource shape).
+  schemas:
+    ModelImportOrigin:
+      type: string
+      enum: [factory_trained, imported_weights, imported_adapter, external_endpoint]
+    ModelImportJobState:
+      type: string
+      enum: [queued, validating, failed, succeeded, blocked_external]
+    ModelImportJobCreateRequest:
+      type: object
+      properties:
+        requested_origin:
+          $ref: '#/components/schemas/ModelImportOrigin'
+        parent_model_version_id:
+          type: [string, 'null']
+          format: uuid
+          description: >-
+            The base ModelVersion. Required when `requested_origin` is
+            `imported_adapter`.
+        trainable_artifact_id:
+          type: [string, 'null']
+          format: uuid
+          description: >-
+            Forbidden (must be null/absent) when `requested_origin` is
+            `external_endpoint` -- no local weight bytes back an endpoint
+            import.
+        external_provider_model_ref:
+          type: [string, 'null']
+          maxLength: 2048
+          description: >-
+            Required when `requested_origin` is `external_endpoint`.
+      required: [requested_origin]
+      additionalProperties: false
+    ModelImportJob:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        requested_origin:
+          $ref: '#/components/schemas/ModelImportOrigin'
+        parent_model_version_id:
+          type: [string, 'null']
+          format: uuid
+        trainable_artifact_id:
+          type: [string, 'null']
+          format: uuid
+        external_provider_model_ref:
+          type: [string, 'null']
+        state:
+          $ref: '#/components/schemas/ModelImportJobState'
+        failure_code:
+          type: [string, 'null']
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      additionalProperties: false

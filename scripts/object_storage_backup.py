@@ -365,6 +365,10 @@ def create_backup(
         raise ObjectStorageBackupError("backup_id and prefix must be plain path segments")
 
     issues = [*_shard_issues(refs), *_key_issues(refs, known_key_refs)]
+    record_key = f"{prefix}/{refs[0].organization_id}/{identity}/{RECORD_NAME}"
+    if _io("backup record", target.list_versions, record_key):
+        # A second record version would make the original backup permanently unverifiable.
+        raise ObjectStorageBackupError("backup_id already exists; refusing to overwrite it")
     fetched: dict[str, bytes] = {}
     entries: list[BackupEntry] = []
     for ref in refs:
@@ -401,7 +405,12 @@ def create_backup(
         blobs=tuple(sorted((d, len(b)) for d, b in fetched.items())),
         entries=ordered,
     )
-    _put_verified(target, f"{base}/{RECORD_NAME}", record.to_json().encode(), retain_until)
+    record_version = _put_verified(
+        target, f"{base}/{RECORD_NAME}", record.to_json().encode(), retain_until
+    )
+    stored = target.list_versions(f"{base}/{RECORD_NAME}")
+    if len(stored) != 1 or stored[0].version_id != record_version:
+        raise ObjectStorageBackupError("backup record is not the only version of its key")
     return record
 
 
@@ -426,13 +435,14 @@ def _entry(ref: BlobRef, metadata: Mapping[str, str]) -> BackupEntry:
     )
 
 
-def _put_verified(target: ObjectStore, key: str, body: bytes, retain_until: datetime) -> None:
-    target.put_retained(key, body, retain_until=retain_until)
+def _put_verified(target: ObjectStore, key: str, body: bytes, retain_until: datetime) -> str:
+    version_id = target.put_retained(key, body, retain_until=retain_until)
     if target.get_latest(key) != body:
         raise ObjectStorageBackupError(f"{key}: read-back differs from what was written")
     held = target.retention_until(key)
     if held is None or held < retain_until.replace(microsecond=0):
         raise ObjectStorageBackupError(f"{key}: retention was not applied")
+    return version_id
 
 
 _TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
@@ -522,8 +532,10 @@ def _load_record(
         raise ObjectStorageBackupError("backup record has more than one version")
     if versions[0].is_delete_marker or not versions[0].is_latest:
         raise ObjectStorageBackupError("backup record version is a delete marker or not latest")
+    # Read the pinned version itself, never "the latest": a retained, re-hashed record
+    # version PUT after the listing must not be what the backup is trusted through.
     try:
-        raw = target.get_latest(record_key)
+        raw = target.get_version(record_key, versions[0].version_id)
     except S3Error as exc:
         raise ObjectStorageBackupError("backup record is missing or unreadable") from exc
     except ObjectStorageBackupError:
@@ -536,6 +548,16 @@ def _load_record(
     if record.organization_id != organization_id:
         raise ObjectStorageBackupError("backup record belongs to a different organization")
     held = _io("backup record retention", target.retention_until, record_key)
+    # Re-list after the reads: the version that was read and whose retention was taken must
+    # still be the record's one and only (latest) version, or a version slipped in between.
+    again = _io("backup record", target.list_versions, record_key)
+    if (
+        len(again) != 1
+        or again[0].version_id != versions[0].version_id
+        or again[0].is_delete_marker
+        or not again[0].is_latest
+    ):
+        raise ObjectStorageBackupError("backup record changed while it was being read")
     declared = datetime.strptime(record.retain_until, _TIME_FORMAT).replace(tzinfo=UTC)
     if held is None or held < declared or held <= now:
         raise BackupIncompleteError(["backup record is not under retention as its record declares"])
@@ -589,6 +611,8 @@ def verify_backup(
     """Re-read a backup and prove its record is consistent and every blob is present,
     hashed as recorded and still retained."""
     current = now if now is not None else datetime.now(UTC)
+    if type(current) is not datetime or current.tzinfo is None:
+        raise ObjectStorageBackupError("now must be timezone-aware")
     record, base = _load_record(target, organization_id, backup_id, prefix, current)
     issues = _record_issues(record)
     if expected_manifest_sha256 is not None and record.manifest_sha256 != expected_manifest_sha256:

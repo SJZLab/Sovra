@@ -528,9 +528,13 @@ def main() -> None:
     )
 
     # Migration 0024 alone (downgrade -1) has none of the three protections.
-    _migrate(migration_url, ["downgrade", "-1"], "alembic downgrade -1 (to 0024 only)")
+    _migrate(
+        migration_url,
+        ["downgrade", "0024_dataset_uploads"],
+        "alembic downgrade 0024_dataset_uploads (0024 only, whatever head is)",
+    )
     attacks_succeed("at migration 0024", reopen=True, insert_verified=True, forward=True)
-    _migrate(migration_url, ["upgrade", "head"], "alembic upgrade head (back to 0025)")
+    _migrate(migration_url, ["upgrade", "head"], "alembic upgrade head (back to head)")
     expect_refused(
         "[re-upgraded] a rejected session cannot be reopened",
         move(app_engine, closed_session("rejected"), reopen_sql()),
