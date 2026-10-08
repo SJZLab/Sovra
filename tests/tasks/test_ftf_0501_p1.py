@@ -818,7 +818,7 @@ def test_s3_finalize_creates_versions_in_order_and_audits() -> None:
                 lambda: _finalize(session, _create(session), now=datetime(2026, 1, 1)), ValueError
             ),
         )
-        stamped = _finalize(session, _create(session), dataset_name="stamp", now=None)
+        stamped = _finalize(session, _create(session, now=None), dataset_name="stamp", now=None)
         check(
             CID,
             "without `now` finalize uses the current time",

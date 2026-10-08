@@ -10459,3 +10459,87 @@ PR is not landed by the next certifier shift.
   - A mutation run on a copy left 15 survivors, including failure-path counts (Law 17).
   - The evidence_hash is stale.
 - **Governance:** #616 merged. evals/reference is now under the mutation and product-truth gates.
+
+## 2026-10-08T12:20Z — CERTIFIED: FTF-1706; RETURNED: FTF-0616 (r3), FTF-0903, FTF-1602, FTF-R005, FTF-1703, FTF-1206 (r3); SLICES: FTF-0516-P1, FTF-0309-P1, FTF-H010-P1
+- **Verification method:** independent Control-plane verifiers in detached worktrees at each merge commit. Faults were
+  behavioural only. Real SeaweedFS (FTF-1602) and a real MLflow 3.1.1 server (FTF-R005) ran in Docker on unique ports.
+  Mutation runs were uncapped (`--max-mutants 0`).
+- **FTF-1706: CERTIFIED** (round 3).
+  - PR #618, merge 879ea74cac33b6868e2fe857bed511ed424d7e87 (tests only). Production is from #615 (402102a).
+  - Scope refusals are asserted by message, and the org, connection and global faults are RED.
+  - Mutation 149/149; evals/ is now gated (#616). evidence_hash updated.
+  - UNWIRED disclosed.
+  - Optional follow-up (not a return reason): a naive `now` should raise a typed error, and a future
+    last_successful_check_at should not count as fresh.
+- **FTF-0616: RETURNED** (round 2 → 3; small production fix plus tests; #613, 1670ff5).
+  - All 7 round-2 items are implemented, and the real-judge clause is disclosed BLOCKED_EXTERNAL. 47 of 50 faults are
+    RED; mutation 304/305.
+  - Required:
+    - Prove the self-judge refusal behaviourally (survivor at llm_judge_grader.py:681).
+    - Never read the verdict from the reasoning text (injection).
+    - A missing or non-string `model` echo is a non-verdict, never PASSED with UNVERIFIED.
+    - Pre-network refusals make zero OpenBao secret fetches.
+  - With these fixed and 0 survivors, the adapter scope can be certified (FTF-1810 precedent), but not DONE.
+- **FTF-0903: RETURNED** (round 1 → 2; production plus tests; #624, 89f1aeb).
+  - Mutation 104/104, but 16 of 54 behavioural faults survive.
+  - Required:
+    - Errors never echo caller text.
+    - Exact str/int types only.
+    - ContentRef is re-validated at emit.
+    - A huge int gives a coded refusal, not OverflowError.
+    - Exact-key, bounds and determinism tests.
+    - Disclose that the checks are shape-only.
+- **FTF-1602: RETURNED** (round 1 → 2; production plus tests; #620, f0835e1).
+  - Real SeaweedFS passes; mutation 191/191.
+  - Required:
+    - Restore is not proven (§48): back up full manifests and prove a restore into a clean bucket on real SeaweedFS.
+      A corrupt, partial or swapped backup must be refused.
+    - Tenant scoping: one backup accepted two orgs.
+    - verify_backup must re-check its counts and hash.
+- **FTF-R005: RETURNED** (round 1 → 2; production plus tests; #621, f44136e).
+  - The integration form is correct: a REST adapter over guarded_fetch, with no new runtime dependency. The real server
+    passes; mutation 320/320.
+  - Required:
+    - Run-level drift against the Factory payload, not only the mutable tag (§78.3).
+    - PENDING_REGISTRATION and FAILED_REGISTRATION surfaced (Law 17).
+    - Bounded retries (§77.5).
+    - Reuse the certified FTF-R002 durable RLS outbox, and prove a restart keeps buffered results.
+    - A token-leak test (the fault survives today).
+    - Page model-version search beyond 200.
+- **FTF-1703: RETURNED** (round 1 → 2; production plus tests; #619, 43c1a39).
+  - Mutation 199/199; 40 of 42 faults RED. The ">=1000 reviewed" clause is honestly BLOCKED_EXTERNAL.
+  - Required:
+    - group_count must follow template families: 21, not 1200 (§67). The floor is reported NOT met.
+    - Provenance must be verified by regeneration, including user turns and tool arguments (Laws 12 and 16).
+    - Reserved input must fail closed (a bare string is split into characters today).
+    - Typed errors for malformed fields; the secret scan must cover dict keys.
+- **FTF-0516 (parked by the relay, #622):** prerequisite slice FTF-0516-P1 has been designed and queued. It covers the
+  quality report, the issue and resolution tables, and their API.
+  - Gap recorded: no task owns running the detectors on dataset artifacts (likely an FTF-0502 refinement).
+- **FTF-1206: RETURNED** (re-review after FTF-1206A; round 2 → 3; small production fix plus tests). It had been
+  PROVISIONAL since 2026-10-02, waiting on its persistence half, which FTF-1206A (certified 2026-10-06) now supplies.
+  - Verifier ran at 89f1aeb; the module is from #412 (d489936).
+  - 28/28 checks; the real PG16 test for FTF-1206A passes. 16 of 18 faults RED; uncapped mutation 32/36.
+  - The verifier recommended CERTIFY. It is returned under the standing bar (0 survivors; typed fail-closed input):
+    - 4 survivors.
+    - A bare str for a set is split into characters.
+    - `route_change_requires_approval=None` turns approval off.
+    - A stale grant is still honoured after the org narrows its policy (negative_acceptance).
+  - Notes still say there is no backing table.
+  - Repo-wide observation, not a return reason: under plain `pytest`, the `tests/tasks` check-collector files report pass
+    even when checks fail, because only `main()` exits non-zero. CI runs them as scripts, so CI evidence is sound.
+- **CI fix (test only, FTF-0501-P1):** `test_s3_finalize_creates_versions_in_order_and_audits` mixed clocks. It
+  created a session at the fixed `_NOW` (2026-10-07T12:00Z, 24h TTL) and finalized it with the real clock (`now=None`),
+  so it expired, and every branch's gate went red from 2026-10-08T12:00Z.
+  - The session in that check is now created on the real clock too.
+  - The assertion and the production code are unchanged, and FTF-0501-P1's certification is unaffected.
+  - The remaining gate steps that CI skipped after it pass locally.
+- **Backlog refill** (frontier recomputed from spec/tasks.json). Added:
+  - FTF-0908 (ready).
+  - FTF-0309-P1, a capabilities read API, because no route exposes the FTF-0307 classifier.
+  - FTF-H010-P1, the import fields and import-validation jobs migration. FTF-H010's real clauses are BLOCKED_EXTERNAL.
+  - FTF-R004 is not queued. It needs an `inspect_ai` pin in workers/evaluation (Inspect AI is a fixed reused component
+    per REFERENCE_REPOSITORIES.md, so it is not a fresh owner ask) and EvaluationRun/case-result persistence. Its real
+    target/runtime clauses are BLOCKED_EXTERNAL. It will be sliced once FTF-0616 and FTF-1705 land.
+- **ci-verdict:** all 7 relay merges since 06:02Z (#618, #620, #613, #619, #622, #621, #624) landed on a green
+  ci-verdict.
