@@ -641,6 +641,75 @@ def test_tenant_scoping_on_real_server(client: S3Client) -> None:
     )
 
 
+def test_record_pin_race_and_existing_backup_id_on_real_server(client: S3Client) -> None:
+    source_bucket, target_bucket, src, dst = _setup(client)
+    record = _backup(src, dst, _seed(client, source_bucket))
+    record_key = f"backups/o/{record.backup_id}/backup-record.json"
+
+    # R4-2: re-using the backup_id is refused and the first backup still verifies.
+    again = None
+    try:
+        _backup(src, dst, _seed(client, source_bucket), backup_id=record.backup_id)
+    except ObjectStorageBackupError as exc:
+        again = exc
+    check(
+        "FTF-1602-R4-2",
+        "an existing backup_id is refused on the real server",
+        again is not None and "already exists" in str(again),
+    )
+    versions = [
+        v for v in client.list_object_versions(target_bucket, prefix=record_key) if "VersionId" in v
+    ]
+    check("FTF-1602-R4-2", "the record still has exactly one version", len(versions) == 1)
+    check(
+        "FTF-1602-R4-2",
+        "the first backup still verifies",
+        raises_backup_error(verify_backup, dst, record.backup_id, organization_id="o") is None,
+    )
+
+    # R4-1: a retained, shrunk, re-hashed record version lands between the list and the read.
+    data = json.loads(client.get_object(target_bucket, record_key)[0])
+    dropped = data["entries"].pop(0)
+    data["blobs"] = [b for b in data["blobs"] if b[0] != dropped["sha256"]]
+    data["object_count"] = len(data["entries"])
+    data["blob_count"] = len(data["blobs"])
+    data["total_bytes"] = sum(size for _, size in data["blobs"])
+    _rehash(data)
+    attack = json.dumps(data).encode()
+
+    class Racing(S3ObjectStore):
+        armed = True
+
+        def list_versions(self, key: str):
+            listed = super().list_versions(key)
+            if self.armed and key == record_key:
+                self.armed = False
+                self._client.put_object(target_bucket, key, attack)
+                self._client.put_object_retention(
+                    target_bucket,
+                    key,
+                    mode="COMPLIANCE",
+                    retain_until_date=datetime(2099, 1, 1, tzinfo=UTC).strftime(
+                        "%Y-%m-%dT%H:%M:%SZ"
+                    ),
+                )
+            return listed
+
+    racing = Racing(client, target_bucket)
+    restore_bucket, clean = _clean_bucket(client)
+    err = raises_backup_error(restore_backup, racing, clean, record.backup_id, organization_id="o")
+    check(
+        "FTF-1602-R4-1",
+        "a record version that lands after the listing is refused, not restored as success",
+        err is not None and "changed while it was being read" in str(err),
+    )
+    check(
+        "FTF-1602-R4-1",
+        "nothing is written to the clean bucket",
+        _all_keys(client, restore_bucket) == [],
+    )
+
+
 def main() -> None:
     endpoint, credentials = _load_endpoint_and_credentials()
     booted_here = False

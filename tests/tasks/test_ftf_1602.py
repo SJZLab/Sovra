@@ -24,7 +24,7 @@ import sys
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -2063,7 +2063,7 @@ def test_storage_failures_are_typed_errors() -> None:
     blob = f"/blobs/{record.blobs[0][0]}"
     for operation, only, error in (
         ("list_versions", "backup-record", TimeoutError("read timed out")),
-        ("get_latest", "backup-record", OSError("connection reset")),
+        ("get_version", "backup-record", OSError("connection reset")),
         ("get_latest", blob, TimeoutError("read timed out")),
         ("retention_until", blob, S3Error(500, "InternalError", "boom")),
         ("retention_until", "backup-record", S3Error(403, "AccessDenied", "no")),
@@ -2306,7 +2306,7 @@ def test_survivor_kills_passthrough_blob_retention_and_list_shape() -> None:
     # A typed error from a store is passed through unchanged, never re-wrapped.
     own = ObjectStorageBackupError("marker-from-store")
     for operation, only, caller in (
-        ("get_latest", "backup-record", "verify"),
+        ("get_version", "backup-record", "verify"),
         ("list_versions", "backup-record", "verify"),
         ("get_latest", "/blobs/", "verify"),
         ("retention_until", "/blobs/", "verify"),
@@ -2349,7 +2349,7 @@ def test_survivor_kills_passthrough_blob_retention_and_list_shape() -> None:
         isinstance(err, BackupIncompleteError) and "blob is missing" in str(err),
     )
     # The record read answering "not found" while one version is listed is unreadable.
-    raced = flaky_copy(target, "get_latest", S3Error(404, "NoSuchKey", "gone"), "backup-record")
+    raced = flaky_copy(target, "get_version", S3Error(404, "NoSuchKey", "gone"), "backup-record")
     check(
         "FTF-1602-N2",
         "a record whose read is a 404 is reported missing or unreadable",
@@ -2514,6 +2514,132 @@ def test_restore_record_json_is_canonical_and_env_client_is_built_from_env() -> 
             f"a missing {name} is refused by name",
             typed(exc, name),
         )
+
+
+class RaceStore(MemStore):
+    """After the record is first listed, a retained, shrunk, re-hashed record version lands."""
+
+    def __init__(self, shrunk: bytes) -> None:
+        super().__init__()
+        self.shrunk = shrunk
+        self.armed = False
+
+    def list_versions(self, key: str) -> list[VersionInfo]:
+        listed = super().list_versions(key)
+        if self.armed and key == RECORD_KEY:
+            self.armed = False
+            self.put_retained(RECORD_KEY, self.shrunk, retain_until=NOW + timedelta(days=30))
+        return listed
+
+
+class LyingLatest(MemStore):
+    """`get_latest` of the record answers a shrunk record while the one listed version is
+    still the genuine one (the pinned version must be what is read)."""
+
+    def __init__(self, shrunk: bytes) -> None:
+        super().__init__()
+        self.shrunk = shrunk
+
+    def get_latest(self, key: str) -> bytes:
+        return self.shrunk if key == RECORD_KEY else super().get_latest(key)
+
+
+class ExtraRecordVersion(MemStore):
+    """A store where the record write is followed by a second version of the same key."""
+
+    def put_retained(self, key: str, body: bytes, *, retain_until: datetime) -> str:
+        version_id = super().put_retained(key, body, retain_until=retain_until)
+        if key.endswith("backup-record.json"):
+            self.add(key, body)
+        return version_id
+
+
+def test_round4_record_pin_race_overwrite_and_naive_now() -> None:
+    _, target, _, record = backed_up()
+    shrunk = shrunk_record(target)
+
+    # R4-1: a record version PUT between the listing and the read.
+    raced = RaceStore(shrunk)
+    raced.versions = {k: list(v) for k, v in target.versions.items()}
+    raced.retention = dict(target.retention)
+    raced.armed = True
+    err = outcome(verify_backup, raced, "b1", organization_id="o", now=NOW)
+    check(
+        "FTF-1602-R4-1",
+        "a record version that lands after the listing is refused (verify)",
+        typed(err, "changed while it was being read"),
+    )
+    raced.armed = True
+    destination = MemStore()
+    raced.versions[RECORD_KEY] = raced.versions[RECORD_KEY][:1]
+    err = outcome(restore, raced, destination)
+    check(
+        "FTF-1602-R4-1",
+        "the same race refuses restore and writes nothing",
+        typed(err, "changed while it was being read") and nothing_written(destination),
+    )
+    lying = LyingLatest(shrunk)
+    lying.versions = {k: list(v) for k, v in target.versions.items()}
+    lying.retention = dict(target.retention)
+    check(
+        "FTF-1602-R4-1",
+        "the pinned version is read, never 'the latest' (negative: genuine record verifies)",
+        outcome(
+            verify_backup,
+            lying,
+            "b1",
+            organization_id="o",
+            now=NOW,
+            expected_manifest_sha256=record.manifest_sha256,
+        )
+        is None,
+    )
+    check(
+        "FTF-1602-R4-1",
+        "the genuine backup still verifies and restores on the real default path",
+        outcome(restore, target, MemStore()) is None,
+    )
+
+    # R4-2: create_backup with an existing backup_id.
+    source, refs = meta_fixture()
+    err = outcome(run, source, refs, target, backup_id="b1")
+    check(
+        "FTF-1602-R4-2",
+        "an existing backup_id is refused",
+        typed(err, "already exists"),
+    )
+    check(
+        "FTF-1602-R4-2",
+        "the original backup is untouched: one record version, still verifies",
+        len(target.versions[RECORD_KEY]) == 1
+        and outcome(verify_backup, target, "b1", organization_id="o", now=NOW) is None,
+    )
+    source2, refs2 = meta_fixture()
+    err = outcome(run, source2, refs2, ExtraRecordVersion(), backup_id="b9")
+    check(
+        "FTF-1602-R4-2",
+        "a record that is not the only version of its key after the write is refused",
+        typed(err, "only version"),
+    )
+
+    # R4-3: a naive or non-datetime `now`.
+    naive = datetime(2026, 10, 8, 12, 0, 0)
+    for label, call in (
+        ("verify", lambda: verify_backup(target, "b1", organization_id="o", now=naive)),
+        ("restore", lambda: restore(target, MemStore(), now=naive)),
+        (
+            "verify str",
+            lambda: verify_backup(target, "b1", organization_id="o", now=cast(Any, "2026")),
+        ),
+    ):
+        destination = MemStore()
+        err = outcome(call)
+        check(
+            "FTF-1602-R4-3",
+            f"{label}: a naive or non-datetime now raises the module's own error",
+            typed(err, "timezone-aware"),
+        )
+    check("FTF-1602-R4-3", "record exists", record.backup_id == "b1")
 
 
 def main() -> int:
