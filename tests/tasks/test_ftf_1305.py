@@ -553,6 +553,20 @@ def test_input_guards() -> None:
     )
 
 
+def _raises_domain_error_not_type_error(fn, *args: object, **kwargs: object) -> bool:
+    """True only if `fn` raises `CandidateRankingError`. A raw `TypeError`
+    (an unhashable value reaching a bare `in table` check once the
+    `isinstance` guard in `_lookup` is dropped) is a distinct, reported
+    failure, not treated as an acceptable rejection."""
+    try:
+        fn(*args, **kwargs)
+    except CandidateRankingError:
+        return True
+    except TypeError:
+        return False
+    return False
+
+
 def _error_text(fn, *args: object, **kwargs: object) -> str:
     try:
         fn(*args, **kwargs)
@@ -839,6 +853,65 @@ def test_round2_result_rows_preserve_inputs() -> None:
         "the candidate kinds are exactly existing, base, tuned",
         CANDIDATE_KINDS == ("existing", "base", "tuned"),
     )
+
+
+def test_round3_primary_sort_key_is_base_before_high() -> None:
+    cheap_base = cand("cheap_base", cost=interval("1", "1", "9"))
+    pricier_base = cand("pricier_base", cost=interval("2", "2", "3"))
+    for pair in ([cheap_base, pricier_base], [pricier_base, cheap_base]):
+        result = rank_candidates(list(pair), min_quality=FLOOR)
+        check(
+            "FTF-1305-A1",
+            "a lower base cost per success ranks first even though its high bound is "
+            "much larger -- base is the primary sort key, high only breaks a base tie",
+            _order(result) == ["cheap_base", "pricier_base"],
+        )
+
+
+def test_round3_lookup_rejects_unhashable_and_wrong_type_kind_and_basis() -> None:
+    bad_kinds: list[object] = [[], {}, 1, b"base"]
+    for bad_kind in bad_kinds:
+        check(
+            "FTF-1305-A1",
+            f"kind={bad_kind!r} (unhashable or wrong type) raises CandidateRankingError, "
+            "not a bare TypeError from an unguarded membership test",
+            _raises_domain_error_not_type_error(cand, "x", bad_kind),
+        )
+    bad_bases: list[object] = [[], {}, 1, b"measured"]
+    for bad_basis in bad_bases:
+        check(
+            "FTF-1305-A1",
+            f"economics_basis={bad_basis!r} (unhashable or wrong type) raises "
+            "CandidateRankingError, not a bare TypeError",
+            _raises_domain_error_not_type_error(cand, "x", basis=bad_basis),
+        )
+
+
+def test_round3_equal_base_and_high_orders_by_id_regardless_of_other_fields() -> None:
+    import itertools
+
+    # Fields are deliberately decorrelated from id order, so a mutant sort key
+    # that reads is_incumbent, kind or quality ahead of id reorders the
+    # result instead of coincidentally reproducing the real a/k/z order.
+    candidates = [
+        cand(
+            "a",
+            "tuned",
+            cost=interval("0.5", "2", "3", amortized=True),
+            incumbent=False,
+            quality="0.85",
+        ),
+        cand("k", "existing", cost=interval("1", "2", "3"), incumbent=True, quality="0.95"),
+        cand("z", "base", cost=interval("1.5", "2", "3"), incumbent=False, quality="1"),
+    ]
+    for perm in itertools.permutations(candidates):
+        result = rank_candidates(list(perm), min_quality=FLOOR)
+        check(
+            "FTF-1305-N1",
+            "equal base and high cost: is_incumbent, kind and quality do not affect "
+            "order in any input permutation -- only candidate_id does",
+            _order(result) == ["a", "k", "z"],
+        )
 
 
 def main() -> None:
