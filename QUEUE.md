@@ -9305,33 +9305,20 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
    Work strictly in this order. Skip an item only if it has an open `[relay]` PR with GREEN CI and no conflict.
    - **0a. Merge conflicts on your own open PRs first** (merge main into the branch, re-run CI, merge on green).
    - **Every grader (FTF-06xx):** before submitting, apply the GRADER CHECKLIST in the same queue.md entry.
-   - **Returned 2026-10-07T21:30Z (Control plane L2).** Every bullet in the list needs its own fault → RED row in the
-     submission. FTF-0308-P1, FTF-0602-P1, FTF-0605-F2 and FTF-04A06-F2 are CERTIFIED; the three below are not.
+   - **Returned 2026-10-08T00:30Z (Control plane L2).** Every bullet in the list needs its own fault → RED row in the
+     submission. FTF-0612, FTF-0613 and FTF-0501-P1 are CERTIFIED; the items below are not.
    - **GRADER CHECKLIST addition (same-class sweep):** never test membership of a raw input in a dict or set before
-     checking its type. An unhashable value ([] or {}) must raise the grader's own error, not TypeError. FTF-0612 and
-     FTF-0613 both had this; check every grader you touch for it.
-   - **0b. FTF-0612 round 2 (production fix + tests).** Work in workers/evaluation/latency_grader.py and tests/tasks/test_ftf_0612.py. Claim `relay/FTF-0612-r2`. Verifier findings (each listed fault must go RED):
-     FTF-0612 RETURN -> round 2, production fix + tests (39eac2c, #589). Mutation 105/105; 62 hand faults, 2 real survivors plus one fail-closed defect:
-     1. Production (fail-closed): `outcome not in _OUTCOME_ISSUE` raises TypeError for an unhashable outcome ([] or {}). Check isinstance(outcome, str) first; test that outcome=[] and outcome={} each raise LatencyGraderError.
-     2. agent_below_request boundary: obs("c1", 49, request_ms=50) -> ("agent_below_request",) (faults `agent + 1 < request` and `agent*2 < request` survive).
-     3. An ok case over the timeout is reported unclamped: obs("c1", TIMEOUT+1) with LatencyLimit("agent_ms", 95, ...) -> the percentile equals TIMEOUT+1 (a clamp-to-timeout fault survives).
-     Optional: shuffled raw order in a percentile test.
-   - **0c. FTF-0613 round 2 (production fix + tests).** Work in workers/evaluation/cost_grader.py and tests/tasks/test_ftf_0613.py. Claim `relay/FTF-0613-r2`. Verifier findings (each listed fault must go RED):
-     FTF-0613 RETURN -> round 2, production fix + tests (1fcb9d3, #590). Mutation 71/71; 49 hand faults, 4 real survivors plus a fail-closed defect:
-     1. Production (fail-closed): `outcome not in _IS_SUCCESS` (and the same for `source`) raises TypeError for unhashable values. Guard with isinstance(..., str) first. Tests: outcome [], {}, 1, b"success" and source [], {}, 1, b"measured" each raise CostGraderError.
-     2. Production: a record with a different currency is skipped before its cost is validated (obs("a1", "garbage", currency="EUR") or "-5" is silently ignored). Validate obs.cost (None or a valid decimal) before the currency branch; test a garbage cost and a negative cost on a EUR record.
-     3. Tests in test_malformed_inputs_fail_closed: cost 0, 0.0, False, b"1", b"", Decimal("1") each raise; cost "1\n", "١" and "１" raise, and so do max_total_cost and max_cost_per_success "1\n" and "１" (`\d` and `$`-anchored regex faults survive); attempt_id, request_id and currency set to b"a1" or 5 raise; spec policy_id, currency and expected_attempt_ids given as b"x", 5 or (b"a",) raise.
-     4. Remove the unused module-level `_DEFAULT_PRICE` constant (dead code, and a guessed price has no place here under Law 11).
-     Optional: a bad cost value never appears in str(exc).
-   - **0d. FTF-1305 round 2 (tests only).** Work in tests/tasks/test_ftf_1305.py. Claim `relay/FTF-1305-r2`. Verifier findings (each listed fault must go RED):
-     FTF-1305 RETURN -> round 2, tests only (a84cb46, #592). Production correct; disclosed UNWIRED; mutation 133/133; 66 hand faults, 10 real survivors. Tests to add in tests/tasks/test_ftf_1305.py:
-     1. Deterministic order: equal base and high cost with different ids, in shuffled input orders -> same ranked order (id ascending); a base-equal pair with different `high` (lower high first); same base but different `low` (base decides, not low); equal cost with different parameter_count in both insertion orders -> order fixed by id.
-     2. Inconclusive overlap with a costlier incumbent outside the overlap group -> INCONCLUSIVE_NO_INCUMBENT, winner None.
-     3. Three-way overlap -> overlap_group holds all three ids in rank order.
-     4. Reconciliation pending only on the best-case or worst-case scenario -> winner_economics_provisional True.
-     5. ranked[i].quality_lower_bound equals the input; ranked[i].is_incumbent is preserved; tie_break_policy_id is None on NO_QUALIFYING_CANDIDATE; CANDIDATE_KINDS == ("existing", "base", "tuned").
-     Note for the promotion task: FTF-1305 has no critical-regression input (Law 14 is enforced at promotion, not here).
-   - **0e. FTF-0517 round 2 (tests + one docstring line).** Work in tests/tasks/test_ftf_0517.py. Claim `relay/FTF-0517-r2`. Verifier findings (each listed fault must go RED):
+     checking its type. An unhashable value ([] or {}) must raise the module's own error, not TypeError.
+   - **0b. FTF-1305 round 3 (tests only).** Work in tests/tasks/test_ftf_1305.py. Claim `relay/FTF-1305-r3`. Verifier findings (each listed fault must go RED):
+     FTF-1305 RETURN -> round 3, tests only (f21f1ec, #596). All 5 round-2 items RED; mutation 133/133. Remaining (the round-2 list missed the first one, Control-plane error; the second is the checklist line in effect since #593):
+     1. Primary sort key not pinned: key=(high, base, id) survives. Add (base=1, high=9) ranked ahead of (base=2, high=3), in both input orders.
+     2. GRADER CHECKLIST (unhashable membership): RankingCandidate(kind=...) and economics_basis=... each raise CandidateRankingError for [], {}, 1 and b"base" / b"measured" (dropping the isinstance guard in _lookup survives).
+     3. When base and high are equal, vary the incumbent flag, kind and quality; order is still by id in every input permutation (faults that put not is_incumbent, kind or -quality before id survive).
+   - **0c. FTF-0103-F1 round 2 (tests only).** Work in tests/tasks/test_ftf_0103_f1.py. Claim `relay/FTF-0103-F1-r2`. Verifier findings (each listed fault must go RED):
+     FTF-0103-F1 RETURN -> round 2, tests only (d6b7381, #597). The production fix is correct (a probe shows memory is bounded at cap plus one chunk; a lying Content-Length cannot bypass it; the /cases override is needed and safe). 14 faults; 13 RED. Missing:
+     1. Prove reading stops at the cap (the decision says "streaming the body and stopping at the cap"). Replacing the loop with `body = await request.body(); if len(body) > MAX_JSON_BODY_BYTES: raise ...` passes every test today. Add a test that sends a chunked body of more than the cap over a real socket, never sends the terminating 0-chunk, and asserts 413 request_too_large within a few seconds (the read-everything fault then times out). Or use an ASGI receive that counts bytes pulled and assert no more than cap plus one chunk is consumed.
+     2. Correct the submission's fault table: "old behaviour (read before cap)" does not cover read-everything-then-check.
+   - **0d. FTF-0517 round 2 (tests + one docstring line).** Work in tests/tasks/test_ftf_0517.py. Claim `relay/FTF-0517-r2`. Verifier findings (each listed fault must go RED):
      FTF-0517 RETURN -> round 2, tests only (db26d03, #591). Production is deterministic and correct; mutation 117/119 killed, 2 timeouts, 0 survived; 60 hand faults, 14 survive (several real). Tests to add in tests/tasks/test_ftf_0517.py:
      1. Pinned golden: for a fixed spec and fixed records (e.g. 200 records keyed conv-i plus tmpl-(i%30)), assert the exact manifest_sha256, the exact counts and a few exact (record_id, role, group_id) triples; also run a subprocess under PYTHONHASHSEED=0 and 777 and compare hashes (kills hash() instead of SHA-256, reversed slot mapping, ratio off-by-one, strategy dropped from the bucket input).
      2. Exact group counts in m.counts (e.g. 30 groups in the template case) - a group count equal to the record count survives today.
@@ -9340,9 +9327,9 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      5. The manifest hash changes when only group_id values change, and when `strategy` changes.
      6. A negative ratio in the validation or dev slot, e.g. (70,-10,20,20), is refused.
      Also (docstring only): state in the module docstring that the caller must call quality_issue_engine.assert_clear_for_split before allocate_splits; the wiring task enforces it.
-   - **0f.** Then the Backlog.
+   - **0e.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
-     (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609 and FTF-0611 are CERTIFIED (2026-10-07); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
+     (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612 and FTF-0613 are CERTIFIED (2026-10-07/08); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid
@@ -9553,8 +9540,22 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
     language/group fields that §68.2/§69.2 and FTF-0602 need, so they are added; the live error convention is
     `{"detail": code}`, not §40's envelope; FTF-0501's "resumable UI" clause is not in its file list and stays with
     FTF-0501's own refinement.
-- FTF-0612, FTF-0613, FTF-1305 and FTF-0517 are returned work in item 0 above.
-  FTF-0501-P1 is claimed (#581).
+- FTF-1305, FTF-0103-F1 and FTF-0517 are returned work in item 0 above.
+- **FTF-0501-P2 (hardening migration, prerequisite for FTF-0501).** Raw `sovra_app` SQL can move a rejected or expired
+  upload session back to `open`, insert a session directly as `verified`, or forward-date `created_at` (the store never
+  does any of this, but the database should refuse it). Next free migration: extend the 0024 freeze trigger so a status
+  change is allowed only from `open` (open→verified|rejected|expired|aborted), and add a BEFORE INSERT check that
+  `status = 'open'` and `created_at` is within 60 s of `now()`. Tests on real Postgres as sovra_app: reopening a
+  rejected/expired/aborted session fails; inserting as verified fails; a forward-dated created_at fails; the normal
+  store path still works. Faults (trigger dropped, transition check dropped, insert check dropped) → RED. Claim
+  `relay/FTF-0501-P2-r1`.
+- **FTF-0501** Direct object-storage upload, re-queued on top of CERTIFIED FTF-0501-P1 (#581) and FTF-0501-P2 once it is
+  certified. DoD: `tools/r1_handoff.py packet FTF-0501`. Presigned multipart (≤5 min per part URL, §65.2) plus finalize
+  verification (size, SHA-256, content type; §8.1, §67.3, §67.5), using storage_semantics_client.py's stdlib SigV4
+  (boto3 stays ask-first). FTF-0501 owns the upload/finalize routes and the contracts:05 lock; it implements the frozen
+  components in 05-interface.yaml with their handlers and uses the P1 store functions. Real SeaweedFS S3 integration
+  as in CI. Negative acceptance: an oversize, partial, wrong-key, wrong-hash or expired upload cannot create an accepted
+  Dataset version.
 - **FTF-0308** Model-to-artifact mapping UI, re-queued: prerequisite FTF-0308-P1 is CERTIFIED (#577, #586). DoD:
   `tools/r1_handoff.py packet FTF-0308`. The UI consumes the frozen GET/POST/changes training-artifact routes in
   03-interface.yaml only; no new backend. Its negative acceptance ("changing mapping invalidates related qualification")
@@ -9591,7 +9592,7 @@ docs/spec-matrix.yaml. It never invents criteria.)
     secret, then re-queue; (2) owner approves using this repository itself (private) with `github.token` as the
     fixture; (3) mark BLOCKED_EXTERNAL per the packet's resource_gate and re-queue when a credential exists.
 - **FTF-0501 Direct object-storage upload: PARKED (BLOCKED_DEPENDENCY), 2026-10-07T10:50Z, lane B.**
-  - **2026-10-07T13:40Z:** prerequisite child slice FTF-0501-P1 is in the Backlog. Re-queue FTF-0501 when FTF-0501-P1 is CERTIFIED.
+  - **2026-10-08T00:30Z: RESOLVED.** FTF-0501-P1 is CERTIFIED; FTF-0501 is re-queued (after FTF-0501-P2). This entry is history.
   - What failed: nothing was attempted. The packet fixes `files` to one module plus its test and says "No independent
     schema change... any required change is a separately claimed migration prerequisite" and "A feature that needs a
     not-yet-frozen interface is BLOCKED_DEPENDENCY". Three things the DoD needs do not exist: (1) no multipart-upload,

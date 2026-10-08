@@ -8826,10 +8826,10 @@ FTF-0611:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0611.py
 FTF-0612:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Latency grader
-  evidence_hash: ''
+  evidence_hash: 79567c0921851bbf4e3b99db563c357dbd59c925
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0006, FTF-0601
@@ -8851,14 +8851,14 @@ FTF-0612:
 
     Disclosed: no live caller yet (Section 25's runtime loop is not dependency-ready), so
     proving_symbol stays blank, same precedent as the sibling graders. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0612.py
 FTF-0613:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Cost grader
-  evidence_hash: ''
+  evidence_hash: 6b9b759ac378d5678d24b71315689a711b5e02f4
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0403, FTF-0601,
@@ -8880,7 +8880,7 @@ FTF-0613:
 
     Disclosed: no live caller yet (Section 25's runtime loop is not dependency-ready), so
     proving_symbol stays blank, same precedent as the sibling graders. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0613.py
 FTF-0614:

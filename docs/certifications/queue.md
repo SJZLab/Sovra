@@ -24510,3 +24510,9 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-07T23:50Z — Control plane: FTF-0517 returned (QUEUE 0e, tests only)
 - Verifiers are running for FTF-0612, FTF-0613 and FTF-1305 (round 2), FTF-0501-P1 (#581) and FTF-0103-F1 (#597). All
   five merged on a green ci-verdict.
+
+## 2026-10-08T00:30Z — Control plane: FTF-0612 and FTF-0613 CERTIFIED (129/302); FTF-0501-P1 certified
+- **CERTIFIED:** FTF-0612 (#594) and FTF-0613 (#595). Slice FTF-0501-P1 (#581) is certified on real Postgres.
+- **Returned:** FTF-1305, round 3 (QUEUE 0b), and FTF-0103-F1, round 2 (QUEUE 0c). Both are tests only.
+- **Backlog:** FTF-0501-P2 (hardening migration) is added, then FTF-0501 is re-queued on top of P1 and P2.
+- **ci-verdict:** all 5 relay merges since 21:55Z landed on a green ci-verdict.
