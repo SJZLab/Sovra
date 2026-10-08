@@ -27,6 +27,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
@@ -183,7 +184,7 @@ def test_standard_authorization_is_scoped_to_provider_surface_and_terms() -> Non
     )
     managed_request = _request("storage", "managed_provider", "standard", "standard")
     for missing in ("account", "region", "retention_terms"):
-        fields = {"account": "a", "region": "r", "retention_terms": "t"}
+        fields: dict[str, Any] = {"account": "a", "region": "r", "retention_terms": "t"}
         fields[missing] = None
         partial = RouteAuthorization("acme", frozenset({"storage"}), "approver", **fields)
         check(
@@ -202,7 +203,7 @@ def test_standard_authorization_is_scoped_to_provider_surface_and_terms() -> Non
 
 
 def test_fail_closed_input_handling() -> None:
-    bad_values: list[object] = [[], {}, 1, b"standard", None, "", "super_secure"]
+    bad_values: list[Any] = [[], {}, 1, b"standard", None, "", "super_secure"]
     for value in bad_values:
         check(
             "FTF-0901-ACC1",
@@ -210,7 +211,7 @@ def test_fail_closed_input_handling() -> None:
             _outcome(
                 enforce_effect,
                 EffectRequest(value, Destination("internal"), "standard", "standard"),
-            )  # type: ignore[arg-type]
+            )
             == "invalid",
         )
         check(
@@ -218,13 +219,13 @@ def test_fail_closed_input_handling() -> None:
             f"org profile {value!r} raises InvalidEffectRequestError",
             _outcome(
                 enforce_effect, EffectRequest("data", Destination("internal"), value, "standard")
-            )  # type: ignore[arg-type]
+            )
             == "invalid",
         )
         check(
             "FTF-0901-ACC1",
             f"destination kind {value!r} raises InvalidEffectRequestError",
-            _outcome(Destination, value, "acme") == "invalid",  # type: ignore[arg-type]
+            _outcome(Destination, value, "acme") == "invalid",
         )
         if value is not None:
             check(
@@ -232,12 +233,12 @@ def test_fail_closed_input_handling() -> None:
                 f"job profile {value!r} raises InvalidEffectRequestError",
                 _outcome(effective_profile, "standard", "standard", value) == "invalid",
             )
-    check("FTF-0901-ACC1", "non-request refused", _outcome(enforce_effect, "x") == "invalid")  # type: ignore[arg-type]
+    check("FTF-0901-ACC1", "non-request refused", _outcome(enforce_effect, "x") == "invalid")
     check(
         "FTF-0901-ACC1",
         "non-authorization refused",
         _outcome(enforce_effect, _request("data", "external", "standard", "standard"), "x")
-        == "invalid",  # type: ignore[arg-type]
+        == "invalid",
     )
     check(
         "FTF-0901-ACC1",
@@ -254,7 +255,7 @@ def test_fail_closed_input_handling() -> None:
         "empty or unknown authorization surfaces refused",
         _outcome(RouteAuthorization, "acme", frozenset(), "a") == "invalid"
         and _outcome(RouteAuthorization, "acme", frozenset({"nope"}), "a") == "invalid"
-        and _outcome(RouteAuthorization, "acme", ["data"], "a") == "invalid",  # type: ignore[arg-type]
+        and _outcome(RouteAuthorization, "acme", ["data"], "a") == "invalid",
     )
 
 
@@ -333,7 +334,7 @@ def test_exact_boundaries_and_non_normalized_names() -> None:
         "a non-Destination destination is refused",
         _outcome(
             enforce_effect,
-            EffectRequest("data", "internal", "standard", "standard"),  # type: ignore[arg-type]
+            EffectRequest("data", cast(Any, "internal"), "standard", "standard"),
         )
         == "invalid",
     )
