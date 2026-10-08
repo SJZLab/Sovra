@@ -11479,7 +11479,7 @@ FTF-1602:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Object storage backup
-  evidence_hash: cad766fe81784d425c9368ee2303873b324164bf
+  evidence_hash: 47ca830e452409b12a3a30d7a9ae8728dd1db791
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-32; scenarios=Q29, Q30; deps=FTF-0004, FTF-1002, FTF-1601
