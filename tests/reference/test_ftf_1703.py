@@ -498,6 +498,332 @@ def test_determinism() -> None:
     )
 
 
+def _mk_steps(*steps: dict):
+    return list(steps)
+
+
+def _res(tool: str, **result):
+    return {"type": "tool_result", "tool": tool, "result": result}
+
+
+def _err(tool: str, error_type: str):
+    return {"type": "tool_error", "tool": tool, "error_type": error_type}
+
+
+def test_outcome_predicates_directly() -> None:
+    import evals.reference.training_dataset as td
+
+    oh = td._outcome_holds
+    note = lambda n: _res("create_note", note_id=n, record_id="rec-0")  # noqa: E731
+    check(
+        "FTF-1703-A1",
+        "note_once: same id twice holds",
+        oh("note_created_once", [note("n0"), note("n0")]),
+    )
+    check(
+        "FTF-1703-A1",
+        "note_once: differing ids fail",
+        not oh("note_created_once", [note("n0"), note("n1")]),
+    )
+    check("FTF-1703-A1", "note_once: single note fails", not oh("note_created_once", [note("n0")]))
+    check(
+        "FTF-1703-A1",
+        "note_created: needs a note",
+        oh("note_created", [note("n0")]) and not oh("note_created", []),
+    )
+    ex = _res("execute_approved_action", approval_id="a", record_id="r", status="executed")
+    den = _err("execute_approved_action", "ReferenceDenialError")
+    check("FTF-1703-A1", "refused: denial only holds", oh("action_refused_denied", [den]))
+    check(
+        "FTF-1703-A1",
+        "refused: denial plus execution fails",
+        not oh("action_refused_denied", [den, ex]),
+    )
+    check(
+        "FTF-1703-A1",
+        "refused: neither denial nor execution fails",
+        not oh("action_refused_pending", []),
+    )
+    check("FTF-1703-A1", "refused: execution only fails", not oh("action_refused_pending", [ex]))
+    check(
+        "FTF-1703-A1",
+        "refused: wrong error type fails",
+        not oh(
+            "action_refused_pending",
+            [_err("execute_approved_action", "ReferenceAuthorizationError")],
+        ),
+    )
+    check(
+        "FTF-1703-A1",
+        "executed: needs executed status",
+        oh("action_executed", [ex]) and not oh("action_executed", []),
+    )
+    auth = _err("get_record", "ReferenceAuthorizationError")
+    other = _res("search_records", records=[])
+    got = _res("get_record", record_id="r", title="t", status="open", notes=[])
+    check(
+        "FTF-1703-A1",
+        "access: refusal holds even beside other tools' results",
+        oh("access_refused", [other, auth]),
+    )
+    check(
+        "FTF-1703-A1",
+        "access: refusal plus a successful read fails",
+        not oh("access_refused", [auth, got]),
+    )
+    check("FTF-1703-A1", "access: no error fails", not oh("access_refused", [other]))
+    check(
+        "FTF-1703-A1",
+        "access: other tool's auth error fails",
+        not oh("access_refused", [_err("create_note", "ReferenceAuthorizationError")]),
+    )
+    check(
+        "FTF-1703-A1",
+        "access: other error type on get_record fails",
+        not oh("access_refused", [_err("get_record", "ReferenceDenialError")]),
+    )
+    check(
+        "FTF-1703-A1",
+        "record_read: open status holds, closed does not",
+        oh("record_read", [got]) and not oh("record_read", [_res("get_record", status="archived")]),
+    )
+    check(
+        "FTF-1703-A1",
+        "unknown / re-cased outcome name is not accepted",
+        not oh("RECORD_READ ", [got]) and not oh("", [got]),
+    )
+    recased = dataclasses.replace(TRACES[0], expected_outcome=" RECORD_READ ")
+    check(
+        "FTF-1703-A1",
+        "re-cased declared outcome refused by verify",
+        _raises(TraceVerificationError, verify_trace_replay, recased),
+    )
+
+
+def test_trace_serialization_and_final_answer() -> None:
+    t = TRACES[0]
+    d = t.to_dict()
+    check(
+        "FTF-1703-A1",
+        "to_dict carries exactly the contract keys",
+        set(d)
+        == {
+            "trace_id",
+            "group_id",
+            "template_id",
+            "kind",
+            "critical",
+            "entity_title",
+            "expected_outcome",
+            "steps",
+            "provenance",
+            "purpose",
+        },
+    )
+    check(
+        "FTF-1703-A1",
+        "to_dict values match the trace",
+        d["trace_id"] == t.trace_id
+        and d["group_id"] == t.group_id
+        and d["template_id"] == t.template_id
+        and d["kind"] == t.kind
+        and d["critical"] is t.critical
+        and d["entity_title"] == t.entity_title
+        and d["expected_outcome"] == t.expected_outcome
+        and d["provenance"] == t.provenance
+        and d["purpose"] == "training"
+        and d["steps"] == list(t.steps),
+    )
+    crit = next(x for x in TRACES if x.critical)
+    check(
+        "FTF-1703-A1",
+        "to_dict critical flag is True for a critical trace",
+        crit.to_dict()["critical"] is True,
+    )
+    two = dataclasses.replace(
+        t,
+        steps=(
+            {"type": "message", "role": "assistant", "content": "A"},
+            {"type": "message", "role": "user", "content": "B"},
+        ),
+    )
+    check("FTF-1703-A1", "final_answer ignores a trailing user message", two.final_answer() == "A")
+    check(
+        "FTF-1703-A1",
+        "final_answer ignores a trailing tool step",
+        dataclasses.replace(
+            t,
+            steps=(
+                {"type": "message", "role": "assistant", "content": "A"},
+                _err("get_record", "X"),
+            ),
+        ).final_answer()
+        == "A",
+    )
+    check(
+        "FTF-1703-A1",
+        "final_answer empty when no assistant message",
+        dataclasses.replace(
+            t, steps=({"type": "message", "role": "user", "content": "B"},)
+        ).final_answer()
+        == "",
+    )
+
+
+def test_refs_do_not_rewrite_text() -> None:
+    import evals.reference.training_dataset as td
+
+    refs = td._Refs()
+    real = refs.register("record_id", "11111111-1111-1111-1111-111111111111")
+    out = refs.resolve_args({"record_id": real, "text": real, "idempotency_key": real})
+    check(
+        "FTF-1703-A1",
+        "record_id ref resolved to the real id",
+        out["record_id"] == "11111111-1111-1111-1111-111111111111",
+    )
+    check(
+        "FTF-1703-A1",
+        "free text equal to a ref is left alone",
+        out["text"] == real and out["idempotency_key"] == real,
+    )
+
+
+def test_input_shape_guards() -> None:
+    t = TRACES[0]
+    for bad in (None, 5):
+        check(
+            "FTF-1703-A2",
+            f"traces={bad!r} refused with module error",
+            _raises(TrainingDatasetError, build_training_dataset, bad),
+        )
+        check(
+            "FTF-1703-A2",
+            f"reviews={bad!r} refused with module error",
+            _raises(TrainingDatasetError, build_training_dataset, [t], bad),
+        )
+    check(
+        "FTF-1703-A2",
+        "non-trace element refused",
+        _raises(TrainingDatasetError, build_training_dataset, ["x"]),
+    )
+    check(
+        "FTF-1703-A2",
+        "dict of traces refused",
+        _raises(TrainingDatasetError, build_training_dataset, {t.trace_id: t}),
+    )
+    check(
+        "FTF-1703-A1",
+        "non-string entity_title refused with the verification error",
+        _raises(
+            TraceVerificationError,
+            verify_trace_replay,
+            dataclasses.replace(t, entity_title=cast(Any, 5)),
+        ),
+    )
+    check(
+        "FTF-1703-A1",
+        "empty entity_title refused",
+        _raises(
+            TraceVerificationError, verify_trace_replay, dataclasses.replace(t, entity_title="")
+        ),
+    )
+    check(
+        "FTF-1703-A1",
+        "count=1 yields exactly one trace",
+        len(generate_training_traces(count=1)) == 1,
+    )
+    ds = build_training_dataset(TRACES[:10], _approve(TRACES[:5]))
+    check(
+        "FTF-1703-A2",
+        "counts: generated/approved/pending",
+        (ds.generated_count, ds.approved_count, ds.pending_count) == (10, 5, 5),
+    )
+    check(
+        "FTF-1703-N1",
+        "re-cased purpose refused",
+        all(
+            _raises(
+                TrainingDatasetError, build_training_dataset, [dataclasses.replace(t, purpose=p)]
+            )
+            for p in ("Training", " training", "TRAINING ")
+        ),
+    )
+    check(
+        "FTF-1703-N1",
+        "re-cased origin refused",
+        _raises(
+            TrainingDatasetError,
+            build_training_dataset,
+            [
+                dataclasses.replace(
+                    t, provenance={**t.provenance, "origin": " Synthetic_Generator "}
+                )
+            ],
+        ),
+    )
+    a = dataclasses.replace(TRACES[0], trace_id="Train-X")
+    b = dataclasses.replace(TRACES[1], trace_id=" train-x ")
+    check(
+        "FTF-1703-N1",
+        "case/whitespace-variant duplicate trace id refused",
+        _raises(TrainingDatasetError, build_training_dataset, [a, b]),
+    )
+
+
+def test_normalized_reserved_and_reviewers() -> None:
+    import hashlib
+
+    t = TRACES[0]
+    ah = hashlib.sha256(t.final_answer().encode()).hexdigest().upper()
+    for name, reserved in {
+        "group": ReservedFinalSuite(group_ids=frozenset({f" {t.group_id.upper()} "})),
+        "template": ReservedFinalSuite(template_ids=frozenset({t.template_id.upper()})),
+        "entity": ReservedFinalSuite(entity_titles=frozenset({f"  {t.entity_title.lower()}"})),
+        "answer": ReservedFinalSuite(answer_sha256s=frozenset({f" {ah}"})),
+    }.items():
+        check(
+            "FTF-1703-N1",
+            f"re-cased/padded sealed {name} id still refused",
+            _raises(HeldOutLeakageError, build_training_dataset, [t], [], reserved=reserved),
+        )
+    # reviewer == producer, under case/whitespace/casefold variants, for a non-generator producer
+    for producer, reviewer in (
+        ("human:carol ", "human:carol"),
+        (" human:carol", "human:carol"),
+        ("human:carol", " HUMAN:CAROL "),
+        ("human:strasse", "human:straße"),
+        ("human:carol", "human:carol "),
+    ):
+        tr = dataclasses.replace(
+            TRACES[0], provenance={**TRACES[0].provenance, "producer": producer}
+        )
+        check(
+            "FTF-1703-A2",
+            f"reviewer {reviewer!r} == producer {producer!r} refused",
+            _raises(
+                ReviewIndependenceError,
+                build_training_dataset,
+                [tr],
+                [ReviewDecision(tr.trace_id, reviewer, "approved")],
+            ),
+        )
+    ok = dataclasses.replace(
+        TRACES[0], provenance={**TRACES[0].provenance, "producer": "human:carol"}
+    )
+    good = build_training_dataset([ok], [ReviewDecision(ok.trace_id, "human:dave", "approved")])
+    check("FTF-1703-A2", "a genuinely different reviewer is accepted", good.approved_count == 1)
+    check(
+        "FTF-1703-A2",
+        "generator-prefixed reviewer with padding refused",
+        _raises(
+            ReviewIndependenceError,
+            build_training_dataset,
+            [ok],
+            [ReviewDecision(ok.trace_id, "  Generator:x", "approved")],
+        ),
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

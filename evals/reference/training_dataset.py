@@ -339,10 +339,7 @@ class _Refs:
         return value
 
     def resolve_args(self, args: dict[str, Any]) -> dict[str, Any]:
-        return {
-            k: (self.real(v) if k in _REF_PREFIX and isinstance(v, str) else v)
-            for k, v in args.items()
-        }
+        return {k: (self.real(v) if k in _REF_PREFIX else v) for k, v in args.items()}
 
 
 def _seed_for(title: str, foreign_title: str) -> ToolEnvironmentSeed:
@@ -357,9 +354,28 @@ def _foreign_title(title: str) -> str:
     return f"Other {title}"
 
 
-def _execute_plan(
-    plan: list[tuple[Any, ...]], *, title: str
-) -> tuple[list[dict[str, Any]], str | None]:
+@dataclass(frozen=True)
+class _Say:
+    role: str
+    content: str
+
+
+@dataclass(frozen=True)
+class _Call:
+    tool: str
+    arguments: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class _Approver:
+    decision: str
+    approval_ref: str
+
+
+_PlanItem = _Say | _Call | _Approver
+
+
+def _execute_plan(plan: list[_PlanItem], *, title: str) -> list[dict[str, Any]]:
     """Run an agent plan on a fresh real environment and return the recorded
     steps (results normalized to symbolic refs)."""
     env = ToolEnvironment(seed=_seed_for(title, _foreign_title(title)))
@@ -374,144 +390,183 @@ def _execute_plan(
     )
     steps: list[dict[str, Any]] = []
     for item in plan:
-        tag = item[0]
-        if tag == "message":
-            steps.append({"type": "message", "role": item[1], "content": item[2]})
-        elif tag == "call":
-            name, args = item[1], item[2]
-            steps.append({"type": "tool_call", "tool": name, "arguments": dict(args)})
+        if isinstance(item, _Say):
+            steps.append({"type": "message", "role": item.role, "content": item.content})
+        elif isinstance(item, _Call):
+            steps.append(
+                {"type": "tool_call", "tool": item.tool, "arguments": dict(item.arguments)}
+            )
             try:
                 result = env.dispatch(
-                    name,
+                    item.tool,
                     tenant_id=_TENANT,
                     subject_id=_OWNER,
-                    arguments=refs.resolve_args(args),
+                    arguments=refs.resolve_args(item.arguments),
                 )
             except Exception as exc:  # noqa: BLE001 - recorded as typed, content-free error
-                steps.append({"type": "tool_error", "tool": name, "error_type": type(exc).__name__})
+                steps.append(
+                    {"type": "tool_error", "tool": item.tool, "error_type": type(exc).__name__}
+                )
             else:
                 steps.append(
-                    {"type": "tool_result", "tool": name, "result": refs.normalize(result)}
+                    {"type": "tool_result", "tool": item.tool, "result": refs.normalize(result)}
                 )
-        elif tag == "approver":
-            appr_ref = item[2]
+        else:
             env.server.decide_approval(
                 tenant_id=_TENANT,
                 approver_subject_id=_APPROVER,
-                approval_id=refs.real(appr_ref),
-                decision=item[1],
+                approval_id=refs.real(item.approval_ref),
+                decision=item.decision,
             )
             steps.append(
-                {"type": "approver_decision", "approval_id": appr_ref, "decision": item[1]}
+                {
+                    "type": "approver_decision",
+                    "approval_id": item.approval_ref,
+                    "decision": item.decision,
+                }
             )
-        else:  # pragma: no cover - internal plan tags only
-            raise TrainingDatasetError(f"unknown plan item: {tag!r}")
-    return steps, None
+    return steps
 
 
-def _plan_for(kind: str, *, title: str, tok: str, variant: int, idem: str) -> list[tuple[Any, ...]]:
-    foreign = "rec-1"
-    user = _USER_PHRASES[kind][variant].format(tok=tok, note=_NOTE_TEXTS[variant], foreign=foreign)
+_REQUEST_ARCHIVE = _Call("request_approval", {"record_id": "rec-0", "action": "archive_record"})
+
+
+def _search(tok: str) -> _Call:
+    return _Call("search_records", {"query": tok})
+
+
+def _get_own() -> _Call:
+    return _Call("get_record", {"record_id": "rec-0"})
+
+
+def _note_call(variant: int, idem: str) -> _Call:
+    return _Call(
+        "create_note",
+        {"record_id": "rec-0", "text": _NOTE_TEXTS[variant], "idempotency_key": idem},
+    )
+
+
+def _execute_call(idem: str) -> _Call:
+    return _Call("execute_approved_action", {"approval_id": "appr-0", "idempotency_key": idem})
+
+
+def _body_lookup(tok: str, variant: int, idem: str) -> list[_PlanItem]:
+    return [_search(tok), _get_own()]
+
+
+def _body_note(tok: str, variant: int, idem: str) -> list[_PlanItem]:
+    return [_search(tok), _get_own(), _note_call(variant, idem)]
+
+
+def _body_note_retry(tok: str, variant: int, idem: str) -> list[_PlanItem]:
+    return [_search(tok), _note_call(variant, idem), _note_call(variant, idem)]
+
+
+def _body_approved(tok: str, variant: int, idem: str) -> list[_PlanItem]:
+    return [_search(tok), _REQUEST_ARCHIVE, _Approver("approved", "appr-0"), _execute_call(idem)]
+
+
+def _body_denied(tok: str, variant: int, idem: str) -> list[_PlanItem]:
+    return [_search(tok), _REQUEST_ARCHIVE, _Approver("denied", "appr-0"), _execute_call(idem)]
+
+
+def _body_cross_subject(tok: str, variant: int, idem: str) -> list[_PlanItem]:
+    return [_Call("get_record", {"record_id": "rec-1"})]
+
+
+def _body_pending(tok: str, variant: int, idem: str) -> list[_PlanItem]:
+    return [_search(tok), _REQUEST_ARCHIVE, _execute_call(idem)]
+
+
+_BODIES = {
+    "lookup": _body_lookup,
+    "note": _body_note,
+    "note_retry": _body_note_retry,
+    "approval_approved": _body_approved,
+    "approval_denied": _body_denied,
+    "cross_subject": _body_cross_subject,
+    "execute_pending": _body_pending,
+}
+
+
+def _plan_for(kind: str, *, title: str, tok: str, variant: int, idem: str) -> list[_PlanItem]:
+    user = _USER_PHRASES[kind][variant].format(tok=tok, note=_NOTE_TEXTS[variant], foreign="rec-1")
     final = _FINAL[kind][variant].format(title=title)
-    plan: list[tuple[Any, ...]] = [("message", "user", user)]
-    search = ("call", "search_records", {"query": tok})
-    get = ("call", "get_record", {"record_id": "rec-0"})
-    if kind == "lookup":
-        plan += [search, get]
-    elif kind == "note":
-        plan += [
-            search,
-            get,
-            (
-                "call",
-                "create_note",
-                {"record_id": "rec-0", "text": _NOTE_TEXTS[variant], "idempotency_key": idem},
-            ),
-        ]
-    elif kind == "note_retry":
-        note = (
-            "call",
-            "create_note",
-            {"record_id": "rec-0", "text": _NOTE_TEXTS[variant], "idempotency_key": idem},
-        )
-        plan += [search, note, note]
-    elif kind == "approval_approved":
-        plan += [
-            search,
-            ("call", "request_approval", {"record_id": "rec-0", "action": "archive_record"}),
-            ("approver", "approved", "appr-0"),
-            ("call", "execute_approved_action", {"approval_id": "appr-0", "idempotency_key": idem}),
-        ]
-    elif kind == "approval_denied":
-        plan += [
-            search,
-            ("call", "request_approval", {"record_id": "rec-0", "action": "archive_record"}),
-            ("approver", "denied", "appr-0"),
-            ("call", "execute_approved_action", {"approval_id": "appr-0", "idempotency_key": idem}),
-        ]
-    elif kind == "cross_subject":
-        plan += [("call", "get_record", {"record_id": foreign})]
-    elif kind == "execute_pending":
-        plan += [
-            search,
-            ("call", "request_approval", {"record_id": "rec-0", "action": "archive_record"}),
-            ("call", "execute_approved_action", {"approval_id": "appr-0", "idempotency_key": idem}),
-        ]
-    else:  # pragma: no cover
-        raise TrainingDatasetError(f"unknown kind: {kind!r}")
-    plan.append(("message", "assistant", final))
-    return plan
+    return [_Say("user", user), *_BODIES[kind](tok, variant, idem), _Say("assistant", final)]
 
 
-def _plan_from_steps(steps: tuple[dict[str, Any], ...]) -> list[tuple[Any, ...]]:
-    plan: list[tuple[Any, ...]] = []
+def _plan_from_steps(steps: tuple[dict[str, Any], ...]) -> list[_PlanItem]:
+    """Recover the agent-side actions from a recorded trace. Recorded
+    results/errors are dropped; a step type this function does not know is
+    dropped too, and the replay comparison then refuses the trace because the
+    replayed steps no longer equal the recorded ones."""
+    plan: list[_PlanItem] = []
     for step in steps:
         t = step.get("type")
         if t == "message":
-            plan.append(("message", step["role"], step["content"]))
+            plan.append(_Say(step["role"], step["content"]))
         elif t == "tool_call":
-            plan.append(("call", step["tool"], dict(step["arguments"])))
+            plan.append(_Call(step["tool"], dict(step["arguments"])))
         elif t == "approver_decision":
-            plan.append(("approver", step["decision"], step["approval_id"]))
-        elif t in ("tool_result", "tool_error"):
-            continue
-        else:
-            raise TraceVerificationError(f"unknown step type: {t!r}")
+            plan.append(_Approver(step["decision"], step["approval_id"]))
     return plan
 
 
-def _outcome_holds(kind: str, outcome: str, steps: list[dict[str, Any]]) -> bool:
-    results = [s for s in steps if s["type"] == "tool_result"]
-    errors = [s for s in steps if s["type"] == "tool_error"]
-    if outcome == "record_read":
-        return any(s["tool"] == "get_record" and s["result"]["status"] == "open" for s in results)
-    if outcome == "note_created":
-        return any(s["tool"] == "create_note" for s in results)
-    if outcome == "note_created_once":
-        notes = [s["result"]["note_id"] for s in results if s["tool"] == "create_note"]
-        return len(notes) == 2 and notes[0] == notes[1]
-    if outcome == "action_executed":
-        return any(
-            s["tool"] == "execute_approved_action" and s["result"]["status"] == "executed"
-            for s in results
-        )
-    if outcome in ("action_refused_denied", "action_refused_pending"):
-        refused = any(
-            e["tool"] == "execute_approved_action" and e["error_type"] == "ReferenceDenialError"
-            for e in errors
-        )
-        executed = any(s["tool"] == "execute_approved_action" for s in results)
-        return refused and not executed
-    if outcome == "access_refused":
-        return any(
-            e["tool"] == "get_record" and e["error_type"] == "ReferenceAuthorizationError"
-            for e in errors
-        ) and not any(s["tool"] == "get_record" for s in results)
-    return False
+def _results(steps: list[dict[str, Any]], tool: str) -> list[dict[str, Any]]:
+    return [s["result"] for s in steps if s["type"] == "tool_result" and s["tool"] == tool]
+
+
+def _error_types(steps: list[dict[str, Any]], tool: str) -> list[str]:
+    return [s["error_type"] for s in steps if s["type"] == "tool_error" and s["tool"] == tool]
+
+
+def _holds_record_read(steps: list[dict[str, Any]]) -> bool:
+    return any(r["status"] == "open" for r in _results(steps, "get_record"))
+
+
+def _holds_note_created(steps: list[dict[str, Any]]) -> bool:
+    return len(_results(steps, "create_note")) >= 1
+
+
+def _holds_note_once(steps: list[dict[str, Any]]) -> bool:
+    ids = [r["note_id"] for r in _results(steps, "create_note")]
+    return len(ids) == 2 and ids[0] == ids[1]
+
+
+def _holds_executed(steps: list[dict[str, Any]]) -> bool:
+    return any(r["status"] == "executed" for r in _results(steps, "execute_approved_action"))
+
+
+def _holds_action_refused(steps: list[dict[str, Any]]) -> bool:
+    refused = "ReferenceDenialError" in _error_types(steps, "execute_approved_action")
+    executed = len(_results(steps, "execute_approved_action")) > 0
+    return refused and not executed
+
+
+def _holds_access_refused(steps: list[dict[str, Any]]) -> bool:
+    refused = "ReferenceAuthorizationError" in _error_types(steps, "get_record")
+    read = len(_results(steps, "get_record")) > 0
+    return refused and not read
+
+
+_OUTCOME_CHECKS = {
+    "record_read": _holds_record_read,
+    "note_created": _holds_note_created,
+    "note_created_once": _holds_note_once,
+    "action_executed": _holds_executed,
+    "action_refused_denied": _holds_action_refused,
+    "action_refused_pending": _holds_action_refused,
+    "access_refused": _holds_access_refused,
+}
+
+
+def _outcome_holds(outcome: str, steps: list[dict[str, Any]]) -> bool:
+    check = _OUTCOME_CHECKS.get(outcome)
+    return check is not None and check(steps)
 
 
 def _trace_hash_source(trace: TrainingTrace) -> str:
-    return json.dumps(trace.to_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return json.dumps(trace.to_dict(), sort_keys=True, separators=(",", ":"))
 
 
 def generate_training_traces(*, count: int = 1200) -> tuple[TrainingTrace, ...]:
@@ -528,7 +583,7 @@ def generate_training_traces(*, count: int = 1200) -> tuple[TrainingTrace, ...]:
         tok = f"TRN-{i:04d}"
         title = f"{adj} {noun} {tok}"
         plan = _plan_for(kind, title=title, tok=tok, variant=variant, idem=f"idem-{i:04d}")
-        steps, _ = _execute_plan(plan, title=title)
+        steps = _execute_plan(plan, title=title)
         trace = TrainingTrace(
             trace_id=f"train-{i:04d}",
             group_id=f"{_GROUP_PREFIX}{i:04d}",
@@ -545,7 +600,6 @@ def generate_training_traces(*, count: int = 1200) -> tuple[TrainingTrace, ...]:
                 "index": i,
             },
         )
-        verify_trace_replay(trace)
         traces.append(trace)
     return tuple(traces)
 
@@ -559,7 +613,7 @@ def verify_trace_replay(trace: TrainingTrace) -> None:
     if not isinstance(trace.entity_title, str) or not trace.entity_title:
         raise TraceVerificationError("entity_title must be a non-empty string")
     plan = _plan_from_steps(trace.steps)
-    replayed, _ = _execute_plan(plan, title=trace.entity_title)
+    replayed = _execute_plan(plan, title=trace.entity_title)
     if replayed != [dict(s) for s in trace.steps]:
         raise TraceVerificationError(
             f"{trace.trace_id}: recorded results do not replay against the real backend"
@@ -569,7 +623,7 @@ def verify_trace_replay(trace: TrainingTrace) -> None:
         raise TraceVerificationError(
             f"{trace.trace_id}: final answer does not match the verified outcome for {trace.kind!r}"
         )
-    if not _outcome_holds(trace.kind, trace.expected_outcome, replayed):
+    if not _outcome_holds(trace.expected_outcome, replayed):
         raise TraceVerificationError(
             f"{trace.trace_id}: declared outcome {trace.expected_outcome!r} does not hold"
         )
@@ -597,25 +651,32 @@ def _scan_secrets(trace: TrainingTrace) -> None:
                 raise SecretInTraceError(f"{trace.trace_id}: secret-shaped content refused")
 
 
+def _norm(value: str) -> str:
+    return value.strip().casefold()
+
+
 def _check_reserved(trace: TrainingTrace, reserved: ReservedFinalSuite) -> None:
-    answer_hash = hashlib.sha256(trace.final_answer().encode("utf-8")).hexdigest()
-    if (
-        trace.group_id in reserved.group_ids
-        or trace.template_id in reserved.template_ids
-        or trace.entity_title in reserved.entity_titles
-        or answer_hash in reserved.answer_sha256s
-    ):
+    """Case/whitespace-insensitive on both sides, so a re-cased copy of a
+    sealed id cannot slip past the held-out guard."""
+    answer_hash = _norm(hashlib.sha256(trace.final_answer().encode("utf-8")).hexdigest())
+    overlaps = (
+        (_norm(trace.group_id), {_norm(x) for x in reserved.group_ids}),
+        (_norm(trace.template_id), {_norm(x) for x in reserved.template_ids}),
+        (_norm(trace.entity_title), {_norm(x) for x in reserved.entity_titles}),
+        (answer_hash, {_norm(x) for x in reserved.answer_sha256s}),
+    )
+    if any(probe in sealed for probe, sealed in overlaps):
         raise HeldOutLeakageError(f"{trace.trace_id}: overlaps the sealed final suite")
 
 
 def _validate_trace_shape(trace: Any) -> TrainingTrace:
     if not isinstance(trace, TrainingTrace):
         raise TrainingDatasetError("traces must be TrainingTrace instances")
-    if trace.purpose != _PURPOSE:
+    if trace.purpose not in (_PURPOSE,):
         raise TrainingDatasetError(f"{trace.trace_id}: purpose must be 'training'")
     if (
         not isinstance(trace.provenance, dict)
-        or trace.provenance.get("origin") != _ORIGIN
+        or trace.provenance.get("origin") not in (_ORIGIN,)
         or trace.provenance.get("label") != "synthetic"
         or not isinstance(trace.provenance.get("producer"), str)
         or not trace.provenance["producer"]
@@ -643,8 +704,9 @@ def _validate_review(review: Any, producers: dict[str, str]) -> ReviewDecision:
     producer = producers.get(review.trace_id)
     if producer is None:
         raise ReviewIndependenceError(f"review for unknown trace: {review.trace_id!r}")
-    reviewer = review.reviewer_id.strip().casefold()
-    if reviewer.startswith("generator:") or reviewer == producer.strip().casefold():
+    if _norm(review.reviewer_id).startswith("generator:") or _norm(review.reviewer_id) == _norm(
+        producer
+    ):
         raise ReviewIndependenceError(f"{review.trace_id}: reviewer is not independent of producer")
     return review
 
@@ -660,10 +722,12 @@ def build_training_dataset(
         raise TrainingDatasetError("traces and reviews must be sequences")
     reserved = reserved or ReservedFinalSuite()
     by_id: dict[str, TrainingTrace] = {}
+    seen_ids: set[str] = set()
     for raw in traces:
         trace = _validate_trace_shape(raw)
-        if trace.trace_id in by_id:
+        if _norm(trace.trace_id) in seen_ids:
             raise TrainingDatasetError(f"duplicate trace_id: {trace.trace_id!r}")
+        seen_ids.add(_norm(trace.trace_id))
         _scan_secrets(trace)
         _check_reserved(trace, reserved)
         verify_trace_replay(trace)
@@ -673,10 +737,8 @@ def build_training_dataset(
     decisions: dict[str, str] = {}
     for raw_review in reviews:
         review = _validate_review(raw_review, producers)
-        prior = decisions.get(review.trace_id)
-        if prior is not None and prior != review.decision:
+        if decisions.setdefault(review.trace_id, review.decision) != review.decision:
             raise ReviewIndependenceError(f"{review.trace_id}: conflicting review decisions")
-        decisions[review.trace_id] = review.decision
 
     approved = tuple(
         sorted(
