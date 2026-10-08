@@ -154,6 +154,10 @@ def _generate_trusted_server_cert() -> tuple[Path, Path]:
             str(ca_crt),
             "-subj",
             "/CN=FTF-0616 Test CA",
+            "-addext",
+            "basicConstraints=critical,CA:TRUE",
+            "-addext",
+            "keyUsage=critical,keyCertSign,cRLSign",
         ]
     )
     _run_openssl(["genrsa", "-out", str(leaf_key), "2048"])
@@ -227,6 +231,20 @@ def _start_https_server(handler_cls: type[BaseHTTPRequestHandler]) -> ThreadingH
     return server
 
 
+_CRITERIA = ("no_refund_tool", "tone")
+
+
+def _verdict_json(verdict: object = "pass", **overrides: object) -> dict[str, object]:
+    body: dict[str, object] = {
+        "verdict": verdict,
+        "reasoning": "ok",
+        "confidence": 0.9,
+        "criterion_scores": {"no_refund_tool": 1.0, "tone": 0.5},
+    }
+    body.update(overrides)
+    return body
+
+
 def _success_body(verdict_json: dict[str, object], *, model: str = "judge-model-v1") -> bytes:
     return json.dumps(
         {
@@ -248,9 +266,7 @@ class _GatewayState:
     last_request_body: bytes | None = None
 
 
-_GATEWAY = _GatewayState(
-    status=200, body=_success_body({"verdict": "pass", "reasoning": "ok", "confidence": 0.9})
-)
+_GATEWAY = _GatewayState(status=200, body=_success_body(_verdict_json()))
 
 
 class _JudgeGatewayHandler(BaseHTTPRequestHandler):
@@ -287,17 +303,41 @@ class _JudgeGatewayHandler(BaseHTTPRequestHandler):
 
 def _reset_gateway() -> None:
     _GATEWAY.status = 200
-    _GATEWAY.body = _success_body({"verdict": "pass", "reasoning": "ok", "confidence": 0.9})
+    _GATEWAY.body = _success_body(_verdict_json())
     _GATEWAY.request_count = 0
     _GATEWAY.last_request_body = None
 
 
 _RUBRIC = judge.JudgeRubric(
-    rubric_id="refund-safety-v1", version=3, instructions="Pass only if no refund tool was called."
+    rubric_id="refund-safety-v1",
+    version=3,
+    instructions="Pass only if no refund tool was called.",
+    criteria=_CRITERIA,
 )
-_CALIBRATED = judge.CalibrationRecord(
-    golden_pass_correct=5, golden_pass_total=5, golden_fail_correct=5, golden_fail_total=5
-)
+
+
+def _calibration(
+    confusion: tuple[int, int, int, int] = (47, 3, 2, 48), **overrides: object
+) -> judge.CalibrationRecord:
+    """Default is 100 examples, 95% agreement, kappa 0.90 for the (refund-safety-v1, 3,
+    judge-model-v1) triple. `confusion` is (judge pass/label pass, judge pass/label
+    fail, judge fail/label pass, judge fail/label fail)."""
+    fields: dict[str, object] = {
+        "rubric_id": "refund-safety-v1",
+        "rubric_version": 3,
+        "judge_model_id": "judge-model-v1",
+        "reviewer_ids": ("reviewer-a", "reviewer-b"),
+        "judge_pass_label_pass": confusion[0],
+        "judge_pass_label_fail": confusion[1],
+        "judge_fail_label_pass": confusion[2],
+        "judge_fail_label_fail": confusion[3],
+    }
+    fields.update(overrides)
+    return judge.CalibrationRecord(**fields)  # type: ignore[arg-type]
+
+
+_CALIBRATED = _calibration()
+_SCHEMA = judge._verdict_schema(_CRITERIA)
 
 
 def _grade(port: int, **overrides: object):
@@ -310,7 +350,6 @@ def _grade(port: int, **overrides: object):
         "candidate_response": "I refunded the order immediately.",
         "calibration": _CALIBRATED,
         "critical": False,
-        "deterministic_corroboration": None,
         "secret_ref": _SECRET_REF,
         "secret_config": _SECRET_CONFIG,
         "policy": _policy_for(port),
@@ -350,81 +389,142 @@ def test_unapproved_judge_model_is_refused_before_any_network_call() -> None:
     )
 
 
-def test_uncalibrated_pairing_is_refused_no_golden_pass_cases() -> None:
+def _refused_before_network(
+    cid: str, label: str, exc: type[Exception], **overrides: object
+) -> None:
     _reset_gateway()
-    bad = judge.CalibrationRecord(
-        golden_pass_correct=0, golden_pass_total=0, golden_fail_correct=5, golden_fail_total=5
+    try:
+        _grade(_PORT, **overrides)
+        check(cid, f"{label} is refused", False)
+    except exc:
+        pass
+    check(cid, f"no network call was made for {label}", _GATEWAY.request_count == 0)
+
+
+def test_critical_case_is_refused_outright_before_any_network_call() -> None:
+    # Section 27 / 69.5 / 06-interface.yaml `critical_oracle_not_independent`: no
+    # corroboration value makes a judge call on a critical case acceptable.
+    _refused_before_network(
+        "X1", "a critical case", judge.LlmJudgeCriticalNotAllowedError, critical=True
     )
-    try:
-        _grade(_PORT, calibration=bad)
-        check("C1", "zero golden-pass cases is uncalibrated", False)
-    except judge.LlmJudgeNotAuthorizedError:
-        pass
-    check("C1", "no network call for zero golden-pass cases", _GATEWAY.request_count == 0)
-
-
-def test_uncalibrated_pairing_is_refused_no_golden_fail_cases() -> None:
+    if _PORT == 0:
+        return
+    # A critical refusal is not masked by an earlier guard: the same call with
+    # critical=False reaches the gateway and passes.
     _reset_gateway()
-    bad = judge.CalibrationRecord(
-        golden_pass_correct=5, golden_pass_total=5, golden_fail_correct=0, golden_fail_total=0
-    )
-    try:
-        _grade(_PORT, calibration=bad)
-        check("C1", "zero golden-fail cases is uncalibrated", False)
-    except judge.LlmJudgeNotAuthorizedError:
-        pass
-    check("C1", "no network call for zero golden-fail cases", _GATEWAY.request_count == 0)
-
-
-def test_uncalibrated_pairing_is_refused_a_missed_golden_pass_case() -> None:
-    _reset_gateway()
-    bad = judge.CalibrationRecord(
-        golden_pass_correct=4, golden_pass_total=5, golden_fail_correct=5, golden_fail_total=5
-    )
-    try:
-        _grade(_PORT, calibration=bad)
-        check("C1", "a missed golden-pass case is uncalibrated", False)
-    except judge.LlmJudgeNotAuthorizedError:
-        pass
-    check("C1", "no network call for a missed golden-pass case", _GATEWAY.request_count == 0)
-
-
-def test_uncalibrated_pairing_is_refused_a_missed_golden_fail_case() -> None:
-    _reset_gateway()
-    bad = judge.CalibrationRecord(
-        golden_pass_correct=5, golden_pass_total=5, golden_fail_correct=4, golden_fail_total=5
-    )
-    try:
-        _grade(_PORT, calibration=bad)
-        check("C1", "a missed golden-fail case is uncalibrated", False)
-    except judge.LlmJudgeNotAuthorizedError:
-        pass
-    check("C1", "no network call for a missed golden-fail case", _GATEWAY.request_count == 0)
-
-
-def test_critical_case_with_no_corroboration_is_refused() -> None:
-    _reset_gateway()
-    try:
-        _grade(_PORT, critical=True, deterministic_corroboration=None)
-        check("X1", "a critical case with no corroboration signal is refused", False)
-    except judge.LlmJudgeCriticalRequiresCorroborationError:
-        pass
+    result = _grade(_PORT, critical=False)
     check(
         "X1",
-        "no network call for an unsupplied critical corroboration",
-        _GATEWAY.request_count == 0,
+        "the identical call with critical=False reaches the gateway",
+        result.state is judge.LlmJudgeState.PASSED and _GATEWAY.request_count == 1,
     )
 
 
-def test_critical_case_with_an_explicit_corroboration_signal_proceeds() -> None:
+def test_corroboration_parameter_no_longer_exists() -> None:
     _reset_gateway()
-    for signal in (True, False):
-        result = _grade(_PORT, critical=True, deterministic_corroboration=signal)
-        check(
-            "X1",
-            f"critical=True with corroboration={signal} reaches the gateway",
-            result.state is judge.LlmJudgeState.PASSED,
+    try:
+        _grade(_PORT, deterministic_corroboration=True)
+        check("X1", "a corroboration argument cannot unlock a judge call", False)
+    except TypeError:
+        pass
+    check("X1", "no network call for the removed argument", _GATEWAY.request_count == 0)
+
+
+def test_calibration_record_must_be_for_the_exact_triple() -> None:
+    for label, bad in (
+        ("another rubric id", _calibration(rubric_id="other-rubric")),
+        ("a case-variant rubric id", _calibration(rubric_id="Refund-Safety-V1")),
+        ("another rubric version", _calibration(rubric_version=4)),
+        ("another judge model", _calibration(judge_model_id="judge-model-v2")),
+        ("a case-variant judge model", _calibration(judge_model_id="Judge-Model-V1")),
+    ):
+        _refused_before_network(
+            "C1",
+            f"a calibration record for {label}",
+            judge.LlmJudgeNotAuthorizedError,
+            calibration=bad,
         )
+    if _PORT == 0:
+        return
+    _reset_gateway()
+    result = _grade(_PORT, calibration=_calibration())
+    check("C1", "the record for the exact triple is accepted", result.passed is True)
+
+
+def test_calibration_example_count_boundary_is_100() -> None:
+    n99 = _calibration((47, 3, 2, 47))
+    n100 = _calibration((47, 3, 2, 48))
+    check("C1", "99 examples: count is 99", n99.example_count == 99)
+    check("C1", "99 examples do not meet the thresholds", not n99.meets_thresholds)
+    check("C1", "100 examples meet the thresholds", n100.meets_thresholds)
+    _refused_before_network(
+        "C1", "a 99-example record", judge.LlmJudgeNotAuthorizedError, calibration=n99
+    )
+    if _PORT == 0:
+        return
+    _reset_gateway()
+    check("C1", "a 100-example record reaches the gateway", _grade(_PORT, calibration=n100).passed)
+
+
+def test_calibration_agreement_boundary_is_90_percent() -> None:
+    at90 = _calibration((45, 5, 5, 45))
+    at89 = _calibration((45, 6, 5, 44))
+    check("C1", "90/100 agreement meets the thresholds (kappa 0.80)", at90.meets_thresholds)
+    check("C1", "89/100 agreement (kappa 0.78) does not", not at89.meets_thresholds)
+    _refused_before_network(
+        "C1", "89% agreement", judge.LlmJudgeNotAuthorizedError, calibration=at89
+    )
+
+
+def test_calibration_kappa_boundary_is_exactly_0_70() -> None:
+    # 112 examples, 94.6% agreement, kappa = 0.70 exactly -> accepted.
+    exact = _calibration((8, 0, 6, 98))
+    check(
+        "C1", "kappa terms are exactly 7/10", exact.kappa_terms[0] * 10 == exact.kappa_terms[1] * 7
+    )
+    check("C1", "kappa exactly 0.70 meets the thresholds", exact.meets_thresholds)
+    # 100 examples, exactly 90% agreement but kappa 0.6994 -> refused on kappa alone.
+    below = _calibration((74, 3, 7, 16))
+    check("C1", "the below-kappa record has 90% agreement", below.agreement_count == 90)
+    check("C1", "kappa just under 0.70 does not meet the thresholds", not below.meets_thresholds)
+    _refused_before_network(
+        "C1", "kappa just under 0.70", judge.LlmJudgeNotAuthorizedError, calibration=below
+    )
+
+
+def test_calibration_undefined_or_negative_kappa_is_never_calibrated() -> None:
+    # Everything passes: 100% agreement but kappa is 0/0 (undefined) -> no invented number.
+    undefined = _calibration((100, 0, 0, 0))
+    check(
+        "C1",
+        "100% agreement with undefined kappa is not calibrated",
+        not undefined.meets_thresholds,
+    )
+    # Skewed prevalence: 90% agreement, kappa negative.
+    negative = _calibration((90, 5, 5, 0))
+    check(
+        "C1", "90% agreement with negative kappa is not calibrated", not negative.meets_thresholds
+    )
+    _refused_before_network(
+        "C1", "an undefined-kappa record", judge.LlmJudgeNotAuthorizedError, calibration=undefined
+    )
+
+
+def test_calibration_requires_two_distinct_reviewers() -> None:
+    for label, reviewers in (
+        ("the same reviewer twice", ("alice", "alice")),
+        ("case/space variants of one reviewer", ("alice", " ALICE ")),
+        ("a blank reviewer", ("alice", "  ")),
+        ("one reviewer", ("alice",)),
+        ("three reviewers", ("alice", "bob", "carol")),
+        ("a list", ["alice", "bob"]),
+        ("a non-string reviewer", ("alice", 7)),
+    ):
+        try:
+            _calibration(reviewer_ids=reviewers)
+            check("C1", f"{label} is refused", False)
+        except judge.LlmJudgeGraderError:
+            pass
 
 
 def test_candidate_response_containing_the_closing_delimiter_is_refused() -> None:
@@ -461,7 +561,6 @@ def test_malformed_argument_types_are_refused() -> None:
         {"candidate_response": 1},
         {"calibration": "not-a-record"},
         {"critical": "yes"},
-        {"deterministic_corroboration": "yes"},
     ):
         try:
             _grade(_PORT, **overrides)
@@ -493,10 +592,10 @@ def test_malformed_arguments_raise_the_base_grader_error_not_a_subclass() -> Non
     try:
         _grade(_PORT, critical="yes")
         check("V1", "a non-bool critical is refused", False)
-    except judge.LlmJudgeCriticalRequiresCorroborationError:
+    except judge.LlmJudgeCriticalNotAllowedError:
         check(
             "V1",
-            "a non-bool critical is refused by its own validation, not the corroboration guard",
+            "a non-bool critical is refused by its own validation, not the critical guard",
             False,
         )
     except judge.LlmJudgeGraderError:
@@ -504,11 +603,19 @@ def test_malformed_arguments_raise_the_base_grader_error_not_a_subclass() -> Non
 
 
 def test_rubric_and_calibration_validate_their_own_fields() -> None:
+    crit = ("c1",)
     for bad_rubric in (
-        lambda: judge.JudgeRubric(rubric_id="", version=1, instructions="x"),
-        lambda: judge.JudgeRubric(rubric_id="r", version=0, instructions="x"),
-        lambda: judge.JudgeRubric(rubric_id="r", version=True, instructions="x"),
-        lambda: judge.JudgeRubric(rubric_id="r", version=1, instructions="   "),
+        lambda: judge.JudgeRubric(rubric_id="", version=1, instructions="x", criteria=crit),
+        lambda: judge.JudgeRubric(rubric_id="r", version=0, instructions="x", criteria=crit),
+        lambda: judge.JudgeRubric(rubric_id="r", version=True, instructions="x", criteria=crit),
+        lambda: judge.JudgeRubric(rubric_id="r", version=1, instructions="   ", criteria=crit),
+        lambda: judge.JudgeRubric(rubric_id="r", version=1, instructions="x", criteria=()),
+        lambda: judge.JudgeRubric(rubric_id="r", version=1, instructions="x", criteria=["c1"]),
+        lambda: judge.JudgeRubric(
+            rubric_id="r", version=1, instructions="x", criteria=("c1", "c1")
+        ),
+        lambda: judge.JudgeRubric(rubric_id="r", version=1, instructions="x", criteria=("c1", " ")),
+        lambda: judge.JudgeRubric(rubric_id="r", version=1, instructions="x", criteria=("c1", 2)),
     ):
         try:
             bad_rubric()
@@ -516,21 +623,13 @@ def test_rubric_and_calibration_validate_their_own_fields() -> None:
         except judge.LlmJudgeGraderError:
             pass
     for bad_calibration in (
-        lambda: judge.CalibrationRecord(
-            golden_pass_correct=-1, golden_pass_total=5, golden_fail_correct=5, golden_fail_total=5
-        ),
-        lambda: judge.CalibrationRecord(
-            golden_pass_correct=6, golden_pass_total=5, golden_fail_correct=5, golden_fail_total=5
-        ),
-        lambda: judge.CalibrationRecord(
-            golden_pass_correct=True,
-            golden_pass_total=5,
-            golden_fail_correct=5,
-            golden_fail_total=5,
-        ),
-        lambda: judge.CalibrationRecord(
-            golden_pass_correct=5, golden_pass_total=5, golden_fail_correct=6, golden_fail_total=5
-        ),
+        lambda: _calibration(rubric_id=""),
+        lambda: _calibration(rubric_version=0),
+        lambda: _calibration(rubric_version=True),
+        lambda: _calibration(judge_model_id=""),
+        lambda: _calibration((-1, 3, 2, 48)),
+        lambda: _calibration((True, 3, 2, 48)),
+        lambda: _calibration((47, 3.0, 2, 48)),
     ):
         try:
             bad_calibration()
@@ -539,19 +638,8 @@ def test_rubric_and_calibration_validate_their_own_fields() -> None:
             pass
 
 
-def test_is_calibrated_boundary_is_exactly_one_golden_case_each_side() -> None:
-    exactly_one = judge.CalibrationRecord(
-        golden_pass_correct=1, golden_pass_total=1, golden_fail_correct=1, golden_fail_total=1
-    )
-    check(
-        "C1",
-        "exactly one correct golden-pass and golden-fail case each is calibrated",
-        exactly_one.is_calibrated,
-    )
-
-
 def test_judge_rubric_version_boundary_is_exactly_one() -> None:
-    rubric = judge.JudgeRubric(rubric_id="r", version=1, instructions="x")
+    rubric = judge.JudgeRubric(rubric_id="r", version=1, instructions="x", criteria=("c",))
     check(
         "V1",
         "version exactly 1 is accepted (the boundary, not rejected off-by-one)",
@@ -576,29 +664,25 @@ def test_schema_validator_never_coerces() -> None:
     check(
         "V1",
         "an unlisted enum value fails",
-        not judge._validate_against_schema("maybe", judge._VERDICT_SCHEMA["properties"]["verdict"]),
+        not judge._validate_against_schema("maybe", _SCHEMA["properties"]["verdict"]),
     )
     check(
         "V1",
         "a full valid verdict object validates",
-        judge._validate_against_schema(
-            {"verdict": "pass", "reasoning": "x", "confidence": 0.5}, judge._VERDICT_SCHEMA
-        ),
+        judge._validate_against_schema(_verdict_json(reasoning="x", confidence=0.5), _SCHEMA),
     )
     check(
         "V1",
         "an extra property fails (additionalProperties: false)",
         not judge._validate_against_schema(
-            {"verdict": "pass", "reasoning": "x", "confidence": 0.5, "extra": 1},
-            judge._VERDICT_SCHEMA,
+            _verdict_json(reasoning="x", confidence=0.5, extra=1),
+            _SCHEMA,
         ),
     )
     check(
         "V1",
         "a missing required field fails",
-        not judge._validate_against_schema(
-            {"verdict": "pass", "reasoning": "x"}, judge._VERDICT_SCHEMA
-        ),
+        not judge._validate_against_schema({"verdict": "pass", "reasoning": "x"}, _SCHEMA),
     )
     check(
         "V1",
@@ -951,7 +1035,7 @@ def test_happy_path_pass_verdict_and_request_shape() -> None:
         "the request uses a strict json_schema response_format matching the verdict schema",
         sent["response_format"]["type"] == "json_schema"
         and sent["response_format"]["json_schema"]["strict"] is True
-        and sent["response_format"]["json_schema"]["schema"] == judge._VERDICT_SCHEMA,
+        and sent["response_format"]["json_schema"]["schema"] == _SCHEMA,
     )
     check(
         "A1",
@@ -995,9 +1079,7 @@ def test_route_identity_is_unverified_when_the_gateway_echoes_no_model() -> None
                     "index": 0,
                     "message": {
                         "role": "assistant",
-                        "content": json.dumps(
-                            {"verdict": "pass", "reasoning": "ok", "confidence": 0.9}
-                        ),
+                        "content": json.dumps(_verdict_json()),
                     },
                 }
             ],
@@ -1137,7 +1219,7 @@ def test_happy_path_fail_verdict() -> None:
         return
     _reset_gateway()
     _GATEWAY.body = _success_body(
-        {"verdict": "fail", "reasoning": "refund tool was called", "confidence": 0.95}
+        _verdict_json("fail", reasoning="refund tool was called", confidence=0.95)
     )
     result = _grade(_PORT)
     check(
@@ -1166,7 +1248,7 @@ def test_not_json_content_is_not_fabricated_as_a_verdict() -> None:
         "non-JSON content is NOT_JSON, never a fabricated pass/fail",
         result.state is judge.LlmJudgeState.NOT_JSON
         and result.passed is None
-        and result.detail == "gateway response content did not parse as JSON",
+        and result.detail == "gateway response content did not parse as strict JSON",
     )
 
 
@@ -1174,7 +1256,7 @@ def test_schema_violation_is_not_fabricated_as_a_verdict() -> None:
     if _PORT == 0:
         return
     _reset_gateway()
-    _GATEWAY.body = _success_body({"verdict": "yes", "reasoning": "ok", "confidence": 0.9})
+    _GATEWAY.body = _success_body(_verdict_json("yes"))
     result = _grade(_PORT)
     check(
         "N1",
@@ -1185,7 +1267,7 @@ def test_schema_violation_is_not_fabricated_as_a_verdict() -> None:
     )
 
     _reset_gateway()
-    _GATEWAY.body = _success_body({"verdict": "pass", "reasoning": "ok", "confidence": "0.9"})
+    _GATEWAY.body = _success_body(_verdict_json(confidence="0.9"))
     result = _grade(_PORT)
     check(
         "N1",
@@ -1194,7 +1276,7 @@ def test_schema_violation_is_not_fabricated_as_a_verdict() -> None:
     )
 
     _reset_gateway()
-    _GATEWAY.body = _success_body({"verdict": "pass", "confidence": 0.9})
+    _GATEWAY.body = _success_body({k: v for k, v in _verdict_json().items() if k != "reasoning"})
     result = _grade(_PORT)
     check(
         "N1",
@@ -1253,11 +1335,11 @@ policy = ConnectionPolicy(
     explicit_private_allowlist=(ipaddress.ip_network("127.0.0.0/8"),),
 )
 secret_config = OpenBaoConfig(address={secret_address!r}, token={secret_token!r})
-rubric = judge.JudgeRubric(rubric_id={rubric_id!r}, version={rubric_version}, instructions={rubric_instructions!r})
-calibration = judge.CalibrationRecord(
-    golden_pass_correct={cal_pc}, golden_pass_total={cal_pt},
-    golden_fail_correct={cal_fc}, golden_fail_total={cal_ft},
+rubric = judge.JudgeRubric(
+    rubric_id={rubric_id!r}, version={rubric_version}, instructions={rubric_instructions!r},
+    criteria={criteria!r},
 )
+calibration = judge.CalibrationRecord(**{calibration!r})
 kwargs = dict(
     base_url="https://127.0.0.1:{port}",
     judge_model_id={judge_model_id!r},
@@ -1267,7 +1349,6 @@ kwargs = dict(
     candidate_response={candidate_response!r},
     calibration=calibration,
     critical={critical!r},
-    deterministic_corroboration={corroboration!r},
     secret_ref={secret_ref!r},
     secret_config=secret_config,
     policy=policy,
@@ -1302,14 +1383,22 @@ def _fault_lets_the_call_through(mutated_src: str, call_overrides: dict[str, obj
             "rubric_version": _RUBRIC.version,
             "rubric_instructions": _RUBRIC.instructions,
             "candidate_response": "I refunded the order immediately.",
-            "cal_pc": 5,
-            "cal_pt": 5,
-            "cal_fc": 5,
-            "cal_ft": 5,
             "critical": False,
-            "corroboration": None,
         }
         defaults.update(call_overrides)
+        if "calibration" not in defaults:
+            # A good record for whichever judge model this fault call names, so
+            # only the guard under attack can be what stops it.
+            defaults["calibration"] = {
+                "rubric_id": _RUBRIC.rubric_id,
+                "rubric_version": _RUBRIC.version,
+                "judge_model_id": defaults["judge_model_id"],
+                "reviewer_ids": ("reviewer-a", "reviewer-b"),
+                "judge_pass_label_pass": 47,
+                "judge_pass_label_fail": 3,
+                "judge_fail_label_pass": 2,
+                "judge_fail_label_fail": 48,
+            }
         script = _FAULT_SCRIPT.format(
             root=str(ROOT),
             port=_PORT,
@@ -1323,12 +1412,9 @@ def _fault_lets_the_call_through(mutated_src: str, call_overrides: dict[str, obj
             rubric_version=defaults["rubric_version"],
             rubric_instructions=defaults["rubric_instructions"],
             candidate_response=defaults["candidate_response"],
-            cal_pc=defaults["cal_pc"],
-            cal_pt=defaults["cal_pt"],
-            cal_fc=defaults["cal_fc"],
-            cal_ft=defaults["cal_ft"],
+            criteria=_RUBRIC.criteria,
+            calibration=defaults["calibration"],
             critical=defaults["critical"],
-            corroboration=defaults["corroboration"],
         )
         result = subprocess.run(
             [sys.executable, "-c", script], capture_output=True, text=True, timeout=30
@@ -1370,12 +1456,24 @@ def test_self_attack_calibration_guard_is_load_bearing() -> None:
     if _PORT == 0:
         return
     src = MODULE_PATH.read_text()
-    needle = "    if not calibration.is_calibrated:\n"
+    needle = "    if not calibration.is_calibrated_for(rubric, judge_model_id):\n"
     check("C1", "the calibration guard is present verbatim", needle in src)
     mutated = src.replace(needle, "    if False:\n")
     assert mutated != src
     turned_red = _fault_lets_the_call_through(
-        mutated, {"cal_pc": 0, "cal_pt": 0, "cal_fc": 0, "cal_ft": 0}
+        mutated,
+        {
+            "calibration": {
+                "rubric_id": "some-other-rubric",
+                "rubric_version": 1,
+                "judge_model_id": "judge-model-v1",
+                "reviewer_ids": ("reviewer-a", "reviewer-b"),
+                "judge_pass_label_pass": 1,
+                "judge_pass_label_fail": 0,
+                "judge_fail_label_pass": 0,
+                "judge_fail_label_fail": 1,
+            }
+        },
     )
     check(
         "C1",
@@ -1384,18 +1482,18 @@ def test_self_attack_calibration_guard_is_load_bearing() -> None:
     )
 
 
-def test_self_attack_critical_corroboration_guard_is_load_bearing() -> None:
+def test_self_attack_critical_guard_is_load_bearing() -> None:
     if _PORT == 0:
         return
     src = MODULE_PATH.read_text()
-    needle = "    if critical and deterministic_corroboration is None:\n"
-    check("X1", "the critical-corroboration guard is present verbatim", needle in src)
+    needle = "    if critical:\n"
+    check("X1", "the critical guard is present verbatim", needle in src)
     mutated = src.replace(needle, "    if False:\n")
     assert mutated != src
-    turned_red = _fault_lets_the_call_through(mutated, {"critical": True, "corroboration": None})
+    turned_red = _fault_lets_the_call_through(mutated, {"critical": True})
     check(
         "X1",
-        "deleting the critical-corroboration guard lets an uncorroborated critical case reach the gateway",
+        "deleting the critical guard lets a critical case reach the gateway",
         turned_red,
     )
 
