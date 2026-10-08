@@ -10642,3 +10642,23 @@ clean (product_truth 45/45, validate_spec --strict, data_exposure OK). No produc
   the record pin reads the latest version after listing, so a shrunk, re-hashed, retained record PUT in between
   restores 3 of 4 objects as success (Law 17). Also: create_backup with an existing backup_id succeeds and loses the
   original backup; a naive `now` raises a raw TypeError; notes lack the mutation figure.
+
+## 2026-10-08T19:59Z — RETURNED: FTF-0903 (r5), FTF-0905 (r4), FTF-0516-P1 (r2), FTF-0908 (r2)
+Independent verifiers, one per PR, each on the merge commit; CI on each PR head green (ci-verdict success, proving
+test log lines read through the GitHub MCP); gates clean (product_truth 45/45, validate_spec --strict, data_exposure
+OK). No producer session matches the certifier.
+- **FTF-0903: RETURNED** (round 4 → 5; tests only; #648, 3dd4c18b52c6f5c5236ae8865d47bc3cf9e97ab5). Round-4 items
+  hold and the test re-runs cleanly. GREEN: a 40-char prefix echo of a rejected ContentRef id leaks traceback or path
+  text (V5e, V5f, V4d), because the test marker sits only at the tail of the traceback.
+- **FTF-0905: RETURNED** (round 3 → 4; tests only; #649, c19d8d6c58ffe0cd93fb3401e4fca01bf9fe12dd). Round-3 items
+  hold. GREEN: clearing the recorded leak set after the first CanaryLeakedError lets a second completion call succeed
+  (F27).
+- **FTF-0516-P1: RETURNED** (round 1 → 2; #639, 90382a2149757d22ea369c1c092233811a841944). 99 of 102 probes pass on
+  PG16 as sovra_app. Open: the detectors_reported CHECK is unpinned (V11 GREEN); detector reports are hand-built and
+  contradict the real FTF-0508 validator on the same batch; NUL in three inputs gives an untyped 500.
+- **FTF-0908: RETURNED** (round 1 → 2; #640, 5511b2469141a4de51cc34a6cd47840a24691298). Deny logic holds; mutation
+  68/68. Reproduced on real Postgres: a propagated denial rolls back its own audit row (0 rows persist). GREEN: the
+  effective job profile in the audit (F9) and the audit identity fields (F5, F6, F7, F12). Malformed AuditContext
+  raises untyped errors. Control-plane ruling: round 2 also adds the §11.2 agreement, subprocessor and
+  deletion-behaviour fields and account/region matching, which the original DoD left out.
+- Pending: FTF-0616 r5 (#645) verification still running.
