@@ -24525,3 +24525,10 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 - **Owner action:** FTF-0616 needs a gateway key and an approved judge model for its real-judge clause.
 - **Backlog:** FTF-0501 (ready), FTF-1703, FTF-1602, FTF-R005 and FTF-0516 (park it if no resolution API exists).
 - **ci-verdict:** all 7 relay merges since 23:40Z landed on a green ci-verdict.
+
+## 2026-10-08T07:00Z — Control plane: FTF-0308, FTF-0602, FTF-0901 CERTIFIED (133/302); FTF-1706 returned
+- **CERTIFIED:** FTF-0308 (#611) and FTF-0602 (#612), the two UIs on certified backends, and FTF-0901 (#614).
+- **Returned:** FTF-1706, round 3, tests only (QUEUE 0g).
+- **Governance:** #616 put evals/reference under the gates.
+- **ci-verdict:** all 4 relay merges since 02:40Z landed on a green ci-verdict.
+- **Still open:** FTF-0616 (#613) and FTF-0501 (#610) are in progress.
