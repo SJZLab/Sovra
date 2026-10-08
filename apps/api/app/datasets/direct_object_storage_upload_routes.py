@@ -53,6 +53,7 @@ from app.datasets.dataset_source_connection_crud import (
 )
 from app.datasets.dataset_source_connection_routes import DATASET_SOURCE_ROLES
 from app.datasets.dataset_upload_store import (
+    DATASET_NAME_MAX_LENGTH,
     HELD_OUT_PURPOSE,
     MAX_UPLOAD_BYTES,
     DatasetUploadSession,
@@ -412,8 +413,15 @@ def build_direct_upload_router(
         del organization_id
         payload = await _read_object(request, frozenset({"dataset_name"}))
         dataset_name = payload["dataset_name"]
-        if not isinstance(dataset_name, str) or not dataset_name.strip():
+        # Validated before any storage work: a name the store would refuse must
+        # not leave a completed-but-unrecorded object behind.
+        if (
+            not isinstance(dataset_name, str)
+            or not dataset_name.strip()
+            or len(dataset_name.strip()) > DATASET_NAME_MAX_LENGTH
+        ):
             raise HTTPException(status_code=400, detail="invalid_body")
+        dataset_name = dataset_name.strip()
         record = load(ctx, project_id, upload_session_id)
         if record.status != "open":
             raise HTTPException(status_code=409, detail="upload_session_not_open")
@@ -449,7 +457,7 @@ def build_direct_upload_router(
                     tenant_context,
                     project_id=project_id,
                     upload_session_id=upload_session_id,
-                    dataset_name=dataset_name.strip(),
+                    dataset_name=dataset_name,
                     verified_size_bytes=verified.size_bytes,
                     verified_sha256=verified.sha256,
                     verified_content_type=verified.content_type,

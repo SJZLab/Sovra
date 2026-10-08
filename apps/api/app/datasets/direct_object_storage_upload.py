@@ -220,9 +220,12 @@ class VerifiedObject:
     content_type: str
 
 
-def plan_parts(declared_size_bytes: int, *, part_size_bytes: int = DEFAULT_PART_BYTES) -> PartPlan:
+def plan_parts(declared_size_bytes: int, *, part_size_bytes: int | None = None) -> PartPlan:
     """The deterministic part layout for a declared size: every part but the
-    last is `part_size_bytes`; the last holds the remainder."""
+    last is `part_size_bytes` (default `DEFAULT_PART_BYTES`, read at call time);
+    the last holds the remainder."""
+    if part_size_bytes is None:
+        part_size_bytes = DEFAULT_PART_BYTES
     if isinstance(declared_size_bytes, bool) or not isinstance(declared_size_bytes, int):
         raise ValueError("declared_size_bytes must be an int")
     if isinstance(part_size_bytes, bool) or not isinstance(part_size_bytes, int):
