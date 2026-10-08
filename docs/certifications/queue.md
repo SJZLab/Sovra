@@ -24559,3 +24559,8 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-08T14:30Z — Control plane: FTF-1602 returned (134/302 unchanged)
 - **Returned:** FTF-1602 r3 (0i): pin the record version and retention, integration tests for the partial and
   foreign-tenant cases, typed input, 0 mutation survivors.
+
+## 2026-10-08T16:25Z — Control plane: 5 returned, FTF-0501-UI sliced (134/302 unchanged)
+- **Returned:** FTF-0903 r4 (0c), FTF-0905 r3 (0d), FTF-1703 r3 (0g), FTF-1206 r5 (0h), FTF-0501 r2 (0j).
+- **Sliced:** FTF-0501-UI (Backlog). **Pending:** FTF-0616 #636.
+- **ci-verdict:** all 6 relay merges since 13:40Z (#610, #630, #632, #634, #635, #636) landed on a green ci-verdict.

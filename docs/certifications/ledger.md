@@ -10586,3 +10586,27 @@ PR is not landed by the next certifier shift.
     - Notes overclaim.
   - The first fault pass was discarded after the verifier's unbounded SeaweedFS fixture filled the disk. All rows come
     from a second, bounded pass with the module sha256-verified after each row.
+
+## 2026-10-08T16:25Z — RETURNED: FTF-0903 (r4), FTF-0905 (r3), FTF-1703 (r3), FTF-1206 (r5), FTF-0501 (r2); SLICE: FTF-0501-UI
+Independent verifiers, one per PR, each on the merge commit, CI on the PR head green (ci-verdict success) and gates
+clean (product_truth 45/45, validate_spec --strict, data_exposure OK). No producer session matches the certifier.
+- **FTF-0903: RETURNED** (round 3 → 4; tests only; #632, d37e6b18a43f87399d7ed7775dcfc35543439f2a). Round-3 fixes 2-3
+  hold; mutation 99/99. Open: ContentRef echo (X5) stays GREEN with a raw traceback in str(exc); X4 and the
+  out-of-range number/count/timestamp/bool echoes (X1-X3, X7) go RED only through guard text; the test leaves a mutant
+  .pyc so a second run in one checkout fails.
+- **FTF-0905: RETURNED** (round 2 → 3; tests only; #634, f6b99cea69406e523e15ed6edebca6cdb008cf68). All five round-2
+  production fixes hold; 17 faults RED. GREEN: default-plan contents (F6, F7, F7b), sticky leak on the same key (F8,
+  F9), canary_id independence (F11, F12).
+- **FTF-1703: RETURNED** (round 2 → 3; production plus tests; #630, 6bc52597920aabb45130f9705a83ebc1120b57f7). Items
+  1, 3, 4 hold. Reproduced: a TrainingTrace subclass with an overridden to_dict() and a nested dict subclass are
+  admitted carrying a sealed final-suite prompt, a forged critical flag and an sk- secret. G4 (exact step type) GREEN.
+- **FTF-1206: RETURNED** (round 4 → 5; production plus tests; #635, 77812afaa364acbd963af1a46375e8e493a56555). All
+  round-3 items hold. Reproduced negative acceptance: a str subclass aliasing an allowed value widens a grant to a
+  namespace the org never allowed and authorizes a non-approver. Seven identifier-pattern faults GREEN.
+- **FTF-0501: RETURNED** (round 1 → 2; #610, 4154b96da3c02d05e3cd93006e803790693944b0). P1/P2 hold; 77 of 78
+  real-route probes pass on PG16 + SeaweedFS; 18 faults RED. Open: XLSX check accepts any ZIP (E8b reproduced); a flaky
+  unsigned-request check (400 vs 403); §67.5 24 h multipart abort claimed but not implemented; no route-level PG + S3
+  CI job and blank proving_symbol; no resumable UI.
+- **SLICE FTF-0501-UI:** the "resumable UI" clause becomes a Backlog child slice on the FTF-0501 routes. FTF-0501 is
+  certified only when round 2 and FTF-0501-UI both pass.
+- Pending: FTF-0616 (#636) verification still running.
