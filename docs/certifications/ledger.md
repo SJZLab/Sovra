@@ -10702,3 +10702,10 @@ data_exposure OK).
   hold. Reproduced on real SeaweedFS: two concurrent creates with one backup_id leave one caller holding a success
   record for an unverifiable backup (6/6, Law 17). GREEN: G1 (get_latest read) in the integration suite, with an ABA
   partial restore under it; G7 (count-only re-list) in both suites. Ruling: create_backup generates the backup_id.
+
+## 2026-10-08T23:05Z — RETURNED: FTF-0616 (r7)
+- **FTF-0616: RETURNED** (round 6 → 7; tests only; #657, 7209ac7d4a36198056d63f58ba7071a062492882). Independent
+  verifier: CI on head d8cc1a3 green (live TLS path ran); gates clean; whole-file mutation 324/324. Round-6 F9, R5f,
+  R5n and optional F15 are RED. GREEN: NFKC-normalised alias membership (R6f) and judge-id comparison (R6m); under
+  each, a fullwidth-character variant of an approved but uncalibrated id certifies. Round 7 closes the normalisation
+  class through one shared variant list.
