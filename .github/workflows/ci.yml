@@ -263,6 +263,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_1401.py
       - name: FTF-1702 negative-test proof (Tool environment catches real defects, no DB required)
         run: uv run python3 tests/reference/test_ftf_1702.py
+      - name: FTF-1706 negative-test proof (Candidate discovery catches real defects, no DB required)
+        run: uv run python3 tests/reference/test_ftf_1706.py
       - name: FTF-1302 negative-test proof (Local compute costing catches real defects, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1302.py
       - name: FTF-1303 negative-test proof (Provider token costing catches real defects, no DB required)

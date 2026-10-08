@@ -388,6 +388,15 @@ def test_unknown_is_blocked_never_assumed_tunable() -> None:
     check("FTF-1706-N2", "another model's probe is no evidence", c.kind is CandidateKind.BLOCKED)
 
 
+def test_unknown_under_strict_profile_reports_only_capability() -> None:
+    c = by_id(run(["m"], security_profile="air_gapped"), "m")
+    check(
+        "FTF-1706-N2",
+        "unknown capability under air_gapped is blocked for capability alone",
+        c.kind is CandidateKind.BLOCKED and c.blocked_reasons == ("capability_unknown",),
+    )
+
+
 def test_roles_passthrough_and_input_guards() -> None:
     res = run(["m"], artifacts_by_model={"m": artifact()}, assigned_roles={"m": "baseline"})
     check(
