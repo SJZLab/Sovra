@@ -1653,6 +1653,116 @@ def test_guards_name_their_own_cause() -> None:
     )
 
 
+def test_round3_subclass_admission() -> None:
+    import evals.reference.training_dataset as td
+
+    base = _kind_trace("note")
+
+    # R3-1: a frozen TrainingTrace subclass whose to_dict() shows the generator's
+    # dict while its real steps hold sealed content, critical=True and a secret.
+    genuine = base.to_dict()
+
+    @dataclasses.dataclass(frozen=True)
+    class Disguised(td.TrainingTrace):
+        def to_dict(self) -> dict[str, Any]:
+            return genuine
+
+    evil_steps = (
+        {"type": "message", "role": "user", "content": "SEALED FINAL SUITE PROMPT sk-" + "a" * 30},
+    )
+    disguised = Disguised(
+        **{**{f.name: getattr(base, f.name) for f in dataclasses.fields(base)}},
+    )
+    disguised = dataclasses.replace(disguised, steps=evil_steps, critical=True)
+    check(
+        "FTF-1703-R3-1",
+        "a TrainingTrace subclass is refused with TraceVerificationError",
+        _raises(TraceVerificationError, build_training_dataset, [disguised], _approve([base])),
+    )
+    check(
+        "FTF-1703-R3-1",
+        "verify_trace_provenance refuses the subclass too",
+        _raises(TraceVerificationError, verify_trace_provenance, disguised),
+    )
+    # negative on the real default path: the genuine class is still admitted and the
+    # admitted object is the regenerated one, equal in content to the generator's.
+    ok = build_training_dataset([base], _approve([base]))
+    check("FTF-1703-R3-1", "genuine trace still admitted", ok.approved_count == 1)
+    check(
+        "FTF-1703-R3-1",
+        "the admitted trace is the regenerated object, not the caller's",
+        ok.traces[0] is not base and ok.traces[0].to_dict() == base.to_dict(),
+    )
+
+    # R3-2: dict subclass nested as a tool result (items() honest, __getitem__ harvested).
+    class Liar(dict):
+        def __getitem__(self, key: str) -> Any:
+            return "harvested row" if key == "title" else super().__getitem__(key)
+
+    ti = _step_index(base, "tool_result")
+    step = dict(base.steps[ti])
+    for key, val in list(step.items()):
+        if isinstance(val, dict):
+            step[key] = Liar(val)
+    nested = _replace_step(base, ti, step)
+    check(
+        "FTF-1703-R3-2",
+        "a nested dict subclass is refused (not plain JSON)",
+        "plain JSON" in _msg_any(build_training_dataset, [nested], _approve([nested])),
+    )
+    check(
+        "FTF-1703-R3-2",
+        "a nested list subclass is refused",
+        "plain JSON"
+        in _msg_any(
+            verify_trace_provenance,
+            _replace_step(base, ti, {**base.steps[ti], "x": type("L", (list,), {})([1])}),
+        ),
+    )
+
+    # R3-3: a dict subclass step is refused by the named step-type check.
+    sub_step = _replace_step(base, 0, type("S", (dict,), {})(base.steps[0]))
+    check(
+        "FTF-1703-R3-3",
+        "a dict-subclass step is refused by the named step check",
+        "sequence of dicts" in _msg_any(verify_trace_provenance, sub_step),
+    )
+
+    # Boundaries of the plain-JSON walk, each with its own message.
+    def nest(n: int) -> Any:
+        v: Any = []
+        for _ in range(n - 1):
+            v = [v]
+        return v
+
+    check(
+        "FTF-1703-R3-2",
+        "nesting exactly at the depth limit is accepted",
+        not _raises(TraceVerificationError, td._require_plain_json, nest(65), "t"),
+    )
+    check(
+        "FTF-1703-R3-2",
+        "nesting one past the depth limit is refused as too deep",
+        "too deep" in _msg_any(td._require_plain_json, nest(66), "t"),
+    )
+    check(
+        "FTF-1703-R3-2",
+        "a non-string key is refused by name",
+        "non-string key" in _msg_any(td._require_plain_json, {1: "x"}, "t"),
+    )
+    check(
+        "FTF-1703-R3-2",
+        "an unsupported value type is refused by name",
+        "unsupported type" in _msg_any(td._require_plain_json, {"a": {1, 2}}, "t"),
+    )
+    forged_prov = dataclasses.replace(base, provenance={**base.provenance, "x": Liar({"a": 1})})
+    check(
+        "FTF-1703-R3-2",
+        "a dict subclass nested in provenance is refused",
+        "unsupported type" in _msg_any(td._require_trace_shape, forged_prov),
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

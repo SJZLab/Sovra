@@ -664,7 +664,7 @@ _STR_FIELDS = (
 def _require_trace_shape(trace: Any) -> TrainingTrace:
     """Exact-type field checks, so a malformed trace raises the typed error and
     never a bare TypeError/AttributeError/KeyError further down."""
-    if not isinstance(trace, TrainingTrace):
+    if type(trace) is not TrainingTrace:
         raise TraceVerificationError("not a TrainingTrace")
     for name in _STR_FIELDS:
         value = getattr(trace, name)
@@ -676,7 +676,34 @@ def _require_trace_shape(trace: Any) -> TrainingTrace:
         raise TraceVerificationError(f"{trace.trace_id}: steps must be a sequence of dicts")
     if type(trace.provenance) is not dict:
         raise TraceVerificationError(f"{trace.trace_id}: provenance must be a dict")
+    _require_plain_json(trace.steps, trace.trace_id)
+    _require_plain_json(trace.provenance, trace.trace_id)
     return trace
+
+
+def _require_plain_json(value: Any, trace_id: str, depth: int = 0) -> None:
+    """Exact plain JSON types all the way down: a dict/list/str subclass can show
+    one value to `items()`/`to_dict()` and another to `__getitem__`."""
+    if depth > 64:
+        raise TraceVerificationError(f"{trace_id}: trace nesting is too deep")
+    kind = type(value)
+    if value is None or kind in (str, int, float, bool):
+        return
+    if kind in (list, tuple):
+        for item in value:
+            _require_plain_json(item, trace_id, depth + 1)
+        return
+    if kind is dict:
+        for key, item in value.items():
+            if type(key) is not str:
+                raise TraceVerificationError(
+                    f"{trace_id}: trace content is not plain JSON data (non-string key)"
+                )
+            _require_plain_json(item, trace_id, depth + 1)
+        return
+    raise TraceVerificationError(
+        f"{trace_id}: trace content is not plain JSON data (unsupported type)"
+    )
 
 
 def _canonical(value: Any) -> str:
@@ -858,7 +885,8 @@ def build_training_dataset(
         _check_reserved(trace, reserved)
         verify_trace_provenance(trace)
         verify_trace_replay(trace)
-        by_id[trace.trace_id] = trace
+        # Admit and hash the regenerated object, never the caller's.
+        by_id[trace.trace_id] = _generate_one(trace.provenance["index"])
 
     trace_ids = set(by_id)
     decisions: dict[str, str] = {}
