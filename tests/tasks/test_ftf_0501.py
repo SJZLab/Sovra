@@ -3560,6 +3560,28 @@ def test_m10_a_closed_session_never_reaches_storage() -> None:
         )
 
 
+def test_m10b_no_url_is_issued_when_storage_has_lost_the_multipart_upload() -> None:
+    with _routes_env() as env:
+        body = _jsonl(2000)
+        sid = _open_session(env, body)["id"]
+        item = f"{_col()}/{sid}"
+        env.fake.uploads.clear()  # the upload vanished from storage; the session row is still open
+        env.fake.reset_calls()
+        reply = _call(env.base, "POST", item + "/part-urls", {"part_numbers": [1]})
+        check(
+            f"{CID}-M10",
+            "an open session with no multipart upload in storage -> 409 upload_session_not_open",
+            reply.status == 409 and reply.detail == "upload_session_not_open",
+        )
+        check(
+            f"{CID}-M10",
+            "no URL (and no placeholder upload id) was issued",
+            b"http" not in reply.body and b"None" not in reply.body,
+        )
+        check(f"{CID}-M10", "nothing was written to storage", not env.fake.called("put_part"))
+        check(f"{CID}-M10", "the session row is untouched", env.sessions()[0].status == "open")
+
+
 def test_m11_the_route_refuses_bad_sizes_before_the_store_is_called() -> None:
     created: list[dict[str, Any]] = []
     real = routes.create_upload_session
