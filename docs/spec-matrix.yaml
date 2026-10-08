@@ -11402,7 +11402,7 @@ FTF-1602:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Object storage backup
-  evidence_hash: b18c456289f75b189ebed4995f6071cc7f3f8a06
+  evidence_hash: a68682cbb9c3ddac67c866a163cfba6d10d72fc2
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-32; scenarios=Q29, Q30; deps=FTF-0004, FTF-1002, FTF-1601
@@ -11418,7 +11418,19 @@ FTF-1602:
     delete refused, stale/deleted/missing-shard/lost-key refusals leave the target empty, a replaced
     blob is caught). No-DB unit/fault suite tests/tasks/test_ftf_1602.py; mutation gate 191/191
     killed. The frozen 16-domain contract is FTF-1601's and was not extended (no contract lock held).
-    Restore automation is FTF-1603. Pure library/CLI: no live caller, proving_symbol stays blank.
+    Round 2 (QUEUE 0d): the record now carries every manifest entry (key, version id, kind, artifact
+    id, shard layout, encryption key reference, tenant, object metadata) so `restore_backup`
+    rebuilds the objects into a clean bucket from the backup alone and proves bytes, sha256,
+    key/version mapping and metadata; a corrupted, truncated, same-size-swapped, record-tampered or
+    unretained backup is refused before any write, and a dirty destination is refused. BlobRef
+    carries organization_id: one tenant per backup, keys must sit under tenants/<org>/ with no dot
+    segments, backups live under <prefix>/<org>/<id>, and verify/restore refuse another tenant's
+    record. verify_backup re-checks object_count, blob_count, total_bytes and manifest_sha256, and
+    optionally a caller-held expected manifest hash. Mutation gate 200/200 killed. Disclosed:
+    metadata is content type plus x-amz-meta-* only; a blob swapped mid-restore aborts it after
+    earlier objects were written (visible, never success); the SeaweedFS integration additions
+    (restore, damaged backups, tenant scoping) have their first real run in CI. Restore
+    automation (scheduling, runbooks) is FTF-1603. Pure library/CLI: no live caller, proving_symbol stays blank.
     Not self-certified (Law 4).
   proof_state: L1-PROVEN
   proving_symbol: ''
