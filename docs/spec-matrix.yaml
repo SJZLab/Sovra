@@ -9668,15 +9668,28 @@ FTF-0907:
   proving_symbol: ''
   proving_test: ''
 FTF-0908:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: External provider denial
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-14; scenarios=Q23, Q25; deps=FTF-0203, FTF-0901, FTF-0902
-  proof_state: UNPROVEN
+  evidence_hash: 7ab132f7704339adb87c00aeec5bb19c1b12cb85
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-14; scenarios=Q23, Q25; deps=FTF-0203, FTF-0901,
+    FTF-0902. Path: `packages/security/external_provider_denial.py`. `authorize_external_provider`
+    composes FTF-0901 `effective_profile`/`enforce_effect` (training -> model surface, inference ->
+    serving surface): zero_egress/air_gapped deny every managed route
+    (`external_provider_profile_blocked`); standard needs a `ProviderApproval` for the exact
+    provider and purpose recording approver, account, region, retention and that purpose's terms
+    (`external_provider_not_approved`, `external_provider_purpose_not_approved`,
+    `external_provider_approval_incomplete`). A "private cloud account" label is data only and never
+    approves. The denial audit reason is content-free (profile, surface, purpose, code) and is
+    written through FTF-0104 `write_audit_event` when an AuditContext is given. Unknown, str-subclass
+    or unhashable values raise `external_provider_invalid_request`. No network call (counting
+    socket test shows zero). UNWIRED: no live caller yet (training/inference submit paths are later
+    tasks) -- blank proving_symbol, same precedent as FTF-0901/FTF-0902. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0908.py
 FTF-0909:
   certification_state: NONE
   criticality: MUST
