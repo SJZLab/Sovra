@@ -974,6 +974,33 @@ def test_m2_model_version_new_field_defaulting() -> None:
             lambda: _mv(lineage_completeness="bogus"), mv_schema.ModelVersionValidationError
         ),
     )
+    check(
+        CID,
+        "a present-but-malformed base_model_revision (pre-existing FTF-1001 validation, "
+        "not only a *missing* one) is still refused via the shared validate_base_model_"
+        "revision -- a gap this slice's own re-test of the __init__ function surfaced: "
+        "FTF-1001's own suite only ever passed base_model_revision=None, never a bad shape",
+        _raises(
+            lambda: _mv(
+                import_kind="full_weight",
+                trainable_artifact_id=_MV_ARTIFACT,
+                weights_digest=_MV_DIGEST,
+                base_model_revision="",
+                endpoint_reference=None,
+            ),
+            mv_schema.ModelVersionValidationError,
+        )
+        and _raises(
+            lambda: _mv(
+                import_kind="full_weight",
+                trainable_artifact_id=_MV_ARTIFACT,
+                weights_digest=_MV_DIGEST,
+                base_model_revision="x" * 300,
+                endpoint_reference=None,
+            ),
+            mv_schema.ModelVersionValidationError,
+        ),
+    )
 
 
 def test_m2_import_kind_branch_comparisons_are_exact_never_normalized() -> None:
