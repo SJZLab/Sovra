@@ -73,9 +73,7 @@ def validate_origin(value: object) -> str:
 
 def validate_external_provider_model_ref(value: object) -> str:
     if not isinstance(value, str) or not value:
-        raise ModelImportValidationError(
-            "external_provider_model_ref must be a non-empty string"
-        )
+        raise ModelImportValidationError("external_provider_model_ref must be a non-empty string")
     if len(value) > EXTERNAL_PROVIDER_MODEL_REF_MAX_LENGTH:
         raise ModelImportValidationError(
             f"external_provider_model_ref must be at most "

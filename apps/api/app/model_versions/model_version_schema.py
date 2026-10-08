@@ -255,9 +255,7 @@ class ModelVersion(Base):
         UUID(as_uuid=True), nullable=True
     )
     external_provider_model_ref: Mapped[str | None] = mapped_column(String(2048), nullable=True)
-    observed_deployment_fingerprint: Mapped[str | None] = mapped_column(
-        String(256), nullable=True
-    )
+    observed_deployment_fingerprint: Mapped[str | None] = mapped_column(String(256), nullable=True)
     tokenizer_revision: Mapped[str | None] = mapped_column(String(200), nullable=True)
     chat_template_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     serving_config_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -304,8 +302,7 @@ class ModelVersion(Base):
             name="ck_model_versions_external_endpoint_consistency",
         ),
         CheckConstraint(
-            "origin <> 'imported_adapter' OR "
-            "(base_model_revision IS NOT NULL AND adapter_only)",
+            "origin <> 'imported_adapter' OR " "(base_model_revision IS NOT NULL AND adapter_only)",
             name="ck_model_versions_imported_adapter_consistency",
         ),
         ForeignKeyConstraint(

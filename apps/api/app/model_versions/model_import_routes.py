@@ -126,9 +126,11 @@ async def _read_post_body(request: Request) -> dict[str, Any]:
         and not isinstance(payload["trainable_artifact_id"], str)
     ):
         raise HTTPException(status_code=400, detail="trainable_artifact_id must be a uuid or null")
-    if "external_provider_model_ref" in payload and payload[
-        "external_provider_model_ref"
-    ] is not None and not isinstance(payload["external_provider_model_ref"], str):
+    if (
+        "external_provider_model_ref" in payload
+        and payload["external_provider_model_ref"] is not None
+        and not isinstance(payload["external_provider_model_ref"], str)
+    ):
         raise HTTPException(
             status_code=400, detail="external_provider_model_ref must be a string or null"
         )

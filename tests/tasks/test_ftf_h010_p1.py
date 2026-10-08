@@ -150,9 +150,8 @@ def test_m1_model_versions_checks() -> None:
         CID,
         "origin enum CHECK",
         "ck_model_versions_origin_values" in src
-        and "origin in {_ORIGINS}" in src.replace(
-            "f\"origin in {_ORIGINS}\"", 'f"origin in {_ORIGINS}"'
-        ),
+        and "origin in {_ORIGINS}"
+        in src.replace('f"origin in {_ORIGINS}"', 'f"origin in {_ORIGINS}"'),
     )
     check(
         CID,
@@ -190,7 +189,9 @@ def test_m2_model_import_jobs_rls_grants_and_checks() -> None:
         "ALTER TABLE model_import_jobs ENABLE ROW LEVEL SECURITY" in src
         and "ALTER TABLE model_import_jobs FORCE ROW LEVEL SECURITY" in src,
     )
-    policy = re.search(r"CREATE POLICY tenant_isolation ON model_import_jobs FOR ALL[^\n]*\n[^\n]*\n[^\n]*", src)
+    policy = re.search(
+        r"CREATE POLICY tenant_isolation ON model_import_jobs FOR ALL[^\n]*\n[^\n]*\n[^\n]*", src
+    )
     check(
         CID,
         "tenant policy is scoped on both USING and WITH CHECK, never allow-all",
@@ -206,13 +207,13 @@ def test_m2_model_import_jobs_rls_grants_and_checks() -> None:
         'GRANT SELECT, INSERT ON model_import_jobs TO "{APP_ROLE_NAME}"'.replace(
             "{APP_ROLE_NAME}", ""
         )
-        in src.replace('f\'GRANT SELECT, INSERT ON model_import_jobs TO "{APP_ROLE_NAME}"\'', "")
+        in src.replace("f'GRANT SELECT, INSERT ON model_import_jobs TO \"{APP_ROLE_NAME}\"'", "")
         or 'GRANT SELECT, INSERT ON model_import_jobs TO "' in src,
     )
     check(
         CID,
         "UPDATE is column-limited to state/failure_code/updated_at only",
-        "_JOB_UPDATE_COLUMNS = \"state, failure_code, updated_at\"" in src
+        '_JOB_UPDATE_COLUMNS = "state, failure_code, updated_at"' in src
         and "GRANT UPDATE ({_JOB_UPDATE_COLUMNS})" in src,
     )
     check(
@@ -276,7 +277,7 @@ def test_fault_injection_against_the_migration_file_on_disk() -> None:
         "widening the job update grant to every column is caught",
         _run_migration_with(
             src.replace(
-                'GRANT UPDATE ({_JOB_UPDATE_COLUMNS}) ON model_import_jobs',
+                "GRANT UPDATE ({_JOB_UPDATE_COLUMNS}) ON model_import_jobs",
                 "GRANT UPDATE ON model_import_jobs",
             )
         ),
@@ -285,15 +286,13 @@ def test_fault_injection_against_the_migration_file_on_disk() -> None:
         CID,
         "dropping the external_endpoint consistency CHECK is caught",
         _run_migration_with(
-            src.replace(
-                '    op.create_check_constraint(\n'
-                '        "ck_model_versions_external_endpoint_consistency",\n'
-                '        "model_versions",\n'
-                '        "origin <> \'external_endpoint\' OR ("\n'
-                '        "trainable_artifact_id IS NULL AND weights_digest IS NULL "\n'
-                '        "AND external_provider_model_ref IS NOT NULL)",\n'
-                "    )\n",
+            re.sub(
+                r'    op\.create_check_constraint\(\s*"ck_model_versions_external_endpoint_'
+                r"consistency\".*?\n    \)\n",
                 "",
+                src,
+                count=1,
+                flags=re.S,
             )
         ),
     )
@@ -301,14 +300,13 @@ def test_fault_injection_against_the_migration_file_on_disk() -> None:
         CID,
         "dropping the imported_adapter consistency CHECK is caught",
         _run_migration_with(
-            src.replace(
-                '    op.create_check_constraint(\n'
-                '        "ck_model_versions_imported_adapter_consistency",\n'
-                '        "model_versions",\n'
-                '        "origin <> \'imported_adapter\' OR "\n'
-                '        "(base_model_revision IS NOT NULL AND adapter_only)",\n'
-                "    )\n",
+            re.sub(
+                r'    op\.create_check_constraint\(\s*"ck_model_versions_imported_adapter_'
+                r"consistency\".*?\n    \)\n",
                 "",
+                src,
+                count=1,
+                flags=re.S,
             )
         ),
     )
@@ -316,7 +314,9 @@ def test_fault_injection_against_the_migration_file_on_disk() -> None:
         CID,
         "a wrong/missing origin-backfill mapping is caught",
         _run_migration_with(
-            src.replace("WHEN 'adapter' THEN 'imported_adapter'", "WHEN 'adapter' THEN 'imported_weights'")
+            src.replace(
+                "WHEN 'adapter' THEN 'imported_adapter'", "WHEN 'adapter' THEN 'imported_weights'"
+            )
         ),
     )
 
@@ -554,7 +554,9 @@ def test_s1_each_origin_creates_a_queued_job_with_one_audit_event() -> None:
             actor=_ACTOR,
         )
         check(CID, "factory_trained with nothing else required is queued", job4.state == "queued")
-        check(CID, "four jobs, four audit events", len(_jobs(session)) == 4 and len(audit.events) == 4)
+        check(
+            CID, "four jobs, four audit events", len(_jobs(session)) == 4 and len(audit.events) == 4
+        )
 
 
 def test_s2_external_endpoint_with_artifact_is_refused() -> None:
@@ -582,7 +584,10 @@ def test_s2_external_endpoint_with_artifact_is_refused() -> None:
 
 def test_s3_external_endpoint_with_no_provider_ref_is_refused() -> None:
     with _store_env() as (session, audit):
-        for bad_ref in (None, "", ):
+        for bad_ref in (
+            None,
+            "",
+        ):
             check(
                 CID,
                 f"external_endpoint with external_provider_model_ref={bad_ref!r} is refused",
@@ -782,18 +787,38 @@ def test_s8_schema_level_validators_are_exact_and_independent() -> None:
         CID,
         "validate_origin refuses a case/whitespace variant of a real origin "
         "(never normalized, even at the schema layer's own entry point)",
-        _raises(lambda: schema.validate_origin(" External_Endpoint "), schema.ModelImportValidationError)
-        and _raises(lambda: schema.validate_origin("FACTORY_TRAINED"), schema.ModelImportValidationError),
+        _raises(
+            lambda: schema.validate_origin(" External_Endpoint "), schema.ModelImportValidationError
+        )
+        and _raises(
+            lambda: schema.validate_origin("FACTORY_TRAINED"), schema.ModelImportValidationError
+        ),
     )
     f = schema.validate_external_provider_model_ref
-    check(CID, "an empty external_provider_model_ref is refused", _raises(lambda: f(""), schema.ModelImportValidationError))
-    check(CID, "a None external_provider_model_ref is refused", _raises(lambda: f(None), schema.ModelImportValidationError))
-    check(CID, "a non-string external_provider_model_ref is refused", _raises(lambda: f(7), schema.ModelImportValidationError))
+    check(
+        CID,
+        "an empty external_provider_model_ref is refused",
+        _raises(lambda: f(""), schema.ModelImportValidationError),
+    )
+    check(
+        CID,
+        "a None external_provider_model_ref is refused",
+        _raises(lambda: f(None), schema.ModelImportValidationError),
+    )
+    check(
+        CID,
+        "a non-string external_provider_model_ref is refused",
+        _raises(lambda: f(7), schema.ModelImportValidationError),
+    )
     check(
         CID,
         "a value over the max length is refused, exactly at the max is accepted",
-        _raises(lambda: f("x" * (schema.EXTERNAL_PROVIDER_MODEL_REF_MAX_LENGTH + 1)), schema.ModelImportValidationError)
-        and f("x" * schema.EXTERNAL_PROVIDER_MODEL_REF_MAX_LENGTH) == "x" * schema.EXTERNAL_PROVIDER_MODEL_REF_MAX_LENGTH,
+        _raises(
+            lambda: f("x" * (schema.EXTERNAL_PROVIDER_MODEL_REF_MAX_LENGTH + 1)),
+            schema.ModelImportValidationError,
+        )
+        and f("x" * schema.EXTERNAL_PROVIDER_MODEL_REF_MAX_LENGTH)
+        == "x" * schema.EXTERNAL_PROVIDER_MODEL_REF_MAX_LENGTH,
     )
     check(CID, "a normal value round-trips unchanged", f("provider://m") == "provider://m")
 
@@ -970,9 +995,7 @@ def test_m2_model_version_new_field_defaulting() -> None:
     check(
         CID,
         "an invalid explicit lineage_completeness is refused",
-        _raises(
-            lambda: _mv(lineage_completeness="bogus"), mv_schema.ModelVersionValidationError
-        ),
+        _raises(lambda: _mv(lineage_completeness="bogus"), mv_schema.ModelVersionValidationError),
     )
     check(
         CID,
@@ -1018,7 +1041,9 @@ def test_m2_import_kind_branch_comparisons_are_exact_never_normalized() -> None:
             "artifact id that the real endpoint branch would forbid is let through "
             "uninspected (neither branch recognizes the kind at all)",
             _mv(
-                import_kind=" Endpoint ", trainable_artifact_id=_MV_ARTIFACT, origin="factory_trained"
+                import_kind=" Endpoint ",
+                trainable_artifact_id=_MV_ARTIFACT,
+                origin="factory_trained",
             ).import_kind
             == " Endpoint ",
         )
@@ -1213,16 +1238,35 @@ def test_r1_post_body_validation() -> None:
                 ("unknown field", {"requested_origin": "factory_trained", "x": 1}),
                 ("missing requested_origin", {}),
                 ("a numeric requested_origin", {"requested_origin": 7}),
-                ("a non-uuid parent_model_version_id", {"requested_origin": "imported_adapter", "parent_model_version_id": "nope"}),
-                ("a numeric parent_model_version_id", {"requested_origin": "imported_adapter", "parent_model_version_id": 7}),
-                ("a non-uuid trainable_artifact_id", {"requested_origin": "imported_weights", "trainable_artifact_id": "nope"}),
-                ("a numeric trainable_artifact_id", {"requested_origin": "imported_weights", "trainable_artifact_id": 7}),
-                ("a numeric external_provider_model_ref", {"requested_origin": "external_endpoint", "external_provider_model_ref": 7}),
+                (
+                    "a non-uuid parent_model_version_id",
+                    {"requested_origin": "imported_adapter", "parent_model_version_id": "nope"},
+                ),
+                (
+                    "a numeric parent_model_version_id",
+                    {"requested_origin": "imported_adapter", "parent_model_version_id": 7},
+                ),
+                (
+                    "a non-uuid trainable_artifact_id",
+                    {"requested_origin": "imported_weights", "trainable_artifact_id": "nope"},
+                ),
+                (
+                    "a numeric trainable_artifact_id",
+                    {"requested_origin": "imported_weights", "trainable_artifact_id": 7},
+                ),
+                (
+                    "a numeric external_provider_model_ref",
+                    {"requested_origin": "external_endpoint", "external_provider_model_ref": 7},
+                ),
             ]
             for label, payload in cases:
                 result = _request(base, "POST", _collection_path(), payload=payload)
                 check(CID, f"{label} -> 400", result.status == 400)
-            check(CID, "a list body -> 400", _request(base, "POST", _collection_path(), payload=[1]).status == 400)
+            check(
+                CID,
+                "a list body -> 400",
+                _request(base, "POST", _collection_path(), payload=[1]).status == 400,
+            )
             check(
                 CID,
                 "a list body containing only a valid body-key string is still 400 "
@@ -1230,13 +1274,22 @@ def test_r1_post_body_validation() -> None:
                 _request(base, "POST", _collection_path(), payload=["requested_origin"]).status
                 == 400,
             )
-            check(CID, "broken JSON -> 400", _request(base, "POST", _collection_path(), raw=b"{").status == 400)
+            check(
+                CID,
+                "broken JSON -> 400",
+                _request(base, "POST", _collection_path(), raw=b"{").status == 400,
+            )
             check(CID, "no body -> 400", _request(base, "POST", _collection_path()).status == 400)
             check(CID, "no refused request reached the store", not env.create_calls)
             unknown = _request(
-                base, "POST", _collection_path(), payload={"requested_origin": "factory_trained", "y": 2}
+                base,
+                "POST",
+                _collection_path(),
+                payload={"requested_origin": "factory_trained", "y": 2},
             )
-            check(CID, "the unknown field is named in the 400 detail", "y" in unknown.json()["detail"])
+            check(
+                CID, "the unknown field is named in the 400 detail", "y" in unknown.json()["detail"]
+            )
 
 
 def test_r2_post_roles_and_unauthenticated() -> None:
@@ -1248,19 +1301,25 @@ def test_r2_post_roles_and_unauthenticated() -> None:
             check(
                 CID,
                 "a viewer cannot POST (403)",
-                _request(base, "POST", _collection_path(), principal="viewer", payload=payload).status == 403,
+                _request(
+                    base, "POST", _collection_path(), principal="viewer", payload=payload
+                ).status
+                == 403,
             )
             check(
                 CID,
                 "no principal is 401 on POST",
-                _request(base, "POST", _collection_path(), principal=None, payload=payload).status == 401,
+                _request(base, "POST", _collection_path(), principal=None, payload=payload).status
+                == 401,
             )
             check(CID, "the viewer's refusal never reached the store", not env.create_calls)
             for principal in ("ml", "admin"):
                 check(
                     CID,
                     f"{principal} may POST (201)",
-                    _request(base, "POST", _collection_path(), principal=principal, payload=payload).status
+                    _request(
+                        base, "POST", _collection_path(), principal=principal, payload=payload
+                    ).status
                     == 201,
                 )
             check(
@@ -1324,7 +1383,11 @@ def test_r3_store_errors_map_to_stable_codes() -> None:
                 env.create_error = error
                 result = _request(base, "POST", _collection_path(), payload=payload)
                 if code is not None:
-                    check(CID, f"{type(error).__name__} -> {status} {code}", result.status == status and result.json() == {"detail": code})
+                    check(
+                        CID,
+                        f"{type(error).__name__} -> {status} {code}",
+                        result.status == status and result.json() == {"detail": code},
+                    )
                 else:
                     check(
                         CID,
@@ -1339,7 +1402,11 @@ def test_r_get_list_and_item() -> None:
         with _patched(env):
             env.list_result = [_job_ns(), _job_ns(job_id=uuid.uuid4(), state="queued")]
             listed = _request(base, "GET", _collection_path()).json()
-            check(CID, "list returns every job serialized", len(listed) == 2 and listed[0]["state"] == "queued")
+            check(
+                CID,
+                "list returns every job serialized",
+                len(listed) == 2 and listed[0]["state"] == "queued",
+            )
 
             env.get_result = _job_ns(origin="external_endpoint")
             one = _request(base, "GET", _item_path()).json()
@@ -1394,7 +1461,11 @@ def test_r_get_list_and_item() -> None:
 
             env.get_error = crud.ModelImportJobNotFoundError("gone")
             missing = _request(base, "GET", _item_path())
-            check(CID, "a missing job is 404 not_found", missing.status == 404 and missing.json() == {"detail": "not_found"})
+            check(
+                CID,
+                "a missing job is 404 not_found",
+                missing.status == 404 and missing.json() == {"detail": "not_found"},
+            )
 
 
 # -- C1 / wiring ---------------------------------------------------------------
@@ -1405,9 +1476,17 @@ def test_c1_interface_contract_declares_the_routes() -> None:
     base = "/api/v1/organizations/{organization_id}/projects/{project_id}/model-imports"
     paths = doc["paths"]
     check(CID, "the collection path declares GET and POST", set(paths[base]) >= {"get", "post"})
-    check(CID, "the item path declares GET only", set(paths[base + "/{model_import_job_id}"]) == {"parameters", "get"})
+    check(
+        CID,
+        "the item path declares GET only",
+        set(paths[base + "/{model_import_job_id}"]) == {"parameters", "get"},
+    )
     post = paths[base]["post"]
-    check(CID, "POST documents 200s/400/401/403/404", set(post["responses"]) >= {"201", "400", "401", "403", "404"})
+    check(
+        CID,
+        "POST documents 200s/400/401/403/404",
+        set(post["responses"]) >= {"201", "400", "401", "403", "404"},
+    )
     schemas = doc["components"]["schemas"]
     request = schemas["ModelImportJobCreateRequest"]
     check(
@@ -1474,8 +1553,14 @@ def test_c1_router_is_wired_into_the_app_and_uses_closed_methods() -> None:
     )
     base = "/api/v1/organizations/{organization_id}/projects/{project_id}/model-imports"
     paths = {getattr(r, "path", "") for r in _router().routes}
-    check(CID, "exactly the collection and item paths are mounted", paths == {base, base + "/{model_import_job_id}"})
-    methods = {(getattr(r, "path", ""), m) for r in _router().routes for m in getattr(r, "methods", set())}
+    check(
+        CID,
+        "exactly the collection and item paths are mounted",
+        paths == {base, base + "/{model_import_job_id}"},
+    )
+    methods = {
+        (getattr(r, "path", ""), m) for r in _router().routes for m in getattr(r, "methods", set())
+    }
     check(
         CID,
         "exactly GET+POST on the collection and GET on the item (no PUT/PATCH/DELETE anywhere)",
@@ -1489,7 +1574,7 @@ def test_c1_module_never_moves_a_job_past_queued() -> None:
     check(
         CID,
         "no production code in this slice ever sets state to anything but queued",
-        "state=\"queued\"" in crud_src
+        'state="queued"' in crud_src
         and "succeeded" not in crud_src
         and "succeeded" not in routes_src.split('"""', 2)[2],
     )

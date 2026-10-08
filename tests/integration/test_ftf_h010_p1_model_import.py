@@ -338,7 +338,11 @@ def main() -> None:
                     "'https://bypass.example.com', NULL, 'bypass', 'external_endpoint', "
                     "'provider://x', :artifact_id)"
                 ),
-                {"org_id": str(org1_id), "project_id": str(project1_id), "artifact_id": str(artifact1_id)},
+                {
+                    "org_id": str(org1_id),
+                    "project_id": str(project1_id),
+                    "artifact_id": str(artifact1_id),
+                },
             )
             session.commit()
             check(
@@ -507,7 +511,9 @@ def main() -> None:
             },
         )
         check(
-            CID, "acceptance: a real imported_adapter enqueue with a real base succeeds (201)", r.status == 201
+            CID,
+            "acceptance: a real imported_adapter enqueue with a real base succeeds (201)",
+            r.status == 201,
         )
 
         r = _request(
@@ -644,9 +650,7 @@ def main() -> None:
             text("SELECT set_config('app.current_organization_id', :org_id, true)"),
             {"org_id": str(org1_id)},
         )
-        job_row = session.execute(
-            text("SELECT id FROM model_import_jobs LIMIT 1")
-        ).scalar_one()
+        job_row = session.execute(text("SELECT id FROM model_import_jobs LIMIT 1")).scalar_one()
         try:
             session.execute(
                 text("UPDATE model_import_jobs SET state = 'validating' WHERE id = :id"),
@@ -660,7 +664,9 @@ def main() -> None:
 
         try:
             session.execute(
-                text("UPDATE model_import_jobs SET requested_origin = 'factory_trained' WHERE id = :id"),
+                text(
+                    "UPDATE model_import_jobs SET requested_origin = 'factory_trained' WHERE id = :id"
+                ),
                 {"id": job_row},
             )
             session.commit()

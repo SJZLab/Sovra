@@ -140,9 +140,7 @@ def upgrade() -> None:
     )
     op.add_column(
         "model_versions",
-        sa.Column(
-            "adapter_only", sa.Boolean(), nullable=False, server_default=sa.text("false")
-        ),
+        sa.Column("adapter_only", sa.Boolean(), nullable=False, server_default=sa.text("false")),
     )
     op.add_column(
         "model_versions",
@@ -155,12 +153,8 @@ def upgrade() -> None:
         "model_versions",
         sa.Column("observed_deployment_fingerprint", sa.String(256), nullable=True),
     )
-    op.add_column(
-        "model_versions", sa.Column("tokenizer_revision", sa.String(200), nullable=True)
-    )
-    op.add_column(
-        "model_versions", sa.Column("chat_template_sha256", sa.String(64), nullable=True)
-    )
+    op.add_column("model_versions", sa.Column("tokenizer_revision", sa.String(200), nullable=True))
+    op.add_column("model_versions", sa.Column("chat_template_sha256", sa.String(64), nullable=True))
     op.add_column(
         "model_versions", sa.Column("serving_config_sha256", sa.String(64), nullable=True)
     )
@@ -179,9 +173,7 @@ def upgrade() -> None:
         "UPDATE model_versions SET external_provider_model_ref = endpoint_reference "
         "WHERE import_kind = 'endpoint' AND external_provider_model_ref IS NULL"
     )
-    op.execute(
-        "UPDATE model_versions SET adapter_only = true WHERE import_kind = 'adapter'"
-    )
+    op.execute("UPDATE model_versions SET adapter_only = true WHERE import_kind = 'adapter'")
 
     op.alter_column("model_versions", "origin", nullable=False)
 
@@ -206,8 +198,7 @@ def upgrade() -> None:
     op.create_check_constraint(
         "ck_model_versions_imported_adapter_consistency",
         "model_versions",
-        "origin <> 'imported_adapter' OR "
-        "(base_model_revision IS NOT NULL AND adapter_only)",
+        "origin <> 'imported_adapter' OR " "(base_model_revision IS NOT NULL AND adapter_only)",
     )
     op.create_check_constraint(
         "ck_model_versions_chat_template_sha256_format",
@@ -249,14 +240,10 @@ def upgrade() -> None:
         ),
         sa.Column("project_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("requested_origin", sa.String(32), nullable=False),
-        sa.Column(
-            "parent_model_version_id", postgresql.UUID(as_uuid=True), nullable=True
-        ),
+        sa.Column("parent_model_version_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("trainable_artifact_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("external_provider_model_ref", sa.String(2048), nullable=True),
-        sa.Column(
-            "state", sa.String(16), nullable=False, server_default=sa.text("'queued'")
-        ),
+        sa.Column("state", sa.String(16), nullable=False, server_default=sa.text("'queued'")),
         sa.Column("failure_code", sa.String(64), nullable=True),
         sa.Column("created_by", sa.String(200), nullable=False),
         sa.Column(
@@ -303,9 +290,7 @@ def upgrade() -> None:
     op.create_index("ix_model_import_jobs_project_id", "model_import_jobs", ["project_id"])
 
     op.execute(f'GRANT SELECT, INSERT ON model_import_jobs TO "{APP_ROLE_NAME}"')
-    op.execute(
-        f'GRANT UPDATE ({_JOB_UPDATE_COLUMNS}) ON model_import_jobs TO "{APP_ROLE_NAME}"'
-    )
+    op.execute(f'GRANT UPDATE ({_JOB_UPDATE_COLUMNS}) ON model_import_jobs TO "{APP_ROLE_NAME}"')
     op.execute("ALTER TABLE model_import_jobs ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE model_import_jobs FORCE ROW LEVEL SECURITY")
     tenant_setting = "NULLIF(current_setting('app.current_organization_id', true), '')::uuid"
@@ -344,9 +329,7 @@ def downgrade() -> None:
         "ck_model_versions_lineage_completeness_values", "model_versions", type_="check"
     )
     op.drop_constraint("ck_model_versions_origin_values", "model_versions", type_="check")
-    op.drop_constraint(
-        "uq_model_versions_organization_id_id", "model_versions", type_="unique"
-    )
+    op.drop_constraint("uq_model_versions_organization_id_id", "model_versions", type_="unique")
     op.drop_column("model_versions", "serving_config_sha256")
     op.drop_column("model_versions", "chat_template_sha256")
     op.drop_column("model_versions", "tokenizer_revision")
