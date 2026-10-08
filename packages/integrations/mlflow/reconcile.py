@@ -73,7 +73,10 @@ __all__ = [
 TAG_ORG = "factory.organization_id"
 TAG_KEY = "factory.logical_run_key"
 TAG_PAYLOAD = "factory.payload_sha256"
-SEALED_PURPOSES = frozenset({"final_qualification", "sealed_final"})
+# Closed allowlist (the non-sealed roles of the group-aware split engine). Any
+# other purpose -- `final_qualification`, a case/whitespace variant of it, or
+# an unknown value -- is refused, so a spelling trick cannot export sealed data.
+ALLOWED_DATA_PURPOSES = frozenset({"train", "validation", "development_eval"})
 ALLOWED_EXPORT_CLASSES = frozenset({"metrics_only", "redacted_metadata"})
 _NAME = re.compile(r"^[A-Za-z0-9._/-]{1,250}$")
 _HASH = re.compile(r"^[0-9a-f]{64}$")
@@ -131,8 +134,11 @@ class TrackedRun:
             self.job_id, uuid.UUID
         ):
             raise ValueError("organization_id and job_id must be uuid.UUID")
-        if self.data_purpose in SEALED_PURPOSES:
-            raise SealedExportRefusedError("sealed final-qualification data is never exported")
+        if not isinstance(self.data_purpose, str) or self.data_purpose not in ALLOWED_DATA_PURPOSES:
+            raise SealedExportRefusedError(
+                "only train, validation and development_eval results are exported; "
+                "sealed final-qualification data never is"
+            )
         if self.export_class not in ALLOWED_EXPORT_CLASSES:
             raise SealedExportRefusedError(f"export class {self.export_class!r} is not permitted")
         if (

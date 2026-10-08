@@ -463,6 +463,7 @@ class Fake(MlflowClient):
         self.fail: dict[str, BaseException] = {}
         self.versions: list[dict[str, Any]] = []
         self.models: dict[str, Mapping[str, str]] = {}
+        self.after_create: Any = None
 
     def _maybe(self, name: str) -> None:
         self.calls.append(name)
@@ -531,6 +532,8 @@ class Fake(MlflowClient):
             "tags": tag_list(tags),
         }
         self.versions.append(record)
+        if self.after_create is not None:
+            self.after_create(record)
         return record
 
     def get_model_version(self, name: str, version: str) -> dict[str, Any]:
@@ -950,6 +953,257 @@ def test_registry_binding() -> None:
     make_binding(f11)
     f11.versions.append({**f11.versions[0], "version": "2"})
     check("R005-B", "two claimants is drift", raises(RegistryDriftError, make_binding, f11))
+
+
+def test_mutation_closers() -> None:
+    mx = client_mod.MAX_RESPONSE_BYTES
+    check(
+        "R005-C",
+        "case-distinct keys are not duplicates",
+        parse_strict_json(b'{"a": 1, "A": 2}') == {"a": 1, "A": 2},
+    )
+    check(
+        "R005-C",
+        "whitespace-distinct keys are not duplicates",
+        parse_strict_json(b'{"a": 1, " a": 2}') == {"a": 1, " a": 2},
+    )
+    prefix, suffix = b'{"a":"', b'"}'
+    check(
+        "R005-C",
+        "oversize valid JSON refused",
+        raises(TrackingRejectedError, parse_strict_json, prefix + b"x" * mx + suffix),
+    )
+    exact = prefix + b"x" * (mx - len(prefix) - len(suffix)) + suffix
+    check(
+        "R005-C",
+        "exactly-bound valid JSON accepted",
+        len(exact) == mx and "a" in parse_strict_json(exact),
+    )
+    stub = Stub()
+    c = stub.client()
+    stub.reply(200, {})
+    check(
+        "R005-C",
+        "100 tags is the allowed boundary",
+        not raises(
+            TrackingRejectedError, c.log_batch, RUN_ID, tags={f"t{i}": "v" for i in range(100)}
+        ),
+    )
+    stub.reply(400, b"not json")
+    try:
+        c.get_run(RUN_ID)
+    except TrackingRejectedError as exc:
+        check(
+            "R005-C",
+            "empty error code leaves a clean message",
+            str(exc) == "MLflow returned HTTP 400",
+        )
+    n = len(stub.seen)
+    stub.reply(200, {"experiment": {"experiment_id": "7", "lifecycle_stage": "deleted"}})
+    check(
+        "R005-C",
+        "deleted experiment is refused without a create call",
+        raises(TrackingRejectedError, c.get_or_create_experiment, "sovra/d")
+        and len(stub.seen) == n + 1,
+    )
+    stub.reply(200, {"experiment": {"lifecycle_stage": "active"}})
+    try:
+        c.get_or_create_experiment("sovra/e")
+    except TrackingRejectedError as exc:
+        check("R005-C", "missing experiment_id is named", "experiment_id" in str(exc))
+    for bad in (None, 5, "xyz", "A" * 32, "a" * 31):
+        stub.reply(200, {"run": {"info": {"run_id": bad}}})
+        check(
+            "R005-C",
+            f"create_run refuses run_id {bad!r}",
+            raises(TrackingRejectedError, c.create_run, "1", run_name="n", tags={}),
+        )
+    stub.reply(200, {"run": {"info": {"run_id": RUN_ID}}})
+    check(
+        "R005-C",
+        "create_run returns a valid id",
+        c.create_run("1", run_name="n", tags={}) == RUN_ID,
+    )
+    stub.reply(200, {"run": "x"})
+    check(
+        "R005-C",
+        "create_run refuses a non-object run",
+        raises(TrackingRejectedError, c.create_run, "1", run_name="n", tags={}),
+    )
+    # registered model: get -> create sequence, exists -> get only, race tolerated
+    n = len(stub.seen)
+    stub.reply(404, {"error_code": "RESOURCE_DOES_NOT_EXIST"})
+    stub.reply(200, {})
+    c.ensure_registered_model("m", {"a": "b"})
+    paths = [x["path"] for x in stub.seen[n:]]
+    check(
+        "R005-C",
+        "missing model is created",
+        len(paths) == 2
+        and "registered-models/get" in paths[0]
+        and "registered-models/create" in paths[1],
+    )
+    created = json.loads(stub.seen[-1]["body"])
+    check(
+        "R005-C",
+        "create carries name and tags",
+        created == {"name": "m", "tags": [{"key": "a", "value": "b"}]},
+    )
+    n = len(stub.seen)
+    stub.reply(200, {})
+    c.ensure_registered_model("m", {})
+    check("R005-C", "existing model is not re-created", len(stub.seen) == n + 1)
+    stub.reply(404, {"error_code": "RESOURCE_DOES_NOT_EXIST"})
+    stub.reply(400, {"error_code": "RESOURCE_ALREADY_EXISTS"})
+    check(
+        "R005-C",
+        "create race is tolerated",
+        not raises(MlflowAlreadyExistsError, c.ensure_registered_model, "m", {}),
+    )
+    # create_model_version validates the run id before any request
+    n = len(stub.seen)
+    check(
+        "R005-C",
+        "bad run id refused before request",
+        raises(
+            TrackingRejectedError,
+            c.create_model_version,
+            "m",
+            source="s3://sovra-model-artifacts/o/",
+            run_id="zz",
+            tags={},
+            approved_source_prefixes=PREFIXES,
+        )
+        and len(stub.seen) == n,
+    )
+    # version search filters by tag and validates shape
+    n = len(stub.seen)
+    stub.reply(
+        200,
+        {
+            "model_versions": [
+                {"version": "1", "tags": [{"key": "k", "value": "v"}]},
+                {"version": "2", "tags": [{"key": "k", "value": "w"}]},
+                {"version": "3"},
+            ]
+        },
+    )
+    found = c.search_model_versions_by_tag("m", "k", "v")
+    check("R005-C", "only matching versions are returned", [v["version"] for v in found] == ["1"])
+    check(
+        "R005-C",
+        "search is scoped to the model name",
+        "name+%3D+%27m%27" in stub.seen[n]["path"]
+        or "name%20%3D%20%27m%27" in stub.seen[n]["path"],
+    )
+    stub.reply(200, {"model_versions": "x"})
+    check(
+        "R005-C",
+        "non-list versions refused",
+        raises(TrackingRejectedError, c.search_model_versions_by_tag, "m", "k", "v"),
+    )
+    stub.reply(200, {"model_versions": [1]})
+    check(
+        "R005-C",
+        "non-object version refused",
+        raises(TrackingRejectedError, c.search_model_versions_by_tag, "m", "k", "v"),
+    )
+    stub.reply(200, {})
+    check(
+        "R005-C",
+        "no versions is an empty list",
+        c.search_model_versions_by_tag("m", "k", "v") == [],
+    )
+    stub.reply(200, {"model_version": {"version": "1"}})
+    check(
+        "R005-C",
+        "get_model_version returns the record",
+        c.get_model_version("m", "1") == {"version": "1"},
+    )
+    check(
+        "R005-C",
+        "get_model_version names model and version",
+        "name=m" in stub.seen[-1]["path"] and "version=1" in stub.seen[-1]["path"],
+    )
+    stub.reply(200, {"model_version": "x"})
+    check(
+        "R005-C",
+        "non-object model_version refused",
+        raises(TrackingRejectedError, c.get_model_version, "m", "1"),
+    )
+    stub.reply(200, {})
+    check(
+        "R005-C",
+        "missing model_version refused",
+        raises(TrackingRejectedError, c.get_model_version, "m", "1"),
+    )
+    stub.server.shutdown()
+    tags_of = client_mod._tags_of
+    check("R005-C", "dict-form tags are read", tags_of({"tags": {"a": "b"}}) == {"a": "b"})
+    check(
+        "R005-C",
+        "list-form tags skip junk items",
+        tags_of({"tags": ["key", {"value": "x"}, {"key": "k", "value": "v"}, {"key": "n"}]})
+        == {"k": "v", "n": ""},
+    )
+    check("R005-C", "absent tags are empty", tags_of({}) == {} and tags_of({"tags": 5}) == {})
+
+    refused_purposes: tuple[Any, ...] = (
+        "final_qualification",
+        " final_qualification",
+        "Final_Qualification",
+        "sealed_final",
+        "FINAL_QUALIFICATION\n",
+        "",
+        "unknown",
+        None,
+        [],
+        5,
+    )
+    for purpose in refused_purposes:
+        check(
+            "R005-R",
+            f"purpose {purpose!r} refused",
+            raises(SealedExportRefusedError, make_run, data_purpose=purpose),
+        )
+    for purpose in ("train", "validation", "development_eval"):
+        check(
+            "R005-R",
+            f"purpose {purpose} allowed",
+            not raises(Exception, make_run, data_purpose=purpose),
+        )
+    check(
+        "R005-R",
+        "case-distinct metric keys allowed",
+        not raises(ValueError, make_run, metrics=(("m", 1.0), ("M", 2.0))),
+    )
+    check(
+        "R005-R",
+        "case-distinct param keys allowed",
+        not raises(ValueError, make_run, params=(("p", "a"), ("P", "b"))),
+    )
+    check(
+        "R005-R",
+        "case-distinct hash keys allowed",
+        not raises(ValueError, make_run, hashes=(("h", "a" * 64), ("H", "b" * 64))),
+    )
+    fake = Fake()
+    entry = InMemoryOutbox().add(make_run())
+    sync_run(fake, entry)
+    digest = entry.run.payload_sha256()
+    fake.runs[0]["data"]["tags"] = [
+        t for t in fake.runs[0]["data"]["tags"] if t["key"] != TAG_PAYLOAD
+    ] + tag_list({TAG_PAYLOAD: digest.upper()})
+    again = sync_run(fake, entry)
+    check("R005-R", "case-variant completion marker is a conflict", again.state == SyncState.FAILED)
+    # a registry version that drifts right after creation is caught by bind itself
+    f = Fake()
+    f.after_create = lambda rec: rec.update(run_id="b" * 32)
+    check(
+        "R005-B",
+        "bind verifies the record it just created",
+        raises(RegistryDriftError, make_binding, f),
+    )
 
 
 def main() -> None:
