@@ -358,10 +358,13 @@ def main() -> None:
         for failure in FAILURES:
             print(f"  {failure}")
         logs = compose("logs", "--no-color", "s3", check_exit=False)
-        print(logs.stdout)
-        print(logs.stderr)
+        print(logs.stdout[-4000:])
+        print(logs.stderr[-1000:])
         if booted_here:
             compose("stop", "s3", check_exit=False)
+        print(f"FTF-1602 object storage backup integration: {len(FAILURES)} failed (summary)")
+        for failure in FAILURES:
+            print(f"  {failure}")
         sys.exit(1)
     if booted_here:
         compose("stop", "s3", check_exit=False)
