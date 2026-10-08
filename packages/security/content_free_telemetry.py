@@ -92,6 +92,7 @@ SPAN_STATUSES: tuple[str, ...] = ("ok", "error")
 _ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,98}")
 _CODE_RE = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _MAX_NUMBER = 1_000_000_000
+_ABSENT = object()
 
 
 class ContentFreeTelemetryError(Exception):
@@ -297,8 +298,8 @@ def emit_event(kind: object, fields: object) -> TelemetryEvent:
             raise DisallowedFieldError(f"required field {name!r} is missing on this event kind")
     # Schema order, whatever the caller's order: same input, same event.
     validated = {
-        name: _validate_field(name, spec, given[name])
+        name: _validate_field(name, spec, value)
         for name, spec in schema.items()
-        if name in given
+        if (value := given.get(name, _ABSENT)) is not _ABSENT
     }
     return TelemetryEvent(kind, MappingProxyType(validated))
