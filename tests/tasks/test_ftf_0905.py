@@ -511,6 +511,22 @@ def test_complete_requires_something_checked_and_the_declared_plan() -> None:
         )
 
 
+def test_declared_plan_must_be_a_collection_of_pairs() -> None:
+    for bad_plan in (5, 1.5, object(), "trace", b"xy"):
+        try:
+            CanaryPlacementLedger(bad_plan)  # type: ignore[arg-type]
+            outcome = "allowed"
+        except InvalidCanaryRequestError as exc:
+            outcome = str(exc)
+        except Exception as exc:
+            outcome = "ERROR:" + type(exc).__name__
+        check(
+            "FTF-0905-R2-2",
+            f"a non-collection / text plan {bad_plan!r} is refused with the typed collection error",
+            "collection of pairs" in outcome,
+        )
+
+
 def test_canary_id_is_independent_of_the_token_and_entropy_is_pinned() -> None:
     prefix = "CANARY-DO-NOT-USE-"
     markers = [generate_canary() for _ in range(50)]
