@@ -402,8 +402,7 @@ def test_project_gateway_permission_request_validates_every_member() -> None:
     # `test_organization_gateway_policy_validates_every_member` above.
     check(
         "FTF-1206",
-        "an unsafe registration namespace in a project's own request is refused "
-        "at construction",
+        "an unsafe registration namespace in a project's own request is refused " "at construction",
         _rejects(
             ProjectGatewayPermissionRequest,
             registration_namespaces=frozenset({"bad namespace"}),
@@ -413,8 +412,7 @@ def test_project_gateway_permission_request_validates_every_member() -> None:
     )
     check(
         "FTF-1206",
-        "an unsafe deployment namespace in a project's own request is refused "
-        "at construction",
+        "an unsafe deployment namespace in a project's own request is refused " "at construction",
         _rejects(
             ProjectGatewayPermissionRequest,
             registration_namespaces=frozenset(),
@@ -424,8 +422,7 @@ def test_project_gateway_permission_request_validates_every_member() -> None:
     )
     check(
         "FTF-1206",
-        "an unsafe approver identity in a project's own request is refused "
-        "at construction",
+        "an unsafe approver identity in a project's own request is refused " "at construction",
         _rejects(
             ProjectGatewayPermissionRequest,
             registration_namespaces=frozenset(),
@@ -491,9 +488,7 @@ def test_route_change_authority_revalidates_inputs_defensively() -> None:
     # `validate_approver_identity` itself -- not by the approver-membership
     # check, which would otherwise treat it as recognized.
     tampered_approvers_policy = _policy()
-    object.__setattr__(
-        tampered_approvers_policy, "approvers", frozenset({"not an approver"})
-    )
+    object.__setattr__(tampered_approvers_policy, "approvers", frozenset({"not an approver"}))
     plain_grant = enforce_project_gateway_permission_request(
         _policy(),
         ProjectGatewayPermissionRequest(
