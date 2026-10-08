@@ -24532,3 +24532,18 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 - **Governance:** #616 put evals/reference under the gates.
 - **ci-verdict:** all 4 relay merges since 02:40Z landed on a green ci-verdict.
 - **Still open:** FTF-0616 (#613) and FTF-0501 (#610) are in progress.
+
+## 2026-10-08T12:20Z — Control plane: FTF-1706 CERTIFIED (134/302); 5 returned; FTF-0516-P1 slice
+- **CERTIFIED:** FTF-1706 (#618, 879ea74), candidate discovery. It is UNWIRED.
+- **Returned:**
+  - FTF-0616 r3 (0b)
+  - FTF-0903 r2 (0c)
+  - FTF-1602 r2 (0d)
+  - FTF-R005 r2 (0e)
+  - FTF-1703 r2 (0g)
+  - FTF-1206 r3 (0h), re-reviewed after FTF-1206A
+  - FTF-0517 r2 is still 0f.
+- **Backlog:** FTF-0516-P1, FTF-0908, FTF-0309-P1 and FTF-H010-P1. FTF-0501 (#610) and FTF-0905 (#625) are claimed.
+- **CI fix:** a time bomb in the FTF-0501-P1 test (mixed fixed and real clocks) turned every gate red from 12:00Z. It is
+  fixed in the test only.
+- **ci-verdict:** all 7 relay merges since 06:02Z landed on a green ci-verdict.

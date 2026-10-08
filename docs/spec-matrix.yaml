@@ -11617,10 +11617,10 @@ FTF-1705:
   proving_symbol: ''
   proving_test: ''
 FTF-1706:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Candidate discovery from org LiteLLM
-  evidence_hash: 4f16be7a198891c6874b5840b05bd88f35a570e2
+  evidence_hash: 879ea74cac33b6868e2fe857bed511ed424d7e87
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-18; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0215, FTF-0307,
@@ -11642,7 +11642,7 @@ FTF-1706:
     tests now pass single-wrapped ScopedEvidence and assert the scope refusal message; mutation
     survivors pinned; evidence_hash re-bound to the round-2 source commit (Law 15).
     Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1706.py
 FTF-1707:

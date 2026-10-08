@@ -1,15 +1,27 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-08T07:00Z. Source: `python3 scripts/status.py` on main.
-- **Status: 133/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
+Updated: 2026-10-08T12:20Z. Source: `python3 scripts/status.py` on main.
+- **Status: 134/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
 - **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902,
-  FTF-0500D, FTF-1002, FTF-0103A, FTF-0510, FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613, FTF-1305, FTF-0308, FTF-0602 and FTF-0901 (2026-10-07/08), plus follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1, FTF-0608-F1 and FTF-04A21-F1.
+  FTF-0500D, FTF-1002, FTF-0103A, FTF-0510, FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613, FTF-1305, FTF-0308, FTF-0602, FTF-0901 and FTF-1706 (2026-10-07/08), plus follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1, FTF-0608-F1 and FTF-04A21-F1.
 - **FTF-0103A (live login + Membership): CERTIFIED.** Every /api/v1 route now authorizes real logged-in members, and
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-08T12:20Z:**
+  - CERTIFIED: FTF-1706 (candidate discovery from the org LiteLLM). It is UNWIRED.
+  - Returned with exact fault lists:
+    - FTF-0616 r3: self-judge proof, injection, model echo.
+    - FTF-0903: no caller text in errors, exact types.
+    - FTF-1602: restore not proven, tenant scoping.
+    - FTF-R005: run drift, Law 17 statuses, durable outbox.
+    - FTF-1703: template-family grouping, verified provenance.
+    - FTF-1206 r3: survivors, typed fail-closed inputs, stale grant. Its persistence is now FTF-1206A.
+  - FTF-0516 is parked; prerequisite slice FTF-0516-P1 is queued. Also queued: FTF-0908, FTF-0309-P1 and FTF-H010-P1.
+  - CI: fixed a clock time bomb in the FTF-0501-P1 test that turned every gate red from 12:00Z.
+  - In progress: FTF-0501 (#610) and FTF-0905 (#625).
 - **2026-10-08T07:00Z:**
   - CERTIFIED: FTF-0308 (model→artifact mapping UI) and FTF-0602 (evaluation case editor/import), the first UIs built
     on the new prerequisite slices, plus FTF-0901 (security profile enforcement). All three are disclosed UNWIRED
