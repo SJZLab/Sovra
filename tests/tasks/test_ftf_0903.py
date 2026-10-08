@@ -492,7 +492,7 @@ class _LeakFloat(float):
 
 
 class _LeakDatetime(datetime):
-    def isoformat(self, *args: object, **kwargs: object) -> str:  # type: ignore[override]
+    def isoformat(self, *args: object, **kwargs: object) -> str:
         return "LEAKED-SECRET"
 
 
@@ -545,7 +545,9 @@ def test_error_messages_never_echo_caller_text() -> None:
         msg is not None and len(msg) < 300 and "ffff" not in msg,
     )
     _ReprKey.called = False
-    msg = _message_of(emit_event, "workflow", {**_WF, _ReprKey(): "x"})
+    bad_key_fields: dict[object, object] = dict(_WF)
+    bad_key_fields[_ReprKey()] = "x"
+    msg = _message_of(emit_event, "workflow", bad_key_fields)
     check(
         "FTF-0903-R2-1",
         "a non-str key's own __repr__ is never run nor echoed",
@@ -719,7 +721,7 @@ def test_number_overflow_and_negative_zero() -> None:
         "10**400 through emit_event is a coded refusal",
         _raises(ContentRefusedError, emit_event, "workflow", {**_WF, "timing_ms": 10**400}),
     )
-    out = _validate_field("n", _FieldSpec("number"), -0.0)
+    out = float(_validate_field("n", _FieldSpec("number"), -0.0))  # type: ignore[arg-type]
     check(
         "FTF-0903-R2-4",
         "-0.0 is normalised to +0.0 (decision: accept and normalise)",
@@ -932,7 +934,8 @@ MUTATIONS = [
     ),
     (
         "ContentRef re-validation at emit removed (a forged ref is stored as given)",
-        r"return ContentRef\(_id_value\(ref_id, \"content ref id\"\), _id_value\(key_id, \"encryption key id\"\)\)",
+        r"return ContentRef\(_id_value\(ref_id, \"content ref id\"\), "
+        r"_id_value\(key_id, \"encryption key id\"\)\)",
         "return value",
         6,
     ),
