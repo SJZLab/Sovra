@@ -39,6 +39,7 @@ from packages.litellm_client.organization_policy_control import (  # noqa: E402
     GatewayPolicyError,
     InvalidNamespaceError,
     OrganizationGatewayPolicy,
+    ProjectGatewayGrant,
     ProjectGatewayPermissionRequest,
     ProjectPermissionWideningError,
     RouteChangeNotAuthorizedError,
@@ -389,6 +390,364 @@ def test_enforce_route_change_authority_checks_target_namespace_against_grant() 
             grant,
             actor="user:anyone",
             target_deployment_namespace="factory-eu",
+        ),
+    )
+
+
+def test_project_gateway_permission_request_validates_every_member() -> None:
+    # Round-3 return, finding 1 (mutation survivor): `ProjectGatewayPermissionRequest
+    # .__post_init__` had no test of its own proving construction-time validation --
+    # an `insert return None first` mutant on that method survived (nothing exercised
+    # the difference between "validated" and "never touched"). Symmetric to
+    # `test_organization_gateway_policy_validates_every_member` above.
+    check(
+        "FTF-1206",
+        "an unsafe registration namespace in a project's own request is refused " "at construction",
+        _rejects(
+            ProjectGatewayPermissionRequest,
+            registration_namespaces=frozenset({"bad namespace"}),
+            deployment_namespaces=frozenset(),
+            approvers=frozenset(),
+        ),
+    )
+    check(
+        "FTF-1206",
+        "an unsafe deployment namespace in a project's own request is refused " "at construction",
+        _rejects(
+            ProjectGatewayPermissionRequest,
+            registration_namespaces=frozenset(),
+            deployment_namespaces=frozenset({""}),
+            approvers=frozenset(),
+        ),
+    )
+    check(
+        "FTF-1206",
+        "an unsafe approver identity in a project's own request is refused " "at construction",
+        _rejects(
+            ProjectGatewayPermissionRequest,
+            registration_namespaces=frozenset(),
+            deployment_namespaces=frozenset(),
+            approvers=frozenset({"not an approver"}),
+        ),
+    )
+    request = ProjectGatewayPermissionRequest(
+        registration_namespaces=frozenset({"factory-candidates"}),
+        deployment_namespaces=frozenset(),
+        approvers=frozenset(),
+    )
+    check(
+        "FTF-1206",
+        "a well-formed request round-trips its own fields unchanged",
+        request.registration_namespaces == frozenset({"factory-candidates"}),
+    )
+
+
+def test_route_change_authority_revalidates_inputs_defensively() -> None:
+    # Round-3 return, finding 1 (mutation survivors): `validate_namespace`
+    # being dropped (replaced by `pass`) on `target_deployment_namespace`,
+    # and a `.strip().lower()` normalization bypass on `target_deployment_
+    # namespace`/`actor`, both survived the existing suite because every
+    # existing test used identifiers that were already both well-formed and
+    # exact-case. These tests force a malformed/case-different value to
+    # reach the grant/policy objects directly (bypassing the dataclasses'
+    # own construction-time validation via `object.__setattr__`, or by
+    # building a `ProjectGatewayGrant` directly rather than through
+    # `enforce_project_gateway_permission_request`), so only
+    # `enforce_route_change_authority`'s own re-validation can catch them.
+    org_policy = _policy()
+
+    # (a) a malformed target namespace, already present (unvalidated) in
+    # both the grant and the organization's own policy sets, must still be
+    # refused by `validate_namespace` itself -- not by either membership
+    # check, since both would otherwise (incorrectly) treat it as granted.
+    tampered_policy = _policy()
+    object.__setattr__(
+        tampered_policy, "allowed_deployment_namespaces", frozenset({"not a namespace"})
+    )
+    tampered_grant = ProjectGatewayGrant(
+        registration_namespaces=frozenset(),
+        deployment_namespaces=frozenset({"not a namespace"}),
+        approvers=frozenset(),
+    )
+    check(
+        "FTF-1206",
+        "a malformed target namespace is refused by validate_namespace itself, "
+        "even when the exact same malformed string is already present in both "
+        "the grant and the organization's own (tampered) policy sets",
+        _rejects(
+            enforce_route_change_authority,
+            tampered_policy,
+            tampered_grant,
+            actor="user:jane",
+            target_deployment_namespace="not a namespace",
+        ),
+    )
+
+    # (b) a malformed actor, already present (unvalidated) in the
+    # organization's own approvers set, must still be refused by
+    # `validate_approver_identity` itself -- not by the approver-membership
+    # check, which would otherwise treat it as recognized.
+    tampered_approvers_policy = _policy()
+    object.__setattr__(tampered_approvers_policy, "approvers", frozenset({"not an approver"}))
+    plain_grant = enforce_project_gateway_permission_request(
+        _policy(),
+        ProjectGatewayPermissionRequest(
+            registration_namespaces=frozenset(),
+            deployment_namespaces=frozenset({"factory-production"}),
+            approvers=frozenset(),
+        ),
+    )
+    check(
+        "FTF-1206",
+        "a malformed actor is refused by validate_approver_identity itself, "
+        "even when the exact same malformed string is already present in the "
+        "organization's own (tampered) approvers set",
+        _rejects(
+            enforce_route_change_authority,
+            tampered_approvers_policy,
+            plain_grant,
+            actor="not an approver",
+            target_deployment_namespace="factory-production",
+        ),
+    )
+
+    # (c) case-different target: the organization's CURRENT policy holds the
+    # exact-case target (so that check alone would pass), but the project's
+    # own grant holds a different-case string -- the grant check must still
+    # refuse an exact-case mismatch rather than normalize it away.
+    case_mismatch_grant = ProjectGatewayGrant(
+        registration_namespaces=frozenset(),
+        deployment_namespaces=frozenset({"factory-production"}),
+        approvers=frozenset(),
+    )
+    case_mismatch_policy = OrganizationGatewayPolicy(
+        allowed_registration_namespaces=frozenset(),
+        allowed_deployment_namespaces=frozenset({"FACTORY-PRODUCTION"}),
+        approvers=frozenset({"user:jane"}),
+    )
+    check(
+        "FTF-1206",
+        "a target namespace that differs only in case from the project's own "
+        "granted namespace is refused -- grant membership is exact-string, "
+        "never case-insensitive -- even though the organization's current "
+        "policy happens to allow the exact-case target",
+        _rejects(
+            enforce_route_change_authority,
+            case_mismatch_policy,
+            case_mismatch_grant,
+            actor="user:jane",
+            target_deployment_namespace="FACTORY-PRODUCTION",
+        ),
+    )
+
+    # (d) case-different target: the project's own grant holds the exact-case
+    # target (so the grant check alone would pass), but the organization's
+    # CURRENT policy holds a different-case string -- the policy re-check
+    # (finding 3) must still refuse an exact-case mismatch rather than
+    # normalize it away.
+    case_mismatch_grant_2 = ProjectGatewayGrant(
+        registration_namespaces=frozenset(),
+        deployment_namespaces=frozenset({"FACTORY-PRODUCTION"}),
+        approvers=frozenset(),
+    )
+    case_mismatch_policy_2 = OrganizationGatewayPolicy(
+        allowed_registration_namespaces=frozenset(),
+        allowed_deployment_namespaces=frozenset({"factory-production"}),
+        approvers=frozenset({"user:jane"}),
+    )
+    check(
+        "FTF-1206",
+        "a target namespace that differs only in case from the organization's "
+        "own current policy is refused -- the policy re-check is exact-string, "
+        "never case-insensitive -- even though the project's own grant happens "
+        "to hold the exact-case target",
+        _rejects(
+            enforce_route_change_authority,
+            case_mismatch_policy_2,
+            case_mismatch_grant_2,
+            actor="user:jane",
+            target_deployment_namespace="FACTORY-PRODUCTION",
+        ),
+    )
+
+    # (e) case-different actor: an approver identity that differs only in
+    # case from the organization's own recognized approver is refused, never
+    # normalized into a match.
+    check(
+        "FTF-1206",
+        "an actor that differs only in case from a recognized organization "
+        "approver is refused -- approver membership is exact-string, never "
+        "case-insensitive",
+        _rejects(
+            enforce_route_change_authority,
+            org_policy,
+            enforce_project_gateway_permission_request(
+                org_policy,
+                ProjectGatewayPermissionRequest(
+                    registration_namespaces=frozenset(),
+                    deployment_namespaces=frozenset({"factory-production"}),
+                    approvers=frozenset(),
+                ),
+            ),
+            actor="USER:JANE",
+            target_deployment_namespace="factory-production",
+        ),
+    )
+
+
+def test_route_change_authority_rechecks_current_organization_policy() -> None:
+    # Round-3 return, finding 3 (negative_acceptance): a grant issued before
+    # the organization narrowed its own policy must never still authorize a
+    # route change into a namespace the organization no longer allows at
+    # all -- the real-world scenario (no case tricks), distinct from the
+    # case-mismatch tests above.
+    original_policy = _policy()
+    grant = enforce_project_gateway_permission_request(
+        original_policy,
+        ProjectGatewayPermissionRequest(
+            registration_namespaces=frozenset(),
+            deployment_namespaces=frozenset({"factory-production"}),
+            approvers=frozenset({"user:jane"}),
+        ),
+    )
+    narrowed_policy = OrganizationGatewayPolicy(
+        allowed_registration_namespaces=original_policy.allowed_registration_namespaces,
+        allowed_deployment_namespaces=frozenset({"factory-eu"}),
+        approvers=original_policy.approvers,
+    )
+    check(
+        "FTF-1206",
+        "negative_acceptance: narrowing the organization's own policy after a "
+        "grant was issued refuses a route change into the now-disallowed "
+        "namespace, even though the project's own (stale) grant still "
+        "includes it",
+        _rejects(
+            enforce_route_change_authority,
+            narrowed_policy,
+            grant,
+            actor="user:jane",
+            target_deployment_namespace="factory-production",
+        ),
+    )
+
+
+def test_malformed_inputs_fail_closed_with_typed_errors() -> None:
+    # Round-3 return, finding 2: malformed inputs must raise this module's
+    # own typed error, never a bare TypeError, and never be silently
+    # coerced (a bare str becoming per-character membership; a falsy-but-
+    # not-bool flag silently disabling approval).
+    check(
+        "FTF-1206",
+        "a bare str passed where a set of registration namespaces is "
+        "expected is refused outright, never iterated into per-character "
+        "membership ('jane' must never become {j,a,n,e})",
+        _rejects(
+            OrganizationGatewayPolicy,
+            allowed_registration_namespaces="jane",
+            allowed_deployment_namespaces=frozenset(),
+            approvers=frozenset(),
+        ),
+    )
+    check(
+        "FTF-1206",
+        "None in place of a namespace set raises this module's own typed "
+        "error, never a bare TypeError",
+        _rejects(
+            OrganizationGatewayPolicy,
+            allowed_registration_namespaces=None,
+            allowed_deployment_namespaces=frozenset(),
+            approvers=frozenset(),
+        ),
+    )
+    check(
+        "FTF-1206",
+        "an int in place of an approver set raises this module's own typed "
+        "error, never a bare TypeError",
+        _rejects(
+            OrganizationGatewayPolicy,
+            allowed_registration_namespaces=frozenset(),
+            allowed_deployment_namespaces=frozenset(),
+            approvers=7,
+        ),
+    )
+    check(
+        "FTF-1206",
+        "a bare str passed where a project's own requested namespace set is "
+        "expected is refused outright (same class, ProjectGatewayPermissionRequest)",
+        _rejects(
+            ProjectGatewayPermissionRequest,
+            registration_namespaces=frozenset(),
+            deployment_namespaces="production",
+            approvers=frozenset(),
+        ),
+    )
+    check(
+        "FTF-1206",
+        "None in place of a project's own requested approver set raises this "
+        "module's own typed error",
+        _rejects(
+            ProjectGatewayPermissionRequest,
+            registration_namespaces=frozenset(),
+            deployment_namespaces=frozenset(),
+            approvers=None,
+        ),
+    )
+    check(
+        "FTF-1206",
+        "a non-bool route_change_requires_approval is refused outright -- "
+        "None is falsy and must never silently switch approval off",
+        _rejects(
+            OrganizationGatewayPolicy,
+            allowed_registration_namespaces=frozenset(),
+            allowed_deployment_namespaces=frozenset(),
+            approvers=frozenset(),
+            route_change_requires_approval=None,
+        ),
+    )
+    check(
+        "FTF-1206",
+        "an int route_change_requires_approval (e.g. 0, falsy like False) is "
+        "refused outright, never silently treated as a bool",
+        _rejects(
+            OrganizationGatewayPolicy,
+            allowed_registration_namespaces=frozenset(),
+            allowed_deployment_namespaces=frozenset(),
+            approvers=frozenset(),
+            route_change_requires_approval=0,
+        ),
+    )
+
+    org_policy = _policy()
+    grant = enforce_project_gateway_permission_request(
+        org_policy,
+        ProjectGatewayPermissionRequest(
+            registration_namespaces=frozenset(),
+            deployment_namespaces=frozenset({"factory-production"}),
+            approvers=frozenset({"user:jane"}),
+        ),
+    )
+    check(
+        "FTF-1206",
+        "an unhashable actor (a list) raises this module's own typed error, "
+        "never a bare TypeError from frozenset membership",
+        _rejects(
+            enforce_route_change_authority,
+            org_policy,
+            grant,
+            actor=[],
+            target_deployment_namespace="factory-production",
+        ),
+    )
+    check(
+        "FTF-1206",
+        "an unhashable actor (a dict) raises this module's own typed error, "
+        "never a bare TypeError from frozenset membership",
+        _rejects(
+            enforce_route_change_authority,
+            org_policy,
+            grant,
+            actor={},
+            target_deployment_namespace="factory-production",
         ),
     )
 
