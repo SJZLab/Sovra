@@ -118,7 +118,7 @@ def _validated_set(values: object, *, validator: object) -> frozenset[str]:
     # `surfaces: frozenset[str]` field (FTF-0402, this task's own cited
     # precedent) -- confirmed by reading that module before writing this
     # fix, not assumed.
-    if not isinstance(values, (frozenset, set)):
+    if not isinstance(values, frozenset | set):
         raise InvalidNamespaceError(
             "expected a set or frozenset of identifiers, got "
             f"{type(values).__name__}: {values!r}"
