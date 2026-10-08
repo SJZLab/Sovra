@@ -1763,6 +1763,233 @@ def test_round3_subclass_admission() -> None:
     )
 
 
+def test_round4_instance_attribute_shadowing_is_refused() -> None:
+    """Round 3 refused a *subclass* overriding to_dict() (type(trace) is not
+    TrainingTrace catches it). Round 4's own gap: a frozen dataclass has no
+    __slots__, so object.__setattr__(t, "to_dict", ...) shadows the bound
+    method on an exact-type instance -- the type check never fires. Two
+    independent defenses now close it: (1) no verification path calls the
+    (possibly shadowed) method on untrusted input any more -- every one reads
+    fields directly via _raw_trace_dict/_raw_final_answer; (2) a trace whose
+    instance __dict__ carries anything beyond its declared fields is refused
+    outright, whether or not the shadow would have lied about anything."""
+    import evals.reference.training_dataset as td
+
+    base = TRACES[7]
+    genuine_dict = base.to_dict()
+    genuine_answer = base.final_answer()
+    evil_steps = _replace_step(
+        base, 0, {"type": "message", "role": "user", "content": "sk-" + "a" * 30}
+    ).steps
+    shadowed = dataclasses.replace(base, steps=evil_steps)
+    object.__setattr__(shadowed, "to_dict", lambda: genuine_dict)
+    object.__setattr__(shadowed, "final_answer", lambda: genuine_answer)
+    check(
+        "FTF-1703-R4-1",
+        "setup: the shadow is real -- to_dict()/final_answer() lie about the "
+        "real (secret-bearing) steps",
+        shadowed.to_dict() == genuine_dict
+        and shadowed.final_answer() == genuine_answer
+        and shadowed.steps != base.steps,
+    )
+    check(
+        "FTF-1703-R4-1",
+        "the shadowed instance is refused outright",
+        _raises(TraceVerificationError, build_training_dataset, [shadowed], _approve([shadowed])),
+    )
+    check(
+        "FTF-1703-R4-1",
+        "_require_trace_shape refuses it directly, before any method is called",
+        _raises(TraceVerificationError, td._require_trace_shape, shadowed),
+    )
+    check(
+        "FTF-1703-R4-1",
+        "the genuine, unmodified trace is unaffected",
+        not _raises(TraceVerificationError, td._require_trace_shape, base),
+    )
+
+    # Load-bearing proof 1 (Law 1): a shadow that tells no lie at all -- same
+    # steps, to_dict()/final_answer() mirror the genuine trace exactly -- is
+    # still refused, because the __dict__ guard does not depend on content.
+    harmless = dataclasses.replace(base)
+    object.__setattr__(harmless, "to_dict", lambda b=base: b.to_dict())
+    check(
+        "FTF-1703-R4-1",
+        "even a non-lying shadow (identical content) is refused: the __dict__ "
+        "guard is unconditional, not content-dependent",
+        _raises(TraceVerificationError, td._require_trace_shape, harmless),
+    )
+    original_shape = td._require_trace_shape
+
+    def _no_dict_guard(trace: Any) -> Any:
+        if type(trace) is not td.TrainingTrace:
+            raise TraceVerificationError("not a TrainingTrace")
+        for name in td._STR_FIELDS:
+            value = getattr(trace, name)
+            if type(value) is not str or not value:
+                raise TraceVerificationError(f"trace field {name} must be a non-empty string")
+        if type(trace.critical) is not bool:
+            raise TraceVerificationError(f"{trace.trace_id}: critical must be a bool")
+        return trace
+
+    td._require_trace_shape = _no_dict_guard
+    try:
+        check(
+            "FTF-1703-R4-FAULT",
+            "fault: without the __dict__ guard, the harmless shadow is no longer "
+            "refused (proving the guard, not the content, was doing the work here)",
+            not _raises(TraceVerificationError, td._require_trace_shape, harmless),
+        )
+    finally:
+        td._require_trace_shape = original_shape
+
+    # Load-bearing proof 2 (Law 1): with the __dict__ guard ALSO disabled,
+    # verify_trace_provenance must still catch a lying shadow on its own
+    # merits, because it reads fields directly rather than via to_dict().
+    td._require_trace_shape = _no_dict_guard
+    try:
+        check(
+            "FTF-1703-R4-1",
+            "with the __dict__ guard disabled, verify_trace_provenance still "
+            "refuses the lying (secret-bearing) shadow via direct field access",
+            _raises(TraceVerificationError, verify_trace_provenance, shadowed),
+        )
+
+        def _old_style_provenance(trace: Any) -> None:
+            td._require_trace_shape(trace)
+            producer = trace.provenance.get("producer")
+            index = trace.provenance.get("index")
+            if producer not in (td.GENERATOR_ID,) or type(index) is not int or index < 0:
+                raise TraceVerificationError(f"{trace.trace_id}: no generator index")
+            if td._canonical(td._generate_one(index).to_dict()) != td._canonical(trace.to_dict()):
+                raise TraceVerificationError(f"{trace.trace_id}: trace differs")
+
+        check(
+            "FTF-1703-R4-FAULT",
+            "fault: the pre-round-4 comparison (trace.to_dict() instead of "
+            "_raw_trace_dict) trusts the shadow and accepts the lie",
+            not _raises(TraceVerificationError, _old_style_provenance, shadowed),
+        )
+    finally:
+        td._require_trace_shape = original_shape
+
+
+def test_round4_each_generator_index_admitted_at_most_once() -> None:
+    import evals.reference.training_dataset as td
+
+    base = TRACES[5]
+    decoy = dataclasses.replace(base, trace_id="train-9999")
+    check(
+        "FTF-1703-R4-2",
+        "setup: the decoy is not itself admissible (wrong trace_id for its claimed "
+        "index), independent of the index guard",
+        _raises(TraceVerificationError, build_training_dataset, [decoy]),
+    )
+    # Load-bearing proof (Law 1), isolating the index guard from the provenance
+    # check that would also refuse this: with verify_trace_provenance patched to
+    # accept anything, a second id claiming an already-admitted index must still
+    # be caught and refused by the index-uniqueness guard alone.
+    original = td.verify_trace_provenance
+    td.verify_trace_provenance = lambda trace: None
+    try:
+        check(
+            "FTF-1703-R4-2",
+            "two ids claiming the same generator index are refused to exactly one "
+            "admission, even with provenance checking disabled",
+            _raises(
+                TrainingDatasetError,
+                build_training_dataset,
+                [base, decoy],
+                _approve([base, decoy]),
+            ),
+        )
+    finally:
+        td.verify_trace_provenance = original
+    a, b = TRACES[10], TRACES[20]
+    ok = build_training_dataset([a, b], _approve([a, b]))
+    check("FTF-1703-R4-2", "two distinct indices are both admitted", ok.approved_count == 2)
+
+
+def test_round4_review_decision_requires_exact_types() -> None:
+    import evals.reference.training_dataset as td
+
+    t = TRACES[30]
+
+    class SneakyReviewer(str):
+        def strip(self, chars: str | None = None, /) -> str:
+            return "reviewer:not-a-generator"
+
+    sneaky = SneakyReviewer("generator:ftf-1703-v1")
+    check(
+        "FTF-1703-R4-3",
+        "setup: the subclass's own strip() lies about its real content",
+        sneaky.strip() != str.strip(sneaky),
+    )
+    check(
+        "FTF-1703-R4-3",
+        "a str-subclass reviewer_id is refused outright, never reaching the "
+        "generator-identity check its own strip() would have defeated",
+        _raises(
+            ReviewIndependenceError,
+            build_training_dataset,
+            [t],
+            [ReviewDecision(t.trace_id, sneaky, "approved")],
+        ),
+    )
+
+    class AlwaysEqual(str):
+        def __eq__(self, other: object) -> bool:
+            return True
+
+        def __hash__(self) -> int:
+            return hash("approved")
+
+    lying = AlwaysEqual("rejected")
+    check(
+        "FTF-1703-R4-3",
+        "a str-subclass decision is refused outright, never reaching the "
+        "conflicting-decision check its own __eq__ would have defeated",
+        _raises(
+            ReviewIndependenceError,
+            build_training_dataset,
+            [t],
+            [
+                ReviewDecision(t.trace_id, "reviewer:a", "approved"),
+                ReviewDecision(t.trace_id, "reviewer:b", lying),
+            ],
+        ),
+    )
+    # Load-bearing proof (Law 1): with the exact-type guard replaced by the old
+    # isinstance check, both subclass attacks above succeed instead of refusing.
+    original = td._validate_review
+
+    def _isinstance_validate(review: Any, trace_ids: set) -> Any:
+        if not isinstance(review, ReviewDecision):
+            raise ReviewIndependenceError("reviews must be ReviewDecision instances")
+        for name in ("trace_id", "reviewer_id", "decision"):
+            if not isinstance(getattr(review, name), str) or not getattr(review, name):
+                raise ReviewIndependenceError(f"review.{name} must be a non-empty string")
+        if review.decision not in td._DECISIONS:
+            raise ReviewIndependenceError(f"unknown review decision: {review.decision!r}")
+        if review.trace_id not in trace_ids:
+            raise ReviewIndependenceError(f"review for unknown trace: {review.trace_id!r}")
+        if td._norm(review.reviewer_id).startswith("generator:"):
+            raise ReviewIndependenceError(f"{review.trace_id}: reviewer not independent")
+        return review
+
+    td._validate_review = _isinstance_validate
+    try:
+        result = build_training_dataset([t], [ReviewDecision(t.trace_id, sneaky, "approved")])
+        check(
+            "FTF-1703-R4-FAULT",
+            "fault: the old isinstance check lets the generator-identity "
+            "reviewer's own strip() through, approving its own output",
+            result.approved_count == 1,
+        )
+    finally:
+        td._validate_review = original
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
