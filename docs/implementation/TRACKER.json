@@ -1001,16 +1001,20 @@
       "blockers": []
     },
     "FTF-0612": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "79567c0921851bbf4e3b99db563c357dbd59c925"
+      ],
       "independent_review": null,
       "blockers": []
     },
     "FTF-0613": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "6b9b759ac378d5678d24b71315689a711b5e02f4"
+      ],
       "independent_review": null,
       "blockers": []
     },

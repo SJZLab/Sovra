@@ -10359,3 +10359,30 @@ PR is not landed by the next certifier shift.
   - The hash's sensitivity to group_id and strategy is untested.
   - A negative non-train ratio is untested.
 - Also required: a docstring line saying the caller must run assert_clear_for_split. QUEUE 0e.
+
+## 2026-10-08T00:30Z — CERTIFIED: FTF-0612, FTF-0613, slice FTF-0501-P1; RETURNED: FTF-1305 (round 2), FTF-0103-F1
+- **Verification method:** independent Control-plane verifiers in detached worktrees at the merge commits. FTF-0501-P1 ran
+  on real Postgres in Docker, matching the CI job.
+- **FTF-0612: CERTIFIED** (round 2).
+  - PR #594, merge 79567c0921851bbf4e3b99db563c357dbd59c925.
+  - Every return item is RED, including reverting the unhashable-outcome fix. 9 round-1 faults RED.
+  - The checklist probe raises no TypeError on any field. Mutation 107/107.
+- **FTF-0613: CERTIFIED** (round 2).
+  - PR #595, merge 6b9b759ac378d5678d24b71315689a711b5e02f4.
+  - Every return item is RED: the outcome/source guards, cost validated before the currency branch, regex anchoring, and
+    bytes inputs. `_DEFAULT_PRICE` is removed.
+  - 9 round-1 faults RED. Mutation 76/76.
+- **FTF-0501-P1 (child slice of FTF-0501): CERTIFIED.**
+  - PR #581, merge 59a2c52897d0123a47f696840617d129997c8615.
+  - Contract met. The FK is stricter than the contract (it adds purpose).
+  - Every gate is clean. Law 18 holds under sovra_app (rolsuper=f, rolbypassrls=f). About 40 faults RED.
+  - Mutation 206/206, uncapped.
+  - Defense-in-depth follow-up FTF-0501-P2: refuse terminal→open status changes and non-open or forward-dated inserts.
+  - FTF-0501 is re-queued after P2.
+- **FTF-1305: RETURNED**, round 3, tests only (#596, f21f1ec).
+  - The primary sort key (base before high) is unpinned. This is a Control-plane gap in the round-2 list.
+  - The unhashable guard on `_lookup` is untested.
+  - The id tiebreak is not pinned against incumbent, kind or quality.
+- **FTF-0103-F1: RETURNED**, round 2, tests only (#597, d6b7381).
+  - The fix is correct and bounds memory at cap plus one chunk.
+  - No test proves the read stops at the cap: a read-everything-then-check fault passes every test.
