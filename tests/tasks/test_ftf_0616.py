@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# mypy: disable-error-code="arg-type,attr-defined,return-value,assignment,call-arg,index,union-attr"
+# mypy: disable-error-code="arg-type,attr-defined,return-value,assignment,call-arg,index,union-attr,misc"
 # ruff: noqa: E501
 """FTF-0616 -- LLM judge adapter through LiteLLM.
 
@@ -465,6 +465,38 @@ def test_malformed_argument_types_are_refused() -> None:
     check("V1", "no network call for any malformed argument", _GATEWAY.request_count == 0)
 
 
+def test_malformed_arguments_raise_the_base_grader_error_not_a_subclass() -> None:
+    """An empty `judge_model_id`/non-bool `critical` must be refused by its
+    *own* validation line, not merely end up refused later by the
+    authorization/corroboration guards it would otherwise still trip --
+    those are both subclasses of `LlmJudgeGraderError`, so catching only the
+    base class could hide a deleted earlier check."""
+    _reset_gateway()
+    try:
+        _grade(_PORT, judge_model_id="")
+        check("V1", "empty judge_model_id is refused", False)
+    except judge.LlmJudgeNotAuthorizedError:
+        check(
+            "V1",
+            "empty judge_model_id is refused by its own validation, not the authorization guard",
+            False,
+        )
+    except judge.LlmJudgeGraderError:
+        pass
+    _reset_gateway()
+    try:
+        _grade(_PORT, critical="yes")
+        check("V1", "a non-bool critical is refused", False)
+    except judge.LlmJudgeCriticalRequiresCorroborationError:
+        check(
+            "V1",
+            "a non-bool critical is refused by its own validation, not the corroboration guard",
+            False,
+        )
+    except judge.LlmJudgeGraderError:
+        pass
+
+
 def test_rubric_and_calibration_validate_their_own_fields() -> None:
     for bad_rubric in (
         lambda: judge.JudgeRubric(rubric_id="", version=1, instructions="x"),
@@ -490,12 +522,26 @@ def test_rubric_and_calibration_validate_their_own_fields() -> None:
             golden_fail_correct=5,
             golden_fail_total=5,
         ),
+        lambda: judge.CalibrationRecord(
+            golden_pass_correct=5, golden_pass_total=5, golden_fail_correct=6, golden_fail_total=5
+        ),
     ):
         try:
             bad_calibration()
             check("V1", "a malformed CalibrationRecord is refused", False)
         except judge.LlmJudgeGraderError:
             pass
+
+
+def test_is_calibrated_boundary_is_exactly_one_golden_case_each_side() -> None:
+    exactly_one = judge.CalibrationRecord(
+        golden_pass_correct=1, golden_pass_total=1, golden_fail_correct=1, golden_fail_total=1
+    )
+    check(
+        "C1",
+        "exactly one correct golden-pass and golden-fail case each is calibrated",
+        exactly_one.is_calibrated,
+    )
 
 
 # -- Schema validator unit checks (no network) ---------------------------------------
@@ -539,6 +585,100 @@ def test_schema_validator_never_coerces() -> None:
             {"verdict": "pass", "reasoning": "x"}, judge._VERDICT_SCHEMA
         ),
     )
+    check(
+        "V1",
+        "a non-string fails a string schema",
+        not judge._validate_against_schema(123, {"type": "string"}),
+    )
+    check(
+        "V1",
+        "a real string passes a string schema",
+        judge._validate_against_schema("ok", {"type": "string"}),
+    )
+    check(
+        "V1",
+        "a non-dict fails an object schema outright (not silently accepted for lack of a dict to check properties on)",
+        not judge._validate_against_schema([1, 2, 3], {"type": "object"}),
+    )
+    check(
+        "V1",
+        "schema_type matching is exact: a case/whitespace variant never matches a known type, so no type check applies and an otherwise-invalid value for the *real* type is not wrongly rejected either -- this pins the type-dispatch is literal, not normalized",
+        judge._validate_against_schema(True, {"type": " Number "}),
+    )
+    check(
+        "V1",
+        "an enum match is exact: case/whitespace variants of an allowed value are rejected, never normalized into a match",
+        not judge._validate_against_schema(" PASS ", {"type": "string", "enum": ["pass", "fail"]}),
+    )
+    check(
+        "V1",
+        "object key matching (required / additionalProperties / nested) is exact: a differently-cased key is "
+        "neither recognized as the required key nor as a known property",
+        not judge._validate_against_schema(
+            {"A": "x"},
+            {
+                "type": "object",
+                "required": ["a"],
+                "properties": {"a": {"type": "string"}},
+                "additionalProperties": False,
+            },
+        ),
+    )
+
+
+def test_state_for_verdict_is_an_exact_match() -> None:
+    check(
+        "A1",
+        "'pass' maps to PASSED",
+        judge._state_for_verdict("pass") is judge.LlmJudgeState.PASSED,
+    )
+    check(
+        "A1",
+        "'fail' maps to FAILED",
+        judge._state_for_verdict("fail") is judge.LlmJudgeState.FAILED,
+    )
+    check(
+        "A1",
+        "a case/whitespace variant of 'pass' is never normalized into PASSED (exact match only)",
+        judge._state_for_verdict(" Pass ") is judge.LlmJudgeState.FAILED,
+    )
+
+
+def test_parse_structured_content_rejects_every_malformed_shape() -> None:
+    def parse(payload: object) -> tuple[str, str | None, object] | None:
+        return judge._parse_structured_content(json.dumps(payload).encode())
+
+    check("E1", "a non-dict top level is rejected", parse([1, 2, 3]) is None)
+    check("E1", "a dict with no choices key is rejected", parse({"id": "x"}) is None)
+    check("E1", "an empty choices list is rejected", parse({"id": "x", "choices": []}) is None)
+    check(
+        "E1",
+        "a non-list choices value is rejected",
+        parse({"id": "x", "choices": "not-a-list"}) is None,
+    )
+    check("E1", "a non-dict first choice is rejected", parse({"id": "x", "choices": [1]}) is None)
+    check(
+        "E1",
+        "a message content that is not a string is rejected",
+        parse({"id": "x", "choices": [{"message": {"content": 1}}]}) is None,
+    )
+    check(
+        "E1",
+        "not even valid JSON is rejected",
+        judge._parse_structured_content(b"not json") is None,
+    )
+    content, resolved_model, usage = parse(
+        {"id": "x", "model": "", "choices": [{"message": {"content": "ok"}}]}
+    )
+    check(
+        "E1",
+        "a blank model field is treated as no model (resolved_model None)",
+        resolved_model is None,
+    )
+    content, resolved_model, usage = parse(
+        {"id": "x", "model": 123, "choices": [{"message": {"content": "ok"}}]}
+    )
+    check("E1", "a non-string model field is treated as no model", resolved_model is None)
 
 
 def test_guard_failure_classifier() -> None:
@@ -607,6 +747,44 @@ def test_rejection_classifier() -> None:
         "a body with no error object is malformed_response",
         state is judge.LlmJudgeState.MALFORMED_RESPONSE,
     )
+    # `param is not None or code in _UNSUPPORTED_PARAMETER_CODES` -- a body
+    # with `param` always short-circuits before `code` is ever evaluated,
+    # so the `code`-membership branch needs its own body with no `param` at
+    # all to actually exercise it.
+    code_only = json.dumps(
+        {"error": {"type": "invalid_request_error", "code": "unsupported_parameter"}}
+    ).encode()
+    state, _ = judge._classify_rejection(code_only)
+    check(
+        "E1",
+        "a code-only (no param) unsupported_parameter rejection is still unsupported_parameter",
+        state is judge.LlmJudgeState.UNSUPPORTED_PARAMETER,
+    )
+    case_variant_type = json.dumps({"error": {"type": "Content_Filter"}}).encode()
+    state, _ = judge._classify_rejection(case_variant_type)
+    check(
+        "E1",
+        "error type matching is exact: a case variant of content_filter is never normalized into a match",
+        state is not judge.LlmJudgeState.CONTENT_FILTERED,
+    )
+    whitespace_variant_code = json.dumps(
+        {"error": {"type": "invalid_request_error", "code": " unsupported_parameter "}}
+    ).encode()
+    state, _ = judge._classify_rejection(whitespace_variant_code)
+    check(
+        "E1",
+        "error code matching is exact: a whitespace variant is never normalized into a match",
+        state is not judge.LlmJudgeState.UNSUPPORTED_PARAMETER,
+    )
+    whitespace_variant_filter_code = json.dumps(
+        {"error": {"type": "invalid_request_error", "code": " content_filter "}}
+    ).encode()
+    state, _ = judge._classify_rejection(whitespace_variant_filter_code)
+    check(
+        "E1",
+        "the content-filter code check is exact too: a whitespace variant is never normalized into a match",
+        state is not judge.LlmJudgeState.CONTENT_FILTERED,
+    )
 
 
 def test_secret_resolution_failure_states() -> None:
@@ -634,6 +812,12 @@ def test_secret_resolution_failure_states() -> None:
         "E1",
         "a missing secret path fails closed",
         key is None and state is judge.LlmJudgeState.SECRET_NOT_FOUND,
+    )
+    key, state, _ = judge._resolve_inference_key(None, secret_config=_SECRET_CONFIG, now=now)  # type: ignore[arg-type]
+    check(
+        "E1",
+        "a non-string secret_ref fails closed as unsupported, not a crash",
+        key is None and state is judge.LlmJudgeState.SECRET_BACKEND_UNSUPPORTED,
     )
 
 
@@ -696,6 +880,162 @@ def test_happy_path_pass_verdict_and_request_shape() -> None:
         and sent["response_format"]["json_schema"]["strict"] is True
         and sent["response_format"]["json_schema"]["schema"] == judge._VERDICT_SCHEMA,
     )
+    check(
+        "A1",
+        "a real round trip takes a real, non-zero amount of time",
+        result.latency_ms is not None and result.latency_ms > 0,
+    )
+    check(
+        "A1",
+        "the success detail names a valid verdict",
+        result.detail == "judge responded with a valid verdict",
+    )
+    check(
+        "A1",
+        "a model echoed back in the response is route_identity VERIFIED",
+        result.route_identity_state is judge.RouteIdentityState.VERIFIED,
+    )
+
+
+def test_now_is_passed_through_verbatim_not_recomputed() -> None:
+    if _PORT == 0:
+        return
+    _reset_gateway()
+    fixed = datetime(2020, 1, 1, tzinfo=UTC)
+    result = _grade(_PORT, now=fixed)
+    check(
+        "A1",
+        "an explicit now is recorded verbatim on the result, never silently replaced",
+        result.judged_at == fixed,
+    )
+
+
+def test_route_identity_is_unverified_when_the_gateway_echoes_no_model() -> None:
+    if _PORT == 0:
+        return
+    _reset_gateway()
+    _GATEWAY.body = json.dumps(
+        {
+            "id": "x",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": json.dumps(
+                            {"verdict": "pass", "reasoning": "ok", "confidence": 0.9}
+                        ),
+                    },
+                }
+            ],
+        }
+    ).encode()
+    result = _grade(_PORT)
+    check(
+        "A1",
+        "no model field in the response is route_identity UNVERIFIED, resolved_model None",
+        result.route_identity_state is judge.RouteIdentityState.UNVERIFIED
+        and result.resolved_model is None,
+    )
+    check(
+        "A1",
+        "the verdict itself is unaffected by a missing model echo",
+        result.state is judge.LlmJudgeState.PASSED,
+    )
+
+
+def test_unexpected_status_code_is_not_fabricated() -> None:
+    if _PORT == 0:
+        return
+    _reset_gateway()
+    _GATEWAY.status = 500
+    _GATEWAY.body = b""
+    result = _grade(_PORT)
+    check(
+        "N1",
+        "a 500 is UNREACHABLE, never fabricated, with the real status named in detail",
+        result.state is judge.LlmJudgeState.UNREACHABLE
+        and result.passed is None
+        and "500" in result.detail,
+    )
+
+
+def test_a_200_with_no_chat_completion_shape_is_malformed_not_not_json() -> None:
+    if _PORT == 0:
+        return
+    _reset_gateway()
+    _GATEWAY.body = json.dumps(
+        {"id": "x", "model": "judge-model-v1"}
+    ).encode()  # no `choices` at all
+    result = _grade(_PORT)
+    check(
+        "N1",
+        "a 200 with no choices array is MALFORMED_RESPONSE (distinct from NOT_JSON), never fabricated",
+        result.state is judge.LlmJudgeState.MALFORMED_RESPONSE
+        and result.passed is None
+        and result.detail == "gateway response was not a valid chat completion",
+    )
+
+
+def test_destination_denied_by_policy_is_not_fabricated() -> None:
+    if _PORT == 0:
+        return
+    _reset_gateway()
+    wrong_port_policy = ConnectionPolicy(
+        name="test-litellm-gateway",
+        allowed_schemes=frozenset({"https"}),
+        allowed_ports=frozenset({_PORT + 1}),
+        explicit_private_allowlist=(ipaddress.ip_network("127.0.0.0/8"),),
+    )
+    result = _grade(_PORT, policy=wrong_port_policy)
+    check(
+        "N1",
+        "a policy that denies the destination port is DESTINATION_DENIED, never fabricated",
+        result.state is judge.LlmJudgeState.DESTINATION_DENIED
+        and result.passed is None
+        and result.detail == "gateway destination is not authorized by policy",
+    )
+    check("N1", "no request reached the real gateway", _GATEWAY.request_count == 0)
+
+
+def test_a_real_connection_failure_is_not_fabricated() -> None:
+    if _PORT == 0:
+        return
+    _reset_gateway()
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    probe.bind(("127.0.0.1", 0))
+    closed_port = probe.getsockname()[1]
+    probe.close()
+    closed_port_policy = ConnectionPolicy(
+        name="test-litellm-gateway",
+        allowed_schemes=frozenset({"https"}),
+        allowed_ports=frozenset({closed_port}),
+        explicit_private_allowlist=(ipaddress.ip_network("127.0.0.0/8"),),
+    )
+    result = _grade(_PORT, base_url=f"https://127.0.0.1:{closed_port}", policy=closed_port_policy)
+    check(
+        "N1",
+        "nothing listening on the port is a real classified connection failure, never fabricated",
+        result.state
+        in (
+            judge.LlmJudgeState.CONNECTION_REFUSED,
+            judge.LlmJudgeState.UNREACHABLE,
+        )
+        and result.passed is None
+        and result.detail == "gateway connection failed",
+    )
+
+
+def test_candidate_response_at_exactly_the_length_bound_is_accepted() -> None:
+    if _PORT == 0:
+        return
+    _reset_gateway()
+    result = _grade(_PORT, candidate_response="a" * judge.CANDIDATE_RESPONSE_MAX_LENGTH)
+    check(
+        "X1",
+        "a candidate response at exactly the length bound is accepted, not refused (off-by-one boundary)",
+        result.state is judge.LlmJudgeState.PASSED,
+    )
 
 
 def test_happy_path_fail_verdict() -> None:
@@ -730,7 +1070,9 @@ def test_not_json_content_is_not_fabricated_as_a_verdict() -> None:
     check(
         "N1",
         "non-JSON content is NOT_JSON, never a fabricated pass/fail",
-        result.state is judge.LlmJudgeState.NOT_JSON and result.passed is None,
+        result.state is judge.LlmJudgeState.NOT_JSON
+        and result.passed is None
+        and result.detail == "gateway response content did not parse as JSON",
     )
 
 
@@ -743,7 +1085,9 @@ def test_schema_violation_is_not_fabricated_as_a_verdict() -> None:
     check(
         "N1",
         "an unlisted verdict enum value is SCHEMA_VIOLATION, never fabricated",
-        result.state is judge.LlmJudgeState.SCHEMA_VIOLATION and result.passed is None,
+        result.state is judge.LlmJudgeState.SCHEMA_VIOLATION
+        and result.passed is None
+        and result.detail == "gateway response content did not validate against the verdict schema",
     )
 
     _reset_gateway()
@@ -777,7 +1121,9 @@ def test_unsupported_response_format_parameter_is_not_fabricated() -> None:
     check(
         "N1",
         "a 400 naming response_format is UNSUPPORTED_PARAMETER, never fabricated",
-        result.state is judge.LlmJudgeState.UNSUPPORTED_PARAMETER and result.passed is None,
+        result.state is judge.LlmJudgeState.UNSUPPORTED_PARAMETER
+        and result.passed is None
+        and result.detail == "gateway rejected an unsupported request parameter",
     )
 
 

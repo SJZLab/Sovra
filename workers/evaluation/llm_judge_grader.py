@@ -83,6 +83,7 @@ module adds no live FastAPI route or worker job.
 from __future__ import annotations
 
 import json
+import re
 import socket
 import ssl
 from dataclasses import dataclass
@@ -123,6 +124,7 @@ _DEFAULT_TIMEOUT_SECONDS = 15.0
 # Same restriction every sibling FTF-020x probe module already documents:
 # only the OpenBao-backed reference shape FTF-0202 actually resolves today.
 _SUPPORTED_SECRET_REF_PREFIX = "openbao://"
+_BLANK_PATTERN = re.compile(r"\s*")
 
 VERDICTS = ("pass", "fail")
 CANDIDATE_RESPONSE_MAX_LENGTH = 65536  # a bounded budget, not an unbounded inference call
@@ -215,7 +217,7 @@ class JudgeRubric:
             raise LlmJudgeGraderError("rubric_id must be a non-empty string")
         if isinstance(self.version, bool) or not isinstance(self.version, int) or self.version < 1:
             raise LlmJudgeGraderError("version must be an integer >= 1")
-        if not isinstance(self.instructions, str) or not self.instructions.strip():
+        if not isinstance(self.instructions, str) or _BLANK_PATTERN.fullmatch(self.instructions):
             raise LlmJudgeGraderError("instructions must be a non-blank string")
 
 
@@ -348,9 +350,10 @@ def _classify_guard_failure(exc: OutboundGuardError) -> LlmJudgeState:
     cause = exc.__cause__
     if isinstance(cause, socket.gaierror):
         return LlmJudgeState.DNS_FAILED
-    if isinstance(cause, ssl.SSLCertVerificationError):
-        return LlmJudgeState.CERTIFICATE_ERROR
     if isinstance(cause, ssl.SSLError):
+        # `ssl.SSLCertVerificationError` is already a subclass of
+        # `ssl.SSLError`, so a dedicated branch for it would return the
+        # exact same state -- nothing to distinguish.
         return LlmJudgeState.CERTIFICATE_ERROR
     if isinstance(cause, TimeoutError):
         return LlmJudgeState.TIMEOUT
@@ -419,6 +422,16 @@ def _resolve_inference_key(
     except SecretBackendError:
         return None, LlmJudgeState.SECRET_BACKEND_ERROR, "secret backend request failed"
     return key, None, ""
+
+
+def _state_for_verdict(verdict: str) -> LlmJudgeState:
+    """`verdict` has already passed `_validate_against_schema`'s own closed
+    `enum: ["pass", "fail"]` check by the time this is called, so it is
+    always exactly one of those two literal strings here -- this is still
+    an exact, case- and whitespace-sensitive comparison, never a normalized
+    one, the same "never silently coerce" rule every closed-vocabulary
+    check in this module already follows."""
+    return LlmJudgeState.PASSED if verdict == "pass" else LlmJudgeState.FAILED
 
 
 def _result(
@@ -629,8 +642,7 @@ def grade_llm_judge(
             detail="gateway response content did not validate against the verdict schema",
         )
 
-    verdict = decoded["verdict"]
-    state = LlmJudgeState.PASSED if verdict == "pass" else LlmJudgeState.FAILED
+    state = _state_for_verdict(decoded["verdict"])
     return _result(
         state,
         judged_at=judged_at,
