@@ -8939,10 +8939,10 @@ FTF-0616:
     undefined kappa is refused). The verdict carries one score per locked rubric criterion (exact ids,
     none missing, none extra); confidence and scores lie in [0, 1]. LlmJudgeResult records rubric id,
     version, requested and resolved model; a resolved model outside the approved set (or the candidate)
-    is MODEL_MISMATCH, never a verdict. Model output is strict JSON (no duplicate keys, NaN/Infinity or
+    is MODEL_MISMATCH, never a verdict. Round 5: a missing model echo is its own MODEL_MISMATCH; approved_judge_model_ids members must be exact non-empty str (LlmJudgeGraderError before any call); the echo must equal the requested judge id or an exact alias named by its CalibrationRecord.judge_model_aliases (an approved but uncalibrated echo is MODEL_MISMATCH). Model output is strict JSON (no duplicate keys, NaN/Infinity or
     overflow, no repair of truncated JSON, deep nesting is refused, not a crash); exactly one choice;
     only HTTP 200 is a response; a 400 is sent once. Fault -> RED table:
-    docs/certifications/submissions/2026-10-08T0500Z-FTF-0616.md.
+    docs/certifications/submissions/2026-10-08T0500Z-FTF-0616.md; round 5: docs/certifications/submissions/2026-10-08T1800Z-FTF-0616.md.
 
     BLOCKED_EXTERNAL (packet resource_gate, owner action): the clause "Call approved real judge through
     LiteLLM" is proven only against a local TLS gateway stand-in. It needs a real gateway key and an
@@ -9639,6 +9639,14 @@ FTF-0905:
     (a `str` subclass with a lying `__eq__` is refused). The earlier "empty ledger is vacuously
     complete" test was removed.
 
+    Round 3 (tests only, production unchanged): behavioural tests pin the DEFAULT plan (every
+    34-of-35 (sink, encoding) subset and every-sink-literal-only raise `IncompleteLeakCoverageError`),
+    a leak on the same key stays sticky under a later clean or found re-check, and `canary_id`
+    comes from its own `secrets.token_hex` draw (patched draw sequences; changing only one draw
+    changes only that field). Seven faults (default plan literal-only / two pairs / minus one pair,
+    re-check ignored, clean re-check clears a leak, id = reversed token, id = hex-complemented
+    token) each turn the probe RED; submission 2026-10-08T1900Z-FTF-0905.md.
+
     Disclosed: this module is a pure library with no live caller yet -- the producers that will
     actually place a canary in a real error path/trace/artifact (training/evaluation workers) are
     separate, dependency-gated tasks; proving_symbol stays blank, same precedent as
@@ -9668,15 +9676,28 @@ FTF-0907:
   proving_symbol: ''
   proving_test: ''
 FTF-0908:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: External provider denial
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-14; scenarios=Q23, Q25; deps=FTF-0203, FTF-0901, FTF-0902
-  proof_state: UNPROVEN
+  evidence_hash: 7ab132f7704339adb87c00aeec5bb19c1b12cb85
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-14; scenarios=Q23, Q25; deps=FTF-0203, FTF-0901,
+    FTF-0902. Path: `packages/security/external_provider_denial.py`. `authorize_external_provider`
+    composes FTF-0901 `effective_profile`/`enforce_effect` (training -> model surface, inference ->
+    serving surface): zero_egress/air_gapped deny every managed route
+    (`external_provider_profile_blocked`); standard needs a `ProviderApproval` for the exact
+    provider and purpose recording approver, account, region, retention and that purpose's terms
+    (`external_provider_not_approved`, `external_provider_purpose_not_approved`,
+    `external_provider_approval_incomplete`). A "private cloud account" label is data only and never
+    approves. The denial audit reason is content-free (profile, surface, purpose, code) and is
+    written through FTF-0104 `write_audit_event` when an AuditContext is given. Unknown, str-subclass
+    or unhashable values raise `external_provider_invalid_request`. No network call (counting
+    socket test shows zero). UNWIRED: no live caller yet (training/inference submit paths are later
+    tasks) -- blank proving_symbol, same precedent as FTF-0901/FTF-0902. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0908.py
 FTF-0909:
   certification_state: NONE
   criticality: MUST

@@ -850,6 +850,243 @@ def test_fault_injection_each_guard_is_load_bearing() -> None:
         )
 
 
+# --- Round 3 (FTF-0905-R3-*) ------------------------------------------------
+# The probe below is loaded from a *file path* (never the shared package), so a
+# mutant is a private temp copy: the real module is never rewritten and a
+# stale __pycache__ can never leak a mutant into another import.
+_R3_PROBE = r"""
+import importlib.util, sys
+from unittest import mock
+
+spec = importlib.util.spec_from_file_location("canary_under_test", sys.argv[1])
+gen = importlib.util.module_from_spec(spec)
+sys.modules["canary_under_test"] = gen
+spec.loader.exec_module(gen)
+
+PREFIX = "CANARY-DO-NOT-USE-"
+OPERATOR = "reviewer-1"
+
+def default_minus_one():
+    marker = gen.generate_canary()
+    pairs = [(s, e) for s in gen.SINKS for e in gen.ENCODINGS]
+    bad = []
+    for skipped in pairs:
+        ledger = gen.CanaryPlacementLedger()
+        for sink, encoding in pairs:
+            if (sink, encoding) == skipped:
+                continue
+            ledger.record_placement(gen.PlacementRecord(marker.canary_id, sink, encoding, OPERATOR))
+            ledger.record_checked(marker.canary_id, sink, encoding, found=False)
+        try:
+            ledger.assert_leak_test_complete()
+            bad.append(skipped)
+        except gen.IncompleteLeakCoverageError:
+            pass
+    if not bad and len(pairs) == 35:
+        return "refused-all-35"
+    return f"completed-with-{len(bad)}-missing"
+
+def literal_only():
+    marker = gen.generate_canary()
+    ledger = gen.CanaryPlacementLedger()
+    for sink in gen.SINKS:
+        ledger.record_placement(gen.PlacementRecord(marker.canary_id, sink, "literal", OPERATOR))
+        ledger.record_checked(marker.canary_id, sink, "literal", found=False)
+    try:
+        ledger.assert_leak_test_complete()
+    except gen.IncompleteLeakCoverageError:
+        return "refused"
+    return "completed"
+
+def _one_pair_ledger():
+    marker = gen.generate_canary()
+    ledger = gen.CanaryPlacementLedger([("trace", "literal")])
+    ledger.record_placement(gen.PlacementRecord(marker.canary_id, "trace", "literal", OPERATOR))
+    return ledger, marker
+
+def sticky(first_found, second_found):
+    ledger, marker = _one_pair_ledger()
+    for found in (first_found, second_found):
+        try:
+            ledger.record_checked(marker.canary_id, "trace", "literal", found=found)
+        except gen.CanaryLeakedError:
+            pass
+    try:
+        ledger.assert_leak_test_complete()
+    except gen.CanaryLeakedError:
+        return "leak-stays"
+    except gen.CanarySecretGeneratorError as exc:
+        return exc.code
+    return "completed"
+
+def draws(sequence):
+    calls = []
+    def fake(nbytes):
+        calls.append(nbytes)
+        return sequence[len(calls) - 1]
+    with mock.patch.object(gen.secrets, "token_hex", side_effect=fake):
+        marker = gen.generate_canary()
+    return marker, len(calls)
+
+A = "0123456789abcdef0123456789abcdef"
+B = "fedcba98765432100123456789abcdef"
+C = "13579bdf02468ace13579bdf02468ace"
+D = "a1b2c3d4e5f60718293a4b5c6d7e8f90"
+
+def id_only_draw():
+    base, n = draws([A, B])
+    moved, _ = draws([A, C])
+    ok = (
+        n == 2
+        and base.value == PREFIX + A
+        and base.canary_id == "canary-" + B
+        and moved.value == base.value
+        and moved.canary_id == "canary-" + C
+    )
+    return "id-follows-its-own-draw" if ok else "id-not-independent"
+
+def token_only_draw():
+    base, _ = draws([A, B])
+    moved, _ = draws([D, B])
+    ok = moved.canary_id == base.canary_id and moved.value == PREFIX + D
+    return "value-follows-its-own-draw" if ok else "token-leaks-into-id"
+
+print(default_minus_one())
+print(literal_only())
+print(sticky(False, True))
+print(sticky(True, False))
+print(id_only_draw())
+print(token_only_draw())
+"""
+
+R3_BASELINE = [
+    "refused-all-35",
+    "refused",
+    "leak-stays",
+    "leak-stays",
+    "id-follows-its-own-draw",
+    "value-follows-its-own-draw",
+    "",
+]
+
+
+def _r3_probe(module_path: Path) -> list[str]:
+    import os
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="ftf-0905-r3-pyc-") as pyc_dir:
+        env = {
+            **os.environ,
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONPYCACHEPREFIX": pyc_dir,
+        }
+        result = subprocess.run(
+            [sys.executable, "-B", "-c", _R3_PROBE, str(module_path)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env=env,
+            check=False,
+        )
+    if result.returncode != 0:
+        return ["ERROR:" + result.stderr[-300:]]
+    return result.stdout.split("\n")
+
+
+def test_r3_default_plan_sticky_leak_and_id_independence() -> None:
+    out = _r3_probe(MODULE)
+    check(
+        "FTF-0905-R3-1",
+        f"default plan refuses every 34-of-35 subset and literal-only ({out[:2]})",
+        out[:2] == R3_BASELINE[:2],
+    )
+    check(
+        "FTF-0905-R3-2",
+        f"a leak on one key stays sticky across a re-check ({out[2:4]})",
+        out[2:4] == R3_BASELINE[2:4],
+    )
+    check(
+        "FTF-0905-R3-3",
+        f"canary_id and token come from independent draws ({out[4:6]})",
+        out[4:6] == R3_BASELINE[4:6],
+    )
+    check("FTF-0905-R3-ALL", "whole R3 probe matches baseline", out == R3_BASELINE)
+
+
+_PLAN_LINE = r"plan = \{\(sink, encoding\) for sink in SINKS for encoding in ENCODINGS\}"
+_CHECKED_ADD = "        self._checked.add(key)\n        if found:\n"
+_ID_LINE = r'canary_id = f"canary-\{secrets\.token_hex\(_TOKEN_NBYTES\)\}"'
+
+# (description, regex, replacement, probe line index that must change)
+R3_MUTATIONS = [
+    (
+        "F6 default plan = every sink x literal only",
+        _PLAN_LINE,
+        'plan = {(sink, "literal") for sink in SINKS}',
+        1,
+    ),
+    (
+        "F7 default plan = two pairs",
+        _PLAN_LINE,
+        'plan = {("trace", "literal"), ("metric", "literal")}',
+        0,
+    ),
+    (
+        "F7b default plan minus one pair",
+        _PLAN_LINE,
+        "plan = {(sink, encoding) for sink in SINKS for encoding in ENCODINGS}"
+        ' - {("pipeline_history", "fragmented")}',
+        0,
+    ),
+    (
+        "F8 a re-check of an already-checked key is ignored",
+        re.escape(_CHECKED_ADD),
+        "        _seen = key in self._checked\n        self._checked.add(key)\n"
+        "        if found and not _seen:\n",
+        2,
+    ),
+    (
+        "F9 a clean re-check clears a recorded leak",
+        re.escape(_CHECKED_ADD),
+        "        self._checked.add(key)\n        if not found:\n"
+        "            self._leaked.discard(key)\n        if found:\n",
+        3,
+    ),
+    (
+        "F11 canary_id = reversed token",
+        _ID_LINE,
+        'canary_id = f"canary-{token[::-1]}"',
+        4,
+    ),
+    (
+        "F12 canary_id = hex-complemented token",
+        _ID_LINE,
+        'canary_id = "canary-" + "".join(format(15 - int(c, 16), "x") for c in token)',
+        4,
+    ),
+]
+
+
+def test_r3_each_fault_turns_the_probe_red() -> None:
+    import tempfile
+
+    text = MODULE.read_text(encoding="utf-8")
+    with tempfile.TemporaryDirectory(prefix="ftf-0905-r3-mutant-") as tmp:
+        for n, (description, pattern, replacement, index) in enumerate(R3_MUTATIONS):
+            mutated, count = re.subn(pattern, replacement.replace("\\", "\\\\"), text, count=1)
+            check("FTF-0905-R3-FAULT", f"mutation pattern matches once: {description}", count == 1)
+            if count != 1:
+                continue
+            path = Path(tmp) / f"mutant_{n}.py"
+            path.write_text(mutated, encoding="utf-8")
+            out = _r3_probe(path)
+            check(
+                "FTF-0905-R3-FAULT",
+                f"mutation turns the probe RED at line {index}: {description} ({out})",
+                len(out) == len(R3_BASELINE) and out[index] != R3_BASELINE[index],
+            )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
