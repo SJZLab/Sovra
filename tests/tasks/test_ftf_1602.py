@@ -2332,6 +2332,22 @@ def test_survivor_kills_passthrough_blob_retention_and_list_shape() -> None:
         "a typed error from the backup-blob read during restore is not re-wrapped",
         typed(err, "marker-from-store") and "storage request failed" not in str(err),
     )
+    # An absent blob is "missing" even when a GET of it would hang until the client times out.
+    absent = flaky_copy(target, "get_latest", TimeoutError("hung"), blob_key)
+    del absent.versions[blob_key]
+    check(
+        "FTF-1602-N1",
+        "an absent blob is reported missing without reading it (a GET could time out)",
+        typed(
+            outcome(verify_backup, absent, "b1", organization_id="o", now=NOW), "blob is missing"
+        ),
+    )
+    err = outcome(restore, absent, MemStore())
+    check(
+        "FTF-1602-N1",
+        "restore of a backup with an absent blob is refused as incomplete, writing nothing",
+        isinstance(err, BackupIncompleteError) and "blob is missing" in str(err),
+    )
     # The record read answering "not found" while one version is listed is unreadable.
     raced = flaky_copy(target, "get_latest", S3Error(404, "NoSuchKey", "gone"), "backup-record")
     check(

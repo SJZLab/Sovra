@@ -533,7 +533,7 @@ def test_backup_missing_a_listed_blob_is_refused_at_restore(client: S3Client) ->
     err = raises_backup_error(restore_backup, dst, clean, partial_id, organization_id="o")
     check(
         "FTF-1602-N2",
-        "a backup whose record lists a blob the backup lacks is refused at restore",
+        f"a backup whose record lists a blob the backup lacks is refused at restore (got {err!r})",
         isinstance(err, BackupIncompleteError) and "blob is missing" in str(err),
     )
     check(

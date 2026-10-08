@@ -595,6 +595,11 @@ def verify_backup(
         issues.append("record manifest_sha256 differs from the expected manifest")
     for digest, size in record.blobs:
         key = f"{base}/blobs/{digest}"
+        # Existence is decided by listing: a GET of an absent key can hang until the client
+        # times out on a real server, which would hide "missing" behind a storage failure.
+        if not _io(f"{digest}: blob", target.list_versions, key):
+            issues.append(f"{digest}: blob is missing")
+            continue
         try:
             body = target.get_latest(key)
         except S3Error:
