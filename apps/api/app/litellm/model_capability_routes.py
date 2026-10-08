@@ -255,6 +255,11 @@ def build_model_capability_router(
             # capability` only reads a reconciled model's `id` (module docstring), so there is
             # no FTF-0205 enrichment content to invent or to fetch for it. `metadata_status` is
             # carried through from discovery's own result, verbatim.
+            # `discovery.state is DiscoveryState.DISCOVERED` is already guaranteed by the
+            # check above, so `discovery.model_count` is always `len(discovery.models)`
+            # here (the only branch `discover_models` ever returns it from) -- read the
+            # models tuple's own length directly rather than carrying a `None`-check for
+            # a state this point in the code can never see.
             reconciliation = AliasReconciliationResult(
                 models=tuple(
                     ReconciledModel(
@@ -264,9 +269,7 @@ def build_model_capability_router(
                     )
                     for model in discovery.models
                 ),
-                model_count=discovery.model_count
-                if discovery.model_count is not None
-                else len(discovery.models),
+                model_count=len(discovery.models),
                 reconciled_at=datetime.now(UTC),
             )
 
