@@ -6,8 +6,20 @@ capabilities` route (FTF-0309-P1, Section 0.12/3.5/6/13/34/68).
 This is the first live caller of FTF-0307's `classify_training_capability`.
 It composes certified pieces only and never re-implements the classifier:
 
-- a fresh FTF-0204 `discover_models` plus FTF-0205/FTF-0207 reconciliation
-  (the `access` dimension);
+- a fresh FTF-0204 `discover_models` for the `access` dimension.
+  `discover_models` itself already makes two real gateway requests under
+  one secret resolution (`GET /v1/models`, then its own `GET /model/info`
+  to decide each alias's `metadata_status`) -- that pair is this route's
+  genuine floor, out of this task's own scope to change. The classifier
+  only ever reads a reconciled model's `id` (existence), never its
+  `metadata_status` or `fields` (FTF-0205/FTF-0207's own enrichment
+  content), so this route builds its `AliasReconciliationResult` directly
+  from `discovery.models` rather than also calling FTF-0205's
+  `enrich_visible_models` for metadata it never consumes -- that extra
+  round trip was a THIRD gateway request (a second `GET /model/info`) and
+  a second, independent secret resolution on top of `discover_models`'
+  own two. `discovered.metadata_status` is carried through as each
+  `ReconciledModel`'s own `metadata_status`, verbatim, never defaulted;
 - the FTF-0308-P1 explicit alias -> artifact mapping and its tenant-scoped
   `get_artifact` (the `capability` / artifact dimensions);
 - the latest FTF-0212 tool-call probe result the catalog holds for exactly
@@ -39,6 +51,7 @@ import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -51,16 +64,13 @@ if str(_REPO_ROOT) not in sys.path:
 
 from packages.litellm_client.alias_reconciliation import (  # noqa: E402
     AliasReconciliationResult,
-    reconcile_aliases,
+    ReconciledModel,
 )
 from packages.litellm_client.connection_validation import (  # noqa: E402
     default_connection_validation_policy,
 )
 from packages.litellm_client.real_tool_call_probe import ToolCallProbeResult  # noqa: E402
 from packages.litellm_client.secret_manager_integration import OpenBaoConfig  # noqa: E402
-from packages.litellm_client.v1_model_info_enrichment import (  # noqa: E402
-    enrich_visible_models,
-)
 from packages.litellm_client.v1_models_discovery import (  # noqa: E402
     DiscoveryState,
     ModelDiscoveryResult,
@@ -178,12 +188,11 @@ def build_model_capability_router(
         [], ConnectionPolicy
     ] = default_connection_validation_policy,
     discovery_function: Callable[..., ModelDiscoveryResult] = discover_models,
-    enrichment_function: Callable[..., Any] = enrich_visible_models,
     probe_lookup: ProbeLookup | None = None,
 ) -> APIRouter:
-    """`discovery_function`, `enrichment_function` and `probe_lookup` default
-    to the real implementations; they are seams so a test can supply results
-    without a live gateway or probe store."""
+    """`discovery_function` and `probe_lookup` default to the real
+    implementations; they are seams so a test can supply results without a
+    live gateway or probe store."""
     router = APIRouter()
     read_dependency = Depends(
         require_role(
@@ -242,14 +251,24 @@ def build_model_capability_router(
             if discovery.state is not DiscoveryState.DISCOVERED:
                 raise HTTPException(status_code=503, detail="gateway_unavailable")
             discovery_checked_at = discovery.checked_at
-            enrichment = enrichment_function(
-                base_url=base_url,
-                secret_ref=secret_ref,
-                secret_config=secret_manager_config_factory(),
-                policy=validation_policy_factory(),
-                visible_model_ids=tuple(model.id for model in discovery.models),
+            # Built from `discovery` alone, never a second gateway call: `classify_training_
+            # capability` only reads a reconciled model's `id` (module docstring), so there is
+            # no FTF-0205 enrichment content to invent or to fetch for it. `metadata_status` is
+            # carried through from discovery's own result, verbatim.
+            reconciliation = AliasReconciliationResult(
+                models=tuple(
+                    ReconciledModel(
+                        id=model.id,
+                        metadata_status=model.metadata_status,
+                        fields=MappingProxyType({}),
+                    )
+                    for model in discovery.models
+                ),
+                model_count=discovery.model_count
+                if discovery.model_count is not None
+                else len(discovery.models),
+                reconciled_at=datetime.now(UTC),
             )
-            reconciliation = reconcile_aliases(discovery=discovery, enrichment=enrichment)
 
         try:
             with tenant_scoped_session_for(session_factory, tenant_context) as session:
