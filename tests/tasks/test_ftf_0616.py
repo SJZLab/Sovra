@@ -1935,6 +1935,38 @@ def test_resolved_model_outside_the_approved_set_is_a_mismatch_never_a_verdict()
     )
 
 
+def test_echo_identity_comparison_is_exact_not_normalised() -> None:
+    if _PORT == 0:
+        return
+    # echo differs from the judge id only by case/whitespace: not the calibrated judge
+    for label, echo in (
+        ("whitespace+case variant", " JUDGE-MODEL-V1 "),
+        ("case variant", "Judge-Model-V1"),
+    ):
+        _reset_gateway()
+        _GATEWAY.body = _success_body(_verdict_json(), model=echo)
+        result = _grade(_PORT, approved_judge_model_ids=frozenset({"judge-model-v1", echo}))
+        check(
+            "R5-2",
+            f"an approved echo that is a {label} of the judge id is MODEL_MISMATCH",
+            result.state is judge.LlmJudgeState.MODEL_MISMATCH,
+        )
+    # the other direction: the judge id has capitals, the echo is its lowercase form
+    _reset_gateway()
+    _GATEWAY.body = _success_body(_verdict_json(), model="judge-v1")
+    result = _grade(
+        _PORT,
+        judge_model_id="Judge-V1",
+        approved_judge_model_ids=frozenset({"Judge-V1", "judge-v1"}),
+        calibration=_calibration(judge_model_id="Judge-V1"),
+    )
+    check(
+        "R5-2",
+        "a lowercase echo of a capitalised judge id is MODEL_MISMATCH",
+        result.state is judge.LlmJudgeState.MODEL_MISMATCH,
+    )
+
+
 def test_approved_set_members_must_be_non_empty_strings_before_any_call() -> None:
     for label, member in (
         ("None", None),
