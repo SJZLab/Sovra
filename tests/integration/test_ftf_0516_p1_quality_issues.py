@@ -1196,6 +1196,24 @@ def main() -> None:
         ),
         "fk_dataset_issue_resolutions_successor_lineage",
     )
+    expect(
+        "new_version with a successor but a NULL after-evidence is refused (NULL cannot pass the CHECK)",  # noqa: E501
+        raw_resolution(
+            aissue("a_w4"),
+            action="new_version",
+            excl="{}",
+            succ=attack_v2.id,
+            sver=attack_v2.version,
+            ssha=attack_v2.verified_sha256,
+            after=None,
+        ),
+        "ck_dataset_issue_resolutions_after_evidence",
+    )
+    expect(
+        "exclude with a NULL after-evidence is refused",
+        raw_resolution(aissue("a_w4"), after=None),
+        "ck_dataset_issue_resolutions_after_evidence",
+    )
     # positive controls: the same shapes, valid, are accepted (consumes the issue)
     ok, message = raw_resolution(aissue("a_w5"))
     check(f"positive control: a valid raw exclude resolution is accepted ({message[:120]})", ok)
@@ -1434,6 +1452,59 @@ def main() -> None:
             )
         ]
     check("with no tenant context the app role sees no quality rows", unset == [0, 0, 0])
+    # ================================================== concurrency: the report row lock
+    lock_ds = make_dataset("lock")
+    lock_report = record(
+        lock_ds,
+        _full_runs(clean=True),
+        extra=(_extra("lk_a", (0, 1)), _extra("lk_b", (0, 1))),
+    )
+    lock_a, lock_b = issue_of(lock_report, "lk_a"), issue_of(lock_report, "lk_b")
+    racer: dict[str, Any] = {}
+
+    def race() -> None:
+        racer["outcome"] = resolve(lock_ds, lock_report, [req(lock_b, "exclude")], version=0)
+
+    with tenant_scoped_session_for(factory, ctx1) as holder:
+        held = qstore.submit_resolutions(
+            holder,
+            ctx1,
+            project_id=p1_id,
+            dataset_id=lock_ds.id,
+            quality_report_id=lock_report.id,
+            expected_resolution_version=0,
+            idempotency_key=uuid.uuid4().hex,
+            resolutions=[req(lock_a, "exclude")],
+            include_held_out=False,
+            actor=actor_ml,
+        )
+        thread = threading.Thread(target=race, daemon=True)
+        thread.start()
+        time.sleep(1.5)
+        still_waiting = thread.is_alive()
+    thread.join(15)
+    check(
+        "a second request for the same report waits on the row lock while the first is open",
+        still_waiting and held.report.resolution_version == 1,
+    )
+    _, raced_error = racer.get("outcome", (None, None))
+    check(
+        f"... then sees the new version and is report_version_conflict, not a 500 ({raced_error!r})",  # noqa: E501
+        refused(raced_error, "report_version_conflict"),
+    )
+    check(
+        "exactly one of the two concurrent decisions was recorded",
+        int(
+            scalar(
+                "SELECT count(*) FROM dataset_issue_resolutions WHERE quality_report_id=:r",
+                r=lock_report.id,
+            )
+            or 0
+        )
+        == 1
+        and report_version(lock_report) == 1,
+    )
+
     # ===================================================================== routes
     org_ids = {"org1": org1_id, "org2": org2_id}
     fixture = _Fixture(org_ids)
