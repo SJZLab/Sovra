@@ -301,13 +301,16 @@ def test_fragment_canary_fail_closed() -> None:
     )
 
 
+_PLAN = (("trace", "literal"), ("metric", "base64"))
+
+
 def _placed_ledger() -> tuple[CanaryPlacementLedger, CanaryMarker, CanaryMarker]:
-    ledger = CanaryPlacementLedger()
+    ledger = CanaryPlacementLedger(_PLAN)
     a = generate_canary()
     b = generate_canary()
-    ledger.record_placement(PlacementRecord(a.canary_id, "trace", "literal", "reviewer-1"))
-    ledger.record_placement(PlacementRecord(a.canary_id, "metric", "base64", "reviewer-1"))
-    ledger.record_placement(PlacementRecord(b.canary_id, "artifact", "hex", "reviewer-2"))
+    for marker in (a, b):
+        for sink, encoding in _PLAN:
+            ledger.record_placement(PlacementRecord(marker.canary_id, sink, encoding, "reviewer-1"))
     return ledger, a, b
 
 
@@ -318,20 +321,15 @@ def test_ledger_requires_every_placement_checked_before_complete() -> None:
         "asserting complete before any check is refused",
         _raises(IncompleteLeakCoverageError, ledger.assert_leak_test_complete),
     )
-    ledger.record_checked(a.canary_id, "trace", "literal", found=False)
-    check(
-        "FTF-0905-N2",
-        "asserting complete after checking only 1 of 3 placements is still refused "
-        "(the absence at 'trace' is not proof the other two sinks are clean)",
-        _raises(IncompleteLeakCoverageError, ledger.assert_leak_test_complete),
-    )
-    ledger.record_checked(a.canary_id, "metric", "base64", found=False)
-    check(
-        "FTF-0905-N2",
-        "asserting complete after 2 of 3 is still refused",
-        _raises(IncompleteLeakCoverageError, ledger.assert_leak_test_complete),
-    )
-    ledger.record_checked(b.canary_id, "artifact", "hex", found=False)
+    steps = [(a, "trace", "literal"), (a, "metric", "base64"), (b, "trace", "literal")]
+    for marker, sink, encoding in steps:
+        ledger.record_checked(marker.canary_id, sink, encoding, found=False)
+        check(
+            "FTF-0905-N2",
+            f"asserting complete with an unchecked placement left ({sink}) is still refused",
+            _raises(IncompleteLeakCoverageError, ledger.assert_leak_test_complete),
+        )
+    ledger.record_checked(b.canary_id, "metric", "base64", found=False)
     check(
         "FTF-0905-N2",
         "asserting complete after every placement was checked, all clean, succeeds",
@@ -452,11 +450,170 @@ def test_placement_record_fail_closed() -> None:
     )
 
 
-def test_empty_ledger_is_vacuously_complete() -> None:
+def test_confirmed_leak_stays_recorded_after_the_error_is_caught() -> None:
+    ledger, a, b = _placed_ledger()
+    try:
+        ledger.record_checked(a.canary_id, "trace", "literal", found=True)
+    except CanaryLeakedError:
+        pass
+    for marker, sink, encoding in (
+        (a, "metric", "base64"),
+        (b, "trace", "literal"),
+        (b, "metric", "base64"),
+    ):
+        ledger.record_checked(marker.canary_id, sink, encoding, found=False)
     check(
-        "FTF-0905-A1",
-        "a ledger with nothing placed is vacuously complete (nothing to assert unsafe)",
-        _no_raise(CanaryPlacementLedger().assert_leak_test_complete),
+        "FTF-0905-R2-1",
+        "every other sink clean after a caught leak: complete still raises CanaryLeakedError",
+        _raises(CanaryLeakedError, ledger.assert_leak_test_complete),
+    )
+
+
+def test_complete_requires_something_checked_and_the_declared_plan() -> None:
+    check(
+        "FTF-0905-R2-2",
+        "an empty ledger is never complete (nothing checked proves nothing)",
+        _raises(IncompleteLeakCoverageError, CanaryPlacementLedger().assert_leak_test_complete),
+    )
+    ledger = CanaryPlacementLedger()
+    marker = generate_canary()
+    ledger.record_placement(PlacementRecord(marker.canary_id, "trace", "literal", "reviewer-1"))
+    ledger.record_checked(marker.canary_id, "trace", "literal", found=False)
+    check(
+        "FTF-0905-R2-2",
+        "one placement + one clean check does not satisfy the default full plan",
+        _raises(IncompleteLeakCoverageError, ledger.assert_leak_test_complete),
+    )
+    full = CanaryPlacementLedger()
+    for sink in SINKS:
+        for encoding in ENCODINGS:
+            full.record_placement(PlacementRecord(marker.canary_id, sink, encoding, "reviewer-1"))
+            full.record_checked(marker.canary_id, sink, encoding, found=False)
+    check(
+        "FTF-0905-R2-2",
+        "the full default plan, every pair placed and checked clean, completes",
+        _no_raise(full.assert_leak_test_complete),
+    )
+    other = generate_canary()
+    full.record_placement(PlacementRecord(other.canary_id, "trace", "literal", "reviewer-1"))
+    full.record_checked(other.canary_id, "trace", "literal", found=False)
+    check(
+        "FTF-0905-R2-2",
+        "a second canary placed at only one pair is short of the plan",
+        _raises(IncompleteLeakCoverageError, full.assert_leak_test_complete),
+    )
+    bad: object
+    for bad in ([], (), "trace", [("trace",)], [("nope", "literal")], [["trace", "literal"]], [[]]):
+        check(
+            "FTF-0905-R2-2",
+            f"an invalid declared plan {bad!r} is refused",
+            _raises(InvalidCanaryRequestError, CanaryPlacementLedger, bad),
+        )
+
+
+def test_declared_plan_must_be_a_collection_of_pairs() -> None:
+    for bad_plan in (5, 1.5, object(), "trace", b"xy"):
+        try:
+            CanaryPlacementLedger(bad_plan)  # type: ignore[arg-type]
+            outcome = "allowed"
+        except InvalidCanaryRequestError as exc:
+            outcome = str(exc)
+        except Exception as exc:
+            outcome = "ERROR:" + type(exc).__name__
+        check(
+            "FTF-0905-R2-2",
+            f"a non-collection / text plan {bad_plan!r} is refused with the typed collection error",
+            "collection of pairs" in outcome,
+        )
+
+
+def test_canary_id_is_independent_of_the_token_and_entropy_is_pinned() -> None:
+    prefix = "CANARY-DO-NOT-USE-"
+    markers = [generate_canary() for _ in range(50)]
+    for m in markers:
+        token = m.value[len(prefix) :]
+        check(
+            "FTF-0905-R2-3",
+            "the canary id contains no 16+ char run of the token",
+            all(token[i : i + 16] not in m.canary_id for i in range(len(token) - 15)),
+        )
+        check(
+            "FTF-0905-R2-4",
+            "the token carries at least 128 bits (>= 32 hex chars)",
+            len(token) >= 32,
+        )
+    check(
+        "FTF-0905-R2-3",
+        "ids are distinct from token-derived ids and unique across 50 markers",
+        len({m.canary_id for m in markers}) == 50,
+    )
+
+
+def test_error_text_never_carries_the_token_or_a_real_secret() -> None:
+    marker = generate_canary()
+    token = marker.value[len("CANARY-DO-NOT-USE-") :]
+    ledger = CanaryPlacementLedger(_PLAN)
+    ledger.record_placement(PlacementRecord(marker.canary_id, "trace", "literal", "reviewer-1"))
+    try:
+        ledger.record_checked(marker.canary_id, "trace", "literal", found=True)
+        text = ""
+    except CanaryLeakedError as exc:
+        text = str(exc) + repr(exc.args)
+    check(
+        "FTF-0905-R2-3",
+        "CanaryLeakedError is raised and its text carries neither the token nor the value",
+        text != "" and token not in text and marker.value not in text,
+    )
+    try:
+        generate_canary_collision = "CANARY-DO-NOT-USE-REALSECRET99"
+        _reject_if_known_real_secret(generate_canary_collision, {generate_canary_collision})
+        text = ""
+    except RealSecretCollisionError as exc:
+        text = str(exc) + repr(exc.args)
+    check(
+        "FTF-0905-R2-3",
+        "the collision error is raised and does not echo the secret",
+        text != "" and "REALSECRET99" not in text,
+    )
+
+
+class _LyingStr(str):
+    def __eq__(self, other: object) -> bool:
+        return True
+
+    def __hash__(self) -> int:
+        return hash("trace")
+
+
+def test_record_checked_input_types_are_exact_and_typed() -> None:
+    marker = generate_canary()
+    ledger = CanaryPlacementLedger(_PLAN)
+    ledger.record_placement(PlacementRecord(marker.canary_id, "trace", "literal", "reviewer-1"))
+    bad_id: object
+    for bad_id in ([], {}, 7, None):
+        check(
+            "FTF-0905-R2-5",
+            f"an unhashable/non-str canary id {bad_id!r} raises the module's own error",
+            _raises(
+                InvalidCanaryRequestError,
+                ledger.record_checked,
+                bad_id,
+                "trace",
+                "literal",
+                found=False,
+            ),
+        )
+    check(
+        "FTF-0905-R2-5",
+        "a str subclass whose __eq__ is always True is not accepted as a sink",
+        _raises(
+            InvalidCanaryRequestError,
+            ledger.record_checked,
+            marker.canary_id,
+            _LyingStr("nope"),
+            "literal",
+            found=False,
+        ),
     )
 
 
@@ -503,9 +660,12 @@ def found_leak():
     ledger.record_checked(marker.canary_id, "trace", "literal", found=True)
 
 def incomplete_coverage():
-    ledger = CanaryPlacementLedger()
+    ledger = CanaryPlacementLedger([("trace", "literal")])
     record = PlacementRecord(marker.canary_id, "trace", "literal", "reviewer-1")
     ledger.record_placement(record)
+    other = PlacementRecord(marker.canary_id, "metric", "literal", "reviewer-1")
+    ledger.record_placement(other)
+    ledger.record_checked(marker.canary_id, "trace", "literal", found=False)
     ledger.assert_leak_test_complete()
 
 def bad_fragment_parts():
@@ -513,6 +673,53 @@ def bad_fragment_parts():
 
 def bad_authorized_by():
     PlacementRecord(marker.canary_id, "trace", "literal", "")
+
+class LyingStr(str):
+    def __eq__(self, other):
+        return True
+    def __hash__(self):
+        return hash("trace")
+
+PLAN = [("trace", "literal")]
+
+def swallowed_leak():
+    ledger = CanaryPlacementLedger(PLAN)
+    ledger.record_placement(PlacementRecord(marker.canary_id, "trace", "literal", "reviewer-1"))
+    try:
+        ledger.record_checked(marker.canary_id, "trace", "literal", found=True)
+    except CanarySecretGeneratorError:
+        pass
+    ledger.assert_leak_test_complete()
+
+def empty_ledger():
+    CanaryPlacementLedger().assert_leak_test_complete()
+
+def short_of_plan():
+    ledger = CanaryPlacementLedger()
+    ledger.record_placement(PlacementRecord(marker.canary_id, "trace", "literal", "reviewer-1"))
+    ledger.record_checked(marker.canary_id, "trace", "literal", found=False)
+    ledger.assert_leak_test_complete()
+
+def unhashable_id():
+    ledger = CanaryPlacementLedger(PLAN)
+    ledger.record_checked([], "trace", "literal", found=False)
+
+def lying_sink():
+    ledger = CanaryPlacementLedger(PLAN)
+    ledger.record_placement(PlacementRecord(marker.canary_id, "trace", "literal", "reviewer-1"))
+    ledger.record_checked(marker.canary_id, LyingStr("nope"), "literal", found=False)
+
+def collision_text():
+    try:
+        secret = "CANARY-DO-NOT-USE-REALSECRET99"
+        _reject_if_known_real_secret(secret, {{secret}})
+    except CanarySecretGeneratorError as exc:
+        return "LEAK" if "REALSECRET99" in str(exc) + repr(exc.args) else "clean"
+    return "allowed"
+
+PREFIX = "CANARY-DO-NOT-USE-"
+token = marker.value[len(PREFIX):]
+derived = any(token[i:i + 16] in marker.canary_id for i in range(len(token) - 15))
 
 print(outcome(bad_sink_placement))
 print(outcome(bad_prefix_marker))
@@ -522,6 +729,14 @@ print(outcome(found_leak))
 print(outcome(incomplete_coverage))
 print(outcome(bad_fragment_parts))
 print(outcome(bad_authorized_by))
+print(outcome(swallowed_leak))
+print(outcome(empty_ledger))
+print(outcome(short_of_plan))
+print(outcome(unhashable_id))
+print(outcome(lying_sink))
+print(collision_text())
+print("derived" if derived else "independent")
+print("weak" if len(token) < 32 else "strong")
 """
 
 
@@ -555,6 +770,14 @@ BASELINE = [
     "canary_incomplete_leak_coverage",  # incomplete coverage
     "canary_invalid_request",  # bad fragment parts
     "canary_invalid_request",  # bad authorized_by
+    "canary_leaked",  # a caught leak stays recorded
+    "canary_incomplete_leak_coverage",  # empty ledger
+    "canary_incomplete_leak_coverage",  # short of the declared plan
+    "canary_invalid_request",  # unhashable canary id
+    "canary_invalid_request",  # lying str subclass as sink
+    "clean",  # collision text does not echo the secret
+    "independent",  # canary id not derived from the token
+    "strong",  # >= 128-bit token
     "",
 ]
 
@@ -562,7 +785,7 @@ BASELINE = [
 MUTATIONS = [
     (
         "membership check removed (_member always passes)",
-        r"if not isinstance\(value, str\) or value not in allowed:",
+        r"if type\(value\) is not str or value not in allowed:",
         "if False:",
         0,
     ),
@@ -586,8 +809,8 @@ MUTATIONS = [
     ),
     (
         "found-leak raise removed (a real leak is silently swallowed)",
-        r"        if found:\n            raise CanaryLeakedError\(",
-        "        if False:\n            raise CanaryLeakedError(",
+        r"        if found:\n",
+        "        if False:\n",
         4,
     ),
     (
