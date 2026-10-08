@@ -292,11 +292,13 @@ def emit_event(kind: object, fields: object) -> TelemetryEvent:
         if type(name) is not str or name not in schema:
             raise DisallowedFieldError("field is not permitted on this event kind")
         given[name] = value
-    validated: dict[str, object] = {}
-    # Schema order, whatever the caller's order: same input, same event.
     for name, spec in schema.items():
-        if name in given:
-            validated[name] = _validate_field(name, spec, given[name])
-        elif spec.required:
+        if spec.required and name not in given:
             raise DisallowedFieldError(f"required field {name!r} is missing on this event kind")
+    # Schema order, whatever the caller's order: same input, same event.
+    validated = {
+        name: _validate_field(name, spec, given[name])
+        for name, spec in schema.items()
+        if name in given
+    }
     return TelemetryEvent(kind, MappingProxyType(validated))

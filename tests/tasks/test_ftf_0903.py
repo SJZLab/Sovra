@@ -676,6 +676,30 @@ def test_content_ref_is_revalidated_at_emit() -> None:
             {**wf, "failure_ref": _Skip("bad id", "key-1")},
         ),
     )
+
+    class _ValidSub(ContentRef):
+        pass
+
+    check(
+        "FTF-0903-R2-3",
+        "a ContentRef subclass, even with valid ids, is refused (exact type)",
+        _raises(
+            ContentRefusedError,
+            emit_event,
+            "workflow",
+            {**wf, "failure_ref": _ValidSub("blob-1", "key-1")},
+        ),
+    )
+
+    class _DuckRef:
+        ref_id = "blob-1"
+        encryption_key_id = "key-1"
+
+    check(
+        "FTF-0903-R2-3",
+        "a duck-typed object with valid ref_id/encryption_key_id is not a ContentRef",
+        _raises(ContentRefusedError, emit_event, "workflow", {**wf, "failure_ref": _DuckRef()}),
+    )
     mutated = ContentRef("blob-1", "key-1")
     object.__setattr__(mutated, "encryption_key_id", "x" * 500)
     check(
@@ -916,8 +940,8 @@ MUTATIONS = [
     ),
     (
         "required-field check removed",
-        r"elif spec\.required:",
-        "elif False:",
+        r"if spec\.required and name not in given:",
+        "if False:",
         2,
     ),
     (
