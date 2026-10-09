@@ -9595,10 +9595,10 @@ FTF-0902:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0902.py
 FTF-0903:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Content-free telemetry
-  evidence_hash: e90e40fe3bcfea78f6399fdeb9fa284427666ea9
+  evidence_hash: c003010bb0f70ea4270316c02142817734f617b5
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0006, FTF-0901,
@@ -9647,7 +9647,7 @@ FTF-0903:
     own case LEAK while the other three stay clean; a negative test confirms today's unmutated
     production stays clean/meta-free on all four paths. Production unchanged (no new leak existed
     on str(exc)/repr(exc.args); these four are new leak channels the old checks could not see).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0903.py
 FTF-0904:

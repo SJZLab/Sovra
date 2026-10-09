@@ -10805,3 +10805,29 @@ producer session matches the certifier.
   mutable payload tag is deleted or the run is tampered with before completion, so a drifted run resolves SYNCED (D5);
   a newline/CRLF token leaks through an uncaught ValueError; record() rewrites resolved outbox rows. Notes overclaim and
   evidence_hash is stale (Law 2).
+
+## 2026-10-09T14:06Z — CERTIFIED: FTF-0903; RETURNED: FTF-0309 (r2), FTF-R004-P2 (r2), FTF-1703 (r6), FTF-H010-P1 (r4), FTF-0516-P1 (r5)
+Independent verifiers on the merge commits; CI on each PR head green (ci-verdict success, proving-test log lines read
+through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --strict, data_exposure OK).
+- **FTF-0903: CERTIFIED** (round 8; tests only; PR #685, merge c003010bb0f70ea4270316c02142817734f617b5, head 1261b72).
+  Session comparison: producer session_01DbtUsTabsqwV6ZUcmn153B ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, which
+  appears nowhere on the PR. CI: ci-verdict 113817955863; gate job 113814241100 "FTF-0903 Content-free telemetry tests:
+  all checks passed". 4 local runs; 130 probes (every missing-required field with markers in all other fields,
+  8x600 threaded refusals) clean; 96 faults, 94 RED (the whole missing-required class now RED); the 2 GREEN are
+  hand-picked log-capture bypasses at covered sites, non-blocking under the 0c ruling. Production c83da8db unchanged
+  since round 3. UNWIRED (proving_symbol blank). Optional: capture sys.__stderr__/fd 2; wrap a raising fields.items().
+- **FTF-0309: RETURNED** (round 1 → 2; #683, e792efc836880e512e29f3dca379246d8d980fe7). Reproduced negative acceptance:
+  Train stays enabled and onTrain fires for a model never checked (prop switch, late response, mismatched echo); a
+  string license flag and a missing declared VRAM minimum enable Train; inferred per-row dates; a simulated "Training
+  requested" with no handler (Law 11). The UI reads fields absent from the frozen contract.
+- **FTF-R004-P2: RETURNED** (round 1 → 2; #677, 6dfdb1600e03256e1abbc47f5e59bb5048709f6b). Reproduced: remote media
+  inside a function_call_output array, and unscreened top-level keys (mcp_servers, prompt, search_parameters, container,
+  extra_body.tools) allowed. Ruling: top-level allow-list; the stricter data:-prefix check is accepted.
+- **FTF-1703: RETURNED** (round 5 → 6; #682, f919b766d6b643cf496c61509083ac0e76d4af30). Reproduced: a str-subclass key
+  in the instance dict re-binds index/trace_id after verification (an unreviewed trace approved) and swallows a
+  conflicting rejection. Ruling: plain-JSON input only; the builder constructs its own objects.
+- **FTF-H010-P1: RETURNED** (round 3 → 4; tests only; #686, 784a41623d01353cdeadb9359845a8d57322a622). Production correct.
+  GREEN: an origin/import-kind widening, sha256 patterns with space/dash and a pattern rejecting every valid hash,
+  validating→queued. Ruling: complete constraint and transition tables.
+- **FTF-0516-P1: RETURNED** (round 4 → 5; tests only; #688, a32be8b37784c73999c095b8eca23ae0e49cd44a). Production
+  correct. GREEN: reason length bounds (1999, 200, byte-counted, min 3). Ruling: one boundary table per text input.
