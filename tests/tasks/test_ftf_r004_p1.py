@@ -1281,6 +1281,19 @@ def test_captured_settings_are_deep_copied() -> None:
         and settings["stop"] == ["a", "b"]
         and settings["response_format"] == {"type": "json"},
     )
+    # dict/list are already rebuilt fresh by the recursive scrub, so they
+    # cannot expose a missing leaf-level deepcopy. A genuinely mutable
+    # *leaf* (not a dict/list/tuple) is the only thing that can: a
+    # bytearray is returned as-is without copy.deepcopy, so mutating the
+    # caller's original object would otherwise mutate the captured one too.
+    mutable_leaf_body: dict[str, Any] = {"logit_bias": bytearray(b"abc")}
+    leaf_settings = capture_effective_generation_settings(mutable_leaf_body)
+    mutable_leaf_body["logit_bias"].extend(b"xyz")
+    check(
+        CID,
+        "a mutable non-container leaf (bytearray) is deep-copied, not returned by reference",
+        leaf_settings["logit_bias"] == bytearray(b"abc"),
+    )
 
 
 def main() -> int:
