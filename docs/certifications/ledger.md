@@ -10762,3 +10762,11 @@ producer session matches the certifier.
   context, so a second denial raises a raw RLS error with no audit row and the caller's later reads return 0 tenant
   rows; a caller's pending row is committed by the denial.
 - **Queued:** FTF-0309 UI (Backlog), gated on every dimension known, sufficient tested VRAM, trainable and access granted.
+
+## 2026-10-09T11:38Z — RETURNED: FTF-0616 (r8)
+- **FTF-0616: RETURNED** (round 7 → 8; tests only; #669, ecc0186581813e14cfd5213e083fbce93b818048). Independent
+  verifier: CI on head 26d9a5e green (live TLS path ran); gates clean; whole-file mutation 324/324. Production correct:
+  0 of 3377 generated Unicode echo variants accepted. R6f and R6m RED. GREEN: 44 of 114 normaliser faults (edge
+  zero-width/BOM strip, CR/LF, NBSP, U+3000, U+2011, and configured-side-only normalisation), each letting an approved
+  but uncalibrated id produce a verdict; the judge-id variant loop runs the pass verdict only. Ruling: round 8 replaces
+  the fixed list with property-generated variants and is the last exactness round.
