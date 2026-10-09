@@ -14,8 +14,12 @@ Rules:
 * `standard` (Section 11.3) allows a managed provider only with an explicit
   `ProviderApproval` for that exact provider *and* that exact purpose.
   Section 11.2: the approval must record provider, account, region, the
-  terms for the requested purpose, retention and permitted purposes; any
-  missing field is a denial (`external_provider_approval_incomplete`).
+  applicable agreement, subprocessors, deletion behaviour, the terms for the
+  requested purpose, retention and permitted purposes; any missing field is a
+  denial (`external_provider_approval_incomplete`). The approval's account and
+  region are matched exactly against the request's target account and region;
+  any difference (or an absent target) is a denial
+  (`external_provider_approval_mismatch`).
   Training and inference are separate purposes: an inference approval never
   authorizes training (`external_provider_purpose_not_approved`).
 * A label such as "private cloud account" (`ExternalProviderRequest.
@@ -29,12 +33,23 @@ Rules:
 The audit reason is content-free: profile, surface, purpose and code only --
 never a host, path, prompt, provider or account text. When an `AuditContext`
 is given the denial is written through the certified FTF-0104
-`write_audit_event` in the caller's transaction; otherwise the raised error
-still carries the same `AuditReason`.
+`write_audit_event` and then *committed before the error is raised*: the
+denial is itself the event to audit (no domain mutation exists to be
+rolled back with), and an enclosing `tenant_scoped_session` rolls back on
+the propagated exception, which would otherwise discard the denial's own
+audit row. The `AuditContext` is validated up front (typed
+`external_provider_invalid_request`), so a malformed context can never
+surface as a raw `AttributeError` or `AuditEventValidationError`. Callers
+pass a session on which they have no uncommitted work, because the commit
+is the session's. Without an `AuditContext` the raised error still carries
+the same `AuditReason`.
 
 Disclosure: this module is a pure decision library with no live caller yet
 (the training and inference submit paths that will call it are separate,
-dependency-gated tasks). It makes no network call.
+dependency-gated tasks). It makes no network call. UNWIRED until persisted
+approvals exist: a `ProviderApproval` is not yet bound to a tenant, and its
+`approved_by` is not yet a verified principal -- both arrive with the
+approval store.
 """
 
 from __future__ import annotations
@@ -43,7 +58,12 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from app.auth.audit_event_writer import write_audit_event
+from app.auth.audit_event_writer import (
+    ALLOWED_ACTOR_TYPES,
+    AuditEventValidationError,
+    _validate_identifier,
+    write_audit_event,
+)
 from packages.security.security_profile_enforcement import (
     Destination,
     EffectRequest,
@@ -156,6 +176,9 @@ class ProviderApproval:
     retention_terms: str | None = None
     training_terms: str | None = None
     inference_terms: str | None = None
+    applicable_agreement: str | None = None
+    subprocessors: str | None = None
+    deletion_behaviour: str | None = None
 
     def __post_init__(self) -> None:
         _exact_text(self.provider, "approval provider")
@@ -170,6 +193,9 @@ class ProviderApproval:
             "retention_terms",
             "training_terms",
             "inference_terms",
+            "applicable_agreement",
+            "subprocessors",
+            "deletion_behaviour",
         ):
             _optional_text(getattr(self, name), f"approval {name}")
 
@@ -183,6 +209,10 @@ class ExternalProviderRequest:
     job_profile: str | None = None
     # Descriptive label only (e.g. "private cloud account"); never an approval.
     account_label: str | None = None
+    # The account and region the request would actually be sent to; the
+    # approval's own account and region must equal these exactly.
+    target_account: str | None = None
+    target_region: str | None = None
 
 
 @dataclass(frozen=True)
@@ -220,10 +250,15 @@ def _approval_gap(
             approval.account,
             approval.region,
             approval.retention_terms,
+            approval.applicable_agreement,
+            approval.subprocessors,
+            approval.deletion_behaviour,
             terms,
         )
     ):
         return "external_provider_approval_incomplete"
+    if approval.account != request.target_account or approval.region != request.target_region:
+        return "external_provider_approval_mismatch"
     return None
 
 
@@ -237,7 +272,32 @@ def _validate(request: object) -> ExternalProviderRequest:
     if request.job_profile is not None:
         _exact_member(request.job_profile, _PROFILES, "job profile")
     _optional_text(request.account_label, "account label")
+    _optional_text(request.target_account, "target account")
+    _optional_text(request.target_region, "target region")
     return request
+
+
+def _validate_audit(audit: object) -> AuditContext:
+    """Typed refusal of a malformed AuditContext before any decision is made."""
+    if not isinstance(audit, AuditContext):
+        raise InvalidProviderRequestError("audit must be an AuditContext")
+    if audit.session is None or not callable(getattr(audit.session, "add", None)):
+        raise InvalidProviderRequestError("audit session must be a database session")
+    if not callable(getattr(audit.session, "commit", None)):
+        raise InvalidProviderRequestError("audit session must be a database session")
+    if type(audit.organization_id) is not uuid.UUID:
+        raise InvalidProviderRequestError("audit organization_id must be a uuid.UUID")
+    if type(audit.actor_type) is not str or audit.actor_type not in ALLOWED_ACTOR_TYPES:
+        raise InvalidProviderRequestError(f"audit actor_type must be one of {ALLOWED_ACTOR_TYPES}")
+    for name in ("actor_id", "request_id"):
+        value = getattr(audit, name)
+        try:
+            if type(value) is not str:
+                raise AuditEventValidationError(name)
+            _validate_identifier(value, name)
+        except AuditEventValidationError:
+            raise InvalidProviderRequestError(f"audit {name} must be a safe identifier") from None
+    return audit
 
 
 def _deny(
@@ -260,6 +320,9 @@ def _deny(
                 "code": reason.code,
             },
         )
+        # The denial is the audited event itself: commit it now, before the
+        # caller's tenant-scoped session rolls back on the propagated error.
+        audit.session.commit()
     return ExternalProviderDeniedError(code, reason)
 
 
@@ -272,8 +335,8 @@ def authorize_external_provider(
     request = _validate(request)
     if approval is not None and not isinstance(approval, ProviderApproval):
         raise InvalidProviderRequestError("approval must be a ProviderApproval")
-    if audit is not None and not isinstance(audit, AuditContext):
-        raise InvalidProviderRequestError("audit must be an AuditContext")
+    if audit is not None:
+        audit = _validate_audit(audit)
     surface = PURPOSE_SURFACE[request.purpose]
     profile = effective_profile(
         request.organization_profile, request.project_profile, request.job_profile
