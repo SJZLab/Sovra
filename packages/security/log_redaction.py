@@ -53,8 +53,11 @@ recognised -- that is what the canary-secret ledger and the content-free
 telemetry schemas are for. Key names are matched by substring, so benign keys
 such as `max_tokens` are redacted too (over-redaction by design). Records that bypass
 the logger (`logging.makeLogRecord`) are covered only at a handler with
-`attach_sink`. Detection runs in time linear in the input (key rule is possessive;
-percent-detection does at most `log2(tokens)` scans per round). This module is a
+`attach_sink`. Detection runs in time linear in the input: the key rule is
+possessive; percent-encoded-secret candidates are found by splitting on whitespace
+once (not by backtracking a greedy `\S*` at every character position, which was
+quadratic on a long run with no closing hex pair), and each of the bounded cut
+rounds then does at most `log2(candidates)` `_reveals_secret` probes. This module is a
 pure library: no live logging configuration installs it yet; that wiring is a
 separate dependency-gated task, disclosed in docs/spec-matrix.yaml with a blank
 `proving_symbol`.
@@ -239,7 +242,8 @@ def _scan(text: str, layers: int) -> str:
     return _BASE64_RUN.sub(_wrap, text)
 
 
-_PERCENT_TOKEN = re.compile(r"\S*%[0-9A-Fa-f]{2}")
+_PERCENT_IN_TOKEN = re.compile(r"%[0-9A-Fa-f]{2}")
+_NON_SPACE_RUN = re.compile(r"\S+")
 _MAX_CUT_ROUNDS = 16
 
 
@@ -253,24 +257,49 @@ def _reveals_secret(segment: str) -> bool:
     return False
 
 
+def _percent_token_starts(line: str) -> list[tuple[int, int | None]]:
+    """(start, widened_start) for every maximal non-whitespace run that itself contains a
+    percent-encoded byte (`%XX`) -- the same set of runs the old `\\S*%[0-9A-Fa-f]{2}` scan
+    found, just linear: splitting on whitespace once and searching each disjoint run, instead of
+    backtracking a greedy `\\S*` at every character position (quadratic on a long run with no
+    closing hex pair, e.g. `"a" * n + "%"`). `widened_start` is the start of the run immediately
+    before it, or None -- a key name separated from its encoded separator by whitespace
+    (`token %3D <secret>`) is otherwise invisible to `_reveals_secret`, which only ever looks
+    forward from a given start."""
+    runs = list(_NON_SPACE_RUN.finditer(line))
+    return [
+        (run.start(), runs[i - 1].start() if i > 0 else None)
+        for i, run in enumerate(runs)
+        if _PERCENT_IN_TOKEN.search(run.group())
+    ]
+
+
+def _reveals_secret_at(line: str, start: int, widened: int | None) -> bool:
+    """Whether decoding from `start` reveals a secret, also trying the widened (one word
+    earlier) window when the narrow one alone does not -- see `_percent_token_starts`."""
+    return _reveals_secret(line[start:]) or (
+        widened is not None and _reveals_secret(line[widened:])
+    )
+
+
 def _cut_encoded_secrets(line: str) -> str:
     """Fail closed on a percent-encoded secret the raw scan could not see. The decoded form is
     used only to *detect*: the raw text from the earliest still-revealing token to the end of the
     line is replaced, so no decoded fragment is ever returned and no encoded one is kept."""
     for _ in range(_MAX_CUT_ROUNDS):
-        starts = [m.start() for m in _PERCENT_TOKEN.finditer(line)]
-        if not starts or not _reveals_secret(line[starts[0] :]):
+        candidates = _percent_token_starts(line)
+        if not candidates or not _reveals_secret_at(line, *candidates[0]):
             return line
-        low, high = 0, len(starts) - 1  # starts[low] reveals; find the last start that still does
+        low, high = 0, len(candidates) - 1  # candidates[low] reveals; find the last one that does
         while low < high:
             mid = (low + high + 1) // 2
-            if _reveals_secret(line[starts[mid] :]):
+            if _reveals_secret_at(line, *candidates[mid]):
                 low = mid
             else:
                 high = mid - 1
-        line = line[: starts[low]] + REDACTED
-    first = _PERCENT_TOKEN.search(line)  # still revealing after the cap: fail closed
-    return line if first is None else line[: first.start()] + REDACTED
+        line = line[: candidates[low][0]] + REDACTED
+    candidates = _percent_token_starts(line)  # still revealing after the cap: fail closed
+    return line if not candidates else line[: candidates[0][0]] + REDACTED
 
 
 def _redact_encoded(text: str) -> str:

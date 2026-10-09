@@ -9733,9 +9733,11 @@ FTF-0904:
 
     Disclosed: detection is pattern-based -- a bare opaque secret with no known prefix, no
     secret-named key and no header/URL context is not recognised; key names match by substring
-    so benign keys such as `max_tokens` are over-redacted; handlers added after
-    `install_redaction` need `attach_sink` to scrub `extra=` attributes (message, args and
-    exceptions are covered at ingress). This module is a pure library with no live logging
+    so benign keys such as `max_tokens` are over-redacted. (Round 2 below adds `extra=` ingress
+    coverage via `Logger.makeRecord`, superseding this paragraph's original claim that a handler
+    added after `install_redaction` needs `attach_sink` to scrub `extra=` -- it no longer does;
+    `attach_sink` is still needed only for the separate `logging.makeLogRecord` bypass, per
+    round 2's own disclosure below.) This module is a pure library with no live logging
     configuration installing it yet -- proving_symbol stays blank (UNWIRED), same precedent as
     FTF-0901/FTF-0902/FTF-0903. Not self-certified (Law 4).
 
