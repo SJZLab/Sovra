@@ -111,6 +111,7 @@ class _Harness:
         self._stack.enter_context(contextlib.redirect_stderr(self.err))
         self.root = logging.getLogger()
         self.saved = (self.root.level, list(self.root.handlers), logging.getLogRecordFactory())
+        self.saved_make_record = logging.Logger.makeRecord
         self.root.handlers = []
         self.root.setLevel(logging.DEBUG)
         harness = self
@@ -141,6 +142,7 @@ class _Harness:
         self.root.handlers = self.saved[1]
         self.root.setLevel(self.saved[0])
         logging.setLogRecordFactory(self.saved[2])
+        logging.Logger.makeRecord = self.saved_make_record  # type: ignore[method-assign]
 
     def outputs(self) -> list[str]:
         rendered = [self.stream.getvalue(), self.out.getvalue(), self.err.getvalue(), *self.lines]
@@ -872,6 +874,416 @@ def test_non_text_inputs_are_coded_refusals() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Round 2 (ACC-1 / bounded runtime): raw-first percent handling, header forms,
+# ingress scrub of extra=, linear key rule
+# ---------------------------------------------------------------------------
+
+_DELIMS = ["&", ";", ",", " ", '"', "'", ")", "]", "}", "/", "\r", "\n", "\t", "%"]
+_PLAIN_SECRETS = ["Zq7Lm2Xv9Rt4Hn8Kc3Pw", "hunter2-Zq7Lm2Xv9Rt4"]
+
+
+def _enc(text: str, layers: int) -> str:
+    for _ in range(layers):
+        text = quote(text, safe="")
+    return text
+
+
+def _percent_cases() -> list[tuple[str, str, list[str]]]:
+    """(label, text, secrets that must not survive)."""
+    cases: list[tuple[str, str, list[str]]] = []
+    plain_sk = SECRETS["openai"]
+    for secret in _PLAIN_SECRETS:
+        for delim in _DELIMS:
+            tag = f"{secret[:4]}/{delim!r}"
+            for layers in (1, 2, 3):
+                body = _enc(delim + secret, layers)
+                cases.append(
+                    (
+                        f"pw-param {tag} x{layers}",
+                        f"username=a&password=p{body}",
+                        [secret],
+                    )
+                )
+                cases.append(
+                    (
+                        f"pw-param+plain {tag} x{layers}",
+                        f"{plain_sk} user=a&password=p{body} tail",
+                        [secret, plain_sk],
+                    )
+                )
+                cases.append(
+                    (
+                        f"decoded-only {tag} x{layers}",
+                        f"GET /x?q={_enc('a' + delim + 'password=' + secret, layers)}",
+                        [secret],
+                    )
+                )
+        for layers in (1, 2, 3):
+            cases.append(
+                (
+                    f"authorization-bearer x{layers}",
+                    f"q={_enc('Authorization: Bearer ' + secret, layers)}",
+                    [secret],
+                )
+            )
+            cases.append(
+                (
+                    f"authorization-next-to-plain x{layers}",
+                    f"{plain_sk} {_enc('Authorization: ' + secret, layers)}",
+                    [secret, plain_sk],
+                )
+            )
+        cases.append(
+            (
+                "encoded CR in a header",
+                f"X-Trace: id%0d%0aAuthorization: {secret}",
+                [secret],
+            )
+        )
+        cases.append(
+            (
+                "encoded CR+LF then cookie",
+                f"X-Trace: id%0D%0ACookie: sid={secret}; path=/",
+                [secret],
+            )
+        )
+        cases.append(
+            (
+                "encoded header then another encoded token",
+                f"Authorization%3A%20 {secret} then%20more",
+                [secret],
+            )
+        )
+        cases.append(
+            (
+                "two encoded tokens, secret spans the second",
+                f"x=a%20b y=password%3D{secret} z=1%202",
+                [secret],
+            )
+        )
+        cases.append(
+            (
+                "dsn password with another rule firing",
+                f"url=postgres://app:p%40{secret}@db/x {plain_sk}",
+                [secret, plain_sk],
+            )
+        )
+        cases.append(
+            (
+                "dsn password with encoded colon",
+                f"url=postgres://app%3Ap%40{secret}@db/x password=hunter",
+                [secret],
+            )
+        )
+    return cases
+
+
+def test_percent_decoded_layers_never_replace_the_raw_scan() -> None:
+    for label, text, secrets in _percent_cases():
+        out = lr.redact_text(text)
+        check("FTF-0904-P1", f"{label}: leaked {out!r}", not leaked(secrets, [out]))
+        raw_only = lr._scan(lr._normalise(text), lr._BASE64_LAYERS)
+        # never less redacted than the raw-only scan: whatever it hides, we hide
+        for secret in secrets:
+            if secret not in raw_only and quote(secret, safe="") not in raw_only:
+                check(
+                    "FTF-0904-P1",
+                    f"{label}: raw-only scan hides a secret that the result shows",
+                    secret not in out,
+                )
+        check("FTF-0904-P1", f"{label}: output not str", type(out) is str)
+
+
+def test_percent_cases_keep_their_context_when_raw_scan_suffices() -> None:
+    out = lr.redact_text("username=a&password=p%26" + _PLAIN_SECRETS[0])
+    check(
+        "FTF-0904-P2",
+        f"raw redaction must be kept whole: {out!r}",
+        out == "username=a&password=[REDACTED]",
+    )
+    out = lr.redact_text("see /a%20b?x=1 and 100%25 done")
+    check(
+        "FTF-0904-P2",
+        f"benign percent text must survive: {out!r}",
+        out == "see /a%20b?x=1 and 100%25 done",
+    )
+
+
+def test_percent_cases_end_to_end_through_logging() -> None:
+    for label, text, secrets in _percent_cases()[::7]:
+        with _Harness() as h:
+            logging.getLogger("t").error("%s", text)
+            logging.getLogger("t").error(text)
+            found = leaked(secrets, h.outputs())
+        check("FTF-0904-P3", f"{label}: end-to-end leak {found}", not found)
+
+
+# --- header forms (ASGI / WSGI tuples and lists, HTTP_ environ keys) -------------------
+
+_HEADER_NAMES = [
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+    "set-cookie",
+    "x-api-key",
+    "x-auth-token",
+    "x-amz-security-token",
+    "x-goog-api-key",
+    "x-access-token",
+    "x-csrf-token",
+    "api-key",
+]
+_HV = "Zq7Lm2Xv9Rt4Hn8Kc3"  # a header value no other rule recognises
+
+
+def _header_forms(name: str) -> dict[str, object]:
+    environ = "HTTP_" + name.upper().replace("-", "_")
+    return {
+        "asgi-bytes-tuples": [(b"host", b"example"), (name.encode(), _HV.encode())],
+        "asgi-str-tuples": [("host", "example"), (name, _HV)],
+        "asgi-bytes-lists": [[b"host", b"example"], [name.encode(), _HV.encode()]],
+        "asgi-upper-case-name": [(name.upper().encode(), _HV.encode())],
+        "scope": {"type": "http", "headers": [(name.encode(), _HV.encode())]},
+        "wsgi-environ": {"REQUEST_METHOD": "GET", environ: _HV},
+        "wsgi-environ-bytes": {environ: _HV.encode()},
+        "bytes-key-mapping": {name.encode(): _HV.encode()},
+    }
+
+
+def test_every_secret_header_is_redacted_in_structured_and_tuple_forms() -> None:
+    names = lr._HEADER_KEYS
+    for name in _HEADER_NAMES:
+        check(
+            "FTF-0904-H1",
+            f"{name} must be a known secret header",
+            re.fullmatch(names, name, re.I) is not None,
+        )
+        for label, value in _header_forms(name).items():
+            as_value = repr(lr.redact_value(value))
+            check("FTF-0904-H1", f"redact_value {name} {label}: {as_value}", _HV not in as_value)
+            as_text = lr.redact_text(repr(value))
+            check("FTF-0904-H1", f"redact_text(repr) {name} {label}: {as_text}", _HV not in as_text)
+            as_str = lr.redact_text(str(value))
+            check("FTF-0904-H1", f"redact_text(str) {name} {label}: {as_str}", _HV not in as_str)
+        environ = "HTTP_" + name.upper().replace("-", "_")
+        for text in (f"{environ}={_HV}", f"{environ}: {_HV}", f"'{environ}': '{_HV}'"):
+            out = lr.redact_text(text)
+            check("FTF-0904-H2", f"environ text {text!r} -> {out!r}", _HV not in out)
+        with _Harness() as h:
+            logging.getLogger("t").error("scope %s", {"headers": [(name.encode(), _HV.encode())]})
+            logging.getLogger("t").error("environ %r", {environ: _HV})
+            found = leaked([_HV], h.outputs())
+        check("FTF-0904-H3", f"end-to-end {name}: {found}", not found)
+
+
+def test_benign_tuples_and_environ_keys_survive() -> None:
+    out = lr.redact_text(repr([(b"host", b"example.test"), (b"accept", b"*/*")]))
+    check("FTF-0904-H4", f"benign headers must survive: {out!r}", "example.test" in out)
+    out = lr.redact_text(repr({"HTTP_HOST": "example.test", "REQUEST_METHOD": "GET"}))
+    check("FTF-0904-H4", f"benign environ must survive: {out!r}", "example.test" in out)
+    value = lr.redact_value([("host", "example.test"), ("accept", "*/*")])
+    check("FTF-0904-H4", f"benign pairs must survive: {value!r}", "example.test" in repr(value))
+
+
+# --- extra= on non-root loggers ---------------------------------------------------------
+
+
+class _Collect(logging.Handler):
+    def __init__(self, sink: list[logging.LogRecord]) -> None:
+        super().__init__()
+        self.sink = sink
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.sink.append(record)
+
+
+def test_extra_attributes_are_scrubbed_for_propagate_false_loggers() -> None:
+    secret = _PLAIN_SECRETS[0]
+    with _Harness(install=False) as h:
+        child = logging.getLogger("ftf0904.uvicorn.error")
+        saved = (child.propagate, list(child.handlers), child.level)
+        child.propagate = False
+        child.setLevel(logging.DEBUG)
+        try:
+            before: list[logging.LogRecord] = []
+            child.addHandler(_Collect(before))
+            lr.install_redaction(h.root)
+            after: list[logging.LogRecord] = []
+            child.addHandler(_Collect(after))
+            extra = {
+                "detail": f"Authorization: Bearer {secret}",
+                "password": secret.encode(),
+                "blob": {"api_key": secret, "n": 1},
+                "note": f"password={secret}",
+            }
+            child.error("event %s", "x", extra=extra)
+            logging.LoggerAdapter(child, extra).warning("adapter event")
+            seen = [*before, *after]
+            check("FTF-0904-X1", f"expected 4 records, got {len(seen)}", len(seen) == 4)
+            for record in seen:
+                blob = repr(sorted((k, repr(v)) for k, v in vars(record).items()))
+                check("FTF-0904-X1", f"extra leaked on {record.name}: {blob}", secret not in blob)
+                check(
+                    "FTF-0904-X1", "benign number must survive", record.__dict__["blob"]["n"] == 1
+                )
+            # the caller's own dict must not be mutated
+            check("FTF-0904-X2", "caller extra mutated", extra["note"] == f"password={secret}")
+        finally:
+            child.propagate, child.handlers, level = saved[0], saved[1], saved[2]
+            child.setLevel(level)
+
+
+def test_install_does_not_stack_the_record_maker() -> None:
+    with _Harness() as h:
+        lr.install_redaction(h.root)
+        lr.install_redaction(h.root)
+        maker = logging.Logger.makeRecord
+        check(
+            "FTF-0904-X3", "makeRecord must be wrapped", getattr(maker, "_ftf0904_redacting", False)
+        )
+        inner = getattr(maker, "__wrapped__", None)
+        check(
+            "FTF-0904-X3",
+            "makeRecord must be wrapped exactly once",
+            inner is not None and not getattr(inner, "_ftf0904_redacting", False),
+        )
+
+
+def test_secret_named_extra_with_non_str_value_is_redacted() -> None:
+    with _Harness() as h:
+        logging.getLogger("t").error("event", extra={"password": b"hunter2-xyz", "token": 12345})
+        record = h.seen_records[-1]
+    check(
+        "FTF-0904-X4",
+        f"bytes secret kept: {record.__dict__["password"]!r}",
+        record.__dict__["password"] == lr.REDACTED,
+    )
+    check(
+        "FTF-0904-X4",
+        f"int secret kept: {record.__dict__["token"]!r}",
+        record.__dict__["token"] == lr.REDACTED,
+    )
+
+
+# --- bounded runtime --------------------------------------------------------------------
+
+_SIZE = 256 * 1024
+_ADVERSARIAL = {
+    "token-run": "token" * (_SIZE // 5),
+    "quoted-token-run": '"token"' * (_SIZE // 7),
+    "dash-token-run": "token-" * (_SIZE // 6),
+    "dot-token-run": "a.token" * (_SIZE // 7),
+    "password-run": "password" * (_SIZE // 8),
+    "key-with-spaces": "api_key " * (_SIZE // 8),
+    "sep-run": "token" + "\\" * (_SIZE - 5),
+    "colon-run": "token" + ":" * (_SIZE - 5),
+    "quote-run": "token=" + '"' * (_SIZE - 6),
+    "backslash-quote": 'token=\\"' * (_SIZE // 8),
+    "header-run": "authorization" * (_SIZE // 13),
+    "percent-run": "%41" * (_SIZE // 3),
+    "percent-space-run": "%41 " * (_SIZE // 4),
+    "base64-run": "QUJD" * (_SIZE // 4),
+    "pem-run": "-----BEGIN " * (_SIZE // 11),
+    "bearer-run": "bearer " * (_SIZE // 7),
+}
+
+
+_CHILD = (
+    "import sys, time\n"
+    "sys.path.insert(0, sys.argv[1])\n"
+    "from packages.security import log_redaction as lr\n"
+    "text = sys.stdin.read()\n"
+    "start = time.perf_counter()\n"
+    "try:\n"
+    "    out = lr.redact_text(text)\n"
+    "except lr.LogRedactionError:\n"
+    "    out = ''\n"
+    "sys.stdout.write(f'{time.perf_counter() - start:.3f}\\n' + out[-80:])\n"
+)
+_LIMIT_SECONDS = 4.0
+
+
+def _timed_redact(text: str) -> tuple[float | None, str]:
+    """(seconds, tail of the output) for `redact_text(text)` in a child process; seconds is None
+    if the child had to be killed (a catastrophic regex holds the GIL, a thread cannot time it)."""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", _CHILD, str(ROOT)],
+            input=text,
+            capture_output=True,
+            text=True,
+            timeout=_LIMIT_SECONDS + 3,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return None, ""
+    head, _, tail = result.stdout.partition("\n")
+    return (float(head) if head else None), tail
+
+
+def test_adversarial_input_is_linear() -> None:
+    for label, text in _ADVERSARIAL.items():
+        text = text[:_SIZE]
+        elapsed, _ = _timed_redact(text)
+        check(
+            "FTF-0904-R1",
+            f"{label}: {len(text)} chars took {elapsed}s (limit {_LIMIT_SECONDS}s)",
+            elapsed is not None and elapsed < _LIMIT_SECONDS,
+        )
+        if elapsed is None:
+            break  # one catastrophic shape is enough; do not wait out the other shapes
+    # a real secret behind adversarial padding is still found, and quickly
+    elapsed, tail = _timed_redact("token" * 40_000 + "=" + _PLAIN_SECRETS[0])
+    check("FTF-0904-R2", f"padded secret took {elapsed}s", elapsed is not None and elapsed < 3.0)
+    check("FTF-0904-R2", f"secret behind padding leaked: {tail!r}", _PLAIN_SECRETS[0] not in tail)
+
+
+_CHILD_LOG = (
+    "import io, logging, sys, time\n"
+    "sys.path.insert(0, sys.argv[1])\n"
+    "from packages.security import log_redaction as lr\n"
+    "stream = io.StringIO()\n"
+    "handler = logging.StreamHandler(stream)\n"
+    "logging.getLogger().addHandler(handler)\n"
+    "lr.install_redaction()\n"
+    "text = sys.stdin.read()\n"
+    "start = time.perf_counter()\n"
+    "logging.getLogger('t').error('%s', text)\n"
+    "sys.stdout.write(f'{time.perf_counter() - start:.3f}\\n' + stream.getvalue()[-80:])\n"
+)
+
+
+def test_adversarial_input_through_the_logging_path_is_bounded() -> None:
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", _CHILD_LOG, str(ROOT)],
+            input="token" * (_SIZE // 5),
+            capture_output=True,
+            text=True,
+            timeout=_LIMIT_SECONDS + 3,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        check("FTF-0904-R3", "logging a 256 KB adversarial line did not finish", False)
+        return
+    head = result.stdout.partition("\n")[0]
+    elapsed = float(head) if head else None
+    check(
+        "FTF-0904-R3",
+        f"logging a 256 KB line took {elapsed}s ({result.stderr[-200:]!r})",
+        elapsed is not None and elapsed < _LIMIT_SECONDS,
+    )
+
+
+def test_three_percent_layers_are_decoded() -> None:
+    secret = _PLAIN_SECRETS[0]
+    for layers in (1, 2, 3):
+        for shape in ("password={s}", "Authorization: Bearer {s}", "token: {s}"):
+            out = lr.redact_text("q=" + _enc(shape.format(s=secret), layers))
+            check("FTF-0904-A7", f"{shape!r} x{layers}: {out!r}", secret not in out)
+
+
+# ---------------------------------------------------------------------------
 # NEG-2: redaction does not authorise external telemetry of sensitive content
 # ---------------------------------------------------------------------------
 
@@ -983,15 +1395,57 @@ FAULTS: list[tuple[str, str, str, int]] = [
     ("F12 format characters kept", '("Cf", "Cc", "Cs", "Co", "Cn")', '("Cc", "Cs", "Co", "Cn")', 1),
     (
         "F13 no percent-decoding",
-        "layers.append(unquote(layers[-1]))",
-        "layers.append(layers[-1])",
+        "        layer = unquote(layer)\n",
+        "        layer = layer\n",
         1,
     ),
     ("F14 one percent-decoding layer", "_MAX_DECODE_LAYERS = 3", "_MAX_DECODE_LAYERS = 1", 1),
     (
-        "F15 decoded secret not returned",
-        "        if scanned != layer:\n            return scanned\n",
-        "",
+        "F15 first decoded layer returned instead of the raw scan (round-1 behaviour)",
+        "    return _redact_encoded(_scan(_normalise(text), _BASE64_LAYERS))\n",
+        "    text = _normalise(text)\n"
+        "    layers = [text]\n"
+        "    for _ in range(_MAX_DECODE_LAYERS):\n"
+        '        if "%" not in layers[-1]:\n'
+        "            break\n"
+        "        layers.append(unquote(layers[-1]))\n"
+        "    for layer in layers[1:]:\n"
+        "        scanned = _scan(layer, _BASE64_LAYERS)\n"
+        "        if scanned != layer:\n"
+        "            return scanned\n"
+        "    return _scan(text, _BASE64_LAYERS)\n",
+        1,
+    ),
+    (
+        "F15b raw text not scanned (decoded layers only)",
+        "    return _redact_encoded(_scan(_normalise(text), _BASE64_LAYERS))\n",
+        "    return _redact_encoded(_normalise(text))\n",
+        1,
+    ),
+    (
+        "F15c encoded secret never detected",
+        "        if _scan(layer, _BASE64_LAYERS) != layer:\n            return True\n",
+        "        pass\n",
+        1,
+    ),
+    (
+        "F15d only the encoded token is cut, not the rest of the line",
+        "        line = line[: starts[low]] + REDACTED\n",
+        "        line = line[: starts[low]] + REDACTED + line[starts[low] :].partition(' ')[2]\n",
+        1,
+    ),
+    (
+        "F15e cut starts at the last encoded token",
+        "        low, high = 0, len(starts) - 1  # starts[low] reveals;"
+        " find the last start that still does\n",
+        "        low, high = len(starts) - 1, len(starts) - 1\n",
+        1,
+    ),
+    (
+        "F15f cut falls back to keeping the line",
+        "    first = _PERCENT_TOKEN.search(line)  # still revealing after the cap: fail closed\n"
+        "    return line if first is None else line[: first.start()] + REDACTED\n",
+        "    return line\n",
         1,
     ),
     ("F16 no base64 detection", "_BASE64_LAYERS = 2", "_BASE64_LAYERS = 0", 1),
@@ -1036,6 +1490,46 @@ FAULTS: list[tuple[str, str, str, int]] = [
         "F23 error chains its cause (text)",
         "        raise LogRedactionError from None\n    return result\n\n\ndef redact_exception",
         "        raise LogRedactionError\n    return result\n\n\ndef redact_exception",
+        1,
+    ),
+    # --- round 2: header forms, ingress extras, linear key rule -----------------------
+    ("F38 header tuple/list text rule removed", '    ("pair", _PAIR),\n', "", 1),
+    (
+        "F39 header pair structure not redacted",
+        "        if len(value) == 2 and isinstance(value[0], str | bytes | bytearray):",
+        "        if False:",
+        1,
+    ),
+    (
+        "F40 bytes header names not decoded",
+        "    if isinstance(key, bytes | bytearray):\n        return redact_text(",
+        "    if False:\n        return redact_text(",
+        1,
+    ),
+    ("F41 HTTP_ environ spelling dropped", '+ "|http_(?:"', '+ "|zzhttp_(?:"', 1),
+    (
+        "F42 extra= not scrubbed at ingress",
+        "        logging.Logger.makeRecord = _wrap_make_record(maker)"
+        "  # type: ignore[method-assign]",
+        "        pass",
+        1,
+    ),
+    (
+        "F43 record maker wrapped on every call",
+        'if not getattr(maker, "_ftf0904_redacting", False):',
+        "if True:",
+        1,
+    ),
+    (
+        "F44 record maker wrapper does not scrub",
+        "        record = original(self, *args, **kwargs)\n        _scrub_record(record)\n",
+        "        record = original(self, *args, **kwargs)\n",
+        1,
+    ),
+    (
+        "F45 quadratic key rule restored",
+        'rf"(?=[\\w.\\-]*?{_SECRET_KEY_WORDS})[\\w.\\-]++"',
+        'rf"[\\w.\\-]*{_SECRET_KEY_WORDS}[\\w.\\-]*"',
         1,
     ),
     # --- records, exceptions, extras ---------------------------------------------------
