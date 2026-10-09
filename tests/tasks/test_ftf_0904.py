@@ -359,12 +359,19 @@ def test_benign_case_and_encoding_survive() -> None:
 
 def test_extra_attribute_names_and_install_targets() -> None:
     with _Harness() as h:
-        logging.getLogger("ftf0904.names").info("m", extra={"MyPayload": SECRETS["openai"]})
+        logging.getLogger("ftf0904.names").info(
+            "m", extra={"MyPayload": SECRETS["openai"], "Name": SECRETS["openai"]}
+        )
         rec_vars = [vars(r) for r in h.seen_records]
     check(
         "FTF-0904-A1",
         "a mixed-case extra attribute is redacted under its own name, no lowercased twin",
         all(v.get("MyPayload") == lr.REDACTED and "mypayload" not in v for v in rec_vars),
+    )
+    check(
+        "FTF-0904-A1",
+        "an extra named like a standard attribute but differently cased is still scrubbed",
+        all(v.get("Name") == lr.REDACTED for v in rec_vars),
     )
     own = logging.getLogger("ftf0904.own")
     own_handler = logging.StreamHandler(io.StringIO())
@@ -821,6 +828,15 @@ def test_a_raising_rule_fails_closed_not_open() -> None:
             "FTF-0904-N1",
             "coded error does not chain the raw cause",
             err is not None and err.__cause__ is None and err.__suppress_context__,
+        )
+        check(
+            "FTF-0904-N1",
+            "coded error carries no context, notes or attributes holding caller text",
+            err is not None
+            and err.__context__ is None
+            and not getattr(err, "__notes__", None)
+            and vars(err) == {}
+            and err.args == ("log redaction failed",),
         )
     finally:
         lr._RULES = saved
