@@ -250,14 +250,29 @@ def main() -> None:
     run = sweeper.sweep_abandoned_uploads(
         client, settings, now=datetime.now(UTC) + timedelta(hours=2), expiry_lookup=database_lookup
     )
-    left = alive()
+    everything = _all_uploads(client, bucket)
+    left = {u["UploadId"] for u in everything}
+    survivors = left & set(filler_uploads)
+    # Diagnostics for the real server's paging behaviour (printed on every run).
+    _, _, raw = client._request(
+        "GET", bucket, query={"uploads": "", "prefix": "tenants/", "max-uploads": "1000"}
+    )
+    head = raw.decode("utf-8", "replace")
+    print(
+        f"W3 diagnostics: run={run}; listing total={len(everything)} unique={len(left)}; "
+        f"fillers surviving={len(survivors)}/{len(filler_uploads)}; first page raw head="
+        f"{head[:300]!r} ... tail={head[-400:]!r}"
+    )
     check(f"W3 the listing took more than one page ({run})", run.pages >= 2)
     check("W3 the expired upload behind 1005 others is aborted", last_up not in left)
     check(
-        "W3 all 1005 live uploads survive",
+        f"W3 all 1005 live uploads survive ({len(survivors)} do; aborted={run.aborted})",
         set(filler_uploads) <= left and run.aborted == 1,
     )
-    check("W3 the sweep saw the whole listing", not run.more_may_remain and run.listed >= FILLERS)
+    check(
+        f"W3 the sweep saw the whole listing ({run})",
+        not run.more_may_remain and run.listed >= FILLERS,
+    )
 
     # ---- W4 main() through the real environment --------------------------------------------
     saved = {
