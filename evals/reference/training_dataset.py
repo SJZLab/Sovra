@@ -678,12 +678,19 @@ def _require_trace_shape(trace: Any) -> TrainingTrace:
     never a bare TypeError/AttributeError/KeyError further down."""
     if type(trace) is not TrainingTrace:
         raise TraceVerificationError("not a TrainingTrace")
-    if set(vars(trace)) != _TRACE_FIELD_NAMES:
+    # The instance __dict__ must be a plain dict: a dict subclass runs its own
+    # __iter__/__getitem__ on every read, so it can show the guards one trace and
+    # later reads another (or hide a shadowed to_dict). Read it once, into a snapshot.
+    instance_dict = vars(trace)
+    if type(instance_dict) is not dict:
+        raise TraceVerificationError("trace instance __dict__ is not a plain dict")
+    state = dict(instance_dict)
+    if set(state) != _TRACE_FIELD_NAMES:
         raise TraceVerificationError(
             "trace instance carries an attribute outside its declared fields"
         )
     for name in _STR_FIELDS:
-        value = getattr(trace, name)
+        value = state[name]
         if type(value) is not str or not value:
             raise TraceVerificationError(f"trace field {name} must be a non-empty string")
     if type(trace.critical) is not bool:
@@ -947,15 +954,13 @@ def build_training_dataset(
         if index in seen_indices:
             raise TrainingDatasetError(f"generator index {index} admitted more than once")
         seen_indices.add(index)
-        # verify_trace_provenance just proved `trace` is field-for-field
-        # identical to the generator's own output for `index`, so a repeated
-        # _scan_secrets/_check_reserved call on the regenerated object could
-        # never behave differently from the first pass above (same content,
-        # same deterministic functions) -- that would be dead code no test
-        # could ever kill. The real-backend replay has no first-pass
-        # counterpart at all, so it runs here, on the object the caller never
-        # touched, for the first and only time.
+        # The object that is admitted is the regenerated one, never the caller's, so
+        # the secret scan and the held-out check run on it too (the caller's
+        # object is only compared against it). The real-backend replay has no
+        # first-pass counterpart and runs here for the first time.
         regenerated = _generate_one(index)
+        _scan_secrets(regenerated)
+        _check_reserved(regenerated, reserved)
         verify_trace_replay(regenerated)
         by_id[trace.trace_id] = regenerated
 

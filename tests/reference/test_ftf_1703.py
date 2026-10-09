@@ -2073,6 +2073,174 @@ def test_round4_review_decision_requires_exact_types() -> None:
         td._validate_review = original
 
 
+def test_round5_dict_subclass_instance_dict_is_refused() -> None:
+    """T1/T1b: a dict-subclass instance __dict__ runs its own __iter__/__getitem__
+    on every guard read. T1 flips the trace to a reserved generator index after the
+    only reserved check; T1b hides a shadowed to_dict from set(vars(trace))."""
+    import evals.reference.training_dataset as td
+
+    reserved_idx = 1
+    sealed = generate_training_traces(count=2)[reserved_idx]
+    reserved = ReservedFinalSuite(
+        group_ids=frozenset({sealed.group_id}),
+        template_ids=frozenset(),
+        entity_titles=frozenset({sealed.entity_title}),
+        answer_sha256s=frozenset(),
+    )
+    base = TRACES[7]
+
+    class FlippingDict(dict):
+        """Honest on the first iteration, a reserved-index trace afterwards."""
+
+        calls = 0
+
+        def __iter__(self):
+            type(self).calls += 1
+            if type(self).calls > 1:
+                self["provenance"] = {**dict.__getitem__(self, "provenance"), "index": reserved_idx}
+                self["group_id"] = sealed.group_id
+                self["entity_title"] = sealed.entity_title
+            return dict.__iter__(self)
+
+    flipper = dataclasses.replace(base)
+    object.__setattr__(flipper, "__dict__", FlippingDict(vars(flipper)))
+    check(
+        "FTF-1703-R5-1",
+        "T1: a dict-subclass __dict__ is refused with the typed error and never admitted",
+        _raises(
+            TraceVerificationError,
+            build_training_dataset,
+            [flipper],
+            _approve([flipper]),
+        ),
+    )
+    check(
+        "FTF-1703-R5-1",
+        "T1: with the reserved suite present it is refused as malformed, never admitted",
+        _raises(
+            TraceVerificationError,
+            build_training_dataset,
+            [flipper],
+            _approve([flipper]),
+            reserved=reserved,
+        ),
+    )
+    check(
+        "FTF-1703-R5-1",
+        "T1: _require_trace_shape names the cause",
+        "plain dict" in _msg_any(td._require_trace_shape, flipper),
+    )
+
+    class HidingDict(dict):
+        def __iter__(self):
+            return iter([k for k in dict.__iter__(self) if k != "to_dict"])
+
+    hidden = dataclasses.replace(base)
+    object.__setattr__(hidden, "to_dict", lambda b=base: b.to_dict())
+    object.__setattr__(hidden, "__dict__", HidingDict(vars(hidden)))
+    check(
+        "FTF-1703-R5-1",
+        "T1b: a subclass dict hiding a shadowed to_dict is refused",
+        _raises(TraceVerificationError, td._require_trace_shape, hidden),
+    )
+    check(
+        "FTF-1703-R5-1",
+        "negative control: a genuine trace still builds and is admitted",
+        build_training_dataset([base], _approve([base])).approved_count == 1,
+    )
+
+
+def test_round5_regenerated_object_is_scanned_and_checked() -> None:
+    """The admitted object is the regenerated one: if the generator's output for an
+    index overlaps the sealed suite or carries a secret, the build refuses it even
+    though the caller's own object passed its first-pass checks."""
+    import evals.reference.training_dataset as td
+
+    t = TRACES[40]
+    original = td._generate_one
+    calls: list[int] = []
+
+    def _drifting(i: int):
+        calls.append(i)
+        real = original(i)
+        if len(calls) == 2:  # the admission call, after the provenance comparison
+            return dataclasses.replace(real, entity_title="Sealed Entity TRN-X")
+        return real
+
+    reserved = ReservedFinalSuite(entity_titles=frozenset({"sealed entity trn-x"}))
+    td._generate_one = _drifting
+    try:
+        raised = _raises(
+            HeldOutLeakageError, build_training_dataset, [t], _approve([t]), reserved=reserved
+        )
+    finally:
+        td._generate_one = original
+    check(
+        "FTF-1703-R5-3",
+        "a held-out overlap on the regenerated object is refused (HeldOutLeakageError)",
+        raised,
+    )
+
+    calls.clear()
+
+    def _leaky(i: int):
+        calls.append(i)
+        real = original(i)
+        if len(calls) == 2:
+            return dataclasses.replace(real, entity_title="sk-" + "a" * 30)
+        return real
+
+    td._generate_one = _leaky
+    try:
+        raised = _raises(SecretInTraceError, build_training_dataset, [t], _approve([t]))
+    finally:
+        td._generate_one = original
+    check(
+        "FTF-1703-R5-3",
+        "a secret in the regenerated object is refused (SecretInTraceError)",
+        raised,
+    )
+
+
+def test_round5_review_decision_subclass_is_refused_by_a_named_check() -> None:
+    """F6: a ReviewDecision subclass whose `decision` changes between reads would
+    swallow a conflicting rejection under an isinstance check."""
+    t = TRACES[50]
+
+    class Flipping(ReviewDecision):
+        reads = 0
+
+        @property
+        def decision(self) -> str:
+            type(self).reads += 1
+            return "approved" if type(self).reads % 2 else "rejected"
+
+        @decision.setter
+        def decision(self, value: str) -> None:
+            pass
+
+    sub = Flipping(t.trace_id, "reviewer:a", "approved")
+    message = _msg_any(build_training_dataset, [t], [sub])
+    check(
+        "FTF-1703-R5-2",
+        "a ReviewDecision subclass is refused as ReviewIndependenceError",
+        _raises(ReviewIndependenceError, build_training_dataset, [t], [sub]),
+    )
+    check(
+        "FTF-1703-R5-2",
+        "the refusal names the exact-type check",
+        "must be ReviewDecision instances" in message,
+    )
+    check(
+        "FTF-1703-R5-2",
+        "negative control: the plain ReviewDecision is accepted",
+        build_training_dataset(
+            [t], [ReviewDecision(t.trace_id, "reviewer:a", "approved")]
+        ).approved_count
+        == 1,
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
