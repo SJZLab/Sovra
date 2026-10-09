@@ -47,6 +47,7 @@ from datetime import UTC, datetime, timedelta
 from typing import IO, TypeVar, cast
 from urllib.parse import urlsplit
 from xml.etree import ElementTree
+from xml.parsers import expat
 
 from app.services.storage_semantics_client import (
     PRESIGN_MAX_EXPIRES_SECONDS,
@@ -115,6 +116,19 @@ MAX_XLSX_CONTENT_TYPES_BYTES = 1024**2
 _XLSX_CONTENT_TYPES_PART = "[Content_Types].xml"
 _XLSX_WORKBOOK_PART = "xl/workbook.xml"
 _XLSX_RANGE_READ_BYTES = 64 * 1024
+# The zip central directory of a legitimate workbook is a few KiB; 10,000 entries
+# of ordinary part names fit well inside this. The end-of-archive record is read
+# first and anything larger is refused before zipfile allocates for it.
+MAX_XLSX_DIRECTORY_BYTES = 4 * 1024**2
+# No single ranged GET (and no single read from the stored object) exceeds this.
+_XLSX_MAX_RANGE_BYTES = 1024**2
+_ZIP_EOCD = b"PK\x05\x06"
+_ZIP64_LOCATOR = b"PK\x06\x07"
+_ZIP64_EOCD = b"PK\x06\x06"
+_ZIP_EOCD_SIZE = 22
+_ZIP64_LOCATOR_SIZE = 20
+_ZIP64_EOCD_SIZE = 56
+_ZIP_MAX_COMMENT = 0xFFFF
 # Closed lookup tables rather than comparisons: a type is matched exactly, with
 # no tolerance for case or whitespace once it has been normalized.
 _SUPPORTED_BY_NAME = {name: name for name in SUPPORTED_CONTENT_TYPES}
@@ -339,6 +353,59 @@ def _guard(operation: str, call: Callable[[], _T]) -> _T:
         raise _storage_error(operation, exc) from exc
 
 
+class _UnsafeArchiveError(Exception):
+    """An archive that asks for more than the bounds allow (internal verdict)."""
+
+
+def _mentions_declaration(document: bytes) -> bool:
+    for codec in ("latin-1", "utf-16", "utf-16-le", "utf-16-be"):
+        text = document.decode(codec, errors="ignore").lower()
+        if "<!doctype" in text or "<!entity" in text:
+            return True
+    return False
+
+
+def _refuse_declarations(document: bytes) -> None:
+    """Parses `document` with expat and refuses any DOCTYPE (the only place an
+    entity, notation or external subset can be declared), whatever the encoding:
+    a byte search for `<!doctype` misses UTF-16. Raises `_UnsafeArchiveError`; a
+    malformed document raises `expat.ExpatError` for the caller to classify."""
+
+    def refuse(*_args: object) -> None:
+        raise _UnsafeArchiveError("DOCTYPE or entity declaration")
+
+    parser = expat.ParserCreate()
+    parser.StartDoctypeDeclHandler = refuse
+    parser.Parse(document, True)
+
+
+def _end_record_totals(tail: bytes) -> tuple[int, int, int] | None:
+    """(entries, directory size, directory offset) as `zipfile` itself would read
+    them from the end of the archive (the end-of-central-directory record, or the
+    zip64 one when its locator is present), or None when no record is found."""
+    if len(tail) >= _ZIP_EOCD_SIZE and tail[-_ZIP_EOCD_SIZE:-18] == _ZIP_EOCD:
+        position = len(tail) - _ZIP_EOCD_SIZE
+        if struct.unpack("<H", tail[-2:])[0] != 0:
+            position = tail.rfind(_ZIP_EOCD)
+    else:
+        position = tail.rfind(_ZIP_EOCD)
+    if position < 0 or len(tail) - position < _ZIP_EOCD_SIZE:
+        return None
+    fields = struct.unpack("<4s4H2LH", tail[position : position + _ZIP_EOCD_SIZE])
+    entries, size, offset = fields[4], fields[5], fields[6]
+    record_at = position - _ZIP64_LOCATOR_SIZE - _ZIP64_EOCD_SIZE
+    locator_at = position - _ZIP64_LOCATOR_SIZE
+    # record_at >= 0 also guarantees locator_at >= 0 (no negative slice indexes)
+    if (
+        record_at >= 0
+        and tail[locator_at : locator_at + 4] == _ZIP64_LOCATOR
+        and tail[record_at : record_at + 4] == _ZIP64_EOCD
+    ):
+        record = struct.unpack("<4sQ2H2L4Q", tail[record_at : record_at + _ZIP64_EOCD_SIZE])
+        entries, size, offset = record[7], record[8], record[9]
+    return entries, size, offset
+
+
 class _StoredObjectFile(io.RawIOBase):
     """A read-only seekable view of a stored object, backed by ranged GETs, so
     the zip central directory can be read without downloading the object. A
@@ -373,11 +440,15 @@ class _StoredObjectFile(io.RawIOBase):
 
     def read(self, size: int = -1) -> bytes:
         end = self._size if size is None or size < 0 else min(self._size, self._pos + size)
+        if end - self._pos > MAX_XLSX_DIRECTORY_BYTES:
+            # zipfile never legitimately asks for more than the bounded directory in one read
+            raise _UnsafeArchiveError("a single read larger than the directory bound")
         out = bytearray()
         while self._pos < end:
             offset = self._pos - self._window_start
             if not 0 <= offset < len(self._window):
-                last = min(self._size, self._pos + max(end - self._pos, _XLSX_RANGE_READ_BYTES)) - 1
+                wanted = min(max(end - self._pos, _XLSX_RANGE_READ_BYTES), _XLSX_MAX_RANGE_BYTES)
+                last = min(self._size, self._pos + wanted) - 1
                 self._window_start = self._pos
                 self._window = self._fetch(self._pos, last)
                 offset = 0
@@ -400,6 +471,21 @@ def inspect_xlsx(
     macro-enabled workbook or entity declarations. Nothing is evaluated."""
     stored = _StoredObjectFile(client, settings, target.object_key, target.declared_size_bytes)
     try:
+        # The end-of-archive record is read first, so a record that claims a huge
+        # directory or entry count is refused before zipfile allocates for it.
+        tail_size = min(
+            stored._size,
+            _ZIP_MAX_COMMENT + _ZIP_EOCD_SIZE + _ZIP64_LOCATOR_SIZE + _ZIP64_EOCD_SIZE,
+        )
+        totals = (
+            _end_record_totals(stored._fetch(stored._size - tail_size, stored._size - 1))
+            if tail_size > 0
+            else None
+        )
+        if totals is not None and (
+            totals[0] > MAX_XLSX_ENTRIES or totals[1] > MAX_XLSX_DIRECTORY_BYTES
+        ):
+            return "unsafe_archive"
         with zipfile.ZipFile(cast("IO[bytes]", stored)) as archive:
             infos = archive.infolist()
             if len(infos) > MAX_XLSX_ENTRIES:
@@ -419,6 +505,8 @@ def inspect_xlsx(
                 document = handle.read(MAX_XLSX_CONTENT_TYPES_BYTES + 1)
     except UploadStorageUnavailableError:
         raise
+    except _UnsafeArchiveError:
+        return "unsafe_archive"
     except (
         zipfile.BadZipFile,
         zipfile.LargeZipFile,
@@ -432,13 +520,15 @@ def inspect_xlsx(
         return "content_type_mismatch"
     if len(document) > MAX_XLSX_CONTENT_TYPES_BYTES:
         return "unsafe_archive"
-    lowered = document.lower()
-    if b"<!doctype" in lowered or b"<!entity" in lowered:
-        return "unsafe_archive"
     try:
-        root = ElementTree.fromstring(document)  # noqa: S314 - DOCTYPE/ENTITY refused above
-    except ElementTree.ParseError:
-        return "content_type_mismatch"
+        _refuse_declarations(document)
+        root = ElementTree.fromstring(document)  # noqa: S314 - no DOCTYPE/ENTITY, refused above
+    except _UnsafeArchiveError:
+        return "unsafe_archive"
+    except (ElementTree.ParseError, expat.ExpatError):
+        # Not well-formed XML: a document that still mentions a declaration (in any
+        # case or encoding) is an attempt, not an innocent mismatch.
+        return "unsafe_archive" if _mentions_declaration(document) else "content_type_mismatch"
     for element in root:
         if element.tag.rpartition("}")[2] == "Override" and element.get("PartName") == (
             "/" + _XLSX_WORKBOOK_PART

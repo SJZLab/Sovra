@@ -7356,6 +7356,14 @@ FTF-0501:
     until a scheduler runs `python -m app.datasets.upload_sweeper`, see
     docs/operations/direct-upload-storage.md); the real routes run on PG16 as sovra_app against
     SeaweedFS in CI job direct-upload-routes-integration. The resumable-UI clause is FTF-0501-UI.
+    Round 3 (Control-plane return): the sweeper dates an upload by its session's expires_at (read as
+    sovra_app under the key's tenant) because SeaweedFS lists no Initiated, pages the listing with
+    key/upload-id markers under a per-run budget, and exits non-zero when an age cannot be derived or
+    the budget ends first (real-server test test_ftf_0501_sweeper_postgres_s3.py in the same CI job);
+    the XLSX end-of-archive record is read first and a directory or entry count above the bound is
+    refused as unsafe_archive before zipfile allocates (every ranged GET is capped at 1 MiB); DOCTYPE
+    and entity declarations are refused at the expat parser in every encoding; the production bounds
+    (10,000 entries, 10 GiB, 1 MiB) are tested at their exact edges without overriding the constants.
     Not self-certified (Law 4): independent Control-plane L2 re-review
     and a green ci-verdict on the PR are required; `certification_state` stays PROVISIONAL.
   proof_state: L1-PROVEN

@@ -2900,6 +2900,10 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real upload routes against PostgreSQL 16 and SeaweedFS
         run: uv run python3 tests/integration/test_ftf_0501_routes_postgres_s3.py
+      - name: Prove the abandoned-upload sweeper against PostgreSQL 16 and SeaweedFS
+        # FTF-0501 round 3: SeaweedFS lists no Initiated, so age comes from the session's
+        # expires_at (read as sovra_app); paging past 1000 uploads; exit codes through main().
+        run: uv run python3 tests/integration/test_ftf_0501_sweeper_postgres_s3.py
 
   dataset-upload-hardening-integration:
     # FTF-0501-P2: real Postgres evidence for migration 0025: a closed
