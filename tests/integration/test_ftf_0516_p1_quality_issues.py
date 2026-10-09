@@ -1463,7 +1463,7 @@ def main() -> None:
     )
 
     def report_insert(
-        report_seq: int, detectors_reported_sql: str, detector_versions: dict
+        report_seq: int, detectors_reported_sql: str, detector_versions: Any
     ) -> tuple[bool, str]:  # noqa: E501
         return raw(
             org1_id,
@@ -1500,6 +1500,14 @@ def main() -> None:
     )
     ok, message = report_insert(23, "ARRAY[]::text[]", VERSIONS)
     check(f"positive control: all 7 required detectors is accepted ({message[:120]})", ok)
+
+    # N8: a JSON ARRAY holding the 7 names satisfies jsonb_exists_all, so only the
+    # jsonb_typeof(...) = 'object' clause refuses it.
+    expect(
+        "detector_versions as a JSON array of the 7 names is refused by the CHECK",
+        report_insert(24, "ARRAY[]::text[]", sorted(VERSIONS)),
+        "ck_dataset_quality_reports_detector_versions",
+    )
 
     # cross-tenant raw access
     cross_ok, cross_msg = raw(
@@ -1867,6 +1875,73 @@ def main() -> None:
                 result.status == 400 and result.json()["detail"] == "invalid_body",
             )
         check("resolve-issue: malformed requests wrote nothing", counts() == before)
+
+        # Round 3 (N2/N6 surrogates, NUL): characters Postgres text cannot store
+        # must be a clean 400 from the real routes, never a 500 from psycopg.
+        def body_with(**over: Any) -> dict[str, Any]:
+            payload: dict[str, Any] = {
+                "quality_report_id": str(route_report.id),
+                "expected_resolution_version": 0,
+                "idempotency_key": uuid.uuid4().hex,
+                "resolutions": [item(route_warn, "exclude")],
+            }
+            payload.update(over)
+            return payload
+
+        bad_chars = (
+            ("a lone high surrogate", "\ud800"),
+            ("a lone low surrogate", "\udc00"),
+            ("a NUL character", "a\x00b"),
+        )
+        for label, bad in bad_chars:
+            for field in ("reason", "idempotency_key"):
+                bad_payload: Any = body_with()
+                if field == "reason":
+                    bad_payload["resolutions"][0]["reason"] = f"x{bad}y"
+                else:
+                    bad_payload["idempotency_key"] = f"k{bad}"
+                # json.dumps escapes the lone surrogate as a JSON \ud800 escape
+                result = _http(
+                    url, "POST", b + "/resolve-issue", ml, json.dumps(bad_payload).encode()
+                )
+                check(
+                    f"resolve-issue: {label} in {field} => 400 invalid_body (got {result.status})",
+                    result.status == 400 and result.json() == {"detail": "invalid_body"},
+                )
+        raw_surrogate = (
+            json.dumps(body_with(), ensure_ascii=False)
+            .replace("route review", "route @@ review")
+            .encode("utf-8")
+            .replace(b"@@", b"\xed\xa0\x80")
+        )
+        result = _http(url, "POST", b + "/resolve-issue", ml, raw_surrogate)
+        check(
+            f"resolve-issue: UTF-8 surrogate bytes => 400 invalid_body (got {result.status})",
+            result.status == 400 and result.json() == {"detail": "invalid_body"},
+        )
+        nul_filter = _http(url, "GET", b + "/issues?detector=a%00b", ml)
+        check(
+            f"issues: a NUL in the detector filter => 400 invalid_filter (got {nul_filter.status})",
+            nul_filter.status == 400 and nul_filter.json() == {"detail": "invalid_filter"},
+        )
+        # A lone surrogate cannot cross the wire in a query string: Starlette decodes the
+        # percent-escapes with errors="replace", so the server sees U+FFFD. It must stay a
+        # clean empty 200, never a 500 (the store-level surrogate refusal is pinned in the
+        # no-DB suite).
+        for escaped in ("%ED%A0%80", "%ED%B0%80"):
+            wire = _http(url, "GET", b + f"/issues?detector=a{escaped}b", ml)
+            check(
+                f"issues: surrogate bytes in the detector filter never 500 (got {wire.status})",
+                wire.status == 200 and wire.json()["items"] == [],
+            )
+        check("resolve-issue: unstorable characters wrote nothing", counts() == before)
+        accepted = _http(
+            url, "GET", b + "/issues?detector=" + urllib.parse.quote("pii_secrets\U0001f600"), ml
+        )
+        check(
+            f"positive control: an emoji in the filter is accepted (got {accepted.status})",
+            accepted.status == 200,
+        )
 
         waive_by_ml = post([item(route_warn, "waive")])
         check(
