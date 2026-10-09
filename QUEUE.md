@@ -9904,6 +9904,29 @@ docs/spec-matrix.yaml. It never invents criteria.)
 ---
 
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
+- **FTF-1602 round 5: PARKED (3 falsified hypotheses on one CI failure), 2026-10-09T10:10Z, lane B.**
+  - What failed: PR #672 (`relay/FTF-1602-r5`): the CI job `object-storage-backup-integration` dies about 45 s into its
+    test step on every run of the full round-5 file (runs 37899436881 a2, 37911808469, and the probes below), with no
+    retrievable log (the job log API returns 404; the step stays `in_progress`; runner death signature, not a test
+    failure). Everything else in the run is green: unit file, mutation gate 405/405 (per the PR), relay-policy, gate.
+    r4 passed the same job (run 37843516353, 60 s); PR #658's run passed it at 08:33Z.
+  - Tried (each a stated hypothesis, each falsified by a CI run): (1) branch behind main -> merged main (run
+    37911808469, same death); (2) the new 6-thread test kills the runner -> made it serial (37913326565, same death);
+    (3) bisect by test selection with `ci-focus`: r4 test file -> normal log, 14 tests in 8 s (37913521112); the four
+    new tests as pairs {concurrent, pinned} and {relist, shared} -> both pass (37913710576, 37914178962); all
+    existing tests without the four new ones -> passes (37914617993). So every subset passes and only the full 18-test
+    file dies: a cumulative or interaction effect, not one bad test.
+  - Not tried / unknown: the cause. Suspects: SeaweedFS 3.99 (`-master.volumeSizeLimitMB=64`, one collection per bucket,
+    about 3 buckets per test) exhausting runner disk, memory or volume slots as buckets accumulate; or an interaction
+    between G1's unretained-version writes and later tests. The log is lost with the runner, so it cannot be read.
+  - Route options: (1) Control plane approves an additive diagnostic step in `object-storage-backup-integration`
+    (runs before the test step: background `df -h`/`free -m`/`docker stats` sampler written to a file and uploaded by a
+    new `if: always()` artifact step), then re-queue; (2) split the round-5 real-server proofs into two integration
+    test files run as two additive jobs (each subset is proven to pass), keeping every test; (3) clean up per test
+    (delete each test's three buckets at the end) so the fixture never accumulates state, which also removes the
+    suspected cause. Recommended: (3) with (2) as the fallback.
+  - State left: PR #672 is open and ready with the intended round-5 files; its `ci-verdict` is red on this one job only.
+    The unit-level proofs, submission and spec-matrix notes are as the PR describes.
 - **FTF-0516 Dataset issue resolution UI: PARKED (BLOCKED_DEPENDENCY), 2026-10-08T07:40Z, lane B.**
   - **2026-10-08T11:30Z:** prerequisite child slice FTF-0516-P1 is in the Backlog. Re-queue FTF-0516 when FTF-0516-P1 is CERTIFIED.
   - What failed: nothing attempted. The packet's acceptance ("UI resolves record issue via exclusion/correction/new
