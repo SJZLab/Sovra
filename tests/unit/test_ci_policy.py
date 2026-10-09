@@ -273,6 +273,19 @@ def test_follow_up_ids_are_distinct_items():
     assert _v(title="[relay] FTF-0608-F1: follow-up", number=4, prs=[parent]) == []
 
 
+def test_child_slice_ids_are_distinct_items():
+    # A disclosed child slice (-P<n> phase, or a named child like -UI) is its own item, not
+    # the same item as its parent -- a round PR for the parent and an open PR for the child
+    # must not collide (this is the real FTF-0501 vs FTF-0501-UI collision: PR #692 vs #697).
+    parent = {"number": 692, "title": "[relay] FTF-0501: round 3"}
+    title = "[relay] FTF-0501-UI: resumable dataset upload UI"
+    assert cp.item_ids(title) == {"FTF-0501-UI"}
+    assert _v(title=title, number=697, prs=[parent]) == []
+    assert cp.item_ids("[relay] FTF-0309-P1: training-capability read API") == {"FTF-0309-P1"}
+    other_parent = {"number": 1, "title": "[relay] FTF-0309: round 1"}
+    assert _v(title="[relay] FTF-0309-P1: child slice", number=2, prs=[other_parent]) == []
+
+
 def test_non_relay_open_prs_do_not_own_items():
     cert = {"number": 3, "title": "[CERT] FTF-0608 CERTIFIED"}
     assert _v(title="[relay] FTF-0608: round 2", number=4, prs=[cert]) == []
