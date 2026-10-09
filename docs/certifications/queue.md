@@ -24590,3 +24590,11 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-08T22:12Z — Control plane: FTF-1602 returned (135/302 unchanged)
 - **Returned:** FTF-1602 r5 (0i): concurrent same-id create, G1/G7 pinned on real SeaweedFS, typed now.
+
+## 2026-10-09 — Certifier (session_015VKtbaSLn1qVKSLenqqwxe): FTF-H010-P1 r2 (#668) NOT CERTIFIED, no state change
+- **Independence:** OK. PR commits carry session_01EPYybG6kiez9LmW4ADzukM; the certifier session differs.
+- **Blocker:** #668 is OPEN (not merged), and `ci-verdict` on head 60b8c8ded3da567b8cc5bae05dee05b490e7fcad concluded
+  **failure** (run 37871644007): failed jobs `mutation-gate`, `relay-policy`, `classify` and `gate`. Logs returned
+  HTTP 404 to this session, so the failure reasons are not diagnosed here.
+- **Not done:** diff review, fault injection and packet check were not run. Certifying on red CI is not allowed.
+- **For the relay:** fix red CI on #668 first. `certification_state` stays `PROVISIONAL`/`L1-PROVEN` and nothing was changed in spec-matrix.yaml or the ledger.
