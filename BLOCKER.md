@@ -1,6 +1,32 @@
 # BLOCKER.md
 
-## LIVE 2026-10-08T23:41Z — GitHub Actions runner-provisioning outage recurrence (same class as
+## LIVE 2026-10-08T23:41Z — GitHub Actions billing stop (root cause confirmed; owner action needed)
+
+**UPDATE 2026-10-09T00:07Z, root cause confirmed by an independent session:**
+`docs/certifications/queue.md`'s own `2026-10-09T00:07Z` entry states plainly: "**CI outage:**
+GitHub Actions refuses jobs for billing since ~23:05Z 2026-10-08; nothing merges until the owner
+fixes it." That entry's own ledger record (PR #662, `docs/certifications/ledger.md`
+`2026-10-09T00:07Z`) independently dates the same window this entry below was built from
+timestamp correlation alone (23:05Z-23:41Z). This is **not** the generic transient
+runner-provisioning flake class from 2026-09-21/27/30 below — it is a billing stop
+(`Settings → Billing and plans → Actions`, or a GitHub Actions spending limit), which
+`docs/operations/routines.md`'s own CI-red rules name explicitly: "a job that 'was not started
+because recent account payments have failed or your spending limit needs to be increased' is a
+billing stop: do not push or re-run; report it once and move on." It will not clear on its own by
+waiting (unlike the 2026-09-21/27/30 occurrences) — it needs the owner to restore payment or raise
+the spending limit. Confirmed still live as of PR #665's own fresh first-attempt CI run
+(2026-10-09T00:10:44Z, `runner_id: 0`, identical signature, a brand-new workflow run on a PR
+opened after this finding, not a re-run of a stuck one).
+
+**Owner action needed:** check GitHub Actions billing status (`Settings → Billing and plans →
+Actions` on the account/org that owns this repo) and restore payment or raise the spending limit.
+Until then, no `[relay]`/`[CERT]` PR in this repo can get a green `ci-verdict`, so nothing merges;
+code-level work (implementing, committing, pushing, opening draft PRs as PROVISIONAL) is
+unaffected and continues.
+
+**Original entry, preserved for context (written before the billing root cause was confirmed):**
+
+## (historical) GitHub Actions runner-provisioning outage recurrence (same class as
 ## the 2026-09-30/10-01 occurrences below)
 
 **What failed:** on PR #663 (`relay/FTF-0903-r6`), the `gate`, `classify`, `mutation-gate` and

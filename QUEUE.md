@@ -9274,6 +9274,7 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
+- 2026-10-09: **GitHub Actions is refusing every job for a billing reason** since ~23:05Z 2026-10-08 (confirmed independently by two sessions: `docs/certifications/queue.md`'s `2026-10-09T00:07Z` entry, and `BLOCKER.md`'s own cross-PR timestamp correlation). Check `Settings → Billing and plans → Actions` and restore payment or raise the spending limit. Nothing merges until this clears (every `ci-verdict` fails in ~2-3s, `runner_id: 0`); code-level relay work continues unaffected. See `BLOCKER.md` for full detail.
 - 2026-10-08: FTF-0616 (LLM judge) needs a real judge call through the org LiteLLM gateway for its acceptance clause: a CI secret holding a gateway virtual key, plus the approved judge model id. Until then that clause stays BLOCKED_EXTERNAL; the rest of FTF-0616 continues.
 - 2026-10-07: FTF-04A31 needs a private-repo test credential (or approval to use this repo with `github.token`). See Parked.
 
