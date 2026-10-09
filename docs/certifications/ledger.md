@@ -10892,3 +10892,19 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   d859f65a unchanged since round 5; uncapped whole-file mutation 324/324. In-class code points the CI sample skips (U+2029,
   LRM/RLM, U+00AD, sub/compat-only NFKC) go RED under the suite's full sweep; advisory to add them to the required list.
   UNWIRED (proving_symbol blank).
+
+## 2026-10-09T19:40Z — CERTIFIED: FTF-0309 (round 4)
+- **FTF-0309: CERTIFIED** (Capability compatibility UI; PR #713, merge e2555b6, head ca1f85d8741bb3e78d737d96e8bbbaa358524f95).
+  Certifier session: session_016veQXScm4KKngKvSi12yRa. Producer session: session_01RW8pymEbYM5zLuunuZXqtf (both PR commits).
+  The two differ, and the certifier session appears on no commit of the PR.
+- **CI:** `ci-verdict` check 113982177055 concluded success on the head SHA (all 64 checks green), run
+  https://github.com/SJZLab/Sovra/actions/runs/37977251755.
+- **Diff re-read:** round 4 changes only apps/web/tests/ftf_0309.spec.ts plus docs/spec-matrix.yaml and the submission. The production component is unchanged.
+- **Tests:** `pnpm exec vitest run apps/web/tests/ftf_0309.spec.ts` gives 47/47 on merged main.
+- **Fault injection run by the certifier (one at a time, file restored after each):**
+  O33b RED 1 · O33c RED 1 · O34 RED 2 · O35 RED 2 · O35b RED 1 · O35c RED 1 · TB RED 1 · G4 RED 2. The producer's equivalent-mutant
+  note for a lone O33 clause is consistent with `Number.isInteger`.
+- **product_truth_check:** 47/47 product-true. proving_symbol `build_model_capability_router` is live-wired, certified through the FTF-0309-P1 slice (#667).
+- **Contract (packet FTF-0309):** acceptance 1 holds (every dimension shown with evidence and server reasons). Negative acceptance holds: unknown support or
+  VRAM, a malformed response, or a non-ready artifact never enables Train. Same UNWIRED UI disclosure as the certified FTF-0308 precedent.
+  Known limit: the Next.js page tree (FTF-H029) and a training-start caller do not exist yet.

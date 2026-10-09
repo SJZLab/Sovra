@@ -2258,14 +2258,14 @@ FTF-0308:
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_0308.spec.ts
 FTF-0309:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Capability compatibility UI
   evidence_hash: c1dc78f0eccb1e9002a4aa7a3212ccdac3a2ca13
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0301, FTF-0307,
-    FTF-0308. PROVISIONAL / L1-PROVEN, not certified (Law 4). UI scope:
+    FTF-0308. CERTIFIED / L2-CERTIFIED 2026-10-09 (PR #713, merge e2555b6; independent certifier session_016veQXScm4KKngKvSi12yRa; ledger entry in docs/certifications/ledger.md). UI scope:
     apps/web/components/artifact-capabilities/capability_compatibility_ui.tsx consumes only the
     frozen FTF-0309-P1 GET .../models/{name}/capabilities?project_id= route, sends the model name
     verbatim, shows every dimension with its dated evidence and the server's own `unknown` reason
@@ -2300,7 +2300,7 @@ FTF-0309:
     call in main.py on a scratch copy reproduces the exact TRACKER unwired failure
     (45/46, "build_model_capability_router has no live callers") the gate is meant to catch,
     confirmed and reverted byte-identical.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: build_model_capability_router
   proving_test: tests/tasks/test_ftf_0309_p1.py
 FTF-0310:

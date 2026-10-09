@@ -24641,3 +24641,7 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-09T18:33Z — Control plane: FTF-0616 CERTIFIED (137/302)
 - **Certified:** FTF-0616 for the adapter scope (#690, merge 4a0de86713e272749ba2ebe0d358e59a2957be2a); real-judge clause BLOCKED_EXTERNAL.
+
+## 2026-10-09T19:40Z — Certifier: FTF-0309 CERTIFIED (138/302)
+- **Certified:** FTF-0309 (#713, merge e2555b6; session_016veQXScm4KKngKvSi12yRa). Details in docs/certifications/ledger.md.
+- **Pending:** none from this firing.
