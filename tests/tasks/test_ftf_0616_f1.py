@@ -332,7 +332,7 @@ FAULTS: tuple[tuple[str, str, str, str], ...] = (
     (
         "F1-D",
         "substring match on the header name",
-        "name.lower() == _DEPLOYMENT_FINGERPRINT_HEADER",
+        "name.lower() in _DEPLOYMENT_FINGERPRINT_HEADER_NAMES",
         "_DEPLOYMENT_FINGERPRINT_HEADER in name.lower()",
     ),
     (

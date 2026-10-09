@@ -178,6 +178,7 @@ _MAX_TOKENS = 512
 # The same documented LiteLLM response header `route_attestation` reads. Compared as exact
 # lower-case ASCII, never by substring.
 _DEPLOYMENT_FINGERPRINT_HEADER = "x-litellm-model-id"
+_DEPLOYMENT_FINGERPRINT_HEADER_NAMES = frozenset({_DEPLOYMENT_FINGERPRINT_HEADER})
 # The width of `model_versions.observed_deployment_fingerprint`.
 _DEPLOYMENT_FINGERPRINT_MAX_LENGTH = 256
 _UNSAFE_FINGERPRINT_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
@@ -411,7 +412,7 @@ def _deployment_fingerprint_from_headers(headers: object) -> str | None:
     values = [
         value
         for name, value in headers.items()
-        if isinstance(name, str) and name.lower() == _DEPLOYMENT_FINGERPRINT_HEADER
+        if isinstance(name, str) and name.lower() in _DEPLOYMENT_FINGERPRINT_HEADER_NAMES
     ]
     if len(values) != 1:
         return None
