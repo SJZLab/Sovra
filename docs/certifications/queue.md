@@ -24616,3 +24616,9 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-09T12:10Z — Control plane: 4 returned (135/302 unchanged)
 - **Returned:** FTF-0903 r8 (0c), FTF-H010-P1 r3 (0d), FTF-0516-P1 r4 (0l), FTF-R004-P1 r3 (0n).
 - **ci-verdict:** relay merges #674, #677, #678, #680 landed on a green ci-verdict.
+
+## 2026-10-09T12:21Z — Control plane: FTF-0501 returned (135/302 unchanged)
+- **Returned:** FTF-0501 r3 (0j, API half): sweeper on the real backend, bounded central directory, parser-level DTD refusal, pinned bounds.
+
+## 2026-10-09T12:25Z — Control plane: FTF-R005 returned (135/302 unchanged)
+- **Returned:** FTF-R005 r6 (0e): tag-independent drift with read-back, token control-character refusal, resolved rows immutable.
