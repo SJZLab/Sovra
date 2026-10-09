@@ -9326,13 +9326,6 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      4. Bounded runtime (required: the regex runs under the handler lock): the secret-key pattern backtracks quadratically (`"token"*k`: 64 KB takes 28 s; 256 KB ran over 2 minutes). Make it linear; a test that a 256 KB adversarial input finishes in about 1 s.
      5. Behavioural pins: a secret-named extra with a non-str value (e.g. bytes) is redacted (A20); the third percent layer the notes claim (A7) - both RED today only through the fault table's anchor-count check.
      Disclosed pattern limits (sig=, key=, sk_live_, glpat- ...) are not return reasons.
-   - **0e. FTF-R005 round 7 (production + tests).** Work in packages/integrations/mlflow/ and its tests. Claim `relay/FTF-R005-r7`. Verifier findings (4b62130, #691: round-6 P1/P2/D5 tag-independent drift, token control-character refusal, sequential D2/D3b, D9 retry timing all fixed on a real MLflow 3.1.1 server and PG16 as sovra_app; 10 of 14 faults RED):
-     FTF-R005 RETURN -> round 7. Required:
-     1. Regression: strictness is gated on the mutable live MLflow status, so a completed run whose payload tag is intact but whose status was flipped back to RUNNING is SYNCED with status_changed and missing-field drift suppressed (Q1, Q1b, Q1c; end to end D7: the real outbox row resolved succeeded while the run is RUNNING and lacks factory.hash.artifact_sha256 - all held at round 5). Decide strictness from Factory's own record (payload tag present or a recorded completion), never the live status. Real-server tests for Q1/Q1b; fault: strict only when the live status is terminal.
-     2. Read-back before SYNCED (0e item 1, not done): a tamper between the drift check and the completion write yields SYNCED while MLflow shows 0.99 vs Factory 0.875 (Q2). Read the run back after writing and compare strictly. Test like Q2; fault: skip the read-back.
-     3. `DurableOutbox.record`: lock the row (SELECT ... FOR UPDATE) or make the write conditional on `status = 'pending'`, and report the mismatch (today it returns None and a failed row still reads SYNCED to the caller, D3b-report). A concurrent worker resolving the row between record()'s read and write still rewrites last_error/attempt_count on real PG (D8). Real-PG tests for D2, D3b and the D8 interleaving (R6-3 exists only in the faked-DB file).
-     4. Pin F7 (a non-latin-1 token gives FAILED "MLflow request could not be sent", never an uncaught UnicodeEncodeError) and F4 (KILLED is terminal).
-     5. Law 2: correct the round-6 notes ("set only by this adapter's own finish_run", "never SYNCED") and update evidence_hash.
    - **0f. FTF-0517 round 2 (tests + one docstring line).** Work in tests/tasks/test_ftf_0517.py. Claim `relay/FTF-0517-r2`. Verifier findings (each listed fault must go RED):
      FTF-0517 RETURN -> round 2, tests only (db26d03, #591). Production is deterministic and correct; mutation 117/119 killed, 2 timeouts, 0 survived; 60 hand faults, 14 survive (several real). Tests to add in tests/tasks/test_ftf_0517.py:
      1. Pinned golden: for a fixed spec and fixed records (e.g. 200 records keyed conv-i plus tmpl-(i%30)), assert the exact manifest_sha256, the exact counts and a few exact (record_id, role, group_id) triples; also run a subprocess under PYTHONHASHSEED=0 and 777 and compare hashes (kills hash() instead of SHA-256, reversed slot mapping, ratio off-by-one, strategy dropped from the bucket input).
@@ -9585,7 +9578,7 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
     language/group fields that §68.2/§69.2 and FTF-0602 need, so they are added; the live error convention is
     `{"detail": code}`, not §40's envelope; FTF-0501's "resumable UI" clause is not in its file list and stays with
     FTF-0501's own refinement.
-- FTF-0516, FTF-R005, FTF-0517, FTF-1703, FTF-1206, FTF-1602, FTF-0501, FTF-0908 and FTF-0904 are returned work in item 0 above.
+- FTF-0516, FTF-0517, FTF-1703, FTF-1206, FTF-1602, FTF-0501, FTF-0908 and FTF-0904 are returned work in item 0 above.
 - **FTF-0501-UI Resumable dataset upload UI** (child slice of FTF-0501; Control-plane design 2026-10-08T17:00Z; §8.1, §67.1 "Multipart resumable upload", §72.2; deps FTF-0501 round 2 API). DoD: `tools/r1_handoff.py packet FTF-0501`, "resumable UI" clause.
   A real file picker in apps/web on the five FTF-0501 routes (create session, part grants, list parts, finalize, read): dataset purpose, per-part progress, pause/resume after a page reload or network drop by listing uploaded parts and re-requesting only missing part URLs, and the typed finalize outcome (accepted, 409 incomplete, 410 expired, 422 hash/type/size, 503 storage outage) shown as visible states - never a fake success (Law 17).
   No secrets, part URLs or file bytes in localStorage (§72.2); presigned URLs are held in memory only.
@@ -13539,6 +13532,7 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
 - FTF-0616 — LLM judge adapter through LiteLLM. CERTIFIED 2026-10-09 for the adapter scope, PR #690 (merge `4a0de86713e272749ba2ebe0d358e59a2957be2a`); the real-judge clause stays BLOCKED_EXTERNAL (gateway key owner action); UNWIRED.
 - FTF-R004-P1 — Inspect AI target-runtime capture and refusal (child slice of FTF-R004). CERTIFIED 2026-10-09, PR #707 (merge `f856b47e0be3c22a53b354860d97e8a8405f487c`); UNWIRED until P3.
 - FTF-0309 — Capability compatibility UI. CERTIFIED 2026-10-09, PR #713 (merge `e2555b6c732dcd184c8fd270fb9301bc05c85dde`); UNWIRED and not product-true until its page has a live caller (FTF-H029), per the Law 7 note.
+- FTF-R005 — Integrate internal MLflow tracking and model registry projection. CERTIFIED 2026-10-09, PR #708 (merge `03442f67294975313db37ec297dea0cc24a6ca9a`); UNWIRED (no live caller yet, disclosed).
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

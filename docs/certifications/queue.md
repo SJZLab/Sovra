@@ -24648,3 +24648,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-09T20:35Z — Control plane: FTF-0908 returned
 - **Returned:** FTF-0908 r4 (0m): pin the tenant re-bind's transaction locality (fault F2 leaks on a pool without the reset guard). **Pending:** FTF-R005 #708.
+
+## 2026-10-09T21:05Z — Control plane: FTF-R005 CERTIFIED (139/302)
+- **Certified:** FTF-R005 (#708, merge 03442f67294975313db37ec297dea0cc24a6ca9a); UNWIRED. Wiring-task observations O1-O4 in the ledger.

@@ -13256,10 +13256,10 @@ FTF-R004:
   proving_symbol: ''
   proving_test: ''
 FTF-R005:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Integrate internal MLflow tracking and model registry projection
-  evidence_hash: b400e96aaaf1fe1ca52bd4dfd738c10f52aa9425
+  evidence_hash: 03442f67294975313db37ec297dea0cc24a6ca9a
   implementation_state: IMPLEMENTED
   notes: >-
     kind=reuse_architecture; requirements=CAP-12, CAP-19, CAP-21; scenarios=Q35, Q38, Q40;
@@ -13404,7 +13404,7 @@ FTF-R005:
     0 SURVIVED | 0 SURVIVED-allowlisted | score 100.0%. First run 40/57 with 17 survivors
     (CI's own `mutation-gate` check, first push) -- closed by tests, not by an allowlist entry;
     details in the submission doc.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_r005.py
 FTF-R006:
