@@ -1442,6 +1442,13 @@ def test_shape_denials_name_the_exact_path() -> None:
         _paths(_chat_body(messages=[{"role": "user", "content": 7}]))
         == [(CODE_UNKNOWN_REQUEST_SHAPE, "messages[0].content")],
     )
+    for bad_part in ("x", 7, None, ["text"]):
+        check(
+            cid,
+            f"a content part {bad_part!r} that is not an object is denied at its index",
+            _paths(_chat_body(messages=[{"role": "user", "content": [bad_part]}]))
+            == [(CODE_UNKNOWN_REQUEST_SHAPE, "messages[0].content[0]")],
+        )
     check(
         cid,
         "null message content is allowed (assistant tool-call history)",
@@ -1750,6 +1757,62 @@ def test_args_hash_is_of_the_argument_text_or_canonical_json() -> None:
                 {"choices": [], "note": "\u00e9"}, sort_keys=True, separators=(",", ":")
             ).encode()
         ).hexdigest(),
+    )
+
+
+def test_attempt_record_validates_itself_so_evidence_cannot_be_forged() -> None:
+    cid = "FTF-R004-P2-REC"
+    h = "a" * 64
+    ok = AttemptRecord("c1", "n", "function", h, h)
+    check(cid, "control: a valid record builds", ok.kind == "function")
+    check(
+        cid,
+        "control: a hosted record builds",
+        AttemptRecord("c1", "n", "hosted", h, h).kind == "hosted",
+    )
+    for label, args in (
+        ("an empty id", ("", "n", "function", h, h)),
+        ("a numeric id", (7, "n", "function", h, h)),
+        ("a str-subclass id", (_Str("c1"), "n", "function", h, h)),
+        ("an empty name", ("c1", "", "function", h, h)),
+        ("a str-subclass name", ("c1", _Str("n"), "function", h, h)),
+        ("an unknown kind", ("c1", "n", "other", h, h)),
+        ("an upper-case kind", ("c1", "n", "FUNCTION", h, h)),
+        ("a padded kind", ("c1", "n", "function ", h, h)),
+        ("a numeric kind", ("c1", "n", 7, h, h)),
+        ("a list kind", ("c1", "n", [], h, h)),
+        ("a non-hex args hash", ("c1", "n", "function", "z" * 64, h)),
+        ("a short args hash", ("c1", "n", "function", "a" * 10, h)),
+        ("a str-subclass args hash", ("c1", "n", "function", _Str(h), h)),
+        ("a non-hex response hash", ("c1", "n", "function", h, "z" * 64)),
+        ("a str-subclass response hash", ("c1", "n", "function", h, _Str(h))),
+    ):
+        check(
+            cid,
+            f"a record with {label} raises the typed error",
+            _raises(AttemptRecord, *args) == "provider_boundary_invalid_response",
+        )
+    # The forgery this prevents: an always-equal str subclass inside a record would make
+    # `evidence != fresh_capture` False and let the filter run on evidence it never captured.
+    response = _chat_response([("call_b", "delete_account", "{}")])
+    real = capture_response_attempts(response)
+    forged_ok = True
+    try:
+        record = AttemptRecord(
+            _Str("anything"),
+            _Str("anything"),
+            "function",
+            real.attempts[0].args_sha256,
+            real.response_sha256,
+        )
+        forged = AttemptEvidence(real.response_sha256, (record,))
+        apply_approval_filter(response, forged, approved_tool_names=frozenset())
+    except ProviderBoundaryError:
+        forged_ok = False
+    check(
+        cid,
+        "evidence built from always-equal str subclasses cannot be built or used",
+        not forged_ok,
     )
 
 

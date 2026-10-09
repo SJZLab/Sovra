@@ -43,8 +43,8 @@ value (`https://x/?u=data:...` is remote) and never by a URL parse that would
 normalise `" data:"` or `"DATA:"` into an inline value. Every other string, whatever
 its scheme (http, https, file, ftp, ...), is a remote dereference.
 
-Decisions are content-free: a denial holds a stable code and an index path (`tools[2]`), never a tool name,
-URL or prompt text.
+Decisions are content-free: a denial holds a stable code and an index path
+(`tools[2]`), never a tool name, URL or prompt text.
 
 Input is validated strictly before it is read: the body must be plain JSON
 (`dict`/`list`/`str`/`int`/`float`/`bool`/`None`, string keys, finite numbers,
@@ -117,6 +117,7 @@ _HOSTED_TYPE_RE = re.compile(
     r"|file_search|image_generation|local_shell)",
     re.ASCII,
 )
+_ATTEMPT_KINDS = ("function", "hosted")
 _CALL_ITEM_RE = re.compile(r"[a-z0-9_]+_call", re.ASCII)
 _BASE64_RE = re.compile(r"[A-Za-z0-9+/_=-]*", re.ASCII)
 _EXTERNAL_KIND = {"internal": False, "managed_provider": True, "external": True}
@@ -254,6 +255,14 @@ def _canonical(value: object) -> bytes:
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _hex64(value: object, what: str) -> str:
+    if type(value) is not str or not _SHA256_RE.fullmatch(value):
+        raise ProviderBoundaryError(
+            _INVALID_RESPONSE, f"{what} must be 64 lowercase hex characters"
+        )
+    return value
 
 
 # --------------------------------------------------------------------------- screening
@@ -485,6 +494,14 @@ class AttemptRecord:
     args_sha256: str
     response_sha256: str
 
+    def __post_init__(self) -> None:
+        _response_text(self.tool_call_id, "tool_call_id")
+        _response_text(self.name, "name")
+        if type(self.kind) is not str or self.kind not in _ATTEMPT_KINDS:
+            raise ProviderBoundaryError(_INVALID_RESPONSE, "kind must be 'function' or 'hosted'")
+        _hex64(self.args_sha256, "args_sha256")
+        _hex64(self.response_sha256, "response_sha256")
+
 
 @dataclass(frozen=True)
 class AttemptEvidence:
@@ -492,18 +509,18 @@ class AttemptEvidence:
     attempts: tuple[AttemptRecord, ...]
 
     def __post_init__(self) -> None:
-        if type(self.response_sha256) is not str or not _SHA256_RE.fullmatch(self.response_sha256):
-            raise ProviderBoundaryError(_INVALID_RESPONSE, "response_sha256 must be 64 hex chars")
+        _hex64(self.response_sha256, "response_sha256")
         if type(self.attempts) is not tuple:
             raise ProviderBoundaryError(_INVALID_RESPONSE, "attempts must be a tuple")
         for attempt in self.attempts:
-            if (
-                type(attempt) is not AttemptRecord
-                or attempt.response_sha256 != self.response_sha256
-            ):
+            if type(attempt) is not AttemptRecord:
                 raise ProviderBoundaryError(
-                    _INVALID_RESPONSE, "every attempt must be an AttemptRecord for this response"
+                    _INVALID_RESPONSE, "every attempt must be an AttemptRecord"
                 )
+        if {a.response_sha256 for a in self.attempts} - {self.response_sha256}:
+            raise ProviderBoundaryError(
+                _INVALID_RESPONSE, "every attempt must be bound to this response"
+            )
 
     def to_emitted_tool_calls(self) -> tuple[EmittedToolCall, ...]:
         """The FTF-0606 records FTF-0609 `grade_forbidden_actions` consumes."""
