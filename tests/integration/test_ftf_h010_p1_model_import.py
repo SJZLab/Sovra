@@ -11,8 +11,9 @@ rejects the `~` regex CHECK operator at CREATE TABLE time):
   - migration 0027 upgrade / downgrade / upgrade round-trips cleanly;
   - the restricted `sovra_app` role, never the migration-owner role, backs
     every request;
-  - a real `factory_trained`/`imported_weights`/`imported_adapter`/
-    `external_endpoint` enqueue each succeeds (201), at state `queued`;
+  - a real `imported_weights`/`imported_adapter`/`external_endpoint` enqueue
+    each succeeds (201), at state `queued`; a `factory_trained` enqueue is
+    refused (400) -- it is not one of Section 68.1's three import forms;
   - negative_acceptance: `external_endpoint` + `trainable_artifact_id` is
     refused (400); `external_endpoint` with no `external_provider_model_ref`
     is refused (400); `imported_adapter` with no `parent_model_version_id`
@@ -228,6 +229,216 @@ def _artifact(org_id: uuid.UUID, name: str, status: str = "ready") -> TrainableA
         minimum_gpu_profile_json={},
         status=status,
     )
+
+
+def _message(exc: DBAPIError) -> str:
+    diag = getattr(exc.orig, "diag", None)
+    return str(exc.orig) if diag is None else str(diag.message_primary)
+
+
+def _raw_job(session: Session, org_id: uuid.UUID, project_id: uuid.UUID) -> uuid.UUID:
+    """A fresh queued job under `org_id`, inserted with that tenant context."""
+    job_id = uuid.uuid4()
+    _set_tenant(session, org_id)
+    session.execute(
+        text(
+            "INSERT INTO model_import_jobs "
+            "(id, organization_id, project_id, requested_origin, state, created_by) "
+            "VALUES (:id, :org_id, :project_id, 'imported_weights', 'queued', 'r3')"
+        ),
+        {"id": str(job_id), "org_id": str(org_id), "project_id": str(project_id)},
+    )
+    session.commit()
+    return job_id
+
+
+def _round3_checks(
+    owner_engine: Any,
+    app_engine: Any,
+    *,
+    org1_id: uuid.UUID,
+    org2_id: uuid.UUID,
+    project1_id: uuid.UUID,
+    project2_id: uuid.UUID,
+    artifact1_id: uuid.UUID,
+) -> None:
+    """Round 3: the pinned-but-previously-unpinned rules (terminal states,
+    cross-tenant UPDATE, origin/import-kind CHECK, sha256 patterns)."""
+    created_jobs: list[uuid.UUID] = []
+
+    # -- 2. Cross-tenant UPDATE (run before any terminal row exists, because this
+    # statement has no WHERE and the terminal-state trigger would refuse it; with a
+    # WHERE or RETURNING the SELECT policy also applies and would mask an extra
+    # UPDATE-only policy): an unqualified (no organization filter) UPDATE
+    # under the org1 context leaves the org2 row untouched; the same statement
+    # does reach the org1 row (same-tenant control, so the context is live). --
+    with Session(owner_engine) as owner:
+        org2_job = uuid.uuid4()
+        owner.execute(
+            text(
+                "INSERT INTO model_import_jobs "
+                "(id, organization_id, project_id, requested_origin, state, created_by) "
+                "VALUES (:id, :org_id, :project_id, 'imported_weights', 'queued', 'r3')"
+            ),
+            {"id": str(org2_job), "org_id": str(org2_id), "project_id": str(project2_id)},
+        )
+        owner.commit()
+        created_jobs.append(org2_job)
+    with Session(app_engine) as session:
+        org1_job = _raw_job(session, org1_id, project1_id)
+        created_jobs.append(org1_job)
+        _set_tenant(session, org1_id)
+        result = session.execute(
+            text("UPDATE model_import_jobs SET updated_at = timestamptz '2001-01-01 00:00:00+00'")
+        )
+        touched = result.rowcount
+        session.commit()
+    with Session(owner_engine) as owner:
+        codes = {
+            row.id: int(row.yr)
+            for row in owner.execute(
+                text(
+                    "SELECT id, extract(year FROM updated_at) AS yr FROM model_import_jobs "
+                    "WHERE id IN (:a, :b)"
+                ),
+                {"a": str(org1_job), "b": str(org2_job)},
+            )
+        }
+    check(
+        CID,
+        "R3-2 control: the unqualified UPDATE under the org1 context reaches the org1 row",
+        touched >= 1 and codes[org1_job] == 2001,
+    )
+    check(
+        CID,
+        "R3-2: the same UPDATE leaves the org2 row unchanged (owner read)",
+        codes[org2_job] != 2001,
+    )
+
+    # -- 1. Terminal states: a same-state UPDATE on each terminal state is
+    # refused by the trigger's own "is a terminal state" branch (not merely
+    # sqlstate 23514, which a CHECK would also give). --
+    with Session(app_engine) as session:
+        for terminal in ("failed", "succeeded", "blocked_external"):
+            job_id = _raw_job(session, org1_id, project1_id)
+            created_jobs.append(job_id)
+            _set_tenant(session, org1_id)
+            session.execute(
+                text("UPDATE model_import_jobs SET state = 'validating' WHERE id = :id"),
+                {"id": str(job_id)},
+            )
+            session.execute(
+                text(
+                    "UPDATE model_import_jobs SET state = :terminal, failure_code = :code "
+                    "WHERE id = :id"
+                ),
+                {
+                    "id": str(job_id),
+                    "terminal": terminal,
+                    "code": None if terminal == "succeeded" else "orig",
+                },
+            )
+            session.commit()
+            for label, statement in (
+                ("a failure_code rewrite", "SET failure_code = 'rewritten'"),
+                ("an updated_at bump", "SET updated_at = now()"),
+            ):
+                _set_tenant(session, org1_id)
+                try:
+                    session.execute(
+                        text(f"UPDATE model_import_jobs {statement} WHERE id = :id"),
+                        {"id": str(job_id)},
+                    )
+                    session.commit()
+                    check(CID, f"R3-1: {label} on a '{terminal}' job is refused", False)
+                except DBAPIError as exc:
+                    session.rollback()
+                    check(
+                        CID,
+                        f"R3-1: {label} on a '{terminal}' job is refused by the terminal-state "
+                        f"branch (sqlstate {_sqlstate(exc)}, message {_message(exc)!r})",
+                        _sqlstate(exc) == "23514"
+                        and f"{terminal} is a terminal state" in _message(exc),
+                    )
+            _set_tenant(session, org1_id)
+            kept = session.execute(
+                text("SELECT state, failure_code FROM model_import_jobs WHERE id = :id"),
+                {"id": str(job_id)},
+            ).one()
+            session.commit()
+            check(
+                CID,
+                f"R3-1: the '{terminal}' row is unchanged after the refused rewrites",
+                kept.state == terminal
+                and kept.failure_code == (None if terminal == "succeeded" else "orig"),
+            )
+
+    # -- 3 + 4. Raw model_versions INSERTs, each with the tenant context set in
+    # its own transaction and refused BY the target constraint's name. --
+    def refused_by(label: str, sql: str, params: dict[str, Any], constraint: str) -> None:
+        with Session(app_engine) as session:
+            _set_tenant(session, org1_id)
+            try:
+                session.execute(text(sql), {"org_id": str(org1_id), **params})
+                session.commit()
+                check(CID, f"{label} is refused", False)
+            except DBAPIError as exc:
+                session.rollback()
+                check(
+                    CID,
+                    f"{label} is refused BY NAME by {constraint} (got {_constraint_name(exc)!r})",
+                    _constraint_name(exc) == constraint,
+                )
+
+    artifact_params = {
+        "project_id": str(project1_id),
+        "artifact_id": str(artifact1_id),
+        "digest": "sha256:" + "d" * 64,
+    }
+    refused_by(
+        "R3-3: an adapter row with origin='factory_trained' and adapter_only=false",
+        "INSERT INTO model_versions "
+        "(organization_id, project_id, version_number, import_kind, trainable_artifact_id, "
+        "weights_digest, base_model_revision, created_by, origin, adapter_only) "
+        "VALUES (:org_id, :project_id, 9101, 'adapter', :artifact_id, :digest, 'rev', 'r3', "
+        "'factory_trained', false)",
+        artifact_params,
+        "ck_model_versions_origin_import_kind_consistency",
+    )
+    refused_by(
+        "R3-3: a full_weight row with origin='imported_adapter' and adapter_only=true",
+        "INSERT INTO model_versions "
+        "(organization_id, project_id, version_number, import_kind, trainable_artifact_id, "
+        "weights_digest, base_model_revision, created_by, origin, adapter_only) "
+        "VALUES (:org_id, :project_id, 9102, 'full_weight', :artifact_id, :digest, 'rev', "
+        "'r3', 'imported_adapter', true)",
+        artifact_params,
+        "ck_model_versions_origin_import_kind_consistency",
+    )
+    version = 9200
+    for column in ("chat_template_sha256", "serving_config_sha256"):
+        for label, value in (
+            ("a 63-char hex value", "a" * 63),
+            ("a 64-char non-hex lowercase value", "g" * 64),
+        ):
+            version += 1
+            refused_by(
+                f"R3-4: {column} = {label}",
+                "INSERT INTO model_versions "
+                "(organization_id, project_id, version_number, import_kind, endpoint_reference, "
+                f"external_provider_model_ref, created_by, origin, {column}) "
+                "VALUES (:org_id, :project_id, :version, 'endpoint', 'https://r3.example.com', "
+                "'https://r3.example.com', 'r3', 'external_endpoint', :value)",
+                {"project_id": str(project1_id), "version": version, "value": value},
+                f"ck_model_versions_{column}_format",
+            )
+
+    with Session(owner_engine) as cleanup:
+        for job_id in created_jobs:
+            cleanup.execute(
+                text("DELETE FROM model_import_jobs WHERE id = :id"), {"id": str(job_id)}
+            )
+        cleanup.commit()
 
 
 def main() -> None:
@@ -617,13 +828,14 @@ def main() -> None:
                 "after this migration",
                 False,
             )
-        except DBAPIError:
+        except DBAPIError as exc:
             session.rollback()
             check(
                 CID,
                 "model_versions stays SELECT/INSERT only -- unchanged, still immutable "
-                "after this migration",
-                True,
+                f"after this migration (sqlstate {_sqlstate(exc)}, expect 42501 "
+                "insufficient_privilege)",
+                _sqlstate(exc) == "42501",
             )
 
     # -- Round 2 item 1: model_import_jobs' own DB-enforced state machine.
@@ -1110,9 +1322,14 @@ def main() -> None:
             )
             session.commit()
             check(CID, "sovra_app can never DELETE a model_import_jobs row", False)
-        except DBAPIError:
+        except DBAPIError as exc:
             session.rollback()
-            check(CID, "sovra_app can never DELETE a model_import_jobs row", True)
+            check(
+                CID,
+                "sovra_app can never DELETE a model_import_jobs row (sqlstate "
+                f"{_sqlstate(exc)}, expect 42501 insufficient_privilege)",
+                _sqlstate(exc) == "42501",
+            )
 
         # -- RLS, with the control item 3 asked for: a same-tenant INSERT
         # under an explicitly re-set org1 context succeeds (proves the
@@ -1172,6 +1389,16 @@ def main() -> None:
                 "proven live by the same-tenant control just above",
                 _sqlstate(exc) == "42501",
             )
+
+    _round3_checks(
+        owner_engine,
+        app_engine,
+        org1_id=org1_id,
+        org2_id=org2_id,
+        project1_id=project1_id,
+        project2_id=project2_id,
+        artifact1_id=artifact1_id,
+    )
 
     if FAILURES:
         print(f"FTF-H010-P1 real model import proof: {len(FAILURES)} failed")
