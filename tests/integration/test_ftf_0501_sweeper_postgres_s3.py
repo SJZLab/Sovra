@@ -254,14 +254,44 @@ def main() -> None:
     left = {u["UploadId"] for u in everything}
     survivors = left & set(filler_uploads)
     # Diagnostics for the real server's paging behaviour (printed on every run).
-    _, _, raw = client._request(
+    import re as _re
+
+    def probe(label: str, **extra: str) -> None:
+        query = {"uploads": "", "prefix": "tenants/", "max-uploads": "1000", **extra}
+        _, _, raw = client._request("GET", bucket, query=query)
+        text_ = raw.decode("utf-8", "replace")
+        keys = _re.findall(r"<Key>([^<]*)</Key>", text_)
+        ids = _re.findall(r"<UploadId>([^<]*)</UploadId>", text_)
+        marks = {
+            name: _re.findall(rf"<{name}>([^<]*)</{name}>", text_)
+            for name in (
+                "IsTruncated",
+                "KeyMarker",
+                "UploadIdMarker",
+                "NextKeyMarker",
+                "NextUploadIdMarker",
+            )
+        }
+        print(
+            f"W3 probe {label}: n={len(keys)} marks={marks} first={keys[:1]}/{ids[:1]} "
+            f"last={keys[-1:]}/{ids[-1:]} keys_sorted={keys == sorted(keys)} "
+            f"ids_sorted={ids == sorted(ids)}"
+        )
+        return None
+
+    probe("page1")
+    _, _, raw1 = client._request(
         "GET", bucket, query={"uploads": "", "prefix": "tenants/", "max-uploads": "1000"}
     )
-    head = raw.decode("utf-8", "replace")
+    t1 = raw1.decode("utf-8", "replace")
+    k1 = _re.findall(r"<Key>([^<]*)</Key>", t1)[-1]
+    u1 = _re.findall(r"<UploadId>([^<]*)</UploadId>", t1)[-1]
+    probe("A key+id markers", **{"key-marker": k1, "upload-id-marker": u1})
+    probe("B id marker only", **{"upload-id-marker": u1})
+    probe("C key marker only", **{"key-marker": k1})
     print(
         f"W3 diagnostics: run={run}; listing total={len(everything)} unique={len(left)}; "
-        f"fillers surviving={len(survivors)}/{len(filler_uploads)}; first page raw head="
-        f"{head[:300]!r} ... tail={head[-400:]!r}"
+        f"fillers surviving={len(survivors)}/{len(filler_uploads)}"
     )
     check(f"W3 the listing took more than one page ({run})", run.pages >= 2)
     check("W3 the expired upload behind 1005 others is aborted", last_up not in left)
