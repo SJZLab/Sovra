@@ -24609,3 +24609,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-09T10:26Z — Control plane: FTF-0309-P1 slice CERTIFIED; FTF-0908 returned (135/302)
 - **Certified slice:** FTF-0309-P1 (#667). **Returned:** FTF-0908 r3 (0m). **Queued:** FTF-0309 UI.
 - Follow-up O1 (non-blocking): refuse a NUL model name with 400 before discovery on the 0309-P1 and 0308-P1 routes.
+
+## 2026-10-09T11:38Z — Control plane: FTF-0616 returned (135/302 unchanged)
+- **Returned:** FTF-0616 r8 (0b), tests only: generated Unicode variants at both points, configured-side mirror, pass and fail.
