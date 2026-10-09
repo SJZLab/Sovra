@@ -1322,13 +1322,26 @@ def test_s4_reads() -> None:
             ("an unknown state", {"state": "closed"}),
             ("an unknown category", {"category": "made_up"}),
             ("a blank detector", {"detector": " "}),
+            ("a lone high-surrogate detector", {"detector": "\ud800"}),
+            ("a lone low-surrogate detector", {"detector": "x\udc00"}),
+            ("a NUL detector", {"detector": "a\x00b"}),
         ):
             try:
                 issues(**kwargs)
                 raised = False
-            except ValueError:
+                message = ""
+            except ValueError as exc:
+                # UnicodeEncodeError is a ValueError too: pin the module's own message so a
+                # bypassed guard that lets the driver fail instead still goes RED (N6c).
                 raised = True
+                message = str(exc) if type(exc) is ValueError else f"{type(exc).__name__}"
             check(CID, f"list_issues refuses {label}", raised)
+            if "detector" in kwargs:
+                check(
+                    CID,
+                    f"list_issues refuses {label} with the module's own ValueError",
+                    message == "detector must be a non-blank string",
+                )
         check(CID, "limit 200 is accepted", len(issues(limit=200)) == 5)
 
         one = store.get_issue(
