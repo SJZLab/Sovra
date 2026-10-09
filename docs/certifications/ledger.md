@@ -10797,3 +10797,11 @@ producer session matches the certifier.
   proving_symbol hold. Reproduced: the §67.5 sweeper aborts nothing on SeaweedFS (no Initiated, exits 0, one unmarked
   page); an unbounded central-directory read (heap ~3x the object); a UTF-16 DTD/ENTITY bypass that let an entity-typed
   workbook become an accepted Dataset version on the real routes. GREEN: the three §67.3 bound values (F5, F18, F19).
+
+## 2026-10-09T12:25Z — RETURNED: FTF-R005 (r6)
+- **FTF-R005: RETURNED** (rounds 2-5 → 6; #674, a2e419fe80cec75a37af46edd4481fec7b852bd0; rounds 3-5 were submitted
+  without Control-plane verification). Independent verifier on a real MLflow 3.1.1 server and PG16 as sovra_app: Law 17
+  statuses, bounded retries, durable outbox reuse and paging hold. Reproduced: run-level drift is skipped when the
+  mutable payload tag is deleted or the run is tampered with before completion, so a drifted run resolves SYNCED (D5);
+  a newline/CRLF token leaks through an uncaught ValueError; record() rewrites resolved outbox rows. Notes overclaim and
+  evidence_hash is stale (Law 2).
