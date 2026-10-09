@@ -10745,3 +10745,20 @@ producer session matches the certifier.
   the detector_versions object-type clause (N8). Route-level NUL tests missing.
 - Pending: FTF-0616 r7 (#669), FTF-0309-P1 r3 (#667), FTF-0908 r2 (#670); queued next: FTF-H010-P1 r2 (#668),
   FTF-R004-P1 r2 (#675), FTF-0501 r2 (#658).
+
+## 2026-10-09T10:26Z — CERTIFIED: slice FTF-0309-P1; RETURNED: FTF-0908 (r3); QUEUED: FTF-0309 UI
+- **FTF-0309-P1 (child slice of FTF-0309): CERTIFIED** (round 3; PR #667, merge
+  8a829cc2b8d35f966303255c4d258cf1643b23cb, head b7819ac). Session comparison: producer session_01LG2dBH7dLGwKUP9AEoxK8X
+  (main-sync commit session_01FzXZvoFHAhmXv43jugSSPS) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, which appears nowhere
+  on the PR. CI: ci-verdict 113729777424; gate job 113718342112 "FTF-0309-P1 capability route tests: all checks passed";
+  model-capabilities-integration job 113718480304 (PG16) "capability real proof: all checks passed". FTF-0309's
+  proving_symbol is build_model_capability_router: product_truth 46/46 in CI, and RED (46/47, "no live callers") when the
+  include_router block is removed. One shared Unicode variant set pins both lookups: FB-nfkc and FB5 RED in both suites;
+  36 faults injected, every clause fault RED; whole-file mutation 68/68; 83/84 probes (the exception: a NUL in the
+  model name gives a 500 after discovery, shared with the certified FTF-0308-P1 routes, no clause covers it - follow-up
+  O1). Status count unchanged (child slice; FTF-0309 stays open for its UI).
+- **FTF-0908: RETURNED** (round 2 → 3; #670, 9605bb9affd815aa07d977a9f697a198541796c0). All six round-2 items fixed;
+  mutation 66/66. Reproduced on PG16 as sovra_app: the denial's own commit ends the transaction holding the tenant
+  context, so a second denial raises a raw RLS error with no audit row and the caller's later reads return 0 tenant
+  rows; a caller's pending row is committed by the denial.
+- **Queued:** FTF-0309 UI (Backlog), gated on every dimension known, sufficient tested VRAM, trainable and access granted.
