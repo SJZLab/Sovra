@@ -155,7 +155,7 @@ def test_compute_run_drift_strictness_inputs() -> None:
         make_run(status="KILLED"),
     )
     check("F4", "a KILLED run that matches a KILLED payload has no drift", killed_ok == ())
-    no_info = {"data": {"tags": [{"key": TAG_PAYLOAD, "value": "x"}]}}
+    no_info: dict[str, object] = {"data": {"tags": [{"key": TAG_PAYLOAD, "value": "x"}]}}
     check(
         "Q1",
         "a tag with no status at all is strict too",
