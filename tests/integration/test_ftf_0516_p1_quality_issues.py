@@ -1636,6 +1636,10 @@ def main() -> None:
     held_ds = make_dataset("routes-held", purpose="held_out_evaluation")
     held_report = record(held_ds, extra=(_extra("held_warn", (0, 1)),))
     held_issue = issue_of(held_report, "held_warn")
+    uni_ds = make_dataset("routes-unicode")
+    uni_report = record(uni_ds, extra=(_extra("uni_emoji", (0, 1)), _extra("uni_arabic", (0, 1))))
+    uni_emoji = issue_of(uni_report, "uni_emoji")
+    uni_arabic = issue_of(uni_report, "uni_arabic")
 
     with _running_app(app) as url:
         b = base(org1_id, p1_id, route_ds.id)
@@ -2101,6 +2105,50 @@ def main() -> None:
             "state=waived filter",
             len(_http(url, "GET", b + "/issues?state=waived", ml).json()["items"]) == 1,
         )
+
+        # Round 4 (N9b/N9c): the product writes copy in two languages, so a non-ASCII
+        # and an astral-plane reason must each be a 201 and stored verbatim -- a reason
+        # validator that narrows to ASCII or to the BMP is a real regression.
+        ub = base(org1_id, p1_id, uni_ds.id)
+        uni_reasons = (
+            ("an emoji reason", uni_emoji, "reviewed \U0001f600 ok"),
+            ("an Arabic reason", uni_arabic, "مراجعة السجل"),
+        )
+        applied = 0  # a refused request must not shift the next case's expected version
+        for label, target, reason in uni_reasons:
+            created = _http(
+                url,
+                "POST",
+                ub + "/resolve-issue",
+                ml,
+                {
+                    "quality_report_id": str(uni_report.id),
+                    "expected_resolution_version": applied,
+                    "idempotency_key": uuid.uuid4().hex,
+                    "resolutions": [item(target, "exclude", reason=reason)],
+                },
+            )
+            check(
+                f"resolve-issue: {label} => 201 (got {created.status})",
+                created.status == 201,
+            )
+            applied += 1 if created.status == 201 else 0
+            stored = scalar(
+                "SELECT reason FROM dataset_issue_resolutions WHERE issue_id = :i",
+                i=target.issue_id,
+            )
+            check(
+                f"resolve-issue: {label} is stored verbatim (got {stored!r})",
+                stored == reason,
+            )
+            listed_reasons = {
+                r["reason"]
+                for r in _http(url, "GET", ub + "/issue-resolutions?limit=10", ml).json()["items"]
+            }
+            check(
+                f"issue-resolutions: {label} is returned verbatim",
+                reason in listed_reasons,
+            )
 
     _finish()
 
