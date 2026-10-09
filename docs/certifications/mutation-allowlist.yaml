@@ -27,23 +27,3 @@ entries:
     operator: M3
     line: 221
     reason: "Protocol method stub whose body is `...`; it is never executed (implementations override it), so an inserted `return None` cannot change behavior. Ruled equivalent by the FTF-0510 round-5 L2 verifier, 2026-10-06."
-  - file: apps/api/app/model_versions/model_import_crud.py
-    function: create_model_import_job
-    operator: M9
-    line: 116
-    reason: "requested_origin has already passed validate_origin() (the line immediately above this function's own branching), which requires exact membership in ALLOWED_ORIGINS -- a frozenset of canonical strings with no uppercase letters and no leading/trailing whitespace. `.strip().lower()` applied to a value already equal to one of those strings is a no-op, so this equality check cannot observe the mutation. FTF-H010-P1 round 2, 2026-10-09."
-  - file: apps/api/app/model_versions/model_import_crud.py
-    function: create_model_import_job
-    operator: M9
-    line: 127
-    reason: "Same as the line-116 entry above -- requested_origin is already validate_origin()-canonical at every comparison in this function, so `.strip().lower()` is a no-op here too. FTF-H010-P1 round 2, 2026-10-09."
-  - file: apps/api/app/model_versions/model_import_crud.py
-    function: create_model_import_job
-    operator: M9
-    line: 136
-    reason: "Same as the line-116 entry above. FTF-H010-P1 round 2, 2026-10-09."
-  - file: apps/api/app/model_versions/model_import_schema.py
-    function: validate_external_provider_model_ref
-    operator: M10
-    line: 80
-    reason: "`value.strip() == \"\"` is only ever true when `value` is composed entirely of whitespace characters; for such a value, `.lstrip()` and `.rstrip()` each also consume every character and yield \"\" too -- there is no string for which `.strip()` and `.lstrip()`/`.rstrip()` disagree about being blank. The stripped result is never stored or reused (the function returns the original, unstripped `value`), so no other check can observe the difference either. FTF-H010-P1 round 2, 2026-10-09."

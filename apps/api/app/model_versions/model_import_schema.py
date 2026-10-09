@@ -50,11 +50,18 @@ __all__ = [
 # legitimately be `factory_trained`); only the *requested_origin* of an
 # import job excludes it, enforced here and, defense in depth, by
 # `ck_model_import_jobs_origin_not_factory_trained` (0028).
-ALLOWED_ORIGINS = (
-    "imported_weights",
-    "imported_adapter",
-    "external_endpoint",
-)
+#
+# Named module-level singletons (not just tuple membership): `validate_origin`
+# always returns one of these exact three objects, never the caller's own
+# `value`, so `create_model_import_job`'s own dispatch can compare by identity
+# (`is`) rather than value (`==`) -- a value-equal but non-identical string
+# (anything a caller could actually construct) is already refused by
+# `validate_origin` itself, so `is` never rejects a real caller; it only
+# forecloses a str method silently returning an equal-but-different object.
+ORIGIN_IMPORTED_WEIGHTS = "imported_weights"
+ORIGIN_IMPORTED_ADAPTER = "imported_adapter"
+ORIGIN_EXTERNAL_ENDPOINT = "external_endpoint"
+ALLOWED_ORIGINS = (ORIGIN_IMPORTED_WEIGHTS, ORIGIN_IMPORTED_ADAPTER, ORIGIN_EXTERNAL_ENDPOINT)
 
 ALLOWED_JOB_STATES = ("queued", "validating", "failed", "succeeded", "blocked_external")
 
@@ -69,15 +76,20 @@ class ModelImportValidationError(ValueError):
 
 
 def validate_origin(value: object) -> str:
-    if not isinstance(value, str) or value not in ALLOWED_ORIGINS:
+    if not isinstance(value, str):
         raise ModelImportValidationError(
             f"requested_origin must be one of {ALLOWED_ORIGINS}: {value!r}"
         )
-    return value
+    for origin in ALLOWED_ORIGINS:
+        if origin == value:
+            return origin  # the canonical singleton, never the caller's own `value`
+    raise ModelImportValidationError(
+        f"requested_origin must be one of {ALLOWED_ORIGINS}: {value!r}"
+    )
 
 
 def validate_external_provider_model_ref(value: object) -> str:
-    if not isinstance(value, str) or not value or value.strip() == "":
+    if not isinstance(value, str) or value == "" or value.isspace():
         raise ModelImportValidationError(
             "external_provider_model_ref must be a non-empty, non-whitespace string"
         )

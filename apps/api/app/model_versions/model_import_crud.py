@@ -52,6 +52,9 @@ from app.auth.audit_event_writer import write_audit_event
 from app.auth.tenant_isolation_query_guards import execute_tenant_scoped
 from app.db.tenant_context import TenantContext
 from app.model_versions.model_import_schema import (
+    ORIGIN_EXTERNAL_ENDPOINT,
+    ORIGIN_IMPORTED_ADAPTER,
+    ORIGIN_IMPORTED_WEIGHTS,
     ModelImportJob,
     ModelImportValidationError,
     validate_external_provider_model_ref,
@@ -111,9 +114,18 @@ def create_model_import_job(
     # (defense in depth); this call surfaces the same error before any
     # referenced id is even looked up, so a bad origin never triggers an
     # extra, pointless lookup of a well-formed parent/artifact id.
+    #
+    # `validate_origin` always returns one of its own three named module-level
+    # singletons, never the caller's own string object -- so the dispatch
+    # below compares by identity (`is`), not value (`==`). A real caller's
+    # value that is merely *equal* to one of these (any string a caller can
+    # actually construct) was already turned into the singleton by
+    # `validate_origin` on the line above; nothing downstream can reach this
+    # dispatch holding some other, differently-cased or whitespace-padded
+    # object that `is` would wrongly refuse.
     requested_origin = validate_origin(requested_origin)
 
-    if requested_origin == "external_endpoint":
+    if requested_origin is ORIGIN_EXTERNAL_ENDPOINT:
         if trainable_artifact_id is not None:
             raise ModelImportValidationError(
                 "an external_endpoint import must not carry trainable_artifact_id -- "
@@ -124,7 +136,7 @@ def create_model_import_job(
         # (`not "  "` is False in Python -- a bare truthiness check would have
         # let a blank-looking ref through).
         validate_external_provider_model_ref(external_provider_model_ref)
-    elif requested_origin == "imported_adapter":
+    elif requested_origin is ORIGIN_IMPORTED_ADAPTER:
         if parent_model_version_id is None:
             raise ModelImportValidationError(
                 "an imported_adapter import requires parent_model_version_id (the base)"
@@ -133,7 +145,7 @@ def create_model_import_job(
             raise ModelImportValidationError(
                 "an imported_adapter import requires trainable_artifact_id (the adapter weights)"
             )
-    elif requested_origin == "imported_weights":
+    elif requested_origin is ORIGIN_IMPORTED_WEIGHTS:
         if trainable_artifact_id is None:
             raise ModelImportValidationError(
                 "an imported_weights import requires trainable_artifact_id"
