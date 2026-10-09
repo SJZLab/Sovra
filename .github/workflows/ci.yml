@@ -486,6 +486,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0905.py
       - name: FTF-H010-P1 negative-test proof (model import fields + import-validation jobs -- migration SQL + RLS/GRANT shape + fault injection, store on SQLite, route seams, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_h010_p1.py
+      - name: FTF-R004-P1 negative-test proof (Inspect bridge generation-config parity comparator, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_r004_p1.py
       - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
         run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check
