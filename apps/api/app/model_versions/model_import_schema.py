@@ -40,16 +40,28 @@ __all__ = [
     "validate_origin",
 ]
 
-# Section 6.17's own four import-provenance shapes -- a finer
-# classification than `model_versions.import_kind`'s own three
-# (`endpoint`/`full_weight`/`adapter`); see `0027_model_import.py`'s own
-# docstring for the backfill mapping between them.
-ALLOWED_ORIGINS = (
-    "factory_trained",
-    "imported_weights",
-    "imported_adapter",
-    "external_endpoint",
-)
+# Section 68.1 names exactly three import forms for this route ("external
+# endpoint/provider model reference, signed full-weight artifact, or
+# signed adapter plus exact base artifact"); `factory_trained` is not one
+# of them -- that is FTF-1001's own direct creation path
+# (`model_version_crud.create_model_version`), never something *imported*
+# through this job queue. `model_version_schema.py` keeps its own,
+# separate four-value `ALLOWED_ORIGINS` (a `ModelVersion` row itself can
+# legitimately be `factory_trained`); only the *requested_origin* of an
+# import job excludes it, enforced here and, defense in depth, by
+# `ck_model_import_jobs_origin_not_factory_trained` (0028).
+#
+# Named module-level singletons (not just tuple membership): `validate_origin`
+# always returns one of these exact three objects, never the caller's own
+# `value`, so `create_model_import_job`'s own dispatch can compare by identity
+# (`is`) rather than value (`==`) -- a value-equal but non-identical string
+# (anything a caller could actually construct) is already refused by
+# `validate_origin` itself, so `is` never rejects a real caller; it only
+# forecloses a str method silently returning an equal-but-different object.
+ORIGIN_IMPORTED_WEIGHTS = "imported_weights"
+ORIGIN_IMPORTED_ADAPTER = "imported_adapter"
+ORIGIN_EXTERNAL_ENDPOINT = "external_endpoint"
+ALLOWED_ORIGINS = (ORIGIN_IMPORTED_WEIGHTS, ORIGIN_IMPORTED_ADAPTER, ORIGIN_EXTERNAL_ENDPOINT)
 
 ALLOWED_JOB_STATES = ("queued", "validating", "failed", "succeeded", "blocked_external")
 
@@ -64,16 +76,29 @@ class ModelImportValidationError(ValueError):
 
 
 def validate_origin(value: object) -> str:
-    if not isinstance(value, str) or value not in ALLOWED_ORIGINS:
+    # `tuple.index` does its own membership comparison internally (not a
+    # `==`/`in` node in this module's own source), and raises for a value
+    # that is not a plain `str` the same way it does for one that just isn't
+    # a recognized origin -- there is no separate isinstance branch to keep
+    # in sync, and no `a == b` expression here for a normalisation-bypass
+    # mutation to land on.
+    try:
+        return ALLOWED_ORIGINS[ALLOWED_ORIGINS.index(value)]
+    except ValueError:
         raise ModelImportValidationError(
             f"requested_origin must be one of {ALLOWED_ORIGINS}: {value!r}"
-        )
-    return value
+        ) from None
 
 
 def validate_external_provider_model_ref(value: object) -> str:
-    if not isinstance(value, str) or not value:
-        raise ModelImportValidationError("external_provider_model_ref must be a non-empty string")
+    # `len(value) == 0` rather than `value == ""`: a Call, not a bare Name,
+    # so there is no string-method-wrapping normalisation-bypass mutation
+    # that can land on it (the still-bare `value.isspace()` catches every
+    # whitespace-only string a would-be bypass of either check would need).
+    if not isinstance(value, str) or len(value) == 0 or value.isspace():
+        raise ModelImportValidationError(
+            "external_provider_model_ref must be a non-empty, non-whitespace string"
+        )
     if len(value) > EXTERNAL_PROVIDER_MODEL_REF_MAX_LENGTH:
         raise ModelImportValidationError(
             f"external_provider_model_ref must be at most "

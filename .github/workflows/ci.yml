@@ -2612,6 +2612,44 @@ jobs:
       - name: Prove the real organization-gateway-policy persistence evidence against the live database
         run: uv run python3 tests/integration/test_ftf_1206a_org_gateway_policy.py
 
+  external-provider-denial-integration:
+    # FTF-0908 r2: real Postgres proof that an external-provider denial is audited
+    # durably -- under the real tenant_scoped_session the propagated
+    # ExternalProviderDeniedError rolls the transaction back, so the denial audit
+    # row must be committed before the error is raised. Exactly one content-free
+    # `external_provider.denied` row per denial code, no row on allow, a
+    # cross-tenant AuditContext rejected by row-level security, org2 unable to
+    # read org1's rows -- tests/integration/test_ftf_0908_external_provider_denial.py.
+    # Same real `services: postgres` pattern as organization-gateway-policy-integration.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' external-provider-denial-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0908
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0908"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0908
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the durable external-provider denial audit against the live database
+        run: uv run python3 tests/integration/test_ftf_0908_external_provider_denial.py
+
   model-catalog-mapping-integration:
     # FTF-0308-P1: real Postgres evidence for the alias -> trainable-artifact
     # mapping slice (migration 0022): upgrade/downgrade/upgrade, ENABLE+FORCE
@@ -3164,6 +3202,7 @@ jobs:
       - database-api-trace-source-integration
       - evaluation-suite-integration
       - organization-gateway-policy-integration
+      - external-provider-denial-integration
       - model-catalog-mapping-integration
       - model-capabilities-integration
       - evaluation-case-integration

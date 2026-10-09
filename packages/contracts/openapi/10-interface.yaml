@@ -142,7 +142,11 @@ components:
   schemas:
     ModelImportOrigin:
       type: string
-      enum: [factory_trained, imported_weights, imported_adapter, external_endpoint]
+      description: >-
+        Section 68.1 names exactly three import forms; `factory_trained`
+        is not one of them (that is the direct, synchronous
+        ModelVersion-creation path, never an import job).
+      enum: [imported_weights, imported_adapter, external_endpoint]
     ModelImportJobState:
       type: string
       enum: [queued, validating, failed, succeeded, blocked_external]
