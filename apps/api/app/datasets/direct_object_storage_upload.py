@@ -393,12 +393,16 @@ def _end_record_totals(tail: bytes) -> tuple[int, int, int] | None:
         return None
     fields = struct.unpack("<4s4H2LH", tail[position : position + _ZIP_EOCD_SIZE])
     entries, size, offset = fields[4], fields[5], fields[6]
+    record_at = position - _ZIP64_LOCATOR_SIZE - _ZIP64_EOCD_SIZE
     locator_at = position - _ZIP64_LOCATOR_SIZE
-    if locator_at >= 0 and tail[locator_at : locator_at + 4] == _ZIP64_LOCATOR:
-        record_at = locator_at - _ZIP64_EOCD_SIZE
-        if record_at >= 0 and tail[record_at : record_at + 4] == _ZIP64_EOCD:
-            record = struct.unpack("<4sQ2H2L4Q", tail[record_at : record_at + _ZIP64_EOCD_SIZE])
-            entries, size, offset = record[7], record[8], record[9]
+    # record_at >= 0 also guarantees locator_at >= 0 (no negative slice indexes)
+    if (
+        record_at >= 0
+        and tail[locator_at : locator_at + 4] == _ZIP64_LOCATOR
+        and tail[record_at : record_at + 4] == _ZIP64_EOCD
+    ):
+        record = struct.unpack("<4sQ2H2L4Q", tail[record_at : record_at + _ZIP64_EOCD_SIZE])
+        entries, size, offset = record[7], record[8], record[9]
     return entries, size, offset
 
 

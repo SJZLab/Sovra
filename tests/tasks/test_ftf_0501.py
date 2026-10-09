@@ -5110,6 +5110,15 @@ def test_x8_the_end_record_is_read_exactly_as_zipfile_reads_it() -> None:
         totals(b"PK\x05\x06" + b"\x00" * 5) is None,
     )
     check(f"{CID}-X8", "an empty tail -> None", totals(b"") is None)
+    # The signature bytes can occur inside the record's own offset field; zipfile takes the
+    # record that ends the archive, so must this (a plain search for the last signature would not).
+    hidden = _end_record(7, 1234, int.from_bytes(b"PK\x05\x06", "little"))
+    check(
+        f"{CID}-X8",
+        "a bare record whose offset field spells the signature is read at the end",
+        totals(hidden) == (7, 1234, int.from_bytes(b"PK\x05\x06", "little"))
+        and totals(b"x" * 9 + hidden) == (7, 1234, int.from_bytes(b"PK\x05\x06", "little")),
+    )
     check(
         f"{CID}-X8",
         "a signature too near the end to hold a record -> None",
