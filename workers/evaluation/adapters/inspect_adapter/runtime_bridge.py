@@ -1,4 +1,4 @@
-"""FTF-R004-P3 -- Inspect runtime bridge: run a locked suite through the target's own runtime adapter.
+"""FTF-R004-P3 -- Inspect runtime bridge: run a locked suite through the target runtime adapter.
 
 Section 66.3-66.4, 77.3, 77.5, 78.2 and Q16/Q35. Acceptance: "Use qualified Agent Bridge or
 actual-runtime adapter; execute original orchestration and real isolated dependencies with
@@ -16,7 +16,7 @@ Refusals (`BridgeError.code`, stable, content-free):
   (a reconstructed adapter without every FTF-04A25 parity category);
 * `unsupported_entry_kind` / `unsupported_model_binding_key` -- the FTF-04A25 closed contracts;
 * `runtime_identity_changed` -- `attest()` and `describe()` are pinned before the run and
-  re-checked after every case and after the run; any changed fingerprint (observed time aside)
+  re-checked before every case and after the run; any changed fingerprint (observed time aside)
   is a refusal;
 * `generic_agent_solver_forbidden` -- the Inspect log's plan is not exactly the one native
   solver, or a model was called;
@@ -55,6 +55,15 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
+from inspect_ai import Task
+from inspect_ai import eval as inspect_eval
+from inspect_ai.agent._bridge.completions import generate_config_from_openai_completions
+from inspect_ai.agent._bridge.util import clear_generation_params
+from inspect_ai.dataset import MemoryDataset
+from inspect_ai.log import read_eval_log
+from inspect_ai.scorer import CORRECT, INCORRECT, Score, Target, accuracy, scorer
+from inspect_ai.solver import Generate, TaskState, solver
+
 from app.target_connectors.production_faithful_target_agent_harness_contract import (
     AdapterDescribeResult,
     AdapterInvokeRequest,
@@ -69,15 +78,6 @@ from app.target_connectors.production_faithful_target_agent_harness_contract imp
     validate_model_binding_override,
     validate_runtime_entry_kind,
 )
-from inspect_ai import Task
-from inspect_ai import eval as inspect_eval
-from inspect_ai.agent._bridge.completions import generate_config_from_openai_completions
-from inspect_ai.agent._bridge.util import clear_generation_params
-from inspect_ai.dataset import MemoryDataset
-from inspect_ai.log import read_eval_log
-from inspect_ai.scorer import CORRECT, INCORRECT, Score, Target, accuracy, scorer
-from inspect_ai.solver import Generate, TaskState, solver
-
 from workers.evaluation.adapters.inspect_adapter.case_adapter import BridgeCase, SuiteCaseSet
 from workers.evaluation.adapters.inspect_adapter.generation_config_parity import (
     DeclaredGenerationChange,
@@ -287,7 +287,7 @@ class _NetworkGuard:
             original = getattr(socket.socket, name)
             self._saved.append((socket.socket, name, original))
             setattr(socket.socket, name, self._guarded_connect(original))
-        for name in ("create_connection", "getaddrinfo", "gethostbyname", "gethostbyname_ex"):
+        for name in ("getaddrinfo", "gethostbyname", "gethostbyname_ex"):
             self._saved.append((socket, name, getattr(socket, name)))
             setattr(socket, name, self._blocked)
         return self
@@ -488,7 +488,6 @@ def _build_solver(state: _RunState) -> Any:
             try:
                 state.check_identity()
                 record = _run_case(state, case)
-                state.check_identity()
             except BridgeError as exc:
                 state.fail(exc)
                 task_state.metadata["adapter_status"] = "bridge_error"
@@ -528,9 +527,7 @@ def _private_workspace(parent: Path | None) -> Iterator[Path]:
     yield path
 
 
-def _verify_log(
-    log_path: Path, case_keys: frozenset[str]
-) -> tuple[str, str]:
+def _verify_log(log_path: Path, case_keys: frozenset[str]) -> tuple[str, str]:
     import inspect_ai
 
     log = read_eval_log(str(log_path))

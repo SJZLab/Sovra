@@ -58,15 +58,6 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
-from app.target_connectors.isolated_real_tool_backend_adapter_contract_tests import (  # noqa: E402
-    build_isolated_tool_backend_adapter,
-)
-from app.target_connectors.production_faithful_target_agent_harness_contract import (  # noqa: E402
-    ModelBinding,
-    ParityCaseCategory,
-    ReconstructedAdapterDeclaration,
-)
-
 import workers.evaluation.adapters.inspect_adapter.case_adapter as case_adapter  # noqa: E402
 import workers.evaluation.adapters.inspect_adapter.runtime_bridge as bridge  # noqa: E402
 from workers.evaluation.adapters.inspect_adapter.case_adapter import (  # noqa: E402
@@ -82,6 +73,15 @@ from workers.evaluation.adapters.inspect_adapter.runtime_bridge import (  # noqa
     BridgeHook,
     observe_inspect_generation_forwarding,
     run_suite_through_runtime,
+)
+
+from app.target_connectors.isolated_real_tool_backend_adapter_contract_tests import (  # noqa: E402
+    build_isolated_tool_backend_adapter,
+)
+from app.target_connectors.production_faithful_target_agent_harness_contract import (  # noqa: E402
+    ModelBinding,
+    ParityCaseCategory,
+    ReconstructedAdapterDeclaration,
 )
 
 CHECKS = [0]
@@ -351,9 +351,7 @@ def test_loader_refuses_draft_final_and_unknown_purpose_before_reading_cases() -
 def test_loader_pages_and_refuses_a_cursor_cycle() -> None:
     a, b = _records()
     calls: list[Any] = []
-    loaded = _load(
-        _FakeSuite("development", "locked"), [([a], "case-001"), ([b], None)], calls
-    )
+    loaded = _load(_FakeSuite("development", "locked"), [([a], "case-001"), ([b], None)], calls)
     check(
         "FTF-R004-P3-AC2",
         "pages are followed with the store's own cursor until it ends",
@@ -465,7 +463,6 @@ def test_run_goes_through_the_native_adapter_under_real_inspect() -> None:
         and len(result.cases) == 2,
     )
     import inspect_ai
-
     from inspect_ai.log import read_eval_log
 
     log = read_eval_log(result.log_path)
@@ -553,8 +550,8 @@ def test_attestation_is_pinned_and_rechecked_after_every_case() -> None:
     _run(steady)
     check(
         "FTF-R004-P3-AC4",
-        "attest() is called before the run and around every case (1 pin + 2 per case + 1 final)",
-        steady.attests == 1 + 2 * 2 + 1,
+        "attest() is called to pin, before each case (describe-free) and once after the run",
+        steady.attests == 1 + 2 * 2 + 1 - 2,
     )
     r = _run()
     check(
@@ -606,7 +603,10 @@ def _chat(**extra: Any) -> dict[str, Any]:
         "model": "m",
         "messages": [{"role": "user", "content": "hi"}],
         "tools": [
-            {"type": "function", "function": {"name": "search_records", "parameters": {"type": "object"}}}
+            {
+                "type": "function",
+                "function": {"name": "search_records", "parameters": {"type": "object"}},
+            }
         ],
         "temperature": 0.2,
         "max_tokens": 64,
@@ -626,7 +626,11 @@ def _response(calls: list[tuple[str, str]]) -> dict[str, Any]:
                     "role": "assistant",
                     "content": "ok",
                     "tool_calls": [
-                        {"id": cid, "type": "function", "function": {"name": name, "arguments": "{}"}}
+                        {
+                            "id": cid,
+                            "type": "function",
+                            "function": {"name": name, "arguments": "{}"},
+                        }
                         for cid, name in calls
                     ],
                 },
@@ -639,19 +643,49 @@ def _response(calls: list[tuple[str, str]]) -> dict[str, Any]:
 def test_hook_applies_p2_and_p1_to_model_traffic() -> None:
     hook = _hook({"temperature": 0.2, "max_tokens": 64})
     hook.screen_request(_chat())
-    check("FTF-R004-P3-AC6", "an approved function tool request passes P2 screening", hook.requests_screened == 1)
+    check(
+        "FTF-R004-P3-AC6",
+        "an approved function tool request passes P2 screening",
+        hook.requests_screened == 1,
+    )
     for label, body in (
         ("hosted web_search tool", _chat(tools=[{"type": "web_search_preview"}])),
-        ("mcp tool", _chat(tools=[{"type": "mcp", "server_label": "x", "server_url": "https://x"}])),
-        ("remote image", _chat(messages=[{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "https://x.test/a.png"}}]}])),
+        (
+            "mcp tool",
+            _chat(tools=[{"type": "mcp", "server_label": "x", "server_url": "https://x"}]),
+        ),
+        (
+            "remote image",
+            _chat(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url", "image_url": {"url": "https://x.test/a.png"}}
+                        ],
+                    }
+                ]
+            ),
+        ),
         (
             "unapproved function tool",
-            _chat(tools=[{"type": "function", "function": {"name": "delete_everything", "parameters": {"type": "object"}}}]),
+            _chat(
+                tools=[
+                    {
+                        "type": "function",
+                        "function": {"name": "delete_everything", "parameters": {"type": "object"}},
+                    }
+                ]
+            ),
         ),
     ):
         h = _hook()
         code = _code(h.screen_request, body)
-        check("FTF-R004-P3-AC6", f"{label} -> provider_boundary_denied (got {code})", code == "provider_boundary_denied")
+        check(
+            "FTF-R004-P3-AC6",
+            f"{label} -> provider_boundary_denied (got {code})",
+            code == "provider_boundary_denied",
+        )
         check("FTF-R004-P3-AC6", f"{label}: the denial is counted", h.requests_denied == 1)
     check(
         "FTF-R004-P3-AC6",
@@ -661,10 +695,16 @@ def test_hook_applies_p2_and_p1_to_model_traffic() -> None:
     try:
         _hook().screen_request(_chat(tools=[{"type": "web_search_preview"}]))
     except BridgeError as exc:
-        check("FTF-R004-P3-AC6", "the denial detail names codes and paths only", "web_search" not in str(exc) and "tools[0]" in str(exc))
+        check(
+            "FTF-R004-P3-AC6",
+            "the denial detail names codes and paths only",
+            "web_search" not in str(exc) and "tools[0]" in str(exc),
+        )
 
     h2 = _hook()
-    outcome = h2.capture_and_filter_response(_response([("call_1", "search_records"), ("call_2", "wire_money")]))
+    outcome = h2.capture_and_filter_response(
+        _response([("call_1", "search_records"), ("call_2", "wire_money")])
+    )
     check(
         "FTF-R004-P3-AC6",
         "every attempted call is captured before filtering; the unapproved one is removed from the output but kept in the evidence",
@@ -805,6 +845,132 @@ def _swallow(fn: Any) -> None:
         pass
 
 
+def test_drift_in_the_last_case_and_other_gaps_are_caught() -> None:
+    one = _case_set([_records()[0]])
+    drift = _Spy(build_isolated_tool_backend_adapter(), attest_drift=True)
+    check(
+        "FTF-R004-P3-AC4",
+        "drift during the only case is caught by the post-run re-check",
+        _code(_run, drift, one) == "runtime_identity_changed" and len(drift.invokes) == 1,
+    )
+    # independent collect: a collect that disagrees with invoke is recorded as such
+    import dataclasses
+
+    def altered(cid: str, inner: Any) -> Any:
+        r = inner.collect_outcome(cid)
+        return dataclasses.replace(r, business_outcome=(("records", ()),))
+
+    res = _run(_Spy(build_isolated_tool_backend_adapter(), collect=altered), one)
+    plain = _run(case_set=one)
+    check(
+        "FTF-R004-P3-AC3",
+        "the outcome digest is of the independently collected result and a disagreement is flagged",
+        res.cases[0].collected_matches_invoke is False
+        and res.cases[0].business_outcome_sha256 != plain.cases[0].business_outcome_sha256,
+    )
+    # AF_UNIX stays usable during a run
+    path = tempfile.mkdtemp(prefix="p3sock-") + "/s"
+    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    srv.bind(path)
+    srv.listen(1)
+
+    def dial_unix(_r: Any) -> None:
+        c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        c.connect(path)
+        c.close()
+
+    try:
+        r = _run(_Spy(build_isolated_tool_backend_adapter(), on_invoke=dial_unix), one)
+    finally:
+        srv.close()
+    check(
+        "FTF-R004-P3-AC8",
+        "a local AF_UNIX connect is not an outbound call",
+        r.network_attempts == 0,
+    )
+
+    def dial_raw(_r: Any) -> None:
+        try:
+            socket.socket().connect(("127.0.0.1", 9))
+        except BridgeError:
+            raise
+        except OSError:
+            pass
+
+    check(
+        "FTF-R004-P3-AC8",
+        "a raw socket connect to an IP (no lookup) is blocked",
+        _code(_run, _Spy(build_isolated_tool_backend_adapter(), on_invoke=dial_raw), one)
+        == "outbound_call_blocked",
+    )
+    # model call: a log produced by a real model is refused
+    real_eval = bridge.inspect_eval
+
+    def with_mock(task: Any, **kw: Any) -> Any:
+        kw["model"] = "mockllm/model"
+        return real_eval(task, **kw)
+
+    try:
+        bridge.inspect_eval = with_mock
+        model_code = _code(_run, case_set=one)
+    finally:
+        bridge.inspect_eval = real_eval
+    check(
+        "FTF-R004-P3-NEG2",
+        f"a run whose log names a model other than none/none is refused (got {model_code})",
+        model_code == "generic_agent_solver_forbidden",
+    )
+    ok = _run(case_set=one)
+    check(
+        "FTF-R004-P3-AC3",
+        "a log whose samples differ from the scheduled cases is refused",
+        _code(bridge._verify_log, Path(ok.log_path), frozenset({"case-001", "ghost"}))
+        == "inspect_run_failed",
+    )
+    # P1 fail-closed on insufficient evidence, and a declared change excuses a difference
+    from workers.evaluation.adapters.inspect_adapter.generation_config_parity import (
+        DeclaredGenerationChange,
+        GenerationParityResult,
+    )
+
+    real_cmp = bridge.compare_generation_parity
+    try:
+        bridge.compare_generation_parity = lambda *a, **k: GenerationParityResult(
+            "insufficient_evidence", (), (), (), (), ()
+        )
+        ins = _code(
+            _hook({"temperature": 0.2}).check_generation_parity,
+            _chat(),
+            forward_generation_config=True,
+        )
+    finally:
+        bridge.compare_generation_parity = real_cmp
+    check(
+        "FTF-R004-P3-AC6",
+        f"insufficient evidence blocks (got {ins})",
+        ins == "generation_config_parity_blocked",
+    )
+    declared = BridgeHook(
+        policy=_hook().policy,
+        approved_settings={"temperature": 0.2},
+        declared_change=DeclaredGenerationChange("a" * 64, {"temperature": 0.7}),
+    )
+    verdict = declared.check_generation_parity(
+        _chat(temperature=0.7), forward_generation_config=True
+    )
+    check(
+        "FTF-R004-P3-AC6",
+        "a locked declared change excuses exactly the declared difference",
+        verdict.verdict == "declared_change"
+        and _code(
+            _hook({"temperature": 0.2}).check_generation_parity,
+            _chat(temperature=0.7),
+            forward_generation_config=True,
+        )
+        == "generation_config_parity_blocked",
+    )
+
+
 # --------------------------------------------------------------------------- negatives
 
 
@@ -878,12 +1044,24 @@ def test_a_generic_agent_solver_cannot_pass() -> None:
 
 
 def test_no_remote_destination_no_telemetry_and_private_log_dir() -> None:
-    saved = {k: os.environ.get(k) for k in ("INSPECT_TELEMETRY", "INSPECT_REQUIRED_HOOKS", "INSPECT_LOG_DIR", "INSPECT_EVAL_LOG_DIR")}
+    saved = {
+        k: os.environ.get(k)
+        for k in (
+            "INSPECT_TELEMETRY",
+            "INSPECT_REQUIRED_HOOKS",
+            "INSPECT_LOG_DIR",
+            "INSPECT_EVAL_LOG_DIR",
+        )
+    }
     try:
         for name in ("INSPECT_TELEMETRY", "INSPECT_REQUIRED_HOOKS"):
             os.environ[name] = "some_module"
             code = _code(_run)
-            check("FTF-R004-P3-NEG3", f"{name} set -> telemetry_configured (got {code})", code == "telemetry_configured")
+            check(
+                "FTF-R004-P3-NEG3",
+                f"{name} set -> telemetry_configured (got {code})",
+                code == "telemetry_configured",
+            )
             del os.environ[name]
         os.environ["INSPECT_LOG_DIR"] = "s3://prod-logs/inspect"
         os.environ["INSPECT_EVAL_LOG_DIR"] = "s3://prod-logs/inspect"
@@ -916,7 +1094,9 @@ def test_no_remote_destination_no_telemetry_and_private_log_dir() -> None:
 
 
 def test_result_and_errors_are_content_free() -> None:
-    res = _run(case_set=_case_set([_record("case-x", "search_records", "subject-a1", {"query": CANARY})]))
+    res = _run(
+        case_set=_case_set([_record("case-x", "search_records", "subject-a1", {"query": CANARY})])
+    )
     check(
         "FTF-R004-P3-NEG4",
         "the run result holds ids, statuses and digests only -- no input or expected content",
@@ -930,7 +1110,8 @@ def test_result_and_errors_are_content_free() -> None:
     check(
         "FTF-R004-P3-NEG4",
         "a case-adapter refusal never echoes case content",
-        CANARY not in str(_exc(_case_set, [_record("c", "t", "s", {}, input_json={"a": {CANARY}})])),
+        CANARY
+        not in str(_exc(_case_set, [_record("c", "t", "s", {}, input_json={"a": {CANARY}})])),
     )
 
 
@@ -1065,7 +1246,8 @@ try:
     out["run_status"] = [c.status for c in r.cases]
     out["run_digest"] = [c.business_outcome_sha256 is not None for c in r.cases]
     out["run_match"] = [c.collected_matches_invoke for c in r.cases]
-    out["run_sha"] = len(r.log_sha256)
+    import hashlib
+    out["run_sha"] = r.log_sha256 == hashlib.sha256(open(r.log_path, "rb").read()).hexdigest()
     out["run_net"] = r.network_attempts
     import os, stat
     out["run_mode"] = oct(stat.S_IMODE(os.stat(r.log_dir).st_mode))
@@ -1095,8 +1277,8 @@ out["no_hook"] = code(run, hook=None)
 out["recon_none"] = code(run, is_reconstructed_adapter=True)
 out["recon_partial"] = code(run, is_reconstructed_adapter=True, reconstructed_declaration=ReconstructedAdapterDeclaration("f", frozenset({{ParityCaseCategory.SUCCESS}})))
 out["recon_full"] = code(run, is_reconstructed_adapter=True, reconstructed_declaration=ReconstructedAdapterDeclaration("f", frozenset(ParityCaseCategory)))
-out["adapter_mismatch"] = code(run, Spy(build_isolated_tool_backend_adapter(), collect=lambda c, i: i.collect_outcome("k2") if c == "k1" else i.collect_outcome(c)))
-out["adapter_boom"] = [c.status for c in run(Spy(build_isolated_tool_backend_adapter(), on_invoke=lambda r: 1/0)).cases]
+out["adapter_mismatch"] = code(run, Spy(build_isolated_tool_backend_adapter(), collect=lambda c, i: dataclasses.replace(i.collect_outcome(c), case_id="x")))
+out["adapter_boom"] = [(c.status, c.adapter_exception_type) for c in run(Spy(build_isolated_tool_backend_adapter(), on_invoke=lambda r: 1/0)).cases]
 # network
 def dial(r):
     try:
@@ -1210,96 +1392,592 @@ def _keys(prefix: str, baseline: dict[str, Any]) -> tuple[str, ...]:
 # (label, module, regex, replacement, probe keys that must change)
 _MUTATIONS: list[tuple[str, str, str, str, tuple[str, ...]]] = [
     # ---- case adapter
-    ("final-suite-not-refused", "cases", r'    if suite\.purpose == "final":\n        raise CaseAdapterError\(CODE_FINAL_SUITE\)\n', "", ("load_final_locked", "load_final_draft")),
-    ("unknown-purpose-allowed", "cases", r'    if suite\.purpose != "development":\n        raise CaseAdapterError\(CODE_UNSUPPORTED_PURPOSE\)\n', "", ("load_unknown",)),
-    ("draft-suite-allowed", "cases", r'    if suite\.status != "locked":\n        raise CaseAdapterError\(CODE_SUITE_NOT_LOCKED\)\n', "", ("load_draft",)),
-    ("cursor-cycle-not-detected", "cases", r"        if after is not None and next_after <= after:\n            raise CaseAdapterError\(CODE_INVALID_CASE\)\n", "", ("load_cycle",)),
-    ("duplicate-key-allowed", "cases", r"        if case_key in seen_keys or case_id in seen_ids:\n            raise CaseAdapterError\(CODE_DUPLICATE_CASE_ID\)\n", "", ("dup_key", "dup_id")),
-    ("duplicate-id-allowed", "cases", r"case_key in seen_keys or case_id in seen_ids", "case_key in seen_keys", ("dup_id",)),
-    ("duplicate-key-only-by-id", "cases", r"case_key in seen_keys or case_id in seen_ids", "case_id in seen_ids", ("dup_key",)),
-    ("empty-suite-allowed", "cases", r"    if not records:\n        raise CaseAdapterError\(CODE_EMPTY_SUITE\)\n", "", ("empty",)),
-    ("non-object-input-allowed", "cases", r"    if not isinstance\(input_json, Mapping\):\n        raise CaseAdapterError\(CODE_INVALID_CASE\)\n", "", ("input_list",)),
-    ("non-string-key-allowed", "cases", r"            if type\(key\) is not str:\n                raise CaseAdapterError\(CODE_INVALID_CASE\)\n", "", ("input_intkey",)),
-    ("unsupported-value-allowed", "cases", r"    raise CaseAdapterError\(CODE_INVALID_CASE\)\n\n\ndef freeze_declared_inputs", "    return value\n\n\ndef freeze_declared_inputs", ("input_set",)),
-    ("depth-unbounded", "cases", r"    if depth > _MAX_FREEZE_DEPTH:\n        raise CaseAdapterError\(CODE_INVALID_CASE\)\n", "", ("deep",)),
-    ("critical-not-bool-checked", "cases", r"        if type\(record\.critical\) is not bool:\n            raise CaseAdapterError\(CODE_INVALID_CASE\)\n", "", ("crit_int",)),
-    ("blank-text-allowed", "cases", r'    if type\(value\) is not str or not value:\n        raise CaseAdapterError\(CODE_INVALID_CASE\)\n', "    return value\n", ("blank_cat",)),
-    ("sample-id-not-case-key", "cases", r"                id=case_key,", "                id=case_id,", ("sample_ids",)),
-    ("sample-metadata-suite-dropped", "cases", r'                    "suite_id": suite_id,\n                    "agent_manifest_id": agent_manifest_id,\n', "", ("sample_meta_keys", "sample_meta_suite")),
-    ("sample-metadata-critical-dropped", "cases", r'                    "critical": case\.critical,\n', "", ("sample_meta_keys",)),
-    ("sample-metadata-group-dropped", "cases", r'                    "group_key": case\.group_key,\n', "", ("sample_meta_keys",)),
-    ("sample-metadata-grader-dropped", "cases", r'                    "grader_type": case\.grader_type,\n', "", ("sample_meta_keys",)),
-    ("inputs-not-frozen", "cases", r"    frozen = _freeze\(input_json\)\n    assert isinstance\(frozen, tuple\)\n    return frozen", "    return tuple(input_json.items())", ("frozen",)),
+    (
+        "final-suite-not-refused",
+        "cases",
+        r'    if suite\.purpose == "final":\n        raise CaseAdapterError\(CODE_FINAL_SUITE\)\n',
+        "",
+        ("load_final_locked", "load_final_draft"),
+    ),
+    (
+        "unknown-purpose-allowed",
+        "cases",
+        r'    if suite\.purpose != "development":\n        raise CaseAdapterError\(CODE_UNSUPPORTED_PURPOSE\)\n',
+        "",
+        ("load_unknown",),
+    ),
+    (
+        "draft-suite-allowed",
+        "cases",
+        r'    if suite\.status != "locked":\n        raise CaseAdapterError\(CODE_SUITE_NOT_LOCKED\)\n',
+        "",
+        ("load_draft",),
+    ),
+    (
+        "cursor-cycle-not-detected",
+        "cases",
+        r"        if after is not None and next_after <= after:\n            raise CaseAdapterError\(CODE_INVALID_CASE\)\n",
+        "",
+        ("load_cycle",),
+    ),
+    (
+        "duplicate-key-allowed",
+        "cases",
+        r"        if case_key in seen_keys or case_id in seen_ids:\n            raise CaseAdapterError\(CODE_DUPLICATE_CASE_ID\)\n",
+        "",
+        ("dup_key", "dup_id"),
+    ),
+    (
+        "duplicate-id-allowed",
+        "cases",
+        r"case_key in seen_keys or case_id in seen_ids",
+        "case_key in seen_keys",
+        ("dup_id",),
+    ),
+    (
+        "duplicate-key-only-by-id",
+        "cases",
+        r"case_key in seen_keys or case_id in seen_ids",
+        "case_id in seen_ids",
+        ("dup_key",),
+    ),
+    (
+        "empty-suite-allowed",
+        "cases",
+        r"    if not records:\n        raise CaseAdapterError\(CODE_EMPTY_SUITE\)\n",
+        "",
+        ("empty",),
+    ),
+    (
+        "non-object-input-allowed",
+        "cases",
+        r"    if not isinstance\(input_json, Mapping\):\n        raise CaseAdapterError\(CODE_INVALID_CASE\)\n",
+        "",
+        ("input_list",),
+    ),
+    (
+        "non-string-key-allowed",
+        "cases",
+        r"            if type\(key\) is not str:\n                raise CaseAdapterError\(CODE_INVALID_CASE\)\n",
+        "",
+        ("input_intkey",),
+    ),
+    (
+        "unsupported-value-allowed",
+        "cases",
+        r"    raise CaseAdapterError\(CODE_INVALID_CASE\)\n\n\ndef freeze_declared_inputs",
+        "    return value\n\n\ndef freeze_declared_inputs",
+        ("input_set",),
+    ),
+    (
+        "depth-unbounded",
+        "cases",
+        r"    if depth > _MAX_FREEZE_DEPTH:\n        raise CaseAdapterError\(CODE_INVALID_CASE\)\n",
+        "",
+        ("deep",),
+    ),
+    (
+        "critical-not-bool-checked",
+        "cases",
+        r"        if type\(record\.critical\) is not bool:\n            raise CaseAdapterError\(CODE_INVALID_CASE\)\n",
+        "",
+        ("crit_int",),
+    ),
+    (
+        "blank-text-allowed",
+        "cases",
+        r"    if type\(value\) is not str or not value:\n        raise CaseAdapterError\(CODE_INVALID_CASE\)\n",
+        "    return value\n",
+        ("blank_cat",),
+    ),
+    (
+        "sample-id-not-case-key",
+        "cases",
+        r"                id=case_key,",
+        "                id=case_id,",
+        ("sample_ids",),
+    ),
+    (
+        "sample-metadata-suite-dropped",
+        "cases",
+        r'                    "suite_id": suite_id,\n                    "agent_manifest_id": agent_manifest_id,\n',
+        "",
+        ("sample_meta_keys", "sample_meta_suite"),
+    ),
+    (
+        "sample-metadata-critical-dropped",
+        "cases",
+        r'                    "critical": case\.critical,\n',
+        "",
+        ("sample_meta_keys",),
+    ),
+    (
+        "sample-metadata-group-dropped",
+        "cases",
+        r'                    "group_key": case\.group_key,\n',
+        "",
+        ("sample_meta_keys",),
+    ),
+    (
+        "sample-metadata-grader-dropped",
+        "cases",
+        r'                    "grader_type": case\.grader_type,\n',
+        "",
+        ("sample_meta_keys",),
+    ),
+    (
+        "inputs-not-frozen",
+        "cases",
+        r"    frozen = _freeze\(input_json\)\n    assert isinstance\(frozen, tuple\)\n    return frozen",
+        "    return tuple(input_json.items())",
+        ("frozen",),
+    ),
     # ---- bridge
-    ("reconstructed-adapter-always-qualified", "bridge", r"    if status != QualificationStatus\.QUALIFIED:\n        raise BridgeError\(CODE_INTEGRATION_REQUIRED\)\n", "", ("recon_none", "recon_partial")),
-    ("binding-not-validated", "bridge", r"        validate_model_binding_override\(describe, model_binding\)\n", "        pass\n", ("bind_key",)),
-    ("entry-kind-not-validated", "bridge", r"        kind = validate_runtime_entry_kind\(entry_kind\)\n", "        kind = None\n", ("entry_kind",)),
-    ("no-pre-run-attest", "bridge", r"    pinned = adapter\.attest\(\)\n", "    pinned = None\n", ("run_status",)),
-    ("identity-not-rechecked-after-case", "bridge", r"                record = _run_case\(state, case\)\n                state\.check_identity\(\)\n", "                record = _run_case(state, case)\n", ("attest_drift_stops",)),
-    ("identity-not-checked-before-case", "bridge", r"                state\.check_identity\(\)\n                record = _run_case\(state, case\)\n", "                record = _run_case(state, case)\n", ("attest_drift_stops",)),
-    ("identity-not-rechecked-after-run", "bridge", r"    log_sha256, version = _verify_log\(log_path, frozenset\(cases\)\)\n    state\.check_identity\(\)\n", "    log_sha256, version = _verify_log(log_path, frozenset(cases))\n", ("attest_drift",)),
-    ("attest-drift-ignored", "bridge", r"        if changed:\n            raise BridgeError\(CODE_IDENTITY_CHANGED, \",\"\.join\(sorted\(changed\)\)\)\n", "", ("attest_drift",)),
-    ("describe-drift-ignored", "bridge", r"        if _describe_view\(self\.adapter\.describe\(\)\) != _describe_view\(self\.pinned_describe\):\n            raise BridgeError\(CODE_IDENTITY_CHANGED, \"describe\"\)\n", "", ("describe_drift",)),
-    ("observed-time-counts-as-drift", "bridge", r'        if f\.name != "observed_at_epoch_seconds"\n', "", ("run_status",)),
-    ("generic-solver-allowed", "bridge", r"    if steps != \[NATIVE_SOLVER_NAME\]:\n        raise BridgeError\(CODE_GENERIC_AGENT\)\n", "", ("generic", "chained")),
-    ("chained-solver-allowed", "bridge", r"    if steps != \[NATIVE_SOLVER_NAME\]:", "    if NATIVE_SOLVER_NAME not in steps:", ("chained",)),
-    ("model-call-allowed", "bridge", r"    if log\.eval\.model != _MODEL_LESS or \(log\.stats and log\.stats\.model_usage\):\n        raise BridgeError\(CODE_GENERIC_AGENT, \"model call\"\)\n", "", ("run_status",)),
-    ("telemetry-allowed", "bridge", r"        if os\.environ\.get\(name\):\n            raise BridgeError\(CODE_TELEMETRY, name\)\n", "        pass\n", ("telemetry", "req_hooks")),
-    ("required-hooks-not-refused", "bridge", r'_TELEMETRY_ENV = \("INSPECT_TELEMETRY", "INSPECT_REQUIRED_HOOKS"\)', '_TELEMETRY_ENV = ("INSPECT_TELEMETRY",)', ("req_hooks",)),
-    ("network-guard-off", "bridge", r"    with _private_workspace\(workspace_parent\) as log_dir, _NetworkGuard\(\) as guard:", "    import contextlib\n    guard = type('G', (), {'attempts': 0})()\n    with _private_workspace(workspace_parent) as log_dir, contextlib.nullcontext():", ("net_dial", "net_lookup", "net_connect_ex", "net_gethost")),
-    ("network-attempts-not-checked", "bridge", r"    if guard\.attempts:\n        raise BridgeError\(CODE_OUTBOUND\)\n", "", ("net_lookup", "net_gethost", "net_connect_ex")),
-    ("connect-not-guarded", "bridge", r'        for name in \("connect", "connect_ex"\):', '        for name in ("connect_ex",):', ("net_dial",)),
-    ("connect-ex-not-guarded", "bridge", r'        for name in \("connect", "connect_ex"\):', '        for name in ("connect",):', ("net_connect_ex",)),
-    ("create-connection-not-guarded", "bridge", r'"create_connection", "getaddrinfo"', '"getaddrinfo"', ("net_dial",)),
-    ("getaddrinfo-not-guarded", "bridge", r'"getaddrinfo", "gethostbyname", "gethostbyname_ex"', '"gethostbyname", "gethostbyname_ex"', ("net_lookup",)),
-    ("gethostbyname-not-guarded", "bridge", r'"gethostbyname", "gethostbyname_ex"\)', '"gethostbyname_ex")', ("net_gethost",)),
-    ("guard-not-restored", "bridge", r"        for owner, name, original in reversed\(self\._saved\):\n            setattr\(owner, name, original\)\n", "", ("net_restored",)),
-    ("unix-sockets-blocked", "bridge", r"            if sock\.family == getattr\(socket, \"AF_UNIX\", None\):\n                return original\(sock, address, \*args, \*\*kwargs\)\n", "", ("run_status",)),
-    ("preflight-ignored", "bridge", r"    if not state\.adapter\.preflight\(request\):", "    if False:", ("preflight_refused",)),
-    ("case-id-mismatch-allowed", "bridge", r"    if invoked\.case_id != case\.case_key or collected\.case_id != case\.case_key:\n        raise BridgeError\(CODE_ADAPTER_MISMATCH\)\n", "", ("adapter_mismatch",)),
-    ("collected-not-independent", "bridge", r"        collected = state\.adapter\.collect_outcome\(case\.case_key\)", "        collected = invoked", ("run_match",)),
-    ("exception-class-not-recorded", "bridge", r"adapter_exception_type=type\(exc\)\.__name__,", "adapter_exception_type=None,", ("adapter_boom",)),
-    ("adapter-exception-hidden-as-completed", "bridge", r'            status="adapter_exception",', '            status="completed",', ("adapter_boom",)),
-    ("idempotency-key-constant", "bridge", r'        idempotency_key=_sha256\(f"\{state\.run_id\}\\0\{case\.case_key\}"\.encode\(\)\),', '        idempotency_key="k",', ("idem",)),
-    ("deadline-not-passed", "bridge", r"        deadline_seconds=state\.deadline_seconds,\n        idempotency_key", "        deadline_seconds=1.0,\n        idempotency_key", ("req_deadline",)),
-    ("tenant-not-passed", "bridge", r"        tenant_namespace=state\.tenant_namespace,", '        tenant_namespace="tenant-b",', ("req_tenant", "run_status")),
-    ("binding-not-passed", "bridge", r"        model_binding=state\.binding,", '        model_binding=ModelBinding("other", "other"),', ("req_binding",)),
-    ("manifest-not-passed", "bridge", r"        agent_manifest_id=state\.agent_manifest_id,", '        agent_manifest_id="other",', ("req_tenant",)),
-    ("log-hash-not-real", "bridge", r"    return _sha256\(log_path\.read_bytes\(\)\), str\(inspect_ai\.__version__\)", '    return "0" * 64, str(inspect_ai.__version__)', ("run_sha",)),
-    ("workspace-world-readable", "bridge", r"    os\.chmod\(path, 0o700\)\n", "    os.chmod(path, 0o755)\n", ("run_mode",)),
-    ("workspace-not-restricted", "bridge", r"    os\.chmod\(path, 0o700\)\n", "    os.chmod(path, 0o777)\n", ("run_mode",)),
-    ("final-purpose-bridge-allowed", "bridge", r'    if case_set\.purpose != "development":\n        raise BridgeError\(CODE_INVALID_REQUEST, "purpose"\)\n', "", ("final_purpose", "other_purpose")),
-    ("hook-not-required", "bridge", r'    if not isinstance\(hook, BridgeHook\):\n        raise BridgeError\(CODE_INVALID_REQUEST, "hook"\)\n', "", ("no_hook",)),
-    ("sample-set-not-checked", "bridge", r'    if sample_ids != case_keys:\n        raise BridgeError\(CODE_RUN_FAILED, "sample set"\)\n', "", ("run_status",)),
+    (
+        "reconstructed-adapter-always-qualified",
+        "bridge",
+        r"    if status != QualificationStatus\.QUALIFIED:\n        raise BridgeError\(CODE_INTEGRATION_REQUIRED\)\n",
+        "",
+        ("recon_none", "recon_partial"),
+    ),
+    (
+        "binding-not-validated",
+        "bridge",
+        r"        validate_model_binding_override\(describe, model_binding\)\n",
+        "        pass\n",
+        ("bind_key",),
+    ),
+    (
+        "entry-kind-not-validated",
+        "bridge",
+        r"        kind = validate_runtime_entry_kind\(entry_kind\)\n",
+        "        kind = None\n",
+        ("entry_kind",),
+    ),
+    (
+        "no-pre-run-attest",
+        "bridge",
+        r"    pinned = adapter\.attest\(\)\n",
+        "    pinned = None\n",
+        ("run_status",),
+    ),
+    (
+        "identity-not-checked-before-case",
+        "bridge",
+        r"                state\.check_identity\(\)\n                record = _run_case\(state, case\)\n",
+        "                record = _run_case(state, case)\n",
+        ("attest_drift_stops",),
+    ),
+    (
+        "identity-not-rechecked-after-run",
+        "bridge",
+        r"    log_sha256, version = _verify_log\(log_path, frozenset\(cases\)\)\n    state\.check_identity\(\)\n",
+        "    log_sha256, version = _verify_log(log_path, frozenset(cases))\n",
+        ("attest_drift",),
+    ),
+    (
+        "attest-drift-ignored",
+        "bridge",
+        r"        if changed:\n            raise BridgeError\(CODE_IDENTITY_CHANGED, \",\"\.join\(sorted\(changed\)\)\)\n",
+        "",
+        ("attest_drift",),
+    ),
+    (
+        "describe-drift-ignored",
+        "bridge",
+        r"        if _describe_view\(self\.adapter\.describe\(\)\) != _describe_view\(self\.pinned_describe\):\n            raise BridgeError\(CODE_IDENTITY_CHANGED, \"describe\"\)\n",
+        "",
+        ("describe_drift",),
+    ),
+    (
+        "observed-time-counts-as-drift",
+        "bridge",
+        r'        if f\.name != "observed_at_epoch_seconds"\n',
+        "",
+        ("run_status",),
+    ),
+    (
+        "generic-solver-allowed",
+        "bridge",
+        r"    if steps != \[NATIVE_SOLVER_NAME\]:\n        raise BridgeError\(CODE_GENERIC_AGENT\)\n",
+        "",
+        ("generic", "chained"),
+    ),
+    (
+        "chained-solver-allowed",
+        "bridge",
+        r"    if steps != \[NATIVE_SOLVER_NAME\]:",
+        "    if NATIVE_SOLVER_NAME not in steps:",
+        ("chained",),
+    ),
+    (
+        "model-call-allowed",
+        "bridge",
+        r"    if log\.eval\.model != _MODEL_LESS or \(log\.stats and log\.stats\.model_usage\):\n        raise BridgeError\(CODE_GENERIC_AGENT, \"model call\"\)\n",
+        "",
+        ("run_status",),
+    ),
+    (
+        "telemetry-allowed",
+        "bridge",
+        r"        if os\.environ\.get\(name\):\n            raise BridgeError\(CODE_TELEMETRY, name\)\n",
+        "        pass\n",
+        ("telemetry", "req_hooks"),
+    ),
+    (
+        "required-hooks-not-refused",
+        "bridge",
+        r'_TELEMETRY_ENV = \("INSPECT_TELEMETRY", "INSPECT_REQUIRED_HOOKS"\)',
+        '_TELEMETRY_ENV = ("INSPECT_TELEMETRY",)',
+        ("req_hooks",),
+    ),
+    (
+        "network-guard-off",
+        "bridge",
+        r"    with _private_workspace\(workspace_parent\) as log_dir, _NetworkGuard\(\) as guard:",
+        "    import contextlib\n    guard = type('G', (), {'attempts': 0})()\n    with _private_workspace(workspace_parent) as log_dir, contextlib.nullcontext():",
+        ("net_dial", "net_lookup", "net_connect_ex", "net_gethost"),
+    ),
+    (
+        "network-attempts-not-checked",
+        "bridge",
+        r"    if guard\.attempts:\n        raise BridgeError\(CODE_OUTBOUND\)\n",
+        "",
+        ("net_lookup", "net_gethost", "net_connect_ex"),
+    ),
+    (
+        "connect-not-guarded",
+        "bridge",
+        r'        for name in \("connect", "connect_ex"\):',
+        '        for name in ("connect_ex",):',
+        ("net_dial",),
+    ),
+    (
+        "connect-ex-not-guarded",
+        "bridge",
+        r'        for name in \("connect", "connect_ex"\):',
+        '        for name in ("connect",):',
+        ("net_connect_ex",),
+    ),
+    (
+        "getaddrinfo-not-guarded",
+        "bridge",
+        r'"getaddrinfo", "gethostbyname", "gethostbyname_ex"',
+        '"gethostbyname", "gethostbyname_ex"',
+        ("net_lookup",),
+    ),
+    (
+        "gethostbyname-not-guarded",
+        "bridge",
+        r'"gethostbyname", "gethostbyname_ex"\)',
+        '"gethostbyname_ex")',
+        ("net_gethost",),
+    ),
+    (
+        "guard-not-restored",
+        "bridge",
+        r"        for owner, name, original in reversed\(self\._saved\):\n            setattr\(owner, name, original\)\n",
+        "",
+        ("net_restored",),
+    ),
+    (
+        "unix-sockets-blocked",
+        "bridge",
+        r"            if sock\.family == getattr\(socket, \"AF_UNIX\", None\):\n                return original\(sock, address, \*args, \*\*kwargs\)\n",
+        "",
+        ("run_status",),
+    ),
+    (
+        "preflight-ignored",
+        "bridge",
+        r"    if not state\.adapter\.preflight\(request\):",
+        "    if False:",
+        ("preflight_refused",),
+    ),
+    (
+        "case-id-mismatch-allowed",
+        "bridge",
+        r"    if invoked\.case_id != case\.case_key or collected\.case_id != case\.case_key:\n        raise BridgeError\(CODE_ADAPTER_MISMATCH\)\n",
+        "",
+        ("adapter_mismatch",),
+    ),
+    (
+        "collected-not-independent",
+        "bridge",
+        r"        collected = state\.adapter\.collect_outcome\(case\.case_key\)",
+        "        collected = invoked",
+        ("run_match",),
+    ),
+    (
+        "exception-class-not-recorded",
+        "bridge",
+        r"adapter_exception_type=type\(exc\)\.__name__,",
+        "adapter_exception_type=None,",
+        ("adapter_boom",),
+    ),
+    (
+        "adapter-exception-hidden-as-completed",
+        "bridge",
+        r'            status="adapter_exception",',
+        '            status="completed",',
+        ("adapter_boom",),
+    ),
+    (
+        "idempotency-key-constant",
+        "bridge",
+        r'        idempotency_key=_sha256\(f"\{state\.run_id\}\\0\{case\.case_key\}"\.encode\(\)\),',
+        '        idempotency_key="k",',
+        ("idem",),
+    ),
+    (
+        "deadline-not-passed",
+        "bridge",
+        r"        deadline_seconds=state\.deadline_seconds,\n        idempotency_key",
+        "        deadline_seconds=1.0,\n        idempotency_key",
+        ("req_deadline",),
+    ),
+    (
+        "tenant-not-passed",
+        "bridge",
+        r"        tenant_namespace=state\.tenant_namespace,",
+        '        tenant_namespace="tenant-b",',
+        ("req_tenant", "run_status"),
+    ),
+    (
+        "binding-not-passed",
+        "bridge",
+        r"        model_binding=state\.binding,",
+        '        model_binding=ModelBinding("other", "other"),',
+        ("req_binding",),
+    ),
+    (
+        "manifest-not-passed",
+        "bridge",
+        r"        agent_manifest_id=state\.agent_manifest_id,",
+        '        agent_manifest_id="other",',
+        ("req_tenant",),
+    ),
+    (
+        "log-hash-not-real",
+        "bridge",
+        r"    return _sha256\(log_path\.read_bytes\(\)\), str\(inspect_ai\.__version__\)",
+        '    return "0" * 64, str(inspect_ai.__version__)',
+        ("run_sha",),
+    ),
+    (
+        "workspace-world-readable",
+        "bridge",
+        r"    os\.chmod\(path, 0o700\)\n",
+        "    os.chmod(path, 0o755)\n",
+        ("run_mode",),
+    ),
+    (
+        "workspace-not-restricted",
+        "bridge",
+        r"    os\.chmod\(path, 0o700\)\n",
+        "    os.chmod(path, 0o777)\n",
+        ("run_mode",),
+    ),
+    (
+        "final-purpose-bridge-allowed",
+        "bridge",
+        r'    if case_set\.purpose != "development":\n        raise BridgeError\(CODE_INVALID_REQUEST, "purpose"\)\n',
+        "",
+        ("final_purpose", "other_purpose"),
+    ),
+    (
+        "hook-not-required",
+        "bridge",
+        r'    if not isinstance\(hook, BridgeHook\):\n        raise BridgeError\(CODE_INVALID_REQUEST, "hook"\)\n',
+        "",
+        ("no_hook",),
+    ),
+    (
+        "sample-set-not-checked",
+        "bridge",
+        r'    if sample_ids != case_keys:\n        raise BridgeError\(CODE_RUN_FAILED, "sample set"\)\n',
+        "",
+        ("run_status",),
+    ),
     # ---- hook (P2 / P1 applied)
-    ("hook-skips-p2-screening", "bridge", r"            decision = screen_outbound_model_request\(body, self\.policy\)", "            decision = SimpleNamespace(allowed=True, denials=())", ("hook_hosted", "hook_mcp", "hook_remote", "hook_unapproved")),
-    ("hook-ignores-denial", "bridge", r"        if not decision\.allowed:\n            detail = ", "        if False:\n            detail = ", ("hook_hosted", "hook_mcp", "hook_remote", "hook_unapproved")),
-    ("hook-boundary-error-swallowed", "bridge", r"            raise BridgeError\(CODE_PROVIDER_DENIED, exc\.code\) from exc\n        with self\._lock:\n            self\.requests_screened", "            return\n        with self._lock:\n            self.requests_screened", ("hook_bad",)),
-    ("hook-count-dropped", "bridge", r"            self\.requests_screened \+= 1\n", "", ("hook_count",)),
-    ("hook-denied-count-dropped", "bridge", r"            if not decision\.allowed:\n                self\.requests_denied \+= 1\n", "", ("hook_denied_count",)),
-    ("filter-before-capture", "bridge", r"            evidence = capture_response_attempts\(response_body\)\n            outcome = apply_approval_filter\(\n                response_body,\n                evidence,", "            outcome = apply_approval_filter(\n                response_body,\n                capture_response_attempts({}),", ("filter_removed", "filter_bad")),
-    ("filter-evidence-dropped", "bridge", r"            self\._evidence\.append\(outcome\.evidence\)\n", "", ("filter_evidence",)),
-    ("filter-attempt-count-dropped", "bridge", r"            self\.attempts_captured \+= len\(outcome\.evidence\.attempts\)\n", "", ("filter_captured",)),
-    ("filter-approved-names-empty", "bridge", r"                approved_tool_names=self\.policy\.approved_tool_names,", "                approved_tool_names=frozenset({'search_records', 'wire'}),", ("filter_removed", "filter_body")),
-    ("parity-skipped", "bridge", r"        result = compare_generation_parity\(\n            self\.approved_settings, before, after, self\.declared_change\n        \)", "        result = compare_generation_parity(self.approved_settings, before, before, self.declared_change)", ("parity_default",)),
-    ("parity-block-ignored", "bridge", r'        if result\.verdict in \("blocked", "insufficient_evidence"\):\n            raise BridgeError\(CODE_PARITY_BLOCKED, ",".join\(result\.blocking_keys\) or result\.verdict\)\n', "", ("parity_default", "parity_changed")),
-    ("parity-insufficient-evidence-passes", "bridge", r'if result\.verdict in \("blocked", "insufficient_evidence"\):', 'if result.verdict == "blocked":', ("parity_default",)),
-    ("parity-count-dropped", "bridge", r"            self\.parity_checks \+= 1\n", "", ("parity_count",)),
-    ("parity-declared-change-ignored", "bridge", r"self\.approved_settings, before, after, self\.declared_change", "self.approved_settings, before, after, None", ("parity_default",)),
-    ("inspect-clearing-assumed-off", "bridge", r"    if not forward_generation_config:\n        clear_generation_params\(config\)\n", "", ("obs_off",)),
-    ("inspect-clearing-assumed-on", "bridge", r"    if not forward_generation_config:", "    if True:", ("obs_on",)),
-    ("observation-max-completion-key-lost", "bridge", r'        if config_field == "max_tokens" and "max_completion_tokens" in body:\n            key = "max_completion_tokens"\n', "", ("obs_on",)),
-    ("observation-stop-key-lost", "bridge", r'    "stop_seqs": "stop",\n', "", ("obs_on", "obs_off")),
+    (
+        "hook-skips-p2-screening",
+        "bridge",
+        r"            decision = screen_outbound_model_request\(body, self\.policy\)",
+        "            decision = SimpleNamespace(allowed=True, denials=())",
+        ("hook_hosted", "hook_mcp", "hook_remote", "hook_unapproved"),
+    ),
+    (
+        "hook-ignores-denial",
+        "bridge",
+        r"        if not decision\.allowed:\n            detail = ",
+        "        if False:\n            detail = ",
+        ("hook_hosted", "hook_mcp", "hook_remote", "hook_unapproved"),
+    ),
+    (
+        "hook-boundary-error-swallowed",
+        "bridge",
+        r"            raise BridgeError\(CODE_PROVIDER_DENIED, exc\.code\) from exc\n        with self\._lock:\n            self\.requests_screened",
+        "            return\n        with self._lock:\n            self.requests_screened",
+        ("hook_bad",),
+    ),
+    (
+        "hook-count-dropped",
+        "bridge",
+        r"            self\.requests_screened \+= 1\n",
+        "",
+        ("hook_count",),
+    ),
+    (
+        "hook-denied-count-dropped",
+        "bridge",
+        r"            if not decision\.allowed:\n                self\.requests_denied \+= 1\n",
+        "",
+        ("hook_denied_count",),
+    ),
+    (
+        "filter-before-capture",
+        "bridge",
+        r"            evidence = capture_response_attempts\(response_body\)\n            outcome = apply_approval_filter\(\n                response_body,\n                evidence,",
+        "            outcome = apply_approval_filter(\n                response_body,\n                capture_response_attempts({}),",
+        ("filter_removed", "filter_bad"),
+    ),
+    (
+        "filter-evidence-dropped",
+        "bridge",
+        r"            self\._evidence\.append\(outcome\.evidence\)\n",
+        "",
+        ("filter_evidence",),
+    ),
+    (
+        "filter-attempt-count-dropped",
+        "bridge",
+        r"            self\.attempts_captured \+= len\(outcome\.evidence\.attempts\)\n",
+        "",
+        ("filter_captured",),
+    ),
+    (
+        "filter-approved-names-empty",
+        "bridge",
+        r"                approved_tool_names=self\.policy\.approved_tool_names,",
+        "                approved_tool_names=frozenset({'search_records', 'wire'}),",
+        ("filter_removed", "filter_body"),
+    ),
+    (
+        "parity-skipped",
+        "bridge",
+        r"        result = compare_generation_parity\(\n            self\.approved_settings, before, after, self\.declared_change\n        \)",
+        "        result = compare_generation_parity(self.approved_settings, before, before, self.declared_change)",
+        ("parity_default",),
+    ),
+    (
+        "parity-block-ignored",
+        "bridge",
+        r'        if result\.verdict in \("blocked", "insufficient_evidence"\):\n            raise BridgeError\(CODE_PARITY_BLOCKED, ",".join\(result\.blocking_keys\) or result\.verdict\)\n',
+        "",
+        ("parity_default", "parity_changed"),
+    ),
+    (
+        "parity-insufficient-evidence-passes",
+        "bridge",
+        r'if result\.verdict in \("blocked", "insufficient_evidence"\):',
+        'if result.verdict == "blocked":',
+        ("parity_default",),
+    ),
+    (
+        "parity-count-dropped",
+        "bridge",
+        r"            self\.parity_checks \+= 1\n",
+        "",
+        ("parity_count",),
+    ),
+    (
+        "parity-declared-change-ignored",
+        "bridge",
+        r"self\.approved_settings, before, after, self\.declared_change",
+        "self.approved_settings, before, after, None",
+        ("parity_default",),
+    ),
+    (
+        "inspect-clearing-assumed-off",
+        "bridge",
+        r"    if not forward_generation_config:\n        clear_generation_params\(config\)\n",
+        "",
+        ("obs_off",),
+    ),
+    (
+        "inspect-clearing-assumed-on",
+        "bridge",
+        r"    if not forward_generation_config:",
+        "    if True:",
+        ("obs_on",),
+    ),
+    (
+        "observation-max-completion-key-lost",
+        "bridge",
+        r'        if config_field == "max_tokens" and "max_completion_tokens" in body:\n            key = "max_completion_tokens"\n',
+        "",
+        ("obs_on",),
+    ),
+    (
+        "observation-stop-key-lost",
+        "bridge",
+        r'    "stop_seqs": "stop",\n',
+        "",
+        ("obs_on", "obs_off"),
+    ),
     ("observation-n-key-lost", "bridge", r'    "num_choices": "n",\n', "", ("obs_on",)),
     ("observation-seed-key-lost", "bridge", r'    "seed": "seed",\n', "", ("obs_on", "obs_off")),
     ("observation-top-p-key-lost", "bridge", r'    "top_p": "top_p",\n', "", ("obs_on",)),
-    ("observation-logprobs-key-lost", "bridge", r'    "logprobs": "logprobs",\n', "", ("obs_on_all",)),
-    ("observation-top-logprobs-key-lost", "bridge", r'    "top_logprobs": "top_logprobs",\n', "", ("obs_on_all",)),
-    ("observation-penalty-keys-lost", "bridge", r'    "frequency_penalty": "frequency_penalty",\n    "presence_penalty": "presence_penalty",\n', "", ("obs_on_all",)),
-    ("observation-logit-bias-key-lost", "bridge", r'    "logit_bias": "logit_bias",\n', "", ("obs_on_all",)),
-    ("observation-parallel-key-lost", "bridge", r'    "parallel_tool_calls": "parallel_tool_calls",\n', "", ("obs_on_all",)),
-    ("observation-reasoning-key-lost", "bridge", r'    "reasoning_effort": "reasoning_effort",\n', "", ("obs_on_all",)),
-    ("observation-non-mapping-allowed", "bridge", r"    if not isinstance\(request_body, Mapping\):\n        raise BridgeError\(CODE_INVALID_REQUEST, \"request body must be a mapping\"\)\n", "", ("obs_bad",)),
+    (
+        "observation-logprobs-key-lost",
+        "bridge",
+        r'    "logprobs": "logprobs",\n',
+        "",
+        ("obs_on_all",),
+    ),
+    (
+        "observation-top-logprobs-key-lost",
+        "bridge",
+        r'    "top_logprobs": "top_logprobs",\n',
+        "",
+        ("obs_on_all",),
+    ),
+    (
+        "observation-penalty-keys-lost",
+        "bridge",
+        r'    "frequency_penalty": "frequency_penalty",\n    "presence_penalty": "presence_penalty",\n',
+        "",
+        ("obs_on_all",),
+    ),
+    (
+        "observation-logit-bias-key-lost",
+        "bridge",
+        r'    "logit_bias": "logit_bias",\n',
+        "",
+        ("obs_on_all",),
+    ),
+    (
+        "observation-parallel-key-lost",
+        "bridge",
+        r'    "parallel_tool_calls": "parallel_tool_calls",\n',
+        "",
+        ("obs_on_all",),
+    ),
+    (
+        "observation-reasoning-key-lost",
+        "bridge",
+        r'    "reasoning_effort": "reasoning_effort",\n',
+        "",
+        ("obs_on_all",),
+    ),
+    (
+        "observation-non-mapping-allowed",
+        "bridge",
+        r"    if not isinstance\(request_body, Mapping\):\n        raise BridgeError\(CODE_INVALID_REQUEST, \"request body must be a mapping\"\)\n",
+        "",
+        ("obs_bad",),
+    ),
 ]
 
 
@@ -1311,7 +1989,11 @@ def main() -> None:
         _finish()
         return
     baseline = _run_probe()
-    check("FTF-R004-P3", "the behavioural probe runs on the unmutated modules", "ERROR" not in baseline)
+    check(
+        "FTF-R004-P3",
+        "the behavioural probe runs on the unmutated modules",
+        "ERROR" not in baseline,
+    )
     if "ERROR" in baseline:
         FAILURES.append(f"probe error: {baseline['ERROR']}")
     else:
