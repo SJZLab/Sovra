@@ -10831,3 +10831,26 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   validating→queued. Ruling: complete constraint and transition tables.
 - **FTF-0516-P1: RETURNED** (round 4 → 5; tests only; #688, a32be8b37784c73999c095b8eca23ae0e49cd44a). Production
   correct. GREEN: reason length bounds (1999, 200, byte-counted, min 3). Ruling: one boundary table per text input.
+
+## 2026-10-09T16:19Z — CERTIFIED: slice FTF-0516-P1; RETURNED: FTF-0309 (r3), FTF-R005 (r7), FTF-R004-P1 (r4); UN-PARKED: FTF-0516 UI
+- **FTF-0516-P1 (child slice of FTF-0516): CERTIFIED** (round 5; tests only; PR #695, merge
+  3ac6cea74b9cdf97ed73c735adf16451e693db58, head 71feff4). Session comparison: producer session_01HfSF1ZAfeerrggmNDmVvhz
+  ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, which appears nowhere on the PR. CI: ci-verdict 113867495738;
+  dataset-quality-issues-integration job 113862797654 (postgres:16) "quality issue real proof: all checks passed".
+  Local on PG16 as sovra_app: integration 328 checks, unit 590, 0 failed. The 0l boundary table (reason 1..2000,
+  idempotency_key 1..200, detector 1..64; ASCII, Arabic, emoji; empty/whitespace/one-past refused with nothing
+  written) is in place; 57 faults, every clause-level fault RED (N13, N13b, N13c, N14 now RED); 189/190 probes (the
+  miss a verifier expectation). Production unchanged since round 4. UNWIRED (record_quality_report has no live
+  producer). Count unchanged (child slice).
+- **FTF-0309: RETURNED** (round 2 → 3; #696, a70296e5d4a04e308fa44032387f216e77f2bf72). Real P1 responses handled
+  correctly; the UI still accepts an out-of-contract `state: "known"` that enables Train (K1, K3). GREEN: reload not
+  cleared, org not in the identity key, no stale guard after json(), VRAM off-by-one. Ruling: only the frozen
+  `unknown` state is valid.
+- **FTF-R005: RETURNED** (round 6 → 7; #691, 4b62130294fb99acab0f912cabc02d682e3ae66e). Round-6 fixes hold. Regression
+  reproduced on a real MLflow 3.1.1 server: strictness gated on the live run status lets a run flipped back to RUNNING
+  resolve SYNCED (D7). No read-back before SYNCED (Q2). record() without a row lock rewrites a resolved row under
+  concurrency (D8) and does not report the mismatch.
+- **FTF-R004-P1: RETURNED** (round 3 → 4; tests only; #689, a2132159eea3ce3e6050b77b97678337e5569961). Production holds
+  every clause. GREEN: digest sensitivity to nested values, order, length and duplicates (FG-FG6).
+- **Un-parked:** FTF-0516 UI to the Backlog.
+- Pending: FTF-0616 r8 (#690).
