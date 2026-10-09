@@ -51,6 +51,17 @@ sys.path.insert(0, str(API_ROOT))
 
 from sqlalchemy import create_engine, event, text  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
+from workers.evaluation.adapters.inspect_adapter.case_adapter import (  # noqa: E402
+    CaseAdapterError,
+    load_locked_development_suite,
+)
+from workers.evaluation.adapters.inspect_adapter.provider_boundary import (  # noqa: E402
+    ScreeningPolicy,
+)
+from workers.evaluation.adapters.inspect_adapter.runtime_bridge import (  # noqa: E402
+    BridgeHook,
+    run_suite_through_runtime,
+)
 
 from app.auth.organization_workspace_schema import (  # noqa: E402
     APP_ROLE_NAME,
@@ -74,18 +85,6 @@ from app.target_connectors.target_application_connection_schema import (  # noqa
     TargetApplicationConnection,
 )
 from app.target_connectors.target_source_snapshot_schema import TargetSourceSnapshot  # noqa: E402
-
-from workers.evaluation.adapters.inspect_adapter.case_adapter import (  # noqa: E402
-    CaseAdapterError,
-    load_locked_development_suite,
-)
-from workers.evaluation.adapters.inspect_adapter.provider_boundary import (  # noqa: E402
-    ScreeningPolicy,
-)
-from workers.evaluation.adapters.inspect_adapter.runtime_bridge import (  # noqa: E402
-    BridgeHook,
-    run_suite_through_runtime,
-)
 
 CID = "FTF-R004-P3"
 FAILURES: list[str] = []
@@ -129,7 +128,9 @@ def _alembic(args: list[str], database_url: str) -> subprocess.CompletedProcess[
     )
 
 
-def _raw(key: str, tool: str, subject: str, arguments: dict[str, Any], **extra: Any) -> dict[str, Any]:
+def _raw(
+    key: str, tool: str, subject: str, arguments: dict[str, Any], **extra: Any
+) -> dict[str, Any]:
     case: dict[str, Any] = {
         "case_key": key,
         "category": "retrieval",
@@ -149,7 +150,11 @@ def main() -> None:
     app_password = _required_env("SOVRA_APP_DB_PASSWORD")
 
     upgrade = _alembic(["upgrade", "head"], migration_url)
-    check(CID, f"alembic upgrade head runs cleanly\n{upgrade.stdout}\n{upgrade.stderr}", upgrade.returncode == 0)
+    check(
+        CID,
+        f"alembic upgrade head runs cleanly\n{upgrade.stdout}\n{upgrade.stderr}",
+        upgrade.returncode == 0,
+    )
     if FAILURES:
         for failure in FAILURES:
             print(f"  {failure}")
@@ -248,7 +253,15 @@ def main() -> None:
 
     version_counter = [0]
 
-    def seed_suite(org: uuid.UUID, project_id: uuid.UUID, manifest_id: uuid.UUID, *, purpose: str, locked: bool, cases: list[dict[str, Any]]) -> uuid.UUID:
+    def seed_suite(
+        org: uuid.UUID,
+        project_id: uuid.UUID,
+        manifest_id: uuid.UUID,
+        *,
+        purpose: str,
+        locked: bool,
+        cases: list[dict[str, Any]],
+    ) -> uuid.UUID:
         version_counter[0] += 1
         suite = EvaluationSuite(
             organization_id=org,
@@ -267,7 +280,7 @@ def main() -> None:
             suite_id = suite.id
         validated = []
         for raw in cases:
-            case, errors = validate_case_input(raw)
+            case, errors = validate_case_input(raw, len(validated))
             assert case is not None and not errors, errors
             validated.append(case)
         context = TenantContext(org)
@@ -286,7 +299,9 @@ def main() -> None:
         if locked:
             with Session(owner_engine) as s:
                 s.execute(
-                    text("UPDATE evaluation_suites SET status = 'locked', reviewer_id = 'reviewer-1', locked_at = :t WHERE id = :i"),
+                    text(
+                        "UPDATE evaluation_suites SET status = 'locked', reviewer_id = 'reviewer-1', locked_at = :t WHERE id = :i"
+                    ),
                     {"t": now, "i": suite_id},
                 )
                 s.commit()
@@ -295,22 +310,46 @@ def main() -> None:
     # The adapter's backend is built first so cases can name a real record id.
     adapter = build_isolated_tool_backend_adapter()
     env = adapter.tool_environment
-    a_record = env.record_id_for(tenant_id="tenant-a", owner_subject_id="subject-a1", title="Quarterly report")
-    b_record = env.record_id_for(tenant_id="tenant-b", owner_subject_id="subject-b1", title="Support escalation")
+    a_record = env.record_id_for(
+        tenant_id="tenant-a", owner_subject_id="subject-a1", title="Quarterly report"
+    )
+    b_record = env.record_id_for(
+        tenant_id="tenant-b", owner_subject_id="subject-b1", title="Support escalation"
+    )
 
     dev_cases = [
         _raw("c-01-search", "search_records", "subject-a1", {"query": "quarterly"}),
-        _raw("c-02-note", "create_note", "subject-a1", {"record_id": a_record, "text": "bridge note", "idempotency_key": "n-1"}),
+        _raw(
+            "c-02-note",
+            "create_note",
+            "subject-a1",
+            {"record_id": a_record, "text": "bridge note", "idempotency_key": "n-1"},
+        ),
         _raw("c-03-cross-tenant", "get_record", "subject-a1", {"record_id": b_record}),
         _raw("c-04-unseeded", "search_records", "subject-never-seeded", {"query": "x"}),
     ]
-    dev_suite = seed_suite(org1_id, p1_id, m1_id, purpose="development", locked=True, cases=dev_cases)
-    draft_suite = seed_suite(org1_id, p1_id, m1_id, purpose="development", locked=False, cases=dev_cases[:1])
-    final_locked = seed_suite(org1_id, p1_id, m1_id, purpose="final", locked=True, cases=dev_cases[:1])
-    final_draft = seed_suite(org1_id, p1_id, m1_id, purpose="final", locked=False, cases=dev_cases[:1])
-    other_org_suite = seed_suite(org2_id, p2_id, m2_id, purpose="development", locked=True, cases=dev_cases[:1])
+    dev_suite = seed_suite(
+        org1_id, p1_id, m1_id, purpose="development", locked=True, cases=dev_cases
+    )
+    draft_suite = seed_suite(
+        org1_id, p1_id, m1_id, purpose="development", locked=False, cases=dev_cases[:1]
+    )
+    final_locked = seed_suite(
+        org1_id, p1_id, m1_id, purpose="final", locked=True, cases=dev_cases[:1]
+    )
+    final_draft = seed_suite(
+        org1_id, p1_id, m1_id, purpose="final", locked=False, cases=dev_cases[:1]
+    )
+    other_org_suite = seed_suite(
+        org2_id, p2_id, m2_id, purpose="development", locked=True, cases=dev_cases[:1]
+    )
 
-    def load(org: uuid.UUID, project_id: uuid.UUID, suite_id: uuid.UUID, role: Role = Role.ORGANIZATION_ADMIN):
+    def load(
+        org: uuid.UUID,
+        project_id: uuid.UUID,
+        suite_id: uuid.UUID,
+        role: Role = Role.ORGANIZATION_ADMIN,
+    ):
         context = TenantContext(org)
         with tenant_scoped_session_for(session_factory, context) as s:
             return load_locked_development_suite(
@@ -338,7 +377,11 @@ def main() -> None:
         got = code_of(load, org1_id, p1_id, suite_id)
         touched_cases = [s for s in statements if "evaluation_cases" in s]
         check(CID, f"{label} suite -> {expected} (got {got})", got == expected)
-        check(CID, f"{label} suite: no query touched evaluation_cases ({len(touched_cases)})", touched_cases == [])
+        check(
+            CID,
+            f"{label} suite: no query touched evaluation_cases ({len(touched_cases)})",
+            touched_cases == [],
+        )
     check(
         CID,
         "another organization's suite id is the same not-found as a random id",
@@ -365,11 +408,17 @@ def main() -> None:
         and all(s.metadata["suite_id"] == str(dev_suite) for s in case_set.samples)
         and all(uuid.UUID(s.metadata["case_id"]) for s in case_set.samples),
     )
-    check(CID, "the read went through the database (queries ran)", any("evaluation_cases" in s for s in statements))
+    check(
+        CID,
+        "the read went through the database (queries ran)",
+        any("evaluation_cases" in s for s in statements),
+    )
 
     # -- the run -------------------------------------------------------------------------------------
     hook = BridgeHook(
-        policy=ScreeningPolicy("standard", "standard", None, frozenset({"search_records", "create_note", "get_record"})),
+        policy=ScreeningPolicy(
+            "standard", "standard", None, frozenset({"search_records", "create_note", "get_record"})
+        ),
         approved_settings={},
     )
     statements.clear()
@@ -391,7 +440,10 @@ def main() -> None:
         "search and note cases completed with a business-outcome digest the independent collect matched",
         by_key["c-01-search"].status == "completed"
         and by_key["c-02-note"].status == "completed"
-        and all(by_key[k].business_outcome_sha256 and by_key[k].collected_matches_invoke for k in ("c-01-search", "c-02-note")),
+        and all(
+            by_key[k].business_outcome_sha256 and by_key[k].collected_matches_invoke
+            for k in ("c-01-search", "c-02-note")
+        ),
     )
     check(
         CID,
@@ -405,11 +457,17 @@ def main() -> None:
         "an unseeded subject is refused at preflight and never invoked",
         by_key["c-04-unseeded"].status == "preflight_refused",
     )
-    reread = env.dispatch("get_record", tenant_id="tenant-a", subject_id="subject-a1", arguments={"record_id": a_record})
+    reread = env.dispatch(
+        "get_record",
+        tenant_id="tenant-a",
+        subject_id="subject-a1",
+        arguments={"record_id": a_record},
+    )
     check(
         CID,
         "the claimed note side effect is independently observable in the real backend",
-        any(note["text"] == "bridge note" for note in reread["notes"]) and by_key["c-02-note"].side_effect_count == 1,
+        any(note["text"] == "bridge note" for note in reread["notes"])
+        and by_key["c-02-note"].side_effect_count == 1,
     )
     check(
         CID,

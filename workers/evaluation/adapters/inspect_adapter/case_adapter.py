@@ -30,11 +30,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from inspect_ai.dataset import Sample
+from sqlalchemy.orm import Session
+
 from app.db.tenant_context import TenantContext
 from app.evaluation.evaluation_case_store import EvaluationCaseRecord, list_cases
 from app.evaluation.evaluation_suite_crud import get_evaluation_suite
-from inspect_ai.dataset import Sample
-from sqlalchemy.orm import Session
 
 __all__ = [
     "CODE_DUPLICATE_CASE_ID",
