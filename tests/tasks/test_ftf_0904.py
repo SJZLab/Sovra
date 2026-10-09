@@ -1045,6 +1045,28 @@ def test_percent_cases_keep_their_context_when_raw_scan_suffices() -> None:
     )
 
 
+def test_percent_token_starts_widened_is_none_for_the_first_run() -> None:
+    """`_percent_token_starts`'s own contract: `widened_start` is the run immediately before a
+    `%XX` run, or None when there is no earlier run. A line that starts with a `%XX`-containing
+    run (index 0 in the whole line, not just index 0 of the filtered candidate list) has no run
+    before it. A mutant that computes `runs[i - 1]` for `i == 0` too (Python wraps to `runs[-1]`,
+    the *last* run in the line, instead of raising) is unreachable through `redact_text`'s own
+    output (a revealing suffix of `line[start:]` can never be true while the superset is false),
+    so this must be pinned directly against the private contract, not just end to end."""
+    out = lr._percent_token_starts("%41 benign text with no secret at all")
+    check(
+        "FTF-0904-P5",
+        f"first run (line starts with %XX) must report widened=None, got {out!r}",
+        len(out) == 1 and out[0] == (0, None),
+    )
+    out2 = lr._percent_token_starts("ok x%20y then%20more")
+    check(
+        "FTF-0904-P5",
+        f"a %XX run that is NOT the line's first token must report a real widened start: {out2!r}",
+        len(out2) == 2 and out2[0][1] == 0 and out2[1][1] is not None,
+    )
+
+
 def test_cut_round_cap_still_fails_closed() -> None:
     secret = _PLAIN_SECRETS[0]
     text = f"ok x%20y Authorization%3A%20 {secret} then%20more"
@@ -1741,6 +1763,12 @@ FAULTS: list[tuple[str, str, str, int]] = [
         "        (m.start(), None)\n"
         '        for m in re.compile(r"\\S*%[0-9A-Fa-f]{2}").finditer(line)\n'
         "    ]\n",
+        1,
+    ),
+    (
+        "F-PCT-WIDEN0 first run's widened wraps to the line's last run instead of None",
+        "runs[i - 1].start() if i > 0 else None",
+        "runs[i - 1].start() if i >= 0 else None",
         1,
     ),
     (
