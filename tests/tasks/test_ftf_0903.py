@@ -512,11 +512,24 @@ _WF = {"workflow_id": "wf-1", "task_id": "t-1", "state": "queued"}
 _LOG = {"level": "info", "message_code": "ok"}
 
 
+def _meta_clean(exc: BaseException) -> bool:
+    """Round 6: a refusal must carry no cause, context, notes or attributes --
+    str(exc)/repr(exc.args) is not the only channel a caller value can leak
+    through (chained `from`, `add_note`, or an attribute set before raise)."""
+    return (
+        exc.__cause__ is None
+        and exc.__context__ is None
+        and not getattr(exc, "__notes__", None)
+        and vars(exc) == {}
+    )
+
+
 def _message_of(fn, *args: object) -> str | None:
     try:
         fn(*args)
     except ContentFreeTelemetryError as exc:
-        return str(exc) + "|" + repr(exc.args)
+        combined = str(exc) + "|" + repr(exc.args)
+        return combined if _meta_clean(exc) else combined + "|META-LEAK"
     return None
 
 
@@ -1017,12 +1030,15 @@ _MARK = "ZZMARK-secret traceback!"
 
 
 def _echo_report(fn) -> str:
-    """'clean' if fn is refused without the marker anywhere in the error,
-    'LEAK' if the marker reached str(exc)/repr(exc.args), else 'allowed'."""
+    """'clean' if fn is refused without the marker anywhere in the error AND
+    with no cause/context/notes/attributes (round 6), 'LEAK' if the marker or
+    any exception metadata leaked, else 'allowed'."""
     try:
         fn()
     except ContentFreeTelemetryError as exc:
-        return "LEAK" if "ZZMARK" in str(exc) + repr(exc.args) else "clean"
+        if "ZZMARK" in str(exc) + repr(exc.args):
+            return "LEAK"
+        return "clean" if _meta_clean(exc) else "LEAK"
     return "allowed"
 
 
@@ -1110,6 +1126,14 @@ class Odd(Mapping):
     def __len__(self): return 1
     def items(self): return [([], "x")]
 
+def meta_clean(exc):
+    return (
+        exc.__cause__ is None
+        and exc.__context__ is None
+        and not getattr(exc, "__notes__", None)
+        and vars(exc) == {}
+    )
+
 def outcome(fn):
     try:
         fn()
@@ -1117,7 +1141,7 @@ def outcome(fn):
     except ContentFreeTelemetryError as exc:
         if "ZZMARK" in str(exc) + repr(exc.args):
             return "LEAK"
-        return exc.code
+        return exc.code if meta_clean(exc) else "LEAK"
     except Exception as exc:
         return "ERROR:" + type(exc).__name__
 
@@ -1224,7 +1248,9 @@ def _r4_echo_report(fn, markers: tuple[str, ...]) -> str:
         fn()
     except ContentFreeTelemetryError as exc:
         text = str(exc) + repr(exc.args)
-        return "LEAK" if any(marker in text for marker in markers) else "clean"
+        if any(marker in text for marker in markers):
+            return "LEAK"
+        return "clean" if _meta_clean(exc) else "LEAK"
     return "allowed"
 
 
@@ -1306,12 +1332,22 @@ def forged(**attrs):
         object.__setattr__(ref, k, v)
     return ref
 
+def meta_clean(exc):
+    return (
+        exc.__cause__ is None
+        and exc.__context__ is None
+        and not getattr(exc, "__notes__", None)
+        and vars(exc) == {}
+    )
+
 def report(fn, *markers):
     try:
         fn()
     except ContentFreeTelemetryError as exc:
         text = str(exc) + repr(exc.args)
-        return "LEAK" if any(x in text for x in markers) or "Traceback" in text else "clean"
+        if any(x in text for x in markers) or "Traceback" in text:
+            return "LEAK"
+        return "clean" if meta_clean(exc) else "LEAK"
     except Exception as exc:
         return "ERROR:" + type(exc).__name__
     return "allowed"
@@ -1469,6 +1505,144 @@ def test_r4_echo_faults_each_turn_the_probe_red() -> None:
             len(out) == len(BASELINE_R4)
             and all(out[i] == "LEAK" for i in indices)
             and all(out[i] == "clean" for i in range(9) if i not in indices),
+        )
+
+
+# --- FTF-0903 round 6: every refusal must also carry no cause, context, notes or attributes. ---
+# str(exc)/repr(exc.args) is not the only leak channel: a `raise ... from ValueError(value)`,
+# an `err.add_note(str(value))`, or storing the value as an exception attribute before raising
+# none of them touch str(exc)/repr(exc.args), so rounds 3-4's own checks above stay "clean" on
+# each of them. Faults C1/C3/C4/C5 below are RED only because _meta_clean (and its subprocess
+# twin here) inspects __cause__/__context__/__notes__/vars(exc) as well.
+
+_PROBE_R6 = """
+import sys
+sys.path.insert(0, __ROOT__)
+from packages.security import content_free_telemetry as m
+from packages.security.content_free_telemetry import (
+    emit_event, ContentFreeTelemetryError, ContentRef,
+)
+
+M = "ZZMARK-secret traceback!"
+WF = {"workflow_id": "w", "task_id": "t", "state": "queued"}
+
+def meta_clean(exc):
+    return (
+        exc.__cause__ is None
+        and exc.__context__ is None
+        and not getattr(exc, "__notes__", None)
+        and vars(exc) == {}
+    )
+
+def report(fn):
+    try:
+        fn()
+    except ContentFreeTelemetryError as exc:
+        return "clean" if meta_clean(exc) else "LEAK"
+    except Exception as exc:
+        return "ERROR:" + type(exc).__name__
+    return "allowed"
+
+# 0: C1 targets _id_value via the ContentRef id path.
+print(report(lambda: ContentRef(M, "key-1")))
+# 1: C3 targets _number_value with a non-numeric string.
+print(report(lambda: emit_event("workflow", {**WF, "cost_usd": M})))
+# 2: C4 targets _code_value (message_code).
+print(report(lambda: emit_event("log", {"level": "info", "message_code": M})))
+# 3: C5 targets _enum_value (level).
+print(report(lambda: emit_event("log", {"level": M, "message_code": "ok"})))
+"""
+
+BASELINE_R6 = ["clean"] * 4 + [""]
+
+
+def _r6_mutations() -> list[tuple[str, str, str, int]]:
+    return [
+        (
+            "C1 _id_value chains the caller value via `from ValueError(value)`",
+            '        raise ContentRefusedError(f"{what} is not a bounded id")\n',
+            '        raise ContentRefusedError(f"{what} is not a bounded id") '
+            "from ValueError(value)\n",
+            0,
+        ),
+        (
+            "C3 _number_value calls float(value) and raises inside except ValueError "
+            "(the caller text reaches __context__)",
+            "    if type(value) not in (int, float) or not (0 <= value <= _MAX_NUMBER):  "
+            "# type: ignore[operator]\n"
+            '        raise ContentRefusedError(f"{what} is not a bounded non-negative number")\n',
+            "    try:\n"
+            "        _r6_numeric = float(value)  # type: ignore[arg-type]\n"
+            "    except ValueError:\n"
+            '        raise ContentRefusedError(f"{what} is not a bounded non-negative number")\n'
+            "    if type(value) not in (int, float) or not (0 <= _r6_numeric <= _MAX_NUMBER):\n"
+            '        raise ContentRefusedError(f"{what} is not a bounded non-negative number")\n',
+            1,
+        ),
+        (
+            "C4 _code_value attaches the caller value as an exception note (err.add_note)",
+            '        raise ContentRefusedError(f"{what} is not a bounded code")\n',
+            '        _err = ContentRefusedError(f"{what} is not a bounded code")\n'
+            "        _err.add_note(str(value))\n"
+            "        raise _err\n",
+            2,
+        ),
+        (
+            "C5 _enum_value stores the caller value as an exception attribute",
+            '        raise ContentRefusedError(f"{what} is not one of the closed set {allowed}")\n',
+            '        _err = ContentRefusedError(f"{what} is not one of the closed set {allowed}")\n'
+            "        _err.rejected_value = value\n"
+            "        raise _err\n",
+            3,
+        ),
+    ]
+
+
+def test_round6_message_of_and_echo_reports_require_clean_exception_metadata() -> None:
+    # Today's production: every shared echo helper stays "clean"/carries no |META-LEAK,
+    # proving the new meta checks do not false-positive on correct code.
+    msg = _message_of(emit_event, "workflow", {**_WF, "request_id": _MARK})
+    check(
+        "FTF-0903-R6-1",
+        "a clean refusal's _message_of carries no META-LEAK marker",
+        msg is not None and "META-LEAK" not in msg,
+    )
+    check(
+        "FTF-0903-R6-1",
+        "_echo_report stays clean on today's production",
+        _echo_report(lambda: ContentRef(_MARK, "key-1")) == "clean",
+    )
+    check(
+        "FTF-0903-R6-1",
+        "_r4_echo_report stays clean on today's production",
+        _r4_echo_report(lambda: emit_event("workflow", {**_WF, "cost_usd": _MARK}), ("ZZMARK",))
+        == "clean",
+    )
+
+
+def test_round6_meta_leak_faults_each_turn_the_probe_red() -> None:
+    script = _PROBE_R6.replace("__ROOT__", repr(str(ROOT)))
+    check(
+        "FTF-0903-R6-FAULT",
+        "unmutated r6 probe matches baseline",
+        _probe(None, script) == BASELINE_R6,
+    )
+    text = MODULE.read_text(encoding="utf-8")
+    for description, anchor, replacement, index in _r6_mutations():
+        check(
+            "FTF-0903-R6-FAULT",
+            f"mutation anchor matches once: {description}",
+            text.count(anchor) == 1,
+        )
+        if text.count(anchor) != 1:
+            continue
+        out = _probe(text.replace(anchor, replacement, 1), script)
+        check(
+            "FTF-0903-R6-FAULT",
+            f"mutation turns the probe LEAK on exactly its case, others stay clean: {description}",
+            len(out) == len(BASELINE_R6)
+            and out[index] == "LEAK"
+            and all(out[i] == "clean" for i in range(4) if i != index),
         )
 
 

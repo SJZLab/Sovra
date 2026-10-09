@@ -32,6 +32,7 @@ import socket
 import sys
 import threading
 import time
+import unicodedata
 import urllib.parse
 import uuid
 from datetime import UTC, datetime
@@ -850,6 +851,226 @@ def test_x_exact_alias_matching_in_the_mapping_lookup() -> None:
         CID,
         "X every one of the four lookups used the model_name verbatim, no normalisation",
         seen_names == ["Alias-A", "ALIAS-A", "alias-a ", "alias-a"],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Round 3 (QUEUE 0k): one shared exact-match variant set proves both lookup
+# sites -- the FTF-0308-P1 mapping store's get_entry and the FTF-0307
+# classifier's own access-dimension model_id comparison -- treat every
+# Unicode variant class as genuinely distinct from the real spelling, plus
+# fault injection (FB-nfkc, FB5) proving each assertion is behavioural.
+# ---------------------------------------------------------------------------
+
+_FULLWIDTH_OFFSET = 0xFF00 - 0x0020  # ASCII 0x21-0x7E -> the fullwidth block
+
+
+def _fullwidth(ch: str) -> str:
+    code = ord(ch)
+    return chr(code + _FULLWIDTH_OFFSET) if 0x21 <= code <= 0x7E else ch
+
+
+def _unicode_exact_match_variants(base: str) -> list[str]:
+    """The single shared variant set both `test_x_exact_match_unicode_
+    variants_mapping_lookup` and `test_x_exact_match_unicode_variants_
+    access_dimension` below use: case, leading/trailing whitespace, a tab, a
+    no-break space, a zero-width space, a non-ASCII Unicode hyphen, a
+    fullwidth first character, and all four Unicode normalisation forms of
+    `base`. Only variants that actually differ from `base` are returned --
+    a base with no combining/compatibility characters makes NFC/NFKC a
+    no-op by construction, so callers also exercise a composed-character
+    base (e.g. "café-alias") to pull in a genuinely distinct NFD/NFKD
+    variant."""
+    candidates = [
+        base.upper(),
+        base.casefold(),
+        " " + base,
+        base + " ",
+        base + "\t",
+        base + " ",  # no-break space
+        base + "​",  # zero-width space
+        base.replace("-", "‐", 1),  # Unicode (non-ASCII) hyphen
+        _fullwidth(base[0]) + base[1:],
+        unicodedata.normalize("NFC", base),
+        unicodedata.normalize("NFD", base),
+        unicodedata.normalize("NFKC", base),
+        unicodedata.normalize("NFKD", base),
+    ]
+    out: list[str] = []
+    for candidate in candidates:
+        if candidate != base and candidate not in out:
+            out.append(candidate)
+    return out
+
+
+def _is_unmatched_mapping(body: dict[str, Any]) -> bool:
+    """The shared mapping-lookup predicate: unknown, no artifact -- the
+    variant was not matched to the mapped entry."""
+    return body["capability"] == "unknown" and body["artifact"]["artifact_id"] is None
+
+
+def _is_not_granted(body: dict[str, Any]) -> bool:
+    """The shared access-dimension predicate."""
+    return body["access"] == "not_granted"
+
+
+def test_x_exact_match_unicode_variants_mapping_lookup() -> None:
+    """Round-3 item 2 (mapping-lookup half). For a plain base alias and a
+    composed-character one, every variant the shared helper produces is
+    `_is_unmatched_mapping` against the real store's own exact SQL equality
+    (modelled by `_recording_get_entry`, the same convention round 2's own
+    `test_x_exact_alias_matching_in_the_mapping_lookup` already used)."""
+    for base in ("alias-a", "café-alias"):
+        variants = _unicode_exact_match_variants(base)
+        check(CID, f"X ({base!r}) the shared helper produced distinct variants", bool(variants))
+        seen_names: list[str] = []
+
+        env = _Env()
+        env.entry, env.artifact = _entry(), _artifact()
+        env.discovery.result = _discovered(base, *variants)
+
+        def _recording_get_entry(
+            session: Any,
+            ctx: Any,
+            *,
+            _base: str = base,
+            _env: Any = env,
+            _seen: list[str] = seen_names,
+            **kwargs: Any,
+        ) -> Any:
+            name = kwargs.get("public_model_name")
+            _seen.append(name)
+            return _env.entry if name == _base else None
+
+        env.get_entry = _recording_get_entry  # type: ignore[method-assign]
+
+        for variant in variants:
+            env.connection_statuses = ["active", "active"]
+            with _running(env) as run_base:
+                status, body = _get(run_base, urllib.parse.quote(variant, safe=""))
+            check(
+                CID,
+                f"X ({base!r}) variant {variant!r} is not matched by the mapping lookup",
+                status == 200 and _is_unmatched_mapping(body),
+            )
+        env.connection_statuses = ["active", "active"]
+        with _running(env) as run_base:
+            status, body = _get(run_base, urllib.parse.quote(base, safe=""))
+        check(
+            CID,
+            f"X ({base!r}) the exact original spelling still matches",
+            status == 200 and body["capability"] == "trainable_open_weight",
+        )
+        check(
+            CID,
+            f"X ({base!r}) every lookup used model_name verbatim, no normalisation",
+            seen_names == [*variants, base],
+        )
+
+
+def test_x_exact_match_unicode_variants_access_dimension() -> None:
+    """Round-3 item 2 (classifier half). `classify_training_capability`'s
+    own access-dimension `model_id` comparison must report `not_granted`
+    for every one of the same shared variants when only the base spelling
+    is in the real discovered/reconciled set -- and `granted` for the exact
+    spelling. No mapping entry is involved (`env.entry = None`), isolating
+    the access dimension from the mapping-lookup dimension (Section 0.12's
+    own orthogonality rule)."""
+    for base in ("alias-a", "café-alias"):
+        variants = _unicode_exact_match_variants(base)
+        check(CID, f"X ({base!r}) the shared helper produced distinct variants", bool(variants))
+        env = _Env()
+        env.entry = None
+        env.discovery.result = _discovered(base)
+        for variant in variants:
+            env.connection_statuses = ["active", "active"]
+            with _running(env) as run_base:
+                status, body = _get(run_base, urllib.parse.quote(variant, safe=""))
+            check(
+                CID,
+                f"X ({base!r}) access for unlisted variant {variant!r} is not_granted",
+                status == 200 and _is_not_granted(body),
+            )
+        env.connection_statuses = ["active", "active"]
+        with _running(env) as run_base:
+            status, body = _get(run_base, urllib.parse.quote(base, safe=""))
+        check(
+            CID,
+            f"X ({base!r}) access for the exact discovered spelling is granted",
+            status == 200 and body["access"] == "granted",
+        )
+
+
+def test_x_fault_injection_nfkc_lookup_and_lowercased_classifier_id() -> None:
+    """The two faults the round-3 DoD names by id. Each is applied only
+    inside this test (a local monkeypatch of `env.get_entry` or of
+    `mcr.classify_training_capability`, fully reverted in `finally`) --
+    this round changes no production file, so nothing here ever touches a
+    module's own bytes on disk. Each check below asserts that the shared
+    predicate the tests above rely on (`_is_unmatched_mapping` /
+    `_is_not_granted`) actually goes false under the fault, proving those
+    assertions are behavioural rather than vacuous."""
+    # FB-nfkc: an NFKC-normalising get_entry would wrongly match the
+    # fullwidth variant "ａlias-a" to the real "alias-a" mapping.
+    fullwidth_variant = _fullwidth("a") + "lias-a"
+    check(
+        CID,
+        "FAULT setup: the fullwidth variant differs from 'alias-a'",
+        fullwidth_variant != "alias-a",
+    )
+    env = _Env()
+    env.entry, env.artifact = _entry(), _artifact()
+    env.discovery.result = _discovered("alias-a", fullwidth_variant)
+
+    def _nfkc_get_entry(session: Any, ctx: Any, **kwargs: Any) -> Any:
+        name = kwargs.get("public_model_name")
+        normalised = unicodedata.normalize("NFKC", name) if isinstance(name, str) else name
+        return env.entry if normalised == "alias-a" else None
+
+    env.get_entry = _nfkc_get_entry  # type: ignore[method-assign]
+    env.connection_statuses = ["active", "active"]
+    with _running(env) as base:
+        status, body = _get(base, urllib.parse.quote(fullwidth_variant, safe=""))
+    check(
+        CID,
+        "FAULT FB-nfkc: an NFKC-normalising get_entry flips the mapping-lookup "
+        "assertion to RED -- it wrongly reports the fullwidth variant as the real "
+        "trainable mapping",
+        status == 200 and not _is_unmatched_mapping(body),
+    )
+
+    # FB5: classify_training_capability called with model_id.lower() would wrongly
+    # grant access to an uppercase, otherwise-unlisted alias when discovery only
+    # ever lists the lowercase spelling.
+    env2 = _Env()
+    env2.entry = None
+    env2.discovery.result = _discovered("alias-a")
+    original_classify = mcr.classify_training_capability
+
+    def _lowering_classify(**kwargs: Any) -> Any:
+        kwargs["model_id"] = kwargs["model_id"].lower()
+        return original_classify(**kwargs)
+
+    mcr.classify_training_capability = _lowering_classify
+    try:
+        env2.connection_statuses = ["active", "active"]
+        with _running(env2) as base:
+            status2, body2 = _get(base, urllib.parse.quote("ALIAS-A", safe=""))
+    finally:
+        mcr.classify_training_capability = original_classify
+    check(
+        CID,
+        "FAULT FB5: a lower()-cased model_id passed to the classifier flips the "
+        "access-dimension assertion to RED -- it wrongly grants access to the "
+        "unlisted 'ALIAS-A' because it now matches the lowercase-only discovered "
+        "'alias-a'",
+        status2 == 200 and not _is_not_granted(body2),
+    )
+    check(
+        CID,
+        "FAULT FB5 is fully reverted: classify_training_capability is the original "
+        "function object again",
+        mcr.classify_training_capability is original_classify,
     )
 
 

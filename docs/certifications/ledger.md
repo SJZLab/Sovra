@@ -10702,3 +10702,28 @@ data_exposure OK).
   hold. Reproduced on real SeaweedFS: two concurrent creates with one backup_id leave one caller holding a success
   record for an unverifiable backup (6/6, Law 17). GREEN: G1 (get_latest read) in the integration suite, with an ABA
   partial restore under it; G7 (count-only re-list) in both suites. Ruling: create_backup generates the backup_id.
+
+## 2026-10-08T23:05Z — RETURNED: FTF-0616 (r7)
+- **FTF-0616: RETURNED** (round 6 → 7; tests only; #657, 7209ac7d4a36198056d63f58ba7071a062492882). Independent
+  verifier: CI on head d8cc1a3 green (live TLS path ran); gates clean; whole-file mutation 324/324. Round-6 F9, R5f,
+  R5n and optional F15 are RED. GREEN: NFKC-normalised alias membership (R6f) and judge-id comparison (R6m); under
+  each, a fullwidth-character variant of an approved but uncalibrated id certifies. Round 7 closes the normalisation
+  class through one shared variant list.
+
+## 2026-10-09T00:07Z — RETURNED: FTF-0309-P1 (r3)
+- **FTF-0309-P1: RETURNED** (round 2 → 3; spec-matrix plus tests; #661, 060cad27eb8caf50143df8bfd830182500936e99).
+  Independent verifier: CI on head becc0f8 green before the GitHub Actions billing outage (ci-verdict 113572684356,
+  real-Postgres job logged its pass line); gates clean; whole-file mutation 68/68; 61/61 probes on PG16 as sovra_app.
+  FA (second gateway call) fixed; the listed alias faults RED. Open: the proving_symbol DoD bullet (ruling: FTF-0309's
+  entry gets build_model_capability_router, verified 46/46 and RED when unmounted on a scratch matrix); GREEN:
+  NFKC-normalised alias lookup (FB-nfkc) and a lower-cased classifier model_id (FB5, an unlisted alias shows granted).
+  Producer session only in the PR body (no commit trailers); certifier absent.
+
+## 2026-10-09T07:48Z — RETURNED: FTF-R004-P1 (r2)
+- **FTF-R004-P1: RETURNED** (round 1 → 2; #673, e1035b6fe6ecc34149116f2a4105eba05d097a5c). Independent verifier: CI on
+  head 3101908 green (gate log "all checks passed"; mutation 78/78); gates clean; UNWIRED disclosed. Reproduced: capture
+  returns prompt text from instructions, prompt variables, prediction, conversation and extra_body.messages; a bridge
+  rewrite (before 0.8 → after 0.7, approved 0.7) and a stale declaration pass as preserved. GREEN: CONTENT_KEYS
+  removals (F5, F6), float tolerance (F8), plain == on declared values (F10). Reason codes and the tuple digest are
+  missing; cyclic input raises a bare RecursionError; the declaration is mutable after validation.
+- CI note: GitHub Actions refused all jobs for billing from ~23:05Z 2026-10-08 to ~07:20Z 2026-10-09.

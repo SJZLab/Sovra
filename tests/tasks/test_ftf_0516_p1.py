@@ -37,6 +37,7 @@ import re
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -53,11 +54,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from tokenizers import Tokenizer, models, pre_tokenizers, processors, trainers
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
+from workers.data.canonical_conversation_normalizer import SCHEMA_VERSION  # noqa: E402
 from workers.data.exact_duplicate_detector import detect_exact_duplicates  # noqa: E402
 from workers.data.near_duplicate_detector import detect_near_duplicates  # noqa: E402
 from workers.data.normalized_duplicate_detector import detect_normalized_duplicates  # noqa: E402
@@ -73,9 +76,12 @@ from workers.data.quality_issue_engine import (  # noqa: E402
     assert_clear_for_split,
     evaluate_quality,
 )
-from workers.data.record_schema_validator import RecordSchemaValidationReport  # noqa: E402
-from workers.data.tokenization_analysis import TokenizationAnalysisReport  # noqa: E402
-from workers.data.tool_argument_validator import ToolCallValidationReport  # noqa: E402
+from workers.data.record_schema_validator import validate_record_batch  # noqa: E402
+from workers.data.tokenization_analysis import (  # noqa: E402
+    ChatTemplateFastTokenizer,
+    analyze_tokenization,
+)
+from workers.data.tool_argument_validator import validate_tool_calls  # noqa: E402
 
 from app.auth.rbac_middleware import AuthenticatedPrincipal, Role  # noqa: E402
 from app.datasets import dataset_quality_routes as routes  # noqa: E402
@@ -521,10 +527,53 @@ def _dataset(
     return row
 
 
+def _build_exact_tokenizer() -> ChatTemplateFastTokenizer:
+    """A real, exact `ChatTemplateFastTokenizer`: a real `tokenizers.Tokenizer`
+    trained offline/in-memory on a tiny fixed corpus, plus a real chat
+    template, both pinned by their own real sha256 digests -- not a hand-built
+    report. Same technique as FTF-0510's own test suite
+    (`tests/tasks/test_ftf_0510.py`); no network, no pretrained model."""
+    tokenizer = Tokenizer(models.BPE(unk_token="[UNK]"))
+    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+    corpus = [
+        "alpha routers beta billing contact help gamma delta",
+        "order status shipped pending cancelled",
+    ] * 20
+    trainer = trainers.BpeTrainer(vocab_size=200, special_tokens=["[UNK]"])
+    tokenizer.train_from_iterator(corpus, trainer)
+    tokenizer.add_special_tokens(["<s>", "</s>"])
+    tokenizer.post_processor = processors.TemplateProcessing(
+        single="<s> $A", special_tokens=[("<s>", tokenizer.token_to_id("<s>"))]
+    )
+    scratch_dir = tempfile.mkdtemp(prefix="ftf_0516_p1_")
+    tokenizer_json_path = os.path.join(scratch_dir, "tokenizer.json")
+    tokenizer.save(tokenizer_json_path)
+    tokenizer_json_sha256 = hashlib.sha256(Path(tokenizer_json_path).read_bytes()).hexdigest()
+    template = (
+        '{% for message in messages %}<|{{ message["role"] }}|>{{ message["content"] }}'
+        "{{ eos_token }}\n{% endfor %}"
+    )
+    template_sha256 = hashlib.sha256(template.encode("utf-8")).hexdigest()
+    return ChatTemplateFastTokenizer.from_resolved_files(
+        tokenizer_json_path,
+        {"chat_template": template, "bos_token": "<s>", "eos_token": "</s>"},
+        expected_tokenizer_json_sha256=tokenizer_json_sha256,
+        expected_chat_template_sha256=template_sha256,
+    )
+
+
+_REAL_TOKENIZER = _build_exact_tokenizer()
+
+
 def _record_batch(index: int, text_value: str, raw: str | None = None) -> dict[str, object]:
     return {
         "record_index": index,
         "purpose": "training",
+        "schema_version": SCHEMA_VERSION,
+        "source_type": "upload",
+        "quality_status": "pending",
+        "pii_status": "unscanned",
+        "tool_schema_status": "not_applicable",
         "record_sha256": _sha(raw if raw is not None else f"raw-{index}-{text_value}"),
         "normalized_sha256": _sha(f"norm-{index}-{text_value}"),
         "content": {
@@ -546,16 +595,21 @@ def _full_runs(clean: bool = False, drop: tuple[str, ...] = ()) -> list[Detector
             _record_batch(14, "delta"),
         ]
     )
+    record_schema = validate_record_batch(batch)
+    assert (
+        record_schema.is_clean
+    ), f"test fixture itself failed real FTF-0508 validation: {record_schema.issues!r}"
+    tool_arguments = validate_tool_calls(
+        [], locked_manifest={}, current_tool_versions={}, instance_validator=None
+    )
+    tokenization = analyze_tokenization(batch, tokenizer=_REAL_TOKENIZER, max_sequence_length=4096)
+    assert (
+        tokenization.certifies_training_fit
+    ), f"test fixture itself failed real FTF-0510 tokenization: {tokenization.issues!r}"
     reports: dict[str, object] = {
-        "record_schema": RecordSchemaValidationReport(
-            issues=(),
-            accepted_batch_positions=tuple(range(len(batch))),
-            rejected_batch_positions=(),
-        ),
-        "tool_arguments": ToolCallValidationReport(issues=(), tool_schema_status="not_applicable"),
-        "tokenization": TokenizationAnalysisReport(
-            conversations=(), distribution=None, issues=(), certifies_training_fit=True
-        ),
+        "record_schema": record_schema,
+        "tool_arguments": tool_arguments,
+        "tokenization": tokenization,
         "exact_duplicate": detect_exact_duplicates(batch),
         "normalized_duplicate": detect_normalized_duplicates(batch),
         "near_duplicate": detect_near_duplicates(batch),
@@ -1613,6 +1667,42 @@ def test_s5_resolutions_succeed_and_are_recorded() -> None:
             )
             == 1,
         )
+        check(
+            CID,
+            "a real detector name in the detector filter is accepted",
+            len(
+                store.list_issues(
+                    session,
+                    _CTX,
+                    project_id=_PROJECT,
+                    dataset_id=d1.id,
+                    include_held_out=False,
+                    limit=10,
+                    detector="exact_duplicate",
+                )
+            )
+            >= 0,
+        )
+        try:
+            store.list_issues(
+                session,
+                _CTX,
+                project_id=_PROJECT,
+                dataset_id=d1.id,
+                include_held_out=False,
+                limit=10,
+                detector="bad\x00detector",
+            )
+            detector_nul_error: BaseException | None = None
+        except BaseException as exc:  # noqa: BLE001
+            detector_nul_error = exc
+        check(
+            CID,
+            "a NUL character in the detector filter is refused as this module's own "
+            f"ValueError, never a raw database error ({detector_nul_error!r})",
+            isinstance(detector_nul_error, ValueError)
+            and not isinstance(detector_nul_error, store.QualityStoreError),
+        )
 
         # idempotent replay
         before = _counts(session, audit)
@@ -2056,6 +2146,11 @@ def test_s6_resolution_refusals_write_nothing() -> None:
             ("a str-subclass key", {"idempotency_key": _Str("k")}),
             ("a string instead of a list", {"resolutions": "abc"}),
             ("a non-request item", {"resolutions": [object()]}),
+            ("a NUL character in idempotency_key", {"idempotency_key": "bad\x00key"}),
+            (
+                "a NUL character in a resolution's reason",
+                {"resolutions": [_req(pii, "exclude", reason="bad\x00reason")]},
+            ),
         ):
             args: dict[str, Any] = {
                 "project_id": _PROJECT,
