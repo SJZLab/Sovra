@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-09T16:19Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-09T18:18Z. Source: `python3 scripts/status.py` on main.
 - **Status: 136/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
 - **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902,
@@ -10,6 +10,9 @@ Updated: 2026-10-09T16:19Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-09T18:18Z:**
+  - CERTIFIED slices FTF-H010-P1 (model import fields + validation jobs) and FTF-R004-P2 (provider-tool/MCP/remote-media denial). Count unchanged (child slices).
+  - Returned: FTF-0309 r4 (strict-parse table), FTF-0904 r2 (decoded-layer leak, header forms, non-root extras, quadratic regex), FTF-1703 r7 (ruling-required fault pinned; reserved snapshot).
 - **2026-10-09T16:19Z:**
   - CERTIFIED slice FTF-0516-P1 (dataset quality report/issue/resolution API). Count unchanged (child slice); the FTF-0516 UI is un-parked into the Backlog.
   - Returned: FTF-0309 r3 (UI must accept only the frozen `unknown` state), FTF-R005 r7 (status-gated strictness regression, read-back, row lock), FTF-R004-P1 r4 (digest sensitivity tests).
