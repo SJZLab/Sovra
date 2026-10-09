@@ -351,13 +351,14 @@ class _StoredObjectFile(io.RawIOBase):
         self._window = b""
 
     def readable(self) -> bool:
+        if self.closed:
+            raise ValueError("I/O operation on closed file")
         return True
 
     def seekable(self) -> bool:
+        if self.closed:
+            raise ValueError("I/O operation on closed file")
         return True
-
-    def tell(self) -> int:
-        return self._pos
 
     def seek(self, offset: int, whence: int = os.SEEK_SET) -> int:
         base = {os.SEEK_SET: 0, os.SEEK_CUR: self._pos, os.SEEK_END: self._size}[whence]

@@ -4468,6 +4468,15 @@ def test_x4_stored_object_file_and_xlsx_boundaries() -> None:
                 stored.readable() and stored.seekable(),
             )
             check(f"{CID}-X4", "a new view starts at 0", stored.tell() == 0)
+            closed_view = dos._StoredObjectFile(client, settings, target.object_key, len(body))
+            closed_view.close()
+            for name in ("readable", "seekable"):
+                try:
+                    getattr(closed_view, name)()
+                    closed_refused = False
+                except ValueError:
+                    closed_refused = True
+                check(f"{CID}-X4", f"{name}() on a closed view raises ValueError", closed_refused)
             check(
                 f"{CID}-X4",
                 "read(0) is empty and fetches nothing",
