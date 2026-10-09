@@ -137,7 +137,12 @@ function shown(value: unknown): string {
 }
 
 const ACCESS_VALUES = ["granted", "not_granted"];
-const CAPABILITY_VALUES = ["trainable_open_weight", "managed_fine_tunable", "inference_only", "unknown"];
+const CAPABILITY_VALUES = [
+  "trainable_open_weight",
+  "managed_fine_tunable",
+  "inference_only",
+  "unknown",
+];
 const AVAILABILITY_VALUES = ["none", "registered", "ready", "archived"];
 const TOP_LEVEL_KEYS = new Set([
   "litellm_connection_id",
@@ -287,23 +292,27 @@ export function CapabilityCompatibilityUI({
   onTrain,
 }: CapabilityCompatibilityUIProps) {
   const identity = JSON.stringify([apiBaseUrl, organizationId, connectionId, projectId, modelName]);
-  const [result, setResult] = useState<{ identity: string; value: ModelCapabilities } | null>(null);
+  const [result, setResult] = useState<ModelCapabilities | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [started, setStarted] = useState(false);
   const latestRequest = useRef(0);
 
-  // Any org/connection/project/model change invalidates the result and any in-flight response.
-  useEffect(() => {
-    latestRequest.current += 1;
+  // Any org/connection/project/model change invalidates the result before the next commit (no frame
+  // with a stale Train) and any in-flight response (its request number is no longer the latest).
+  const [seenIdentity, setSeenIdentity] = useState(identity);
+  if (seenIdentity !== identity) {
+    setSeenIdentity(identity);
     setResult(null);
     setError(null);
     setLoading(false);
     setStarted(false);
+  }
+  useEffect(() => {
+    latestRequest.current += 1;
   }, [identity]);
 
-  // A result only counts for the identity it was checked for (covers the render before the effect runs).
-  const capabilities = result !== null && result.identity === identity ? result.value : null;
+  const capabilities = result;
 
   async function handleLoad() {
     const request = ++latestRequest.current;
@@ -337,7 +346,7 @@ export function CapabilityCompatibilityUI({
         setError("capabilities response does not match the request");
         return;
       }
-      setResult({ identity, value: body });
+      setResult(body);
     } catch (caught) {
       if (!stale()) setError(networkErrorMessage(caught));
     } finally {
@@ -377,18 +386,9 @@ export function CapabilityCompatibilityUI({
           </dl>
           <table>
             <tbody>
-              <DimensionRow
-                label="Method support"
-                dim={capabilities.method_support}
-              />
-              <DimensionRow
-                label="Tested VRAM"
-                dim={capabilities.min_gpu_vram_gb}
-              />
-              <DimensionRow
-                label="Chat template"
-                dim={capabilities.chat_template}
-              />
+              <DimensionRow label="Method support" dim={capabilities.method_support} />
+              <DimensionRow label="Tested VRAM" dim={capabilities.min_gpu_vram_gb} />
+              <DimensionRow label="Chat template" dim={capabilities.chat_template} />
             </tbody>
           </table>
           <p data-testid="declared-vram">

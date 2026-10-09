@@ -12,7 +12,7 @@
 // Next.js `app/` page tree yet (FTF-H029), same precedent as ftf_0308.spec.ts.
 import { createElement } from "react";
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import {
@@ -313,7 +313,9 @@ for (const [what, patch] of [
 }
 
 test("FTF-0309-PR4 license_approved must be the boolean true; the string 'false' never enables Train", async () => {
-  await load(ok(capabilities({ artifact: { ...capabilities().artifact, license_approved: "false" } })));
+  await load(
+    ok(capabilities({ artifact: { ...capabilities().artifact, license_approved: "false" } })),
+  );
   expect(screen.getByRole("alert").textContent).toContain("malformed");
   expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
 });
@@ -336,7 +338,11 @@ test("FTF-0309-PR8 known tested VRAM with no numeric declared minimum blocks Tra
   for (const profile of [undefined, null, {}, { memory_gb: "40" }, { gpu: "A100" }]) {
     cleanup();
     await load(
-      ok(capabilities({ min_gpu_vram_gb: { state: "known", tested_gb: 80, declared_minimum_gpu_profile: profile } })),
+      ok(
+        capabilities({
+          min_gpu_vram_gb: { state: "known", tested_gb: 80, declared_minimum_gpu_profile: profile },
+        }),
+      ),
     );
     expect(train().disabled).toBe(true);
     expect(screen.getByText(/no numeric declared minimum/)).toBeTruthy();
@@ -349,7 +355,11 @@ test("FTF-0309-PR9 known VRAM with a missing or non-numeric tested_gb blocks Tra
     await load(
       ok(
         capabilities({
-          min_gpu_vram_gb: { state: "known", tested_gb: tested, declared_minimum_gpu_profile: { memory_gb: 40 } },
+          min_gpu_vram_gb: {
+            state: "known",
+            tested_gb: tested,
+            declared_minimum_gpu_profile: { memory_gb: 40 },
+          },
         }),
       ),
     );
@@ -370,7 +380,9 @@ test("FTF-0309-PR14 rows show the tested VRAM value and never borrow the discove
 
 test("FTF-0309-F13 an unknown row shows the server's own reason in the row", async () => {
   await load(ok(capabilities({ method_support: unknown("no_backing_evidence") })));
-  expect(screen.getByTestId("dimension-Method support").textContent).toContain("reason: no_backing_evidence");
+  expect(screen.getByTestId("dimension-Method support").textContent).toContain(
+    "reason: no_backing_evidence",
+  );
 });
 
 test("FTF-0309-F22 the blockers list is rendered and accessible when Train is blocked", async () => {
@@ -394,4 +406,114 @@ test("FTF-0309-A2 an explicit click on an enabled Train reports the request only
   fireEvent.click(train());
   expect(onTrain).toHaveBeenCalledTimes(1);
   expect(screen.getByRole("status").textContent).toContain(ALIAS);
+});
+
+function reactOnClick(button: HTMLElement): () => void {
+  const key = Object.keys(button).find((k) => k.startsWith("__reactProps$"));
+  const handler = key
+    ? (button as unknown as Record<string, { onClick?: () => void }>)[key]?.onClick
+    : undefined;
+  if (!handler) throw new Error("Train has no React onClick handler");
+  return handler;
+}
+
+test("FTF-0309-PR13b the click handler itself reports nothing when onTrain is absent (not only the disabled attribute)", async () => {
+  reply = ok(capabilities());
+  renderUI(undefined);
+  await check();
+  const click = reactOnClick(train());
+  act(() => click());
+  expect(screen.queryByText(/Training requested/)).toBeNull();
+});
+
+test("FTF-0309-PR13c a throwing onTrain never leaves a 'Training requested' status behind", async () => {
+  reply = ok(capabilities());
+  const boom = vi.fn(() => {
+    throw new Error("start failed");
+  });
+  renderUI(boom);
+  await check();
+  const click = reactOnClick(train());
+  let thrown: unknown = null;
+  act(() => {
+    try {
+      click();
+    } catch (caught) {
+      thrown = caught; // keep the update queue flushing, so a status set before the throw would show
+    }
+  });
+  expect(String(thrown)).toContain("start failed");
+  expect(boom).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText(/Training requested/)).toBeNull();
+});
+
+test("FTF-0309-PR2b a stale response cannot alter the state of the newer request", async () => {
+  const pending: Array<(value: unknown) => void> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise((resolve) => {
+          pending.push(resolve);
+        }),
+    ),
+  );
+  const first = props();
+  const view = render(createElement(CapabilityCompatibilityUI, first));
+  fireEvent.click(screen.getByRole("button", { name: "Check compatibility" })); // request 1
+  view.rerender(createElement(CapabilityCompatibilityUI, { ...first, modelName: "Org/Other" }));
+  fireEvent.click(screen.getByRole("button", { name: "Check compatibility" })); // request 2
+  expect(screen.getByText("Checking...")).toBeTruthy();
+  await act(async () => {
+    pending[0]?.({ ok: false, status: 503, json: async () => ({ detail: "gateway_unavailable" }) });
+    await new Promise((r) => setTimeout(r, 10));
+  });
+  expect(screen.queryByRole("alert")).toBeNull(); // old 503 must not surface on the new check
+  expect(screen.getByText("Checking...")).toBeTruthy(); // nor end the new check's loading state
+  await act(async () => {
+    pending[1]?.({
+      ok: true,
+      status: 200,
+      json: async () => capabilities({ public_model_name: "Org/Other" }),
+    });
+    await new Promise((r) => setTimeout(r, 10));
+  });
+  expect(train().disabled).toBe(false);
+});
+
+test("FTF-0309-PR1b switching away and back does not resurrect the old result", async () => {
+  reply = ok(capabilities());
+  const first = props();
+  const view = render(createElement(CapabilityCompatibilityUI, first));
+  await check();
+  view.rerender(createElement(CapabilityCompatibilityUI, { ...first, modelName: "Org/Other" }));
+  view.rerender(createElement(CapabilityCompatibilityUI, first));
+  expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+});
+
+test("FTF-0309-PR2d a stale error body read after a switch never surfaces as an alert", async () => {
+  let release: (value: unknown) => void = () => {};
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    })),
+  );
+  const first = props();
+  const view = render(createElement(CapabilityCompatibilityUI, first));
+  fireEvent.click(screen.getByRole("button", { name: "Check compatibility" }));
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  view.rerender(createElement(CapabilityCompatibilityUI, { ...first, modelName: "Org/Other" }));
+  await act(async () => {
+    release({ detail: "gateway_unavailable" });
+    await new Promise((r) => setTimeout(r, 10));
+  });
+  expect(screen.queryByRole("alert")).toBeNull();
 });
