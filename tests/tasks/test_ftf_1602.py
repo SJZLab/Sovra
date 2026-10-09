@@ -22,7 +22,7 @@ import hashlib
 import json
 import sys
 import tempfile
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Any, cast
 from unittest import mock
@@ -159,7 +159,19 @@ def fixture(**overrides: object) -> tuple[MemStore, list[BlobRef]]:
     return source, refs
 
 
-def run(source: MemStore, refs: Any, target: MemStore | None = None, **kw: object):
+def run(
+    source: MemStore,
+    refs: Any,
+    target: MemStore | None = None,
+    *,
+    backup_id: str = "b1",
+    **kw: object,
+):
+    """`backup_id` is this test helper's own fixture knob, never `create_backup`'s own parameter
+    (round 5: the real function always generates its own id -- see `_new_backup_id`). Pinning it
+    here, via the module's private generator seam, keeps every existing fixed-key assertion in
+    this file (`RECORD_KEY`, `"b1"` paths) working without a caller-facing backup_id parameter a
+    real caller could also use to force two calls onto the same record key."""
     target = target if target is not None else MemStore()
     args: dict[str, object] = {
         "source": source,
@@ -167,10 +179,10 @@ def run(source: MemStore, refs: Any, target: MemStore | None = None, **kw: objec
         "known_key_refs": frozenset({"kms/a"}),
         "retain_days": 30,
         "now": NOW,
-        "backup_id": "b1",
     }
     args.update(kw)
-    return create_backup(refs, **args)  # type: ignore[arg-type]
+    with mock.patch.object(osb, "_new_backup_id", return_value=backup_id):
+        return create_backup(refs, **args)  # type: ignore[arg-type]
 
 
 def invalid(fn, *args: object, **kwargs: object) -> bool:
@@ -462,7 +474,6 @@ def test_input_validation() -> None:
         ("naive now", {"now": datetime(2026, 1, 1)}),
         ("key refs as list", {"known_key_refs": ["kms/a"]}),
         ("key refs with non-str", {"known_key_refs": frozenset({1})}),
-        ("slash in backup id", {"backup_id": "a/b"}),
         ("blank prefix", {"prefix": ""}),
         ("trailing slash prefix", {"prefix": "p/"}),
     ]
@@ -2663,6 +2674,120 @@ def test_round4_record_pin_race_overwrite_and_naive_now() -> None:
             typed(err, "timezone-aware"),
         )
     check("FTF-1602-R4-3", "record exists", record.backup_id == "b1")
+
+
+class _NoOffsetTz(tzinfo):
+    """A tzinfo that is set (`tzinfo is not None`) but answers `utcoffset() is None` -- Python
+    itself then treats the datetime as naive for comparison/arithmetic, so checking only
+    `tzinfo is None` misses it (round 5, R5-3)."""
+
+    def utcoffset(self, dt: datetime | None) -> timedelta | None:
+        return None
+
+    def dst(self, dt: datetime | None) -> timedelta | None:
+        return None
+
+    def tzname(self, dt: datetime | None) -> str | None:
+        return "no-offset"
+
+
+def test_round5_typed_now_is_required() -> None:
+    source, refs = meta_fixture()
+    bad_tz_now = datetime(2026, 10, 8, 12, 0, 0, tzinfo=_NoOffsetTz())
+    for label, call in (
+        (
+            "create",
+            lambda: create_backup(
+                refs,
+                source=source,
+                target=MemStore(),
+                known_key_refs=frozenset(),
+                retain_days=30,
+                now=bad_tz_now,
+            ),
+        ),
+        ("verify", lambda: verify_backup(MemStore(), "x", organization_id="o", now=bad_tz_now)),
+        (
+            "restore",
+            lambda: osb.restore_backup(
+                MemStore(), MemStore(), "x", organization_id="o", now=bad_tz_now
+            ),
+        ),
+    ):
+        err = outcome(call)
+        check(
+            "FTF-1602-R5-3",
+            f"{label}: tzinfo set but utcoffset() is None is refused as not timezone-aware",
+            typed(err, "timezone-aware"),
+        )
+
+    class SneakyDatetime(datetime):
+        """An exact-type check closes a subclass bypass, the same convention this module's
+        tenant/identity guards already use elsewhere (`_is_text`)."""
+
+    sneaky = SneakyDatetime(2026, 10, 8, 12, 0, 0, tzinfo=UTC)
+    err = outcome(
+        lambda: create_backup(
+            refs,
+            source=source,
+            target=MemStore(),
+            known_key_refs=frozenset(),
+            retain_days=30,
+            now=sneaky,
+        )
+    )
+    check(
+        "FTF-1602-R5-3",
+        "create: a datetime subclass for now is refused (exact type only)",
+        typed(err, "timezone-aware"),
+    )
+    err = outcome(lambda: verify_backup(MemStore(), "x", organization_id="o", now=sneaky))
+    check(
+        "FTF-1602-R5-3",
+        "verify: a datetime subclass for now is refused (exact type only)",
+        typed(err, "timezone-aware"),
+    )
+
+
+def test_round5_backup_id_is_always_generated() -> None:
+    source, refs = meta_fixture()
+    err = raises(
+        TypeError,
+        create_backup,
+        refs,
+        source=source,
+        target=MemStore(),
+        known_key_refs=frozenset({"kms/a"}),
+        retain_days=30,
+        now=NOW,
+        backup_id="x",
+    )
+    check(
+        "FTF-1602-R5-1",
+        "create_backup no longer accepts a caller-chosen backup_id at all",
+        err is not None,
+    )
+    r1 = create_backup(
+        refs,
+        source=source,
+        target=MemStore(),
+        known_key_refs=frozenset({"kms/a"}),
+        retain_days=30,
+        now=NOW,
+    )
+    r2 = create_backup(
+        refs,
+        source=source,
+        target=MemStore(),
+        known_key_refs=frozenset({"kms/a"}),
+        retain_days=30,
+        now=NOW,
+    )
+    check(
+        "FTF-1602-R5-1",
+        "two real calls (no forced id) are given distinct, real backup ids",
+        r1.backup_id != r2.backup_id and bool(r1.backup_id) and bool(r2.backup_id),
+    )
 
 
 def main() -> int:
