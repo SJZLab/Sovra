@@ -24634,3 +24634,7 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-09T16:19Z — Control plane: FTF-0516-P1 slice CERTIFIED; 3 returned (136/302)
 - **Certified slice:** FTF-0516-P1 (#695). **Returned:** FTF-0309 r3 (0c), FTF-R005 r7 (0e), FTF-R004-P1 r4 (0n).
 - **Un-parked:** FTF-0516 UI (Backlog). **Pending:** FTF-0616 #690.
+
+## 2026-10-09T18:18Z — Control plane: slices FTF-H010-P1 and FTF-R004-P2 CERTIFIED; 3 returned (136/302)
+- **Certified slices:** FTF-H010-P1 (#699), FTF-R004-P2 (#702). **Returned:** FTF-0309 r4 (0c), FTF-0904 r2 (0d), FTF-1703 r7 (0g).
+- **Pending:** FTF-0616 #690. FTF-R004-P3 becomes ready once FTF-R004-P1 certifies.

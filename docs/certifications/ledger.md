@@ -10854,3 +10854,28 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   every clause. GREEN: digest sensitivity to nested values, order, length and duplicates (FG-FG6).
 - **Un-parked:** FTF-0516 UI to the Backlog.
 - Pending: FTF-0616 r8 (#690).
+
+## 2026-10-09T18:18Z — CERTIFIED: slices FTF-H010-P1, FTF-R004-P2; RETURNED: FTF-0309 (r4), FTF-0904 (r2), FTF-1703 (r7)
+- **FTF-H010-P1 (child slice of FTF-H010): CERTIFIED** (round 4; tests only; PR #699, merge
+  f917395dd97dd33102128da10ee7424f3cb3bbe0, head d1db6b7). Session comparison: producer session_01Fh1ZUSqz3NqfJuhJukv7oS
+  (earlier rounds session_01DbtUsTabsqwV6ZUcmn153B) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent from the PR.
+  CI: ci-verdict 113900530075; model-import-integration job 113896077358 (postgres:16.15) "real model import proof: all
+  checks passed". Complete tables per the 0d ruling: 96 origin/import-kind rows, per-column sha256 table, full 5x5 job
+  transition matrix. 64 faults, 58 RED (N1-N3, N10, N11 now RED); GREEN only equivalent mutants and two hand-picked
+  alphabet variants of the closed class (non-blocking). 768-row and 408-substitution probes: 0 violations. Production
+  unchanged since round 2. FTF-H010's real endpoint/weights/GPU clauses stay BLOCKED_EXTERNAL.
+- **FTF-R004-P2 (child slice of FTF-R004): CERTIFIED** (round 2; PR #702, merge 029dfa5218576b766cc4bec724d52ea43ab6529f,
+  head 6ebd181). Session comparison: producer session_019UYvGwj2PggkDFprmJ9Nuz (round 1 session_01Jq9GyGEfDEoX8dJbyK3yvN)
+  ≠ certifier, absent from the PR. CI: ci-verdict 113922024647; gate job 113918693513 "provider boundary: all 548 checks
+  passed"; uncapped whole-file mutation 275/275. function_call_output screened; exact top-level allow-list; F18 pinned.
+  116 probes, 0 failures; 21 of 23 faults RED (the 2 GREEN are one-key allow-list additions, non-blocking under the
+  ruling). UNWIRED until P3.
+- **FTF-0309: RETURNED** (round 3 → 4; tests only; #706, b09b05dbabbdadbcd12f369574c9055458123d2d). Known path removed;
+  production holds. GREEN: the strict-parse faults the 0c ruling named (catalog_version, evidence, enums, trainable) and
+  a regression on the availability blocker text (G4).
+- **FTF-0904: RETURNED** (round 1 → 2; #703, 2c2faa5028a4a23878b44b56e29e8f412dc6d828). Negative acceptance holds.
+  Reproduced acceptance leaks: a decoded percent layer re-exposes secrets the raw scan redacts; ASGI/WSGI header forms
+  unredacted; extra= on non-root loggers unscrubbed. Quadratic regex under the handler lock (required fix).
+- **FTF-1703: RETURNED** (round 6 → 7; #698, 2799c7837b054d061eb7ce73374ebc39a6ac8f54). Plain-JSON ruling in place;
+  production correct; the ruling-named fault (FB2/FB3, read index/trace_id from the caller after parsing) stays GREEN.
+- Pending: FTF-0616 r8 (#690).
