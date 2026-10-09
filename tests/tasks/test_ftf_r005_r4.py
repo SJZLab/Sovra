@@ -296,6 +296,84 @@ def test_record_accepts_the_same_stored_outcome_as_a_replay() -> None:
         check(f"D3b/{state}", "a same-outcome replay is a silent no-op", world.calls == [])
 
 
+def test_record_compares_the_stored_outcome_exactly() -> None:
+    # Stored values are compared byte for byte, never case/whitespace folded:
+    # a denormalised stored status or external id is a disagreement.
+    cases = (
+        (SyncState.SYNCED, "Succeeded", "mlflow-1"),
+        (SyncState.SYNCED, " succeeded", "mlflow-1"),
+        (SyncState.SYNCED, "succeeded", "MLFLOW-1"),
+        (SyncState.SYNCED, "succeeded", "mlflow-1 "),
+        (SyncState.FAILED, "Failed", None),
+        (SyncState.AMBIGUOUS, "failed ", None),
+    )
+    for state, status, external_id in cases:
+        world = r3.World()
+        entry = r3.entry_for(state, last_error="e", mlflow_run_id="mlflow-1")
+        r3.seed_pending(world, entry, status=status, external_id=external_id, attempt_count=3)
+        try:
+            r3.outbox(world).record(entry)
+            check(f"D3b/exact/{state}/{status!r}/{external_id!r}", "reported, not folded", False)
+        except OutboxRowResolvedError:
+            pass
+    world = r3.World()
+    entry = r3.entry_for(SyncState.SYNCED, last_error="e", mlflow_run_id="Mlflow-1")
+    r3.seed_pending(world, entry, status="succeeded", external_id="mlflow-1", attempt_count=3)
+    try:
+        r3.outbox(world).record(entry)
+        check("D3b/exact", "an entry id differing only in case is reported", False)
+    except OutboxRowResolvedError:
+        pass
+
+
+def test_resolved_error_status_is_compared_exactly() -> None:
+    for status in ("Succeeded", " succeeded", "SUCCEEDED"):
+        entry = r3.entry_for(SyncState.SYNCED, last_error=None, mlflow_run_id="mine")
+        OutboxRowResolvedError(status, "mlflow-9", None).apply_to(entry)
+        check(
+            f"D3b/exact/{status!r}",
+            "a denormalised status is never read as a stored success",
+            entry.state == SyncState.FAILED and entry.mlflow_run_id == "mine",
+        )
+
+
+def test_completion_tag_is_matched_by_exact_name_and_value() -> None:
+    from packages.integrations.mlflow import reconcile
+
+    run = make_run(metrics=(("m", 1.0),), params=(("p", "v"),))
+    # a payload-tag VALUE that only differs by case or padding is a real change
+    for stored in (
+        run.payload_sha256().upper(),
+        f" {run.payload_sha256()}",
+        f"{run.payload_sha256()} ",
+    ):
+        fake = Fake()
+        entry = InMemoryOutbox().add(run)
+        fake.on_get_run = lambda c, v=stored: set_tag(c.runs[0], TAG_PAYLOAD, v)
+        result = sync_run(fake, entry)
+        check(
+            f"Q2/exact/{stored!r}",
+            "a case/padding-only different completion tag is payload_tag_changed",
+            result.state == SyncState.FAILED and "payload_tag_changed" in result.drift,
+        )
+    # the tag NAME is used exactly: with an odd configured name, the exact
+    # key still switches strict mode on
+    original = reconcile.TAG_PAYLOAD
+    reconcile.TAG_PAYLOAD = " Odd.Tag "
+    try:
+        record = {
+            "info": {"status": "RUNNING"},
+            "data": {"tags": [{"key": " Odd.Tag ", "value": "x"}]},
+        }
+        check(
+            "Q1/exact",
+            "the completion tag is looked up by its exact name",
+            "param_missing:p" in compute_run_drift(record, run),
+        )
+    finally:
+        reconcile.TAG_PAYLOAD = original
+
+
 def test_resolved_error_applies_the_stored_truth_to_the_entry() -> None:
     entry = r3.entry_for(SyncState.SYNCED, last_error=None, mlflow_run_id="mine")
     entry.next_retry_at_ms = 5
