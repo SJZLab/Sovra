@@ -11891,7 +11891,7 @@ FTF-1703:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Training dataset
-  evidence_hash: ce03b5a8d2e9cf528b5f63d30b0e7bdf5b82fb39
+  evidence_hash: f40fe58aba4c3bbdbc018723d0a5b0ba1ce1679a
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0506, FTF-1701,
@@ -11968,6 +11968,15 @@ FTF-1703:
     verify_trace_replay still takes a TrainingTrace (only the builder's own regenerated one is
     ever passed to it by production). Fault -> RED table in
     docs/certifications/submissions/2026-10-09T1700Z-FTF-1703-r6.md.
+    Round 7 (L2 return, tests + one hardening): production was already correct (the raw dict is parsed
+    once); the ruling-required faults FB2 (`by_id[raw["trace_id"]] = regenerated`) and FB3 (FB2 plus
+    the index re-read from the raw provenance) now go RED through a named test that runs caller code
+    mid-build (a wrapper around the module's own `_check_reserved`) and rewrites the raw dict:
+    approval of train-0002 admits exactly the regenerated train-0002, approval of the flipped
+    train-0005 is refused. Hardening: `reserved` is snapshotted once at entry into exact frozensets
+    of plain str (`_snapshot_reserved`), so no caller code runs inside the per-trace loop (reads of
+    the caller's object no longer scale with the trace count). Fault -> RED table in
+    docs/certifications/submissions/2026-10-09T2000Z-FTF-1703-r7.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1703.py
