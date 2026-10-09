@@ -1,8 +1,8 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-09T20:35Z. Source: `python3 scripts/status.py` on main.
-- **Status: 138/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
+Updated: 2026-10-09T21:05Z. Source: `python3 scripts/status.py` on main.
+- **Status: 139/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   status.py prints 46 product-true: it counts FTF-0309 through its live P1 API route, but the FTF-0309 screen stays
   UNWIRED until FTF-H029, so it is not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
@@ -12,6 +12,8 @@ Updated: 2026-10-09T20:35Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-09T21:05Z:**
+  - CERTIFIED: FTF-R005 (MLflow projection with durable outbox), after 7 rounds. It is UNWIRED.
 - **2026-10-09T20:35Z:**
   - Returned: FTF-0908 r4 (post-commit tenant re-bind must be transaction-local; a session-level re-bind leaks on a pool without the reset guard).
 - **2026-10-09T20:10Z:**

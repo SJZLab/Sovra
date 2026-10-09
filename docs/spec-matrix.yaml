@@ -8290,7 +8290,7 @@ FTF-0516:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Dataset issue resolution UI
-  evidence_hash: ''
+  evidence_hash: 28ffd996756cff3f907b8f5c0605780fbfe295fa
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0515.
@@ -8303,7 +8303,15 @@ FTF-0516:
     before the request is sent; waive is offered for a warning only; a detector failure or an
     already decided issue has no decision control; there is no in-place edit of locked data.
     400/403/404/409/5xx and network failures are errors (Law 17). Proof:
-    apps/web/tests/ftf_0516.spec.ts (33 DOM-level Vitest tests, mocked fetch). Disclosed UNWIRED
+    apps/web/tests/ftf_0516.spec.ts (63 DOM-level Vitest tests, mocked fetch). Round 2 (return
+    of 8cc6970): one response-binding function (decisionMatchesRequest) compares EVERY field sent
+    with the decision returned (report, issue, action, before-evidence, trimmed reason, sorted
+    positions, successor) and the server-derived fields against the action (engine_decision is
+    waived exactly for waive; after-evidence present exactly when not waive;
+    resolution_version_after and the top-level resolution_version equal expected + 1); parseIssue
+    binds a nested resolution to its issue, report and state with a named actor and a non-blank
+    reason; submit is disabled while a reload or load-more is in flight (no stuck Loading...).
+    Fault table: docs/certifications/submissions/2026-10-09T2015Z-FTF-0516-r3.md. Disclosed UNWIRED
     (Law 6/7): no Next.js page tree (FTF-H029), so no Playwright journey from /; proving_symbol
     stays blank. Fault -> RED table: docs/certifications/submissions/2026-10-09T1650Z-FTF-0516-UI.md.
   proof_state: L1-PROVEN
@@ -13263,10 +13271,10 @@ FTF-R004:
   proving_symbol: ''
   proving_test: ''
 FTF-R005:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Integrate internal MLflow tracking and model registry projection
-  evidence_hash: b400e96aaaf1fe1ca52bd4dfd738c10f52aa9425
+  evidence_hash: 03442f67294975313db37ec297dea0cc24a6ca9a
   implementation_state: IMPLEMENTED
   notes: >-
     kind=reuse_architecture; requirements=CAP-12, CAP-19, CAP-21; scenarios=Q35, Q38, Q40;
@@ -13411,7 +13419,7 @@ FTF-R005:
     0 SURVIVED | 0 SURVIVED-allowlisted | score 100.0%. First run 40/57 with 17 survivors
     (CI's own `mutation-gate` check, first push) -- closed by tests, not by an allowlist entry;
     details in the submission doc.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_r005.py
 FTF-R006:

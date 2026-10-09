@@ -10930,3 +10930,19 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   pool without the reset guard (guc=<org1>, visible_rows=1); mitigated today only by the API engine's reset guard.
   Ruling: the raw InvalidRequestError inside `s.begin()` (P12) is a disclosure (fails closed, audit durable, no
   production caller).
+
+## 2026-10-09T21:05Z — CERTIFIED: FTF-R005 (139/302)
+- **FTF-R005: CERTIFIED** (round 7; PR #708, merge 03442f67294975313db37ec297dea0cc24a6ca9a, head 5cae2624; production
+  b400e96a = evidence_hash at submission). Session comparison: producer session_01U1YRffpzqBJSJEesvRCUCK ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR, absent from the PR. CI: ci-verdict 113955681011; gate job 113951200403 "FTF-R005
+  MLflow projection tests: all checks passed" and "round-7 tests: all checks passed"; mlflow-durable-outbox-integration
+  113951311137 (PG16.15, mlflow 3.1.1) and mlflow-projection-integration 113951311240 passed; mutation-gate 113951200817
+  85/85 killed. All 0e items class-closed: strictness from Factory's own completion record (R7-Q1/Q1b, D7 via the real
+  outbox row), read-back before SYNCED (Q2 + 10 tamper probes FAILED with exact drift codes), `record()` row lock with
+  reported disagreement (R7-D2/D3b/D8; 45 concurrent pairs, no stale write). Local real MLflow 3.1.1 + PG16 as sovra_app:
+  876 suite checks pass; 69 probes, 0 violations. 29 faults, 27 RED; GREEN H7 (SYNCED-state term in the same-outcome
+  check, errs safe, sibling variants RED) and C3 (token check narrowed to CR/LF, minor F8) are non-blocking under the
+  ruling. Observations for the wiring task: concurrent sweepers on one new row can create a duplicate MLflow run (O1,
+  serialize per row); apply_to keeps stale drift codes (O2); AMBIGUOUS over a failed row unreported (O3); C1 control
+  characters accepted in tokens, 429 classed rejected, a raising ResultSource aborts the sweep (O4). UNWIRED
+  (proving_symbol blank).
