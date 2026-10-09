@@ -28,6 +28,7 @@ from __future__ import annotations
 import itertools
 import json
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -70,6 +71,9 @@ def _approval(**overrides: Any) -> ProviderApproval:
         "retention_terms": "30d",
         "training_terms": "no-train-on-data",
         "inference_terms": "no-retain",
+        "applicable_agreement": "dpa-2026",
+        "subprocessors": "listed-in-dpa",
+        "deletion_behaviour": "deleted-30d",
     }
     fields.update(overrides)
     return ProviderApproval(**fields)
@@ -82,8 +86,10 @@ def _request(
     job: str | None = None,
     provider: str = "acme",
     label: str | None = None,
+    account: str | None = "acct",
+    region: str | None = "eu",
 ) -> ExternalProviderRequest:
-    return ExternalProviderRequest(provider, purpose, org, project, job, label)
+    return ExternalProviderRequest(provider, purpose, org, project, job, label, account, region)
 
 
 def _outcome(request: Any, approval: Any = None, audit: Any = None) -> str:
@@ -97,17 +103,34 @@ def _outcome(request: Any, approval: Any = None, audit: Any = None) -> str:
 
 
 class _RecordingSession:
-    """Collects rows the real `write_audit_event` adds; never commits."""
+    """Collects rows the real `write_audit_event` adds and every commit, in order."""
 
     def __init__(self) -> None:
         self.added: list[Any] = []
+        self.events: list[str] = []
 
     def add(self, row: Any) -> None:
         self.added.append(row)
+        self.events.append("add")
+
+    def commit(self) -> None:
+        self.events.append("commit")
 
 
 def _audit(session: _RecordingSession) -> AuditContext:
     return AuditContext(cast(Any, session), uuid.uuid4(), "system", "actor-1", "req-1")
+
+
+def _audit_with(session: Any = None, **overrides: Any) -> AuditContext:
+    fields: dict[str, Any] = {
+        "session": _RecordingSession() if session is None else session,
+        "organization_id": uuid.uuid4(),
+        "actor_type": "system",
+        "actor_id": "actor-1",
+        "request_id": "req-1",
+    }
+    fields.update(overrides)
+    return AuditContext(**fields)
 
 
 def test_denials_and_allows_for_every_profile_and_purpose() -> None:
@@ -203,7 +226,16 @@ def test_denial_audit_is_content_free_and_goes_through_the_writer() -> None:
 
 def test_every_missing_approval_field_is_a_denial() -> None:
     for purpose, terms_field in (("training", "training_terms"), ("inference", "inference_terms")):
-        for field in ("approved_by", "account", "region", "retention_terms", terms_field):
+        for field in (
+            "approved_by",
+            "account",
+            "region",
+            "retention_terms",
+            "applicable_agreement",
+            "subprocessors",
+            "deletion_behaviour",
+            terms_field,
+        ):
             for blank in (None, "", "   "):
                 outcome = _outcome(_request(purpose), _approval(**{field: blank}))
                 check(
@@ -354,7 +386,7 @@ def test_string_length_boundary_is_exactly_200() -> None:
     check(
         "FTF-0908-NEG4",
         "a 200-character account is accepted",
-        _outcome(_request(), _approval(account=ok)) == "allowed",
+        _outcome(_request(account=ok), _approval(account=ok)) == "allowed",
     )
     check(
         "FTF-0908-NEG4",
@@ -434,6 +466,292 @@ def test_malformed_values_raise_the_typed_error() -> None:
             check("FTF-0908-NEG4", f"malformed approval raised {type(exc).__name__}", False)
 
 
+class _TxSession:
+    """Models the enclosing tenant-scoped session: rows survive only if committed,
+    and the propagated error rolls back everything not yet committed."""
+
+    def __init__(self) -> None:
+        self.pending: list[Any] = []
+        self.persisted: list[Any] = []
+
+    def add(self, row: Any) -> None:
+        self.pending.append(row)
+
+    def commit(self) -> None:
+        self.persisted.extend(self.pending)
+        self.pending = []
+
+    def rollback(self) -> None:
+        self.pending = []
+
+
+def test_denial_audit_is_committed_before_the_error_is_raised() -> None:
+    session = _RecordingSession()
+    try:
+        authorize_external_provider(_request(org="zero_egress"), _approval(), _audit(session))
+        check("FTF-0908-R2-1", "deny raised", False)
+    except ExternalProviderDeniedError:
+        pass
+    check(
+        "FTF-0908-R2-1",
+        "the audit row is added, then committed, before the error propagates",
+        session.events == ["add", "commit"],
+    )
+    allowed = _RecordingSession()
+    authorize_external_provider(_request(), _approval(), _audit(allowed))
+    check("FTF-0908-R2-1", "an allow neither writes nor commits", allowed.events == [])
+    # The real default code under the real rollback-on-exception shape.
+    tx = _TxSession()
+    try:
+        authorize_external_provider(
+            _request("inference", "standard", "air_gapped"), None, _audit_with(tx)
+        )
+    except ExternalProviderDeniedError:
+        tx.rollback()
+    check(
+        "FTF-0908-R2-1",
+        "the denial audit survives the enclosing session's rollback",
+        len(tx.persisted) == 1 and not tx.pending,
+    )
+    # Every denial code is durable, not only the profile block.
+    for label, request, approval in (
+        ("not_approved", _request(), None),
+        ("purpose", _request("inference"), _approval(purposes=frozenset({"training"}))),
+        ("incomplete", _request(), _approval(region=None)),
+        ("mismatch", _request(region="us"), _approval()),
+    ):
+        tx2 = _TxSession()
+        try:
+            authorize_external_provider(request, approval, _audit_with(tx2))
+        except ExternalProviderDeniedError:
+            tx2.rollback()
+        check("FTF-0908-R2-1", f"{label}: denial audit durable", len(tx2.persisted) == 1)
+
+
+def test_effective_profile_is_pinned_in_reason_and_audit() -> None:
+    cases = (
+        ("zero_egress", "standard", None, "zero_egress"),
+        ("standard", "zero_egress", None, "zero_egress"),
+        ("standard", "standard", "zero_egress", "zero_egress"),
+        ("air_gapped", "standard", "standard", "air_gapped"),
+        ("standard", "air_gapped", "zero_egress", "air_gapped"),
+        ("zero_egress", "standard", "air_gapped", "air_gapped"),
+        ("standard", "standard", "air_gapped", "air_gapped"),
+    )
+    for org, project, job, expected in cases:
+        session = _RecordingSession()
+        try:
+            authorize_external_provider(
+                _request("training", org, project, job), _approval(), _audit(session)
+            )
+            check("FTF-0908-R2-2", f"{org}/{project}/{job} denied", False)
+            continue
+        except ExternalProviderDeniedError as exc:
+            reason_profile = exc.reason.profile
+        details = session.added[0].details_json if session.added else {}
+        check(
+            "FTF-0908-R2-2",
+            f"{org}/{project}/{job}: reason profile is {expected}",
+            reason_profile == expected,
+        )
+        check(
+            "FTF-0908-R2-2",
+            f"{org}/{project}/{job}: audit profile is {expected}",
+            details.get("profile") == expected,
+        )
+
+
+def test_audit_row_carries_the_audit_context() -> None:
+    for actor_type, actor_id, request_id, purpose in (
+        ("worker", "actor-xyz", "req-xyz", "inference"),
+        ("user", "actor-abc.1", "req-abc:2", "training"),
+    ):
+        session = _RecordingSession()
+        org_id = uuid.uuid4()
+        context = _audit_with(
+            session,
+            organization_id=org_id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
+        )
+        try:
+            authorize_external_provider(_request(purpose, "zero_egress"), None, context)
+        except ExternalProviderDeniedError:
+            pass
+        row = session.added[0] if session.added else None
+        check("FTF-0908-R2-3", f"{actor_type}: one row written", row is not None)
+        if row is None:
+            continue
+        check("FTF-0908-R2-3", f"{actor_type}: organization_id", row.organization_id == org_id)
+        check("FTF-0908-R2-3", f"{actor_type}: request_id", row.request_id == request_id)
+        check("FTF-0908-R2-3", f"{actor_type}: actor_id", row.actor_id == actor_id)
+        check("FTF-0908-R2-3", f"{actor_type}: actor_type", row.actor_type == actor_type)
+        check(
+            "FTF-0908-R2-3", f"{actor_type}: resource_id is the purpose", row.resource_id == purpose
+        )
+        check(
+            "FTF-0908-R2-3",
+            f"{actor_type}: resource_type",
+            row.resource_type == "external_provider_request",
+        )
+
+
+class _NoCommit:
+    def add(self, row: Any) -> None:
+        pass
+
+
+class _NoAdd:
+    def commit(self) -> None:
+        pass
+
+
+class _UuidSub(uuid.UUID):
+    pass
+
+
+def test_audit_context_is_validated_up_front() -> None:
+    good = _RecordingSession()
+    bad_contexts: list[tuple[str, AuditContext]] = [
+        ("session=None", AuditContext(cast(Any, None), uuid.uuid4(), "system", "a", "r")),
+        ("session without commit", _audit_with(_NoCommit())),
+        ("session without add", _audit_with(_NoAdd())),
+        ("session is a str", _audit_with("session")),
+        ("organization_id str", _audit_with(good, organization_id=str(uuid.uuid4()))),
+        ("organization_id None", _audit_with(good, organization_id=None)),
+        ("organization_id subclass", _audit_with(good, organization_id=_UuidSub(int=5))),
+        ("actor_type unknown", _audit_with(good, actor_type="admin")),
+        ("actor_type upper", _audit_with(good, actor_type="SYSTEM")),
+        ("actor_type None", _audit_with(good, actor_type=None)),
+        ("actor_type subclass", _audit_with(good, actor_type=_Str("system"))),
+        ("actor_type unhashable", _audit_with(good, actor_type=[])),
+        ("actor_id empty", _audit_with(good, actor_id="")),
+        ("actor_id space", _audit_with(good, actor_id="a b")),
+        ("actor_id newline", _audit_with(good, actor_id="actor-1\n")),
+        ("actor_id int", _audit_with(good, actor_id=7)),
+        ("actor_id subclass", _audit_with(good, actor_id=_Str("actor-1"))),
+        ("actor_id 129 chars", _audit_with(good, actor_id="a" * 129)),
+        ("request_id empty", _audit_with(good, request_id="")),
+        ("request_id slash", _audit_with(good, request_id="req/1")),
+        ("request_id newline", _audit_with(good, request_id="req-1\n")),
+        ("request_id None", _audit_with(good, request_id=None)),
+        ("request_id subclass", _audit_with(good, request_id=_Str("req-1"))),
+    ]
+    for label, context in bad_contexts:
+        for request_label, request, approval in (
+            ("deny", _request(org="zero_egress"), _approval()),
+            ("allow", _request(), _approval()),
+        ):
+            try:
+                outcome = _outcome(request, approval, context)
+            except BaseException as exc:  # a raw AttributeError / ValueError etc.
+                outcome = f"CRASH:{type(exc).__name__}"
+            check(
+                "FTF-0908-R2-4",
+                f"{label} ({request_label}) -> typed external_provider_invalid_request",
+                outcome == "external_provider_invalid_request",
+            )
+    check("FTF-0908-R2-4", "a refused context writes and commits nothing", good.events == [])
+    exact = _audit_with(_RecordingSession(), actor_id="a" * 128, request_id="r" * 128)
+    check(
+        "FTF-0908-R2-4",
+        "128-character identifiers are accepted",
+        _outcome(_request(org="zero_egress"), _approval(), exact)
+        == "external_provider_profile_blocked",
+    )
+
+
+def test_section_11_2_fields_and_target_matching() -> None:
+    for purpose in PURPOSES:
+        for field in ("applicable_agreement", "subprocessors", "deletion_behaviour"):
+            for blank in (None, "", "   "):
+                check(
+                    "FTF-0908-R2-5",
+                    f"{purpose}: {field}={blank!r} -> incomplete",
+                    _outcome(_request(purpose), _approval(**{field: blank}))
+                    == "external_provider_approval_incomplete",
+                )
+        for target in ("other", "ACCT", "acct ", " acct", "acc", None):
+            check(
+                "FTF-0908-R2-5",
+                f"{purpose}: target account {target!r} -> mismatch",
+                _outcome(_request(purpose, account=target), _approval())
+                == "external_provider_approval_mismatch",
+            )
+        for target in ("us", "EU", "eu ", " eu", "e", None):
+            check(
+                "FTF-0908-R2-5",
+                f"{purpose}: target region {target!r} -> mismatch",
+                _outcome(_request(purpose, region=target), _approval())
+                == "external_provider_approval_mismatch",
+            )
+        check(
+            "FTF-0908-R2-5",
+            f"{purpose}: matching account and region -> allowed",
+            _outcome(_request(purpose, account="acct", region="eu"), _approval()) == "allowed",
+        )
+    check(
+        "FTF-0908-R2-5",
+        "a label equal to the approval's account never supplies the target",
+        _outcome(_request(label="acct", account=None), _approval())
+        == "external_provider_approval_mismatch",
+    )
+    # Precedence: profile block, then missing approval, purpose, incomplete, mismatch.
+    check(
+        "FTF-0908-R2-5",
+        "zero_egress is blocked before the mismatch is considered",
+        _outcome(_request(org="zero_egress", account="other"), _approval())
+        == "external_provider_profile_blocked",
+    )
+    check(
+        "FTF-0908-R2-5",
+        "an incomplete approval is reported before a mismatch",
+        _outcome(_request(account="other"), _approval(subprocessors=None))
+        == "external_provider_approval_incomplete",
+    )
+    check(
+        "FTF-0908-R2-5",
+        "a purpose gap is reported before a mismatch",
+        _outcome(_request(account="other"), _approval(purposes=frozenset({"inference"})))
+        == "external_provider_purpose_not_approved",
+    )
+    marker = "SECRET-ACCT-9"
+    session = _RecordingSession()
+    outcome = _outcome(
+        _request(account=marker, region="SECRET-REGION-9"), _approval(), _audit(session)
+    )
+    check("FTF-0908-R2-5", "mismatch denial code", outcome == "external_provider_approval_mismatch")
+    check(
+        "FTF-0908-R2-5",
+        "the mismatch audit is content-free",
+        len(session.added) == 1
+        and "SECRET" not in json.dumps(session.added[0].details_json)
+        and session.added[0].details_json["code"] == "external_provider_approval_mismatch",
+    )
+    bad_targets: list[Any] = [7, [], {}, _Str("acct"), "x" * 201]
+    for bad in bad_targets:
+        check(
+            "FTF-0908-R2-5",
+            f"malformed target account {bad!r} -> invalid_request",
+            _outcome(_request(account=cast(Any, bad)), _approval())
+            == "external_provider_invalid_request",
+        )
+        check(
+            "FTF-0908-R2-5",
+            f"malformed target region {bad!r} -> invalid_request",
+            _outcome(_request(region=cast(Any, bad)), _approval())
+            == "external_provider_invalid_request",
+        )
+    for field in ("applicable_agreement", "subprocessors", "deletion_behaviour"):
+        for bad in (7, [], _Str("x"), "x" * 201):
+            check(
+                "FTF-0908-R2-5",
+                f"malformed approval {field}={bad!r}",
+                _approval_build_error(**{field: bad}),
+            )
+
+
 def test_no_network_is_touched_by_any_decision() -> None:
     counts = {"connect": 0, "resolve": 0}
     real_connect, real_getaddrinfo = socket.socket.connect, socket.getaddrinfo
@@ -468,15 +786,21 @@ sys.path.insert(0, {root!r}); sys.path.insert(0, {api!r})
 from packages.security.external_provider_denial import *
 class S(str): pass
 class Rec:
-    def __init__(self): self.added = []
-    def add(self, row): self.added.append(row)
+    def __init__(self): self.added = []; self.events = []
+    def add(self, row): self.added.append(row); self.events.append("add")
+    def commit(self): self.events.append("commit")
+class NoCommit:
+    def add(self, row): pass
+class NoAdd:
+    def commit(self): pass
 def appr(**o):
     f = dict(provider="acme", purposes=frozenset(PURPOSES), approved_by="a", account="x",
-             region="eu", retention_terms="30d", training_terms="t", inference_terms="i")
+             region="eu", retention_terms="30d", training_terms="t", inference_terms="i",
+             applicable_agreement="dpa", subprocessors="sp", deletion_behaviour="del")
     f.update(o); return ProviderApproval(**f)
 def req(purpose="training", org="standard", project="standard", job=None,
-        provider="acme", label=None):
-    return ExternalProviderRequest(provider, purpose, org, project, job, label)
+        provider="acme", label=None, account="x", region="eu"):
+    return ExternalProviderRequest(provider, purpose, org, project, job, label, account, region)
 def raw(*a): return ExternalProviderRequest(*a)
 def run(request, approval=None, audit=None):
     try:
@@ -509,10 +833,47 @@ out["unhash_provider"] = run(raw([], "training", "standard", "standard"), appr()
 out["unhash_purpose"] = run(raw("acme", [], "standard", "standard"), appr())
 out["unhash_profile"] = run(raw("acme", "training", {{}}, "standard"), appr())
 out["unhash_job"] = run(raw("acme", "training", "standard", "standard", []), appr())
+for f in ("applicable_agreement", "subprocessors", "deletion_behaviour"):
+    out["miss_" + f] = run(req(), appr(**{{f: None}}))
+out["mismatch_account"] = run(req(account="other"), appr())
+out["mismatch_region"] = run(req(region="us"), appr())
+out["mismatch_none_account"] = run(req(account=None), appr())
+out["mismatch_none_region"] = run(req(region=None), appr())
+STD = ("acme", "training", "standard", "standard", None, None)
+out["bad_target_account"] = run(raw(*STD, 7, "eu"), appr())
+out["bad_target_region"] = run(raw(*STD, "x", []), appr())
 rec = Rec()
-ctx = AuditContext(rec, uuid.uuid4(), "system", "actor", "req")
-run(req(org="zero_egress"), appr(), ctx)
+ORG = uuid.UUID(int=77)
+ctx = AuditContext(rec, ORG, "worker", "actor-9", "req-9")
+run(req("inference", org="zero_egress"), appr(), ctx)
 out["audit"] = [r.details_json for r in rec.added]
+out["audit_events"] = rec.events
+out["audit_row"] = [
+    [str(r.organization_id), r.actor_type, r.actor_id, r.request_id, r.resource_id]
+    for r in rec.added
+]
+rec3 = Rec()
+try:
+    c3 = AuditContext(rec3, ORG, "system", "a", "r")
+    authorize_external_provider(req(job="air_gapped"), appr(), c3)
+except ExternalProviderDeniedError as e:
+    out["reason_job_profile"] = e.reason.profile
+out["audit_job_profile"] = [r.details_json["profile"] for r in rec3.added]
+recb = Rec()
+for name, c in (
+    ("session_none", AuditContext(None, ORG, "system", "a", "r")),
+    ("session_nocommit", AuditContext(NoCommit(), ORG, "system", "a", "r")),
+    ("session_noadd", AuditContext(NoAdd(), ORG, "system", "a", "r")),
+    ("org_str", AuditContext(recb, str(ORG), "system", "a", "r")),
+    ("actor_type", AuditContext(recb, ORG, "admin", "a", "r")),
+    ("actor_id", AuditContext(recb, ORG, "system", "a b", "r")),
+    ("actor_id_nl", AuditContext(recb, ORG, "system", "a\n", "r")),
+    ("actor_id_sub", AuditContext(recb, ORG, "system", S("a"), "r")),
+    ("request_id", AuditContext(recb, ORG, "system", "a", "r/1")),
+    ("request_id_none", AuditContext(recb, ORG, "system", "a", None)),
+):
+    out["bad_audit_" + name] = run(req(org="zero_egress"), appr(), c)
+out["bad_audit_events"] = recb.events
 rec2 = Rec()
 run(req(), appr(), AuditContext(rec2, uuid.uuid4(), "system", "actor", "req"))
 out["audit_on_allow"] = len(rec2.added)
@@ -543,6 +904,7 @@ def _run_probe(source: str | None) -> dict[str, Any]:
         )
     finally:
         MODULE.write_bytes(original)
+        shutil.rmtree(cache_dir, ignore_errors=True)
     if MODULE.read_bytes() != original:
         raise RuntimeError("module not restored")
     if result.returncode != 0:
@@ -608,14 +970,14 @@ _MUTATIONS: list[tuple[str, str, str, tuple[str, ...]]] = [
     ("drop-region", r"            approval\.region,\n", "", ("miss_region",)),
     (
         "drop-retention",
-        r"            approval\.retention_terms,\n            terms,",
-        "            terms,",
+        r"            approval\.retention_terms,\n",
+        "",
         ("miss_retention_terms",),
     ),
     (
         "drop-terms",
-        r"            approval\.retention_terms,\n            terms,",
-        "            approval.retention_terms,",
+        r"            terms,\n",
+        "",
         ("miss_training_terms", "miss_inference_terms"),
     ),
     (
@@ -657,6 +1019,141 @@ _MUTATIONS: list[tuple[str, str, str, tuple[str, ...]]] = [
         ("audit_on_allow",),
     ),
     (
+        "no-commit-before-raise",
+        r"        audit\.session\.commit\(\)\n",
+        "",
+        ("audit_events",),
+    ),
+    (
+        "profile-computed-without-job",
+        r"    profile = effective_profile\(\n        request\.organization_profile, "
+        r"request\.project_profile, request\.job_profile\n    \)",
+        "    profile = effective_profile(request.organization_profile, request.project_profile)",
+        ("reason_job_profile", "audit_job_profile"),
+    ),
+    (
+        "audit-organization-id-constant",
+        r"organization_id=audit\.organization_id,",
+        "organization_id=uuid.UUID(int=1),",
+        ("audit_row",),
+    ),
+    (
+        "audit-request-id-constant",
+        r"request_id=audit\.request_id,",
+        "request_id='req-const',",
+        ("audit_row",),
+    ),
+    (
+        "audit-actor-id-constant",
+        r"actor_id=audit\.actor_id,",
+        "actor_id='actor-const',",
+        ("audit_row",),
+    ),
+    (
+        "audit-actor-type-constant",
+        r"actor_type=audit\.actor_type,",
+        "actor_type='system',",
+        ("audit_row",),
+    ),
+    (
+        "audit-resource-id-constant",
+        r"resource_id=reason\.purpose,",
+        "resource_id='x',",
+        ("audit_row",),
+    ),
+    (
+        "audit-validation-skipped",
+        r"        audit = _validate_audit\(audit\)\n",
+        "        pass\n",
+        (
+            "bad_audit_session_none",
+            "bad_audit_org_str",
+            "bad_audit_actor_type",
+            "bad_audit_actor_id",
+            "bad_audit_request_id",
+        ),
+    ),
+    (
+        "audit-session-commit-unchecked",
+        r'for method in \("add", "commit"\):',
+        'for method in ("add",):',
+        ("bad_audit_session_nocommit",),
+    ),
+    (
+        "audit-session-add-unchecked",
+        r'for method in \("add", "commit"\):',
+        'for method in ("commit",):',
+        ("bad_audit_session_none", "bad_audit_session_noadd"),
+    ),
+    (
+        "audit-org-type-unchecked",
+        r"    if type\(audit\.organization_id\) is not uuid\.UUID:",
+        "    if False:",
+        ("bad_audit_org_str",),
+    ),
+    (
+        "audit-actor-type-unchecked",
+        r"    if type\(audit\.actor_type\) is not str or "
+        r"audit\.actor_type not in ALLOWED_ACTOR_TYPES:",
+        "    if False:",
+        ("bad_audit_actor_type",),
+    ),
+    (
+        "audit-identifier-match-not-fullmatch",
+        r"_SAFE_IDENTIFIER\.fullmatch\(value\)",
+        "_SAFE_IDENTIFIER.match(value)",
+        ("bad_audit_actor_id_nl",),
+    ),
+    (
+        "audit-identifier-accepts-subclass",
+        r"if type\(value\) is not str or not _SAFE_IDENTIFIER",
+        "if not isinstance(value, str) or not _SAFE_IDENTIFIER",
+        ("bad_audit_actor_id_sub",),
+    ),
+    (
+        "audit-identifier-unchecked",
+        r"or not _SAFE_IDENTIFIER\.fullmatch\(value\)",
+        "",
+        ("bad_audit_actor_id", "bad_audit_request_id", "bad_audit_actor_id_nl"),
+    ),
+    (
+        "drop-applicable_agreement",
+        r"            approval\.applicable_agreement,\n",
+        "",
+        ("miss_applicable_agreement",),
+    ),
+    ("drop-subprocessors", r"            approval\.subprocessors,\n", "", ("miss_subprocessors",)),
+    (
+        "drop-deletion_behaviour",
+        r"            approval\.deletion_behaviour,\n",
+        "",
+        ("miss_deletion_behaviour",),
+    ),
+    (
+        "account-mismatch-ignored",
+        r"approval\.account != request\.target_account or ",
+        "",
+        ("mismatch_account", "mismatch_none_account"),
+    ),
+    (
+        "region-mismatch-ignored",
+        r" or approval\.region != request\.target_region",
+        "",
+        ("mismatch_region", "mismatch_none_region"),
+    ),
+    (
+        "target-account-unvalidated",
+        r'    _optional_text\(request\.target_account, "target account"\)\n',
+        "",
+        ("bad_target_account",),
+    ),
+    (
+        "target-region-unvalidated",
+        r'    _optional_text\(request\.target_region, "target region"\)\n',
+        "",
+        ("bad_target_region",),
+    ),
+    (
         "surface-swapped",
         r'\{"training": "model", "inference": "serving"\}',
         '{"training": "serving", "inference": "model"}',
@@ -676,7 +1173,29 @@ def test_each_guard_is_load_bearing() -> None:
         and baseline.get("ok_train") == "allowed:model"
         and baseline.get("unhash_profile") == "external_provider_invalid_request"
         and baseline.get("audit_on_allow") == 0
-        and len(baseline.get("audit", [])) == 1,
+        and len(baseline.get("audit", [])) == 1
+        and baseline.get("audit_events") == ["add", "commit"]
+        and baseline.get("reason_job_profile") == "air_gapped"
+        and baseline.get("audit_job_profile") == ["air_gapped"]
+        and baseline.get("audit_row")
+        == [[str(uuid.UUID(int=77)), "worker", "actor-9", "req-9", "inference"]]
+        and baseline.get("mismatch_account") == "external_provider_approval_mismatch"
+        and baseline.get("bad_audit_events") == []
+        and all(
+            baseline.get("bad_audit_" + n) == "external_provider_invalid_request"
+            for n in (
+                "session_none",
+                "session_nocommit",
+                "session_noadd",
+                "org_str",
+                "actor_type",
+                "actor_id",
+                "actor_id_nl",
+                "actor_id_sub",
+                "request_id",
+                "request_id_none",
+            )
+        ),
     )
     text = MODULE.read_text(encoding="utf-8")
     for label, pattern, replacement, keys in _MUTATIONS:

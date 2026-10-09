@@ -369,6 +369,35 @@ def test_m1_offline_downgrade_sql_actually_runs() -> None:
         check(CID, f"the real downgrade SQL contains {needle!r}", needle in down)
 
 
+def test_r2_offline_upgrade_sql_0028_actually_runs() -> None:
+    # Same technique as 0027 above, for round 2's own migration: proves
+    # upgrade() is not short-circuited (an additive early `return None` --
+    # a real mutation-gate fault class -- would leave every needle below
+    # missing from the offline SQL, since nothing would ever execute).
+    up = _offline_sql("0027_model_import:0028_model_import_state_machine", "upgrade")
+    for needle in (
+        "ck_model_versions_origin_import_kind_consistency",
+        "ck_model_import_jobs_origin_not_factory_trained",
+        "CREATE FUNCTION model_import_jobs_state_transition_guard",
+        "CREATE TRIGGER model_import_jobs_state_transition_guard",
+        "BEFORE INSERT OR UPDATE ON model_import_jobs",
+        "version_num='0028_model_import_state_machine'",
+    ):
+        check(CID, f"the real 0028 upgrade SQL contains {needle!r}", needle in up)
+
+
+def test_r2_offline_downgrade_sql_0028_actually_runs() -> None:
+    down = _offline_sql("0028_model_import_state_machine:0027_model_import", "downgrade")
+    for needle in (
+        "DROP TRIGGER IF EXISTS model_import_jobs_state_transition_guard",
+        "DROP FUNCTION IF EXISTS model_import_jobs_state_transition_guard",
+        "DROP CONSTRAINT ck_model_import_jobs_origin_not_factory_trained",
+        "DROP CONSTRAINT ck_model_versions_origin_import_kind_consistency",
+        "version_num='0027_model_import'",
+    ):
+        check(CID, f"the real 0028 downgrade SQL contains {needle!r}", needle in down)
+
+
 # -- S*: store against SQLite, with the reused DB-touching seams replaced ----
 
 
@@ -508,21 +537,23 @@ def test_s1_each_origin_creates_a_queued_job_with_one_audit_event() -> None:
             project_id=_PROJECT,
             requested_origin="imported_adapter",
             parent_model_version_id=adapter_base,
-            trainable_artifact_id=None,
+            trainable_artifact_id=artifact,
             external_provider_model_ref=None,
             actor=_ACTOR,
         )
         check(
             CID,
-            "imported_adapter with a real base is queued",
-            job2.state == "queued" and job2.parent_model_version_id == adapter_base,
+            "imported_adapter with a real base and a real artifact is queued",
+            job2.state == "queued"
+            and job2.parent_model_version_id == adapter_base
+            and job2.trainable_artifact_id == artifact,
         )
         event2 = audit.events[-1]
         check(
             CID,
-            "audit details carry the real parent id (present) and None for the absent artifact",
+            "audit details carry the real parent id and the real artifact id",
             event2["details"]["parent_model_version_id"] == str(adapter_base)
-            and event2["details"]["trainable_artifact_id"] is None,
+            and event2["details"]["trainable_artifact_id"] == str(artifact),
         )
 
         job3 = crud.create_model_import_job(
@@ -543,19 +574,28 @@ def test_s1_each_origin_creates_a_queued_job_with_one_audit_event() -> None:
             and job3.external_provider_model_ref == "provider://model/x",
         )
 
-        job4 = crud.create_model_import_job(
-            session,
-            _CTX,
-            project_id=_PROJECT,
-            requested_origin="factory_trained",
-            parent_model_version_id=None,
-            trainable_artifact_id=None,
-            external_provider_model_ref=None,
-            actor=_ACTOR,
-        )
-        check(CID, "factory_trained with nothing else required is queued", job4.state == "queued")
         check(
-            CID, "four jobs, four audit events", len(_jobs(session)) == 4 and len(audit.events) == 4
+            CID,
+            "factory_trained is refused outright: Section 68.1 names exactly three import "
+            "forms, and factory_trained is not one of them",
+            _raises(
+                lambda: crud.create_model_import_job(
+                    session,
+                    _CTX,
+                    project_id=_PROJECT,
+                    requested_origin="factory_trained",
+                    parent_model_version_id=None,
+                    trainable_artifact_id=None,
+                    external_provider_model_ref=None,
+                    actor=_ACTOR,
+                ),
+                schema.ModelImportValidationError,
+            ),
+        )
+        check(
+            CID,
+            "three jobs, three audit events (the factory_trained refusal wrote nothing)",
+            len(_jobs(session)) == 3 and len(audit.events) == 3,
         )
 
 
@@ -580,6 +620,28 @@ def test_s2_external_endpoint_with_artifact_is_refused() -> None:
             ),
         )
         check(CID, "nothing was written by the refusal", not _jobs(session) and not audit.events)
+        check(
+            CID,
+            "imported_weights with no trainable_artifact_id is a ModelImportValidationError",
+            _raises(
+                lambda: crud.create_model_import_job(
+                    session,
+                    _CTX,
+                    project_id=_PROJECT,
+                    requested_origin="imported_weights",
+                    parent_model_version_id=None,
+                    trainable_artifact_id=None,
+                    external_provider_model_ref=None,
+                    actor=_ACTOR,
+                ),
+                schema.ModelImportValidationError,
+            ),
+        )
+        check(
+            CID,
+            "nothing was written by the imported_weights refusal either",
+            not _jobs(session) and not audit.events,
+        )
 
 
 def test_s3_external_endpoint_with_no_provider_ref_is_refused() -> None:
@@ -587,6 +649,8 @@ def test_s3_external_endpoint_with_no_provider_ref_is_refused() -> None:
         for bad_ref in (
             None,
             "",
+            "   ",
+            "\t\n ",
         ):
             check(
                 CID,
@@ -609,7 +673,9 @@ def test_s3_external_endpoint_with_no_provider_ref_is_refused() -> None:
 
 
 def test_s4_imported_adapter_with_no_base_is_refused() -> None:
-    with _store_env() as (session, audit):
+    real_parent = uuid.uuid4()
+    real_artifact = uuid.uuid4()
+    with _store_env(parent_versions={real_parent}, artifacts={real_artifact}) as (session, audit):
         check(
             CID,
             "imported_adapter with parent_model_version_id=None is refused",
@@ -628,6 +694,52 @@ def test_s4_imported_adapter_with_no_base_is_refused() -> None:
             ),
         )
         check(CID, "nothing was written", not _jobs(session) and not audit.events)
+        check(
+            CID,
+            "imported_adapter with parent_model_version_id=None is refused even with a "
+            "real trainable_artifact_id present -- isolates the base check from the "
+            "artifact check (neither masks the other)",
+            _raises(
+                lambda: crud.create_model_import_job(
+                    session,
+                    _CTX,
+                    project_id=_PROJECT,
+                    requested_origin="imported_adapter",
+                    parent_model_version_id=None,
+                    trainable_artifact_id=real_artifact,
+                    external_provider_model_ref=None,
+                    actor=_ACTOR,
+                ),
+                schema.ModelImportValidationError,
+            ),
+        )
+        check(
+            CID,
+            "nothing was written by the base-missing-with-artifact-present refusal either",
+            not _jobs(session) and not audit.events,
+        )
+        check(
+            CID,
+            "imported_adapter with a real base but no trainable_artifact_id is refused too",
+            _raises(
+                lambda: crud.create_model_import_job(
+                    session,
+                    _CTX,
+                    project_id=_PROJECT,
+                    requested_origin="imported_adapter",
+                    parent_model_version_id=real_parent,
+                    trainable_artifact_id=None,
+                    external_provider_model_ref=None,
+                    actor=_ACTOR,
+                ),
+                schema.ModelImportValidationError,
+            ),
+        )
+        check(
+            CID,
+            "nothing was written by the base-without-artifact refusal either",
+            not _jobs(session) and not audit.events,
+        )
 
 
 def test_s5_foreign_or_missing_references_are_refused() -> None:
@@ -664,7 +776,7 @@ def test_s5_foreign_or_missing_references_are_refused() -> None:
                     project_id=_PROJECT,
                     requested_origin="imported_adapter",
                     parent_model_version_id=uuid.uuid4(),
-                    trainable_artifact_id=None,
+                    trainable_artifact_id=real_artifact,
                     external_provider_model_ref=None,
                     actor=_ACTOR,
                 ),
@@ -711,7 +823,16 @@ def test_s5_foreign_or_missing_references_are_refused() -> None:
 
 def test_s6_unknown_origin_is_refused() -> None:
     with _store_env() as (session, audit):
-        for bad in ("", "ENDPOINT", "endpoint", "full_weight", 7, None, ["factory_trained"]):
+        for bad in (
+            "",
+            "ENDPOINT",
+            "endpoint",
+            "full_weight",
+            "factory_trained",
+            7,
+            None,
+            ["factory_trained"],
+        ):
             check(
                 CID,
                 f"origin {bad!r} is refused",
@@ -734,14 +855,15 @@ def test_s6_unknown_origin_is_refused() -> None:
 
 def test_s7_get_and_list_are_scoped_to_the_exact_project() -> None:
     other_project = uuid.uuid4()
-    with _store_env() as (session, _audit):
+    artifact = uuid.uuid4()
+    with _store_env(artifacts={artifact}) as (session, _audit):
         job = crud.create_model_import_job(
             session,
             _CTX,
             project_id=_PROJECT,
-            requested_origin="factory_trained",
+            requested_origin="imported_weights",
             parent_model_version_id=None,
-            trainable_artifact_id=None,
+            trainable_artifact_id=artifact,
             external_provider_model_ref=None,
             actor=_ACTOR,
         )
@@ -1529,7 +1651,7 @@ def test_c1_interface_contract_declares_the_routes() -> None:
         schemas["ModelImportJobState"]["enum"]
         == ["queued", "validating", "failed", "succeeded", "blocked_external"]
         and schemas["ModelImportOrigin"]["enum"]
-        == ["factory_trained", "imported_weights", "imported_adapter", "external_endpoint"],
+        == ["imported_weights", "imported_adapter", "external_endpoint"],
     )
 
 

@@ -70,7 +70,7 @@ import json
 import re
 import sys
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -183,6 +183,18 @@ class TrainingTrace:
             if step.get("type") == "message" and step.get("role") == "assistant":
                 return str(step.get("content", ""))
         return ""
+
+
+# The exact set of this dataclass's own field names -- never recomputed from an
+# instance, so it cannot itself be forged. Used to refuse a `TrainingTrace` whose
+# instance __dict__ carries anything beyond its declared fields: round 4's own
+# attack sets `object.__setattr__(t, "to_dict", lambda: {...a lie...})` on a frozen
+# dataclass, which shadows the bound method with a plain callable (instance
+# attributes take priority over class methods), so `t.to_dict()` and
+# `t.final_answer()` can be made to return forged content while every real field
+# stays untouched -- and every verification below used to trust exactly those two
+# methods on untrusted, caller-supplied traces.
+_TRACE_FIELD_NAMES = frozenset(f.name for f in fields(TrainingTrace))
 
 
 @dataclass(frozen=True)
@@ -666,6 +678,10 @@ def _require_trace_shape(trace: Any) -> TrainingTrace:
     never a bare TypeError/AttributeError/KeyError further down."""
     if type(trace) is not TrainingTrace:
         raise TraceVerificationError("not a TrainingTrace")
+    if set(vars(trace)) != _TRACE_FIELD_NAMES:
+        raise TraceVerificationError(
+            "trace instance carries an attribute outside its declared fields"
+        )
     for name in _STR_FIELDS:
         value = getattr(trace, name)
         if type(value) is not str or not value:
@@ -715,9 +731,39 @@ def _canonical(value: Any) -> str:
         raise TraceVerificationError("trace content is not plain JSON data") from exc
 
 
+def _raw_trace_dict(trace: TrainingTrace) -> dict[str, Any]:
+    """`TrainingTrace.to_dict`'s own shape, built from direct field access --
+    never a method call a shadowed instance attribute could intercept."""
+    return {
+        "trace_id": trace.trace_id,
+        "group_id": trace.group_id,
+        "template_id": trace.template_id,
+        "kind": trace.kind,
+        "critical": trace.critical,
+        "entity_title": trace.entity_title,
+        "expected_outcome": trace.expected_outcome,
+        "steps": [dict(s) for s in trace.steps],
+        "provenance": dict(trace.provenance),
+        "purpose": trace.purpose,
+    }
+
+
+def _raw_final_answer(trace: TrainingTrace) -> str:
+    """`TrainingTrace.final_answer`'s own logic, but never calling the
+    (possibly shadowed) method on untrusted input."""
+    for step in reversed(trace.steps):
+        if step.get("type") == "message" and step.get("role") == "assistant":
+            return str(step.get("content", ""))
+    return ""
+
+
 def verify_trace_provenance(trace: TrainingTrace) -> None:
     """Regenerate the trace from `GENERATOR_ID` and `provenance.index` and
-    require the recorded trace to equal it exactly; raise otherwise."""
+    require the recorded trace to equal it exactly; raise otherwise. This is
+    the one check that compares the caller's own (untrusted) trace against a
+    freshly generated reference, so it reads every field directly
+    (`_raw_trace_dict`) rather than through `to_dict()`, which a forged
+    instance attribute could shadow."""
     _require_trace_shape(trace)
     producer = trace.provenance.get("producer")
     index = trace.provenance.get("index")
@@ -725,7 +771,7 @@ def verify_trace_provenance(trace: TrainingTrace) -> None:
         raise TraceVerificationError(
             f"{trace.trace_id}: provenance does not name a generator index"
         )
-    if _canonical(_generate_one(index).to_dict()) != _canonical(trace.to_dict()):
+    if _canonical(_generate_one(index).to_dict()) != _canonical(_raw_trace_dict(trace)):
         raise TraceVerificationError(
             f"{trace.trace_id}: trace differs from what the generator produces for its index"
         )
@@ -743,7 +789,7 @@ def verify_trace_replay(trace: TrainingTrace) -> None:
             f"{trace.trace_id}: recorded results do not replay against the real backend"
         )
     allowed_final = {f.format(title=trace.entity_title) for f in _FINAL.get(trace.kind, ())}
-    if trace.final_answer() not in allowed_final:
+    if _raw_final_answer(trace) not in allowed_final:
         raise TraceVerificationError(
             f"{trace.trace_id}: final answer does not match the verified outcome for {trace.kind!r}"
         )
@@ -770,7 +816,7 @@ def _strings(value: Any) -> list[str]:
 
 def _scan_secrets(trace: TrainingTrace) -> None:
     try:
-        texts = _strings(trace.to_dict())
+        texts = _strings(_raw_trace_dict(trace))
     except RecursionError as exc:
         raise TraceVerificationError(f"{trace.trace_id}: trace nesting is too deep") from exc
     for text in texts:
@@ -801,7 +847,7 @@ def _check_reserved_shape(reserved: Any) -> ReservedFinalSuite:
 def _check_reserved(trace: TrainingTrace, reserved: ReservedFinalSuite) -> None:
     """Case/whitespace-insensitive on both sides, so a re-cased copy of a
     sealed id cannot slip past the held-out guard."""
-    answer_hash = _norm(hashlib.sha256(trace.final_answer().encode("utf-8")).hexdigest())
+    answer_hash = _norm(hashlib.sha256(_raw_final_answer(trace).encode("utf-8")).hexdigest())
     overlaps = (
         (_norm(trace.group_id), {_norm(x) for x in reserved.group_ids}),
         (_norm(trace.template_id), {_norm(x) for x in reserved.template_ids}),
@@ -838,10 +884,16 @@ def _validate_trace_shape(trace: Any) -> TrainingTrace:
 
 
 def _validate_review(review: Any, trace_ids: set[str]) -> ReviewDecision:
-    if not isinstance(review, ReviewDecision):
+    # Exact types throughout: a ReviewDecision subclass, or a str subclass
+    # overriding __eq__/__hash__/strip(), could otherwise make a conflicting
+    # decision look consistent (the `decisions.setdefault`/set check below
+    # trusts `decision.__eq__`) or let a generator-identity reviewer's own
+    # `.strip()` lie its way past the independence check below.
+    if type(review) is not ReviewDecision:
         raise ReviewIndependenceError("reviews must be ReviewDecision instances")
     for name in ("trace_id", "reviewer_id", "decision"):
-        if not isinstance(getattr(review, name), str) or not getattr(review, name):
+        value = getattr(review, name)
+        if type(value) is not str or not value:
             raise ReviewIndependenceError(f"review.{name} must be a non-empty string")
     if review.decision not in _DECISIONS:
         raise ReviewIndependenceError(f"unknown review decision: {review.decision!r}")
@@ -876,17 +928,36 @@ def build_training_dataset(
     reserved = _check_reserved_shape(ReservedFinalSuite() if reserved is None else reserved)
     by_id: dict[str, TrainingTrace] = {}
     seen_ids: set[str] = set()
+    seen_indices: set[int] = set()
     for raw in traces:
         trace = _validate_trace_shape(raw)
         if _norm(trace.trace_id) in seen_ids:
             raise TrainingDatasetError(f"duplicate trace_id: {trace.trace_id!r}")
         seen_ids.add(_norm(trace.trace_id))
+        # First pass, on the caller's own trace: every check here now reads it
+        # through direct field access (_raw_trace_dict/_raw_final_answer), never
+        # a method call a forged instance attribute could shadow, so a tampered
+        # trace is refused here with its own specific error (a secret as
+        # SecretInTraceError, a held-out overlap as HeldOutLeakageError) before
+        # ever reaching the more generic provenance mismatch below.
         _scan_secrets(trace)
         _check_reserved(trace, reserved)
         verify_trace_provenance(trace)
-        verify_trace_replay(trace)
-        # Admit and hash the regenerated object, never the caller's.
-        by_id[trace.trace_id] = _generate_one(trace.provenance["index"])
+        index = trace.provenance["index"]
+        if index in seen_indices:
+            raise TrainingDatasetError(f"generator index {index} admitted more than once")
+        seen_indices.add(index)
+        # verify_trace_provenance just proved `trace` is field-for-field
+        # identical to the generator's own output for `index`, so a repeated
+        # _scan_secrets/_check_reserved call on the regenerated object could
+        # never behave differently from the first pass above (same content,
+        # same deterministic functions) -- that would be dead code no test
+        # could ever kill. The real-backend replay has no first-pass
+        # counterpart at all, so it runs here, on the object the caller never
+        # touched, for the first and only time.
+        regenerated = _generate_one(index)
+        verify_trace_replay(regenerated)
+        by_id[trace.trace_id] = regenerated
 
     trace_ids = set(by_id)
     decisions: dict[str, str] = {}

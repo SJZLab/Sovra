@@ -50,6 +50,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import unicodedata
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -1935,6 +1936,76 @@ def test_resolved_model_outside_the_approved_set_is_a_mismatch_never_a_verdict()
     )
 
 
+_COMPOSED_E_NFC = "é"  # e-acute, precomposed (single codepoint)
+_COMPOSED_E_NFD = unicodedata.normalize("NFD", _COMPOSED_E_NFC)  # "e" + combining acute
+
+
+def _exactness_variants(base: str) -> tuple[tuple[str, str], ...]:
+    """Every variant of `base` an exact (`==`/`in`) identity comparison must
+    reject -- each one is the exact input that a specific case-folding,
+    trimming, or Unicode-normalising fault would incorrectly accept as `base`
+    itself (round 7's own shared helper, used by both the judge-id echo check
+    and the calibration-alias echo check -- one list, not one variant per
+    round). `base` is assumed plain-ASCII with at least one letter and one
+    digit (true of every judge/alias id this module is tested with)."""
+    letter_index = next(i for i, ch in enumerate(base) if ch.isalpha())
+    digit_index = next(i for i, ch in enumerate(base) if ch.isdigit())
+    fullwidth_letter = (
+        base[:letter_index]
+        + chr(ord(base[letter_index]) + 0xFEE0)  # ASCII -> fullwidth block offset
+        + base[letter_index + 1 :]
+    )
+    fullwidth_digit = (
+        base[:digit_index]
+        + chr(ord(base[digit_index]) - ord("0") + 0xFF10)  # '0'..'9' -> fullwidth digits
+        + base[digit_index + 1 :]
+    )
+    mid = len(base) // 2
+    return (
+        ("upper case", base.upper()),
+        ("title case", base.title()),
+        ("leading whitespace", " " + base),
+        ("trailing whitespace", base + " "),
+        ("inner whitespace", base[:mid] + " " + base[mid:]),
+        ("leading tab", "\t" + base),
+        ("trailing tab", base + "\t"),
+        ("leading NBSP (U+00A0)", " " + base),
+        ("inner zero-width space (U+200B)", base[:1] + "​" + base[1:]),
+        ("ASCII hyphen replaced with Unicode hyphen (U+2010)", base.replace("-", "‐")),
+        (f"fullwidth letter (U+{ord(fullwidth_letter[letter_index]):04X})", fullwidth_letter),
+        (f"fullwidth digit (U+{ord(fullwidth_digit[digit_index]):04X})", fullwidth_digit),
+    )
+
+
+def _composed_character_cases(base_with_e: str) -> tuple[tuple[str, str, bool], ...]:
+    """(label, echo, must_pass) for a judge/alias id containing a precomposed
+    'e' (the configured/approved value is always the NFC form). NFC and NFKC
+    give back the identical precomposed codepoint for this character (no
+    compatibility-only decomposition applies), so both are byte-identical to
+    the configured value and must pass; NFD and NFKD give the decomposed
+    "e" + combining-acute form, genuinely different bytes, and must be
+    MODEL_MISMATCH -- exactly what a fault that normalises either side via
+    any of unicodedata's four forms before comparing would get wrong."""
+    return (
+        ("NFC composed-character form (the configured value itself)", base_with_e, True),
+        (
+            "NFKC composed-character form",
+            unicodedata.normalize("NFKC", base_with_e),
+            True,
+        ),
+        (
+            "NFD composed-character form",
+            unicodedata.normalize("NFD", base_with_e),
+            False,
+        ),
+        (
+            "NFKD composed-character form",
+            unicodedata.normalize("NFKD", base_with_e),
+            False,
+        ),
+    )
+
+
 def test_echo_identity_comparison_is_exact_not_normalised() -> None:
     if _PORT == 0:
         return
@@ -1965,6 +2036,46 @@ def test_echo_identity_comparison_is_exact_not_normalised() -> None:
         "a lowercase echo of a capitalised judge id is MODEL_MISMATCH",
         result.state is judge.LlmJudgeState.MODEL_MISMATCH,
     )
+    # Round 7 (R6m): the shared exactness-variant list, run against the judge id itself.
+    # Each echo is also added to approved_judge_model_ids so only the identity-exactness
+    # comparison (never the approval gate) can be what refuses it.
+    judge_id = "judge-model-v1"
+    for label, echo in _exactness_variants(judge_id):
+        _reset_gateway()
+        _GATEWAY.body = _success_body(_verdict_json(), model=echo)
+        result = _grade(_PORT, approved_judge_model_ids=frozenset({judge_id, echo}))
+        check(
+            "R7-1",
+            f"a judge-id echo that is a {label} variant is MODEL_MISMATCH, never a verdict",
+            result.state is judge.LlmJudgeState.MODEL_MISMATCH and result.passed is None,
+        )
+    # Round 7: composed-character (NFC/NFD/NFKC/NFKD) forms of a judge id containing a
+    # precomposed accented letter -- the configured judge id is always the NFC form.
+    composed_judge_id = "judge-caf" + _COMPOSED_E_NFC + "-v1"
+    for label, echo, must_pass in _composed_character_cases(composed_judge_id):
+        for verdict in ("pass", "fail"):
+            _reset_gateway()
+            _GATEWAY.body = _success_body(_verdict_json(verdict), model=echo)
+            result = _grade(
+                _PORT,
+                judge_model_id=composed_judge_id,
+                approved_judge_model_ids=frozenset({composed_judge_id, echo}),
+                calibration=_calibration(judge_model_id=composed_judge_id),
+            )
+            if must_pass:
+                check(
+                    "R7-1",
+                    f"a judge-id echo in {label} ({verdict}) is byte-identical to the "
+                    "configured value and IS a verdict",
+                    result.passed is (verdict == "pass"),
+                )
+            else:
+                check(
+                    "R7-1",
+                    f"a judge-id echo in {label} ({verdict}) is genuinely different bytes "
+                    "from the configured NFC value: MODEL_MISMATCH, never a verdict",
+                    result.state is judge.LlmJudgeState.MODEL_MISMATCH and result.passed is None,
+                )
 
 
 def test_approved_set_members_must_be_non_empty_strings_before_any_call() -> None:
@@ -2216,6 +2327,50 @@ def test_r6_calibration_alias_matching_is_exact_not_normalised() -> None:
                 and result.passed is None
                 and result.resolved_model == echo,
             )
+    # Round 7 (R6f): the SAME shared exactness-variant helper the judge-id test uses
+    # (round 6 only tried 3 hand-picked variants; round 7 closes the whole class in one
+    # shared list instead of one more case).
+    for label, echo in _exactness_variants(alias):
+        for verdict in ("pass", "fail"):
+            _reset_gateway()
+            _GATEWAY.body = _success_body(_verdict_json(verdict), model=echo)
+            result = _grade(
+                _PORT,
+                approved_judge_model_ids=frozenset({"judge-model-v1", alias, echo}),
+                calibration=_calibration(judge_model_aliases=(alias,)),
+            )
+            check(
+                "R7-2",
+                f"an alias echo that is a {label} variant ({verdict}) is MODEL_MISMATCH, "
+                "never a verdict",
+                result.state is judge.LlmJudgeState.MODEL_MISMATCH and result.passed is None,
+            )
+    # Round 7: composed-character (NFC/NFD/NFKC/NFKD) forms of a calibration alias
+    # containing a precomposed accented letter -- the configured alias is the NFC form.
+    composed_alias = "judge-model-caf" + _COMPOSED_E_NFC + "-2026-01"
+    for label, echo, must_pass in _composed_character_cases(composed_alias):
+        for verdict in ("pass", "fail"):
+            _reset_gateway()
+            _GATEWAY.body = _success_body(_verdict_json(verdict), model=echo)
+            result = _grade(
+                _PORT,
+                approved_judge_model_ids=frozenset({"judge-model-v1", composed_alias, echo}),
+                calibration=_calibration(judge_model_aliases=(composed_alias,)),
+            )
+            if must_pass:
+                check(
+                    "R7-2",
+                    f"an alias echo in {label} ({verdict}) is byte-identical to the "
+                    "configured alias and IS a verdict",
+                    result.passed is (verdict == "pass"),
+                )
+            else:
+                check(
+                    "R7-2",
+                    f"an alias echo in {label} ({verdict}) is genuinely different bytes "
+                    "from the configured NFC alias: MODEL_MISMATCH, never a verdict",
+                    result.state is judge.LlmJudgeState.MODEL_MISMATCH and result.passed is None,
+                )
 
 
 def test_r6_a_5xx_is_sent_exactly_once() -> None:

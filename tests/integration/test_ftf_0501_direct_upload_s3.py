@@ -162,6 +162,14 @@ def _refused(status: int) -> bool:
     return status in (403, DROPPED)
 
 
+def _refused_unsigned(status: int) -> bool:
+    """A request with no signature at all is refused with 403 or, on some
+    SeaweedFS builds, 400 `MissingFields` (3 of 9 local runs saw 400). Only this
+    check accepts 400; every other refusal stays 403 or a dropped connection,
+    and "nothing was stored" is asserted separately."""
+    return status in (400, 403, DROPPED)
+
+
 def _target(
     body: bytes, *, content_type: str = "application/jsonl", sha: str | None = None
 ) -> dos.UploadTarget:
@@ -318,7 +326,9 @@ def test_a_presigned_url_is_bound_to_what_it_was_issued_for(lab: Lab) -> None:
         check(
             CID,
             "an unsigned request is refused",
-            _refused(_put(grants[2].url.split("X-Amz-Signature=")[0].rstrip("&"), piece(2))),
+            _refused_unsigned(
+                _put(grants[2].url.split("X-Amz-Signature=")[0].rstrip("&"), piece(2))
+            ),
         )
         stale = dos.presign_part_urls(
             lab.settings, target, upload_id, [2], now=datetime.now(UTC) - timedelta(seconds=600)
@@ -372,6 +382,71 @@ def test_wrong_hash_is_rejected_and_deleted(lab: Lab) -> None:
         isinstance(got, dos.UploadRejection) and got.reason == "sha256_mismatch",
     )
     check(CID, "the real object is deleted, nothing in progress", lab.gone(target))
+
+
+def _xlsx_bytes(members: list[tuple[str, bytes]]) -> bytes:
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in members:
+            archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+def _types_xml(part: str, content_type: str) -> bytes:
+    return (
+        '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/'
+        f'content-types"><Override PartName="{part}" ContentType="{content_type}"/></Types>'
+    ).encode()
+
+
+def test_xlsx_must_be_a_spreadsheet_package(lab: Lab) -> None:
+    """The ranged reads of the zip directory work against the real server."""
+    sheet = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
+    word = "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
+    good = _xlsx_bytes(
+        [
+            ("[Content_Types].xml", _types_xml("/xl/workbook.xml", sheet)),
+            ("xl/workbook.xml", b"<workbook/>"),
+        ]
+    )
+    cases = [
+        (
+            "a docx",
+            _xlsx_bytes(
+                [
+                    ("[Content_Types].xml", _types_xml("/word/document.xml", word)),
+                    ("word/document.xml", b"<document/>"),
+                ]
+            ),
+            "content_type_mismatch",
+        ),
+        ("a plain zip", _xlsx_bytes([("a.txt", b"hello")]), "content_type_mismatch"),
+        ("PK-prefixed zero bytes", b"PK\x03\x04" + b"\x00" * 300, "content_type_mismatch"),
+        ("a truncated xlsx", good[: len(good) // 2], "content_type_mismatch"),
+    ]
+    xlsx_type = dos.XLSX_CONTENT_TYPE
+    for label, body, reason in cases:
+        target = _target(body, content_type=xlsx_type)
+        upload_id = lab.open(target)
+        lab.upload(target, body, upload_id, [1])
+        got = lab.verify(target)
+        check(
+            CID,
+            f"{label} declared as XLSX -> {reason}",
+            isinstance(got, dos.UploadRejection) and got.reason == reason,
+        )
+        check(CID, f"({label}) the real object is deleted", lab.gone(target))
+    target = _target(good, content_type=xlsx_type)
+    upload_id = lab.open(target)
+    lab.upload(target, good, upload_id, [1])
+    check(
+        CID,
+        "a real spreadsheet package verifies on the real server",
+        lab.verify(target) == dos.VerifiedObject(len(good), _sha(good), xlsx_type),
+    )
 
 
 def test_wrong_content_type_is_rejected_and_deleted(lab: Lab) -> None:

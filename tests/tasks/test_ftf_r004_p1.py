@@ -29,6 +29,18 @@ test_canary_prompt_string_never_appears_in_capture_or_result (fault FG),
 test_values_compared_exactly_not_by_python_equality,
 test_malformed_input_raises_never_type_error_never_allow.
 
+Round 2 (L2 return, 2026-10-09T07:48Z, QUEUE 0n):
+test_content_free_capture_covers_every_content_key (F5/F6 and the new
+  instructions/prompt/prediction/conversation/previous_response_id/
+  extra_body.messages content keys),
+test_near_equal_float_and_declared_bool_int_are_not_equal (F8/F10),
+test_before_after_mismatch_blocks_even_when_approved_matches_after (item 3),
+test_stale_declared_change_blocks (item 4),
+test_reason_codes_and_compatibility_tuple_are_stable (item 5),
+test_cyclic_or_over_deep_values_raise_typed_error,
+test_declared_change_values_are_frozen_and_deep_copied,
+test_captured_settings_are_deep_copied (item 6).
+
 Run directly: python3 tests/tasks/test_ftf_r004_p1.py
 """
 
@@ -43,6 +55,9 @@ sys.path.insert(0, str(ROOT))
 
 from workers.evaluation.adapters.inspect_adapter.generation_config_parity import (  # noqa: E402
     CONTENT_KEYS,
+    REASON_BRIDGE_DEFAULT_INHERITED,
+    REASON_GENERATION_CONFIG_CHANGED,
+    REASON_GENERATION_CONFIG_DROPPED,
     DeclaredGenerationChange,
     GenerationConfigParityError,
     GenerationParityResult,
@@ -53,6 +68,16 @@ from workers.evaluation.adapters.inspect_adapter.generation_config_parity import
 FAILURES: list[str] = []
 CID = "FTF-R004-P1"
 VALID_DIGEST = "a" * 64
+
+
+def _nested(depth: int, leaf: object = 1) -> object:
+    """`depth` dict wrappers around `leaf`. Used to probe the exact nesting-
+    depth boundary in _scrub_content/_exact_equal (MAX_NESTING_DEPTH=64):
+    `_nested(64)` must never raise, `_nested(65)` always must."""
+    value = leaf
+    for _ in range(depth):
+        value = {"n": value}
+    return value
 
 
 def check(criterion_id: str, description: str, condition: bool) -> None:
@@ -67,6 +92,17 @@ def raises(fn: Any) -> bool:
         return True
     except Exception:  # noqa: BLE001 -- the wrong exception type is a failed check
         return False
+    return False
+
+
+def raises_any(fn: Any) -> bool:
+    """Like raises(), but any exception counts -- used where the refusal is
+    enforced by a stdlib type (MappingProxyType raising TypeError), not by
+    this module's own GenerationConfigParityError."""
+    try:
+        fn()
+    except Exception:  # noqa: BLE001 -- any exception means the write was refused
+        return True
     return False
 
 
@@ -245,13 +281,43 @@ def test_inherited_default_top_p_blocks() -> None:
     )
 
 
-def test_approved_takes_precedence_over_before_on_disagreement() -> None:
-    """Recorded reading: approved is authoritative over a disagreeing before."""
+def test_before_after_mismatch_blocks_even_when_approved_matches_after() -> None:
+    """Round 2 (QUEUE 0n, item 3): approved=0.7, before=0.8, after=0.7 used to
+    be `preserved` (approved alone decided it). A disagreeing before is a
+    real bridge rewrite and must block even though after happens to match
+    approved again; the approved-vs-before disagreement itself must also be
+    surfaced, never just silently resolved by picking approved's side.
+    Supersedes the old test_approved_takes_precedence_over_before_on_disagreement,
+    which pinned exactly this now-fixed reading."""
     result = compare({"temperature": 0.7}, {"temperature": 0.8}, {"temperature": 0.7})
     check(
         CID,
-        "after matching approved (not before) is preserved",
-        result.verdict == "preserved",
+        "before (0.8) disagreeing with after (0.7) blocks, even though approved (0.7) matches after",
+        result.verdict == "blocked" and result.changed_keys == ("temperature",),
+    )
+    check(
+        CID,
+        "the approved-vs-before disagreement is surfaced on the result",
+        result.approved_before_disagreement_keys == ("temperature",),
+    )
+    check(
+        CID,
+        "the changed reason code is present",
+        REASON_GENERATION_CONFIG_CHANGED in result.reason_codes,
+    )
+
+    agreeing = compare({"temperature": 0.7}, {"temperature": 0.7}, {"temperature": 0.7})
+    check(
+        CID,
+        "no disagreement is surfaced when approved and before already agree",
+        agreeing.approved_before_disagreement_keys == () and agreeing.verdict == "preserved",
+    )
+
+    only_before = compare({}, {"temperature": 0.7}, {"temperature": 0.7})
+    check(
+        CID,
+        "a key named only by before (not approved) has nothing to disagree with -- preserved",
+        only_before.approved_before_disagreement_keys == () and only_before.verdict == "preserved",
     )
 
 
@@ -696,9 +762,18 @@ def _verdicts_for_test() -> tuple[str, ...]:
 
 
 def test_expected_value_lookup_key_is_not_normalized_across_branches() -> None:
-    """Kills the 'key -> key.strip().lower()' mutant on the expected_value
-    ternary: cross-contaminating case-distinct keys with different values
-    on both the approved-present branch and the before-only branch."""
+    """Kills the 'key -> key.strip().lower()' mutant on the
+    approved_present/before_present membership checks: cross-contaminating
+    case-distinct keys with different values on both the approved-present
+    and the before-only branch.
+
+    Round 2 note: the old third check here (`only_mixed_case`) used
+    `compare({"Alpha": 1}, {"Alpha": 5}, {"Alpha": 1})` and asserted
+    "preserved" -- exactly the now-fixed approved-overrides-before reading
+    (see test_before_after_mismatch_blocks_even_when_approved_matches_after,
+    which replaces it). Replaced below with sibling-key scenarios that
+    isolate the membership-check-folding mutant without depending on that
+    now-blocking behaviour."""
     cross = {"Alpha": 1, "alpha": 999}
     true_branch = compare(cross, dict(cross), dict(cross))
     check(
@@ -712,13 +787,27 @@ def test_expected_value_lookup_key_is_not_normalized_across_branches() -> None:
         "before-only branch: 'Alpha' is looked up as 'Alpha', never folded to 'alpha'",
         false_branch.verdict == "preserved",
     )
-    # No same-named lowercase sibling this time: a folded 'in' check would flip
-    # True -> False and wrongly fall through to before's (different) value.
-    only_mixed_case = compare({"Alpha": 1}, {"Alpha": 5}, {"Alpha": 1})
+    # 'alpha' is before-only (not in approved); a folded membership check
+    # would wrongly treat 'Alpha' (approved) as covering it too, pulling in
+    # approved's mismatching value (1 != 999) and wrongly blocking.
+    before_only_sibling = compare(
+        {"Alpha": 1}, {"Alpha": 1, "alpha": 999}, {"Alpha": 1, "alpha": 999}
+    )
     check(
         CID,
-        "'Alpha' in approved is matched by its own exact spelling, not a folded 'alpha'",
-        only_mixed_case.verdict == "preserved",
+        "'alpha' (before-only) is never folded into approved's 'Alpha' entry",
+        before_only_sibling.verdict == "preserved",
+    )
+    # Symmetric: 'alpha' is approved-only (not in before); a folded
+    # membership check would wrongly treat before's 'Alpha' as covering it,
+    # pulling in before's mismatching value (1 != 999) and wrongly blocking.
+    approved_only_sibling = compare(
+        {"Alpha": 1, "alpha": 999}, {"Alpha": 1}, {"Alpha": 1, "alpha": 999}
+    )
+    check(
+        CID,
+        "'alpha' (approved-only) is never folded into before's 'Alpha' entry",
+        approved_only_sibling.verdict == "preserved",
     )
 
 
@@ -772,6 +861,438 @@ def test_malformed_observation_still_validated_when_the_other_side_is_none() -> 
         CID,
         "a non-string key in observed_after is refused even though observed_before is None",
         raises(lambda: compare({"temperature": 0.7}, None, {5: 0.7})),
+    )
+
+
+# --------------------------------------------------------------------------
+# Round 2 (L2 return, 2026-10-09T07:48Z, QUEUE 0n)
+# --------------------------------------------------------------------------
+
+
+def test_content_free_capture_covers_every_content_key() -> None:
+    """Round 2 item 1: the round-1 CONTENT_KEYS missed real content-bearing
+    keys -- Responses `instructions`, `prompt` template variables, chat
+    `prediction`, legacy `prompt`, `conversation`, `previous_response_id`
+    -- and never scrubbed a nested `extra_body.messages`. A canary test per
+    key, including the two faults the round-2 review named directly: F5
+    (remove 'input' from CONTENT_KEYS) and F6 (remove 'functions'/
+    'function_call') must go RED if CONTENT_KEYS ever shrinks."""
+    canary = "CANARY-r004p1-r2-content-key"
+    for key, value in (
+        ("messages", [{"role": "user", "content": canary}]),
+        ("input", [{"type": "message", "content": canary}]),
+        ("tools", [{"type": "function", "name": canary}]),
+        ("functions", [{"name": canary}]),
+        ("function_call", {"name": canary}),
+        ("model", canary),
+        ("stream", canary),
+        ("user", canary),
+        ("metadata", {"trace": canary}),
+        ("instructions", canary),
+        ("prompt", canary),
+        ("prediction", {"content": canary}),
+        ("conversation", canary),
+        ("previous_response_id", canary),
+    ):
+        body = {"temperature": 0.7, key: value}
+        settings = capture_effective_generation_settings(body)
+        check(
+            CID,
+            f"{key!r} is excluded from capture -- its canary value never appears",
+            key not in settings and canary not in repr(settings),
+        )
+    check(
+        CID,
+        "CONTENT_KEYS names every key this test just exercised",
+        CONTENT_KEYS
+        >= {
+            "messages",
+            "input",
+            "tools",
+            "functions",
+            "function_call",
+            "model",
+            "stream",
+            "user",
+            "metadata",
+            "instructions",
+            "prompt",
+            "prediction",
+            "conversation",
+            "previous_response_id",
+        },
+    )
+    # extra_body.messages: a nested passthrough content leak, not itself a
+    # top-level CONTENT_KEYS member -- extra_body's OTHER fields must still
+    # be captured (digest/scrub, not a blanket exclusion of the whole key).
+    nested = capture_effective_generation_settings(
+        {
+            "temperature": 0.7,
+            "extra_body": {"top_k": 5, "messages": [{"role": "user", "content": canary}]},
+        }
+    )
+    check(
+        CID,
+        "extra_body.messages is scrubbed out but extra_body.top_k survives",
+        canary not in repr(nested) and nested["extra_body"] == {"top_k": 5},
+    )
+
+
+def test_near_equal_float_and_declared_bool_int_are_not_equal() -> None:
+    """Round 2 item 2 (F8/F10): a near-equal float difference still blocks
+    (no implicit tolerance), and a declared value is compared by exact
+    type -- never plain `==` -- so a declared bool is never excused by an
+    observed int."""
+    near_equal = compare({"temperature": 0.7}, {"temperature": 0.7}, {"temperature": 0.700001})
+    check(
+        CID,
+        "a near-equal (but not exactly equal) float still blocks -- no implicit tolerance",
+        near_equal.verdict == "blocked" and near_equal.changed_keys == ("temperature",),
+    )
+
+    declared_bool = DeclaredGenerationChange(
+        compatibility_tuple_sha256=VALID_DIGEST, changed_values={"parallel_tool_calls": True}
+    )
+    result = compare(
+        {"parallel_tool_calls": False},
+        {"parallel_tool_calls": False},
+        {"parallel_tool_calls": 1},
+        declared_bool,
+    )
+    check(
+        CID,
+        "a declared bool (True) does not excuse an observed int (1) -- exact type, not plain ==",
+        result.verdict == "blocked"
+        and result.changed_keys == ("parallel_tool_calls",)
+        and result.declared_change_keys == (),
+    )
+
+
+def test_stale_declared_change_blocks() -> None:
+    """Round 2 item 4: a declared change that does not match reality must
+    block, even when nothing else in the comparison touched that key."""
+    declared_wrong_value = DeclaredGenerationChange(
+        compatibility_tuple_sha256=VALID_DIGEST, changed_values={"temperature": 0.5}
+    )
+    result = compare(
+        {"temperature": 0.7}, {"temperature": 0.7}, {"temperature": 0.7}, declared_wrong_value
+    )
+    check(
+        CID,
+        "a declared 0.5 with 0.7 actually observed (unchanged) blocks, not preserved",
+        result.verdict == "blocked" and result.stale_declared_keys == ("temperature",),
+    )
+    check(CID, "...and it is in blocking_keys", "temperature" in result.blocking_keys)
+
+    declared_never_observed = DeclaredGenerationChange(
+        compatibility_tuple_sha256=VALID_DIGEST, changed_values={"reasoning_effort": "high"}
+    )
+    result2 = compare(
+        {"temperature": 0.7}, {"temperature": 0.7}, {"temperature": 0.7}, declared_never_observed
+    )
+    check(
+        CID,
+        "a declared key that never appears anywhere in after blocks, not silently ignored",
+        result2.verdict == "blocked" and result2.stale_declared_keys == ("reasoning_effort",),
+    )
+
+    declared_applied = DeclaredGenerationChange(
+        compatibility_tuple_sha256=VALID_DIGEST, changed_values={"temperature": 0.9}
+    )
+    result3 = compare(
+        {"temperature": 0.7}, {"temperature": 0.7}, {"temperature": 0.9}, declared_applied
+    )
+    check(
+        CID,
+        "a declared change that is actually applied is never marked stale",
+        result3.stale_declared_keys == () and result3.verdict == "declared_change",
+    )
+
+
+def test_reason_codes_and_compatibility_tuple_are_stable() -> None:
+    """Round 2 item 5: stable reason codes describing which blocking
+    categories are present, and a declared_change verdict carries the
+    excusing compatibility_tuple_sha256."""
+    dropped_result = compare({"temperature": 0.7}, {"temperature": 0.7}, {})
+    check(
+        CID,
+        "a dropped key gives exactly the dropped reason code",
+        dropped_result.reason_codes == (REASON_GENERATION_CONFIG_DROPPED,),
+    )
+    changed_result = compare({"temperature": 0.7}, {"temperature": 0.7}, {"temperature": 0.8})
+    check(
+        CID,
+        "a changed key gives exactly the changed reason code",
+        changed_result.reason_codes == (REASON_GENERATION_CONFIG_CHANGED,),
+    )
+    inherited_result = compare({}, {}, {"top_p": 1.0})
+    check(
+        CID,
+        "an inherited-default key gives exactly the inherited reason code",
+        inherited_result.reason_codes == (REASON_BRIDGE_DEFAULT_INHERITED,),
+    )
+    mixed_result = compare(
+        {"temperature": 0.7, "seed": 1}, {"temperature": 0.7, "seed": 1}, {"top_p": 1.0}
+    )
+    check(
+        CID,
+        "a dropped-and-inherited mix gives both codes, in stable order",
+        mixed_result.reason_codes
+        == (REASON_GENERATION_CONFIG_DROPPED, REASON_BRIDGE_DEFAULT_INHERITED),
+    )
+    preserved_result = compare({"temperature": 0.7}, {"temperature": 0.7}, {"temperature": 0.7})
+    check(
+        CID,
+        "preserved carries no reason codes and no compatibility tuple",
+        preserved_result.reason_codes == () and preserved_result.compatibility_tuple_sha256 is None,
+    )
+
+    declared = DeclaredGenerationChange(
+        compatibility_tuple_sha256=VALID_DIGEST, changed_values={"temperature": 0.9}
+    )
+    declared_result = compare(
+        {"temperature": 0.7}, {"temperature": 0.7}, {"temperature": 0.9}, declared
+    )
+    check(
+        CID,
+        "a declared_change verdict carries the excusing compatibility_tuple_sha256",
+        declared_result.verdict == "declared_change"
+        and declared_result.compatibility_tuple_sha256 == VALID_DIGEST,
+    )
+    check(
+        CID,
+        "...and no blocking reason code, since nothing is actually blocking",
+        declared_result.reason_codes == (),
+    )
+
+
+def test_cyclic_or_over_deep_values_raise_typed_error() -> None:
+    """Round 2 item 6: a cyclic or over-deep value must raise this
+    module's own typed error, never a bare RecursionError."""
+    cyclic: dict[str, object] = {}
+    cyclic["self"] = cyclic
+    check(
+        CID,
+        "a cyclic value in capture raises GenerationConfigParityError, never RecursionError",
+        raises(lambda: capture_effective_generation_settings({"response_format": cyclic})),
+    )
+    check(
+        CID,
+        "a cyclic value in compare raises GenerationConfigParityError, never RecursionError",
+        raises(
+            lambda: compare(
+                {"response_format": cyclic}, {"response_format": cyclic}, {"response_format": {}}
+            )
+        ),
+    )
+
+    over_deep: dict[str, object] = {}
+    node = over_deep
+    for _ in range(200):
+        node["next"] = {}
+        node = node["next"]  # type: ignore[assignment]
+    check(
+        CID,
+        "an over-deep (but non-cyclic) value also raises the typed error, not RecursionError",
+        raises(lambda: capture_effective_generation_settings({"response_format": over_deep})),
+    )
+
+    reasonable = {"a": {"b": {"c": 1}}}
+    check(
+        CID,
+        "a reasonably-nested value is unaffected by the depth guard",
+        capture_effective_generation_settings({"response_format": reasonable})
+        == {"response_format": reasonable},
+    )
+
+    # Exact boundary (kills the '_depth > MAX -> _depth >= MAX' off-by-one
+    # mutants in both _scrub_content and _exact_equal): depth 64 must never
+    # raise, depth 65 always must.
+    boundary_ok = _nested(64)
+    check(
+        CID,
+        "_scrub_content: exactly the maximum allowed nesting depth does not raise",
+        capture_effective_generation_settings({"response_format": boundary_ok})
+        == {"response_format": boundary_ok},
+    )
+    boundary_too_deep = _nested(65)
+    check(
+        CID,
+        "_scrub_content: one level past the maximum allowed depth raises the typed error",
+        raises(
+            lambda: capture_effective_generation_settings({"response_format": boundary_too_deep})
+        ),
+    )
+    exact_equal_boundary_ok = _nested(64)
+    boundary_compare = compare(
+        {"response_format": exact_equal_boundary_ok},
+        {"response_format": exact_equal_boundary_ok},
+        {"response_format": exact_equal_boundary_ok},
+    )
+    check(
+        CID,
+        "_exact_equal: exactly the maximum allowed nesting depth does not raise",
+        boundary_compare.verdict == "preserved",
+    )
+    exact_equal_too_deep = _nested(65)
+    check(
+        CID,
+        "_exact_equal: one level past the maximum allowed depth raises the typed error",
+        raises(
+            lambda: compare(
+                {"response_format": exact_equal_too_deep},
+                {"response_format": exact_equal_too_deep},
+                {"response_format": exact_equal_too_deep},
+            )
+        ),
+    )
+
+
+def test_scrub_content_recurses_into_lists_tuples_and_preserves_nested_keys() -> None:
+    """Kills the 'disable the list/tuple recursion branch' and 'fold a
+    nested dict key' mutants in _scrub_content: a CONTENT_KEYS leak nested
+    inside a list or tuple element must still be scrubbed, and a nested
+    dict's own key must survive byte-exact, never stripped or lowercased."""
+    canary = "CANARY-r004p1-r2-nested-container"
+    list_settings = capture_effective_generation_settings(
+        {"logit_bias": [{"messages": canary}, {"ok": 1}]}
+    )
+    check(
+        CID,
+        "a CONTENT_KEYS leak nested inside a list element is scrubbed",
+        list_settings == {"logit_bias": [{}, {"ok": 1}]},
+    )
+    tuple_settings = capture_effective_generation_settings(
+        {"logit_bias": ("a", {"messages": canary})}
+    )
+    check(
+        CID,
+        "a CONTENT_KEYS leak nested inside a tuple element is scrubbed",
+        tuple_settings == {"logit_bias": ("a", {})},
+    )
+    key_settings = capture_effective_generation_settings({"response_format": {" Type ": "x"}})
+    check(
+        CID,
+        "a nested dict's own key survives byte-exact, never stripped or lowercased",
+        key_settings == {"response_format": {" Type ": "x"}},
+    )
+    # The nested exclusion check itself (not just the output key) must be
+    # byte-exact: a key that only matches a CONTENT_KEYS member after
+    # folding (case/whitespace) is a different, legitimate key and must
+    # survive, not be wrongly dropped.
+    nested_fold_settings = capture_effective_generation_settings(
+        {"extra_body": {" Messages ": "keep", "messages": "drop"}}
+    )
+    check(
+        CID,
+        "a nested key that only folds to a content key (not an exact match) is kept, "
+        "while the exact 'messages' is scrubbed",
+        nested_fold_settings == {"extra_body": {" Messages ": "keep"}},
+    )
+
+
+def test_approved_and_before_presence_checks_cannot_be_folded_to_mask_a_real_mismatch() -> None:
+    """Kills the 'key -> key.strip().lower()' mutants on `approved_present`
+    and `before_present` in the main comparison loop. Both checks feed a
+    vacuous-true OR (`not approved_present or ...`), so a naive same-case
+    test can't distinguish a folded membership check from a correct one --
+    this needs a real mismatch that a wrongly-vacuous branch would hide."""
+    approved_folded_hides_mismatch = compare({"Alpha": 1}, {}, {"Alpha": 999})
+    check(
+        CID,
+        "a folded approved-presence check would wrongly treat 'Alpha' as absent, hiding "
+        "the real 1-vs-999 mismatch behind a vacuous match",
+        approved_folded_hides_mismatch.verdict == "blocked"
+        and approved_folded_hides_mismatch.changed_keys == ("Alpha",),
+    )
+    before_folded_hides_mismatch = compare({}, {"Alpha": 1}, {"Alpha": 999})
+    check(
+        CID,
+        "a folded before-presence check would wrongly treat 'Alpha' as absent, hiding "
+        "the real 1-vs-999 mismatch behind a vacuous match",
+        before_folded_hides_mismatch.verdict == "blocked"
+        and before_folded_hides_mismatch.changed_keys == ("Alpha",),
+    )
+
+
+def test_compatibility_tuple_sha256_is_never_leaked_on_a_blocked_verdict() -> None:
+    """Kills the 'and -> or' mutant on the compatibility_tuple_sha256
+    ternary: a declared_change that is present but does not actually
+    excuse anything (verdict stays 'blocked') must never leak its digest."""
+    declared = DeclaredGenerationChange(
+        compatibility_tuple_sha256=VALID_DIGEST, changed_values={"unrelated_key": "x"}
+    )
+    result = compare({"temperature": 0.7}, {"temperature": 0.7}, {"temperature": 0.8}, declared)
+    check(
+        CID,
+        "a declared_change that excuses nothing leaves the verdict blocked",
+        result.verdict == "blocked",
+    )
+    check(
+        CID,
+        "...and never leaks compatibility_tuple_sha256 just because declared_change was passed",
+        result.compatibility_tuple_sha256 is None,
+    )
+
+
+def test_declared_change_values_are_frozen_and_deep_copied() -> None:
+    """Round 2 item 6: DeclaredGenerationChange.changed_values is frozen
+    (MappingProxyType) and deep-copied at construction -- mutating the
+    caller's own dict, or writing directly through the attribute, must
+    never change what was already locked in."""
+    source: dict[str, Any] = {"temperature": 0.9, "response_format": {"type": "json"}}
+    declared = DeclaredGenerationChange(
+        compatibility_tuple_sha256=VALID_DIGEST, changed_values=source
+    )
+    source["temperature"] = 0.1
+    source["response_format"]["type"] = "tampered"
+    source["new_key"] = "injected"
+    check(
+        CID,
+        "mutating the caller's own dict after construction never changes changed_values",
+        declared.changed_values["temperature"] == 0.9
+        and declared.changed_values["response_format"] == {"type": "json"}
+        and "new_key" not in declared.changed_values,
+    )
+    check(
+        CID,
+        "changed_values itself refuses a direct write (frozen, MappingProxyType)",
+        raises_any(lambda: declared.changed_values.__setitem__("temperature", 0.2)),  # type: ignore[index]
+    )
+
+
+def test_captured_settings_are_deep_copied() -> None:
+    """Round 2 item 6: capture_effective_generation_settings returns an
+    independent snapshot -- mutating the caller's own request_body after
+    capture must never change the already-captured settings."""
+    body: dict[str, Any] = {
+        "temperature": 0.7,
+        "stop": ["a", "b"],
+        "response_format": {"type": "json"},
+    }
+    settings = capture_effective_generation_settings(body)
+    body["temperature"] = 0.1
+    body["stop"].append("c")
+    body["response_format"]["type"] = "tampered"
+    check(
+        CID,
+        "mutating the caller's request_body after capture never changes the captured settings",
+        settings["temperature"] == 0.7
+        and settings["stop"] == ["a", "b"]
+        and settings["response_format"] == {"type": "json"},
+    )
+    # dict/list are already rebuilt fresh by the recursive scrub, so they
+    # cannot expose a missing leaf-level deepcopy. A genuinely mutable
+    # *leaf* (not a dict/list/tuple) is the only thing that can: a
+    # bytearray is returned as-is without copy.deepcopy, so mutating the
+    # caller's original object would otherwise mutate the captured one too.
+    mutable_leaf_body: dict[str, Any] = {"logit_bias": bytearray(b"abc")}
+    leaf_settings = capture_effective_generation_settings(mutable_leaf_body)
+    mutable_leaf_body["logit_bias"].extend(b"xyz")
+    check(
+        CID,
+        "a mutable non-container leaf (bytearray) is deep-copied, not returned by reference",
+        leaf_settings["logit_bias"] == bytearray(b"abc"),
     )
 
 

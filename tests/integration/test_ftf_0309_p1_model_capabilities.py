@@ -30,6 +30,7 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 import urllib.parse
 import uuid
 from collections.abc import Iterator
@@ -215,6 +216,40 @@ def _artifact(org_id: uuid.UUID, name: str, status: str) -> TrainableArtifact:
 
 
 _DIGEST = "sha256:" + "b" * 64
+
+# Round 3 (QUEUE 0k): the same shared Unicode exact-match variant set the unit
+# suite's own `_unicode_exact_match_variants` uses (tests/tasks/test_ftf_0309_p1.py),
+# exercised here against the REAL get_entry SQL lookup on a live PostgreSQL --
+# a byte/codepoint-exact `=` comparison, never normalised.
+_FULLWIDTH_OFFSET = 0xFF00 - 0x0020  # ASCII 0x21-0x7E -> the fullwidth block
+
+
+def _fullwidth(ch: str) -> str:
+    code = ord(ch)
+    return chr(code + _FULLWIDTH_OFFSET) if 0x21 <= code <= 0x7E else ch
+
+
+def _unicode_exact_match_variants(base: str) -> list[str]:
+    candidates = [
+        base.upper(),
+        base.casefold(),
+        " " + base,
+        base + " ",
+        base + "\t",
+        base + " ",
+        base + "​",
+        base.replace("-", "‐", 1),
+        _fullwidth(base[0]) + base[1:],
+        unicodedata.normalize("NFC", base),
+        unicodedata.normalize("NFD", base),
+        unicodedata.normalize("NFKC", base),
+        unicodedata.normalize("NFKD", base),
+    ]
+    out: list[str] = []
+    for candidate in candidates:
+        if candidate != base and candidate not in out:
+            out.append(candidate)
+    return out
 
 
 def main() -> None:
@@ -429,23 +464,37 @@ def main() -> None:
             and unmapped.json()["catalog_version"] == 0,
         )
 
-        # Exact, case-sensitive alias matching (QUEUE 0k round 2): only the exact spelling
-        # "trainable-alias" was mapped above, against the REAL get_entry SQL lookup.
-        for variant in ("Trainable-Alias", "TRAINABLE-ALIAS", "trainable-alias "):
-            cased = _request(
-                base,
-                "GET",
-                cap_path(org1_id, conn1_id, urllib.parse.quote(variant, safe=""), proj1_id),
-                principal="viewer1",
-            )
+        # Exact, codepoint-exact alias matching (QUEUE 0k round 2, widened round 3): only
+        # the exact spelling "trainable-alias" was mapped and discovered above, against
+        # the REAL get_entry SQL lookup and the REAL classify_training_capability access
+        # check. Round 3 widens round 2's own three case/whitespace variants to the full
+        # shared variant set (case, whitespace, tab, NBSP, zero-width space, a non-ASCII
+        # Unicode hyphen, a fullwidth first character, NFC/NFD/NFKC/NFKD) on both the
+        # plain base alias and a composed-character one.
+        for base_alias in ("trainable-alias", "café-alias"):
+            variants = _unicode_exact_match_variants(base_alias)
             check(
                 CID,
-                f"model_name {variant!r} is not matched to the real 'trainable-alias' mapping "
-                f"on the real server: unknown, null artifact ({cased.status})",
-                cased.status == 200
-                and cased.json()["capability"] == "unknown"
-                and cased.json()["artifact"]["artifact_id"] is None,
+                f"({base_alias!r}) the shared helper produced distinct variants",
+                bool(variants),
             )
+            for variant in variants:
+                cased = _request(
+                    base,
+                    "GET",
+                    cap_path(org1_id, conn1_id, urllib.parse.quote(variant, safe=""), proj1_id),
+                    principal="viewer1",
+                )
+                check(
+                    CID,
+                    f"model_name {variant!r} is not matched to the real {base_alias!r} mapping "
+                    f"on the real server: unknown, null artifact, access not_granted "
+                    f"({cased.status})",
+                    cased.status == 200
+                    and cased.json()["capability"] == "unknown"
+                    and cased.json()["artifact"]["artifact_id"] is None
+                    and cased.json()["access"] == "not_granted",
+                )
         exact = _request(
             base,
             "GET",
@@ -455,7 +504,9 @@ def main() -> None:
         check(
             CID,
             "the exact original spelling still matches on the real server",
-            exact.status == 200 and exact.json()["capability"] == "trainable_open_weight",
+            exact.status == 200
+            and exact.json()["capability"] == "trainable_open_weight"
+            and exact.json()["access"] == "granted",
         )
 
         discovery.calls = 0
