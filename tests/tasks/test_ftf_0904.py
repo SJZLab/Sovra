@@ -1302,6 +1302,62 @@ def test_adversarial_input_through_the_logging_path_is_bounded() -> None:
     )
 
 
+def test_size_and_depth_boundaries() -> None:
+    at_limit = "a" * lr.MAX_TEXT_LENGTH
+    check(
+        "FTF-0904-B1",
+        "text of exactly MAX_TEXT_LENGTH is accepted",
+        lr.redact_text(at_limit) == at_limit,
+    )
+    try:
+        lr.redact_text(at_limit + "a")
+        refused = False
+    except lr.LogRedactionError:
+        refused = True
+    check("FTF-0904-B1", "text one over MAX_TEXT_LENGTH is refused", refused)
+
+    def nested(levels: int) -> object:
+        value: object = "x"
+        for _ in range(levels):
+            value = [value]
+        return value
+
+    check(
+        "FTF-0904-B2",
+        "a container nested _MAX_DEPTH deep is still walked",
+        lr.redact_value(nested(lr._MAX_DEPTH)) == nested(lr._MAX_DEPTH),
+    )
+    deeper = lr.redact_value(nested(lr._MAX_DEPTH + 1))
+    check(
+        "FTF-0904-B2",
+        f"a container past _MAX_DEPTH is redacted whole: {deeper!r}",
+        deeper != nested(lr._MAX_DEPTH + 1) and "x" not in repr(deeper),
+    )
+    cycle: list[object] = []
+    cycle.append(cycle)
+    check(
+        "FTF-0904-B3",
+        f"a self-containing list is cut at the first revisit: {lr.redact_value(cycle)!r}",
+        lr.redact_value(cycle) == [lr.REDACTED],
+    )
+
+
+def test_only_two_element_pairs_are_header_pairs() -> None:
+    for value in ([], ["token"], ["token", "a", "b"], ("password", "p", "q", "r"), [1, "x"]):
+        out = lr.redact_value(value)
+        check("FTF-0904-B4", f"{value!r} must keep its shape, got {out!r}", out == value)
+    check(
+        "FTF-0904-B4",
+        "a 2-element secret pair is redacted",
+        lr.redact_value(["token", "abc"]) == ["token", lr.REDACTED],
+    )
+    check(
+        "FTF-0904-B4",
+        "a 2-element pair with a non-str name is kept",
+        lr.redact_value([1, "abc"]) == [1, "abc"],
+    )
+
+
 def test_three_percent_layers_are_decoded() -> None:
     secret = _PLAIN_SECRETS[0]
     for layers in (1, 2, 3):

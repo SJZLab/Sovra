@@ -247,8 +247,6 @@ def _reveals_secret(segment: str) -> bool:
     """True if any percent-decoded layer (up to three) of `segment` contains a secret shape."""
     layer = segment
     for _ in range(_MAX_DECODE_LAYERS):
-        if "%" not in layer:
-            return False
         layer = unquote(layer)
         if _scan(layer, _BASE64_LAYERS) != layer:
             return True
