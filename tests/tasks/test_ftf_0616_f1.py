@@ -29,11 +29,11 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import test_ftf_0616 as h  # noqa: E402  (the certified FTF-0616 harness, reused verbatim)
-
 import packages.litellm_client.route_attestation as attestation  # noqa: E402
+import test_ftf_0616 as h  # noqa: E402  (the certified FTF-0616 harness, reused verbatim)
 
 judge = h.judge
 FAILURES: list[str] = []
@@ -96,7 +96,11 @@ def test_a_present_header_is_recorded_verbatim() -> None:
     if _PORT == 0:
         return
     result = _grade_with([(_HEADER, "dep-abc123")])
-    check("F1-A", "a present header is recorded verbatim", result.deployment_fingerprint == "dep-abc123")
+    check(
+        "F1-A",
+        "a present header is recorded verbatim",
+        result.deployment_fingerprint == "dep-abc123",
+    )
     check("F1-A", "the verdict is unchanged by the header", result.passed is True)
     longest = "d" * 256
     result = _grade_with([(_HEADER, longest)])
@@ -133,8 +137,15 @@ def test_an_unacceptable_value_is_none() -> None:
     for label, value in bad_values.items():
         result = _grade_with([(_HEADER, value)])
         check("F1-B", f"{label} is None", result.deployment_fingerprint is None)
+
     # direct, because a real HTTP parser may refuse some of these before they reach the grader
-    direct = judge._deployment_fingerprint_from_headers
+    def direct(headers: object) -> object:
+        # a crash is a wrong answer, reported against the criterion rather than as a bare traceback
+        try:
+            return judge._deployment_fingerprint_from_headers(headers)
+        except Exception as exc:  # noqa: BLE001
+            return f"<raised {type(exc).__name__}>"
+
     for label, value in {
         "line separator U+2028": "dep abc",
         "paragraph separator U+2029": "dep abc",
@@ -158,6 +169,21 @@ def test_an_unacceptable_value_is_none() -> None:
         direct({"X-LiteLLM-Model-Id": "one", _HEADER: "two"}) is None,
     )
     check("F1-B", "direct: no headers is None", direct({}) is None)
+
+    class _StrSubclass(str):
+        pass
+
+    check("F1-B", "direct: a str subclass is None", direct({_HEADER: _StrSubclass("dep")}) is None)
+    check(
+        "F1-B",
+        "direct: headers that are not a dict are None",
+        direct([(_HEADER, "a")]) is None and direct(None) is None,
+    )
+    check(
+        "F1-D",
+        "direct: a non-str header name is skipped, not a crash",
+        direct({1: "x", b"x-litellm-model-id": "y", _HEADER: "dep"}) == "dep",
+    )
 
 
 def test_a_non_200_response_never_carries_a_fingerprint() -> None:
@@ -248,7 +274,11 @@ def test_the_no_cache_field_is_sent_exactly_once() -> None:
     sent = json.loads(raw, object_pairs_hook=hook)
     top_level = [key for key, _ in pairs[-1]]
     check("F1-G", "the top-level `cache` key appears exactly once", top_level.count("cache") == 1)
-    check("F1-G", "the cache field is exactly {no-cache: true}", sent.get("cache") == {"no-cache": True})
+    check(
+        "F1-G",
+        "the cache field is exactly {no-cache: true}",
+        sent.get("cache") == {"no-cache": True},
+    )
     check(
         "F1-G",
         "the golden: round 8 keys in round 8 order, then only `cache`",
@@ -258,13 +288,18 @@ def test_the_no_cache_field_is_sent_exactly_once() -> None:
     check(
         "F1-G",
         "removing the one cache key leaves the round-8 request byte-for-byte",
-        json.dumps(round8).encode("utf-8")
-        == raw.replace(b', "cache": {"no-cache": true}', b"", 1),
+        json.dumps(round8).encode("utf-8") == raw.replace(b', "cache": {"no-cache": true}', b"", 1),
     )
-    check("F1-G", "the whole body is exactly the serialization of what was parsed", json.dumps(sent).encode("utf-8") == raw)
+    check(
+        "F1-G",
+        "the whole body is exactly the serialization of what was parsed",
+        json.dumps(sent).encode("utf-8") == raw,
+    )
 
 
 # -- Self-attack: break the production code on disk, confirm this file turns RED ---------
+# Runs last (`test_zz_`): every child process removes the sandbox CA trust on exit, so no live-TLS
+# test may run after the first child.
 
 
 def _red_under_fault(mutated_src: str, expect: str) -> bool:
@@ -291,14 +326,20 @@ FAULTS: tuple[tuple[str, str, str, str], ...] = (
     (
         "F1-A",
         "the header is ignored (helper always None)",
-        "    target = _DEPLOYMENT_FINGERPRINT_HEADER\n",
-        "    return None\n    target = _DEPLOYMENT_FINGERPRINT_HEADER\n",
+        "    values = [\n",
+        "    return None\n    values = [\n",
     ),
     (
         "F1-D",
         "substring match on the header name",
-        "if name.isascii() and name.lower() == target:",
-        "if target in name.lower():",
+        "name.lower() == _DEPLOYMENT_FINGERPRINT_HEADER",
+        "_DEPLOYMENT_FINGERPRINT_HEADER in name.lower()",
+    ),
+    (
+        "F1-D",
+        "a non-str header name crashes the lookup",
+        "if isinstance(name, str) and name.lower()",
+        "if name.lower()",
     ),
     (
         "F1-C",
@@ -308,38 +349,36 @@ FAULTS: tuple[tuple[str, str, str, str], ...] = (
     ),
     (
         "F1-B",
-        "the length bound is dropped",
+        "the upper length bound is dropped",
         "len(value) <= _DEPLOYMENT_FINGERPRINT_MAX_LENGTH",
-        "True",
+        "len(value) >= 1",
     ),
+    ("F1-B", "the empty-value check is dropped", "1 <= len(value) <=", "len(value) <="),
     (
         "F1-B",
         "the character-category check is dropped",
-        "unicodedata.category(ch) not in _UNSAFE_FINGERPRINT_CATEGORIES",
+        "all(unicodedata.category(ch) not in _UNSAFE_FINGERPRINT_CATEGORIES for ch in value)",
         "True",
     ),
+    ("F1-B", "the ASCII check is dropped", "        and value.isascii()\n", ""),
+    ("F1-B", "the exact-str check is dropped", "type(value) is str", "True"),
     (
         "F1-B",
-        "the ASCII check is dropped",
-        "value.isascii()",
-        "True",
+        "an ambiguous pair of headers picks a winner",
+        "if len(values) != 1:",
+        "if len(values) < 1:",
     ),
-    (
-        "F1-G",
-        "the cache field is dropped",
-        '            "cache": {"no-cache": True},\n',
-        "",
-    ),
+    ("F1-G", "the cache field is dropped", '            "cache": {"no-cache": True},\n', ""),
     (
         "F1-F",
         "the fingerprint is not carried on the 200 path",
-        "    make = partial(make, deployment_fingerprint=",
-        "    make = partial(make, _unused=",
+        "make, deployment_fingerprint=_deployment_fingerprint_from_headers(response.headers)",
+        "make, deployment_fingerprint=None",
     ),
 )
 
 
-def test_self_attack_each_fault_turns_this_file_red() -> None:
+def test_zz_self_attack_each_fault_turns_this_file_red() -> None:
     if _PORT == 0 or NO_FAULTS:
         return
     src = MODULE_PATH.read_text()

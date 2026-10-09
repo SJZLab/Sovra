@@ -96,6 +96,7 @@ import math
 import re
 import socket
 import ssl
+import unicodedata
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
@@ -173,6 +174,13 @@ def _json_schema_request(criteria: tuple[str, ...]) -> dict[str, Any]:
 
 
 _MAX_TOKENS = 512
+
+# The same documented LiteLLM response header `route_attestation` reads. Compared as exact
+# lower-case ASCII, never by substring.
+_DEPLOYMENT_FINGERPRINT_HEADER = "x-litellm-model-id"
+# The width of `model_versions.observed_deployment_fingerprint`.
+_DEPLOYMENT_FINGERPRINT_MAX_LENGTH = 256
+_UNSAFE_FINGERPRINT_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
 
 _CANDIDATE_TAG_OPEN = "<candidate_response>"
 _CANDIDATE_TAG_CLOSE = "</candidate_response>"
@@ -377,6 +385,9 @@ class LlmJudgeResult:
     latency_ms: float | None
     detail: str
     judged_at: datetime
+    # Which gateway deployment served the content-bearing call (FTF-0616-F1). `None` unless a 200
+    # response carried an acceptable `x-litellm-model-id`; never fabricated.
+    deployment_fingerprint: str | None = None
 
     @property
     def passed(self) -> bool | None:
@@ -387,6 +398,32 @@ class LlmJudgeResult:
         if self.state is LlmJudgeState.FAILED:
             return False
         return None
+
+
+def _deployment_fingerprint_from_headers(headers: object) -> str | None:
+    """The `x-litellm-model-id` response header, or `None`. The name is matched
+    case-insensitively against exact ASCII (`GuardedResponse.headers` keeps the casing the
+    server sent); two differently-cased copies are ambiguous, so neither wins. The value must
+    be an exact `str` of 1..256 ASCII characters with no control, format or line/paragraph
+    separator character."""
+    if not isinstance(headers, dict):
+        return None
+    values = [
+        value
+        for name, value in headers.items()
+        if isinstance(name, str) and name.lower() == _DEPLOYMENT_FINGERPRINT_HEADER
+    ]
+    if len(values) != 1:
+        return None
+    value = values[0]
+    if (
+        type(value) is str
+        and 1 <= len(value) <= _DEPLOYMENT_FINGERPRINT_MAX_LENGTH
+        and value.isascii()
+        and all(unicodedata.category(ch) not in _UNSAFE_FINGERPRINT_CATEGORIES for ch in value)
+    ):
+        return value
+    return None
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -605,6 +642,7 @@ def _result(
     usage: ChatUsage | None = None,
     latency_ms: float | None = None,
     detail: str = "",
+    deployment_fingerprint: str | None = None,
 ) -> LlmJudgeResult:
     return LlmJudgeResult(
         state=state,
@@ -620,6 +658,7 @@ def _result(
         latency_ms=latency_ms,
         detail=detail,
         judged_at=judged_at,
+        deployment_fingerprint=deployment_fingerprint,
     )
 
 
@@ -739,6 +778,8 @@ def grade_llm_judge(
             "max_tokens": _MAX_TOKENS,
             "stream": False,
             "response_format": _json_schema_request(rubric.criteria),
+            # Section 3.5: semantic caching is disabled for evaluation routes.
+            "cache": {"no-cache": True},
         }
     ).encode("utf-8")
 
@@ -777,6 +818,10 @@ def grade_llm_judge(
             detail=f"gateway returned unexpected status {response.status}",
         )
 
+    # Only a 200 reaches here, so only a 200's header is ever read.
+    make = partial(
+        make, deployment_fingerprint=_deployment_fingerprint_from_headers(response.headers)
+    )
     parsed = _parse_structured_content(response.body)
     if parsed is None:
         return make(
