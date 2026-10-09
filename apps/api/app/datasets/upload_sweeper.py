@@ -210,10 +210,6 @@ def _database_expiry_lookup(database_url: str) -> tuple[ExpiryLookup, Callable[[
     return lookup, engine.dispose
 
 
-def _no_cleanup() -> None:
-    return None
-
-
 def main() -> int:
     """Sweeps once using the API's own `SOVRA_UPLOAD_S3_*` environment and,
     when `SOVRA_DATABASE_URL` is set, the upload sessions' own expiry. Exit 0
@@ -226,7 +222,7 @@ def main() -> int:
         print("upload sweeper: SOVRA_UPLOAD_S3_* is not configured", file=sys.stderr)
         return 2
     lookup: ExpiryLookup | None = None
-    cleanup: Callable[[], None] = _no_cleanup
+    cleanup: Callable[[], None] | None = None
     database_url = os.environ.get("SOVRA_DATABASE_URL")
     try:
         if database_url:
@@ -241,7 +237,8 @@ def main() -> int:
         print(f"upload sweeper: session lookup failed ({type(exc).__name__})", file=sys.stderr)
         return 1
     finally:
-        cleanup()
+        if cleanup is not None:
+            cleanup()
     print(
         f"upload sweeper: listed={result.listed} aborted={result.aborted} kept={result.kept} "
         f"undated={result.undated} foreign={result.foreign} pages={result.pages} "
