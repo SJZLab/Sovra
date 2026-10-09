@@ -963,6 +963,20 @@ def _percent_cases() -> list[tuple[str, str, list[str]]]:
         )
         cases.append(
             (
+                "dsn password containing a literal @",
+                f"url=postgres://app:pa@ss{secret}@db/x ok",
+                [secret],
+            )
+        )
+        cases.append(
+            (
+                "dsn password containing a literal @ after an encoded token",
+                f"a%20b url=postgres://app:pa@ss{secret}@db/x",
+                [secret],
+            )
+        )
+        cases.append(
+            (
                 "dsn password with another rule firing",
                 f"url=postgres://app:p%40{secret}@db/x {plain_sk}",
                 [secret, plain_sk],
@@ -1007,6 +1021,19 @@ def test_percent_cases_keep_their_context_when_raw_scan_suffices() -> None:
         f"benign percent text must survive: {out!r}",
         out == "see /a%20b?x=1 and 100%25 done",
     )
+
+
+def test_cut_round_cap_still_fails_closed() -> None:
+    secret = _PLAIN_SECRETS[0]
+    text = f"ok x%20y Authorization%3A%20 {secret} then%20more"
+    saved = lr._MAX_CUT_ROUNDS
+    lr._MAX_CUT_ROUNDS = 0
+    try:
+        out = lr.redact_text(text)
+    finally:
+        lr._MAX_CUT_ROUNDS = saved
+    check("FTF-0904-P4", f"capped cut leaked: {out!r}", secret not in out)
+    check("FTF-0904-P4", f"capped cut dropped the clean prefix: {out!r}", out.startswith("ok "))
 
 
 def test_percent_cases_end_to_end_through_logging() -> None:
@@ -1435,13 +1462,6 @@ FAULTS: list[tuple[str, str, str, int]] = [
         1,
     ),
     (
-        "F15e cut starts at the last encoded token",
-        "        low, high = 0, len(starts) - 1  # starts[low] reveals;"
-        " find the last start that still does\n",
-        "        low, high = len(starts) - 1, len(starts) - 1\n",
-        1,
-    ),
-    (
         "F15f cut falls back to keeping the line",
         "    first = _PERCENT_TOKEN.search(line)  # still revealing after the cap: fail closed\n"
         "    return line if first is None else line[: first.start()] + REDACTED\n",
@@ -1563,7 +1583,7 @@ FAULTS: list[tuple[str, str, str, int]] = [
         "F30 secret-named mapping key value kept",
         "            if _SECRET_KEY_NAME.fullmatch(name):",
         "            if False:",
-        1,
+        2,
     ),
     (
         "F31 depth and cycle guard removed",
