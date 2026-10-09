@@ -60,6 +60,7 @@ from packages.security.external_provider_denial import (  # noqa: E402
     ExternalProviderDecision,
     ExternalProviderDeniedError,
     ExternalProviderRequest,
+    InvalidProviderRequestError,
     ProviderApproval,
     authorize_external_provider,
 )
@@ -360,6 +361,39 @@ def main() -> None:
         "by the enclosing tenant_scoped_session exactly as if no denial had occurred)",
         found is None,
     )
+
+    # -- 7. A real session with no tenant context bound at all (never opened
+    # through tenant_scoped_session) is a typed refusal, never a crash and
+    # never a silently-allowed decision.
+    with Session(app_engine) as bare_session:
+        try:
+            authorize_external_provider(
+                _request(profile="zero_egress"),
+                _approval(),
+                AuditContext(
+                    bare_session,
+                    org1_id,
+                    "system",
+                    "actor-no-ctx",
+                    f"req-noctx-{uuid.uuid4().hex[:8]}",
+                ),
+            )
+            check(
+                "FTF-0908-R3-3", "a session with no tenant context is refused, not allowed", False
+            )
+        except InvalidProviderRequestError as exc:
+            check(
+                "FTF-0908-R3-3",
+                f"typed refusal, not a crash (got {exc.code})",
+                exc.code == "external_provider_invalid_request",
+            )
+        except ExternalProviderDeniedError:
+            check(
+                "FTF-0908-R3-3",
+                "a session with no tenant context raises InvalidProviderRequestError, "
+                "not a denial",
+                False,
+            )
 
     _finish()
 
