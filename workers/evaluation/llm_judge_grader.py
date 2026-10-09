@@ -87,6 +87,17 @@ sibling grader in this directory -- Section 25's evaluation runtime loop
 (the engine that would call a grader after a candidate turn) is not owned
 by any dependency-ready task yet, so `proving_symbol` stays blank and this
 module adds no live FastAPI route or worker job.
+
+FTF-0616-F1 (follow-up, additive only): every judge request now also carries
+LiteLLM's own documented request-level `"cache": {"no-cache": true}` field
+(the same field FTF-H005's `attest_route` already sends), and
+`LlmJudgeResult.deployment_fingerprint` records the real `x-litellm-model-id`
+response header -- which deployment actually served the call, distinct from
+the `model` alias echoed in `resolved_model` -- on every genuine 200
+response, `None` on every other path. FTF-0617 compares this value by exact
+`==` against an approval's pinned fingerprint to detect a silent fallback;
+nothing in this module's own refusal/calibration/echo-matching/schema
+behaviour changes.
 """
 
 from __future__ import annotations
@@ -96,6 +107,7 @@ import math
 import re
 import socket
 import ssl
+import unicodedata
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
@@ -136,6 +148,21 @@ _DEFAULT_TIMEOUT_SECONDS = 15.0
 # only the OpenBao-backed reference shape FTF-0202 actually resolves today.
 _SUPPORTED_SECRET_REF_PREFIX = "openbao://"
 _BLANK_PATTERN = re.compile(r"\s*")
+
+# Same documented header and the same exact lower-case-ASCII lookup as
+# `route_attestation._deployment_fingerprint_from_headers` -- never a
+# substring match (a look-alike name like "x-litellm-model-id-x" or
+# "x-litellm-model" never matches). Duplicated here rather than
+# cross-imported, same disclosed independent-module convention this file's
+# own docstring already states for `real_structured_output_probe.py`.
+_DEPLOYMENT_FINGERPRINT_HEADER = "x-litellm-model-id"
+_DEPLOYMENT_FINGERPRINT_MAX_LENGTH = 256
+# The width of `model_versions.observed_deployment_fingerprint` (migration
+# 0027); Cc/Cf/Zl/Zp characters (control, format, line/paragraph separator --
+# e.g. a bidi mark or U+2029) are refused rather than stored, since FTF-0617
+# will compare this value by exact `==` and must never be fooled by an
+# invisible character.
+_FORBIDDEN_FINGERPRINT_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
 
 VERDICTS = ("pass", "fail")
 CANDIDATE_RESPONSE_MAX_LENGTH = 65536  # a bounded budget, not an unbounded inference call
@@ -377,6 +404,7 @@ class LlmJudgeResult:
     latency_ms: float | None
     detail: str
     judged_at: datetime
+    deployment_fingerprint: str | None = None
 
     @property
     def passed(self) -> bool | None:
@@ -542,6 +570,30 @@ def _classify_rejection(body: bytes) -> tuple[LlmJudgeState, str]:
     )
 
 
+def _deployment_fingerprint_from_headers(headers: dict[str, str]) -> str | None:
+    """Reads the real `x-litellm-model-id` response header LiteLLM's proxy
+    sets to the specific backing deployment that actually answered, never
+    fabricated when absent or malformed. The lookup is case-insensitive on
+    the header *name* (HTTP header names are case-insensitive; `headers`
+    preserves the casing the server actually sent) but exact on the whole
+    name -- no substring/prefix match. The *value* must be an exact `str`
+    of 1..256 characters with no Cc/Cf/Zl/Zp character; any other shape
+    (absent, empty, over-length, or containing a control/format/separator
+    character) is `None`, never partially accepted or truncated."""
+    target = _DEPLOYMENT_FINGERPRINT_HEADER.lower()
+    for name, value in headers.items():
+        if name.lower() != target:
+            continue
+        if not isinstance(value, str) or not (
+            1 <= len(value) <= _DEPLOYMENT_FINGERPRINT_MAX_LENGTH
+        ):
+            return None
+        if any(unicodedata.category(ch) in _FORBIDDEN_FINGERPRINT_CATEGORIES for ch in value):
+            return None
+        return value
+    return None
+
+
 def _resolve_inference_key(
     secret_ref: str, *, secret_config: OpenBaoConfig | None, now: datetime
 ) -> tuple[str, None, str] | tuple[None, LlmJudgeState, str]:
@@ -605,6 +657,7 @@ def _result(
     usage: ChatUsage | None = None,
     latency_ms: float | None = None,
     detail: str = "",
+    deployment_fingerprint: str | None = None,
 ) -> LlmJudgeResult:
     return LlmJudgeResult(
         state=state,
@@ -620,6 +673,7 @@ def _result(
         latency_ms=latency_ms,
         detail=detail,
         judged_at=judged_at,
+        deployment_fingerprint=deployment_fingerprint,
     )
 
 
@@ -739,6 +793,12 @@ def grade_llm_judge(
             "max_tokens": _MAX_TOKENS,
             "stream": False,
             "response_format": _json_schema_request(rubric.criteria),
+            # LiteLLM's own documented semantic/response-cache bypass field
+            # (the same field FTF-H005's `attest_route` already sends):
+            # evaluation routes must never answer a judge call from cache
+            # (Section 3.5), and a cached reply could carry a stale
+            # deployment fingerprint that never reflects the real call.
+            "cache": {"no-cache": True},
         }
     ).encode("utf-8")
 
@@ -777,12 +837,20 @@ def grade_llm_judge(
             detail=f"gateway returned unexpected status {response.status}",
         )
 
+    # Read only on a genuine 200: every earlier return above (guard/policy
+    # failure, 401/403, 400, any other non-200 status) already returned
+    # without reaching here, so this can never be read from a rejection or
+    # error body (Section 3.5 -- a deployment identity must come from the
+    # real content-bearing response, never an error path).
+    deployment_fingerprint = _deployment_fingerprint_from_headers(response.headers)
+
     parsed = _parse_structured_content(response.body)
     if parsed is None:
         return make(
             LlmJudgeState.MALFORMED_RESPONSE,
             latency_ms=latency_ms,
             detail="gateway response was not a valid chat completion",
+            deployment_fingerprint=deployment_fingerprint,
         )
     content, resolved_model, usage = parsed
     # An absent or non-string `model` echo is `resolved_model is None`: the route
@@ -797,6 +865,7 @@ def grade_llm_judge(
             usage=usage,
             latency_ms=latency_ms,
             detail="gateway response carried no model echo; the route identity is unverifiable",
+            deployment_fingerprint=deployment_fingerprint,
         )
     if (
         resolved_model not in approved_judge_model_ids
@@ -814,6 +883,7 @@ def grade_llm_judge(
             usage=usage,
             latency_ms=latency_ms,
             detail="gateway resolved the request to a model outside the approved judge set",
+            deployment_fingerprint=deployment_fingerprint,
         )
 
     try:
@@ -826,6 +896,7 @@ def grade_llm_judge(
             usage=usage,
             latency_ms=latency_ms,
             detail="gateway response content did not parse as strict JSON",
+            deployment_fingerprint=deployment_fingerprint,
         )
     if (
         not isinstance(decoded, dict)
@@ -840,6 +911,7 @@ def grade_llm_judge(
             usage=usage,
             latency_ms=latency_ms,
             detail="gateway response content did not validate against the verdict schema",
+            deployment_fingerprint=deployment_fingerprint,
         )
 
     return make(
@@ -855,4 +927,5 @@ def grade_llm_judge(
         usage=usage,
         latency_ms=latency_ms,
         detail="judge responded with a valid verdict",
+        deployment_fingerprint=deployment_fingerprint,
     )
