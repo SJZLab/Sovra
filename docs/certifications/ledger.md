@@ -10790,3 +10790,10 @@ producer session matches the certifier.
   change passes as preserved (G1); int-key logit_bias entries dropped (G2); bare TypeError/KeyError (G3); inexact set
   and mapping compares (G4); further content keys captured verbatim (G5). Ruling: allow-list capture with digests.
 - Pending: FTF-0501 r2 (#658), FTF-R005 (#674); queued next: FTF-R004-P2 (#677).
+
+## 2026-10-09T12:21Z — RETURNED: FTF-0501 (r3, API half)
+- **FTF-0501: RETURNED** (round 2 → 3; #658, 9149174209a0672193a37d8757b16b5c29e22a9d). Independent verifier on PG16 as
+  sovra_app plus bounded real SeaweedFS: XLSX package check, the flaky refusal (12/12 green), the real-route CI job and
+  proving_symbol hold. Reproduced: the §67.5 sweeper aborts nothing on SeaweedFS (no Initiated, exits 0, one unmarked
+  page); an unbounded central-directory read (heap ~3x the object); a UTF-16 DTD/ENTITY bypass that let an entity-typed
+  workbook become an accepted Dataset version on the real routes. GREEN: the three §67.3 bound values (F5, F18, F19).
