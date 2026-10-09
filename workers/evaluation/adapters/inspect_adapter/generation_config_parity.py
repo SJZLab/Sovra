@@ -10,13 +10,29 @@ Acceptance ("Compare effective target generation settings before and after
 the Inspect bridge; preserve the approved temperature/top_p/token/reasoning
 settings or record an explicit candidate configuration change in the locked
 compatibility tuple. Do not silently inherit bridge defaults."):
-`capture_effective_generation_settings` reads only the generation-settings
-keys of an OpenAI-compatible chat/responses body -- it never reads
-`messages`, `tools`, `input`, `model` or any other content/identity-bearing
-key (`CONTENT_KEYS`), so the comparator can never surface prompt or tool
-content even if a caller hands it a full request body. `compare_generation_
-parity` then compares the approved baseline, the settings observed just
-before the bridge runs and the settings observed just after it, key by key.
+`capture_effective_generation_settings` takes an OpenAI-compatible
+chat/responses body and keeps only what is safe and needed to detect a
+changed setting: a top-level key named in `GENERATION_SETTINGS_KEYS` (an
+allow-list) is kept verbatim; a key in `CONTENT_KEYS` (`messages`, `input`,
+`tools`, `model`, ...) is never read; any other key is not kept verbatim
+but replaced by a `ContentDigest` (the sha256 of the value's canonical
+form), so a bridge that adds, drops or rewrites an unrecognised parameter
+is still seen as a difference without the value being captured. `extra_body`
+is handled the same way one level down (`EXTRA_BODY_SETTINGS_KEYS`).
+Round 2's deny-list could not be completed (each review round found more
+missed content keys) and it deleted content-named keys at any depth, which
+also erased real JSON-schema properties named `model`, `input` or `user`;
+the allow-list never looks at key names inside a kept value, so a changed
+`response_format` schema is a visible change. `compare_generation_parity`
+then compares the approved baseline, the settings observed just before the
+bridge runs and the settings observed just after it, key by key.
+
+Values are limited to None, bool, int, float, str, bytes, `ContentDigest`
+and list/tuple/dict of those (dict keys are scalars, kept and compared by
+exact type, so `{50256: -100.0}` is not `{"50256": -100.0}`). Any other type
+(a set, a non-dict mapping, a generator, a lock, an object with its own
+`__eq__`) raises `GenerationConfigParityError` instead of being copied or
+compared by Python `==`.
 
 Negative acceptance ("Reject silent generation-config dropping"): a key
 present in `approved`/`observed_before` that is missing, or has a different
@@ -43,9 +59,10 @@ pinned to a locked `compatibility_tuple_sha256` (hex64) that names the
 tuple recording the change -- a declared change with no digest is refused
 outright, never treated as an ambient default.
 
-Unknown or malformed input (a non-mapping, a non-string key, a malformed
-`DeclaredGenerationChange`) raises `GenerationConfigParityError`. It never
-raises bare `TypeError`/`KeyError` and never resolves to a passing verdict.
+Unknown or malformed input (a non-mapping, a non-string key, an
+unsupported value type, a malformed `DeclaredGenerationChange`) raises
+`GenerationConfigParityError`. It never raises bare `TypeError`/`KeyError`
+and never resolves to a passing verdict.
 
 Round 2 (L2 return, 2026-10-09T07:48Z): a key is "preserved" only when
 *every* value this module actually holds for it -- `approved` and, when
@@ -72,6 +89,12 @@ blocking categories are present, and a `declared_change` verdict carries
 the excusing `compatibility_tuple_sha256` so a caller never has to
 re-derive why a blocked-looking difference actually passed.
 
+Round 3 (L2 return, 2026-10-09T12:10Z): capture switched from a content-key
+deny-list to the allow-list plus digest described above; nested non-string
+keys are kept; unsupported value types and any copy failure raise the typed
+error; set/frozenset/non-dict mappings are refused rather than compared
+loosely.
+
 No live caller yet: the Inspect runtime bridge that calls this module is
 FTF-R004-P3 (not yet dependency-ready). `workers/evaluation` is this
 repository's real evaluation-worker root; no schema change, no new runtime
@@ -80,7 +103,7 @@ dependency, no network call.
 
 from __future__ import annotations
 
-import copy
+import hashlib
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -88,10 +111,12 @@ from types import MappingProxyType
 
 __all__ = [
     "CONTENT_KEYS",
+    "EXTRA_BODY_SETTINGS_KEYS",
     "GENERATION_SETTINGS_KEYS",
     "REASON_BRIDGE_DEFAULT_INHERITED",
     "REASON_GENERATION_CONFIG_CHANGED",
     "REASON_GENERATION_CONFIG_DROPPED",
+    "ContentDigest",
     "DeclaredGenerationChange",
     "GenerationConfigParityError",
     "GenerationParityResult",
@@ -112,10 +137,8 @@ REASON_GENERATION_CONFIG_DROPPED = "generation_config_dropped"
 REASON_GENERATION_CONFIG_CHANGED = "generation_config_changed"
 REASON_BRIDGE_DEFAULT_INHERITED = "bridge_default_inherited"
 
-# Named generation-settings keys this module documents by name. Any other
-# top-level key not in CONTENT_KEYS is still captured verbatim (a forward-
-# compatible, unknown generation setting) -- naming these is documentation,
-# not a filter.
+# The top-level allow-list: only these keys are captured verbatim. Every
+# other non-content key is captured as a ContentDigest, never verbatim.
 GENERATION_SETTINGS_KEYS = (
     "temperature",
     "top_p",
@@ -131,13 +154,37 @@ GENERATION_SETTINGS_KEYS = (
     "tool_choice",
     "parallel_tool_calls",
     "response_format",
+    "text",
+    "logit_bias",
+    "logprobs",
+    "top_logprobs",
+    "n",
+    "top_k",
+    "min_p",
+    "repetition_penalty",
+    "service_tier",
+    "truncation",
+    "verbosity",
+)
+
+# `extra_body` is a passthrough container: its children are captured verbatim
+# only when named here (the sampling and guided-decoding knobs a vLLM-style
+# server accepts); anything else in it is a ContentDigest.
+EXTRA_BODY_SETTINGS_KEYS = (
+    *GENERATION_SETTINGS_KEYS,
+    "guided_json",
+    "guided_regex",
+    "guided_choice",
+    "guided_grammar",
+    "guided_decoding_backend",
 )
 
 # Keys that carry prompt/tool content or request identity/routing, never a
-# generation setting. Never captured by capture_effective_generation_settings,
-# whatever else is present alongside them -- at the top level, and (via
-# _scrub_content) at any nesting depth, since a passthrough container key
-# such as `extra_body` can carry a nested `messages` of its own.
+# generation setting. Never read by capture_effective_generation_settings,
+# not even as a digest -- at the top level and directly inside `extra_body`
+# (a passthrough container that can carry a `messages` of its own). They are
+# not looked for inside a kept value: a JSON-schema property that happens to
+# be named `model` is part of the setting, not content.
 CONTENT_KEYS = frozenset(
     {
         "messages",
@@ -165,83 +212,149 @@ class GenerationConfigParityError(ValueError):
     inside GenerationParityResult, not an error."""
 
 
+@dataclass(frozen=True)
+class ContentDigest:
+    """The sha256 of a value's canonical form, held instead of the value."""
+
+    sha256: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.sha256, str) or not _HEX64.fullmatch(self.sha256):
+            raise GenerationConfigParityError("sha256 must be a lowercase hex64 string")
+
+
+_SCALAR_TYPES = (type(None), bool, int, float, str, bytes, ContentDigest)
+
+
+def _check_depth(depth: int) -> None:
+    if depth > _MAX_NESTING_DEPTH:
+        raise GenerationConfigParityError(
+            "value nesting exceeds the maximum depth (cyclic or over-deep structure)"
+        )
+
+
 def _validate_settings_mapping(value: object, *, name: str) -> Mapping[str, object]:
     if not isinstance(value, Mapping):
         raise GenerationConfigParityError(f"{name} must be a mapping")
     for key in value:
-        if not isinstance(key, str) or key == "":
+        if type(key) is not str or key == "":
             raise GenerationConfigParityError(f"every {name} key must be a non-empty string")
     return value
 
 
-def _scrub_content(value: object, *, _depth: int = 0) -> object:
-    """Recursively rebuilds `value`, dropping any CONTENT_KEYS key at any
-    nesting depth (so a passthrough `extra_body: {"messages": [...]}`
-    cannot leak prompt content just because `extra_body` itself is a
-    legitimate, captured settings key), and deep-copies every leaf so the
-    returned settings can never be mutated by a later change to the
-    caller's own request_body object."""
-    if _depth > _MAX_NESTING_DEPTH:
-        raise GenerationConfigParityError(
-            "value nesting exceeds the maximum depth (cyclic or over-deep structure)"
+def _copy_value(value: object, *, _depth: int = 0) -> object:
+    """An independent copy of `value`, rebuilt only from the supported exact
+    types. Nothing is deep-copied by reflection, so no `__deepcopy__`,
+    `__reduce__` or `__eq__` of a caller object ever runs, and an
+    unsupported type (a set, a non-dict mapping, a generator, a lock, a
+    subclass) raises this module's own error naming only the type."""
+    _check_depth(_depth)
+    value_type = type(value)
+    if value_type in _SCALAR_TYPES:
+        return value
+    if value_type is list:
+        return [_copy_value(item, _depth=_depth + 1) for item in value]  # type: ignore[attr-defined]
+    if value_type is tuple:
+        return tuple(_copy_value(item, _depth=_depth + 1) for item in value)  # type: ignore[attr-defined]
+    if value_type is dict:
+        copied: dict[object, object] = {}
+        for key, item in value.items():  # type: ignore[attr-defined]
+            if type(key) not in _SCALAR_TYPES:
+                raise GenerationConfigParityError(
+                    f"unsupported mapping key type {type(key).__name__}"
+                )
+            copied[key] = _copy_value(item, _depth=_depth + 1)
+        return copied
+    raise GenerationConfigParityError(f"unsupported value type {value_type.__name__}")
+
+
+def _copy_settings(value: object, *, name: str) -> dict[str, object]:
+    validated = _validate_settings_mapping(value, name=name)
+    return {key: _copy_value(item) for key, item in validated.items()}
+
+
+def _tagged(value: object) -> str:
+    """A canonical, type-tagged text form of an already-copied value (so `1`,
+    `True`, `1.0` and `"1"` all digest differently, and dict order is
+    irrelevant). Depth was already bounded by `_copy_value`."""
+    value_type = type(value)
+    if value_type is dict:
+        entries = sorted(
+            f"{_tagged(key)}:{_tagged(item)}"
+            for key, item in value.items()  # type: ignore[attr-defined]
         )
-    if isinstance(value, Mapping):
-        return {
-            key: _scrub_content(val, _depth=_depth + 1)
-            for key, val in value.items()
-            if isinstance(key, str) and key not in CONTENT_KEYS
-        }
-    if isinstance(value, list):
-        return [_scrub_content(item, _depth=_depth + 1) for item in value]
-    if isinstance(value, tuple):
-        return tuple(_scrub_content(item, _depth=_depth + 1) for item in value)
-    return copy.deepcopy(value)
+        return "d{" + ",".join(entries) + "}"
+    if value_type is list:
+        return "l[" + ",".join(_tagged(item) for item in value) + "]"  # type: ignore[attr-defined]
+    if value_type is tuple:
+        return "t(" + ",".join(_tagged(item) for item in value) + ")"  # type: ignore[attr-defined]
+    return f"{value_type.__name__}:{value!r}"
+
+
+def _digest(value: object) -> ContentDigest:
+    copied = _copy_value(value)
+    return ContentDigest(hashlib.sha256(_tagged(copied).encode("utf-8")).hexdigest())
+
+
+def _capture_extra_body(extra_body: Mapping[object, object]) -> dict[str, object]:
+    captured: dict[str, object] = {}
+    for key, value in extra_body.items():
+        if type(key) is not str:
+            raise GenerationConfigParityError("every extra_body key must be a string")
+        if key in CONTENT_KEYS:
+            continue
+        if key in EXTRA_BODY_SETTINGS_KEYS:
+            captured[key] = _copy_value(value)
+        else:
+            captured[key] = _digest(value)
+    return captured
 
 
 def capture_effective_generation_settings(
     request_body: Mapping[str, object],
 ) -> Mapping[str, object]:
-    """Reads only the generation-settings keys of an OpenAI-compatible
-    chat/responses request body. `messages`, `tools`, `input`, `model`,
-    `instructions`, `prompt`, `prediction`, `conversation`,
-    `previous_response_id` and the rest of CONTENT_KEYS are never read --
-    at the top level or nested inside a kept key such as `extra_body` --
-    whatever they contain. Every returned value is an independent deep
-    copy of what the caller passed."""
+    """Reduces an OpenAI-compatible chat/responses request body to its
+    generation settings. A top-level key in GENERATION_SETTINGS_KEYS is kept
+    verbatim (an independent copy); a key in CONTENT_KEYS is never read; any
+    other key is kept only as a ContentDigest. `extra_body` is reduced the
+    same way against EXTRA_BODY_SETTINGS_KEYS. This is not a copy of the
+    request body: prompt, tool and identity content never survives."""
     validated = _validate_settings_mapping(request_body, name="request_body")
     settings: dict[str, object] = {}
     for key, value in validated.items():
         if key in CONTENT_KEYS:
             continue
-        settings[key] = _scrub_content(value)
+        if key == "extra_body" and isinstance(value, Mapping):
+            settings[key] = _capture_extra_body(value)
+        elif key in GENERATION_SETTINGS_KEYS:
+            settings[key] = _copy_value(value)
+        else:
+            settings[key] = _digest(value)
     return settings
 
 
 def _exact_equal(left: object, right: object, *, _depth: int = 0) -> bool:
-    """`0.7 != "0.7"` and `True != 1`: exact type, not merely Python `==`
-    (which treats `True == 1`). Recurses into dict/list/tuple so a changed
+    """`0.7 != "0.7"`, `True != 1`, `{1: x} != {True: x}`: exact type, not
+    merely Python `==`. Recurses into dict/list/tuple so a changed
     `response_format` shape or `stop` list is caught, not waved through by
-    `==` on the outer container alone. A cyclic or over-deep structure
-    raises this module's own typed error rather than a bare
-    RecursionError."""
-    if _depth > _MAX_NESTING_DEPTH:
-        raise GenerationConfigParityError(
-            "value nesting exceeds the maximum depth (cyclic or over-deep structure)"
-        )
+    `==` on the outer container alone. Both sides have already been through
+    `_copy_value`, so only the supported exact types reach here. A cyclic or
+    over-deep structure raises this module's own typed error."""
+    _check_depth(_depth)
     if type(left) is not type(right):
         return False
-    if isinstance(left, dict):
-        right_dict = right if isinstance(right, dict) else {}
-        return left.keys() == right_dict.keys() and all(
-            _exact_equal(left[key], right_dict[key], _depth=_depth + 1) for key in left
+    if isinstance(left, dict) and isinstance(right, dict):
+        left_items = {(type(key), key): item for key, item in left.items()}
+        right_items = {(type(key), key): item for key, item in right.items()}
+        return left_items.keys() == right_items.keys() and all(
+            _exact_equal(left_items[key], right_items[key], _depth=_depth + 1) for key in left_items
         )
-    if isinstance(left, list | tuple):
-        right_sequence = right if isinstance(right, list | tuple) else ()
-        return len(left) == len(right_sequence) and all(
+    if isinstance(left, list | tuple) and isinstance(right, list | tuple):
+        return len(left) == len(right) and all(
             _exact_equal(item_left, item_right, _depth=_depth + 1)
-            for item_left, item_right in zip(left, right_sequence, strict=True)
+            for item_left, item_right in zip(left, right, strict=True)
         )
-    return left == right
+    return bool(left == right)
 
 
 @dataclass(frozen=True)
@@ -263,12 +376,14 @@ class DeclaredGenerationChange:
         validated = _validate_settings_mapping(self.changed_values, name="changed_values")
         if not validated:
             raise GenerationConfigParityError("changed_values must be a non-empty mapping")
-        # Freeze and deep-copy: a frozen dataclass only blocks reassigning
+        # Freeze and copy: a frozen dataclass only blocks reassigning
         # `self.changed_values`, not mutating the mapping object itself. A
-        # MappingProxyType over a fresh, deep-copied dict means neither the
+        # MappingProxyType over a fresh, typed copy means neither the
         # caller's original mapping nor anything handed back by this
-        # dataclass can change `changed_values` after construction.
-        frozen = MappingProxyType({key: copy.deepcopy(val) for key, val in validated.items()})
+        # dataclass can change `changed_values` after construction, and an
+        # unsupported value type is this module's own error, never a bare
+        # TypeError from a reflective deepcopy.
+        frozen = MappingProxyType(_copy_settings(validated, name="changed_values"))
         object.__setattr__(self, "changed_values", frozen)
 
 
@@ -312,7 +427,7 @@ def compare_generation_parity(
     """Compares the approved baseline against what was observed immediately
     before and after the Inspect bridge. See the module docstring for the
     exact blocking/declared-change/insufficient-evidence rules."""
-    approved_validated = _validate_settings_mapping(approved, name="approved")
+    approved_validated = _copy_settings(approved, name="approved")
     if declared_change is not None and not isinstance(declared_change, DeclaredGenerationChange):
         raise GenerationConfigParityError(
             "declared_change must be a DeclaredGenerationChange or None"
@@ -320,9 +435,9 @@ def compare_generation_parity(
 
     if observed_before is None or observed_after is None:
         if observed_before is not None:
-            _validate_settings_mapping(observed_before, name="observed_before")
+            _copy_settings(observed_before, name="observed_before")
         if observed_after is not None:
-            _validate_settings_mapping(observed_after, name="observed_after")
+            _copy_settings(observed_after, name="observed_after")
         return GenerationParityResult(
             verdict="insufficient_evidence",
             dropped_keys=(),
@@ -332,8 +447,8 @@ def compare_generation_parity(
             blocking_keys=(),
         )
 
-    before_validated = _validate_settings_mapping(observed_before, name="observed_before")
-    after_validated = _validate_settings_mapping(observed_after, name="observed_after")
+    before_validated = _copy_settings(observed_before, name="observed_before")
+    after_validated = _copy_settings(observed_after, name="observed_after")
     declared_values = declared_change.changed_values if declared_change is not None else {}
 
     expected_keys = set(approved_validated) | set(before_validated)
