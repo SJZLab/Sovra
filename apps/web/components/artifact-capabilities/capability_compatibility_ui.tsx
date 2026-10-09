@@ -33,13 +33,13 @@
  * Train is disabled for every real response.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export interface CapabilityDimension {
-  state: string;
+  state: "known" | "unknown";
   reason?: string;
-  declared_minimum_gpu_profile?: Record<string, unknown> | null;
-  declared_evidence?: string;
+  declared_minimum_gpu_profile?: unknown;
+  declared_evidence?: "declared";
   tested_gb?: number;
 }
 
@@ -48,7 +48,7 @@ export interface ModelCapabilities {
   project_id: string;
   public_model_name: string;
   connection_status: string;
-  access: string;
+  access: "granted" | "not_granted";
   capability: string;
   trainable: boolean;
   capability_detail?: string;
@@ -56,7 +56,7 @@ export interface ModelCapabilities {
   role?: string | null;
   artifact: {
     artifact_id: string | null;
-    availability: string;
+    availability: "none" | "registered" | "ready" | "archived";
     license_approved: boolean;
     weights_digest: string | null;
   };
@@ -136,32 +136,99 @@ function shown(value: unknown): string {
   return String(value);
 }
 
+const ACCESS_VALUES = ["granted", "not_granted"];
+const CAPABILITY_VALUES = [
+  "trainable_open_weight",
+  "managed_fine_tunable",
+  "inference_only",
+  "unknown",
+];
+const AVAILABILITY_VALUES = ["none", "registered", "ready", "archived"];
+const TOP_LEVEL_KEYS = new Set([
+  "litellm_connection_id",
+  "project_id",
+  "public_model_name",
+  "connection_status",
+  "access",
+  "capability",
+  "trainable",
+  "capability_detail",
+  "capability_reason",
+  "role",
+  "artifact",
+  "catalog_version",
+  "method_support",
+  "min_gpu_vram_gb",
+  "chat_template",
+  "evidence",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isStringOrNull(value: unknown): boolean {
+  return value === null || typeof value === "string";
+}
+
+/** A dimension is well formed only with a recognised state; `unknown` carries the server's reason. */
 function isDimension(value: unknown): value is CapabilityDimension {
+  if (!isRecord(value)) return false;
+  if (value.state === "unknown") return typeof value.reason === "string" && value.reason !== "";
+  if (value.state !== "known") return false;
+  if ("declared_evidence" in value && value.declared_evidence !== "declared") return false;
+  return true;
+}
+
+/**
+ * Strict parse of the frozen `ModelCapabilities` schema (additionalProperties
+ * false, every required field typed). Anything else is a typed error, never a
+ * recommendation.
+ */
+function isCapabilities(body: unknown): body is ModelCapabilities {
+  if (!isRecord(body)) return false;
+  for (const key of Object.keys(body)) if (!TOP_LEVEL_KEYS.has(key)) return false;
+  const artifact = body.artifact;
+  const evidence = body.evidence;
   return (
-    !!value && typeof value === "object" && typeof (value as CapabilityDimension).state === "string"
+    typeof body.litellm_connection_id === "string" &&
+    typeof body.project_id === "string" &&
+    typeof body.public_model_name === "string" &&
+    typeof body.connection_status === "string" &&
+    typeof body.access === "string" &&
+    ACCESS_VALUES.includes(body.access) &&
+    typeof body.capability === "string" &&
+    CAPABILITY_VALUES.includes(body.capability) &&
+    typeof body.trainable === "boolean" &&
+    (body.capability_detail === undefined || typeof body.capability_detail === "string") &&
+    (body.capability_reason === undefined || isStringOrNull(body.capability_reason)) &&
+    (body.role === undefined || isStringOrNull(body.role)) &&
+    isRecord(artifact) &&
+    isStringOrNull(artifact.artifact_id) &&
+    typeof artifact.availability === "string" &&
+    AVAILABILITY_VALUES.includes(artifact.availability) &&
+    typeof artifact.license_approved === "boolean" &&
+    isStringOrNull(artifact.weights_digest) &&
+    typeof body.catalog_version === "number" &&
+    Number.isInteger(body.catalog_version) &&
+    body.catalog_version >= 0 &&
+    isRecord(evidence) &&
+    isStringOrNull(evidence.discovery_checked_at) &&
+    isStringOrNull(evidence.tool_call_probe_checked_at) &&
+    typeof evidence.tool_call_probe_present === "boolean" &&
+    isDimension(body.method_support) &&
+    isDimension(body.min_gpu_vram_gb) &&
+    isDimension(body.chat_template)
   );
 }
 
-function isCapabilities(body: unknown): body is ModelCapabilities {
-  if (!body || typeof body !== "object") return false;
-  const c = body as Partial<ModelCapabilities>;
-  return (
-    typeof c.trainable === "boolean" &&
-    typeof c.access === "string" &&
-    !!c.artifact &&
-    typeof c.artifact === "object" &&
-    !!c.evidence &&
-    typeof c.evidence === "object" &&
-    isDimension(c.method_support) &&
-    isDimension(c.min_gpu_vram_gb) &&
-    isDimension(c.chat_template)
-  );
+function finiteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function declaredVramGb(profile: unknown): number | null {
-  if (!profile || typeof profile !== "object") return null;
-  const gb = (profile as Record<string, unknown>).memory_gb;
-  return typeof gb === "number" ? gb : null;
+  if (!isRecord(profile)) return null;
+  return finiteNumber(profile.memory_gb);
 }
 
 /** Every reason Train is disabled; an empty list is the only way to enable it. */
@@ -172,7 +239,7 @@ export function trainBlockers(c: ModelCapabilities): string[] {
   if (c.artifact.availability !== "ready") {
     blockers.push(`Trainable artifact is ${shown(c.artifact.availability)}, not ready`);
   }
-  if (!c.artifact.license_approved) blockers.push("Artifact license is not approved");
+  if (c.artifact.license_approved !== true) blockers.push("Artifact license is not approved");
   const dimensions: Array<[string, CapabilityDimension]> = [
     ["Method support", c.method_support],
     ["Tested VRAM", c.min_gpu_vram_gb],
@@ -185,31 +252,33 @@ export function trainBlockers(c: ModelCapabilities): string[] {
   }
   if (c.min_gpu_vram_gb.state === "known") {
     const need = declaredVramGb(c.min_gpu_vram_gb.declared_minimum_gpu_profile);
-    const tested = c.min_gpu_vram_gb.tested_gb;
-    if (typeof tested !== "number" || (need !== null && tested < need)) {
-      blockers.push(
-        `Tested VRAM ${shown(tested)} GB is below the declared minimum ${shown(need)} GB`,
-      );
+    const tested = finiteNumber(c.min_gpu_vram_gb.tested_gb);
+    if (tested === null) {
+      blockers.push("Tested VRAM was not reported as a number");
+    } else if (need === null) {
+      blockers.push(`Tested VRAM ${tested} GB cannot be compared: no numeric declared minimum`);
+    } else if (tested < need) {
+      blockers.push(`Tested VRAM ${tested} GB is below the declared minimum ${need} GB`);
     }
   }
   return blockers;
 }
 
-function DimensionRow({
-  label,
-  dim,
-  checkedAt,
-}: {
-  label: string;
-  dim: CapabilityDimension;
-  checkedAt: string | null;
-}) {
+/** Shows only what the server returned for this dimension; no date is inferred from elsewhere. */
+function DimensionRow({ label, dim }: { label: string; dim: CapabilityDimension }) {
+  const tested = dim.state === "known" ? finiteNumber(dim.tested_gb) : null;
   return (
     <tr data-testid={`dimension-${label}`}>
       <th scope="row">{label}</th>
       <td>{dim.state}</td>
-      <td>{dim.state === "known" ? "" : `reason: ${shown(dim.reason)}`}</td>
-      <td>{checkedAt ? `checked ${checkedAt}` : "evidence date not recorded"}</td>
+      <td>
+        {dim.state === "known"
+          ? tested !== null
+            ? `tested ${tested} GB`
+            : "tested value not reported"
+          : `reason: ${shown(dim.reason)}`}
+      </td>
+      <td>no evidence date returned by the server</td>
     </tr>
   );
 }
@@ -222,40 +291,71 @@ export function CapabilityCompatibilityUI({
   modelName,
   onTrain,
 }: CapabilityCompatibilityUIProps) {
-  const [capabilities, setCapabilities] = useState<ModelCapabilities | null>(null);
+  const identity = JSON.stringify([apiBaseUrl, organizationId, connectionId, projectId, modelName]);
+  const [result, setResult] = useState<ModelCapabilities | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [started, setStarted] = useState(false);
+  const latestRequest = useRef(0);
+
+  // Any org/connection/project/model change invalidates the result before the next commit (no frame
+  // with a stale Train) and any in-flight response (its request number is no longer the latest).
+  const [seenIdentity, setSeenIdentity] = useState(identity);
+  if (seenIdentity !== identity) {
+    setSeenIdentity(identity);
+    setResult(null);
+    setError(null);
+    setLoading(false);
+    setStarted(false);
+  }
+  useEffect(() => {
+    latestRequest.current += 1;
+  }, [identity]);
+
+  const capabilities = result;
 
   async function handleLoad() {
+    const request = ++latestRequest.current;
+    const stale = () => request !== latestRequest.current;
     setLoading(true);
     setError(null);
-    setCapabilities(null);
+    setResult(null);
     setStarted(false);
     try {
       const response = await fetch(
         capabilitiesUrl(apiBaseUrl, organizationId, connectionId, modelName, projectId),
         { method: "GET", credentials: "include" },
       );
+      if (stale()) return;
       if (!response.ok) {
-        setError(await readErrorDetail(response));
+        const message = await readErrorDetail(response);
+        if (!stale()) setError(message);
         return;
       }
       const body: unknown = await response.json();
+      if (stale()) return;
       if (!isCapabilities(body)) {
         setError("malformed capabilities response");
         return;
       }
-      setCapabilities(body);
+      if (
+        body.public_model_name !== modelName ||
+        body.project_id !== projectId ||
+        body.litellm_connection_id !== connectionId
+      ) {
+        setError("capabilities response does not match the request");
+        return;
+      }
+      setResult(body);
     } catch (caught) {
-      setError(networkErrorMessage(caught));
+      if (!stale()) setError(networkErrorMessage(caught));
     } finally {
-      setLoading(false);
+      if (!stale()) setLoading(false);
     }
   }
 
   const blockers = capabilities ? trainBlockers(capabilities) : [];
-  const trainEnabled = capabilities !== null && blockers.length === 0;
+  const trainEnabled = capabilities !== null && blockers.length === 0 && onTrain !== undefined;
 
   return (
     <section aria-label="Capability compatibility">
@@ -286,21 +386,9 @@ export function CapabilityCompatibilityUI({
           </dl>
           <table>
             <tbody>
-              <DimensionRow
-                label="Method support"
-                dim={capabilities.method_support}
-                checkedAt={capabilities.evidence.discovery_checked_at}
-              />
-              <DimensionRow
-                label="Tested VRAM"
-                dim={capabilities.min_gpu_vram_gb}
-                checkedAt={capabilities.evidence.discovery_checked_at}
-              />
-              <DimensionRow
-                label="Chat template"
-                dim={capabilities.chat_template}
-                checkedAt={capabilities.evidence.discovery_checked_at}
-              />
+              <DimensionRow label="Method support" dim={capabilities.method_support} />
+              <DimensionRow label="Tested VRAM" dim={capabilities.min_gpu_vram_gb} />
+              <DimensionRow label="Chat template" dim={capabilities.chat_template} />
             </tbody>
           </table>
           <p data-testid="declared-vram">
@@ -321,8 +409,9 @@ export function CapabilityCompatibilityUI({
             type="button"
             disabled={!trainEnabled}
             onClick={() => {
+              if (!onTrain) return;
+              onTrain(modelName);
               setStarted(true);
-              onTrain?.(modelName);
             }}
           >
             Train
