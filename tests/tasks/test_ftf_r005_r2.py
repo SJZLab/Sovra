@@ -947,6 +947,386 @@ def test_binding_must_be_the_internal_mlflow_service() -> None:
     check("R2-7", "the caller's timeout reaches the client", built._timeout == 3.5)
 
 
+# -- R2-8 DurableOutbox behaviour against a recording fake of its DB seams ---
+
+
+class _Row:
+    def __init__(self, **over: Any) -> None:
+        self.attempt_count = 0
+        self.updated_at = datetime(2026, 1, 2, 3, 4, 5, 678000, tzinfo=UTC)
+        self.external_id = None
+        self.last_error = None
+        self.idempotency_key = "mlflow:unset"
+        self.__dict__.update(over)
+
+
+class _Scalars:
+    def __init__(self, items: list[Any]) -> None:
+        self._items = items
+
+    def all(self) -> list[Any]:
+        return list(self._items)
+
+    def one(self) -> Any:
+        assert len(self._items) == 1
+        return self._items[0]
+
+
+class _Result:
+    def __init__(self, items: list[Any]) -> None:
+        self._items = items
+
+    def scalars(self) -> _Scalars:
+        return _Scalars(self._items)
+
+
+class _Seams:
+    """Replaces the three DB seams `durable_outbox` imports, recording every
+    call, so the outbox's own logic is exercised without a database."""
+
+    def __init__(self) -> None:
+        self.sessions: list[tuple[Any, Any]] = []
+        self.statements: list[tuple[Any, Any]] = []
+        self.outcomes: list[dict[str, Any]] = []
+        self.pending_ids: list[uuid.UUID] = []
+        self.rows: dict[uuid.UUID, _Row] = {}
+        self.conflict = False
+
+    def session_for(self, factory: Any, context: Any) -> Any:
+        import contextlib
+
+        self.sessions.append((factory, context))
+
+        @contextlib.contextmanager
+        def cm() -> Any:
+            yield "SESSION"
+
+        return cm()
+
+    def execute(self, session: Any, organization_id: Any, statement: Any) -> _Result:
+        assert session == "SESSION"
+        self.statements.append((organization_id, statement))
+        params = list(statement.compile().params.values())
+        if "pending" in params:
+            return _Result(list(self.pending_ids))
+        job = [v for v in params if isinstance(v, uuid.UUID) and v in self.rows]
+        return _Result([self.rows[job[0]]])
+
+    def record(self, session: Any, context: Any, **kwargs: Any) -> _Row:
+        assert session == "SESSION"
+        kwargs["_context"] = context
+        self.outcomes.append(kwargs)
+        if self.conflict:
+            from app.component_bindings.component_binding_crud import SyncOutboxConflictError
+
+            raise SyncOutboxConflictError("different key")
+        return self.rows.setdefault(kwargs["factory_job_id"], _Row())
+
+
+def _with_seams(fn: Any) -> Any:
+    from packages.integrations.mlflow import durable_outbox as mod
+
+    seams = _Seams()
+    saved = (mod.tenant_scoped_session_for, mod.execute_tenant_scoped, mod.record_sync_outcome)
+    mod.tenant_scoped_session_for = seams.session_for
+    mod.execute_tenant_scoped = seams.execute
+    mod.record_sync_outcome = seams.record
+    try:
+        return fn(seams)
+    finally:
+        mod.tenant_scoped_session_for, mod.execute_tenant_scoped, mod.record_sync_outcome = saved
+
+
+class _Results:
+    def __init__(self, runs: dict[uuid.UUID, Any]) -> None:
+        self.runs = runs
+        self.calls: list[tuple[uuid.UUID, uuid.UUID]] = []
+
+    def load(self, organization_id: uuid.UUID, job_id: uuid.UUID) -> Any:
+        self.calls.append((organization_id, job_id))
+        return self.runs.get(job_id)
+
+
+_BINDING = uuid.UUID("00000000-0000-4000-8000-0000000000b1")
+_ACTOR = ActorInfo(actor_type="user", actor_id="u", request_id="r")
+_NOW = datetime(2030, 1, 1, tzinfo=UTC)
+
+
+def _outbox(runs: dict[uuid.UUID, Any], policy: RetryPolicy | None = None) -> DurableOutbox:
+    kwargs: dict[str, Any] = {}
+    if policy is not None:
+        kwargs["policy"] = policy
+    return DurableOutbox(
+        lambda: None,  # type: ignore[arg-type, return-value]
+        TenantContext(organization_id=ORG_A),
+        binding_id=_BINDING,
+        results=_Results(runs),
+        actor=_ACTOR,
+        clock=lambda: _NOW,
+        **kwargs,
+    )
+
+
+def test_durable_outbox_add() -> None:
+    from packages.integrations.mlflow.durable_outbox import idempotency_key_for
+    from packages.integrations.mlflow.reconcile import RunConflictError, logical_run_key
+
+    run = make_run()
+
+    def ok(seams: _Seams) -> None:
+        seams.rows[JOB] = _Row(attempt_count=3, external_id="r-1", last_error="boom")
+        entry = _outbox({}).add(run)
+        check("R2-8", "add admits through record_sync_outcome once", len(seams.outcomes) == 1)
+        sent = seams.outcomes[0]
+        check(
+            "R2-8",
+            "add sends binding, job, key and actor, and no outcome",
+            sent["component_binding_id"] == _BINDING
+            and sent["factory_job_id"] == JOB
+            and sent["idempotency_key"] == idempotency_key_for(run)
+            and sent["actor"] == _ACTOR
+            and "outcome" not in sent
+            and sent["_context"].organization_id == ORG_A,
+        )
+        check(
+            "R2-8",
+            "add maps the row onto the entry and never tracks a due time",
+            entry.entry_id == logical_run_key(ORG_A, JOB)
+            and entry.run is run
+            and entry.attempts == 3
+            and entry.mlflow_run_id == "r-1"
+            and entry.last_error == "boom"
+            and entry.next_retry_at_ms is None
+            and entry.state == SyncState.PENDING,
+        )
+
+    _with_seams(ok)
+
+    def foreign(seams: _Seams) -> None:
+        other = make_run(organization_id=base.ORG_B)
+        try:
+            _outbox({}).add(other)
+            check("R2-8", "a result of another organization is refused", False)
+        except RunConflictError as exc:
+            check(
+                "R2-8", "the refusal names the organization", "different organization" in str(exc)
+            )
+        check(
+            "R2-8", "a refused add touches no database", not seams.outcomes and not seams.sessions
+        )
+
+    _with_seams(foreign)
+
+    def conflict(seams: _Seams) -> None:
+        seams.conflict = True
+        try:
+            _outbox({}).add(run)
+            check("R2-8", "a different queued result is refused", False)
+        except RunConflictError as exc:
+            check(
+                "R2-8",
+                "the conflict is the stable RunConflictError with its cause",
+                "different result is already queued" in str(exc)
+                and type(exc.__cause__).__name__ == "SyncOutboxConflictError",
+            )
+
+    _with_seams(conflict)
+
+
+def test_durable_outbox_pending_sweep() -> None:
+    from packages.integrations.mlflow.durable_outbox import _ms, idempotency_key_for
+
+    check(
+        "R2-8",
+        "_ms is whole milliseconds",
+        _ms(datetime(1970, 1, 1, 0, 0, 1, 500000, tzinfo=UTC)) == 1500,
+    )
+    j_ok, j_zero, j_missing, j_org, j_job, j_changed = (uuid.uuid4() for _ in range(6))
+    good = make_run(job_id=j_ok)
+    zero = make_run(job_id=j_zero)
+    runs = {
+        j_ok: good,
+        j_zero: zero,
+        j_org: make_run(job_id=j_org, organization_id=base.ORG_B),
+        j_job: make_run(job_id=uuid.uuid4()),
+        j_changed: make_run(job_id=j_changed, completed_at_ms=999),
+    }
+    policy = RetryPolicy(max_attempts=5, base_delay_ms=1000, max_delay_ms=300000)
+
+    def sweep(seams: _Seams) -> None:
+        seams.pending_ids = [j_ok, j_zero, j_missing, j_org, j_job, j_changed]
+        updated = datetime(2026, 5, 6, 7, 8, 9, 250000, tzinfo=UTC)
+        seams.rows = {
+            j_ok: _Row(
+                attempt_count=3,
+                updated_at=updated,
+                external_id="r-9",
+                last_error="old",
+                idempotency_key=idempotency_key_for(good),
+            ),
+            j_zero: _Row(attempt_count=0, idempotency_key=idempotency_key_for(zero)),
+            j_missing: _Row(idempotency_key="mlflow:k-missing"),
+            j_org: _Row(idempotency_key="mlflow:k-org"),
+            j_job: _Row(idempotency_key="mlflow:k-job"),
+            j_changed: _Row(idempotency_key="mlflow:not-the-current-hash"),
+        }
+        outbox = _outbox(runs, policy)
+        entries = outbox.pending()
+        check(
+            "R2-8",
+            "only the intact rows come back, in listing order",
+            [e.run.job_id for e in entries] == [j_ok, j_zero],
+        )
+        first, second = entries
+        expected_ms = int(updated.timestamp() * 1000) + 4000
+        check(
+            "R2-8",
+            "a retried row's due time is updated_at + the policy delay",
+            first.next_retry_at_ms
+            == expected_ms
+            == policy.delay_ms(3) + int(updated.timestamp() * 1000)
+            and first.attempts == 3
+            and first.mlflow_run_id == "r-9"
+            and first.last_error == "old"
+            and first.entry_id.startswith("run-"),
+        )
+        check("R2-8", "a never-attempted row has no due time", second.next_retry_at_ms is None)
+        loads = outbox._results.calls  # type: ignore[attr-defined]
+        check(
+            "R2-8",
+            "evidence is loaded per pending job for this organization",
+            loads[0] == (ORG_A, j_ok) and len(loads) == 6,
+        )
+        failed = {o["factory_job_id"]: o for o in seams.outcomes if o.get("outcome") == "failed"}
+        check(
+            "R2-8",
+            "exactly the four unloadable rows are resolved failed, nothing else",
+            set(failed) == {j_missing, j_org, j_job, j_changed} and len(seams.outcomes) == 4,
+        )
+        check(
+            "R2-8",
+            "each unloadable row fails with its own visible reason and key",
+            failed[j_missing]["error"] == "result_missing: Factory evidence has no result"
+            and failed[j_org]["error"] == "result_mismatch: evidence identity differs"
+            and failed[j_job]["error"] == "result_mismatch: evidence identity differs"
+            and failed[j_changed]["error"] == "result_changed: evidence differs from admission"
+            and failed[j_missing]["idempotency_key"] == "mlflow:k-missing"
+            and failed[j_changed]["idempotency_key"] == "mlflow:not-the-current-hash"
+            and failed[j_missing]["component_binding_id"] == _BINDING
+            and failed[j_missing]["actor"] == _ACTOR,
+        )
+        listing = [st for _, st in seams.statements if "pending" in st.compile().params.values()]
+        check("R2-8", "the listing runs once", len(listing) == 1)
+        sql = str(listing[0].compile())
+        params = list(listing[0].compile().params.values())
+        check(
+            "R2-8",
+            "the listing is scoped to org, binding and pending, oldest first",
+            sorted(map(str, params)) == sorted([str(ORG_A), str(_BINDING), "pending"])
+            and sql.count(" = ") == 3
+            and "!=" not in sql
+            and "<>" not in sql
+            and "ORDER BY" in sql
+            and "created_at" in sql,
+        )
+        check(
+            "R2-8",
+            "every statement is passed the caller's organization",
+            all(o == ORG_A for o, _ in seams.statements),
+        )
+        row_stmts = [st for _, st in seams.statements if st is not listing[0]]
+        for st in row_stmts:
+            rsql = str(st.compile())
+            rparams = list(st.compile().params.values())
+            check(
+                "R2-8",
+                "a row lookup is scoped to org, binding and job by equality",
+                ORG_A in rparams
+                and _BINDING in rparams
+                and rsql.count(" = ") == 3
+                and "!=" not in rsql
+                and "<>" not in rsql,
+            )
+
+    _with_seams(sweep)
+
+
+def test_durable_outbox_record_states() -> None:
+    from packages.integrations.mlflow.durable_outbox import idempotency_key_for
+
+    run = make_run()
+    key = idempotency_key_for(run)
+
+    def go(seams: _Seams) -> None:
+        outbox = _outbox({})
+
+        def put(**over: Any) -> tuple[dict[str, Any], _Row]:
+            seams.outcomes.clear()
+            seams.rows.clear()
+            entry = OutboxEntry(entry_id="e", run=run, attempts=2, **over)
+            outbox.record(entry)
+            return seams.outcomes[0], seams.rows[JOB]
+
+        sent, row = put(state=SyncState.SYNCED, mlflow_run_id="r-7", last_error="x")
+        check(
+            "R2-8",
+            "SYNCED resolves succeeded with the MLflow run id",
+            len(seams.outcomes) == 1
+            and sent["outcome"] == "succeeded"
+            and sent["external_id"] == "r-7"
+            and "error" not in sent
+            and sent["idempotency_key"] == key
+            and sent["component_binding_id"] == _BINDING
+            and sent["factory_job_id"] == JOB
+            and sent["actor"] == _ACTOR
+            and row.attempt_count == 2,
+        )
+        sent, row = put(state=SyncState.PENDING, last_error="e" * 600)
+        check(
+            "R2-8",
+            "PENDING only records the attempt, with a 500-character error and the clock",
+            "outcome" not in sent
+            and "error" not in sent
+            and row.last_error == "e" * 500
+            and row.updated_at == _NOW
+            and row.attempt_count == 2,
+        )
+        sent, row = put(state=SyncState.PENDING, last_error="e" * 500)
+        check("R2-8", "a 500-character error is kept whole", row.last_error == "e" * 500)
+        for empty in (None, ""):
+            sent, row = put(state=SyncState.PENDING, last_error=empty)
+            check("R2-8", f"PENDING with error {empty!r} stores none", row.last_error is None)
+        sent, row = put(state=SyncState.FAILED, last_error="retry limit reached")
+        check(
+            "R2-8",
+            "FAILED resolves failed with the error exactly as given",
+            sent["outcome"] == "failed"
+            and sent["error"] == "retry limit reached"
+            and "external_id" not in sent
+            and row.attempt_count == 2,
+        )
+        sent, _ = put(state=SyncState.FAILED, last_error=None)
+        check("R2-8", "FAILED without an error says sync failed", sent["error"] == "sync failed")
+        sent, _ = put(state=SyncState.FAILED, last_error="")
+        check("R2-8", "FAILED with an empty error says sync failed", sent["error"] == "sync failed")
+        sent, _ = put(state=SyncState.AMBIGUOUS, last_error="no ack")
+        check(
+            "R2-8",
+            "AMBIGUOUS is failed with an ambiguous: prefix",
+            sent["outcome"] == "failed" and sent["error"] == "ambiguous: no ack",
+        )
+        sent, _ = put(state=SyncState.AMBIGUOUS, last_error=None)
+        check("R2-8", "AMBIGUOUS without an error", sent["error"] == "ambiguous: sync failed")
+        sent, _ = put(state="SOMETHING_ELSE", last_error="z")
+        check(
+            "R2-8",
+            "an unknown state is treated as failed, never as synced",
+            sent["outcome"] == "failed" and sent["error"] == "z",
+        )
+
+    _with_seams(go)
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
