@@ -27,6 +27,9 @@ Run directly: python3 tests/tasks/test_ftf_0903.py
 
 from __future__ import annotations
 
+import contextlib
+import io
+import logging
 import marshal
 import math
 import os
@@ -37,6 +40,7 @@ import tempfile
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TypeGuard
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
@@ -533,33 +537,38 @@ def _message_of(fn, *args: object) -> str | None:
     return None
 
 
+def _clean_msg(msg: str | None) -> TypeGuard[str]:
+    """Round 7: a refusal happened AND carried no cause/context/notes/attributes."""
+    return msg is not None and "META-LEAK" not in msg
+
+
 def test_error_messages_never_echo_caller_text() -> None:
     long_kind = "k" * 5000
     msg = _message_of(emit_event, long_kind, {})
-    check("FTF-0903-R2-1", "a 5000-char kind is refused", msg is not None)
+    check("FTF-0903-R2-1", "a 5000-char kind is refused", _clean_msg(msg))
     check(
         "FTF-0903-R2-1",
         "the refusal message is bounded (kind text is not echoed)",
-        msg is not None and len(msg) < 300 and "kkkk" not in msg,
+        _clean_msg(msg) and len(msg) < 300 and "kkkk" not in msg,
     )
     secret_kind = "sk-live-SECRET123"
     msg = _message_of(emit_event, secret_kind, {})
     check(
         "FTF-0903-R2-1",
         "a secret-looking kind is not echoed in the message",
-        msg is not None and "SECRET123" not in msg,
+        _clean_msg(msg) and "SECRET123" not in msg,
     )
     msg = _message_of(emit_event, "workflow", {**_WF, "sk-live-SECRET123": "x"})
     check(
         "FTF-0903-R2-1",
         "a secret-looking field NAME is not echoed in the message",
-        msg is not None and "SECRET123" not in msg,
+        _clean_msg(msg) and "SECRET123" not in msg,
     )
     msg = _message_of(emit_event, "workflow", {**_WF, "f" * 5000: "x"})
     check(
         "FTF-0903-R2-1",
         "a 5000-char field name is not echoed and the message stays bounded",
-        msg is not None and len(msg) < 300 and "ffff" not in msg,
+        _clean_msg(msg) and len(msg) < 300 and "ffff" not in msg,
     )
     _ReprKey.called = False
     bad_key_fields: dict[object, object] = {k: v for k, v in _WF.items()}
@@ -568,19 +577,19 @@ def test_error_messages_never_echo_caller_text() -> None:
     check(
         "FTF-0903-R2-1",
         "a non-str key's own __repr__ is never run nor echoed",
-        msg is not None and not _ReprKey.called and "LEAKED" not in msg,
+        _clean_msg(msg) and not _ReprKey.called and "LEAKED" not in msg,
     )
     msg = _message_of(emit_event, "workflow", {"task_id": "t", "state": "queued", "zz": 1})
     check(
         "FTF-0903-R2-1",
         "every refusal still carries a stable machine code on the class",
-        msg is not None and DisallowedFieldError.code.startswith("content_free_telemetry_"),
+        _clean_msg(msg) and DisallowedFieldError.code.startswith("content_free_telemetry_"),
     )
     msg = _message_of(emit_event, "log", {**_LOG, "message_code": "sk-live-SECRET123 and more"})
     check(
         "FTF-0903-R2-1",
         "a rejected VALUE is not echoed either",
-        msg is not None and "SECRET123" not in msg,
+        _clean_msg(msg) and "SECRET123" not in msg,
     )
 
 
@@ -1029,17 +1038,46 @@ def test_fault_injection_each_guard_is_load_bearing() -> None:
 _MARK = "ZZMARK-secret traceback!"
 
 
-def _echo_report(fn) -> str:
-    """'clean' if fn is refused without the marker anywhere in the error AND
-    with no cause/context/notes/attributes (round 6), 'LEAK' if the marker or
-    any exception metadata leaked, else 'allowed'."""
+def _refusal_report(fn, markers: tuple[str, ...]) -> str:
+    """'clean' if fn is refused with none of `markers` in str/args, no
+    cause/context/notes/attributes (round 6), and nothing written to root logging, stderr or
+    stdout while it ran (round 7); 'LEAK' otherwise; 'allowed' if it was not refused."""
+    records: list[logging.LogRecord] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    root = logging.getLogger()
+    handler = _Capture(0)
+    previous_level = root.level
+    root.addHandler(handler)
+    root.setLevel(logging.DEBUG)
+    stream = io.StringIO()
+    caught: BaseException | None = None
     try:
-        fn()
-    except ContentFreeTelemetryError as exc:
-        if "ZZMARK" in str(exc) + repr(exc.args):
-            return "LEAK"
-        return "clean" if _meta_clean(exc) else "LEAK"
-    return "allowed"
+        with contextlib.redirect_stderr(stream), contextlib.redirect_stdout(stream):
+            try:
+                fn()
+            except BaseException as exc:  # noqa: BLE001
+                caught = exc
+    finally:
+        root.removeHandler(handler)
+        root.setLevel(previous_level)
+    if caught is None:
+        return "allowed"
+    if not isinstance(caught, ContentFreeTelemetryError):
+        raise caught
+    text = str(caught) + repr(caught.args)
+    if any(marker in text for marker in markers):
+        return "LEAK"
+    if records or stream.getvalue():
+        return "LEAK"
+    return "clean" if _meta_clean(caught) else "LEAK"
+
+
+def _echo_report(fn) -> str:
+    return _refusal_report(fn, ("ZZMARK",))
 
 
 class _SubclassedName(str):
@@ -1244,14 +1282,7 @@ def _forged_ref(**attrs: str) -> ContentRef:
 
 
 def _r4_echo_report(fn, markers: tuple[str, ...]) -> str:
-    try:
-        fn()
-    except ContentFreeTelemetryError as exc:
-        text = str(exc) + repr(exc.args)
-        if any(marker in text for marker in markers):
-            return "LEAK"
-        return "clean" if _meta_clean(exc) else "LEAK"
-    return "allowed"
+    return _refusal_report(fn, markers)
 
 
 def test_r4_content_ref_values_are_never_echoed() -> None:
@@ -1643,6 +1674,229 @@ def test_round6_meta_leak_faults_each_turn_the_probe_red() -> None:
             len(out) == len(BASELINE_R6)
             and out[index] == "LEAK"
             and all(out[i] == "clean" for i in range(4) if i != index),
+        )
+
+
+# --- FTF-0903 round 7: every refusal site, shared META-LEAK check, log capture. ---
+
+_R7_LONG = _MARK + "k" * 5000
+
+
+def _r7_cases() -> dict[str, object]:
+    return {
+        "event kind (short marker)": lambda: emit_event(_MARK, {}),
+        "event kind (5000 chars)": lambda: emit_event(_R7_LONG, {}),
+        "fields as a str": lambda: emit_event("workflow", _MARK),
+        "field name not in the schema": lambda: emit_event("workflow", {**_WF, _MARK: "x"}),
+        "field name not in the schema (5000 chars)": lambda: emit_event(
+            "workflow", {**_WF, _R7_LONG: "x"}
+        ),
+        "ContentRef id": lambda: ContentRef(_MARK, "key-1"),
+    }
+
+
+def test_round7_every_refusal_site_is_clean_logs_nothing_and_carries_no_metadata() -> None:
+    for label, fn in _r7_cases().items():
+        check(
+            "FTF-0903-R7-2",
+            f"{label}: refused, marker absent from str/args, no cause/context/notes/attributes, "
+            "nothing logged or printed",
+            _refusal_report(fn, ("ZZMARK",)) == "clean",
+        )
+
+    # Negative control on the real helper: a refusal that logs the caller value is a LEAK.
+    def logs_then_refuses() -> None:
+        logging.warning("refused %r", _MARK)
+        raise ContentRefusedError("x")
+
+    check(
+        "FTF-0903-R7-4",
+        "the capture helper reports a refusal that logs the caller value as LEAK",
+        _refusal_report(logs_then_refuses, ("ZZMARK",)) == "LEAK",
+    )
+
+    def prints_then_refuses() -> None:
+        print(_MARK, file=sys.stderr)
+        raise ContentRefusedError("x")
+
+    check(
+        "FTF-0903-R7-4",
+        "the capture helper reports a refusal that writes to stderr as LEAK",
+        _refusal_report(prints_then_refuses, ("ZZMARK",)) == "LEAK",
+    )
+
+
+_PROBE_R7 = """
+import io, logging, sys, contextlib
+sys.path.insert(0, __ROOT__)
+from packages.security import content_free_telemetry as m
+from packages.security.content_free_telemetry import (
+    emit_event, ContentFreeTelemetryError, ContentRef,
+)
+
+M = "ZZMARK-secret traceback!"
+LONG = M + "k" * 5000
+WF = {"workflow_id": "w", "task_id": "t", "state": "queued"}
+
+def meta_clean(exc):
+    return (
+        exc.__cause__ is None
+        and exc.__context__ is None
+        and not getattr(exc, "__notes__", None)
+        and vars(exc) == {}
+    )
+
+def report(fn):
+    records = []
+    class Cap(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+    root = logging.getLogger()
+    root.addHandler(Cap(0))
+    root.setLevel(logging.DEBUG)
+    stream = io.StringIO()
+    caught = None
+    with contextlib.redirect_stderr(stream), contextlib.redirect_stdout(stream):
+        try:
+            fn()
+        except BaseException as exc:
+            caught = exc
+    if caught is None:
+        return "allowed"
+    if not isinstance(caught, ContentFreeTelemetryError):
+        return "ERROR:" + type(caught).__name__
+    text = str(caught) + repr(caught.args)
+    if "ZZMARK" in text or records or stream.getvalue():
+        return "LEAK"
+    return "clean" if meta_clean(caught) else "LEAK"
+
+print(report(lambda: emit_event(M, {})))
+print(report(lambda: emit_event(LONG, {})))
+print(report(lambda: emit_event("workflow", M)))
+print(report(lambda: emit_event("workflow", {**WF, M: "x"})))
+print(report(lambda: emit_event("workflow", {**WF, LONG: "x"})))
+print(report(lambda: ContentRef(M, "key-1")))
+"""
+
+BASELINE_R7 = ["clean"] * 6 + [""]
+
+_R7_KIND = '        raise InvalidEventError("event kind is not one of the permitted kinds")\n'
+_R7_FIELDS = '        raise InvalidEventError("fields must be a mapping")\n'
+_R7_NAME = '            raise DisallowedFieldError("field is not permitted on this event kind")\n'
+
+
+def _r7_mutations() -> list[tuple[str, str, str, tuple[int, ...]]]:
+    return [
+        (
+            "K-cause: the kind refusal chains `from ValueError(kind)`",
+            _R7_KIND,
+            _R7_KIND.rstrip("\n") + " from ValueError(kind)\n",
+            (0, 1),
+        ),
+        (
+            "K-note: the kind refusal attaches the kind as an exception note",
+            _R7_KIND,
+            '        _err = InvalidEventError("event kind is not one of the permitted kinds")\n'
+            "        _err.add_note(str(kind))\n"
+            "        raise _err\n",
+            (0, 1),
+        ),
+        (
+            "K-attr: the kind refusal stores the kind as an exception attribute",
+            _R7_KIND,
+            '        _err = InvalidEventError("event kind is not one of the permitted kinds")\n'
+            "        _err.rejected_kind = kind\n"
+            "        raise _err\n",
+            (0, 1),
+        ),
+        (
+            "K1: `try: EVENT_SCHEMAS[kind] except KeyError: raise InvalidEventError(...)` "
+            "(the KeyError text reaches __context__)",
+            "    if type(kind) is not str or kind not in EVENT_SCHEMAS:\n" + _R7_KIND,
+            "    if type(kind) is not str:\n" + _R7_KIND + "    try:\n"
+            "        EVENT_SCHEMAS[kind]\n"
+            "    except KeyError:\n"
+            '        raise InvalidEventError("event kind is not one of the permitted kinds")\n',
+            (0, 1),
+        ),
+        (
+            "FL-cause: the non-mapping fields refusal chains `from ValueError(fields)`",
+            _R7_FIELDS,
+            _R7_FIELDS.rstrip("\n") + " from ValueError(fields)\n",
+            (2,),
+        ),
+        (
+            "FL-note: the non-mapping fields refusal attaches the fields as a note",
+            _R7_FIELDS,
+            '        _err = InvalidEventError("fields must be a mapping")\n'
+            "        _err.add_note(str(fields))\n"
+            "        raise _err\n",
+            (2,),
+        ),
+        (
+            "FL-attr: the non-mapping fields refusal stores the fields as an attribute",
+            _R7_FIELDS,
+            '        _err = InvalidEventError("fields must be a mapping")\n'
+            "        _err.rejected_fields = fields\n"
+            "        raise _err\n",
+            (2,),
+        ),
+        (
+            "FN1: `try: schema[name] except KeyError: raise DisallowedFieldError(...)`",
+            "        if type(name) is not str or name not in schema:\n" + _R7_NAME,
+            "        if type(name) is not str:\n" + _R7_NAME + "        try:\n"
+            "            schema[name]\n"
+            "        except KeyError:\n"
+            '            raise DisallowedFieldError("field is not permitted on this event kind")\n',
+            (3, 4),
+        ),
+        (
+            "FN-cause: the field-name refusal chains `from ValueError(name)`",
+            _R7_NAME,
+            _R7_NAME.rstrip("\n") + " from ValueError(name)\n",
+            (3, 4),
+        ),
+        (
+            "FN-attr: the field-name refusal stores the name as an exception attribute",
+            _R7_NAME,
+            '            _err = DisallowedFieldError("field is not permitted on this event kind")\n'
+            "            _err.rejected_name = name\n"
+            "            raise _err\n",
+            (3, 4),
+        ),
+        (
+            "L1: _id_value logs the rejected value via logging.warning",
+            '        raise ContentRefusedError(f"{what} is not a bounded id")\n',
+            "        import logging\n\n"
+            '        logging.warning("refused %s: %r", what, value)\n'
+            '        raise ContentRefusedError(f"{what} is not a bounded id")\n',
+            (5,),
+        ),
+    ]
+
+
+def test_round7_each_refusal_site_fault_turns_exactly_its_cases_red() -> None:
+    script = _PROBE_R7.replace("__ROOT__", repr(str(ROOT)))
+    check(
+        "FTF-0903-R7-FAULT",
+        "unmutated r7 probe matches baseline",
+        _probe(None, script) == BASELINE_R7,
+    )
+    text = MODULE.read_text(encoding="utf-8")
+    for description, anchor, replacement, targets in _r7_mutations():
+        check(
+            "FTF-0903-R7-FAULT",
+            f"mutation anchor matches once: {description}",
+            text.count(anchor) == 1,
+        )
+        if text.count(anchor) != 1:
+            continue
+        out = _probe(text.replace(anchor, replacement, 1), script)
+        check(
+            "FTF-0903-R7-FAULT",
+            f"mutation turns its cases LEAK and leaves the others clean: {description}",
+            len(out) == len(BASELINE_R7)
+            and all(out[i] == ("LEAK" if i in targets else "clean") for i in range(6)),
         )
 
 
