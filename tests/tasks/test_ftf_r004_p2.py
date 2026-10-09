@@ -1940,6 +1940,7 @@ out["sub_type"] = run(body([{{"type": S("function"), "function": {{"name": "look
 out["sub_name"] = run(body([{{"type": "function", "function": {{"name": S("evil")}}}}]))
 out["sub_url"] = run(body(content=img(S("https://x.test/a"))))
 out["nonobj"] = run([])
+out["unk_tool_type"] = run(body([{{"type": "teleport"}}]))
 cyc = {{"model": "m"}}; cyc["s"] = cyc
 out["cycle"] = run(cyc)
 deep = "x"
@@ -1987,8 +1988,9 @@ out["flt_none"] = runc(apply_approval_filter, r1, None, approved_tool_names=froz
 out["flt_forged"] = runc(apply_approval_filter, r1, AttemptEvidence(ev.response_sha256, ()), approved_tool_names=frozenset())
 out["flt_twice"] = runc(apply_approval_filter, o.body, ev, approved_tool_names=frozenset())
 out["flt_sub"] = runc(apply_approval_filter, r1, ev, approved_tool_names=frozenset({{S("a")}}))
-ho = apply_approval_filter(resp, hev, approved_tool_names=frozenset({{"delete_account"}}))
+ho = apply_approval_filter(resp, hev, approved_tool_names=frozenset({{"delete_account", "rt"}}))
 out["flt_hosted_types"] = [i["type"] for i in ho.body["output"]]
+out["flt_hosted_removed"] = list(ho.removed_call_ids)
 # network
 cnt = {{"c": 0}}
 real = socket.socket.connect
@@ -2051,7 +2053,164 @@ APPROVED_HOSTED_BLOCKED_KEYS = tuple(
 )
 
 # (label, regex, replacement, probe keys that must change)
-_MUTATIONS: list[tuple[str, str, str, tuple[str, ...]]] = []
+_MUTATIONS: list[tuple[str, str, str, tuple[str, ...]]] = [
+    (
+        "hosted-tools-allowed",
+        r"(    elif _HOSTED_TYPE_RE\.fullmatch\(tool_type\):\n)        if not _hosted_allowed\(tool_type, policy\):\n            out\.append\(Denial\(CODE_HOSTED_TOOL_DENIED, path\)\)\n",
+        "\\1        pass\n",
+        HOSTED_KEYS,
+    ),
+    (
+        "mcp-allowed",
+        r"        if not _hosted_allowed\(tool_type, policy\):\n            out\.append\(Denial\(CODE_MCP_DENIED, path\)\)\n",
+        "        pass\n",
+        ("mcp",),
+    ),
+    (
+        "any-media-is-inline",
+        r'    return value\.startswith\("data:"\)',
+        "    return True",
+        URL_KEYS,
+    ),
+    (
+        "media-substring-match",
+        r'    return value\.startswith\("data:"\)',
+        '    return "data:" in value',
+        ("url4",),
+    ),
+    (
+        "media-case-insensitive",
+        r'    return value\.startswith\("data:"\)',
+        '    return value.lower().startswith("data:")',
+        ("url5",),
+    ),
+    (
+        "media-whitespace-trimmed",
+        r'    return value\.startswith\("data:"\)',
+        '    return value.strip().startswith("data:")',
+        ("url6",),
+    ),
+    (
+        "function-tool-always-approved",
+        r"    elif name not in policy\.approved_tool_names:",
+        "    elif False:",
+        ("fn_bad", "fn_case", "fn_resp_bad", "fn_legacy_bad", "fn_empty_set"),
+    ),
+    (
+        "function-name-case-insensitive",
+        r"    elif name not in policy\.approved_tool_names:",
+        "    elif name.lower() not in policy.approved_tool_names:",
+        ("fn_case",),
+    ),
+    (
+        "hosted-ignores-profile",
+        r"    try:\n        enforce_effect\(.*?\n    except SecurityProfileEnforcementError:\n        return False\n",
+        "",
+        APPROVED_HOSTED_BLOCKED_KEYS,
+    ),
+    (
+        "approval-ignores-capability",
+        r"    if approval is None or capability not in approval\.capabilities:",
+        "    if approval is None:",
+        ("appr_other_cap",),
+    ),
+    (
+        "wrong-surface",
+        r'                "model",\n                approval\.destination,',
+        '                "storage",\n                approval.destination,',
+        ("appr_std",),
+    ),
+    (
+        "capability-keys-ignored",
+        r"    for key, capability in _CAPABILITY_KEYS:\n        if request\.get\(key\) is not None and",
+        "    for key, capability in ():\n        if False and",
+        ("wso", "plugins"),
+    ),
+    (
+        "null-capability-key-denied",
+        r"request\.get\(key\) is not None and",
+        "key in request and",
+        ("wso_null",),
+    ),
+    (
+        "unknown-tool-type-allowed",
+        r"    else:\n        out\.append\(Denial\(CODE_UNKNOWN_REQUEST_SHAPE, path\)\)\n\n\ndef _screen_tools",
+        "    else:\n        pass\n\n\ndef _screen_tools",
+        ("unk_tool_type",),
+    ),
+    (
+        "str-subclass-accepted",
+        r"        elif kind not in \(str, int, bool, type\(None\)\):",
+        "        elif not isinstance(value, (str, int, bool, type(None))):",
+        ("sub_type", "sub_name", "sub_url"),
+    ),
+    (
+        "no-depth-limit",
+        r"if depth > _MAX_DEPTH or nodes > _MAX_NODES:",
+        "if nodes > _MAX_NODES:",
+        ("deep",),
+    ),
+    (
+        "nan-accepted",
+        r'            if value != value or value in \(float\("inf"\), float\("-inf"\)\):',
+        "            if False:",
+        ("nan",),
+    ),
+    (
+        "capture-skips-hosted-calls",
+        r"        elif _CALL_ITEM_RE\.fullmatch\(item_type\):",
+        "        elif False:",
+        ("cap_hosted", "emitted"),
+    ),
+    (
+        "duplicate-ids-collapse",
+        r"    if len\(set\(ids\)\) != len\(ids\):",
+        "    if False:",
+        ("cap_dup",),
+    ),
+    (
+        "legacy-function-call-ignored",
+        r'        if message\.get\("function_call"\) is not None:',
+        "        if False:",
+        ("cap_legacy",),
+    ),
+    (
+        "canonical-json-unsorted",
+        r"sort_keys=True",
+        "sort_keys=False",
+        ("cap_resp",),
+    ),
+    (
+        "filter-without-matching-evidence",
+        r"    if type\(evidence\) is not AttemptEvidence or evidence != capture_response_attempts\(body\):",
+        "    if type(evidence) is not AttemptEvidence:",
+        ("flt_other", "flt_forged", "flt_twice"),
+    ),
+    (
+        "filter-keeps-approved-named-hosted-call",
+        r"        if not found\.hosted and found\.name in names:",
+        "        if found.name in names:",
+        ("flt_hosted_types", "flt_hosted_removed"),
+    ),
+    (
+        "filter-removes-forwards",
+        r"    for found in reversed\(_collect\(filtered\)\):",
+        "    for found in _collect(filtered):",
+        ("flt_hosted_types", "flt_hosted_removed"),
+    ),
+    (
+        "removed-ids-reversed",
+        r"    removed\.reverse\(\)\n",
+        "",
+        ("flt_hosted_removed",),
+    ),
+    (
+        "outcome-evidence-recaptured-after-filtering",
+        r"    return FilterOutcome\(filtered, tuple\(removed\), evidence\)",
+        "    return FilterOutcome(filtered, tuple(removed), capture_response_attempts(filtered))",
+        ("flt_evidence_kept",),
+    ),
+]
 
 
 def main() -> None:
