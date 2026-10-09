@@ -8266,15 +8266,28 @@ FTF-0515:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0515.py
 FTF-0516:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Dataset issue resolution UI
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0515
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0515.
+    PROVISIONAL / L1-PROVEN, not certified (Law 4). UI scope:
+    apps/web/components/dataset-factory/dataset_issue_resolution_ui.tsx consumes only the frozen
+    FTF-0516-P1 routes (quality-report, issues, issue-resolutions, resolve-issue); a decision
+    carries the server's report id, resolution version and per-issue evidence sha256, and is shown
+    as recorded only when the response parses strictly and echoes the report, issue, action and
+    before-evidence sent. Every action, waive included, needs a trimmed 1..2000 character rationale
+    before the request is sent; waive is offered for a warning only; a detector failure or an
+    already decided issue has no decision control; there is no in-place edit of locked data.
+    400/403/404/409/5xx and network failures are errors (Law 17). Proof:
+    apps/web/tests/ftf_0516.spec.ts (33 DOM-level Vitest tests, mocked fetch). Disclosed UNWIRED
+    (Law 6/7): no Next.js page tree (FTF-H029), so no Playwright journey from /; proving_symbol
+    stays blank. Fault -> RED table: docs/certifications/submissions/2026-10-09T1650Z-FTF-0516-UI.md.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: apps/web/tests/ftf_0516.spec.ts
 FTF-0517:
   certification_state: PROVISIONAL
   criticality: MUST
