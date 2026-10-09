@@ -148,9 +148,9 @@ def install(world: World) -> None:
         wanted = [v for v in statement.compile().params.values() if isinstance(v, uuid.UUID)]
         return Result([r for r in world.rows.values() if r.factory_job_id in wanted])
 
-    mod.tenant_scoped_session_for = scoped
-    mod.record_sync_outcome = record_sync_outcome
-    mod.execute_tenant_scoped = execute_tenant_scoped
+    mod.tenant_scoped_session_for = scoped  # type: ignore[assignment]
+    mod.record_sync_outcome = record_sync_outcome  # type: ignore[assignment]
+    mod.execute_tenant_scoped = execute_tenant_scoped  # type: ignore[assignment]
 
 
 class Evidence:
