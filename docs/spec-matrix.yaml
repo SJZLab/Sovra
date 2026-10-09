@@ -9687,14 +9687,23 @@ FTF-0908:
     composes FTF-0901 `effective_profile`/`enforce_effect` (training -> model surface, inference ->
     serving surface): zero_egress/air_gapped deny every managed route
     (`external_provider_profile_blocked`); standard needs a `ProviderApproval` for the exact
-    provider and purpose recording approver, account, region, retention and that purpose's terms
-    (`external_provider_not_approved`, `external_provider_purpose_not_approved`,
-    `external_provider_approval_incomplete`). A "private cloud account" label is data only and never
+    provider and purpose recording approver, account, region, retention, applicable agreement,
+    subprocessors, deletion behaviour and that purpose's terms (`external_provider_not_approved`,
+    `external_provider_purpose_not_approved`, `external_provider_approval_incomplete`); the
+    approval's account and region must equal the request's target account and region
+    (`external_provider_approval_mismatch`). A "private cloud account" label is data only and never
     approves. The denial audit reason is content-free (profile, surface, purpose, code) and is
-    written through FTF-0104 `write_audit_event` when an AuditContext is given. Unknown, str-subclass
-    or unhashable values raise `external_provider_invalid_request`. No network call (counting
-    socket test shows zero). UNWIRED: no live caller yet (training/inference submit paths are later
-    tasks) -- blank proving_symbol, same precedent as FTF-0901/FTF-0902. Not self-certified (Law 4).
+    written through FTF-0104 `write_audit_event` when an AuditContext is given, then committed
+    before the error is raised (round 2: under `tenant_scoped_session` the propagated error
+    otherwise rolls the audit row back; real-Postgres proof
+    `tests/integration/test_ftf_0908_external_provider_denial.py`, CI job
+    `external-provider-denial-integration`). The AuditContext is validated up front
+    (`external_provider_invalid_request`). Unknown, str-subclass or unhashable values raise
+    `external_provider_invalid_request`. No network call (counting socket test shows zero).
+    UNWIRED: no live caller yet (training/inference submit paths are later tasks) and no persisted
+    approvals yet, so a ProviderApproval is not tenant-bound and `approved_by` is not a verified
+    principal -- blank proving_symbol, same precedent as FTF-0901/FTF-0902. Not self-certified
+    (Law 4).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0908.py
