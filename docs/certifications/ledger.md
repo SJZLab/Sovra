@@ -10718,3 +10718,12 @@ data_exposure OK).
   entry gets build_model_capability_router, verified 46/46 and RED when unmounted on a scratch matrix); GREEN:
   NFKC-normalised alias lookup (FB-nfkc) and a lower-cased classifier model_id (FB5, an unlisted alias shows granted).
   Producer session only in the PR body (no commit trailers); certifier absent.
+
+## 2026-10-09T07:48Z — RETURNED: FTF-R004-P1 (r2)
+- **FTF-R004-P1: RETURNED** (round 1 → 2; #673, e1035b6fe6ecc34149116f2a4105eba05d097a5c). Independent verifier: CI on
+  head 3101908 green (gate log "all checks passed"; mutation 78/78); gates clean; UNWIRED disclosed. Reproduced: capture
+  returns prompt text from instructions, prompt variables, prediction, conversation and extra_body.messages; a bridge
+  rewrite (before 0.8 → after 0.7, approved 0.7) and a stale declaration pass as preserved. GREEN: CONTENT_KEYS
+  removals (F5, F6), float tolerance (F8), plain == on declared values (F10). Reason codes and the tuple digest are
+  missing; cyclic input raises a bare RecursionError; the declaration is mutable after validation.
+- CI note: GitHub Actions refused all jobs for billing from ~23:05Z 2026-10-08 to ~07:20Z 2026-10-09.
