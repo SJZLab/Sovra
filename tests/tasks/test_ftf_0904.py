@@ -45,7 +45,11 @@ from urllib.parse import quote
 
 REAL_ROOT = Path(__file__).resolve().parent.parent.parent
 ROOT = Path(os.environ.get("FTF0904_ROOT", str(REAL_ROOT)))
-BEHAVIOUR_ONLY = os.environ.get("FTF0904_BEHAVIOUR_ONLY") == "1"
+# scripts/mutation_gate.py edits the real module in place and re-runs this file once per mutant;
+# the fault-injection copies below would then be copies of a mutant (and cost minutes each), so
+# only the behavioural checks run there. The plain CI step and local runs still run every fault.
+UNDER_MUTATION_GATE = "mutation-gate-pyc" in os.environ.get("PYTHONPYCACHEPREFIX", "")
+BEHAVIOUR_ONLY = os.environ.get("FTF0904_BEHAVIOUR_ONLY") == "1" or UNDER_MUTATION_GATE
 sys.path.insert(0, str(ROOT))
 
 from packages.security import log_redaction as lr  # noqa: E402
