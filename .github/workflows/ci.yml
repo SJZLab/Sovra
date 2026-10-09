@@ -498,6 +498,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_r004_p1.py
       - name: FTF-R004-P2 negative-test proof (Inspect bridge provider-side execution boundary + pre-filter attempt evidence, no DB/network required)
         run: uv run python3 tests/tasks/test_ftf_r004_p2.py
+      - name: FTF-R004-P3 negative-test proof (pinned Inspect worker + case adapter + native runtime bridge over the real isolated tool backend, no DB/network required)
+        run: uv run python3 tests/tasks/test_ftf_r004_p3.py
       - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
         run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check
@@ -3190,6 +3192,42 @@ jobs:
       - name: Prove the real model import fields + import-validation jobs evidence against the live database
         run: uv run python3 tests/integration/test_ftf_h010_p1_model_import.py
 
+  inspect-target-bridge-integration:
+    # FTF-R004-P3: the pinned inspect_ai (model-less) runs a locked development suite read
+    # through the tenant-scoped case store as sovra_app on real Postgres, through the native
+    # FTF-04A26 adapter over the real FTF-1702 tool backend: draft/final suites refused before any
+    # case row is read, cross-tenant refusal and side effect observed in the backend, local
+    # private log with matching sha256, 0 outbound attempts --
+    # tests/integration/test_inspect_target_bridge.py.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' inspect-target-bridge-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftfr004p3
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftfr004p3"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfr004p3
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (all workspace members, incl. the pinned inspect_ai)
+        run: uv sync --all-packages
+      - name: Prove the Inspect runtime bridge against real Postgres and the real tool backend
+        run: uv run python3 tests/integration/test_inspect_target_bridge.py
+
   ci-verdict:
     # THE result to read for "CI is green" (merge-on-green, certification, Control plane).
     # Fails on any failed or cancelled job, on any skipped job without a documented exemption
@@ -3266,6 +3304,7 @@ jobs:
       - mlflow-durable-outbox-integration
       - model-import-integration
       - candidate-selection-integration
+      - inspect-target-bridge-integration
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
