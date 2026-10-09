@@ -159,6 +159,17 @@ class DurableOutbox:
         run = entry.run
         key = idempotency_key_for(run)
         with tenant_scoped_session_for(self._session_factory, self._context) as session:
+            current = self._row(session, run.job_id)
+            if current.status != "pending":
+                # Already resolved by a concurrent sync (R002's own
+                # `record_sync_outcome` guards `succeeded`/`failed` against
+                # this, but it no-ops for the `outcome=None` admission/
+                # attempt replay the PENDING branch below uses, and nothing
+                # stopped the unconditional `attempt_count` write that used
+                # to follow every branch). This entry's own outcome is
+                # stale; a resolved row's status, external id, error and
+                # attempt count are never rewritten (D2/D3b).
+                return
             if entry.state == SyncState.SYNCED:
                 row = record_sync_outcome(
                     session,

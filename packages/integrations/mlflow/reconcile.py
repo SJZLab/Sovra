@@ -22,7 +22,11 @@ How this module delivers it:
   a final completion tag holding the payload hash. A replay of an
   already-completed identical payload writes nothing; a different payload
   for a completed run is `RunConflictError` (drift is surfaced, never
-  silently overwritten).
+  silently overwritten). `compute_run_drift` runs on *every* found run,
+  whether or not its completion tag survived -- a deleted payload tag or a
+  run tampered with before its own completion is caught the same way a
+  tampered completed run is, never read as "not yet written" (Section
+  78.3: never rely solely on mutable tags for identity).
 * `TrackingOutbox` holds the measured result first. An outage leaves the
   entry `TRACKING_SYNC_PENDING` with the result intact; a server rejection
   is `FAILED`, an ambiguity `AMBIGUOUS`. None of those is ever reported as
@@ -294,11 +298,34 @@ def _field_drift(label: str, expected: Mapping[str, Any], actual: Mapping[str, A
     return drift
 
 
+_TERMINAL_RUN_STATUSES = frozenset({"FINISHED", "FAILED", "KILLED"})
+
+
 def compute_run_drift(record: dict[str, object], run: TrackedRun) -> tuple[str, ...]:
-    """Field-level comparison of a completed MLflow run with the Factory
-    payload (Section 78.3: never rely solely on mutable tags). Returns sorted
-    drift codes; empty means the run still equals what was projected."""
+    """Field-level comparison of a found MLflow run with the Factory payload
+    (Section 78.3: never rely solely on mutable tags). Called on *every*
+    found run, whether or not its completion tag survived -- a deleted
+    `factory.payload_sha256` tag must never make a tampered run look like
+    one that was simply never finished. Returns sorted drift codes; empty
+    means nothing has been written that disagrees with what Factory expects.
+
+    The run's own terminal `status` (set only by this adapter's own
+    `finish_run`, not a tag) decides how strict the comparison is:
+
+    * Not yet terminal (status is MLflow's default `RUNNING`, or the run is
+      brand new): a field Factory has not written yet is not drift, but any
+      value already present that disagrees with what Factory is about to
+      write is -- a run cannot be pre-seeded with a wrong value before its
+      own completion write (`changed`/`extra`, never `missing`).
+    * Terminal (`FINISHED`/`FAILED`/`KILLED`, Factory's own prior completion):
+      every field must match exactly, including one that went missing and a
+      run status that no longer agrees (`missing`/`changed`/`extra` and
+      `status_changed`).
+    """
     tags = run_tags(record)
+    info = record.get("info")
+    status = info.get("status") if isinstance(info, dict) else None
+    completed = status in _TERMINAL_RUN_STATUSES
     drift = _field_drift(
         "hash",
         {f"factory.hash.{k}": v for k, v in run.hashes},
@@ -306,10 +333,11 @@ def compute_run_drift(record: dict[str, object], run: TrackedRun) -> tuple[str, 
     )
     drift += _field_drift("param", dict(run.params), run_params(record))
     drift += _field_drift("metric", {k: float(v) for k, v in run.metrics}, run_metrics(record))
-    info = record.get("info")
-    status = info.get("status") if isinstance(info, dict) else None
-    if status != run.status:
-        drift.append("status_changed")
+    if completed:
+        if status != run.status:
+            drift.append("status_changed")
+    else:
+        drift = [code for code in drift if "_missing:" not in code]
     return tuple(sorted(drift))
 
 
@@ -354,13 +382,15 @@ def sync_run(
         run_id, tags, record = found
         entry.mlflow_run_id = run_id
         completed = tags.get(TAG_PAYLOAD)
-        if completed is not None:
-            if completed != run.payload_sha256():
-                raise RunConflictError("completed MLflow run holds a different payload")
-            drift = compute_run_drift(record, run)
-            if drift:
-                raise RunDriftError(drift)
-        else:
+        if completed is not None and completed != run.payload_sha256():
+            raise RunConflictError("completed MLflow run holds a different payload")
+        # Always compared against the live run, tag or no tag: a deleted
+        # completion tag must never be read as "never finished" when the
+        # run's own data (or terminal status) says otherwise.
+        drift = compute_run_drift(record, run)
+        if drift:
+            raise RunDriftError(drift)
+        if completed is None:
             client.log_batch(
                 run_id,
                 metrics=[(k, float(v), run.completed_at_ms, 0) for k, v in run.metrics],
