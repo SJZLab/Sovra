@@ -1037,9 +1037,11 @@
       "blockers": []
     },
     "FTF-0616": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "4a0de86713e272749ba2ebe0d358e59a2957be2a"
+      ],
       "independent_review": null,
       "blockers": []
     },
