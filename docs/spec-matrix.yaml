@@ -8927,7 +8927,7 @@ FTF-0616:
   certification_state: PROVISIONAL
   criticality: MUST
   description: LLM judge adapter through LiteLLM
-  evidence_hash: ''
+  evidence_hash: fc93b9ab7836c3f7c547efec7db9284f320c31c8
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-25; scenarios=Q16, Q17, Q18; deps=FTF-0210, FTF-0601.
@@ -8941,8 +8941,14 @@ FTF-0616:
     version, requested and resolved model; a resolved model outside the approved set (or the candidate)
     is MODEL_MISMATCH, never a verdict. Round 5: a missing model echo is its own MODEL_MISMATCH; approved_judge_model_ids members must be exact non-empty str (LlmJudgeGraderError before any call); the echo must equal the requested judge id or an exact alias named by its CalibrationRecord.judge_model_aliases (an approved but uncalibrated echo is MODEL_MISMATCH). Model output is strict JSON (no duplicate keys, NaN/Infinity or
     overflow, no repair of truncated JSON, deep nesting is refused, not a crash); exactly one choice;
-    only HTTP 200 is a response; a 400 is sent once. Fault -> RED table:
-    docs/certifications/submissions/2026-10-08T0500Z-FTF-0616.md; round 5: docs/certifications/submissions/2026-10-08T1800Z-FTF-0616.md.
+    only HTTP 200 is a response; a 400 is sent once. Round 7 (tests only): one shared
+    `_exactness_variants` helper closes the echo-identity Unicode-normalisation class (case, whitespace,
+    tab, NBSP, zero-width space, Unicode hyphen, fullwidth letter/digit) for both the judge-id and the
+    calibration-alias echo checks at once, plus a dedicated NFC/NFD/NFKC/NFKD composed-character check;
+    an NFKC-normalised comparison at either point is now RED (confirmed GREEN on the round-6 suite,
+    then RED on this round's). Whole-file mutation 200/200, 0 survivors. Fault -> RED table:
+    docs/certifications/submissions/2026-10-08T0500Z-FTF-0616.md; round 5: docs/certifications/submissions/2026-10-08T1800Z-FTF-0616.md;
+    round 7: docs/certifications/submissions/2026-10-09T0230Z-FTF-0616-r7.md.
 
     BLOCKED_EXTERNAL (packet resource_gate, owner action): the clause "Call approved real judge through
     LiteLLM" is proven only against a local TLS gateway stand-in. It needs a real gateway key and an
