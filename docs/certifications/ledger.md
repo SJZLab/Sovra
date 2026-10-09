@@ -10770,3 +10770,23 @@ producer session matches the certifier.
   zero-width/BOM strip, CR/LF, NBSP, U+3000, U+2011, and configured-side-only normalisation), each letting an approved
   but uncalibrated id produce a verdict; the judge-id variant loop runs the pass verdict only. Ruling: round 8 replaces
   the fixed list with property-generated variants and is the last exactness round.
+
+## 2026-10-09T12:10Z — RETURNED: FTF-0903 (r8), FTF-H010-P1 (r3), FTF-0516-P1 (r4), FTF-R004-P1 (r3)
+Independent verifiers on the merge commits; CI on each PR head green (ci-verdict success, proving-test log lines read
+through the GitHub MCP); gates clean (product_truth 47/47 locally, validate_spec --strict, data_exposure OK). No
+producer session matches the certifier.
+- **FTF-0903: RETURNED** (round 7 → 8; tests only; #680, 41d77de5f85564391b098c9e620b485b965c7840). Round-7 items met.
+  GREEN: the whole fault class at the missing-required-field refusal site (cause, note, attribute, log, print, warn),
+  the one site outside the shared META-LEAK check and log capture. Per the 0c ruling this is the last site.
+- **FTF-H010-P1: RETURNED** (round 2 → 3; #668, 8dc1495ac0ed140ae41365b4233254a969e3e762). All round-2 production fixes
+  hold on PG16 as sovra_app; no clause violated by the shipped code. GREEN: terminal-state block, a permissive
+  cross-tenant UPDATE policy (reproduced an org2 row changed under org1), two origin/import-kind CHECK weakenings,
+  partial sha256 patterns. Submission doc claims an allowlist and a .strip() check not in the diff (Law 2).
+- **FTF-0516-P1: RETURNED** (round 3 → 4; tests only; #678, 167d32e35d077d1cdc1894708c0943a00e938766). Round-3 items
+  delivered; 108/108 probes. GREEN: refusing non-ASCII or astral reasons (N9b, N9c) and the detector-path surrogate
+  guard (N6c); a test comment claims a store-level test that does not exist.
+- **FTF-R004-P1: RETURNED** (round 2 → 3; #675, da1a5b03a79f476a927dd353e33a76459a9ff1e3). Round-2 items fixed.
+  Reproduced: the recursive content scrub erases JSON-schema properties named like content keys, so a schema type
+  change passes as preserved (G1); int-key logit_bias entries dropped (G2); bare TypeError/KeyError (G3); inexact set
+  and mapping compares (G4); further content keys captured verbatim (G5). Ruling: allow-list capture with digests.
+- Pending: FTF-0501 r2 (#658), FTF-R005 (#674); queued next: FTF-R004-P2 (#677).

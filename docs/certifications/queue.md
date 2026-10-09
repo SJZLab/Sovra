@@ -24612,3 +24612,7 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-09T11:38Z — Control plane: FTF-0616 returned (135/302 unchanged)
 - **Returned:** FTF-0616 r8 (0b), tests only: generated Unicode variants at both points, configured-side mirror, pass and fail.
+
+## 2026-10-09T12:10Z — Control plane: 4 returned (135/302 unchanged)
+- **Returned:** FTF-0903 r8 (0c), FTF-H010-P1 r3 (0d), FTF-0516-P1 r4 (0l), FTF-R004-P1 r3 (0n).
+- **ci-verdict:** relay merges #674, #677, #678, #680 landed on a green ci-verdict.
