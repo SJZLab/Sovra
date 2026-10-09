@@ -2527,6 +2527,8 @@ def _r8_configured_forms(base: str) -> tuple[tuple[str, str, str], ...]:
         ),
         ("trailing NBSP", base + "\u00a0", base),
         ("trailing space", base + " ", base),
+        ("trailing U+3000", base + "\u3000", base),
+        ("leading U+3000", "\u3000" + base, base),
         ("zero-width prefix", "\u200b" + base, base),
         ("BOM prefix", "\ufeff" + base, base),
         ("trailing LF", base + "\n", base),
