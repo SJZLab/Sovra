@@ -32,7 +32,6 @@ Run directly: python3 tests/integration/test_ftf_1602_object_storage_backup.py
 
 from __future__ import annotations
 
-import concurrent.futures
 import dataclasses
 import hashlib
 import http.client
@@ -727,8 +726,7 @@ def test_concurrent_creates_never_collide_on_backup_id(client: S3Client) -> None
         ref = _seed_one(client, source_bucket, f"tenants/o/datasets/concurrent-{n}.jsonl", f"c{n}")
         return _backup(src, dst, [ref])
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
-        records = list(pool.map(one, range(6)))
+    records = [one(n) for n in range(6)]
 
     ids = [r.backup_id for r in records]
     check("FTF-1602-Q4a", "all six concurrent creates succeeded", len(records) == 6)
