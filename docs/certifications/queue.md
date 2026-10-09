@@ -24605,3 +24605,7 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-09T10:06Z — Control plane: 3 returned (135/302 unchanged)
 - **Returned:** FTF-0903 r7 (0c), FTF-1703 r5 (0g), FTF-0516-P1 r3 (0l).
 - **ci-verdict:** the 10 relay merges since CI recovered (#658, #663, #665, #667, #668, #669, #670, #671, #673, #675) all landed on a green ci-verdict.
+
+## 2026-10-09T10:26Z — Control plane: FTF-0309-P1 slice CERTIFIED; FTF-0908 returned (135/302)
+- **Certified slice:** FTF-0309-P1 (#667). **Returned:** FTF-0908 r3 (0m). **Queued:** FTF-0309 UI.
+- Follow-up O1 (non-blocking): refuse a NUL model name with 400 before discovery on the 0309-P1 and 0308-P1 routes.
