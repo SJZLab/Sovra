@@ -852,9 +852,7 @@ def test_input_shape_guards() -> None:
         "FTF-1703-N1",
         "re-cased purpose refused",
         all(
-            _raises(
-                TrainingDatasetError, _build, [dataclasses.replace(t, purpose=p)]
-            )
+            _raises(TrainingDatasetError, _build, [dataclasses.replace(t, purpose=p)])
             for p in ("Training", " training", "TRAINING ")
         ),
     )
@@ -1670,8 +1668,7 @@ def test_guards_name_their_own_cause() -> None:
         check(
             "FTF-1703-N1",
             f"{label} is refused by the provenance guard",
-            "provenance must be synthetic generator output"
-            in _msg_any(_build, [bad]),
+            "provenance must be synthetic generator output" in _msg_any(_build, [bad]),
         )
     for label, change in (
         ("group outside the train namespace", {"group_id": "final-grp-0001"}),
@@ -1691,9 +1688,7 @@ def test_guards_name_their_own_cause() -> None:
             "FTF-1703-A2",
             f"a review for {trace_id!r} is not a review of 'train-0000'",
             "unknown trace"
-            in _msg_any(
-                _build, [t], [ReviewDecision(trace_id, "reviewer:a", "approved")]
-            ),
+            in _msg_any(_build, [t], [ReviewDecision(trace_id, "reviewer:a", "approved")]),
         )
 
     # replay stays on the admission path as defence in depth: a generator regression
@@ -2044,12 +2039,7 @@ def test_round4_each_generator_index_admitted_at_most_once() -> None:
             "FTF-1703-R4-2",
             "two ids claiming the same generator index are refused to exactly one "
             "admission, even with provenance checking disabled",
-            _raises(
-                TrainingDatasetError,
-                _build,
-                [base, decoy],
-                _approve([base, decoy]),
-            ),
+            "admitted more than once" in _msg_any(_build, [base, decoy], _approve([base])),
         )
     finally:
         td._check_provenance = original
@@ -2226,9 +2216,7 @@ def test_round5_regenerated_object_is_scanned_and_checked() -> None:
     reserved = ReservedFinalSuite(entity_titles=frozenset({"sealed entity trn-x"}))
     td._generate_one = _drifting
     try:
-        raised = _raises(
-            HeldOutLeakageError, _build, [t], _approve([t]), reserved=reserved
-        )
+        raised = _raises(HeldOutLeakageError, _build, [t], _approve([t]), reserved=reserved)
     finally:
         td._generate_one = original
     check(
@@ -2301,7 +2289,10 @@ class _RigKey(str):
     """A str-subclass key whose __eq__ (run on every dict lookup) rewrites the value
     stored under it, so every read of the attribute can return a different value."""
 
-    def __new__(cls, name: str, store: dict, values: list):
+    store: dict[Any, Any]
+    values: list[Any]
+
+    def __new__(cls, name: str, store: dict[Any, Any], values: list[Any]) -> _RigKey:
         obj = str.__new__(cls, name)
         obj.store = store
         obj.values = list(values)
@@ -2343,8 +2334,12 @@ def test_round6_caller_objects_are_never_read() -> None:
         pass
 
     attacks = {
-        "exact TrainingTrace": _trace_as(__import__("evals.reference.training_dataset", fromlist=["x"]), a),
-        "TrainingTrace subclass": SubTrace(**{f.name: getattr(a, f.name) for f in dataclasses.fields(a)}),
+        "exact TrainingTrace": _trace_as(
+            __import__("evals.reference.training_dataset", fromlist=["x"]), a
+        ),
+        "TrainingTrace subclass": SubTrace(
+            **{f.name: getattr(a, f.name) for f in dataclasses.fields(a)}
+        ),
         "P8b trace_id flips between two traces": _flipping(
             dataclasses.replace(a), "trace_id", [b.trace_id, a.trace_id] * 40
         ),
@@ -2404,14 +2399,12 @@ def test_round6_plain_json_gate_faults() -> None:
     # 1. object gate: a faulty parser that admits a TrainingTrace object.
     obj_gate = _mutant(
         (
-            '    if type(data) is not dict:\n        raise TraceVerificationError("a trace must be a plain JSON object (dict)")',
-            '    if type(data) is TrainingTrace:\n        return _require_trace_shape(data)\n'
-            '    if type(data) is not dict:\n        raise TraceVerificationError("a trace must be a plain JSON object (dict)")',
+            '    if type(data) is not dict:\n        raise TraceVerificationError("a trace must be a plain JSON object (dict)")',  # noqa: E501
+            "    if type(data) is TrainingTrace:\n        return _require_trace_shape(data)\n"
+            '    if type(data) is not dict:\n        raise TraceVerificationError("a trace must be a plain JSON object (dict)")',  # noqa: E501
         )
     )
-    flipped = _flipping(
-        _trace_as(obj_gate, a), "trace_id", [TRACES[4].trace_id, a.trace_id] * 40
-    )
+    flipped = _flipping(_trace_as(obj_gate, a), "trace_id", [TRACES[4].trace_id, a.trace_id] * 40)
     msg = _msg_mut(obj_gate.build_training_dataset, [flipped], review)
     check(
         "FTF-1703-R6-FAULT",
@@ -2422,7 +2415,7 @@ def test_round6_plain_json_gate_faults() -> None:
 
     # 2. exact-str keys.
     rig = _RigKey("entity_title", {}, [])
-    keyed = {k: v for k, v in wire.items() if k != "entity_title"}
+    keyed: dict[Any, Any] = {k: v for k, v in wire.items() if k != "entity_title"}
     keyed[rig] = wire["entity_title"]
     check(
         "FTF-1703-R6-2",
@@ -2431,8 +2424,8 @@ def test_round6_plain_json_gate_faults() -> None:
     )
     weak_key = _mutant(
         (
-            "            if type(key) is not str:\n                raise TraceVerificationError(f\"{what}: not plain JSON data (non-str key)\")",
-            "            if not isinstance(key, str):\n                raise TraceVerificationError(f\"{what}: not plain JSON data (non-str key)\")",
+            '            if type(key) is not str:\n                raise TraceVerificationError(f"{what}: not plain JSON data (non-str key)")',  # noqa: E501
+            '            if not isinstance(key, str):\n                raise TraceVerificationError(f"{what}: not plain JSON data (non-str key)")',  # noqa: E501
         )
     )
     check(
@@ -2456,8 +2449,8 @@ def test_round6_plain_json_gate_faults() -> None:
     )
     weak_value = _mutant(
         (
-            "    if value is None or kind in (str, int, float, bool):\n        return value\n    if kind is list:",
-            "    if value is None or isinstance(value, (str, int, float, bool)):\n        return value\n    if kind is list:",
+            "    if value is None or kind in (str, int, float, bool):\n        return value\n    if kind is list:",  # noqa: E501
+            "    if value is None or isinstance(value, (str, int, float, bool)):\n        return value\n    if kind is list:",  # noqa: E501
         )
     )
     check(
@@ -2479,15 +2472,16 @@ def test_round6_plain_json_gate_faults() -> None:
     )
     weak_top = _mutant(
         (
-            '    if type(data) is not dict:\n        raise TraceVerificationError("a trace must be a plain JSON object (dict)")',
-            '    if not isinstance(data, dict):\n        raise TraceVerificationError("a trace must be a plain JSON object (dict)")',
+            '    if type(data) is not dict:\n        raise TraceVerificationError("a trace must be a plain JSON object (dict)")',  # noqa: E501
+            '    if not isinstance(data, dict):\n        raise TraceVerificationError("a trace must be a plain JSON object (dict)")',  # noqa: E501
         )
     )
     check(
         "FTF-1703-R6-FAULT",
         "fault: isinstance(dict) at the top level -> the named top-level refusal is gone "
         "(only the recursive copy's differently worded check still refuses it)",
-        "plain JSON object" not in _msg_mut(weak_top.build_training_dataset, [LoudDict(wire)], review),
+        "plain JSON object"
+        not in _msg_mut(weak_top.build_training_dataset, [LoudDict(wire)], review),
     )
 
     # 5. exact key set, steps list.
@@ -2508,12 +2502,14 @@ def test_round6_plain_json_gate_faults() -> None:
         check(
             "FTF-1703-R6-2",
             f"steps that are {label} are refused by the named list check",
-            "steps must be a list" in _msg_any(build_training_dataset, [{**wire, "steps": bad_steps}], review),
+            "steps must be a list"
+            in _msg_any(build_training_dataset, [{**wire, "steps": bad_steps}], review),
         )
     check(
         "FTF-1703-R6-2",
         "a tuple of steps (not JSON) is refused",
-        "unsupported type" in _msg_any(build_training_dataset, [{**wire, "steps": tuple(wire["steps"])}], review),
+        "unsupported type"
+        in _msg_any(build_training_dataset, [{**wire, "steps": tuple(wire["steps"])}], review),
     )
     for name, src, dst in (
         ("exact key set", "    if set(copied) != _TRACE_FIELD_NAMES:", "    if False:"),
@@ -2553,8 +2549,8 @@ def test_round6_plain_json_gate_faults() -> None:
     )
     shallow = _mutant(
         (
-            '    if depth > 64:\n        raise TraceVerificationError(f"{what}: nesting is too deep")',
-            '    if depth > 640:\n        raise TraceVerificationError(f"{what}: nesting is too deep")',
+            '    if depth > 64:\n        raise TraceVerificationError(f"{what}: nesting is too deep")',  # noqa: E501
+            '    if depth > 640:\n        raise TraceVerificationError(f"{what}: nesting is too deep")',  # noqa: E501
         )
     )
     check(
@@ -2572,7 +2568,7 @@ def test_round6_review_dict_is_parsed_strictly() -> None:
     class LoudDict(dict):
         pass
 
-    cases = {
+    cases: dict[str, Any] = {
         "a dict subclass": LoudDict(base),
         "a list": [base],
         "a string": "approved",
@@ -2591,7 +2587,7 @@ def test_round6_review_dict_is_parsed_strictly() -> None:
     for label, bad in cases.items():
         check(
             "FTF-1703-R6-3",
-            f"a review that is {label} is refused with ReviewIndependenceError (never a bare TypeError)",
+            f"a review that is {label} is refused with ReviewIndependenceError (never a bare TypeError)",  # noqa: E501
             _raises(ReviewIndependenceError, build_training_dataset, [wire], [bad]),
         )
     check(
@@ -2603,8 +2599,8 @@ def test_round6_review_dict_is_parsed_strictly() -> None:
     # faults
     weak_top = _mutant(
         (
-            '    if type(data) is not dict:\n        raise ReviewIndependenceError("a review must be a plain JSON object (dict)")',
-            '    if not isinstance(data, dict):\n        raise ReviewIndependenceError("a review must be a plain JSON object (dict)")',
+            '    if type(data) is not dict:\n        raise ReviewIndependenceError("a review must be a plain JSON object (dict)")',  # noqa: E501
+            '    if not isinstance(data, dict):\n        raise ReviewIndependenceError("a review must be a plain JSON object (dict)")',  # noqa: E501
         )
     )
     check(
@@ -2618,7 +2614,8 @@ def test_round6_review_dict_is_parsed_strictly() -> None:
     check(
         "FTF-1703-R6-FAULT",
         "fault: exact key check removed -> the extra-key review loses its named refusal",
-        "exactly trace_id" not in _msg_mut(no_keys.build_training_dataset, [wire], [{**base, "note": "x"}]),
+        "exactly trace_id"
+        not in _msg_mut(no_keys.build_training_dataset, [wire], [{**base, "note": "x"}]),
     )
     rig = _RigKey("decision", {}, [])
     rigged = {"trace_id": base["trace_id"], "reviewer_id": base["reviewer_id"], rig: "approved"}
