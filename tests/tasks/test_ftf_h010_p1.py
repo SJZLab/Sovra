@@ -645,7 +645,8 @@ def test_s3_external_endpoint_with_no_provider_ref_is_refused() -> None:
 
 def test_s4_imported_adapter_with_no_base_is_refused() -> None:
     real_parent = uuid.uuid4()
-    with _store_env(parent_versions={real_parent}) as (session, audit):
+    real_artifact = uuid.uuid4()
+    with _store_env(parent_versions={real_parent}, artifacts={real_artifact}) as (session, audit):
         check(
             CID,
             "imported_adapter with parent_model_version_id=None is refused",
@@ -664,6 +665,30 @@ def test_s4_imported_adapter_with_no_base_is_refused() -> None:
             ),
         )
         check(CID, "nothing was written", not _jobs(session) and not audit.events)
+        check(
+            CID,
+            "imported_adapter with parent_model_version_id=None is refused even with a "
+            "real trainable_artifact_id present -- isolates the base check from the "
+            "artifact check (neither masks the other)",
+            _raises(
+                lambda: crud.create_model_import_job(
+                    session,
+                    _CTX,
+                    project_id=_PROJECT,
+                    requested_origin="imported_adapter",
+                    parent_model_version_id=None,
+                    trainable_artifact_id=real_artifact,
+                    external_provider_model_ref=None,
+                    actor=_ACTOR,
+                ),
+                schema.ModelImportValidationError,
+            ),
+        )
+        check(
+            CID,
+            "nothing was written by the base-missing-with-artifact-present refusal either",
+            not _jobs(session) and not audit.events,
+        )
         check(
             CID,
             "imported_adapter with a real base but no trainable_artifact_id is refused too",
