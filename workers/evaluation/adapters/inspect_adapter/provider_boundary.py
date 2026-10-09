@@ -35,11 +35,15 @@ forbidden tool calls before approval filtering can replace model output."):
   can never come before capture and a filtered body can never be passed off as
   the original. The returned `FilterOutcome` carries the pre-filter evidence.
 
-Screening performs no network call, no DNS resolution and no filesystem read:
-URLs are classified by parsing (`urlsplit`, the parse FTF-H006 `url_policy`
-uses), never by substring, and only a value whose scheme is exactly `data` and
-that starts with the literal `data:` is inline. Decisions are content-free: a
-denial holds a stable code and an index path (`tools[2]`), never a tool name,
+Screening performs no network call, no DNS resolution and no filesystem read.
+
+A media reference is inline only when the raw value starts with the literal,
+lower-case `data:` -- never decided by searching for the substring anywhere in the
+value (`https://x/?u=data:...` is remote) and never by a URL parse that would
+normalise `" data:"` or `"DATA:"` into an inline value. Every other string, whatever
+its scheme (http, https, file, ftp, ...), is a remote dereference.
+
+Decisions are content-free: a denial holds a stable code and an index path (`tools[2]`), never a tool name,
 URL or prompt text.
 
 Input is validated strictly before it is read: the body must be plain JSON
@@ -64,7 +68,6 @@ import json
 import re
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlsplit
 
 from packages.security.security_profile_enforcement import (
     Destination,
@@ -116,6 +119,7 @@ _HOSTED_TYPE_RE = re.compile(
 )
 _CALL_ITEM_RE = re.compile(r"[a-z0-9_]+_call", re.ASCII)
 _BASE64_RE = re.compile(r"[A-Za-z0-9+/_=-]*", re.ASCII)
+_EXTERNAL_KIND = {"internal": False, "managed_provider": True, "external": True}
 _TEXT_PART_TYPES = frozenset({"text", "input_text", "output_text", "refusal"})
 _NON_CALL_OUTPUT_TYPES = frozenset({"message", "reasoning"})
 _KNOWN_INPUT_ITEM_TYPES = frozenset({"function_call", "function_call_output", "reasoning"})
@@ -132,10 +136,6 @@ class ProviderBoundaryError(Exception):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
-
-
-def _is_str(value: object) -> bool:
-    return type(value) is str
 
 
 def _text(value: object, what: str) -> str:
@@ -163,7 +163,7 @@ class HostedCapabilityApproval:
     def __post_init__(self) -> None:
         if not _name_set(self.capabilities, "capabilities"):
             raise ProviderBoundaryError(_INVALID_REQUEST, "capabilities must not be empty")
-        if type(self.destination) is not Destination or self.destination.kind == "internal":
+        if type(self.destination) is not Destination or not _EXTERNAL_KIND[self.destination.kind]:
             raise ProviderBoundaryError(
                 _INVALID_REQUEST, "a hosted capability needs a non-internal Destination"
             )
@@ -280,12 +280,12 @@ def _hosted_allowed(capability: str, policy: ScreeningPolicy) -> bool:
 
 
 def _is_inline_data_uri(value: str) -> bool:
-    if value[:5] != "data:":
-        return False
-    try:
-        return urlsplit(value).scheme == "data"
-    except ValueError:
-        return False
+    """Exact, case-sensitive `data:` prefix of the raw value -- stricter than any URL parse.
+
+    `urlsplit` strips leading whitespace and lower-cases the scheme, so `" data:..."`
+    and `"DATA:..."` would classify as inline; a raw-prefix test refuses both.
+    """
+    return value.startswith("data:")
 
 
 def _screen_function(name: object, path: str, policy: ScreeningPolicy, out: list[Denial]) -> None:
@@ -383,10 +383,7 @@ def _screen_part(part: object, path: str, out: list[Denial]) -> None:
         reference = part.get("image_url")
         if type(reference) is dict:
             reference = reference.get("url")
-        if reference is None or type(reference) is list:
-            out.append(Denial(CODE_UNKNOWN_REQUEST_SHAPE, path))
-        else:
-            _screen_media(reference, path, out)
+        _screen_media(reference, path, out)
     elif part_type == "input_image":
         _screen_references(part, path, out, inline=("image_url",), remote=("file_id",))
     elif part_type == "input_file":
@@ -524,9 +521,9 @@ class FilterOutcome:
 class _Found:
     tool_call_id: str
     name: str
-    kind: str
+    hosted: bool
     args_sha256: str
-    container: str
+    chat: bool
     path: tuple[int, ...]
 
 
@@ -575,9 +572,9 @@ def _collect_chat(body: dict[str, Any], found: list[_Found]) -> None:
                 _Found(
                     _response_text(call.get("id"), "tool call id"),
                     _response_text(function.get("name"), "tool call name"),
-                    "function",
+                    False,
                     _args_hash(function.get("arguments")),
-                    "tool_calls",
+                    True,
                     (choice_index, call_index),
                 )
             )
@@ -600,9 +597,9 @@ def _collect_output(body: dict[str, Any], found: list[_Found]) -> None:
                 _Found(
                     _response_text(item.get("call_id"), "function call id"),
                     _response_text(item.get("name"), "function call name"),
-                    "function",
+                    False,
                     _args_hash(item.get("arguments")),
-                    "output",
+                    False,
                     (index,),
                 )
             )
@@ -614,9 +611,9 @@ def _collect_output(body: dict[str, Any], found: list[_Found]) -> None:
                 _Found(
                     _response_text(call_id, "hosted call id"),
                     _response_text(name, "hosted call name"),
-                    "hosted",
+                    True,
                     _args_hash(arguments),
-                    "output",
+                    False,
                     (index,),
                 )
             )
@@ -641,7 +638,13 @@ def capture_response_attempts(response_body: object) -> AttemptEvidence:
     return AttemptEvidence(
         digest,
         tuple(
-            AttemptRecord(f.tool_call_id, f.name, f.kind, f.args_sha256, digest)
+            AttemptRecord(
+                f.tool_call_id,
+                f.name,
+                "hosted" if f.hosted else "function",
+                f.args_sha256,
+                digest,
+            )
             for f in _collect(body)
         ),
     )
@@ -663,9 +666,9 @@ def apply_approval_filter(
     filtered = copy.deepcopy(body)
     removed: list[str] = []
     for found in reversed(_collect(filtered)):
-        if found.kind == "function" and found.name in names:
+        if not found.hosted and found.name in names:
             continue
-        if found.container == "tool_calls":
+        if found.chat:
             del filtered["choices"][found.path[0]]["message"]["tool_calls"][found.path[1]]
         else:
             del filtered["output"][found.path[0]]
