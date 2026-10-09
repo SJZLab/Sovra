@@ -1851,6 +1851,81 @@ def test_supported_scalar_and_container_types_are_accepted_and_copied() -> None:
     check(CID, "bytes are compared exactly", _captured_blocks("logit_bias", b"a", b"b"))
 
 
+def test_r4_digest_is_sensitive_to_nested_values_order_length_and_duplicates() -> None:
+    """Round 4 (QUEUE 0n): a change that goes through capture on both sides
+    must block, for every shape the digest covers. Faults FG3/FG6 (keys-only
+    digest), FG/FG2 (list/tuple order ignored), FG4 (only first element
+    kept), FG5 (de-duplicated elements) each leave one of these `preserved`."""
+    # 1. nested value inside a digested dict (digested top-level and digested extra_body child)
+    check(
+        CID,
+        "web_search_options.search_context_size change blocks through capture",
+        _captured_blocks(
+            "web_search_options", {"search_context_size": "low"}, {"search_context_size": "high"}
+        ),
+    )
+    for before_v, after_v in ((True, False), (False, True), (1, True), ("a", "b")):
+        check(
+            CID,
+            f"extra_body.chat_template_kwargs.enable_thinking {before_v!r}->{after_v!r} blocks",
+            _captured_blocks(
+                "extra_body",
+                {"chat_template_kwargs": {"enable_thinking": before_v}},
+                {"chat_template_kwargs": {"enable_thinking": after_v}},
+            ),
+        )
+    check(
+        CID,
+        "an unknown extra_body child with the same key names but a changed nested value blocks",
+        _captured_blocks(
+            "extra_body", {"unknown_child": {"k": {"j": 1}}}, {"unknown_child": {"k": {"j": 2}}}
+        ),
+    )
+    check(
+        CID,
+        "a deeply nested value change in a digested top-level key blocks",
+        _captured_blocks("zz", {"a": {"b": {"c": [1]}}}, {"a": {"b": {"c": [2]}}}),
+    )
+    # 2. list / tuple reorder
+    check(CID, "list reorder blocks", _captured_blocks("zz", [1, 2], [2, 1]))
+    check(CID, "tuple reorder blocks", _captured_blocks("zz", (1, 2), (2, 1)))
+    check(
+        CID,
+        "reorder of stop_token_ids blocks",
+        _captured_blocks("stop_token_ids", [1, 2, 3], [3, 2, 1]),
+    )
+    check(
+        CID,
+        "reorder nested in a digested dict blocks",
+        _captured_blocks("zz", {"k": [1, 2]}, {"k": [2, 1]})
+        and _captured_blocks("zz", {"k": (1, 2)}, {"k": (2, 1)}),
+    )
+    # 3. length and duplicates
+    check(CID, "[2,1] -> [2] blocks", _captured_blocks("zz", [2, 1], [2]))
+    check(CID, "[1] -> [1,1] blocks", _captured_blocks("zz", [1], [1, 1]))
+    check(CID, "[1,1] -> [1] blocks", _captured_blocks("zz", [1, 1], [1]))
+    check(CID, "(1,) -> (1,1) blocks", _captured_blocks("zz", (1,), (1, 1)))
+    check(
+        CID,
+        "stop_token_ids [2,1] -> [2] blocks through capture",
+        _captured_blocks("stop_token_ids", [2, 1], [2]),
+    )
+    check(
+        CID,
+        "stop_token_ids [2] -> [2,1] blocks through capture",
+        _captured_blocks("stop_token_ids", [2], [2, 1]),
+    )
+    # an identical value must still be preserved (the sensitivity is not over-blocking)
+    same = capture_effective_generation_settings(
+        {"stop_token_ids": [2, 1], "web_search_options": {"search_context_size": "low"}}
+    )
+    check(
+        CID,
+        "identical digested settings stay preserved",
+        compare(same, same, same).verdict == "preserved",
+    )
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
