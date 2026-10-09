@@ -232,7 +232,8 @@ def _artifact(org_id: uuid.UUID, name: str, status: str = "ready") -> TrainableA
 
 
 def _message(exc: DBAPIError) -> str:
-    return str(getattr(exc.orig, "diag", None) and exc.orig.diag.message_primary or exc.orig)
+    diag = getattr(exc.orig, "diag", None)
+    return str(exc.orig) if diag is None else str(diag.message_primary)
 
 
 def _raw_job(session: Session, org_id: uuid.UUID, project_id: uuid.UUID) -> uuid.UUID:
