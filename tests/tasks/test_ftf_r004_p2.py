@@ -28,7 +28,7 @@ evidence in the bridge"): the same tests, plus
 test_screening_makes_zero_network_calls (fault FI),
 test_unknown_shapes_are_denied_never_allowed,
 test_str_subclass_and_unhashable_values_never_allow_never_type_error (fault FJ),
-test_url_classification_is_by_parsing_not_substring (fault FK).
+test_data_prefix_is_exact_raw_prefix_not_substring_or_parse (fault FK).
 
 Fault injection (Law 1): the mutation table at the bottom rewrites the real
 module in a fresh subprocess; each behavioural probe key must change.
@@ -384,7 +384,7 @@ def test_remote_media_is_denied_inline_data_is_allowed() -> None:
     check("FTF-R004-P2-FC", "a remote image in a tool message is denied", not _allowed(nested))
 
 
-def test_url_classification_is_by_parsing_not_substring() -> None:
+def test_data_prefix_is_exact_raw_prefix_not_substring_or_parse() -> None:
     # The substring 'data:' appears in all of these, none is an inline data URI.
     for url in (
         "https://example.com/data:image/png",
@@ -1509,7 +1509,9 @@ def test_size_and_depth_limits_are_exact() -> None:
         == "provider_boundary_invalid_request",
     )
     check(
-        cid, "a bool, an int and a null are accepted", _allowed({"model": None, "a": True, "b": 3})
+        cid,
+        "a bool, an int and a null are accepted",
+        _allowed({"model": None, "stream": True, "n": 3}),
     )
 
 
@@ -1861,6 +1863,249 @@ def test_attempt_evidence_validates_itself() -> None:
         )
 
 
+def _fco_body(output: Any) -> dict[str, Any]:
+    return {
+        "model": "m",
+        "input": [{"type": "function_call_output", "call_id": "c", "output": output}],
+    }
+
+
+def test_function_call_output_content_parts_are_screened() -> None:
+    cid = "FTF-R004-P2-R1"
+    remote = CODE_REMOTE_MEDIA_DEREFERENCE
+    cases: list[tuple[str, Any, list[tuple[str, str]]]] = [
+        (
+            "a remote input_image in the output list",
+            [{"type": "input_image", "image_url": "https://x.test/a.png"}],
+            [(remote, "input[0].output[0]")],
+        ),
+        (
+            "a remote input_file file_url in the output list",
+            [{"type": "input_file", "file_url": "https://x.test/a.pdf"}],
+            [(remote, "input[0].output[0]")],
+        ),
+        (
+            "an input_file file_id in the output list",
+            [{"type": "input_file", "file_id": "file-1"}],
+            [(remote, "input[0].output[0]")],
+        ),
+        (
+            "an input_image file_id in the output list",
+            [{"type": "input_image", "file_id": "file-1"}],
+            [(remote, "input[0].output[0]")],
+        ),
+        (
+            "an unknown part type in the output list",
+            [{"type": "hologram"}],
+            [(CODE_UNKNOWN_REQUEST_SHAPE, "input[0].output[0]")],
+        ),
+        (
+            "the second of two parts is remote",
+            [
+                {"type": "input_text", "text": "ok"},
+                {"type": "input_image", "image_url": "http://x/a"},
+            ],
+            [(remote, "input[0].output[1]")],
+        ),
+        ("an output that is a number", 7, [(CODE_UNKNOWN_REQUEST_SHAPE, "input[0].output")]),
+        (
+            "an output that is an object",
+            {"a": 1},
+            [(CODE_UNKNOWN_REQUEST_SHAPE, "input[0].output")],
+        ),
+    ]
+    for label, output, expected in cases:
+        got = _paths(_fco_body(output))
+        check(cid, f"{label} -> {expected} (got {got})", got == expected)
+        check(cid, f"{label} is not allowed", not _allowed(_fco_body(output)))
+    for label, output in (
+        ("a plain string output", "result text"),
+        ("a null output", None),
+        ("a text-part list", [{"type": "input_text", "text": "ok"}]),
+        ("an inline data: image part", [{"type": "input_image", "image_url": DATA_URI}]),
+        ("an empty list", []),
+    ):
+        check(cid, f"{label} is allowed", _allowed(_fco_body(output)))
+
+
+def test_request_top_level_is_an_allow_list_of_known_keys() -> None:
+    cid = "FTF-R004-P2-R2"
+    check(cid, "control: the plain chat body is allowed", _allowed(_chat_body()))
+    for key, value in (
+        ("mcp_servers", [{"url": "https://x.test/mcp"}]),
+        (
+            "prompt",
+            {
+                "id": "pmpt_1",
+                "variables": {"img": {"type": "input_image", "image_url": "https://x/a"}},
+            },
+        ),
+        ("search_parameters", {"mode": "on"}),
+        ("container", {"type": "auto"}),
+        ("extra_body", {"tools": [{"type": "web_search"}]}),
+        ("extra_body", {"web_search_options": {}}),
+        ("extra_body", {}),
+        ("tool_resources", {"file_search": {"vector_store_ids": ["vs"]}}),
+        ("WEB_SEARCH_OPTIONS", {"a": 1}),
+        ("Web_Search_Options", {"a": 1}),
+        ("web_search_options ", {"a": 1}),
+        ("Plugins", [{"id": "p"}]),
+        ("some_future_hosted_thing", True),
+        ("previous_response_id", "resp_1"),
+    ):
+        body = _chat_body(**{key: value})
+        got = _paths(body)
+        check(
+            cid,
+            f"unknown top-level key {key!r} is one unknown_request_shape denial (got {got})",
+            len(got) == 1 and got[0][0] == CODE_UNKNOWN_REQUEST_SHAPE,
+        )
+        check(cid, f"unknown top-level key {key!r} is not allowed", not _allowed(body))
+    # Every unknown key is reported (not only the first), and none names the key.
+    many = _paths(_chat_body(mcp_servers=[], container={}, tool_resources={}))
+    check(
+        cid,
+        f"three unknown keys are three denials (got {many})",
+        [c for c, _ in many] == [CODE_UNKNOWN_REQUEST_SHAPE] * 3,
+    )
+    for _, path in many:
+        check(
+            cid,
+            f"the denial path {path!r} does not echo a request key",
+            not any(k in path for k in ("mcp_servers", "container", "tool_resources")),
+        )
+    # Documented capability keys keep their own code, not unknown_request_shape.
+    check(
+        cid,
+        "web_search_options stays hosted_tool_denied",
+        _paths(_chat_body(web_search_options={"a": 1}))
+        == [(CODE_HOSTED_TOOL_DENIED, "web_search_options")],
+    )
+    # Ordinary generation settings are known keys.
+    for key, value in (
+        ("temperature", 0.1),
+        ("top_p", 1),
+        ("max_tokens", 5),
+        ("max_completion_tokens", 5),
+        ("max_output_tokens", 5),
+        ("stop", ["x"]),
+        ("seed", 1),
+        ("stream", False),
+        ("n", 1),
+        ("response_format", {"type": "json_object"}),
+        ("tool_choice", "auto"),
+        ("parallel_tool_calls", False),
+        ("instructions", "be brief"),
+        ("metadata", {"k": "v"}),
+        ("user", "u1"),
+    ):
+        check(cid, f"known key {key!r} is allowed", _allowed(_chat_body(**{key: value})))
+
+
+def test_tool_choice_cannot_name_a_hosted_tool() -> None:
+    cid = "FTF-R004-P2-R2B"
+    for value in (
+        {"type": "web_search_preview"},
+        {"type": "mcp", "server_label": "x"},
+        {"type": "allowed_tools", "tools": [{"type": "web_search"}]},
+        7,
+        ["auto"],
+    ):
+        got = _paths(_chat_body(tool_choice=value))
+        check(
+            cid,
+            f"tool_choice {value!r} is an unknown_request_shape denial at tool_choice (got {got})",
+            got == [(CODE_UNKNOWN_REQUEST_SHAPE, "tool_choice")],
+        )
+    for value in (
+        "auto",
+        "none",
+        "required",
+        {"type": "function", "function": {"name": "lookup_order"}},
+    ):
+        check(cid, f"tool_choice {value!r} is allowed", _allowed(_chat_body(tool_choice=value)))
+
+
+def test_function_tool_with_an_extra_key_is_denied() -> None:
+    cid = "FTF-R004-P2-R2C"
+    cases: list[tuple[str, dict[str, Any]]] = [
+        ("chat form, extra key on the tool", {**_chat_function_tool(), "web_search": {}}),
+        (
+            "chat form, extra key on the function",
+            {"type": "function", "function": {"name": "lookup_order", "web_search": {}}},
+        ),
+        ("responses form, extra key", {**_responses_function_tool(), "web_search": {}}),
+        (
+            "responses form, extra mcp key",
+            {**_responses_function_tool(), "server_url": "https://x.test"},
+        ),
+        ("responses form, extra type-like key", {**_responses_function_tool(), "container": {}}),
+    ]
+    for label, tool in cases:
+        got = _paths(_chat_body(tools=[tool]))
+        check(
+            cid,
+            f"{label} -> unknown_request_shape at tools[0] (got {got})",
+            got == [(CODE_UNKNOWN_REQUEST_SHAPE, "tools[0]")],
+        )
+    legacy = _paths(_chat_body(tools=[], functions=[{"name": "lookup_order", "web_search": {}}]))
+    check(
+        cid,
+        f"legacy function with an extra key is denied (got {legacy})",
+        legacy == [(CODE_UNKNOWN_REQUEST_SHAPE, "functions[0]")],
+    )
+    for tool in (
+        {
+            "type": "function",
+            "function": {
+                "name": "lookup_order",
+                "description": "d",
+                "parameters": {"type": "object"},
+                "strict": True,
+            },
+        },
+        {
+            "type": "function",
+            "name": "lookup_order",
+            "description": "d",
+            "parameters": {"type": "object"},
+            "strict": True,
+        },
+    ):
+        check(
+            cid,
+            f"the documented function-tool keys are allowed: {sorted(tool)}",
+            _allowed(_chat_body(tools=[tool])),
+        )
+    check(
+        cid,
+        "a legacy function with the documented keys is allowed",
+        _allowed(
+            _chat_body(
+                tools=[], functions=[{"name": "lookup_order", "description": "d", "parameters": {}}]
+            )
+        ),
+    )
+
+
+def test_remote_media_reference_keys_have_exact_codes() -> None:
+    cid = "FTF-R004-P2-R3"
+    cases: list[tuple[str, list[dict[str, Any]]]] = [
+        ("input_file.file_url", [{"type": "input_file", "file_url": "https://x.test/a.pdf"}]),
+        ("input_file.file_id", [{"type": "input_file", "file_id": "file-1"}]),
+        ("input_image.file_id", [{"type": "input_image", "file_id": "file-1"}]),
+        ("file.file_id", [{"type": "file", "file": {"file_id": "file-1"}}]),
+    ]
+    for label, content in cases:
+        body = {"model": "m", "input": [{"type": "message", "role": "user", "content": content}]}
+        got = _paths(body)
+        check(
+            cid,
+            f"{label} is exactly one remote_media_dereference at input[0].content[0] (got {got})",
+            got == [(CODE_REMOTE_MEDIA_DEREFERENCE, "input[0].content[0]")],
+        )
+
+
 # --------------------------------------------------------------------------- mutations
 
 _PROBE = r"""
@@ -1915,6 +2160,7 @@ out["file_data_ok"] = run(body(content=[{{"type": "file", "file": {{"file_data":
 out["audio_ok"] = run(body(content=[{{"type": "input_audio", "input_audio": {{"data": "AAAA", "format": "wav"}}}}]))
 out["audio_url"] = run(body(content=[{{"type": "input_audio", "input_audio": {{"data": "https://x/a", "format": "wav"}}}}]))
 out["in_file_url"] = run({{"model": "m", "input": [{{"type": "message", "role": "user", "content": [{{"type": "input_file", "file_url": "https://x/a"}}]}}]}})
+out["in_file_id"] = run({{"model": "m", "input": [{{"type": "message", "role": "user", "content": [{{"type": "input_file", "file_id": "f"}}]}}]}})
 out["in_img_id"] = run({{"model": "m", "input": [{{"type": "message", "role": "user", "content": [{{"type": "input_image", "file_id": "f"}}]}}]}})
 out["fn_bad"] = run(body([fn("evil")]))
 out["fn_case"] = run(body([fn("Lookup_Order")]))
@@ -2209,6 +2455,24 @@ _MUTATIONS: list[tuple[str, str, str, tuple[str, ...]]] = [
         r"    return FilterOutcome\(filtered, tuple\(removed\), evidence\)",
         "    return FilterOutcome(filtered, tuple(removed), capture_response_attempts(filtered))",
         ("flt_evidence_kept",),
+    ),
+    (
+        "file-url-not-a-remote-key",
+        r'inline=\("file_data",\), remote=\("file_id", "file_url"\)',
+        'inline=("file_data",), remote=("file_id",)',
+        ("in_file_url",),
+    ),
+    (
+        "input-file-file-id-not-a-remote-key",
+        r'inline=\("file_data",\), remote=\("file_id", "file_url"\)',
+        'inline=("file_data",), remote=("file_url",)',
+        ("in_file_id",),
+    ),
+    (
+        "input-image-file-id-not-a-remote-key",
+        r'inline=\("image_url",\), remote=\("file_id",\)',
+        'inline=("image_url",), remote=()',
+        ("in_img_id",),
     ),
 ]
 
