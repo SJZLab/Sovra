@@ -33,16 +33,27 @@ Rules:
 The audit reason is content-free: profile, surface, purpose and code only --
 never a host, path, prompt, provider or account text. When an `AuditContext`
 is given the denial is written through the certified FTF-0104
-`write_audit_event` and then *committed before the error is raised*: the
-denial is itself the event to audit (no domain mutation exists to be
-rolled back with), and an enclosing `tenant_scoped_session` rolls back on
-the propagated exception, which would otherwise discard the denial's own
-audit row. The `AuditContext` is validated up front (typed
+`write_audit_event` and committed on its *own* session and transaction --
+never the caller's. The denial is itself the event to audit (no domain
+mutation exists to be rolled back with), and an enclosing
+`tenant_scoped_session` rolls back the caller's own transaction on the
+propagated exception; committing *that* session directly (round 2/3's
+design) would end it early, discarding its `SET LOCAL` tenant context (a
+second denial in the same session then hits row-level security as a raw
+error instead of a typed one, and every later read in that session sees
+zero tenant rows) and sweeping in whatever the caller had not yet
+committed. The independent session reads the caller's own current tenant
+context (never writes it) and binds the same context to itself, so a
+denial whose `AuditContext.organization_id` disagrees with the caller's
+real tenant is still refused by row-level security, exactly as before. The
+`AuditContext` is validated up front (typed
 `external_provider_invalid_request`), so a malformed context can never
-surface as a raw `AttributeError` or `AuditEventValidationError`. Callers
-pass a session on which they have no uncommitted work, because the commit
-is the session's. Without an `AuditContext` the raised error still carries
-the same `AuditReason`.
+surface as a raw `AttributeError` or `AuditEventValidationError`. Without an
+`AuditContext` the raised error still carries the same `AuditReason`. A
+non-SQLAlchemy `AuditContext.session` (a plain test double exercising only
+the decision logic, not real transactional isolation) is written to and
+committed in place, as before -- there is no real transaction for it to
+corrupt.
 
 Disclosure: this module is a pure decision library with no live caller yet
 (the training and inference submit paths that will call it are separate,
@@ -56,13 +67,16 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.auth.audit_event_writer import (
     _SAFE_IDENTIFIER,
     ALLOWED_ACTOR_TYPES,
     write_audit_event,
 )
+from app.auth.organization_workspace_schema import set_tenant_context
 from packages.security.security_profile_enforcement import (
     Destination,
     EffectRequest,
@@ -72,9 +86,6 @@ from packages.security.security_profile_enforcement import (
     effective_profile,
     enforce_effect,
 )
-
-if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
 
 __all__ = [
     "PURPOSES",
@@ -300,26 +311,76 @@ def _deny(
     code: str, reason: AuditReason, audit: AuditContext | None
 ) -> ExternalProviderDeniedError:
     if audit is not None:
+        details = {
+            "profile": reason.profile,
+            "surface": reason.surface,
+            "purpose": reason.purpose,
+            "code": reason.code,
+        }
+        if isinstance(audit.session, Session):
+            # A real SQLAlchemy session means a real database, where
+            # committing the caller's own session would end its
+            # transaction early (see module docstring). Write and commit
+            # on an independent session/transaction instead.
+            _audit_denial_independently(audit, reason.purpose, details)
+        else:
+            # A plain test double exercising only the decision logic, not
+            # real transactional isolation -- write in place, as before.
+            write_audit_event(
+                audit.session,
+                organization_id=audit.organization_id,
+                actor_type=audit.actor_type,
+                actor_id=audit.actor_id,
+                action=AUDIT_ACTION,
+                resource_type=AUDIT_RESOURCE_TYPE,
+                resource_id=reason.purpose,
+                request_id=audit.request_id,
+                details=details,
+            )
+            audit.session.commit()
+    return ExternalProviderDeniedError(code, reason)
+
+
+def _audit_denial_independently(
+    audit: AuditContext, resource_id: str, details: dict[str, str]
+) -> None:
+    """Writes and commits the denial audit on its own session, on its own
+    transaction, over its own connection -- never the caller's. Reads
+    (never writes) the caller's own currently-bound tenant context and
+    binds the same value to the independent session, so a denial whose
+    `AuditContext.organization_id` disagrees with the caller's real tenant
+    is still refused by row-level security, exactly as if written in
+    place. The caller's own session is never committed, rolled back, or
+    flushed by this function: its tenant context and any uncommitted work
+    are left exactly as the caller left them."""
+    with audit.session.no_autoflush:
+        current_tenant = audit.session.execute(
+            text("SELECT current_setting('app.current_organization_id', true)")
+        ).scalar_one()
+    if not current_tenant:
+        raise InvalidProviderRequestError(
+            "audit session has no active tenant context to bind the denial audit to"
+        )
+    independent_session = Session(bind=audit.session.get_bind())
+    try:
+        set_tenant_context(independent_session, uuid.UUID(current_tenant))
         write_audit_event(
-            audit.session,
+            independent_session,
             organization_id=audit.organization_id,
             actor_type=audit.actor_type,
             actor_id=audit.actor_id,
             action=AUDIT_ACTION,
             resource_type=AUDIT_RESOURCE_TYPE,
-            resource_id=reason.purpose,
+            resource_id=resource_id,
             request_id=audit.request_id,
-            details={
-                "profile": reason.profile,
-                "surface": reason.surface,
-                "purpose": reason.purpose,
-                "code": reason.code,
-            },
+            details=details,
         )
-        # The denial is the audited event itself: commit it now, before the
-        # caller's tenant-scoped session rolls back on the propagated error.
-        audit.session.commit()
-    return ExternalProviderDeniedError(code, reason)
+        independent_session.commit()
+    except BaseException:
+        independent_session.rollback()
+        raise
+    finally:
+        independent_session.close()
 
 
 def authorize_external_provider(

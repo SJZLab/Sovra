@@ -20,6 +20,20 @@ session -- stay green. This test runs the real default code on a real
 * org2 cannot read org1's denial row (RLS read isolation);
 * the row carries the AuditContext's organization, actor and request.
 
+Round 3->4 (QUEUE 0m, 2026-10-09T10:26Z return): round 2/3's design
+committed the denial audit directly on the caller's own tenant-scoped
+session, which ends that session's transaction early -- discarding its
+`SET LOCAL` tenant context and sweeping in whatever the caller had not yet
+committed. This file additionally proves, on real Postgres:
+
+* two denials inside one `tenant_scoped_session` both raise the typed
+  `ExternalProviderDeniedError` (not a raw row-level-security error from a
+  lost tenant context), both persist their own durable row, and the
+  caller's own session can still read its own tenant's rows afterward;
+* a denial never commits the caller's own pending (not-yet-committed) row
+  in the same session -- it is rolled back exactly as if no denial had
+  ever touched that session.
+
 Requires a live Postgres at `SOVRA_DATABASE_URL` (migration owner) plus
 `SOVRA_APP_DB_PASSWORD`, like every prior integration test. Run directly:
     SOVRA_DATABASE_URL=postgresql+psycopg://<owner>@host/db \\
@@ -54,7 +68,11 @@ from sqlalchemy.exc import DBAPIError  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.auth.audit_event_writer import AuditEvent  # noqa: E402
-from app.auth.organization_workspace_schema import APP_ROLE_NAME, Organization  # noqa: E402
+from app.auth.organization_workspace_schema import (  # noqa: E402
+    APP_ROLE_NAME,
+    Organization,
+    Workspace,
+)
 from app.auth.tenant_isolation_query_guards import tenant_scoped_session  # noqa: E402
 
 FAILURES: list[str] = []
@@ -265,6 +283,83 @@ def main() -> None:
         org2_sees_org1 == 0 and org2_visible == 0,
     )
     check("FTF-0908-R2-1", "org1 reads its own five denial rows", org1_denials == len(cases))
+
+    # -- 5. Round 3->4: two denials in one tenant_scoped_session are both typed
+    # and both durable, and the caller's own session can still read its own
+    # tenant's rows afterward (a lost `SET LOCAL` tenant context would instead
+    # raise a raw row-level-security error on the second one and blind every
+    # later read in that same session to 0 rows).
+    two_ids = [f"req-two-{i}-{uuid.uuid4().hex[:8]}" for i in range(2)]
+    outcomes: list[tuple[str, str | None]] = []
+    with tenant_scoped_session(factory, org1_id) as session:
+        for request_id in two_ids:
+            try:
+                decision = authorize_external_provider(
+                    _request(profile="zero_egress"),
+                    _approval(),
+                    AuditContext(session, org1_id, "system", "actor-two", request_id),
+                )
+                assert isinstance(decision, ExternalProviderDecision)
+                outcomes.append(("allowed", None))
+            except ExternalProviderDeniedError as exc:
+                outcomes.append(("denied", exc.code))
+        visible_after = session.execute(
+            select(func.count()).select_from(AuditEvent).where(AuditEvent.request_id.in_(two_ids))
+        ).scalar_one()
+    check(
+        "FTF-0908-R3-1",
+        f"two denials in one session are both typed, not a raw RLS error (got {outcomes})",
+        outcomes == [("denied", "external_provider_profile_blocked")] * 2,
+    )
+    check(
+        "FTF-0908-R3-1",
+        f"the caller's own session still reads both its own rows after both denials "
+        f"(got {visible_after})",
+        visible_after == 2,
+    )
+    for request_id in two_ids:
+        check(
+            "FTF-0908-R3-1",
+            f"{request_id}: durable although the caller's session committed neither",
+            len(denied_rows(request_id)) == 1,
+        )
+
+    # -- 6. Round 3->4: a denial never commits the caller's own pending
+    # (not-yet-committed) row in the same session.
+    pending_id: uuid.UUID | None = None
+    try:
+        with tenant_scoped_session(factory, org1_id) as session:
+            pending = Workspace(
+                organization_id=org1_id,
+                name="pending-ws-0908",
+                slug=f"pending-0908-{uuid.uuid4().hex[:8]}",
+            )
+            session.add(pending)
+            session.flush()
+            pending_id = pending.id
+            authorize_external_provider(
+                _request(profile="zero_egress"),
+                _approval(),
+                AuditContext(
+                    session,
+                    org1_id,
+                    "system",
+                    "actor-pending",
+                    f"req-pending-{uuid.uuid4().hex[:8]}",
+                ),
+            )
+    except ExternalProviderDeniedError:
+        pass
+    with Session(owner_engine) as owner:
+        found = owner.execute(
+            select(Workspace).where(Workspace.id == pending_id)
+        ).scalar_one_or_none()
+    check(
+        "FTF-0908-R3-2",
+        "the caller's own pending row is not persisted by a denial (it is rolled back "
+        "by the enclosing tenant_scoped_session exactly as if no denial had occurred)",
+        found is None,
+    )
 
     _finish()
 

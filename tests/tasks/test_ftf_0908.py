@@ -1006,11 +1006,11 @@ _MUTATIONS: list[tuple[str, str, str, tuple[str, ...]]] = [
     ),
     (
         "no-audit",
-        r"    if audit is not None:\n        write_audit_event",
-        "    if False:\n        write_audit_event",
+        r"    if audit is not None:\n        details = \{",
+        "    if False:\n        details = {",
         ("audit",),
     ),
-    ("audit-drop-purpose", r'                "purpose": reason\.purpose,\n', "", ("audit",)),
+    ("audit-drop-purpose", r'            "purpose": reason\.purpose,\n', "", ("audit",)),
     (
         "audit-on-allow",
         r"        return ExternalProviderDecision\(True, profile, request\.purpose, surface\)",
