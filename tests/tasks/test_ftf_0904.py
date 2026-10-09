@@ -1631,8 +1631,9 @@ FAULTS: list[tuple[str, str, str, int]] = [
     ),
     (
         "F15d only the encoded token is cut, not the rest of the line",
-        "        line = line[: starts[low]] + REDACTED\n",
-        "        line = line[: starts[low]] + REDACTED + line[starts[low] :].partition(' ')[2]\n",
+        "        line = line[: candidates[low][0]] + REDACTED\n",
+        "        line = line[: candidates[low][0]] + REDACTED"
+        " + line[candidates[low][0] :].partition(' ')[2]\n",
         1,
     ),
     (
