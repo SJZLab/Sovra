@@ -8979,7 +8979,10 @@ FTF-0616:
     an NFKC-normalised comparison at either point is now RED (confirmed GREEN on the round-6 suite,
     then RED on this round's). Whole-file mutation 200/200, 0 survivors. Fault -> RED table:
     docs/certifications/submissions/2026-10-08T0500Z-FTF-0616.md; round 5: docs/certifications/submissions/2026-10-08T1800Z-FTF-0616.md;
-    round 7: docs/certifications/submissions/2026-10-09T0230Z-FTF-0616-r7.md.
+    round 7: docs/certifications/submissions/2026-10-09T0230Z-FTF-0616-r7.md. Round 8 (tests only): echo variants are
+    generated from Unicode properties (whitespace/Cc/Cf/Z*, NFKC/NFKD look-alikes, dashes, case forms) at both the
+    judge-id and alias comparison, plus configured-side forms; 36 normaliser faults all RED.
+    round 8: docs/certifications/submissions/2026-10-09T1600Z-FTF-0616-r8.md.
 
     BLOCKED_EXTERNAL (packet resource_gate, owner action): the clause "Call approved real judge through
     LiteLLM" is proven only against a local TLS gateway stand-in. It needs a real gateway key and an
