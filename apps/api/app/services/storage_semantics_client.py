@@ -589,6 +589,42 @@ class S3Client:
             uploads = [uploads]
         return [u for u in uploads if isinstance(u, dict)]
 
+    def list_multipart_uploads_page(
+        self,
+        bucket: str,
+        *,
+        prefix: str,
+        key_marker: str = "",
+        upload_id_marker: str = "",
+        max_uploads: int = 1000,
+    ) -> tuple[list[dict[str, str]], tuple[str, str] | None]:
+        """One page of in-progress uploads and the (key, upload id) markers of
+        the next page, or `None` when the listing is complete. A server that
+        says the listing is truncated without advancing the markers is refused
+        (it would page forever)."""
+        query = {"uploads": "", "prefix": prefix, "max-uploads": str(max_uploads)}
+        if key_marker:
+            query["key-marker"] = key_marker
+            if upload_id_marker:
+                query["upload-id-marker"] = upload_id_marker
+        _, _, body = self._request("GET", bucket, query=query)
+        parsed = _xml_to_dict(ET.fromstring(body))  # noqa: S314
+        if not isinstance(parsed, dict):
+            return [], None
+        uploads = parsed.get("Upload", [])
+        if isinstance(uploads, dict):
+            uploads = [uploads]
+        page = [u for u in uploads if isinstance(u, dict)]
+        if str(parsed.get("IsTruncated", "false")).lower() != "true":
+            return page, None
+        next_key = parsed.get("NextKeyMarker")
+        next_upload = parsed.get("NextUploadIdMarker")
+        if not isinstance(next_key, str) or not next_key or not isinstance(next_upload, str):
+            raise S3Error(0, "MalformedResponse", "ListMultipartUploads gave no usable markers")
+        if (next_key, next_upload) == (key_marker, upload_id_marker):
+            raise S3Error(0, "MalformedResponse", "ListMultipartUploads did not advance")
+        return page, (next_key, next_upload)
+
     def list_parts(self, bucket: str, key: str, upload_id: str) -> list[dict[str, str]]:
         """Every part uploaded so far (paged through `part-number-marker`)."""
         parts: list[dict[str, str]] = []
