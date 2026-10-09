@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-09T22:27Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-09T23:46Z. Source: `python3 scripts/status.py` on main.
 - **Status: 140/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   status.py prints 46 product-true: it counts FTF-0309 through its live P1 API route, but the FTF-0309 screen stays
   UNWIRED until FTF-H029, so it is not counted here (Law 7).
@@ -12,6 +12,9 @@ Updated: 2026-10-09T22:27Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-09T23:46Z:**
+  - Queued: FTF-H010-P3a (pure import-artifact validators, split from P3 so it is ready now). Ready and unclaimed: FTF-H010-P2, FTF-0310, FTF-H010-P3a.
+  - Verifying: FTF-0908 r4 (#719).
 - **2026-10-09T22:27Z:**
   - FTF-0501: the API half (#692) passed L2; the resumable upload UI (#697) is returned for round 2 (strict parsing, field binding, org-keyed drafts, simulated progress, untyped errors). FTF-0501 certifies when the UI does.
   - Ruling: one UI CHECKLIST now applies to every apps/web UI slice (QUEUE item 0).
