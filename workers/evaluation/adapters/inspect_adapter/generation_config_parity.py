@@ -396,9 +396,10 @@ def compare_generation_parity(
             stale_mismatch = True
 
     blocking = tuple(sorted({*dropped, *changed, *inherited, *stale_declared}))
+    is_declared_change = not blocking and bool(declared_ok)
     if blocking:
         verdict = "blocked"
-    elif declared_ok:
+    elif is_declared_change:
         verdict = "declared_change"
     else:
         verdict = "preserved"
@@ -414,7 +415,7 @@ def compare_generation_parity(
     )
     compatibility_tuple_sha256 = (
         declared_change.compatibility_tuple_sha256
-        if verdict == "declared_change" and declared_change is not None
+        if is_declared_change and declared_change is not None
         else None
     )
 

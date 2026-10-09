@@ -70,6 +70,16 @@ CID = "FTF-R004-P1"
 VALID_DIGEST = "a" * 64
 
 
+def _nested(depth: int, leaf: object = 1) -> object:
+    """`depth` dict wrappers around `leaf`. Used to probe the exact nesting-
+    depth boundary in _scrub_content/_exact_equal (MAX_NESTING_DEPTH=64):
+    `_nested(64)` must never raise, `_nested(65)` always must."""
+    value = leaf
+    for _ in range(depth):
+        value = {"n": value}
+    return value
+
+
 def check(criterion_id: str, description: str, condition: bool) -> None:
     if not condition:
         FAILURES.append(f"FAIL [{criterion_id}] {description}")
@@ -1093,6 +1103,122 @@ def test_cyclic_or_over_deep_values_raise_typed_error() -> None:
         "a reasonably-nested value is unaffected by the depth guard",
         capture_effective_generation_settings({"response_format": reasonable})
         == {"response_format": reasonable},
+    )
+
+    # Exact boundary (kills the '_depth > MAX -> _depth >= MAX' off-by-one
+    # mutants in both _scrub_content and _exact_equal): depth 64 must never
+    # raise, depth 65 always must.
+    boundary_ok = _nested(64)
+    check(
+        CID,
+        "_scrub_content: exactly the maximum allowed nesting depth does not raise",
+        capture_effective_generation_settings({"response_format": boundary_ok})
+        == {"response_format": boundary_ok},
+    )
+    boundary_too_deep = _nested(65)
+    check(
+        CID,
+        "_scrub_content: one level past the maximum allowed depth raises the typed error",
+        raises(
+            lambda: capture_effective_generation_settings({"response_format": boundary_too_deep})
+        ),
+    )
+    exact_equal_boundary_ok = _nested(64)
+    boundary_compare = compare(
+        {"response_format": exact_equal_boundary_ok},
+        {"response_format": exact_equal_boundary_ok},
+        {"response_format": exact_equal_boundary_ok},
+    )
+    check(
+        CID,
+        "_exact_equal: exactly the maximum allowed nesting depth does not raise",
+        boundary_compare.verdict == "preserved",
+    )
+    exact_equal_too_deep = _nested(65)
+    check(
+        CID,
+        "_exact_equal: one level past the maximum allowed depth raises the typed error",
+        raises(
+            lambda: compare(
+                {"response_format": exact_equal_too_deep},
+                {"response_format": exact_equal_too_deep},
+                {"response_format": exact_equal_too_deep},
+            )
+        ),
+    )
+
+
+def test_scrub_content_recurses_into_lists_tuples_and_preserves_nested_keys() -> None:
+    """Kills the 'disable the list/tuple recursion branch' and 'fold a
+    nested dict key' mutants in _scrub_content: a CONTENT_KEYS leak nested
+    inside a list or tuple element must still be scrubbed, and a nested
+    dict's own key must survive byte-exact, never stripped or lowercased."""
+    canary = "CANARY-r004p1-r2-nested-container"
+    list_settings = capture_effective_generation_settings(
+        {"logit_bias": [{"messages": canary}, {"ok": 1}]}
+    )
+    check(
+        CID,
+        "a CONTENT_KEYS leak nested inside a list element is scrubbed",
+        list_settings == {"logit_bias": [{}, {"ok": 1}]},
+    )
+    tuple_settings = capture_effective_generation_settings(
+        {"logit_bias": ("a", {"messages": canary})}
+    )
+    check(
+        CID,
+        "a CONTENT_KEYS leak nested inside a tuple element is scrubbed",
+        tuple_settings == {"logit_bias": ("a", {})},
+    )
+    key_settings = capture_effective_generation_settings({"response_format": {" Type ": "x"}})
+    check(
+        CID,
+        "a nested dict's own key survives byte-exact, never stripped or lowercased",
+        key_settings == {"response_format": {" Type ": "x"}},
+    )
+
+
+def test_approved_and_before_presence_checks_cannot_be_folded_to_mask_a_real_mismatch() -> None:
+    """Kills the 'key -> key.strip().lower()' mutants on `approved_present`
+    and `before_present` in the main comparison loop. Both checks feed a
+    vacuous-true OR (`not approved_present or ...`), so a naive same-case
+    test can't distinguish a folded membership check from a correct one --
+    this needs a real mismatch that a wrongly-vacuous branch would hide."""
+    approved_folded_hides_mismatch = compare({"Alpha": 1}, {}, {"Alpha": 999})
+    check(
+        CID,
+        "a folded approved-presence check would wrongly treat 'Alpha' as absent, hiding "
+        "the real 1-vs-999 mismatch behind a vacuous match",
+        approved_folded_hides_mismatch.verdict == "blocked"
+        and approved_folded_hides_mismatch.changed_keys == ("Alpha",),
+    )
+    before_folded_hides_mismatch = compare({}, {"Alpha": 1}, {"Alpha": 999})
+    check(
+        CID,
+        "a folded before-presence check would wrongly treat 'Alpha' as absent, hiding "
+        "the real 1-vs-999 mismatch behind a vacuous match",
+        before_folded_hides_mismatch.verdict == "blocked"
+        and before_folded_hides_mismatch.changed_keys == ("Alpha",),
+    )
+
+
+def test_compatibility_tuple_sha256_is_never_leaked_on_a_blocked_verdict() -> None:
+    """Kills the 'and -> or' mutant on the compatibility_tuple_sha256
+    ternary: a declared_change that is present but does not actually
+    excuse anything (verdict stays 'blocked') must never leak its digest."""
+    declared = DeclaredGenerationChange(
+        compatibility_tuple_sha256=VALID_DIGEST, changed_values={"unrelated_key": "x"}
+    )
+    result = compare({"temperature": 0.7}, {"temperature": 0.7}, {"temperature": 0.8}, declared)
+    check(
+        CID,
+        "a declared_change that excuses nothing leaves the verdict blocked",
+        result.verdict == "blocked",
+    )
+    check(
+        CID,
+        "...and never leaks compatibility_tuple_sha256 just because declared_change was passed",
+        result.compatibility_tuple_sha256 is None,
     )
 
 
