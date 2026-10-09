@@ -375,15 +375,6 @@ class RedactingFormatter(logging.Formatter):
         except Exception:
             return REDACTION_FAILED_MARKER
 
-    def formatException(self, ei: Any) -> str:  # noqa: N802 -- stdlib override
-        try:
-            value = ei[1]
-            if isinstance(value, BaseException):
-                return redact_exception(value)
-        except Exception:
-            pass
-        return REDACTION_FAILED_MARKER
-
 
 def attach_sink(handler: logging.Handler) -> None:
     """Make `handler` redact whatever reaches it, whatever formatter it uses."""

@@ -236,6 +236,19 @@ def test_secret_headers_are_redacted_whole() -> None:
                 f"{header!r} sep {sep!r} header value leaked: {out!r}",
                 "abc123SECRETvalue456" not in out and "zzSESSIONzz" not in out,
             )
+    for bare in (
+        "Bearer opaqueBEARERtoken12345",
+        "basic dXNlcjpwYXNzd29yZDEyMw==",
+        "BEARER\topaqueTAB-token99",
+    ):
+        out = lr.redact_text("failed: " + bare + " (retrying)")
+        check(
+            "FTF-0904-A1",
+            f"bare credential scheme leaked: {out!r}",
+            "opaqueBEARERtoken12345" not in out
+            and "dXNlcjpwYXNz" not in out
+            and "opaqueTAB" not in out,
+        )
     out = lr.redact_text("GET /x\r\nAuthorization: Basic dXNlcjpwYXNzd29yZDEyMw==\r\nHost: a")
     check("FTF-0904-A1", "multi-line request head: auth redacted", "dXNlcjpwYXNz" not in out)
     check("FTF-0904-A1", "multi-line request head: neighbours kept", "Host: a" in out)
@@ -352,6 +365,16 @@ def test_redact_value_structures() -> None:
 
     check(
         "FTF-0904-A1",
+        "bytes values are redacted",
+        "pw-Bytes-7788" not in repr(lr.redact_value(b"token=pw-Bytes-7788 x")),
+    )
+    check(
+        "FTF-0904-A1",
+        "non-string mapping keys do not break redaction",
+        "pw-IntKey-9911" not in repr(lr.redact_value({1: "password=pw-IntKey-9911"})),
+    )
+    check(
+        "FTF-0904-A1",
         "arbitrary object redacted via its repr",
         "pw-Repr-5566" not in repr(lr.redact_value(Obj())),
     )
@@ -414,6 +437,91 @@ def test_sink_redacts_even_when_ingress_was_bypassed() -> None:
         out = handler.stream.getvalue()
     check("FTF-0904-A1", f"sink-only handler leaked: {out!r}", not leaked([secret], [out]))
     check("FTF-0904-A1", "sink keeps the non-secret part", "tok" in out)
+    # the sink alone, with a record that still carries a raw exc_info / exc_text / stack_info
+    with _Harness(install=False) as h2:
+        sink = logging.StreamHandler(io.StringIO())
+        lr.attach_sink(sink)
+        h2.root.handlers = [sink]
+        try:
+            raise ValueError("sink-only token=" + SECRETS["github_pat"])
+        except ValueError:
+            raw_info = sys.exc_info()
+        rec_exc = logging.LogRecord("x", logging.ERROR, __file__, 1, "boom", None, raw_info)
+        rec_text = logging.LogRecord("x", logging.ERROR, __file__, 1, "boom2", None, None)
+        rec_text.exc_text = "Traceback: Authorization: Bearer " + SECRETS["hf"]
+        rec_stack = logging.LogRecord(
+            "x",
+            logging.ERROR,
+            __file__,
+            1,
+            "boom3",
+            None,
+            None,
+            sinfo="Stack: token=" + SECRETS["slack"],
+        )
+        for rec in (rec_exc, rec_text, rec_stack):
+            h2.root.handle(rec)
+        sink_out = sink.stream.getvalue()
+    check(
+        "FTF-0904-A2",
+        f"sink-only exc_info/exc_text/stack_info leaked: {sink_out!r}",
+        not leaked([SECRETS["github_pat"], SECRETS["hf"], SECRETS["slack"]], [sink_out]),
+    )
+    check("FTF-0904-A2", "sink-only keeps the traceback shape", "ValueError" in sink_out)
+    # each layer alone. Filter alone: inspect the record it leaves behind.
+    try:
+        raise ValueError("filter-only token=" + SECRETS["github_pat"])
+    except ValueError:
+        raw_info2 = sys.exc_info()
+    only = logging.LogRecord(
+        "x",
+        logging.ERROR,
+        __file__,
+        1,
+        "m %s",
+        ("Bearer " + SECRETS["openai"],),
+        raw_info2,
+        sinfo="Stack: token=" + SECRETS["slack"],
+    )
+    only.__dict__["pre_exc"] = None
+    lr.RedactingFilter().filter(only)
+    left = repr(sorted((k, repr(v)) for k, v in vars(only).items()))
+    check(
+        "FTF-0904-A2",
+        "the filter alone leaves no secret on the record (msg/args/exc/stack)",
+        not leaked([SECRETS["openai"], SECRETS["github_pat"], SECRETS["slack"]], [left]),
+    )
+    check(
+        "FTF-0904-A2",
+        "the filter alone renders the exception into exc_text",
+        "ValueError" in (only.exc_text or ""),
+    )
+    pre = logging.LogRecord("x", logging.ERROR, __file__, 1, "p", None, None)
+    pre.exc_text = "Traceback: Authorization: Bearer " + SECRETS["hf"]
+    lr.RedactingFilter().filter(pre)
+    check(
+        "FTF-0904-A2",
+        "a pre-set exc_text is redacted by the filter",
+        not leaked([SECRETS["hf"]], [pre.exc_text or ""]),
+    )
+    # Formatter layer alone: the filter is removed after attach_sink.
+    bare = logging.StreamHandler(io.StringIO())
+    lr.attach_sink(bare)
+    bare.filters.clear()
+    check(
+        "FTF-0904-A1",
+        "attach_sink installs a redacting formatter",
+        isinstance(bare.formatter, lr.RedactingFormatter),
+    )
+    rec_fmt = logging.LogRecord(
+        "x", logging.INFO, __file__, 1, "raw %s", ("token=" + SECRETS["opaque"],), None
+    )
+    bare.handle(rec_fmt)
+    check(
+        "FTF-0904-A1",
+        "formatter layer alone redacts the line",
+        not leaked([SECRETS["opaque"]], [bare.stream.getvalue()]),
+    )
     # formatter used on its own, with no filter at all
     fmt = lr.RedactingFormatter("%(message)s")
     rec = logging.LogRecord(
@@ -754,7 +862,156 @@ def _raises(exc_type: type[BaseException], fn, *args: object, **kwargs: object) 
 # ---------------------------------------------------------------------------
 
 # (id, old, new): `old` must occur in the real module exactly `count` times.
-FAULTS: list[tuple[str, str, str, int]] = []
+FAULTS: list[tuple[str, str, str, int]] = [
+    # --- rules removed one at a time -------------------------------------------------
+    ("F01 header rule removed", '    ("header", _HEADER),\n', "", 1),
+    ("F02 bearer/basic rule removed", '    ("bearer", _BEARER),\n', "", 1),
+    ("F03 token-prefix rule removed", '    ("prefix", _PREFIXES),\n', "", 1),
+    ("F04 URL userinfo rule removed", '    ("userinfo", _USERINFO),\n', "", 1),
+    ("F05 key=value rule removed", '    ("key_value", _KEY_VALUE),\n', "", 1),
+    ("F06 PEM rule removed", '    ("pem", _PEM),\n', "", 1),
+    # --- pattern weakened --------------------------------------------------------------
+    (
+        "F07 header value stops at whitespace",
+        '|[^\\r\\n]*)",\n    re.I,',
+        '|[^\\s]*)",\n    re.I,',
+        1,
+    ),
+    ("F08 escaped-JSON value form dropped", '\\\\+"[^"\\r\\n]*?\\\\+"|', "", 1),
+    ("F09 userinfo stops at first @", '[^/\\s?#]*@")', '[^/\\s?#@]*@")', 1),
+    ("F10 idempotence guard dropped", "\\[REDACTED\\]|{_QUOTED_VALUE}", "{_QUOTED_VALUE}", 1),
+    # --- normalisation and decoding ----------------------------------------------------
+    ("F11 NFKC skipped", 'unicodedata.normalize("NFKC", text)', "text", 1),
+    ("F12 format characters kept", '("Cf", "Cc", "Cs", "Co", "Cn")', '("Cc", "Cs", "Co", "Cn")', 1),
+    ("F13 no percent-decoding", "decoded = unquote(current)", "decoded = current", 1),
+    ("F14 one percent-decoding layer", "_MAX_DECODE_LAYERS = 3", "_MAX_DECODE_LAYERS = 1", 1),
+    (
+        "F15 decoded secret not returned",
+        "        if scanned != decoded:\n            return scanned\n",
+        "",
+        1,
+    ),
+    ("F16 no base64 detection", "_BASE64_LAYERS = 2", "_BASE64_LAYERS = 0", 1),
+    (
+        "F17 one base64 layer only is not tested but zero is",
+        "def _scan(text: str, layers: int) -> str:\n    text = _apply_rules(text)\n    if layers <= 0:\n        return text\n",
+        "def _scan(text: str, layers: int) -> str:\n    text = _apply_rules(text)\n    return text\n",
+        1,
+    ),
+    # --- fail closed -------------------------------------------------------------------
+    (
+        "F18 oversize guard removed",
+        "    if len(text) > MAX_TEXT_LENGTH:\n        raise LogRedactionError\n",
+        "",
+        1,
+    ),
+    (
+        "F19 exact str type not required",
+        "    if type(text) is not str:\n        raise LogRedactionError\n",
+        "",
+        1,
+    ),
+    (
+        "F20 record failure keeps raw message",
+        "        record.msg = REDACTION_FAILED_MARKER\n",
+        "",
+        1,
+    ),
+    (
+        "F21 extras failure keeps raw extras",
+        "dict.fromkeys(extras, REDACTION_FAILED_MARKER)",
+        "{k: record.__dict__[k] for k in extras}",
+        1,
+    ),
+    (
+        "F22 formatter failure returns raw line",
+        "        except Exception:\n            return REDACTION_FAILED_MARKER\n",
+        "        except Exception:\n            return self.formatMessage(record)\n",
+        1,
+    ),
+    (
+        "F23 error chains its cause (text)",
+        "        raise LogRedactionError from None\n    return result\n\n\ndef redact_exception",
+        "        raise LogRedactionError\n    return result\n\n\ndef redact_exception",
+        1,
+    ),
+    # --- records, exceptions, extras ---------------------------------------------------
+    (
+        "F24 exception chain not redacted",
+        "        result = redact_text(rendered)",
+        "        result = rendered",
+        1,
+    ),
+    (
+        "F25 exc_info rendered raw",
+        "exc_text = redact_exception(value)",
+        'exc_text = "".join(traceback.format_exception(value))',
+        1,
+    ),
+    (
+        "F26 pre-set exc_text kept raw",
+        "exc_text = redact_text(str.__str__(record.exc_text))",
+        "exc_text = record.exc_text",
+        1,
+    ),
+    ("F27 stack_info kept raw", "stack_info = redact_text(str.__str__(stack_info))", "pass", 1),
+    ("F28 extras never written back", "    record.__dict__.update(scrubbed)\n", "", 1),
+    (
+        "F29 secret-named attribute value kept",
+        "REDACTED\n            if _SECRET_KEY_NAME.fullmatch(k)\n            else _redact_value(",
+        "_redact_value(\n            if True\n            else _redact_value(",
+        1,
+    ),
+    (
+        "F30 secret-named mapping key value kept",
+        "            if _SECRET_KEY_NAME.fullmatch(name):",
+        "            if False:",
+        1,
+    ),
+    (
+        "F31 depth and cycle guard removed",
+        "    if depth >= _MAX_DEPTH or id(value) in path:\n        return REDACTED\n",
+        "",
+        1,
+    ),
+    # --- ingress / sink wiring ---------------------------------------------------------
+    (
+        "F32 ingress factory not installed",
+        "        logging.setLogRecordFactory(_wrap_factory(current))",
+        "        pass",
+        1,
+    ),
+    (
+        "F33 factory wrapped on every call",
+        'if not getattr(current, "_ftf0904_redacting", False):',
+        "if True:",
+        1,
+    ),
+    (
+        "F34 sink filter not attached",
+        "        handler.addFilter(RedactingFilter())",
+        "        pass",
+        1,
+    ),
+    (
+        "F35 sink formatter not attached",
+        "        handler.setFormatter(RedactingFormatter(inner=existing))",
+        "        pass",
+        1,
+    ),
+    (
+        "F36 sink filter attached twice",
+        "    if not any(isinstance(f, RedactingFilter) for f in handler.filters):",
+        "    if True:",
+        1,
+    ),
+    (
+        "F37 formatter does not redact the line",
+        "            return redact_text(str.__str__(raw))",
+        "            return raw",
+        1,
+    ),
+]
 
 
 def _run_mutant(fault_id: str, old: str, new: str, count: int) -> tuple[bool, str]:
