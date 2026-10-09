@@ -9688,7 +9688,7 @@ FTF-0904:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Log redaction
-  evidence_hash: fd87cd1b855d70bf1b4ac6d162ebe04a0cbe12d9
+  evidence_hash: d48287780a7682491c40a1969bdf6645430fe75d
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0903
@@ -9730,6 +9730,24 @@ FTF-0904:
     exceptions are covered at ingress). This module is a pure library with no live logging
     configuration installing it yet -- proving_symbol stays blank (UNWIRED), same precedent as
     FTF-0901/FTF-0902/FTF-0903. Not self-certified (Law 4).
+
+    Round 2 (Control-plane return 2026-10-09, QUEUE 0d; PROVISIONAL / L1-PROVEN, not certified):
+    `_redact` scans the raw text first and never returns a decoded layer; percent-decoded layers
+    (up to three) are used only to detect a secret the raw scan could not see, and then the raw text
+    from the earliest still-revealing encoded token to the end of the line is replaced (fail
+    closed; at most 16 cut rounds, then the first encoded token onward). The rule set adds
+    ASGI/WSGI `(name, value)` header pairs in text and structures (str and bytes names, list or
+    tuple), the `HTTP_` environ spelling of every secret header, and bytes mapping keys.
+    `install_redaction` also wraps `Logger.makeRecord`, so `extra=` is scrubbed at creation for
+    every logger (propagate=False loggers, handlers added before or after install). The secret-key
+    pattern is a possessive single run with a lookahead (linear): a 256 KB `"token"*k` line, which
+    took minutes, is redacted in about a second (checked in a child process with a hard timeout).
+    Evidence: tests/tasks/test_ftf_0904.py now has 49 faults (was 37) and 280 generated percent
+    cases (secrets x 14 delimiters x 1-3 layers, mixed with plain secrets); against the round-1
+    module the new checks are RED (354 failures); mutation gate PASS 44/44 with 0 survivors.
+    Disclosed: a revealing encoded token redacts the rest of its line (deliberate over-redaction);
+    `logging.makeLogRecord` records bypass makeRecord and are covered only at an `attach_sink`
+    handler. Still UNWIRED (blank proving_symbol).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0904.py
