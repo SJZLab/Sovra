@@ -323,6 +323,67 @@ def test_benign_text_survives() -> None:
     )
 
 
+def test_redact_value_keeps_container_types() -> None:
+    check("FTF-0904-A1", "list stays a list", lr.redact_value(["a", "b"]) == ["a", "b"])
+    check("FTF-0904-A1", "tuple stays a tuple", lr.redact_value(("a", 1)) == ("a", 1))
+    check("FTF-0904-A1", "set becomes a list", lr.redact_value({"only"}) == ["only"])
+    check("FTF-0904-A1", "bytes become redacted text", lr.redact_value(b"hello") == "hello")
+    check(
+        "FTF-0904-A1",
+        "scalars pass through",
+        lr.redact_value((None, True, 3, 2.5)) == (None, True, 3, 2.5),
+    )
+
+
+def test_benign_case_and_encoding_survive() -> None:
+    for text in (
+        "Job ABC Finished OK  with  spaces\n",
+        "Folder%2FSub%20Dir and UPPER",
+        "blob=" + base64.b64encode(b"Hello World, nothing secret here.\n").decode(),
+        "id=Req-AbCdEfGhIjKlMnOpQr",
+    ):
+        out = lr.redact_text(text)
+        check("FTF-0904-A1", f"benign text altered: {out!r}", out == text)
+    padded = base64.b64encode(b"  PASSWORD=Hunter2Upper-Zq9  \n").decode()
+    out = lr.redact_text("x " + padded + " y")
+    check(
+        "FTF-0904-A1",
+        f"upper-case padded base64 secret leaked: {out!r}",
+        padded not in out and "Hunter2Upper" not in out,
+    )
+    binary = base64.b64encode(b"\x00\x01token=pw-Binary-4422\x02").decode()
+    check("FTF-0904-A1", "binary-wrapped secret leaked", binary not in lr.redact_text(binary))
+
+
+def test_extra_attribute_names_and_install_targets() -> None:
+    with _Harness() as h:
+        logging.getLogger("ftf0904.names").info("m", extra={"MyPayload": "kept-value"})
+        names = [vars(r).get("MyPayload") for r in h.seen_records]
+    check("FTF-0904-A1", "a mixed-case extra attribute keeps name and value", "kept-value" in names)
+    own = logging.getLogger("ftf0904.own")
+    own_handler = logging.StreamHandler(io.StringIO())
+    own.addHandler(own_handler)
+    other = logging.StreamHandler(io.StringIO())
+    try:
+        with _Harness(install=False) as h:
+            h.root.addHandler(other)
+            lr.install_redaction(own)
+            check(
+                "FTF-0904-A1",
+                "install_redaction(logger) covers that logger's handlers only",
+                any(isinstance(f, lr.RedactingFilter) for f in own_handler.filters)
+                and not any(isinstance(f, lr.RedactingFilter) for f in other.filters),
+            )
+            lr.install_redaction()
+            check(
+                "FTF-0904-A1",
+                "install_redaction() with no argument covers the root logger's handlers",
+                any(isinstance(f, lr.RedactingFilter) for f in other.filters),
+            )
+    finally:
+        own.removeHandler(own_handler)
+
+
 def test_redact_value_structures() -> None:
     value = {
         "password": "pw-Struct-4455",
@@ -708,6 +769,16 @@ def test_a_raising_rule_fails_closed_not_open() -> None:
             "redact_text raises its own coded error",
             _raises(lr.LogRedactionError, lr.redact_text, RAW),
         )
+        check(
+            "FTF-0904-N1",
+            "redact_exception raises its own coded error when a rule fails",
+            _raises(lr.LogRedactionError, lr.redact_exception, ValueError(RAW)),
+        )
+        check(
+            "FTF-0904-N1",
+            "redact_value raises its own coded error when a rule fails",
+            _raises(lr.LogRedactionError, lr.redact_value, {"k": RAW}),
+        )
         with _Harness() as h:
             logging.getLogger("ftf0904.neg1b").info("msg " + RAW, extra={"k": RAW})
             try:
@@ -761,6 +832,11 @@ def test_non_text_inputs_are_coded_refusals() -> None:
             f"redact_text({type(bad).__name__}) must be a coded error",
             _raises(lr.LogRedactionError, lr.redact_text, bad),
         )
+    check(
+        "FTF-0904-N1",
+        "the error message is the constant one",
+        str(lr.LogRedactionError()) == "log redaction failed",
+    )
     check(
         "FTF-0904-N1",
         "exception redactor refuses non-exceptions",
@@ -883,19 +959,19 @@ FAULTS: list[tuple[str, str, str, int]] = [
     # --- normalisation and decoding ----------------------------------------------------
     ("F11 NFKC skipped", 'unicodedata.normalize("NFKC", text)', "text", 1),
     ("F12 format characters kept", '("Cf", "Cc", "Cs", "Co", "Cn")', '("Cc", "Cs", "Co", "Cn")', 1),
-    ("F13 no percent-decoding", "decoded = unquote(current)", "decoded = current", 1),
+    ("F13 no percent-decoding", "decoded = unquote(layers[-1])", "decoded = layers[-1]", 1),
     ("F14 one percent-decoding layer", "_MAX_DECODE_LAYERS = 3", "_MAX_DECODE_LAYERS = 1", 1),
     (
         "F15 decoded secret not returned",
-        "        if scanned != decoded:\n            return scanned\n",
+        "        if scanned != layer:\n            return scanned\n",
         "",
         1,
     ),
     ("F16 no base64 detection", "_BASE64_LAYERS = 2", "_BASE64_LAYERS = 0", 1),
     (
         "F17 one base64 layer only is not tested but zero is",
-        "def _scan(text: str, layers: int) -> str:\n    text = _apply_rules(text)\n    if layers <= 0:\n        return text\n",
-        "def _scan(text: str, layers: int) -> str:\n    text = _apply_rules(text)\n    return text\n",
+        "    text = _apply_rules(text)\n    if layers <= 0:\n        return text\n",
+        "    text = _apply_rules(text)\n    return text\n",
         1,
     ),
     # --- fail closed -------------------------------------------------------------------

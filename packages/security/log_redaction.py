@@ -143,7 +143,9 @@ _KEY_VALUE = re.compile(
     rf"""(?P<val>\[REDACTED\]|{_QUOTED_VALUE}|[^\s&,;"'}}\])]+)""",
     re.I,
 )
-_BASE64_RUN = re.compile(r"(?<![A-Za-z0-9+/_\-])[A-Za-z0-9+/_\-]{16,}={0,2}(?![A-Za-z0-9+/_=\-])")
+_BASE64_RUN = re.compile(
+    r"(?<![A-Za-z0-9+/_\-])(?P<body>[A-Za-z0-9+/_\-]{16,})={0,2}(?![A-Za-z0-9+/_=\-])"
+)
 
 # (name, compiled rule). The replacement for a rule is `_REPLACEMENTS[name]`
 # (default: the bare marker). Rules run in this order: whole-line header values
@@ -181,18 +183,15 @@ def _apply_rules(text: str) -> str:
     return text
 
 
-def _decode_base64(run: str) -> str | None:
-    cleaned = run.rstrip("=").replace("-", "+").replace("_", "/")
-    if len(cleaned) % 4 == 1:
-        return None
+def _decode_base64(body: str) -> str | None:
+    """The UTF-8 text a base64/base64url run decodes to, or None. Anything that decodes
+    is scanned (binary with an embedded secret included): fail closed, not selective."""
+    cleaned = body.replace("-", "+").replace("_", "/")
     cleaned += "=" * (-len(cleaned) % 4)
     try:
-        decoded = base64.b64decode(cleaned, validate=True).decode("utf-8")
+        return base64.b64decode(cleaned, validate=True).decode("utf-8")
     except (binascii.Error, UnicodeDecodeError, ValueError):
         return None
-    if len(decoded) < 4 or not decoded.isprintable():
-        return None
-    return decoded
 
 
 def _scan(text: str, layers: int) -> str:
@@ -201,7 +200,7 @@ def _scan(text: str, layers: int) -> str:
         return text
 
     def _wrap(match: re.Match[str]) -> str:
-        decoded = _decode_base64(match.group(0))
+        decoded = _decode_base64(match.group("body"))
         if decoded is not None and _scan(decoded, layers - 1) != decoded:
             return REDACTED
         return match.group(0)
@@ -213,15 +212,16 @@ def _redact(text: str) -> str:
     if len(text) > MAX_TEXT_LENGTH:
         raise LogRedactionError
     text = _normalise(text)
-    current = text
+    layers = [text]
     for _ in range(_MAX_DECODE_LAYERS):
-        decoded = unquote(current)
-        if decoded == current:
+        decoded = unquote(layers[-1])
+        if decoded == layers[-1]:
             break
-        scanned = _scan(decoded, _BASE64_LAYERS)
-        if scanned != decoded:
+        layers.append(decoded)
+    for layer in layers[1:]:
+        scanned = _scan(layer, _BASE64_LAYERS)
+        if scanned != layer:
             return scanned
-        current = decoded
     return _scan(text, _BASE64_LAYERS)
 
 
@@ -248,8 +248,6 @@ def redact_text(text: str) -> str:
 
 def redact_exception(exc: BaseException) -> str:
     """The redacted, fully rendered traceback of `exc` and its whole chain."""
-    if not isinstance(exc, BaseException):
-        raise LogRedactionError
     failed = False
     try:
         rendered = "".join(traceback.format_exception(exc))
