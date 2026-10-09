@@ -24630,3 +24630,7 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-09T15:43Z — Control plane: Backlog refill (136/302)
 - **Queued:** FTF-0904 Log redaction (frontier; deps FTF-0902 and FTF-0903 now certified). Other frontier items are claimed, parked or sliced.
+
+## 2026-10-09T16:19Z — Control plane: FTF-0516-P1 slice CERTIFIED; 3 returned (136/302)
+- **Certified slice:** FTF-0516-P1 (#695). **Returned:** FTF-0309 r3 (0c), FTF-R005 r7 (0e), FTF-R004-P1 r4 (0n).
+- **Un-parked:** FTF-0516 UI (Backlog). **Pending:** FTF-0616 #690.
