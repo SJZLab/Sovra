@@ -441,6 +441,33 @@ def test_sync_pending_reports_the_stored_truth_not_the_stale_outcome() -> None:
         pass
 
 
+# -- retry boundaries (the sweep and the attempt limit are exact) -------------
+
+
+def test_attempt_limit_and_due_time_boundaries_are_exact() -> None:
+    policy = RetryPolicy(max_attempts=3, base_delay_ms=1000, max_delay_ms=4000)
+    # attempts == max_attempts is the limit: FAILED, not one more PENDING
+    for attempts_before, expected in ((1, SyncState.PENDING), (2, SyncState.FAILED)):
+        fake = Fake()
+        fake.fail["create_run"] = TrackingUnavailableError("down")
+        entry = InMemoryOutbox().add(make_run())
+        entry.attempts = attempts_before
+        result = sync_run(fake, entry, now_ms=0, policy=policy)
+        check(
+            f"retry/limit/{attempts_before}",
+            f"attempt {result.attempts} of {policy.max_attempts} is {expected}",
+            result.state == expected,
+        )
+    # an entry due exactly now is attempted; one due a millisecond later is not
+    for due, attempted in ((1000, True), (1001, False)):
+        fake = Fake()
+        store = InMemoryOutbox(policy=policy)
+        entry = store.add(make_run())
+        entry.next_retry_at_ms = due
+        done = sync_pending(fake, store, now_ms=1000)
+        check(f"retry/due/{due}", "due exactly now is attempted", bool(done) == attempted)
+
+
 # -- F7 a non-latin-1 bearer token -------------------------------------------
 
 
