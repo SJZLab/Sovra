@@ -2270,13 +2270,21 @@ FTF-0309:
     frozen FTF-0309-P1 GET .../models/{name}/capabilities?project_id= route, sends the model name
     verbatim, shows every dimension with its dated evidence and the server's own `unknown` reason
     codes, and disables Train unless trainable, access granted, artifact ready, license approved and
-    method_support / min_gpu_vram_gb / chat_template are all `known` (any other or unrecognised
-    state blocks; tested VRAM below the declared minimum blocks); 404, 503, network errors and a
-    malformed body are errors with no Train button (Law 17). Proof: apps/web/tests/ftf_0309.spec.ts
-    (10 DOM-level Vitest tests, mocked fetch). Disclosed UNWIRED (Law 6/7): no Next.js page tree
+    method_support / min_gpu_vram_gb / chat_template are all known. Round 3 (Control-plane ruling):
+    the frozen 03-interface.yaml allows only `state: "unknown"` (ModelCapabilityUnknown) for those
+    dimensions, so a `known` state, any other state, a dimension key outside
+    state/reason/declared_minimum_gpu_profile/declared_evidence, `declared_evidence` other than
+    "declared", or a tested_gb / memory_gb field on a dimension is a malformed response with no
+    Train; the `known` path and its VRAM comparison were removed (a future known state needs a
+    separate, owner-routed contract change). A re-check that fails clears the earlier result, an
+    organization/connection/project/model switch removes Train, and a response that lands after a
+    switch (status, error body or JSON) is ignored. 404, 503, network errors and a malformed body
+    are errors with no Train button (Law 17). Proof: apps/web/tests/ftf_0309.spec.ts (33 DOM-level
+    Vitest tests, mocked fetch; round 3 evidence in
+    docs/certifications/submissions/2026-10-09T1720Z-FTF-0309-r3.md). Disclosed UNWIRED (Law 6/7): no Next.js page tree
     (FTF-H029) and no training-start caller, same precedent as FTF-0308; the frozen route can only
     return `unknown` for the three tested dimensions today, so Train is disabled for every real
-    response. Fault -> RED table: docs/certifications/submissions/2026-10-09T1230Z-FTF-0309.md.
+    response. Fault -> RED table: docs/certifications/submissions/2026-10-09T1720Z-FTF-0309-r3.md.
     The proving_symbol/proving_test below are the FTF-0309-P1 API live-wiring evidence, per the
     2026-10-08T17:52Z Control-plane ruling on the FTF-0309-P1 round-2 DoD's open proving_symbol
     bullet: FTF-0309-P1's own child slice has no spec-matrix entry of its own, so its live-wiring
