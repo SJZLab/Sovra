@@ -19,6 +19,20 @@ R2-6  search_model_versions_by_tag pages beyond one page and refuses a
       non-advancing cursor.
 R2-4  client_from_binding builds the adapter only from the MLflow
       ComponentBinding (the durable outbox itself: integration file).
+R6-1  run-level drift is computed regardless of the completion tag: a run
+      tampered with before its own completion write, and a completed run
+      whose payload tag was deleted and then re-logged differently, are
+      both FAILED with drift, never SYNCED; a deleted tag alone (nothing
+      else changed) heals back to SYNCED rather than failing falsely.
+R6-2  a bearer token containing a control character (CRLF above all) is
+      refused with a static message before any request is sent, and
+      `sync_run` resolves FAILED instead of raising.
+R6-5  `_call` wire-level mutation coverage: a body is sent only when given;
+      the token check refuses before any connection attempt, independent of
+      reachability; a transport failure actually raises (never silently
+      falls through); 5xx/404/400-exists map to their own exact error
+      types, not a generic one; a case-only-different payload-tag value is
+      a real mismatch, never normalised into a match.
 
 Run directly: python3 tests/tasks/test_ftf_r005_r2.py
 """
@@ -41,7 +55,9 @@ sys.path.insert(0, str(ROOT / "tests" / "tasks"))
 import test_ftf_r005 as base  # noqa: E402
 from packages.integrations.mlflow.client import (  # noqa: E402
     MAX_PAGES,
+    MlflowAlreadyExistsError,
     MlflowClient,
+    MlflowNotFoundError,
     TrackingRejectedError,
     TrackingUnavailableError,
     run_metrics,
@@ -54,11 +70,15 @@ from packages.integrations.mlflow.durable_outbox import (  # noqa: E402
 )
 from packages.integrations.mlflow.reconcile import (  # noqa: E402
     DEFAULT_RETRY_POLICY,
+    TAG_KEY,
+    TAG_ORG,
     InMemoryOutbox,
     OutboxEntry,
     RetryPolicy,
     SyncState,
     compute_run_drift,
+    experiment_name,
+    logical_run_key,
     sync_pending,
     sync_run,
 )
@@ -227,6 +247,88 @@ def test_run_level_drift() -> None:
         "R2-1",
         "a healed run is SYNCED again with drift cleared",
         healed.state == SyncState.SYNCED and healed.drift == () and healed.last_error is None,
+    )
+
+
+# -- R6-1 drift regardless of the completion tag ---------------------------
+
+
+def test_drift_before_completion() -> None:
+    # P2: the run already exists (e.g. from an interrupted prior attempt,
+    # the normal resume case) and already carries a metric value that
+    # disagrees with what Factory is about to write -- before Factory's own
+    # completion write has ever run. A tag-gated check has nothing to gate
+    # on yet (no payload tag exists); the fix must still catch this.
+    fake = Fake()
+    run = make_run(metrics=(("m", 1.0),), params=(), hashes=())
+    key = logical_run_key(run.organization_id, run.job_id)
+    experiment_id = fake.get_or_create_experiment(experiment_name(run.organization_id))
+    run_id = fake.create_run(
+        experiment_id, run_name=key, tags={TAG_KEY: key, TAG_ORG: str(run.organization_id)}
+    )
+    fake.log_batch(run_id, metrics=[("m", 99.0, 1, 0)])  # tampered before Factory ever writes
+    entry = InMemoryOutbox().add(run)
+    before = len(fake.calls)
+    result = sync_run(fake, entry)
+    check(
+        "R6-1", "pre-completion tampering is FAILED, never SYNCED", result.state == SyncState.FAILED
+    )
+    check(
+        "R6-1",
+        "drift names the tampered metric",
+        any(c.startswith("metric_changed:m") for c in result.drift),
+    )
+    check(
+        "R6-1",
+        "nothing was written over the tampered run",
+        not any(c == "finish" or c.startswith("log:") for c in fake.calls[before:]),
+    )
+    check("R6-1", "the run was never finished", "status" not in fake.runs[0]["info"])
+
+
+def test_drift_after_completion_tag_deleted() -> None:
+    # P1: a completed run whose payload tag was deleted and a metric
+    # re-logged differently must still be caught -- a missing tag must
+    # never read as "never finished" when the run's own terminal status
+    # says otherwise.
+    fake, entry = synced()
+    set_tag(fake.runs[0], "factory.payload_sha256", None)
+    fake.runs[0]["data"]["metrics"][0] = {"key": "m", "value": 42.0, "timestamp": 5, "step": 0}
+    entry.attempts = 0
+    before = len(fake.calls)
+    result = sync_run(fake, entry)
+    check(
+        "R6-1",
+        "tag-deleted-and-tampered run is FAILED, never SYNCED",
+        result.state == SyncState.FAILED,
+    )
+    check(
+        "R6-1",
+        "drift names the re-logged metric",
+        any(c.startswith("metric_changed:m") for c in result.drift),
+    )
+    check(
+        "R6-1",
+        "nothing was written over the tampered run",
+        not any(c == "finish" or c.startswith("log:") for c in fake.calls[before:]),
+    )
+
+    # a deleted tag with nothing else changed heals back to SYNCED rather
+    # than being falsely failed (the data still agrees with the payload).
+    fake2, entry2 = synced()
+    set_tag(fake2.runs[0], "factory.payload_sha256", None)
+    entry2.attempts = 0
+    healed = sync_run(fake2, entry2)
+    check(
+        "R6-1",
+        "a deleted tag alone heals back to SYNCED",
+        healed.state == SyncState.SYNCED and healed.drift == (),
+    )
+    check(
+        "R6-1",
+        "the payload tag is restored",
+        {t["key"]: t["value"] for t in fake2.runs[0]["data"]["tags"]}.get("factory.payload_sha256")
+        == entry2.run.payload_sha256(),
     )
 
 
@@ -560,6 +662,156 @@ def test_token_never_leaks() -> None:
     stub.reply(200, {"experiment": {"experiment_id": "7", "lifecycle_stage": "active"}})
     stub.client(token=TOKEN).get_or_create_experiment("sovra/x")
     check("R2-5", "the bearer token is still sent", stub.seen[-1]["auth"] == f"Bearer {TOKEN}")
+
+
+# -- R6-2 a CRLF/control-character token never raises ----------------------
+
+
+def test_token_with_control_characters_is_refused_not_raised() -> None:
+    for bad_token in ("t\n", "t\r\nX: 1"):
+        stub = Stub()
+        stub.reply(200, {"experiment": {"experiment_id": "7", "lifecycle_stage": "active"}})
+        client = stub.client(token=bad_token)
+        check(
+            "R6-2",
+            f"{bad_token!r}: refused as TrackingRejectedError, not a raw ValueError",
+            raises(TrackingRejectedError, client.get_or_create_experiment, "sovra/x"),
+        )
+        check("R6-2", f"{bad_token!r}: never reached the stub server", not stub.seen)
+        try:
+            client.get_or_create_experiment("sovra/x")
+        except TrackingRejectedError as exc:
+            check(
+                "R6-2",
+                f"{bad_token!r}: the token never appears in the error",
+                bad_token not in str(exc),
+            )
+        # end to end: sync_run resolves FAILED, it never raises out
+        entry = InMemoryOutbox().add(make_run())
+        result = sync_run(client, entry)
+        check(
+            "R6-2",
+            f"{bad_token!r}: sync_run returns FAILED instead of raising",
+            result.state == SyncState.FAILED,
+        )
+        check(
+            "R6-2",
+            f"{bad_token!r}: the token never appears in last_error",
+            result.last_error is not None and bad_token not in result.last_error,
+        )
+    # a normal token is unaffected
+    stub = Stub()
+    stub.reply(200, {"experiment": {"experiment_id": "7", "lifecycle_stage": "active"}})
+    ok = stub.client(token="a-normal-token-123")
+    check("R6-2", "a normal token still works", ok.get_or_create_experiment("sovra/x") == "7")
+
+
+# -- R6-5 _call wire-level coverage (mutation gate on the function this
+# round's changes sit inside) ------------------------------------------
+
+
+def test_call_sends_a_body_only_when_one_is_given() -> None:
+    stub = Stub()
+    stub.reply(200, {"run": {"info": {"run_id": "a" * 32}}})
+    stub.client().create_run("1", run_name="x", tags={"k": "v"})
+    check("R6-5", "a POST with a body sends real JSON bytes", stub.seen[-1]["body"] != b"")
+    check(
+        "R6-5",
+        "the body actually names the request",
+        b'"run_name"' in stub.seen[-1]["body"] and b'"x"' in stub.seen[-1]["body"],
+    )
+    stub2 = Stub()
+    stub2.reply(200, {"experiment": {"experiment_id": "7", "lifecycle_stage": "active"}})
+    stub2.client().get_or_create_experiment("sovra/x")
+    check("R6-5", "a GET with no body sends none", stub2.seen[-1]["body"] == b"")
+
+
+def test_call_token_refusal_precedes_any_connection_attempt() -> None:
+    down = Stub()
+    down.server.shutdown()
+    down.server.server_close()
+    # Both the explicit token check and the fallback `except ValueError`
+    # around `guarded_fetch` resolve to the same TrackingRejectedError
+    # *type* here (http.client's own header validation never reaches the
+    # network), so the exception type alone cannot tell them apart. The
+    # message does: the explicit check's own static text, never the
+    # fallback's generic one, proves the check itself fired -- on an
+    # unreachable server, so this cannot be a lucky real response either.
+    try:
+        down.client(token="t\n", timeout=1).get_or_create_experiment("sovra/x")
+        check("R6-5", "a bad token is rejected", False)
+    except TrackingRejectedError as exc:
+        check(
+            "R6-5",
+            "the explicit check's own message fired, not the generic fallback",
+            str(exc) == "token contains control characters",
+        )
+
+
+def test_call_a_transport_failure_actually_raises() -> None:
+    down = Stub()
+    down.server.shutdown()
+    down.server.server_close()
+    # A valid token reaching an unreachable server must raise
+    # TrackingUnavailableError for real -- if the computed `failure` were
+    # ever silently dropped instead of raised, the next line
+    # (`status = response.status`) would hit an unbound `response` and
+    # raise something else entirely, which `raises()` would not credit.
+    check(
+        "R6-5",
+        "an unreachable server really raises TrackingUnavailableError",
+        raises(
+            TrackingUnavailableError,
+            down.client(token="fine", timeout=1).get_or_create_experiment,
+            "sovra/x",
+        ),
+    )
+
+
+def test_call_5xx_maps_to_unavailable_not_rejected() -> None:
+    stub = Stub()
+    stub.reply(500, b"{}")
+    check(
+        "R6-5",
+        "exactly HTTP 500 is TrackingUnavailableError, not a generic rejection",
+        raises(TrackingUnavailableError, stub.client().get_or_create_experiment, "sovra/x"),
+    )
+
+
+def test_call_404_maps_to_not_found_exactly() -> None:
+    stub = Stub()
+    stub.reply(404, b'{"error_code": "RESOURCE_DOES_NOT_EXIST"}')
+    check(
+        "R6-5",
+        "RESOURCE_DOES_NOT_EXIST is MlflowNotFoundError exactly",
+        raises(MlflowNotFoundError, stub.client().get_run, "a" * 32),
+    )
+
+
+def test_call_400_exists_maps_to_already_exists_exactly() -> None:
+    stub = Stub()
+    stub.reply(400, b'{"error_code": "RESOURCE_ALREADY_EXISTS"}')
+    check(
+        "R6-5",
+        "RESOURCE_ALREADY_EXISTS is MlflowAlreadyExistsError exactly",
+        raises(MlflowAlreadyExistsError, stub.client().get_run, "a" * 32),
+    )
+
+
+def test_drift_payload_tag_comparison_is_case_exact() -> None:
+    # A stored payload-tag value that differs only in case from the real
+    # sha256 hex digest is a real mismatch (RunConflictError -> FAILED),
+    # never normalised into a match -- `compute_run_drift` is never even
+    # reached because the conflict check runs first.
+    fake, entry = synced()
+    set_tag(fake.runs[0], "factory.payload_sha256", entry.run.payload_sha256().upper())
+    entry.attempts = 0
+    result = sync_run(fake, entry)
+    check(
+        "R6-5",
+        "an uppercase-only payload tag is a conflict, never a case-insensitive match",
+        result.state == SyncState.FAILED,
+    )
 
 
 # -- R2-6 model-version paging ---------------------------------------------

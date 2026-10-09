@@ -26,6 +26,11 @@ R2-D7  run-level drift on the real server: an extra metric, a changed hash tag
        tag-only check would say SYNCED) is FAILED with drift codes and the run
        is not overwritten; a drifted run found via the durable outbox fails
        the row with `run drift:`.
+R6-1   drift is computed regardless of the completion tag, on the real
+       server: a completed run whose payload tag was deleted and then
+       re-logged differently (R6-1a), and a run tampered with before its
+       own completion write ever ran (R6-1b), both fail the real outbox
+       row with `run drift:`, never SYNCED.
 R2-D8  Law 17 on real model versions: READY reads READY; a version flipped to
        PENDING_REGISTRATION / FAILED_REGISTRATION in the server's own store is
        reported as such, never clean; forged approval tags change nothing.
@@ -699,6 +704,84 @@ def main() -> int:
             [e.state for e in drift_sweep] == [SyncState.FAILED]
             and row["status"] == "failed"
             and str(row["last_error"]).startswith("run drift:"),
+        )
+
+        # R6-1a: a completed run's own payload tag deleted, then a metric
+        # re-logged with a different value, on the real server. A tag-gated
+        # check would read the missing tag as "never finished" and silently
+        # rewrite over the tamper; it must instead fail with drift.
+        job11 = uuid.uuid4()
+        run11 = make_run(a_id, job11)
+        results.save(run11)
+        pre11 = sync_run(client, env_a.outbox.add(run11))
+        check("R6-1", "the run was really finished first", pre11.state == SyncState.SYNCED)
+        run_id11 = pre11.mlflow_run_id
+        assert isinstance(run_id11, str)
+        proj.raw(port, "POST", "/runs/delete-tag", {"run_id": run_id11, "key": TAG_PAYLOAD})
+        proj.raw(
+            port,
+            "POST",
+            "/runs/log-metric",
+            {
+                "run_id": run_id11,
+                "key": "eval/accuracy",
+                "value": 0.111,
+                # A later timestamp than the original completion write, so
+                # this is genuinely the "latest" value MLflow itself would
+                # report -- not an artifact of an earlier fake timestamp
+                # losing to the real one.
+                "timestamp": run11.completed_at_ms + 1,
+                "step": 0,
+            },
+        )
+        tags11 = {t["key"]: t["value"] for t in client.get_run(run_id11)["data"]["tags"]}
+        check("R6-1", "the payload tag is really gone before the sweep", TAG_PAYLOAD not in tags11)
+        swept11 = sync_pending(client, env_a.outbox, now_ms=now_ms())
+        entry11 = next((e for e in swept11 if e.run.job_id == job11), None)
+        row11 = outbox_row(owner_url, a_id, job11)
+        check(
+            "R6-1",
+            "deleted-tag-and-re-logged is failed with drift, never synced",
+            entry11 is not None
+            and entry11.state == SyncState.FAILED
+            and row11["status"] == "failed"
+            and str(row11["last_error"]).startswith("run drift:"),
+        )
+
+        # R6-1b: a run that exists (e.g. an interrupted prior attempt) but
+        # was never finished already carries a metric value that disagrees
+        # with what Factory is about to write -- before Factory's own
+        # completion write has ever run, so there is no payload tag at all
+        # yet to gate on.
+        job12 = uuid.uuid4()
+        run12 = make_run(a_id, job12)
+        results.save(run12)
+        key12 = logical_run_key(a_id, job12)
+        run_id12 = client.create_run(
+            exp_a, run_name=key12, tags={TAG_KEY: key12, TAG_ORG: str(a_id)}
+        )
+        proj.raw(
+            port,
+            "POST",
+            "/runs/log-metric",
+            {"run_id": run_id12, "key": "eval/accuracy", "value": 0.111, "timestamp": 1, "step": 0},
+        )
+        env_a.outbox.add(run12)
+        swept12 = sync_pending(client, env_a.outbox, now_ms=now_ms())
+        entry12 = next((e for e in swept12 if e.run.job_id == job12), None)
+        row12 = outbox_row(owner_url, a_id, job12)
+        check(
+            "R6-1",
+            "tampered-before-completion is failed with drift, never synced",
+            entry12 is not None
+            and entry12.state == SyncState.FAILED
+            and row12["status"] == "failed"
+            and str(row12["last_error"]).startswith("run drift:"),
+        )
+        check(
+            "R6-1",
+            "the run was never finished over the tampered value",
+            client.get_run(run_id12)["info"].get("status") != "FINISHED",
         )
 
         # R2-D8: Law 17 on real model versions.
