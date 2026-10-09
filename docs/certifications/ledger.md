@@ -10946,3 +10946,35 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   serialize per row); apply_to keeps stale drift codes (O2); AMBIGUOUS over a failed row unreported (O3); C1 control
   characters accepted in tokens, 429 classed rejected, a raising ResultSource aborts the sweep (O4). UNWIRED
   (proving_symbol blank).
+
+## 2026-10-09T21:56Z — CERTIFIED: FTF-1703 (140/302, in-sandbox scope)
+- **FTF-1703: CERTIFIED** for the in-sandbox scope (round 7; PR #714, merge 1fc59f19c1c265493da550994c78f7e77450b151, head
+  00607b14; evidence_hash f40fe58a byte-identical to the merge for production and tests). The ">=1000 reviewed" clause
+  stays BLOCKED_EXTERNAL (Argilla/human review) and the independent-group floor reports not met
+  (BLOCKED_independent_group_floor, 21 template families) - honest, never claimed; FTF-0616/FTF-1810 precedent. Session
+  comparison: producer session_0123ecY3FThWDNJUSBpbwDsd ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent from the PR.
+  CI: ci-verdict 113998654631; gate job 113994947824 "FTF-1703 Training dataset tests: all checks passed"; mutation-gate
+  113994947877 49/49 killed. Round-7 items fixed: ruling-named FB2/FB3 (+FB3b) RED via the mid-build caller-hook test;
+  reserved suite snapshotted once (FS1c/FS1d RED). Plain-JSON ruling in place. Local 38 tests / 417 checks; 71/71 own
+  probes (mid-build hooks, held-out case/whitespace variants, reserved shape, reviewer identity, floor honesty, 300-way
+  concurrency) pass. GREEN: FV1 (equivalent), FS2/FS5 (caller contradicting its own reserved object; hand-picked variants
+  of the closed class, non-blocking). Disclosed: a reviewer id with a zero-width or fullwidth `generator:` prefix is
+  accepted (to be closed when real Argilla reviewer identities replace caller-supplied ids); held-out matching is exact
+  after strip/casefold, no near-duplicate detection. UNWIRED (proving_symbol blank).
+
+## 2026-10-09T22:11Z — RETURNED: FTF-0904 (r3), FTF-0516 UI (r3)
+- **FTF-0904: RETURNED** (round 2 → 3; PR #711, merge f19efa300fef8ffdac71fbd13d39611219b51daf, head d3eb757). Producer
+  session_01D6atafa7xH4XSemHNfmtrF ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 114002771652; gate job
+  113997261966 "FTF-0904 Log redaction tests: all checks passed"; mutation 113997261705 43 killed + 1 timeout. Round-2
+  items 1-3 and 5 fixed (decoded-layer, header-form and extra= property sweeps: 0 leaks). Return reasons: required item 4
+  (linear runtime under the handler lock) violated by a new quadratic `_PERCENT_TOKEN` scan (262 KB 102 s; a 200 KB-state
+  URL 243 s via logging); fault V12 (`_PAIR` secret-key alternative dropped) GREEN with a reproduced pair-text leak;
+  encoded-separator regression (`token %3D <S>`). Ruling: generated 8K..256K size sweep through redact_text and the
+  logging path. The test file needs Python 3.12 (declared minimum 3.11).
+- **FTF-0516 (UI): RETURNED** (round 2 → 3; PR #717, merge 96391fa024c32e56f3e1d5e5b68afedf7e97e276, head 1d54fe1). Producer
+  session_01Wa1C8RBMkMvu4KK5aEwC6u ≠ certifier. CI: ci-verdict 114017198627; gate job 114012192186 (334 vitest tests).
+  Round-2 items 1-3 fixed (single every-field response binding; nested binding; no submit while loading); 106 faults, 84
+  RED; no false success reproduced. Return reasons: 21 strict-parse faults the round-2 ruling listed stay GREEN (F24
+  shows controls for `is_detector_failure: 0`, F33 "Blocks training yes" for "false"); two false errors on the real P1
+  router (uppercase successor U1; replay top-level version RV, pinned wrongly by the spec). Ruling: generated
+  strict-parse table over every response field.

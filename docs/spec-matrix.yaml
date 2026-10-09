@@ -11922,10 +11922,10 @@ FTF-1702:
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1702.py
 FTF-1703:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Training dataset
-  evidence_hash: f40fe58aba4c3bbdbc018723d0a5b0ba1ce1679a
+  evidence_hash: 1fc59f19c1c265493da550994c78f7e77450b151
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0506, FTF-1701,
@@ -12011,7 +12011,7 @@ FTF-1703:
     of plain str (`_snapshot_reserved`), so no caller code runs inside the per-trace loop (reads of
     the caller's object no longer scale with the trace count). Fault -> RED table in
     docs/certifications/submissions/2026-10-09T2000Z-FTF-1703-r7.md.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1703.py
 FTF-1704:
