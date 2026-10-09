@@ -24622,3 +24622,8 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-09T12:25Z — Control plane: FTF-R005 returned (135/302 unchanged)
 - **Returned:** FTF-R005 r6 (0e): tag-independent drift with read-back, token control-character refusal, resolved rows immutable.
+
+## 2026-10-09T14:06Z — Control plane: FTF-0903 CERTIFIED (136/302); 5 returned
+- **Certified:** FTF-0903 (#685, merge c003010bb0f70ea4270316c02142817734f617b5).
+- **Returned:** FTF-0309 r2 (0c), FTF-H010-P1 r4 (0d), FTF-1703 r6 (0g), FTF-0516-P1 r5 (0l), FTF-R004-P2 r2 (0o).
+- **ci-verdict:** relay merges #682, #683, #685, #686, #688, #689, #690 landed on a green ci-verdict.
