@@ -10920,3 +10920,13 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   (endpoint import validation, weights/adapter validation, roles + continuation eligibility). Certified entries
   FTF-0309-P1, FTF-0309, FTF-H010-P1 and FTF-0516-P1 removed from the Backlog.
 - Pending: FTF-0908 r3 (#693), FTF-R005 r7 (#708).
+
+## 2026-10-09T20:35Z — RETURNED: FTF-0908 (r4)
+- **FTF-0908: RETURNED** (round 3 → 4; PR #693, merge ca1b6dd1d4e2db83b977c7e2e519f03ae422aacf, head e3e1e3b). Producer
+  session_01SN5XfLBY7kKmyy3Loa5Gjy ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 113979085428;
+  external-provider-denial-integration job 113964056545 and gate job 113963935230 "all checks passed"; mutation-gate
+  113963934891 45/45 killed. Round-3 DB3/DB3b/DB4 fixed (27 real-PG probes on PG16 as sovra_app). Return reason: fault F2
+  (post-commit tenant re-bind made session-level) stays GREEN in every suite and leaks the tenant to a fresh checkout on a
+  pool without the reset guard (guc=<org1>, visible_rows=1); mitigated today only by the API engine's reset guard.
+  Ruling: the raw InvalidRequestError inside `s.begin()` (P12) is a disclosure (fails closed, audit durable, no
+  production caller).
