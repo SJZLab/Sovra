@@ -24622,3 +24622,15 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-09T12:25Z — Control plane: FTF-R005 returned (135/302 unchanged)
 - **Returned:** FTF-R005 r6 (0e): tag-independent drift with read-back, token control-character refusal, resolved rows immutable.
+
+## 2026-10-09T14:06Z — Control plane: FTF-0903 CERTIFIED (136/302); 5 returned
+- **Certified:** FTF-0903 (#685, merge c003010bb0f70ea4270316c02142817734f617b5).
+- **Returned:** FTF-0309 r2 (0c), FTF-H010-P1 r4 (0d), FTF-1703 r6 (0g), FTF-0516-P1 r5 (0l), FTF-R004-P2 r2 (0o).
+- **ci-verdict:** relay merges #682, #683, #685, #686, #688, #689, #690 landed on a green ci-verdict.
+
+## 2026-10-09T15:43Z — Control plane: Backlog refill (136/302)
+- **Queued:** FTF-0904 Log redaction (frontier; deps FTF-0902 and FTF-0903 now certified). Other frontier items are claimed, parked or sliced.
+
+## 2026-10-09T16:19Z — Control plane: FTF-0516-P1 slice CERTIFIED; 3 returned (136/302)
+- **Certified slice:** FTF-0516-P1 (#695). **Returned:** FTF-0309 r3 (0c), FTF-R005 r7 (0e), FTF-R004-P1 r4 (0n).
+- **Un-parked:** FTF-0516 UI (Backlog). **Pending:** FTF-0616 #690.

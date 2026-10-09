@@ -8274,15 +8274,28 @@ FTF-0515:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0515.py
 FTF-0516:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Dataset issue resolution UI
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0515
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0515.
+    PROVISIONAL / L1-PROVEN, not certified (Law 4). UI scope:
+    apps/web/components/dataset-factory/dataset_issue_resolution_ui.tsx consumes only the frozen
+    FTF-0516-P1 routes (quality-report, issues, issue-resolutions, resolve-issue); a decision
+    carries the server's report id, resolution version and per-issue evidence sha256, and is shown
+    as recorded only when the response parses strictly and echoes the report, issue, action and
+    before-evidence sent. Every action, waive included, needs a trimmed 1..2000 character rationale
+    before the request is sent; waive is offered for a warning only; a detector failure or an
+    already decided issue has no decision control; there is no in-place edit of locked data.
+    400/403/404/409/5xx and network failures are errors (Law 17). Proof:
+    apps/web/tests/ftf_0516.spec.ts (33 DOM-level Vitest tests, mocked fetch). Disclosed UNWIRED
+    (Law 6/7): no Next.js page tree (FTF-H029), so no Playwright journey from /; proving_symbol
+    stays blank. Fault -> RED table: docs/certifications/submissions/2026-10-09T1650Z-FTF-0516-UI.md.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: apps/web/tests/ftf_0516.spec.ts
 FTF-0517:
   certification_state: PROVISIONAL
   criticality: MUST
@@ -8987,7 +9000,10 @@ FTF-0616:
     an NFKC-normalised comparison at either point is now RED (confirmed GREEN on the round-6 suite,
     then RED on this round's). Whole-file mutation 200/200, 0 survivors. Fault -> RED table:
     docs/certifications/submissions/2026-10-08T0500Z-FTF-0616.md; round 5: docs/certifications/submissions/2026-10-08T1800Z-FTF-0616.md;
-    round 7: docs/certifications/submissions/2026-10-09T0230Z-FTF-0616-r7.md.
+    round 7: docs/certifications/submissions/2026-10-09T0230Z-FTF-0616-r7.md. Round 8 (tests only): echo variants are
+    generated from Unicode properties (whitespace/Cc/Cf/Z*, NFKC/NFKD look-alikes, dashes, case forms) at both the
+    judge-id and alias comparison, plus configured-side forms; 36 normaliser faults all RED.
+    round 8: docs/certifications/submissions/2026-10-09T1600Z-FTF-0616-r8.md.
 
     BLOCKED_EXTERNAL (packet resource_gate, owner action): the clause "Call approved real judge through
     LiteLLM" is proven only against a local TLS gateway stand-in. It needs a real gateway key and an
@@ -9600,10 +9616,10 @@ FTF-0902:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0902.py
 FTF-0903:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Content-free telemetry
-  evidence_hash: e90e40fe3bcfea78f6399fdeb9fa284427666ea9
+  evidence_hash: c003010bb0f70ea4270316c02142817734f617b5
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0006, FTF-0901,
@@ -9652,7 +9668,7 @@ FTF-0903:
     own case LEAK while the other three stay clean; a negative test confirms today's unmutated
     production stays clean/meta-free on all four paths. Production unchanged (no new leak existed
     on str(exc)/repr(exc.args); these four are new leak channels the old checks could not see).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0903.py
 FTF-0904:
@@ -11823,7 +11839,7 @@ FTF-1703:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Training dataset
-  evidence_hash: c16ba1d8490ba5c4f323735a372cc26a813cc434
+  evidence_hash: ce03b5a8d2e9cf528b5f63d30b0e7bdf5b82fb39
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0506, FTF-1701,
@@ -11886,6 +11902,20 @@ FTF-1703:
     id with a zero-width or fullwidth "generator:" prefix is accepted as independent until the
     Argilla review binding. Fault -> RED table in
     docs/certifications/submissions/2026-10-09T1200Z-FTF-1703-r5.md.
+    Round 6 (L2 return, production + tests; Control-plane ruling closing the object-model class):
+    CORRECTION (Law 2): the round-5 text above says a ReviewDecision subclass is refused by an
+    exact-type check -- that check read the caller's object, which a __dict__ whose key's __eq__
+    rewrites values (P8b, P8f, P11b) defeats. `build_training_dataset` and
+    `verify_trace_provenance` now accept traces (and the builder, reviews) ONLY as plain JSON
+    data -- exact dict/list/str/int/float/bool/None, exact-str keys, checked recursively -- and
+    construct their own TrainingTrace and ReviewDecision from it; any caller TrainingTrace or
+    ReviewDecision (exact, subclass or rigged) is refused, no caller object, method, attribute or
+    hook is read after parsing, index/trace_id/reviewer_id/decision are read once into locals, and
+    `by_id` is keyed by the regenerated trace_id. API change: callers pass
+    `TrainingTrace.to_dict()` output and `{"trace_id","reviewer_id","decision"}` dicts.
+    verify_trace_replay still takes a TrainingTrace (only the builder's own regenerated one is
+    ever passed to it by production). Fault -> RED table in
+    docs/certifications/submissions/2026-10-09T1700Z-FTF-1703-r6.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1703.py
@@ -13142,7 +13172,7 @@ FTF-R005:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Integrate internal MLflow tracking and model registry projection
-  evidence_hash: 6fc6d4544829291e54f5bdd634d0057ad7580104
+  evidence_hash: b008bdc6db581a302b921593cc0e6bac54464988
   implementation_state: IMPLEMENTED
   notes: >-
     kind=reuse_architecture; requirements=CAP-12, CAP-19, CAP-21; scenarios=Q35, Q38, Q40;
@@ -13188,7 +13218,8 @@ FTF-R005:
     (1) run-level drift: a completed run is compared field by field with the Factory payload
     (hash tags, params, metrics, status) in compute_run_drift, not only the mutable payload tag;
     an extra metric/param/hash, a changed hash or value, or a missing one is FAILED with drift
-    codes and the run is never SYNCED or overwritten (R2-D7, R2-1).
+    codes and the run is never SYNCED or overwritten (R2-D7, R2-1). CORRECTION (Law 2, round 6):
+    this round's own check only ran while the payload tag survived -- round 6 below closes that.
     (2) Law 17: verify_binding raises RegistryPendingError for PENDING_REGISTRATION and for a
     missing or unknown status, RegistryFailedError for FAILED_REGISTRATION; inspect_binding and
     the projection carry registration_state and never report drift None for a not-READY version;
@@ -13203,6 +13234,8 @@ FTF-R005:
     (engine disposed, every object dropped) loses nothing (R2-D2).
     (5) The bearer token is scrubbed from every raised error and never echoed from a server error
     code, and errors are raised outside the handler so the original is not chained (R2-5).
+    CORRECTION (Law 2, round 6): this round never tried a token with a control character -- round
+    6 below closes that.
     (6) search_model_versions_by_tag pages (205 real versions found, non-advancing cursor refused)
     (R2-D9, R2-6).
     Round-2 disclosures: the measured result is Factory evidence read through the ResultSource
@@ -13216,6 +13249,42 @@ FTF-R005:
     Round 2 follow-up (relay/FTF-R005-r4): mutation gate over the three suites (unit, round-2 unit, real
     Postgres + mlflow integration) 200 run | 200 KILLED | 0 SURVIVED; exact key/value drift, exact
     cursors on both searches, binding mode/key, result identity and stored admission key are pinned.
+    Round 6 (L2 return of a2e419f / PR #674 rounds 2-5, production + tests), against the real server
+    and real Postgres in tests/integration/test_mlflow_durable_outbox.py plus
+    tests/tasks/test_ftf_r005_r2.py and test_ftf_r005_r3.py:
+    (1) compute_run_drift now runs on every found run, not only while the payload tag survives,
+    gated by the run's own terminal MLflow status rather than a tag: a completed run (status
+    FINISHED/FAILED/KILLED) is compared field by field including missing fields and status; a
+    not-yet-completed run is compared on changed/extra fields only (a field Factory has not
+    written yet is not drift). A completed run whose payload tag was deleted and a metric
+    re-logged differently (P1), and a run tampered with before its own completion write ever ran
+    (P2), are both FAILED with drift, never SYNCED, never overwritten; a deleted tag alone (data
+    unchanged) heals back to SYNCED rather than failing falsely (R6-1, R6-1a/b real-server).
+    (2) client.py refuses a bearer token containing a control character (CRLF above all) before
+    building any header, with a static message that never carries the token; any other transport
+    ValueError is also wrapped in a static, scrubbed TrackingRejectedError. Previously such a
+    token reached http.client's own header validation, whose uncaught ValueError both crashed
+    sync_run and echoed the raw token (R6-2).
+    (3) DurableOutbox.record (durable_outbox.py) now reads the row's current status before doing
+    anything else and returns without touching it when the row is no longer pending: a stale
+    PENDING outcome race no longer writes last_error/attempt_count onto an already-succeeded row
+    (D2), and a late SYNCED/FAILED/AMBIGUOUS outcome race no longer rewrites an already-resolved
+    row's attempt_count (D3b) -- the previous unconditional `row.attempt_count = entry.attempts`
+    ran after every branch regardless of whether record_sync_outcome had already no-op'd (R6-3).
+    (4) The retry-due-time test now uses a row whose created_at is a real, different fixture value
+    from updated_at (previously both defaulted to the same value, so a fault reading created_at
+    instead was only ever caught by an AttributeError on a fake missing that field, never
+    behaviourally); shown RED against the actual fault (R6-4).
+    Fault -> RED table, Law-1 self-attack (each production fix reverted, the new test shown to
+    fail, then restored byte-identical) and the real-server reproduction of the CRLF crash are in
+    docs/certifications/submissions/2026-10-09T1330Z-FTF-R005-r6.md.
+    Regression: tests/tasks/test_ftf_r005.py, test_ftf_r005_r2.py, test_ftf_r005_r3.py and
+    tests/integration/test_mlflow_durable_outbox.py all still pass; tests/tasks/test_ftf_1001.py
+    and test_ftf_1002.py (this task's own two dependencies) unaffected.
+    Mutation gate (R6-5, R6-6 in the same two test files): 57 run | 57 KILLED | 0 TIMEOUT |
+    0 SURVIVED | 0 SURVIVED-allowlisted | score 100.0%. First run 40/57 with 17 survivors
+    (CI's own `mutation-gate` check, first push) -- closed by tests, not by an allowlist entry;
+    details in the submission doc.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_r005.py

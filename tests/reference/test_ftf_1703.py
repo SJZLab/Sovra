@@ -39,6 +39,7 @@ from evals.reference.training_dataset import (  # noqa: E402
     SecretInTraceError,
     TraceVerificationError,
     TrainingDatasetError,
+    TrainingTrace,
     build_training_dataset,
     generate_training_traces,
     verify_trace_provenance,
@@ -62,6 +63,61 @@ def _raises(exc_type: type[BaseException], fn, *args: object, **kwargs: object) 
 
 
 TRACES = generate_training_traces()
+
+
+def _mutant(*replacements: tuple[str, str]):
+    """Load the real production source with each (old, new) text replacement applied
+    (each must match exactly once), as a fresh module: a fault injected into the
+    production code itself, not a stub of it."""
+    import types
+
+    source = (ROOT / "evals" / "reference" / "training_dataset.py").read_text()
+    for old, new in replacements:
+        if source.count(old) != 1:
+            raise AssertionError(f"mutation target must match exactly once: {old!r}")
+        source = source.replace(old, new)
+    module = types.ModuleType("training_dataset_mutant")
+    module.__file__ = str(ROOT / "evals" / "reference" / "training_dataset.py")
+    sys.modules[module.__name__] = module  # dataclasses resolves annotations via sys.modules
+    try:
+        exec(compile(source, module.__file__, "exec"), module.__dict__)
+    finally:
+        sys.modules.pop(module.__name__, None)
+    return module
+
+
+def _wire(item):
+    """Caller-side serialisation to the plain JSON data the production API takes.
+    Only an exact TrainingTrace/ReviewDecision is converted; anything else (a
+    subclass, a dict, junk) reaches the production function untouched."""
+    if type(item) is TrainingTrace:
+        # Field-by-field, not to_dict(): malformed fixtures must reach the
+        # production parser as the caller wrote them.
+        raw = {f.name: getattr(item, f.name) for f in dataclasses.fields(item)}
+        if type(raw["steps"]) is tuple:
+            raw["steps"] = list(raw["steps"])
+        return raw
+    if type(item) is ReviewDecision:
+        return {
+            "trace_id": item.trace_id,
+            "reviewer_id": item.reviewer_id,
+            "decision": item.decision,
+        }
+    return item
+
+
+def _wire_all(items):
+    if type(items) in (list, tuple):
+        return [_wire(i) for i in items]
+    return items
+
+
+def _build(traces, reviews=(), **kwargs):
+    return build_training_dataset(_wire_all(traces), _wire_all(reviews), **kwargs)
+
+
+def _prov(trace):
+    return verify_trace_provenance(_wire(trace))
 
 
 def _approve(traces, reviewer: str = "reviewer:alice"):
@@ -192,7 +248,7 @@ def test_replay_rejects_tampering() -> None:
     check(
         "FTF-1703-A1",
         "builder itself refuses a forged trace (replay is on the admission path)",
-        _raises(TraceVerificationError, build_training_dataset, [forged], _approve([forged])),
+        _raises(TraceVerificationError, _build, [forged], _approve([forged])),
     )
     wrong_outcome = dataclasses.replace(TRACES[0], expected_outcome="action_executed")
     check(
@@ -227,7 +283,7 @@ def test_replay_rejects_tampering() -> None:
 
 
 def test_floor_requires_independent_review() -> None:
-    none = build_training_dataset(TRACES)
+    none = _build(TRACES)
     check(
         "FTF-1703-A2",
         "no reviews => zero approved",
@@ -239,7 +295,7 @@ def test_floor_requires_independent_review() -> None:
         "no reviews => blocked status",
         none.review_status == "BLOCKED_EXTERNAL_independent_review",
     )
-    full = build_training_dataset(TRACES, _approve(TRACES))
+    full = _build(TRACES, _approve(TRACES))
     check(
         "FTF-1703-A2",
         "all 1200 approved, but only 21 template families => group floor NOT met",
@@ -253,7 +309,7 @@ def test_floor_requires_independent_review() -> None:
         "critical count carried",
         full.critical_count == sum(1 for t in TRACES if t.critical),
     )
-    exact = build_training_dataset(TRACES[:1000], _approve(TRACES[:1000]))
+    exact = _build(TRACES[:1000], _approve(TRACES[:1000]))
     check(
         "FTF-1703-A2",
         "exactly 1000 approved traces still do not meet the independent-group floor",
@@ -262,13 +318,13 @@ def test_floor_requires_independent_review() -> None:
         and MIN_APPROVED_TRACES == 1000
         and MIN_INDEPENDENT_GROUPS == 1000,
     )
-    short = build_training_dataset(TRACES[:1000], _approve(TRACES[:999]))
+    short = _build(TRACES[:1000], _approve(TRACES[:999]))
     check(
         "FTF-1703-A2",
         "999 approved does not meet floor",
         not short.meets_floor and short.pending_count == 1,
     )
-    rej = build_training_dataset(
+    rej = _build(
         TRACES[:1000],
         _approve(TRACES[:999]) + [ReviewDecision(TRACES[999].trace_id, "reviewer:bob", "rejected")],
     )
@@ -280,14 +336,14 @@ def test_floor_requires_independent_review() -> None:
 
 
 def test_floor_counts_groups_not_traces() -> None:
-    ds = build_training_dataset(TRACES[:1000], _approve(TRACES[:1000]))
+    ds = _build(TRACES[:1000], _approve(TRACES[:1000]))
     check(
         "FTF-1703-A2",
         "1000 approved traces are 21 template-family groups, not 1000 groups",
         ds.approved_count == 1000 and ds.group_count == 21 and not ds.meets_floor,
     )
     one_kind = [t for t in TRACES if t.template_id == "train-tmpl-lookup-v0"]
-    only = build_training_dataset(one_kind, _approve(one_kind))
+    only = _build(one_kind, _approve(one_kind))
     check(
         "FTF-1703-A2",
         "many traces of one template family are one group",
@@ -296,7 +352,7 @@ def test_floor_counts_groups_not_traces() -> None:
     check(
         "FTF-1703-A2",
         "no reviews => no approved traces => zero groups",
-        build_training_dataset(TRACES[:30]).group_count == 0,
+        _build(TRACES[:30]).group_count == 0,
     )
     check(
         "FTF-1703-A2",
@@ -339,7 +395,7 @@ def test_review_independence() -> None:
             f"generator-identity reviewer {reviewer!r} refused",
             _raises(
                 ReviewIndependenceError,
-                build_training_dataset,
+                _build,
                 [t],
                 [ReviewDecision(t.trace_id, reviewer, "approved")],
             ),
@@ -349,7 +405,7 @@ def test_review_independence() -> None:
         "case-variant producer id refused",
         _raises(
             ReviewIndependenceError,
-            build_training_dataset,
+            _build,
             [t],
             [ReviewDecision(t.trace_id, GENERATOR_ID.upper(), "approved")],
         ),
@@ -359,7 +415,7 @@ def test_review_independence() -> None:
         "unknown decision refused",
         _raises(
             ReviewIndependenceError,
-            build_training_dataset,
+            _build,
             [t],
             [ReviewDecision(t.trace_id, "reviewer:a", "maybe")],
         ),
@@ -369,7 +425,7 @@ def test_review_independence() -> None:
         "unhashable decision refused with module error, not TypeError",
         _raises(
             ReviewIndependenceError,
-            build_training_dataset,
+            _build,
             [t],
             [ReviewDecision(t.trace_id, "reviewer:a", cast(Any, []))],
         ),
@@ -379,7 +435,7 @@ def test_review_independence() -> None:
         "review of unknown trace refused",
         _raises(
             ReviewIndependenceError,
-            build_training_dataset,
+            _build,
             [t],
             [ReviewDecision("nope", "reviewer:a", "approved")],
         ),
@@ -389,7 +445,7 @@ def test_review_independence() -> None:
         "conflicting decisions refused",
         _raises(
             ReviewIndependenceError,
-            build_training_dataset,
+            _build,
             [t],
             [
                 ReviewDecision(t.trace_id, "reviewer:a", "approved"),
@@ -400,14 +456,14 @@ def test_review_independence() -> None:
     check(
         "FTF-1703-A2",
         "non-ReviewDecision refused",
-        _raises(ReviewIndependenceError, build_training_dataset, [t], [("x", "y", "approved")]),
+        _raises(ReviewIndependenceError, _build, [t], [("x", "y", "approved")]),
     )
     check(
         "FTF-1703-A2",
         "empty reviewer refused",
         _raises(
             ReviewIndependenceError,
-            build_training_dataset,
+            _build,
             [t],
             [ReviewDecision(t.trace_id, "", "approved")],
         ),
@@ -421,32 +477,32 @@ def test_no_harvest_no_secrets() -> None:
         check(
             "FTF-1703-N1",
             f"purpose {purpose!r} refused",
-            _raises(TrainingDatasetError, build_training_dataset, [bad]),
+            _raises(TrainingDatasetError, _build, [bad]),
         )
     for origin in ("repository", "production_log", "Synthetic_Generator"):
         bad = dataclasses.replace(t, provenance={**t.provenance, "origin": origin})
         check(
             "FTF-1703-N1",
             f"origin {origin!r} refused",
-            _raises(TrainingDatasetError, build_training_dataset, [bad]),
+            _raises(TrainingDatasetError, _build, [bad]),
         )
     bad = dataclasses.replace(t, provenance={k: v for k, v in t.provenance.items() if k != "label"})
     check(
         "FTF-1703-N1",
         "unlabelled provenance refused",
-        _raises(TrainingDatasetError, build_training_dataset, [bad]),
+        _raises(TrainingDatasetError, _build, [bad]),
     )
     out_ns = dataclasses.replace(t, group_id="final-grp-0001")
     check(
         "FTF-1703-N1",
         "group outside training namespace refused",
-        _raises(TrainingDatasetError, build_training_dataset, [out_ns]),
+        _raises(TrainingDatasetError, _build, [out_ns]),
     )
     dup = [t, t]
     check(
         "FTF-1703-N1",
         "duplicate trace id refused",
-        _raises(TrainingDatasetError, build_training_dataset, dup),
+        _raises(TrainingDatasetError, _build, dup),
     )
     for secret in (
         "sk-abcdefghijklmnopqrstuvwx",
@@ -461,9 +517,9 @@ def test_no_harvest_no_secrets() -> None:
         check(
             "FTF-1703-N1",
             f"secret {secret[:8]!r} refused",
-            _raises(SecretInTraceError, build_training_dataset, [leaked]),
+            _raises(SecretInTraceError, _build, [leaked]),
         )
-    clean = build_training_dataset(TRACES[:50], _approve(TRACES[:50]))
+    clean = _build(TRACES[:50], _approve(TRACES[:50]))
     check(
         "FTF-1703-N1",
         "default synthetic traces carry no secret-shaped text",
@@ -484,14 +540,14 @@ def test_final_suite_disjoint() -> None:
         check(
             "FTF-1703-N1",
             f"overlap on {name} refused",
-            _raises(HeldOutLeakageError, build_training_dataset, [t], [], reserved=reserved),
+            _raises(HeldOutLeakageError, _build, [t], [], reserved=reserved),
         )
     ok = ReservedFinalSuite(
         group_ids=frozenset({"final-grp-1"}),
         template_ids=frozenset({"final-tmpl-1"}),
         entity_titles=frozenset({"Final thing FIN-1"}),
     )
-    ds = build_training_dataset(TRACES[:20], _approve(TRACES[:20]), reserved=ok)
+    ds = _build(TRACES[:20], _approve(TRACES[:20]), reserved=ok)
     check(
         "FTF-1703-N1",
         "default traces share nothing with a final-namespace suite",
@@ -508,13 +564,13 @@ def test_final_suite_disjoint() -> None:
 
 
 def test_determinism() -> None:
-    a = build_training_dataset(TRACES, _approve(TRACES)).dataset_sha256
-    b = build_training_dataset(generate_training_traces(), _approve(TRACES)).dataset_sha256
+    a = _build(TRACES, _approve(TRACES)).dataset_sha256
+    b = _build(generate_training_traces(), _approve(TRACES)).dataset_sha256
     check("FTF-1703-D1", "regenerated dataset hash identical", a == b)
-    shuffled = build_training_dataset(list(reversed(TRACES)), _approve(TRACES)).dataset_sha256
+    shuffled = _build(list(reversed(TRACES)), _approve(TRACES)).dataset_sha256
     check("FTF-1703-D1", "hash independent of input order", a == shuffled)
-    c = build_training_dataset([TRACES[1]], _approve([TRACES[1]])).dataset_sha256
-    d = build_training_dataset([TRACES[0]], _approve([TRACES[0]])).dataset_sha256
+    c = _build([TRACES[1]], _approve([TRACES[1]])).dataset_sha256
+    d = _build([TRACES[0]], _approve([TRACES[0]])).dataset_sha256
     check("FTF-1703-D1", "different approved traces give a different dataset hash", c != d)
     changed = _replace_step(
         TRACES[0], 0, {"type": "message", "role": "user", "content": "different"}
@@ -522,14 +578,14 @@ def test_determinism() -> None:
     check(
         "FTF-1703-D1",
         "a one-message user-text change is refused, so it can never change the hash",
-        _raises(TraceVerificationError, build_training_dataset, [changed], _approve([changed])),
+        _raises(TraceVerificationError, _build, [changed], _approve([changed])),
     )
     code = (
         f"import sys; sys.path.insert(0, {str(ROOT)!r}); sys.path.insert(0, {str(API_ROOT)!r});"
         "from evals.reference.training_dataset import *;"
         "t=generate_training_traces(count=60);"
-        "r=[ReviewDecision(x.trace_id,'reviewer:a','approved') for x in t];"
-        "print(build_training_dataset(t,r).dataset_sha256)"
+        "r=[{'trace_id':x.trace_id,'reviewer_id':'reviewer:a','decision':'approved'} for x in t];"
+        "print(build_training_dataset([x.to_dict() for x in t],r).dataset_sha256)"
     )
     hashes = set()
     for seed in ("0", "777"):
@@ -748,22 +804,22 @@ def test_input_shape_guards() -> None:
         check(
             "FTF-1703-A2",
             f"traces={bad!r} refused with module error",
-            _raises(TrainingDatasetError, build_training_dataset, bad),
+            _raises(TrainingDatasetError, _build, bad),
         )
         check(
             "FTF-1703-A2",
             f"reviews={bad!r} refused with module error",
-            _raises(TrainingDatasetError, build_training_dataset, [t], bad),
+            _raises(TrainingDatasetError, _build, [t], bad),
         )
     check(
         "FTF-1703-A2",
         "non-trace element refused",
-        _raises(TrainingDatasetError, build_training_dataset, ["x"]),
+        _raises(TrainingDatasetError, _build, ["x"]),
     )
     check(
         "FTF-1703-A2",
         "dict of traces refused",
-        _raises(TrainingDatasetError, build_training_dataset, {t.trace_id: t}),
+        _raises(TrainingDatasetError, _build, {t.trace_id: t}),
     )
     check(
         "FTF-1703-A1",
@@ -786,7 +842,7 @@ def test_input_shape_guards() -> None:
         "count=1 yields exactly one trace",
         len(generate_training_traces(count=1)) == 1,
     )
-    ds = build_training_dataset(TRACES[:10], _approve(TRACES[:5]))
+    ds = _build(TRACES[:10], _approve(TRACES[:5]))
     check(
         "FTF-1703-A2",
         "counts: generated/approved/pending",
@@ -796,9 +852,7 @@ def test_input_shape_guards() -> None:
         "FTF-1703-N1",
         "re-cased purpose refused",
         all(
-            _raises(
-                TrainingDatasetError, build_training_dataset, [dataclasses.replace(t, purpose=p)]
-            )
+            _raises(TrainingDatasetError, _build, [dataclasses.replace(t, purpose=p)])
             for p in ("Training", " training", "TRAINING ")
         ),
     )
@@ -807,7 +861,7 @@ def test_input_shape_guards() -> None:
         "re-cased origin refused",
         _raises(
             TrainingDatasetError,
-            build_training_dataset,
+            _build,
             [
                 dataclasses.replace(
                     t, provenance={**t.provenance, "origin": " Synthetic_Generator "}
@@ -817,7 +871,7 @@ def test_input_shape_guards() -> None:
     )
     b = dataclasses.replace(TRACES[0], trace_id=" TRAIN-0000 ")
     try:
-        build_training_dataset([TRACES[0], b])
+        _build([TRACES[0], b])
         dup_message = ""
     except TrainingDatasetError as exc:
         dup_message = str(exc)
@@ -842,7 +896,7 @@ def test_normalized_reserved_and_reviewers() -> None:
         check(
             "FTF-1703-N1",
             f"re-cased/padded sealed {name} id still refused",
-            _raises(HeldOutLeakageError, build_training_dataset, [t], [], reserved=reserved),
+            _raises(HeldOutLeakageError, _build, [t], [], reserved=reserved),
         )
     # Only generator output is admitted, so a non-generator producer never reaches review.
     for producer in ("human:carol", " " + GENERATOR_ID, GENERATOR_ID.upper(), GENERATOR_ID + " "):
@@ -854,20 +908,20 @@ def test_normalized_reserved_and_reviewers() -> None:
             f"producer {producer!r} other than the generator is refused at admission",
             _raises(
                 TraceVerificationError,
-                build_training_dataset,
+                _build,
                 [tr],
                 [ReviewDecision(tr.trace_id, "human:dave", "approved")],
             ),
         )
     ok = TRACES[0]
-    good = build_training_dataset([ok], [ReviewDecision(ok.trace_id, "human:dave", "approved")])
+    good = _build([ok], [ReviewDecision(ok.trace_id, "human:dave", "approved")])
     check("FTF-1703-A2", "a genuinely different reviewer is accepted", good.approved_count == 1)
     check(
         "FTF-1703-A2",
         "generator-prefixed reviewer with padding refused",
         _raises(
             ReviewIndependenceError,
-            build_training_dataset,
+            _build,
             [ok],
             [ReviewDecision(ok.trace_id, "  Generator:x", "approved")],
         ),
@@ -926,12 +980,12 @@ def test_helper_exactness() -> None:
             f"decision {bad!r} refused",
             _raises(
                 ReviewIndependenceError,
-                build_training_dataset,
+                _build,
                 [t],
                 [ReviewDecision(t.trace_id, "reviewer:a", bad)],
             ),
         )
-    rj = build_training_dataset(
+    rj = _build(
         TRACES[:3],
         [
             ReviewDecision(TRACES[0].trace_id, "reviewer:a", "rejected"),
@@ -943,7 +997,7 @@ def test_helper_exactness() -> None:
         "rejected counted exactly",
         (rj.rejected_count, rj.approved_count, rj.pending_count) == (1, 1, 1),
     )
-    same = build_training_dataset(
+    same = _build(
         [t],
         [
             ReviewDecision(t.trace_id, "reviewer:a", "approved"),
@@ -982,7 +1036,7 @@ def _message(error: type[BaseException], fn, *args: object, **kwargs: object) ->
 
 def test_provenance_is_regenerated_not_declared() -> None:
     for t in (*TRACES[:14], TRACES[600], TRACES[1199]):
-        verify_trace_provenance(t)
+        _prov(t)
     check("FTF-1703-R2-2", "genuine generator output verifies for every kind", True)
 
     lookup = _kind_trace("lookup")
@@ -999,14 +1053,14 @@ def test_provenance_is_regenerated_not_declared() -> None:
     check(
         "FTF-1703-R2-2",
         "a replaced user turn is refused by provenance",
-        _raises(TraceVerificationError, verify_trace_provenance, replaced_user),
+        _raises(TraceVerificationError, _prov, replaced_user),
     )
     check(
         "FTF-1703-R2-2",
         "a replaced user turn is refused by the builder, even with an independent approval",
         _raises(
             TraceVerificationError,
-            build_training_dataset,
+            _build,
             [replaced_user],
             _approve([replaced_user]),
         ),
@@ -1019,7 +1073,7 @@ def test_provenance_is_regenerated_not_declared() -> None:
     check(
         "FTF-1703-R2-2",
         "a harvested production-looking row in place of the user turn is refused",
-        _raises(TraceVerificationError, build_training_dataset, [harvested], _approve([harvested])),
+        _raises(TraceVerificationError, _build, [harvested], _approve([harvested])),
     )
 
     note = _kind_trace("note")
@@ -1041,7 +1095,7 @@ def test_provenance_is_regenerated_not_declared() -> None:
     check(
         "FTF-1703-R2-2",
         "replaced free-text tool arguments are refused by the builder",
-        _raises(TraceVerificationError, build_training_dataset, [note_text], _approve([note_text])),
+        _raises(TraceVerificationError, _build, [note_text], _approve([note_text])),
     )
 
     forged_critical = dataclasses.replace(lookup, critical=True)
@@ -1050,7 +1104,7 @@ def test_provenance_is_regenerated_not_declared() -> None:
         "a forged critical=True on a non-critical kind is refused",
         _raises(
             TraceVerificationError,
-            build_training_dataset,
+            _build,
             [forged_critical],
             _approve([forged_critical]),
         ),
@@ -1061,7 +1115,7 @@ def test_provenance_is_regenerated_not_declared() -> None:
         "a critical trace relabelled non-critical is refused",
         _raises(
             TraceVerificationError,
-            build_training_dataset,
+            _build,
             [dataclasses.replace(denied, critical=False)],
         ),
     )
@@ -1077,7 +1131,7 @@ def test_provenance_is_regenerated_not_declared() -> None:
         check(
             "FTF-1703-R2-2",
             f"a forged {name} is refused by provenance",
-            _raises(TraceVerificationError, verify_trace_provenance, forged),
+            _raises(TraceVerificationError, _prov, forged),
         )
 
     for label, provenance in (
@@ -1095,7 +1149,7 @@ def test_provenance_is_regenerated_not_declared() -> None:
         check(
             "FTF-1703-R2-2",
             f"provenance with {label} is refused by the builder",
-            _raises(TraceVerificationError, build_training_dataset, [forged], _approve([forged])),
+            _raises(TraceVerificationError, _build, [forged], _approve([forged])),
         )
 
     no_producer = dataclasses.replace(
@@ -1104,7 +1158,7 @@ def test_provenance_is_regenerated_not_declared() -> None:
     check(
         "FTF-1703-R2-2",
         "provenance with no producer is refused",
-        _raises(TrainingDatasetError, build_training_dataset, [no_producer]),
+        _raises(TrainingDatasetError, _build, [no_producer]),
     )
 
     class RiggedStr(str):
@@ -1123,7 +1177,7 @@ def test_provenance_is_regenerated_not_declared() -> None:
     check(
         "FTF-1703-R2-2",
         "a str subclass with a rigged __eq__ cannot make a forged value look equal",
-        _raises(TraceVerificationError, verify_trace_provenance, rigged)
+        _raises(TraceVerificationError, _prov, rigged)
         and _raises(TraceVerificationError, verify_trace_replay, rigged),
     )
     check(
@@ -1131,21 +1185,21 @@ def test_provenance_is_regenerated_not_declared() -> None:
         "non-JSON content in a trace is the typed error, not a TypeError",
         _raises(
             TraceVerificationError,
-            verify_trace_provenance,
+            _prov,
             _replace_step(lookup, 0, {"type": "message", "role": "user", "content": object()}),
         ),
     )
     check(
         "FTF-1703-R2-2",
         "a non-trace is refused by provenance",
-        _raises(TraceVerificationError, verify_trace_provenance, {"x": 1}),
+        _raises(TraceVerificationError, _prov, {"x": 1}),
     )
 
 
 def test_group_floor_is_by_template_family() -> None:
     import evals.reference.training_dataset as td
 
-    full = build_training_dataset(TRACES, _approve(TRACES))
+    full = _build(TRACES, _approve(TRACES))
     check(
         "FTF-1703-R2-1",
         "1200 approved traces are 21 groups and the floor is never claimed",
@@ -1166,8 +1220,8 @@ def test_group_floor_is_by_template_family() -> None:
     check(
         "FTF-1703-R2-1",
         "the group count follows the template ids of the approved traces only",
-        build_training_dataset(two, _approve(two)).group_count == 2
-        and build_training_dataset(two, _approve(two[:1])).group_count == 1,
+        _build(two, _approve(two)).group_count == 2
+        and _build(two, _approve(two[:1])).group_count == 1,
     )
     check(
         "FTF-1703-R2-1",
@@ -1216,7 +1270,7 @@ def test_reserved_suite_fails_closed() -> None:
     check(
         "FTF-1703-R2-3",
         "a reserved set tampered into a bare string after construction is refused by the builder",
-        _raises(TrainingDatasetError, build_training_dataset, [t], [], reserved=tampered),
+        _raises(TrainingDatasetError, _build, [t], [], reserved=tampered),
     )
     for field in ("template_ids", "entity_titles", "answer_sha256s"):
         again = ReservedFinalSuite()
@@ -1224,7 +1278,7 @@ def test_reserved_suite_fails_closed() -> None:
         check(
             "FTF-1703-R2-3",
             f"a tampered {field} is refused by the builder",
-            _raises(TrainingDatasetError, build_training_dataset, [t], [], reserved=again),
+            _raises(TrainingDatasetError, _build, [t], [], reserved=again),
         )
     empty_cases: list[tuple[str, Any]] = [
         ("empty dict", {}),
@@ -1238,19 +1292,19 @@ def test_reserved_suite_fails_closed() -> None:
         check(
             "FTF-1703-R2-3",
             f"reserved={label} is refused, never read as 'no sealed suite'",
-            _raises(TrainingDatasetError, build_training_dataset, [t], [], reserved=cast(Any, bad)),
+            _raises(TrainingDatasetError, _build, [t], [], reserved=cast(Any, bad)),
         )
     check(
         "FTF-1703-R2-3",
         "reserved=None is the explicit 'nothing sealed' default and still builds",
-        build_training_dataset([t], _approve([t]), reserved=None).approved_count == 1,
+        _build([t], _approve([t]), reserved=None).approved_count == 1,
     )
     check(
         "FTF-1703-R2-3",
         "a well-formed sealed group is still refused as held-out leakage",
         _raises(
             HeldOutLeakageError,
-            build_training_dataset,
+            _build,
             [t],
             [],
             reserved=ReservedFinalSuite(group_ids=frozenset({sealed})),
@@ -1291,13 +1345,13 @@ def test_malformed_trace_fields_raise_typed_errors() -> None:
         check(
             "FTF-1703-R2-4",
             f"{name}={value!r} raises the typed error from the builder",
-            _raises(TraceVerificationError, build_training_dataset, [trace]),
+            _raises(TraceVerificationError, _build, [trace]),
         )
         check(
             "FTF-1703-R2-4",
             f"{name}={value!r} raises the typed error from replay and provenance",
             _raises(TraceVerificationError, verify_trace_replay, trace)
-            and _raises(TraceVerificationError, verify_trace_provenance, trace),
+            and _raises(TraceVerificationError, _prov, trace),
         )
 
     class SubStr(str):
@@ -1308,7 +1362,7 @@ def test_malformed_trace_fields_raise_typed_errors() -> None:
         "a str-subclass kind is refused",
         _raises(
             TraceVerificationError,
-            build_training_dataset,
+            _build,
             [dataclasses.replace(t, kind=SubStr("lookup"))],
         ),
     )
@@ -1316,7 +1370,7 @@ def test_malformed_trace_fields_raise_typed_errors() -> None:
     check(
         "FTF-1703-R2-4",
         "steps held in a list are still a valid sequence of dicts",
-        build_training_dataset([list_steps], _approve([list_steps])).approved_count == 1,
+        _build([list_steps], _approve([list_steps])).approved_count == 1,
     )
     note = _kind_trace("note")
     i = _step_index(note, "tool_call", "create_note")
@@ -1339,7 +1393,7 @@ def test_malformed_trace_fields_raise_typed_errors() -> None:
             "FTF-1703-R2-4",
             f"{label} raises the typed error",
             _raises(TraceVerificationError, verify_trace_replay, bad)
-            and _raises(TraceVerificationError, build_training_dataset, [bad]),
+            and _raises(TraceVerificationError, _build, [bad]),
         )
     check(
         "FTF-1703-R2-4",
@@ -1357,7 +1411,7 @@ def test_malformed_trace_fields_raise_typed_errors() -> None:
     check(
         "FTF-1703-R2-4",
         "absurdly deep nesting is the typed error, not a RecursionError",
-        _raises(TraceVerificationError, build_training_dataset, [nested]),
+        _raises(TraceVerificationError, _build, [nested]),
     )
 
 
@@ -1382,7 +1436,7 @@ def test_forged_approver_ref_is_typed() -> None:
         check(
             "FTF-1703-R2-4",
             f"{label} is refused by the builder too",
-            _raises(TraceVerificationError, build_training_dataset, [forged], _approve([forged])),
+            _raises(TraceVerificationError, _build, [forged], _approve([forged])),
         )
     unknown = _message(
         TraceVerificationError,
@@ -1444,7 +1498,7 @@ def test_secret_scan_covers_dict_keys() -> None:
         check(
             "FTF-1703-N1",
             f"a secret-shaped dict KEY {secret[:8]!r} is refused (not only values)",
-            _raises(SecretInTraceError, build_training_dataset, [in_key]),
+            _raises(SecretInTraceError, _build, [in_key]),
         )
         nested = _replace_step(
             note,
@@ -1458,7 +1512,7 @@ def test_secret_scan_covers_dict_keys() -> None:
         check(
             "FTF-1703-N1",
             f"a secret-shaped key nested inside a list is refused ({secret[:8]!r})",
-            _raises(SecretInTraceError, build_training_dataset, [nested]),
+            _raises(SecretInTraceError, _build, [nested]),
         )
     harmless = _replace_step(
         note,
@@ -1472,7 +1526,7 @@ def test_secret_scan_covers_dict_keys() -> None:
     check(
         "FTF-1703-N1",
         "a harmless extra key is not a secret (it is refused later, as non-generator content)",
-        _raises(TraceVerificationError, build_training_dataset, [harmless]),
+        _raises(TraceVerificationError, _build, [harmless]),
     )
 
 
@@ -1482,6 +1536,15 @@ def _msg_any(fn, *args: object, **kwargs: object) -> str:
         fn(*args, **kwargs)
     except TrainingDatasetError as exc:
         return str(exc)
+    return ""
+
+
+def _msg_mut(fn, *args: object, **kwargs: object) -> str:
+    """Like _msg_any for a mutant module, whose error classes are its own."""
+    try:
+        fn(*args, **kwargs)
+    except Exception as exc:  # noqa: BLE001 - a fault may surface as any raw error
+        return f"{type(exc).__name__}: {exc}"
     return ""
 
 
@@ -1545,7 +1608,7 @@ def test_guards_name_their_own_cause() -> None:
             steps=tuple(reorder(step) for step in base.steps),
             provenance=reorder(base.provenance),
         )
-        verify_trace_provenance(shuffled)
+        _prov(shuffled)
         verify_trace_replay(shuffled)
     check(
         "FTF-1703-R2-2",
@@ -1560,7 +1623,7 @@ def test_guards_name_their_own_cause() -> None:
     check(
         "FTF-1703-R2-2",
         "non-JSON content is refused naming plain JSON data (provenance and replay)",
-        "plain JSON data" in _msg_any(verify_trace_provenance, odd)
+        "plain JSON data" in _msg_any(_prov, odd)
         and "plain JSON data" in _msg_any(verify_trace_replay, odd_result),
     )
 
@@ -1576,21 +1639,21 @@ def test_guards_name_their_own_cause() -> None:
         check(
             "FTF-1703-R2-2",
             f"producer {producer!r} is refused as not naming the generator",
-            "does not name a generator index" in _msg_any(verify_trace_provenance, forged),
+            "does not name a generator index" in _msg_any(_prov, forged),
         )
 
     # the early builder guards each name their own cause
     check(
         "FTF-1703-N1",
         "a non-trace element is refused by the type guard",
-        "must be TrainingTrace" in _msg_any(build_training_dataset, ["x"]),
+        "plain JSON object" in _msg_any(_build, ["x"]),
     )
     for purpose in ("validation", "Training", " training", "TRAINING "):
         bad = dataclasses.replace(t, purpose=purpose)
         check(
             "FTF-1703-N1",
             f"purpose {purpose!r} is refused by the purpose guard",
-            "purpose must be 'training'" in _msg_any(build_training_dataset, [bad]),
+            "purpose must be 'training'" in _msg_any(_build, [bad]),
         )
     for label, provenance in (
         ("wrong origin", {**t.provenance, "origin": "repository"}),
@@ -1605,8 +1668,7 @@ def test_guards_name_their_own_cause() -> None:
         check(
             "FTF-1703-N1",
             f"{label} is refused by the provenance guard",
-            "provenance must be synthetic generator output"
-            in _msg_any(build_training_dataset, [bad]),
+            "provenance must be synthetic generator output" in _msg_any(_build, [bad]),
         )
     for label, change in (
         ("group outside the train namespace", {"group_id": "final-grp-0001"}),
@@ -1617,7 +1679,7 @@ def test_guards_name_their_own_cause() -> None:
         check(
             "FTF-1703-N1",
             f"{label} is refused by the namespace guard",
-            "outside the training namespace" in _msg_any(build_training_dataset, [bad]),
+            "outside the training namespace" in _msg_any(_build, [bad]),
         )
 
     # reviews must name an exact trace id
@@ -1626,9 +1688,7 @@ def test_guards_name_their_own_cause() -> None:
             "FTF-1703-A2",
             f"a review for {trace_id!r} is not a review of 'train-0000'",
             "unknown trace"
-            in _msg_any(
-                build_training_dataset, [t], [ReviewDecision(trace_id, "reviewer:a", "approved")]
-            ),
+            in _msg_any(_build, [t], [ReviewDecision(trace_id, "reviewer:a", "approved")]),
         )
 
     # replay stays on the admission path as defence in depth: a generator regression
@@ -1637,8 +1697,8 @@ def test_guards_name_their_own_cause() -> None:
     original = td._generate_one
     td._generate_one = lambda index: regressed  # type: ignore[assignment]
     try:
-        provenance_ok = not _raises(TraceVerificationError, verify_trace_provenance, regressed)
-        refused = _msg_any(build_training_dataset, [regressed], _approve([regressed]))
+        provenance_ok = not _raises(TraceVerificationError, _prov, regressed)
+        refused = _msg_any(_build, [regressed], _approve([regressed]))
     finally:
         td._generate_one = original
     check(
@@ -1677,16 +1737,16 @@ def test_round3_subclass_admission() -> None:
     check(
         "FTF-1703-R3-1",
         "a TrainingTrace subclass is refused with TraceVerificationError",
-        _raises(TraceVerificationError, build_training_dataset, [disguised], _approve([base])),
+        _raises(TraceVerificationError, _build, [disguised], _approve([base])),
     )
     check(
         "FTF-1703-R3-1",
         "verify_trace_provenance refuses the subclass too",
-        _raises(TraceVerificationError, verify_trace_provenance, disguised),
+        _raises(TraceVerificationError, _prov, disguised),
     )
     # negative on the real default path: the genuine class is still admitted and the
     # admitted object is the regenerated one, equal in content to the generator's.
-    ok = build_training_dataset([base], _approve([base]))
+    ok = _build([base], _approve([base]))
     check("FTF-1703-R3-1", "genuine trace still admitted", ok.approved_count == 1)
     check(
         "FTF-1703-R3-1",
@@ -1708,14 +1768,14 @@ def test_round3_subclass_admission() -> None:
     check(
         "FTF-1703-R3-2",
         "a nested dict subclass is refused (not plain JSON)",
-        "plain JSON" in _msg_any(build_training_dataset, [nested], _approve([nested])),
+        "plain JSON" in _msg_any(_build, [nested], _approve([nested])),
     )
     check(
         "FTF-1703-R3-2",
         "a nested list subclass is refused",
         "plain JSON"
         in _msg_any(
-            verify_trace_provenance,
+            _prov,
             _replace_step(base, ti, {**base.steps[ti], "x": type("L", (list,), {})([1])}),
         ),
     )
@@ -1724,8 +1784,8 @@ def test_round3_subclass_admission() -> None:
     sub_step = _replace_step(base, 0, type("S", (dict,), {})(base.steps[0]))
     check(
         "FTF-1703-R3-3",
-        "a dict-subclass step is refused by the named step check",
-        "sequence of dicts" in _msg_any(verify_trace_provenance, sub_step),
+        "a dict-subclass step is refused by the plain-JSON parse",
+        "plain JSON" in _msg_any(_prov, sub_step),
     )
 
     # Boundaries of the plain-JSON walk, each with its own message.
@@ -1842,7 +1902,7 @@ def test_round4_held_out_check_runs_on_the_raw_trace_too() -> None:
         "FTF-1703-R4-8",
         "a trace whose raw (tampered) group_id overlaps the reserved set is "
         "refused as a held-out overlap, not a generic provenance mismatch",
-        _raises(HeldOutLeakageError, build_training_dataset, [tampered], [], reserved=reserved),
+        _raises(HeldOutLeakageError, _build, [tampered], [], reserved=reserved),
     )
 
 
@@ -1966,36 +2026,32 @@ def test_round4_each_generator_index_admitted_at_most_once() -> None:
         "FTF-1703-R4-2",
         "setup: the decoy is not itself admissible (wrong trace_id for its claimed "
         "index), independent of the index guard",
-        _raises(TraceVerificationError, build_training_dataset, [decoy]),
+        _raises(TraceVerificationError, _build, [decoy]),
     )
     # Load-bearing proof (Law 1), isolating the index guard from the provenance
     # check that would also refuse this: with verify_trace_provenance patched to
     # accept anything, a second id claiming an already-admitted index must still
     # be caught and refused by the index-uniqueness guard alone.
-    original = td.verify_trace_provenance
-    td.verify_trace_provenance = lambda trace: None
+    original = td._check_provenance
+    td._check_provenance = lambda trace: trace.provenance["index"]
     try:
         check(
             "FTF-1703-R4-2",
             "two ids claiming the same generator index are refused to exactly one "
             "admission, even with provenance checking disabled",
-            _raises(
-                TrainingDatasetError,
-                build_training_dataset,
-                [base, decoy],
-                _approve([base, decoy]),
-            ),
+            "admitted more than once" in _msg_any(_build, [base, decoy], _approve([base])),
         )
     finally:
-        td.verify_trace_provenance = original
+        td._check_provenance = original
     a, b = TRACES[10], TRACES[20]
-    ok = build_training_dataset([a, b], _approve([a, b]))
+    ok = _build([a, b], _approve([a, b]))
     check("FTF-1703-R4-2", "two distinct indices are both admitted", ok.approved_count == 2)
 
 
 def test_round4_review_decision_requires_exact_types() -> None:
-    import evals.reference.training_dataset as td
-
+    """Reviews are plain JSON dicts of exact str: a str subclass overriding
+    strip()/__eq__/__hash__ is refused at the parse, before any check it could
+    defeat."""
     t = TRACES[30]
 
     class SneakyReviewer(str):
@@ -2008,6 +2064,7 @@ def test_round4_review_decision_requires_exact_types() -> None:
         "setup: the subclass's own strip() lies about its real content",
         sneaky.strip() != str.strip(sneaky),
     )
+    wire = _wire(t)
     check(
         "FTF-1703-R4-3",
         "a str-subclass reviewer_id is refused outright, never reaching the "
@@ -2015,8 +2072,8 @@ def test_round4_review_decision_requires_exact_types() -> None:
         _raises(
             ReviewIndependenceError,
             build_training_dataset,
-            [t],
-            [ReviewDecision(t.trace_id, sneaky, "approved")],
+            [wire],
+            [{"trace_id": t.trace_id, "reviewer_id": sneaky, "decision": "approved"}],
         ),
     )
 
@@ -2035,42 +2092,31 @@ def test_round4_review_decision_requires_exact_types() -> None:
         _raises(
             ReviewIndependenceError,
             build_training_dataset,
-            [t],
+            [wire],
             [
-                ReviewDecision(t.trace_id, "reviewer:a", "approved"),
-                ReviewDecision(t.trace_id, "reviewer:b", lying),
+                {"trace_id": t.trace_id, "reviewer_id": "reviewer:a", "decision": "approved"},
+                {"trace_id": t.trace_id, "reviewer_id": "reviewer:b", "decision": lying},
             ],
         ),
     )
-    # Load-bearing proof (Law 1): with the exact-type guard replaced by the old
-    # isinstance check, both subclass attacks above succeed instead of refusing.
-    original = td._validate_review
-
-    def _isinstance_validate(review: Any, trace_ids: set) -> Any:
-        if not isinstance(review, ReviewDecision):
-            raise ReviewIndependenceError("reviews must be ReviewDecision instances")
-        for name in ("trace_id", "reviewer_id", "decision"):
-            if not isinstance(getattr(review, name), str) or not getattr(review, name):
-                raise ReviewIndependenceError(f"review.{name} must be a non-empty string")
-        if review.decision not in td._DECISIONS:
-            raise ReviewIndependenceError(f"unknown review decision: {review.decision!r}")
-        if review.trace_id not in trace_ids:
-            raise ReviewIndependenceError(f"review for unknown trace: {review.trace_id!r}")
-        if td._norm(review.reviewer_id).startswith("generator:"):
-            raise ReviewIndependenceError(f"{review.trace_id}: reviewer not independent")
-        return review
-
-    td._validate_review = _isinstance_validate
-    try:
-        result = build_training_dataset([t], [ReviewDecision(t.trace_id, sneaky, "approved")])
-        check(
-            "FTF-1703-R4-FAULT",
-            "fault: the old isinstance check lets the generator-identity "
-            "reviewer's own strip() through, approving its own output",
-            result.approved_count == 1,
+    # Load-bearing proof (Law 1): with the exact-type check weakened to isinstance in
+    # the production source, the generator-identity reviewer's own strip() gets
+    # through and the producer approves its own output.
+    weak = _mutant(
+        (
+            "if type(key) is not str or type(value) is not str or not value:",
+            "if not isinstance(key, str) or not isinstance(value, str) or not value:",
         )
-    finally:
-        td._validate_review = original
+    )
+    result = weak.build_training_dataset(
+        [wire], [{"trace_id": t.trace_id, "reviewer_id": sneaky, "decision": "approved"}]
+    )
+    check(
+        "FTF-1703-R4-FAULT",
+        "fault: an isinstance check lets the generator-identity reviewer's own "
+        "strip() through, approving its own output",
+        result.approved_count == 1,
+    )
 
 
 def test_round5_dict_subclass_instance_dict_is_refused() -> None:
@@ -2146,7 +2192,7 @@ def test_round5_dict_subclass_instance_dict_is_refused() -> None:
     check(
         "FTF-1703-R5-1",
         "negative control: a genuine trace still builds and is admitted",
-        build_training_dataset([base], _approve([base])).approved_count == 1,
+        _build([base], _approve([base])).approved_count == 1,
     )
 
 
@@ -2170,9 +2216,7 @@ def test_round5_regenerated_object_is_scanned_and_checked() -> None:
     reserved = ReservedFinalSuite(entity_titles=frozenset({"sealed entity trn-x"}))
     td._generate_one = _drifting
     try:
-        raised = _raises(
-            HeldOutLeakageError, build_training_dataset, [t], _approve([t]), reserved=reserved
-        )
+        raised = _raises(HeldOutLeakageError, _build, [t], _approve([t]), reserved=reserved)
     finally:
         td._generate_one = original
     check(
@@ -2192,7 +2236,7 @@ def test_round5_regenerated_object_is_scanned_and_checked() -> None:
 
     td._generate_one = _leaky
     try:
-        raised = _raises(SecretInTraceError, build_training_dataset, [t], _approve([t]))
+        raised = _raises(SecretInTraceError, _build, [t], _approve([t]))
     finally:
         td._generate_one = original
     check(
@@ -2204,7 +2248,9 @@ def test_round5_regenerated_object_is_scanned_and_checked() -> None:
 
 def test_round5_review_decision_subclass_is_refused_by_a_named_check() -> None:
     """F6: a ReviewDecision subclass whose `decision` changes between reads would
-    swallow a conflicting rejection under an isinstance check."""
+    swallow a conflicting rejection if the builder read the caller's object. The
+    builder takes plain JSON data only, so any ReviewDecision (subclass or not) is
+    refused by the named plain-JSON check."""
     t = TRACES[50]
 
     class Flipping(ReviewDecision):
@@ -2220,24 +2266,374 @@ def test_round5_review_decision_subclass_is_refused_by_a_named_check() -> None:
             pass
 
     sub = Flipping(t.trace_id, "reviewer:a", "approved")
-    message = _msg_any(build_training_dataset, [t], [sub])
+    wire = _wire(t)
+    message = _msg_any(build_training_dataset, [wire], [sub])
     check(
         "FTF-1703-R5-2",
         "a ReviewDecision subclass is refused as ReviewIndependenceError",
-        _raises(ReviewIndependenceError, build_training_dataset, [t], [sub]),
+        _raises(ReviewIndependenceError, build_training_dataset, [wire], [sub]),
     )
     check(
         "FTF-1703-R5-2",
-        "the refusal names the exact-type check",
-        "must be ReviewDecision instances" in message,
+        "the refusal names the plain-JSON check",
+        "plain JSON object" in message,
     )
     check(
         "FTF-1703-R5-2",
-        "negative control: the plain ReviewDecision is accepted",
-        build_training_dataset(
-            [t], [ReviewDecision(t.trace_id, "reviewer:a", "approved")]
-        ).approved_count
-        == 1,
+        "negative control: the same review as plain JSON data is accepted",
+        _build([t], [ReviewDecision(t.trace_id, "reviewer:a", "approved")]).approved_count == 1,
+    )
+
+
+class _RigKey(str):
+    """A str-subclass key whose __eq__ (run on every dict lookup) rewrites the value
+    stored under it, so every read of the attribute can return a different value."""
+
+    store: dict[Any, Any]
+    values: list[Any]
+
+    def __new__(cls, name: str, store: dict[Any, Any], values: list[Any]) -> _RigKey:
+        obj = str.__new__(cls, name)
+        obj.store = store
+        obj.values = list(values)
+        return obj
+
+    def __hash__(self) -> int:
+        return hash(str(self))
+
+    def __eq__(self, other: object) -> bool:
+        same = str.__eq__(self, other)
+        if same and self.values:
+            self.store[self] = self.values.pop(0)
+        return same
+
+
+def _flipping(obj: Any, field: str, values: list) -> Any:
+    """Give `obj` an instance __dict__ whose `field` entry changes on every read."""
+    state = dict(vars(obj))
+    state.pop(field)
+    key = _RigKey(field, state, values)
+    state[key] = values[0]
+    object.__setattr__(obj, "__dict__", state)
+    return obj
+
+
+def _trace_as(module: Any, base: Any) -> Any:
+    return module.TrainingTrace(**{f.name: getattr(base, f.name) for f in dataclasses.fields(base)})
+
+
+def test_round6_caller_objects_are_never_read() -> None:
+    """P8b/P8f/P11b: the builder and verify_trace_provenance accept plain JSON data
+    only and construct their own TrainingTrace/ReviewDecision. A caller TrainingTrace
+    or ReviewDecision -- exact type, subclass, or one whose __dict__ rewrites its own
+    values on every read -- is refused before anything is read from it."""
+    a, b = TRACES[1], TRACES[2]
+    review = [{"trace_id": a.trace_id, "reviewer_id": "reviewer:x", "decision": "approved"}]
+
+    class SubTrace(TrainingTrace):
+        pass
+
+    attacks = {
+        "exact TrainingTrace": _trace_as(
+            __import__("evals.reference.training_dataset", fromlist=["x"]), a
+        ),
+        "TrainingTrace subclass": SubTrace(
+            **{f.name: getattr(a, f.name) for f in dataclasses.fields(a)}
+        ),
+        "P8b trace_id flips between two traces": _flipping(
+            dataclasses.replace(a), "trace_id", [b.trace_id, a.trace_id] * 40
+        ),
+        "P8f provenance flips between two indices": _flipping(
+            dataclasses.replace(a), "provenance", [b.provenance, a.provenance] * 40
+        ),
+    }
+    for label, obj in attacks.items():
+        for fn_name, call in (
+            ("build", lambda o=obj: build_training_dataset([o], review)),
+            ("verify_trace_provenance", lambda o=obj: verify_trace_provenance(o)),
+        ):
+            check(
+                "FTF-1703-R6-1",
+                f"{label}: {fn_name} refuses it as a non-plain-JSON trace and admits nothing",
+                "plain JSON object" in _msg_any(call),
+            )
+        check(
+            "FTF-1703-R6-1",
+            f"{label}: refused with the typed TraceVerificationError (never a bare error)",
+            _raises(TraceVerificationError, build_training_dataset, [obj], review),
+        )
+
+    class SubReview(ReviewDecision):
+        pass
+
+    flipping_review = _flipping(
+        ReviewDecision(a.trace_id, "reviewer:x", "approved"),
+        "decision",
+        ["approved", "rejected"] * 40,
+    )
+    for label, rev in (
+        ("exact ReviewDecision", ReviewDecision(a.trace_id, "reviewer:x", "approved")),
+        ("ReviewDecision subclass", SubReview(a.trace_id, "reviewer:x", "approved")),
+        ("P11b decision flips between approved and rejected", flipping_review),
+    ):
+        check(
+            "FTF-1703-R6-1",
+            f"{label}: refused by the plain-JSON review check, never admitted",
+            "plain JSON object" in _msg_any(build_training_dataset, [_wire(a)], [rev])
+            and _raises(ReviewIndependenceError, build_training_dataset, [_wire(a)], [rev]),
+        )
+    check(
+        "FTF-1703-R6-1",
+        "negative control: the same trace and review as plain JSON data are admitted",
+        build_training_dataset([_wire(a)], review).approved_count == 1,
+    )
+
+
+def test_round6_plain_json_gate_faults() -> None:
+    """Each production-source fault must turn the corresponding attack from refused
+    into accepted (or into a different, later refusal)."""
+    a = TRACES[3]
+    wire = _wire(a)
+    review = [{"trace_id": a.trace_id, "reviewer_id": "reviewer:x", "decision": "approved"}]
+
+    # 1. object gate: a faulty parser that admits a TrainingTrace object.
+    obj_gate = _mutant(
+        (
+            '    if type(data) is not dict:\n        raise TraceVerificationError("a trace must be a plain JSON object (dict)")',  # noqa: E501
+            "    if type(data) is TrainingTrace:\n        return _require_trace_shape(data)\n"
+            '    if type(data) is not dict:\n        raise TraceVerificationError("a trace must be a plain JSON object (dict)")',  # noqa: E501
+        )
+    )
+    flipped = _flipping(_trace_as(obj_gate, a), "trace_id", [TRACES[4].trace_id, a.trace_id] * 40)
+    msg = _msg_mut(obj_gate.build_training_dataset, [flipped], review)
+    check(
+        "FTF-1703-R6-FAULT",
+        "fault: a parser that accepts a caller TrainingTrace object reads it (the "
+        "plain-JSON refusal is gone)",
+        "plain JSON object" not in msg,
+    )
+
+    # 2. exact-str keys.
+    rig = _RigKey("entity_title", {}, [])
+    keyed: dict[Any, Any] = {k: v for k, v in wire.items() if k != "entity_title"}
+    keyed[rig] = wire["entity_title"]
+    check(
+        "FTF-1703-R6-2",
+        "a str-subclass key in a trace is refused by the plain-JSON parse",
+        "non-str key" in _msg_any(build_training_dataset, [keyed], review),
+    )
+    weak_key = _mutant(
+        (
+            '            if type(key) is not str:\n                raise TraceVerificationError(f"{what}: not plain JSON data (non-str key)")',  # noqa: E501
+            '            if not isinstance(key, str):\n                raise TraceVerificationError(f"{what}: not plain JSON data (non-str key)")',  # noqa: E501
+        )
+    )
+    check(
+        "FTF-1703-R6-FAULT",
+        "fault: non-exact-str keys accepted -> the str-subclass-keyed trace is admitted",
+        weak_key.build_training_dataset([keyed], review).approved_count == 1,
+    )
+
+    # 3. exact-str values.
+    class LoudStr(str):
+        pass
+
+    loud_steps = [dict(step) for step in wire["steps"]]
+    loud_steps[0] = {**loud_steps[0], "content": LoudStr(loud_steps[0]["content"])}
+    loud = {**wire, "steps": loud_steps}
+    check(
+        "FTF-1703-R6-2",
+        "a str-subclass value nested in a step is refused (unsupported type)",
+        "trace: not plain JSON data (unsupported type)"
+        in _msg_any(build_training_dataset, [loud], review),
+    )
+    weak_value = _mutant(
+        (
+            "    if value is None or kind in (str, int, float, bool):\n        return value\n    if kind is list:",  # noqa: E501
+            "    if value is None or isinstance(value, (str, int, float, bool)):\n        return value\n    if kind is list:",  # noqa: E501
+        )
+    )
+    check(
+        "FTF-1703-R6-FAULT",
+        "fault: isinstance on values in the parse -> the first-layer refusal is gone "
+        "(only the shape layer's own, differently worded, check still refuses it)",
+        "trace: not plain JSON data"
+        not in _msg_mut(weak_value.build_training_dataset, [loud], review),
+    )
+
+    # 4. exact dict at the top level.
+    class LoudDict(dict):
+        pass
+
+    check(
+        "FTF-1703-R6-2",
+        "a dict-subclass trace is refused",
+        "plain JSON object" in _msg_any(build_training_dataset, [LoudDict(wire)], review),
+    )
+    weak_top = _mutant(
+        (
+            '    if type(data) is not dict:\n        raise TraceVerificationError("a trace must be a plain JSON object (dict)")',  # noqa: E501
+            '    if not isinstance(data, dict):\n        raise TraceVerificationError("a trace must be a plain JSON object (dict)")',  # noqa: E501
+        )
+    )
+    check(
+        "FTF-1703-R6-FAULT",
+        "fault: isinstance(dict) at the top level -> the named top-level refusal is gone "
+        "(only the recursive copy's differently worded check still refuses it)",
+        "plain JSON object"
+        not in _msg_mut(weak_top.build_training_dataset, [LoudDict(wire)], review),
+    )
+
+    # 5. exact key set, steps list.
+    check(
+        "FTF-1703-R6-2",
+        "an extra top-level key is refused with the typed error",
+        "exactly the declared" in _msg_any(build_training_dataset, [{**wire, "extra": 1}], review),
+    )
+    check(
+        "FTF-1703-R6-2",
+        "a missing top-level key is refused with the typed error",
+        "exactly the declared"
+        in _msg_any(
+            build_training_dataset, [{k: v for k, v in wire.items() if k != "purpose"}], review
+        ),
+    )
+    for label, bad_steps in (("None", None), ("a dict", {}), ("a string", "abc"), ("an int", 7)):
+        check(
+            "FTF-1703-R6-2",
+            f"steps that are {label} are refused by the named list check",
+            "steps must be a list"
+            in _msg_any(build_training_dataset, [{**wire, "steps": bad_steps}], review),
+        )
+    check(
+        "FTF-1703-R6-2",
+        "a tuple of steps (not JSON) is refused",
+        "unsupported type"
+        in _msg_any(build_training_dataset, [{**wire, "steps": tuple(wire["steps"])}], review),
+    )
+    for name, src, dst in (
+        ("exact key set", "    if set(copied) != _TRACE_FIELD_NAMES:", "    if False:"),
+        ("steps list check", "    if type(steps) is not list:", "    if False:"),
+    ):
+        mutant = _mutant((src, dst))
+        named = "exactly the declared" if name == "exact key set" else "steps must be a list"
+        check(
+            "FTF-1703-R6-FAULT",
+            f"fault: {name} removed -> the named refusal is gone",
+            named
+            not in _msg_mut(
+                mutant.build_training_dataset,
+                [{**wire, "extra": 1} if name == "exact key set" else {**wire, "steps": "abc"}],
+                review,
+            ),
+        )
+
+    # 6. depth.
+    import evals.reference.training_dataset as td
+
+    def nested(levels: int) -> Any:
+        v: Any = []
+        for _ in range(levels - 1):
+            v = [v]
+        return v
+
+    check(
+        "FTF-1703-R6-2",
+        "65 nested lists (innermost at depth 64) are copied",
+        td._plain_copy(nested(65), "t") == nested(65),
+    )
+    check(
+        "FTF-1703-R6-2",
+        "66 nested lists (innermost at depth 65) are refused as too deep",
+        "too deep" in _msg_any(td._plain_copy, nested(66), "t"),
+    )
+    shallow = _mutant(
+        (
+            '    if depth > 64:\n        raise TraceVerificationError(f"{what}: nesting is too deep")',  # noqa: E501
+            '    if depth > 640:\n        raise TraceVerificationError(f"{what}: nesting is too deep")',  # noqa: E501
+        )
+    )
+    check(
+        "FTF-1703-R6-FAULT",
+        "fault: depth bound raised -> 66 nested lists are accepted",
+        "too deep" not in _msg_mut(shallow._plain_copy, nested(66), "t"),
+    )
+
+
+def test_round6_review_dict_is_parsed_strictly() -> None:
+    t = TRACES[6]
+    wire = _wire(t)
+    base = {"trace_id": t.trace_id, "reviewer_id": "reviewer:x", "decision": "approved"}
+
+    class LoudDict(dict):
+        pass
+
+    cases: dict[str, Any] = {
+        "a dict subclass": LoudDict(base),
+        "a list": [base],
+        "a string": "approved",
+        "None": None,
+        "an extra key": {**base, "note": "x"},
+        "a missing key": {k: v for k, v in base.items() if k != "decision"},
+        "a non-str key": {**base, 7: "x"},
+        "an unhashable list value": {**base, "reviewer_id": []},
+        "an unhashable dict value": {**base, "decision": {}},
+        "an int value": {**base, "reviewer_id": 5},
+        "an empty reviewer": {**base, "reviewer_id": ""},
+        "an unknown decision": {**base, "decision": "maybe"},
+        "an unknown trace": {**base, "trace_id": "train-9999"},
+        "a generator reviewer": {**base, "reviewer_id": "Generator:ftf-1703-v1"},
+    }
+    for label, bad in cases.items():
+        check(
+            "FTF-1703-R6-3",
+            f"a review that is {label} is refused with ReviewIndependenceError (never a bare TypeError)",  # noqa: E501
+            _raises(ReviewIndependenceError, build_training_dataset, [wire], [bad]),
+        )
+    check(
+        "FTF-1703-R6-3",
+        "the keys-exact message is named",
+        "exactly trace_id, reviewer_id, decision"
+        in _msg_any(build_training_dataset, [wire], [{**base, "note": "x"}]),
+    )
+    # faults
+    weak_top = _mutant(
+        (
+            '    if type(data) is not dict:\n        raise ReviewIndependenceError("a review must be a plain JSON object (dict)")',  # noqa: E501
+            '    if not isinstance(data, dict):\n        raise ReviewIndependenceError("a review must be a plain JSON object (dict)")',  # noqa: E501
+        )
+    )
+    check(
+        "FTF-1703-R6-FAULT",
+        "fault: isinstance(dict) on reviews -> a dict-subclass review is admitted",
+        weak_top.build_training_dataset([wire], [LoudDict(base)]).approved_count == 1,
+    )
+    no_keys = _mutant(
+        ('    if set(fields_seen) != {"trace_id", "reviewer_id", "decision"}:', "    if False:")
+    )
+    check(
+        "FTF-1703-R6-FAULT",
+        "fault: exact key check removed -> the extra-key review loses its named refusal",
+        "exactly trace_id"
+        not in _msg_mut(no_keys.build_training_dataset, [wire], [{**base, "note": "x"}]),
+    )
+    rig = _RigKey("decision", {}, [])
+    rigged = {"trace_id": base["trace_id"], "reviewer_id": base["reviewer_id"], rig: "approved"}
+    check(
+        "FTF-1703-R6-3",
+        "a str-subclass key in a review is refused",
+        _raises(ReviewIndependenceError, build_training_dataset, [wire], [rigged]),
+    )
+    weak_key = _mutant(
+        (
+            "if type(key) is not str or type(value) is not str or not value:",
+            "if not isinstance(key, str) or type(value) is not str or not value:",
+        )
+    )
+    check(
+        "FTF-1703-R6-FAULT",
+        "fault: non-exact-str review key accepted -> the str-subclass-keyed review is admitted",
+        weak_key.build_training_dataset([wire], [rigged]).approved_count == 1,
     )
 
 

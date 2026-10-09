@@ -12,7 +12,7 @@
 // Next.js `app/` page tree yet (FTF-H029), same precedent as ftf_0308.spec.ts.
 import { createElement } from "react";
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import {
@@ -117,6 +117,7 @@ test("FTF-0309-A1 all dimensions known: exact GET, evidence shown, Train enabled
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(fetchMock.mock.calls[0]?.[0]).toBe(URL);
   expect(fetchMock.mock.calls[0]?.[1].method).toBe("GET");
+  expect(fetchMock.mock.calls[0]?.[1].credentials).toBe("include"); // F17
   expect(capabilitiesUrl(API_BASE, ORG_ID, CONN_ID, ALIAS, PROJECT_ID)).toBe(URL);
   expect(screen.getByText(/2026-10-09T08:00:00/, { selector: "dd" })).toBeTruthy();
   expect(screen.getByTestId("declared-vram").textContent).toContain("declared, not tested");
@@ -158,9 +159,10 @@ for (const [name, patch, reason] of [
   });
 }
 
-test("FTF-0309-N1 an unrecognised dimension state blocks (fail closed)", async () => {
+test("FTF-0309-N1 an unrecognised dimension state is a typed error with no Train (fail closed)", async () => {
   await load(ok(capabilities({ chat_template: { state: "maybe" } })));
-  expect(train().disabled).toBe(true);
+  expect(screen.getByRole("alert").textContent).toContain("malformed");
+  expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
 });
 
 test("FTF-0309-N2 insufficient tested VRAM disables Train and names the numbers", async () => {
@@ -235,4 +237,283 @@ test("FTF-0309-N6 503 and 404 are errors with no recommendation and no Train but
   await load(ok({ trainable: true }));
   expect(screen.getByRole("alert").textContent).toContain("malformed");
   expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+});
+
+const OTHER_PROJECT = "44444444-4444-4444-4444-444444444444";
+const OTHER_CONN = "55555555-5555-5555-5555-555555555555";
+
+function props(extra: Record<string, unknown> = {}) {
+  return {
+    apiBaseUrl: API_BASE,
+    organizationId: ORG_ID,
+    connectionId: CONN_ID,
+    projectId: PROJECT_ID,
+    modelName: ALIAS,
+    onTrain: vi.fn(),
+    ...extra,
+  };
+}
+
+async function check() {
+  fireEvent.click(screen.getByRole("button", { name: "Check compatibility" }));
+  await waitFor(() => expect(screen.queryByText("Checking...")).toBeNull());
+}
+
+for (const [what, patch] of [
+  ["modelName", { modelName: "Org/Other" }],
+  ["projectId", { projectId: OTHER_PROJECT }],
+  ["connectionId", { connectionId: OTHER_CONN }],
+] as const) {
+  test(`FTF-0309-PR1 a ${what} switch clears the old result so Train cannot act on an unchecked identity`, async () => {
+    reply = ok(capabilities());
+    const first = props();
+    const view = render(createElement(CapabilityCompatibilityUI, first));
+    await check();
+    expect(train().disabled).toBe(false);
+    view.rerender(createElement(CapabilityCompatibilityUI, { ...first, ...patch }));
+    expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+    expect(first.onTrain).not.toHaveBeenCalled();
+  });
+}
+
+test("FTF-0309-PR2 a response that lands after a model switch is ignored", async () => {
+  let release: (value: unknown) => void = () => {};
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    ),
+  );
+  const first = props();
+  const view = render(createElement(CapabilityCompatibilityUI, first));
+  fireEvent.click(screen.getByRole("button", { name: "Check compatibility" }));
+  view.rerender(createElement(CapabilityCompatibilityUI, { ...first, modelName: "Org/Other" }));
+  release({ ok: true, status: 200, json: async () => capabilities() });
+  await new Promise((r) => setTimeout(r, 10));
+  expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByRole("button", { name: "Check compatibility" })).toBeTruthy();
+});
+
+for (const [what, patch] of [
+  ["public_model_name", { public_model_name: "Org/Other" }],
+  ["project_id", { project_id: OTHER_PROJECT }],
+  ["litellm_connection_id", { litellm_connection_id: OTHER_CONN }],
+] as const) {
+  test(`FTF-0309-PR3 a 200 echoing a different ${what} is an error with no Train`, async () => {
+    await load(ok(capabilities(patch)));
+    expect(screen.getByRole("alert").textContent).toContain("does not match the request");
+    expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+  });
+}
+
+test("FTF-0309-PR4 license_approved must be the boolean true; the string 'false' never enables Train", async () => {
+  await load(
+    ok(capabilities({ artifact: { ...capabilities().artifact, license_approved: "false" } })),
+  );
+  expect(screen.getByRole("alert").textContent).toContain("malformed");
+  expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+});
+
+test("FTF-0309-F16 a missing dimension, an unknown top-level key and an unknown-without-reason are typed errors", async () => {
+  const missing = capabilities() as Record<string, unknown>;
+  delete missing.chat_template;
+  await load(ok(missing));
+  expect(screen.getByRole("alert").textContent).toContain("malformed");
+  cleanup();
+  await load(ok(capabilities({ recommended_model: "Org/Llama" })));
+  expect(screen.getByRole("alert").textContent).toContain("malformed");
+  expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+  cleanup();
+  await load(ok(capabilities({ method_support: { state: "unknown" } })));
+  expect(screen.getByRole("alert").textContent).toContain("malformed");
+});
+
+test("FTF-0309-PR8 known tested VRAM with no numeric declared minimum blocks Train", async () => {
+  for (const profile of [undefined, null, {}, { memory_gb: "40" }, { gpu: "A100" }]) {
+    cleanup();
+    await load(
+      ok(
+        capabilities({
+          min_gpu_vram_gb: { state: "known", tested_gb: 80, declared_minimum_gpu_profile: profile },
+        }),
+      ),
+    );
+    expect(train().disabled).toBe(true);
+    expect(screen.getByText(/no numeric declared minimum/)).toBeTruthy();
+  }
+});
+
+test("FTF-0309-PR9 known VRAM with a missing or non-numeric tested_gb blocks Train", async () => {
+  for (const tested of [undefined, null, "80", Number.NaN]) {
+    cleanup();
+    await load(
+      ok(
+        capabilities({
+          min_gpu_vram_gb: {
+            state: "known",
+            tested_gb: tested,
+            declared_minimum_gpu_profile: { memory_gb: 40 },
+          },
+        }),
+      ),
+    );
+    expect(train().disabled).toBe(true);
+    expect(screen.getByText("Tested VRAM was not reported as a number")).toBeTruthy();
+  }
+});
+
+test("FTF-0309-PR14 rows show the tested VRAM value and never borrow the discovery date", async () => {
+  await load(ok(capabilities()));
+  const vram = screen.getByTestId("dimension-Tested VRAM");
+  expect(vram.textContent).toContain("tested 80 GB"); // F13: row detail present
+  expect(vram.textContent).toContain("no evidence date returned by the server"); // F14: row date cell present
+  for (const label of ["Method support", "Tested VRAM", "Chat template"]) {
+    expect(screen.getByTestId(`dimension-${label}`).textContent).not.toContain("2026-10-09");
+  }
+});
+
+test("FTF-0309-F13 an unknown row shows the server's own reason in the row", async () => {
+  await load(ok(capabilities({ method_support: unknown("no_backing_evidence") })));
+  expect(screen.getByTestId("dimension-Method support").textContent).toContain(
+    "reason: no_backing_evidence",
+  );
+});
+
+test("FTF-0309-F22 the blockers list is rendered and accessible when Train is blocked", async () => {
+  await load(ok(capabilities({ access: "not_granted" })));
+  const list = screen.getByRole("list", { name: "Why training is blocked" }); // role queries skip hidden nodes
+  expect(list.textContent).toContain("Gateway access is not_granted");
+});
+
+test("FTF-0309-PR13 with no onTrain wired Train is disabled and never reports 'Training requested'", async () => {
+  reply = ok(capabilities());
+  renderUI(undefined);
+  await check();
+  expect(train().disabled).toBe(true);
+  fireEvent.click(train());
+  expect(screen.queryByText(/Training requested/)).toBeNull();
+  expect(screen.queryByRole("status")).toBeNull();
+});
+
+test("FTF-0309-A2 an explicit click on an enabled Train reports the request only after onTrain ran", async () => {
+  const onTrain = await load(ok(capabilities()));
+  fireEvent.click(train());
+  expect(onTrain).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("status").textContent).toContain(ALIAS);
+});
+
+function reactOnClick(button: HTMLElement): () => void {
+  const key = Object.keys(button).find((k) => k.startsWith("__reactProps$"));
+  const handler = key
+    ? (button as unknown as Record<string, { onClick?: () => void }>)[key]?.onClick
+    : undefined;
+  if (!handler) throw new Error("Train has no React onClick handler");
+  return handler;
+}
+
+test("FTF-0309-PR13b the click handler itself reports nothing when onTrain is absent (not only the disabled attribute)", async () => {
+  reply = ok(capabilities());
+  renderUI(undefined);
+  await check();
+  const click = reactOnClick(train());
+  act(() => click());
+  expect(screen.queryByText(/Training requested/)).toBeNull();
+});
+
+test("FTF-0309-PR13c a throwing onTrain never leaves a 'Training requested' status behind", async () => {
+  reply = ok(capabilities());
+  const boom = vi.fn(() => {
+    throw new Error("start failed");
+  });
+  renderUI(boom);
+  await check();
+  const click = reactOnClick(train());
+  let thrown: unknown = null;
+  act(() => {
+    try {
+      click();
+    } catch (caught) {
+      thrown = caught; // keep the update queue flushing, so a status set before the throw would show
+    }
+  });
+  expect(String(thrown)).toContain("start failed");
+  expect(boom).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText(/Training requested/)).toBeNull();
+});
+
+test("FTF-0309-PR2b a stale response cannot alter the state of the newer request", async () => {
+  const pending: Array<(value: unknown) => void> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise((resolve) => {
+          pending.push(resolve);
+        }),
+    ),
+  );
+  const first = props();
+  const view = render(createElement(CapabilityCompatibilityUI, first));
+  fireEvent.click(screen.getByRole("button", { name: "Check compatibility" })); // request 1
+  view.rerender(createElement(CapabilityCompatibilityUI, { ...first, modelName: "Org/Other" }));
+  fireEvent.click(screen.getByRole("button", { name: "Check compatibility" })); // request 2
+  expect(screen.getByText("Checking...")).toBeTruthy();
+  await act(async () => {
+    pending[0]?.({ ok: false, status: 503, json: async () => ({ detail: "gateway_unavailable" }) });
+    await new Promise((r) => setTimeout(r, 10));
+  });
+  expect(screen.queryByRole("alert")).toBeNull(); // old 503 must not surface on the new check
+  expect(screen.getByText("Checking...")).toBeTruthy(); // nor end the new check's loading state
+  await act(async () => {
+    pending[1]?.({
+      ok: true,
+      status: 200,
+      json: async () => capabilities({ public_model_name: "Org/Other" }),
+    });
+    await new Promise((r) => setTimeout(r, 10));
+  });
+  expect(train().disabled).toBe(false);
+});
+
+test("FTF-0309-PR1b switching away and back does not resurrect the old result", async () => {
+  reply = ok(capabilities());
+  const first = props();
+  const view = render(createElement(CapabilityCompatibilityUI, first));
+  await check();
+  view.rerender(createElement(CapabilityCompatibilityUI, { ...first, modelName: "Org/Other" }));
+  view.rerender(createElement(CapabilityCompatibilityUI, first));
+  expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+});
+
+test("FTF-0309-PR2d a stale error body read after a switch never surfaces as an alert", async () => {
+  let release: (value: unknown) => void = () => {};
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    })),
+  );
+  const first = props();
+  const view = render(createElement(CapabilityCompatibilityUI, first));
+  fireEvent.click(screen.getByRole("button", { name: "Check compatibility" }));
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  view.rerender(createElement(CapabilityCompatibilityUI, { ...first, modelName: "Org/Other" }));
+  await act(async () => {
+    release({ detail: "gateway_unavailable" });
+    await new Promise((r) => setTimeout(r, 10));
+  });
+  expect(screen.queryByRole("alert")).toBeNull();
 });

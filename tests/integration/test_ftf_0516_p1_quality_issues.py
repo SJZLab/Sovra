@@ -2150,6 +2150,133 @@ def main() -> None:
                 reason in listed_reasons,
             )
 
+        # Round 5 (boundary table, Control-plane ruling): every length-validated text input
+        # on these routes gets one table through the REAL route and REAL Postgres --
+        # min and max in ASCII, Arabic and astral (emoji) text store verbatim and are
+        # listed verbatim; one past the max, empty and whitespace-only are a 400 that
+        # writes nothing. Lengths are CHARACTERS, never UTF-8 bytes.
+        bd_scripts = (("ASCII", "x"), ("Arabic", "ب"), ("emoji", "\U0001f600"))
+        bd_ds = make_dataset("routes-boundary")
+        bd_extras = tuple(_extra(f"bd_{n}", (0, 1)) for n in range(13))
+        bd_report = record(bd_ds, extra=bd_extras)
+        bd_issues = [issue_of(bd_report, f"bd_{n}") for n in range(13)]
+        bd_spare = bd_issues[12]  # only ever sent in refused requests
+        bb = base(org1_id, p1_id, bd_ds.id)
+
+        def bd_version() -> int:
+            return int(_http(url, "GET", bb + "/quality-report", ml).json()["resolution_version"])
+
+        def bd_post(
+            issue: qstore.DatasetQualityIssue, *, reason: str, key: str, version: int
+        ) -> _Response:
+            return _http(
+                url,
+                "POST",
+                bb + "/resolve-issue",
+                ml,
+                {
+                    "quality_report_id": str(bd_report.id),
+                    "expected_resolution_version": version,
+                    "idempotency_key": key,
+                    "resolutions": [item(issue, "exclude", reason=reason)],
+                },
+            )
+
+        bd_cursor = 0
+
+        def bd_accept(label: str, *, reason: str, key: str) -> None:
+            nonlocal bd_cursor
+            issue = bd_issues[bd_cursor]
+            bd_cursor += 1
+            version = bd_version()
+            created = bd_post(issue, reason=reason, key=key, version=version)
+            check(f"boundary: {label} => 201 (got {created.status})", created.status == 201)
+            row = scalar(
+                "SELECT reason || '|' || idempotency_key FROM dataset_issue_resolutions "
+                "WHERE issue_id = :i",
+                i=issue.issue_id,
+            )
+            check(
+                f"boundary: {label} is stored verbatim (got {str(row)[:20]!r}...)",
+                row == f"{reason}|{key}",
+            )
+            listed = _http(url, "GET", bb + "/issue-resolutions?limit=200", ml).json()["items"]
+            check(
+                f"boundary: {label} is listed verbatim",
+                any(r["issue_id"] == issue.issue_id and r["reason"] == reason for r in listed),
+            )
+            check(
+                f"boundary: {label} advanced the resolution version by one",
+                bd_version() == version + 1,
+            )
+
+        def bd_refuse(label: str, *, reason: str, key: str) -> None:
+            written = counts()
+            version = bd_version()
+            refused = bd_post(bd_spare, reason=reason, key=key, version=version)
+            check(
+                f"boundary: {label} => 400 invalid_request (got {refused.status})",
+                refused.status == 400,
+            )
+            check(f"boundary: {label} wrote nothing", counts() == written)
+            check(f"boundary: {label} left the version alone", bd_version() == version)
+
+        key_n = 0
+
+        def fresh_key() -> str:
+            nonlocal key_n
+            key_n += 1
+            return f"bd-key-{key_n}"
+
+        for script, ch in bd_scripts:
+            bd_accept(f"a 1-character {script} reason", reason=ch, key=fresh_key())
+            bd_accept(f"a 2000-character {script} reason", reason=ch * 2000, key=fresh_key())
+            bd_refuse(f"a 2001-character {script} reason", reason=ch * 2001, key=fresh_key())
+        for label, bad in (("an empty", ""), ("a space-only", "   "), ("a tab/newline", "\t\n")):
+            bd_refuse(f"{label} reason", reason=bad, key=fresh_key())
+        for script, ch in bd_scripts:
+            bd_accept(f"a 1-character {script} idempotency key", reason="ok", key=ch)
+            bd_accept(f"a 200-character {script} idempotency key", reason="ok", key=ch * 200)
+            bd_refuse(f"a 201-character {script} idempotency key", reason="ok", key=ch * 201)
+        for label, bad in (("an empty", ""), ("a space-only", "   "), ("a tab/newline", "\t\n")):
+            bd_refuse(f"{label} idempotency key", reason="ok", key=bad)
+
+        # The detector filter: 1..64 characters is a 200; 65, empty and blank are a 400
+        # `invalid_filter` (a 64-character name matches no issue, so the page is empty).
+        for script, ch in bd_scripts:
+            for length in (1, 64):
+                wire = _http(
+                    url,
+                    "GET",
+                    bb + "/issues?detector=" + urllib.parse.quote(ch * length),
+                    ml,
+                )
+                check(
+                    f"boundary: a {length}-character {script} detector filter => 200 "
+                    f"(got {wire.status})",
+                    wire.status == 200 and wire.json()["items"] == [],
+                )
+            wire = _http(url, "GET", bb + "/issues?detector=" + urllib.parse.quote(ch * 65), ml)
+            check(
+                f"boundary: a 65-character {script} detector filter => 400 (got {wire.status})",
+                wire.status == 400 and wire.json() == {"detail": "invalid_filter"},
+            )
+        for label, bad in (("an empty", ""), ("a space-only", "%20%20"), ("a tab", "%09")):
+            wire = _http(url, "GET", bb + "/issues?detector=" + bad, ml)
+            check(
+                f"boundary: {label} detector filter => 400 (got {wire.status})",
+                wire.status == 400 and wire.json() == {"detail": "invalid_filter"},
+            )
+        check(
+            "boundary: refused requests left the spare issue open",
+            next(
+                i["state"]
+                for i in _http(url, "GET", bb + "/issues?limit=200", ml).json()["items"]
+                if i["issue_id"] == bd_spare.issue_id
+            )
+            == "open",
+        )
+
     _finish()
 
 
