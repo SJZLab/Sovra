@@ -57,6 +57,7 @@ from packages.integrations.mlflow.client import MlflowClient, TrackingRejectedEr
 from packages.integrations.mlflow.reconcile import (
     DEFAULT_RETRY_POLICY,
     OutboxEntry,
+    OutboxRowResolvedError,
     RetryPolicy,
     RunConflictError,
     SyncState,
@@ -159,17 +160,30 @@ class DurableOutbox:
         run = entry.run
         key = idempotency_key_for(run)
         with tenant_scoped_session_for(self._session_factory, self._context) as session:
-            current = self._row(session, run.job_id)
+            # Locked until this transaction ends, so a concurrent worker cannot
+            # resolve the row between this read and the writes below (D8).
+            current = self._row(session, run.job_id, lock=True)
             if current.status != "pending":
-                # Already resolved by a concurrent sync (R002's own
-                # `record_sync_outcome` guards `succeeded`/`failed` against
-                # this, but it no-ops for the `outcome=None` admission/
-                # attempt replay the PENDING branch below uses, and nothing
-                # stopped the unconditional `attempt_count` write that used
-                # to follow every branch). This entry's own outcome is
-                # stale; a resolved row's status, external id, error and
-                # attempt count are never rewritten (D2/D3b).
-                return
+                # Already resolved by a concurrent sync. This entry's own
+                # outcome is stale; a resolved row's status, external id,
+                # error and attempt count are never rewritten (D2/D3b). The
+                # same outcome is a harmless replay; a different one is
+                # reported (never silently dropped, D3b-report) with the
+                # stored truth so the caller does not claim SYNCED for a row
+                # that is failed.
+                same = (
+                    current.status == "succeeded"
+                    and entry.state == SyncState.SYNCED
+                    and current.external_id == entry.mlflow_run_id
+                ) or (
+                    current.status == "failed"
+                    and entry.state in (SyncState.FAILED, SyncState.AMBIGUOUS)
+                )
+                if same:
+                    return
+                raise OutboxRowResolvedError(
+                    current.status, current.external_id, current.last_error
+                )
             if entry.state == SyncState.SYNCED:
                 row = record_sync_outcome(
                     session,
@@ -223,12 +237,16 @@ class DurableOutbox:
             result = execute_tenant_scoped(session, self._context.organization_id, statement)
             return list(result.scalars().all())
 
-    def _row(self, session: Session, job_id: uuid.UUID) -> ComponentSyncOutbox:
+    def _row(
+        self, session: Session, job_id: uuid.UUID, *, lock: bool = False
+    ) -> ComponentSyncOutbox:
         statement = select(ComponentSyncOutbox).where(
             ComponentSyncOutbox.organization_id == self._context.organization_id,
             ComponentSyncOutbox.component_binding_id == self._binding_id,
             ComponentSyncOutbox.factory_job_id == job_id,
         )
+        if lock:
+            statement = statement.with_for_update()
         result = execute_tenant_scoped(session, self._context.organization_id, statement)
         return result.scalars().one()
 

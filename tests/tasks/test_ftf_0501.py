@@ -38,6 +38,7 @@ import json
 import os
 import re
 import socket
+import struct
 import sys
 import threading
 import time
@@ -126,6 +127,9 @@ class FakeS3:
         self.fail: set[str] = set()
         self.calls: list[tuple[str, str]] = []
         self.head_lies_about_size: int | None = None
+        self.listing_override: str | None = None
+        self.stuck_listing = False
+        self.seaweed_paging = False  # list by upload id; page by upload-id-marker alone
         fake = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -259,14 +263,56 @@ class FakeS3:
 
     def op_list_uploads(self, h: Any, key: str, query: dict[str, str], body: bytes) -> None:
         prefix = query.get("prefix", "")
+        key_marker = query.get("key-marker", "")
+        id_marker = query.get("upload-id-marker", "")
+        limit = int(query.get("max-uploads", "1000"))
+        if self.seaweed_paging:
+            # What SeaweedFS 3.99 was observed to do: ordered by upload id; `upload-id-marker`
+            # alone pages; a key-marker narrows to that one key instead of paging past it.
+            ordered = sorted(
+                (u["key"], uid, u)
+                for uid, u in self.uploads.items()
+                if u["key"].startswith(prefix)
+                and (not key_marker or u["key"] == key_marker)
+                and (not id_marker or uid > id_marker)
+            )
+            ordered.sort(key=lambda item: item[1])
+        else:
+            ordered = sorted(
+                (u["key"], uid, u)
+                for uid, u in self.uploads.items()
+                if u["key"].startswith(prefix)
+                and (
+                    u["key"] > key_marker
+                    or (u["key"] == key_marker and id_marker and uid > id_marker)
+                )
+            )
+        page, rest = ordered[:limit], ordered[limit:]
         items = "".join(
-            f"<Upload><Key>{u['key']}</Key><UploadId>{uid}</UploadId>"
+            f"<Upload><Key>{k}</Key><UploadId>{uid}</UploadId>"
             + (f"<Initiated>{u['initiated']}</Initiated>" if u.get("initiated") else "")
             + "</Upload>"
-            for uid, u in self.uploads.items()
-            if u["key"].startswith(prefix)
+            for k, uid, u in page
         )
-        h._send(200, f"<ListMultipartUploadsResult>{items}</ListMultipartUploadsResult>".encode())
+        tail = (
+            f"<IsTruncated>true</IsTruncated><NextKeyMarker>{page[-1][0]}</NextKeyMarker>"
+            f"<NextUploadIdMarker>{page[-1][1]}</NextUploadIdMarker>"
+            if rest
+            else "<IsTruncated>false</IsTruncated>"
+        )
+        if self.seaweed_paging and rest:
+            tail = (
+                f"<IsTruncated>true</IsTruncated><KeyMarker></KeyMarker>"
+                f"<NextUploadIdMarker>{page[-1][1]}</NextUploadIdMarker>"
+            )
+        if self.stuck_listing:  # a server that never advances its markers
+            tail = (
+                f"<IsTruncated>true</IsTruncated><NextKeyMarker>{key_marker or 'k'}</NextKeyMarker>"
+                f"<NextUploadIdMarker>{id_marker}</NextUploadIdMarker>"
+            )
+        xml = f"<ListMultipartUploadsResult>{items}{tail}</ListMultipartUploadsResult>"
+        override = self.listing_override
+        h._send(200, (override if override is not None else xml).encode())
 
     def put_part(self, h: Any, key: str, query: dict[str, str], body: bytes) -> None:
         upload = self.uploads.get(query.get("uploadId", ""))
@@ -4260,13 +4306,6 @@ def _iso(moment: datetime) -> str:
     return moment.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
-def _listing_of(count: int) -> Any:
-    def listing(bucket: str, prefix: str) -> list[dict[str, str]]:
-        return [{"Key": f"x/{i}", "UploadId": str(i)} for i in range(count)]
-
-    return listing
-
-
 def test_s1_the_sweeper_aborts_only_uploads_older_than_24_hours() -> None:
     now = datetime(2026, 10, 8, 12, 0, 0, tzinfo=UTC)
     with FakeS3() as fake:
@@ -4396,14 +4435,6 @@ def test_s2_the_sweeper_validates_arguments_and_never_hides_an_outage() -> None:
             "a connection failure during an abort is a storage outage",
             isinstance(got, dos.UploadStorageUnavailableError),
         )
-        for count, expected in ((999, False), (1000, True)):
-            client.list_multipart_uploads = _listing_of(count)  # type: ignore[method-assign]
-            result = sweeper.sweep_abandoned_uploads(client, settings, now=now)
-            check(
-                f"{CID}-S2",
-                f"{count} listed uploads -> more_may_remain is {expected}",
-                result.more_may_remain is expected and result.foreign == count,
-            )
 
 
 def test_s3_the_sweeper_entry_point_reports_through_its_exit_code() -> None:
@@ -4605,6 +4636,866 @@ def test_s4_the_sweeper_parses_a_padded_initiation_time() -> None:
                 f"an initiation time with {label} is dated and aborted",
                 result.aborted == 1 and result.undated == 0 and upload not in fake.uploads,
             )
+
+
+def _session_key(org_prefix: str, session: uuid.UUID | None = None) -> str:
+    org = uuid.UUID(org_prefix * 32)
+    return f"tenants/{org}/projects/{uuid.uuid4()}/uploads/{session or uuid.uuid4()}/source"
+
+
+def _plant(fake: FakeS3, key: str, *, initiated: str | None = None) -> str:
+    """Puts an in-progress upload straight into the fake (no HTTP round trip),
+    so a test can hold thousands of them; the listing still goes over HTTP."""
+    upload_id = uuid.uuid4().hex
+    fake.uploads[upload_id] = {"key": key, "content_type": "", "parts": {}}
+    if initiated is not None:
+        fake.uploads[upload_id]["initiated"] = initiated
+    return upload_id
+
+
+def test_s5_the_sweeper_pages_past_the_first_listing_page() -> None:
+    """Finding 1: one unmarked page meant an old upload behind 1000 others was never reached."""
+    now = datetime(2026, 10, 8, 12, 0, 0, tzinfo=UTC)
+    stale = _iso(now - timedelta(days=3))
+    young = _iso(now - timedelta(hours=1))
+    with FakeS3() as fake:
+        for _ in range(1004):  # sorts first: org prefix "0"
+            _plant(fake, _session_key("0"), initiated=young)
+        old = _plant(fake, _session_key("f"), initiated=stale)  # sorts last
+        foreign = _plant(fake, "tenants/not-a-session/x", initiated=stale)
+        settings = fake.settings()
+        result = sweeper.sweep_abandoned_uploads(settings.client(), settings, now=now)
+        check(f"{CID}-S5", "the old upload behind 1004 others is aborted", old not in fake.uploads)
+        check(
+            f"{CID}-S5",
+            "the 1004 young uploads and the foreign key are untouched",
+            len(fake.uploads) == 1005 and foreign in fake.uploads,
+        )
+        check(
+            f"{CID}-S5",
+            "the whole listing was seen over two or more pages and is complete",
+            result.listed == 1006 and result.pages >= 2 and not result.more_may_remain,
+        )
+        check(f"{CID}-S5", "exactly one upload was aborted", result.aborted == 1)
+    # A small explicit page size pages the same listing and still reaches the last upload.
+    with FakeS3() as fake:
+        for _ in range(35):
+            _plant(fake, _session_key("0"), initiated=young)
+        old = _plant(fake, _session_key("f"), initiated=stale)
+        settings = fake.settings()
+        result = sweeper.sweep_abandoned_uploads(settings.client(), settings, now=now, page_size=10)
+        check(
+            f"{CID}-S5",
+            "page_size=10 over 36 uploads takes four pages and aborts the last one",
+            result.pages == 4 and old not in fake.uploads and result.aborted == 1,
+        )
+        # The per-run budget ends the run honestly: not complete, nothing past it touched.
+        old2 = _plant(fake, _session_key("f"), initiated=stale)
+        capped = sweeper.sweep_abandoned_uploads(
+            settings.client(), settings, now=now, page_size=10, max_pages=2
+        )
+        check(
+            f"{CID}-S5",
+            "a budget of two pages reports more_may_remain and leaves the tail alone",
+            capped.pages == 2 and capped.more_may_remain and old2 in fake.uploads,
+        )
+        finished = sweeper.sweep_abandoned_uploads(
+            settings.client(), settings, now=now, page_size=10
+        )
+        check(
+            f"{CID}-S5",
+            "the next full run finishes the job",
+            old2 not in fake.uploads and not finished.more_may_remain,
+        )
+        bad_args: tuple[tuple[str, dict[str, Any]], ...] = (
+            ("max_pages=0", {"max_pages": 0}),
+            ("page_size=0", {"page_size": 0}),
+            ("page_size=1001", {"page_size": 1001}),
+        )
+        for label, kwargs in bad_args:
+            try:
+                sweeper.sweep_abandoned_uploads(settings.client(), settings, now=now, **kwargs)
+                got: Any = None
+            except Exception as exc:  # noqa: BLE001
+                got = exc
+            check(f"{CID}-S5", f"{label} is refused", isinstance(got, ValueError))
+        # A server that says "truncated" without advancing its markers must not loop forever.
+        fake.stuck_listing = True
+        try:
+            sweeper.sweep_abandoned_uploads(settings.client(), settings, now=now, page_size=10)
+            got = None
+        except Exception as exc:  # noqa: BLE001
+            got = exc
+        check(
+            f"{CID}-S5",
+            "a listing that never advances is a storage failure, not an endless loop",
+            isinstance(got, dos.UploadStorageUnavailableError),
+        )
+
+
+def test_s6_the_sweeper_dates_an_upload_by_its_sessions_expiry() -> None:
+    """Finding 1: SeaweedFS 3.99 lists no `Initiated`; the DB session's expiry dates the upload."""
+    now = datetime(2026, 10, 8, 12, 0, 0, tzinfo=UTC)
+    seen: list[tuple[uuid.UUID, uuid.UUID]] = []
+    expiries: dict[uuid.UUID, datetime | None] = {}
+
+    def lookup(org: uuid.UUID, session: uuid.UUID) -> datetime | None:
+        seen.append((org, session))
+        return expiries.get(session)
+
+    with FakeS3() as fake:
+        keys: dict[str, tuple[uuid.UUID, uuid.UUID]] = {}
+        uploads: dict[str, str] = {}
+        for label, expiry in (
+            ("expired", now - timedelta(hours=2)),
+            ("at_deadline", now),
+            ("live", now + timedelta(hours=2)),
+            ("no_session", None),
+        ):
+            session = uuid.uuid4()
+            key = _session_key("a", session)
+            expiries[session] = expiry
+            uploads[label] = _plant(fake, key)  # no Initiated at all
+            keys[label] = (uuid.UUID("a" * 32), session)
+        # A misleading Initiated must not outrank the session's own expiry.
+        liar_session = uuid.uuid4()
+        expiries[liar_session] = now + timedelta(hours=5)
+        uploads["liar"] = _plant(
+            fake, _session_key("a", liar_session), initiated=_iso(now - timedelta(days=9))
+        )
+        settings = fake.settings()
+        result = sweeper.sweep_abandoned_uploads(
+            settings.client(), settings, now=now, expiry_lookup=lookup
+        )
+        left = set(fake.uploads)
+        check(f"{CID}-S6", "only the expired session's upload is aborted", result.aborted == 1)
+        check(
+            f"{CID}-S6",
+            "expired is gone; at-the-deadline, live, unknown and misleading are kept",
+            uploads["expired"] not in left
+            and {uploads["at_deadline"], uploads["live"], uploads["no_session"], uploads["liar"]}
+            <= left,
+        )
+        check(
+            f"{CID}-S6",
+            "an upload whose session is unknown and has no Initiated is undated, not aborted",
+            (result.kept, result.undated) == (3, 1),
+        )
+        check(
+            f"{CID}-S6",
+            "the lookup got the organization and session ids parsed from the key",
+            set(keys.values()) <= set(seen),
+        )
+
+        def broken(org: uuid.UUID, session: uuid.UUID) -> datetime | None:
+            raise RuntimeError("database down")
+
+        try:
+            sweeper.sweep_abandoned_uploads(
+                settings.client(), settings, now=now, expiry_lookup=broken
+            )
+            got: Any = None
+        except RuntimeError as exc:
+            got = exc
+        check(
+            f"{CID}-S6", "a failing lookup propagates and is never a clean sweep", got is not None
+        )
+    # Negative on the real default code: no lookup and no Initiated -> never aborted, reported.
+    with FakeS3() as fake:
+        undated = _plant(fake, _session_key("b"))
+        settings = fake.settings()
+        result = sweeper.sweep_abandoned_uploads(
+            settings.client(), settings, now=now + timedelta(days=400)
+        )
+        check(
+            f"{CID}-S6",
+            "an upload whose age cannot be derived is never aborted",
+            result.aborted == 0 and result.undated == 1 and undated in fake.uploads,
+        )
+
+
+def test_s7_the_sweeper_exit_code_never_calls_an_unfinished_sweep_done() -> None:
+    names = (
+        "SOVRA_UPLOAD_S3_ENDPOINT",
+        "SOVRA_UPLOAD_S3_BUCKET",
+        "SOVRA_UPLOAD_S3_ACCESS_KEY",
+        "SOVRA_UPLOAD_S3_SECRET_KEY",
+        "SOVRA_UPLOAD_S3_REGION",
+        "SOVRA_DATABASE_URL",
+    )
+    saved = {name: os.environ.get(name) for name in names}
+    saved_budget = sweeper.DEFAULT_MAX_PAGES
+    stale = _iso(datetime.now(UTC) - timedelta(days=3))
+    try:
+        for name in names:
+            os.environ.pop(name, None)
+        with FakeS3() as fake:
+            os.environ["SOVRA_UPLOAD_S3_ENDPOINT"] = f"http://127.0.0.1:{fake.port}"
+            os.environ["SOVRA_UPLOAD_S3_BUCKET"] = fake.BUCKET
+            os.environ["SOVRA_UPLOAD_S3_ACCESS_KEY"] = fake.ACCESS
+            os.environ["SOVRA_UPLOAD_S3_SECRET_KEY"] = fake.SECRET
+            undated = _plant(fake, _session_key("c"))
+            check(
+                f"{CID}-S7",
+                "an upload with no determinable age makes the sweep exit 1",
+                sweeper.main() == 1 and undated in fake.uploads,
+            )
+            fake.uploads.clear()
+            for _ in range(1001):
+                _plant(fake, _session_key("c"), initiated=stale)
+            for upload in fake.uploads.values():  # all young: nothing to abort
+                upload["initiated"] = _iso(datetime.now(UTC))
+            sweeper.DEFAULT_MAX_PAGES = 1
+            check(
+                f"{CID}-S7",
+                "a sweep stopped by its page budget exits 3, not 0",
+                sweeper.main() == 3,
+            )
+            sweeper.DEFAULT_MAX_PAGES = saved_budget
+            check(
+                f"{CID}-S7",
+                "the same listing swept in full exits 0",
+                sweeper.main() == 0,
+            )
+            os.environ["SOVRA_DATABASE_URL"] = "postgresql+psycopg://nobody:x@127.0.0.1:1/none"
+            check(
+                f"{CID}-S7",
+                "an unreachable session database exits 1, never a clean sweep",
+                sweeper.main() == 1,
+            )
+    finally:
+        sweeper.DEFAULT_MAX_PAGES = saved_budget
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
+def _inspect_stored(body: bytes) -> tuple[Any, list[int], int]:
+    """`inspect_xlsx` over a stored object: (verdict, every ranged GET size, tracemalloc peak)."""
+    import tracemalloc
+
+    with FakeS3() as fake:
+        target = _target(body, content_type=dos.XLSX_CONTENT_TYPE)
+        _stored(fake, target, body)
+        settings = fake.settings()
+        client = settings.client()
+        original = client.get_object_range
+        sizes: list[int] = []
+
+        def counting(bucket: str, key: str, first: int, last: int) -> bytes:
+            sizes.append(last - first + 1)
+            return original(bucket, key, first, last)
+
+        client.get_object_range = counting  # type: ignore[method-assign]
+        tracemalloc.start()
+        try:
+            verdict = dos.inspect_xlsx(client, settings, target)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+    return verdict, sizes, peak
+
+
+def _patch_end_record(body: bytes, *, entries: int | None = None, size: int | None = None) -> bytes:
+    """Rewrites the claimed entry count / directory size in the end-of-archive record."""
+    at = body.rfind(b"PK\x05\x06")
+    out = bytearray(body)
+    if entries is not None:
+        out[at + 8 : at + 10] = entries.to_bytes(2, "little")
+        out[at + 10 : at + 12] = entries.to_bytes(2, "little")
+    if size is not None:
+        out[at + 12 : at + 16] = size.to_bytes(4, "little")
+    return bytes(out)
+
+
+def test_x5_a_lying_central_directory_is_refused_before_it_is_read() -> None:
+    """Finding 2: an end record claiming a directory spanning the file caused one full-size GET."""
+    mib = 1024**2
+    good = _xlsx()
+    padded = b"\x00" * (24 * mib) + good  # a 24 MiB object that really ends in a tiny archive
+    lying = _patch_end_record(padded, size=len(padded) - 100)
+    verdict, sizes, peak = _inspect_stored(lying)
+    check(
+        f"{CID}-X5",
+        "a directory claimed to span the file is refused as unsafe_archive",
+        verdict == "unsafe_archive",
+    )
+    check(
+        f"{CID}-X5",
+        "no ranged GET is larger than the per-GET cap (1 MiB)",
+        bool(sizes) and max(sizes) <= mib,
+    )
+    check(
+        f"{CID}-X5",
+        f"heap stays far below the object size (peak {peak} bytes of a 24 MiB object)",
+        peak < 8 * mib,
+    )
+    # Entry count claimed above the bound, with a plausible directory size.
+    verdict, sizes, _ = _inspect_stored(_patch_end_record(good, entries=60_000))
+    check(
+        f"{CID}-X5",
+        "an end record claiming 60,000 entries is refused before zipfile reads the directory",
+        verdict == "unsafe_archive" and sum(sizes) <= 2 * 65_558,
+    )
+    # Negative on the real default code: the honest archive still verifies, and a
+    # large honest prefix (an archive that starts late) is not mistaken for a lie.
+    verdict, _, _ = _inspect_stored(good)
+    check(f"{CID}-X5", "an honest workbook is accepted", verdict is None)
+    verdict, sizes, _ = _inspect_stored(padded)
+    check(
+        f"{CID}-X5",
+        "an honest workbook behind 24 MiB of prefix is accepted with only small GETs",
+        verdict is None and max(sizes) <= mib,
+    )
+    # A legitimate directory above one GET (about 2 MiB here) is read in capped GETs.
+    long_names = _xlsx(extra=[(f"xl/{'n' * 190}{i:05d}.xml", b"") for i in range(9_000)])
+    verdict, sizes, _ = _inspect_stored(long_names)
+    check(
+        f"{CID}-X5",
+        "a 2 MiB directory is read in several GETs, none over 1 MiB",
+        verdict is None and len(sizes) >= 3 and max(sizes) <= mib,
+    )
+    # Each single read of the stored view is capped too, whatever zipfile asks for.
+    with FakeS3() as fake:
+        target = _target(padded, content_type=dos.XLSX_CONTENT_TYPE)
+        _stored(fake, target, padded)
+        settings = fake.settings()
+        view = dos._StoredObjectFile(settings.client(), settings, target.object_key, len(padded))
+        try:
+            view.read(dos.MAX_XLSX_DIRECTORY_BYTES + 1)
+            refused = False
+        except Exception:  # noqa: BLE001
+            refused = True
+        check(f"{CID}-X5", "a read larger than the directory bound is refused", refused)
+
+
+def _types_document(root: str, *, doctype: str = "", ct: str = _XLSX_MAIN, prolog: str = "") -> str:
+    return (
+        f"{prolog}{doctype}<{root} "
+        'xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        f'<Override PartName="/xl/workbook.xml" ContentType="{ct}"/></{root}>'
+    )
+
+
+def test_x6_dtd_and_entities_are_refused_at_the_parser_in_every_encoding() -> None:
+    """Finding 3: a byte search missed UTF-16, and a ContentType from an ENTITY was accepted."""
+    entity_decl = f'<!DOCTYPE Types [<!ENTITY s "{_XLSX_MAIN}">]>'
+    encodings = (
+        ("UTF-8", lambda text: text.encode("utf-8")),
+        ("UTF-8 with BOM", lambda text: b"\xef\xbb\xbf" + text.encode("utf-8")),
+        ("UTF-16", lambda text: text.encode("utf-16")),
+        ("UTF-16LE", lambda text: text.encode("utf-16-le")),
+        ("UTF-16BE", lambda text: text.encode("utf-16-be")),
+    )
+    documents = (
+        ("an entity used as the workbook ContentType", entity_decl, "&s;"),
+        ("an unused entity declaration", entity_decl, _XLSX_MAIN),
+        ("a bare DOCTYPE", "<!DOCTYPE Types>", _XLSX_MAIN),
+        ("a lower-case doctype", "<!doctype Types>", _XLSX_MAIN),
+        (
+            "an external-entity DOCTYPE",
+            '<!DOCTYPE Types SYSTEM "http://x.invalid/a.dtd">',
+            _XLSX_MAIN,
+        ),
+        ("a parameter entity", '<!DOCTYPE Types [<!ENTITY % p "x">]>', _XLSX_MAIN),
+    )
+    for enc_label, encode in encodings:
+        for label, doctype, ct in documents:
+            body = _xlsx(content_types=encode(_types_document("Types", doctype=doctype, ct=ct)))
+            got, gone = _xlsx_outcome(body)
+            check(
+                f"{CID}-X6",
+                f"{label} in {enc_label} is refused as unsafe_archive",
+                isinstance(got, dos.UploadRejection) and got.reason == "unsafe_archive",
+            )
+            check(f"{CID}-X6", f"({label}, {enc_label}) nothing is left in storage", gone)
+        # Negative on the real default code: the same encoding without a DTD verifies.
+        clean = _xlsx(content_types=encode(_types_document("Types")))
+        got, _ = _xlsx_outcome(clean)
+        check(
+            f"{CID}-X6",
+            f"a well-formed {enc_label} [Content_Types].xml without a DTD still verifies",
+            isinstance(got, dos.VerifiedObject),
+        )
+
+
+def _patch_directory_sizes(body: bytes, claimed: dict[str, int]) -> bytes:
+    """Rewrites the uncompressed size a central-directory entry claims (32-bit field)."""
+    out = bytearray(body)
+    at = out.find(b"PK\x01\x02")
+    while at != -1:
+        name_len = int.from_bytes(out[at + 28 : at + 30], "little")
+        name = bytes(out[at + 46 : at + 46 + name_len]).decode()
+        if name in claimed:
+            out[at + 24 : at + 28] = claimed[name].to_bytes(4, "little")
+        at = out.find(b"PK\x01\x02", at + 4)
+    return bytes(out)
+
+
+def test_x7_the_production_bounds_hold_at_their_exact_edges() -> None:
+    """Finding 4: the production constants, with no override, at limit and limit + 1."""
+    check(f"{CID}-X7", "the entry bound is 10,000", dos.MAX_XLSX_ENTRIES == 10_000)
+    check(
+        f"{CID}-X7",
+        "the uncompressed bound is 10 GiB",
+        dos.MAX_XLSX_UNCOMPRESSED_BYTES == 10 * 1024**3,
+    )
+    check(
+        f"{CID}-X7",
+        "the [Content_Types].xml bound is 1 MiB",
+        dos.MAX_XLSX_CONTENT_TYPES_BYTES == 1024**2,
+    )
+
+    def many(total: int) -> bytes:
+        return _xlsx(extra=[(f"xl/s{i}.xml", b"") for i in range(total - 2)])
+
+    for total, expected in ((10_000, None), (10_001, "unsafe_archive")):
+        verdict, _, _ = _inspect_stored(many(total))
+        check(
+            f"{CID}-X7",
+            f"a workbook of {total:,} entries -> {expected}",
+            verdict == expected,
+        )
+    # 10 GiB of claimed uncompressed bytes: the sum is what is bounded (at, then over).
+    base = _zip(
+        [
+            ("[Content_Types].xml", _content_types()),
+            ("xl/workbook.xml", b"<workbook/>"),
+            ("xl/a.bin", b""),
+            ("xl/b.bin", b""),
+            ("xl/c.bin", b""),
+        ]
+    )
+    honest = len(_content_types()) + len(b"<workbook/>")
+    limit = 10 * 1024**3
+    first = second = 2**32 - 1
+    for extra, expected in ((0, None), (1, "unsafe_archive")):
+        third = limit + extra - honest - first - second
+        body = _patch_directory_sizes(
+            base, {"xl/a.bin": first, "xl/b.bin": second, "xl/c.bin": third}
+        )
+        verdict, _, _ = _inspect_stored(body)
+        check(
+            f"{CID}-X7",
+            f"claimed uncompressed bytes of 10 GiB{'+1' if extra else ''} -> {expected}",
+            verdict == expected,
+        )
+    # [Content_Types].xml of exactly 1 MiB, then 1 MiB + 1 byte.
+    skeleton = _content_types()
+    for extra, expected in ((0, None), (1, "unsafe_archive")):
+        padding = b" " * (1024**2 + extra - len(skeleton))
+        verdict, _, _ = _inspect_stored(_xlsx(content_types=skeleton + padding))
+        check(
+            f"{CID}-X7",
+            f"a [Content_Types].xml of 1 MiB{'+1' if extra else ''} -> {expected}",
+            verdict == expected,
+        )
+
+
+def _end_record(entries: int, size: int, offset: int, comment: bytes = b"") -> bytes:
+    return (
+        b"PK\x05\x06"
+        + struct.pack("<4H2LH", 0, 0, entries, entries, size, offset, len(comment))
+        + comment
+    )
+
+
+def _zip64_tail(entries: int, size: int, offset: int, *, locator: bool = True) -> bytes:
+    record = b"PK\x06\x06" + struct.pack(
+        "<Q2H2L4Q", 44, 45, 45, 0, 0, entries, entries, size, offset
+    )
+    pointer = (b"PK\x06\x07" if locator else b"XXXX") + struct.pack("<LQL", 0, 0, 1)
+    return record + pointer + _end_record(0xFFFF, 0xFFFFFFFF, 0xFFFFFFFF)
+
+
+def test_x8_the_end_record_is_read_exactly_as_zipfile_reads_it() -> None:
+    totals = dos._end_record_totals
+    exact = _end_record(7, 1234, 99)
+    check(f"{CID}-X8", "a bare 22-byte record is read", totals(exact) == (7, 1234, 99))
+    check(f"{CID}-X8", "a record behind junk is read", totals(b"junk" * 9 + exact) == (7, 1234, 99))
+    check(
+        f"{CID}-X8",
+        "a record with a trailing comment is found by searching",
+        totals(b"x" * 30 + _end_record(5, 10, 20, b"a comment")) == (5, 10, 20),
+    )
+    check(
+        f"{CID}-X8", "no record at all -> None", totals(b"nothing here at all, no record") is None
+    )
+    check(
+        f"{CID}-X8",
+        "a tail shorter than a record -> None",
+        totals(b"PK\x05\x06" + b"\x00" * 5) is None,
+    )
+    check(f"{CID}-X8", "an empty tail -> None", totals(b"") is None)
+    # The signature bytes can occur inside the record's own offset field; zipfile takes the
+    # record that ends the archive, so must this (a plain search for the last signature would not).
+    hidden = _end_record(7, 1234, int.from_bytes(b"PK\x05\x06", "little"))
+    check(
+        f"{CID}-X8",
+        "a bare record whose offset field spells the signature is read at the end",
+        totals(hidden) == (7, 1234, int.from_bytes(b"PK\x05\x06", "little"))
+        and totals(b"x" * 9 + hidden) == (7, 1234, int.from_bytes(b"PK\x05\x06", "little")),
+    )
+    check(
+        f"{CID}-X8",
+        "a signature too near the end to hold a record -> None",
+        totals(b"\x00" * 40 + b"PK\x05\x06" + b"\x00" * 10) is None,
+    )
+    check(
+        f"{CID}-X8",
+        "a 22-byte tail that is not a record -> None",
+        totals(b"\x01" * 22) is None,
+    )
+    z64 = _zip64_tail(70_000, 123_456_789_012, 5_000_000_000)
+    check(
+        f"{CID}-X8",
+        "the zip64 record wins over the saturated 32-bit fields",
+        totals(z64) == (70_000, 123_456_789_012, 5_000_000_000),
+    )
+    check(
+        f"{CID}-X8",
+        "a zip64 tail with a wrong locator signature keeps the 32-bit fields",
+        totals(_zip64_tail(70_000, 1, 2, locator=False)) == (0xFFFF, 0xFFFFFFFF, 0xFFFFFFFF),
+    )
+    bad_record = bytearray(z64)
+    bad_record[0:4] = b"XXXX"
+    check(
+        f"{CID}-X8",
+        "a zip64 locator pointing at a non-record keeps the 32-bit fields",
+        totals(bytes(bad_record)) == (0xFFFF, 0xFFFFFFFF, 0xFFFFFFFF),
+    )
+    check(
+        f"{CID}-X8",
+        "a locator with too little room before it for a zip64 record is ignored",
+        totals(b"PK\x06\x07" + b"\x00" * 16 + _end_record(3, 4, 5)) == (3, 4, 5),
+    )
+    # A real zip64 archive end through the whole check: 70,000 claimed entries is refused.
+    lying = _xlsx() + _zip64_tail(70_000, 100, 0)
+    verdict, _, _ = _inspect_stored(lying)
+    check(
+        f"{CID}-X8",
+        "a zip64 record claiming 70,000 entries is refused",
+        verdict == "unsafe_archive",
+    )
+
+
+def test_x9_bounds_at_their_exact_edges_inside_the_end_record_and_the_reader() -> None:
+    good = _xlsx()
+    bound = dos.MAX_XLSX_DIRECTORY_BYTES
+    padded = b"\x00" * (bound + 10) + good
+    for size, expected in ((bound, "accepted"), (bound + 1, "unsafe_archive")):
+        verdict, _, _ = _inspect_stored(_patch_end_record(padded, size=size))
+        got = "unsafe_archive" if verdict == "unsafe_archive" else "accepted"
+        check(f"{CID}-X9", f"a claimed directory of {size} bytes -> {expected}", got == expected)
+    # The entry count in the end record may claim exactly 10,000 but not 10,001.
+    for entries, expected in ((10_000, "accepted"), (10_001, "unsafe_archive")):
+        verdict, _, _ = _inspect_stored(_patch_end_record(good, entries=entries))
+        got = "unsafe_archive" if verdict == "unsafe_archive" else "accepted"
+        check(
+            f"{CID}-X9", f"an end record claiming {entries} entries -> {expected}", got == expected
+        )
+    # A record that under-claims (10 entries) cannot hide a directory of 10,001 entries.
+    many = _xlsx(extra=[(f"xl/s{i}.xml", b"") for i in range(9_999)])  # 10,001 members
+    verdict, _, _ = _inspect_stored(_patch_end_record(many, entries=10))
+    check(
+        f"{CID}-X9",
+        "a record claiming 10 entries over a real 10,001-entry directory is still refused",
+        verdict == "unsafe_archive",
+    )
+    # The stored view: a read of exactly the directory bound is served, one more is refused.
+    with FakeS3() as fake:
+        target = _target(padded, content_type=dos.XLSX_CONTENT_TYPE)
+        _stored(fake, target, padded)
+        settings = fake.settings()
+        view = dos._StoredObjectFile(settings.client(), settings, target.object_key, len(padded))
+        served = view.read(bound)
+        view.seek(0)
+        try:
+            view.read(bound + 1)
+            refused = False
+        except Exception:  # noqa: BLE001
+            refused = True
+        check(f"{CID}-X9", "a read of exactly the directory bound is served", len(served) == bound)
+        check(f"{CID}-X9", "a read of one byte more is refused", refused)
+    # A zero-byte object has no tail to read and is not a spreadsheet.
+    with FakeS3() as fake:
+        target = _target(b"", content_type=dos.XLSX_CONTENT_TYPE, size=0)
+        _stored(fake, target, b"")
+        settings = fake.settings()
+        verdict = dos.inspect_xlsx(settings.client(), settings, target)
+        check(
+            f"{CID}-X9",
+            "an empty object -> content_type_mismatch",
+            verdict == "content_type_mismatch",
+        )
+
+
+def test_s8_the_listing_page_is_parsed_strictly() -> None:
+    with FakeS3() as fake:
+        settings = fake.settings()
+        client = settings.client()
+        _plant(fake, _session_key("a"))
+        _plant(fake, _session_key("b"))
+        page, nxt = client.list_multipart_uploads_page(
+            settings.bucket, prefix="tenants/", max_uploads=1
+        )
+        assert nxt is not None
+        check(
+            f"{CID}-S8",
+            "a truncated page returns one upload and the next markers",
+            len(page) == 1,
+        )
+        page2, nxt2 = client.list_multipart_uploads_page(
+            settings.bucket,
+            prefix="tenants/",
+            key_marker=nxt[0],
+            upload_id_marker=nxt[1],
+            max_uploads=1,
+        )
+        check(
+            f"{CID}-S8",
+            "the next page is the other upload and the listing ends",
+            len(page2) == 1 and nxt2 is None,
+        )
+        check(
+            f"{CID}-S8",
+            "the two pages are different uploads",
+            page[0]["UploadId"] != page2[0]["UploadId"],
+        )
+        # A key marker with an empty upload-id marker is sent as a key marker only.
+        page3, _ = client.list_multipart_uploads_page(
+            settings.bucket, prefix="tenants/", key_marker=page[0]["Key"], max_uploads=5
+        )
+        check(
+            f"{CID}-S8",
+            "a key marker alone is honoured",
+            all(u["Key"] > page[0]["Key"] for u in page3),
+        )
+        for label, xml in (("a root that is not a mapping", "<ListMultipartUploadsResult/>"),):
+            fake.listing_override = xml
+            got, nxt3 = client.list_multipart_uploads_page(settings.bucket, prefix="tenants/")
+            check(f"{CID}-S8", f"{label} -> an empty, complete page", got == [] and nxt3 is None)
+        # A truncated page without usable markers: the last entry returned is the next marker
+        # (what SeaweedFS needed), and with no entries to take it from the page is refused.
+        entry = (
+            "<Upload><Key>tenants/k1</Key><UploadId>u1</UploadId></Upload>"
+            "<Upload><Key>tenants/k2</Key><UploadId>u2</UploadId></Upload>"
+        )
+        for label, tail, expected in (
+            ("no markers at all", "", ("tenants/k2", "u2")),
+            (
+                "an empty NextKeyMarker and no upload id",
+                "<NextKeyMarker></NextKeyMarker>",
+                ("tenants/k2", "u2"),
+            ),
+            (
+                "no NextUploadIdMarker",
+                "<NextKeyMarker>tenants/k2</NextKeyMarker>",
+                ("tenants/k2", "u2"),
+            ),
+            # SeaweedFS style: an upload id and no key -> page by the upload id alone
+            (
+                "only a NextUploadIdMarker",
+                "<NextUploadIdMarker>zz</NextUploadIdMarker>",
+                ("", "zz"),
+            ),
+        ):
+            fake.listing_override = (
+                f"<ListMultipartUploadsResult>{entry}<IsTruncated>true</IsTruncated>{tail}"
+                "</ListMultipartUploadsResult>"
+            )
+            got_page, got_next = client.list_multipart_uploads_page(
+                settings.bucket, prefix="tenants/"
+            )
+            check(
+                f"{CID}-S8",
+                f"{label}: next markers are {expected}",
+                len(got_page) == 2 and got_next == expected,
+            )
+        # The last entry must itself name both a key and an upload id to stand in for a marker.
+        for label, entries in (
+            ("a last entry without an UploadId", "<Upload><Key>tenants/k1</Key></Upload>"),
+            (
+                "a last entry with an empty Key",
+                "<Upload><Key></Key><UploadId>u1</UploadId></Upload>",
+            ),
+            (
+                "a last entry with an empty UploadId and no Key",
+                "<Upload><UploadId></UploadId></Upload>",
+            ),
+        ):
+            fake.listing_override = (
+                f"<ListMultipartUploadsResult>{entries}<IsTruncated>true</IsTruncated>"
+                "</ListMultipartUploadsResult>"
+            )
+            try:
+                client.list_multipart_uploads_page(settings.bucket, prefix="tenants/")
+                got_error: Any = None
+            except s3.S3Error as exc:
+                got_error = exc
+            check(
+                f"{CID}-S8",
+                f"{label} cannot stand in for a marker",
+                isinstance(got_error, s3.S3Error),
+            )
+        for label, tail in (
+            ("no markers", ""),
+            ("an empty NextKeyMarker", "<NextKeyMarker></NextKeyMarker>"),
+        ):
+            fake.listing_override = (
+                "<ListMultipartUploadsResult><IsTruncated>true</IsTruncated>"
+                f"{tail}</ListMultipartUploadsResult>"
+            )
+            try:
+                client.list_multipart_uploads_page(settings.bucket, prefix="tenants/")
+                got_error = None
+            except s3.S3Error as exc:
+                got_error = exc
+            check(
+                f"{CID}-S8",
+                f"a truncated page with no entries and {label} is a malformed response",
+                isinstance(got_error, s3.S3Error),
+            )
+        # The same markers as were sent are not progress.
+        fake.listing_override = (
+            "<ListMultipartUploadsResult><IsTruncated>true</IsTruncated>"
+            "<NextKeyMarker>k</NextKeyMarker><NextUploadIdMarker>u</NextUploadIdMarker>"
+            "</ListMultipartUploadsResult>"
+        )
+        try:
+            client.list_multipart_uploads_page(
+                settings.bucket, prefix="tenants/", key_marker="k", upload_id_marker="u"
+            )
+            got_error = None
+        except s3.S3Error as exc:
+            got_error = exc
+        check(
+            f"{CID}-S8",
+            "markers equal to those sent are refused",
+            isinstance(got_error, s3.S3Error),
+        )
+    # page_size=1 is a valid page size.
+    with FakeS3() as fake:
+        settings = fake.settings()
+        for letter in "abc":
+            _plant(fake, _session_key(letter), initiated=_iso(datetime.now(UTC)))
+        result = sweeper.sweep_abandoned_uploads(settings.client(), settings, page_size=1)
+        check(f"{CID}-S8", "page_size=1 takes three pages for three uploads", result.pages == 3)
+
+
+def test_s10_the_sweeper_pages_a_server_that_pages_by_upload_id_alone() -> None:
+    """Real SeaweedFS 3.99 (CI evidence): listing in upload-id order, `NextUploadIdMarker` only,
+    and a key-marker answers with an empty page -- the markers must follow that."""
+    now = datetime(2026, 10, 8, 12, 0, 0, tzinfo=UTC)
+    stale = _iso(now - timedelta(days=3))
+    young = _iso(now - timedelta(hours=1))
+    with FakeS3() as fake:
+        fake.seaweed_paging = True
+        fillers = [_plant(fake, _session_key("0"), initiated=young) for _ in range(1004)]
+        old = _plant(fake, _session_key("f"), initiated=stale)
+        settings = fake.settings()
+        client = settings.client()
+        page, nxt = client.list_multipart_uploads_page(settings.bucket, prefix="tenants/")
+        check(
+            f"{CID}-S10",
+            "the first page is full and names an upload-id-only marker",
+            (
+                len(page) == 1000
+                and nxt is not None
+                and nxt[0] == ""
+                and nxt[1] == page[-1]["UploadId"]
+            ),
+        )
+        assert nxt is not None
+        page2, nxt2 = client.list_multipart_uploads_page(
+            settings.bucket, prefix="tenants/", key_marker=nxt[0], upload_id_marker=nxt[1]
+        )
+        check(
+            f"{CID}-S10",
+            "the second page holds the other five and ends",
+            len(page2) == 5 and nxt2 is None,
+        )
+        result = sweeper.sweep_abandoned_uploads(client, settings, now=now)
+        check(
+            f"{CID}-S10",
+            "every upload is listed once and the stale one is aborted",
+            result.listed == 1005 and result.aborted == 1 and old not in fake.uploads,
+        )
+        check(f"{CID}-S10", "the young uploads survive", set(fillers) <= set(fake.uploads))
+
+
+def test_s9_the_session_expiry_lookup_reads_only_the_named_session() -> None:
+    import tempfile
+
+    from app.auth import tenant_isolation_query_guards as guards
+
+    org = uuid.uuid4()
+    with tempfile.TemporaryDirectory() as folder:
+        url = f"sqlite:///{folder}/sessions.db"
+        engine = create_engine(url)
+        store.DatasetUploadSession.__table__.create(engine)  # type: ignore[attr-defined]
+        wanted, other = uuid.uuid4(), uuid.uuid4()
+        expiry = datetime(2026, 10, 9, 12, 0, 0)
+        with Session(engine) as db:
+            for sid, hours in ((wanted, 0), (other, 5)):
+                db.add(
+                    store.DatasetUploadSession(
+                        id=sid,
+                        organization_id=org,
+                        project_id=uuid.uuid4(),
+                        dataset_source_connection_id=uuid.uuid4(),
+                        purpose="training",
+                        object_key="k",
+                        declared_size_bytes=1,
+                        max_bytes=1,
+                        declared_sha256="9" * 64,
+                        declared_content_type="a/b",
+                        status="open",
+                        created_by="x",
+                        created_at=expiry,
+                        expires_at=expiry + timedelta(hours=hours),
+                        updated_at=expiry,
+                    )
+                )
+            db.commit()
+        engine.dispose()
+        opened: list[uuid.UUID] = []
+        saved = (guards.tenant_scoped_session, guards.execute_tenant_scoped)
+
+        @contextlib.contextmanager
+        def scoped(session_factory: Any, organization_id: uuid.UUID):
+            opened.append(organization_id)
+            with session_factory() as db:
+                yield db
+
+        guards.tenant_scoped_session = scoped
+
+        def passthrough(db: Any, organization_id: uuid.UUID, statement: Any) -> Any:
+            return db.execute(statement)
+
+        guards.execute_tenant_scoped = passthrough  # type: ignore[assignment]
+        try:
+            lookup, dispose = sweeper._database_expiry_lookup(url)
+            got = lookup(org, wanted)
+            check(
+                f"{CID}-S9",
+                "the lookup returns the named session's own expires_at",
+                isinstance(got, datetime) and got.replace(tzinfo=None) == expiry,
+            )
+            check(f"{CID}-S9", "the lookup runs under the key's organization", opened == [org])
+            other_got = lookup(org, other)
+            check(
+                f"{CID}-S9",
+                "a different session gets its own expiry",
+                isinstance(other_got, datetime)
+                and other_got.replace(tzinfo=None) == expiry + timedelta(hours=5),
+            )
+            check(f"{CID}-S9", "an unknown session answers None", lookup(org, uuid.uuid4()) is None)
+            dispose()
+        finally:
+            guards.tenant_scoped_session, guards.execute_tenant_scoped = saved
 
 
 def test_c1_interface_contract() -> None:

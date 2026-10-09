@@ -24627,3 +24627,24 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 - **Certified:** FTF-0903 (#685, merge c003010bb0f70ea4270316c02142817734f617b5).
 - **Returned:** FTF-0309 r2 (0c), FTF-H010-P1 r4 (0d), FTF-1703 r6 (0g), FTF-0516-P1 r5 (0l), FTF-R004-P2 r2 (0o).
 - **ci-verdict:** relay merges #682, #683, #685, #686, #688, #689, #690 landed on a green ci-verdict.
+
+## 2026-10-09T15:43Z — Control plane: Backlog refill (136/302)
+- **Queued:** FTF-0904 Log redaction (frontier; deps FTF-0902 and FTF-0903 now certified). Other frontier items are claimed, parked or sliced.
+
+## 2026-10-09T16:19Z — Control plane: FTF-0516-P1 slice CERTIFIED; 3 returned (136/302)
+- **Certified slice:** FTF-0516-P1 (#695). **Returned:** FTF-0309 r3 (0c), FTF-R005 r7 (0e), FTF-R004-P1 r4 (0n).
+- **Un-parked:** FTF-0516 UI (Backlog). **Pending:** FTF-0616 #690.
+
+## 2026-10-09T18:18Z — Control plane: slices FTF-H010-P1 and FTF-R004-P2 CERTIFIED; 3 returned (136/302)
+- **Certified slices:** FTF-H010-P1 (#699), FTF-R004-P2 (#702). **Returned:** FTF-0309 r4 (0c), FTF-0904 r2 (0d), FTF-1703 r7 (0g).
+- **Pending:** FTF-0616 #690. FTF-R004-P3 becomes ready once FTF-R004-P1 certifies.
+
+## 2026-10-09T18:33Z — Control plane: FTF-0616 CERTIFIED (137/302)
+- **Certified:** FTF-0616 for the adapter scope (#690, merge 4a0de86713e272749ba2ebe0d358e59a2957be2a); real-judge clause BLOCKED_EXTERNAL.
+
+## 2026-10-09T20:10Z — Control plane: FTF-0309 CERTIFIED (138/302)
+- **Certified:** FTF-0309 (#713, merge e2555b6c732dcd184c8fd270fb9301bc05c85dde); UNWIRED, not product-true (Law 7). **Certified slice:** FTF-R004-P1 (#707). **Returned:** FTF-0516 UI r2 (0c).
+- **Pending:** FTF-0908 #693, FTF-R005 #708. New Backlog: FTF-0616-F1, FTF-0617, FTF-H010-P2..P4.
+
+## 2026-10-09T20:35Z — Control plane: FTF-0908 returned
+- **Returned:** FTF-0908 r4 (0m): pin the tenant re-bind's transaction locality (fault F2 leaks on a pool without the reset guard). **Pending:** FTF-R005 #708.

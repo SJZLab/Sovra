@@ -21,6 +21,17 @@ forbidden tool calls before approval filtering can replace model output."):
   `input_audio` part that is not an inline `data:` payload is
   `remote_media_dereference`; any shape this module does not recognise is
   `unknown_request_shape`. Every denial is reported, not only the first.
+* The request top level is an allow-list of known keys (`_KNOWN_REQUEST_KEYS`, plus
+  the capability keys `web_search_options`/`plugins`/`plugin`, which have their own
+  rule). Any other key -- `prompt` (a stored prompt can carry remote-media
+  variables), `extra_body`, `mcp_servers`, `container`, `tool_resources`,
+  `search_parameters`, an upper-case `WEB_SEARCH_OPTIONS` -- is
+  `unknown_request_shape`, at `request.unknown_key[i]` (never the key itself). A
+  function tool or legacy function entry may carry only the documented function
+  keys, so a function tool with an extra `web_search` key is denied; `tool_choice`
+  may pick a mode or a function, never a hosted tool.
+* `function_call_output.output` lists are content parts and are screened like message
+  content: a remote `input_image`/`input_file` there is `remote_media_dereference`.
 * A hosted capability is allowed only under the `standard` profile with an
   explicit FTF-0901 `RouteAuthorization` that covers the model surface and
   names the exact capability. The profile comes from FTF-0901
@@ -124,6 +135,44 @@ _EXTERNAL_KIND = {"internal": False, "managed_provider": True, "external": True}
 _TEXT_PART_TYPES = frozenset({"text", "input_text", "output_text", "refusal"})
 _NON_CALL_OUTPUT_TYPES = frozenset({"message", "reasoning"})
 _KNOWN_INPUT_ITEM_TYPES = frozenset({"function_call", "function_call_output", "reasoning"})
+# The request top level is an allow-list (exact, case-sensitive). Anything else -- a
+# stored `prompt`, `extra_body`, `mcp_servers`, `container`, `tool_resources`,
+# `search_parameters`, an upper-cased `WEB_SEARCH_OPTIONS`, a future provider key --
+# is `unknown_request_shape`. The capability keys below are handled by their own rule.
+_KNOWN_REQUEST_KEYS = frozenset(
+    {
+        "model",
+        "messages",
+        "input",
+        "instructions",
+        "tools",
+        "functions",
+        "tool_choice",
+        "function_call",
+        "parallel_tool_calls",
+        "temperature",
+        "top_p",
+        "top_k",
+        "max_tokens",
+        "max_completion_tokens",
+        "max_output_tokens",
+        "n",
+        "stop",
+        "seed",
+        "stream",
+        "presence_penalty",
+        "frequency_penalty",
+        "logit_bias",
+        "logprobs",
+        "top_logprobs",
+        "response_format",
+        "metadata",
+        "user",
+    }
+)
+_FUNCTION_KEYS = frozenset({"name", "description", "parameters", "strict"})
+_FUNCTION_TOOL_KEYS = _FUNCTION_KEYS | {"type"}
+_NESTED_FUNCTION_TOOL_KEYS = frozenset({"type", "function"})
 _CAPABILITY_KEYS: tuple[tuple[str, str], ...] = (
     ("web_search_options", "web_search_options"),
     ("plugins", "plugins"),
@@ -314,8 +363,16 @@ def _screen_tool(tool: object, path: str, policy: ScreeningPolicy, out: list[Den
     elif tool_type == "function":
         nested, direct = tool.get("function"), tool.get("name")
         if nested is None:
-            _screen_function(direct, path, policy, out)
-        elif direct is not None or type(nested) is not dict:
+            if set(tool) - _FUNCTION_TOOL_KEYS:
+                out.append(Denial(CODE_UNKNOWN_REQUEST_SHAPE, path))
+            else:
+                _screen_function(direct, path, policy, out)
+        elif (
+            direct is not None
+            or type(nested) is not dict
+            or set(tool) - _NESTED_FUNCTION_TOOL_KEYS
+            or set(nested) - _FUNCTION_KEYS
+        ):
             out.append(Denial(CODE_UNKNOWN_REQUEST_SHAPE, path))
         else:
             _screen_function(nested.get("name"), path, policy, out)
@@ -344,7 +401,7 @@ def _screen_tools(body: dict[str, Any], policy: ScreeningPolicy, out: list[Denia
         else:
             for index, function in enumerate(functions):
                 path = f"functions[{index}]"
-                if type(function) is not dict:
+                if type(function) is not dict or set(function) - _FUNCTION_KEYS:
                     out.append(Denial(CODE_UNKNOWN_REQUEST_SHAPE, path))
                 else:
                     _screen_function(function.get("name"), path, policy, out)
@@ -456,8 +513,33 @@ def _screen_input(body: dict[str, Any], out: list[Denial]) -> None:
             item_type = "message"
         if item_type == "message":
             _screen_content(item.get("content"), f"{path}.content", out)
+        elif item_type == "function_call_output":
+            _screen_content(item.get("output"), f"{path}.output", out)
         elif type(item_type) is not str or item_type not in _KNOWN_INPUT_ITEM_TYPES:
             out.append(Denial(CODE_UNKNOWN_REQUEST_SHAPE, path))
+
+
+def _screen_tool_choice(body: dict[str, Any], out: list[Denial]) -> None:
+    """`tool_choice` may only pick a mode or a function; it can never name a hosted tool."""
+    if "tool_choice" not in body:
+        return
+    choice = body["tool_choice"]
+    if type(choice) is str:
+        return
+    if (
+        type(choice) is dict
+        and choice.get("type") == "function"
+        and set(choice) <= (_NESTED_FUNCTION_TOOL_KEYS | {"name"})
+    ):
+        return
+    out.append(Denial(CODE_UNKNOWN_REQUEST_SHAPE, "tool_choice"))
+
+
+def _screen_top_level(body: dict[str, Any], out: list[Denial]) -> None:
+    capability_keys = {key for key, _ in _CAPABILITY_KEYS}
+    unknown = sorted(set(body) - _KNOWN_REQUEST_KEYS - capability_keys)
+    for index in range(len(unknown)):
+        out.append(Denial(CODE_UNKNOWN_REQUEST_SHAPE, f"request.unknown_key[{index}]"))
 
 
 def screen_outbound_model_request(body: object, policy: ScreeningPolicy) -> ScreeningDecision:
@@ -466,6 +548,8 @@ def screen_outbound_model_request(body: object, policy: ScreeningPolicy) -> Scre
         raise ProviderBoundaryError(_INVALID_REQUEST, "policy must be a ScreeningPolicy")
     request = _json_object(body, "request body")
     denials: list[Denial] = []
+    _screen_top_level(request, denials)
+    _screen_tool_choice(request, denials)
     _screen_tools(request, policy, denials)
     for key, capability in _CAPABILITY_KEYS:
         if request.get(key) is not None and not _hosted_allowed(capability, policy):
