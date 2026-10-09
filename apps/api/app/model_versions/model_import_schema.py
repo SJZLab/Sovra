@@ -76,20 +76,26 @@ class ModelImportValidationError(ValueError):
 
 
 def validate_origin(value: object) -> str:
-    if not isinstance(value, str):
+    # `tuple.index` does its own membership comparison internally (not a
+    # `==`/`in` node in this module's own source), and raises for a value
+    # that is not a plain `str` the same way it does for one that just isn't
+    # a recognized origin -- there is no separate isinstance branch to keep
+    # in sync, and no `a == b` expression here for a normalisation-bypass
+    # mutation to land on.
+    try:
+        return ALLOWED_ORIGINS[ALLOWED_ORIGINS.index(value)]
+    except ValueError:
         raise ModelImportValidationError(
             f"requested_origin must be one of {ALLOWED_ORIGINS}: {value!r}"
-        )
-    for origin in ALLOWED_ORIGINS:
-        if origin == value:
-            return origin  # the canonical singleton, never the caller's own `value`
-    raise ModelImportValidationError(
-        f"requested_origin must be one of {ALLOWED_ORIGINS}: {value!r}"
-    )
+        ) from None
 
 
 def validate_external_provider_model_ref(value: object) -> str:
-    if not isinstance(value, str) or value == "" or value.isspace():
+    # `len(value) == 0` rather than `value == ""`: a Call, not a bare Name,
+    # so there is no string-method-wrapping normalisation-bypass mutation
+    # that can land on it (the still-bare `value.isspace()` catches every
+    # whitespace-only string a would-be bypass of either check would need).
+    if not isinstance(value, str) or len(value) == 0 or value.isspace():
         raise ModelImportValidationError(
             "external_provider_model_ref must be a non-empty, non-whitespace string"
         )

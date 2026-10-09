@@ -369,6 +369,35 @@ def test_m1_offline_downgrade_sql_actually_runs() -> None:
         check(CID, f"the real downgrade SQL contains {needle!r}", needle in down)
 
 
+def test_r2_offline_upgrade_sql_0028_actually_runs() -> None:
+    # Same technique as 0027 above, for round 2's own migration: proves
+    # upgrade() is not short-circuited (an additive early `return None` --
+    # a real mutation-gate fault class -- would leave every needle below
+    # missing from the offline SQL, since nothing would ever execute).
+    up = _offline_sql("0027_model_import:0028_model_import_state_machine", "upgrade")
+    for needle in (
+        "ck_model_versions_origin_import_kind_consistency",
+        "ck_model_import_jobs_origin_not_factory_trained",
+        "CREATE FUNCTION model_import_jobs_state_transition_guard",
+        "CREATE TRIGGER model_import_jobs_state_transition_guard",
+        "BEFORE INSERT OR UPDATE ON model_import_jobs",
+        "version_num='0028_model_import_state_machine'",
+    ):
+        check(CID, f"the real 0028 upgrade SQL contains {needle!r}", needle in up)
+
+
+def test_r2_offline_downgrade_sql_0028_actually_runs() -> None:
+    down = _offline_sql("0028_model_import_state_machine:0027_model_import", "downgrade")
+    for needle in (
+        "DROP TRIGGER IF EXISTS model_import_jobs_state_transition_guard",
+        "DROP FUNCTION IF EXISTS model_import_jobs_state_transition_guard",
+        "DROP CONSTRAINT ck_model_import_jobs_origin_not_factory_trained",
+        "DROP CONSTRAINT ck_model_versions_origin_import_kind_consistency",
+        "version_num='0027_model_import'",
+    ):
+        check(CID, f"the real 0028 downgrade SQL contains {needle!r}", needle in down)
+
+
 # -- S*: store against SQLite, with the reused DB-touching seams replaced ----
 
 
