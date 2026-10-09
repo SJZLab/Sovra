@@ -23,6 +23,9 @@ R6-3  record: a row already resolved by a concurrent sync (status no longer
       `pending`) is never rewritten by a late PENDING/SYNCED/FAILED/AMBIGUOUS
       outcome -- status, external id, last_error and attempt_count all stay
       exactly as the concurrent resolution left them (D2, D3b).
+R6-6  record: the pending-status check is exact, never case/whitespace
+      folded -- a stored value that is not byte-for-byte "pending" is
+      treated as already resolved (mutation gate).
 
 Run directly: python3 tests/tasks/test_ftf_r005_r3.py
 """
@@ -646,6 +649,21 @@ def test_record_never_rewrites_a_row_resolved_concurrently() -> None:
         check(f"R6-3/{state}", "attempt_count untouched by the late write", row.attempt_count == 3)
         check(f"R6-3/{state}", "last_error untouched", row.last_error == "original failure")
         check(f"R6-3/{state}", "external id untouched", row.external_id is None)
+
+
+def test_record_treats_a_non_exact_pending_status_as_already_resolved() -> None:
+    # The status check is exact, never case/whitespace-folded: a stored
+    # value that is not byte-for-byte "pending" is treated the same as an
+    # already-resolved row (fail closed), not normalised into a match.
+    world = World()
+    entry = entry_for(SyncState.PENDING, last_error="x")
+    seed_pending(world, entry, status=" pending", attempt_count=0, updated_at=T0)
+    outbox(world).record(entry)
+    row = world.rows[entry.run.job_id]
+    check("R6-6", "no record_sync_outcome call was made at all", world.calls == [])
+    check("R6-6", "the odd status is left exactly as it was", row.status == " pending")
+    check("R6-6", "attempt_count untouched", row.attempt_count == 0)
+    check("R6-6", "updated_at untouched", row.updated_at == T0)
 
 
 def main() -> None:

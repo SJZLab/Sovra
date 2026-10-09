@@ -13246,6 +13246,10 @@ FTF-R005:
     Regression: tests/tasks/test_ftf_r005.py, test_ftf_r005_r2.py, test_ftf_r005_r3.py and
     tests/integration/test_mlflow_durable_outbox.py all still pass; tests/tasks/test_ftf_1001.py
     and test_ftf_1002.py (this task's own two dependencies) unaffected.
+    Mutation gate (R6-5, R6-6 in the same two test files): 57 run | 57 KILLED | 0 TIMEOUT |
+    0 SURVIVED | 0 SURVIVED-allowlisted | score 100.0%. First run 40/57 with 17 survivors
+    (CI's own `mutation-gate` check, first push) -- closed by tests, not by an allowlist entry;
+    details in the submission doc.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_r005.py
