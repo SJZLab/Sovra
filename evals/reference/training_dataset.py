@@ -889,29 +889,44 @@ def _norm(value: str) -> str:
 _RESERVED_FIELDS = ("group_ids", "template_ids", "entity_titles", "answer_sha256s")
 
 
-def _check_reserved_shape(reserved: Any) -> ReservedFinalSuite:
-    """A reserved set must be real frozensets of strings: a bare string would be
-    split into characters (admitting the sealed id) and `{}` would read as 'none'."""
+_SealedSets = tuple[frozenset[str], frozenset[str], frozenset[str], frozenset[str]]
+
+
+def _snapshot_reserved(reserved: Any) -> _SealedSets:
+    """Read the caller's reserved suite exactly once into exact frozensets of plain
+    `str` (already normalised), in `_RESERVED_FIELDS` order. A set must be a real
+    frozenset of strings: a bare string would be split into characters (admitting
+    the sealed id) and `{}` would read as 'none'. Everything after this call uses
+    the snapshot, so no caller code (a `__dict__` key hook, `__getattr__`) can run
+    inside the per-trace loop."""
     if not isinstance(reserved, ReservedFinalSuite):
         raise TrainingDatasetError("reserved must be a ReservedFinalSuite")
+    sealed: list[frozenset[str]] = []
     for name in _RESERVED_FIELDS:
         members = getattr(reserved, name)
         if type(members) is not frozenset or not all(type(m) is str for m in members):
             raise TrainingDatasetError(f"reserved.{name} must be a frozenset of strings")
+        sealed.append(frozenset(_norm(m) for m in members))
+    return (sealed[0], sealed[1], sealed[2], sealed[3])
+
+
+def _check_reserved_shape(reserved: Any) -> ReservedFinalSuite:
+    _snapshot_reserved(reserved)
     return reserved
 
 
-def _check_reserved(trace: TrainingTrace, reserved: ReservedFinalSuite) -> None:
+def _check_reserved(trace: TrainingTrace, sealed: _SealedSets) -> None:
     """Case/whitespace-insensitive on both sides, so a re-cased copy of a
-    sealed id cannot slip past the held-out guard."""
+    sealed id cannot slip past the held-out guard. `sealed` is the entry snapshot
+    from `_snapshot_reserved`."""
     answer_hash = _norm(hashlib.sha256(_raw_final_answer(trace).encode("utf-8")).hexdigest())
-    overlaps = (
-        (_norm(trace.group_id), {_norm(x) for x in reserved.group_ids}),
-        (_norm(trace.template_id), {_norm(x) for x in reserved.template_ids}),
-        (_norm(trace.entity_title), {_norm(x) for x in reserved.entity_titles}),
-        (answer_hash, {_norm(x) for x in reserved.answer_sha256s}),
+    probes = (
+        _norm(trace.group_id),
+        _norm(trace.template_id),
+        _norm(trace.entity_title),
+        answer_hash,
     )
-    if any({probe} & sealed for probe, sealed in overlaps):
+    if any(probe in members for probe, members in zip(probes, sealed, strict=True)):
         raise HeldOutLeakageError(f"{trace.trace_id}: overlaps the sealed final suite")
 
 
@@ -993,7 +1008,7 @@ def build_training_dataset(
     object, method, attribute or hook is read after parsing."""
     if not isinstance(traces, tuple | list) or not isinstance(reviews, tuple | list):
         raise TrainingDatasetError("traces and reviews must be sequences")
-    reserved = _check_reserved_shape(ReservedFinalSuite() if reserved is None else reserved)
+    sealed = _snapshot_reserved(ReservedFinalSuite() if reserved is None else reserved)
     by_id: dict[str, TrainingTrace] = {}
     seen_ids: set[str] = set()
     seen_indices: set[int] = set()
@@ -1009,7 +1024,7 @@ def build_training_dataset(
         # SecretInTraceError, a held-out overlap as HeldOutLeakageError) before
         # ever reaching the more generic provenance mismatch below.
         _scan_secrets(trace)
-        _check_reserved(trace, reserved)
+        _check_reserved(trace, sealed)
         index = _check_provenance(trace)
         if index in seen_indices:
             raise TrainingDatasetError(f"generator index {index} admitted more than once")
@@ -1020,7 +1035,7 @@ def build_training_dataset(
         # first-pass counterpart and runs here for the first time.
         regenerated = _generate_one(index)
         _scan_secrets(regenerated)
-        _check_reserved(regenerated, reserved)
+        _check_reserved(regenerated, sealed)
         verify_trace_replay(regenerated)
         by_id[regenerated.trace_id] = regenerated
 
