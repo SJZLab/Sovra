@@ -9616,10 +9616,10 @@ FTF-0904:
   proving_symbol: ''
   proving_test: ''
 FTF-0905:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Canary-secret generator
-  evidence_hash: 25166ce5c426a019881f005086377463b4787c5a
+  evidence_hash: 0dfce99276ffa7b2dd5d69fe6790bdda997cb708
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-14; scenarios=Q23, Q25; deps=FTF-0901, FTF-0902 (both
@@ -9659,7 +9659,7 @@ FTF-0905:
     actually place a canary in a real error path/trace/artifact (training/evaluation workers) are
     separate, dependency-gated tasks; proving_symbol stays blank, same precedent as
     FTF-0901/FTF-0902/FTF-0903. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0905.py
 FTF-0906:
