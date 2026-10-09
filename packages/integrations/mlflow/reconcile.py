@@ -22,7 +22,11 @@ How this module delivers it:
   a final completion tag holding the payload hash. A replay of an
   already-completed identical payload writes nothing; a different payload
   for a completed run is `RunConflictError` (drift is surfaced, never
-  silently overwritten).
+  silently overwritten). `compute_run_drift` runs on *every* found run,
+  whether or not its completion tag survived -- a deleted payload tag or a
+  run tampered with before its own completion is caught the same way a
+  tampered completed run is, never read as "not yet written" (Section
+  78.3: never rely solely on mutable tags for identity).
 * `TrackingOutbox` holds the measured result first. An outage leaves the
   entry `TRACKING_SYNC_PENDING` with the result intact; a server rejection
   is `FAILED`, an ambiguity `AMBIGUOUS`. None of those is ever reported as
@@ -65,6 +69,7 @@ __all__ = [
     "RunDriftError",
     "AmbiguousRunError",
     "OutboxEntry",
+    "OutboxRowResolvedError",
     "OutboxStore",
     "InMemoryOutbox",
     "RunConflictError",
@@ -101,6 +106,30 @@ class AmbiguousRunError(MlflowClientError):
 
 class RunConflictError(MlflowClientError):
     """A completed MLflow run holds a different payload or tenant."""
+
+
+class OutboxRowResolvedError(MlflowClientError):
+    """The durable outbox row was already resolved (by a concurrent worker)
+    when this entry's outcome was about to be recorded, and the stored outcome
+    disagrees with it. The stored row is authoritative: it is never rewritten,
+    and `sync_pending` reports it instead of the stale in-memory outcome."""
+
+    def __init__(self, status: str, external_id: str | None, error: str | None) -> None:
+        super().__init__(f"outbox row already resolved as {status}")
+        self.status = status
+        self.external_id = external_id
+        self.error = error
+
+    def apply_to(self, entry: OutboxEntry) -> None:
+        if self.status == "succeeded":
+            entry.state = SyncState.SYNCED
+            entry.mlflow_run_id = self.external_id
+            entry.last_error = None
+        else:
+            ambiguous = (self.error or "").startswith("ambiguous: ")
+            entry.state = SyncState.AMBIGUOUS if ambiguous else SyncState.FAILED
+            entry.last_error = self.error or f"outbox row already resolved as {self.status}"
+        entry.next_retry_at_ms = None
 
 
 class RunDriftError(RunConflictError):
@@ -294,11 +323,38 @@ def _field_drift(label: str, expected: Mapping[str, Any], actual: Mapping[str, A
     return drift
 
 
+_TERMINAL_RUN_STATUSES = frozenset({"FINISHED", "FAILED", "KILLED"})
+
+
 def compute_run_drift(record: dict[str, object], run: TrackedRun) -> tuple[str, ...]:
-    """Field-level comparison of a completed MLflow run with the Factory
-    payload (Section 78.3: never rely solely on mutable tags). Returns sorted
-    drift codes; empty means the run still equals what was projected."""
+    """Field-level comparison of a found MLflow run with the Factory payload
+    (Section 78.3: never rely solely on mutable tags). Called on *every*
+    found run, whether or not its completion tag survived -- a deleted
+    `factory.payload_sha256` tag must never make a tampered run look like
+    one that was simply never finished. Returns sorted drift codes; empty
+    means nothing has been written that disagrees with what Factory expects.
+
+    How strict the comparison is is decided by evidence that Factory already
+    completed the run, never by the live status alone (both the status and
+    every tag are mutable in MLflow, so either one can be tampered with):
+
+    * Completed -- the run carries Factory's completion tag
+      (`factory.payload_sha256`, written last) OR its status is already
+      terminal (`FINISHED`/`FAILED`/`KILLED`): every field must match
+      exactly, including one that went missing and a run status that no
+      longer agrees (`missing`/`changed`/`extra` and `status_changed`). A
+      completed run whose status was flipped back to `RUNNING` is therefore
+      `status_changed`, not "still being written".
+    * Neither (a brand-new run, or an interrupted attempt that never reached
+      its completion write): a field Factory has not written yet is not
+      drift, but any value already present that disagrees with what Factory
+      is about to write is -- a run cannot be pre-seeded with a wrong value
+      before its own completion write (`changed`/`extra`, never `missing`).
+    """
     tags = run_tags(record)
+    info = record.get("info")
+    status = info.get("status") if isinstance(info, dict) else None
+    completed = status in _TERMINAL_RUN_STATUSES or TAG_PAYLOAD in tags
     drift = _field_drift(
         "hash",
         {f"factory.hash.{k}": v for k, v in run.hashes},
@@ -306,10 +362,11 @@ def compute_run_drift(record: dict[str, object], run: TrackedRun) -> tuple[str, 
     )
     drift += _field_drift("param", dict(run.params), run_params(record))
     drift += _field_drift("metric", {k: float(v) for k, v in run.metrics}, run_metrics(record))
-    info = record.get("info")
-    status = info.get("status") if isinstance(info, dict) else None
-    if status != run.status:
-        drift.append("status_changed")
+    if completed:
+        if status != run.status:
+            drift.append("status_changed")
+    else:
+        drift = [code for code in drift if "_missing:" not in code]
     return tuple(sorted(drift))
 
 
@@ -354,13 +411,15 @@ def sync_run(
         run_id, tags, record = found
         entry.mlflow_run_id = run_id
         completed = tags.get(TAG_PAYLOAD)
-        if completed is not None:
-            if completed != run.payload_sha256():
-                raise RunConflictError("completed MLflow run holds a different payload")
-            drift = compute_run_drift(record, run)
-            if drift:
-                raise RunDriftError(drift)
-        else:
+        if completed is not None and completed != run.payload_sha256():
+            raise RunConflictError("completed MLflow run holds a different payload")
+        # Always compared against the live run, tag or no tag: a deleted
+        # completion tag must never be read as "never finished" when the
+        # run's own data (or terminal status) says otherwise.
+        drift = compute_run_drift(record, run)
+        if drift:
+            raise RunDriftError(drift)
+        if completed is None:
             client.log_batch(
                 run_id,
                 metrics=[(k, float(v), run.completed_at_ms, 0) for k, v in run.metrics],
@@ -369,6 +428,19 @@ def sync_run(
             )
             client.finish_run(run_id, status=run.status, end_time_ms=run.completed_at_ms)
             client.log_batch(run_id, tags={TAG_PAYLOAD: run.payload_sha256()})
+            # Read back before reporting SYNCED: a write that was altered
+            # between the drift check and now (or a write the server did not
+            # keep) must never be reported as in sync. The completion tag is
+            # now present, so this comparison is strict on every field.
+            written = client.get_run(run_id)
+            written_drift = compute_run_drift(written, run)
+            stored_tag = run_tags(written).get(TAG_PAYLOAD)
+            if stored_tag is None:
+                written_drift = (*written_drift, "payload_tag_missing")
+            elif stored_tag != run.payload_sha256():
+                written_drift = (*written_drift, "payload_tag_changed")
+            if written_drift:
+                raise RunDriftError(tuple(sorted(written_drift)))
         entry.state = SyncState.SYNCED
         entry.last_error = None
         entry.next_retry_at_ms = None
@@ -412,7 +484,10 @@ def sync_pending(
         if entry.next_retry_at_ms is not None and entry.next_retry_at_ms > now:
             continue
         done.append(sync_run(client, entry, now_ms=now, policy=bound))
-        store.record(entry)
+        try:
+            store.record(entry)
+        except OutboxRowResolvedError as resolved:
+            resolved.apply_to(entry)
         if entry.state == SyncState.PENDING:
             break
     return done

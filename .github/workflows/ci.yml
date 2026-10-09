@@ -342,6 +342,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_r005_r2.py
       - name: FTF-R005 round-5 negative-test proof (DurableOutbox decisions with the DB seams faked, no DB required)
         run: uv run python3 tests/tasks/test_ftf_r005_r3.py
+      - name: FTF-R005 round-7 negative-test proof (strictness from Factory's record, read-back before SYNCED, locked outbox row, no network or DB required)
+        run: uv run python3 tests/tasks/test_ftf_r005_r4.py
       - name: FTF-1506 negative-test proof (Dependency scanning, no network required)
         run: uv run python3 tests/tasks/test_ftf_1506.py
       - name: FTF-04A17 negative-test proof (DiscoveredAgentCandidate schema/API, no DB required)
@@ -486,6 +488,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0908.py
       - name: FTF-0903 negative-test proof (content-free telemetry -- bounded workflow/log/span schemas, no snippet/traceback/prompt leak, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0903.py
+      - name: FTF-0904 negative-test proof (log redaction -- secret headers/URLs/tokens/exception chains redacted at ingress and sink, redactor failure logs a constant marker only, fault-injected copies of the module, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0904.py
       - name: FTF-0905 negative-test proof (canary-secret generator -- unique prefixed markers, no real-secret collision, full-coverage leak ledger, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0905.py
       - name: FTF-H010-P1 negative-test proof (model import fields + import-validation jobs -- migration SQL + RLS/GRANT shape + fault injection, store on SQLite, route seams, mounted app, no DB required)

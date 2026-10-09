@@ -19,6 +19,13 @@ R5-2  pending: the tenant/binding/status-scoped queries, evidence load,
 R5-3  record: SYNCED / PENDING / AMBIGUOUS / FAILED each take their own
       branch; an unrecognised state fails closed (never succeeded); the
       500-char error bound; attempt count persisted.
+R6-3  record: a row already resolved by a concurrent sync (status no longer
+      `pending`) is never rewritten by a late PENDING/SYNCED/FAILED/AMBIGUOUS
+      outcome -- status, external id, last_error and attempt_count all stay
+      exactly as the concurrent resolution left them (D2, D3b).
+R6-6  record: the pending-status check is exact, never case/whitespace
+      folded -- a stored value that is not byte-for-byte "pending" is
+      treated as already resolved (mutation gate).
 
 Run directly: python3 tests/tasks/test_ftf_r005_r3.py
 """
@@ -46,6 +53,7 @@ from packages.integrations.mlflow.durable_outbox import (  # noqa: E402
 )
 from packages.integrations.mlflow.reconcile import (  # noqa: E402
     OutboxEntry,
+    OutboxRowResolvedError,
     RetryPolicy,
     RunConflictError,
     SyncState,
@@ -95,6 +103,10 @@ class World:
             "attempt_count": 0,
             "external_id": None,
             "last_error": None,
+            # Deliberately not T0: R6-2 pins the retry due time to
+            # `updated_at`, never `created_at` -- a fake that gives both the
+            # same value could not tell the two apart.
+            "created_at": T0 - timedelta(hours=1),
             "updated_at": T0,
         }
         fields.update(over)
@@ -320,6 +332,12 @@ def test_pending_returns_due_tracked_entries_for_attempted_rows_only() -> None:
         "an attempted row is due updated_at + delay_ms(attempts)",
         retry.next_retry_at_ms == ms(T0) + POLICY.delay_ms(3) == ms(T0) + 4_000,
     )
+    check(
+        "R6-4",
+        "...not created_at + delay (created_at is 1h earlier, a real fixture "
+        "field, not an attribute a fake merely lacks)",
+        retry.next_retry_at_ms != ms(T0 - timedelta(hours=1)) + POLICY.delay_ms(3),
+    )
     check("R5-2", "attempts from the row", retry.attempts == 3)
     check("R5-2", "mlflow run id from the row", retry.mlflow_run_id == "r-1")
     check("R5-2", "last error from the row", retry.last_error == "e")
@@ -459,9 +477,23 @@ def entry_for(state: str, **over: Any) -> OutboxEntry:
     return OutboxEntry(**fields)
 
 
+def seed_pending(world: World, entry: OutboxEntry, **over: Any) -> None:
+    """A `record()` call always follows a row `add()` or `pending()` already
+    put there -- R6-3 below proves `record()` itself never changes a row
+    that is not (still) `pending`, so every test of its normal branches
+    needs a real pending row to start from."""
+    fields: dict[str, Any] = {
+        "idempotency_key": idempotency_key_for(entry.run),
+        "status": "pending",
+    }
+    fields.update(over)
+    world.row(entry.run.job_id, **fields)
+
+
 def test_record_synced_resolves_succeeded_with_the_external_id() -> None:
     world = World()
     entry = entry_for(SyncState.SYNCED, last_error="stale")
+    seed_pending(world, entry)
     outbox(world).record(entry)
     check("R5-3", "one call", len(world.calls) == 1)
     call = world.calls[0]
@@ -497,6 +529,7 @@ def test_record_pending_keeps_the_row_pending_and_bounds_the_error() -> None:
     for label, given, stored in cases:
         world = World()
         entry = entry_for(SyncState.PENDING, last_error=given)
+        seed_pending(world, entry)
         outbox(world).record(entry)
         row = world.rows[entry.run.job_id]
         call = world.calls[0]
@@ -527,6 +560,7 @@ def test_record_failed_and_ambiguous_resolve_failed_with_their_prefix() -> None:
     for state, given, expected in cases:
         world = World()
         entry = entry_for(state, last_error=given)
+        seed_pending(world, entry)
         outbox(world).record(entry)
         call = world.calls[0]
         label = f"{state}/{given!r}"
@@ -543,13 +577,16 @@ def test_record_fails_closed_on_an_unrecognised_or_denormalised_state() -> None:
     for state in ("synced", " SYNCED", "SYNCED ", "Synced", "tracking_sync_pending", "weird"):
         world = World()
         entry = entry_for(state, last_error="odd")
+        seed_pending(world, entry)
         outbox(world).record(entry)
         call = world.calls[0]
         check("R5-3", f"{state!r}: never recorded as succeeded", call.get("outcome") != "succeeded")
         check("R5-3", f"{state!r}: failed visibly", call.get("outcome") == "failed")
         check("R5-3", f"{state!r}: no ambiguous prefix", call.get("error") == "odd")
     world = World()
-    outbox(world).record(entry_for(" ambiguous", last_error="odd"))
+    odd_entry = entry_for(" ambiguous", last_error="odd")
+    seed_pending(world, odd_entry)
+    outbox(world).record(odd_entry)
     check(
         "R5-3",
         "a denormalised AMBIGUOUS is a plain failure, not an ambiguous one",
@@ -560,9 +597,93 @@ def test_record_fails_closed_on_an_unrecognised_or_denormalised_state() -> None:
 def test_record_pending_ignores_the_run_when_the_state_is_not_pending() -> None:
     world = World()
     entry = entry_for(SyncState.FAILED, last_error="x")
+    seed_pending(world, entry)
     outbox(world).record(entry)
     row = world.rows[entry.run.job_id]
     check("R5-3", "a failed entry does not touch updated_at", row.updated_at == T0)
+
+
+# -- R6-3 record never rewrites an already-resolved row ---------------------
+
+
+def test_record_never_rewrites_a_row_resolved_concurrently() -> None:
+    # D2: a stale PENDING outcome (this process's own attempt, raced by a
+    # concurrent sync that already resolved the row `succeeded`) must not
+    # overwrite that row's status, external id, last_error or attempt count.
+    world = World()
+    pending_entry = entry_for(SyncState.PENDING, last_error="transient timeout")
+    seed_pending(
+        world,
+        pending_entry,
+        status="succeeded",
+        external_id="mlflow-already-synced",
+        attempt_count=2,
+        last_error=None,
+        updated_at=T0,
+    )
+    try:
+        outbox(world).record(pending_entry)
+        check("R6-3", "the stale PENDING outcome is reported, not dropped", False)
+    except OutboxRowResolvedError:
+        pass
+    row = world.rows[pending_entry.run.job_id]
+    check("R6-3", "no record_sync_outcome call was made at all", world.calls == [])
+    check("R6-3", "status untouched", row.status == "succeeded")
+    check("R6-3", "external id untouched", row.external_id == "mlflow-already-synced")
+    check("R6-3", "attempt_count untouched by the stale pending write", row.attempt_count == 2)
+    check("R6-3", "last_error untouched", row.last_error is None)
+    check("R6-3", "updated_at untouched", row.updated_at == T0)
+
+    # D3b: a late SYNCED/FAILED outcome racing a row a concurrent sync
+    # already resolved `failed` must not rewrite its attempt count either.
+    for state in (SyncState.SYNCED, SyncState.FAILED, SyncState.AMBIGUOUS):
+        world = World()
+        late_entry = entry_for(state, last_error="late", attempts=9)
+        seed_pending(
+            world,
+            late_entry,
+            status="failed",
+            last_error="original failure",
+            attempt_count=3,
+            external_id=None,
+        )
+        try:
+            outbox(world).record(late_entry)
+            reported = False
+        except OutboxRowResolvedError:
+            reported = True
+        # a SYNCED outcome over a failed row disagrees and is reported; a
+        # FAILED/AMBIGUOUS one agrees with the stored failure (silent replay)
+        check(
+            f"R6-3/{state}",
+            "disagreement reported exactly when outcomes differ",
+            reported == (state == SyncState.SYNCED),
+        )
+        row = world.rows[late_entry.run.job_id]
+        check(f"R6-3/{state}", "no record_sync_outcome call was made at all", world.calls == [])
+        check(f"R6-3/{state}", "status stays failed", row.status == "failed")
+        check(f"R6-3/{state}", "attempt_count untouched by the late write", row.attempt_count == 3)
+        check(f"R6-3/{state}", "last_error untouched", row.last_error == "original failure")
+        check(f"R6-3/{state}", "external id untouched", row.external_id is None)
+
+
+def test_record_treats_a_non_exact_pending_status_as_already_resolved() -> None:
+    # The status check is exact, never case/whitespace-folded: a stored
+    # value that is not byte-for-byte "pending" is treated the same as an
+    # already-resolved row (fail closed), not normalised into a match.
+    world = World()
+    entry = entry_for(SyncState.PENDING, last_error="x")
+    seed_pending(world, entry, status=" pending", attempt_count=0, updated_at=T0)
+    try:
+        outbox(world).record(entry)
+        check("R6-6", "the odd status is reported as resolved", False)
+    except OutboxRowResolvedError as exc:
+        check("R6-6", "the report carries the stored status verbatim", exc.status == " pending")
+    row = world.rows[entry.run.job_id]
+    check("R6-6", "no record_sync_outcome call was made at all", world.calls == [])
+    check("R6-6", "the odd status is left exactly as it was", row.status == " pending")
+    check("R6-6", "attempt_count untouched", row.attempt_count == 0)
+    check("R6-6", "updated_at untouched", row.updated_at == T0)
 
 
 def main() -> None:
