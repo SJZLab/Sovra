@@ -28,6 +28,7 @@ from __future__ import annotations
 import itertools
 import json
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -728,7 +729,8 @@ def test_section_11_2_fields_and_target_matching() -> None:
         and "SECRET" not in json.dumps(session.added[0].details_json)
         and session.added[0].details_json["code"] == "external_provider_approval_mismatch",
     )
-    for bad in (7, [], {}, _Str("acct"), "x" * 201):
+    bad_targets: list[Any] = [7, [], {}, _Str("acct"), "x" * 201]
+    for bad in bad_targets:
         check(
             "FTF-0908-R2-5",
             f"malformed target account {bad!r} -> invalid_request",
@@ -902,6 +904,7 @@ def _run_probe(source: str | None) -> dict[str, Any]:
         )
     finally:
         MODULE.write_bytes(original)
+        shutil.rmtree(cache_dir, ignore_errors=True)
     if MODULE.read_bytes() != original:
         raise RuntimeError("module not restored")
     if result.returncode != 0:
