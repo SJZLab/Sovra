@@ -67,6 +67,7 @@ from app.auth.rbac_middleware import AuthenticatedPrincipal, Role  # noqa: E402
 from app.datasets import dataset_upload_store as store  # noqa: E402
 from app.datasets import direct_object_storage_upload as dos  # noqa: E402
 from app.datasets import direct_object_storage_upload_routes as routes  # noqa: E402
+from app.datasets import upload_sweeper as sweeper  # noqa: E402
 from app.datasets.dataset_source_connection_crud import (  # noqa: E402
     DatasetSourceAuthorizationError,
     DatasetSourceConnectionNotFoundError,
@@ -248,6 +249,7 @@ class FakeS3:
             "key": key,
             "content_type": h.headers.get("Content-Type", ""),
             "parts": {},
+            "initiated": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
         }
         xml = (
             "<InitiateMultipartUploadResult>"
@@ -258,7 +260,9 @@ class FakeS3:
     def op_list_uploads(self, h: Any, key: str, query: dict[str, str], body: bytes) -> None:
         prefix = query.get("prefix", "")
         items = "".join(
-            f"<Upload><Key>{u['key']}</Key><UploadId>{uid}</UploadId></Upload>"
+            f"<Upload><Key>{u['key']}</Key><UploadId>{uid}</UploadId>"
+            + (f"<Initiated>{u['initiated']}</Initiated>" if u.get("initiated") else "")
+            + "</Upload>"
             for uid, u in self.uploads.items()
             if u["key"].startswith(prefix)
         )
@@ -332,6 +336,13 @@ class FakeS3:
         obj = self.objects.get(key)
         if obj is None:
             return h._error(404, "NoSuchKey")
+        spec = h.headers.get("Range")
+        if spec:
+            first_text, _, last_text = spec.removeprefix("bytes=").partition("-")
+            first, last = int(first_text), min(int(last_text), len(obj["body"]) - 1)
+            return h._send(
+                206, obj["body"][first : last + 1], {"Content-Type": obj["content_type"]}
+            )
         h._send(200, obj["body"], {"Content-Type": obj["content_type"]})
 
     # -- test helpers -----------------------------------------------------------
@@ -1224,7 +1235,7 @@ def test_v6_content_type_is_checked_against_the_bytes() -> None:
             got.content_type == "text/csv; charset=utf-8",
         )
     with FakeS3() as fake:
-        body = b"PK\x03\x04" + b"\x00" * 200
+        body = _xlsx()
         target = _target(body, content_type=dos.XLSX_CONTENT_TYPE)
         _open_and_upload(fake, target, body)
         check(
@@ -3997,6 +4008,603 @@ def test_m15_list_parts_pages_forward_only() -> None:
             f"{CID}-M15", "a marker that goes backwards is a MalformedResponse", _is_malformed(got)
         )
         check(f"{CID}-M15", "the walk stopped on the backwards marker", len(raw.requests) == 2)
+
+
+# -- X: XLSX container check (Section 8.1 steps 3-4, 67.3) ---------------------------
+
+_XLSX_MAIN = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
+_DOCX_MAIN = "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
+_MACRO_MAIN = "application/vnd.ms-excel.sheet.macroEnabled.main+xml"
+
+
+def _content_types(part: str = "/xl/workbook.xml", content_type: str = _XLSX_MAIN) -> bytes:
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        f'<Override PartName="{part}" ContentType="{content_type}"/></Types>'
+    ).encode()
+
+
+def _zip(members: list[tuple[str, bytes]]) -> bytes:
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in members:
+            archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+def _xlsx(*, content_types: bytes | None = None, extra: list[tuple[str, bytes]] | None = None):
+    return _zip(
+        [
+            ("[Content_Types].xml", content_types or _content_types()),
+            ("xl/workbook.xml", b"<workbook/>"),
+            *(extra or []),
+        ]
+    )
+
+
+def _xlsx_outcome(body: bytes) -> Any:
+    with FakeS3() as fake:
+        target = _target(body, content_type=dos.XLSX_CONTENT_TYPE)
+        _open_and_upload(fake, target, body)
+        got = _outcome(fake, target)
+        gone = _gone(fake, target)
+    return got, gone
+
+
+def test_x1_xlsx_must_be_a_spreadsheet_package() -> None:
+    import io
+    import zipfile
+
+    docx = _zip(
+        [
+            ("[Content_Types].xml", _content_types("/word/document.xml", _DOCX_MAIN)),
+            ("word/document.xml", b"<document/>"),
+        ]
+    )
+    only_word = _zip([("word/document.xml", b"<document/>")])
+    plain_zip = _zip([("a.txt", b"hello")])
+    no_workbook_part = _zip([("[Content_Types].xml", _content_types()), ("xl/other.xml", b"<a/>")])
+    wrong_declared = _xlsx(content_types=_content_types(content_type=_DOCX_MAIN))
+    undeclared = _xlsx(content_types=_content_types(part="/xl/other.xml"))
+    not_xml = _xlsx(content_types=b"this is not xml")
+    good = _xlsx()
+    cases = [
+        ("a docx", docx, "content_type_mismatch"),
+        ("a zip holding only word/document.xml", only_word, "content_type_mismatch"),
+        ("a plain zip", plain_zip, "content_type_mismatch"),
+        ("PK-prefixed zero bytes", b"PK\x03\x04" + b"\x00" * 200, "content_type_mismatch"),
+        ("PK-prefixed junk", b"PK\x03\x04" + b"junk" * 100, "content_type_mismatch"),
+        ("a truncated xlsx", good[: len(good) // 2], "content_type_mismatch"),
+        ("an xlsx cut before its directory", good[:-30], "content_type_mismatch"),
+        (
+            "[Content_Types].xml without the workbook part",
+            no_workbook_part,
+            "content_type_mismatch",
+        ),
+        ("a workbook declared as another type", wrong_declared, "content_type_mismatch"),
+        ("a workbook part never declared", undeclared, "content_type_mismatch"),
+        ("[Content_Types].xml that is not XML", not_xml, "content_type_mismatch"),
+        (
+            "a macro-enabled workbook",
+            _xlsx(content_types=_content_types(content_type=_MACRO_MAIN)),
+            "unsafe_archive",
+        ),
+        (
+            "an entity declaration",
+            _xlsx(content_types=b'<!DOCTYPE t [<!ENTITY a "aaaa">]>' + _content_types()),
+            "unsafe_archive",
+        ),
+        ("a path-traversal member", _xlsx(extra=[("../evil.xml", b"x")]), "unsafe_archive"),
+        ("an absolute member", _xlsx(extra=[("/abs.xml", b"x")]), "unsafe_archive"),
+        ("a backslash member", _xlsx(extra=[("a\\..\\b.xml", b"x")]), "unsafe_archive"),
+    ]
+    for label, body, reason in cases:
+        got, gone = _xlsx_outcome(body)
+        check(
+            f"{CID}-X1",
+            f"{label} is refused as {reason}",
+            isinstance(got, dos.UploadRejection) and got.reason == reason,
+        )
+        check(f"{CID}-X1", f"({label}) nothing is left in storage", gone)
+    got, _ = _xlsx_outcome(good)
+    check(
+        f"{CID}-X1",
+        "a real spreadsheet package verifies",
+        isinstance(got, dos.VerifiedObject) and got.size_bytes == len(good),
+    )
+    # A multi-sheet package with many members still verifies.
+    many = _xlsx(extra=[(f"xl/worksheets/sheet{i}.xml", b"<w/>") for i in range(200)])
+    got, _ = _xlsx_outcome(many)
+    check(f"{CID}-X1", "a package with 200 sheets verifies", isinstance(got, dos.VerifiedObject))
+    # Duplicate member names are refused (the reader would use the last one).
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("[Content_Types].xml", _content_types())
+        archive.writestr("xl/workbook.xml", b"<workbook/>")
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            archive.writestr("[Content_Types].xml", _content_types(content_type=_DOCX_MAIN))
+    got, _ = _xlsx_outcome(buffer.getvalue())
+    check(
+        f"{CID}-X1",
+        "duplicate member names are refused",
+        isinstance(got, dos.UploadRejection) and got.reason == "unsafe_archive",
+    )
+
+
+def test_x2_xlsx_bounds_and_storage_outage() -> None:
+    saved = (
+        dos.MAX_XLSX_ENTRIES,
+        dos.MAX_XLSX_UNCOMPRESSED_BYTES,
+        dos.MAX_XLSX_CONTENT_TYPES_BYTES,
+    )
+    try:
+        dos.MAX_XLSX_ENTRIES = 5
+        got, _ = _xlsx_outcome(_xlsx(extra=[(f"xl/s{i}.xml", b"<w/>") for i in range(4)]))
+        check(
+            f"{CID}-X2",
+            "more members than the bound is refused",
+            isinstance(got, dos.UploadRejection) and got.reason == "unsafe_archive",
+        )
+        got, _ = _xlsx_outcome(_xlsx(extra=[(f"xl/s{i}.xml", b"<w/>") for i in range(3)]))
+        check(
+            f"{CID}-X2",
+            "exactly the bound verifies",
+            isinstance(got, dos.VerifiedObject),
+        )
+        dos.MAX_XLSX_ENTRIES = saved[0]
+        dos.MAX_XLSX_UNCOMPRESSED_BYTES = 100
+        got, _ = _xlsx_outcome(_xlsx(extra=[("xl/big.xml", b"a" * 5000)]))
+        check(
+            f"{CID}-X2",
+            "a decompressed size over the bound is refused",
+            isinstance(got, dos.UploadRejection) and got.reason == "unsafe_archive",
+        )
+        dos.MAX_XLSX_UNCOMPRESSED_BYTES = saved[1]
+        dos.MAX_XLSX_CONTENT_TYPES_BYTES = 100
+        got, _ = _xlsx_outcome(_xlsx())
+        check(
+            f"{CID}-X2",
+            "an oversized [Content_Types].xml is refused",
+            isinstance(got, dos.UploadRejection) and got.reason == "unsafe_archive",
+        )
+    finally:
+        (
+            dos.MAX_XLSX_ENTRIES,
+            dos.MAX_XLSX_UNCOMPRESSED_BYTES,
+            dos.MAX_XLSX_CONTENT_TYPES_BYTES,
+        ) = saved
+    # A ranged read failing is an outage, never a rejection or a success.
+    body = _xlsx()
+    with FakeS3() as fake:
+        target = _target(body, content_type=dos.XLSX_CONTENT_TYPE)
+        _open_and_upload(fake, target, body)
+        settings = fake.settings()
+        client = settings.client()
+        original = client.get_object_range
+
+        def failing(*args: Any, **kwargs: Any) -> bytes:
+            raise s3.S3Error(503, "SlowDown", "slow down")
+
+        client.get_object_range = failing  # type: ignore[method-assign]
+        try:
+            dos.verify_and_complete(client, settings, target)
+            outage: Any = None
+        except Exception as exc:  # noqa: BLE001
+            outage = exc
+        client.get_object_range = original  # type: ignore[method-assign]
+        check(
+            f"{CID}-X2",
+            "a failing ranged read is a storage outage",
+            isinstance(outage, dos.UploadStorageUnavailableError),
+        )
+        check(
+            f"{CID}-X2",
+            "the object is kept on an outage (the session stays open)",
+            target.object_key in fake.objects,
+        )
+
+
+def test_x3_the_unsigned_refusal_check_accepts_only_400_403_or_a_drop() -> None:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "ftf0501_s3_integration",
+        ROOT / "tests" / "integration" / "test_ftf_0501_direct_upload_s3.py",
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    for status in (400, 403, module.DROPPED):
+        check(
+            f"{CID}-X3",
+            f"an unsigned request answered {status} is a refusal",
+            module._refused_unsigned(status),
+        )
+    for status in (200, 204, 404, 500, 503):
+        check(
+            f"{CID}-X3",
+            f"an unsigned request answered {status} is not a refusal",
+            not module._refused_unsigned(status),
+        )
+    check(f"{CID}-X3", "every other refusal stays strict: 400 is not one", not module._refused(400))
+    check(
+        f"{CID}-X3",
+        "403 and a dropped connection stay refusals",
+        module._refused(403) and module._refused(module.DROPPED),
+    )
+
+
+# -- S: abandoned multipart upload sweeper (Section 67.5, 24 h) -----------------------
+
+
+def _open_aged(fake: FakeS3, initiated: str | None, *, key: str | None = None) -> str:
+    target = _target(b"x", key=key)
+    settings = fake.settings()
+    upload_id = dos.start_multipart(settings.client(), settings, target)
+    if initiated is None:
+        fake.uploads[upload_id].pop("initiated", None)
+    else:
+        fake.uploads[upload_id]["initiated"] = initiated
+    return upload_id
+
+
+def _iso(moment: datetime) -> str:
+    return moment.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def _listing_of(count: int) -> Any:
+    def listing(bucket: str, prefix: str) -> list[dict[str, str]]:
+        return [{"Key": f"x/{i}", "UploadId": str(i)} for i in range(count)]
+
+    return listing
+
+
+def test_s1_the_sweeper_aborts_only_uploads_older_than_24_hours() -> None:
+    now = datetime(2026, 10, 8, 12, 0, 0, tzinfo=UTC)
+    with FakeS3() as fake:
+        old = _open_aged(fake, _iso(now - timedelta(hours=25)))
+        very_old = _open_aged(fake, _iso(now - timedelta(days=30)))
+        edge = _open_aged(fake, _iso(now - timedelta(hours=24)))
+        fresh = _open_aged(fake, _iso(now - timedelta(hours=23, minutes=59)))
+        undated = _open_aged(fake, None)
+        garbage = _open_aged(fake, "yesterday-ish")
+        naive = _open_aged(fake, "2026-10-01T00:00:00")
+        foreign = _open_aged(fake, _iso(now - timedelta(days=9)), key="tenants/not-a-session/x")
+        other = _open_aged(
+            fake, _iso(now - timedelta(days=9)), key=f"tenants/{uuid.uuid4()}/projects/p/source"
+        )
+        settings = fake.settings()
+        result = sweeper.sweep_abandoned_uploads(settings.client(), settings, now=now)
+        check(f"{CID}-S1", "two stale uploads are aborted", result.aborted == 2)
+        check(
+            f"{CID}-S1",
+            "the report counts every other upload exactly",
+            (result.listed, result.kept, result.undated, result.foreign) == (9, 2, 3, 2)
+            and not result.more_may_remain,
+        )
+        left = set(fake.uploads)
+        check(
+            f"{CID}-S1",
+            "the 25 h and 30 day uploads are gone, all others remain",
+            old not in left
+            and very_old not in left
+            and {edge, fresh, undated, garbage, naive, foreign, other} <= left,
+        )
+        check(
+            f"{CID}-S1",
+            "exactly 24 h old is kept (older than, not at)",
+            edge in left,
+        )
+        again = sweeper.sweep_abandoned_uploads(settings.client(), settings, now=now)
+        check(f"{CID}-S1", "a second sweep has nothing left to abort", again.aborted == 0)
+        smaller = sweeper.sweep_abandoned_uploads(
+            settings.client(), settings, now=now, max_age=timedelta(hours=1)
+        )
+        check(
+            f"{CID}-S1",
+            "a shorter max_age ages out the uploads inside 24 h",
+            smaller.aborted == 2 and edge not in fake.uploads and fresh not in fake.uploads,
+        )
+    # Negative on the real default clock: an upload that was just started survives.
+    with FakeS3() as fake:
+        started = _open_aged(fake, _iso(datetime.now(UTC)))
+        settings = fake.settings()
+        result = sweeper.sweep_abandoned_uploads(settings.client(), settings)
+        check(
+            f"{CID}-S1",
+            "with the default clock a brand-new upload is never aborted",
+            result.aborted == 0 and started in fake.uploads,
+        )
+
+
+def test_s2_the_sweeper_validates_arguments_and_never_hides_an_outage() -> None:
+    now = datetime(2026, 10, 8, 12, 0, 0, tzinfo=UTC)
+    with FakeS3() as fake:
+        settings = fake.settings()
+        client = settings.client()
+        for label, kwargs, error in (
+            ("a naive now", {"now": datetime(2026, 10, 8, 12, 0, 0)}, ValueError),
+            ("a zero max_age", {"now": now, "max_age": timedelta(0)}, ValueError),
+            ("a negative max_age", {"now": now, "max_age": timedelta(hours=-1)}, ValueError),
+            ("a max_age over 24 h", {"now": now, "max_age": timedelta(hours=25)}, ValueError),
+        ):
+            try:
+                sweeper.sweep_abandoned_uploads(client, settings, **kwargs)
+                got: Any = None
+            except Exception as exc:  # noqa: BLE001
+                got = exc
+            check(f"{CID}-S2", f"{label} is refused", isinstance(got, error))
+        # max_age of exactly 24 h is allowed.
+        sweeper.sweep_abandoned_uploads(client, settings, now=now, max_age=timedelta(hours=24))
+
+        _open_aged(fake, _iso(now - timedelta(days=2)))
+        fake.fail.add("list_uploads")
+        try:
+            sweeper.sweep_abandoned_uploads(client, settings, now=now)
+            got = None
+        except Exception as exc:  # noqa: BLE001
+            got = exc
+        check(
+            f"{CID}-S2",
+            "a failing listing is a storage outage, not an empty sweep",
+            isinstance(got, dos.UploadStorageUnavailableError),
+        )
+        fake.fail.clear()
+        fake.fail.add("abort")
+        try:
+            sweeper.sweep_abandoned_uploads(client, settings, now=now)
+            got = None
+        except Exception as exc:  # noqa: BLE001
+            got = exc
+        check(
+            f"{CID}-S2",
+            "a failing abort is a storage outage, never counted as aborted",
+            isinstance(got, dos.UploadStorageUnavailableError) and len(fake.uploads) == 1,
+        )
+        fake.fail.clear()
+
+        def vanished(*args: Any, **kwargs: Any) -> None:
+            raise s3.S3Error(404, "NoSuchUpload", "gone")
+
+        client.abort_multipart_upload = vanished  # type: ignore[method-assign]
+        result = sweeper.sweep_abandoned_uploads(client, settings, now=now)
+        check(
+            f"{CID}-S2",
+            "an upload that vanished before its abort (404) counts as already gone",
+            result.aborted == 1,
+        )
+
+        def unreachable(*args: Any, **kwargs: Any) -> None:
+            raise ConnectionResetError("reset")
+
+        client.abort_multipart_upload = unreachable  # type: ignore[method-assign]
+        try:
+            sweeper.sweep_abandoned_uploads(client, settings, now=now)
+            got = None
+        except Exception as exc:  # noqa: BLE001
+            got = exc
+        check(
+            f"{CID}-S2",
+            "a connection failure during an abort is a storage outage",
+            isinstance(got, dos.UploadStorageUnavailableError),
+        )
+        for count, expected in ((999, False), (1000, True)):
+            client.list_multipart_uploads = _listing_of(count)  # type: ignore[method-assign]
+            result = sweeper.sweep_abandoned_uploads(client, settings, now=now)
+            check(
+                f"{CID}-S2",
+                f"{count} listed uploads -> more_may_remain is {expected}",
+                result.more_may_remain is expected and result.foreign == count,
+            )
+
+
+def test_s3_the_sweeper_entry_point_reports_through_its_exit_code() -> None:
+    now_old = _iso(datetime.now(UTC) - timedelta(days=3))
+    names = (
+        "SOVRA_UPLOAD_S3_ENDPOINT",
+        "SOVRA_UPLOAD_S3_BUCKET",
+        "SOVRA_UPLOAD_S3_ACCESS_KEY",
+        "SOVRA_UPLOAD_S3_SECRET_KEY",
+        "SOVRA_UPLOAD_S3_REGION",
+    )
+    saved = {name: os.environ.get(name) for name in names}
+    try:
+        for name in names:
+            os.environ.pop(name, None)
+        check(f"{CID}-S3", "an unconfigured sweeper exits 2", sweeper.main() == 2)
+        with FakeS3() as fake:
+            os.environ["SOVRA_UPLOAD_S3_ENDPOINT"] = f"http://127.0.0.1:{fake.port}"
+            os.environ["SOVRA_UPLOAD_S3_BUCKET"] = fake.BUCKET
+            os.environ["SOVRA_UPLOAD_S3_ACCESS_KEY"] = fake.ACCESS
+            os.environ["SOVRA_UPLOAD_S3_SECRET_KEY"] = fake.SECRET
+            stale = _open_aged(fake, now_old)
+            fake.fail.add("list_uploads")
+            check(f"{CID}-S3", "a storage failure exits 1", sweeper.main() == 1)
+            fake.fail.clear()
+            check(
+                f"{CID}-S3",
+                "a completed sweep exits 0 and aborts the stale upload",
+                sweeper.main() == 0 and stale not in fake.uploads,
+            )
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
+def test_x4_stored_object_file_and_xlsx_boundaries() -> None:
+    body = _xlsx()
+    with FakeS3() as fake:
+        target = _target(body, content_type=dos.XLSX_CONTENT_TYPE)
+        _open_and_upload(fake, target, body)
+        _verify(fake, target)  # completes the multipart upload
+        settings = fake.settings()
+        client = settings.client()
+        fetches: list[tuple[int, int]] = []
+        original = client.get_object_range
+
+        def counting(bucket: str, key: str, first: int, last: int) -> bytes:
+            fetches.append((first, last))
+            return original(bucket, key, first, last)
+
+        client.get_object_range = counting  # type: ignore[method-assign]
+        saved_window = dos._XLSX_RANGE_READ_BYTES
+        dos._XLSX_RANGE_READ_BYTES = 16
+        try:
+            stored = dos._StoredObjectFile(client, settings, target.object_key, len(body))
+            check(
+                f"{CID}-X4",
+                "the stored view is readable and seekable",
+                stored.readable() and stored.seekable(),
+            )
+            check(f"{CID}-X4", "a new view starts at 0", stored.tell() == 0)
+            closed_view = dos._StoredObjectFile(client, settings, target.object_key, len(body))
+            closed_view.close()
+            for name in ("readable", "seekable"):
+                try:
+                    getattr(closed_view, name)()
+                    closed_refused = False
+                except ValueError:
+                    closed_refused = True
+                check(f"{CID}-X4", f"{name}() on a closed view raises ValueError", closed_refused)
+            check(
+                f"{CID}-X4",
+                "read(0) is empty and fetches nothing",
+                stored.read(0) == b"" and fetches == [],
+            )
+            check(
+                f"{CID}-X4",
+                "read(4) returns the first 4 bytes",
+                stored.read(4) == body[:4] and stored.tell() == 4,
+            )
+            check(f"{CID}-X4", "one 16-byte window was fetched", fetches == [(0, 15)])
+            stored.seek(0)
+            check(
+                f"{CID}-X4",
+                "re-reading inside the window does not refetch",
+                stored.read(8) == body[:8] and len(fetches) == 1,
+            )
+            stored.seek(10)
+            check(
+                f"{CID}-X4",
+                "a read across the window end is exact",
+                stored.read(20) == body[10:30] and stored.tell() == 30,
+            )
+            stored.seek(16)
+            check(
+                f"{CID}-X4",
+                "a read starting exactly at the window end refetches",
+                stored.read(3) == body[16:19],
+            )
+            stored.seek(0)
+            check(f"{CID}-X4", "read(-1) reads to the end", stored.read(-1) == body)
+            stored.seek(0)
+            check(f"{CID}-X4", "read(None) reads to the end", stored.read(None) == body)  # type: ignore[arg-type]
+            check(
+                f"{CID}-X4",
+                "a read at the end is empty",
+                stored.read(5) == b"" and stored.seek(0, 2) == len(body) and stored.read() == b"",
+            )
+            stored.seek(-3, 2)
+            check(f"{CID}-X4", "seek from the end", stored.read() == body[-3:])
+            stored.seek(2)
+            stored.seek(3, 1)
+            check(f"{CID}-X4", "seek relative to the position", stored.tell() == 5)
+            check(
+                f"{CID}-X4",
+                "a read past the end is clipped",
+                dos._StoredObjectFile(client, settings, target.object_key, len(body)).read(
+                    len(body) + 100
+                )
+                == body,
+            )
+        finally:
+            dos._XLSX_RANGE_READ_BYTES = saved_window
+
+    import io as _io
+    import zipfile as _zf
+
+    sizes = sum(i.file_size for i in _zf.ZipFile(_io.BytesIO(body)).infolist())
+    ct_len = len(_content_types())
+    saved = (dos.MAX_XLSX_UNCOMPRESSED_BYTES, dos.MAX_XLSX_CONTENT_TYPES_BYTES)
+    try:
+        dos.MAX_XLSX_UNCOMPRESSED_BYTES = sizes
+        got, _ = _xlsx_outcome(body)
+        check(
+            f"{CID}-X4",
+            "exactly the uncompressed bound verifies",
+            isinstance(got, dos.VerifiedObject),
+        )
+        dos.MAX_XLSX_UNCOMPRESSED_BYTES = sizes - 1
+        got, _ = _xlsx_outcome(body)
+        check(
+            f"{CID}-X4",
+            "one byte over the uncompressed bound is refused",
+            isinstance(got, dos.UploadRejection) and got.reason == "unsafe_archive",
+        )
+        dos.MAX_XLSX_UNCOMPRESSED_BYTES = saved[0]
+        dos.MAX_XLSX_CONTENT_TYPES_BYTES = ct_len
+        got, _ = _xlsx_outcome(body)
+        check(
+            f"{CID}-X4",
+            "a [Content_Types].xml exactly at its bound verifies",
+            isinstance(got, dos.VerifiedObject),
+        )
+        dos.MAX_XLSX_CONTENT_TYPES_BYTES = ct_len - 1
+        got, _ = _xlsx_outcome(body)
+        check(
+            f"{CID}-X4",
+            "one byte over the [Content_Types].xml bound is refused",
+            isinstance(got, dos.UploadRejection) and got.reason == "unsafe_archive",
+        )
+    finally:
+        dos.MAX_XLSX_UNCOMPRESSED_BYTES, dos.MAX_XLSX_CONTENT_TYPES_BYTES = saved
+    for label, prefix in (
+        ("a DOCTYPE alone", b"<!DOCTYPE t>"),
+        ("an ENTITY alone", b'<!ENTITY a "b">'),
+    ):
+        got, _ = _xlsx_outcome(_xlsx(content_types=prefix + _content_types()))
+        check(
+            f"{CID}-X4",
+            f"{label} is refused as unsafe_archive",
+            isinstance(got, dos.UploadRejection) and got.reason == "unsafe_archive",
+        )
+    for label, declared in (
+        ("a trailing space", _XLSX_MAIN + " "),
+        ("an upper-cased type", _XLSX_MAIN.upper()),
+        ("a leading space", " " + _XLSX_MAIN),
+    ):
+        got, _ = _xlsx_outcome(_xlsx(content_types=_content_types(content_type=declared)))
+        check(
+            f"{CID}-X4",
+            f"{label} on the workbook content type is refused",
+            isinstance(got, dos.UploadRejection) and got.reason == "content_type_mismatch",
+        )
+
+
+def test_s4_the_sweeper_parses_a_padded_initiation_time() -> None:
+    now = datetime(2026, 10, 8, 12, 0, 0, tzinfo=UTC)
+    stale = _iso(now - timedelta(days=2))
+    for label, text in (("a leading space", " " + stale), ("a trailing space", stale + " ")):
+        with FakeS3() as fake:
+            upload = _open_aged(fake, text)
+            settings = fake.settings()
+            result = sweeper.sweep_abandoned_uploads(settings.client(), settings, now=now)
+            check(
+                f"{CID}-S4",
+                f"an initiation time with {label} is dated and aborted",
+                result.aborted == 1 and result.undated == 0 and upload not in fake.uploads,
+            )
 
 
 def test_c1_interface_contract() -> None:
