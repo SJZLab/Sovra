@@ -9924,7 +9924,16 @@ docs/spec-matrix.yaml. It never invents criteria.)
     new `if: always()` artifact step), then re-queue; (2) split the round-5 real-server proofs into two integration
     test files run as two additive jobs (each subset is proven to pass), keeping every test; (3) clean up per test
     (delete each test's three buckets at the end) so the fixture never accumulates state, which also removes the
-    suspected cause. Recommended: (3) with (2) as the fallback.
+    suspected cause; (4) periodically recycle the SeaweedFS fixture (`docker compose down -v` + `up -d s3`, re-wait
+    ready) every N test functions inside this file's own `main()`, bounding accumulated collections/volumes without
+    touching any test or `.github/workflows/ci.yml`. Recommended: (3) with (4) as the fallback, (2) after that.
+  - **2026-10-09T17:10Z, read-only re-check (no Docker in this sandbox, so unverified):** corroborates the volume-slot
+    suspicion above with a concrete precedent — `infra/docker/docker-compose.yml`'s own comment on the SeaweedFS
+    service documents an earlier, near-identical death in `test_storage_semantics.py` ("no free volumes left" after
+    ~2 of ~11 unique buckets, each bucket its own collection that eagerly grows to 7 volumes), fixed there with
+    `-master.volumeSizeLimitMB=64`. This file's 18 tests create roughly 45 unique buckets, about 4x that prior
+    threshold even with the fix in place — consistent with every tested subset (8-14 tests) passing and only the
+    full 18-test run dying. Raises confidence in (3)/(4) above; still needs a real run to confirm.
   - State left: PR #672 is open and ready with the intended round-5 files; its `ci-verdict` is red on this one job only.
     The unit-level proofs, submission and spec-matrix notes are as the PR describes.
 - **FTF-0516 Dataset issue resolution UI: PARKED (BLOCKED_DEPENDENCY), 2026-10-08T07:40Z, lane B.**
