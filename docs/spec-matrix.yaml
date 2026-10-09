@@ -2261,7 +2261,7 @@ FTF-0309:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Capability compatibility UI
-  evidence_hash: 1b19294bec02edc353747b7b3be8eabb375801f3
+  evidence_hash: c1dc78f0eccb1e9002a4aa7a3212ccdac3a2ca13
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0301, FTF-0307,
@@ -2279,12 +2279,17 @@ FTF-0309:
     separate, owner-routed contract change). A re-check that fails clears the earlier result, an
     organization/connection/project/model switch removes Train, and a response that lands after a
     switch (status, error body or JSON) is ignored. 404, 503, network errors and a malformed body
-    are errors with no Train button (Law 17). Proof: apps/web/tests/ftf_0309.spec.ts (33 DOM-level
-    Vitest tests, mocked fetch; round 3 evidence in
-    docs/certifications/submissions/2026-10-09T1720Z-FTF-0309-r3.md). Disclosed UNWIRED (Law 6/7): no Next.js page tree
+    are errors with no Train button (Law 17). Proof: apps/web/tests/ftf_0309.spec.ts (47 DOM-level
+    Vitest tests, mocked fetch; round 4 evidence in
+    docs/certifications/submissions/2026-10-09T1900Z-FTF-0309-r4.md). Round 4 (tests only, QUEUE
+    0c): added a strict-parse table for catalog_version/evidence/access/capability/availability/
+    trainable (the O33/O33b/O33c, O34/O34b, O35/O35b/O35c, TB faults the ruling named were
+    previously unobserved) and pinned the exact "Trainable artifact is <availability>, not ready"
+    blocker text for an unmapped (`none`) and a revoked (`archived`) artifact (G4). No production
+    change -- the component already held by construction. Disclosed UNWIRED (Law 6/7): no Next.js page tree
     (FTF-H029) and no training-start caller, same precedent as FTF-0308; the frozen route can only
     return `unknown` for the three tested dimensions today, so Train is disabled for every real
-    response. Fault -> RED table: docs/certifications/submissions/2026-10-09T1720Z-FTF-0309-r3.md.
+    response. Fault -> RED table: docs/certifications/submissions/2026-10-09T1900Z-FTF-0309-r4.md.
     The proving_symbol/proving_test below are the FTF-0309-P1 API live-wiring evidence, per the
     2026-10-08T17:52Z Control-plane ruling on the FTF-0309-P1 round-2 DoD's open proving_symbol
     bullet: FTF-0309-P1's own child slice has no spec-matrix entry of its own, so its live-wiring
