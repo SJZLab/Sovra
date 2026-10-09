@@ -13134,7 +13134,7 @@ FTF-R005:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Integrate internal MLflow tracking and model registry projection
-  evidence_hash: 6fc6d4544829291e54f5bdd634d0057ad7580104
+  evidence_hash: b008bdc6db581a302b921593cc0e6bac54464988
   implementation_state: IMPLEMENTED
   notes: >-
     kind=reuse_architecture; requirements=CAP-12, CAP-19, CAP-21; scenarios=Q35, Q38, Q40;
@@ -13180,7 +13180,8 @@ FTF-R005:
     (1) run-level drift: a completed run is compared field by field with the Factory payload
     (hash tags, params, metrics, status) in compute_run_drift, not only the mutable payload tag;
     an extra metric/param/hash, a changed hash or value, or a missing one is FAILED with drift
-    codes and the run is never SYNCED or overwritten (R2-D7, R2-1).
+    codes and the run is never SYNCED or overwritten (R2-D7, R2-1). CORRECTION (Law 2, round 6):
+    this round's own check only ran while the payload tag survived -- round 6 below closes that.
     (2) Law 17: verify_binding raises RegistryPendingError for PENDING_REGISTRATION and for a
     missing or unknown status, RegistryFailedError for FAILED_REGISTRATION; inspect_binding and
     the projection carry registration_state and never report drift None for a not-READY version;
@@ -13195,6 +13196,8 @@ FTF-R005:
     (engine disposed, every object dropped) loses nothing (R2-D2).
     (5) The bearer token is scrubbed from every raised error and never echoed from a server error
     code, and errors are raised outside the handler so the original is not chained (R2-5).
+    CORRECTION (Law 2, round 6): this round never tried a token with a control character -- round
+    6 below closes that.
     (6) search_model_versions_by_tag pages (205 real versions found, non-advancing cursor refused)
     (R2-D9, R2-6).
     Round-2 disclosures: the measured result is Factory evidence read through the ResultSource
@@ -13208,6 +13211,38 @@ FTF-R005:
     Round 2 follow-up (relay/FTF-R005-r4): mutation gate over the three suites (unit, round-2 unit, real
     Postgres + mlflow integration) 200 run | 200 KILLED | 0 SURVIVED; exact key/value drift, exact
     cursors on both searches, binding mode/key, result identity and stored admission key are pinned.
+    Round 6 (L2 return of a2e419f / PR #674 rounds 2-5, production + tests), against the real server
+    and real Postgres in tests/integration/test_mlflow_durable_outbox.py plus
+    tests/tasks/test_ftf_r005_r2.py and test_ftf_r005_r3.py:
+    (1) compute_run_drift now runs on every found run, not only while the payload tag survives,
+    gated by the run's own terminal MLflow status rather than a tag: a completed run (status
+    FINISHED/FAILED/KILLED) is compared field by field including missing fields and status; a
+    not-yet-completed run is compared on changed/extra fields only (a field Factory has not
+    written yet is not drift). A completed run whose payload tag was deleted and a metric
+    re-logged differently (P1), and a run tampered with before its own completion write ever ran
+    (P2), are both FAILED with drift, never SYNCED, never overwritten; a deleted tag alone (data
+    unchanged) heals back to SYNCED rather than failing falsely (R6-1, R6-1a/b real-server).
+    (2) client.py refuses a bearer token containing a control character (CRLF above all) before
+    building any header, with a static message that never carries the token; any other transport
+    ValueError is also wrapped in a static, scrubbed TrackingRejectedError. Previously such a
+    token reached http.client's own header validation, whose uncaught ValueError both crashed
+    sync_run and echoed the raw token (R6-2).
+    (3) DurableOutbox.record (durable_outbox.py) now reads the row's current status before doing
+    anything else and returns without touching it when the row is no longer pending: a stale
+    PENDING outcome race no longer writes last_error/attempt_count onto an already-succeeded row
+    (D2), and a late SYNCED/FAILED/AMBIGUOUS outcome race no longer rewrites an already-resolved
+    row's attempt_count (D3b) -- the previous unconditional `row.attempt_count = entry.attempts`
+    ran after every branch regardless of whether record_sync_outcome had already no-op'd (R6-3).
+    (4) The retry-due-time test now uses a row whose created_at is a real, different fixture value
+    from updated_at (previously both defaulted to the same value, so a fault reading created_at
+    instead was only ever caught by an AttributeError on a fake missing that field, never
+    behaviourally); shown RED against the actual fault (R6-4).
+    Fault -> RED table, Law-1 self-attack (each production fix reverted, the new test shown to
+    fail, then restored byte-identical) and the real-server reproduction of the CRLF crash are in
+    docs/certifications/submissions/2026-10-09T1330Z-FTF-R005-r6.md.
+    Regression: tests/tasks/test_ftf_r005.py, test_ftf_r005_r2.py, test_ftf_r005_r3.py and
+    tests/integration/test_mlflow_durable_outbox.py all still pass; tests/tasks/test_ftf_1001.py
+    and test_ftf_1002.py (this task's own two dependencies) unaffected.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_r005.py
