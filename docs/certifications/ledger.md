@@ -10978,3 +10978,21 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   shows controls for `is_detector_failure: 0`, F33 "Blocks training yes" for "false"); two false errors on the real P1
   router (uppercase successor U1; replay top-level version RV, pinned wrongly by the spec). Ruling: generated
   strict-parse table over every response field.
+
+## 2026-10-09T22:27Z — FTF-0501: API half PASSED L2; UI slice RETURNED (r2); UI CHECKLIST ruling
+- **FTF-0501 API (round 3; PR #692, merge b99723744b582685793be7c494fe6f1fc0100fa2, head ad1bbf0e): PASSED L2, not yet
+  certified** (FTF-0501 certifies only with its UI slice). Producer session_01W5sGbcHuyQj4HWKtsmQnKB ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 113999847024; gate job 113980488082 "FTF-0501 direct upload tests: all
+  checks passed"; direct-upload-routes-integration 113981370125 (PG16 + SeaweedFS routes and sweeper, pages=2);
+  mutation-gate 113980488089 141 killed + 2 timeout. 0j items 1-4 fixed; new tests 40 RED on the pre-fix module; 164
+  probes (56 routes incl. 8 concurrent finalizes = one 201; 2,300 real uploads paged; 0/50 cross-tenant; 78 DTD shapes x
+  encodings refused); 17/17 faults RED. Advisory (closed-class variants): duplicate workbook Override, vbaProject.bin with
+  the sheet type, cp500 over-refusal. proving_symbol build_direct_upload_router mounted (apps/api/app/main.py:290).
+- **FTF-0501-UI (child slice): RETURNED** (round 1 → 2; PR #697, merge 54fb57cc5e954f747e4bde9272e132c9240a416b, head
+  883a9e56). Producers session_01Cz8ktmhVtwPfswTkMft7yJ, session_014ggVH3xe8FEvP7NERrLSnc ≠ certifier. CI: ci-verdict
+  114018221214; gate job 114012659396 (324 vitest tests). Real resume works end to end (verifier probe on PG16 +
+  SeaweedFS). Return: 36 of 40 probes violate strict parsing / field binding / identity / typed errors; 6 of 14 faults
+  GREEN (UF3, UF4, UF6, UF7, UF8, UF10). Ruling: "from /" Playwright waits on FTF-H029; a committed real-API resume test
+  in CI is required now.
+- **Ruling: UI CHECKLIST** (QUEUE item 0) for every apps/web UI slice, closing the class behind the FTF-0309, FTF-0516
+  and FTF-0501-UI returns.
