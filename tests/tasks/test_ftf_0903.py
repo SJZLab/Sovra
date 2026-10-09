@@ -1692,6 +1692,9 @@ def _r7_cases() -> dict[str, object]:
             "workflow", {**_WF, _R7_LONG: "x"}
         ),
         "ContentRef id": lambda: ContentRef(_MARK, "key-1"),
+        "missing required field (caller value held in `given`)": lambda: emit_event(
+            "workflow", {"task_id": "t", "state": "queued", "error_code": _MARK}
+        ),
     }
 
 
@@ -1776,12 +1779,17 @@ print(report(lambda: emit_event("workflow", M)))
 print(report(lambda: emit_event("workflow", {**WF, M: "x"})))
 print(report(lambda: emit_event("workflow", {**WF, LONG: "x"})))
 print(report(lambda: ContentRef(M, "key-1")))
+print(report(lambda: emit_event("workflow", {"task_id": "t", "state": "queued", "error_code": M})))
 """
 
-BASELINE_R7 = ["clean"] * 6 + [""]
+BASELINE_R7 = ["clean"] * 7 + [""]
 
 _R7_KIND = '        raise InvalidEventError("event kind is not one of the permitted kinds")\n'
 _R7_FIELDS = '        raise InvalidEventError("fields must be a mapping")\n'
+_R7_MISSING = (
+    "            raise DisallowedFieldError("
+    'f"required field {name!r} is missing on this event kind")\n'
+)
 _R7_NAME = '            raise DisallowedFieldError("field is not permitted on this event kind")\n'
 
 
@@ -1865,6 +1873,19 @@ def _r7_mutations() -> list[tuple[str, str, str, tuple[int, ...]]]:
             (3, 4),
         ),
         (
+            "MR-cause: the missing-required-field refusal chains `from ValueError(repr(given))`",
+            _R7_MISSING,
+            _R7_MISSING.rstrip("\n") + " from ValueError(repr(given))\n",
+            (6,),
+        ),
+        (
+            "MR-log: the missing-required-field refusal logs the caller's `given` values",
+            _R7_MISSING,
+            "            import logging\n\n"
+            '            logging.warning("missing %s in %r", name, given)\n' + _R7_MISSING,
+            (6,),
+        ),
+        (
             "L1: _id_value logs the rejected value via logging.warning",
             '        raise ContentRefusedError(f"{what} is not a bounded id")\n',
             "        import logging\n\n"
@@ -1896,7 +1917,7 @@ def test_round7_each_refusal_site_fault_turns_exactly_its_cases_red() -> None:
             "FTF-0903-R7-FAULT",
             f"mutation turns its cases LEAK and leaves the others clean: {description}",
             len(out) == len(BASELINE_R7)
-            and all(out[i] == ("LEAK" if i in targets else "clean") for i in range(6)),
+            and all(out[i] == ("LEAK" if i in targets else "clean") for i in range(7)),
         )
 
 
