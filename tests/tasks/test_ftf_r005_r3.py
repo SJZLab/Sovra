@@ -53,6 +53,7 @@ from packages.integrations.mlflow.durable_outbox import (  # noqa: E402
 )
 from packages.integrations.mlflow.reconcile import (  # noqa: E402
     OutboxEntry,
+    OutboxRowResolvedError,
     RetryPolicy,
     RunConflictError,
     SyncState,
@@ -620,7 +621,11 @@ def test_record_never_rewrites_a_row_resolved_concurrently() -> None:
         last_error=None,
         updated_at=T0,
     )
-    outbox(world).record(pending_entry)
+    try:
+        outbox(world).record(pending_entry)
+        check("R6-3", "the stale PENDING outcome is reported, not dropped", False)
+    except OutboxRowResolvedError:
+        pass
     row = world.rows[pending_entry.run.job_id]
     check("R6-3", "no record_sync_outcome call was made at all", world.calls == [])
     check("R6-3", "status untouched", row.status == "succeeded")
@@ -642,7 +647,18 @@ def test_record_never_rewrites_a_row_resolved_concurrently() -> None:
             attempt_count=3,
             external_id=None,
         )
-        outbox(world).record(late_entry)
+        try:
+            outbox(world).record(late_entry)
+            reported = False
+        except OutboxRowResolvedError:
+            reported = True
+        # a SYNCED outcome over a failed row disagrees and is reported; a
+        # FAILED/AMBIGUOUS one agrees with the stored failure (silent replay)
+        check(
+            f"R6-3/{state}",
+            "disagreement reported exactly when outcomes differ",
+            reported == (state == SyncState.SYNCED),
+        )
         row = world.rows[late_entry.run.job_id]
         check(f"R6-3/{state}", "no record_sync_outcome call was made at all", world.calls == [])
         check(f"R6-3/{state}", "status stays failed", row.status == "failed")
@@ -658,7 +674,11 @@ def test_record_treats_a_non_exact_pending_status_as_already_resolved() -> None:
     world = World()
     entry = entry_for(SyncState.PENDING, last_error="x")
     seed_pending(world, entry, status=" pending", attempt_count=0, updated_at=T0)
-    outbox(world).record(entry)
+    try:
+        outbox(world).record(entry)
+        check("R6-6", "the odd status is reported as resolved", False)
+    except OutboxRowResolvedError as exc:
+        check("R6-6", "the report carries the stored status verbatim", exc.status == " pending")
     row = world.rows[entry.run.job_id]
     check("R6-6", "no record_sync_outcome call was made at all", world.calls == [])
     check("R6-6", "the odd status is left exactly as it was", row.status == " pending")
