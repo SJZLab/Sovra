@@ -1176,6 +1176,19 @@ def test_scrub_content_recurses_into_lists_tuples_and_preserves_nested_keys() ->
         "a nested dict's own key survives byte-exact, never stripped or lowercased",
         key_settings == {"response_format": {" Type ": "x"}},
     )
+    # The nested exclusion check itself (not just the output key) must be
+    # byte-exact: a key that only matches a CONTENT_KEYS member after
+    # folding (case/whitespace) is a different, legitimate key and must
+    # survive, not be wrongly dropped.
+    nested_fold_settings = capture_effective_generation_settings(
+        {"extra_body": {" Messages ": "keep", "messages": "drop"}}
+    )
+    check(
+        CID,
+        "a nested key that only folds to a content key (not an exact match) is kept, "
+        "while the exact 'messages' is scrubbed",
+        nested_fold_settings == {"extra_body": {" Messages ": "keep"}},
+    )
 
 
 def test_approved_and_before_presence_checks_cannot_be_folded_to_mask_a_real_mismatch() -> None:
