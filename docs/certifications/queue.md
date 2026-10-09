@@ -24651,3 +24651,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-09T21:05Z — Control plane: FTF-R005 CERTIFIED (139/302)
 - **Certified:** FTF-R005 (#708, merge 03442f67294975313db37ec297dea0cc24a6ca9a); UNWIRED. Wiring-task observations O1-O4 in the ledger.
+
+## 2026-10-09T21:56Z — Control plane: FTF-1703 CERTIFIED (140/302)
+- **Certified:** FTF-1703 (#714, merge 1fc59f19c1c265493da550994c78f7e77450b151) for the in-sandbox scope; ">=1000 reviewed" BLOCKED_EXTERNAL; UNWIRED.

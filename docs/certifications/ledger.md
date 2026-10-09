@@ -10946,3 +10946,18 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   serialize per row); apply_to keeps stale drift codes (O2); AMBIGUOUS over a failed row unreported (O3); C1 control
   characters accepted in tokens, 429 classed rejected, a raising ResultSource aborts the sweep (O4). UNWIRED
   (proving_symbol blank).
+
+## 2026-10-09T21:56Z — CERTIFIED: FTF-1703 (140/302, in-sandbox scope)
+- **FTF-1703: CERTIFIED** for the in-sandbox scope (round 7; PR #714, merge 1fc59f19c1c265493da550994c78f7e77450b151, head
+  00607b14; evidence_hash f40fe58a byte-identical to the merge for production and tests). The ">=1000 reviewed" clause
+  stays BLOCKED_EXTERNAL (Argilla/human review) and the independent-group floor reports not met
+  (BLOCKED_independent_group_floor, 21 template families) - honest, never claimed; FTF-0616/FTF-1810 precedent. Session
+  comparison: producer session_0123ecY3FThWDNJUSBpbwDsd ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent from the PR.
+  CI: ci-verdict 113998654631; gate job 113994947824 "FTF-1703 Training dataset tests: all checks passed"; mutation-gate
+  113994947877 49/49 killed. Round-7 items fixed: ruling-named FB2/FB3 (+FB3b) RED via the mid-build caller-hook test;
+  reserved suite snapshotted once (FS1c/FS1d RED). Plain-JSON ruling in place. Local 38 tests / 417 checks; 71/71 own
+  probes (mid-build hooks, held-out case/whitespace variants, reserved shape, reviewer identity, floor honesty, 300-way
+  concurrency) pass. GREEN: FV1 (equivalent), FS2/FS5 (caller contradicting its own reserved object; hand-picked variants
+  of the closed class, non-blocking). Disclosed: a reviewer id with a zero-width or fullwidth `generator:` prefix is
+  accepted (to be closed when real Argilla reviewer identities replace caller-supplied ids); held-out matching is exact
+  after strip/casefold, no near-duplicate detection. UNWIRED (proving_symbol blank).
