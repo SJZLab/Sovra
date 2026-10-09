@@ -36,6 +36,7 @@ from packages.security.url_policy import ConnectionPolicy, OutboundPolicyError
 
 __all__ = [
     "MAX_RESPONSE_BYTES",
+    "MODEL_VERSION_PAGE_SIZE",
     "MlflowAlreadyExistsError",
     "MlflowClient",
     "MlflowClientError",
@@ -46,6 +47,7 @@ __all__ = [
 
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 MAX_PAGES = 20
+MODEL_VERSION_PAGE_SIZE = 200
 _API = "/api/2.0/mlflow"
 # Identifier-shaped values only: they are interpolated into MLflow filter
 # strings, so a quote or backtick must never reach the query.
@@ -56,6 +58,17 @@ _RUN_ID = re.compile(r"^[0-9a-f]{32}$")
 # approved internal artifact location.
 _UNSAFE_SOURCE_CHARS = re.compile(r"[\x00-\x20\x7f\\]")
 _MAX_METRICS, _MAX_PARAMS, _MAX_TAGS = 1000, 100, 100
+
+
+_ERROR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
+
+
+def _redact(text: str, token: str | None) -> str:
+    """Never let the bearer token reach an error message, a log line or an
+    outbox `last_error`, even if a server or a transport error echoes it."""
+    if token:
+        return text.replace(token, "[redacted]")
+    return text
 
 
 class MlflowClientError(Exception):
@@ -167,6 +180,7 @@ class MlflowClient:
             headers["Content-Type"] = "application/json"
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
+        failure: MlflowClientError | None = None
         try:
             response = guarded_fetch(
                 url,
@@ -177,16 +191,23 @@ class MlflowClient:
                 timeout=self._timeout,
             )
         except OutboundPolicyError as exc:
-            raise TrackingRejectedError(f"destination denied by policy: {exc}") from exc
+            failure = TrackingRejectedError(self._scrub(f"destination denied by policy: {exc}"))
         except (OutboundGuardError, OSError) as exc:
-            raise TrackingUnavailableError(f"MLflow unreachable: {exc}") from exc
+            failure = TrackingUnavailableError(self._scrub(f"MLflow unreachable: {exc}"))
+        if failure is not None:
+            # Raised outside the handler so the original exception (whose text
+            # could carry request data) is not chained onto the one we raise.
+            raise failure
         status = response.status
         if status >= 500:
             raise TrackingUnavailableError(f"MLflow returned HTTP {status}")
         if status != 200:
             code = ""
             try:
-                code = str(parse_strict_json(response.body).get("error_code", ""))
+                raw_code = str(parse_strict_json(response.body).get("error_code", ""))
+                # Only a code-shaped value is ever echoed: a server-chosen
+                # string (which could carry the bearer token) is dropped.
+                code = raw_code if _ERROR_CODE.fullmatch(raw_code) else ""
             except TrackingRejectedError:
                 pass
             if code == "RESOURCE_DOES_NOT_EXIST":
@@ -196,7 +217,14 @@ class MlflowClient:
             raise TrackingRejectedError(
                 f"MLflow returned HTTP {status}" + (f" {code}" if code else "")
             )
-        return parse_strict_json(response.body)
+        try:
+            return parse_strict_json(response.body)
+        except TrackingRejectedError as exc:
+            failure = TrackingRejectedError(self._scrub(str(exc)))
+        raise failure
+
+    def _scrub(self, text: str) -> str:
+        return _redact(text, self._token)
 
     # -- experiments -------------------------------------------------------
 
@@ -367,20 +395,24 @@ class MlflowClient:
         _safe_key(name, name="model name")
         _safe_key(key, name="tag key")
         _safe_value(value, name="tag value")
-        found = self._call(
-            "GET",
-            "/model-versions/search",
-            query={"filter": f"name = '{name}'", "max_results": "200"},
-        )
-        versions = found.get("model_versions", [])
-        if not isinstance(versions, list) or not all(isinstance(v, dict) for v in versions):
-            raise TrackingRejectedError("MLflow returned a malformed version list")
-        out = []
-        for version in versions:
-            tag_map = _tags_of(version)
-            if tag_map.get(key) == value:
-                out.append(version)
-        return out
+        out: list[dict[str, Any]] = []
+        token: str | None = None
+        for _ in range(MAX_PAGES):
+            query = {"filter": f"name = '{name}'", "max_results": str(MODEL_VERSION_PAGE_SIZE)}
+            if token:
+                query["page_token"] = token
+            found = self._call("GET", "/model-versions/search", query=query)
+            versions = found.get("model_versions", [])
+            if not isinstance(versions, list) or not all(isinstance(v, dict) for v in versions):
+                raise TrackingRejectedError("MLflow returned a malformed version list")
+            out.extend(v for v in versions if _tags_of(v).get(key) == value)
+            next_token = found.get("next_page_token")
+            if not next_token:
+                return out
+            if not isinstance(next_token, str) or next_token == token:
+                raise TrackingRejectedError("MLflow pagination did not advance")
+            token = next_token
+        raise TrackingRejectedError("MLflow model version search exceeded the page bound")
 
     def get_model_version(self, name: str, version: str) -> dict[str, Any]:
         found = self._call(
@@ -417,6 +449,34 @@ def _tags_of(record: Mapping[str, Any]) -> dict[str, str]:
 def run_tags(run: Mapping[str, Any]) -> dict[str, str]:
     data = run.get("data")
     return _tags_of(data) if isinstance(data, dict) else {}
+
+
+def _kv_of(data: Mapping[str, Any], field: str) -> dict[str, str]:
+    raw = data.get(field, [])
+    out: dict[str, str] = {}
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, dict) and "key" in item:
+                out[str(item["key"])] = str(item.get("value", ""))
+    return out
+
+
+def run_params(run: Mapping[str, Any]) -> dict[str, str]:
+    data = run.get("data")
+    return _kv_of(data, "params") if isinstance(data, dict) else {}
+
+
+def run_metrics(run: Mapping[str, Any]) -> dict[str, float]:
+    """Latest value per metric key as MLflow reports it in run data."""
+    data = run.get("data")
+    out: dict[str, float] = {}
+    if isinstance(data, dict) and isinstance(data.get("metrics"), list):
+        for item in data["metrics"]:
+            if isinstance(item, dict) and "key" in item:
+                value = item.get("value")
+                if isinstance(value, int | float) and not isinstance(value, bool):
+                    out[str(item["key"])] = float(value)
+    return out
 
 
 def is_approved_source(source: object, prefixes: Sequence[str]) -> bool:

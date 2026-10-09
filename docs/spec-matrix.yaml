@@ -13145,12 +13145,46 @@ FTF-R005:
     export is R005-N3, ambiguous replay is R005-A1/N4, unapproved source is R005-N5. The no-network
     suite tests/tasks/test_ftf_r005.py covers every guard in all three modules and is
     mutation-gated.
-    Disclosed narrowings: the durable outbox store (a table) and the GET
-    /model-versions/{id}/registry-binding route are the wiring task's, this task ships the state
-    machine against an OutboxStore protocol (in-memory store used in tests) and the projection
-    function the route will call; proving_symbol stays blank because no live route calls it yet.
-    The CI job installs mlflow 3.1.1 with sqlalchemy below 2.1 inside the job only (3.1.1 imports a
-    symbol SQLAlchemy 2.1 removed, reproduced locally).
+    Disclosed narrowings: the GET /model-versions/{id}/registry-binding route is the wiring task's
+    (this task ships inspect_binding + project_registry_binding for it) and the live caller that
+    composes DurableOutbox + sync_pending is also wiring, so proving_symbol stays blank (UNWIRED:
+    no live route or worker calls the adapter yet). The CI job installs mlflow 3.1.1 with
+    sqlalchemy below 2.1 inside the job only (3.1.1 imports a symbol SQLAlchemy 2.1 removed,
+    reproduced locally).
+    Round 2 (QUEUE Active 0e, L2 return of f44136e / PR #621), all against the real server and
+    real Postgres in tests/integration/test_mlflow_durable_outbox.py (CI job
+    mlflow-durable-outbox-integration) plus tests/tasks/test_ftf_r005_r2.py:
+    (1) run-level drift: a completed run is compared field by field with the Factory payload
+    (hash tags, params, metrics, status) in compute_run_drift, not only the mutable payload tag;
+    an extra metric/param/hash, a changed hash or value, or a missing one is FAILED with drift
+    codes and the run is never SYNCED or overwritten (R2-D7, R2-1).
+    (2) Law 17: verify_binding raises RegistryPendingError for PENDING_REGISTRATION and for a
+    missing or unknown status, RegistryFailedError for FAILED_REGISTRATION; inspect_binding and
+    the projection carry registration_state and never report drift None for a not-READY version;
+    real versions flipped in the server's own store are reported as such (R2-D8, R2-2).
+    (3) Bounded retries: RetryPolicy (5 attempts, 1s doubling to 300s by default); an outage keeps
+    the row pending with attempt count and error, the next attempt is due updated_at + delay
+    (derived, no schema change), entries not due are skipped, and at the limit the row is
+    resolved failed with "retry limit reached", counted by R002's status projection (R2-D3, R2-3).
+    (4) DurableOutbox (durable_outbox.py) is the certified FTF-R002 component_sync_outbox via its
+    own record_sync_outcome and ComponentBinding, with no second table and no migration;
+    client_from_binding builds the adapter from the tenant's MLflow ComponentBinding. A restart
+    (engine disposed, every object dropped) loses nothing (R2-D2).
+    (5) The bearer token is scrubbed from every raised error and never echoed from a server error
+    code, and errors are raised outside the handler so the original is not chained (R2-5).
+    (6) search_model_versions_by_tag pages (205 real versions found, non-advancing cursor refused)
+    (R2-D9, R2-6).
+    Round-2 disclosures: the measured result is Factory evidence read through the ResultSource
+    protocol (the R002 row holds identity, state, attempts, error and external id, and its
+    idempotency key is mlflow:<payload sha256> so a changed or vanished result is failed
+    visibly, never synced); the integration test supplies that evidence as JSON files on disk, the
+    real ResultSource over Factory evidence is wiring. The CI MLflow server is unauthenticated
+    loopback, so bearer-token transport is proven against the stub, not a live authenticated
+    server. The R002 binding row stores the https production endpoint; the loopback server is
+    reached with an explicit policy and URL in the test.
+    Round 2 follow-up (relay/FTF-R005-r4): mutation gate over the three suites (unit, round-2 unit, real
+    Postgres + mlflow integration) 200 run | 200 KILLED | 0 SURVIVED; exact key/value drift, exact
+    cursors on both searches, binding mode/key, result identity and stored admission key are pinned.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_r005.py

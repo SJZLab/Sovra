@@ -43,19 +43,26 @@ import hashlib
 import json
 import math
 import re
+import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
 from packages.integrations.mlflow.client import (
     MlflowClient,
     MlflowClientError,
     TrackingRejectedError,
     TrackingUnavailableError,
+    run_metrics,
+    run_params,
     run_tags,
 )
 
 __all__ = [
+    "DEFAULT_RETRY_POLICY",
+    "RetryPolicy",
+    "RunDriftError",
     "AmbiguousRunError",
     "OutboxEntry",
     "OutboxStore",
@@ -64,6 +71,7 @@ __all__ = [
     "SealedExportRefusedError",
     "SyncState",
     "TrackedRun",
+    "compute_run_drift",
     "experiment_name",
     "logical_run_key",
     "sync_pending",
@@ -93,6 +101,46 @@ class AmbiguousRunError(MlflowClientError):
 
 class RunConflictError(MlflowClientError):
     """A completed MLflow run holds a different payload or tenant."""
+
+
+class RunDriftError(RunConflictError):
+    """A completed MLflow run no longer matches the Factory payload field by
+    field (hashes, params, metrics). Never overwritten, never SYNCED."""
+
+    def __init__(self, drift: tuple[str, ...]) -> None:
+        super().__init__("run drift: " + ", ".join(drift))
+        self.drift = drift
+
+
+@dataclass(frozen=True)
+class RetryPolicy:
+    """Bounded retries (Section 77.5): after `max_attempts` unavailable
+    outcomes an entry is FAILED and visible, never retried forever. The next
+    attempt is not due before an exponential, capped delay."""
+
+    max_attempts: int = 5
+    base_delay_ms: int = 1_000
+    max_delay_ms: int = 300_000
+
+    def __post_init__(self) -> None:
+        for name in ("max_attempts", "base_delay_ms", "max_delay_ms"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"{name} must be a positive int")
+        if self.max_delay_ms < self.base_delay_ms:
+            raise ValueError("max_delay_ms must be >= base_delay_ms")
+
+    def delay_ms(self, attempts: int) -> int:
+        """Delay after the `attempts`-th failed attempt (1-based)."""
+        exponent = min(max(attempts, 1) - 1, 32)
+        return min(self.max_delay_ms, self.base_delay_ms * (2**exponent))
+
+
+DEFAULT_RETRY_POLICY = RetryPolicy()
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
 
 
 class SyncState:
@@ -199,16 +247,25 @@ class OutboxEntry:
     attempts: int = 0
     mlflow_run_id: str | None = None
     last_error: str | None = None
+    next_retry_at_ms: int | None = None
+    drift: tuple[str, ...] = ()
 
 
 class OutboxStore(Protocol):
+    # The retry bound this store's entries are held to.
+    policy: RetryPolicy
+
     def add(self, run: TrackedRun) -> OutboxEntry: ...
     def pending(self) -> list[OutboxEntry]: ...
+    # Persists the outcome of one `sync_run` (state, attempts, error, next
+    # retry time, external id).
+    def record(self, entry: OutboxEntry) -> None: ...
 
 
 @dataclass
 class InMemoryOutbox:
     entries: dict[str, OutboxEntry] = field(default_factory=dict)
+    policy: RetryPolicy = DEFAULT_RETRY_POLICY
 
     def add(self, run: TrackedRun) -> OutboxEntry:
         entry_id = logical_run_key(run.organization_id, run.job_id)
@@ -224,8 +281,41 @@ class InMemoryOutbox:
     def pending(self) -> list[OutboxEntry]:
         return [e for e in self.entries.values() if e.state == SyncState.PENDING]
 
+    def record(self, entry: OutboxEntry) -> None:
+        self.entries[entry.entry_id] = entry
 
-def _find_or_create_run(client: MlflowClient, run: TrackedRun) -> tuple[str, dict[str, str]]:
+
+def _field_drift(label: str, expected: Mapping[str, Any], actual: Mapping[str, Any]) -> list[str]:
+    """Missing, changed and extra keys of one field family, by exact key and
+    exact value (no case or whitespace folding)."""
+    drift = [f"{label}_missing:{k}" for k in expected if k not in actual]
+    drift += [f"{label}_changed:{k}" for k, v in expected.items() if k in actual and actual[k] != v]
+    drift += [f"{label}_extra:{k}" for k in actual if k not in expected]
+    return drift
+
+
+def compute_run_drift(record: dict[str, object], run: TrackedRun) -> tuple[str, ...]:
+    """Field-level comparison of a completed MLflow run with the Factory
+    payload (Section 78.3: never rely solely on mutable tags). Returns sorted
+    drift codes; empty means the run still equals what was projected."""
+    tags = run_tags(record)
+    drift = _field_drift(
+        "hash",
+        {f"factory.hash.{k}": v for k, v in run.hashes},
+        {k: v for k, v in tags.items() if k.startswith("factory.hash.")},
+    )
+    drift += _field_drift("param", dict(run.params), run_params(record))
+    drift += _field_drift("metric", {k: float(v) for k, v in run.metrics}, run_metrics(record))
+    info = record.get("info")
+    status = info.get("status") if isinstance(info, dict) else None
+    if status != run.status:
+        drift.append("status_changed")
+    return tuple(sorted(drift))
+
+
+def _find_or_create_run(
+    client: MlflowClient, run: TrackedRun
+) -> tuple[str, dict[str, str], dict[str, object]]:
     experiment_id = client.get_or_create_experiment(experiment_name(run.organization_id))
     key = logical_run_key(run.organization_id, run.job_id)
     matches = client.search_runs_by_tag(experiment_id, TAG_KEY, key)
@@ -238,27 +328,38 @@ def _find_or_create_run(client: MlflowClient, run: TrackedRun) -> tuple[str, dic
         tags = run_tags(found)
         if tags.get(TAG_ORG) != str(run.organization_id) or not isinstance(run_id, str):
             raise RunConflictError("matched run belongs to a different tenant")
-        return run_id, tags
+        return run_id, tags, found
     run_id = client.create_run(
         experiment_id,
         run_name=key,
         tags={TAG_KEY: key, TAG_ORG: str(run.organization_id)},
     )
-    return run_id, {}
+    return run_id, {}, {}
 
 
-def sync_run(client: MlflowClient, entry: OutboxEntry) -> OutboxEntry:
+def sync_run(
+    client: MlflowClient,
+    entry: OutboxEntry,
+    *,
+    now_ms: int | None = None,
+    policy: RetryPolicy = DEFAULT_RETRY_POLICY,
+) -> OutboxEntry:
     """Projects one outbox entry into MLflow, idempotently. Never raises for
     an expected failure: the entry's state says what happened."""
+    now = _now_ms() if now_ms is None else now_ms
     entry.attempts += 1
     run = entry.run
     try:
-        run_id, tags = _find_or_create_run(client, run)
+        found = _find_or_create_run(client, run)
+        run_id, tags, record = found
         entry.mlflow_run_id = run_id
         completed = tags.get(TAG_PAYLOAD)
         if completed is not None:
             if completed != run.payload_sha256():
                 raise RunConflictError("completed MLflow run holds a different payload")
+            drift = compute_run_drift(record, run)
+            if drift:
+                raise RunDriftError(drift)
         else:
             client.log_batch(
                 run_id,
@@ -270,24 +371,48 @@ def sync_run(client: MlflowClient, entry: OutboxEntry) -> OutboxEntry:
             client.log_batch(run_id, tags={TAG_PAYLOAD: run.payload_sha256()})
         entry.state = SyncState.SYNCED
         entry.last_error = None
+        entry.next_retry_at_ms = None
+        entry.drift = ()
     except TrackingUnavailableError as exc:
-        entry.state = SyncState.PENDING
-        entry.last_error = str(exc)
+        if entry.attempts >= policy.max_attempts:
+            entry.state = SyncState.FAILED
+            entry.last_error = f"retry limit reached after {entry.attempts} attempts: {exc}"
+            entry.next_retry_at_ms = None
+        else:
+            entry.state = SyncState.PENDING
+            entry.last_error = str(exc)
+            entry.next_retry_at_ms = now + policy.delay_ms(entry.attempts)
     except AmbiguousRunError as exc:
         entry.state = SyncState.AMBIGUOUS
         entry.last_error = str(exc)
+    except RunDriftError as exc:
+        entry.state = SyncState.FAILED
+        entry.last_error = str(exc)
+        entry.drift = exc.drift
     except MlflowClientError as exc:
         entry.state = SyncState.FAILED
         entry.last_error = str(exc)
     return entry
 
 
-def sync_pending(client: MlflowClient, store: OutboxStore) -> list[OutboxEntry]:
-    """Replays every pending entry. Stops early on an outage: the remaining
-    entries stay pending with their results intact."""
+def sync_pending(
+    client: MlflowClient,
+    store: OutboxStore,
+    *,
+    now_ms: int | None = None,
+    policy: RetryPolicy | None = None,
+) -> list[OutboxEntry]:
+    """Replays every pending entry whose retry time has come, under the
+    store's own retry policy unless one is given. Stops early on an outage:
+    the remaining entries stay pending with their results intact."""
+    now = _now_ms() if now_ms is None else now_ms
+    bound = store.policy if policy is None else policy
     done = []
     for entry in store.pending():
-        done.append(sync_run(client, entry))
+        if entry.next_retry_at_ms is not None and entry.next_retry_at_ms > now:
+            continue
+        done.append(sync_run(client, entry, now_ms=now, policy=bound))
+        store.record(entry)
         if entry.state == SyncState.PENDING:
             break
     return done

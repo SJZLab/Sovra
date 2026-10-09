@@ -78,6 +78,7 @@ FAILURES: list[str] = []
 PREFIXES = ("s3://sovra-model-artifacts/",)
 ORG_A, ORG_B, JOB, MV = uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
 RUN_ID = "a" * 32
+LATER_MS = 10**15  # a retry time that is certainly due
 
 
 def check(criterion_id: str, description: str, condition: bool) -> None:
@@ -496,10 +497,17 @@ class Fake(MlflowClient):
         for run in self.runs:
             if run["info"]["run_id"] == run_id:
                 run["data"]["tags"].extend(tag_list(tags or {}))
+                run["data"].setdefault("params", []).extend(tag_list(params or {}))
+                run["data"].setdefault("metrics", []).extend(
+                    {"key": k, "value": v, "timestamp": t, "step": st} for k, v, t, st in metrics
+                )
                 run.setdefault("logged", []).append((list(metrics), dict(params or {})))
 
     def finish_run(self, run_id: str, *, status: str, end_time_ms: int) -> None:
         self._maybe("finish")
+        for run in self.runs:
+            if run["info"]["run_id"] == run_id:
+                run["info"]["status"] = status
 
     def ensure_registered_model(self, name: str, tags: Mapping[str, str]) -> None:
         self._maybe("ensure_model")
@@ -529,6 +537,7 @@ class Fake(MlflowClient):
             "version": str(len(self.versions) + 1),
             "source": source,
             "run_id": run_id,
+            "status": "READY",
             "tags": tag_list(tags),
         }
         self.versions.append(record)
@@ -720,7 +729,7 @@ def test_outbox_and_sync() -> None:
         e3.mlflow_run_id is not None and e3.state == SyncState.PENDING,
     )
     f3.fail.clear()
-    sync_pending(f3, b3)
+    sync_pending(f3, b3, now_ms=LATER_MS)
     check(
         "R005-R",
         "restore completes without duplicate run",
@@ -775,7 +784,8 @@ def test_outbox_and_sync() -> None:
     check(
         "R005-R",
         "sync_pending drains after recovery",
-        all(e.state == SyncState.SYNCED for e in sync_pending(f7, b7)) and b7.pending() == [],
+        all(e.state == SyncState.SYNCED for e in sync_pending(f7, b7, now_ms=LATER_MS))
+        and b7.pending() == [],
     )
     # a non-pending failure does not stop the rest
     f8, b8 = Fake(), InMemoryOutbox()
