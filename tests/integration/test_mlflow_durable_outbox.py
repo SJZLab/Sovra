@@ -411,6 +411,11 @@ def main() -> int:
         )
         check(
             "R2-D2",
+            "the recorded error survives the restart on the buffered entry",
+            buffered[0].last_error is not None and "unreachable" in buffered[0].last_error,
+        )
+        check(
+            "R2-D2",
             "the retry time survives the restart",
             (buffered[0].next_retry_at_ms or 0) >= t0 + pol.delay_ms(1) - 5000,
         )
