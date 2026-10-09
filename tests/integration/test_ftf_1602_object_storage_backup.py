@@ -952,7 +952,9 @@ def main() -> None:
     for name, fn in sorted(globals().items()):
         if not (name.startswith("test_") and callable(fn)):
             continue
-        if name not in {
+        if name in {
+            "test_concurrent_creates_never_collide_on_backup_id",
+            "test_pinned_record_read_ignores_a_transient_unretained_swap",
             "test_record_relist_identity_swap_is_refused_on_real_server",
             "test_shared_backup_id_collision_is_never_silently_successful",
         }:
