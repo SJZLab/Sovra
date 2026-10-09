@@ -1,5 +1,21 @@
 # BLOCKER.md
 
+## RESOLVED 2026-10-09T08:00Z — GitHub Actions billing stop (was LIVE 2026-10-08T23:41Z)
+
+**Resolution:** confirmed genuinely cleared by real CI runs on four separate PRs within the same
+few minutes, each showing actual runner activity (jobs taking minutes, real `job_id`s doing real
+work — `uv sync`, pytest, real Postgres/SeaweedFS integration jobs — not the `runner_id: 0`/
+2-3-second instant-failure signature): PR #669 (`ci-verdict` success, run `37899449087`), PR #663
+(`ci-verdict` success, run `37899466211`), PR #665 (`ci-verdict` success, run `37899462741`), and
+PR #668 (same real-runner signature after a relay-policy fix unrelated to the outage). All four
+merged. This independently reproduces the clearing another session first spotted (its own
+`Merge main into relay/...` commits on #663/#665/#668/#669, citing run `37897733542` passing at
+07:12Z) rather than merely trusting that claim. The owner evidently did restore payment or raise
+the spending limit as this entry's own "Owner action needed" asked. No further owner action
+needed; this entry is closed.
+
+**Original entry, preserved for context:**
+
 ## LIVE 2026-10-08T23:41Z — GitHub Actions billing stop (root cause confirmed; owner action needed)
 
 **UPDATE 2026-10-09T00:07Z, root cause confirmed by an independent session:**
