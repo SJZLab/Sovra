@@ -2017,6 +2017,18 @@ def test_tool_choice_cannot_name_a_hosted_tool() -> None:
             f"tool_choice {value!r} is an unknown_request_shape denial at tool_choice (got {got})",
             got == [(CODE_UNKNOWN_REQUEST_SHAPE, "tool_choice")],
         )
+    full = {"type": "function", "function": {"name": "lookup_order"}, "name": "lookup_order"}
+    check(
+        cid,
+        "tool_choice with every documented key is allowed",
+        _allowed(_chat_body(tool_choice=full)),
+    )
+    check(
+        cid,
+        "tool_choice with an extra key is denied",
+        _paths(_chat_body(tool_choice={**full, "server": "x"}))
+        == [(CODE_UNKNOWN_REQUEST_SHAPE, "tool_choice")],
+    )
     for value in (
         "auto",
         "none",
