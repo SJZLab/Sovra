@@ -919,14 +919,9 @@ def _check_reserved(trace: TrainingTrace, sealed: _SealedSets) -> None:
     """Case/whitespace-insensitive on both sides, so a re-cased copy of a
     sealed id cannot slip past the held-out guard. `sealed` is the entry snapshot
     from `_snapshot_reserved`."""
-    answer_hash = _norm(hashlib.sha256(_raw_final_answer(trace).encode("utf-8")).hexdigest())
-    probes = (
-        _norm(trace.group_id),
-        _norm(trace.template_id),
-        _norm(trace.entity_title),
-        answer_hash,
-    )
-    if any(probe in members for probe, members in zip(probes, sealed, strict=True)):
+    answer_hash = hashlib.sha256(_raw_final_answer(trace).encode("utf-8")).hexdigest()
+    probes = (trace.group_id, trace.template_id, trace.entity_title, answer_hash)
+    if any(_norm(probe) in members for probe, members in zip(probes, sealed, strict=True)):
         raise HeldOutLeakageError(f"{trace.trace_id}: overlaps the sealed final suite")
 
 
