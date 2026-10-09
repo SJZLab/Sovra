@@ -831,6 +831,10 @@ class NoAdd:
     def commit(self): pass
     def execute(self, stmt, params=None): pass
     new = dirty = deleted = ()
+class NoTracked:
+    def add(self, row): pass
+    def commit(self): pass
+    def execute(self, stmt, params=None): pass
 class NoExecute:
     def add(self, row): pass
     def commit(self): pass
@@ -929,6 +933,7 @@ for name, c in (
     ("session_nocommit", AuditContext(NoCommit(), ORG, "system", "a", "r")),
     ("session_noadd", AuditContext(NoAdd(), ORG, "system", "a", "r")),
     ("session_noexecute", AuditContext(NoExecute(), ORG, "system", "a", "r")),
+    ("session_notracked", AuditContext(NoTracked(), ORG, "system", "a", "r")),
     ("org_str", AuditContext(recb, str(ORG), "system", "a", "r")),
     ("actor_type", AuditContext(recb, ORG, "admin", "a", "r")),
     ("actor_id", AuditContext(recb, ORG, "system", "a b", "r")),
@@ -1157,6 +1162,19 @@ _MUTATIONS: list[tuple[str, str, str, tuple[str, ...]]] = [
         ("bad_audit_session_noexecute",),
     ),
     (
+        "audit-session-tracking-attrs-unchecked",
+        r"        if getattr\(audit\.session, tracked, None\) is None:\n",
+        "        if False:\n",
+        ("bad_audit_session_notracked",),
+    ),
+    (
+        "audit-session-tracking-attrs-no-raise",
+        r"(getattr\(audit\.session, tracked, None\) is None:\n)            raise "
+        r'InvalidProviderRequestError\("audit session must be a database session"\)',
+        r"\1            pass",
+        ("bad_audit_session_notracked",),
+    ),
+    (
         "tenant-not-rebound-after-commit",
         r"        if tenant:\n",
         "        if False:\n",
@@ -1330,6 +1348,7 @@ def test_each_guard_is_load_bearing() -> None:
                 "session_nocommit",
                 "session_noadd",
                 "session_noexecute",
+                "session_notracked",
                 "org_str",
                 "actor_type",
                 "actor_id",
