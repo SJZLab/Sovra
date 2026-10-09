@@ -9792,7 +9792,7 @@ FTF-0908:
   certification_state: PROVISIONAL
   criticality: MUST
   description: External provider denial
-  evidence_hash: 7ab132f7704339adb87c00aeec5bb19c1b12cb85
+  evidence_hash: 81921eb001f6db8c728c62c7916f3e99f5901f91
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-14; scenarios=Q23, Q25; deps=FTF-0203, FTF-0901,
@@ -9810,7 +9810,15 @@ FTF-0908:
     before the error is raised (round 2: under `tenant_scoped_session` the propagated error
     otherwise rolls the audit row back; real-Postgres proof
     `tests/integration/test_ftf_0908_external_provider_denial.py`, CI job
-    `external-provider-denial-integration`). The AuditContext is validated up front
+    `external-provider-denial-integration`). Round 3: the commit ends the transaction holding the
+    session's transaction-local tenant context, so the tenant read from the session up front is
+    bound again right after the commit (two denials in one `tenant_scoped_session` give two typed
+    denials, two durable rows and unchanged tenant visibility), and a session carrying uncommitted
+    work (new/dirty/deleted ORM state, or any write already flushed in the open transaction, read
+    via `txid_current_if_assigned()`) is refused with `external_provider_invalid_request` before
+    any decision, so a denial never commits the caller's pending row. The audit is still written
+    on the caller's session (not an independent transaction): a caller must hold no uncommitted
+    work, which is now enforced rather than documented. The AuditContext is validated up front
     (`external_provider_invalid_request`). Unknown, str-subclass or unhashable values raise
     `external_provider_invalid_request`. No network call (counting socket test shows zero).
     UNWIRED: no live caller yet (training/inference submit paths are later tasks) and no persisted
