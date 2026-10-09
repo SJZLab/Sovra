@@ -11804,7 +11804,7 @@ FTF-1703:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Training dataset
-  evidence_hash: be9ae27023971b483a6df3d044089cafc6ed49e1
+  evidence_hash: c16ba1d8490ba5c4f323735a372cc26a813cc434
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0506, FTF-1701,
@@ -11855,6 +11855,18 @@ FTF-1703:
     check). Every pre-existing test still passes unchanged. Fault -> RED table and the Law-1
     self-attack (production reverted, new tests shown to fail against it, then restored) are in
     docs/certifications/submissions/2026-10-08T2340Z-FTF-1703-r4.md.
+    Round 5 (L2 return, production + tests). CORRECTION (Law 2): the round-4 note above says
+    build_training_dataset re-ran the secret scan and held-out check on the regenerated object; it
+    did not (round 4 deleted those calls as dead code). Round 5 adds them for real:
+    `_scan_secrets(regenerated)` and `_check_reserved(regenerated, reserved)` now run on the object
+    that is admitted, each with a test that goes RED when the call is removed. `_require_trace_shape`
+    now requires `type(vars(trace)) is dict` and reads the instance dict once into a snapshot, so a
+    dict-subclass `__dict__` (T1: __iter__ flips the trace to a reserved generator index; T1b: hides
+    a shadowed to_dict) is refused with TraceVerificationError. A ReviewDecision subclass is refused
+    by the named exact-type check (F6 test). Disclosed limitation, not a return reason: a reviewer
+    id with a zero-width or fullwidth "generator:" prefix is accepted as independent until the
+    Argilla review binding. Fault -> RED table in
+    docs/certifications/submissions/2026-10-09T1200Z-FTF-1703-r5.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1703.py
