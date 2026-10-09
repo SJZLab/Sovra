@@ -10727,3 +10727,21 @@ data_exposure OK).
   removals (F5, F6), float tolerance (F8), plain == on declared values (F10). Reason codes and the tuple digest are
   missing; cyclic input raises a bare RecursionError; the declaration is mutable after validation.
 - CI note: GitHub Actions refused all jobs for billing from ~23:05Z 2026-10-08 to ~07:20Z 2026-10-09.
+
+## 2026-10-09T10:06Z — RETURNED: FTF-0903 (r7), FTF-1703 (r5), FTF-0516-P1 (r3)
+Independent verifiers on the merge commits; CI on each PR head green (ci-verdict success, proving-test log lines read
+through the GitHub MCP); gates clean (product_truth 47/47 locally, validate_spec --strict, data_exposure OK). No
+producer session matches the certifier.
+- **FTF-0903: RETURNED** (round 6 → 7; tests only; #663, 5589cc662481e52f1e791cde9a6bfd3df364a1d8). Round-6 C1/C3/C4/C5
+  RED. GREEN: cause/note/attribute and KeyError-context faults on the event-kind, fields and field-name paths (the
+  META-LEAK suffix is checked at one call site only) and a log line echoing the value (L1). Ruling: certifiable once
+  every refusal site is covered by the shared META-LEAK check plus log capture.
+- **FTF-1703: RETURNED** (round 4 → 5; #665, 3bf864aa3610e620239d15bfa60eec2f1329aa83). Reproduced held-out leakage:
+  a dict-subclass `__dict__` flips the trace to a reserved generator index after the only reserved check (T1).
+  Round 4 deleted the regenerated-object reserved check and secret scan the DoD required, while the notes still claim
+  them (Law 2). GREEN: exact ReviewDecision type (F6).
+- **FTF-0516-P1: RETURNED** (round 2 → 3; tests only; #671, 167ec9703f29af89dce421f648f0c5f8e7117847). Real detector
+  reports, V10, V11 and NUL handling fixed. GREEN: the lone-surrogate guard (N2, N6; 500s return on real routes) and
+  the detector_versions object-type clause (N8). Route-level NUL tests missing.
+- Pending: FTF-0616 r7 (#669), FTF-0309-P1 r3 (#667), FTF-0908 r2 (#670); queued next: FTF-H010-P1 r2 (#668),
+  FTF-R004-P1 r2 (#675), FTF-0501 r2 (#658).

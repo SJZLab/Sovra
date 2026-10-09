@@ -24601,3 +24601,7 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-09T07:48Z — Control plane: FTF-R004-P1 returned (135/302 unchanged)
 - **Returned:** FTF-R004-P1 r2 (0n): content-free capture, exact compares, bridge rewrite and stale declaration block, reason codes.
 - **CI:** recovered ~07:20Z after the billing outage.
+
+## 2026-10-09T10:06Z — Control plane: 3 returned (135/302 unchanged)
+- **Returned:** FTF-0903 r7 (0c), FTF-1703 r5 (0g), FTF-0516-P1 r3 (0l).
+- **ci-verdict:** the 10 relay merges since CI recovered (#658, #663, #665, #667, #668, #669, #670, #671, #673, #675) all landed on a green ci-verdict.
