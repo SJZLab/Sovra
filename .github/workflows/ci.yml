@@ -492,6 +492,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_h010_p1.py
       - name: FTF-R004-P1 negative-test proof (Inspect bridge generation-config parity comparator, no DB required)
         run: uv run python3 tests/tasks/test_ftf_r004_p1.py
+      - name: FTF-R004-P2 negative-test proof (Inspect bridge provider-side execution boundary + pre-filter attempt evidence, no DB/network required)
+        run: uv run python3 tests/tasks/test_ftf_r004_p2.py
       - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
         run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check
