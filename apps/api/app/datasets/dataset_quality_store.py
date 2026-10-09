@@ -460,10 +460,23 @@ def _report_digest(
 
 
 def _is_clean_text(value: object, max_length: int) -> bool:
-    """A non-blank exact `str` with no leading or trailing whitespace."""
+    """A non-blank exact `str` with no leading or trailing whitespace, holding
+    only characters Postgres `text` can actually store. Postgres text columns
+    refuse a NUL byte outright (psycopg raises a raw `DataError`, not this
+    module's own typed error), and a lone UTF-16 surrogate cannot be encoded
+    to the UTF-8 the wire protocol sends -- both are refused here, before
+    anything reaches the database."""
     if type(value) is not str:
         return False
-    return bool(value) and value == value.strip() and len(value) <= max_length
+    if not (bool(value) and value == value.strip() and len(value) <= max_length):
+        return False
+    if "\x00" in value:
+        return False
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def _require_detector_versions(value: object) -> dict[str, str]:
