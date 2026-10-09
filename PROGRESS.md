@@ -11,7 +11,7 @@ Updated: 2026-10-09T10:26Z. Source: `python3 scripts/status.py` on main.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
 - **2026-10-09T10:26Z:**
-  - CERTIFIED slice FTF-0309-P1 (training-capability read API). It is wired: FTF-0309's proving_symbol is the route, and product-true is now 46 on main. The FTF-0309 UI is now in the Backlog.
+  - CERTIFIED slice FTF-0309-P1 (training-capability read API). It is wired: FTF-0309's proving_symbol is the route, so product_truth_check counts it (47/47 checked symbols); the certified product-true figure stays 45 until FTF-0309 itself certifies. The FTF-0309 UI is now in the Backlog.
   - Returned: FTF-0908 r3 (a denial's commit drops the caller's tenant context and commits its pending work), FTF-0903 r7, FTF-1703 r5, FTF-0516-P1 r3.
   - CI: GitHub Actions refused all jobs for billing from 23:05Z 2026-10-08 to about 07:20Z 2026-10-09; recovered.
 - **2026-10-08T22:02Z:**
