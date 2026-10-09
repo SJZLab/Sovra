@@ -45,10 +45,6 @@ sys.path.insert(0, str(API_ROOT))
 
 import uvicorn  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
-from packages.litellm_client.v1_model_info_enrichment import (  # noqa: E402
-    EnrichmentState,
-    ModelInfoEnrichmentResult,
-)
 from packages.litellm_client.v1_models_discovery import (  # noqa: E402
     DiscoveredModel,
     DiscoveryState,
@@ -339,9 +335,6 @@ def main() -> None:
             role_lookup=role_lookup,
             secret_manager_config_factory=lambda: None,
             discovery_function=discovery,
-            enrichment_function=lambda **kwargs: ModelInfoEnrichmentResult(
-                state=EnrichmentState.COMPLETED, entries=(), detail="", checked_at=_NOW
-            ),
         ),
     ):
         app.include_router(router)
@@ -434,6 +427,35 @@ def main() -> None:
             and unmapped.json()["capability"] == "unknown"
             and unmapped.json()["trainable"] is False
             and unmapped.json()["catalog_version"] == 0,
+        )
+
+        # Exact, case-sensitive alias matching (QUEUE 0k round 2): only the exact spelling
+        # "trainable-alias" was mapped above, against the REAL get_entry SQL lookup.
+        for variant in ("Trainable-Alias", "TRAINABLE-ALIAS", "trainable-alias "):
+            cased = _request(
+                base,
+                "GET",
+                cap_path(org1_id, conn1_id, urllib.parse.quote(variant, safe=""), proj1_id),
+                principal="viewer1",
+            )
+            check(
+                CID,
+                f"model_name {variant!r} is not matched to the real 'trainable-alias' mapping "
+                f"on the real server: unknown, null artifact ({cased.status})",
+                cased.status == 200
+                and cased.json()["capability"] == "unknown"
+                and cased.json()["artifact"]["artifact_id"] is None,
+            )
+        exact = _request(
+            base,
+            "GET",
+            cap_path(org1_id, conn1_id, "trainable-alias", proj1_id),
+            principal="viewer1",
+        )
+        check(
+            CID,
+            "the exact original spelling still matches on the real server",
+            exact.status == 200 and exact.json()["capability"] == "trainable_open_weight",
         )
 
         discovery.calls = 0
