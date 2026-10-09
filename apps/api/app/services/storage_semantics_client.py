@@ -605,8 +605,8 @@ class S3Client:
         query = {"uploads": "", "prefix": prefix, "max-uploads": str(max_uploads)}
         if key_marker:
             query["key-marker"] = key_marker
-            if upload_id_marker:
-                query["upload-id-marker"] = upload_id_marker
+        if upload_id_marker:
+            query["upload-id-marker"] = upload_id_marker
         _, _, body = self._request("GET", bucket, query=query)
         parsed = _xml_to_dict(ET.fromstring(body))  # noqa: S314
         if not isinstance(parsed, dict):
@@ -619,9 +619,14 @@ class S3Client:
             return page, None
         next_key = parsed.get("NextKeyMarker")
         next_upload = parsed.get("NextUploadIdMarker")
-        if not (isinstance(next_key, str) and next_key and isinstance(next_upload, str)):
-            # Some servers (SeaweedFS 3.99 was seen doing this) flag the page truncated but omit or
-            # empty a marker. S3's own rule is that the next marker is the last entry returned.
+        if isinstance(next_key, str) and next_key and isinstance(next_upload, str):
+            pass  # AWS S3: the pair names the position
+        elif not next_key and isinstance(next_upload, str) and next_upload:
+            # SeaweedFS 3.99 lists in upload-id order and pages by `upload-id-marker` alone (it
+            # answers a key-marker with an empty page): carry the upload id and no key.
+            next_key = ""
+        else:
+            # Neither style: S3's rule is that the next marker is the last entry returned.
             last = page[-1] if page else {}
             next_key, next_upload = last.get("Key"), last.get("UploadId")
             if not (isinstance(next_key, str) and next_key and isinstance(next_upload, str)):

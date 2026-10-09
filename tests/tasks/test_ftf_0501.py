@@ -129,6 +129,7 @@ class FakeS3:
         self.head_lies_about_size: int | None = None
         self.listing_override: str | None = None
         self.stuck_listing = False
+        self.seaweed_paging = False  # list by upload id; page by upload-id-marker alone
         fake = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -265,14 +266,27 @@ class FakeS3:
         key_marker = query.get("key-marker", "")
         id_marker = query.get("upload-id-marker", "")
         limit = int(query.get("max-uploads", "1000"))
-        ordered = sorted(
-            (u["key"], uid, u)
-            for uid, u in self.uploads.items()
-            if u["key"].startswith(prefix)
-            and (
-                u["key"] > key_marker or (u["key"] == key_marker and id_marker and uid > id_marker)
+        if self.seaweed_paging:
+            # What SeaweedFS 3.99 was observed to do: ordered by upload id; `upload-id-marker`
+            # alone pages; a key-marker narrows to that one key instead of paging past it.
+            ordered = sorted(
+                (u["key"], uid, u)
+                for uid, u in self.uploads.items()
+                if u["key"].startswith(prefix)
+                and (not key_marker or u["key"] == key_marker)
+                and (not id_marker or uid > id_marker)
             )
-        )
+            ordered.sort(key=lambda item: item[1])
+        else:
+            ordered = sorted(
+                (u["key"], uid, u)
+                for uid, u in self.uploads.items()
+                if u["key"].startswith(prefix)
+                and (
+                    u["key"] > key_marker
+                    or (u["key"] == key_marker and id_marker and uid > id_marker)
+                )
+            )
         page, rest = ordered[:limit], ordered[limit:]
         items = "".join(
             f"<Upload><Key>{k}</Key><UploadId>{uid}</UploadId>"
@@ -286,6 +300,11 @@ class FakeS3:
             if rest
             else "<IsTruncated>false</IsTruncated>"
         )
+        if self.seaweed_paging and rest:
+            tail = (
+                f"<IsTruncated>true</IsTruncated><KeyMarker></KeyMarker>"
+                f"<NextUploadIdMarker>{page[-1][1]}</NextUploadIdMarker>"
+            )
         if self.stuck_listing:  # a server that never advances its markers
             tail = (
                 f"<IsTruncated>true</IsTruncated><NextKeyMarker>{key_marker or 'k'}</NextKeyMarker>"
@@ -5264,11 +5283,24 @@ def test_s8_the_listing_page_is_parsed_strictly() -> None:
             "<Upload><Key>tenants/k1</Key><UploadId>u1</UploadId></Upload>"
             "<Upload><Key>tenants/k2</Key><UploadId>u2</UploadId></Upload>"
         )
-        for label, tail in (
-            ("no markers at all", ""),
-            ("no NextKeyMarker", "<NextUploadIdMarker>zz</NextUploadIdMarker>"),
-            ("an empty NextKeyMarker", "<NextKeyMarker></NextKeyMarker>"),
-            ("no NextUploadIdMarker", "<NextKeyMarker>tenants/k2</NextKeyMarker>"),
+        for label, tail, expected in (
+            ("no markers at all", "", ("tenants/k2", "u2")),
+            (
+                "an empty NextKeyMarker and no upload id",
+                "<NextKeyMarker></NextKeyMarker>",
+                ("tenants/k2", "u2"),
+            ),
+            (
+                "no NextUploadIdMarker",
+                "<NextKeyMarker>tenants/k2</NextKeyMarker>",
+                ("tenants/k2", "u2"),
+            ),
+            # SeaweedFS style: an upload id and no key -> page by the upload id alone
+            (
+                "only a NextUploadIdMarker",
+                "<NextUploadIdMarker>zz</NextUploadIdMarker>",
+                ("", "zz"),
+            ),
         ):
             fake.listing_override = (
                 f"<ListMultipartUploadsResult>{entry}<IsTruncated>true</IsTruncated>{tail}"
@@ -5279,8 +5311,8 @@ def test_s8_the_listing_page_is_parsed_strictly() -> None:
             )
             check(
                 f"{CID}-S8",
-                f"{label}: the last entry returned becomes the next marker",
-                len(got_page) == 2 and got_next == ("tenants/k2", "u2"),
+                f"{label}: next markers are {expected}",
+                len(got_page) == 2 and got_next == expected,
             )
         for label, tail in (
             ("no markers", ""),
@@ -5325,6 +5357,47 @@ def test_s8_the_listing_page_is_parsed_strictly() -> None:
             _plant(fake, _session_key(letter), initiated=_iso(datetime.now(UTC)))
         result = sweeper.sweep_abandoned_uploads(settings.client(), settings, page_size=1)
         check(f"{CID}-S8", "page_size=1 takes three pages for three uploads", result.pages == 3)
+
+
+def test_s10_the_sweeper_pages_a_server_that_pages_by_upload_id_alone() -> None:
+    """Real SeaweedFS 3.99 (CI evidence): listing in upload-id order, `NextUploadIdMarker` only,
+    and a key-marker answers with an empty page -- the markers must follow that."""
+    now = datetime(2026, 10, 8, 12, 0, 0, tzinfo=UTC)
+    stale = _iso(now - timedelta(days=3))
+    young = _iso(now - timedelta(hours=1))
+    with FakeS3() as fake:
+        fake.seaweed_paging = True
+        fillers = [_plant(fake, _session_key("0"), initiated=young) for _ in range(1004)]
+        old = _plant(fake, _session_key("f"), initiated=stale)
+        settings = fake.settings()
+        client = settings.client()
+        page, nxt = client.list_multipart_uploads_page(settings.bucket, prefix="tenants/")
+        check(
+            f"{CID}-S10",
+            "the first page is full and names an upload-id-only marker",
+            (
+                len(page) == 1000
+                and nxt is not None
+                and nxt[0] == ""
+                and nxt[1] == page[-1]["UploadId"]
+            ),
+        )
+        assert nxt is not None
+        page2, nxt2 = client.list_multipart_uploads_page(
+            settings.bucket, prefix="tenants/", key_marker=nxt[0], upload_id_marker=nxt[1]
+        )
+        check(
+            f"{CID}-S10",
+            "the second page holds the other five and ends",
+            len(page2) == 5 and nxt2 is None,
+        )
+        result = sweeper.sweep_abandoned_uploads(client, settings, now=now)
+        check(
+            f"{CID}-S10",
+            "every upload is listed once and the stale one is aborted",
+            result.listed == 1005 and result.aborted == 1 and old not in fake.uploads,
+        )
+        check(f"{CID}-S10", "the young uploads survive", set(fillers) <= set(fake.uploads))
 
 
 def test_s9_the_session_expiry_lookup_reads_only_the_named_session() -> None:
