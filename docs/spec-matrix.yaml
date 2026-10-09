@@ -9718,7 +9718,7 @@ FTF-0908:
   certification_state: PROVISIONAL
   criticality: MUST
   description: External provider denial
-  evidence_hash: 7ab132f7704339adb87c00aeec5bb19c1b12cb85
+  evidence_hash: 9e60bf985dc9e1d67ba50fc8e4ba9a4a410f8f70
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-14; scenarios=Q23, Q25; deps=FTF-0203, FTF-0901,
@@ -9732,17 +9732,29 @@ FTF-0908:
     approval's account and region must equal the request's target account and region
     (`external_provider_approval_mismatch`). A "private cloud account" label is data only and never
     approves. The denial audit reason is content-free (profile, surface, purpose, code) and is
-    written through FTF-0104 `write_audit_event` when an AuditContext is given, then committed
-    before the error is raised (round 2: under `tenant_scoped_session` the propagated error
-    otherwise rolls the audit row back; real-Postgres proof
-    `tests/integration/test_ftf_0908_external_provider_denial.py`, CI job
-    `external-provider-denial-integration`). The AuditContext is validated up front
-    (`external_provider_invalid_request`). Unknown, str-subclass or unhashable values raise
-    `external_provider_invalid_request`. No network call (counting socket test shows zero).
-    UNWIRED: no live caller yet (training/inference submit paths are later tasks) and no persisted
-    approvals yet, so a ProviderApproval is not tenant-bound and `approved_by` is not a verified
-    principal -- blank proving_symbol, same precedent as FTF-0901/FTF-0902. Not self-certified
-    (Law 4).
+    written through FTF-0104 `write_audit_event` when an AuditContext is given. Round 4
+    (2026-10-09, fixes the round 2/3 -> 4 return): committing the audit directly on the caller's own
+    `tenant_scoped_session` session ended that transaction early -- discarding its `SET LOCAL`
+    tenant context (so a second denial in the same session raised a raw row-level-security error
+    instead of a typed one, and every later read in that session saw 0 tenant rows) and sweeping in
+    whatever the caller had not yet committed. `_audit_denial_independently` now writes and commits
+    the audit on its own session/transaction/connection when `AuditContext.session` is a real
+    SQLAlchemy `Session` -- never the caller's -- bound to the caller's own currently-set tenant
+    context (read, never written), so a mismatched `AuditContext.organization_id` is still refused
+    by row-level security exactly as before; a session with no tenant context bound at all is a
+    typed `external_provider_invalid_request`, not a crash. A non-Session test double (unit-test
+    fakes exercising only the decision logic) is still written and committed in place, unchanged.
+    Real-Postgres proof: two denials in one `tenant_scoped_session` both typed and durable with
+    unchanged tenant visibility afterward; a caller's own pending row is never persisted by a
+    denial; a bare session with no tenant context is refused, not a crash
+    (`tests/integration/test_ftf_0908_external_provider_denial.py`, CI job
+    `external-provider-denial-integration`). Whole-file mutation gate: 98/98 KILLED, 100%. The
+    AuditContext is validated up front (`external_provider_invalid_request`). Unknown, str-subclass
+    or unhashable values raise `external_provider_invalid_request`. No network call (counting socket
+    test shows zero). UNWIRED: no live caller yet (training/inference submit paths are later tasks)
+    and no persisted approvals yet, so a ProviderApproval is not tenant-bound and `approved_by` is
+    not a verified principal -- blank proving_symbol, same precedent as FTF-0901/FTF-0902. Not
+    self-certified (Law 4).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0908.py
