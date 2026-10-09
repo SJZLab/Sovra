@@ -895,16 +895,22 @@ run(req("inference", org="zero_egress"), appr(), ctx)
 out["audit"] = [r.details_json for r in rec.added]
 out["audit_events"] = rec.events
 # R3-1: the tenant context a commit discards is bound again; a second denial works.
-recr = Rec(bound="org-77")
+recr = Rec(bound=str(uuid.UUID(int=5)))
 run(req("inference", org="zero_egress"), appr(), AuditContext(recr, ORG, "worker", "a", "r"))
 out["rebound_tenant"] = [recr.bound, recr.events]
-rec_two = Rec(bound="org-77")
+rec_two = Rec(bound=str(uuid.UUID(int=5)))
 ctx_two = AuditContext(rec_two, ORG, "worker", "a", "r")
 out["second_denial"] = [run(req(org="zero_egress"), appr(), ctx_two) for _ in range(2)]
 out["second_denial_rows"] = len(rec_two.added)
 recn = Rec()
 run(req(org="zero_egress"), appr(), AuditContext(recn, ORG, "worker", "a", "r"))
 out["no_context_no_rebind"] = recn.events
+# R4-1: a tenant context that is not an organization id is refused typed, before any write.
+recx = Rec(bound="org-77")
+out["non_uuid_tenant"] = [
+    run(req("inference", org="zero_egress"), appr(), AuditContext(recx, ORG, "worker", "a", "r")),
+    recx.events, len(recx.added),
+]
 # R3-2: pending work on the caller's session is refused before any decision.
 for name, kw in (
     ("new", dict(new=[1])), ("dirty", dict(dirty=[1])), ("deleted", dict(deleted=[1])),
@@ -1176,21 +1182,29 @@ _MUTATIONS: list[tuple[str, str, str, tuple[str, ...]]] = [
     ),
     (
         "tenant-not-rebound-after-commit",
-        r"        if tenant:\n",
+        r"        if tenant is not None:\n",
         "        if False:\n",
         ("rebound_tenant", "second_denial"),
     ),
     (
         "rebind-uses-audit-org-not-session-tenant",
-        r'\{"org_id": tenant\}',
-        '{"org_id": str(audit.organization_id)}',
+        r"set_tenant_context\(audit\.session, tenant\)",
+        "set_tenant_context(audit.session, audit.organization_id)",
         ("rebound_tenant", "no_context_no_rebind"),
     ),
     (
         "rebind-unconditional",
-        r"        if tenant:\n",
+        r"        if tenant is not None:\n",
         "        if True:\n",
         ("no_context_no_rebind",),
+    ),
+    (
+        "non-uuid-tenant-raw-valueerror",
+        r"        raise InvalidProviderRequestError\(\n"
+        r'            "audit session tenant context is not an organization id"\n'
+        r"        \) from None\n",
+        "        raise\n",
+        ("non_uuid_tenant",),
     ),
     (
         "pending-guard-skipped",
@@ -1332,7 +1346,8 @@ def test_each_guard_is_load_bearing() -> None:
         == [[str(uuid.UUID(int=77)), "worker", "actor-9", "req-9", "inference"]]
         and baseline.get("mismatch_account") == "external_provider_approval_mismatch"
         and baseline.get("bad_audit_events") == []
-        and baseline.get("rebound_tenant") == ["org-77", ["add", "commit", "bind"]]
+        and baseline.get("rebound_tenant") == [str(uuid.UUID(int=5)), ["add", "commit", "bind"]]
+        and baseline.get("non_uuid_tenant") == ["external_provider_invalid_request", [], 0]
         and baseline.get("second_denial") == ["external_provider_profile_blocked"] * 2
         and baseline.get("second_denial_rows") == 2
         and baseline.get("no_context_no_rebind") == ["add", "commit"]

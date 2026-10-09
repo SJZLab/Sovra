@@ -50,7 +50,7 @@ from packages.security.external_provider_denial import (  # noqa: E402
     ProviderApproval,
     authorize_external_provider,
 )
-from sqlalchemy import create_engine, func, select  # noqa: E402
+from sqlalchemy import create_engine, func, select, text  # noqa: E402
 from sqlalchemy.exc import DBAPIError, SQLAlchemyError  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
@@ -374,6 +374,46 @@ def main() -> None:
             f"{kind}: nothing is audited for a refused request",
             denied_rows(pending_request) == [],
         )
+
+    # -- R4-1. The post-commit tenant re-bind is transaction-local. A pool WITHOUT the
+    # reset guard (pool_size=1, so the next checkout is the same connection) must hand a
+    # fresh checkout no tenant context after a caught denial and a normal exit of the
+    # tenant-scoped session. A session-level re-bind (set_config(.., false)) leaks the
+    # tenant onto the pooled connection and this check goes RED.
+    bare_engine = create_engine(
+        _app_role_url(migration_url, app_password), pool_size=1, max_overflow=0
+    )
+
+    def bare_factory() -> Session:
+        return Session(bare_engine)
+
+    try:
+        with tenant_scoped_session(bare_factory, org1_id) as session:
+            authorize_external_provider(
+                _request(profile="zero_egress"),
+                _approval(),
+                AuditContext(
+                    session, org1_id, "system", "actor-0908", f"req-r4-{uuid.uuid4().hex[:8]}"
+                ),
+            )
+    except ExternalProviderDeniedError:
+        pass
+    with bare_engine.connect() as fresh:
+        guc = fresh.execute(
+            text("SELECT current_setting('app.current_organization_id', true)")
+        ).scalar_one()
+        visible = fresh.execute(select(func.count()).select_from(Organization)).scalar_one()
+    check(
+        "FTF-0908-R4-1",
+        f"a fresh checkout after a denial has no tenant context (guc={guc!r})",
+        guc in (None, ""),
+    )
+    check(
+        "FTF-0908-R4-1",
+        f"a fresh checkout after a denial sees 0 tenant rows (visible={visible})",
+        visible == 0,
+    )
+    bare_engine.dispose()
 
     _finish()
 
