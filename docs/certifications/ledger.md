@@ -10892,3 +10892,41 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   d859f65a unchanged since round 5; uncapped whole-file mutation 324/324. In-class code points the CI sample skips (U+2029,
   LRM/RLM, U+00AD, sub/compat-only NFKC) go RED under the suite's full sweep; advisory to add them to the required list.
   UNWIRED (proving_symbol blank).
+
+## 2026-10-09T20:10Z — CERTIFIED: FTF-0309 (138/302), slice FTF-R004-P1; RETURNED: FTF-0516 UI (r2)
+- **FTF-0309: CERTIFIED** (round 4; tests only; PR #713, merge e2555b6c732dcd184c8fd270fb9301bc05c85dde, head ca1f85d8).
+  Session comparison: producer session_01RW8pymEbYM5zLuunuZXqtf ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent
+  from the PR. CI: ci-verdict 113982177055; gate job 113978535363 (read via GitHub MCP get_job_logs), 304 vitest tests.
+  The 0c strict-parse table (catalog_version, evidence, enums, trainable) and the G4 availability blocker text are pinned;
+  96 faults, 69 RED, the GREEN rows equivalent or outside the ruling; 88 adversarial probes, 0 violations. Law 7: the
+  UI component has no caller outside its spec, so FTF-0309 stays UNWIRED for its screen and is not counted product-true
+  until FTF-H029 mounts it. status.py prints 46 product-true because FTF-0309's proving_symbol is its live,
+  product_truth_check-proven P1 API route (build_model_capability_router); the reported figure stays 45.
+- **FTF-R004-P1 (child slice of FTF-R004): CERTIFIED** (round 4; tests only; PR #707, merge
+  f856b47e0be3c22a53b354860d97e8a8405f487c, head a92a341). Session comparison: producer session_01GXUZnGbQLHhSHJ3yjBU5yh ≠
+  certifier, absent from the PR. CI: ci-verdict 113948036357; gate job 113943708703 (4203/4203 lines read); mutation gate
+  113943709248 success (production unchanged, round 3 140/140 killed). Digest sensitivity pinned through capture on both
+  sides: FG, FG2, FG3, FG4, FG5, FG6 all RED; 55 probes clean. UNWIRED until P3; FTF-R004-P3 is now dependency-ready.
+- **FTF-0516 (UI): RETURNED** (round 1 → 2; PR #704, merge 8cc6970bf2dabe2e464a12028b08cf3fd710345e, head 351f6bc).
+  Producer session_019UYvGwj2PggkDFprmJ9Nuz ≠ certifier. CI: ci-verdict 113930412003, gate job 113927092962 (288 vitest
+  tests). Correct against the real P1 API on PG16 (exclude/correct/waive, 403, 409, 404, cross-tenant, identical-retry
+  replay = one row). Faults: "Decision recorded" shown when the response's successor, positions, engine_decision,
+  resolution_version or reason differ from what was sent (M1-M5c, F07); parseIssue accepts a nested resolution for
+  another issue, a waived state with an exclude decision, blank actor_id or reason (P-n1..n4, F72); a submit during a
+  reload leaves Loading stuck; 30 clause-level faults GREEN (78 mutants, 45 RED). Class-closing ruling: one
+  response-binding check over every field sent.
+- **Backlog (Control-plane design):** FTF-0616-F1 (judge-call deployment fingerprint + cache bypass; FTF-0616 stays
+  CERTIFIED while F1 re-runs its full evidence, Law 15), FTF-0617 (zero-egress judge policy, UNWIRED), FTF-H010-P2..P4
+  (endpoint import validation, weights/adapter validation, roles + continuation eligibility). Certified entries
+  FTF-0309-P1, FTF-0309, FTF-H010-P1 and FTF-0516-P1 removed from the Backlog.
+- Pending: FTF-0908 r3 (#693), FTF-R005 r7 (#708).
+
+## 2026-10-09T20:35Z — RETURNED: FTF-0908 (r4)
+- **FTF-0908: RETURNED** (round 3 → 4; PR #693, merge ca1b6dd1d4e2db83b977c7e2e519f03ae422aacf, head e3e1e3b). Producer
+  session_01SN5XfLBY7kKmyy3Loa5Gjy ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 113979085428;
+  external-provider-denial-integration job 113964056545 and gate job 113963935230 "all checks passed"; mutation-gate
+  113963934891 45/45 killed. Round-3 DB3/DB3b/DB4 fixed (27 real-PG probes on PG16 as sovra_app). Return reason: fault F2
+  (post-commit tenant re-bind made session-level) stays GREEN in every suite and leaks the tenant to a fresh checkout on a
+  pool without the reset guard (guc=<org1>, visible_rows=1); mitigated today only by the API engine's reset guard.
+  Ruling: the raw InvalidRequestError inside `s.begin()` (P12) is a disclosure (fails closed, audit durable, no
+  production caller).

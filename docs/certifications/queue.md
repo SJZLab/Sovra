@@ -24641,3 +24641,10 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-09T18:33Z — Control plane: FTF-0616 CERTIFIED (137/302)
 - **Certified:** FTF-0616 for the adapter scope (#690, merge 4a0de86713e272749ba2ebe0d358e59a2957be2a); real-judge clause BLOCKED_EXTERNAL.
+
+## 2026-10-09T20:10Z — Control plane: FTF-0309 CERTIFIED (138/302)
+- **Certified:** FTF-0309 (#713, merge e2555b6c732dcd184c8fd270fb9301bc05c85dde); UNWIRED, not product-true (Law 7). **Certified slice:** FTF-R004-P1 (#707). **Returned:** FTF-0516 UI r2 (0c).
+- **Pending:** FTF-0908 #693, FTF-R005 #708. New Backlog: FTF-0616-F1, FTF-0617, FTF-H010-P2..P4.
+
+## 2026-10-09T20:35Z — Control plane: FTF-0908 returned
+- **Returned:** FTF-0908 r4 (0m): pin the tenant re-bind's transaction locality (fault F2 leaks on a pool without the reset guard). **Pending:** FTF-R005 #708.

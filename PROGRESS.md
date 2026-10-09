@@ -1,8 +1,10 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-09T18:33Z. Source: `python3 scripts/status.py` on main.
-- **Status: 137/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
+Updated: 2026-10-09T20:35Z. Source: `python3 scripts/status.py` on main.
+- **Status: 138/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
+  status.py prints 46 product-true: it counts FTF-0309 through its live P1 API route, but the FTF-0309 screen stays
+  UNWIRED until FTF-H029, so it is not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
 - **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902,
   FTF-0500D, FTF-1002, FTF-0103A, FTF-0510, FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613, FTF-1305, FTF-0308, FTF-0602, FTF-0901 and FTF-1706 (2026-10-07/08), plus follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1, FTF-0608-F1 and FTF-04A21-F1.
@@ -10,6 +12,13 @@ Updated: 2026-10-09T18:33Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-09T20:35Z:**
+  - Returned: FTF-0908 r4 (post-commit tenant re-bind must be transaction-local; a session-level re-bind leaks on a pool without the reset guard).
+- **2026-10-09T20:10Z:**
+  - CERTIFIED: FTF-0309 (capability compatibility UI), after 4 rounds. UNWIRED; not product-true until FTF-H029 mounts the screen.
+  - CERTIFIED slice FTF-R004-P1 (Inspect AI target-runtime capture). Count unchanged (child slice); FTF-R004-P3 is now ready.
+  - Returned: FTF-0516 UI r2 (response must match every field sent; nested resolutions bound to their issue; stuck Loading).
+  - Queued: FTF-0616-F1, FTF-0617 (zero-egress judge policy), FTF-H010-P2..P4.
 - **2026-10-09T18:33Z:**
   - CERTIFIED: FTF-0616 (LLM judge adapter through LiteLLM) for the adapter scope, after 8 rounds. The real-judge clause stays BLOCKED_EXTERNAL (gateway key owner action); UNWIRED.
 - **2026-10-09T18:18Z:**
