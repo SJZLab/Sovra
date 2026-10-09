@@ -24593,3 +24593,7 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-08T23:05Z — Control plane: FTF-0616 returned (135/302 unchanged)
 - **Returned:** FTF-0616 r7 (0b), tests only: one shared exactness helper covering Unicode normalisation variants.
+
+## 2026-10-09T00:07Z — Control plane: FTF-0309-P1 returned (135/302 unchanged)
+- **Returned:** FTF-0309-P1 r3 (0k): proving_symbol on FTF-0309, shared exact-match helper for both lookups.
+- **CI outage:** GitHub Actions refuses jobs for billing since ~23:05Z 2026-10-08; nothing merges until the owner fixes it.
