@@ -24654,3 +24654,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-09T21:56Z — Control plane: FTF-1703 CERTIFIED (140/302)
 - **Certified:** FTF-1703 (#714, merge 1fc59f19c1c265493da550994c78f7e77450b151) for the in-sandbox scope; ">=1000 reviewed" BLOCKED_EXTERNAL; UNWIRED.
+
+## 2026-10-09T22:11Z — Control plane: FTF-0516 UI and FTF-0904 returned
+- **Returned:** FTF-0516 UI r3 (0c): generated strict-parse table; uppercase-successor and replay-version false errors. FTF-0904 r3 (0d): linear percent tokenisation with a generated size sweep; pin V12; encoded-separator regression; 3.11 parse.

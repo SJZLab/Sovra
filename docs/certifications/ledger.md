@@ -10961,3 +10961,20 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   of the closed class, non-blocking). Disclosed: a reviewer id with a zero-width or fullwidth `generator:` prefix is
   accepted (to be closed when real Argilla reviewer identities replace caller-supplied ids); held-out matching is exact
   after strip/casefold, no near-duplicate detection. UNWIRED (proving_symbol blank).
+
+## 2026-10-09T22:11Z — RETURNED: FTF-0904 (r3), FTF-0516 UI (r3)
+- **FTF-0904: RETURNED** (round 2 → 3; PR #711, merge f19efa300fef8ffdac71fbd13d39611219b51daf, head d3eb757). Producer
+  session_01D6atafa7xH4XSemHNfmtrF ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 114002771652; gate job
+  113997261966 "FTF-0904 Log redaction tests: all checks passed"; mutation 113997261705 43 killed + 1 timeout. Round-2
+  items 1-3 and 5 fixed (decoded-layer, header-form and extra= property sweeps: 0 leaks). Return reasons: required item 4
+  (linear runtime under the handler lock) violated by a new quadratic `_PERCENT_TOKEN` scan (262 KB 102 s; a 200 KB-state
+  URL 243 s via logging); fault V12 (`_PAIR` secret-key alternative dropped) GREEN with a reproduced pair-text leak;
+  encoded-separator regression (`token %3D <S>`). Ruling: generated 8K..256K size sweep through redact_text and the
+  logging path. The test file needs Python 3.12 (declared minimum 3.11).
+- **FTF-0516 (UI): RETURNED** (round 2 → 3; PR #717, merge 96391fa024c32e56f3e1d5e5b68afedf7e97e276, head 1d54fe1). Producer
+  session_01Wa1C8RBMkMvu4KK5aEwC6u ≠ certifier. CI: ci-verdict 114017198627; gate job 114012192186 (334 vitest tests).
+  Round-2 items 1-3 fixed (single every-field response binding; nested binding; no submit while loading); 106 faults, 84
+  RED; no false success reproduced. Return reasons: 21 strict-parse faults the round-2 ruling listed stay GREEN (F24
+  shows controls for `is_detector_failure: 0`, F33 "Blocks training yes" for "false"); two false errors on the real P1
+  router (uppercase successor U1; replay top-level version RV, pinned wrongly by the spec). Ruling: generated
+  strict-parse table over every response field.
