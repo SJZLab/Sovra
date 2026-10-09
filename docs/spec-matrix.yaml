@@ -2263,10 +2263,22 @@ FTF-0309:
   description: Capability compatibility UI
   evidence_hash: ''
   implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0301, FTF-0307, FTF-0308
+  notes: >-
+    kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0301, FTF-0307,
+    FTF-0308. certification_state/proof_state/implementation_state stay NONE/UNPROVEN/ABSENT --
+    FTF-0309's own UI scope is not implemented. proving_symbol/proving_test are filled per the
+    2026-10-08T17:52Z Control-plane ruling on the FTF-0309-P1 round-2 DoD's open proving_symbol
+    bullet: FTF-0309-P1's own child slice has no spec-matrix entry of its own, so its live-wiring
+    evidence (apps/api/app/main.py mounts build_model_capability_router at
+    .../models/{model_name}/capabilities) attaches to this, the only FTF-0309-family entry that
+    exists. Confirmed wired this round (FTF-0309-P1 round 3): product_truth_check --fail-on-unwired
+    goes from 45/45 to 46/46 product-true with this symbol filled; reverting the include_router
+    call in main.py on a scratch copy reproduces the exact TRACKER unwired failure
+    (45/46, "build_model_capability_router has no live callers") the gate is meant to catch,
+    confirmed and reverted byte-identical.
   proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  proving_symbol: build_model_capability_router
+  proving_test: tests/tasks/test_ftf_0309_p1.py
 FTF-0310:
   certification_state: NONE
   criticality: MUST
@@ -8927,7 +8939,7 @@ FTF-0616:
   certification_state: PROVISIONAL
   criticality: MUST
   description: LLM judge adapter through LiteLLM
-  evidence_hash: ''
+  evidence_hash: fc93b9ab7836c3f7c547efec7db9284f320c31c8
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-25; scenarios=Q16, Q17, Q18; deps=FTF-0210, FTF-0601.
@@ -8941,8 +8953,14 @@ FTF-0616:
     version, requested and resolved model; a resolved model outside the approved set (or the candidate)
     is MODEL_MISMATCH, never a verdict. Round 5: a missing model echo is its own MODEL_MISMATCH; approved_judge_model_ids members must be exact non-empty str (LlmJudgeGraderError before any call); the echo must equal the requested judge id or an exact alias named by its CalibrationRecord.judge_model_aliases (an approved but uncalibrated echo is MODEL_MISMATCH). Model output is strict JSON (no duplicate keys, NaN/Infinity or
     overflow, no repair of truncated JSON, deep nesting is refused, not a crash); exactly one choice;
-    only HTTP 200 is a response; a 400 is sent once. Fault -> RED table:
-    docs/certifications/submissions/2026-10-08T0500Z-FTF-0616.md; round 5: docs/certifications/submissions/2026-10-08T1800Z-FTF-0616.md.
+    only HTTP 200 is a response; a 400 is sent once. Round 7 (tests only): one shared
+    `_exactness_variants` helper closes the echo-identity Unicode-normalisation class (case, whitespace,
+    tab, NBSP, zero-width space, Unicode hyphen, fullwidth letter/digit) for both the judge-id and the
+    calibration-alias echo checks at once, plus a dedicated NFC/NFD/NFKC/NFKD composed-character check;
+    an NFKC-normalised comparison at either point is now RED (confirmed GREEN on the round-6 suite,
+    then RED on this round's). Whole-file mutation 200/200, 0 survivors. Fault -> RED table:
+    docs/certifications/submissions/2026-10-08T0500Z-FTF-0616.md; round 5: docs/certifications/submissions/2026-10-08T1800Z-FTF-0616.md;
+    round 7: docs/certifications/submissions/2026-10-09T0230Z-FTF-0616-r7.md.
 
     BLOCKED_EXTERNAL (packet resource_gate, owner action): the clause "Call approved real judge through
     LiteLLM" is proven only against a local TLS gateway stand-in. It needs a real gateway key and an
@@ -9594,6 +9612,19 @@ FTF-0903:
     workflows, worker logs, serving spans) are separate, dependency-gated tasks that will call
     `emit_event`; proving_symbol stays blank, same precedent as FTF-0901/FTF-0902. Not
     self-certified (Law 4).
+
+    Round 6 (L2 return, tests only): every shared echo helper (`_echo_report`, `_r4_echo_report`,
+    `_message_of`, and the R3/R4 subprocess probes' own `outcome`/`report`) now also requires
+    `exc.__cause__ is None`, `exc.__context__ is None`, no `__notes__`, and `vars(exc) == {}` for
+    every refusal -- str(exc)/repr(exc.args) alone misses a chained `raise ... from
+    ValueError(value)`, an `err.add_note(str(value))`, or the caller value stored as an exception
+    attribute before raise. A new subprocess probe and four fault mutations (C1 `_id_value`
+    chained from a ValueError holding the ContentRef id; C3 `_number_value` calling `float()` on
+    a non-numeric string inside `except ValueError`, so the caller text reaches `__context__`; C4
+    `_code_value` via `add_note`; C5 `_enum_value` via a stored attribute) each turn exactly their
+    own case LEAK while the other three stay clean; a negative test confirms today's unmutated
+    production stays clean/meta-free on all four paths. Production unchanged (no new leak existed
+    on str(exc)/repr(exc.args); these four are new leak channels the old checks could not see).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0903.py
@@ -9687,14 +9718,23 @@ FTF-0908:
     composes FTF-0901 `effective_profile`/`enforce_effect` (training -> model surface, inference ->
     serving surface): zero_egress/air_gapped deny every managed route
     (`external_provider_profile_blocked`); standard needs a `ProviderApproval` for the exact
-    provider and purpose recording approver, account, region, retention and that purpose's terms
-    (`external_provider_not_approved`, `external_provider_purpose_not_approved`,
-    `external_provider_approval_incomplete`). A "private cloud account" label is data only and never
+    provider and purpose recording approver, account, region, retention, applicable agreement,
+    subprocessors, deletion behaviour and that purpose's terms (`external_provider_not_approved`,
+    `external_provider_purpose_not_approved`, `external_provider_approval_incomplete`); the
+    approval's account and region must equal the request's target account and region
+    (`external_provider_approval_mismatch`). A "private cloud account" label is data only and never
     approves. The denial audit reason is content-free (profile, surface, purpose, code) and is
-    written through FTF-0104 `write_audit_event` when an AuditContext is given. Unknown, str-subclass
-    or unhashable values raise `external_provider_invalid_request`. No network call (counting
-    socket test shows zero). UNWIRED: no live caller yet (training/inference submit paths are later
-    tasks) -- blank proving_symbol, same precedent as FTF-0901/FTF-0902. Not self-certified (Law 4).
+    written through FTF-0104 `write_audit_event` when an AuditContext is given, then committed
+    before the error is raised (round 2: under `tenant_scoped_session` the propagated error
+    otherwise rolls the audit row back; real-Postgres proof
+    `tests/integration/test_ftf_0908_external_provider_denial.py`, CI job
+    `external-provider-denial-integration`). The AuditContext is validated up front
+    (`external_provider_invalid_request`). Unknown, str-subclass or unhashable values raise
+    `external_provider_invalid_request`. No network call (counting socket test shows zero).
+    UNWIRED: no live caller yet (training/inference submit paths are later tasks) and no persisted
+    approvals yet, so a ProviderApproval is not tenant-bound and `approved_by` is not a verified
+    principal -- blank proving_symbol, same precedent as FTF-0901/FTF-0902. Not self-certified
+    (Law 4).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0908.py
@@ -11756,7 +11796,7 @@ FTF-1703:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Training dataset
-  evidence_hash: 9f89a8a46f953e92ce4d7276caec9883cf95ef1b
+  evidence_hash: be9ae27023971b483a6df3d044089cafc6ed49e1
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0506, FTF-1701,
@@ -11789,6 +11829,24 @@ FTF-1703:
     identity is an unauthenticated string until the BLOCKED_EXTERNAL Argilla review step binds real
     review records, and held-out matching is exact after strip/casefold (no near-duplicate
     detection).
+
+    Round 4 (L2 return, production + tests): a frozen dataclass has no __slots__, so
+    `object.__setattr__(t, "to_dict", ...)` shadowed the bound method on an exact-type
+    `TrainingTrace` instance (round 3's subclass-only defense never fired on it), letting a trace
+    carrying a sealed prompt and a secret key pass provenance and the secret scan by lying through
+    the shadowed method -- reproduced as held-out leakage and a secret admission. Fixed two ways:
+    every verification path now reads trace content through direct field access
+    (`_raw_trace_dict`/`_raw_final_answer`), never a method call untrusted input could shadow, and
+    `_require_trace_shape` refuses a trace whose instance `__dict__` carries anything beyond its
+    declared fields, unconditionally. `build_training_dataset` also re-runs the secret scan,
+    held-out check and replay a second time on the freshly regenerated object (defense in depth),
+    and now tracks admitted generator indices so the same index can never be admitted twice under
+    a different id. `_validate_review` requires `type(review) is ReviewDecision` and exact `str`
+    fields (a subclass could override `strip()` to defeat the generator-identity check, or
+    `__eq__`/`__hash__` to make a conflicting decision look consistent to the set-based dedup
+    check). Every pre-existing test still passes unchanged. Fault -> RED table and the Law-1
+    self-attack (production reverted, new tests shown to fail against it, then restored) are in
+    docs/certifications/submissions/2026-10-08T2340Z-FTF-1703-r4.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1703.py
