@@ -306,11 +306,9 @@ def _sha256(data: bytes) -> str:
 
 
 def _attestation_view(attestation: RuntimeAttestation) -> dict[str, object]:
-    return {
-        f.name: getattr(attestation, f.name)
-        for f in fields(attestation)
-        if f.name != "observed_at_epoch_seconds"
-    }
+    view = {f.name: getattr(attestation, f.name) for f in fields(attestation)}
+    del view["observed_at_epoch_seconds"]
+    return view
 
 
 def _describe_view(describe: AdapterDescribeResult) -> dict[str, object]:
@@ -400,16 +398,6 @@ def _outcome_digest(result: AdapterInvokeResult) -> str | None:
     return _sha256(json.dumps(result.business_outcome, sort_keys=True, default=repr).encode())
 
 
-def _same_result(left: AdapterInvokeResult, right: AdapterInvokeResult) -> bool:
-    return (
-        left.case_id == right.case_id
-        and left.status == right.status
-        and left.business_outcome == right.business_outcome
-        and left.side_effects == right.side_effects
-        and left.error_classification == right.error_classification
-    )
-
-
 def _run_case(state: _RunState, case: BridgeCase) -> CaseRunRecord:
     request = AdapterInvokeRequest(
         case_id=case.case_key,
@@ -439,8 +427,6 @@ def _run_case(state: _RunState, case: BridgeCase) -> CaseRunRecord:
     try:
         invoked = state.adapter.invoke(request)
         collected = state.adapter.collect_outcome(case.case_key)
-    except BridgeError:
-        raise
     except Exception as exc:  # noqa: BLE001 -- recorded as a typed, content-free failure row
         return CaseRunRecord(
             case_key=case.case_key,
@@ -469,7 +455,7 @@ def _run_case(state: _RunState, case: BridgeCase) -> CaseRunRecord:
         route_fingerprint=invoked.route_fingerprint,
         business_outcome_sha256=_outcome_digest(collected),
         side_effect_count=len(invoked.side_effects),
-        collected_matches_invoke=_same_result(invoked, collected),
+        collected_matches_invoke=invoked == collected,
         deadline_exceeded=elapsed > state.deadline_seconds,
         adapter_exception_type=None,
     )
@@ -480,11 +466,7 @@ def _build_solver(state: _RunState) -> Any:
     def native_runtime_adapter() -> Any:
         async def run(task_state: TaskState, generate: Generate) -> TaskState:
             del generate  # a native adapter owns its orchestration; Inspect never generates
-            case = state.cases.get(str(task_state.sample_id))
-            if case is None:
-                state.fail(BridgeError(CODE_ADAPTER_MISMATCH))
-                task_state.metadata["adapter_status"] = "bridge_error"
-                return task_state
+            case = state.cases[str(task_state.sample_id)]
             try:
                 state.check_identity()
                 record = _run_case(state, case)
@@ -578,7 +560,7 @@ def run_suite_through_runtime(
         is_reconstructed_adapter=is_reconstructed_adapter,
         reconstructed_declaration=reconstructed_declaration,
     )
-    if status != QualificationStatus.QUALIFIED:
+    if status is not QualificationStatus.QUALIFIED:
         raise BridgeError(CODE_INTEGRATION_REQUIRED)
 
     describe = adapter.describe()

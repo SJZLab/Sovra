@@ -971,6 +971,424 @@ def test_drift_in_the_last_case_and_other_gaps_are_caught() -> None:
     )
 
 
+def test_case_rows_hold_the_adapters_exact_values() -> None:
+    import dataclasses
+
+    env_adapter = build_isolated_tool_backend_adapter()
+    a_rec = env_adapter.tool_environment.record_id_for(
+        tenant_id="tenant-a", owner_subject_id="subject-a1", title="Quarterly report"
+    )
+    b_rec = env_adapter.tool_environment.record_id_for(
+        tenant_id="tenant-b", owner_subject_id="subject-b1", title="Support escalation"
+    )
+    recs = [
+        _record(
+            "Case-A",
+            "create_note",
+            "subject-a1",
+            {"record_id": a_rec, "text": "t", "idempotency_key": "i"},
+        ),
+        _record("case-b", "get_record", "subject-a1", {"record_id": b_rec}),
+        _record("case-c", "search_records", "subject-never", {"query": "x"}),
+        _record("case-d", "search_records", "subject-a1", {"query": "q"}),
+    ]
+    results: dict[str, Any] = {}
+    spy = _Spy(env_adapter)
+    original_invoke = spy.invoke
+
+    def recording_invoke(request: Any) -> Any:
+        out = original_invoke(request)
+        results[request.case_id] = out
+        return out
+
+    spy.invoke = recording_invoke
+    res = _run(spy, _case_set(recs), run_id="run-exact")
+    check("FTF-R004-P3-AC3", "the result carries the run id", res.run_id == "run-exact")
+    check(
+        "FTF-R004-P3-AC3",
+        "the result carries suite and manifest ids",
+        res.suite_id == SUITE_ID and res.agent_manifest_id == MANIFEST_ID,
+    )
+    rows = {r.case_key: r for r in res.cases}
+    ok = rows["Case-A"]
+    inv = results["Case-A"]
+    check(
+        "FTF-R004-P3-AC3",
+        "a completed row copies trace, fingerprints, side-effect count and classification exactly",
+        ok.status == "completed"
+        and ok.trace_ref == inv.trace_ref
+        and ok.runtime_fingerprint == inv.runtime_fingerprint != ""
+        and ok.route_fingerprint == inv.route_fingerprint != ""
+        and ok.side_effect_count == 1
+        and ok.error_classification == "none"
+        and ok.collected_matches_invoke is True
+        and ok.deadline_exceeded is False
+        and ok.adapter_exception_type is None
+        and ok.case_id == str(recs[0].id),
+    )
+    refused = rows["case-b"]
+    check(
+        "FTF-R004-P3-AC3",
+        "a backend refusal is a row with classification refusal, no outcome digest and no side effects",
+        refused.status == "error"
+        and refused.error_classification == "refusal"
+        and refused.business_outcome_sha256 is None
+        and refused.side_effect_count == 0
+        and refused.trace_ref == results["case-b"].trace_ref
+        and refused.runtime_fingerprint == results["case-b"].runtime_fingerprint
+        and refused.collected_matches_invoke is True,
+    )
+    pre = rows["case-c"]
+    check(
+        "FTF-R004-P3-AC3",
+        "a preflight-refused row is empty apart from ids and status",
+        pre
+        == dataclasses.replace(
+            pre,
+            status="preflight_refused",
+            error_classification="none",
+            trace_ref="",
+            runtime_fingerprint="",
+            route_fingerprint="",
+            business_outcome_sha256=None,
+            side_effect_count=0,
+            collected_matches_invoke=False,
+            deadline_exceeded=False,
+            adapter_exception_type=None,
+        )
+        and pre.status == "preflight_refused",
+    )
+    boom = _run(
+        _Spy(build_isolated_tool_backend_adapter(), on_invoke=lambda r: 1 / 0),
+        _case_set(recs[3:]),
+    ).cases[0]
+    check(
+        "FTF-R004-P3-AC3",
+        "an adapter exception row is empty apart from status, the fatal classification and the type name",
+        boom.status == "adapter_exception"
+        and boom.error_classification == "fatal"
+        and boom.adapter_exception_type == "ZeroDivisionError"
+        and boom.trace_ref == ""
+        and boom.runtime_fingerprint == ""
+        and boom.route_fingerprint == ""
+        and boom.business_outcome_sha256 is None
+        and boom.side_effect_count == 0
+        and boom.collected_matches_invoke is False
+        and boom.deadline_exceeded is False,
+    )
+    slow = (
+        _run(_case_set=None) if False else _run(case_set=_case_set(recs[3:]), deadline_seconds=1e-9)
+    )
+    check(
+        "FTF-R004-P3-AC3",
+        "a call that outlasts its deadline is flagged, one that does not is not",
+        slow.cases[0].deadline_exceeded is True
+        and _run(case_set=_case_set(recs[3:])).cases[0].deadline_exceeded is False,
+    )
+    for label, bad_id in (
+        ("upper-cased", "CASE-D"),
+        ("padded", " case-d"),
+        ("trailing", "case-d "),
+    ):
+        relabel = _Spy(
+            build_isolated_tool_backend_adapter(),
+            collect=lambda cid, inner, b=bad_id: dataclasses.replace(
+                inner.collect_outcome(cid), case_id=b
+            ),
+        )
+        check(
+            "FTF-R004-P3-AC3",
+            f"a {label} case id from the adapter is not the scheduled case",
+            _code(_run, relabel, _case_set(recs[3:])) == "adapter_case_mismatch",
+        )
+    inv_relabel = _Spy(build_isolated_tool_backend_adapter())
+    real_invoke = inv_relabel.invoke
+    inv_relabel.invoke = lambda r: dataclasses.replace(real_invoke(r), case_id="CASE-D")
+    check(
+        "FTF-R004-P3-AC3",
+        "an invoke result for another case id is refused",
+        _code(_run, inv_relabel, _case_set(recs[3:])) == "adapter_case_mismatch",
+    )
+    check(
+        "FTF-R004-P3-AC3",
+        "a case key that is not lower-case is matched exactly",
+        _run(
+            case_set=_case_set([_record("Case-A", "search_records", "subject-a1", {"query": "q"})])
+        )
+        .cases[0]
+        .status
+        == "completed",
+    )
+
+
+def test_blocked_calls_raise_inside_the_adapter_and_are_counted() -> None:
+    seen: list[str] = []
+
+    def lookup(_r: Any) -> None:
+        try:
+            socket.getaddrinfo("example.invalid", 80)
+            seen.append("returned")
+        except BridgeError:
+            seen.append("raised")
+
+    code = _code(_run, _Spy(build_isolated_tool_backend_adapter(), on_invoke=lookup))
+    check(
+        "FTF-R004-P3-AC8",
+        f"the adapter's own call raises (it is never told the lookup worked): {seen}",
+        code == "outbound_call_blocked" and seen == ["raised", "raised"],
+    )
+
+
+def test_case_adapter_gap_closures() -> None:
+    cs = _case_set(
+        [
+            _record(
+                "Z-key",
+                "t",
+                "s",
+                {"b": [1, {"c": 2}]},
+                input_json={"b": 1, "a": [1, {"c": 2}]},
+                expected_json={"y": 1, "x": 2},
+            ),
+        ]
+    )
+    check(
+        "FTF-R004-P3-AC1",
+        "inputs are canonical (sorted keys) and lists are frozen to tuples",
+        cs.samples[0].input == '{"a":[1,{"c":2}],"b":1}'
+        and cs.samples[0].target == '{"x":2,"y":1}'
+        and cs.cases[0].declared_inputs == (("b", 1), ("a", (1, (("c", 2),)))),
+    )
+    check(
+        "FTF-R004-P3-AC1",
+        "project, suite and manifest ids are carried",
+        cs.project_id == PROJECT_ID
+        and cs.suite_id == SUITE_ID
+        and cs.agent_manifest_id == MANIFEST_ID,
+    )
+    same = _record("Mixed-Case", "t", "s", {})
+    twin = SimpleNamespace(**{**vars(same), "id": uuid.uuid4()})
+    check(
+        "FTF-R004-P3-AC2",
+        "an exact duplicate of a mixed-case key is refused",
+        _code(_case_set, [same, twin]) == "duplicate_case_id",
+    )
+    check(
+        "FTF-R004-P3-AC2",
+        "keys that differ only in case are distinct cases",
+        len(_case_set([_record("Case-A", "t", "s", {}), _record("case-a", "t", "s", {})]).cases)
+        == 2,
+    )
+
+    def nest(levels: int) -> dict[str, Any]:
+        value: Any = "x"
+        for _ in range(levels):
+            value = {"a": value}
+        return value
+
+    from workers.evaluation.adapters.inspect_adapter.case_adapter import freeze_declared_inputs
+
+    check(
+        "FTF-R004-P3-AC2",
+        "64 levels of nesting are accepted and 65 are refused",
+        _code(freeze_declared_inputs, nest(64)) == "NO_RAISE"
+        and _code(freeze_declared_inputs, nest(65)) == "invalid_case",
+    )
+    for purpose in ("Development", " development", "DEVELOPMENT", "development "):
+        calls: list[Any] = []
+        originals = _patch_store(_FakeSuite(purpose, "locked"), [(_records(), None)], calls)
+        try:
+            code = _code(
+                load_locked_development_suite,
+                None,
+                None,
+                project_id=uuid.UUID(PROJECT_ID),
+                suite_id=uuid.UUID(SUITE_ID),
+                role="x",
+            )
+        finally:
+            _restore_store(originals)
+        check(
+            "FTF-R004-P3-AC2",
+            f"purpose {purpose!r} is not 'development' -> refused (got {code})",
+            code == "unsupported_suite_purpose" and calls == [],
+        )
+    loaded = _load(_FakeSuite("development", "locked"), [(_records(), None)], [])
+    check("FTF-R004-P3-AC2", "the loader carries the project id", loaded.project_id == PROJECT_ID)
+    originals_pages = case_adapter._MAX_PAGES
+    calls = []
+    pages = [([_record(f"k{i}", "t", "s", {})], f"k{i}") for i in range(10)]
+    try:
+        case_adapter._MAX_PAGES = 3
+        originals = _patch_store(_FakeSuite("development", "locked"), pages, calls)
+        try:
+            code = _code(
+                load_locked_development_suite,
+                None,
+                None,
+                project_id=uuid.UUID(PROJECT_ID),
+                suite_id=uuid.UUID(SUITE_ID),
+                role="x",
+            )
+        finally:
+            _restore_store(originals)
+    finally:
+        case_adapter._MAX_PAGES = originals_pages
+    check(
+        "FTF-R004-P3-AC2",
+        f"a store that never ends its pages is cut off at the page bound (got {code})",
+        code == "invalid_case" and len(calls) == 3,
+    )
+
+
+def test_bridge_input_validation_and_log_checks() -> None:
+    check(
+        "FTF-R004-P3-AC5",
+        "a non-SuiteCaseSet is refused",
+        _code(_run, case_set=object()) == "bridge_invalid_request",
+    )
+    empty = SimpleNamespace(**{**vars(_case_set()), "cases": ()})
+    check(
+        "FTF-R004-P3-AC5",
+        "a case set with no cases is refused",
+        _code(_run, case_set=empty) == "bridge_invalid_request",
+    )
+    for label, kw in (
+        ("empty run id", {"run_id": ""}),
+        ("non-string run id", {"run_id": 5}),
+        ("non-string tenant", {"tenant_namespace": 5}),
+    ):
+        check(
+            "FTF-R004-P3-AC5", f"{label} is refused", _code(_run, **kw) == "bridge_invalid_request"
+        )
+    check(
+        "FTF-R004-P3-AC5",
+        "a purpose that is not exactly 'development' is refused",
+        _code(_run, case_set=_case_set(purpose="Development")) == "bridge_invalid_request",
+    )
+
+    good = _run(case_set=_case_set([_records()[0]]))
+    path = Path(good.log_path)
+    real_read = bridge.read_eval_log
+    keys = frozenset({"case-001"})
+
+    def fake_log(**over: Any):
+        base = dict(
+            status="success",
+            plan=SimpleNamespace(steps=[SimpleNamespace(solver="native_runtime_adapter")]),
+            eval=SimpleNamespace(model="none/none"),
+            stats=SimpleNamespace(model_usage={}),
+            samples=[SimpleNamespace(id="case-001")],
+        )
+        base.update(over)
+        return SimpleNamespace(**base)
+
+    def verify(log: Any) -> str:
+        try:
+            bridge.read_eval_log = lambda _p: log
+            return _code(bridge._verify_log, path, keys)
+        finally:
+            bridge.read_eval_log = real_read
+
+    check("FTF-R004-P3-NEG2", "a well-formed log verifies", verify(fake_log()) == "NO_RAISE")
+    for status in ("error", "cancelled", "Success", " success", "success "):
+        check(
+            "FTF-R004-P3-NEG2",
+            f"log status {status!r} -> inspect_run_failed",
+            verify(fake_log(status=status)) == "inspect_run_failed",
+        )
+    for model in ("None/None", " none/none", "none/none ", "mockllm/model"):
+        check(
+            "FTF-R004-P3-NEG2",
+            f"log model {model!r} -> refused",
+            verify(fake_log(eval=SimpleNamespace(model=model))) == "generic_agent_solver_forbidden",
+        )
+    check(
+        "FTF-R004-P3-NEG2",
+        "model usage in the log -> refused",
+        verify(fake_log(stats=SimpleNamespace(model_usage={"m": 1})))
+        == "generic_agent_solver_forbidden",
+    )
+    check(
+        "FTF-R004-P3-NEG2",
+        "no plan -> refused",
+        verify(fake_log(plan=None)) == "generic_agent_solver_forbidden",
+    )
+
+    # run_suite_through_runtime's own log-count / location / destination / record checks
+    real_eval = bridge.inspect_eval
+    one = _case_set([_records()[0]])
+    other = Path(tempfile.mkdtemp(prefix="p3-other-"))
+
+    def patched(fn: Any) -> str:
+        try:
+            bridge.inspect_eval = fn
+            return _code(_run, case_set=one)
+        finally:
+            bridge.inspect_eval = real_eval
+
+    check(
+        "FTF-R004-P3-NEG3",
+        "no log returned -> inspect_run_failed",
+        patched(lambda t, **k: []) == "inspect_run_failed",
+    )
+
+    def two(t: Any, **k: Any) -> Any:
+        logs = real_eval(t, **k)
+        return [logs[0], logs[0]]
+
+    check(
+        "FTF-R004-P3-NEG3",
+        "two logs returned -> inspect_run_failed",
+        patched(two) == "inspect_run_failed",
+    )
+
+    def no_location(t: Any, **k: Any) -> Any:
+        real_eval(t, **k)
+        return [SimpleNamespace(location=None)]
+
+    check(
+        "FTF-R004-P3-NEG3",
+        "a log without a location -> inspect_run_failed",
+        patched(no_location) == "inspect_run_failed",
+    )
+
+    def elsewhere(t: Any, **k: Any) -> Any:
+        logs = real_eval(t, **k)
+        copy = other / Path(logs[0].location).name
+        shutil.copy(logs[0].location.removeprefix("file://"), copy)
+        return [SimpleNamespace(location=str(copy))]
+
+    check(
+        "FTF-R004-P3-NEG3",
+        "a log outside the private workspace -> inspect_run_failed",
+        patched(elsewhere) == "inspect_run_failed",
+    )
+
+    from inspect_ai.solver import solver as inspect_solver
+
+    real_build = bridge._build_solver
+
+    @inspect_solver(name="native_runtime_adapter")
+    def silent():
+        async def run(state: Any, generate: Any) -> Any:
+            return state
+
+        return run
+
+    try:
+        bridge._build_solver = lambda state: silent()
+        silent_code = _code(_run, case_set=one)
+    finally:
+        bridge._build_solver = real_build
+    check(
+        "FTF-R004-P3-NEG3",
+        f"a run that recorded no case row -> inspect_run_failed (got {silent_code})",
+        silent_code == "inspect_run_failed",
+    )
+    shutil.rmtree(other, ignore_errors=True)
+
+
 # --------------------------------------------------------------------------- negatives
 
 
