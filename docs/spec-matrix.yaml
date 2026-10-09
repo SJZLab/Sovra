@@ -8976,10 +8976,10 @@ FTF-0615:
   proving_symbol: ''
   proving_test: ''
 FTF-0616:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: LLM judge adapter through LiteLLM
-  evidence_hash: fc93b9ab7836c3f7c547efec7db9284f320c31c8
+  evidence_hash: 4a0de86713e272749ba2ebe0d358e59a2957be2a
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-25; scenarios=Q16, Q17, Q18; deps=FTF-0210, FTF-0601.
@@ -9009,7 +9009,7 @@ FTF-0616:
     LiteLLM" is proven only against a local TLS gateway stand-in. It needs a real gateway key and an
     approved judge model, which do not exist yet. Disclosed: no live caller yet (Section 25's runtime
     loop is not dependency-ready), so proving_symbol stays blank. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0616.py
 FTF-0617:

@@ -24638,3 +24638,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-09T18:18Z — Control plane: slices FTF-H010-P1 and FTF-R004-P2 CERTIFIED; 3 returned (136/302)
 - **Certified slices:** FTF-H010-P1 (#699), FTF-R004-P2 (#702). **Returned:** FTF-0309 r4 (0c), FTF-0904 r2 (0d), FTF-1703 r7 (0g).
 - **Pending:** FTF-0616 #690. FTF-R004-P3 becomes ready once FTF-R004-P1 certifies.
+
+## 2026-10-09T18:33Z — Control plane: FTF-0616 CERTIFIED (137/302)
+- **Certified:** FTF-0616 for the adapter scope (#690, merge 4a0de86713e272749ba2ebe0d358e59a2957be2a); real-judge clause BLOCKED_EXTERNAL.

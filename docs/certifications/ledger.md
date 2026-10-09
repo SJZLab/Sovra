@@ -10879,3 +10879,16 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
 - **FTF-1703: RETURNED** (round 6 → 7; #698, 2799c7837b054d061eb7ce73374ebc39a6ac8f54). Plain-JSON ruling in place;
   production correct; the ruling-named fault (FB2/FB3, read index/trace_id from the caller after parsing) stays GREEN.
 - Pending: FTF-0616 r8 (#690).
+
+## 2026-10-09T18:33Z — CERTIFIED: FTF-0616 (adapter scope)
+- **FTF-0616: CERTIFIED** for the adapter scope (round 8; tests only; PR #690, merge
+  4a0de86713e272749ba2ebe0d358e59a2957be2a, head bad5dfc). The real-judge clause stays BLOCKED_EXTERNAL (org LiteLLM
+  gateway key, dated owner action); FTF-1810 precedent and the QUEUE 0b certification rule. Session comparison: producer
+  session_01BQxQSRYYLDbqgvAcmKhSpR ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, which appears nowhere on the PR. CI:
+  ci-verdict 113837256048; gate job 113833563112 "FTF-0616 llm judge adapter tests: all checks passed" with the live
+  TLS gateway path. Property-generated Unicode variants at both comparison points under pass and fail, with the
+  configured-side mirror: all 44 round-7 GREEN faults now RED; 114/114 normaliser faults and 43/43 regression faults
+  RED; 5258 new probes plus the 3377-variant sweep, 0 accepted on production, no over-refusal. Production
+  d859f65a unchanged since round 5; uncapped whole-file mutation 324/324. In-class code points the CI sample skips (U+2029,
+  LRM/RLM, U+00AD, sub/compat-only NFKC) go RED under the suite's full sweep; advisory to add them to the required list.
+  UNWIRED (proving_symbol blank).
