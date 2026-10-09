@@ -2263,10 +2263,22 @@ FTF-0309:
   description: Capability compatibility UI
   evidence_hash: ''
   implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0301, FTF-0307, FTF-0308
+  notes: >-
+    kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0301, FTF-0307,
+    FTF-0308. certification_state/proof_state/implementation_state stay NONE/UNPROVEN/ABSENT --
+    FTF-0309's own UI scope is not implemented. proving_symbol/proving_test are filled per the
+    2026-10-08T17:52Z Control-plane ruling on the FTF-0309-P1 round-2 DoD's open proving_symbol
+    bullet: FTF-0309-P1's own child slice has no spec-matrix entry of its own, so its live-wiring
+    evidence (apps/api/app/main.py mounts build_model_capability_router at
+    .../models/{model_name}/capabilities) attaches to this, the only FTF-0309-family entry that
+    exists. Confirmed wired this round (FTF-0309-P1 round 3): product_truth_check --fail-on-unwired
+    goes from 45/45 to 46/46 product-true with this symbol filled; reverting the include_router
+    call in main.py on a scratch copy reproduces the exact TRACKER unwired failure
+    (45/46, "build_model_capability_router has no live callers") the gate is meant to catch,
+    confirmed and reverted byte-identical.
   proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  proving_symbol: build_model_capability_router
+  proving_test: tests/tasks/test_ftf_0309_p1.py
 FTF-0310:
   certification_state: NONE
   criticality: MUST
