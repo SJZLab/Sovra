@@ -16,9 +16,12 @@
  * Train rather than fake auto recommendation"): the Train button is disabled
  * unless EVERY gate holds -- `trainable`, `access === "granted"`, a ready
  * artifact with an approved license, and method_support / min_gpu_vram_gb /
- * chat_template all `known` (fail closed: any other state, including a state
- * this file does not recognise, blocks). Tested VRAM below the artifact's
- * declared minimum blocks too. Each blocker is listed with its reason. A 404
+ * chat_template all known. The frozen contract allows ONLY `state: "unknown"`
+ * for those three dimensions (`ModelCapabilityUnknown`), so a `known` state, any
+ * other state, or a `tested_gb` / `memory_gb` field on a dimension is a
+ * malformed response with no Train (control-plane ruling, round 3). A future
+ * known state needs a separate, owner-routed contract change. Each blocker is
+ * listed with its reason. A 404
  * or 503 is an error screen, never an empty recommendation (Law 17). The UI
  * never recommends a model: Train only reports an explicit user click.
  *
@@ -35,12 +38,12 @@
 
 import { useEffect, useRef, useState } from "react";
 
+/** The frozen `ModelCapabilityUnknown`: `unknown` is the only state the contract allows today. */
 export interface CapabilityDimension {
-  state: "known" | "unknown";
-  reason?: string;
+  state: "unknown";
+  reason: string;
   declared_minimum_gpu_profile?: unknown;
   declared_evidence?: "declared";
-  tested_gb?: number;
 }
 
 export interface ModelCapabilities {
@@ -171,11 +174,19 @@ function isStringOrNull(value: unknown): boolean {
   return value === null || typeof value === "string";
 }
 
-/** A dimension is well formed only with a recognised state; `unknown` carries the server's reason. */
+const DIMENSION_KEYS = new Set([
+  "state",
+  "reason",
+  "declared_minimum_gpu_profile",
+  "declared_evidence",
+]);
+
+/** A dimension is well formed only as the frozen `unknown` shape carrying the server's reason. */
 function isDimension(value: unknown): value is CapabilityDimension {
   if (!isRecord(value)) return false;
-  if (value.state === "unknown") return typeof value.reason === "string" && value.reason !== "";
-  if (value.state !== "known") return false;
+  for (const key of Object.keys(value)) if (!DIMENSION_KEYS.has(key)) return false;
+  if (value.state !== "unknown") return false;
+  if (typeof value.reason !== "string" || value.reason === "") return false;
   if ("declared_evidence" in value && value.declared_evidence !== "declared") return false;
   return true;
 }
@@ -222,15 +233,6 @@ function isCapabilities(body: unknown): body is ModelCapabilities {
   );
 }
 
-function finiteNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
-}
-
-function declaredVramGb(profile: unknown): number | null {
-  if (!isRecord(profile)) return null;
-  return finiteNumber(profile.memory_gb);
-}
-
 /** Every reason Train is disabled; an empty list is the only way to enable it. */
 export function trainBlockers(c: ModelCapabilities): string[] {
   const blockers: string[] = [];
@@ -246,38 +248,18 @@ export function trainBlockers(c: ModelCapabilities): string[] {
     ["Chat template", c.chat_template],
   ];
   for (const [label, dim] of dimensions) {
-    if (dim.state !== "known") {
-      blockers.push(`${label} is ${dim.state}: ${shown(dim.reason)}`);
-    }
-  }
-  if (c.min_gpu_vram_gb.state === "known") {
-    const need = declaredVramGb(c.min_gpu_vram_gb.declared_minimum_gpu_profile);
-    const tested = finiteNumber(c.min_gpu_vram_gb.tested_gb);
-    if (tested === null) {
-      blockers.push("Tested VRAM was not reported as a number");
-    } else if (need === null) {
-      blockers.push(`Tested VRAM ${tested} GB cannot be compared: no numeric declared minimum`);
-    } else if (tested < need) {
-      blockers.push(`Tested VRAM ${tested} GB is below the declared minimum ${need} GB`);
-    }
+    blockers.push(`${label} is ${dim.state}: ${shown(dim.reason)}`);
   }
   return blockers;
 }
 
 /** Shows only what the server returned for this dimension; no date is inferred from elsewhere. */
 function DimensionRow({ label, dim }: { label: string; dim: CapabilityDimension }) {
-  const tested = dim.state === "known" ? finiteNumber(dim.tested_gb) : null;
   return (
     <tr data-testid={`dimension-${label}`}>
       <th scope="row">{label}</th>
       <td>{dim.state}</td>
-      <td>
-        {dim.state === "known"
-          ? tested !== null
-            ? `tested ${tested} GB`
-            : "tested value not reported"
-          : `reason: ${shown(dim.reason)}`}
-      </td>
+      <td>{`reason: ${shown(dim.reason)}`}</td>
       <td>no evidence date returned by the server</td>
     </tr>
   );
@@ -326,7 +308,6 @@ export function CapabilityCompatibilityUI({
         capabilitiesUrl(apiBaseUrl, organizationId, connectionId, modelName, projectId),
         { method: "GET", credentials: "include" },
       );
-      if (stale()) return;
       if (!response.ok) {
         const message = await readErrorDetail(response);
         if (!stale()) setError(message);
@@ -409,7 +390,7 @@ export function CapabilityCompatibilityUI({
             type="button"
             disabled={!trainEnabled}
             onClick={() => {
-              if (!onTrain) return;
+              if (!trainEnabled || !onTrain) return;
               onTrain(modelName);
               setStarted(true);
             }}

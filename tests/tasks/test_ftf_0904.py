@@ -1,0 +1,1171 @@
+#!/usr/bin/env python3
+"""FTF-0904 -- Log redaction (no-DB unit/fault tests).
+
+Proves, without any database or network:
+
+1. ACC-1 (known secret headers / URLs / tokens are sanitised at ingress and at
+   the sink): every secret in every generated variant (case, whitespace,
+   zero-width and fullwidth look-alikes, URL-encoding, base64 wrapping, split
+   across logging args, inside an exception chain, inside `extra=` attributes,
+   inside dict reprs and JSON text) is absent from the *fully rendered* output
+   of root logging, stderr, stdout, every handler's formatted line, and every
+   attribute of every record a handler saw.
+2. ACC-2 (unstructured exception content): the whole `__cause__` /
+   `__context__` chain, `__notes__` and the traceback text are redacted.
+3. NEG-1 (redactor failure must not log the raw payload): a redaction rule that
+   raises, a message whose `__str__` raises, a mismatched `%` format, and an
+   oversize payload are each replaced by one constant content-free marker -- the
+   raw message, args, traceback and extras never reach any output.
+4. NEG-2 (redaction alone cannot justify external telemetry of sensitive
+   content): redacted text is still refused by FTF-0903's `emit_event` in every
+   field of every kind, and this module never builds a telemetry event.
+5. Fault injection (Law 1): every removed rule / bypass is applied to a *copy* of
+   the real module, run in a fresh subprocess against the behavioural checks,
+   and must turn them RED. The real file is never edited.
+
+Run directly: python3 tests/tasks/test_ftf_0904.py
+"""
+
+from __future__ import annotations
+
+import base64
+import contextlib
+import io
+import json
+import logging
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any
+from urllib.parse import quote
+
+REAL_ROOT = Path(__file__).resolve().parent.parent.parent
+ROOT = Path(os.environ.get("FTF0904_ROOT", str(REAL_ROOT)))
+BEHAVIOUR_ONLY = os.environ.get("FTF0904_BEHAVIOUR_ONLY") == "1"
+sys.path.insert(0, str(ROOT))
+
+from packages.security import log_redaction as lr  # noqa: E402
+
+MODULE = REAL_ROOT / "packages" / "security" / "log_redaction.py"
+FAILURES: list[str] = []
+
+
+def check(criterion_id: str, description: str, condition: bool) -> None:
+    if not condition:
+        FAILURES.append(f"FAIL [{criterion_id}] {description}")
+
+
+# ---------------------------------------------------------------------------
+# Secrets (generated, not hand-listed) and a shared leak check
+# ---------------------------------------------------------------------------
+
+_ALNUM = "Zq7Lm2Xv9Rt4Hn8Kc3Pw6Yb1Dg5Fs0J"  # fixed, deterministic filler
+
+
+def _filler(index: int, length: int = 32) -> str:
+    """A different 32-char filler per secret, so one secret's tail never matches another's."""
+    rotated = _ALNUM[index:] + _ALNUM[:index]
+    return rotated[::-1] if index % 2 else rotated
+
+
+def _secret_values() -> dict[str, str]:
+    return {
+        "openai": "sk-" + _filler(1),
+        "anthropic": "sk-ant-api03-" + _filler(2),
+        "github": "ghp_" + _filler(3)[:30],
+        "github_pat": "github_pat_" + _filler(4) + "_" + _filler(5)[:12],
+        "slack": "xoxb-1234567890-" + _filler(6)[:20],
+        "aws": "AKIA" + _filler(7).upper()[:16],
+        "hf": "hf_" + _filler(8),
+        "jwt": "eyJhbGciOiJIUzI1NiJ9." + "eyJzdWIiOiJ1c2VyLTEifQ." + _filler(9)[:16],
+        "google": "AIza" + _filler(10) + "abcd",
+        "opaque": "hunter2-" + _filler(11),
+    }
+
+
+SECRETS = _secret_values()
+PEM = (
+    "-----BEGIN RSA PRIVATE KEY-----\n"
+    "MIIEowIBAAKCAQEA" + _ALNUM + "\n"
+    "-----END RSA PRIVATE KEY-----"
+)
+
+
+class _Harness:
+    """Real root logging with two handlers, stderr and stdout all captured."""
+
+    def __init__(self, *, install: bool = True) -> None:
+        self.install = install
+        self.seen_records: list[logging.LogRecord] = []
+        self.lines: list[str] = []
+        self.out = io.StringIO()
+        self.err = io.StringIO()
+
+    def __enter__(self) -> _Harness:
+        self._stack = contextlib.ExitStack()
+        self._stack.enter_context(contextlib.redirect_stdout(self.out))
+        self._stack.enter_context(contextlib.redirect_stderr(self.err))
+        self.root = logging.getLogger()
+        self.saved = (self.root.level, list(self.root.handlers), logging.getLogRecordFactory())
+        self.root.handlers = []
+        self.root.setLevel(logging.DEBUG)
+        harness = self
+
+        class _Capture(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                harness.seen_records.append(record)
+                harness.lines.append(self.format(record))
+
+        self.stream = io.StringIO()
+        stream_handler = logging.StreamHandler(self.stream)
+        capture = _Capture()
+        # created after the redirect: these really write to the captured stderr / stdout
+        for handler in (
+            stream_handler,
+            capture,
+            logging.StreamHandler(),
+            logging.StreamHandler(sys.stdout),
+        ):
+            handler.setFormatter(logging.Formatter("%(levelname)s %(name)s %(message)s"))
+            self.root.addHandler(handler)
+        if self.install:
+            lr.install_redaction(self.root)
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self._stack.close()
+        self.root.handlers = self.saved[1]
+        self.root.setLevel(self.saved[0])
+        logging.setLogRecordFactory(self.saved[2])
+
+    def outputs(self) -> list[str]:
+        rendered = [self.stream.getvalue(), self.out.getvalue(), self.err.getvalue(), *self.lines]
+        for record in self.seen_records:
+            rendered.append(repr(sorted((k, repr(v)) for k, v in vars(record).items())))
+            rendered.append(record.getMessage() if _safe_get_message(record) else "")
+        return rendered
+
+
+def _safe_get_message(record: logging.LogRecord) -> bool:
+    try:
+        record.getMessage()
+    except Exception:
+        return False
+    return True
+
+
+def leaked(secrets: list[str], outputs: list[str]) -> list[str]:
+    """Every secret that survives, verbatim or in a trivially decoded form, in any output."""
+    found = []
+    blob = "\n".join(outputs)
+    for secret in secrets:
+        forms = {secret, secret.lower(), secret.upper(), quote(secret, safe="")}
+        forms.add(base64.b64encode(secret.encode()).decode().rstrip("="))
+        forms.add(base64.urlsafe_b64encode(secret.encode()).decode().rstrip("="))
+        # the distinctive tail, so a partial redaction ("sk-[REDACTED]Zq7...") is still caught
+        if len(secret) > 14:
+            forms.add(secret[-12:])
+        for form in forms:
+            if form and form in blob:
+                found.append(secret)
+                break
+    return found
+
+
+def _variants(secret: str) -> dict[str, str]:
+    return {
+        "plain": secret,
+        "upper-case-prefix": secret[:3].upper() + secret[3:],
+        "zero-width-inner": secret[:5] + "​" + secret[5:],
+        "bom-prefix": "﻿" + secret,
+        "vertical-tab-inner": secret[:5] + "\x0b" + secret[5:],
+        "unit-separator-inner": secret[:6] + "\x1f" + secret[6:],
+        "fullwidth-prefix": "".join(
+            chr(ord(c) + 0xFEE0) if "!" <= c <= "~" else c for c in secret[:3]
+        )
+        + secret[3:],
+    }
+
+
+# ---------------------------------------------------------------------------
+# ACC-1: headers, URLs, tokens
+# ---------------------------------------------------------------------------
+
+
+def test_every_secret_shape_is_removed_from_text() -> None:
+    for name, secret in SECRETS.items():
+        for vname, value in _variants(secret).items():
+            for template in (
+                "value is {s} end",
+                "token={s}",
+                "failed with key {s}.",
+                "{{'k': '{s}'}}",
+            ):
+                text = template.format(s=value)
+                if name == "opaque" and "token=" not in template:
+                    continue  # an opaque value has no shape; only key=value / header forms bind it
+                out = lr.redact_text(text)
+                check(
+                    "FTF-0904-A1",
+                    f"{name}/{vname} not removed from {template!r}: {out!r}",
+                    not leaked([secret], [out]),
+                )
+    out = lr.redact_text("key:\n" + PEM + "\nafter")
+    check("FTF-0904-A1", "PEM private key block removed", _ALNUM not in out and "after" in out)
+
+
+def test_secret_headers_are_redacted_whole() -> None:
+    for header in (
+        "Authorization",
+        "authorization",
+        "AUTHORIZATION",
+        "Proxy-Authorization",
+        "Cookie",
+        "Set-Cookie",
+        "X-Api-Key",
+        "x-auth-token",
+        "X-Amz-Security-Token",
+    ):
+        for sep in (": ", ":", " : ", "="):
+            raw = f"{header}{sep}Bearer abc123SECRETvalue456 session=zzSESSIONzz; other=1"
+            out = lr.redact_text(raw)
+            check(
+                "FTF-0904-A1",
+                f"{header!r} sep {sep!r} header value leaked: {out!r}",
+                "abc123SECRETvalue456" not in out and "zzSESSIONzz" not in out,
+            )
+    for bare in (
+        "Bearer opaqueBEARERtoken12345",
+        "basic dXNlcjpwYXNzd29yZDEyMw==",
+        "BEARER\topaqueTAB-token99",
+    ):
+        out = lr.redact_text("failed: " + bare + " (retrying)")
+        check(
+            "FTF-0904-A1",
+            f"bare credential scheme leaked: {out!r}",
+            "opaqueBEARERtoken12345" not in out
+            and "dXNlcjpwYXNz" not in out
+            and "opaqueTAB" not in out,
+        )
+    out = lr.redact_text("GET /x\r\nAuthorization: Basic dXNlcjpwYXNzd29yZDEyMw==\r\nHost: a")
+    check("FTF-0904-A1", "multi-line request head: auth redacted", "dXNlcjpwYXNz" not in out)
+    check("FTF-0904-A1", "multi-line request head: neighbours kept", "Host: a" in out)
+    out = lr.redact_text(repr({"Authorization": "Bearer abc123SECRETvalue456", "Accept": "x"}))
+    check(
+        "FTF-0904-A1",
+        f"dict repr header redacted, neighbour kept: {out!r}",
+        "abc123SECRETvalue456" not in out and "Accept" in out,
+    )
+    out = lr.redact_text(json.dumps({"headers": {"cookie": "sid=QQQsecretQQQ"}}))
+    check("FTF-0904-A1", f"JSON header redacted: {out!r}", "QQQsecretQQQ" not in out)
+    out = lr.redact_text(json.dumps(json.dumps({"password": "pw-Embedded-9988"})))
+    check("FTF-0904-A1", f"JSON-in-JSON escaped quotes: {out!r}", "pw-Embedded-9988" not in out)
+
+
+def test_url_userinfo_and_query_tokens() -> None:
+    out = lr.redact_text(
+        "connect postgres://app:p%40ss-Word-7788@db.internal:5432/x?sslmode=require"
+    )
+    check("FTF-0904-A1", f"userinfo password removed: {out!r}", "Word-7788" not in out)
+    check("FTF-0904-A1", "host kept for diagnosis", "db.internal:5432" in out)
+    out = lr.redact_text("https://user@example.com/a")
+    check("FTF-0904-A1", f"userinfo without password removed: {out!r}", "user@" not in out)
+    for param in (
+        "token",
+        "access_token",
+        "api_key",
+        "apikey",
+        "password",
+        "secret",
+        "signature",
+        "X-Amz-Signature",
+    ):
+        out = lr.redact_text(f"GET https://h.example/path?a=1&{param}=Q9zV8xW7uT6r&b=2")
+        check("FTF-0904-A1", f"query {param} value kept: {out!r}", "Q9zV8xW7uT6r" not in out)
+        check("FTF-0904-A1", f"query {param}: unrelated params kept", "a=1" in out and "b=2" in out)
+    out = lr.redact_text("https://h.example/p?next=%2Fhome&page=2")
+    check("FTF-0904-A1", f"benign query untouched: {out!r}", out.endswith("next=%2Fhome&page=2"))
+
+
+def test_variants_url_encoded_base64_and_split() -> None:
+    secret = SECRETS["openai"]
+    for label, text in (
+        ("url-encoded", f"q={quote('Authorization: Bearer ' + secret, safe='')}"),
+        ("double-url-encoded", f"q={quote(quote('token=' + secret, safe=''), safe='')}"),
+        ("base64", "blob=" + base64.b64encode(f"password={secret}".encode()).decode()),
+        (
+            "base64-urlsafe",
+            "blob=" + base64.urlsafe_b64encode(f"token: {secret}".encode()).decode(),
+        ),
+        ("base64-bare-secret", "blob=" + base64.b64encode(secret.encode()).decode()),
+        ("mixed-whitespace", "Authorization: 　Bearer\t " + secret),
+        ("fullwidth-bearer", "Ｂｅａｒｅｒ " + secret),
+    ):
+        out = lr.redact_text(text)
+        check("FTF-0904-A1", f"{label} leaked: {out!r}", not leaked([secret], [out]))
+
+
+def test_benign_text_survives() -> None:
+    for text in (
+        "job 42 finished in 130 ms",
+        "request_id=req-1 state=running",
+        "GET https://api.example.com/v1/models?limit=10 -> 200",
+        "",
+    ):
+        check("FTF-0904-A1", f"benign text mangled: {text!r}", lr.redact_text(text) == text)
+    check(
+        "FTF-0904-A1",
+        "redaction is idempotent",
+        lr.redact_text(lr.redact_text("token=" + SECRETS["opaque"]))
+        == lr.redact_text("token=" + SECRETS["opaque"]),
+    )
+
+
+def test_redact_value_keeps_container_types() -> None:
+    check("FTF-0904-A1", "list stays a list", lr.redact_value(["a", "b"]) == ["a", "b"])
+    check("FTF-0904-A1", "tuple stays a tuple", lr.redact_value(("a", 1)) == ("a", 1))
+    check("FTF-0904-A1", "set becomes a list", lr.redact_value({"only"}) == ["only"])
+    check("FTF-0904-A1", "bytes become redacted text", lr.redact_value(b"hello") == "hello")
+    check(
+        "FTF-0904-A1",
+        "scalars pass through",
+        lr.redact_value((None, True, 3, 2.5)) == (None, True, 3, 2.5),
+    )
+
+
+def test_benign_case_and_encoding_survive() -> None:
+    for text in (
+        "Job ABC Finished OK  with  spaces\n",
+        "Folder%2FSub%20Dir and UPPER",
+        "blob=" + base64.b64encode(b"Hello World, nothing secret here.\n").decode(),
+        "id=Req-AbCdEfGhIjKlMnOpQr",
+    ):
+        out = lr.redact_text(text)
+        check("FTF-0904-A1", f"benign text altered: {out!r}", out == text)
+    padded = base64.b64encode(b"  PASSWORD=Hunter2Upper-Zq9  \n").decode()
+    out = lr.redact_text("x " + padded + " y")
+    check(
+        "FTF-0904-A1",
+        f"upper-case padded base64 secret leaked: {out!r}",
+        padded not in out and "Hunter2Upper" not in out,
+    )
+    binary = base64.b64encode(b"\x00\x01token=pw-Binary-4422\x02").decode()
+    check("FTF-0904-A1", "binary-wrapped secret leaked", binary not in lr.redact_text(binary))
+
+
+def test_extra_attribute_names_and_install_targets() -> None:
+    with _Harness() as h:
+        logging.getLogger("ftf0904.names").info(
+            "m", extra={"MyPayload": SECRETS["openai"], "Name": SECRETS["openai"]}
+        )
+        rec_vars = [vars(r) for r in h.seen_records]
+    check(
+        "FTF-0904-A1",
+        "a mixed-case extra attribute is redacted under its own name, no lowercased twin",
+        all(v.get("MyPayload") == lr.REDACTED and "mypayload" not in v for v in rec_vars),
+    )
+    check(
+        "FTF-0904-A1",
+        "an extra named like a standard attribute but differently cased is still scrubbed",
+        all(v.get("Name") == lr.REDACTED for v in rec_vars),
+    )
+    own = logging.getLogger("ftf0904.own")
+    own_handler = logging.StreamHandler(io.StringIO())
+    own.addHandler(own_handler)
+    other = logging.StreamHandler(io.StringIO())
+    try:
+        with _Harness(install=False) as h:
+            h.root.addHandler(other)
+            lr.install_redaction(own)
+            check(
+                "FTF-0904-A1",
+                "install_redaction(logger) covers that logger's handlers only",
+                any(isinstance(f, lr.RedactingFilter) for f in own_handler.filters)
+                and not any(isinstance(f, lr.RedactingFilter) for f in other.filters),
+            )
+            lr.install_redaction()
+            check(
+                "FTF-0904-A1",
+                "install_redaction() with no argument covers the root logger's handlers",
+                any(isinstance(f, lr.RedactingFilter) for f in other.filters),
+            )
+    finally:
+        own.removeHandler(own_handler)
+
+
+def test_redact_value_structures() -> None:
+    value = {
+        "password": "pw-Struct-4455",
+        "nested": {
+            "api_key": "key-Struct-6677",
+            "n": 1,
+            "list": ["Authorization: Bearer lst-Struct-8899", 3],
+        },
+        "ok": "fine",
+    }
+    out: Any = lr.redact_value(value)
+    text = repr(out)
+    for needle in ("pw-Struct-4455", "key-Struct-6677", "lst-Struct-8899"):
+        check("FTF-0904-A1", f"{needle} survived redact_value: {text}", needle not in text)
+    check(
+        "FTF-0904-A1",
+        "non-secret structure preserved",
+        out["ok"] == "fine" and out["nested"]["n"] == 1,
+    )
+    check("FTF-0904-A1", "input is not mutated", value["password"] == "pw-Struct-4455")
+    cyc: dict[str, object] = {"password": "pw-Cyc-1122"}
+    cyc["self"] = cyc
+    check(
+        "FTF-0904-A1",
+        "cyclic structure is bounded, not recursed forever",
+        "pw-Cyc-1122" not in repr(lr.redact_value(cyc)),
+    )
+    deep: object = "token=pw-Deep-3344"
+    for _ in range(40):
+        deep = [deep]
+    check(
+        "FTF-0904-A1",
+        "over-deep structure is cut, never leaked",
+        "pw-Deep-3344" not in repr(lr.redact_value(deep)),
+    )
+
+    class Obj:
+        def __repr__(self) -> str:
+            return "Obj(token=pw-Repr-5566)"
+
+    check(
+        "FTF-0904-A1",
+        "bytes values are redacted",
+        "pw-Bytes-7788" not in repr(lr.redact_value(b"token=pw-Bytes-7788 x")),
+    )
+    check(
+        "FTF-0904-A1",
+        "non-string mapping keys do not break redaction",
+        "pw-IntKey-9911" not in repr(lr.redact_value({1: "password=pw-IntKey-9911"})),
+    )
+    check(
+        "FTF-0904-A1",
+        "arbitrary object redacted via its repr",
+        "pw-Repr-5566" not in repr(lr.redact_value(Obj())),
+    )
+
+
+# ---------------------------------------------------------------------------
+# ACC-1 end to end through real logging: ingress and sink
+# ---------------------------------------------------------------------------
+
+
+def test_logging_end_to_end_ingress_and_sink() -> None:
+    secrets = list(SECRETS.values())
+    with _Harness() as h:
+        log = logging.getLogger("ftf0904.e2e")
+        for name, secret in SECRETS.items():
+            if name != "opaque":  # a bare opaque value has no shape to match (disclosed limit)
+                log.info("plain %s", secret)
+                log.info("fmt " + secret.replace("%", "%%"))
+                log.warning("split %s%s", secret[:9], secret[9:])
+                log.info("extra", extra={"payload": secret})
+            log.error("dict %r", {"Authorization": "Bearer " + secret})
+            log.info("extra", extra={"headers": {"cookie": "sid=" + secret}, "password": secret})
+            log.info("kv password=%s", secret)
+        log.info(
+            "url %s", "https://u:" + SECRETS["opaque"] + "@h.example/p?token=" + SECRETS["github"]
+        )
+        log.info("to the console handlers too %s", SECRETS["openai"])
+    check(
+        "FTF-0904-A1",
+        f"secrets reached an output: {leaked(secrets, h.outputs())}",
+        not leaked(secrets, h.outputs()),
+    )
+    check(
+        "FTF-0904-A1",
+        "console handlers (stderr/stdout) carried the redacted line",
+        "to the console handlers too" in h.err.getvalue()
+        and "to the console handlers too" in h.out.getvalue(),
+    )
+    check(
+        "FTF-0904-A1",
+        "records still reach handlers (redaction does not drop them)",
+        len(h.seen_records) > 20,
+    )
+    check(
+        "FTF-0904-A1",
+        "non-secret message text is preserved",
+        any("plain" in line for line in h.lines),
+    )
+
+
+def test_sink_redacts_even_when_ingress_was_bypassed() -> None:
+    secret = SECRETS["github"]
+    with _Harness(install=False) as h:
+        handler = logging.StreamHandler(io.StringIO())
+        lr.attach_sink(handler)
+        h.root.handlers = [handler]
+        record = logging.LogRecord("x", logging.INFO, __file__, 1, "tok %s", (secret,), None)
+        record.payload = secret
+        h.root.handle(record)
+        out = handler.stream.getvalue()
+    check("FTF-0904-A1", f"sink-only handler leaked: {out!r}", not leaked([secret], [out]))
+    check("FTF-0904-A1", "sink keeps the non-secret part", "tok" in out)
+    # the sink alone, with a record that still carries a raw exc_info / exc_text / stack_info
+    with _Harness(install=False) as h2:
+        sink = logging.StreamHandler(io.StringIO())
+        lr.attach_sink(sink)
+        h2.root.handlers = [sink]
+        try:
+            raise ValueError("sink-only token=" + SECRETS["github_pat"])
+        except ValueError:
+            raw_info = sys.exc_info()
+        rec_exc = logging.LogRecord("x", logging.ERROR, __file__, 1, "boom", None, raw_info)
+        rec_text = logging.LogRecord("x", logging.ERROR, __file__, 1, "boom2", None, None)
+        rec_text.exc_text = "Traceback: Authorization: Bearer " + SECRETS["hf"]
+        rec_stack = logging.LogRecord(
+            "x",
+            logging.ERROR,
+            __file__,
+            1,
+            "boom3",
+            None,
+            None,
+            sinfo="Stack: token=" + SECRETS["slack"],
+        )
+        for rec in (rec_exc, rec_text, rec_stack):
+            h2.root.handle(rec)
+        sink_out = sink.stream.getvalue()
+    check(
+        "FTF-0904-A2",
+        f"sink-only exc_info/exc_text/stack_info leaked: {sink_out!r}",
+        not leaked([SECRETS["github_pat"], SECRETS["hf"], SECRETS["slack"]], [sink_out]),
+    )
+    check("FTF-0904-A2", "sink-only keeps the traceback shape", "ValueError" in sink_out)
+    # each layer alone. Filter alone: inspect the record it leaves behind.
+    try:
+        raise ValueError("filter-only token=" + SECRETS["github_pat"])
+    except ValueError:
+        raw_info2 = sys.exc_info()
+    only = logging.LogRecord(
+        "x",
+        logging.ERROR,
+        __file__,
+        1,
+        "m %s",
+        ("Bearer " + SECRETS["openai"],),
+        raw_info2,
+        sinfo="Stack: token=" + SECRETS["slack"],
+    )
+    only.__dict__["pre_exc"] = None
+    lr.RedactingFilter().filter(only)
+    left = repr(sorted((k, repr(v)) for k, v in vars(only).items()))
+    check(
+        "FTF-0904-A2",
+        "the filter alone leaves no secret on the record (msg/args/exc/stack)",
+        not leaked([SECRETS["openai"], SECRETS["github_pat"], SECRETS["slack"]], [left]),
+    )
+    check(
+        "FTF-0904-A2",
+        "the filter alone renders the exception into exc_text",
+        "ValueError" in (only.exc_text or ""),
+    )
+    pre = logging.LogRecord("x", logging.ERROR, __file__, 1, "p", None, None)
+    pre.exc_text = "Traceback: Authorization: Bearer " + SECRETS["hf"]
+    lr.RedactingFilter().filter(pre)
+    check(
+        "FTF-0904-A2",
+        "a pre-set exc_text is redacted by the filter",
+        not leaked([SECRETS["hf"]], [pre.exc_text or ""]),
+    )
+    # Formatter layer alone: the filter is removed after attach_sink.
+    bare = logging.StreamHandler(io.StringIO())
+    lr.attach_sink(bare)
+    bare.filters.clear()
+    check(
+        "FTF-0904-A1",
+        "attach_sink installs a redacting formatter",
+        isinstance(bare.formatter, lr.RedactingFormatter),
+    )
+    rec_fmt = logging.LogRecord(
+        "x", logging.INFO, __file__, 1, "raw %s", ("token=" + SECRETS["opaque"],), None
+    )
+    bare.handle(rec_fmt)
+    check(
+        "FTF-0904-A1",
+        "formatter layer alone redacts the line",
+        not leaked([SECRETS["opaque"]], [bare.stream.getvalue()]),
+    )
+    # formatter used on its own, with no filter at all
+    fmt = lr.RedactingFormatter("%(message)s")
+    rec = logging.LogRecord(
+        "x", logging.INFO, __file__, 1, "a %s", ("Bearer " + SECRETS["openai"],), None
+    )
+    check(
+        "FTF-0904-A1",
+        "RedactingFormatter alone redacts",
+        not leaked([SECRETS["openai"]], [fmt.format(rec)]),
+    )
+
+
+def test_install_is_idempotent_and_covers_late_handlers() -> None:
+    with _Harness() as h:
+        lr.install_redaction(h.root)
+        lr.install_redaction(h.root)
+        late = logging.StreamHandler(io.StringIO())
+        h.root.addHandler(late)
+        logging.getLogger("ftf0904.late").info("late %s", SECRETS["slack"])
+        # ingress redaction is at record creation, so a handler added after install is covered too
+        check(
+            "FTF-0904-A1",
+            "late handler is covered by ingress",
+            not leaked([SECRETS["slack"]], [late.stream.getvalue()]),
+        )
+        chain = 0
+        factory = logging.getLogRecordFactory()
+        while hasattr(factory, "__wrapped__"):
+            factory = factory.__wrapped__
+            chain += 1
+        check("FTF-0904-A1", f"record factory wrapped exactly once, got {chain}", chain == 1)
+        filters = [f for f in h.root.handlers[0].filters if isinstance(f, lr.RedactingFilter)]
+        check("FTF-0904-A1", "sink filter attached once per handler", len(filters) == 1)
+
+
+# ---------------------------------------------------------------------------
+# ACC-2: exceptions
+# ---------------------------------------------------------------------------
+
+
+def _raise_chain(secret: str) -> BaseException:
+    try:
+        try:
+            raise ValueError(f"inner failed token={secret}")
+        except ValueError as inner:
+            raise RuntimeError("outer failed (see cause)") from inner
+    except RuntimeError as outer:
+        outer.add_note(f"note: Authorization: Bearer {secret}")
+        return outer
+
+
+def test_exception_chain_notes_and_traceback_are_redacted() -> None:
+    secret = SECRETS["openai"]
+    out = lr.redact_exception(_raise_chain(secret))
+    check("FTF-0904-A2", f"chain/notes leaked: {out!r}", not leaked([secret], [out]))
+    check(
+        "FTF-0904-A2",
+        "exception type and structure kept",
+        "RuntimeError" in out and "ValueError" in out,
+    )
+
+    try:
+        try:
+            raise KeyError("ctx-" + secret)
+        except KeyError:
+            raise OSError("implicit context")  # noqa: B904 -- __context__ on purpose
+    except OSError as exc:
+        implicit = lr.redact_exception(exc)
+    check("FTF-0904-A2", "implicit __context__ redacted", not leaked([secret], [implicit]))
+
+    class Weird(Exception):
+        def __str__(self) -> str:
+            return "weird token=" + secret
+
+    check(
+        "FTF-0904-A2",
+        "custom __str__ redacted",
+        not leaked([secret], [lr.redact_exception(Weird())]),
+    )
+
+    group = ExceptionGroup("grp", [ValueError("a token=" + secret), TypeError("b " + secret)])
+    check(
+        "FTF-0904-A2",
+        "ExceptionGroup members redacted",
+        not leaked([secret], [lr.redact_exception(group)]),
+    )
+
+    exc_a = RuntimeError("a token=" + secret)
+    exc_b = RuntimeError("b token=" + secret)
+    exc_a.__cause__ = exc_b
+    exc_b.__cause__ = exc_a
+    check(
+        "FTF-0904-A2",
+        "cyclic cause chain terminates, redacted",
+        not leaked([secret], [lr.redact_exception(exc_a)]),
+    )
+
+
+def test_logging_exception_paths_never_leak() -> None:
+    secret = SECRETS["github"]
+    with _Harness() as h:
+        log = logging.getLogger("ftf0904.exc")
+        try:
+            raise _raise_chain(secret)
+        except RuntimeError:
+            log.exception("handler failed")
+            log.error("explicit", exc_info=True)
+        log.error("stack", stack_info=True, extra={"detail": "x " + secret})
+        log.error("tuple", exc_info=(RuntimeError, RuntimeError("t " + secret), None))
+    check(
+        "FTF-0904-A2",
+        f"logged exception leaked: {leaked([secret], h.outputs())}",
+        not leaked([secret], h.outputs()),
+    )
+    check(
+        "FTF-0904-A2",
+        "traceback shape is still logged",
+        any("Traceback" in line or "RuntimeError" in line for line in h.lines),
+    )
+    check(
+        "FTF-0904-A2",
+        "no record carries a raw exc_info for another handler to render",
+        all(getattr(r, "exc_info", None) in (None, False) for r in h.seen_records),
+    )
+
+
+# ---------------------------------------------------------------------------
+# NEG-1: the redactor failing must not log the raw payload
+# ---------------------------------------------------------------------------
+
+RAW = "RAWPAYLOAD-" + _ALNUM
+
+
+def test_redactor_failure_logs_a_constant_marker_only() -> None:
+    class Boom(str):
+        def __str__(self) -> str:
+            raise RuntimeError("str exploded " + RAW)
+
+    class BadRepr:
+        def __repr__(self) -> str:
+            raise RuntimeError("repr exploded " + RAW)
+
+    with _Harness() as h:
+        log = logging.getLogger("ftf0904.neg1")
+        log.info(
+            "bad format %d " + RAW, "not-a-number"
+        )  # mismatched args: logging would dump raw to stderr
+        log.info("object %s " + RAW, BadRepr())
+        log.info("exploding %s", Boom(RAW))
+        log.info("extra", extra={"payload": RAW, "obj": BadRepr()})
+        log.info("big " + RAW + "x" * (lr.MAX_TEXT_LENGTH + 5))
+    check(
+        "FTF-0904-N1",
+        f"raw payload reached an output after failures: {leaked([RAW], h.outputs())}",
+        RAW not in "\n".join(h.outputs()),
+    )
+    check(
+        "FTF-0904-N1",
+        "the failure marker is what was logged",
+        any(lr.REDACTION_FAILED_MARKER in line for line in h.lines),
+    )
+    check(
+        "FTF-0904-N1",
+        "marker is a content-free constant",
+        lr.REDACTION_FAILED_MARKER == "[LOG_REDACTION_FAILED]",
+    )
+    check(
+        "FTF-0904-N1",
+        "logging's own error dump to stderr is empty",
+        "Logging error" not in h.err.getvalue(),
+    )
+
+
+def test_a_raising_rule_fails_closed_not_open() -> None:
+    class ExplodingPattern:
+        def sub(self, *_a: object, **_k: object) -> str:
+            raise RuntimeError("rule exploded " + RAW)
+
+    saved = lr._RULES
+    lr._RULES = (*saved, ("exploding", ExplodingPattern()))
+    try:
+        check(
+            "FTF-0904-N1",
+            "redact_text raises its own coded error",
+            _raises(lr.LogRedactionError, lr.redact_text, RAW),
+        )
+        check(
+            "FTF-0904-N1",
+            "redact_exception raises its own coded error when a rule fails",
+            _raises(lr.LogRedactionError, lr.redact_exception, ValueError(RAW)),
+        )
+        check(
+            "FTF-0904-N1",
+            "redact_value raises its own coded error when a rule fails",
+            _raises(lr.LogRedactionError, lr.redact_value, {"k": RAW}),
+        )
+        with _Harness() as h:
+            logging.getLogger("ftf0904.neg1b").info("msg " + RAW, extra={"k": RAW})
+            try:
+                raise ValueError(RAW)
+            except ValueError:
+                logging.getLogger("ftf0904.neg1b").exception("e")
+            fmt = lr.RedactingFormatter("%(message)s")
+            rec = logging.LogRecord("x", logging.INFO, __file__, 1, "m " + RAW, None, None)
+            formatted = fmt.format(rec)
+        check(
+            "FTF-0904-N1",
+            "formatter returns the marker when the rule raises",
+            formatted == lr.REDACTION_FAILED_MARKER,
+        )
+        check(
+            "FTF-0904-N1",
+            "raw payload never reached an output",
+            RAW not in "\n".join(h.outputs() + [formatted]),
+        )
+        err = None
+        try:
+            lr.redact_text(RAW)
+        except lr.LogRedactionError as exc:
+            err = exc
+        check(
+            "FTF-0904-N1",
+            "coded error echoes no caller text",
+            err is not None
+            and RAW not in str(err)
+            and RAW not in repr(err)
+            and err.code == "LOG_REDACTION_FAILED",
+        )
+        check(
+            "FTF-0904-N1",
+            "coded error does not chain the raw cause",
+            err is not None and err.__cause__ is None and err.__suppress_context__,
+        )
+        check(
+            "FTF-0904-N1",
+            "coded error carries no context, notes or attributes holding caller text",
+            err is not None
+            and err.__context__ is None
+            and not getattr(err, "__notes__", None)
+            and vars(err) == {}
+            and err.args == ("log redaction failed",),
+        )
+    finally:
+        lr._RULES = saved
+    check(
+        "FTF-0904-N1",
+        "state restored: redaction works again",
+        lr.redact_text("token=" + SECRETS["opaque"]) != "token=" + SECRETS["opaque"],
+    )
+
+
+def test_non_text_inputs_are_coded_refusals() -> None:
+    for bad in (None, 5, b"token=abc", object(), ["x"]):
+        check(
+            "FTF-0904-N1",
+            f"redact_text({type(bad).__name__}) must be a coded error",
+            _raises(lr.LogRedactionError, lr.redact_text, bad),
+        )
+    check(
+        "FTF-0904-N1",
+        "the error message is the constant one",
+        str(lr.LogRedactionError()) == "log redaction failed",
+    )
+    check(
+        "FTF-0904-N1",
+        "exception redactor refuses non-exceptions",
+        _raises(lr.LogRedactionError, lr.redact_exception, "not an exception"),
+    )
+    check(
+        "FTF-0904-N1",
+        "str subclass is refused (exact types)",
+        _raises(lr.LogRedactionError, lr.redact_text, type("S", (str,), {})("x")),
+    )
+
+
+# ---------------------------------------------------------------------------
+# NEG-2: redaction does not authorise external telemetry of sensitive content
+# ---------------------------------------------------------------------------
+
+
+def test_redacted_text_is_still_refused_by_external_telemetry() -> None:
+    from packages.security import content_free_telemetry as cft
+
+    redacted = lr.redact_text(
+        "Authorization: Bearer " + SECRETS["openai"] + " failed on prompt: summarise my contract"
+    )
+    refused = 0
+    attempts = 0
+    for kind in cft.EVENT_KINDS:
+        baseline = _valid_event_fields(kind)
+        check(
+            "FTF-0904-N2",
+            f"baseline {kind} event must itself be valid",
+            _accepted(cft, kind, baseline),
+        )
+        for field in [*cft.EVENT_SCHEMAS[kind], "message", "detail", "text", "redacted"]:
+            attempts += 1
+            if not _accepted(cft, kind, {**baseline, field: redacted}):
+                refused += 1
+    check(
+        "FTF-0904-N2",
+        f"redacted free text accepted by external telemetry ({refused}/{attempts} refused)",
+        refused == attempts and attempts > 20,
+    )
+    source = MODULE.read_text(encoding="utf-8")
+    check(
+        "FTF-0904-N2",
+        "module never imports or builds telemetry events",
+        "content_free_telemetry" not in source and "emit_event" not in source,
+    )
+    public = [n for n in dir(lr) if not n.startswith("_")]
+    check(
+        "FTF-0904-N2",
+        "module exposes no telemetry-permission function",
+        not any(re.search(r"telemetry|egress|external", n, re.I) for n in public),
+    )
+
+
+def _accepted(cft: object, kind: str, fields: dict[str, object]) -> bool:
+    try:
+        cft.emit_event(kind, fields)  # type: ignore[attr-defined]
+    except cft.ContentFreeTelemetryError:  # type: ignore[attr-defined]
+        return False
+    return True
+
+
+def _valid_event_fields(kind: str) -> dict[str, object]:
+    from datetime import UTC, datetime
+
+    from packages.security import content_free_telemetry as cft
+
+    out: dict[str, object] = {}
+    for name, spec in cft.EVENT_SCHEMAS[kind].items():
+        if not spec.required:
+            continue
+        if spec.kind == "id":
+            out[name] = "id-1"
+        elif spec.kind == "code":
+            out[name] = "code_1"
+        elif spec.kind == "enum":
+            assert spec.enum is not None
+            out[name] = spec.enum[0]
+        elif spec.kind == "timestamp":
+            out[name] = datetime.now(UTC)
+        else:
+            raise AssertionError(f"unhandled required kind {spec.kind}")
+    return out
+
+
+def _raises(exc_type: type[BaseException], fn, *args: object, **kwargs: object) -> bool:
+    try:
+        fn(*args, **kwargs)
+    except exc_type:
+        return True
+    except Exception:
+        return False
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Fault injection: mutate a COPY of the module, rerun the behavioural checks
+# ---------------------------------------------------------------------------
+
+# (id, old, new): `old` must occur in the real module exactly `count` times.
+FAULTS: list[tuple[str, str, str, int]] = [
+    # --- rules removed one at a time -------------------------------------------------
+    ("F01 header rule removed", '    ("header", _HEADER),\n', "", 1),
+    ("F02 bearer/basic rule removed", '    ("bearer", _BEARER),\n', "", 1),
+    ("F03 token-prefix rule removed", '    ("prefix", _PREFIXES),\n', "", 1),
+    ("F04 URL userinfo rule removed", '    ("userinfo", _USERINFO),\n', "", 1),
+    ("F05 key=value rule removed", '    ("key_value", _KEY_VALUE),\n', "", 1),
+    ("F06 PEM rule removed", '    ("pem", _PEM),\n', "", 1),
+    # --- pattern weakened --------------------------------------------------------------
+    (
+        "F07 header value stops at whitespace",
+        '|[^\\r\\n]*)",\n    re.I,',
+        '|[^\\s]*)",\n    re.I,',
+        1,
+    ),
+    ("F08 escaped-JSON value form dropped", '\\\\+"[^"\\r\\n]*?\\\\+"|', "", 1),
+    ("F09 userinfo stops at first @", '[^/\\s?#]*@")', '[^/\\s?#@]*@")', 1),
+    ("F10 idempotence guard dropped", "\\[REDACTED\\]|{_QUOTED_VALUE}", "{_QUOTED_VALUE}", 1),
+    # --- normalisation and decoding ----------------------------------------------------
+    ("F11 NFKC skipped", 'unicodedata.normalize("NFKC", text)', "text", 1),
+    ("F12 format characters kept", '("Cf", "Cc", "Cs", "Co", "Cn")', '("Cc", "Cs", "Co", "Cn")', 1),
+    (
+        "F13 no percent-decoding",
+        "layers.append(unquote(layers[-1]))",
+        "layers.append(layers[-1])",
+        1,
+    ),
+    ("F14 one percent-decoding layer", "_MAX_DECODE_LAYERS = 3", "_MAX_DECODE_LAYERS = 1", 1),
+    (
+        "F15 decoded secret not returned",
+        "        if scanned != layer:\n            return scanned\n",
+        "",
+        1,
+    ),
+    ("F16 no base64 detection", "_BASE64_LAYERS = 2", "_BASE64_LAYERS = 0", 1),
+    (
+        "F17 one base64 layer only is not tested but zero is",
+        "    text = _apply_rules(text)\n    if layers <= 0:\n        return text\n",
+        "    text = _apply_rules(text)\n    return text\n",
+        1,
+    ),
+    # --- fail closed -------------------------------------------------------------------
+    (
+        "F18 oversize guard removed",
+        "    if len(text) > MAX_TEXT_LENGTH:\n        raise LogRedactionError\n",
+        "",
+        1,
+    ),
+    (
+        "F19 exact str type not required",
+        "    if type(text) is not str:\n        raise LogRedactionError\n",
+        "",
+        1,
+    ),
+    (
+        "F20 record failure keeps raw message",
+        "        record.msg = REDACTION_FAILED_MARKER\n",
+        "",
+        1,
+    ),
+    (
+        "F21 extras failure keeps raw extras",
+        "dict.fromkeys(extras, REDACTION_FAILED_MARKER)",
+        "{k: record.__dict__[k] for k in extras}",
+        1,
+    ),
+    (
+        "F22 formatter failure returns raw line",
+        "        except Exception:\n            return REDACTION_FAILED_MARKER\n",
+        "        except Exception:\n            return self.formatMessage(record)\n",
+        1,
+    ),
+    (
+        "F23 error chains its cause (text)",
+        "        raise LogRedactionError from None\n    return result\n\n\ndef redact_exception",
+        "        raise LogRedactionError\n    return result\n\n\ndef redact_exception",
+        1,
+    ),
+    # --- records, exceptions, extras ---------------------------------------------------
+    (
+        "F24 exception chain not redacted",
+        "        result = redact_text(rendered)",
+        "        result = rendered",
+        1,
+    ),
+    (
+        "F25 exc_info rendered raw",
+        "exc_text = redact_exception(value)",
+        'exc_text = "".join(traceback.format_exception(value))',
+        1,
+    ),
+    (
+        "F26 pre-set exc_text kept raw",
+        "exc_text = redact_text(str.__str__(record.exc_text))",
+        "exc_text = record.exc_text",
+        1,
+    ),
+    ("F27 stack_info kept raw", "stack_info = redact_text(str.__str__(stack_info))", "pass", 1),
+    ("F28 extras never written back", "    record.__dict__.update(scrubbed)\n", "", 1),
+    (
+        "F29 secret-named attribute value kept",
+        "REDACTED\n            if _SECRET_KEY_NAME.fullmatch(k)\n            else _redact_value(",
+        "_redact_value(\n            if True\n            else _redact_value(",
+        1,
+    ),
+    (
+        "F30 secret-named mapping key value kept",
+        "            if _SECRET_KEY_NAME.fullmatch(name):",
+        "            if False:",
+        1,
+    ),
+    (
+        "F31 depth and cycle guard removed",
+        "    if depth >= _MAX_DEPTH or id(value) in path:\n        return REDACTED\n",
+        "",
+        1,
+    ),
+    # --- ingress / sink wiring ---------------------------------------------------------
+    (
+        "F32 ingress factory not installed",
+        "        logging.setLogRecordFactory(_wrap_factory(current))",
+        "        pass",
+        1,
+    ),
+    (
+        "F33 factory wrapped on every call",
+        'if not getattr(current, "_ftf0904_redacting", False):',
+        "if True:",
+        1,
+    ),
+    (
+        "F34 sink filter not attached",
+        "        handler.addFilter(RedactingFilter())",
+        "        pass",
+        1,
+    ),
+    (
+        "F35 sink formatter not attached",
+        "        handler.setFormatter(RedactingFormatter(inner=existing))",
+        "        pass",
+        1,
+    ),
+    (
+        "F36 sink filter attached twice",
+        "    if not any(isinstance(f, RedactingFilter) for f in handler.filters):",
+        "    if True:",
+        1,
+    ),
+    (
+        "F37 formatter does not redact the line",
+        "            return redact_text(str.__str__(raw))",
+        "            return raw",
+        1,
+    ),
+]
+
+
+def _run_mutant(fault_id: str, old: str, new: str, count: int) -> tuple[bool, str]:
+    source = MODULE.read_text(encoding="utf-8")
+    if source.count(old) != count:
+        return False, f"fault {fault_id}: pattern occurs {source.count(old)}x, expected {count}"
+    with tempfile.TemporaryDirectory() as tmp:
+        pkg = Path(tmp) / "packages" / "security"
+        pkg.mkdir(parents=True)
+        (Path(tmp) / "packages" / "__init__.py").write_text("")
+        for sibling in (REAL_ROOT / "packages" / "security").glob("*.py"):
+            shutil.copy(sibling, pkg / sibling.name)
+        (pkg / "log_redaction.py").write_text(source.replace(old, new), encoding="utf-8")
+        env = {
+            **os.environ,
+            "FTF0904_ROOT": tmp,
+            "FTF0904_BEHAVIOUR_ONLY": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
+        }
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve())],
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=tmp,
+            timeout=300,
+            check=False,
+        )
+    return result.returncode != 0, (result.stdout + result.stderr)[-300:]
+
+
+def test_zz_fault_injection_turns_checks_red() -> None:
+    if BEHAVIOUR_ONLY:
+        return
+    for fault_id, old, new, count in FAULTS:
+        killed, detail = _run_mutant(fault_id, old, new, count)
+        check("FTF-0904-F", f"fault {fault_id} stayed GREEN ({detail})", killed)
+
+
+def main() -> None:
+    for name, fn in sorted(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            fn()
+    if FAILURES:
+        print(f"FTF-0904 Log redaction tests: {len(FAILURES)} failed")
+        for failure in FAILURES:
+            print(f"  {failure}")
+        sys.exit(1)
+    print("FTF-0904 Log redaction tests: all checks passed")
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
