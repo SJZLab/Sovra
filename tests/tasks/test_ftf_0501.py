@@ -5258,23 +5258,37 @@ def test_s8_the_listing_page_is_parsed_strictly() -> None:
             fake.listing_override = xml
             got, nxt3 = client.list_multipart_uploads_page(settings.bucket, prefix="tenants/")
             check(f"{CID}-S8", f"{label} -> an empty, complete page", got == [] and nxt3 is None)
-        broken = (
-            (
-                "no NextKeyMarker",
-                "<IsTruncated>true</IsTruncated><NextUploadIdMarker>u</NextUploadIdMarker>",
-            ),
-            (
-                "an empty NextKeyMarker",
-                "<IsTruncated>true</IsTruncated><NextKeyMarker></NextKeyMarker><NextUploadIdMarker>u</NextUploadIdMarker>",
-            ),
-            (
-                "no NextUploadIdMarker",
-                "<IsTruncated>true</IsTruncated><NextKeyMarker>k</NextKeyMarker>",
-            ),
+        # A truncated page without usable markers: the last entry returned is the next marker
+        # (what SeaweedFS needed), and with no entries to take it from the page is refused.
+        entry = (
+            "<Upload><Key>tenants/k1</Key><UploadId>u1</UploadId></Upload>"
+            "<Upload><Key>tenants/k2</Key><UploadId>u2</UploadId></Upload>"
         )
-        for label, tail in broken:
+        for label, tail in (
+            ("no markers at all", ""),
+            ("no NextKeyMarker", "<NextUploadIdMarker>zz</NextUploadIdMarker>"),
+            ("an empty NextKeyMarker", "<NextKeyMarker></NextKeyMarker>"),
+            ("no NextUploadIdMarker", "<NextKeyMarker>tenants/k2</NextKeyMarker>"),
+        ):
             fake.listing_override = (
-                f"<ListMultipartUploadsResult>{tail}</ListMultipartUploadsResult>"
+                f"<ListMultipartUploadsResult>{entry}<IsTruncated>true</IsTruncated>{tail}"
+                "</ListMultipartUploadsResult>"
+            )
+            got_page, got_next = client.list_multipart_uploads_page(
+                settings.bucket, prefix="tenants/"
+            )
+            check(
+                f"{CID}-S8",
+                f"{label}: the last entry returned becomes the next marker",
+                len(got_page) == 2 and got_next == ("tenants/k2", "u2"),
+            )
+        for label, tail in (
+            ("no markers", ""),
+            ("an empty NextKeyMarker", "<NextKeyMarker></NextKeyMarker>"),
+        ):
+            fake.listing_override = (
+                "<ListMultipartUploadsResult><IsTruncated>true</IsTruncated>"
+                f"{tail}</ListMultipartUploadsResult>"
             )
             try:
                 client.list_multipart_uploads_page(settings.bucket, prefix="tenants/")
@@ -5282,7 +5296,9 @@ def test_s8_the_listing_page_is_parsed_strictly() -> None:
             except s3.S3Error as exc:
                 got_error = exc
             check(
-                f"{CID}-S8", f"{label} is a malformed response", isinstance(got_error, s3.S3Error)
+                f"{CID}-S8",
+                f"a truncated page with no entries and {label} is a malformed response",
+                isinstance(got_error, s3.S3Error),
             )
         # The same markers as were sent are not progress.
         fake.listing_override = (

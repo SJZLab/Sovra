@@ -619,10 +619,19 @@ class S3Client:
             return page, None
         next_key = parsed.get("NextKeyMarker")
         next_upload = parsed.get("NextUploadIdMarker")
-        if not isinstance(next_key, str) or not next_key or not isinstance(next_upload, str):
-            raise S3Error(0, "MalformedResponse", "ListMultipartUploads gave no usable markers")
+        if not (isinstance(next_key, str) and next_key and isinstance(next_upload, str)):
+            # Some servers (SeaweedFS 3.99 was seen doing this) flag the page truncated but omit or
+            # empty a marker. S3's own rule is that the next marker is the last entry returned.
+            last = page[-1] if page else {}
+            next_key, next_upload = last.get("Key"), last.get("UploadId")
+            if not (isinstance(next_key, str) and next_key and isinstance(next_upload, str)):
+                raise S3Error(0, "MalformedResponse", "ListMultipartUploads gave no usable markers")
         if (next_key, next_upload) == (key_marker, upload_id_marker):
-            raise S3Error(0, "MalformedResponse", "ListMultipartUploads did not advance")
+            raise S3Error(
+                0,
+                "MalformedResponse",
+                f"ListMultipartUploads did not advance (markers {next_key!r}/{next_upload!r})",
+            )
         return page, (next_key, next_upload)
 
     def list_parts(self, bucket: str, key: str, upload_id: str) -> list[dict[str, str]]:
