@@ -9904,6 +9904,12 @@ docs/spec-matrix.yaml. It never invents criteria.)
 
 ---
 
+- **FTF-0904 Log redaction** (Control-plane 2026-10-09; deps FTF-0902, FTF-0903 CERTIFIED; §11-12, §65, §66, §70, §77, §81; DoD: `tools/r1_handoff.py packet FTF-0904`; lock `security:log_redaction`; contract owner FTF-0902, read 09-interface.yaml and 09-domain.schema.json; files `packages/security/log_redaction.py`, `tests/tasks/test_ftf_0904.py`). Acceptance: "Sanitize known secret headers/URLs/tokens and unstructured exception content at ingress and sink." Negative: "Redactor failure must not log raw payload; redaction alone cannot justify external telemetry of sensitive content."
+  - A stdlib `logging` filter/formatter applied at ingress (record creation) and at every sink handler, plus a function for exception text. It redacts known secret headers (Authorization, Proxy-Authorization, Cookie, Set-Cookie, X-Api-Key and the like), userinfo and token-like query values in URLs, bearer/basic credentials and known token prefixes (sk-, ghp_, xox*-, AKIA..., JWT-shaped), and the rendered exception text including `__cause__`/`__context__` chains and `__notes__`.
+  - Fail closed: if redaction raises, the record is replaced by a constant content-free marker with the redactor's error code - never the raw message, args or traceback. Redaction never upgrades a record to external telemetry; FTF-0903's content-free emitter stays the only external path.
+  - Lessons from FTF-0903 (build them in from round 1): one shared leak check over the fully rendered output (message, args, `traceback.format_exception` of the whole chain, notes, attributes) for every case; capture root logging, stderr and stdout; secrets generated as variants (case, whitespace, URL-encoding, base64-wrapped, split across args) rather than a fixed list; a fault table where each removed rule and a failing redactor go RED.
+  - Disclose UNWIRED if no live logger configuration installs it yet (proving_symbol blank).
+
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
 - **FTF-0516 Dataset issue resolution UI: PARKED (BLOCKED_DEPENDENCY), 2026-10-08T07:40Z, lane B.**
   - **2026-10-08T11:30Z:** prerequisite child slice FTF-0516-P1 is in the Backlog. Re-queue FTF-0516 when FTF-0516-P1 is CERTIFIED.

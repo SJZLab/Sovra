@@ -24627,3 +24627,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 - **Certified:** FTF-0903 (#685, merge c003010bb0f70ea4270316c02142817734f617b5).
 - **Returned:** FTF-0309 r2 (0c), FTF-H010-P1 r4 (0d), FTF-1703 r6 (0g), FTF-0516-P1 r5 (0l), FTF-R004-P2 r2 (0o).
 - **ci-verdict:** relay merges #682, #683, #685, #686, #688, #689, #690 landed on a green ci-verdict.
+
+## 2026-10-09T15:43Z — Control plane: Backlog refill (136/302)
+- **Queued:** FTF-0904 Log redaction (frontier; deps FTF-0902 and FTF-0903 now certified). Other frontier items are claimed, parked or sliced.
