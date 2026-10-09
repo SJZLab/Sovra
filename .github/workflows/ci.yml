@@ -340,6 +340,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_r005.py
       - name: FTF-R005 round-2 negative-test proof (run drift, Law 17 status, bounded retries, token redaction, no network required)
         run: uv run python3 tests/tasks/test_ftf_r005_r2.py
+      - name: FTF-R005 round-5 negative-test proof (DurableOutbox decisions with the DB seams faked, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_r005_r3.py
       - name: FTF-1506 negative-test proof (Dependency scanning, no network required)
         run: uv run python3 tests/tasks/test_ftf_1506.py
       - name: FTF-04A17 negative-test proof (DiscoveredAgentCandidate schema/API, no DB required)
