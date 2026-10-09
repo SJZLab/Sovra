@@ -5314,6 +5314,32 @@ def test_s8_the_listing_page_is_parsed_strictly() -> None:
                 f"{label}: next markers are {expected}",
                 len(got_page) == 2 and got_next == expected,
             )
+        # The last entry must itself name both a key and an upload id to stand in for a marker.
+        for label, entries in (
+            ("a last entry without an UploadId", "<Upload><Key>tenants/k1</Key></Upload>"),
+            (
+                "a last entry with an empty Key",
+                "<Upload><Key></Key><UploadId>u1</UploadId></Upload>",
+            ),
+            (
+                "a last entry with an empty UploadId and no Key",
+                "<Upload><UploadId></UploadId></Upload>",
+            ),
+        ):
+            fake.listing_override = (
+                f"<ListMultipartUploadsResult>{entries}<IsTruncated>true</IsTruncated>"
+                "</ListMultipartUploadsResult>"
+            )
+            try:
+                client.list_multipart_uploads_page(settings.bucket, prefix="tenants/")
+                got_error: Any = None
+            except s3.S3Error as exc:
+                got_error = exc
+            check(
+                f"{CID}-S8",
+                f"{label} cannot stand in for a marker",
+                isinstance(got_error, s3.S3Error),
+            )
         for label, tail in (
             ("no markers", ""),
             ("an empty NextKeyMarker", "<NextKeyMarker></NextKeyMarker>"),
@@ -5324,7 +5350,7 @@ def test_s8_the_listing_page_is_parsed_strictly() -> None:
             )
             try:
                 client.list_multipart_uploads_page(settings.bucket, prefix="tenants/")
-                got_error: Any = None
+                got_error = None
             except s3.S3Error as exc:
                 got_error = exc
             check(
