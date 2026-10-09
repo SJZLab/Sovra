@@ -441,6 +441,307 @@ def _round3_checks(
         cleanup.commit()
 
 
+_ALL_ORIGINS = ("factory_trained", "imported_weights", "imported_adapter", "external_endpoint")
+_ALL_KINDS = ("endpoint", "full_weight", "adapter")
+_ALL_STATES = ("queued", "validating", "failed", "succeeded", "blocked_external")
+_TERMINAL_STATES = ("failed", "succeeded", "blocked_external")
+
+
+def _expected_origin_row_refusal(
+    kind: str, origin: str, adapter_only: bool, artifact: bool, digest: bool
+) -> str | None:
+    """The Postgres CHECK that refuses the row (None = accepted), modelled from the
+    migrations' own constraint text. Postgres evaluates CHECK constraints in
+    alphabetical order of name and reports the first that fails."""
+    has_base = kind != "endpoint"
+    has_endpoint_ref = kind == "endpoint"
+    has_provider_ref = origin == "external_endpoint"
+    failing: list[str] = []
+    if kind == "endpoint":
+        kind_ok = not artifact and not digest and not has_base and has_endpoint_ref
+    else:
+        kind_ok = artifact and digest and has_base and not has_endpoint_ref
+    if not kind_ok:
+        failing.append("ck_model_versions_kind_consistency")
+    if origin == "external_endpoint" and not (not artifact and not digest and has_provider_ref):
+        failing.append("ck_model_versions_external_endpoint_consistency")
+    if origin == "imported_adapter" and not (has_base and adapter_only):
+        failing.append("ck_model_versions_imported_adapter_consistency")
+    origin_kind_ok = (
+        (kind == "endpoint" and origin == "external_endpoint")
+        or (
+            kind == "adapter" and origin in ("imported_adapter", "factory_trained") and adapter_only
+        )
+        or (kind == "full_weight" and origin in ("imported_weights", "factory_trained"))
+    )
+    if not origin_kind_ok:
+        failing.append("ck_model_versions_origin_import_kind_consistency")
+    return sorted(failing)[0] if failing else None
+
+
+def _round4_checks(
+    owner_engine: Any,
+    app_engine: Any,
+    *,
+    org1_id: uuid.UUID,
+    project1_id: uuid.UUID,
+    artifact1_id: uuid.UUID,
+) -> None:
+    """Round 4: complete tables (not hand-picked rows) for the origin/import-kind CHECK,
+    the SHA-256 columns and the whole job state matrix."""
+    version = [9300]
+
+    def insert_version(columns: dict[str, Any]) -> DBAPIError | None:
+        version[0] += 1
+        params: dict[str, Any] = {
+            "organization_id": str(org1_id),
+            "project_id": str(project1_id),
+            "version_number": version[0],
+            "created_by": "r4",
+            **columns,
+        }
+        names = ", ".join(params)
+        values = ", ".join(f":{name}" for name in params)
+        with Session(app_engine) as session:
+            _set_tenant(session, org1_id)
+            try:
+                session.execute(
+                    text(f"INSERT INTO model_versions ({names}) VALUES ({values})"), params
+                )
+                session.commit()
+                return None
+            except DBAPIError as exc:
+                session.rollback()
+                return exc
+
+    def read_version(column: str) -> Any:
+        with Session(app_engine) as session:
+            _set_tenant(session, org1_id)
+            row = session.execute(
+                text(f"SELECT {column} FROM model_versions WHERE version_number = :n"),
+                {"n": version[0]},
+            ).first()
+            session.commit()
+        return None if row is None else row[0]
+
+    # -- 1. every (import_kind, origin, adapter_only, artifact present, digest present) --
+    combos = 0
+    accepted = 0
+    for kind in _ALL_KINDS:
+        for origin in _ALL_ORIGINS:
+            for adapter_only in (False, True):
+                for artifact in (False, True):
+                    for digest in (False, True):
+                        combos += 1
+                        columns: dict[str, Any] = {
+                            "import_kind": kind,
+                            "origin": origin,
+                            "adapter_only": adapter_only,
+                            "trainable_artifact_id": str(artifact1_id) if artifact else None,
+                            "weights_digest": "sha256:" + "d" * 64 if digest else None,
+                            "base_model_revision": None if kind == "endpoint" else "rev",
+                            "endpoint_reference": "https://r4.example.com"
+                            if kind == "endpoint"
+                            else None,
+                            "external_provider_model_ref": "https://r4.example.com"
+                            if origin == "external_endpoint"
+                            else None,
+                        }
+                        label = (
+                            f"R4-1 [{kind} x {origin} x adapter_only={adapter_only} x "
+                            f"artifact={artifact} x digest={digest}]"
+                        )
+                        expected = _expected_origin_row_refusal(
+                            kind, origin, adapter_only, artifact, digest
+                        )
+                        exc = insert_version(columns)
+                        if expected is None:
+                            accepted += 1
+                            check(CID, f"{label} is accepted (got {exc!r})", exc is None)
+                            if exc is None:
+                                check(
+                                    CID,
+                                    f"{label} reads back origin={origin!r}",
+                                    read_version("origin") == origin,
+                                )
+                        else:
+                            check(CID, f"{label} is refused by {expected}", exc is not None)
+                            if exc is not None:
+                                check(
+                                    CID,
+                                    f"{label} is refused BY NAME by {expected} "
+                                    f"(got {_constraint_name(exc)!r})",
+                                    _constraint_name(exc) == expected,
+                                )
+    check(CID, f"R4-1 the table covers all 96 combinations (got {combos})", combos == 96)
+    check(
+        CID,
+        f"R4-1 exactly 8 of 96 combinations are accepted (got {accepted})",
+        accepted == 8,
+    )
+
+    # -- 2. SHA-256 columns: accepted value read back, each malformed shape refused --
+    valid = "0123456789abcdef" * 4
+    shapes: list[tuple[str, str, bool]] = [
+        ("a valid lowercase 64-hex value", valid, True),
+        ("63 hex", valid[:63], False),
+        ("65 hex", valid + "a", False),
+        ("64 upper-case hex", valid.upper(), False),
+        ("63 hex + a trailing space", valid[:63] + " ", False),
+        ("a space inside 64 chars", valid[:31] + " " + valid[32:], False),
+        ("63 hex + a '-'", valid[:63] + "-", False),
+        ("a '-' inside 64 chars", valid[:31] + "-" + valid[32:], False),
+        ("63 hex + a non-hex letter", valid[:63] + "g", False),
+        ("64 hex + trailing newline", valid + "\n", False),
+        ("the empty string", "", False),
+    ]
+    for column in ("chat_template_sha256", "serving_config_sha256"):
+        for label, value, ok in shapes:
+            exc = insert_version(
+                {
+                    "import_kind": "endpoint",
+                    "origin": "external_endpoint",
+                    "endpoint_reference": "https://r4.example.com",
+                    "external_provider_model_ref": "https://r4.example.com",
+                    column: value,
+                }
+            )
+            constraint = f"ck_model_versions_{column}_format"
+            if ok:
+                check(CID, f"R4-2 {column} = {label} is accepted (got {exc!r})", exc is None)
+                if exc is None:
+                    check(
+                        CID,
+                        f"R4-2 {column} = {label} is read back verbatim",
+                        read_version(column) == value,
+                    )
+            else:
+                check(CID, f"R4-2 {column} = {label} is refused", exc is not None)
+                if exc is not None:
+                    # a 65-char value hits the varchar(64) width (22001) before any CHECK
+                    named = _constraint_name(exc) == constraint
+                    too_long = len(value) > 64 and _sqlstate(exc) == "22001"
+                    check(
+                        CID,
+                        f"R4-2 {column} = {label} is refused by {constraint} "
+                        f"(got {_constraint_name(exc)!r}, sqlstate {_sqlstate(exc)})",
+                        named or too_long,
+                    )
+
+    # -- 3. job state machine: every state to every state --
+    created: list[uuid.UUID] = []
+
+    def failure_code_for(state: str) -> str | None:
+        return None if state in ("queued", "validating", "succeeded") else "r4"
+
+    def job_in_state(session: Session, state: str) -> uuid.UUID:
+        job_id = _raw_job(session, org1_id, project1_id)
+        created.append(job_id)
+        if state == "queued":
+            return job_id
+        path = ["validating"] if state == "validating" else ["validating", state]
+        for step in path:
+            _set_tenant(session, org1_id)
+            session.execute(
+                text("UPDATE model_import_jobs SET state = :s, failure_code = :c WHERE id = :id"),
+                {"s": step, "c": failure_code_for(step), "id": str(job_id)},
+            )
+            session.commit()
+        return job_id
+
+    allowed = {
+        ("queued", "queued"),
+        ("queued", "validating"),
+        ("validating", "validating"),
+        ("validating", "failed"),
+        ("validating", "succeeded"),
+        ("validating", "blocked_external"),
+    }
+    with Session(app_engine) as session:
+        for source in _ALL_STATES:
+            for target in _ALL_STATES:
+                job_id = job_in_state(session, source)
+                label = f"R4-3 {source} -> {target}"
+                _set_tenant(session, org1_id)
+                try:
+                    session.execute(
+                        text(
+                            "UPDATE model_import_jobs SET state = :s, failure_code = :c "
+                            "WHERE id = :id"
+                        ),
+                        {"s": target, "c": failure_code_for(target), "id": str(job_id)},
+                    )
+                    session.commit()
+                    check(CID, f"{label} is allowed", (source, target) in allowed)
+                    _set_tenant(session, org1_id)
+                    now = session.execute(
+                        text("SELECT state FROM model_import_jobs WHERE id = :id"),
+                        {"id": str(job_id)},
+                    ).scalar_one()
+                    session.commit()
+                    check(CID, f"{label} reads back state={target!r} (got {now!r})", now == target)
+                except DBAPIError as exc:
+                    session.rollback()
+                    if source in _TERMINAL_STATES:
+                        expected_message = (
+                            f"model_import_jobs_state_transition: {source} is a terminal state, "
+                            "no further change is allowed"
+                        )
+                    else:
+                        expected_message = (
+                            f"model_import_jobs_state_transition: {source} -> {target} is not an "
+                            "allowed state transition"
+                        )
+                    check(CID, f"{label} is refused", (source, target) not in allowed)
+                    check(
+                        CID,
+                        f"{label} is refused with sqlstate 23514 and message {expected_message!r} "
+                        f"(got {_sqlstate(exc)}, {_message(exc)!r})",
+                        _sqlstate(exc) == "23514" and _message(exc) == expected_message,
+                    )
+        for state in _ALL_STATES:
+            if state == "queued":
+                continue
+            _set_tenant(session, org1_id)
+            try:
+                session.execute(
+                    text(
+                        "INSERT INTO model_import_jobs (id, organization_id, project_id, "
+                        "requested_origin, state, failure_code, created_by) VALUES "
+                        "(:id, :org, :project, 'imported_weights', :s, :c, 'r4')"
+                    ),
+                    {
+                        "id": str(uuid.uuid4()),
+                        "org": str(org1_id),
+                        "project": str(project1_id),
+                        "s": state,
+                        "c": failure_code_for(state),
+                    },
+                )
+                session.commit()
+                check(CID, f"R4-3 a new job inserted at {state!r} is refused", False)
+            except DBAPIError as exc:
+                session.rollback()
+                expected_message = (
+                    "model_import_jobs_state_transition: a new job must be inserted at "
+                    f"state=queued, not {state}"
+                )
+                check(
+                    CID,
+                    f"R4-3 an insert at {state!r} is refused (23514, {expected_message!r}; "
+                    f"got {_sqlstate(exc)}, {_message(exc)!r})",
+                    _sqlstate(exc) == "23514" and _message(exc) == expected_message,
+                )
+    check(CID, "R4-3 the matrix covers 25 transitions", len(_ALL_STATES) ** 2 == 25)
+
+    with Session(owner_engine) as cleanup:
+        for job_id in created:
+            cleanup.execute(
+                text("DELETE FROM model_import_jobs WHERE id = :id"), {"id": str(job_id)}
+            )
+        cleanup.commit()
+
+
 def main() -> None:
     migration_url = _required_env("SOVRA_DATABASE_URL")
     app_password = _required_env("SOVRA_APP_DB_PASSWORD")
@@ -1397,6 +1698,13 @@ def main() -> None:
         org2_id=org2_id,
         project1_id=project1_id,
         project2_id=project2_id,
+        artifact1_id=artifact1_id,
+    )
+    _round4_checks(
+        owner_engine,
+        app_engine,
+        org1_id=org1_id,
+        project1_id=project1_id,
         artifact1_id=artifact1_id,
     )
 
