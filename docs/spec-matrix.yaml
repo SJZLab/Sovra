@@ -11775,7 +11775,7 @@ FTF-1703:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Training dataset
-  evidence_hash: 9f89a8a46f953e92ce4d7276caec9883cf95ef1b
+  evidence_hash: be9ae27023971b483a6df3d044089cafc6ed49e1
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0506, FTF-1701,
@@ -11808,6 +11808,24 @@ FTF-1703:
     identity is an unauthenticated string until the BLOCKED_EXTERNAL Argilla review step binds real
     review records, and held-out matching is exact after strip/casefold (no near-duplicate
     detection).
+
+    Round 4 (L2 return, production + tests): a frozen dataclass has no __slots__, so
+    `object.__setattr__(t, "to_dict", ...)` shadowed the bound method on an exact-type
+    `TrainingTrace` instance (round 3's subclass-only defense never fired on it), letting a trace
+    carrying a sealed prompt and a secret key pass provenance and the secret scan by lying through
+    the shadowed method -- reproduced as held-out leakage and a secret admission. Fixed two ways:
+    every verification path now reads trace content through direct field access
+    (`_raw_trace_dict`/`_raw_final_answer`), never a method call untrusted input could shadow, and
+    `_require_trace_shape` refuses a trace whose instance `__dict__` carries anything beyond its
+    declared fields, unconditionally. `build_training_dataset` also re-runs the secret scan,
+    held-out check and replay a second time on the freshly regenerated object (defense in depth),
+    and now tracks admitted generator indices so the same index can never be admitted twice under
+    a different id. `_validate_review` requires `type(review) is ReviewDecision` and exact `str`
+    fields (a subclass could override `strip()` to defeat the generator-identity check, or
+    `__eq__`/`__hash__` to make a conflicting decision look consistent to the set-based dedup
+    check). Every pre-existing test still passes unchanged. Fault -> RED table and the Law-1
+    self-attack (production reverted, new tests shown to fail against it, then restored) are in
+    docs/certifications/submissions/2026-10-08T2340Z-FTF-1703-r4.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1703.py
