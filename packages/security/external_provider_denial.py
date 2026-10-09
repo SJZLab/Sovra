@@ -59,9 +59,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from app.auth.audit_event_writer import (
+    _SAFE_IDENTIFIER,
     ALLOWED_ACTOR_TYPES,
-    AuditEventValidationError,
-    _validate_identifier,
     write_audit_event,
 )
 from packages.security.security_profile_enforcement import (
@@ -281,22 +280,19 @@ def _validate_audit(audit: object) -> AuditContext:
     """Typed refusal of a malformed AuditContext before any decision is made."""
     if not isinstance(audit, AuditContext):
         raise InvalidProviderRequestError("audit must be an AuditContext")
-    if audit.session is None or not callable(getattr(audit.session, "add", None)):
-        raise InvalidProviderRequestError("audit session must be a database session")
-    if not callable(getattr(audit.session, "commit", None)):
-        raise InvalidProviderRequestError("audit session must be a database session")
+    for method in ("add", "commit"):
+        if not callable(getattr(audit.session, method, None)):
+            raise InvalidProviderRequestError("audit session must be a database session")
     if type(audit.organization_id) is not uuid.UUID:
         raise InvalidProviderRequestError("audit organization_id must be a uuid.UUID")
     if type(audit.actor_type) is not str or audit.actor_type not in ALLOWED_ACTOR_TYPES:
         raise InvalidProviderRequestError(f"audit actor_type must be one of {ALLOWED_ACTOR_TYPES}")
     for name in ("actor_id", "request_id"):
         value = getattr(audit, name)
-        try:
-            if type(value) is not str:
-                raise AuditEventValidationError(name)
-            _validate_identifier(value, name)
-        except AuditEventValidationError:
-            raise InvalidProviderRequestError(f"audit {name} must be a safe identifier") from None
+        # fullmatch, not the writer's own `.match`: its `$` also accepts a
+        # trailing newline, which would persist as an identifier.
+        if type(value) is not str or not _SAFE_IDENTIFIER.fullmatch(value):
+            raise InvalidProviderRequestError(f"audit {name} must be a safe identifier")
     return audit
 
 
