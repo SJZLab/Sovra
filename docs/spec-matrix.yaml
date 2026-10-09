@@ -2258,15 +2258,26 @@ FTF-0308:
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_0308.spec.ts
 FTF-0309:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Capability compatibility UI
-  evidence_hash: ''
-  implementation_state: ABSENT
+  evidence_hash: 1b19294bec02edc353747b7b3be8eabb375801f3
+  implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0301, FTF-0307,
-    FTF-0308. certification_state/proof_state/implementation_state stay NONE/UNPROVEN/ABSENT --
-    FTF-0309's own UI scope is not implemented. proving_symbol/proving_test are filled per the
+    FTF-0308. PROVISIONAL / L1-PROVEN, not certified (Law 4). UI scope:
+    apps/web/components/artifact-capabilities/capability_compatibility_ui.tsx consumes only the
+    frozen FTF-0309-P1 GET .../models/{name}/capabilities?project_id= route, sends the model name
+    verbatim, shows every dimension with its dated evidence and the server's own `unknown` reason
+    codes, and disables Train unless trainable, access granted, artifact ready, license approved and
+    method_support / min_gpu_vram_gb / chat_template are all `known` (any other or unrecognised
+    state blocks; tested VRAM below the declared minimum blocks); 404, 503, network errors and a
+    malformed body are errors with no Train button (Law 17). Proof: apps/web/tests/ftf_0309.spec.ts
+    (10 DOM-level Vitest tests, mocked fetch). Disclosed UNWIRED (Law 6/7): no Next.js page tree
+    (FTF-H029) and no training-start caller, same precedent as FTF-0308; the frozen route can only
+    return `unknown` for the three tested dimensions today, so Train is disabled for every real
+    response. Fault -> RED table: docs/certifications/submissions/2026-10-09T1230Z-FTF-0309.md.
+    The proving_symbol/proving_test below are the FTF-0309-P1 API live-wiring evidence, per the
     2026-10-08T17:52Z Control-plane ruling on the FTF-0309-P1 round-2 DoD's open proving_symbol
     bullet: FTF-0309-P1's own child slice has no spec-matrix entry of its own, so its live-wiring
     evidence (apps/api/app/main.py mounts build_model_capability_router at
@@ -2276,7 +2287,7 @@ FTF-0309:
     call in main.py on a scratch copy reproduces the exact TRACKER unwired failure
     (45/46, "build_model_capability_router has no live callers") the gate is meant to catch,
     confirmed and reverted byte-identical.
-  proof_state: UNPROVEN
+  proof_state: L1-PROVEN
   proving_symbol: build_model_capability_router
   proving_test: tests/tasks/test_ftf_0309_p1.py
 FTF-0310:
