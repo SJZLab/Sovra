@@ -186,6 +186,31 @@ def _request(
         conn.close()
 
 
+def _set_tenant(session: Session, org_id: uuid.UUID) -> None:
+    """`set_config(..., is_local=true)` is scoped to the CURRENT transaction
+    only -- it is cleared the moment that transaction commits or rolls
+    back. Every raw-SQL block below that needs a tenant context must call
+    this again, in its own transaction, right before the statement it
+    guards; calling it once at the top of a `with Session(...)` block and
+    reusing it across several commit/rollback cycles silently loses the
+    context after the first one (round-2 finding: this let RLS -- firing
+    on a now-empty context -- mask the real CHECK/trigger being tested)."""
+    session.execute(
+        text("SELECT set_config('app.current_organization_id', :org_id, true)"),
+        {"org_id": str(org_id)},
+    )
+
+
+def _constraint_name(exc: DBAPIError) -> str | None:
+    diag = getattr(exc.orig, "diag", None)
+    return None if diag is None else diag.constraint_name
+
+
+def _sqlstate(exc: DBAPIError) -> str | None:
+    diag = getattr(exc.orig, "diag", None)
+    return None if diag is None else diag.sqlstate
+
+
 def _artifact(org_id: uuid.UUID, name: str, status: str = "ready") -> TrainableArtifact:
     return TrainableArtifact(
         organization_id=org_id,
@@ -321,12 +346,17 @@ def main() -> None:
 
     # -- Real database-level defense-in-depth: the two new structural CHECKs
     # catch a row even when the ORM's own __init__ defaulting is bypassed
-    # entirely (a raw INSERT through sovra_app) --
+    # entirely (a raw INSERT through sovra_app). Round 2: the tenant
+    # context is re-set (via `_set_tenant`) in its own transaction right
+    # before EVERY attempt below -- `set_config(..., true)` is local to one
+    # transaction and is silently cleared by the previous block's own
+    # commit/rollback, which is exactly what let RLS (firing on a lost,
+    # empty context) mask the real CHECK under test in round 1. Each check
+    # now also asserts the exact constraint name that fired, not merely
+    # "some DBAPIError happened" -- so a fault that trips a *different*
+    # constraint first (e.g. RLS) is caught, not silently green.
     with Session(app_engine) as session:
-        session.execute(
-            text("SELECT set_config('app.current_organization_id', :org_id, true)"),
-            {"org_id": str(org1_id)},
-        )
+        _set_tenant(session, org1_id)
         try:
             session.execute(
                 text(
@@ -352,16 +382,18 @@ def main() -> None:
                 "is refused by ck_model_versions_external_endpoint_consistency",
                 False,
             )
-        except DBAPIError:
+        except DBAPIError as exc:
             session.rollback()
             check(
                 CID,
                 "negative_acceptance/defense-in-depth: a raw INSERT claiming "
                 "origin='external_endpoint' while still carrying a trainable_artifact_id "
-                "is refused by ck_model_versions_external_endpoint_consistency",
-                True,
+                "is refused BY NAME by ck_model_versions_external_endpoint_consistency "
+                f"(got {_constraint_name(exc)!r})",
+                _constraint_name(exc) == "ck_model_versions_external_endpoint_consistency",
             )
 
+        _set_tenant(session, org1_id)
         try:
             session.execute(
                 text(
@@ -387,18 +419,197 @@ def main() -> None:
                 "ck_model_versions_imported_adapter_consistency",
                 False,
             )
-        except DBAPIError:
+        except DBAPIError as exc:
             session.rollback()
             check(
                 CID,
                 "negative_acceptance/defense-in-depth: a raw INSERT claiming "
-                "origin='imported_adapter' with adapter_only=false is refused by "
-                "ck_model_versions_imported_adapter_consistency",
-                True,
+                "origin='imported_adapter' with adapter_only=false is refused BY NAME by "
+                f"ck_model_versions_imported_adapter_consistency (got {_constraint_name(exc)!r})",
+                _constraint_name(exc) == "ck_model_versions_imported_adapter_consistency",
             )
 
+        # -- Round 2 item 5: origin must be consistent with import_kind, not
+        # just internally consistent with itself. Section 68.1's three
+        # import forms tie 1:1 to import_kind (endpoint<->external_endpoint,
+        # adapter<->imported_adapter); full_weight/adapter rows may also be
+        # factory_trained (this repository cannot tell an organically
+        # Factory-trained row from an externally imported one -- 0027's own
+        # docstring already discloses this for full_weight).
+        _set_tenant(session, org1_id)
         try:
-            session.execute(text("UPDATE model_versions SET version_number = 9999 LIMIT 1"))
+            session.execute(
+                text(
+                    "INSERT INTO model_versions "
+                    "(organization_id, project_id, version_number, import_kind, "
+                    "endpoint_reference, created_by, origin, lineage_completeness) "
+                    "VALUES (:org_id, :project_id, 997, 'endpoint', "
+                    "'https://bypass2.example.com', 'bypass', 'factory_trained', 'complete')"
+                ),
+                {"org_id": str(org1_id), "project_id": str(project1_id)},
+            )
+            session.commit()
+            check(
+                CID,
+                "negative_acceptance/defense-in-depth: an 'endpoint' row claiming "
+                "origin='factory_trained' is refused -- Section 68.1 has no "
+                "'Factory-trained endpoint' shape",
+                False,
+            )
+        except DBAPIError as exc:
+            session.rollback()
+            check(
+                CID,
+                "negative_acceptance/defense-in-depth: an 'endpoint' row claiming "
+                "origin='factory_trained' is refused BY NAME by "
+                f"ck_model_versions_origin_import_kind_consistency (got {_constraint_name(exc)!r})",
+                _constraint_name(exc) == "ck_model_versions_origin_import_kind_consistency",
+            )
+
+        _set_tenant(session, org1_id)
+        try:
+            session.execute(
+                text(
+                    "INSERT INTO model_versions "
+                    "(organization_id, project_id, version_number, import_kind, "
+                    "trainable_artifact_id, weights_digest, base_model_revision, created_by, "
+                    "origin, adapter_only) "
+                    "VALUES (:org_id, :project_id, 996, 'adapter', :artifact_id, :digest, "
+                    "'rev', 'bypass', 'imported_weights', true)"
+                ),
+                {
+                    "org_id": str(org1_id),
+                    "project_id": str(project1_id),
+                    "artifact_id": str(artifact1_id),
+                    "digest": "sha256:" + "e" * 64,
+                },
+            )
+            session.commit()
+            check(
+                CID,
+                "negative_acceptance/defense-in-depth: an 'adapter' row claiming "
+                "origin='imported_weights' is refused -- an adapter is never plain "
+                "'imported_weights'",
+                False,
+            )
+        except DBAPIError as exc:
+            session.rollback()
+            check(
+                CID,
+                "negative_acceptance/defense-in-depth: an 'adapter' row claiming "
+                "origin='imported_weights' is refused BY NAME by "
+                f"ck_model_versions_origin_import_kind_consistency (got {_constraint_name(exc)!r})",
+                _constraint_name(exc) == "ck_model_versions_origin_import_kind_consistency",
+            )
+
+        _set_tenant(session, org1_id)
+        try:
+            session.execute(
+                text(
+                    "INSERT INTO model_versions "
+                    "(organization_id, project_id, version_number, import_kind, "
+                    "trainable_artifact_id, weights_digest, base_model_revision, created_by, "
+                    "origin) "
+                    "VALUES (:org_id, :project_id, 995, 'full_weight', :artifact_id, :digest, "
+                    "'rev', 'bypass', 'factory_trained')"
+                ),
+                {
+                    "org_id": str(org1_id),
+                    "project_id": str(project1_id),
+                    "artifact_id": str(artifact1_id),
+                    "digest": "sha256:" + "f" * 64,
+                },
+            )
+            session.commit()
+            check(
+                CID,
+                "positive control: a 'full_weight' row claiming origin='factory_trained' "
+                "IS accepted -- the consistency CHECK does not over-refuse the one "
+                "genuinely ambiguous case this repository discloses",
+                True,
+            )
+        except DBAPIError as exc:
+            session.rollback()
+            check(
+                CID,
+                f"positive control unexpectedly refused ({_constraint_name(exc)!r})",
+                False,
+            )
+
+        # -- sha256-format CHECKs: no raw-INSERT test exercised these before --
+        # Both rows below supply a real external_provider_model_ref so the
+        # ONLY violated CHECK is the sha256-format one under test -- without
+        # it, the row also violates ck_model_versions_external_endpoint_
+        # consistency, and Postgres's unspecified multi-CHECK reporting order
+        # can surface that constraint's name instead of the one being tested.
+        _set_tenant(session, org1_id)
+        try:
+            session.execute(
+                text(
+                    "INSERT INTO model_versions "
+                    "(organization_id, project_id, version_number, import_kind, "
+                    "endpoint_reference, external_provider_model_ref, created_by, origin, "
+                    "chat_template_sha256) "
+                    "VALUES (:org_id, :project_id, 994, 'endpoint', "
+                    "'https://bypass3.example.com', 'https://bypass3.example.com', "
+                    "'bypass', 'external_endpoint', 'not-hex')"
+                ),
+                {"org_id": str(org1_id), "project_id": str(project1_id)},
+            )
+            session.commit()
+            check(
+                CID,
+                "a non-hex, non-64-char chat_template_sha256 is refused",
+                False,
+            )
+        except DBAPIError as exc:
+            session.rollback()
+            check(
+                CID,
+                "a malformed chat_template_sha256 is refused BY NAME by "
+                f"ck_model_versions_chat_template_sha256_format (got {_constraint_name(exc)!r})",
+                _constraint_name(exc) == "ck_model_versions_chat_template_sha256_format",
+            )
+
+        _set_tenant(session, org1_id)
+        try:
+            session.execute(
+                text(
+                    "INSERT INTO model_versions "
+                    "(organization_id, project_id, version_number, import_kind, "
+                    "endpoint_reference, external_provider_model_ref, created_by, origin, "
+                    "serving_config_sha256) "
+                    "VALUES (:org_id, :project_id, 993, 'endpoint', "
+                    "'https://bypass4.example.com', 'https://bypass4.example.com', "
+                    "'bypass', 'external_endpoint', '" + "A" * 64 + "')"
+                ),
+                {"org_id": str(org1_id), "project_id": str(project1_id)},
+            )
+            session.commit()
+            check(
+                CID,
+                "an uppercase-hex (not lowercase) serving_config_sha256 is refused",
+                False,
+            )
+        except DBAPIError as exc:
+            session.rollback()
+            check(
+                CID,
+                "an uppercase serving_config_sha256 is refused BY NAME by "
+                f"ck_model_versions_serving_config_sha256_format (got {_constraint_name(exc)!r})",
+                _constraint_name(exc) == "ck_model_versions_serving_config_sha256_format",
+            )
+
+        _set_tenant(session, org1_id)
+        try:
+            session.execute(
+                text(
+                    "UPDATE model_versions SET version_number = 9999 "
+                    "WHERE id = (SELECT id FROM model_versions WHERE organization_id = "
+                    ":org_id LIMIT 1)"
+                ),
+                {"org_id": str(org1_id)},
+            )
             session.commit()
             check(
                 CID,
@@ -414,6 +625,140 @@ def main() -> None:
                 "after this migration",
                 True,
             )
+
+    # -- Round 2 item 1: model_import_jobs' own DB-enforced state machine.
+    # Proven against the real sovra_app role, with a fresh same-tenant
+    # context set before every attempt (see _set_tenant's own docstring).
+    # job_b ends up a real, persisted row under project1_id -- cleaned up
+    # via owner_engine below so it never pollutes the later per-project
+    # listing assertion against project1 (sovra_app itself can never DELETE,
+    # proven separately further down).
+    with Session(app_engine) as session:
+        _set_tenant(session, org1_id)
+        job_a = uuid.uuid4()
+        try:
+            session.execute(
+                text(
+                    "INSERT INTO model_import_jobs "
+                    "(id, organization_id, project_id, requested_origin, state, created_by) "
+                    "VALUES (:id, :org_id, :project_id, 'imported_weights', 'succeeded', "
+                    "'bypass')"
+                ),
+                {"id": str(job_a), "org_id": str(org1_id), "project_id": str(project1_id)},
+            )
+            session.commit()
+            check(CID, "a raw INSERT at state='succeeded' is refused", False)
+        except DBAPIError as exc:
+            session.rollback()
+            check(
+                CID,
+                f"a raw INSERT at state='succeeded' is refused (sqlstate {_sqlstate(exc)})",
+                _sqlstate(exc) == "23514",
+            )
+
+        _set_tenant(session, org1_id)
+        job_b = uuid.uuid4()
+        session.execute(
+            text(
+                "INSERT INTO model_import_jobs "
+                "(id, organization_id, project_id, requested_origin, state, created_by) "
+                "VALUES (:id, :org_id, :project_id, 'imported_weights', 'queued', 'bypass')"
+            ),
+            {"id": str(job_b), "org_id": str(org1_id), "project_id": str(project1_id)},
+        )
+        session.commit()
+
+        _set_tenant(session, org1_id)
+        try:
+            session.execute(
+                text("UPDATE model_import_jobs SET state = 'succeeded' WHERE id = :id"),
+                {"id": str(job_b)},
+            )
+            session.commit()
+            check(CID, "queued -> succeeded (skipping validating) is refused", False)
+        except DBAPIError as exc:
+            session.rollback()
+            check(
+                CID,
+                f"queued -> succeeded (skipping validating) is refused (sqlstate {_sqlstate(exc)})",
+                _sqlstate(exc) == "23514",
+            )
+
+        _set_tenant(session, org1_id)
+        session.execute(
+            text("UPDATE model_import_jobs SET state = 'validating' WHERE id = :id"),
+            {"id": str(job_b)},
+        )
+        session.execute(
+            text(
+                "UPDATE model_import_jobs SET state = 'blocked_external', "
+                "failure_code = 'f1' WHERE id = :id"
+            ),
+            {"id": str(job_b)},
+        )
+        row = session.execute(
+            text("SELECT state, failure_code FROM model_import_jobs WHERE id = :id"),
+            {"id": str(job_b)},
+        ).one()
+        session.commit()
+        check(
+            CID,
+            "queued -> validating -> blocked_external is allowed end to end",
+            row.state == "blocked_external" and row.failure_code == "f1",
+        )
+
+        _set_tenant(session, org1_id)
+        try:
+            session.execute(
+                text(
+                    "UPDATE model_import_jobs SET state = 'queued', failure_code = NULL "
+                    "WHERE id = :id"
+                ),
+                {"id": str(job_b)},
+            )
+            session.commit()
+            check(CID, "a change away from a terminal state is refused", False)
+        except DBAPIError as exc:
+            session.rollback()
+            check(
+                CID,
+                f"a change away from a terminal state is refused (sqlstate {_sqlstate(exc)})",
+                _sqlstate(exc) == "23514",
+            )
+
+        # -- Round 2 item 4, defense in depth: requested_origin='factory_trained'
+        # is refused even via a raw INSERT (the app layer already refuses it;
+        # this proves the DB-level backstop independently). --
+        _set_tenant(session, org1_id)
+        try:
+            session.execute(
+                text(
+                    "INSERT INTO model_import_jobs "
+                    "(organization_id, project_id, requested_origin, state, created_by) "
+                    "VALUES (:org_id, :project_id, 'factory_trained', 'queued', 'bypass')"
+                ),
+                {"org_id": str(org1_id), "project_id": str(project1_id)},
+            )
+            session.commit()
+            check(CID, "a raw INSERT with requested_origin='factory_trained' is refused", False)
+        except DBAPIError as exc:
+            session.rollback()
+            check(
+                CID,
+                "a raw INSERT with requested_origin='factory_trained' is refused BY NAME by "
+                f"ck_model_import_jobs_origin_not_factory_trained (got {_constraint_name(exc)!r})",
+                _constraint_name(exc) == "ck_model_import_jobs_origin_not_factory_trained",
+            )
+
+    # job_b (above) is a real, persisted bypass row under project1_id --
+    # clean it up via owner_engine (sovra_app itself can never DELETE, proven
+    # separately below) so it does not inflate the project1 listing count
+    # the HTTP section below asserts against.
+    with Session(owner_engine) as cleanup_session:
+        cleanup_session.execute(
+            text("DELETE FROM model_import_jobs WHERE id = :id"), {"id": str(job_b)}
+        )
+        cleanup_session.commit()
 
     # -- Real server: the model-imports routes --
     principals = {
@@ -467,7 +812,10 @@ def main() -> None:
             "POST",
             collection(org1_id, project1_id),
             principal="viewer1",
-            payload={"requested_origin": "factory_trained"},
+            payload={
+                "requested_origin": "imported_weights",
+                "trainable_artifact_id": str(artifact1_id),
+            },
         )
         check(CID, "a viewer cannot POST (403)", r.status == 403)
 
@@ -476,7 +824,10 @@ def main() -> None:
             "POST",
             collection(org1_id, project2_id),
             principal="ml1",
-            payload={"requested_origin": "factory_trained"},
+            payload={
+                "requested_origin": "imported_weights",
+                "trainable_artifact_id": str(artifact1_id),
+            },
         )
         check(
             CID,
@@ -491,12 +842,60 @@ def main() -> None:
             principal="ml1",
             payload={"requested_origin": "factory_trained"},
         )
-        check(CID, "acceptance: a real factory_trained enqueue succeeds (201)", r.status == 201)
-        factory_job = r.json() if r.status == 201 else {}
+        check(
+            CID,
+            "negative_acceptance: factory_trained is refused (400) -- Section 68.1 names "
+            "exactly three import forms, and factory_trained (Factory's own direct creation "
+            "path) is not one of them",
+            r.status == 400,
+        )
+
+        r = _request(
+            base,
+            "POST",
+            collection(org1_id, project1_id),
+            principal="ml1",
+            payload={"requested_origin": "imported_weights"},
+        )
+        check(
+            CID,
+            "negative_acceptance: imported_weights with no trainable_artifact_id is refused (400)",
+            r.status == 400,
+        )
+
+        r = _request(
+            base,
+            "POST",
+            collection(org1_id, project1_id),
+            principal="ml1",
+            payload={
+                "requested_origin": "external_endpoint",
+                "external_provider_model_ref": "   ",
+            },
+        )
+        check(
+            CID,
+            "negative_acceptance: a whitespace-only external_provider_model_ref is refused "
+            "(400), not merely a blank one",
+            r.status == 400,
+        )
+
+        r = _request(
+            base,
+            "POST",
+            collection(org1_id, project1_id),
+            principal="ml1",
+            payload={
+                "requested_origin": "imported_weights",
+                "trainable_artifact_id": str(artifact1_id),
+            },
+        )
+        check(CID, "acceptance: a real imported_weights enqueue succeeds (201)", r.status == 201)
+        weights_job = r.json() if r.status == 201 else {}
         check(
             CID,
             "a fresh job starts at state=queued with no failure_code",
-            factory_job.get("state") == "queued" and factory_job.get("failure_code") is None,
+            weights_job.get("state") == "queued" and weights_job.get("failure_code") is None,
         )
 
         r = _request(
@@ -586,6 +985,7 @@ def main() -> None:
             payload={
                 "requested_origin": "imported_adapter",
                 "parent_model_version_id": str(uuid.uuid4()),
+                "trainable_artifact_id": str(artifact1_id),
             },
         )
         check(
@@ -617,12 +1017,12 @@ def main() -> None:
         listed = r.json() if r.status == 200 else []
         check(
             CID,
-            "listing shows exactly the 3 successfully enqueued jobs (factory_trained, "
+            "listing shows exactly the 3 successfully enqueued jobs (imported_weights, "
             "imported_adapter-with-base, external_endpoint-with-ref); every refused "
             "request above wrote nothing",
             isinstance(listed, list) and len(listed) == 3,
         )
-        job_id = factory_job["id"]
+        job_id = weights_job["id"]
 
         r = _request(base, "GET", item(org2_id, project1_id, job_id), principal="admin2")
         check(
@@ -646,15 +1046,30 @@ def main() -> None:
     # -- Grant-surface proof: sovra_app can only UPDATE the column-limited
     # outcome columns on model_import_jobs, and can never DELETE --
     with Session(app_engine) as session:
+        _set_tenant(session, org1_id)
+        # A fresh, dedicated job at state='queued' -- not one of the earlier
+        # blocks' own jobs, which may already be terminal; picking a row by
+        # `LIMIT 1` with no further qualification would make "may UPDATE
+        # state" and "a grant-restricted column is refused" depend on which
+        # job happened to sort first, including possibly a terminal one the
+        # round-2 state-machine trigger would ALSO refuse for an unrelated
+        # reason.
+        grant_job = uuid.uuid4()
         session.execute(
-            text("SELECT set_config('app.current_organization_id', :org_id, true)"),
-            {"org_id": str(org1_id)},
+            text(
+                "INSERT INTO model_import_jobs "
+                "(id, organization_id, project_id, requested_origin, state, created_by) "
+                "VALUES (:id, :org_id, :project_id, 'imported_weights', 'queued', 'bypass')"
+            ),
+            {"id": str(grant_job), "org_id": str(org1_id), "project_id": str(project1_id)},
         )
-        job_row = session.execute(text("SELECT id FROM model_import_jobs LIMIT 1")).scalar_one()
+        session.commit()
+
+        _set_tenant(session, org1_id)
         try:
             session.execute(
                 text("UPDATE model_import_jobs SET state = 'validating' WHERE id = :id"),
-                {"id": job_row},
+                {"id": str(grant_job)},
             )
             session.commit()
             check(CID, "sovra_app may UPDATE the column-limited state column", True)
@@ -662,12 +1077,14 @@ def main() -> None:
             session.rollback()
             check(CID, "sovra_app may UPDATE the column-limited state column", False)
 
+        _set_tenant(session, org1_id)
         try:
             session.execute(
                 text(
-                    "UPDATE model_import_jobs SET requested_origin = 'factory_trained' WHERE id = :id"
+                    "UPDATE model_import_jobs SET requested_origin = 'imported_adapter' "
+                    "WHERE id = :id"
                 ),
-                {"id": job_row},
+                {"id": str(grant_job)},
             )
             session.commit()
             check(
@@ -676,30 +1093,66 @@ def main() -> None:
                 "column-limited to state/failure_code/updated_at only",
                 False,
             )
-        except DBAPIError:
+        except DBAPIError as exc:
             session.rollback()
             check(
                 CID,
-                "sovra_app cannot UPDATE requested_origin directly -- the grant is "
+                "sovra_app cannot UPDATE requested_origin directly (sqlstate "
+                f"{_sqlstate(exc)}, expect 42501 insufficient_privilege) -- the grant is "
                 "column-limited to state/failure_code/updated_at only",
-                True,
+                _sqlstate(exc) == "42501",
             )
 
+        _set_tenant(session, org1_id)
         try:
-            session.execute(text("DELETE FROM model_import_jobs WHERE id = :id"), {"id": job_row})
+            session.execute(
+                text("DELETE FROM model_import_jobs WHERE id = :id"), {"id": str(grant_job)}
+            )
             session.commit()
             check(CID, "sovra_app can never DELETE a model_import_jobs row", False)
         except DBAPIError:
             session.rollback()
             check(CID, "sovra_app can never DELETE a model_import_jobs row", True)
 
-        # -- RLS: a raw cross-tenant INSERT is rejected --
+        # -- RLS, with the control item 3 asked for: a same-tenant INSERT
+        # under an explicitly re-set org1 context succeeds (proves the
+        # context really is org1, not merely absent), and a cross-tenant
+        # INSERT under that SAME context is rejected BY RLS specifically
+        # (sqlstate 42501), not by some other, unrelated failure. --
+        _set_tenant(session, org1_id)
+        same_tenant_job = uuid.uuid4()
+        session.execute(
+            text(
+                "INSERT INTO model_import_jobs "
+                "(id, organization_id, project_id, requested_origin, state, created_by) "
+                "VALUES (:id, :org_id, :project_id, 'imported_weights', 'queued', 'bypass')"
+            ),
+            {"id": str(same_tenant_job), "org_id": str(org1_id), "project_id": str(project1_id)},
+        )
+        session.commit()
+        # set_config(..., is_local=true) clears on commit -- re-set the
+        # context fresh before this verification SELECT, or it runs with no
+        # tenant context at all and the row looks invisible for the wrong
+        # reason (RLS masking a context that was never really the bug).
+        _set_tenant(session, org1_id)
+        check(
+            CID,
+            "control: a same-tenant (org1) INSERT succeeds under the org1 context -- the "
+            "context really is set, not merely absent",
+            session.execute(
+                text("SELECT 1 FROM model_import_jobs WHERE id = :id"),
+                {"id": str(same_tenant_job)},
+            ).scalar_one_or_none()
+            == 1,
+        )
+
+        _set_tenant(session, org1_id)
         try:
             session.execute(
                 text(
                     "INSERT INTO model_import_jobs "
                     "(organization_id, project_id, requested_origin, state, created_by) "
-                    "VALUES (:org2_id, :project2_id, 'factory_trained', 'queued', 'bypass')"
+                    "VALUES (:org2_id, :project2_id, 'imported_weights', 'queued', 'bypass')"
                 ),
                 {"org2_id": str(org2_id), "project2_id": str(project2_id)},
             )
@@ -707,16 +1160,17 @@ def main() -> None:
             check(
                 CID,
                 "RLS: a raw INSERT into model_import_jobs for a DIFFERENT organization, "
-                "while the session's tenant context is org1, is rejected",
+                "under a freshly re-set org1 context, is rejected",
                 False,
             )
-        except DBAPIError:
+        except DBAPIError as exc:
             session.rollback()
             check(
                 CID,
-                "RLS: a raw INSERT into model_import_jobs for a DIFFERENT organization, "
-                "while the session's tenant context is org1, is rejected",
-                True,
+                "RLS: a raw cross-tenant INSERT is rejected BY RLS specifically (sqlstate "
+                f"{_sqlstate(exc)}, expect 42501 insufficient_privilege), under a context "
+                "proven live by the same-tenant control just above",
+                _sqlstate(exc) == "42501",
             )
 
     if FAILURES:

@@ -9,15 +9,20 @@ Disclosed scope (Law 11 -- no placeholder route): this slice implements
 enqueue and read only. Nothing here runs a real provider/endpoint probe,
 transfers weights, or touches a GPU budget -- FTF-H010's own real
 endpoint fine-tune, weights, GPU and continuation clauses stay
-`BLOCKED_EXTERNAL`. A job is created at `state='queued'` and never moves:
-no worker that would advance it to `validating`/`failed`/`succeeded`/
-`blocked_external` exists anywhere in this repository yet (a later,
-separately dependency-gated FTF-H010 task's own job, the same "wiring
-work, not yet done" disclosure `FTF-0516-P1`'s own `record_quality_report`
-gap already carries). "Job states never jump to succeeded without
-validation" (this task's own DoD) holds trivially and verifiably: there is
-no code path anywhere in this module, `model_import_crud.py` or the
-migration's own grants that can write `state='succeeded'` at all.
+`BLOCKED_EXTERNAL`. A job is created at `state='queued'` and never moves
+through this router: no worker that would advance it to
+`validating`/`failed`/`succeeded`/`blocked_external` exists anywhere in
+this repository yet (a later, separately dependency-gated FTF-H010 task's
+own job, the same "wiring work, not yet done" disclosure
+`FTF-0516-P1`'s own `record_quality_report` gap already carries). "Job
+states never jump to succeeded without validation" (this task's own DoD)
+holds at the database level, not merely because no caller here attempts
+it: `0028_model_import_state_machine.py`'s own `BEFORE INSERT OR UPDATE`
+trigger refuses any INSERT not at `state='queued'`, any `queued ->
+succeeded` transition that skips `validating`, and any further change
+once a row reaches a terminal state -- enforced for `sovra_app` itself,
+the real runtime role, not only for code paths this module happens not
+to take.
 
 Role gating follows `model_version_routes.py`'s own precedent exactly
 (Section 45 names no more specific role for this class of work): reads

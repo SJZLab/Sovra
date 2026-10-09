@@ -22,10 +22,17 @@ chain already follows.
 This module validates only the request's own *shape* at enqueue time
 (Law 17: "POST validates the shape and enqueues; it never claims success
 synchronously") -- whether a referenced id exists and belongs to the
-caller's own organization/project, and this task's own two structural
-negative_acceptance rules (an `external_endpoint` request carrying an
-artifact hash; an `imported_adapter` request with no base). It never
-checks a referenced `TrainableArtifact`'s own readiness or a parent
+caller's own organization/project, and this task's own structural
+negative_acceptance rules (round 2): `requested_origin='factory_trained'`
+is refused outright -- Section 68.1 names exactly three import forms
+(endpoint/full-weight/adapter), never Factory's own direct training
+path; an `external_endpoint` request may not carry
+`trainable_artifact_id`, and its `external_provider_model_ref` must be a
+real, non-blank string (never merely non-empty -- a whitespace-only
+value is refused too); an `imported_weights` or `imported_adapter`
+request requires `trainable_artifact_id`, and `imported_adapter` also
+requires `parent_model_version_id` (the base). It never checks a
+referenced `TrainableArtifact`'s own readiness or a parent
 `ModelVersion`'s own compatibility -- that deeper, real-provider/weights/
 GPU-dependent check is exactly what the (not yet built) `validating`
 state is for.
@@ -47,6 +54,7 @@ from app.db.tenant_context import TenantContext
 from app.model_versions.model_import_schema import (
     ModelImportJob,
     ModelImportValidationError,
+    validate_external_provider_model_ref,
     validate_origin,
 )
 from app.model_versions.model_version_crud import (
@@ -112,14 +120,23 @@ def create_model_import_job(
                 "no local weight bytes back an endpoint import (this task's own "
                 "negative_acceptance: no fictitious hash)"
             )
-        if not external_provider_model_ref:
-            raise ModelImportValidationError(
-                "an external_endpoint import requires a real external_provider_model_ref"
-            )
+        # Raises ModelImportValidationError for None, empty or whitespace-only
+        # (`not "  "` is False in Python -- a bare truthiness check would have
+        # let a blank-looking ref through).
+        validate_external_provider_model_ref(external_provider_model_ref)
     elif requested_origin == "imported_adapter":
         if parent_model_version_id is None:
             raise ModelImportValidationError(
                 "an imported_adapter import requires parent_model_version_id (the base)"
+            )
+        if trainable_artifact_id is None:
+            raise ModelImportValidationError(
+                "an imported_adapter import requires trainable_artifact_id (the adapter weights)"
+            )
+    elif requested_origin == "imported_weights":
+        if trainable_artifact_id is None:
+            raise ModelImportValidationError(
+                "an imported_weights import requires trainable_artifact_id"
             )
 
     if parent_model_version_id is not None:

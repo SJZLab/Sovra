@@ -40,12 +40,17 @@ __all__ = [
     "validate_origin",
 ]
 
-# Section 6.17's own four import-provenance shapes -- a finer
-# classification than `model_versions.import_kind`'s own three
-# (`endpoint`/`full_weight`/`adapter`); see `0027_model_import.py`'s own
-# docstring for the backfill mapping between them.
+# Section 68.1 names exactly three import forms for this route ("external
+# endpoint/provider model reference, signed full-weight artifact, or
+# signed adapter plus exact base artifact"); `factory_trained` is not one
+# of them -- that is FTF-1001's own direct creation path
+# (`model_version_crud.create_model_version`), never something *imported*
+# through this job queue. `model_version_schema.py` keeps its own,
+# separate four-value `ALLOWED_ORIGINS` (a `ModelVersion` row itself can
+# legitimately be `factory_trained`); only the *requested_origin* of an
+# import job excludes it, enforced here and, defense in depth, by
+# `ck_model_import_jobs_origin_not_factory_trained` (0028).
 ALLOWED_ORIGINS = (
-    "factory_trained",
     "imported_weights",
     "imported_adapter",
     "external_endpoint",
@@ -72,8 +77,10 @@ def validate_origin(value: object) -> str:
 
 
 def validate_external_provider_model_ref(value: object) -> str:
-    if not isinstance(value, str) or not value:
-        raise ModelImportValidationError("external_provider_model_ref must be a non-empty string")
+    if not isinstance(value, str) or not value or value.strip() == "":
+        raise ModelImportValidationError(
+            "external_provider_model_ref must be a non-empty, non-whitespace string"
+        )
     if len(value) > EXTERNAL_PROVIDER_MODEL_REF_MAX_LENGTH:
         raise ModelImportValidationError(
             f"external_provider_model_ref must be at most "
