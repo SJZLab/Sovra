@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# mypy: disable-error-code="arg-type,call-arg,var-annotated,dict-item"
+# mypy: disable-error-code="arg-type,call-arg,var-annotated,dict-item,index,call-overload,operator,return-value"
 # ruff: noqa: E501
 """FTF-R004-P1 -- Inspect bridge generation-config parity comparator.
 
@@ -1651,6 +1651,16 @@ def test_content_digest_is_canonical_type_tagged_and_validated() -> None:
         "digest separates adjacent values (['a,b'] vs ['a','b'])",
         digest_of(["a,b"]) != digest_of(["a", "b"]),
     )
+    check(
+        CID,
+        "digest ignores dict order inside a list",
+        digest_of([{"a": 1, "b": 2}]) == digest_of([{"b": 2, "a": 1}]),
+    )
+    check(
+        CID,
+        "digest ignores dict order inside a tuple",
+        digest_of(({"a": 1, "b": 2},)) == digest_of(({"b": 2, "a": 1},)),
+    )
     check(CID, "digest handles bytes", digest_of(b"x") != digest_of("x"))
     check(CID, "digest handles None", digest_of(None) != digest_of("None"))
     value = digest_of("CANARY-digest-value")
@@ -1726,6 +1736,35 @@ def test_extra_body_children_follow_the_extra_body_allow_list() -> None:
         }
         <= set(EXTRA_BODY_SETTINGS_KEYS)
         and set(GENERATION_SETTINGS_KEYS) <= set(EXTRA_BODY_SETTINGS_KEYS),
+    )
+
+
+def test_allow_list_membership_is_byte_exact_for_every_key_check() -> None:
+    """A key that only matches an allow-listed name after case/whitespace
+    folding is an unknown key: it is digested, never kept verbatim and never
+    treated as the extra_body container."""
+    for variant in ("TEMPERATURE", " temperature", "temperature ", "Top_P"):
+        settings = capture_effective_generation_settings({variant: 0.7})
+        check(
+            CID,
+            f"{variant!r} is not the allow-listed key: digested, not kept",
+            type(settings[variant]) is ContentDigest,
+        )
+    nested = capture_effective_generation_settings({"EXTRA_BODY": {"top_k": 5}, " extra_body": {}})
+    check(
+        CID,
+        "a folded extra_body name is digested, not unpacked as the container",
+        type(nested["EXTRA_BODY"]) is ContentDigest
+        and type(nested[" extra_body"]) is ContentDigest,
+    )
+    inner = capture_effective_generation_settings(
+        {"extra_body": {" top_k": 1, "TOP_K": 2, "top_k ": 3, "top_k": 4}}
+    )["extra_body"]
+    check(
+        CID,
+        "folded extra_body child names are digested; the exact one is kept",
+        inner["top_k"] == 4
+        and all(type(inner[name]) is ContentDigest for name in (" top_k", "TOP_K", "top_k ")),
     )
 
 

@@ -108,6 +108,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
+from typing import cast
 
 __all__ = [
     "CONTENT_KEYS",
@@ -333,26 +334,27 @@ def capture_effective_generation_settings(
     return settings
 
 
-def _exact_equal(left: object, right: object, *, _depth: int = 0) -> bool:
+def _exact_equal(left: object, right: object) -> bool:
     """`0.7 != "0.7"`, `True != 1`, `{1: x} != {True: x}`: exact type, not
     merely Python `==`. Recurses into dict/list/tuple so a changed
     `response_format` shape or `stop` list is caught, not waved through by
     `==` on the outer container alone. Both sides have already been through
-    `_copy_value`, so only the supported exact types reach here. A cyclic or
-    over-deep structure raises this module's own typed error."""
-    _check_depth(_depth)
+    `_copy_value`, so only the supported exact types reach here and the
+    nesting depth is already bounded."""
     if type(left) is not type(right):
         return False
-    if isinstance(left, dict) and isinstance(right, dict):
+    if isinstance(left, dict):
+        right_dict = cast(dict[object, object], right)
         left_items = {(type(key), key): item for key, item in left.items()}
-        right_items = {(type(key), key): item for key, item in right.items()}
+        right_items = {(type(key), key): item for key, item in right_dict.items()}
         return left_items.keys() == right_items.keys() and all(
-            _exact_equal(left_items[key], right_items[key], _depth=_depth + 1) for key in left_items
+            _exact_equal(left_items[key], right_items[key]) for key in left_items
         )
-    if isinstance(left, list | tuple) and isinstance(right, list | tuple):
-        return len(left) == len(right) and all(
-            _exact_equal(item_left, item_right, _depth=_depth + 1)
-            for item_left, item_right in zip(left, right, strict=True)
+    if isinstance(left, list | tuple):
+        right_sequence = cast(list[object] | tuple[object, ...], right)
+        return len(left) == len(right_sequence) and all(
+            _exact_equal(item_left, item_right)
+            for item_left, item_right in zip(left, right_sequence, strict=True)
         )
     return bool(left == right)
 
