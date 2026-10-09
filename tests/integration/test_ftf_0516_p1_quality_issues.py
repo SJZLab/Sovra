@@ -43,6 +43,7 @@ import os
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -62,6 +63,8 @@ from fastapi import FastAPI  # noqa: E402
 from sqlalchemy import create_engine, text  # noqa: E402
 from sqlalchemy.exc import DBAPIError  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
+from tokenizers import Tokenizer, models, pre_tokenizers, processors, trainers  # noqa: E402
+from workers.data.canonical_conversation_normalizer import SCHEMA_VERSION  # noqa: E402
 from workers.data.exact_duplicate_detector import detect_exact_duplicates  # noqa: E402
 from workers.data.near_duplicate_detector import detect_near_duplicates  # noqa: E402
 from workers.data.normalized_duplicate_detector import detect_normalized_duplicates  # noqa: E402
@@ -74,9 +77,12 @@ from workers.data.quality_issue_engine import (  # noqa: E402
     assert_clear_for_split,
     assert_clear_for_training,
 )
-from workers.data.record_schema_validator import RecordSchemaValidationReport  # noqa: E402
-from workers.data.tokenization_analysis import TokenizationAnalysisReport  # noqa: E402
-from workers.data.tool_argument_validator import ToolCallValidationReport  # noqa: E402
+from workers.data.record_schema_validator import validate_record_batch  # noqa: E402
+from workers.data.tokenization_analysis import (  # noqa: E402
+    ChatTemplateFastTokenizer,
+    analyze_tokenization,
+)
+from workers.data.tool_argument_validator import validate_tool_calls  # noqa: E402
 
 from app.auth.organization_workspace_schema import (  # noqa: E402
     APP_ROLE_NAME,
@@ -221,6 +227,11 @@ def _record(index: int, text_value: str, raw: str | None = None) -> dict[str, ob
     return {
         "record_index": index,
         "purpose": "training",
+        "schema_version": SCHEMA_VERSION,
+        "source_type": "upload",
+        "quality_status": "pending",
+        "pii_status": "unscanned",
+        "tool_schema_status": "not_applicable",
         "record_sha256": _sha(raw if raw is not None else f"raw-{index}-{text_value}"),
         "normalized_sha256": _sha(f"norm-{index}-{text_value}"),
         "content": {
@@ -228,6 +239,44 @@ def _record(index: int, text_value: str, raw: str | None = None) -> dict[str, ob
             "metadata": {},
         },
     }
+
+
+def _build_exact_tokenizer() -> ChatTemplateFastTokenizer:
+    """A real, exact `ChatTemplateFastTokenizer`: a real `tokenizers.Tokenizer`
+    trained offline/in-memory on a tiny fixed corpus, plus a real chat
+    template, both pinned by their own real sha256 digests -- not a hand-built
+    report. Same technique as FTF-0510's own test suite
+    (`tests/tasks/test_ftf_0510.py`); no network, no pretrained model."""
+    tokenizer = Tokenizer(models.BPE(unk_token="[UNK]"))
+    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+    corpus = [
+        "alpha routers beta billing contact help gamma delta",
+        "order status shipped pending cancelled",
+    ] * 20
+    trainer = trainers.BpeTrainer(vocab_size=200, special_tokens=["[UNK]"])
+    tokenizer.train_from_iterator(corpus, trainer)
+    tokenizer.add_special_tokens(["<s>", "</s>"])
+    tokenizer.post_processor = processors.TemplateProcessing(
+        single="<s> $A", special_tokens=[("<s>", tokenizer.token_to_id("<s>"))]
+    )
+    scratch_dir = tempfile.mkdtemp(prefix="ftf_0516_p1_integration_")
+    tokenizer_json_path = os.path.join(scratch_dir, "tokenizer.json")
+    tokenizer.save(tokenizer_json_path)
+    tokenizer_json_sha256 = hashlib.sha256(Path(tokenizer_json_path).read_bytes()).hexdigest()
+    template = (
+        '{% for message in messages %}<|{{ message["role"] }}|>{{ message["content"] }}'
+        "{{ eos_token }}\n{% endfor %}"
+    )
+    template_sha256 = hashlib.sha256(template.encode("utf-8")).hexdigest()
+    return ChatTemplateFastTokenizer.from_resolved_files(
+        tokenizer_json_path,
+        {"chat_template": template, "bos_token": "<s>", "eos_token": "</s>"},
+        expected_tokenizer_json_sha256=tokenizer_json_sha256,
+        expected_chat_template_sha256=template_sha256,
+    )
+
+
+_REAL_TOKENIZER = _build_exact_tokenizer()
 
 
 def _full_runs(clean: bool = False, drop: tuple[str, ...] = ()) -> list[DetectorRun]:
@@ -245,16 +294,21 @@ def _full_runs(clean: bool = False, drop: tuple[str, ...] = ()) -> list[Detector
             _record(14, "delta"),
         ]
     )
+    record_schema = validate_record_batch(batch)
+    assert (
+        record_schema.is_clean
+    ), f"test fixture itself failed real FTF-0508 validation: {record_schema.issues!r}"
+    tool_arguments = validate_tool_calls(
+        [], locked_manifest={}, current_tool_versions={}, instance_validator=None
+    )
+    tokenization = analyze_tokenization(batch, tokenizer=_REAL_TOKENIZER, max_sequence_length=4096)
+    assert (
+        tokenization.certifies_training_fit
+    ), f"test fixture itself failed real FTF-0510 tokenization: {tokenization.issues!r}"
     reports: dict[str, object] = {
-        "record_schema": RecordSchemaValidationReport(
-            issues=(),
-            accepted_batch_positions=tuple(range(len(batch))),
-            rejected_batch_positions=(),
-        ),
-        "tool_arguments": ToolCallValidationReport(issues=(), tool_schema_status="not_applicable"),
-        "tokenization": TokenizationAnalysisReport(
-            conversations=(), distribution=None, issues=(), certifies_training_fit=True
-        ),
+        "record_schema": record_schema,
+        "tool_arguments": tool_arguments,
+        "tokenization": tokenization,
         "exact_duplicate": detect_exact_duplicates(batch),
         "normalized_duplicate": detect_normalized_duplicates(batch),
         "near_duplicate": detect_near_duplicates(batch),
@@ -1407,6 +1461,45 @@ def main() -> None:
         raw(org1_id, "UPDATE dataset_issue_resolutions SET reason='edited' WHERE true"),
         "permission denied",
     )
+
+    def report_insert(
+        report_seq: int, detectors_reported_sql: str, detector_versions: dict
+    ) -> tuple[bool, str]:  # noqa: E501
+        return raw(
+            org1_id,
+            "INSERT INTO dataset_quality_reports (id, organization_id, project_id, dataset_id, "
+            "dataset_name, dataset_purpose, dataset_version, dataset_sha256, report_seq, "
+            "report_sha256, detector_versions, detectors_reported, issue_count, "
+            "blocking_count, warning_count, created_by) "
+            f"VALUES (gen_random_uuid(), :o1, :p, :d, 'attack', 'training', 1, :sha, "
+            f"{report_seq}, :rsha, CAST(:dv AS jsonb), {detectors_reported_sql}, 0, 0, 0, 'x')",
+            o1=org1_id,
+            p=p1_id,
+            d=attack_ds.id,
+            sha=attack_ds.verified_sha256,
+            rsha=_sha(f"check-{report_seq}"),
+            dv=json.dumps(detector_versions),
+        )
+
+    # V11: detectors_reported must be a subset of the 7 known detector names.
+    expect(
+        "an unknown detector name in detectors_reported is refused by the CHECK",
+        report_insert(20, "ARRAY['bogus_detector']::text[]", VERSIONS),
+        "ck_dataset_quality_reports_detectors_reported",
+    )
+    ok, message = report_insert(21, "ARRAY['record_schema']::text[]", VERSIONS)
+    check(f"positive control: a real detector name is accepted ({message[:120]})", ok)
+
+    # V10: detector_versions must name every one of the 7 required detectors.
+    incomplete_versions = dict(VERSIONS)
+    del incomplete_versions[next(iter(sorted(incomplete_versions)))]
+    expect(
+        "detector_versions missing one of the 7 required detectors is refused by the CHECK",
+        report_insert(22, "ARRAY[]::text[]", incomplete_versions),
+        "ck_dataset_quality_reports_detector_versions",
+    )
+    ok, message = report_insert(23, "ARRAY[]::text[]", VERSIONS)
+    check(f"positive control: all 7 required detectors is accepted ({message[:120]})", ok)
 
     # cross-tenant raw access
     cross_ok, cross_msg = raw(
