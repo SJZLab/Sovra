@@ -11818,7 +11818,7 @@ FTF-1703:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Training dataset
-  evidence_hash: c16ba1d8490ba5c4f323735a372cc26a813cc434
+  evidence_hash: ce03b5a8d2e9cf528b5f63d30b0e7bdf5b82fb39
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0506, FTF-1701,
@@ -11881,6 +11881,20 @@ FTF-1703:
     id with a zero-width or fullwidth "generator:" prefix is accepted as independent until the
     Argilla review binding. Fault -> RED table in
     docs/certifications/submissions/2026-10-09T1200Z-FTF-1703-r5.md.
+    Round 6 (L2 return, production + tests; Control-plane ruling closing the object-model class):
+    CORRECTION (Law 2): the round-5 text above says a ReviewDecision subclass is refused by an
+    exact-type check -- that check read the caller's object, which a __dict__ whose key's __eq__
+    rewrites values (P8b, P8f, P11b) defeats. `build_training_dataset` and
+    `verify_trace_provenance` now accept traces (and the builder, reviews) ONLY as plain JSON
+    data -- exact dict/list/str/int/float/bool/None, exact-str keys, checked recursively -- and
+    construct their own TrainingTrace and ReviewDecision from it; any caller TrainingTrace or
+    ReviewDecision (exact, subclass or rigged) is refused, no caller object, method, attribute or
+    hook is read after parsing, index/trace_id/reviewer_id/decision are read once into locals, and
+    `by_id` is keyed by the regenerated trace_id. API change: callers pass
+    `TrainingTrace.to_dict()` output and `{"trace_id","reviewer_id","decision"}` dicts.
+    verify_trace_replay still takes a TrainingTrace (only the builder's own regenerated one is
+    ever passed to it by production). Fault -> RED table in
+    docs/certifications/submissions/2026-10-09T1700Z-FTF-1703-r6.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1703.py
