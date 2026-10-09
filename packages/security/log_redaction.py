@@ -214,10 +214,9 @@ def _redact(text: str) -> str:
     text = _normalise(text)
     layers = [text]
     for _ in range(_MAX_DECODE_LAYERS):
-        decoded = unquote(layers[-1])
-        if decoded == layers[-1]:
+        if "%" not in layers[-1]:
             break
-        layers.append(decoded)
+        layers.append(unquote(layers[-1]))
     for layer in layers[1:]:
         scanned = _scan(layer, _BASE64_LAYERS)
         if scanned != layer:

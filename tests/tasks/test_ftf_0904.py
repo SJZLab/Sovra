@@ -182,6 +182,8 @@ def _variants(secret: str) -> dict[str, str]:
         "upper-case-prefix": secret[:3].upper() + secret[3:],
         "zero-width-inner": secret[:5] + "​" + secret[5:],
         "bom-prefix": "﻿" + secret,
+        "vertical-tab-inner": secret[:5] + "\x0b" + secret[5:],
+        "unit-separator-inner": secret[:6] + "\x1f" + secret[6:],
         "fullwidth-prefix": "".join(
             chr(ord(c) + 0xFEE0) if "!" <= c <= "~" else c for c in secret[:3]
         )
@@ -357,9 +359,13 @@ def test_benign_case_and_encoding_survive() -> None:
 
 def test_extra_attribute_names_and_install_targets() -> None:
     with _Harness() as h:
-        logging.getLogger("ftf0904.names").info("m", extra={"MyPayload": "kept-value"})
-        names = [vars(r).get("MyPayload") for r in h.seen_records]
-    check("FTF-0904-A1", "a mixed-case extra attribute keeps name and value", "kept-value" in names)
+        logging.getLogger("ftf0904.names").info("m", extra={"MyPayload": SECRETS["openai"]})
+        rec_vars = [vars(r) for r in h.seen_records]
+    check(
+        "FTF-0904-A1",
+        "a mixed-case extra attribute is redacted under its own name, no lowercased twin",
+        all(v.get("MyPayload") == lr.REDACTED and "mypayload" not in v for v in rec_vars),
+    )
     own = logging.getLogger("ftf0904.own")
     own_handler = logging.StreamHandler(io.StringIO())
     own.addHandler(own_handler)
@@ -959,7 +965,12 @@ FAULTS: list[tuple[str, str, str, int]] = [
     # --- normalisation and decoding ----------------------------------------------------
     ("F11 NFKC skipped", 'unicodedata.normalize("NFKC", text)', "text", 1),
     ("F12 format characters kept", '("Cf", "Cc", "Cs", "Co", "Cn")', '("Cc", "Cs", "Co", "Cn")', 1),
-    ("F13 no percent-decoding", "decoded = unquote(layers[-1])", "decoded = layers[-1]", 1),
+    (
+        "F13 no percent-decoding",
+        "layers.append(unquote(layers[-1]))",
+        "layers.append(layers[-1])",
+        1,
+    ),
     ("F14 one percent-decoding layer", "_MAX_DECODE_LAYERS = 3", "_MAX_DECODE_LAYERS = 1", 1),
     (
         "F15 decoded secret not returned",
