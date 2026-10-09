@@ -13116,6 +13116,9 @@ FTF-R005:
     loopback, so bearer-token transport is proven against the stub, not a live authenticated
     server. The R002 binding row stores the https production endpoint; the loopback server is
     reached with an explicit policy and URL in the test.
+    Round 2 follow-up (relay/FTF-R005-r4): mutation gate over the three suites (unit, round-2 unit, real
+    Postgres + mlflow integration) 200 run | 200 KILLED | 0 SURVIVED; exact key/value drift, exact
+    cursors on both searches, binding mode/key, result identity and stored admission key are pinned.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_r005.py
