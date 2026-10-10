@@ -24660,3 +24660,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-09T22:27Z — Control plane: FTF-0501 API passed; FTF-0501-UI returned
 - **Passed L2:** FTF-0501 API (#692). **Returned:** FTF-0501-UI r2 (0j). **Ruling:** UI CHECKLIST in QUEUE item 0.
+
+## 2026-10-10T00:10Z — Control plane: FTF-0908 returned (tests only)
+- **Returned:** FTF-0908 r5 (0m): catch the denial inside the scope so a session-level re-bind (F2, F2g) goes RED in the real-PG job; production unchanged.

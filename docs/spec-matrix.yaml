@@ -9696,7 +9696,7 @@ FTF-0904:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Log redaction
-  evidence_hash: d48287780a7682491c40a1969bdf6645430fe75d
+  evidence_hash: 4543d719c9ebee1c3529bce5ada211a3bfa3a989
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0903
@@ -9733,9 +9733,11 @@ FTF-0904:
 
     Disclosed: detection is pattern-based -- a bare opaque secret with no known prefix, no
     secret-named key and no header/URL context is not recognised; key names match by substring
-    so benign keys such as `max_tokens` are over-redacted; handlers added after
-    `install_redaction` need `attach_sink` to scrub `extra=` attributes (message, args and
-    exceptions are covered at ingress). This module is a pure library with no live logging
+    so benign keys such as `max_tokens` are over-redacted. (Round 2 below adds `extra=` ingress
+    coverage via `Logger.makeRecord`, superseding this paragraph's original claim that a handler
+    added after `install_redaction` needs `attach_sink` to scrub `extra=` -- it no longer does;
+    `attach_sink` is still needed only for the separate `logging.makeLogRecord` bypass, per
+    round 2's own disclosure below.) This module is a pure library with no live logging
     configuration installing it yet -- proving_symbol stays blank (UNWIRED), same precedent as
     FTF-0901/FTF-0902/FTF-0903. Not self-certified (Law 4).
 
@@ -9756,6 +9758,38 @@ FTF-0904:
     Disclosed: a revealing encoded token redacts the rest of its line (deliberate over-redaction);
     `logging.makeLogRecord` records bypass makeRecord and are covered only at an `attach_sink`
     handler. Still UNWIRED (blank proving_symbol).
+
+    Round 3 (Control-plane return 2026-10-09, QUEUE 0d; PROVISIONAL / L1-PROVEN, not certified;
+    evidence commit 4543d71): the percent-token candidate scan (`_percent_token_starts`) no
+    longer backtracks a greedy `\S*` at every character position -- it splits on whitespace once
+    (linear) and bounded-searches each disjoint run for `%XX`, fixing a quadratic blow-up on a
+    long whitespace-free run with no (or a far) closing hex pair (`"a" * n + "%"` took 24s at
+    128 KB and 102s at 262 KB pre-fix). The same function now also reports the run immediately
+    before each `%XX` run, so a key name separated from its encoded separator by whitespace
+    (`token %3D <secret>`, `password %3A <secret>`) is included in the decode-and-scan window --
+    a round-1 regression where that shape leaked past both the raw scan and the encoded-cut path.
+    Added a test proving the `pair` rule's generic-secret-word branch (`_SECRET_KEY`, not just
+    `_HEADER_KEYS`) actually redacts tuple pairs in text form (`[('client_secret', ...), ('password',
+    b'...')]`) -- round 2 only ever exercised the header-named branch. Fixed a Python 3.12-only
+    nested-quote f-string in the test file that failed to parse on 3.11 (the pinned runtime;
+    `python:3.11-slim` is the api image).
+    Evidence: tests/tasks/test_ftf_0904.py now has 51 faults (was 49) and 284 generated percent
+    cases (was 280, +4 for the two new space-separated-separator cases x 2 secrets); every fault,
+    including the two new ones (F-PCT-QUAD, F-PAIR-KEY), turns the full behavioural suite RED
+    (`python3 tests/tasks/test_ftf_0904.py`, exit 1 under each mutant, exit 0 on the real module).
+    A generated size sweep (64 KB..256 KB, two representative shapes) through both `redact_text`
+    and the `install_redaction` logging path shows a <3x time ratio across each doubling (linear;
+    quadratic would be ~4x); the four 256 KB shapes named in the finding (lone `%`, a leading valid
+    token then a long plain run, one bare `%` in compact JSON, a long opaque URL state param) are
+    all pinned under the 4s cap in the existing adversarial-input test. Gates: ruff, ruff format,
+    mypy clean; `validate_spec.py --strict` clean; `product_truth_check.py --fail-on-unwired`
+    47/47 unchanged; `status.py` 140/302 certified / 46 product-true unchanged (Law 2 -- a
+    resubmission is not a certification); `data_exposure_check.py` N/A (no datastore backend).
+    Regression swept FTF-0901/FTF-0902/FTF-0903 (neighbours) -- all green, unchanged. Same-class
+    sweep: no other `packages/security` module uses an unanchored `\S*`-style pattern.
+    Disclosed: the stale round-1 "handlers added after install_redaction need attach_sink to
+    scrub extra=" claim (superseded by round 2's own makeRecord wrap) is corrected above, not
+    restated here. Still UNWIRED (blank proving_symbol).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0904.py
