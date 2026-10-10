@@ -9831,7 +9831,7 @@ FTF-0908:
   certification_state: PROVISIONAL
   criticality: MUST
   description: External provider denial
-  evidence_hash: 81921eb001f6db8c728c62c7916f3e99f5901f91
+  evidence_hash: b159f964e13e3ba924b476f5cd108f9a192f8531
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-14; scenarios=Q23, Q25; deps=FTF-0203, FTF-0901,
@@ -9857,7 +9857,14 @@ FTF-0908:
     via `txid_current_if_assigned()`) is refused with `external_provider_invalid_request` before
     any decision, so a denial never commits the caller's pending row. The audit is still written
     on the caller's session (not an independent transaction): a caller must hold no uncommitted
-    work, which is now enforced rather than documented. The AuditContext is validated up front
+    work, which is now enforced rather than documented. Round 4: the re-bind goes through FTF-0102
+    `set_tenant_context` (`set_config(.., true)`), so it is transaction-local; a real-Postgres
+    check on a pool WITHOUT the reset guard shows a fresh checkout after a caught denial has no
+    tenant context and sees 0 rows; a tenant context that is not an organization id is refused as
+    `external_provider_invalid_request`. Disclosed (Control-plane ruling): a denial inside
+    `with Session(app) as s, s.begin():` surfaces SQLAlchemy's raw `InvalidRequestError` (fails
+    closed, audit row already durable, no production caller uses `session.begin()`); the denial's
+    commit releases advisory transaction locks and drops other `SET LOCAL` settings. The AuditContext is validated up front
     (`external_provider_invalid_request`). Unknown, str-subclass or unhashable values raise
     `external_provider_invalid_request`. No network call (counting socket test shows zero).
     UNWIRED: no live caller yet (training/inference submit paths are later tasks) and no persisted
