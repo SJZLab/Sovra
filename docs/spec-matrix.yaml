@@ -2304,15 +2304,35 @@ FTF-0309:
   proving_symbol: build_model_capability_router
   proving_test: tests/tasks/test_ftf_0309_p1.py
 FTF-0310:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Capability contract tests
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0301, FTF-0307, FTF-0309
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0301, FTF-0307,
+    FTF-0309. PROVISIONAL / L1-PROVEN, not certified (Law 4). Test-only task, so
+    proving_symbol stays blank. packages/model_catalog/capability_contract_tests.py is a
+    stdlib-only conformance checker over exactly the keywords the frozen 03-interface.yaml uses
+    (fail closed on any other keyword, exact JSON typing, enum by type and value) with a
+    generated negative table (missing required, enum case and whitespace variants, wrong type,
+    bounds, extra property on closed objects). The path refines the packet's
+    packages/model-catalog/ to the real package packages/model_catalog/. Evidence:
+    tests/tasks/test_ftf_0310.py (checker, generated table, matrix, in-test faults) and
+    tests/integration/test_ftf_0310_capability_contract.py (real routers on PostgreSQL 16, 72
+    cells = 4 source types x 3 statuses x 3 license states x mapped/unmapped, each response
+    validated against the frozen schemas; upstream-only and unresolvable names never trainable;
+    generated table derived from real responses). FINDING, reported not fixed: the capability
+    route reports trainable_open_weight for a ready artifact with no accepted license (8 of the
+    72 cells), because classify_training_capability does not check license_approved. The public
+    API cannot create that state (mark-ready requires an accepted license, revoke-license
+    demotes ready to registered), so it needs a direct database write. A second finding:
+    ModelTrainingArtifactMappingResult in the frozen file is allOf of a closed object plus
+    `changed`, which standard JSON Schema semantics can never accept, so the POST result is
+    validated with `changed` removed against ModelTrainingArtifactMapping.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0310.py
 FTF-0401:
   certification_state: CERTIFIED
   criticality: MUST

@@ -466,6 +466,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0308_p1.py
       - name: FTF-0309-P1 negative-test proof (training-capability read API -- route seams over real HTTP, contract, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0309_p1.py
+      - name: FTF-0310 negative-test proof (capability contract checker -- stdlib schema checker, generated negative table, source matrix, fault injection, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0310.py
       - name: FTF-0602-P1 negative-test proof (evaluation cases -- migration SQL + RLS/GRANT shape + fault injection, real routes over the real store on SQLite, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0602_p1.py
       - name: FTF-0501-P1 negative-test proof (dataset uploads -- migration SQL + RLS/GRANT/freeze-trigger shape + fault injection, store on SQLite, read routes, mounted app, no DB required)
@@ -2781,6 +2783,44 @@ jobs:
       - name: Prove the real training-capability read API evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0309_p1_model_capabilities.py
 
+  capability-contract-integration:
+    # FTF-0310: real artifact, mapping and capability routers on a real uvicorn
+    # server over PostgreSQL 16. Every shipped source type x artifact status x
+    # license state x mapped/unmapped cell (72) has its capability, mapping and
+    # change responses validated against the frozen 03 contract, trainable is
+    # true only for a mapped, ready, license-approved artifact, an upstream-only
+    # model and unresolvable names are never trainable, and a generated negative
+    # table derived from the real responses is rejected --
+    # tests/integration/test_ftf_0310_capability_contract.py.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' capability-contract-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0310
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0310"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0310
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real capability contract evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_0310_capability_contract.py
+
   evaluation-case-integration:
     # FTF-0602-P1: real Postgres evidence for EvaluationCase persistence
     # (migration 0023): upgrade/downgrade/upgrade, ENABLE+FORCE RLS and a
@@ -3310,6 +3350,7 @@ jobs:
       - external-provider-denial-integration
       - model-catalog-mapping-integration
       - model-capabilities-integration
+      - capability-contract-integration
       - evaluation-case-integration
       - dataset-upload-integration
       - dataset-upload-hardening-integration
