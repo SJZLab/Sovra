@@ -9790,6 +9790,61 @@ FTF-0904:
     Disclosed: the stale round-1 "handlers added after install_redaction need attach_sink to
     scrub extra=" claim (superseded by round 2's own makeRecord wrap) is corrected above, not
     restated here. Still UNWIRED (blank proving_symbol).
+
+    Round 4 (Control-plane return 2026-10-10, QUEUE 0d; PROVISIONAL / L1-PROVEN, not certified):
+    round 3's own sweep proved linear scaling only for the two percent-token shapes round 3
+    itself fixed, not the class-closing bar it set for every rule. This round found two more:
+    `_PREFIXES`'s JWT alternative had no adversarial coverage at all, and `_QUOTED_VALUE`'s
+    escaped-quote alternative was the one shape round 3 never touched.
+
+    A bare `"eyJ" * k` does NOT reproduce the JWT defect -- `_PREFIXES`'s own leading
+    `(?<![A-Za-z0-9])` lookbehind rejects every repeat after the first (each is preceded by "J",
+    a letter), so that shape is linear and was already hiding the real one. `_` satisfies the
+    lookbehind (not `[A-Za-z0-9]`) and is itself a member of the segment's own class
+    (`[A-Za-z0-9_\-]`), so it does not stop the greedy consume either: `"_eyJ" * 40_000` (160 KB)
+    took 23s pre-fix -- genuinely quadratic, confirmed by direct timing at 160/320/640 KB.
+    Converting the segment to possessive (`{5,}+`) alone did NOT fix it (still 23s): the wasted
+    work is the repeated O(remaining) *consume* at every one of O(n) independent "eyJ" repeats,
+    not backtracking after it, and possessive only removes the latter. Bounding the quantifier's
+    own maximum (`{5,1024}+`, real JWT header/payload segments are a small fraction of that) is
+    what makes it linear: confirmed via direct timing up to 2.56 MB after the fix (doubling n
+    roughly doubles time, not quadruples) and the regression test is the generated size sweep
+    below. `_QUOTED_VALUE`'s bare-quote alternatives (`"[^"\r\n]*"`, `'[^'\r\n]*'`) are genuinely
+    safe with possessive alone and need no bound: their own closing quote is excluded from the
+    class that scans for it, so a repeat of either one is self-bounding (every opener is also
+    the nearest possible closer for the one before it) -- confirmed empirically (`'token=\"' *
+    k`, `"token='" * k` with lookbehind-resetting separators: both linear before this round's fix
+    too). The escaped-quote alternative (`\\+"[^"\r\n]*?\\+"`) has the same self-bounding property
+    for repeats (its own opener and closer both require a literal `"`), but its middle allows
+    backslashes and so cannot be made possessive without changing what matches (a real
+    nested-JSON escape can contain them); it is bounded instead, to 8192 characters, closing the
+    unbounded-single-attempt case the self-bounding property does not need but does not hurt.
+
+    Evidence: added `_adversarial_shape(label, size)`, a size-parameterized generator covering
+    every existing `_ADVERSARIAL` shape plus three new ones this round (`jwt-no-dot`,
+    `jwt-repeated-no-dot`, `lone-backslash-then-quote`); `_ADVERSARIAL` itself is unchanged in
+    substance, now built from the generator at the pinned `_SIZE`. New test
+    `test_every_rule_size_sweep_is_linear_not_quadratic` sweeps the three round-4 shapes across
+    `_SWEEP_SIZES` (64/128/256 KB) through `redact_text`, asserting both the existing 4s cap and a
+    <3x time ratio per doubling (quadratic would be ~4x), plus the real `install_redaction`
+    logging path at the top size -- the same methodology round 3's own sweep used, generalised
+    rather than re-derived. Updated fault F08's search text for the new bounded escaped-quote
+    pattern (still kills the same way: dropping that alternative). Fault count unchanged (50);
+    this round added a performance fix and a timing-based regression test, not a new behavioural
+    guard a text-mutation fault could target -- mutation_gate confirms: both changed regions sit
+    in module-level constant assignments outside any function, so `python3 scripts/mutation_gate.py`
+    (diff mode against `origin/main`) generates 0 mutants (nothing in its M1-M9 operator set
+    applies there) -- an honest PASS, not a gap, since the real protection here is proven by the
+    sweep's own fault->RED timing comparison (pre-fix vs post-fix on the same adversarial input),
+    not by AST mutation. Gates: ruff, ruff format, mypy clean; `validate_spec.py --strict` clean;
+    `product_truth_check.py --fail-on-unwired` 47/47 unchanged; `status.py` 140/302 certified / 46
+    product-true unchanged (Law 2 -- a resubmission is not a certification); `data_exposure_check.py`
+    N/A (no datastore). Regression swept FTF-0901/FTF-0902/FTF-0903 (neighbours) -- all green,
+    unchanged. Same-class sweep: no other `packages/security` module alternation requires two
+    literals not excluded from the segment that precedes them.
+    Disclosed: a JWT segment or a nested-JSON-escaped value longer than 1024 / 8192 characters
+    respectively is not matched by that one shape; other rules still see the surrounding text.
+    Still UNWIRED (blank proving_symbol).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0904.py
