@@ -54,7 +54,6 @@ import hashlib
 import json
 import math
 import re
-import struct
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
@@ -344,20 +343,38 @@ def _exact_str_list(value: object) -> list[str] | None:
     return cast("list[str]", items)
 
 
+@dataclass(frozen=True)
+class _KindSpec:
+    named: frozenset[str]
+    shards: bool
+    required: frozenset[str]
+
+
+_KIND_SPECS: Mapping[str, _KindSpec] = {
+    KIND_WEIGHTS: _KindSpec(named=_WEIGHTS_NAMED_FILES, shards=True, required=_WEIGHTS_REQUIRED),
+    KIND_ADAPTER: _KindSpec(
+        named=_ADAPTER_NAMED_FILES | {_ADAPTER_WEIGHTS_FILE},
+        shards=False,
+        required=_ADAPTER_REQUIRED,
+    ),
+}
+
+
+def _is_shard(name: str) -> bool:
+    return _WEIGHTS_SHARD.fullmatch(name) is not None and name != _ADAPTER_WEIGHTS_FILE
+
+
 def check_file_names(names: object, *, kind: object) -> tuple[str, ...]:
     """Exact allow-list over a manifest's file names for `kind`
     ('weights' | 'adapter'). Order of precedence when several problems exist:
     `unsafe_weight_format`, then `unexpected_file`, then `required_file_missing`.
     Returns the validated names."""
-    if type(kind) is not str or kind not in (KIND_WEIGHTS, KIND_ADAPTER):
+    spec = _KIND_SPECS.get(kind) if type(kind) is str else None
+    if spec is None:
         raise ImportArtifactValidationError(CODE_VALIDATOR_INPUT_INVALID, "unknown_kind")
     items = _exact_str_list(names)
     if items is None:
         raise ImportArtifactValidationError(CODE_UNEXPECTED_FILE, "names_not_a_list_of_str")
-    if kind == KIND_WEIGHTS:
-        named = _WEIGHTS_NAMED_FILES
-    else:
-        named = _ADAPTER_NAMED_FILES | {_ADAPTER_WEIGHTS_FILE}
 
     unsafe = False
     unexpected = False
@@ -367,13 +384,7 @@ def check_file_names(names: object, *, kind: object) -> tuple[str, ...]:
             unexpected = True
             continue
         seen.add(name)
-        if name in named:
-            continue
-        if (
-            kind == KIND_WEIGHTS
-            and _WEIGHTS_SHARD.fullmatch(name) is not None
-            and name != _ADAPTER_WEIGHTS_FILE
-        ):
+        if name in spec.named or (spec.shards and _is_shard(name)):
             continue
         if _is_pickle_capable(name):
             unsafe = True
@@ -384,18 +395,12 @@ def check_file_names(names: object, *, kind: object) -> tuple[str, ...]:
     if unexpected:
         raise ImportArtifactValidationError(CODE_UNEXPECTED_FILE, "not_on_the_allow_list")
 
-    if kind == KIND_WEIGHTS:
-        has_shard = any(
-            _WEIGHTS_SHARD.fullmatch(name) is not None and name != _ADAPTER_WEIGHTS_FILE
-            for name in seen
-        )
-        complete = (
-            _WEIGHTS_REQUIRED <= seen and bool(_TOKENIZER_REQUIRED_ONE_OF & seen) and has_shard
-        )
-    else:
-        complete = _ADAPTER_REQUIRED <= seen
-    if not complete:
+    if spec.required - seen:
         raise ImportArtifactValidationError(CODE_REQUIRED_FILE_MISSING, "required_file_absent")
+    if spec.shards and not (
+        _TOKENIZER_REQUIRED_ONE_OF & seen and any(_is_shard(name) for name in seen)
+    ):
+        raise ImportArtifactValidationError(CODE_REQUIRED_FILE_MISSING, "tokenizer_or_shard_absent")
     return tuple(items)
 
 
@@ -498,11 +503,10 @@ def parse_safetensors_header(prefix: object, *, file_size: object) -> Safetensor
     real size, checked against N and against the offsets' exact coverage."""
     if type(prefix) is not bytes:
         raise _header_error("prefix_type")
-    if type(file_size) is not int or file_size < 8:
+    if type(file_size) is not int:
         raise _header_error("file_size")
-    if len(prefix) < 8:
-        raise _header_error("prefix_too_short")
-    (n,) = struct.unpack("<Q", prefix[:8])
+    # A prefix shorter than 8 bytes gives a small n, and the length check below refuses it.
+    n = int.from_bytes(prefix[:8], "little")
     if n > MAX_SAFETENSORS_HEADER_BYTES:
         raise _header_error("header_size_out_of_bounds")
     if n > file_size - 8:
@@ -515,8 +519,7 @@ def parse_safetensors_header(prefix: object, *, file_size: object) -> Safetensor
     header, reason = _strict_loads(raw, n, SAFETENSORS_HEADER_MAX_DEPTH)
     if reason is not None:
         raise _header_error(reason)
-    if type(header) is not dict:
-        raise _header_error("header_not_an_object")
+    header = cast("dict[str, object]", header)
 
     data_size = file_size - 8 - n
     metadata: tuple[tuple[str, str], ...] = ()

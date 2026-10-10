@@ -87,6 +87,17 @@ def outcome(m: Any, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> str:
     return "ok"
 
 
+def reason_of(m: Any, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> str:
+    """The module error's static reason, or '' when it did not refuse."""
+    try:
+        fn(*args, **kwargs)
+    except m.ImportArtifactValidationError as exc:
+        return str(exc.reason)
+    except BaseException:  # noqa: BLE001
+        return "LEAK"
+    return ""
+
+
 def refuses(m: Any, code: str, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> bool:
     return outcome(m, fn, *args, **kwargs) == code
 
@@ -457,6 +468,23 @@ def group_a(m: Any) -> None:
             f"{label} input is refused by the module's own error (got {got})",
             got == "unexpected_file",
         )
+    for kind in (
+        " weights",
+        "weights ",
+        "Weights",
+        "WEIGHTS",
+        "weights\n",
+        " adapter",
+        "ADAPTER",
+        "Adapter\n",
+        "",
+        "weight",
+    ):
+        check(
+            "A5",
+            f"kind {kind!r} is not normalised",
+            refuses(m, "validator_input_invalid", f, minimal, kind=kind),
+        )
     check(
         "A5",
         "an unknown kind is refused by the module's own error",
@@ -475,6 +503,37 @@ def group_a(m: Any) -> None:
 
 
 # -- B/C: strict JSON, config, tokenizer config --------------------------------------
+
+
+JSON_REASONS = {
+    "dup-key top": "duplicate_key",
+    "dup-key same value": "duplicate_key",
+    "dup-key nested": "duplicate_key",
+    "NaN": "non_finite_number",
+    "Infinity": "non_finite_number",
+    "-Infinity": "non_finite_number",
+    "1e999": "non_finite_number",
+    "-1e999": "non_finite_number",
+    "trailing garbage": "malformed_json",
+    "trailing comma": "malformed_json",
+    "two documents": "malformed_json",
+    "empty": "malformed_json",
+    "whitespace": "malformed_json",
+    "bad utf8": "malformed_json",
+    "overlong utf8": "malformed_json",
+    "BOM": "malformed_json",
+    "lone surrogate escape": "invalid_text",
+    "lone low surrogate escape in key": "invalid_text",
+    "list top": "not_an_object",
+    "string top": "not_an_object",
+    "number top": "not_an_object",
+    "null top": "not_an_object",
+    "depth 33": "too_deep",
+    "depth 100000": "too_deep",
+    "huge int": "integer_too_large",
+    "single quotes": "malformed_json",
+    "comment": "malformed_json",
+}
 
 
 def nest(depth: int) -> bytes:
@@ -622,6 +681,11 @@ def group_b(m: Any) -> None:
         over_limit = at_limit + b" "
         check("B1", f"{label}: exactly {limit} bytes accepted", outcome(m, fn, at_limit) == "ok")
         check("B1", f"{label}: {limit}+1 bytes refused", refuses(m, code, fn, over_limit))
+        check(
+            "B1",
+            f"{label}: {limit}+1 bytes refused as too_large",
+            reason_of(m, fn, over_limit) == "too_large",
+        )
         for tag, raw in [
             ("dup-key top", b'{"model_type":"a","model_type":"b"}'),
             ("dup-key same value", b'{"r":1,"r":1}'),
@@ -653,6 +717,8 @@ def group_b(m: Any) -> None:
         ]:
             got = outcome(m, fn, raw)
             check("B1", f"{label}: {tag} refused with its own code (got {got})", got == code)
+            want = JSON_REASONS[tag]
+            check("B1", f"{label}: {tag} refused for reason {want}", reason_of(m, fn, raw) == want)
         # depth 32 accepted by the JSON layer itself (field rules may still refuse): must not be a depth refusal
         for tag, bad in [
             ("bytearray", bytearray(base)),
@@ -668,6 +734,11 @@ def group_b(m: Any) -> None:
                 "B1",
                 f"{label}: {tag} input refused by the module's own error (got {got})",
                 got == code,
+            )
+            check(
+                "B1",
+                f"{label}: {tag} input refused as input_type",
+                reason_of(m, fn, bad) == "input_type",
             )
     # integer text bound: 20 digits accepted, 21 refused (host-independent)
     twenty = b"1" + b"0" * 19
@@ -1036,6 +1107,22 @@ def group_d(m: Any, big: bool) -> None:
             f"__metadata__ {md!r} refused",
             refuses(m, "weights_header_invalid", parse, m, raw),
         )
+    for lookalike in (
+        "__METADATA__",
+        " __metadata__",
+        "__metadata__ ",
+        "__Metadata__",
+        "__metadata__\n",
+    ):
+        got = parse(
+            m,
+            st_tensor_header({lookalike: {"dtype": "U8", "shape": [1], "data_offsets": [0, 1]}}, 1),
+        )
+        check(
+            "D1",
+            f"{lookalike!r} is an ordinary tensor name, not the metadata key",
+            dict(got.tensors).keys() == {lookalike} and got.metadata == (),
+        )
     check(
         "D1",
         "__metadata__ str->str accepted",
@@ -1068,6 +1155,13 @@ def group_d(m: Any, big: bool) -> None:
         refuses(m, "weights_header_invalid", p, b"\x01\x00\x00", file_size=3),
     )
     check("D1", "empty prefix refused", refuses(m, "weights_header_invalid", p, b"", file_size=0))
+    for cut in (0, 1, 3, 7, 8):
+        cut_prefix = struct.pack("<Q", 2)[:cut]
+        check(
+            "D1",
+            f"{cut}-byte prefix with a large file refused as prefix_too_short",
+            reason_of(m, p, cut_prefix, file_size=100) == "prefix_too_short",
+        )
     check(
         "D1",
         "N=0 refused",
@@ -1534,6 +1628,17 @@ def group_e(m: Any) -> None:
     wrong_rank_base = {**BASE_SHAPES, f"{MOD_Q}.weight": (16,)}
     check(
         "E2",
+        "a zero-size base tensor elsewhere in the map is accepted",
+        outcome(m, cc, header(good), cfg, {**BASE_SHAPES, "model.empty.weight": (0, 4)}) == "ok",
+    )
+    empty_adapter = m.SafetensorsHeader(tensors=(), metadata=(), header_size=2, data_size=0)
+    check(
+        "E2",
+        "an adapter header with no tensors is refused as no_lora_tensors",
+        reason_of(m, cc, empty_adapter, cfg, BASE_SHAPES) == "no_lora_tensors",
+    )
+    check(
+        "E2",
         "base tensor of rank 1 refused",
         refuses(m, "adapter_base_incompatible", cc, header(good), cfg, wrong_rank_base),
     )
@@ -1893,11 +1998,18 @@ FAULTS: list[tuple[str, str, str, int, bool]] = [
         "shard-match-not-fullmatch",
         "_WEIGHTS_SHARD.fullmatch(name)",
         "_WEIGHTS_SHARD.match(name)",
-        2,
+        1,
         False,
     ),
-    ("adapter-file-allowed-as-weights-shard", " and name != _ADAPTER_WEIGHTS_FILE", "", 2, False),
-    ("required-files-not-checked", "    if not complete:", "    if False:", 1, False),
+    ("adapter-file-allowed-as-weights-shard", " and name != _ADAPTER_WEIGHTS_FILE", "", 1, False),
+    ("required-files-not-checked", "    if spec.required - seen:", "    if False:", 1, False),
+    (
+        "tokenizer-or-shard-requirement-dropped",
+        "    if spec.shards and not (",
+        "    if False and not (",
+        1,
+        False,
+    ),
     (
         "duplicate-names-accepted",
         "        if name in seen:\n            unexpected = True\n            continue",
@@ -2042,7 +2154,7 @@ FAULTS: list[tuple[str, str, str, int, bool]] = [
         1,
         False,
     ),
-    ("safetensors-big-endian-length", 'struct.unpack("<Q"', 'struct.unpack(">Q"', 1, False),
+    ("safetensors-big-endian-length", '(prefix[:8], "little")', '(prefix[:8], "big")', 1, False),
     ("safetensors-header-not-brace-checked", '    if raw[:1] != b"{":', "    if False:", 1, False),
     ("safetensors-no-tensors-accepted", "    if not tensors:", "    if False:", 1, False),
     (
