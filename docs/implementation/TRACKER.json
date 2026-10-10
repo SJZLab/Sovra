@@ -750,9 +750,11 @@
       "blockers": []
     },
     "FTF-0501": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "41904e5fe5702a08a12483760c9bc811acfa2ddf"
+      ],
       "independent_review": null,
       "blockers": []
     },
