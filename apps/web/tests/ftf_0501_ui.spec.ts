@@ -25,8 +25,8 @@
 // Next.js `app/` page tree yet (FTF-H029). Law 6 stays BLOCKED on it.
 import { createElement } from "react";
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import {
   ALLOWED_PURPOSES,
@@ -74,12 +74,11 @@ const DRAFT_KEY = draftStorageKey(ORG_ID, PROJECT_ID, CONNECTION_ID);
 // 5 bytes, split as part_size_bytes=3/part_count=2 -> parts of 3 and 2 bytes.
 const FILE_BYTES = new Uint8Array([10, 20, 30, 40, 50]);
 const OTHER_BYTES = new Uint8Array([9, 9, 9, 9, 9]);
-let HASH = "";
+// SHA-256 of FILE_BYTES, fixed at module load: the generated case tables below are built
+// when this file is collected, before any beforeAll hook could fill a variable in. A test
+// further down proves the constant is the real digest of those bytes.
+const HASH = "6ef53a6408ec4429791fa808e4fbe7843f936316950a20ba5fbbbdd01cd29899";
 const OTHER_HASH = "a".repeat(64);
-
-beforeAll(async () => {
-  HASH = await sha256Hex(testFile(FILE_BYTES));
-});
 
 function testFile(bytes: Uint8Array, name = "data.jsonl"): File {
   return new File([bytes as BlobPart], name, { type: "application/jsonl" });
@@ -328,7 +327,7 @@ test("sha256Hex computes the real digest of the file's bytes", async () => {
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
   expect(await sha256Hex(testFile(FILE_BYTES))).toBe(expected);
-  expect(HASH).toMatch(/^[0-9a-f]{64}$/);
+  expect(HASH).toBe(expected);
 });
 
 // ---------------------------------------------------------------------------
@@ -394,8 +393,11 @@ test("a double click on Start creates exactly one session", async () => {
     target: { files: [testFile(FILE_BYTES)] },
   });
   const button = screen.getByTestId("upload-start-button");
-  fireEvent.click(button);
-  fireEvent.click(button);
+  // Both clicks land before React re-renders, as a fast double click does.
+  act(() => {
+    button.click();
+    button.click();
+  });
   await waitFor(() => expect(screen.getByTestId("upload-all-parts-uploaded")).toBeTruthy());
   expect(calls("POST", SESSIONS_URL).length).toBe(1);
 });
@@ -407,8 +409,10 @@ test("a double click on Finalize sends exactly one finalize request", async () =
   });
   enqueue("POST", FINALIZE_URL, ok(datasetBody(), 201));
   const button = screen.getByTestId("upload-finalize-button");
-  fireEvent.click(button);
-  fireEvent.click(button);
+  act(() => {
+    button.click();
+    button.click();
+  });
   await waitFor(() => expect(screen.getByTestId("upload-accepted")).toBeTruthy());
   expect(calls("POST", FINALIZE_URL).length).toBe(1);
 });
@@ -485,6 +489,138 @@ test.each([201, 200])(
     expect(unexpected).toEqual([]);
   },
 );
+
+test.each([200, 202, 204])(
+  "the create reply with status %i and a fully valid session body is malformed (only 201 creates)",
+  async (status) => {
+    renderUI();
+    enqueue("POST", SESSIONS_URL, ok(session(), status));
+    await selectFileAndStart(testFile(FILE_BYTES));
+    await waitFor(() => expect(screen.getByTestId("upload-malformed-text")).toBeTruthy());
+    expect(window.localStorage.getItem(DRAFT_KEY)).toBeNull();
+    expect(unexpected).toEqual([]);
+  },
+);
+
+test.each([201, 202, 204])(
+  "a parts listing with status %i and a fully valid body is malformed (only 200 lists)",
+  async (status) => {
+    renderUI();
+    enqueue("POST", SESSIONS_URL, ok(session(), 201));
+    enqueue("GET", PARTS_URL, ok(listing([1]), status));
+    await selectFileAndStart(testFile(FILE_BYTES));
+    await waitFor(() => expect(screen.getByTestId("upload-malformed-text")).toBeTruthy());
+    expect(calls("POST", PART_URLS_URL).length).toBe(0);
+    expect(unexpected).toEqual([]);
+  },
+);
+
+test.each([201, 202, 204])(
+  "part-url grants with status %i and a fully valid body are malformed, no PUT (only 200 grants)",
+  async (status) => {
+    renderUI();
+    enqueue("POST", SESSIONS_URL, ok(session(), 201));
+    enqueue("GET", PARTS_URL, ok(listing()));
+    enqueue("POST", PART_URLS_URL, ok(grants([1, 2]), status));
+    await selectFileAndStart(testFile(FILE_BYTES));
+    await waitFor(() => expect(screen.getByTestId("upload-malformed-text")).toBeTruthy());
+    expect(calls("PUT", PART1_URL).length + calls("PUT", PART2_URL).length).toBe(0);
+    expect(unexpected).toEqual([]);
+  },
+);
+
+test.each([201, 202, 204])(
+  "a resumed session read with status %i and a fully valid body is malformed (only 200 reads)",
+  async (status) => {
+    seedDraft();
+    renderUI();
+    enqueue("GET", SESSION_URL, ok(session(), status));
+    fireEvent.change(screen.getByTestId("upload-resume-file-input"), {
+      target: { files: [testFile(FILE_BYTES)] },
+    });
+    await waitFor(() => expect(screen.getByTestId("upload-malformed-text")).toBeTruthy());
+    expect(calls("GET", PARTS_URL).length).toBe(0);
+    expect(unexpected).toEqual([]);
+  },
+);
+
+// 101 one-byte parts: the component asks for part URLs in batches of 100, and the storage
+// origin pinned by the first batch must hold for the second.
+async function manyPartsFixture() {
+  const bytes = new Uint8Array(101).map((_, i) => i);
+  const sha = await sha256Hex(testFile(bytes));
+  const many = (overrides: Json = {}) =>
+    session({
+      declared_size_bytes: 101,
+      declared_sha256: sha,
+      part_size_bytes: 1,
+      part_count: 101,
+      ...overrides,
+    });
+  const manyGrant = (n: number, origin: string) => ({
+    part_number: n,
+    method: "PUT",
+    url: `${origin}/p${n}`,
+    content_length: 1,
+    expires_at: "2026-10-09T00:05:00+00:00",
+  });
+  return { bytes, many, manyGrant };
+}
+
+test("101 parts go out in two batches of part-url requests, all on one origin, and reach finalize", async () => {
+  const { bytes, many, manyGrant } = await manyPartsFixture();
+  renderUI();
+  enqueue("POST", SESSIONS_URL, ok(many(), 201));
+  enqueue("GET", PARTS_URL, ok({ part_size_bytes: 1, part_count: 101, parts: [] }));
+  enqueue(
+    "POST",
+    PART_URLS_URL,
+    (init) => {
+      const wanted = (JSON.parse(String(init?.body)) as { part_numbers: number[] }).part_numbers;
+      return ok({ parts: wanted.map((n) => manyGrant(n, "https://a.example")) });
+    },
+    (init) => {
+      const wanted = (JSON.parse(String(init?.body)) as { part_numbers: number[] }).part_numbers;
+      return ok({ parts: wanted.map((n) => manyGrant(n, "https://a.example")) });
+    },
+  );
+  for (let n = 1; n <= 101; n += 1) enqueue("PUT", `https://a.example/p${n}`, ok({}));
+  await selectFileAndStart(testFile(bytes));
+  await waitFor(() => expect(screen.getByTestId("upload-all-parts-uploaded")).toBeTruthy());
+  expect(calls("POST", PART_URLS_URL).length).toBe(2);
+  expect(unexpected).toEqual([]);
+});
+
+test("a second batch of grants on another storage origin is malformed; none of its parts is PUT", async () => {
+  const { bytes, many, manyGrant } = await manyPartsFixture();
+  renderUI();
+  enqueue("POST", SESSIONS_URL, ok(many(), 201));
+  enqueue("GET", PARTS_URL, ok({ part_size_bytes: 1, part_count: 101, parts: [] }));
+  enqueue(
+    "POST",
+    PART_URLS_URL,
+    (init) => {
+      const wanted = (JSON.parse(String(init?.body)) as { part_numbers: number[] }).part_numbers;
+      return ok({ parts: wanted.map((n) => manyGrant(n, "https://a.example")) });
+    },
+    ok({ parts: [manyGrant(101, "https://evil.example")] }),
+  );
+  for (let n = 1; n <= 100; n += 1) enqueue("PUT", `https://a.example/p${n}`, ok({}));
+  await selectFileAndStart(testFile(bytes));
+  await waitFor(() => expect(screen.getByTestId("upload-malformed-text")).toBeTruthy());
+  expect(calls("PUT", "https://evil.example/p101").length).toBe(0);
+  expect(unexpected).toEqual([]);
+});
+
+test("a configured storageOrigin refuses grants for any other origin", async () => {
+  renderUI({ storageOrigin: "https://elsewhere.example" } as Partial<typeof PROPS>);
+  enqueue("POST", SESSIONS_URL, ok(session(), 201));
+  enqueue("GET", PARTS_URL, ok(listing()));
+  enqueue("POST", PART_URLS_URL, ok(grants([1, 2])));
+  await selectFileAndStart(testFile(FILE_BYTES));
+  await waitFor(() => expect(screen.getByTestId("upload-malformed-text")).toBeTruthy());
+  expect(calls("PUT", PART1_URL).length).toBe(0);
+});
 
 test("UF3: a parts listing that claims a part of the wrong size is malformed, not progress", async () => {
   renderUI();
@@ -618,6 +754,19 @@ const SESSION_FIELDS: Record<string, FieldSpec> = {
 
 const CREATE_CASES: Case[] = [
   ...buildCases(() => session(), SESSION_FIELDS),
+  // self-consistent but not positive integers: the plan check alone must not admit them
+  {
+    name: "part_size_bytes = -1 with a consistent part_count = -5",
+    body: session({ part_size_bytes: -1, part_count: -5 }),
+  },
+  {
+    name: "part_size_bytes = 1.5 with a consistent part_count = 4",
+    body: session({ part_size_bytes: 1.5, part_count: 4 }),
+  },
+  {
+    name: "part_size_bytes = 2 ** 53 (not a safe integer) with a consistent part_count = 1",
+    body: session({ part_size_bytes: 2 ** 53, part_count: 1 }),
+  },
   // the create reply must be an OPEN session and the new id may be anything
   { name: "status bound to open (verified)", body: session({ status: "verified" }) },
   { name: "status bound to open (rejected)", body: session({ status: "rejected" }) },
@@ -791,6 +940,25 @@ const GRANT_CASES: Case[] = [
     name: `parts[0].url = ${value}`,
     body: grantReply({ parts: [grant(1, { url: value }), grant(2)] }),
   })),
+  // every grant carries the same bad URL scheme, so the single-origin rule cannot catch it
+  ...[
+    "ftp://storage.example/part",
+    "file:///tmp/part",
+    "javascript:alert(1)",
+    "data:text/plain,hello",
+    "blob:https://storage.example/0000",
+    "ws://storage.example/part",
+  ].map((prefix) => ({
+    name: `both grants use the scheme of ${prefix}`,
+    body: grantReply({
+      parts: [grant(1, { url: `${prefix}1` }), grant(2, { url: `${prefix}2` })],
+    }),
+  })),
+  // a one-element array stringifies to a valid URL: the type check must refuse it
+  {
+    name: "parts[0].url is an array holding a valid URL",
+    body: grantReply({ parts: [grant(1, { url: [PART1_URL] }), grant(2)] }),
+  },
   {
     name: "grants spread over two storage origins",
     body: grantReply({ parts: [grant(1), grant(2, { url: "https://evil.example/part2" })] }),
@@ -867,6 +1035,130 @@ test.each(DATASET_CASES)(
     expect(unexpected).toEqual([]);
   },
 );
+
+test.each(
+  Object.entries(SESSION_FIELDS).flatMap(([field, spec]) => [
+    {
+      name: `${field} missing`,
+      body: (() => {
+        const b = session();
+        delete b[field];
+        return b;
+      })(),
+    },
+    ...wrongValues(spec).map(({ label, value }) => ({
+      name: `${field} = ${label}`,
+      body: session({ [field]: value }),
+    })),
+  ]),
+)("parseUploadSession alone refuses: $name", (c) => {
+  expect(parseUploadSession(c.body)).toBeNull();
+});
+
+test.each([
+  ["part_size_bytes -1 / part_count -5", { part_size_bytes: -1, part_count: -5 }],
+  ["part_size_bytes 1.5 / part_count 4", { part_size_bytes: 1.5, part_count: 4 }],
+  ["declared_size_bytes 0 / part_count 0", { declared_size_bytes: 0, part_count: 0 }],
+  ["declared_size_bytes -3 / part_count -1", { declared_size_bytes: -3, part_count: -1 }],
+  ["declared_size_bytes 1.5 / part_count 1", { declared_size_bytes: 1.5, part_count: 1 }],
+])(
+  "parseUploadSession alone refuses a self-consistent non-positive plan: %s",
+  (_label, override) => {
+    expect(parseUploadSession(session(override))).toBeNull();
+  },
+);
+
+const FAKE_SESSION = (overrides: Json = {}) => ({
+  ...(parseUploadSession(session()) as NonNullable<ReturnType<typeof parseUploadSession>>),
+  ...overrides,
+});
+
+test.each([
+  ["name is empty (expected name also empty)", { name: "" }, {}, ""],
+  [
+    "purpose outside the enum (session purpose also outside)",
+    { purpose: "bogus" },
+    { purpose: "bogus" },
+    "my-dataset",
+  ],
+  [
+    "verified_sha256 malformed (session sha also malformed)",
+    { verified_sha256: "zz" },
+    { declared_sha256: "zz" },
+    "my-dataset",
+  ],
+  [
+    "verified_size_bytes 0 (session size also 0)",
+    { verified_size_bytes: 0 },
+    { declared_size_bytes: 0 },
+    "my-dataset",
+  ],
+  [
+    "verified_size_bytes 1.5 (session size also 1.5)",
+    { verified_size_bytes: 1.5 },
+    { declared_size_bytes: 1.5 },
+    "my-dataset",
+  ],
+])(
+  "parseUploadedDataset alone refuses when the binding would otherwise agree: %s",
+  (_label, bodyOverride, sessionOverride, name) => {
+    const bound = FAKE_SESSION(sessionOverride) as Parameters<
+      typeof parseUploadedDataset
+    >[1]["session"];
+    expect(
+      parseUploadedDataset(datasetBody({ name: name || "x", ...bodyOverride }), {
+        organizationId: ORG_ID,
+        session: bound,
+        datasetName: name,
+      }),
+    ).toBeNull();
+  },
+);
+
+test("parsePartsListing alone refuses a non-positive size even when the plan says the same", () => {
+  // part 2 of a 3-byte file in 3-byte parts has a planned size of 0
+  const odd = FAKE_SESSION({
+    declared_size_bytes: 3,
+    part_size_bytes: 3,
+    part_count: 2,
+  }) as Parameters<typeof parsePartsListing>[1];
+  expect(
+    parsePartsListing(
+      { part_size_bytes: 3, part_count: 2, parts: [{ part_number: 2, size_bytes: 0 }] },
+      odd,
+    ),
+  ).toBeNull();
+});
+
+test("parsePartUrlGrants alone refuses a url that is not a string but stringifies to one", () => {
+  const parsed = parseUploadSession(session())!;
+  expect(
+    parsePartUrlGrants({ parts: [grant(1, { url: [PART1_URL] }), grant(2)] }, [1, 2], parsed, null),
+  ).toBeNull();
+});
+
+test("table bases are valid: every generated case below differs from a reply that is accepted", () => {
+  // Guards the tables against going vacuous (a broken base makes every case "malformed").
+  const parsed = parseUploadSession(session());
+  expect(parsed).not.toBeNull();
+  const expectation = { ...EXPECTATION, declaredSha256: HASH };
+  expect(sessionMatches(parsed!, expectation)).toBe(true);
+  expect(sessionMatches(parsed!, { ...expectation, id: undefined as unknown as string })).toBe(
+    true,
+  );
+  expect(parsePartsListing(listing([1]), parsed!)?.length).toBe(1);
+  expect(parsePartUrlGrants(grantReply(), [1, 2], parsed!, null)).not.toBeNull();
+  expect(
+    parseUploadedDataset(datasetBody(), {
+      organizationId: ORG_ID,
+      session: parsed!,
+      datasetName: "my-dataset",
+    }),
+  ).not.toBeNull();
+  for (const status of SESSION_STATUSES) {
+    expect(parseUploadSession(session({ status }))).not.toBeNull();
+  }
+});
 
 test("a non-JSON 2xx finalize body is malformed, not success", async () => {
   await uploadToReadyToFinalize();
