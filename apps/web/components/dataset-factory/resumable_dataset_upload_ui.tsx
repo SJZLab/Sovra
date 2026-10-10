@@ -587,6 +587,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   content_type_mismatch:
     "The uploaded content does not match the declared type; nothing was created.",
   part_size_mismatch: "One or more uploaded parts have the wrong size; nothing was created.",
+  unsafe_archive: "The uploaded spreadsheet archive was refused as unsafe; nothing was created.",
   unexpected_part: "An unexpected part was found in storage; nothing was created.",
   unsupported_content_type: "The declared content type is not supported; nothing was created.",
   source_revoked:
@@ -614,6 +615,7 @@ const CLOSED_CODES = new Set([
   "part_size_mismatch",
   "unexpected_part",
   "unsupported_content_type",
+  "unsafe_archive",
   "source_revoked",
   "verification_mismatch",
 ]);
