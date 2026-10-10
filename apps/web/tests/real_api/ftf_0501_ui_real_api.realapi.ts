@@ -174,6 +174,12 @@ test("R2 real router + S3: interrupt, reload, resume uploads ONLY the missing pa
   await waitFor(() => expect(screen.getByTestId("upload-interrupted")).toBeTruthy(), {
     timeout: 120_000,
   });
+  // visible progress equals parts that really reached storage (1), never the part count
+  const shown = /interrupted after 1 of (\d+) parts/.exec(
+    screen.getByTestId("upload-interrupted-text").textContent ?? "",
+  );
+  expect(shown).not.toBeNull();
+  expect(Number(shown?.[1])).toBeGreaterThanOrEqual(3);
   // part 1 reached storage, part 2 was dropped on the wire, part 3 was never attempted
   expect(partPuts().map((r) => r.partNumber)).toEqual(["1"]);
   expect(records.some((r) => r.status === "dropped" && r.partNumber === "2")).toBe(true);
