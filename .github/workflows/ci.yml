@@ -424,6 +424,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_1305.py
       - name: FTF-0616 negative-test proof (LLM judge adapter, no DB required; real local gateway over HTTPS)
         run: uv run python3 tests/tasks/test_ftf_0616.py
+      - name: FTF-0616-F1 negative-test proof (judge deployment fingerprint + cache bypass, no DB required; real local gateway over HTTPS)
+        run: uv run python3 tests/tasks/test_ftf_0616_f1.py
       - name: FTF-04A02 negative-test proof (GitHub App/token read-only secret integration, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a02.py
       - name: FTF-04A03 negative-test proof (GitHub accessible-repository listing connector, no DB required)
@@ -2905,6 +2907,54 @@ jobs:
         # expires_at (read as sovra_app); paging past 1000 uploads; exit codes through main().
         run: uv run python3 tests/integration/test_ftf_0501_sweeper_postgres_s3.py
 
+  resumable-upload-ui-real-api-integration:
+    # FTF-0501-UI round 2 (UI CHECKLIST f): the real resumable-upload component
+    # (apps/web/components/dataset-factory/resumable_dataset_upload_ui.tsx, Vitest +
+    # jsdom) against the real upload router on a real uvicorn server over PostgreSQL 16
+    # as sovra_app and the live SeaweedFS S3 API, part size at S3's 5 MiB minimum:
+    # multi-part upload and finalize, connection drop + reload + resume of ONLY the
+    # missing parts, a foreign organization's path refused -- then an independent check
+    # of the Datasets, sessions and stored objects --
+    # tests/integration/test_ftf_0501_ui_real_api.py (spec:
+    # apps/web/tests/real_api/ftf_0501_ui_real_api.realapi.ts).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' resumable-upload-ui-real-api-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0501ui
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0501ui"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0501ui
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Install JS/TS dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Prove the real upload UI against the real router, PostgreSQL 16 and SeaweedFS
+        run: uv run python3 tests/integration/test_ftf_0501_ui_real_api.py
+
   dataset-upload-hardening-integration:
     # FTF-0501-P2: real Postgres evidence for migration 0025: a closed
     # (rejected / expired / verified) upload session cannot be reopened or
@@ -3228,6 +3278,7 @@ jobs:
       - s3-minio-versioned-source-integration
       - direct-upload-s3-integration
       - direct-upload-routes-integration
+      - resumable-upload-ui-real-api-integration
       - oidc-provider-integration
       - license-acceptance-workflow-integration
       - tool-schema-crud-integration
