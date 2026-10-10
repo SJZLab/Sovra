@@ -489,7 +489,7 @@ def group_b(m: Any) -> None:
             ("worker blank", {"worker_id": ""}),
             ("worker spaces", {"worker_id": "   "}),
             ("worker NUL", {"worker_id": "w\x00"}),
-            ("worker 201 chars", {"worker_id": "w" * 201}),
+            ("worker 129 chars", {"worker_id": "w" * 129}),
             ("worker as int", {"worker_id": 7}),
             ("origins empty", {"origins": ()}),
             ("origins as a bare str", {"origins": "external_endpoint"}),
@@ -529,8 +529,8 @@ def group_b(m: Any) -> None:
         job = env.add_job()
         check(
             "B3",
-            "a 200-character worker id is accepted",
-            expect(m, lambda: env.claim(job, worker="w" * 200)) is None,
+            "a 128-character worker id is accepted",
+            expect(m, lambda: env.claim(job, worker="w" * 128)) is None,
         )
     with Env(m).patched() as env:
         token = m.ClaimToken(ORG, PROJECT, uuid.uuid4(), 1, WORKER)
@@ -1573,6 +1573,305 @@ def group_h(m: Any, vs: Any = None) -> None:
     )
 
 
+# -- R: routes (the new POST field, the new response fields) over real HTTP, DB seams replaced ----
+
+R_ORG = uuid.UUID("abababab-0000-4000-8000-00000000000a")
+R_PROJECT = uuid.UUID("bcbcbcbc-0000-4000-8000-00000000000b")
+R_JOB = uuid.UUID("cdcdcdcd-0000-4000-8000-00000000000c")
+R_CONN = uuid.UUID("dedededa-0000-4000-8000-00000000000d")
+R_RESULT = uuid.UUID("efefefef-0000-4000-8000-00000000000e")
+
+
+class RouteEnv:
+    def __init__(self) -> None:
+        self.create_calls: list[dict[str, Any]] = []
+        self.create_error: Exception | None = None
+        self.job: Any = None
+
+    def create(self, session: Any, ctx: Any, **kwargs: Any) -> Any:
+        self.create_calls.append(kwargs)
+        if self.create_error is not None:
+            raise self.create_error
+        return self.job
+
+    def get(self, session: Any, ctx: Any, project_id: Any, job_id: Any) -> Any:
+        return self.job
+
+    def list_jobs(self, session: Any, ctx: Any, project_id: Any) -> Any:
+        return [self.job]
+
+
+def route_job(**override: Any) -> Any:
+    fields: dict[str, Any] = dict(
+        id=R_JOB,
+        organization_id=R_ORG,
+        project_id=R_PROJECT,
+        requested_origin="external_endpoint",
+        parent_model_version_id=None,
+        trainable_artifact_id=None,
+        external_provider_model_ref=REF,
+        litellm_connection_id=R_CONN,
+        result_model_version_id=None,
+        state="queued",
+        failure_code=None,
+        created_by="ml-1",
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    fields.update(override)
+    return SimpleNamespace(**fields)
+
+
+def group_r(mir: Any = None) -> None:
+    import http.client
+    import json
+    import socket
+    import threading
+    import time
+
+    import uvicorn
+    from fastapi import FastAPI
+
+    import app.model_versions.model_import_routes as real_mir
+    from app.auth.rbac_middleware import AuthenticatedPrincipal, Role
+
+    mir = mir or real_mir
+    principals = {
+        "ml": AuthenticatedPrincipal(issuer="https://issuer.example", subject="ml-1"),
+        "viewer": AuthenticatedPrincipal(issuer="https://issuer.example", subject="viewer-1"),
+    }
+    roles = {"ml-1": Role.ML_ENGINEER, "viewer-1": Role.VIEWER}
+
+    def resolver(request: Any) -> Any:
+        return principals.get(request.headers.get("x-test-principal", ""))
+
+    def role_lookup(issuer: str, subject: str, organization_id: uuid.UUID) -> Any:
+        return roles.get(subject) if organization_id == R_ORG else None
+
+    @contextlib.contextmanager
+    def session_cm(session_factory: Any, tenant_context: Any):
+        yield object()
+
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    app = FastAPI()
+    app.include_router(
+        mir.build_model_import_router(
+            lambda: None, principal_resolver=resolver, role_lookup=role_lookup
+        )
+    )
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    for _ in range(300):
+        if server.started:
+            break
+        time.sleep(0.02)
+    env = RouteEnv()
+    names = {
+        "tenant_scoped_session_for": session_cm,
+        "create_model_import_job": env.create,
+        "get_model_import_job": env.get,
+        "list_model_import_jobs": env.list_jobs,
+    }
+    saved = {name: getattr(mir, name) for name in names}
+    for name, value in names.items():
+        setattr(mir, name, value)
+
+    collection = f"/api/v1/organizations/{R_ORG}/projects/{R_PROJECT}/model-imports"
+
+    def call(
+        method: str, path: str, payload: Any = None, principal: str | None = "ml"
+    ) -> tuple[int, Any]:
+        headers = {"Content-Type": "application/json"}
+        if principal is not None:
+            headers["X-Test-Principal"] = principal
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        try:
+            conn.request(
+                method,
+                path,
+                body=None if payload is None else json.dumps(payload).encode(),
+                headers=headers,
+            )
+            response = conn.getresponse()
+            raw = response.read()
+            return response.status, (json.loads(raw) if raw else None)
+        finally:
+            conn.close()
+
+    try:
+        env.job = route_job()
+        endpoint = {"requested_origin": "external_endpoint", "external_provider_model_ref": REF}
+        wrong_shapes: list[tuple[str, Any]] = [
+            ("an int", 7),
+            ("a bool", True),
+            ("a list", []),
+            ("a dict", {}),
+            ("a non-uuid string", "nope"),
+            ("an empty string", ""),
+            ("a float", 1.5),
+        ]
+        for label, value in wrong_shapes:
+            env.create_calls.clear()
+            status, body = call("POST", collection, {**endpoint, "litellm_connection_id": value})
+            check(
+                "R1",
+                f"external_endpoint with litellm_connection_id as {label} -> 400 invalid_body",
+                status == 400 and body == {"detail": "invalid_body"},
+            )
+            check("R1", f"{label}: nothing reached the store", not env.create_calls)
+        for label, payload in (
+            ("missing", endpoint),
+            ("null", {**endpoint, "litellm_connection_id": None}),
+        ):
+            env.create_calls.clear()
+            status, body = call("POST", collection, payload)
+            check(
+                "R2",
+                f"external_endpoint with litellm_connection_id {label} -> 400 invalid_body",
+                status == 400 and body == {"detail": "invalid_body"} and not env.create_calls,
+            )
+        for origin in ("imported_weights", "imported_adapter", "factory_trained", "made_up"):
+            env.create_calls.clear()
+            status, body = call(
+                "POST",
+                collection,
+                {"requested_origin": origin, "litellm_connection_id": str(R_CONN)},
+            )
+            check(
+                "R3",
+                f"{origin} with a litellm_connection_id -> 400 invalid_body",
+                status == 400 and body == {"detail": "invalid_body"} and not env.create_calls,
+            )
+        for label, extra in (("missing", {}), ("null", {"litellm_connection_id": None})):
+            env.create_calls.clear()
+            env.job = route_job(
+                requested_origin="imported_weights",
+                litellm_connection_id=None,
+                external_provider_model_ref=None,
+            )
+            status, body = call(
+                "POST", collection, {"requested_origin": "imported_weights", **extra}
+            )
+            check(
+                "R4",
+                f"imported_weights with litellm_connection_id {label} reaches the store with None",
+                status == 201
+                and len(env.create_calls) == 1
+                and env.create_calls[0]["litellm_connection_id"] is None,
+            )
+        env.job = route_job()
+        env.create_calls.clear()
+        status, body = call("POST", collection, {**endpoint, "litellm_connection_id": str(R_CONN)})
+        check(
+            "R5",
+            "a valid external_endpoint request is 201 and passes the parsed connection UUID",
+            status == 201
+            and len(env.create_calls) == 1
+            and env.create_calls[0]["litellm_connection_id"] == R_CONN
+            and env.create_calls[0]["external_provider_model_ref"] == REF,
+        )
+        check(
+            "R5",
+            "the 201 body carries litellm_connection_id and result_model_version_id",
+            body is not None
+            and body["litellm_connection_id"] == str(R_CONN)
+            and body["result_model_version_id"] is None,
+        )
+        check(
+            "R5",
+            "the 201 body keeps every earlier field",
+            {
+                "id",
+                "organization_id",
+                "project_id",
+                "requested_origin",
+                "parent_model_version_id",
+                "trainable_artifact_id",
+                "external_provider_model_ref",
+                "state",
+                "failure_code",
+                "created_by",
+                "created_at",
+                "updated_at",
+            }
+            <= set(body),
+        )
+        check(
+            "R5",
+            "the response contract has exactly the earlier fields plus the two new ones (no claim_epoch, no lease)",
+            set(body)
+            == {
+                "id",
+                "organization_id",
+                "project_id",
+                "requested_origin",
+                "parent_model_version_id",
+                "trainable_artifact_id",
+                "external_provider_model_ref",
+                "litellm_connection_id",
+                "result_model_version_id",
+                "state",
+                "failure_code",
+                "created_by",
+                "created_at",
+                "updated_at",
+            },
+        )
+        env.job = route_job(state="succeeded", result_model_version_id=R_RESULT)
+        status, body = call("GET", f"{collection}/{R_JOB}")
+        check(
+            "R6",
+            "GET shows the succeeded job's result id",
+            status == 200
+            and body["result_model_version_id"] == str(R_RESULT)
+            and body["litellm_connection_id"] == str(R_CONN)
+            and body["state"] == "succeeded",
+        )
+        status, body = call("GET", collection)
+        check(
+            "R6",
+            "the list shows the same two fields",
+            status == 200
+            and body[0]["result_model_version_id"] == str(R_RESULT)
+            and body[0]["litellm_connection_id"] == str(R_CONN),
+        )
+        env.create_calls.clear()
+        env.create_error = mir.ConnectionNotFoundError("foreign")
+        status, body = call(
+            "POST", collection, {**endpoint, "litellm_connection_id": str(uuid.uuid4())}
+        )
+        check(
+            "R7",
+            "a foreign or missing connection is 404 not_found",
+            status == 404 and body == {"detail": "not_found"},
+        )
+        env.create_error = None
+        status, body = call(
+            "POST", collection, {**endpoint, "litellm_connection_id": str(R_CONN), "claim_epoch": 5}
+        )
+        check(
+            "R8",
+            "claim_epoch is not an accepted body key",
+            status == 400 and "claim_epoch" in body["detail"],
+        )
+        status, body = call(
+            "POST",
+            collection,
+            {**endpoint, "litellm_connection_id": str(R_CONN)},
+            principal="viewer",
+        )
+        check("R8", "a viewer cannot POST (403)", status == 403)
+    finally:
+        for name, value in saved.items():
+            setattr(mir, name, value)
+        server.should_exit = True
+        thread.join(timeout=5)
+
+
 # -- faults ----------------------------------------------------------------------------------------
 
 FAULTS: list[tuple[str, str, str, int]] = [
@@ -1962,7 +2261,78 @@ SCHEMA_FAULTS: list[tuple[str, str, str, int]] = [
 ]
 
 
-def suite(m: Any) -> list[str]:
+ROUTES_PATH = ROOT / "apps" / "api" / "app" / "model_versions" / "model_import_routes.py"
+ROUTE_FAULTS: list[tuple[str, str, str, int]] = [
+    (
+        "route-body-key-not-allowed",
+        '        "external_provider_model_ref",\n        "litellm_connection_id",\n    }',
+        '        "external_provider_model_ref",\n    }',
+        1,
+    ),
+    (
+        "route-connection-mismatch-allowed",
+        'if (payload["requested_origin"] == "external_endpoint") != (connection is not None):',
+        "if False:",
+        1,
+    ),
+    (
+        "route-connection-type-unchecked",
+        "if connection is not None and not isinstance(connection, str):",
+        "if False:",
+        1,
+    ),
+    (
+        "route-connection-uuid-error-500",
+        '    except ValueError as exc:\n        raise HTTPException(status_code=400, detail="invalid_body") from exc',
+        '    except KeyError as exc:\n        raise HTTPException(status_code=400, detail="invalid_body") from exc',
+        1,
+    ),
+    (
+        "route-connection-null-parsed",
+        '    raw = payload.get("litellm_connection_id")\n    if raw is None:\n        return None',
+        '    raw = payload.get("litellm_connection_id")\n    if raw is None:\n        raw = str(uuid.uuid4())',
+        1,
+    ),
+    (
+        "route-response-drops-connection",
+        '        "litellm_connection_id": (\n            None if job.litellm_connection_id is None else str(job.litellm_connection_id)\n        ),\n',
+        "",
+        1,
+    ),
+    (
+        "route-response-drops-result",
+        '        "result_model_version_id": (\n            None if job.result_model_version_id is None else str(job.result_model_version_id)\n        ),\n',
+        "",
+        1,
+    ),
+    (
+        "route-response-result-wrong",
+        "None if job.result_model_version_id is None else str(job.result_model_version_id)",
+        "None if job.result_model_version_id is None else str(job.id)",
+        1,
+    ),
+    (
+        "route-connection-not-found-500",
+        "            ArtifactNotFoundError,\n            ConnectionNotFoundError,\n            TenantContextError,",
+        "            ArtifactNotFoundError,\n            TenantContextError,",
+        1,
+    ),
+    (
+        "route-connection-not-passed",
+        "                    litellm_connection_id=litellm_connection_id,\n                )",
+        "                    litellm_connection_id=None,\n                )",
+        1,
+    ),
+    (
+        "route-connection-not-parsed",
+        "        litellm_connection_id = _parse_connection_id(payload)\n",
+        "        litellm_connection_id = None\n",
+        1,
+    ),
+]
+
+
+def suite(m: Any, with_routes: bool = False) -> list[str]:
     _failures.clear()
     group_a(m)
     group_b(m)
@@ -1974,6 +2344,8 @@ def suite(m: Any) -> list[str]:
     group_f(m)
     group_g(m)
     group_h(m)
+    if with_routes:
+        group_r()
     return list(_failures)
 
 
@@ -2026,6 +2398,28 @@ def run_schema_fault(
     return True, f"{len(red)} failing check(s), e.g. {red[0][:110]}"
 
 
+def run_route_fault(source: str, name: str, old: str, new: str, count: int) -> tuple[bool, str]:
+    if source.count(old) != count:
+        return False, f"patch text occurs {source.count(old)} time(s), expected {count}"
+    mutated = source.replace(old, new)
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "mutant_routes.py"
+        path.write_text(mutated)
+        try:
+            mm = load_module(path, f"model_import_routes_fault_{abs(hash(name))}")
+        except BaseException as exc:  # noqa: BLE001
+            return False, f"mutant does not import ({type(exc).__name__}: {exc})"
+        _failures.clear()
+        try:
+            group_r(mm)
+            red = list(_failures)
+        except BaseException as exc:  # noqa: BLE001
+            red = [f"crash {type(exc).__name__}: {exc}"]
+    if not red:
+        return False, "suite stayed GREEN"
+    return True, f"{len(red)} failing check(s), e.g. {red[0][:110]}"
+
+
 SCHEMA_PATH = ROOT / "apps" / "api" / "app" / "model_versions" / "model_version_schema.py"
 
 
@@ -2035,8 +2429,8 @@ def main() -> int:
         return 1
     source = MODULE_PATH.read_text()
     m = load_module(MODULE_PATH, "model_import_validation_real")
-    failures = suite(m)
-    names = [f[0] for f in FAULTS] + [f[0] for f in SCHEMA_FAULTS]
+    failures = suite(m, with_routes=True)
+    names = [f[0] for f in FAULTS] + [f[0] for f in SCHEMA_FAULTS] + [f[0] for f in ROUTE_FAULTS]
     if len(set(names)) != len(names):
         failures.append("FAIL [I1] duplicate fault names")
     ran = 0
@@ -2052,6 +2446,14 @@ def main() -> int:
     schema_source = SCHEMA_PATH.read_text()
     for name, old, new, count in SCHEMA_FAULTS:
         ok, detail = run_schema_fault(schema_source, name, old, new, count, m)
+        ran += 1
+        if ok:
+            print(f"  fault {name}: RED ({detail})")
+        else:
+            failures.append(f"FAIL [I1] fault {name}: {detail}")
+    route_source = ROUTES_PATH.read_text()
+    for name, old, new, count in ROUTE_FAULTS:
+        ok, detail = run_route_fault(route_source, name, old, new, count)
         ran += 1
         if ok:
             print(f"  fault {name}: RED ({detail})")
