@@ -1933,7 +1933,7 @@ FTF-0304:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0304.py
 FTF-0305:
-  certification_state: CERTIFIED
+  certification_state: PROVISIONAL
   criticality: MUST
   description: License acceptance workflow
   evidence_hash: 1a3c6b42785cf89a18c7f4c68138f224f1787574
@@ -1992,7 +1992,7 @@ FTF-0305:
     narrowing (revocation only, no live training/serving caller yet) matches the
     FTF-0103/FTF-0104/FTF-0105/FTF-H003 disclosed-gap precedent, not a hidden gap. evidence_hash
     here points at the merge commit (`1a3c6b4`), matching the FTF-0402 convention.
-  proof_state: L2-CERTIFIED
+  proof_state: L1-PROVEN
   proving_symbol: apply_revoke_license
   proving_test: tests/tasks/test_ftf_0305.py
 FTF-0306:
