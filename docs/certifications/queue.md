@@ -24677,3 +24677,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-10T15:50Z — Control plane: FTF-H010-P3a and FTF-0616-F1 returned
 - **Returned:** FTF-H010-P3a r2 (0e): bound the shape product and dimension range; pin negative dims, lora_A rank, PEFT prefix.
 - **Returned:** FTF-0616-F1 r2 (0g), tests only; FTF-0616 requalification partial (no regression; uncapped mutation moves to F1 r2).
+
+## 2026-10-10T16:15Z — Control plane: FTF-0305 decertified (140/302); FTF-0310 returned
+- **Decertified:** FTF-0305 → PROVISIONAL (reproduced revoked-license-trainable race). **New:** FTF-0305-F1 (0b, top priority). **Returned:** FTF-0310 r2 (0k).

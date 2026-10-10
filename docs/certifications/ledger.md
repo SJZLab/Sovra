@@ -11064,3 +11064,17 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   with FTF_0616_FULL_SWEEP=1 (local live TLS and CI); FTF-0616 lines unchanged (additive diff); round-8 behaviour identical.
   The verifier's uncapped whole-file mutation run did not finish (the verifier stopped on an API usage limit). FTF-0616
   stays CERTIFIED; the uncapped mutation is required at F1 round 2's verification.
+
+## 2026-10-10T16:15Z — DECERTIFIED: FTF-0305 (140/302); RETURNED: FTF-0310 (r2); new item FTF-0305-F1
+- **FTF-0305: CERTIFIED → PROVISIONAL (requalification required, Law 2/15).** Evidence: the FTF-0310 L2 verifier (PR #738
+  review, scratchpad v738 race_interleave.py) ran the real `mark_ready` and `revoke_license` crud transactions in a fixed
+  interleave on PG16 as sovra_app; final row (`ready`, NULL, NULL); real mapping POST 200; real capabilities GET 200
+  `trainable: true, capability: trainable_open_weight, license_approved: false`. No direct database write. This violates
+  FTF-0305's negative acceptance "Unaccepted/revoked license blocks training/serving". Causes: `_fetch_or_raise` takes no
+  row lock or version check; the FTF-0307 classifier ignores `license_approved` for trainability. Fix routed as
+  FTF-0305-F1 (QUEUE item 0b) with Law 15 requalification of FTF-0301, FTF-0307 and FTF-0309-P1 paths.
+- **FTF-0310: RETURNED** (round 1 → 2; PR #738, merge 825e8263f1e4838f763704aa030cfaf58f6f443e, head e5ad0582). Producer
+  session_01QoD43Fh5FsA5vmV1zB4WQg ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 114126691508;
+  capability-contract-integration 114124516554 (72 cells, 8 FINDING lines for the exempted license cells); gate
+  114124474947. Return: the 8 license cells are exempted by `api_reachable()` on a refuted premise; date-time checking
+  is not RFC 3339 (V8/V9 GREEN); checker ignores non-false additionalProperties; V3 GREEN in integration.
