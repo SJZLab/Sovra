@@ -49,6 +49,8 @@ import {
   sha256Hex,
   SUPPORTED_CONTENT_TYPES,
 } from "../components/dataset-factory/resumable_dataset_upload_ui";
+import routesSource from "../../api/app/datasets/direct_object_storage_upload_routes.py?raw";
+import uploadSource from "../../api/app/datasets/direct_object_storage_upload.py?raw";
 
 const API_BASE = "http://localhost:8000";
 const ORG_ID = "11111111-1111-1111-1111-111111111111";
@@ -147,7 +149,7 @@ function datasetBody(overrides: Json = {}): Json {
   };
 }
 
-type Plain = { status?: number; body?: unknown; jsonThrows?: boolean };
+type Plain = { status?: number; body?: unknown; jsonThrows?: boolean; jsonGate?: Promise<void> };
 type Reply = Plain | "throw" | ((init?: { body?: unknown }) => Plain | "throw") | Promise<Plain>;
 let replies: Record<string, Reply[]>;
 let unexpected: string[];
@@ -211,6 +213,7 @@ beforeEach(() => {
         ok: status >= 200 && status < 300,
         status,
         json: async () => {
+          if (settled.jsonGate) await settled.jsonGate;
           if (settled.jsonThrows) throw new SyntaxError("Unexpected token < in JSON");
           return settled.body;
         },
@@ -1648,4 +1651,144 @@ test("fault: a secret, a presigned URL or file bytes ever written to localStorag
   expect(everything).not.toContain("10,20,30");
   expect(everything).toContain(SESSION_ID);
   expect(everything).toContain(ORG_ID);
+});
+
+// ---------------------------------------------------------------------------
+// Round 3 (Control-plane return of d3bf8ba, #727)
+// ---------------------------------------------------------------------------
+
+async function startAndWaitFor(testId: string) {
+  await selectFileAndStart(testFile(FILE_BYTES));
+  await waitFor(() => expect(screen.getByTestId(testId)).toBeTruthy());
+}
+
+test("UF3-r3: listing [] then a 503 on part-urls shows 'after 0 of 2', never a listed-all count", async () => {
+  renderUI();
+  enqueue("POST", SESSIONS_URL, ok(session(), 201));
+  enqueue("GET", PARTS_URL, ok(listing([])));
+  enqueue("POST", PART_URLS_URL, fail(503, "storage_unavailable"));
+  await startAndWaitFor("upload-interrupted-text");
+  expect(screen.getByTestId("upload-interrupted-text").textContent).toContain(
+    "interrupted after 0 of 2 parts",
+  );
+  expect(calls("PUT", PART1_URL).length).toBe(0);
+});
+
+test("UF3-r3: listing [1] then a 500 on part-urls shows 'after 1 of 2'", async () => {
+  renderUI();
+  enqueue("POST", SESSIONS_URL, ok(session(), 201));
+  enqueue("GET", PARTS_URL, ok(listing([1])));
+  enqueue("POST", PART_URLS_URL, fail(500, null));
+  await startAndWaitFor("upload-interrupted-text");
+  expect(screen.getByTestId("upload-interrupted-text").textContent).toContain(
+    "interrupted after 1 of 2 parts",
+  );
+});
+
+test("UF3-r3: a PUT still in flight shows 'Uploaded 0 of 2', and a 403 PUT is not counted", async () => {
+  renderUI();
+  let release: (value: Plain) => void = () => undefined;
+  const held = new Promise<Plain>((resolve) => {
+    release = resolve;
+  });
+  enqueue("POST", SESSIONS_URL, ok(session(), 201));
+  enqueue("GET", PARTS_URL, ok(listing([])));
+  enqueue("POST", PART_URLS_URL, (init) => {
+    const requested = (JSON.parse(String(init?.body)) as { part_numbers: number[] }).part_numbers;
+    return ok(grants(requested));
+  });
+  enqueue("PUT", PART1_URL, held);
+  await selectFileAndStart(testFile(FILE_BYTES));
+  await waitFor(() => expect(calls("PUT", PART1_URL).length).toBe(1));
+  expect(screen.getByTestId("upload-progress-text").textContent).toContain("Uploaded 0 of 2 parts");
+  release({ status: 403, body: {} });
+  await waitFor(() => expect(screen.getByTestId("upload-interrupted-text")).toBeTruthy());
+  expect(screen.getByTestId("upload-interrupted-text").textContent).toContain(
+    "interrupted after 0 of 2 parts",
+  );
+  expect(screen.queryByTestId("upload-all-parts-uploaded")).toBeNull();
+});
+
+test("UF3-r3: part 1 listed and part 2 PUT ok then part 3 absent: counts equal listed + 2xx PUTs", async () => {
+  renderUI();
+  enqueue("POST", SESSIONS_URL, ok(session(), 201));
+  enqueue("GET", PARTS_URL, ok(listing([1])));
+  enqueue("POST", PART_URLS_URL, (init) => {
+    const requested = (JSON.parse(String(init?.body)) as { part_numbers: number[] }).part_numbers;
+    return ok(grants(requested));
+  });
+  enqueue("PUT", PART2_URL, fail(403, null));
+  await startAndWaitFor("upload-interrupted-text");
+  // listed part 1 counts; the refused PUT of part 2 does not
+  expect(screen.getByTestId("upload-interrupted-text").textContent).toContain(
+    "interrupted after 1 of 2 parts",
+  );
+});
+
+test("UNSAFE-ARCHIVE: a 422 unsafe_archive on finalize is terminal: rejected, draft cleared, no Finalize control", async () => {
+  await uploadToReadyToFinalize();
+  expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+  await finalizeWith("my-dataset", fail(422, "unsafe_archive"));
+  await waitFor(() => expect(screen.getByTestId("upload-rejected-text")).toBeTruthy());
+  expect(window.localStorage.getItem(DRAFT_KEY)).toBeNull();
+  expect(screen.queryByTestId("upload-finalize-button")).toBeNull();
+  expect(screen.queryByTestId("upload-finalize")).toBeNull();
+  expect(screen.getByTestId("upload-rejected-text").textContent).not.toContain("can be retried");
+});
+
+test("422 vocabulary cannot drift: every reason the server can raise on finalize is terminal on the client", () => {
+  const upload = uploadSource;
+  const routes = routesSource;
+  const reasons = new Set<string>();
+  // `return "code"` (sniff_content / inspect_xlsx verdicts) and `_reject(..., "code")`
+  for (const match of upload.matchAll(/return "([a-z][a-z0-9_]*)"/g))
+    reasons.add(match[1] as string);
+  for (const match of upload.matchAll(/_reject\([^)]*?"([a-z][a-z0-9_]*)"\s*\)/g)) {
+    reasons.add(match[1] as string);
+  }
+  // the route's own 422 details
+  for (const match of routes.matchAll(/status_code=422, detail="([a-z][a-z0-9_]*)"/g)) {
+    reasons.add(match[1] as string);
+  }
+  // the extractor must really have found the vocabulary (a silent empty set proves nothing)
+  for (const known of [
+    "unsafe_archive",
+    "content_type_mismatch",
+    "sha256_mismatch",
+    "size_mismatch",
+    "part_size_mismatch",
+    "unexpected_part",
+    "unsupported_content_type",
+    "verification_mismatch",
+    "source_revoked",
+  ]) {
+    expect(reasons.has(known), `extractor missed ${known}`).toBe(true);
+  }
+  for (const reason of reasons) {
+    const failure = classifyFailure(422, reason);
+    expect(failure.kind, `422 ${reason}`).toBe("closed");
+    expect(failure.message, `422 ${reason}`).not.toContain("can be retried");
+  }
+});
+
+test("B34: a create whose body resolves after an organization change saves no draft and lists no parts", async () => {
+  const view = renderUI();
+  let open: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  enqueue("POST", SESSIONS_URL, { status: 201, body: session(), jsonGate: gate });
+  await selectFileAndStart(testFile(FILE_BYTES));
+  await waitFor(() => expect(calls("POST", SESSIONS_URL).length).toBe(1));
+  view.rerender(
+    createElement(ResumableDatasetUploadUI, { ...PROPS, organizationId: OTHER_ORG_ID }),
+  );
+  await act(async () => {
+    open();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  expect(window.localStorage.getItem(DRAFT_KEY)).toBeNull();
+  expect(calls("GET", PARTS_URL).length).toBe(0);
+  expect(window.localStorage.length).toBe(0);
+  expect(unexpected).toEqual([]);
 });
