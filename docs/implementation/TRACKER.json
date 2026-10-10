@@ -284,13 +284,13 @@
       "blockers": []
     },
     "FTF-0305": {
-      "status": "CERTIFIED",
+      "status": "NOT_STARTED",
       "commits": [],
-      "evidence": [
-        "1a3c6b42785cf89a18c7f4c68138f224f1787574"
-      ],
+      "evidence": [],
       "independent_review": null,
-      "blockers": []
+      "blockers": [
+        "DECERTIFIED 2026-10-10T16:15Z: reproduced revoked-license-trainable race; requalifies with FTF-0305-F1 (QUEUE item 0b)"
+      ]
     },
     "FTF-0306": {
       "status": "CERTIFIED",

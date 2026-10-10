@@ -1,8 +1,8 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-10T15:50Z. Source: `python3 scripts/status.py` on main.
-- **Status: 141/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
+Updated: 2026-10-10T16:15Z. Source: `python3 scripts/status.py` on main.
+- **Status: 140/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   status.py prints 46 product-true: it counts FTF-0309 through its live P1 API route, but the FTF-0309 screen stays
   UNWIRED until FTF-H029, so it is not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
@@ -12,6 +12,9 @@ Updated: 2026-10-10T15:50Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-10T16:15Z:**
+  - DECERTIFIED to PROVISIONAL: FTF-0305 (license acceptance workflow). The FTF-0310 verifier reproduced, through real request transactions only, a ready artifact with a revoked license reported as trainable, violating FTF-0305's "revoked license blocks training". Fix item FTF-0305-F1 is top priority in QUEUE item 0; FTF-0305 re-certifies with it. Count 141 → 140.
+  - Returned: FTF-0310 r2 (license exemption removed once F1 lands; RFC 3339 date-time checking; checker strictness).
 - **2026-10-10T15:50Z:**
   - Returned: FTF-0616-F1 r2, tests only (golden body self-referential; header name/value normalisers unpinned). FTF-0616 stays CERTIFIED: its suite and full Unicode sweep pass at the F1 merge; the uncapped mutation re-run was cut short and moves to F1 round 2 (Law 15).
   - Returned: FTF-H010-P3a r2 (unbounded safetensors shape product - 139 s at 4.2 MB; three validator clauses unpinned).
