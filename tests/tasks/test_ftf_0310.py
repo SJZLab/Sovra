@@ -502,6 +502,16 @@ def test_k8_edges() -> None:
     )
     check(
         "K8",
+        "enum compares nested types: {a: True} is not {a: 1}",
+        bool(v({"a": True}, {"enum": [{"a": 1}]})) and bool(v({"a": 1}, {"enum": [{"a": True}]})),
+    )
+    check(
+        "K8",
+        "enum compares nested types: [True] is not [1]",
+        bool(v([True], {"enum": [[1]]})) and bool(v([1], {"enum": [[True]]})),
+    )
+    check(
+        "K8",
         "enum is not case/space insensitive",
         bool(v(" A ", {"enum": ["a"]})) and bool(v("A", {"enum": ["a"]})),
     )
