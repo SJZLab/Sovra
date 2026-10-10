@@ -669,6 +669,26 @@ def group_b(m: Any) -> None:
                 f"{label}: {tag} input refused by the module's own error (got {got})",
                 got == code,
             )
+    # integer text bound: 20 digits accepted, 21 refused (host-independent)
+    twenty = b"1" + b"0" * 19
+    check(
+        "B1",
+        "a 20-digit integer in an ignored field is accepted",
+        outcome(
+            m, cfg, jb({**GOOD_CONFIG, "extra": 1}).replace(b'"extra": 1', b'"extra": ' + twenty)
+        )
+        == "ok",
+    )
+    check(
+        "B1",
+        "a 21-digit integer is refused",
+        refuses(
+            m,
+            "config_invalid",
+            cfg,
+            jb({**GOOD_CONFIG, "extra": 1}).replace(b'"extra": 1', b'"extra": ' + twenty + b"0"),
+        ),
+    )
     # exact depth boundary through an entry point that ignores unknown keys
     deep_ok = json.dumps(
         {**GOOD_CONFIG, "extra": json.loads(nest(31))}
@@ -1886,6 +1906,20 @@ FAULTS: list[tuple[str, str, str, int, bool]] = [
         False,
     ),
     (
+        "integer-digit-bound-dropped",
+        "    if len(text) > _MAX_INT_TEXT_LENGTH:",
+        "    if False:",
+        1,
+        False,
+    ),
+    (
+        "integer-digit-bound-off-by-one",
+        "    if len(text) > _MAX_INT_TEXT_LENGTH:",
+        "    if len(text) >= _MAX_INT_TEXT_LENGTH:",
+        1,
+        False,
+    ),
+    (
         "duplicate-json-keys-accepted",
         '        if key in out:\n            raise _Reject("duplicate_key")',
         "        if key in out:\n            pass",
@@ -1894,8 +1928,8 @@ FAULTS: list[tuple[str, str, str, int, bool]] = [
     ),
     (
         "nan-infinity-constants-accepted",
-        '    raise _Reject("non_finite_number")\n\n\ndef _parse_float',
-        "    return 0\n\n\ndef _parse_float",
+        'def _reject_constant(_name: str) -> object:\n    raise _Reject("non_finite_number")',
+        "def _reject_constant(_name: str) -> object:\n    return 0",
         1,
         False,
     ),
@@ -2204,6 +2238,9 @@ def run_fault(
 
 
 def main() -> int:
+    # Neutral host: the interpreter's int-string limit switched off, so the huge-integer
+    # refusals prove the module's own bound and not the host's setting.
+    sys.set_int_max_str_digits(0)
     if not MODULE_PATH.exists():
         print(f"FAIL [{CID}] module missing: {MODULE_PATH}")
         return 1

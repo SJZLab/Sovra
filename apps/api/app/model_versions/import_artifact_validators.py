@@ -97,6 +97,7 @@ MAX_SAFETENSORS_HEADER_BYTES = 100_000_000
 CONFIG_MAX_BYTES = 1 << 20  # config.json, adapter_config.json: 1 MiB
 TOKENIZER_CONFIG_MAX_BYTES = 4 << 20  # tokenizer_config.json: 4 MiB
 JSON_MAX_DEPTH = 32
+_MAX_INT_TEXT_LENGTH = 20
 SAFETENSORS_HEADER_MAX_DEPTH = 3  # {tensor: {shape: [dim]}} is the deepest valid header
 
 _PICKLE_EXTENSIONS = frozenset(
@@ -240,6 +241,14 @@ def _reject_constant(_name: str) -> object:
     raise _Reject("non_finite_number")
 
 
+def _parse_int(text: str) -> int:
+    # Bounded here rather than left to the interpreter's int-string limit, which a host
+    # can switch off (PYTHONINTMAXSTRDIGITS=0). Twenty digits covers any real size or offset.
+    if len(text) > _MAX_INT_TEXT_LENGTH:
+        raise _Reject("integer_too_large")
+    return int(text)
+
+
 def _parse_float(text: str) -> float:
     value = float(text)
     if not math.isfinite(value):
@@ -285,6 +294,7 @@ def _strict_loads(data: object, max_bytes: int, max_depth: int) -> tuple[object,
             object_pairs_hook=_object_pairs,
             parse_constant=_reject_constant,
             parse_float=_parse_float,
+            parse_int=_parse_int,
         )
     except _Reject as exc:
         reason = exc.reason
