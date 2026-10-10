@@ -35,6 +35,9 @@ guard in the file on disk, confirm the happy-path-shaped call that should
 have been refused now reaches the gateway instead, then restore
 byte-identical) proving the guard is load-bearing, not merely present.
 
+Follow-up FTF-0616-F1 (deployment fingerprint, cache bypass) is pinned in
+tests/tasks/test_ftf_0616_f1.py, which reuses this file's gateway harness.
+
 Run directly: python3 tests/tasks/test_ftf_0616.py
 """
 
