@@ -9893,8 +9893,13 @@ FTF-0908:
     on the caller's session (not an independent transaction): a caller must hold no uncommitted
     work, which is now enforced rather than documented. Round 4: the re-bind goes through FTF-0102
     `set_tenant_context` (`set_config(.., true)`), so it is transaction-local; a real-Postgres
-    check on a pool WITHOUT the reset guard shows a fresh checkout after a caught denial has no
-    tenant context and sees 0 rows; a tenant context that is not an organization id is refused as
+    check on a pool WITHOUT the reset guard (pool_size=1) shows that, with the denial caught
+    INSIDE the `tenant_scoped_session` block so the scope exits normally and commits, a fresh
+    checkout is the same backend (`pg_backend_pid()`), has an empty tenant context and sees 0 rows
+    (round 5: the round-4 check caught the denial outside the block, so the scope rolled back and
+    that rollback also undid a session-level re-bind -- it could not fail on the fault it targeted);
+    the same job reddens F2 and F2g (a module-local `set_tenant_context` doing
+    `set_config(.., false)` with the call text unchanged) and shows a leak of the tenant; a tenant context that is not an organization id is refused as
     `external_provider_invalid_request`. Disclosed (Control-plane ruling): a denial inside
     `with Session(app) as s, s.begin():` surfaces SQLAlchemy's raw `InvalidRequestError` (fails
     closed, audit row already durable, no production caller uses `session.begin()`); the denial's
