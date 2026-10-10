@@ -182,7 +182,7 @@ def main() -> None:
             orgs[org_profile] = org.id
         owner.commit()
 
-    org_ze, org_std, org_air = orgs["zero_egress"], orgs["standard"], orgs["air_gapped"]
+    org_ze, org_std = orgs["zero_egress"], orgs["standard"]
     project_ze = projects[("zero_egress", "standard")]  # a weakened project under a zero_egress org
     conn_ze = connections["zero_egress"]
 
