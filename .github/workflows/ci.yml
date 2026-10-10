@@ -500,6 +500,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_r004_p1.py
       - name: FTF-R004-P2 negative-test proof (Inspect bridge provider-side execution boundary + pre-filter attempt evidence, no DB/network required)
         run: uv run python3 tests/tasks/test_ftf_r004_p2.py
+      - name: FTF-H010-P3a negative-test proof (pure import-artifact validators -- file allow-list, strict JSON, safetensors header, adapter/base shapes, fault-injected module copies, no DB/network required)
+        run: uv run python3 tests/tasks/test_ftf_h010_p3a.py
       - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
         run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check
