@@ -426,6 +426,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0616.py
       - name: FTF-0616-F1 negative-test proof (judge deployment fingerprint + cache bypass, no DB required; real local gateway over HTTPS)
         run: uv run python3 tests/tasks/test_ftf_0616_f1.py
+      - name: FTF-0617 negative-test proof (zero-egress judge policy, no DB required; real local gateway over HTTPS)
+        run: uv run python3 tests/tasks/test_ftf_0617.py
       - name: FTF-04A02 negative-test proof (GitHub App/token read-only secret integration, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a02.py
       - name: FTF-04A03 negative-test proof (GitHub accessible-repository listing connector, no DB required)
@@ -3244,6 +3246,45 @@ jobs:
       - name: Prove the real model import fields + import-validation jobs evidence against the live database
         run: uv run python3 tests/integration/test_ftf_h010_p1_model_import.py
 
+  zero-egress-judge-integration:
+    # FTF-0617: real Postgres proof of the zero-egress judge policy's database half --
+    # the profile in force read through execute_tenant_scoped (org x project x job truth
+    # table, a raw-SQL-weakened project row, foreign project identical to missing), the
+    # tenant's own connection row (revoked / foreign refused), and the real FTF-0103A
+    # lookup_org_role for the approver and reviewer role tables (all six roles, revoked,
+    # foreign-org and workspace-scoped memberships), plus a private-judge plan and a
+    # verdict end to end against the local TLS gateway -- and no row written by the policy --
+    # tests/integration/test_ftf_0617_zero_egress_judge.py.
+    # Same real `services: postgres` pattern as external-provider-denial-integration.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' zero-egress-judge-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0617
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0617"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0617
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the zero-egress judge policy against the live database and a real local gateway
+        run: uv run python3 tests/integration/test_ftf_0617_zero_egress_judge.py
+
   ci-verdict:
     # THE result to read for "CI is green" (merge-on-green, certification, Control plane).
     # Fails on any failed or cancelled job, on any skipped job without a documented exemption
@@ -3308,6 +3349,7 @@ jobs:
       - evaluation-suite-integration
       - organization-gateway-policy-integration
       - external-provider-denial-integration
+      - zero-egress-judge-integration
       - model-catalog-mapping-integration
       - model-capabilities-integration
       - evaluation-case-integration
