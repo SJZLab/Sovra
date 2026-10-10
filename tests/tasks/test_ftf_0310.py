@@ -455,6 +455,357 @@ def test_k6_expected_trainable() -> None:
     )
 
 
+def raises_with(exc: type[BaseException], needle: str, fn: Any) -> bool:
+    try:
+        fn()
+    except exc as caught:
+        return needle in str(caught)
+    except Exception:  # noqa: BLE001 - a different error type is a failed check
+        return False
+    return False
+
+
+def test_k8_edges() -> None:
+    def v(instance: Any, schema: dict[str, Any]) -> list[str]:
+        return cct.validate(instance, schema, ROOT_DOC)
+
+    # boundaries are inclusive
+    check("K8", "minLength boundary accepted", not v("a", {"type": "string", "minLength": 1}))
+    check("K8", "maximum boundary accepted", not v(100, {"type": "integer", "maximum": 100}))
+    check("K8", "minimum boundary accepted", not v(0, {"type": "integer", "minimum": 0}))
+    check("K8", "maximum exceeded", bool(v(101, {"type": "integer", "maximum": 100})))
+    check(
+        "K8",
+        "number accepts int and float, refuses str and bool",
+        not v(1, {"type": "number"})
+        and not v(1.5, {"type": "number"})
+        and bool(v("1", {"type": "number"}))
+        and bool(v(True, {"type": "number"})),
+    )
+    check("K8", "float is not an integer", bool(v(1.5, {"type": "integer"})))
+    # enum equality is exact and deep
+    check(
+        "K8",
+        "enum compares dict values",
+        not v({"a": 1}, {"enum": [{"a": 1}]})
+        and bool(v({"a": 2}, {"enum": [{"a": 1}]}))
+        and bool(v({"a": 1, "b": 2}, {"enum": [{"a": 1}]}))
+        and bool(v({}, {"enum": [{"a": 1}]})),
+    )
+    check(
+        "K8",
+        "enum compares list values",
+        not v([1, 2], {"enum": [[1, 2]]})
+        and bool(v([1], {"enum": [[1, 2]]}))
+        and bool(v([1, 3], {"enum": [[1, 2]]}))
+        and bool(v([2, 1], {"enum": [[1, 2]]})),
+    )
+    check(
+        "K8",
+        "enum is not case/space insensitive",
+        bool(v(" A ", {"enum": ["a"]})) and bool(v("A", {"enum": ["a"]})),
+    )
+    # oneOf: exactly one valid branch among several
+    check(
+        "K8",
+        "oneOf with one valid among three",
+        not v(1, {"oneOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}]}),
+    )
+    # required / properties are exact-name
+    check(
+        "K8",
+        "required name is case-exact",
+        bool(v({"a": 1}, {"type": "object", "required": ["A"]})),
+    )
+    check(
+        "K8",
+        "property name is case/space-exact on a closed object",
+        bool(
+            v({" A": 1}, {"type": "object", "properties": {"a": {}}, "additionalProperties": False})
+        ),
+    )
+    # formats are strict
+    check(
+        "K8",
+        "uuid without dashes is refused",
+        bool(v("1" * 32, {"type": "string", "format": "uuid"})),
+    )
+    check(
+        "K8",
+        "uuid with braces is refused",
+        bool(v("{" + _UUID_A + "}", {"type": "string", "format": "uuid"})),
+    )
+    check(
+        "K8",
+        "uuid with Z-less date-time naive accepted shape",
+        not v("2026-10-07T12:00:00", {"type": "string", "format": "date-time"}),
+    )
+    check(
+        "K8",
+        "date-time Z suffix accepted",
+        not v("2026-10-07T12:00:00Z", {"type": "string", "format": "date-time"}),
+    )
+    check(
+        "K8",
+        "date-time garbage refused",
+        bool(v("2026-13-45T99:00:00", {"type": "string", "format": "date-time"})),
+    )
+    # malformed schemas / contracts fail closed with a specific message
+    check(
+        "K8",
+        "non-object schema raises",
+        raises_with(cct.UnsupportedSchemaError, "not an object", lambda: v(1, [])),
+    )
+    check(
+        "K8",
+        "non-str $ref raises 'unsupported'",
+        raises_with(cct.UnsupportedSchemaError, "unsupported $ref", lambda: v(1, {"$ref": 5})),
+    )
+    check(
+        "K8",
+        "external $ref raises 'unsupported'",
+        raises_with(
+            cct.UnsupportedSchemaError, "unsupported $ref", lambda: v(1, {"$ref": "http://x/y"})
+        ),
+    )
+    check(
+        "K8",
+        "missing component raises 'unresolvable'",
+        raises_with(
+            cct.UnsupportedSchemaError,
+            "unresolvable",
+            lambda: v(1, {"$ref": "#/components/schemas/Nope"}),
+        ),
+    )
+    check(
+        "K8",
+        "unhashable type name raises",
+        raises_with(
+            cct.UnsupportedSchemaError, "unsupported type", lambda: v(1, {"type": [["a"]]})
+        ),
+    )
+    check(
+        "K8",
+        "type name is exact",
+        raises_with(
+            cct.UnsupportedSchemaError, "unsupported type", lambda: v("x", {"type": "String"})
+        ),
+    )
+    check(
+        "K8",
+        "format name is exact",
+        raises_with(
+            cct.UnsupportedSchemaError,
+            "unsupported format",
+            lambda: v("x", {"type": "string", "format": "UUID"}),
+        ),
+    )
+    check(
+        "K8",
+        "unknown frozen schema name raises",
+        raises_with(cct.ContractError, "unknown frozen schema", lambda: CONTRACT.schema("Nope")),
+    )
+    check(
+        "K8",
+        "non-str frozen schema name raises",
+        raises_with(
+            cct.ContractError,
+            "unknown frozen schema",
+            lambda: CONTRACT.schema(["ModelCapabilities"]),
+        ),
+    )
+    for body, label in (("[]", "a list"), ("a: 1\n", "no components"), ("- 1\n", "a sequence")):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            target = tmp / cct.FROZEN_CONTRACT_RELATIVE_PATH
+            target.parent.mkdir(parents=True)
+            target.write_text(body)
+            check(
+                "K8",
+                f"a frozen file that is {label} is refused",
+                raises_with(
+                    cct.ContractError,
+                    "not an OpenAPI document",
+                    lambda tmp=tmp: cct.load_frozen_contract(tmp),
+                ),
+            )
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        check(
+            "K8",
+            "a missing frozen file is refused",
+            raises_with(
+                cct.ContractError, "frozen contract missing", lambda: cct.load_frozen_contract(tmp)
+            ),
+        )
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_k9_generator_on_custom_schemas() -> None:
+    doc: dict[str, Any] = {
+        "components": {
+            "schemas": {
+                "Str": {"type": "string"},
+                "Obj": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["Id", "n", "name", "tag", "tags", "when", "ref", "opt"],
+                    "properties": {
+                        "Id": {"type": "string", "format": "uuid"},
+                        "n": {"type": "integer"},
+                        "m": {"type": "integer", "minimum": 5},
+                        "name": {"type": "string", "minLength": 1, "maxLength": 3},
+                        "tag": {"type": "string", "enum": ["Ab", "cd"]},
+                        "tags": {"type": "array", "items": {"type": "string"}},
+                        "bag": {"type": "array"},
+                        "when": {"type": "number"},
+                        "ref": {"oneOf": [{"$ref": "#/components/schemas/Str"}, {"type": "null"}]},
+                        "opt": {
+                            "allOf": [
+                                {"type": "object"},
+                                {"properties": {"k": {"type": "integer"}}, "required": ["k"]},
+                            ]
+                        },
+                        "free": {},
+                    },
+                },
+            }
+        }
+    }
+    schema = {"$ref": "#/components/schemas/Obj"}
+    seed = {
+        "Id": _UUID_A,
+        "n": 1,
+        "m": 7,
+        "name": "ab",
+        "tag": "Ab",
+        "tags": ["t"],
+        "bag": [1],
+        "when": 2.5,
+        "ref": None,
+        "opt": {"k": 1},
+        "free": 1,
+    }
+    check("K9", "the custom seed is valid", not cct.validate(seed, schema, doc))
+    cases = cct.generate_negative_cases(seed, schema, doc)
+    check(
+        "K9",
+        "every custom case is rejected",
+        cct.assert_negative_cases_rejected(cases, schema, doc) == [],
+    )
+    by_cat: dict[str, list[str]] = {}
+    for case in cases:
+        by_cat.setdefault(case.category, []).append(case.path)
+    for needed in (
+        "missing_required",
+        "wrong_type",
+        "enum",
+        "max_length",
+        "min_length",
+        "format",
+        "minimum",
+        "extra_property",
+    ):
+        check("K9", f"custom table has {needed} cases", needed in by_cat)
+    check(
+        "K9",
+        "a required name with a capital letter is removed",
+        any(p == "$.Id" for p in by_cat.get("missing_required", [])),
+    )
+    check(
+        "K9",
+        "a property name with a capital letter is walked",
+        any(p.startswith("$.Id:") for p in by_cat.get("wrong_type", [])),
+    )
+    check(
+        "K9",
+        "array items are walked",
+        any(p.startswith("$.tags[0]") for p in by_cat.get("wrong_type", [])),
+    )
+    check(
+        "K9",
+        "nested allOf object requirement is removed",
+        "$.opt.k" in by_cat.get("missing_required", []),
+    )
+    check(
+        "K9",
+        "an array without `items` does not crash and is not walked",
+        not any(p.startswith("$.bag[") for p in by_cat.get("wrong_type", [])),
+    )
+    check(
+        "K9",
+        "an integer without `minimum` does not crash",
+        not any(p.startswith("$.n") for p in by_cat.get("minimum", [])),
+    )
+    check("K9", "minimum below the bound is generated", "$.m" in by_cat.get("minimum", []))
+    check(
+        "K9",
+        "number: an integer sample is not a wrong type",
+        not any(p == "$.when:integer" for p in by_cat.get("wrong_type", [])),
+    )
+    check(
+        "K9",
+        "number: a string sample is a wrong type",
+        "$.when:string" in by_cat.get("wrong_type", []),
+    )
+    check(
+        "K9",
+        "oneOf of [$ref string, null]: string and null are NOT wrong types",
+        not any(p in ("$.ref:string", "$.ref:null") for p in by_cat.get("wrong_type", [])),
+    )
+    check(
+        "K9",
+        "oneOf of [$ref string, null]: object is a wrong type",
+        "$.ref:object" in by_cat.get("wrong_type", []),
+    )
+    check(
+        "K9",
+        "an unconstrained property gets no wrong-type case",
+        not any(p.startswith("$.free") for p in by_cat.get("wrong_type", [])),
+    )
+    enum_paths = set(by_cat.get("enum", []))
+    check("K9", "enum: uppercase variant of 'Ab' is generated", "$.tag:'AB'" in enum_paths)
+    check(
+        "K9",
+        "enum: a variant equal to another enum member is not generated",
+        not any(p == "$.tag:'cd'" for p in enum_paths),
+    )
+    check("K9", "enum: no duplicate candidates", len(enum_paths) == len(by_cat.get("enum", [])))
+    check(
+        "K9",
+        "enum: the valid value itself is never a negative case",
+        "$.tag:'Ab'" not in enum_paths,
+    )
+    check(
+        "K9",
+        "min_length case is generated for minLength 1",
+        "$.name" in by_cat.get("min_length", []),
+    )
+    check(
+        "K9",
+        "no min_length case for a property without minLength",
+        "$.tag" not in by_cat.get("min_length", []),
+    )
+    check("K9", "max_length case is generated", "$.name" in by_cat.get("max_length", []))
+    check(
+        "K9",
+        "a string property gets no minimum case",
+        not any(p == "$.name" for p in by_cat.get("minimum", [])),
+    )
+    check(
+        "K9",
+        "a non-seed-valid instance is refused",
+        raises_with(
+            cct.ContractError,
+            "seed instance must be valid",
+            lambda: cct.generate_negative_cases({}, schema, doc),
+        ),
+    )
+
+
 def survivors_with(patched: dict[str, Any]) -> int:
     """Run the whole table with module attributes patched; count wrongly accepted cases."""
     originals = {k: getattr(cct, k) for k in patched}

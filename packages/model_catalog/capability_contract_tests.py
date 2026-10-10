@@ -34,6 +34,7 @@ from __future__ import annotations
 import hashlib
 import re
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -83,8 +84,15 @@ SUPPORTED_KEYWORDS = frozenset(
 ANNOTATION_KEYWORDS = frozenset(
     {"description", "default", "summary", "title", "example", "allowEmptyValue"}
 )
-_SUPPORTED_FORMATS = frozenset({"uuid", "date-time"})
-_TYPE_NAMES = frozenset({"string", "integer", "number", "boolean", "object", "array", "null"})
+_TYPE_CHECKS: dict[str, Callable[[Any], bool]] = {
+    "null": lambda v: v is None,
+    "boolean": lambda v: type(v) is bool,
+    "integer": lambda v: type(v) is int,
+    "number": lambda v: type(v) in (int, float),
+    "string": lambda v: type(v) is str,
+    "object": lambda v: type(v) is dict,
+    "array": lambda v: type(v) is list,
+}
 _UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
@@ -148,22 +156,11 @@ def _resolve(ref: str, root: dict[str, Any]) -> dict[str, Any]:
     return resolved
 
 
-def _is_type(value: Any, name: str) -> bool:
-    if name not in _TYPE_NAMES:
+def _is_type(value: Any, name: Any) -> bool:
+    check = _TYPE_CHECKS.get(name) if type(name) is str else None
+    if check is None:
         raise UnsupportedSchemaError(f"unsupported type {name!r}")
-    if name == "null":
-        return value is None
-    if name == "boolean":
-        return type(value) is bool
-    if name == "integer":
-        return type(value) is int
-    if name == "number":
-        return type(value) in (int, float)
-    if name == "string":
-        return type(value) is str
-    if name == "object":
-        return type(value) is dict
-    return type(value) is list
+    return check(value)
 
 
 def _json_equal(left: Any, right: Any) -> bool:
@@ -178,25 +175,35 @@ def _json_equal(left: Any, right: Any) -> bool:
     return bool(left == right)
 
 
-def _format_ok(value: str, name: str) -> bool:
-    if name == "uuid":
-        if not _UUID_RE.match(value):
-            return False
-        try:
-            uuid.UUID(value)
-        except ValueError:
-            return False
-        return True
-    if name == "date-time":
-        text = value[:-1] + "+00:00" if value.endswith("Z") else value
-        if "T" not in text:
-            return False
-        try:
-            datetime.fromisoformat(text)
-        except ValueError:
-            return False
-        return True
-    raise UnsupportedSchemaError(f"unsupported format {name!r}")
+def _uuid_ok(value: str) -> bool:
+    if not _UUID_RE.match(value):
+        return False
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _datetime_ok(value: str) -> bool:
+    text = value[:-1] + "+00:00" if value.endswith("Z") else value
+    if "T" not in text:
+        return False
+    try:
+        datetime.fromisoformat(text)
+    except ValueError:
+        return False
+    return True
+
+
+_FORMAT_CHECKS: dict[str, Callable[[str], bool]] = {"uuid": _uuid_ok, "date-time": _datetime_ok}
+
+
+def _format_ok(value: str, name: Any) -> bool:
+    check = _FORMAT_CHECKS.get(name) if type(name) is str else None
+    if check is None:
+        raise UnsupportedSchemaError(f"unsupported format {name!r}")
+    return check(value)
 
 
 def validate(instance: Any, schema: dict[str, Any], root: dict[str, Any]) -> list[str]:
@@ -287,85 +294,82 @@ def _deepcopy(value: Any) -> Any:
     return value
 
 
-def _types_of(node: dict[str, Any], root: dict[str, Any]) -> set[str]:
+def _allowed_types(node: dict[str, Any], root: dict[str, Any]) -> set[str] | None:
+    """The JSON types `node` accepts, or None when it does not constrain the type."""
     if "$ref" in node:
-        return _types_of(_resolve(node["$ref"], root), root)
+        return _allowed_types(_resolve(node["$ref"], root), root)
+    found: list[set[str]] = []
     if "type" in node:
-        return set(node["type"]) if type(node["type"]) is list else {node["type"]}
-    return set()
+        names = node["type"] if type(node["type"]) is list else [node["type"]]
+        found.append(set(names))
+    for sub in node.get("allOf", ()):
+        sub_types = _allowed_types(sub, root)
+        if sub_types is not None:
+            found.append(sub_types)
+    if "oneOf" in node:
+        branches = [_allowed_types(sub, root) for sub in node["oneOf"]]
+        if None not in branches:
+            found.append(set().union(*[b for b in branches if b is not None]))
+    if not found:
+        return None
+    allowed = found[0].intersection(*found[1:])
+    if "number" in allowed:
+        allowed.add("integer")
+    return allowed
+
+
+_BOUND_KEYWORDS = ("enum", "minLength", "maxLength", "minimum", "maximum", "items", "format")
 
 
 def _flatten(schema: dict[str, Any], instance: Any, root: dict[str, Any]) -> dict[str, Any]:
     """Merge $ref/allOf and the one matching oneOf branch into a single view
     of the constraints that apply to `instance`."""
-    merged: dict[str, Any] = {
-        "properties": {},
-        "required": [],
-        "closed": False,
-        "types": None,
-        "union_types": set(),
-    }
+    merged: dict[str, Any] = {"properties": {}, "required": [], "closed": False}
 
     def absorb(node: dict[str, Any]) -> None:
         if "$ref" in node:
             absorb(_resolve(node["$ref"], root))
         for sub in node.get("allOf", ()):
             absorb(sub)
-        if "oneOf" in node:
-            for sub in node["oneOf"]:
-                merged["union_types"].update(_types_of(sub, root))
-            for sub in node["oneOf"]:
-                if not validate(instance, sub, root):
-                    absorb(sub)
-                    break
+        for sub in node.get("oneOf", ()):
+            if not validate(instance, sub, root):
+                absorb(sub)
+                break
         for key, value in node.get("properties", {}).items():
             merged["properties"].setdefault(key, value)
         merged["required"].extend(node.get("required", ()))
         if node.get("additionalProperties") is False:
             merged["closed"] = True
-        for key in ("enum", "minLength", "maxLength", "minimum", "maximum", "items", "pattern"):
-            if key in node:
-                merged[key] = node[key]
-        if "format" in node:
-            merged["format"] = node["format"]
-        if "type" in node:
-            names = node["type"] if type(node["type"]) is list else [node["type"]]
-            merged["types"] = names if merged["types"] is None else merged["types"]
+        for keyword in _BOUND_KEYWORDS:
+            if keyword in node:
+                merged[keyword] = node[keyword]
 
     absorb(schema)
-    if merged["union_types"]:
-        # every oneOf branch's type is valid for this value, not just the matching branch's
-        merged["types"] = sorted(merged["union_types"] | set(merged["types"] or ()))
     return merged
 
 
-_WRONG_TYPE_SAMPLES: tuple[tuple[str, Any], ...] = (
-    ("string", "x"),
-    ("integer", 12345),
-    ("boolean", True),
-    ("null", None),
-    ("array", ["x"]),
-    ("object", {"x": 1}),
-)
+_WRONG_TYPE_SAMPLES: dict[str, Any] = {
+    "string": "x",
+    "integer": 12345,
+    "boolean": True,
+    "null": None,
+    "array": ["x"],
+    "object": {"x": 1},
+}
 
 
 def _variants(value: str) -> list[str]:
-    options = [
+    return [
         value.upper(),
         value.title(),
         " " + value,
         value + " ",
         value + "\n",
-        value + "​",
+        value + "\u200b",
         "",
         value + "x",
         value[:-1],
     ]
-    out: list[str] = []
-    for option in options:
-        if option != value and option not in out:
-            out.append(option)
-    return out
 
 
 def generate_negative_cases(
@@ -392,42 +396,33 @@ def generate_negative_cases(
         view = _flatten(sub_schema, value, root)
         label = "$" + "".join(f"[{p!r}]" if type(p) is int else f".{p}" for p in path)
         if path:
-            types = view["types"]
-            for type_name, sample in _WRONG_TYPE_SAMPLES:
-                if types is not None and type_name in types:
-                    continue
-                if types is None and not view["properties"] and "enum" not in view:
-                    continue  # unconstrained value (`{}`): any type is valid
-                if type_name == "integer" and "number" in (types or ()):
-                    continue
-                cases.append(
-                    NegativeCase("wrong_type", f"{label}:{type_name}", set_at(path, sample))
-                )
+            allowed = _allowed_types(sub_schema, root)
+            if allowed is not None:
+                for type_name in sorted(set(_WRONG_TYPE_SAMPLES) - allowed):
+                    sample = _WRONG_TYPE_SAMPLES[type_name]
+                    cases.append(
+                        NegativeCase("wrong_type", f"{label}:{type_name}", set_at(path, sample))
+                    )
             if "enum" in view:
-                options = view["enum"]
-                candidates: list[Any] = []
-                if type(value) is str:
-                    candidates.extend(_variants(value))
+                candidates: list[Any] = _variants(value) if type(value) is str else []
                 candidates.extend(["not-in-enum", None, 0, 1, True, False])
+                tried: list[Any] = list(view["enum"])
                 for candidate in candidates:
-                    if any(_json_equal(candidate, option) for option in options):
+                    if any(_json_equal(candidate, other) for other in tried):
                         continue
+                    tried.append(candidate)
                     cases.append(
                         NegativeCase("enum", f"{label}:{candidate!r}", set_at(path, candidate))
                     )
             if type(value) is str:
                 if "maxLength" in view:
-                    cases.append(
-                        NegativeCase(
-                            "max_length", label, set_at(path, "a" * (view["maxLength"] + 1))
-                        )
-                    )
+                    too_long = "a" * (view["maxLength"] + 1)
+                    cases.append(NegativeCase("max_length", label, set_at(path, too_long)))
                 if view.get("minLength", 0) >= 1:
                     cases.append(NegativeCase("min_length", label, set_at(path, "")))
                 if "format" in view:
-                    cases.append(
-                        NegativeCase("format", label, set_at(path, "not-a-" + view["format"]))
-                    )
+                    bad = "not-a-" + view["format"]
+                    cases.append(NegativeCase("format", label, set_at(path, bad)))
             if type(value) is int and "minimum" in view:
                 cases.append(NegativeCase("minimum", label, set_at(path, view["minimum"] - 1)))
         if type(value) is dict:
@@ -441,11 +436,8 @@ def generate_negative_cases(
                         )
                     )
             if view["closed"]:
-                cases.append(
-                    NegativeCase(
-                        "extra_property", label, set_at((*path, "unexpected_extra_field"), 1)
-                    )
-                )
+                extra = set_at((*path, "unexpected_extra_field"), 1)
+                cases.append(NegativeCase("extra_property", label, extra))
             for key, child in value.items():
                 if key in view["properties"]:
                     walk(child, view["properties"][key], (*path, key))
