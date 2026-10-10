@@ -53,13 +53,25 @@ recognised -- that is what the canary-secret ledger and the content-free
 telemetry schemas are for. Key names are matched by substring, so benign keys
 such as `max_tokens` are redacted too (over-redaction by design). Records that bypass
 the logger (`logging.makeLogRecord`) are covered only at a handler with
-`attach_sink`. Detection runs in time linear in the input: the key rule is
-possessive; percent-encoded-secret candidates are found by splitting on whitespace
-once (not by backtracking a greedy `\S*` at every character position, which was
-quadratic on a long run with no closing hex pair), and each of the bounded cut
-rounds then does at most `log2(candidates)` `_reveals_secret` probes. This module is a
-pure library: no live logging configuration installs it yet; that wiring is a
-separate dependency-gated task, disclosed in docs/spec-matrix.yaml with a blank
+`attach_sink`. Detection runs in time linear in the input: the key rule and the
+bare-quoted-value shapes are possessive (the closing quote is excluded from the
+class that scans for it, so there is only ever one possible split point --
+backtracking could never find a different one, only waste time). The JWT shape's
+two required dots are not excluded from the segment before each one, so a repeat of
+the "eyJ" prefix alone (not itself excluded either) can re-scan the rest of the
+text at every repeat with nothing to stop it; that segment is bounded, not just
+possessive, to 1024 characters (comfortably over any real JWT header or payload
+segment). The escaped-quoted-value shape allows backslashes in its own middle and
+so cannot be made possessive without changing what matches, so it is bounded
+instead, to 8192 characters -- a nested-JSON-escaped value or a JWT segment past
+either bound is not matched by that one shape (other rules still see the
+surrounding text). Percent-encoded-secret candidates are found by splitting on
+whitespace once (not by backtracking a greedy `\S*` at every character position,
+which was quadratic on a long run with no closing hex pair), and each of the
+bounded cut rounds then does at most `log2(candidates)` `_reveals_secret` probes.
+This module is a pure library: no
+live logging configuration installs it yet; that wiring is a separate
+dependency-gated task, disclosed in docs/spec-matrix.yaml with a blank
 `proving_symbol`.
 """
 
@@ -140,7 +152,13 @@ _SECRET_KEY_WORDS = (
 # it) that contains a secret word (a lookahead that runs once per run): linear in the input.
 _SECRET_KEY = rf"(?=[\w.\-]*?{_SECRET_KEY_WORDS})[\w.\-]++"
 _SEP = r"""\\*["']?[ \t]*[:=][ \t]*"""
-_QUOTED_VALUE = r"""\\+"[^"\r\n]*?\\+"|"[^"\r\n]*"|'[^'\r\n]*'"""
+# Possessive `*+` on the bare-quote alternatives: the closing quote is itself excluded from the
+# preceding class, so there is only ever one possible split point -- giving back characters on
+# failure can never find a different one, only waste time re-checking positions already ruled
+# out. The escaped-quote alternative's middle allows backslashes (a real nested-JSON escape can
+# contain them), so it cannot be made possessive without changing what matches; it is bounded
+# instead (disclosed below) to cap the cost of an unterminated escape run.
+_QUOTED_VALUE = r"""\\+"[^"\r\n]{0,8192}?\\+"|"[^"\r\n]*+"|'[^'\r\n]*+'"""
 
 _PEM = re.compile(
     r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|\Z)",
@@ -165,7 +183,17 @@ _PREFIXES = re.compile(
     r"|(?:AKIA|ASIA|AGPA|AIDA|AROA)[A-Z0-9]{16}"
     r"|hf_[A-Za-z0-9]{20,}"
     r"|AIza[0-9A-Za-z_\-]{35,}"
-    r"|eyJ[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]*"
+    # Bounded and possessive (`{5,1024}+`): unlike every alternative above, this one needs TWO
+    # literals ('.') that a run of the segment's own alphabet never has to contain -- "eyJ" is
+    # not itself excluded from `[A-Za-z0-9_\-]`, so a text built from many `eyJ`-prefixed, dot-
+    # free runs (each satisfying the lookbehind on the one before it) makes an *unbounded*
+    # greedy or possessive class re-consume the rest of the text at every one of O(n) such
+    # positions: possessive only removes the backtrack, not that repeated O(remaining) consume,
+    # so it alone is not enough (confirmed: `"_eyJ" * 40_000` still took 23s with `{5,}+`, and
+    # still scaled linearly but with a large constant at `{5,4096}+`). A segment longer than
+    # 1024 characters (real JWT header/payload segments are a small fraction of that) is not
+    # matched by this rule; other rules still see the surrounding text.
+    r"|eyJ[A-Za-z0-9_\-]{5,1024}+\.[A-Za-z0-9_\-]{5,1024}+\.[A-Za-z0-9_\-]*+"
     r")",
     re.I,
 )

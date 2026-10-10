@@ -1255,32 +1255,105 @@ def test_secret_named_extra_with_non_str_value_is_redacted() -> None:
 # --- bounded runtime --------------------------------------------------------------------
 
 _SIZE = 256 * 1024
-_ADVERSARIAL = {
-    "token-run": "token" * (_SIZE // 5),
-    "quoted-token-run": '"token"' * (_SIZE // 7),
-    "dash-token-run": "token-" * (_SIZE // 6),
-    "dot-token-run": "a.token" * (_SIZE // 7),
-    "password-run": "password" * (_SIZE // 8),
-    "key-with-spaces": "api_key " * (_SIZE // 8),
-    "sep-run": "token" + "\\" * (_SIZE - 5),
-    "colon-run": "token" + ":" * (_SIZE - 5),
-    "quote-run": "token=" + '"' * (_SIZE - 6),
-    "backslash-quote": 'token=\\"' * (_SIZE // 8),
-    "header-run": "authorization" * (_SIZE // 13),
-    "percent-run": "%41" * (_SIZE // 3),
-    "percent-space-run": "%41 " * (_SIZE // 4),
-    "base64-run": "QUJD" * (_SIZE // 4),
-    "pem-run": "-----BEGIN " * (_SIZE // 11),
-    "bearer-run": "bearer " * (_SIZE // 7),
+
+
+def _adversarial_shape(label: str, size: int) -> str:
+    """Every shape in `_ADVERSARIAL`, parameterized by size so it can be swept at several sizes
+    (see `test_every_rule_size_sweep_is_linear_not_quadratic`), not just pinned once at `_SIZE`."""
+    if label == "token-run":
+        return "token" * (size // 5)
+    if label == "quoted-token-run":
+        return '"token"' * (size // 7)
+    if label == "dash-token-run":
+        return "token-" * (size // 6)
+    if label == "dot-token-run":
+        return "a.token" * (size // 7)
+    if label == "password-run":
+        return "password" * (size // 8)
+    if label == "key-with-spaces":
+        return "api_key " * (size // 8)
+    if label == "sep-run":
+        return "token" + "\\" * (size - 5)
+    if label == "colon-run":
+        return "token" + ":" * (size - 5)
+    if label == "quote-run":
+        return "token=" + '"' * (size - 6)
+    if label == "backslash-quote":
+        return 'token=\\"' * (size // 8)
+    if label == "header-run":
+        return "authorization" * (size // 13)
+    if label == "percent-run":
+        return "%41" * (size // 3)
+    if label == "percent-space-run":
+        return "%41 " * (size // 4)
+    if label == "base64-run":
+        return "QUJD" * (size // 4)
+    if label == "pem-run":
+        return "-----BEGIN " * (size // 11)
+    if label == "bearer-run":
+        return "bearer " * (size // 7)
     # Round 3: the old `\S*%[0-9A-Fa-f]{2}` scan backtracked a greedy `\S*` at every character
     # position in a run with no (or a far) closing hex pair -- quadratic, not linear.
-    "lone-percent": "a" * (_SIZE - 1) + "%",
-    "percent-prefix-then-plain-run": "%41" + "a" * (_SIZE - 3),
-    "compact-json-one-percent": ('{"accuracy":"99%","note":"' + "a" * (_SIZE - 40) + '"}')[:_SIZE],
-    "callback-url-long-state": (
-        "https://cb?redirect_uri=https%3A%2F%2Fexample.com&state=" + "a" * _SIZE
-    )[:_SIZE],
-}
+    if label == "lone-percent":
+        return "a" * (size - 1) + "%"
+    if label == "percent-prefix-then-plain-run":
+        return "%41" + "a" * (size - 3)
+    if label == "compact-json-one-percent":
+        return ('{"accuracy":"99%","note":"' + "a" * (size - 40) + '"}')[:size]
+    if label == "callback-url-long-state":
+        return ("https://cb?redirect_uri=https%3A%2F%2Fexample.com&state=" + "a" * size)[:size]
+    # Round 4: no shape exercised `_PREFIXES`'s own JWT alternative at all.
+    if label == "jwt-no-dot":
+        # One very long attempt: both dots are required but the segment before each one had no
+        # upper bound, so a run with no dot anywhere consumed to the true end before failing.
+        return "eyJ" + "A" * (size - 3)
+    if label == "jwt-repeated-no-dot":
+        # The real quadratic shape: a BARE `"eyJ" * k` does NOT reproduce it, because the rule's
+        # own leading `(?<![A-Za-z0-9])` lookbehind already rejects every repeat after the first
+        # (each one is preceded by "J", a letter) -- confirmed by timing `"eyJ" * k` directly:
+        # linear. `_` satisfies the lookbehind (it is not `[A-Za-z0-9]`) AND is itself a member
+        # of the segment's own class (`[A-Za-z0-9_\-]`), so it does not stop the greedy consume
+        # either: every repeat is a genuine, independent trigger, each re-scanning the rest of
+        # the text for a dot that is never there. Confirmed quadratic pre-fix (`"_eyJ" * 40_000`:
+        # 23s) and confirmed that possessive alone (`{5,}+`, no upper bound) does not fix it --
+        # the wasted work is the repeated O(remaining) *consume*, not backtracking after it, so
+        # only a bound on the quantifier's own maximum (`{5,1024}+`) makes it linear.
+        return "_eyJ" * (size // 4)
+    # Round 4: `_QUOTED_VALUE`'s escaped-quote alternative allows backslashes in its own middle
+    # (unlike the bare-quote alternatives, the closing shape is not excluded from the class), so
+    # a run of lone backslashes before the first real quote is a genuine forward scan, not a
+    # wasted backtrack -- still worth sweeping since it is the one alternative this round bounds.
+    if label == "lone-backslash-then-quote":
+        return "token=\\" + "\\" * (size - 9) + '"'
+    raise ValueError(label)  # pragma: no cover - every label above is listed in _ALL_LABELS
+
+
+_ALL_LABELS = (
+    "token-run",
+    "quoted-token-run",
+    "dash-token-run",
+    "dot-token-run",
+    "password-run",
+    "key-with-spaces",
+    "sep-run",
+    "colon-run",
+    "quote-run",
+    "backslash-quote",
+    "header-run",
+    "percent-run",
+    "percent-space-run",
+    "base64-run",
+    "pem-run",
+    "bearer-run",
+    "lone-percent",
+    "percent-prefix-then-plain-run",
+    "compact-json-one-percent",
+    "callback-url-long-state",
+    "jwt-no-dot",
+    "jwt-repeated-no-dot",
+    "lone-backslash-then-quote",
+)
+_ADVERSARIAL = {label: _adversarial_shape(label, _SIZE) for label in _ALL_LABELS}
 
 
 _CHILD = (
@@ -1440,6 +1513,66 @@ def test_percent_token_scan_is_linear_not_quadratic() -> None:
                 f"{label} at {size} chars through logging took {elapsed}s",
                 elapsed is not None and elapsed < _LIMIT_SECONDS,
             )
+
+
+_ROUND4_QUADRATIC_LABELS = ("jwt-no-dot", "jwt-repeated-no-dot", "lone-backslash-then-quote")
+
+
+def test_every_rule_size_sweep_is_linear_not_quadratic() -> None:
+    """Round-4 return: the round-3 sweep above proved scaling only for the two percent-token
+    shapes round 3 itself fixed, not the class-closing bar round 3 set ("every regex that runs
+    on log text must be linear ... proven by a generated size sweep ... through BOTH redact_text
+    and the install_redaction logging path") for every rule a later round touches. This round
+    touches `_PREFIXES` (the JWT alternative had no adversarial coverage at all -- both dots are
+    required but the segment before each one was plain greedy, backtracking from the true end
+    down to the 5-char minimum on a run with no dot anywhere, `jwt-no-dot`/
+    `jwt-repeated-no-dot`) and `_QUOTED_VALUE` (the escaped-quote alternative's own middle allows
+    backslashes, so it is the one alternative this round bounds rather than makes possessive,
+    `lone-backslash-then-quote`); each is generated via the same `_adversarial_shape` the pinned
+    single-size check above uses, swept across `_SWEEP_SIZES`."""
+    for label in _ROUND4_QUADRATIC_LABELS:
+        times: list[float] = []
+        for size in _SWEEP_SIZES:
+            text = _adversarial_shape(label, size)
+            elapsed, _ = _timed_redact(text)
+            check(
+                "FTF-0904-R6",
+                f"{label} at {size} chars took {elapsed}s (limit {_LIMIT_SECONDS}s)",
+                elapsed is not None and elapsed < _LIMIT_SECONDS,
+            )
+            if elapsed is None:
+                break
+            times.append(elapsed)
+        if len(times) >= 2:
+            ratio = times[-1] / max(times[-2], 1e-6)
+            check(
+                "FTF-0904-R6",
+                f"{label}: time ratio {_SWEEP_SIZES[-2]}->{_SWEEP_SIZES[-1]} is {ratio:.2f}x "
+                "(quadratic doubling would be ~4x; linear is ~2x)",
+                ratio < 3.0,
+            )
+    # the two round-4 shapes additionally proven through the real logging path, at the top size
+    for label in _ROUND4_QUADRATIC_LABELS:
+        text = _adversarial_shape(label, _SWEEP_SIZES[-1])
+        try:
+            result = subprocess.run(
+                [sys.executable, "-c", _CHILD_LOG, str(ROOT)],
+                input=text,
+                capture_output=True,
+                text=True,
+                timeout=_LIMIT_SECONDS + 3,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            check("FTF-0904-R7", f"{label} through logging did not finish", False)
+            continue
+        head = result.stdout.partition("\n")[0]
+        elapsed = float(head) if head else None
+        check(
+            "FTF-0904-R7",
+            f"{label} at {_SWEEP_SIZES[-1]} chars through logging took {elapsed}s",
+            elapsed is not None and elapsed < _LIMIT_SECONDS,
+        )
 
 
 def test_size_and_depth_boundaries() -> None:
@@ -1610,7 +1743,7 @@ FAULTS: list[tuple[str, str, str, int]] = [
         '|[^\\s]*)",\n    re.I,',
         1,
     ),
-    ("F08 escaped-JSON value form dropped", '\\\\+"[^"\\r\\n]*?\\\\+"|', "", 1),
+    ("F08 escaped-JSON value form dropped", '\\\\+"[^"\\r\\n]{0,8192}?\\\\+"|', "", 1),
     ("F09 userinfo stops at first @", '[^/\\s?#]*@")', '[^/\\s?#@]*@")', 1),
     ("F10 idempotence guard dropped", "\\[REDACTED\\]|{_QUOTED_VALUE}", "{_QUOTED_VALUE}", 1),
     # --- normalisation and decoding ----------------------------------------------------
