@@ -24666,3 +24666,7 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-10T02:27Z — Control plane: FTF-0501-UI returned
 - **Returned:** FTF-0501-UI r3 (0j): pin UF3 progress counts; terminal unsafe_archive with a drift-proof 422 vocabulary; pin B34.
+
+## 2026-10-10T02:41Z — Control plane: FTF-0908 CERTIFIED (141/302); FTF-0904 returned
+- **Certified:** FTF-0908 (#730, merge d64628a84c85fca8f329741f7493ca1690776ac2); UNWIRED.
+- **Returned:** FTF-0904 r4 (0d): `_PREFIXES` JWT and `_QUOTED_VALUE` quadratics; generated every-rule size sweep through both paths.

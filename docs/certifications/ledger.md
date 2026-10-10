@@ -11015,3 +11015,22 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   faults RED. Return: UF3 (round-1-named simulated progress) GREEN with a reproduced false "2 of 2"; terminal 422
   unsafe_archive shown as retryable on the real router; B34 stale-create guard GREEN. FTF-0501 API half re-passed at
   this merge (proving test + routes/sweeper/S3 integration suites); FTF-0501 stays uncertified until the UI certifies.
+
+## 2026-10-10T02:41Z — CERTIFIED: FTF-0908 (141/302); RETURNED: FTF-0904 (r4)
+- **FTF-0908: CERTIFIED** (round 5, tests only; PR #730, squash merge d64628a84c85fca8f329741f7493ca1690776ac2, head
+  9934cce7; production unchanged since round 4 #719, b159f964). Session comparison: producer
+  session_01AuvexbKYEvC4Kr84rsak4o (earlier rounds session_014ggVH3xe8FEvP7NERrLSnc, session_01SN5XfLBY7kKmyy3Loa5Gjy) ≠
+  certifier session_01QVznorVMjnmcttUhyDnoGR, absent from the PR. CI: ci-verdict 114098396960; integration job
+  114095036517 (PG16.15) "FTF-0908 durable denial audit real proof: all checks passed"; gate job 114094980567 "FTF-0908
+  External provider denial tests: all checks passed". R4-1 now catches the denial inside the committed scope and, on a
+  pool without the reset guard, asserts same backend, empty tenant GUC, 0 rows: F2 and F2g RED in the real-PG job, plus
+  verifier variants F2h (SET), F2i (raw cursor), F2j (alias wrapper); 20/20 faults RED. Local: unit 428 checks, integration
+  52 checks x4 runs. Probes: 192/192 concurrent committed-scope denials across 8 tenants on a 3-connection unguarded pool
+  clean; 162-case policy matrix clean. Disclosed per ruling: raw InvalidRequestError inside `s.begin()`/`begin_nested()`
+  (fails closed, audit kept, no leak); advisory-lock and SET LOCAL losses. UNWIRED (proving_symbol blank).
+- **FTF-0904: RETURNED** (round 3 → 4; PR #726, merge 8fce1d579db8b938b67d934b2b8ccbf675bca744, head f5960224). Producer
+  session_01McmND1xyC9qaWT6JhFMUh1 ≠ certifier. CI: ci-verdict 114080331743; gate job 114076554858 "FTF-0904 Log redaction
+  tests: all checks passed"; mutation 12 killed + 1 timeout. Round-3 items 1-4 fixed. Return: the class-closing ruling
+  (every regex linear, generated sweep) not met - `_PREFIXES` JWT alternative and the first `_QUOTED_VALUE` alternative
+  are quadratic (34-184 s at 128-256 KB, both paths, 3.11 and 3.12) with the suite GREEN; the producer swept only the
+  percent regex. Docstring still claims "linear".
