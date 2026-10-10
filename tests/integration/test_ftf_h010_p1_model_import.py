@@ -81,6 +81,7 @@ from app.auth.organization_workspace_schema import (  # noqa: E402
     Workspace,
 )
 from app.auth.rbac_middleware import AuthenticatedPrincipal, Role  # noqa: E402
+from app.litellm.connection_schema import LiteLLMConnection  # noqa: E402
 from app.model_versions.model_import_routes import build_model_import_router  # noqa: E402
 from app.model_versions.model_version_crud import ActorInfo, create_model_version  # noqa: E402
 from app.projects.project_schema import Project  # noqa: E402
@@ -273,6 +274,12 @@ def _round3_checks(
     # under the org1 context leaves the org2 row untouched; the same statement
     # does reach the org1 row (same-tenant control, so the context is live). --
     with Session(owner_engine) as owner:
+        # FTF-H010-P2 (0029): a validating row refuses a bare `updated_at` refresh (only a lease
+        # renewal or a re-claim may touch a validating row), so earlier checks' validating rows
+        # are removed (owner role) before this unqualified UPDATE.
+        owner.execute(text("DELETE FROM model_import_jobs WHERE state = 'validating'"))
+        owner.commit()
+    with Session(owner_engine) as owner:
         org2_job = uuid.uuid4()
         owner.execute(
             text(
@@ -318,24 +325,45 @@ def _round3_checks(
     # -- 1. Terminal states: a same-state UPDATE on each terminal state is
     # refused by the trigger's own "is a terminal state" branch (not merely
     # sqlstate 23514, which a CHECK would also give). --
+    # FTF-H010-P2 (0029): a succeeded job names its result ModelVersion (same project, origin
+    # imported_weights, the origin _raw_job requests).
+    r3_result_version = uuid.uuid4()
+    with Session(owner_engine) as owner:
+        owner.execute(
+            text(
+                "INSERT INTO model_versions (id, organization_id, project_id, version_number, "
+                "import_kind, origin, trainable_artifact_id, weights_digest, "
+                "base_model_revision, created_by) VALUES (:id, :org, :project, 9100, "
+                "'full_weight', 'imported_weights', :artifact, :digest, 'a1b2c3d4e5f6', 'r3')"
+            ),
+            {
+                "id": str(r3_result_version),
+                "org": str(org1_id),
+                "project": str(project1_id),
+                "artifact": str(artifact1_id),
+                "digest": "sha256:" + "b" * 64,
+            },
+        )
+        owner.commit()
     with Session(app_engine) as session:
         for terminal in ("failed", "succeeded", "blocked_external"):
             job_id = _raw_job(session, org1_id, project1_id)
             created_jobs.append(job_id)
             _set_tenant(session, org1_id)
             session.execute(
-                text("UPDATE model_import_jobs SET state = 'validating' WHERE id = :id"),
+                text("UPDATE model_import_jobs SET state = 'validating', claim_epoch = 1, lease_expires_at = now() + interval '1 hour' WHERE id = :id"),
                 {"id": str(job_id)},
             )
             session.execute(
                 text(
-                    "UPDATE model_import_jobs SET state = :terminal, failure_code = :code "
-                    "WHERE id = :id"
+                    "UPDATE model_import_jobs SET state = :terminal, failure_code = :code, "
+                    "lease_expires_at = NULL, result_model_version_id = :rid WHERE id = :id"
                 ),
                 {
                     "id": str(job_id),
                     "terminal": terminal,
                     "code": None if terminal == "succeeded" else "orig",
+                    "rid": str(r3_result_version) if terminal == "succeeded" else None,
                 },
             )
             session.commit()
@@ -634,6 +662,33 @@ def _round4_checks(
     def failure_code_for(state: str) -> str | None:
         return None if state in ("queued", "validating", "succeeded") else "r4"
 
+    # FTF-H010-P2 (0029): a validating row carries an epoch and a lease, a terminal row has no
+    # lease, and a succeeded row names its result ModelVersion (same project and origin).
+    result_version_id = uuid.uuid4()
+    seeded = insert_version(
+        {
+            "id": str(result_version_id),
+            "import_kind": "full_weight",
+            "origin": "imported_weights",
+            "trainable_artifact_id": str(artifact1_id),
+            "weights_digest": "sha256:" + "b" * 64,
+            "base_model_revision": "a1b2c3d4e5f6",
+        }
+    )
+    check(CID, f"R4-3 setup: the result ModelVersion is inserted (got {seeded!r})", seeded is None)
+
+    def set_sql(state: str) -> str:
+        if state == "validating":
+            return (
+                "state = 'validating', claim_epoch = 1, "
+                "lease_expires_at = now() + interval '1 hour'"
+            )
+        if state == "succeeded":
+            return "state = 'succeeded', result_model_version_id = :rid, lease_expires_at = NULL"
+        if state == "queued":
+            return "state = 'queued'"
+        return "state = :s, failure_code = :c, lease_expires_at = NULL"
+
     def job_in_state(session: Session, state: str) -> uuid.UUID:
         job_id = _raw_job(session, org1_id, project1_id)
         created.append(job_id)
@@ -643,8 +698,13 @@ def _round4_checks(
         for step in path:
             _set_tenant(session, org1_id)
             session.execute(
-                text("UPDATE model_import_jobs SET state = :s, failure_code = :c WHERE id = :id"),
-                {"s": step, "c": failure_code_for(step), "id": str(job_id)},
+                text(f"UPDATE model_import_jobs SET {set_sql(step)} WHERE id = :id"),
+                {
+                    "s": step,
+                    "c": failure_code_for(step),
+                    "rid": str(result_version_id),
+                    "id": str(job_id),
+                },
             )
             session.commit()
         return job_id
@@ -665,11 +725,13 @@ def _round4_checks(
                 _set_tenant(session, org1_id)
                 try:
                     session.execute(
-                        text(
-                            "UPDATE model_import_jobs SET state = :s, failure_code = :c "
-                            "WHERE id = :id"
-                        ),
-                        {"s": target, "c": failure_code_for(target), "id": str(job_id)},
+                        text(f"UPDATE model_import_jobs SET {set_sql(target)} WHERE id = :id"),
+                        {
+                            "s": target,
+                            "c": failure_code_for(target),
+                            "rid": str(result_version_id),
+                            "id": str(job_id),
+                        },
                     )
                     session.commit()
                     check(CID, f"{label} is allowed", (source, target) in allowed)
@@ -807,6 +869,16 @@ def main() -> None:
         artifact1 = _artifact(org1.id, "artifact-org1")
         artifact2 = _artifact(org2.id, "artifact-org2")
         session.add_all([artifact1, artifact2])
+        # FTF-H010-P2: an external_endpoint job names its gateway connection.
+        p1_connection = LiteLLMConnection(
+            organization_id=org1.id,
+            name="h010p1-gateway",
+            base_url="https://gateway.example",
+            secret_ref="openbao://secret/litellm/org1/api_key",
+        )
+        session.add(p1_connection)
+        session.flush()
+        p1_connection_id = p1_connection.id
         session.commit()
         org1_id, org2_id = org1.id, org2.id
         project1_id, project2_id = project1.id, project2.id
@@ -1199,13 +1271,13 @@ def main() -> None:
 
         _set_tenant(session, org1_id)
         session.execute(
-            text("UPDATE model_import_jobs SET state = 'validating' WHERE id = :id"),
+            text("UPDATE model_import_jobs SET state = 'validating', claim_epoch = 1, lease_expires_at = now() + interval '1 hour' WHERE id = :id"),
             {"id": str(job_b)},
         )
         session.execute(
             text(
                 "UPDATE model_import_jobs SET state = 'blocked_external', "
-                "failure_code = 'f1' WHERE id = :id"
+                "failure_code = 'f1', lease_expires_at = NULL WHERE id = :id"
             ),
             {"id": str(job_b)},
         )
@@ -1450,6 +1522,7 @@ def main() -> None:
             payload={
                 "requested_origin": "external_endpoint",
                 "external_provider_model_ref": "provider://real/model",
+                "litellm_connection_id": str(p1_connection_id),
             },
         )
         check(
@@ -1581,7 +1654,7 @@ def main() -> None:
         _set_tenant(session, org1_id)
         try:
             session.execute(
-                text("UPDATE model_import_jobs SET state = 'validating' WHERE id = :id"),
+                text("UPDATE model_import_jobs SET state = 'validating', claim_epoch = 1, lease_expires_at = now() + interval '1 hour' WHERE id = :id"),
                 {"id": str(grant_job)},
             )
             session.commit()

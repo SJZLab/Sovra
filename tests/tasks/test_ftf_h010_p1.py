@@ -417,6 +417,7 @@ _ORG = uuid.uuid4()
 _PROJECT = uuid.uuid4()
 _CTX: Any = SimpleNamespace(organization_id=_ORG)
 _ACTOR = crud.ActorInfo(actor_type="user", actor_id="user-1", request_id="req-1")
+_CONN = uuid.uuid4()  # FTF-H010-P2: an external_endpoint job names its gateway connection
 
 
 @contextlib.contextmanager
@@ -446,13 +447,18 @@ def _store_env(
             raise ArtifactNotFoundError("no such artifact")
         return SimpleNamespace(id=artifact_id)
 
+    def fake_get_connection(session: Any, context: Any, connection_id: Any) -> Any:
+        return SimpleNamespace(id=connection_id)
+
     saved = (
         crud._authorize_project_or_raise,
         crud._fetch_model_version_or_raise,
         crud.get_artifact,
         crud.execute_tenant_scoped,
         crud.write_audit_event,
+        crud.get_connection,
     )
+    crud.get_connection = fake_get_connection
     crud._authorize_project_or_raise = fake_authorize_project
     crud._fetch_model_version_or_raise = fake_fetch_model_version
     crud.get_artifact = fake_get_artifact
@@ -468,6 +474,7 @@ def _store_env(
             crud.get_artifact,
             crud.execute_tenant_scoped,
             crud.write_audit_event,
+            crud.get_connection,
         ) = saved
         engine.dispose()
 
@@ -565,6 +572,7 @@ def test_s1_each_origin_creates_a_queued_job_with_one_audit_event() -> None:
             trainable_artifact_id=None,
             external_provider_model_ref="provider://model/x",
             actor=_ACTOR,
+            litellm_connection_id=_CONN,
         )
         check(
             CID,
@@ -615,6 +623,7 @@ def test_s2_external_endpoint_with_artifact_is_refused() -> None:
                     trainable_artifact_id=artifact,
                     external_provider_model_ref="provider://x",
                     actor=_ACTOR,
+                    litellm_connection_id=_CONN,
                 ),
                 schema.ModelImportValidationError,
             ),
@@ -665,6 +674,7 @@ def test_s3_external_endpoint_with_no_provider_ref_is_refused() -> None:
                         trainable_artifact_id=None,
                         external_provider_model_ref=r,
                         actor=_ACTOR,
+                        litellm_connection_id=_CONN,
                     ),
                     schema.ModelImportValidationError,
                 ),
@@ -1302,6 +1312,8 @@ def _job_ns(
         parent_model_version_id=parent_model_version_id,
         trainable_artifact_id=trainable_artifact_id,
         external_provider_model_ref=None,
+        litellm_connection_id=None,
+        result_model_version_id=None,
         state=state,
         failure_code=None,
         created_by="ml-1",
@@ -1544,6 +1556,8 @@ def test_r_get_list_and_item() -> None:
                     "parent_model_version_id",
                     "trainable_artifact_id",
                     "external_provider_model_ref",
+                    "litellm_connection_id",
+                    "result_model_version_id",
                     "state",
                     "failure_code",
                     "created_by",
