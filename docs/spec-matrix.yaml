@@ -9865,7 +9865,7 @@ FTF-0908:
   certification_state: PROVISIONAL
   criticality: MUST
   description: External provider denial
-  evidence_hash: b159f964e13e3ba924b476f5cd108f9a192f8531
+  evidence_hash: 23790e85ee4cee9e8c93501ec01a6b637c5ca8e0
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-14; scenarios=Q23, Q25; deps=FTF-0203, FTF-0901,
