@@ -993,6 +993,24 @@ def _percent_cases() -> list[tuple[str, str, list[str]]]:
                 [secret],
             )
         )
+        # Round 3 regression: the key and its separator are two separate whitespace-delimited
+        # tokens, so the only `%XX` is in a run that, on its own, decodes to no recognisable
+        # key=value shape ("= secret", with no key in view). The scan must still look one token
+        # back to the key name it belongs to.
+        cases.append(
+            (
+                "encoded separator, key and secret all space-separated (equals)",
+                f"token %3D {secret} other=1",
+                [secret],
+            )
+        )
+        cases.append(
+            (
+                "encoded separator, key and secret all space-separated (colon)",
+                f"password %3A {secret} other=1",
+                [secret],
+            )
+        )
     return cases
 
 
@@ -1024,6 +1042,28 @@ def test_percent_cases_keep_their_context_when_raw_scan_suffices() -> None:
         "FTF-0904-P2",
         f"benign percent text must survive: {out!r}",
         out == "see /a%20b?x=1 and 100%25 done",
+    )
+
+
+def test_percent_token_starts_widened_is_none_for_the_first_run() -> None:
+    """`_percent_token_starts`'s own contract: `widened_start` is the run immediately before a
+    `%XX` run, or None when there is no earlier run. A line that starts with a `%XX`-containing
+    run (index 0 in the whole line, not just index 0 of the filtered candidate list) has no run
+    before it. A mutant that computes `runs[i - 1]` for `i == 0` too (Python wraps to `runs[-1]`,
+    the *last* run in the line, instead of raising) is unreachable through `redact_text`'s own
+    output (a revealing suffix of `line[start:]` can never be true while the superset is false),
+    so this must be pinned directly against the private contract, not just end to end."""
+    out = lr._percent_token_starts("%41 benign text with no secret at all")
+    check(
+        "FTF-0904-P5",
+        f"first run (line starts with %XX) must report widened=None, got {out!r}",
+        len(out) == 1 and out[0] == (0, None),
+    )
+    out2 = lr._percent_token_starts("ok x%20y then%20more")
+    check(
+        "FTF-0904-P5",
+        f"a %XX run that is NOT the line's first token must report a real widened start: {out2!r}",
+        len(out2) == 2 and out2[0][1] == 0 and out2[1][1] is not None,
     )
 
 
@@ -1116,6 +1156,22 @@ def test_benign_tuples_and_environ_keys_survive() -> None:
     check("FTF-0904-H4", f"benign pairs must survive: {value!r}", "example.test" in repr(value))
 
 
+def test_pair_rule_covers_generic_secret_words_not_just_header_names() -> None:
+    """The `pair` rule's key alternation is `_HEADER_KEYS | _SECRET_KEY`: a header-named key
+    (authorization, cookie, ...) is one branch, but a generic secret word (client_secret,
+    password, api_key, ...) that is not itself a header name is the other. Round-2 only
+    exercised the header-named branch (test_every_secret_header_is_redacted_...); a fault
+    dropping `|_SECRET_KEY` stayed GREEN because nothing here hit it (FTF-0904-F-PAIR-KEY)."""
+    secret1, secret2 = _PLAIN_SECRETS[0], _PLAIN_SECRETS[1]
+    text = f"got response pairs: [('client_secret', '{secret1}'), ('password', b'{secret2}')]"
+    out = lr.redact_text(text)
+    check("FTF-0904-H5", f"client_secret tuple (str) leaked: {out!r}", secret1 not in out)
+    check("FTF-0904-H5", f"password tuple (bytes) leaked: {out!r}", secret2 not in out)
+    # a non-secret generic key must not be swept up by the same rule
+    benign = lr.redact_text(f"got response pairs: [('status', '{secret1}'), ('accept', 'ok')]")
+    check("FTF-0904-H5", f"benign pair must survive: {benign!r}", secret1 in benign)
+
+
 # --- extra= on non-root loggers ---------------------------------------------------------
 
 
@@ -1186,12 +1242,12 @@ def test_secret_named_extra_with_non_str_value_is_redacted() -> None:
         record = h.seen_records[-1]
     check(
         "FTF-0904-X4",
-        f"bytes secret kept: {record.__dict__["password"]!r}",
+        f"bytes secret kept: {record.__dict__['password']!r}",
         record.__dict__["password"] == lr.REDACTED,
     )
     check(
         "FTF-0904-X4",
-        f"int secret kept: {record.__dict__["token"]!r}",
+        f"int secret kept: {record.__dict__['token']!r}",
         record.__dict__["token"] == lr.REDACTED,
     )
 
@@ -1216,6 +1272,14 @@ _ADVERSARIAL = {
     "base64-run": "QUJD" * (_SIZE // 4),
     "pem-run": "-----BEGIN " * (_SIZE // 11),
     "bearer-run": "bearer " * (_SIZE // 7),
+    # Round 3: the old `\S*%[0-9A-Fa-f]{2}` scan backtracked a greedy `\S*` at every character
+    # position in a run with no (or a far) closing hex pair -- quadratic, not linear.
+    "lone-percent": "a" * (_SIZE - 1) + "%",
+    "percent-prefix-then-plain-run": "%41" + "a" * (_SIZE - 3),
+    "compact-json-one-percent": ('{"accuracy":"99%","note":"' + "a" * (_SIZE - 40) + '"}')[:_SIZE],
+    "callback-url-long-state": (
+        "https://cb?redirect_uri=https%3A%2F%2Fexample.com&state=" + "a" * _SIZE
+    )[:_SIZE],
 }
 
 
@@ -1304,6 +1368,78 @@ def test_adversarial_input_through_the_logging_path_is_bounded() -> None:
         f"logging a 256 KB line took {elapsed}s ({result.stderr[-200:]!r})",
         elapsed is not None and elapsed < _LIMIT_SECONDS,
     )
+
+
+_PERCENT_QUADRATIC_LABELS = ("lone-percent", "percent-prefix-then-plain-run")
+# Pinned, non-swept bound check (all four shapes, incl. "compact-json-one-percent" and
+# "callback-url-long-state") lives in _ADVERSARIAL / test_adversarial_input_is_linear above;
+# the sweep below additionally proves actual linear *scaling* (not just a bound at one size) on
+# two representative shapes of the same regex mechanism, keeping the subprocess count bounded.
+_SWEEP_SIZES = (64 * 1024, 128 * 1024, 256 * 1024)
+
+
+def _percent_quadratic_shape(label: str, size: int) -> str:
+    if label == "lone-percent":
+        return "a" * (size - 1) + "%"
+    if label == "percent-prefix-then-plain-run":
+        return "%41" + "a" * (size - 3)
+    if label == "compact-json-one-percent":
+        return ('{"accuracy":"99%","note":"' + "a" * (size - 40) + '"}')[:size]
+    return ("https://cb?redirect_uri=https%3A%2F%2Fexample.com&state=" + "a" * size)[:size]
+
+
+def test_percent_token_scan_is_linear_not_quadratic() -> None:
+    """Round-3 regression: `\\S*%[0-9A-Fa-f]{2}` backtracked a greedy `\\S*` at every character
+    position in a whitespace-free run whose only (or far) closing hex pair never lets an early
+    attempt succeed -- quadratic, not linear (confirmed: `"a" * n + "%"` took 24s at 128K and
+    102s at 262K, a ~4.2x ratio for a ~2x size increase). A generated size sweep (64K..256K)
+    through BOTH `redact_text` and the `install_redaction` logging path proves linear scaling,
+    not just a bound under the cap at one hand-picked size; the four 256 KB shapes from the
+    finding (lone %, a leading valid token then a long plain run, one bare `%` in compact JSON,
+    a long opaque URL state param) are all pinned at the limit in `_ADVERSARIAL` above."""
+    for label in _PERCENT_QUADRATIC_LABELS:
+        times: list[float] = []
+        for size in _SWEEP_SIZES:
+            text = _percent_quadratic_shape(label, size)
+            elapsed, _ = _timed_redact(text)
+            check(
+                "FTF-0904-R4",
+                f"{label} at {size} chars took {elapsed}s (limit {_LIMIT_SECONDS}s)",
+                elapsed is not None and elapsed < _LIMIT_SECONDS,
+            )
+            if elapsed is None:
+                break
+            times.append(elapsed)
+        if len(times) >= 2:
+            ratio = times[-1] / max(times[-2], 1e-6)
+            check(
+                "FTF-0904-R4",
+                f"{label}: time ratio {_SWEEP_SIZES[-2]}->{_SWEEP_SIZES[-1]} is {ratio:.2f}x "
+                "(quadratic doubling would be ~4x; linear is ~2x)",
+                ratio < 3.0,
+            )
+    for label in _PERCENT_QUADRATIC_LABELS:
+        for size in (_SWEEP_SIZES[-1],):
+            text = _percent_quadratic_shape(label, size)
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-c", _CHILD_LOG, str(ROOT)],
+                    input=text,
+                    capture_output=True,
+                    text=True,
+                    timeout=_LIMIT_SECONDS + 3,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                check("FTF-0904-R5", f"{label} at {size} through logging did not finish", False)
+                continue
+            head = result.stdout.partition("\n")[0]
+            elapsed = float(head) if head else None
+            check(
+                "FTF-0904-R5",
+                f"{label} at {size} chars through logging took {elapsed}s",
+                elapsed is not None and elapsed < _LIMIT_SECONDS,
+            )
 
 
 def test_size_and_depth_boundaries() -> None:
@@ -1517,14 +1653,16 @@ FAULTS: list[tuple[str, str, str, int]] = [
     ),
     (
         "F15d only the encoded token is cut, not the rest of the line",
-        "        line = line[: starts[low]] + REDACTED\n",
-        "        line = line[: starts[low]] + REDACTED + line[starts[low] :].partition(' ')[2]\n",
+        "        line = line[: candidates[low][0]] + REDACTED\n",
+        "        line = line[: candidates[low][0]] + REDACTED"
+        " + line[candidates[low][0] :].partition(' ')[2]\n",
         1,
     ),
     (
         "F15f cut falls back to keeping the line",
-        "    first = _PERCENT_TOKEN.search(line)  # still revealing after the cap: fail closed\n"
-        "    return line if first is None else line[: first.start()] + REDACTED\n",
+        "    candidates = _percent_token_starts(line)  # still revealing after the cap:"
+        " fail closed\n"
+        "    return line if not candidates else line[: candidates[0][0]] + REDACTED\n",
         "    return line\n",
         1,
     ),
@@ -1610,6 +1748,33 @@ FAULTS: list[tuple[str, str, str, int]] = [
         "F45 quadratic key rule restored",
         'rf"(?=[\\w.\\-]*?{_SECRET_KEY_WORDS})[\\w.\\-]++"',
         'rf"[\\w.\\-]*{_SECRET_KEY_WORDS}[\\w.\\-]*"',
+        1,
+    ),
+    # --- round 3: percent-token tokeniser linear, pair rule, encoded separator ---------
+    (
+        "F-PCT-QUAD percent-token scan reverted to quadratic \\S* backtracking",
+        "    runs = list(_NON_SPACE_RUN.finditer(line))\n"
+        "    return [\n"
+        "        (run.start(), runs[i - 1].start() if i > 0 else None)\n"
+        "        for i, run in enumerate(runs)\n"
+        "        if _PERCENT_IN_TOKEN.search(run.group())\n"
+        "    ]\n",
+        "    return [\n"
+        "        (m.start(), None)\n"
+        '        for m in re.compile(r"\\S*%[0-9A-Fa-f]{2}").finditer(line)\n'
+        "    ]\n",
+        1,
+    ),
+    (
+        "F-PCT-WIDEN0 first run's widened wraps to the line's last run instead of None",
+        "runs[i - 1].start() if i > 0 else None",
+        "runs[i - 1].start() if i >= 0 else None",
+        1,
+    ),
+    (
+        "F-PAIR-KEY pair rule drops the generic secret-word alternative",
+        "(?:{_HEADER_KEYS}|{_SECRET_KEY})(?P=q)",
+        "(?:{_HEADER_KEYS})(?P=q)",
         1,
     ),
     # --- records, exceptions, extras ---------------------------------------------------
