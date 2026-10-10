@@ -10996,3 +10996,13 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   in CI is required now.
 - **Ruling: UI CHECKLIST** (QUEUE item 0) for every apps/web UI slice, closing the class behind the FTF-0309, FTF-0516
   and FTF-0501-UI returns.
+
+## 2026-10-10T00:10Z — RETURNED: FTF-0908 (r5, tests only)
+- **FTF-0908: RETURNED** (round 4 → 5; PR #719, merge fd05e7e04e7ff49193855b3dedae50eec8522666, head f418af18; production
+  b159f964 = evidence_hash). Producer session_014ggVH3xe8FEvP7NERrLSnc ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI:
+  ci-verdict 114064272351; external-provider-denial-integration 114062104875 and gate 114062104924 "all checks passed";
+  mutation-gate 114062143544 26/26 killed. Production correct and class-closing (re-bind via FTF-0102 set_tenant_context;
+  non-UUID tenant refused typed); round-4 real-PG probes L1-L7, T, M (162 cases), N: 0 violations. Return reason (test
+  only): R4-1 catches the denial outside the scope, so rollback masks a session-level re-bind; F2 GREEN in the
+  integration job (unit RED only via a text anchor) and F2g GREEN in every suite with the round-3 leak reproduced on a
+  pool without the reset guard. P12 and the advisory-lock/SET LOCAL losses are disclosed per the ruling.
