@@ -9862,10 +9862,10 @@ FTF-0907:
   proving_symbol: ''
   proving_test: ''
 FTF-0908:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: External provider denial
-  evidence_hash: 23790e85ee4cee9e8c93501ec01a6b637c5ca8e0
+  evidence_hash: d64628a84c85fca8f329741f7493ca1690776ac2
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-14; scenarios=Q23, Q25; deps=FTF-0203, FTF-0901,
@@ -9910,7 +9910,7 @@ FTF-0908:
     approvals yet, so a ProviderApproval is not tenant-bound and `approved_by` is not a verified
     principal -- blank proving_symbol, same precedent as FTF-0901/FTF-0902. Not self-certified
     (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0908.py
 FTF-0909:
