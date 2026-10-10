@@ -2180,8 +2180,44 @@ FAULTS: list[tuple[str, str, str, int, bool]] = [
     ),
     (
         "safetensors-shape-check-dropped",
-        "type(shape) is not list or any(type(d) is not int or d < 0 for d in shape)",
-        "type(shape) is not list",
+        "type(shape) is not list or any(\n        type(d) is not int or d < 0 or d > _MAX_SHAPE_DIM for d in shape\n    ):",
+        "type(shape) is not list:",
+        1,
+        False,
+    ),
+    (
+        "safetensors-dimension-above-u64-accepted",
+        "d < 0 or d > _MAX_SHAPE_DIM",
+        "d < 0",
+        1,
+        False,
+    ),
+    ("safetensors-negative-dimension-accepted", "d < 0 or d >", "d < -1 or d >", 1, False),
+    (
+        "safetensors-shape-product-overflow-accepted",
+        "        if elements > _MAX_SHAPE_DIM:",
+        "        if elements > _MAX_SHAPE_DIM**2:",
+        1,
+        False,
+    ),
+    (
+        "adapter-lora-A-rank-unchecked",
+        "if shape_a[0] != config.r or shape_b[1] != config.r:",
+        "if shape_b[1] != config.r:",
+        1,
+        False,
+    ),
+    (
+        "adapter-lora-B-rank-unchecked",
+        "if shape_a[0] != config.r or shape_b[1] != config.r:",
+        "if shape_a[0] != config.r:",
+        1,
+        False,
+    ),
+    (
+        "peft-prefix-stripped-anywhere",
+        "name[len(_PEFT_PREFIX) :] if name.startswith(_PEFT_PREFIX) else name",
+        'name.replace(_PEFT_PREFIX, "")',
         1,
         False,
     ),
@@ -2316,12 +2352,119 @@ FAULTS: list[tuple[str, str, str, int, bool]] = [
 ]
 
 
+def group_round2(m: Any) -> None:
+    """Round-2 return: bounded shape product, negative dimension, lora_A rank, PEFT prefix."""
+    import time
+
+    shape_u64 = 2**64 - 1
+    # R1: dimensions and the running product stay within u64, in order (like the format's reader)
+    for shape in ([0, 2**64], [2**64], [shape_u64 + 1, 0], [2**32, 2**32, 0], [2**40, 2**40, 1]):
+        raw = st_tensor_header({"t": {"dtype": "U8", "shape": shape, "data_offsets": [0, 0]}}, 0)
+        check(
+            "R1",
+            f"shape {shape!r} refused as `shape`",
+            reason_of(m, parse, m, raw) == "shape"
+            and refuses(m, "weights_header_invalid", parse, m, raw),
+        )
+    ok_raw = st_tensor_header(
+        {"t": {"dtype": "U8", "shape": [0, shape_u64], "data_offsets": [0, 0]}}, 0
+    )
+    check(
+        "R1",
+        "a zero first dimension then a u64-max one is still accepted",
+        outcome(m, parse, m, ok_raw) == "ok",
+    )
+    # a product that fits u64 but not the buffer is a size mismatch, never a crash
+    raw = st_tensor_header(
+        {"t": {"dtype": "F64", "shape": [2**40, 2**20], "data_offsets": [0, 8]}}, 8
+    )
+    check(
+        "R1",
+        "huge in-range product vs 8 bytes -> size_mismatch",
+        reason_of(m, parse, m, raw) == "size_mismatch",
+    )
+    # the shape product is bounded in time: 200k+ dimensions of a huge value / of one
+    for label, dims in (
+        ("huge", [2**60] * 300_000),
+        ("huge-after-ones", [1] * 100_000 + [2**33] * 200_000),
+        ("ones", [1] * 400_000),
+    ):
+        raw = st_tensor_header({"t": {"dtype": "U8", "shape": dims, "data_offsets": [0, 1]}}, 1)
+        start = time.perf_counter()
+        got = outcome(m, parse, m, raw)
+        took = time.perf_counter() - start
+        check("R1", f"{label}: {len(dims)} dims took {took:.2f}s (limit 5s)", took < 5.0)
+        check("R1", f"{label}: outcome {got}", got in ("ok", "weights_header_invalid"))
+        if label != "ones":
+            check("R1", f"{label}: refused", got == "weights_header_invalid")
+    # R2: negative dimensions are refused as `shape` even when the size equation would hold
+    for shape in ([-1, -1], [-2, -2], [-1, 1, -1]):
+        n = 1
+        for d in shape:
+            n *= d
+        raw = st_tensor_header(
+            {"t": {"dtype": "U8", "shape": shape, "data_offsets": [0, n]}}, max(n, 0)
+        )
+        check(
+            "R2", f"negative shape {shape!r}: reason shape", reason_of(m, parse, m, raw) == "shape"
+        )
+    raw = st_tensor_header({"t": {"dtype": "F32", "shape": [-1, -1], "data_offsets": [0, 4]}}, 4)
+    check("R2", "[-1,-1] F32 with offsets [0,4] -> shape", reason_of(m, parse, m, raw) == "shape")
+
+    cc = m.check_adapter_base_compatibility
+    cfg = m.validate_adapter_config_json(jb(GOOD_ADAPTER_CFG))
+
+    def header(tensors: dict[str, tuple[str, list[int]]]) -> Any:
+        return parse(m, st_file(tensors))
+
+    # R3: lora_A's rank is checked on its own (the base matches A [5,8] / B [16,4], so nothing
+    # else can refuse it)
+    base = {f"{MOD_Q}.weight": (16, 8)}
+    cfg_q = m.validate_adapter_config_json(jb({**GOOD_ADAPTER_CFG, "target_modules": ["q_proj"]}))
+    for label, a_shape, b_shape in (
+        ("A rank 5, B rank 4", [5, 8], [16, 4]),
+        ("A rank 3, B rank 4", [3, 8], [16, 4]),
+        ("A rank 4, B rank 5", [4, 8], [16, 5]),
+        ("A rank 4, B rank 3", [4, 8], [16, 3]),
+    ):
+        adapter = header(
+            {
+                f"base_model.model.{MOD_Q}.lora_A.weight": ("F32", a_shape),
+                f"base_model.model.{MOD_Q}.lora_B.weight": ("F32", b_shape),
+            }
+        )
+        check("R3", f"{label}: r_mismatch", reason_of(m, cc, adapter, cfg_q, base) == "r_mismatch")
+    good_adapter = header(lora(m, MOD_Q, 4, 8, 16))
+    check("R3", "A and B both rank r accepted", outcome(m, cc, good_adapter, cfg_q, base) == "ok")
+    # R4: only ONE leading `base_model.model.` is stripped, never one found elsewhere in the name
+    base_q = {f"{MOD_Q}.weight": (16, 8), "model.layers.0.q_proj.weight": (16, 8)}
+    doubled = header(lora(m, MOD_Q, 4, 8, 16, prefix="base_model.model.base_model.model."))
+    check(
+        "R4",
+        "doubled prefix -> base_tensor_missing",
+        reason_of(m, cc, doubled, cfg_q, base_q) == "base_tensor_missing",
+    )
+    inner = header(lora(m, "model.layers.0.base_model.model.q_proj", 4, 8, 16, prefix=""))
+    check(
+        "R4",
+        "inner prefix not stripped -> base_tensor_missing",
+        reason_of(m, cc, inner, cfg_q, base_q) == "base_tensor_missing",
+    )
+    inner2 = header(lora(m, "model.layers.0.base_model.model.q_proj", 4, 8, 16))
+    check(
+        "R4",
+        "single leading + inner prefix -> base_tensor_missing",
+        reason_of(m, cc, inner2, cfg_q, base_q) == "base_tensor_missing",
+    )
+
+
 def suite(m: Any, source: str, big: bool) -> list[str]:
     _failures.clear()
     group_a(m)
     group_b(m)
     group_d(m, big)
     group_e(m)
+    group_round2(m)
     group_f(m)
     group_g(m, source)
     return list(_failures)
