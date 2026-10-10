@@ -486,10 +486,19 @@ def main() -> None:
                     f"[{label}] real archive is 200 ({archived.status})",
                     archived.status == 200,
                 )
-            elif cell["status"] == "registered":
+            elif cell["status"] == "registered" and cell["license"] != "revoked":
                 sql("UPDATE trainable_artifacts SET status='registered' WHERE id=:i", i=art_id)
-            elif cell["status"] == "ready":
+            elif cell["status"] == "ready" and cell["license"] == "revoked":
+                # unreachable through the API: the real revoke demoted it to registered
                 sql("UPDATE trainable_artifacts SET status='ready' WHERE id=:i", i=art_id)
+            if cell["license"] == "revoked" and cell["status"] == "registered":
+                # the real revoke route alone must have demoted the ready artifact
+                current = _request(base, "GET", artifact_path(art_id), principal="viewer1")
+                check(
+                    CID,
+                    f"[{label}] revoke-license alone demoted the artifact to registered",
+                    current.status == 200 and current.json()["status"] == "registered",
+                )
 
             capabilities = _request(base, "GET", cap_path(alias), principal="viewer1")
             check(
