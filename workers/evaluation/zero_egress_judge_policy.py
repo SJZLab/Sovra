@@ -71,7 +71,6 @@ from typing import Any
 from packages.litellm_client.real_chat_probe import RouteIdentityState
 from packages.litellm_client.route_attestation import (
     RouteAttestationError,
-    RouteAttestationState,
     attest_route,
 )
 from packages.litellm_client.secret_manager_integration import OpenBaoConfig
@@ -98,6 +97,7 @@ from app.auth.tenant_isolation_query_guards import execute_tenant_scoped
 from app.db.tenant_context import TenantContext
 from app.evaluation.evaluation_suite_routes import EVALUATION_SUITE_WRITE_ROLES
 from app.litellm.connection_crud import ConnectionNotFoundError, get_connection
+from app.services.project_security_profile import security_profile_rank
 from workers.evaluation.llm_judge_grader import (
     CalibrationRecord,
     JudgeRubric,
@@ -158,7 +158,22 @@ DESTINATION_ROLES: tuple[str, ...] = (
     "cache",
     "embedding",
 )
-_DISABLEABLE_ROLES = frozenset({"cache", "embedding"})
+# role -> may this destination be explicitly disabled (cache and embedding only)
+_ROLE_DISABLEABLE: dict[str, bool] = {
+    "upstream": False,
+    "logging_callbacks": False,
+    "cache": True,
+    "embedding": True,
+}
+# kind -> (exact key set, is "disabled"); every other kind names a provider or is internal
+_KIND_RULES: dict[str, tuple[frozenset[str], bool]] = {
+    "disabled": (frozenset({"kind"}), True),
+    "internal": (frozenset({"kind"}), False),
+    "managed_provider": (frozenset({"kind", "provider"}), False),
+    "external": (frozenset({"kind", "provider"}), False),
+}
+# Strictness is derived from FTF-0901's boundary-only set (not re-listed) as a rank threshold.
+_STRICT_MIN_RANK = min(security_profile_rank(name) for name in STRICT_PROFILES)
 _TOP_LEVEL_KEYS = frozenset(
     {
         "schema_version",
@@ -173,7 +188,6 @@ _TOP_LEVEL_KEYS = frozenset(
         "expires_at",
     }
 )
-_DESTINATION_KINDS = frozenset({"internal", "managed_provider", "external", "disabled"})
 _TIMESTAMP = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})",
     re.ASCII,
@@ -344,6 +358,15 @@ def load_profiles_in_force(
     return (org_row[0], project_row[0], effective)
 
 
+def _is_strict(profile: str) -> bool:
+    return security_profile_rank(profile) >= _STRICT_MIN_RANK
+
+
+def _has_role(role: Role | None, allowed: frozenset[Role]) -> bool:
+    """Identity, not equality: only the exact enum members count."""
+    return any(role is member for member in allowed)
+
+
 def _load_connection(
     session: Session, context: TenantContext, connection_id: uuid.UUID
 ) -> tuple[str, str]:
@@ -373,10 +396,10 @@ class PrivateJudgeApproval:
     resolved_model: str
     deployment_fingerprint: str
     boundary_id: str
-    upstream: JudgeDestinationRecord
-    logging_callbacks: JudgeDestinationRecord
-    cache: JudgeDestinationRecord
-    embedding: JudgeDestinationRecord
+    upstream: JudgeDestinationRecord | None
+    logging_callbacks: JudgeDestinationRecord | None
+    cache: JudgeDestinationRecord | None
+    embedding: JudgeDestinationRecord | None
     approved_by_issuer: str
     approved_by_subject: str
     approved_at: datetime
@@ -403,28 +426,29 @@ def _timestamp(value: object) -> datetime:
         parsed = datetime.fromisoformat(value)
     except ValueError:
         raise JudgeApprovalInvalidError() from None
-    if parsed.utcoffset() is None:
-        raise JudgeApprovalInvalidError()
     return parsed
 
 
-def _destination_record(value: object, role: str) -> JudgeDestinationRecord:
+def _destination_record(value: object, disableable: bool) -> JudgeDestinationRecord | None:
+    """`None` is an explicitly disabled destination."""
     if type(value) is not dict:
         raise JudgeApprovalInvalidError()
     kind = value.get("kind")
-    if type(kind) is not str or kind not in _DESTINATION_KINDS:
+    if type(kind) is not str:
         raise JudgeApprovalInvalidError()
-    if kind == "disabled":
-        if set(value) != {"kind"} or role not in _DISABLEABLE_ROLES:
-            raise JudgeApprovalInvalidError()
-        return JudgeDestinationRecord("disabled")
-    if kind == "internal":
-        if set(value) != {"kind"}:
-            raise JudgeApprovalInvalidError()
-        return JudgeDestinationRecord("internal")
-    if set(value) != {"kind", "provider"}:
+    rule = _KIND_RULES.get(kind)
+    if rule is None:
         raise JudgeApprovalInvalidError()
-    return JudgeDestinationRecord(kind, _approval_text(value["provider"]))
+    keys, is_disabled = rule
+    if set(value) != keys:
+        raise JudgeApprovalInvalidError()
+    if is_disabled:
+        if not disableable:
+            raise JudgeApprovalInvalidError()
+        return None
+    if "provider" in keys:
+        return JudgeDestinationRecord(kind, _approval_text(value["provider"]))
+    return JudgeDestinationRecord(kind)
 
 
 def parse_private_judge_approval(
@@ -449,7 +473,7 @@ def parse_private_judge_approval(
         data = raw
     else:
         raise JudgeApprovalInvalidError()
-    if not 0 < len(data) <= APPROVAL_MAX_BYTES:
+    if len(data) > APPROVAL_MAX_BYTES:
         raise JudgeApprovalInvalidError()
     try:
         document = json.loads(
@@ -479,9 +503,8 @@ def parse_private_judge_approval(
     if type(fallbacks) is not list:
         raise JudgeApprovalInvalidError()
     records = {
-        role: _destination_record(destinations[role], role)
-        for role in DESTINATION_ROLES
-        if role != "fallbacks"
+        role: _destination_record(destinations[role], disableable)
+        for role, disableable in _ROLE_DISABLEABLE.items()
     }
     if expires_at <= approved_at:
         raise JudgeApprovalInvalidError()
@@ -489,7 +512,7 @@ def parse_private_judge_approval(
     if fallbacks:
         raise JudgeFallbackNotPermittedError()
     for record in records.values():
-        if record.kind == "disabled":
+        if record is None:
             continue
         try:
             enforce_effect(
@@ -549,7 +572,7 @@ def authorize_human_judgment(
     reviewer_issuer, reviewer_subject = _identity(reviewer)
     producer_issuer, producer_subject = _identity(candidate_producer)
     role = lookup_org_role(session_factory, reviewer_issuer, reviewer_subject, organization_id)
-    if role is None or role not in REVIEWER_ROLES:
+    if not _has_role(role, REVIEWER_ROLES):
         raise HumanReviewerNotAuthorizedError()
     if (reviewer_issuer, reviewer_subject) == (producer_issuer, producer_subject) or (
         _normalised(reviewer_issuer),
@@ -638,8 +661,6 @@ def _attestation_defect(
         )
     except RouteAttestationError:
         raise JudgeAttestationRefusedError() from None
-    if attestation.state is not RouteAttestationState.ATTESTED:
-        return "judge_route_identity_unverified"
     try:
         pinned = pin_route_identity(approval.judge_model_id, attestation)
     except RouteQualificationInvalidError:
@@ -690,7 +711,7 @@ def decide_judge_plan(
     def issue(mode: JudgeMode, reason: str, **kwargs: Any) -> JudgePlan:
         return _plan(mode, reason, profile, organization_id, project_id, connection_id, **kwargs)
 
-    if profile not in STRICT_PROFILES:
+    if not _is_strict(profile):
         if type(judge_destination) is not Destination:
             raise JudgePolicyInvalidInputError()
         try:
@@ -720,7 +741,7 @@ def decide_judge_plan(
                 parsed.approved_by_subject,
                 organization_id,
             )
-            if role is None or role not in APPROVER_ROLES:
+            if not _has_role(role, APPROVER_ROLES):
                 raise JudgeApprovalNotAuthorizedError()
         except ZeroEgressJudgePolicyError as exc:
             defect = exc.code
@@ -777,9 +798,7 @@ class JudgeOutcome:
 
     @property
     def passed(self) -> bool | None:
-        if self.blocked or self.result is None:
-            return None
-        return self.result.passed
+        return None if self.result is None else self.result.passed
 
 
 def _blocked(code: str, *, possible_egress: bool = False) -> JudgeOutcome:
@@ -818,7 +837,9 @@ def run_private_judge(
     _organization_profile, _project_profile, profile = load_profiles_in_force(
         session, context, plan.project_id, job_profile
     )
-    if profile != plan.profile or profile not in STRICT_PROFILES:
+    if security_profile_rank(profile) != security_profile_rank(plan.profile) or not _is_strict(
+        profile
+    ):
         raise JudgePlanError()
     if approval.expires_at <= now or approval.approved_at > now:
         return _blocked("judge_approval_expired")
@@ -840,7 +861,7 @@ def run_private_judge(
         )
     except LlmJudgeGraderError:
         raise JudgeCallRefusedError() from None
-    if result.state in (LlmJudgeState.PASSED, LlmJudgeState.FAILED):
+    if result.state is LlmJudgeState.PASSED or result.state is LlmJudgeState.FAILED:
         if (
             result.route_identity_state is not RouteIdentityState.VERIFIED
             or result.resolved_model is None

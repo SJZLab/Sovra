@@ -357,11 +357,11 @@ def sc_parse_valid(mod) -> list[str]:
         "boundary-1",
     ):
         problems.append("identity fields not carried exactly")
-    if (a.upstream.kind, a.logging_callbacks.kind, a.cache.kind, a.embedding.kind) != (
+    if (a.upstream.kind, a.logging_callbacks.kind, a.cache, a.embedding) != (
         "internal",
         "internal",
-        "disabled",
-        "disabled",
+        None,
+        None,
     ):
         problems.append("destinations not carried exactly")
     if (a.approved_by_issuer, a.approved_by_subject) != ADMIN:
@@ -1480,6 +1480,13 @@ def _header_safe(value: str) -> bool:
     return all(ch not in "\r\n\x00" for ch in value)
 
 
+def _safe_exactness(base: str):
+    try:
+        return h._exactness_variants(base)
+    except StopIteration:
+        return ()
+
+
 def _variants_of(base: str) -> list[str]:
     try:
         seen = {v for _label, v in h._exactness_variants(base)}
@@ -1488,7 +1495,10 @@ def _variants_of(base: str) -> list[str]:
     seen |= {v for _label, v, _always in h._generated_echo_variants(base)}
     seen.discard(base)
     ordered = sorted(seen)
-    return ordered[::8] if UNDER_MUTATION_GATE else ordered
+    if not UNDER_MUTATION_GATE:
+        return ordered
+    handcrafted = [v for _label, v in _safe_exactness(base)]
+    return sorted(set(handcrafted) | set(ordered[::8]))
 
 
 def sc_exact_admission(mod) -> list[str]:
@@ -1735,6 +1745,72 @@ def sc_content_free(mod) -> list[str]:
             problems.append(
                 f"{type(outcome).__name__} leaks: {[w for w in text.replace(',', ' ').split() if MK in w][:3]}"
             )
+    return problems
+
+
+def sc_survivor_regressions(mod) -> list[str]:
+    """Pins found by the mutation gate: each line below killed a surviving mutant."""
+    problems: list[str] = []
+    reset()
+    # Destination kind written in another case / padding, with a provider, is not a kind at all.
+    for kind in (
+        "Internal",
+        "EXTERNAL",
+        " external",
+        "external ",
+        "managed_provider\n",
+        None,
+        ["external"],
+        7,
+        "unknown",
+    ):
+        raw = with_destination("upstream", {"kind": kind, "provider": "acme"})
+        got = code_of_mod(mod, lambda raw=raw: parse(mod, raw))
+        if got != "judge_approval_invalid":
+            problems.append(f"destination kind {kind!r}: {got!r}")
+    # A non-active connection status is not 'active' however it is written.
+    for status in ("Active", " active", "active ", "ACTIVE", "", "revoked"):
+        reset()
+        DB.connections[(ORG_A, CONN_A)].status = status
+        if code_of_mod(mod, lambda: decide(mod)) != "judge_gateway_revoked":
+            problems.append(f"connection status {status!r} treated as active")
+    # Exactly 50 reviewer candidates are accepted, 51 are not.
+    reset()
+    add_all_roles()
+    fifty = tuple((IDP, f"r{i}") for i in range(50))
+    if code_of_mod(mod, lambda: decide(mod, approval=None, human_reviewers=fifty)) != "":
+        problems.append("50 reviewer candidates refused")
+    # casefold, not lower: 'ß' folds to 'ss'.
+    reset()
+    DB.memberships[(ORG_A, IDP, "straße")] = Role.EVALUATOR
+    if (
+        code_of_mod(mod, lambda: _authorize(mod, (IDP, "straße"), producer=(IDP, "strasse")))
+        != "human_reviewer_not_independent"
+    ):
+        problems.append("casefold-equal identities (ß / ss) treated as independent")
+    # Upper-case identities must travel through admission and the judge call exactly.
+    reset()
+    add_all_roles()
+    G.probe_model = G.judge_model = "Judge-Model-V1"
+    G.probe_fp = G.judge_fp = "DEP-A"
+    plan = decide(
+        mod, approval=approval_json(resolved_model="Judge-Model-V1", deployment_fingerprint="DEP-A")
+    )
+    if not _is_private(plan):
+        problems.append(f"upper-case exact identity not admitted ({plan.approval_defect})")
+    else:
+        outcome = run(
+            mod,
+            plan,
+            calibration=h._calibration(
+                judge_model_id="private-judge", judge_model_aliases=("Judge-Model-V1",)
+            ),
+        )
+        if outcome.blocked or outcome.passed is not True:
+            problems.append(f"upper-case exact identity refused at the call ({outcome.code})")
+    # A blocked outcome never reports a verdict.
+    if mod.JudgeOutcome(True, "judge_unavailable").passed is not None:
+        problems.append("a blocked outcome reports a verdict")
     return problems
 
 
@@ -2138,13 +2214,13 @@ for extra in ("ML_ENGINEER", "APPROVER", "VIEWER"):
     )
 fault(
     "F10 approver role check removed",
-    "            if role is None or role not in APPROVER_ROLES:",
+    "            if not _has_role(role, APPROVER_ROLES):",
     "            if role is None:",
     [sc_mode_table_strict],
 )
 fault(
     "F10 reviewer role check removed",
-    "    if role is None or role not in REVIEWER_ROLES:",
+    "    if not _has_role(role, REVIEWER_ROLES):",
     "    if role is None:",
     [sc_human_roles],
 )
@@ -2270,14 +2346,14 @@ fault(
 )
 fault(
     "F16 profile not re-read at the judge call",
-    "    if profile != plan.profile or profile not in STRICT_PROFILES:\n        raise JudgePlanError()",
+    "    if security_profile_rank(profile) != security_profile_rank(plan.profile) or not _is_strict(\n        profile\n    ):\n        raise JudgePlanError()",
     "    if False:\n        raise JudgePlanError()",
     [sc_run_plan_guards],
 )
 fault(
     "F16b profile re-read ignores the job snapshot",
-    "        session, context, plan.project_id, job_profile\n    )\n    if profile != plan.profile",
-    "        session, context, plan.project_id, None\n    )\n    if profile != plan.profile",
+    "        session, context, plan.project_id, job_profile\n    )\n    if security_profile_rank(profile) !=",
+    "        session, context, plan.project_id, None\n    )\n    if security_profile_rank(profile) !=",
     [sc_run_plan_guards],
 )
 fault(
@@ -2330,14 +2406,14 @@ fault(
 )
 fault(
     "F22 oversize approval accepted",
-    "    if not 0 < len(data) <= APPROVAL_MAX_BYTES:",
-    "    if not 0 < len(data):",
+    "    if len(data) > APPROVAL_MAX_BYTES:",
+    "    if False:",
     [sc_parse_strict_table],
 )
 fault(
     "F22b approval size limit off by one",
-    "    if not 0 < len(data) <= APPROVAL_MAX_BYTES:",
-    "    if not 0 < len(data) < APPROVAL_MAX_BYTES:",
+    "    if len(data) > APPROVAL_MAX_BYTES:",
+    "    if len(data) >= APPROVAL_MAX_BYTES:",
     [sc_parse_strict_table],
 )
 fault(
@@ -2396,8 +2472,8 @@ fault(
 )
 fault(
     "F27 disabled accepted for any role",
-    '        if set(value) != {"kind"} or role not in _DISABLEABLE_ROLES:',
-    '        if set(value) != {"kind"}:',
+    "        if not disableable:\n            raise JudgeApprovalInvalidError()\n        return None",
+    "        return None",
     [sc_parse_destinations],
 )
 fault(
@@ -2408,7 +2484,7 @@ fault(
 )
 fault(
     "F29 strict set widened to nothing",
-    "    if profile not in STRICT_PROFILES:",
+    "    if not _is_strict(profile):",
     "    if False:",
     [sc_profile_db_only, sc_mode_table_standard],
 )
@@ -2463,6 +2539,11 @@ TESTS = [
     ),
     ("FTF-0617-B3", "revoked, missing and foreign connections refused", sc_connection_checks),
     ("FTF-0617-B4", "malformed arguments refused before any effect", sc_input_types),
+    (
+        "FTF-0617-B7",
+        "mutation-gate regressions (kind spelling, connection status, ß casefold, 50 reviewers, upper-case identities)",
+        sc_survivor_regressions,
+    ),
     (
         "FTF-0617-B6",
         "error shape (message is the code) and identity-text bounds 0/1/200/201",
