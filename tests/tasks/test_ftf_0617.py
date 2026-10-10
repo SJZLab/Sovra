@@ -232,9 +232,6 @@ def install(mod: types.ModuleType) -> types.ModuleType:
     return mod
 
 
-install(m)
-
-
 def reset() -> None:
     G.reset()
     DB.reset()
@@ -1741,6 +1738,73 @@ def sc_content_free(mod) -> list[str]:
     return problems
 
 
+def sc_error_shape_and_identity_bounds(mod) -> list[str]:
+    problems: list[str] = []
+    for name in dir(mod):
+        cls = getattr(mod, name)
+        if isinstance(cls, type) and issubclass(cls, mod.ZeroEgressJudgePolicyError):
+            err = cls()
+            if str(err) != cls.code or err.args != (cls.code,):
+                problems.append(f"{name}: default message is not exactly its code")
+            if cls.code in ("", None) or not cls.code.isascii():
+                problems.append(f"{name}: no stable code")
+    if str(mod.ZeroEgressJudgePolicyError("custom")) != "custom":
+        problems.append("an explicit message is not carried")
+    reset()
+    add_all_roles()
+    for length, want in (
+        (0, "judge_policy_invalid_input"),
+        (1, "human_reviewer_not_authorized"),
+        (200, "human_reviewer_not_authorized"),
+        (201, "judge_policy_invalid_input"),
+    ):
+        for position in (
+            "reviewer issuer",
+            "reviewer subject",
+            "producer issuer",
+            "producer subject",
+        ):
+            value = "a" * length
+            reviewer = (
+                (value, "x")
+                if position == "reviewer issuer"
+                else (IDP, value)
+                if position == "reviewer subject"
+                else REVIEWER
+            )
+            producer = (
+                (value, "x")
+                if position == "producer issuer"
+                else (IDP, value)
+                if position == "producer subject"
+                else PRODUCER
+            )
+            got = code_of_mod(
+                mod,
+                lambda reviewer=reviewer, producer=producer: _authorize(
+                    mod, reviewer, producer=producer
+                ),
+            )
+            expected = want
+            if position.startswith("producer") and want == "human_reviewer_not_authorized":
+                expected = ""  # the reviewer is valid; only the producer text was bounded
+            if got != expected:
+                problems.append(f"{position} length {length}: {got!r}")
+    for label, value in (
+        ("NUL", "a\x00"),
+        ("LF", "a\n"),
+        ("surrogate", "a\ud800"),
+        ("zero-width", "a\u200b"),
+        ("separator", "a\u2028"),
+    ):
+        if (
+            code_of_mod(mod, lambda value=value: _authorize(mod, (IDP, value)))
+            != "judge_policy_invalid_input"
+        ):
+            problems.append(f"reviewer subject {label} accepted")
+    return problems
+
+
 def sc_str_subclass_inputs(mod) -> list[str]:
     """Exact types only: a `str` / `UUID` subclass can alias another value through __eq__/__hash__."""
     problems: list[str] = []
@@ -2400,6 +2464,11 @@ TESTS = [
     ("FTF-0617-B3", "revoked, missing and foreign connections refused", sc_connection_checks),
     ("FTF-0617-B4", "malformed arguments refused before any effect", sc_input_types),
     (
+        "FTF-0617-B6",
+        "error shape (message is the code) and identity-text bounds 0/1/200/201",
+        sc_error_shape_and_identity_bounds,
+    ),
+    (
         "FTF-0617-B5",
         "exact types only (str/UUID/datetime/context subclasses)",
         sc_str_subclass_inputs,
@@ -2493,6 +2562,7 @@ def main() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
+    install(m)
     timings: list[tuple[float, str]] = []
     for cid, description, scenario in TESTS:
         started = time.monotonic()
