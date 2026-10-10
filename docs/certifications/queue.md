@@ -24680,3 +24680,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-10T16:15Z — Control plane: FTF-0305 decertified (140/302); FTF-0310 returned
 - **Decertified:** FTF-0305 → PROVISIONAL (reproduced revoked-license-trainable race). **New:** FTF-0305-F1 (0b, top priority). **Returned:** FTF-0310 r2 (0k).
+
+## 2026-10-10T16:34Z — Control plane: FTF-0501 CERTIFIED (141/302)
+- **Certified:** FTF-0501 (API #692 + UI #736, merge 41904e5fe5702a08a12483760c9bc811acfa2ddf); UI UNWIRED, not product-true. Product-true corrected to 44.

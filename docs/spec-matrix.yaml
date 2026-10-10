@@ -7356,10 +7356,10 @@ FTF-0500D:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500d.py
 FTF-0501:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Direct object-storage upload
-  evidence_hash: ''
+  evidence_hash: 41904e5fe5702a08a12483760c9bc811acfa2ddf
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-02, AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500,
@@ -7386,7 +7386,7 @@ FTF-0501:
     (10,000 entries, 10 GiB, 1 MiB) are tested at their exact edges without overriding the constants.
     Not self-certified (Law 4): independent Control-plane L2 re-review
     and a green ci-verdict on the PR are required; `certification_state` stays PROVISIONAL.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: build_direct_upload_router
   proving_test: tests/tasks/test_ftf_0501.py
 FTF-0502:
