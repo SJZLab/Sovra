@@ -24663,3 +24663,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-10T00:10Z — Control plane: FTF-0908 returned (tests only)
 - **Returned:** FTF-0908 r5 (0m): catch the denial inside the scope so a session-level re-bind (F2, F2g) goes RED in the real-PG job; production unchanged.
+
+## 2026-10-10T02:27Z — Control plane: FTF-0501-UI returned
+- **Returned:** FTF-0501-UI r3 (0j): pin UF3 progress counts; terminal unsafe_archive with a drift-proof 422 vocabulary; pin B34.
