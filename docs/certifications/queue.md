@@ -24670,3 +24670,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-10T02:41Z — Control plane: FTF-0908 CERTIFIED (141/302); FTF-0904 returned
 - **Certified:** FTF-0908 (#730, merge d64628a84c85fca8f329741f7493ca1690776ac2); UNWIRED.
 - **Returned:** FTF-0904 r4 (0d): `_PREFIXES` JWT and `_QUOTED_VALUE` quadratics; generated every-rule size sweep through both paths.
+
+## 2026-10-10T03:57Z — Control plane: FTF-H010-P2 ruling
+- **Ruled:** FTF-H010-P2 park resolved (route 3: NULL endpoint_reference for gateway-alias imports; FTF-1001 requalified with P2). P2 re-queued.

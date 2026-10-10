@@ -11034,3 +11034,15 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   (every regex linear, generated sweep) not met - `_PREFIXES` JWT alternative and the first `_QUOTED_VALUE` alternative
   are quadratic (34-184 s at 128-256 KB, both paths, 3.11 and 3.12) with the suite GREEN; the producer swept only the
   percent regex. Docstring still claims "linear".
+
+## 2026-10-10T03:57Z — FTF-H010-P2: park-only PR not certifiable; Control-plane ruling (route 3)
+- **FTF-H010-P2 (child slice): NOT CERTIFIED, nothing implemented** (PR #733, merge 8b2c5130a6145b5934ae5d73bd098dd8b22cb6c1,
+  head d01918b5; 2 tracker files; ci-verdict 114108883674 green with scope "tracker", no P2 test ran). Producer
+  session_01R99cJq84qwmYQqJPyrs3pn ≠ certifier. The verifier reproduced the park reason: `ModelVersion(import_kind=
+  'endpoint', endpoint_reference=<alias>)` refuses every alias (https required; DB CHECK 0009 requires it).
+- **Ruling (route 3):** NULL `endpoint_reference` + alias in `external_provider_model_ref` for gateway imports, via a
+  narrowly widened CHECK in P2's migration 0029 and a minimal FTF-1001 schema edit; FTF-1001's POST still requires an
+  https URL; FTF-1001 requalified at P2's verification (Law 15). Route 2 rejected: it would expose the org-admin-only
+  connection `base_url` to project readers. Route 1 rejected: origin does not distinguish the paths.
+- Verifier note: `tests/tasks/*.py` files must be run as scripts (as CI does); under pytest, `check()` collects
+  failures without failing the run.
