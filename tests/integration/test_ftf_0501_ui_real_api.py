@@ -29,6 +29,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 import uuid
@@ -203,8 +204,13 @@ def main() -> None:
         print(ran.stdout[-6000:])
         print(ran.stderr[-3000:])
         check(f"the Vitest real-API run exits 0 (got {ran.returncode})", ran.returncode == 0)
+        # CI forces colour: strip ANSI escapes before looking for the scenario names.
+        plain = re.sub(r"\x1b\[[0-9;]*m", "", ran.stdout)
         for scenario in ("R1", "R2", "R3"):
-            check(f"the Vitest run executed {scenario}", f" {scenario} real" in ran.stdout)
+            check(
+                f"the Vitest run executed and passed {scenario}",
+                re.search(rf"✓.*\b{scenario} real ", plain) is not None,
+            )
 
     # ---- independent database / bucket verification -------------------------------------
     expected = {
