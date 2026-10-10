@@ -9865,7 +9865,7 @@ FTF-0908:
   certification_state: PROVISIONAL
   criticality: MUST
   description: External provider denial
-  evidence_hash: b159f964e13e3ba924b476f5cd108f9a192f8531
+  evidence_hash: ca2fab9c177795275bb4d8093fb142453385580b
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-14; scenarios=Q23, Q25; deps=FTF-0203, FTF-0901,
@@ -9892,13 +9892,24 @@ FTF-0908:
     any decision, so a denial never commits the caller's pending row. The audit is still written
     on the caller's session (not an independent transaction): a caller must hold no uncommitted
     work, which is now enforced rather than documented. Round 4: the re-bind goes through FTF-0102
-    `set_tenant_context` (`set_config(.., true)`), so it is transaction-local; a real-Postgres
-    check on a pool WITHOUT the reset guard shows a fresh checkout after a caught denial has no
-    tenant context and sees 0 rows; a tenant context that is not an organization id is refused as
-    `external_provider_invalid_request`. Disclosed (Control-plane ruling): a denial inside
-    `with Session(app) as s, s.begin():` surfaces SQLAlchemy's raw `InvalidRequestError` (fails
-    closed, audit row already durable, no production caller uses `session.begin()`); the denial's
-    commit releases advisory transaction locks and drops other `SET LOCAL` settings. The AuditContext is validated up front
+    `set_tenant_context` (`set_config(.., true)`), so it is transaction-local; a tenant context
+    that is not an organization id is refused as `external_provider_invalid_request`. Disclosed
+    (Control-plane ruling): a denial inside `with Session(app) as s, s.begin():` surfaces
+    SQLAlchemy's raw `InvalidRequestError` (fails closed, audit row already durable, no production
+    caller uses `session.begin()`); the denial's commit releases advisory transaction locks and
+    drops other `SET LOCAL` settings. Round 5 (test-only fix, no production change): round 4's own
+    real-Postgres check caught the denial OUTSIDE `tenant_scoped_session`'s `with` block, so the
+    scope always took its rollback path -- and Postgres undoes a plain `SET` exactly like
+    `SET LOCAL` on ROLLBACK (only on COMMIT do they differ: `SET`'s effect survives for the
+    session, `SET LOCAL`'s does not), so a session-level re-bind leak was never actually
+    exercised. Fixed by catching the denial INSIDE the `with` block (the real calling pattern: a
+    denial is handled, not left to propagate), so `tenant_scoped_session` takes its commit path.
+    Proven both ways on a pool WITHOUT the reset guard: with `set_tenant_context` monkeypatched to
+    a session-level `set_config(.., false)` (the observable shape of fault F2, "re-bind replaced
+    by a hand-written `set_config(..., false)`", and fault F2g, "a module-local `set_tenant_context`
+    doing the same, call text unchanged") a fresh checkout after the commit sees the leaked tenant
+    and one visible row; with the real transaction-local re-bind, the same fresh checkout sees no
+    tenant context and 0 rows. The AuditContext is validated up front
     (`external_provider_invalid_request`). Unknown, str-subclass or unhashable values raise
     `external_provider_invalid_request`. No network call (counting socket test shows zero).
     UNWIRED: no live caller yet (training/inference submit paths are later tasks) and no persisted

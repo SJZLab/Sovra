@@ -20,6 +20,12 @@ session -- stay green. This test runs the real default code on a real
 * org2 cannot read org1's denial row (RLS read isolation);
 * the row carries the AuditContext's organization, actor and request.
 
+Round 5 (fixing round 4's own FTF-0908-R4-1 check, QUEUE 0m): a denial must be
+caught INSIDE the `tenant_scoped_session` block for the post-commit tenant
+re-bind check to mean anything -- see the comment above `_rebind_leak_probe`
+below for why round 4's catch-outside-the-`with` version could never go RED on
+a real leak (faults F2/F2g).
+
 Requires a live Postgres at `SOVRA_DATABASE_URL` (migration owner) plus
 `SOVRA_APP_DB_PASSWORD`, like every prior integration test. Run directly:
     SOVRA_DATABASE_URL=postgresql+psycopg://<owner>@host/db \\
@@ -41,6 +47,7 @@ API_ROOT = ROOT / "apps" / "api"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(API_ROOT))
 
+import packages.security.external_provider_denial as epd_module  # noqa: E402
 from packages.security.external_provider_denial import (  # noqa: E402
     AuditContext,
     ExternalProviderDecision,
@@ -375,11 +382,31 @@ def main() -> None:
             denied_rows(pending_request) == [],
         )
 
-    # -- R4-1. The post-commit tenant re-bind is transaction-local. A pool WITHOUT the
-    # reset guard (pool_size=1, so the next checkout is the same connection) must hand a
-    # fresh checkout no tenant context after a caught denial and a normal exit of the
-    # tenant-scoped session. A session-level re-bind (set_config(.., false)) leaks the
-    # tenant onto the pooled connection and this check goes RED.
+    # -- R4-1 (round 5 fix). The post-commit tenant re-bind is transaction-local. A pool
+    # WITHOUT the reset guard (pool_size=1, so the next checkout is the same connection)
+    # must hand a fresh checkout no tenant context after a denial and a NORMAL exit of
+    # the tenant-scoped session -- the real calling pattern (a request handler catches
+    # `ExternalProviderDeniedError` to turn it into a 4xx response; it does not let it
+    # propagate out of the unit of work). The denial must be caught INSIDE the `with`
+    # block, around only the `authorize_external_provider` call: that is what makes
+    # `tenant_scoped_session`'s own `yield`/`session.commit()` run on a normal return
+    # from the body, instead of its `except BaseException: session.rollback(); raise`.
+    # This matters because Postgres only distinguishes `SET` from `SET LOCAL` on COMMIT
+    # (SET's effect survives commit and leaks onto the pooled connection; SET LOCAL's
+    # effect ends there) -- on ROLLBACK both are undone along with the rest of the
+    # transaction. Round 4's version put the `try`/`except` around the whole `with`
+    # statement, so the denial always propagated out of the body and the scope always
+    # rolled back -- which discards a session-level re-bind (`set_config(.., false)`)
+    # exactly as it discards the correct transaction-local one, so a real leak into the
+    # pool was never exercised. Proven below with a real fault: monkeypatching this
+    # module's `set_tenant_context` to a session-level `set_config(.., false)` (the
+    # observable shape of both fault F2, "re-bind replaced by a hand-written
+    # `set_config(..., false)`", and fault F2g, "a module-local `set_tenant_context`
+    # doing the same, call text unchanged" -- a monkeypatch changes what the imported
+    # name resolves to without touching the call site, which is exactly F2g's shape, and
+    # produces the identical runtime SQL as F2's hand-edited call site) makes the
+    # fresh-checkout check RED under the commit path; the same fault is invisible under
+    # the round-4 rollback-only path.
     bare_engine = create_engine(
         _app_role_url(migration_url, app_password), pool_size=1, max_overflow=0
     )
@@ -387,31 +414,77 @@ def main() -> None:
     def bare_factory() -> Session:
         return Session(bare_engine)
 
-    try:
+    def _rebind_leak_probe(check_id: str) -> tuple[str | None, int]:
+        """Run one denial under a NORMAL (commit-path) exit and report what a
+        fresh checkout of the same pooled connection sees afterwards."""
+        request_id = f"req-{check_id.lower()}-{uuid.uuid4().hex[:8]}"
         with tenant_scoped_session(bare_factory, org1_id) as session:
-            authorize_external_provider(
-                _request(profile="zero_egress"),
-                _approval(),
-                AuditContext(
-                    session, org1_id, "system", "actor-0908", f"req-r4-{uuid.uuid4().hex[:8]}"
-                ),
-            )
-    except ExternalProviderDeniedError:
-        pass
-    with bare_engine.connect() as fresh:
-        guc = fresh.execute(
-            text("SELECT current_setting('app.current_organization_id', true)")
-        ).scalar_one()
-        visible = fresh.execute(select(func.count()).select_from(Organization)).scalar_one()
+            try:
+                authorize_external_provider(
+                    _request(profile="zero_egress"),
+                    _approval(),
+                    AuditContext(session, org1_id, "system", "actor-0908", request_id),
+                )
+            except ExternalProviderDeniedError:
+                # Caught INSIDE the with block: the body returns normally, so
+                # `tenant_scoped_session` takes its `session.commit()` path, not
+                # its rollback one. This is the real calling pattern.
+                pass
+        with bare_engine.connect() as fresh:
+            guc = fresh.execute(
+                text("SELECT current_setting('app.current_organization_id', true)")
+            ).scalar_one()
+            visible = fresh.execute(select(func.count()).select_from(Organization)).scalar_one()
+        return (guc, visible)
+
+    # -- R5-1. Fault injection first: a session-level re-bind (F2 / F2g's observable
+    # shape) must leak the tenant onto the pooled connection once the scope actually
+    # commits. If this does not go RED, the check below it proves nothing.
+    real_set_tenant_context = epd_module.set_tenant_context
+
+    def _broken_set_tenant_context_f2(session: Session, organization_id: uuid.UUID) -> None:
+        session.execute(
+            text("SELECT set_config('app.current_organization_id', :org_id, false)"),
+            {"org_id": str(organization_id)},
+        )
+
+    epd_module.set_tenant_context = _broken_set_tenant_context_f2
+    try:
+        fault_guc, fault_visible = _rebind_leak_probe("r5-1-fault")
+    finally:
+        epd_module.set_tenant_context = real_set_tenant_context
+        # The fault's session-level `SET` (is_local=false) survives on the pooled
+        # connection past both COMMIT and the pool's default rollback-on-return (neither
+        # clears a session-level setting) -- that is the leak this probe exists to show.
+        # Left alone, it would also contaminate the next (real) probe on this same
+        # pool_size=1 connection, since the real code's own SET LOCAL only shadows the
+        # session-level value for the duration of its transaction and the old session
+        # value re-emerges once that transaction ends. Dispose so the next checkout is a
+        # genuinely fresh physical connection, not a reused one carrying this fault's
+        # leftover state.
+        bare_engine.dispose()
+    check(
+        "FTF-0908-R5-1",
+        f"fault F2/F2g (session-level re-bind) leaks onto a fresh checkout as expected "
+        f"(guc={fault_guc!r}, visible={fault_visible}) -- if this is not GREEN, the "
+        "round-4 check below cannot be trusted",
+        fault_guc == str(org1_id) and fault_visible == 1,
+    )
+
+    # -- R4-1. With the real (transaction-local) re-bind restored, the same commit-path
+    # probe -- on a connection that never saw the fault above -- must show no leak.
+    real_guc, real_visible = _rebind_leak_probe("r4-1")
     check(
         "FTF-0908-R4-1",
-        f"a fresh checkout after a denial has no tenant context (guc={guc!r})",
-        guc in (None, ""),
+        f"a fresh checkout after a denial that commits normally has no tenant context "
+        f"(guc={real_guc!r})",
+        real_guc in (None, ""),
     )
     check(
         "FTF-0908-R4-1",
-        f"a fresh checkout after a denial sees 0 tenant rows (visible={visible})",
-        visible == 0,
+        f"a fresh checkout after a denial that commits normally sees 0 tenant rows "
+        f"(visible={real_visible})",
+        real_visible == 0,
     )
     bare_engine.dispose()
 
