@@ -11046,3 +11046,21 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   connection `base_url` to project readers. Route 1 rejected: origin does not distinguish the paths.
 - Verifier note: `tests/tasks/*.py` files must be run as scripts (as CI does); under pytest, `check()` collects
   failures without failing the run.
+
+## 2026-10-10T15:50Z — RETURNED: FTF-H010-P3a (r2), FTF-0616-F1 (r2)
+- **FTF-H010-P3a (child slice): RETURNED** (round 1 → 2; PR #734, merge f5c83e684f9ec4ccdfddce81acbe153f7f36ffd5, head
+  3a4ad850). Producer session_01R99cJq84qwmYQqJPyrs3pn ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict green;
+  gate job 114121370854 "OK -- 111088 checks in 62 suite runs, 61 faults RED". No artifact execution (audit hook), codes-only
+  errors; 292 probes; 18 verifier faults RED. Return: unbounded shape product reproduced (quadratic; 139 s at 4.2 MB;
+  dimensions > 2^64-1 accepted); negative-dimension, lora_A rank and PEFT-prefix clauses unpinned (faults GREEN or caught
+  only by the patch-text guard).
+- **FTF-0616-F1 (follow-up on FTF-0616): RETURNED** (round 1 → 2, tests only; PR #720, merge
+  2c7967a589cab64b488234b72b0bbdf971df08f7, head 8b099b3b). Producer session_01YBNR44CU4yRUVTWaWkzAVD ≠ certifier. CI:
+  ci-verdict 114087693892; gate 114079326937 (live TLS); mutation-gate 114079326756 ran in diff mode. Production correct
+  (72 pure + 35 wire probes, 0 violations; 25 of 34 verifier faults RED). Return: golden request test self-referential
+  (G-MAXTOK/G-STREAM/G-SYSMSG/G-ENSUREASCII GREEN); header value and name normalisers GREEN against the FTF-0616
+  property-generated Unicode ruling (V-STRIP reproduced on the wire); submission misstates the mutation scope.
+- **FTF-0616 Law 15 requalification at 2c7967a5: PARTIAL, no regression found.** Whole suite passes in default mode and
+  with FTF_0616_FULL_SWEEP=1 (local live TLS and CI); FTF-0616 lines unchanged (additive diff); round-8 behaviour identical.
+  The verifier's uncapped whole-file mutation run did not finish (the verifier stopped on an API usage limit). FTF-0616
+  stays CERTIFIED; the uncapped mutation is required at F1 round 2's verification.
