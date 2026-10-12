@@ -999,6 +999,10 @@ artifact = TrainableArtifact(
     trust_remote_code_allowed=False, status="registered",
 )
 artifact.id = uuid.uuid4()
+# FTF-0305-F1: trainability also requires an accepted license, so this fault probe
+# accepts one -- otherwise the license gate (not the ready-only gate) would hold.
+artifact.license_accepted_by = "reviewer-1"
+artifact.license_accepted_at = datetime.now(UTC)
 result = classify_training_capability(
     model_id="gpt-a", organization_id=_ORG, reconciliation=recon, probe=None, artifact=artifact
 )
@@ -1133,6 +1137,10 @@ artifact = TrainableArtifact(
     trust_remote_code_allowed=False, status="ready",
 )
 artifact.id = uuid.uuid4()
+# FTF-0305-F1: trainability also requires an accepted license; this fault probe has one so the
+# guard under test (not the license gate) is what holds.
+artifact.license_accepted_by = "reviewer-1"
+artifact.license_accepted_at = datetime.now(UTC)
 result = classify_training_capability(
     model_id="gpt-a", organization_id=_ORG, reconciliation=recon, probe=None, artifact=artifact
 )
@@ -1165,6 +1173,10 @@ artifact = TrainableArtifact(
     trust_remote_code_allowed=False, status="ready",
 )
 artifact.id = uuid.uuid4()
+# FTF-0305-F1: trainability also requires an accepted license; this fault probe has one so the
+# guard under test (not the license gate) is what holds.
+artifact.license_accepted_by = "reviewer-1"
+artifact.license_accepted_at = datetime.now(UTC)
 artifact.weights_digest = "sha256:"
 result = classify_training_capability(
     model_id="gpt-a", organization_id=_ORG, reconciliation=recon, probe=None, artifact=artifact
@@ -1245,6 +1257,10 @@ artifact = TrainableArtifact(
     trust_remote_code_allowed=False, status="ready",
 )
 artifact.id = uuid.uuid4()
+# FTF-0305-F1: trainability also requires an accepted license; this fault probe has one so the
+# guard under test (not the license gate) is what holds.
+artifact.license_accepted_by = "reviewer-1"
+artifact.license_accepted_at = datetime.now(UTC)
 result = classify_training_capability(
     model_id="gpt-a", organization_id=_ORG, reconciliation=recon, probe=None, artifact=artifact
 )
