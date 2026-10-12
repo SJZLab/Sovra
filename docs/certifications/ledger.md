@@ -11078,3 +11078,29 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   capability-contract-integration 114124516554 (72 cells, 8 FINDING lines for the exempted license cells); gate
   114124474947. Return: the 8 license cells are exempted by `api_reachable()` on a refuted premise; date-time checking
   is not RFC 3339 (V8/V9 GREEN); checker ignores non-false additionalProperties; V3 GREEN in integration.
+
+## 2026-10-10T16:34Z — CERTIFIED: FTF-0501 (141/302)
+- **FTF-0501: CERTIFIED.** API half: PR #692 (merge b99723744b582685793be7c494fe6f1fc0100fa2), passed L2 2026-10-09 and
+  re-passed at #727 and #736. Resumable UI slice FTF-0501-UI: round 3, PR #736 (merge 41904e5fe5702a08a12483760c9bc811acfa2ddf, head 8107dd71), production
+  change `unsafe_archive` terminal. Session comparison: producers session_01W5sGbcHuyQj4HWKtsmQnKB (API),
+  session_01Cz8ktmhVtwPfswTkMft7yJ / session_014ggVH3xe8FEvP7NERrLSnc / session_01YagVF3XQsQyi4yTUXXcE1J /
+  session_01LzDqGuFqZSWvUYNaUNaVLf (UI rounds) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent from every PR. CI:
+  ci-verdict 114114763764; resumable-upload-ui-real-api-integration 114110976715 (PG16 + SeaweedFS R1-R3 passed); gate
+  114110937411 (1407 vitest tests, "FTF-0501 direct upload tests: all checks passed"); API jobs green. Local: UI spec
+  1073/1073; real-API suite on PG16 as sovra_app + SeaweedFS; all API suites. 156 component probes + real-router RP1/
+  RP12/RP13 (unsafe archives terminal, server session rejected) clean; 99 faults, 88 RED incl. UF3 (4 tests), UA1-UA7,
+  B34, DR1-DR3; GREEN only equivalents and hand-picked variants of the closed stale-reply class (B34b-f) plus DR4/DR5
+  (drift test regex; client default fail-safe). Advisories: opt-in storageOrigin pin (FTF-H029 mount should pass it),
+  lenient timestamp parse, expired grant still used (S3 refuses). The upload API (build_direct_upload_router) is live;
+  the resumable UI is UNWIRED until FTF-H029, so FTF-0501 is not counted product-true (Law 7, FTF-0309 precedent).
+- **Correction:** product-true after FTF-0305's decertification is 44 (FTF-0305 carried proving_symbol
+  apply_revoke_license); the 16:15Z entry said 45.
+
+## 2026-10-12T03:39Z — RETURNED: FTF-0904 (r5)
+- **FTF-0904: RETURNED** (round 4 → 5; PR #739, merge 62674e861da6447c849787137942f5992e159c94, head 50347cb3). Producer
+  session_018NKAtbgQu3JkMkM7NkRbCg (production commit b82d6d12 has no trailer) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR.
+  CI: ci-verdict 114126560924; gate 114123432681 "FTF-0904 Log redaction tests: all checks passed" (SyntaxWarning on the
+  docstring); mutation 0 mutants. Quadratics closed (99-shape x 6-size sweep linear, 2376 runs). Return: the fix caps
+  match length - JWT payload > 1024 chars and escaped values > 8192 chars leak verbatim (reproduced, regressions from
+  round 3); F-QV-QUAD, V-JWT-BOUND-40, V-QV-BOUND-16 GREEN; suite flaky on an unmutated module (2/4 idle runs).
+  Ruling: a bounded match is a leak; linear AND unbounded, proven by a time sweep and a long-secret sweep for every rule.
