@@ -269,7 +269,7 @@ class _FakeSession:
         text_sql = str(compiled)
         self.sql.append((text_sql, dict(compiled.params), dict(clause.get_execution_options())))  # type: ignore[attr-defined]
         target = next((v for v in compiled.params.values() if isinstance(v, uuid.UUID)), None)
-        art = self.rows.get(target) if target is not None else None  # type: ignore[arg-type]
+        art = self.rows.get(target) if target is not None else None
         if text_sql.startswith("SELECT trainable_artifacts.organization_id"):
             return _Result([(art.organization_id,)] if art is not None else [])
         if self.hide_after_ownership:
@@ -291,7 +291,7 @@ def _world(status: str = "registered", accepted: bool = True):
 
 def test_fetch_or_raise_contract() -> None:
     art, sess = _world()
-    got = crud._fetch_or_raise(sess, _CTX, art.id)  # type: ignore[arg-type]
+    got = crud._fetch_or_raise(sess, _CTX, art.id)
     check("F1-LOCK", "unlocked fetch returns the row", got is art)
     check("F1-LOCK", "unlocked fetch has no FOR UPDATE", "FOR UPDATE" not in sess.sql[-1][0])
     check(
@@ -300,7 +300,7 @@ def test_fetch_or_raise_contract() -> None:
         art.id in sess.sql[-1][1].values(),
     )
     art2, sess2 = _world()
-    got2 = crud._fetch_or_raise(sess2, _CTX, art2.id, lock=True)  # type: ignore[arg-type]
+    got2 = crud._fetch_or_raise(sess2, _CTX, art2.id, lock=True)
     sql, params, opts = sess2.sql[-1]
     check("F1-LOCK", "locked fetch returns the row", got2 is art2)
     check("F1-LOCK", "locked fetch is FOR UPDATE", sql.rstrip().endswith("FOR UPDATE"))
@@ -313,7 +313,7 @@ def test_fetch_or_raise_contract() -> None:
     )
     for bad in ("not-a-uuid", str(art.id), None, 7):
         try:
-            crud._fetch_or_raise(sess, _CTX, bad, lock=True)  # type: ignore[arg-type]
+            crud._fetch_or_raise(sess, _CTX, bad, lock=True)
             check("F1-LOCK", f"non-UUID id {bad!r} refused", False)
         except crud.ArtifactNotFoundError as exc:
             check(
@@ -330,14 +330,14 @@ def test_fetch_or_raise_contract() -> None:
     foreign, fsess = _world()
     foreign.organization_id = uuid.uuid4()
     try:
-        crud._fetch_or_raise(fsess, _CTX, foreign.id, lock=True)  # type: ignore[arg-type]
+        crud._fetch_or_raise(fsess, _CTX, foreign.id, lock=True)
         check("F1-LOCK", "foreign-tenant id refused identically", False)
     except crud.ArtifactNotFoundError:
         pass
     vanish, vsess = _world()
     vsess.hide_after_ownership = True
     try:
-        crud._fetch_or_raise(vsess, _CTX, vanish.id, lock=True)  # type: ignore[arg-type]
+        crud._fetch_or_raise(vsess, _CTX, vanish.id, lock=True)
         check("F1-LOCK", "a row that vanishes mid-transaction is refused", False)
     except crud.ArtifactNotFoundError as exc:
         check("F1-LOCK", "vanished-row message names the artifact", str(vanish.id) in str(exc))
