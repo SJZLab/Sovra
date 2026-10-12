@@ -11095,3 +11095,12 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   the resumable UI is UNWIRED until FTF-H029, so FTF-0501 is not counted product-true (Law 7, FTF-0309 precedent).
 - **Correction:** product-true after FTF-0305's decertification is 44 (FTF-0305 carried proving_symbol
   apply_revoke_license); the 16:15Z entry said 45.
+
+## 2026-10-12T03:39Z — RETURNED: FTF-0904 (r5)
+- **FTF-0904: RETURNED** (round 4 → 5; PR #739, merge 62674e861da6447c849787137942f5992e159c94, head 50347cb3). Producer
+  session_018NKAtbgQu3JkMkM7NkRbCg (production commit b82d6d12 has no trailer) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR.
+  CI: ci-verdict 114126560924; gate 114123432681 "FTF-0904 Log redaction tests: all checks passed" (SyntaxWarning on the
+  docstring); mutation 0 mutants. Quadratics closed (99-shape x 6-size sweep linear, 2376 runs). Return: the fix caps
+  match length - JWT payload > 1024 chars and escaped values > 8192 chars leak verbatim (reproduced, regressions from
+  round 3); F-QV-QUAD, V-JWT-BOUND-40, V-QV-BOUND-16 GREEN; suite flaky on an unmutated module (2/4 idle runs).
+  Ruling: a bounded match is a leak; linear AND unbounded, proven by a time sweep and a long-secret sweep for every rule.

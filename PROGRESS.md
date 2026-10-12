@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-10T16:34Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-12T03:39Z. Source: `python3 scripts/status.py` on main.
 - **Status: 141/302 certified · 44 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   status.py prints 46 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7). Correction: the
@@ -13,6 +13,9 @@ Updated: 2026-10-10T16:34Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-12T03:39Z:**
+  - No relay merges since 2026-10-10T04:02Z; relay and verifier sessions were stopped by an API usage limit (2026-10-10 ~04:00Z and again after ~16:40Z).
+  - Returned: FTF-0904 r5. The quadratics are fixed, but by capping match length, which leaks real JWTs over 1024 chars and escaped values over 8192 chars. Ruling: a bounded match is a leak; every rule must be linear and unbounded, with a long-secret sweep.
 - **2026-10-10T16:34Z:**
   - CERTIFIED: FTF-0501 (direct object-storage upload), after the API (round 3) and resumable UI (round 3) both passed. The upload API is live; the UI is UNWIRED until FTF-H029, so product-true stays 44.
 - **2026-10-10T16:15Z:**
