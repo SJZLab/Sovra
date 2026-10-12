@@ -2412,6 +2412,7 @@ def group_round2(m: Any) -> None:
     check("R2", "[-1,-1] F32 with offsets [0,4] -> shape", reason_of(m, parse, m, raw) == "shape")
 
     cc = m.check_adapter_base_compatibility
+
     def header(tensors: dict[str, tuple[str, list[int]]]) -> Any:
         return parse(m, st_file(tensors))
 
