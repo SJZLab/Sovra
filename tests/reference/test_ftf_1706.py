@@ -290,6 +290,37 @@ def test_license_checks() -> None:
     check("FTF-1706-A2", "empty allow-list approves nothing", c.kind is CandidateKind.BLOCKED)
 
 
+def test_unlicensed_artifact_names_its_cause_and_is_never_tunable() -> None:
+    """FTF-0305-F1: a ready artifact without an accepted license classifies unknown; the
+    candidate must still say why, and a registered one must not claim a license reason."""
+    c = by_id(run(["m"], artifacts_by_model={"m": artifact(accepted=False)}), "m")
+    check(
+        "FTF-0305-F1",
+        "ready + unlicensed is blocked, never tunable, with the license reason and state",
+        c.kind is CandidateKind.BLOCKED
+        and c.capability.value == "unknown"
+        and c.license is LicenseState.NOT_ACCEPTED
+        and "license_not_accepted" in c.blocked_reasons
+        and "capability_unknown" in c.blocked_reasons,
+    )
+    c = by_id(
+        run(["m"], artifacts_by_model={"m": artifact(status="registered", accepted=False)}), "m"
+    )
+    check(
+        "FTF-0305-F1",
+        "registered + unlicensed reports capability_unknown only",
+        c.kind is CandidateKind.BLOCKED
+        and c.license is LicenseState.NOT_APPLICABLE
+        and c.blocked_reasons == ("capability_unknown",),
+    )
+    c = by_id(run(["m"], artifacts_by_model={"m": artifact(accepted=True)}), "m")
+    check(
+        "FTF-0305-F1",
+        "ready + licensed stays tunable with no license reason",
+        c.kind is CandidateKind.TUNABLE and "license_not_accepted" not in c.blocked_reasons,
+    )
+
+
 def test_method_checks() -> None:
     c = by_id(run(["m"], artifacts_by_model={"m": artifact(gpu={})}), "m")
     check(
