@@ -313,6 +313,17 @@ def test_unlicensed_artifact_names_its_cause_and_is_never_tunable() -> None:
         and c.license is LicenseState.NOT_APPLICABLE
         and c.blocked_reasons == ("capability_unknown",),
     )
+    for odd in (" READY ", "Ready", "ready "):
+        odd_art = artifact(accepted=False)
+        odd_art.status = odd
+        c = by_id(run(["m"], artifacts_by_model={"m": odd_art}), "m")
+        check(
+            "FTF-0305-F1",
+            f"status {odd!r} is not 'ready': no license reason, only capability_unknown",
+            c.kind is CandidateKind.BLOCKED
+            and c.license is LicenseState.NOT_APPLICABLE
+            and c.blocked_reasons == ("capability_unknown",),
+        )
     c = by_id(run(["m"], artifacts_by_model={"m": artifact(accepted=True)}), "m")
     check(
         "FTF-0305-F1",
