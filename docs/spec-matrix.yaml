@@ -8310,7 +8310,7 @@ FTF-0516:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Dataset issue resolution UI
-  evidence_hash: 28ffd996756cff3f907b8f5c0605780fbfe295fa
+  evidence_hash: ea0256a6fd9ec751693b607f9567414b160eb21c
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0515.
@@ -8334,6 +8334,13 @@ FTF-0516:
     Fault table: docs/certifications/submissions/2026-10-09T2015Z-FTF-0516-r3.md. Disclosed UNWIRED
     (Law 6/7): no Next.js page tree (FTF-H029), so no Playwright journey from /; proving_symbol
     stays blank. Fault -> RED table: docs/certifications/submissions/2026-10-09T1650Z-FTF-0516-UI.md.
+    Round 4 (relay/FTF-0516-r4, 69 tests): generated strict-parse tables over every contract
+    field of the report, issue, decision and resolve-response shapes (wrong JSON type, out-of-enum,
+    missing, extra key; legal alternates as positive controls); an uppercase-typed successor is
+    sent lowercase; a replay accepts the report's current top-level version (>= expected + 1) while
+    a fresh decision must equal expected + 1; integers are safe integers; timestamps are RFC 3339;
+    decision reasons are at most 2000 characters. Fault table:
+    docs/certifications/submissions/2026-10-12T0530Z-FTF-0516-r4.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_0516.spec.ts
