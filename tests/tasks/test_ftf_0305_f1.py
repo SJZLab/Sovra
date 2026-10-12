@@ -313,7 +313,7 @@ def test_fetch_or_raise_contract() -> None:
     )
     for bad in ("not-a-uuid", str(art.id), None, 7):
         try:
-            crud._fetch_or_raise(sess, _CTX, bad, lock=True)
+            crud._fetch_or_raise(sess, _CTX, bad, lock=True)  # type: ignore[arg-type]
             check("F1-LOCK", f"non-UUID id {bad!r} refused", False)
         except crud.ArtifactNotFoundError as exc:
             check(
