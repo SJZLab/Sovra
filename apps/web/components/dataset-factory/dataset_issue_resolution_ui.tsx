@@ -110,6 +110,7 @@ const REASON_MAX = 2000;
 const PAGE_SIZE = 50;
 const SHA256 = /^[0-9a-f]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DATE_TIME = /^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/;
 const ACTIONS: IssueAction[] = ["exclude", "correct", "new_version", "waive"];
 const ROLES = ["ml_engineer", "workspace_admin", "organization_admin"];
 
@@ -199,8 +200,11 @@ function isSha(value: unknown): value is string {
 function isUuid(value: unknown): value is string {
   return typeof value === "string" && UUID.test(value);
 }
+function isDateTime(value: unknown): value is string {
+  return typeof value === "string" && DATE_TIME.test(value) && !Number.isNaN(Date.parse(value));
+}
 function isCount(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 function isIntArray(value: unknown): value is number[] {
   return Array.isArray(value) && value.every(isCount);
@@ -238,14 +242,15 @@ export function parseResolution(body: unknown): DatasetIssueResolution | null {
     (body.after_evidence_sha256 === null || isSha(body.after_evidence_sha256)) &&
     isStr(body.reason) &&
     body.reason.trim() !== "" &&
+    [...body.reason].length <= REASON_MAX &&
     isStr(body.actor_id) &&
     body.actor_id.trim() !== "" &&
     isStr(body.actor_role) &&
     ROLES.includes(body.actor_role) &&
     typeof body.resolution_version_after === "number" &&
-    Number.isInteger(body.resolution_version_after) &&
+    Number.isSafeInteger(body.resolution_version_after) &&
     body.resolution_version_after >= 1 &&
-    isStr(body.created_at);
+    isDateTime(body.created_at);
   return ok ? (body as unknown as DatasetIssueResolution) : null;
 }
 
@@ -342,8 +347,8 @@ export function parseReport(body: unknown): DatasetQualityReport | null {
     typeof body.blocks_training === "boolean" &&
     isStr(body.residual_risk_disclosure) &&
     body.residual_risk_disclosure !== "" &&
-    isStr(body.created_at) &&
-    isStr(body.updated_at);
+    isDateTime(body.created_at) &&
+    isDateTime(body.updated_at);
   return ok ? (body as unknown as DatasetQualityReport) : null;
 }
 
@@ -390,7 +395,7 @@ function parseResolveResponse(body: unknown): {
   if (
     !isUuid(body.quality_report_id) ||
     typeof body.resolution_version !== "number" ||
-    !Number.isInteger(body.resolution_version) ||
+    !Number.isSafeInteger(body.resolution_version) ||
     body.resolution_version < 1 ||
     typeof body.replayed !== "boolean" ||
     items === null ||
@@ -616,6 +621,9 @@ export function DatasetIssueResolutionUI({
     loaded && selected ? (loaded.issues.find((i) => i.issue_id === selected) ?? null) : null;
   const reason = validReason(draft.reason);
   const successorOk = isUuid(draft.successor.trim());
+  // The server stores and echoes UUIDs lowercase; send the canonical form so an uppercase-typed
+  // successor is not reported as a mismatched response.
+  const successorSent = draft.successor.trim().toLowerCase();
   const needsSuccessor = draft.action === "correct" || draft.action === "new_version";
   const problems: string[] = [];
   if (issue) {
@@ -646,7 +654,7 @@ export function DatasetIssueResolutionUI({
     if (draft.action === "exclude") {
       item.excluded_batch_positions = sentPositions(draft);
     }
-    if (needsSuccessor) item.successor_dataset_id = draft.successor.trim();
+    if (needsSuccessor) item.successor_dataset_id = successorSent;
     return JSON.stringify({
       quality_report_id: report.id,
       expected_resolution_version: report.resolution_version,
@@ -668,7 +676,7 @@ export function DatasetIssueResolutionUI({
       beforeEvidence: sent.evidence_sha256,
       reason: reason as string,
       positions: sentAction === "exclude" ? sentPositions(draft) : [],
-      successor: needsSuccessor ? draft.successor.trim() : null,
+      successor: needsSuccessor ? successorSent : null,
     };
     // The same key only for a retry of an identical request that did not conclude.
     if (attempt.current === null || attempt.current.body !== bodyText) {
@@ -701,7 +709,12 @@ export function DatasetIssueResolutionUI({
       if (
         parsed === null ||
         parsed.quality_report_id !== report.id ||
-        parsed.resolution_version !== expected.expectedVersion + 1 ||
+        // A replay returns the report's CURRENT version, which later decisions on other issues may
+        // have raised; only a fresh decision lands exactly on expected + 1. The decision's own
+        // resolution_version_after is bound to expected + 1 either way.
+        (parsed.replayed
+          ? parsed.resolution_version < expected.expectedVersion + 1
+          : parsed.resolution_version !== expected.expectedVersion + 1) ||
         parsed.items.length !== 1 ||
         decision === null ||
         !decisionMatchesRequest(decision, expected)
