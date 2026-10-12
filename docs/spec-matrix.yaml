@@ -2322,11 +2322,15 @@ FTF-0310:
     tests/integration/test_ftf_0310_capability_contract.py (real routers on PostgreSQL 16, 72
     cells = 4 source types x 3 statuses x 3 license states x mapped/unmapped, each response
     validated against the frozen schemas; upstream-only and unresolvable names never trainable;
-    generated table derived from real responses). FINDING, reported not fixed: the capability
-    route reports trainable_open_weight for a ready artifact with no accepted license (8 of the
-    72 cells), because classify_training_capability does not check license_approved. The public
-    API cannot create that state (mark-ready requires an accepted license, revoke-license
-    demotes ready to registered), so it needs a direct database write. A second finding:
+    generated table derived from real responses). Round 2 (2026-10-12, relay/FTF-0310-r2): the earlier
+    FINDING (a ready artifact with no accepted license reported trainable) is closed by FTF-0305-F1 (row lock,
+    migration 0029 CHECK, classifier license term); the api_reachable exemption is REMOVED, all 72 cells are
+    asserted (the 8 ready + pending/revoked cells are seeded with the CHECK lifted for the matrix only, then
+    archived and the CHECK restored), and a deterministic held-lock interleave over the real mark-ready and
+    revoke-license routes is RED without the row lock. The checker now scans the whole schema before validating
+    (unsupported keyword, type or format, any non-false additionalProperties, malformed containers), enforces RFC 3339
+    date-time only, reads the /changes response schema from the frozen document, and the generator dedupes with its
+    own exact equality. A second finding:
     ModelTrainingArtifactMappingResult in the frozen file is allOf of a closed object plus
     `changed`, which standard JSON Schema semantics can never accept, so the POST result is
     validated with `changed` removed against ModelTrainingArtifactMapping.

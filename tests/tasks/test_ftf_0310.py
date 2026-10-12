@@ -29,6 +29,7 @@ import hashlib
 import shutil
 import sys
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -439,14 +440,19 @@ def test_k6_expected_trainable() -> None:
     )
     check(
         "K6",
-        "exactly the ready cells without an approved license are API-unreachable",
-        {(c["status"], c["license"]) for c in cells if not cct.api_reachable(c)}
-        == {("ready", "pending"), ("ready", "revoked")},
+        "there is no API-reachability exemption: every cell's trainability is asserted",
+        not hasattr(cct, "api_reachable"),
+    )
+    ready_unlicensed = [c for c in cells if c["status"] == "ready" and c["license"] != "approved"]
+    check(
+        "K6",
+        f"the ready + pending/revoked cells are in the matrix ({len(ready_unlicensed)})",
+        len(ready_unlicensed) == len(CONTRACT.enum_values("SourceType")) * 2 * 2,
     )
     check(
         "K6",
-        "every trainable cell is API-reachable",
-        all(cct.api_reachable(c) for c in cells if cct.expected_trainable(c)),
+        "every ready + pending/revoked cell, mapped or not, is expected non-trainable",
+        all(not cct.expected_trainable(c) for c in ready_unlicensed),
     )
     check(
         "K6",
@@ -547,8 +553,8 @@ def test_k8_edges() -> None:
     )
     check(
         "K8",
-        "uuid with Z-less date-time naive accepted shape",
-        not v("2026-10-07T12:00:00", {"type": "string", "format": "date-time"}),
+        "a naive date-time (no offset) is refused",
+        bool(v("2026-10-07T12:00:00", {"type": "string", "format": "date-time"})),
     )
     check(
         "K8",
@@ -816,6 +822,424 @@ def test_k9_generator_on_custom_schemas() -> None:
     )
 
 
+# ----------------------------------------------------------------- round 2
+
+_DT = {"type": "string", "format": "date-time"}
+
+
+def test_k10_rfc3339() -> None:
+    valid = [
+        "2026-10-07T12:00:00Z",
+        "2026-10-07T12:00:00+00:00",
+        "2026-10-07T12:00:00-05:30",
+        "2026-10-07T12:00:00.5Z",
+        "2026-10-07T12:00:00.123456+02:00",
+        "2026-10-07t12:00:00z",
+        "2016-12-31T23:59:60Z",
+        "2024-02-29T00:00:00Z",
+        "2026-10-07T23:59:59+23:59",
+        "2026-10-07T00:00:00-00:00",
+    ]
+    for value in valid:
+        check("K10", f"RFC 3339 value accepted: {value!r}", not errors_for(value, _DT))
+    invalid = [
+        "2026-10-07T12:00:00",  # naive
+        "2026-10-07T12:00:00.5",  # naive with fraction
+        "2026-10-07T12Z",  # hour only
+        "2026-10-07T12:00Z",  # no seconds
+        "2026-10-07T12:00:00+0000",  # offset without colon
+        "2026-10-07T12:00:00+00",  # hour-only offset
+        "2026-W41-3T12:00:00Z",  # ISO week date
+        "2026-280T12:00:00Z",  # ordinal date
+        "20261007T120000Z",  # basic format
+        "2026-10-07",  # date only
+        "2026-10-07 12:00:00Z",  # space separator
+        "2026-10-07T12:00:00.Z",  # empty fraction
+        "2026-02-30T12:00:00Z",  # impossible day
+        "2025-02-29T12:00:00Z",  # not a leap year
+        "2026-13-01T12:00:00Z",  # month 13
+        "2026-00-10T12:00:00Z",  # month 0
+        "2026-10-00T12:00:00Z",  # day 0
+        "2026-10-07T24:00:00Z",  # hour 24
+        "2026-10-07T12:60:00Z",  # minute 60
+        "2026-10-07T12:00:61Z",  # second 61
+        "2026-10-07T12:00:00+24:00",  # offset hour 24
+        "2026-10-07T12:00:00+00:60",  # offset minute 60
+        "2026-10-07T12:00:00Z\n",  # trailing newline
+        "2026-10-07T12:00:00Z ",
+        " 2026-10-07T12:00:00Z",
+        "\n2026-10-07T12:00:00Z",
+        "2026-10-07T12:00:00ZZ",
+        "2026-10-07T12:00:00+00:00Z",
+        "２０２６-10-07T12:00:00Z",  # fullwidth digits
+        "٢٠٢٦-10-07T12:00:00Z",  # Arabic-Indic digits
+        "2026-10-07T12:00:00​Z",  # zero-width space
+        "0000-10-07T12:00:00Z",  # year 0 is not representable
+        "",
+        "not-a-date-time",
+    ]
+    for value in invalid:
+        check("K10", f"non-RFC 3339 value refused: {value!r}", bool(errors_for(value, _DT)))
+    check("K10", "a non-string is refused", bool(errors_for(20261007, _DT)))
+
+
+def _datetime_paths(value: Any, prefix: str = "$") -> list[str]:
+    """Labels (as the generator writes them) of every RFC 3339 string in a seed."""
+    found: list[str] = []
+    if type(value) is str and cct._RFC3339_RE.fullmatch(value):
+        found.append(prefix)
+    elif type(value) is dict:
+        for key, child in value.items():
+            found.extend(_datetime_paths(child, f"{prefix}.{key}"))
+    elif type(value) is list:
+        for index, child in enumerate(value):
+            found.extend(_datetime_paths(child, f"{prefix}[{index!r}]"))
+    return found
+
+
+def test_k10b_datetime_variants_for_every_field() -> None:
+    expected_variants = 11
+    seen_fields = 0
+    for name, schema, cases in cases_cache:
+        seed = next(seed for n, _, seed in SEEDS if n == name)
+        for label in _datetime_paths(seed):
+            seen_fields += 1
+            variants = [
+                c
+                for c in cases
+                if c.category == "format_datetime" and c.path.startswith(label + ":")
+            ]
+            check(
+                "K10",
+                f"{name}: {label} gets {expected_variants} non-RFC 3339 variants ({len(variants)})",
+                len(variants) == expected_variants,
+            )
+            check(
+                "K10",
+                f"{name}: {label} variants are all refused by the checker",
+                cct.assert_negative_cases_rejected(variants, schema, ROOT_DOC) == [],
+            )
+    check("K10", f"the seeds contain date-time fields ({seen_fields})", seen_fields >= 8)
+    # the named verifier faults: a naive evidence timestamp and a created_at without seconds/offset
+    caps = next(c for n, _, c in cases_cache if n == "ModelCapabilities")
+    check(
+        "K10",
+        "ModelCapabilities evidence.discovery_checked_at gets a naive variant",
+        any(
+            c.category == "format_datetime"
+            and "evidence.discovery_checked_at" in c.path
+            and c.path.endswith("'2026-10-07T12:00:00'")
+            for c in caps
+        ),
+    )
+    check(
+        "K10",
+        "the variant table has no duplicate case ids",
+        len({repr(c) + c.path for c in caps}) == len(caps),
+    )
+    check(
+        "K10",
+        "_datetime_variants of a non-RFC value is empty",
+        cct._datetime_variants("nope") == [],
+    )
+    check(
+        "K10",
+        "_datetime_variants of a Z value covers naive, hour-only, no-seconds, compact offset and basic",
+        set(cct._datetime_variants("2026-10-07T12:00:00Z"))
+        >= {
+            "2026-10-07T12:00:00",
+            "2026-10-07T12Z",
+            "2026-10-07T12:00Z",
+            "2026-10-07T12:00:00Z".replace("Z", "+00"),
+            "20261007T120000Z",
+            "2026-10-07 12:00:00Z",
+            "2026-10-07Z",
+            "2026-10-07",
+            "2026-W41-3T12:00:00Z",
+            "2026-280T12:00:00Z",
+        },
+    )
+    check(
+        "K10",
+        "_datetime_variants of an offset value keeps the offset rendering variants",
+        {"2026-10-07T12:00:00-0530", "2026-10-07T12:00:00-05"}
+        <= set(cct._datetime_variants("2026-10-07T12:00:00-05:30")),
+    )
+    check(
+        "K10",
+        "no variant is itself a valid RFC 3339 date-time",
+        all(
+            not cct._datetime_ok(v) for v in cct._datetime_variants("2026-10-07T12:00:00.25+01:00")
+        ),
+    )
+
+
+def test_k11_whole_schema_prescan() -> None:
+    def unsupported(schema: dict[str, Any], instance: Any = None) -> bool:
+        return raises(cct.UnsupportedSchemaError, lambda: errors_for(instance, schema))
+
+    for label, schema in (
+        (
+            "unused property",
+            {"type": "object", "properties": {"a": {"type": "string", "exclusiveMinimum": 1}}},
+        ),
+        (
+            "unused oneOf branch",
+            {"oneOf": [{"type": "object"}, {"type": "string", "uniqueItems": True}]},
+        ),
+        (
+            "unused allOf branch",
+            {"allOf": [{"type": "object"}, {"type": "object", "not": {}}]},
+        ),
+        (
+            "array items",
+            {"type": "object", "properties": {"a": {"type": "array", "items": {"nullable": True}}}},
+        ),
+        (
+            "property type",
+            {"type": "object", "properties": {"a": {"type": "decimal"}}},
+        ),
+        (
+            "type list member",
+            {"type": "object", "properties": {"a": {"type": ["string", "decimal"]}}},
+        ),
+        (
+            "property format",
+            {"type": "object", "properties": {"a": {"type": "string", "format": "email"}}},
+        ),
+        (
+            "unhashable format",
+            {"type": "object", "properties": {"a": {"type": "string", "format": ["uuid"]}}},
+        ),
+        (
+            "unhashable type",
+            {"type": "object", "properties": {"a": {"type": {}}}},
+        ),
+        ("type name in the wrong case", {"properties": {"a": {"type": "String"}}}),
+        ("type name upper case", {"properties": {"a": {"type": "INTEGER"}}}),
+        ("type name with a trailing space", {"properties": {"a": {"type": "string "}}}),
+        ("type name with a leading space", {"properties": {"a": {"type": " string"}}}),
+        (
+            "bad keyword under an unused property of an allOf branch",
+            {"allOf": [{"properties": {"a": {"type": "string", "exclusiveMinimum": 1}}}]},
+        ),
+        (
+            "bad keyword under an unused property of a oneOf branch",
+            {"oneOf": [{"properties": {"a": {"type": "string", "uniqueItems": True}}}]},
+        ),
+        (
+            "bad type under an unused property of an allOf branch",
+            {"allOf": [{"properties": {"a": {"type": "decimal"}}}]},
+        ),
+        (
+            "open additionalProperties under an unused property of a oneOf branch",
+            {"oneOf": [{"properties": {"a": {"additionalProperties": True}}}]},
+        ),
+    ):
+        check(
+            "K11",
+            f"{label}: an unsupported form the instance never walks still raises",
+            unsupported(schema, {}),
+        )
+    for label, value in (
+        ("true", True),
+        ("schema-valued", {"type": "string"}),
+        ("empty schema", {}),
+        ("null", None),
+        ("string", "false"),
+        ("zero", 0),
+    ):
+        check(
+            "K11",
+            f"additionalProperties {label} raises",
+            unsupported({"type": "object", "additionalProperties": value}, {}),
+        )
+        check(
+            "K11",
+            f"additionalProperties {label} nested in an unused property raises",
+            unsupported(
+                {
+                    "type": "object",
+                    "properties": {"a": {"type": "object", "additionalProperties": value}},
+                },
+                {},
+            ),
+        )
+    check(
+        "K11",
+        "additionalProperties false is still enforced",
+        bool(errors_for({"x": 1}, {"type": "object", "additionalProperties": False})),
+    )
+    doc = {
+        "components": {
+            "schemas": {
+                "Bad": {"type": "object", "additionalProperties": True},
+                "Good": {
+                    "type": "object",
+                    "properties": {"b": {"$ref": "#/components/schemas/Bad"}},
+                },
+            }
+        }
+    }
+    check(
+        "K11",
+        "a $ref target is scanned even when the instance never reaches it",
+        raises(
+            cct.UnsupportedSchemaError,
+            lambda: cct.validate({}, {"$ref": "#/components/schemas/Good"}, doc),
+        ),
+    )
+    cyclic = {
+        "components": {
+            "schemas": {
+                "Node": {
+                    "type": "object",
+                    "properties": {"next": {"$ref": "#/components/schemas/Node"}},
+                }
+            }
+        }
+    }
+    check(
+        "K11",
+        "a self-referencing $ref terminates (and is valid)",
+        cct.validate({"next": {}}, {"$ref": "#/components/schemas/Node"}, cyclic) == [],
+    )
+    for label, schema in (
+        ("allOf not a list", {"allOf": {"type": "object"}}),
+        ("allOf an empty object", {"allOf": {}}),
+        ("allOf null", {"allOf": None}),
+        ("oneOf not a list", {"oneOf": "x"}),
+        ("oneOf an empty object", {"oneOf": {}}),
+        ("oneOf null", {"oneOf": None}),
+        ("properties not an object", {"properties": ["a"]}),
+        ("schema not an object", {"properties": {"a": []}}),
+        ("items not an object", {"items": [{"type": "string"}]}),
+    ):
+        check("K11", f"malformed container refused: {label}", unsupported(schema, {}))
+    check(
+        "K11",
+        "every schema in the frozen document passes the pre-scan",
+        all(
+            not raises(
+                cct.UnsupportedSchemaError,
+                lambda n=n: cct.validate(None, {"$ref": f"#/components/schemas/{n}"}, ROOT_DOC),
+            )
+            for n in ROOT_DOC["components"]["schemas"]
+        ),
+    )
+
+
+_CHANGES_PATH = (
+    "/api/v1/organizations/{organization_id}/connections/litellm/{connection_id}"
+    "/models/{model_name}/training-artifact/changes"
+)
+
+
+def test_k12_frozen_response_schema() -> None:
+    schema = CONTRACT.response_schema(_CHANGES_PATH, "get", "200")
+    check(
+        "K12",
+        "the changes response is read from the frozen document",
+        schema["required"] == ["changes"],
+    )
+    check(
+        "K12",
+        "it is the document's own object, not a copy",
+        schema
+        is ROOT_DOC["paths"][_CHANGES_PATH]["get"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"],
+    )
+    check(
+        "K12", "a valid change list passes", errors_for({"changes": [VALID_CHANGE]}, schema) == []
+    )
+    check("K12", "an empty change list passes", errors_for({"changes": []}, schema) == [])
+    check(
+        "K12",
+        "an extra top-level key is refused",
+        bool(errors_for({"changes": [], "x": 1}, schema)),
+    )
+    check("K12", "a missing changes key is refused", bool(errors_for({}, schema)))
+    check("K12", "a non-list changes is refused", bool(errors_for({"changes": {}}, schema)))
+    bad = dict(VALID_CHANGE)
+    bad.pop("id", None)
+    check("K12", "a malformed change item is refused", bool(errors_for({"changes": [bad]}, schema)))
+    for label, args in (
+        ("unknown path", ("/nope", "get", "200")),
+        ("unknown method", (_CHANGES_PATH, "put", "200")),
+        ("unknown status", (_CHANGES_PATH, "get", "299")),
+        ("status with no body", (_CHANGES_PATH, "get", "404")),
+        ("non-string status", (_CHANGES_PATH, "get", 200)),
+        ("unhashable path", ([], "get", "200")),
+    ):
+        check(
+            "K12",
+            f"{label} raises ContractError",
+            raises(cct.ContractError, lambda a=args: CONTRACT.response_schema(*a)),
+        )
+    corrupted = cct.FrozenContract(
+        {
+            "paths": {
+                "/p": {
+                    "get": {"responses": {"200": {"content": {"application/json": {"schema": []}}}}}
+                }
+            }
+        },
+        "x",
+        Path("x"),
+    )
+    check(
+        "K12",
+        "a non-object frozen schema raises ContractError",
+        raises(cct.ContractError, lambda: corrupted.response_schema("/p", "get", "200")),
+    )
+
+
+def test_k13_generator_equality_is_independent() -> None:
+    check("K13", "same scalar is equal", cct._same_exactly("a", "a"))
+    check("K13", "bool is not int", not cct._same_exactly(True, 1))
+    check("K13", "False is not 0", not cct._same_exactly(False, 0))
+    check("K13", "int is not float", not cct._same_exactly(1, 1.0))
+    check("K13", "None is not False", not cct._same_exactly(None, False))
+    check("K13", "key order is irrelevant", cct._same_exactly({"a": 1, "b": 2}, {"b": 2, "a": 1}))
+    check("K13", "nested bool vs int differs", not cct._same_exactly({"a": [True]}, {"a": [1]}))
+    check("K13", "case differs", not cct._same_exactly("ab", "AB"))
+    check("K13", "whitespace differs", not cct._same_exactly("ab", "ab "))
+
+    schema = {
+        "type": "object",
+        "required": ["n"],
+        "additionalProperties": False,
+        "properties": {"n": {"enum": [0, 5]}},
+    }
+    doc: dict[str, Any] = {"components": {"schemas": {}}}
+    cases = cct.generate_negative_cases({"n": 5}, schema, doc)
+    enum_paths = {c.path for c in cases if c.category == "enum"}
+    check("K13", "False (== 0 under a lax compare) is still generated", "$.n:False" in enum_paths)
+    check("K13", "True is generated", "$.n:True" in enum_paths)
+    check("K13", "None is generated", "$.n:None" in enum_paths)
+    check("K13", "an enum member (0) is not a negative case", "$.n:0" not in enum_paths)
+
+    def lax(left: Any, right: Any) -> bool:
+        return bool(left == right)
+
+    real = cct._json_equal
+    cct._json_equal = lax
+    try:
+        lax_cases = cct.generate_negative_cases({"n": 5}, schema, doc)
+        lax_rejects_all = cct.assert_negative_cases_rejected(lax_cases, schema, doc) == []
+    finally:
+        cct._json_equal = real
+    check(
+        "K13",
+        "a lax checker equality does not change the generated table",
+        [(c.category, c.path) for c in lax_cases] == [(c.category, c.path) for c in cases],
+    )
+    check(
+        "K13", "...and the generated table then catches the lax checker (V3)", not lax_rejects_all
+    )
+
+
 def survivors_with(patched: dict[str, Any]) -> int:
     """Run the whole table with module attributes patched; count wrongly accepted cases."""
     originals = {k: getattr(cct, k) for k in patched}
@@ -894,6 +1318,35 @@ def test_k7_faults() -> None:
 
     check(
         "K7", "a checker that skips format is caught", survivors_with({"_format_ok": no_format}) > 0
+    )
+
+    def lax_datetime(value: str) -> bool:
+        text = value[:-1] + "+00:00" if value.endswith("Z") else value
+        if "T" not in text:
+            return False
+        try:
+            datetime.fromisoformat(text)
+        except ValueError:
+            return False
+        return True
+
+    check(
+        "K7",
+        "a lax (fromisoformat) date-time check is caught",
+        survivors_with({"_FORMAT_CHECKS": {"uuid": cct._uuid_ok, "date-time": lax_datetime}}) > 0,
+    )
+    check(
+        "K7",
+        "a checker that accepts a naive timestamp is caught",
+        survivors_with(
+            {
+                "_FORMAT_CHECKS": {
+                    "uuid": cct._uuid_ok,
+                    "date-time": lambda v: bool(cct._datetime_ok(v + "Z")) or cct._datetime_ok(v),
+                }
+            }
+        )
+        > 0,
     )
 
 
