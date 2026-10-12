@@ -26,6 +26,7 @@ import sys
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 API_ROOT = ROOT / "apps" / "api"
@@ -311,9 +312,10 @@ def test_fetch_or_raise_contract() -> None:
         "locked fetch selects by id equality, never inequality",
         "trainable_artifacts.id = " in sql and "!=" not in sql and "<>" not in sql,
     )
-    for bad in ("not-a-uuid", str(art.id), None, 7):
+    bad_ids: list[Any] = ["not-a-uuid", str(art.id), None, 7]
+    for bad in bad_ids:
         try:
-            crud._fetch_or_raise(sess, _CTX, bad, lock=True)  # type: ignore[arg-type]
+            crud._fetch_or_raise(sess, _CTX, bad, lock=True)
             check("F1-LOCK", f"non-UUID id {bad!r} refused", False)
         except crud.ArtifactNotFoundError as exc:
             check(
@@ -470,7 +472,7 @@ def _load_migration(fake_op: _FakeOp):
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    module.op = fake_op  # the alembic boundary only
+    module.__dict__["op"] = fake_op  # the alembic boundary only
     return module
 
 
