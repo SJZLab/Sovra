@@ -797,9 +797,14 @@ def main() -> None:
             barrier = threading.Barrier(2)
             outcomes: list[int] = []
 
-            def racer(suffix_: str, target: uuid.UUID = race_id) -> None:
-                barrier.wait(10)
-                outcomes.append(
+            def racer(
+                suffix_: str,
+                target: uuid.UUID = race_id,
+                gate: threading.Barrier = barrier,
+                sink: list[int] = outcomes,
+            ) -> None:
+                gate.wait(10)
+                sink.append(
                     _request(
                         base, "POST", artifact_path(target, suffix_), principal="admin1", payload={}
                     ).status

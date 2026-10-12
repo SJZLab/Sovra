@@ -1015,6 +1015,26 @@ def test_k11_whole_schema_prescan() -> None:
             "unhashable type",
             {"type": "object", "properties": {"a": {"type": {}}}},
         ),
+        ("type name in the wrong case", {"properties": {"a": {"type": "String"}}}),
+        ("type name upper case", {"properties": {"a": {"type": "INTEGER"}}}),
+        ("type name with a trailing space", {"properties": {"a": {"type": "string "}}}),
+        ("type name with a leading space", {"properties": {"a": {"type": " string"}}}),
+        (
+            "bad keyword under an unused property of an allOf branch",
+            {"allOf": [{"properties": {"a": {"type": "string", "exclusiveMinimum": 1}}}]},
+        ),
+        (
+            "bad keyword under an unused property of a oneOf branch",
+            {"oneOf": [{"properties": {"a": {"type": "string", "uniqueItems": True}}}]},
+        ),
+        (
+            "bad type under an unused property of an allOf branch",
+            {"allOf": [{"properties": {"a": {"type": "decimal"}}}]},
+        ),
+        (
+            "open additionalProperties under an unused property of a oneOf branch",
+            {"oneOf": [{"properties": {"a": {"additionalProperties": True}}}]},
+        ),
     ):
         check(
             "K11",
@@ -1086,7 +1106,11 @@ def test_k11_whole_schema_prescan() -> None:
     )
     for label, schema in (
         ("allOf not a list", {"allOf": {"type": "object"}}),
+        ("allOf an empty object", {"allOf": {}}),
+        ("allOf null", {"allOf": None}),
         ("oneOf not a list", {"oneOf": "x"}),
+        ("oneOf an empty object", {"oneOf": {}}),
+        ("oneOf null", {"oneOf": None}),
         ("properties not an object", {"properties": ["a"]}),
         ("schema not an object", {"properties": {"a": []}}),
         ("items not an object", {"items": [{"type": "string"}]}),
