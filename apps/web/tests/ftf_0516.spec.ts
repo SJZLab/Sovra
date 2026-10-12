@@ -1403,3 +1403,338 @@ test("FTF-0516-O2 a reload that is malformed, for another dataset, or a network 
     expect(screen.queryByRole("list", { name: "Recent decisions" }), label).toBeNull();
   }
 });
+
+test("FTF-0516-U1 an uppercase-typed successor is sent lowercase and the lowercase echo is recorded", async () => {
+  await loaded();
+  review(ISSUE_OPEN);
+  fireEvent.change(screen.getByLabelText("Action"), { target: { value: "correct" } });
+  type(reasonBox(), "fixed upstream");
+  const upper = "ABCDEF12-ABCD-ABCD-ABCD-ABCDEF123456";
+  type(screen.getByLabelText("Successor dataset id"), ` ${upper} `);
+  replies["POST resolve-issue"] = posted({
+    action: "correct",
+    successor_dataset_id: upper.toLowerCase(),
+    excluded_batch_positions: [],
+    reason: "fixed upstream",
+  });
+  await submit();
+  const item = (sentBody().resolutions as Array<Record<string, unknown>>)[0];
+  expect(item?.successor_dataset_id).toBe(upper.toLowerCase());
+  expect(screen.queryByText("resolution response does not match the request")).toBeNull();
+  expect(screen.getByTestId("recorded-decision").textContent).toContain("correct");
+});
+
+test("FTF-0516-RV a replay with a higher top-level version and a matching decision is recorded; a fresh decision or a lower version is not", async () => {
+  const drive = async (reply: Reply) => {
+    cleanup();
+    replies = defaults();
+    calls = [];
+    await loaded();
+    review(ISSUE_OPEN);
+    type(reasonBox(), "because");
+    fireEvent.click(screen.getByLabelText("position 0"));
+    replies["POST resolve-issue"] = reply;
+    await submit();
+  };
+  // replay: the report's CURRENT version (a decision on another issue landed meanwhile)
+  await drive(posted({}, { replayed: true, resolution_version: 9 }));
+  expect(screen.getByTestId("recorded-decision")).toBeTruthy();
+  // replay never reports a version below the decision's own
+  await drive(posted({}, { replayed: true, resolution_version: 3 }));
+  expect(screen.getByRole("alert").textContent).toBe(
+    "resolution response does not match the request",
+  );
+  // a fresh decision lands exactly on expected + 1
+  await drive(posted({}, { replayed: false, resolution_version: 9 }));
+  expect(screen.getByRole("alert").textContent).toBe(
+    "resolution response does not match the request",
+  );
+  // the decision's own version_after is bound to expected + 1 even on a replay
+  await drive(posted({ resolution_version_after: 9 }, { replayed: true, resolution_version: 9 }));
+  expect(screen.getByRole("alert").textContent).toBe(
+    "resolution response does not match the request",
+  );
+});
+
+// ---- Generated strict-parse table: EVERY response field x wrong JSON type / out-of-enum / missing ----
+//
+// Each field of the four response shapes is described once by the set of values the frozen contract
+// allows (`legal`); every other value of a fixed candidate pool is generated as a mutation and must
+// land as "malformed quality response": no report, no decision controls, no POST. Legal alternates
+// are positive controls (they must still load), so the table cannot go green by rejecting everything.
+type Spec = { legal: unknown[]; also?: (value: unknown) => boolean; skip?: unknown[] };
+const isStrNonBlank = (v: unknown) => typeof v === "string" && v.trim() !== "";
+const intMin = (min: number) => (v: unknown) => Number.isSafeInteger(v) && (v as number) >= min;
+const isAnyStr = (v: unknown) => typeof v === "string";
+const isLegalValue = (spec: Spec, value: unknown) =>
+  spec.legal.some((l) => same(l, value)) || (spec.also?.(value) ?? false);
+const POOL: unknown[] = [
+  null,
+  "",
+  " ",
+  "x",
+  "false",
+  "true",
+  "0",
+  "1",
+  0,
+  1,
+  -1,
+  1.5,
+  2 ** 53,
+  true,
+  false,
+  [],
+  {},
+  [null],
+  ["x"],
+  [-1],
+  [1.5],
+  "2026-13-45T99:99:99Z",
+  "not a date",
+  "ZZZZZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZZZZZZZZZ",
+  "A".repeat(64),
+  "a".repeat(63),
+  "a".repeat(65),
+  "x".repeat(2001),
+];
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const UUID_OK = "77777777-7777-7777-7777-777777777777";
+const UPPER_UUID = "ABCDEF12-ABCD-ABCD-ABCD-ABCDEF123456";
+const TS = "2026-10-09T08:00:00Z";
+
+const REPORT_SPEC: Record<string, Spec> = {
+  id: { legal: [REPORT], skip: [UUID_OK, UPPER_UUID] },
+  dataset_id: { legal: [DATASET] },
+  dataset_version: { legal: [1, 7], also: intMin(1) },
+  dataset_sha256: { legal: [sha("1"), sha("0")] },
+  report_seq: { legal: [1, 9], also: intMin(1) },
+  report_sha256: { legal: [sha("2")] },
+  detector_versions: { legal: [{}, { pii: "1" }] },
+  detectors_reported: {
+    legal: [[], ["pii"], [""]],
+    also: (v) => Array.isArray(v) && v.every(isAnyStr),
+  },
+  issue_count: { legal: [0, 4, 7], also: intMin(0) },
+  blocking_count: { legal: [0, 2, 7], also: intMin(0) },
+  warning_count: { legal: [0, 2, 7], also: intMin(0) },
+  resolution_version: { legal: [0, 3, 9], also: intMin(0) },
+  is_clean: { legal: [true, false] },
+  blocks_split: { legal: [true, false] },
+  blocks_training: { legal: [true, false] },
+  residual_risk_disclosure: {
+    legal: ["A clean report is not proof the data has no personal data.", " x "],
+    also: (v) => typeof v === "string" && v !== "",
+  },
+  created_at: { legal: [TS, "2026-10-09T08:00:00.123+03:00", "2026-10-09T08:00:00+00:00"] },
+  updated_at: { legal: [TS, "2026-10-09T08:00:00.5Z"] },
+};
+const RESOLUTION_SPEC: Record<string, Spec> = {
+  id: { legal: [UUID_OK] },
+  quality_report_id: { legal: [REPORT] },
+  issue_id: { legal: [ISSUE_DONE] },
+  action: { legal: ["exclude"] },
+  engine_decision: { legal: ["resolved"] },
+  excluded_batch_positions: { legal: [[], [1], [0, 3]] },
+  successor_dataset_id: { legal: [null, UUID_OK] },
+  before_evidence_sha256: { legal: [EVIDENCE] },
+  after_evidence_sha256: { legal: [null, AFTER] },
+  reason: {
+    legal: ["removed the leaked row", "x".repeat(2000)],
+    also: (v) => isStrNonBlank(v) && [...(v as string)].length <= 2000,
+  },
+  actor_id: { legal: ["user-1", "svc"], also: isStrNonBlank },
+  actor_role: { legal: ["ml_engineer", "workspace_admin", "organization_admin"] },
+  resolution_version_after: { legal: [1, 3, 8], also: intMin(1) },
+  created_at: { legal: [TS] },
+};
+const ISSUE_SPEC: Record<string, Spec> = {
+  issue_id: { legal: [ISSUE_OPEN] },
+  report_id: { legal: [REPORT] },
+  detector: { legal: ["pii", ""], also: isAnyStr },
+  category: { legal: ["personal_data", ""], also: isAnyStr },
+  severity: { legal: ["blocking", "warning"] },
+  reason_code: {
+    legal: ["pii_detected", "a1_b2"],
+    also: (v) => typeof v === "string" && /^[a-z][a-z0-9_]*$/.test(v),
+  },
+  message_sha256: { legal: [sha("9")] },
+  batch_positions: { legal: [[], [0, 2, 5]] },
+  record_indices: { legal: [[], [10, null, 12], [null]] },
+  evidence_digest: { legal: [null, sha("8")] },
+  is_detector_failure: { legal: [true, false] },
+  evidence_sha256: { legal: [EVIDENCE] },
+  state: { legal: ["open"] },
+  resolution: { legal: [null] },
+};
+const ENUM_OUT = [
+  "exclude ",
+  "EXCLUDE",
+  "delete",
+  "approve",
+  "open",
+  "closed",
+  "root",
+  "admin",
+  "fatal",
+  "info",
+  "Blocking",
+];
+
+function mutations(spec: Record<string, Spec>, base: () => Record<string, unknown>) {
+  const out: Array<{ label: string; body: Record<string, unknown>; legal: boolean }> = [];
+  for (const [field, fieldSpec] of Object.entries(spec)) {
+    const { legal } = fieldSpec;
+    const enumField = ["action", "engine_decision", "actor_role", "severity", "state"].includes(
+      field,
+    );
+    const candidates = [...POOL, ...(enumField ? ENUM_OUT : [])];
+    for (const value of candidates) {
+      if (isLegalValue(fieldSpec, value) || fieldSpec.skip?.some((k) => same(k, value))) continue;
+      out.push({
+        label: `${field}=${JSON.stringify(value)}`,
+        body: { ...base(), [field]: value },
+        legal: false,
+      });
+    }
+    const missing = base();
+    delete missing[field];
+    out.push({ label: `${field} missing`, body: missing, legal: false });
+    out.push({
+      label: `${field} extra sibling`,
+      body: { ...base(), [`${field}_x`]: 1 },
+      legal: false,
+    });
+    for (const value of legal) {
+      out.push({
+        label: `${field}=${JSON.stringify(value)} (legal)`,
+        body: { ...base(), [field]: value },
+        legal: true,
+      });
+    }
+  }
+  return out;
+}
+
+async function loadsMalformed(route: string, body: unknown, label: string) {
+  cleanup();
+  replies = defaults();
+  calls = [];
+  replies[route] = { ok: true, status: 200, body };
+  mount();
+  await load();
+  expect(screen.queryByRole("alert")?.textContent, label).toBe("malformed quality response");
+  expect(screen.queryByTestId("report"), label).toBeNull();
+  expect(screen.queryByRole("button", { name: /^Review / }), label).toBeNull();
+  expect(screen.queryByRole("button", { name: /Record decision/ }), label).toBeNull();
+  expect(posts(), label).toHaveLength(0);
+}
+
+async function loadsFine(route: string, body: unknown, label: string) {
+  cleanup();
+  replies = defaults();
+  calls = [];
+  replies[route] = { ok: true, status: 200, body };
+  mount();
+  await load();
+  expect(screen.queryByRole("alert"), label).toBeNull();
+  expect(screen.getByTestId("report"), label).toBeTruthy();
+}
+
+test("FTF-0516-T1 generated table: every quality-report field x wrong type / out-of-range / missing / extra is malformed", async () => {
+  const rows = mutations(REPORT_SPEC, () => ({ ...report() }));
+  expect(rows.length).toBeGreaterThan(400);
+  for (const row of rows) {
+    if (row.label.startsWith("id=") && !row.legal) {
+      // other dataset/report identity rows are covered by FTF-0516-D; here only the shape matters
+    }
+    if (row.legal) await loadsFine("GET quality-report", row.body, `report ${row.label}`);
+    else await loadsMalformed("GET quality-report", row.body, `report ${row.label}`);
+  }
+}, 120_000);
+
+test("FTF-0516-T2 generated table: every issue field x wrong type / out-of-range / missing / extra is malformed", async () => {
+  const rows = mutations(ISSUE_SPEC, () => ({ ...issue(ISSUE_OPEN) }));
+  expect(rows.length).toBeGreaterThan(300);
+  for (const row of rows) {
+    const body = { items: [row.body], next_after: null };
+    if (row.legal) await loadsFine("GET issues", body, `issue ${row.label}`);
+    else await loadsMalformed("GET issues", body, `issue ${row.label}`);
+  }
+}, 120_000);
+
+test("FTF-0516-T3 generated table: every resolution field (as a decision list item and as a nested decision) is malformed when wrong", async () => {
+  const rows = mutations(RESOLUTION_SPEC, () => ({ ...resolution() }));
+  expect(rows.length).toBeGreaterThan(300);
+  for (const row of rows) {
+    const listBody = { items: [row.body] };
+    if (row.legal) await loadsFine("GET issue-resolutions", listBody, `resolutions ${row.label}`);
+    else await loadsMalformed("GET issue-resolutions", listBody, `resolutions ${row.label}`);
+    if (!row.legal) {
+      const nested = {
+        items: [issue(ISSUE_DONE, { state: "resolved", resolution: row.body })],
+        next_after: null,
+      };
+      await loadsMalformed("GET issues", nested, `nested ${row.label}`);
+    }
+  }
+}, 240_000);
+
+test("FTF-0516-T4 generated table: page wrappers and the resolve response reject every wrong type, missing key and extra key", async () => {
+  const wrappers: Array<[string, Record<string, unknown>, string[]]> = [
+    ["GET issues", { items: [], next_after: null }, ["items", "next_after"]],
+    ["GET issue-resolutions", { items: [] }, ["items"]],
+  ];
+  for (const [route, base, keys] of wrappers) {
+    for (const key of keys) {
+      for (const value of POOL) {
+        if (key === "next_after" && value === null) continue;
+        if (key === "items" && same(value, [])) continue;
+        await loadsMalformed(
+          route,
+          { ...base, [key]: value },
+          `${route} ${key}=${JSON.stringify(value)}`,
+        );
+      }
+      const missing = { ...base };
+      delete missing[key];
+      await loadsMalformed(route, missing, `${route} ${key} missing`);
+    }
+    await loadsMalformed(route, { ...base, extra: 1 }, `${route} extra`);
+  }
+  // resolve response: each top-level key and nested-item field, driven through a real submit
+  const submitWith = async (reply: Reply, label: string) => {
+    cleanup();
+    replies = defaults();
+    calls = [];
+    await loaded();
+    review(ISSUE_OPEN);
+    type(reasonBox(), "because");
+    fireEvent.click(screen.getByLabelText("position 0"));
+    replies["POST resolve-issue"] = reply;
+    await submit();
+    expect(screen.queryByTestId("recorded-decision"), label).toBeNull();
+    expect(screen.getByRole("alert").textContent, label).toMatch(
+      /^(resolution response does not match the request|malformed.*)$/,
+    );
+  };
+  for (const key of ["quality_report_id", "resolution_version", "replayed", "items"]) {
+    for (const value of POOL) {
+      if (key === "replayed" && typeof value === "boolean") continue;
+      if (key === "items" && Array.isArray(value) && value.length === 0) continue;
+      await submitWith(posted({}, { [key]: value }), `resolve ${key}=${JSON.stringify(value)}`);
+    }
+    const reply = posted();
+    delete (reply.body as Record<string, unknown>)[key];
+    await submitWith(reply, `resolve ${key} missing`);
+  }
+  for (const [field, fieldSpec] of Object.entries(RESOLUTION_SPEC)) {
+    for (const value of POOL) {
+      if (isLegalValue(fieldSpec, value)) continue;
+      await submitWith(
+        posted({ [field]: value }),
+        `resolve item ${field}=${JSON.stringify(value)}`,
+      );
+    }
+  }
+}, 240_000);
