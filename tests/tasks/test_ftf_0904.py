@@ -1820,7 +1820,7 @@ FAULTS: list[tuple[str, str, str, int]] = [
     (
         "F08 escaped-JSON value form dropped (round 5 retarget: round 5 replaced the bounded "
         "lazy form this fault used to target with an unrolled, unbounded one)",
-        'r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+\\\\+"\'\n    r"""|',
+        'r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+\\\\+"\' r"""|',
         'r"""',
         1,
     ),
