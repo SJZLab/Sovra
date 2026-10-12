@@ -24683,3 +24683,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-10T16:34Z — Control plane: FTF-0501 CERTIFIED (141/302)
 - **Certified:** FTF-0501 (API #692 + UI #736, merge 41904e5fe5702a08a12483760c9bc811acfa2ddf); UI UNWIRED, not product-true. Product-true corrected to 44.
+
+## 2026-10-12T03:39Z — Control plane: FTF-0904 returned
+- **Returned:** FTF-0904 r5 (0d): length caps leak long JWTs/escaped values; ruling: linear and unbounded, long-secret sweep per rule; deflake.
