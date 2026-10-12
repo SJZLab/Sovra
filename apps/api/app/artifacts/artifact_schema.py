@@ -357,6 +357,10 @@ class TrainableArtifact(Base):
             "status in ('registered','ready','archived')", name="ck_trainable_artifacts_status"
         ),
         CheckConstraint(
+            "status <> 'ready' OR license_accepted_at IS NOT NULL",
+            name="ck_trainable_artifacts_ready_needs_license",
+        ),
+        CheckConstraint(
             "source_type in ('huggingface','private_s3','local_filesystem','private_registry')",
             name="ck_trainable_artifacts_source_type",
         ),

@@ -67,6 +67,7 @@ from packages.litellm_client.v1_models_discovery import (  # noqa: E402
 )
 from packages.model_catalog import capability_contract_tests as cct  # noqa: E402
 from sqlalchemy import create_engine, text  # noqa: E402
+from sqlalchemy.exc import IntegrityError  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 
 from app.artifacts.artifact_routes import build_trainable_artifact_router  # noqa: E402
@@ -440,6 +441,27 @@ def main() -> None:
             alias = aliases[index]
             label = f"{index}:{cell['source_type']}/{cell['status']}/{cell['license']}/{'mapped' if cell['mapped'] else 'unmapped'}"
             art_id = seed_artifact(cell["source_type"], str(index))
+            if not cct.api_reachable(cell):
+                # FTF-0305-F1: migration 0029 makes `ready` without an accepted license
+                # unrepresentable in the database itself, so these cells can no longer be
+                # seeded. Assert the refusal for real instead (FTF-0310 round 2 reworks the
+                # matrix around this).
+                try:
+                    sql(
+                        "UPDATE trainable_artifacts SET license_accepted_by=NULL, "
+                        "license_accepted_at=NULL WHERE id=:i",
+                        i=art_id,
+                    )
+                    refused = False
+                except IntegrityError as exc:
+                    refused = "ck_trainable_artifacts_ready_needs_license" in str(exc)
+                check(
+                    CID,
+                    f"[{label}] the database refuses a ready artifact without an accepted license",
+                    refused,
+                )
+                unreachable_cells.append(label)
+                continue
             if cell["mapped"]:
                 mapped = _request(
                     base,
@@ -476,7 +498,8 @@ def main() -> None:
                 )
             elif cell["license"] == "pending":
                 sql(
-                    "UPDATE trainable_artifacts SET license_accepted_by=NULL, license_accepted_at=NULL WHERE id=:i",
+                    "UPDATE trainable_artifacts SET license_accepted_by=NULL, "
+                    "license_accepted_at=NULL, status='registered' WHERE id=:i",
                     i=art_id,
                 )
             if cell["status"] == "archived":
@@ -590,7 +613,7 @@ def main() -> None:
         check(
             CID,
             f"validated every cell's responses ({validated})",
-            all(v == len(cells) for v in validated.values()),
+            all(v == len(cells) - len(unreachable_cells) for v in validated.values()),
         )
 
         # Negative acceptance: an upstream-only model (listed by the gateway, no mapping) and
