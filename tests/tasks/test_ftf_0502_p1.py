@@ -3108,6 +3108,7 @@ class FakeS3:
         self.data = data
         self.gets: list[tuple[str, str, int]] = []
         self.fail_at: int | None = None
+        self.fail_after_last: bool = False
         self.error: BaseException = S3Error(503, "SlowDown", "slow", "")
 
     def stream_object(
@@ -3119,6 +3120,8 @@ class FakeS3:
             if self.fail_at is not None and i == self.fail_at:
                 raise self.error
             yield piece
+        if self.fail_after_last:
+            raise self.error
 
     def __getattr__(self, name: str) -> Any:
         raise AssertionError(f"dataset_object_source called S3Client.{name}")
@@ -3561,6 +3564,21 @@ def test_src_storage_failures_are_content_free_and_block_the_import() -> None:
             outcome is not None
             and (outcome.state, outcome.failure_code) == ("failed", "source_changed"),
         )
+        for position in ("at chunk 1", "after the last chunk"):
+            fake = FakeS3()
+            fake.error = UploadStorageUnavailableError("already content-free")
+            if position == "at chunk 1":
+                fake.fail_at = 1
+            else:
+                fake.fail_after_last = True
+            src = _open(session, train, fake)
+            err = raises(UploadStorageUnavailableError, _join, src.chunks)
+            check(
+                "SRC-4",
+                f"an UploadStorageUnavailableError raised {position} is passed through unchanged",
+                err is not None and str(err) == "already content-free",
+            )
+
         import http.client
 
         for odd in (
