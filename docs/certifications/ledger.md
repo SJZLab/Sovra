@@ -11197,3 +11197,22 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   catalog names differ from the importer entries and refuse their codes; raw IncompleteRead/BadStatusLine escape with
   `.partial` object bytes (reproduced); FE/FE2 bounded-resource faults GREEN; integration fixture bypasses the FTF-0501
   routes. Ruling: P1 owns the catalog the importer entries name.
+
+## 2026-10-13T21:22Z — CERTIFIED: FTF-1206 (145/302); RETURNED: FTF-0503 (r2); importer-order ruling
+- **FTF-0503: RETURNED** (round 1 → 2; PR #761, merge 396577c2f0aacd09c53802cafada2fa05b4852c0, head 107799ac). Producer
+  session_01XVwUcrzcU4AG5dFB7ecRmx ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: gate 115434069294 "all checks
+  passed"; ci-verdict 115463526738; no integration job. Built on the returned FTF-0502 r1 types, not P1. 12 reproduced
+  violations (whole-document json.loads 62x memory; 4301-digit int mid-stream crash; duplicate keys/NaN/1e999/surrogates
+  accepted; 3 MiB element accepted; content leaks; no mapping; encoding rules; no content-type gate, report, Law 17 states,
+  deterministic record_id); F2/F3/F9/F10 GREEN. Depth handling held.
+- **Ruling (importer order):** FTF-0502-P1 must certify before FTF-0502/0503/0504/0505 are claimed or merged; #766
+  (FTF-0504) must not merge until rebased on certified P1.
+- **FTF-1206: CERTIFIED** (round 6, tests only; PR #763, merge e5f6e5ee327ba60bdae73b43eda2e31a0dc02da3, head 00230073; production byte-identical to round 5).
+  Producer session_013JoRRjen6ucsJAjfWjUzJF (earlier rounds session_01MdGt1NvNbMm8F8qpsUxJ3S and others) ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR, absent from the PR. CI: ci-verdict 115490617389; gate 115460282991 "FTF-1206
+  Organization policy control tests: all checks passed"; integration 115460419697 (PG16.15) FTF-1206A real proof passed.
+  F19 RED (3 failures) plus verifier variants; tests (a)/(b)/(c) present. Local 122 + 33 + 43 checks; uncapped mutation
+  47/47. 171 + 26 unit probes and 19 real-PG probes (incl. revocation saved through the real store under RLS): no
+  production violation. 34/37 faults RED. Ruling: F19d (refusal raises a sibling GatewayPolicyError subclass) is not
+  clause-level - every decision is unchanged, production raises RouteChangeNotAuthorizedError, no consumer depends on the
+  subclass; advisory to assert exact classes. F7c/F9b hand-picked variants of closed classes. UNWIRED.

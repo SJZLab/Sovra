@@ -10713,10 +10713,10 @@ FTF-1205:
   proving_symbol: ''
   proving_test: ''
 FTF-1206:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Organization policy control
-  evidence_hash: ''
+  evidence_hash: e5f6e5ee327ba60bdae73b43eda2e31a0dc02da3
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-02; scenarios=Q21, Q22; deps=FTF-0402, FTF-1201, FTF-1206A
@@ -10903,7 +10903,7 @@ FTF-1206:
     `organization_id`. Not self-certified (Law 4) -- `certification_state` stays `PROVISIONAL`,
     `proof_state` stays `L1-PROVEN`. Full evidence:
     `docs/certifications/submissions/2026-10-08T1903Z-FTF-1206.md`.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1206.py
 FTF-1206A:
