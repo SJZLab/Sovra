@@ -41,12 +41,13 @@ Rules this module enforces:
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import re
 import time
 import uuid
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from types import MappingProxyType
 from typing import Final
@@ -165,7 +166,6 @@ MAPPING_INVALID_REASONS: Final = frozenset(
 # so a caller cannot mistake "we cannot do this" for "you wrote this wrong".
 UNSUPPORTED_SHAPES: Final = frozenset({"grouped_rows", "grouped_multi_row"})
 
-_SHAPES: Final = ("messages", "prompt_completion", "messages_json")
 _METADATA_KEYS: Final = (
     "language",
     "task_category",
@@ -304,18 +304,22 @@ def _scan_depth(text: str, max_depth: int) -> None:
         if in_string:
             if escaped:
                 escaped = False
-            elif ch == "\\":
-                escaped = True
-            elif ch == '"':
-                in_string = False
-        elif ch == '"':
-            in_string = True
-        elif ch in "[{":
-            depth += 1
-            if depth > max_depth:
-                raise StrictJsonError("depth_exceeded")
-        elif ch in "]}":
-            depth -= 1
+                continue
+            match ch:
+                case "\\":
+                    escaped = True
+                case '"':
+                    in_string = False
+            continue
+        match ch:
+            case '"':
+                in_string = True
+            case "[" | "{":
+                depth += 1
+                if depth > max_depth:
+                    raise StrictJsonError("depth_exceeded")
+            case "]" | "}":
+                depth -= 1
 
 
 def _reject_duplicates(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -339,7 +343,8 @@ def _parse_float(text: str) -> float:
 
 
 def _parse_int(text: str) -> int:
-    if len(text.lstrip("-")) > MAX_JSON_INT_DIGITS:
+    digits = text[1:] if text.startswith("-") else text
+    if len(digits) > MAX_JSON_INT_DIGITS:
         raise StrictJsonError("number_out_of_range")
     try:
         return int(text)
@@ -412,8 +417,35 @@ class Slot:
     kind: str
     value: str | int
 
-    def to_object(self) -> dict[str, object]:
-        return {self.kind: self.value}
+
+@dataclass(frozen=True)
+class _ShapeKeys:
+    required: tuple[str, ...]
+    optional: tuple[str, ...]
+    message_based: bool
+    pointer_based: bool
+
+
+_COMMON_KEYS: Final = ("group_key", "metadata", "csv", "xlsx", "json")
+_MESSAGE_KEYS: Final = ("role_key", "content_key", "role_map", "on_unmapped_message_keys")
+_MESSAGE_OPTIONAL: Final = ("tool_calls_key", "tool_call_id_key", "name_key")
+_SHAPE_KEYS: Final = {
+    "messages": _ShapeKeys(
+        ("shape", "messages_pointer", *_MESSAGE_KEYS),
+        (*_COMMON_KEYS, *_MESSAGE_OPTIONAL),
+        True,
+        True,
+    ),
+    "messages_json": _ShapeKeys(
+        ("shape", "messages", *_MESSAGE_KEYS),
+        (*_COMMON_KEYS, *_MESSAGE_OPTIONAL),
+        True,
+        False,
+    ),
+    "prompt_completion": _ShapeKeys(
+        ("shape", "prompt", "completion"), (*_COMMON_KEYS, "system"), False, False
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -451,8 +483,6 @@ def _obj(value: object, required: Iterable[str], optional: Iterable[str]) -> dic
         raise _bad("not_an_object")
     required_set, optional_set = frozenset(required), frozenset(optional)
     for key in value:
-        if type(key) is not str:
-            raise _bad("wrong_type")
         if key not in required_set and key not in optional_set:
             raise _bad("unknown_key")
     for key in required_set:
@@ -546,7 +576,8 @@ def resolve_pointer(document: object, tokens: Sequence[str]) -> tuple[bool, obje
 
 def _message_keys(obj: dict[str, object]) -> MessageKeys:
     def optional(key: str) -> str | None:
-        return _name(obj[key]) if key in obj else None
+        value = obj.get(key, _MISSING)
+        return None if value is _MISSING else _name(value)
 
     return MessageKeys(
         role_key=_name(obj["role_key"]),
@@ -595,61 +626,26 @@ def _canonical_sha256(document: object) -> str:
     return hashlib.sha256(text.encode("ascii")).hexdigest()
 
 
-def _check_json_object(value: object, depth: int = 0) -> None:
-    """Exact JSON types only: no subclasses, NaN or caller objects."""
-    if depth > MAX_MAPPING_DEPTH:
-        raise _bad("bad_value")
-    kind = type(value)
-    if kind is dict:
-        for key, item in value.items():  # type: ignore[attr-defined]
-            if type(key) is not str:
-                raise _bad("wrong_type")
-            _check_json_object(item, depth + 1)
-    elif kind is list:
-        for item in value:  # type: ignore[attr-defined]
-            _check_json_object(item, depth + 1)
-    elif kind is float:
-        if value != value or value in (float("inf"), float("-inf")):
-            raise _bad("bad_value")
-    elif kind not in (str, int, bool, type(None)):
-        raise _bad("wrong_type")
-
-
 def mapping_from_object(obj: object) -> ImportMapping:
     """Validates an already-parsed MappingSpec. Raises `MappingInvalidError`
     (`mapping_invalid`) or `MappingUnsupportedError` (`mapping_unsupported`)."""
-    _check_json_object(obj)
     if type(obj) is not dict:
         raise _bad("not_an_object")
     shape = obj.get("shape")
-    if type(shape) is str and shape in UNSUPPORTED_SHAPES:
-        raise MappingUnsupportedError
     if type(shape) is not str:
-        raise _bad("wrong_type" if "shape" in obj else "missing_key")
-    if shape not in _SHAPES:
+        raise _bad("wrong_type")
+    if shape in UNSUPPORTED_SHAPES:
+        raise MappingUnsupportedError
+    spec = _SHAPE_KEYS.get(shape)
+    if spec is None:
         raise _bad("bad_shape")
-
-    common = ("group_key", "metadata", "csv", "xlsx", "json")
-    message_optional = ("tool_calls_key", "tool_call_id_key", "name_key")
-    message_required = ("role_key", "content_key", "role_map", "on_unmapped_message_keys")
-    required: tuple[str, ...]
-    optional: tuple[str, ...]
-    if shape == "messages":
-        required = ("shape", "messages_pointer", *message_required)
-        optional = (*common, *message_optional)
-    elif shape == "messages_json":
-        required = ("shape", "messages", *message_required)
-        optional = (*common, *message_optional)
-    else:
-        required = ("shape", "prompt", "completion")
-        optional = (*common, "system")
-    body = _obj(obj, required, optional)
+    body = _obj(obj, spec.required, spec.optional)
 
     group_key = _slot(body["group_key"]) if "group_key" in body else None
     metadata_slots: list[tuple[str, Slot]] = []
     if "metadata" in body:
         metadata = _obj(body["metadata"], (), _METADATA_KEYS)
-        metadata_slots = [(key, _slot(metadata[key])) for key in _METADATA_KEYS if key in metadata]
+        metadata_slots = [(key, _slot(raw)) for key, raw in sorted(metadata.items())]
     _validate_formats(body)
 
     pointer: tuple[str, ...] | None = None
@@ -660,22 +656,20 @@ def mapping_from_object(obj: object) -> ImportMapping:
     system: Slot | None = None
     on_unmapped: str | None = None
     role_map: Mapping[str, str] = MappingProxyType({})
-    if shape == "prompt_completion":
-        prompt, completion = _slot(body["prompt"]), _slot(body["completion"])
-        system = _slot(body["system"]) if "system" in body else None
-    else:
+    if spec.message_based:
         keys = _message_keys(body)
         role_map = _role_map(body["role_map"])
         policy = body["on_unmapped_message_keys"]
-        if type(policy) is not str:
-            raise _bad("wrong_type")
-        if policy not in ("reject", "ignore"):
+        if type(policy) is not str or policy not in ("reject", "ignore"):
             raise _bad("bad_value")
         on_unmapped = policy
-        if shape == "messages":
+        if spec.pointer_based:
             pointer = _parse_pointer(body["messages_pointer"])
         else:
             messages_slot = _slot(body["messages"])
+    else:
+        prompt, completion = _slot(body["prompt"]), _slot(body["completion"])
+        system = _slot(body["system"]) if "system" in body else None
 
     return ImportMapping(
         shape=shape,
@@ -806,8 +800,11 @@ def _parse_timestamp(value: str) -> None:
         parsed = datetime.fromisoformat(value)
     except ValueError:
         raise RowMappingError("invalid_event_timestamp", "metadata.event_timestamp") from None
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
+    if parsed.utcoffset() is None:
         raise RowMappingError("invalid_event_timestamp", "metadata.event_timestamp")
+
+
+_METADATA_CHECKS: Final = {"event_timestamp": _parse_timestamp}
 
 
 def apply_mapping(
@@ -816,7 +813,7 @@ def apply_mapping(
     """Builds the FTF-0506 raw record from one source row. A mapping never
     defaults a value: an empty optional slot is omitted."""
     messages: list[dict[str, object]] = []
-    if mapping.shape == "prompt_completion":
+    if mapping.prompt is not None:
         system = _text_value(mapping.system, row, headers, "system", required=False)
         prompt = _text_value(mapping.prompt, row, headers, "prompt", required=True)
         completion = _text_value(mapping.completion, row, headers, "completion", required=True)
@@ -825,7 +822,7 @@ def apply_mapping(
         messages.append({"role": "user", "content": prompt})
         messages.append({"role": "assistant", "content": completion})
     else:
-        if mapping.shape == "messages":
+        if mapping.messages_slot is None:
             if not isinstance(row, Mapping):
                 raise RowMappingError("mapping_type_mismatch", "messages")
             found, array = resolve_pointer(dict(row), mapping.messages_pointer or ())
@@ -854,8 +851,9 @@ def apply_mapping(
         text = _text_value(slot, row, headers, f"metadata.{name}", required=False)
         if text is None:
             continue
-        if name == "event_timestamp":
-            _parse_timestamp(text)
+        check = _METADATA_CHECKS.get(name)
+        if check is not None:
+            check(text)
         metadata[name] = text
     group_key = None
     if mapping.group_key is not None:
@@ -949,9 +947,6 @@ class RowRejection:
         if self.slot is not None and not _SLOT_NAME_PATTERN.fullmatch(self.slot):
             raise ValueError("slot is not from the slot grammar")
 
-    def to_object(self) -> dict[str, object]:
-        return {"locator": self.locator, "code": self.code, "slot": self.slot}
-
 
 @dataclass(frozen=True)
 class AcceptedRecord:
@@ -964,14 +959,6 @@ class BlankLine:
 
 
 ImportEvent = AcceptedRecord | RowRejection | BlankLine
-
-
-def _report_value(value: object) -> object:
-    if isinstance(value, tuple) and value and isinstance(value[0], RowRejection):
-        return [rejection.to_object() for rejection in value]
-    if isinstance(value, tuple):
-        return {code: count for code, count in value}  # rejection_counts
-    return value
 
 
 @dataclass(frozen=True)
@@ -996,11 +983,10 @@ class ImportReport:
 
     def body(self) -> dict[str, object]:
         """Every field except `report_sha256`, as canonical-JSON-ready data."""
-        return {
-            name: _report_value(getattr(self, name))
-            for name in ImportReport.__dataclass_fields__
-            if name != "report_sha256"
-        }
+        values = asdict(self)
+        del values["report_sha256"]
+        values["rejection_counts"] = dict(self.rejection_counts)
+        return values
 
     def __post_init__(self) -> None:
         if self.state not in ("completed", "failed", "blocked"):
@@ -1032,7 +1018,7 @@ class Deadline:
             raise ImportAborted("failed", "deadline_exceeded")
 
 
-class ChunkReader:
+class ChunkReader(Iterator[bytes]):
     """Wraps an `Iterable[bytes]` source: counts and hashes what it yields and
     holds it to the declared size and sha256.
 
@@ -1058,26 +1044,14 @@ class ChunkReader:
         self._expected_size = expected_size
         self._expected_sha256 = expected_sha256
         self._limits = limits
-        self._deadline = Deadline(limits.deadline_seconds, clock)
+        self.deadline = Deadline(limits.deadline_seconds, clock)
         self._hash = hashlib.sha256()
-        self._bytes = 0
-        self._done = False
+        self.bytes_read = 0
         self._aborted: ImportAborted | None = None
-
-    @property
-    def bytes_read(self) -> int:
-        return self._bytes
 
     @property
     def sha256(self) -> str:
         return self._hash.hexdigest()
-
-    @property
-    def deadline(self) -> Deadline:
-        return self._deadline
-
-    def __iter__(self) -> ChunkReader:
-        return self
 
     def _abort(self, state: str, code: str) -> ImportAborted:
         self._aborted = ImportAborted(state, code)
@@ -1092,12 +1066,10 @@ class ChunkReader:
     def __next__(self) -> bytes:
         if self._aborted is not None:
             raise self._aborted
-        if self._done:
-            raise StopIteration
         if self._expected_size > self._limits.max_source_bytes:
             raise self._abort("failed", "source_too_large")
         try:
-            self._deadline.check()
+            self.deadline.check()
         except ImportAborted as exc:
             raise self._abort(exc.state, exc.failure_code) from None
         while True:
@@ -1111,15 +1083,14 @@ class ChunkReader:
                 raise self._abort("blocked", "source_unavailable")
             if not chunk:
                 continue
-            self._bytes += len(chunk)
+            self.bytes_read += len(chunk)
             self._hash.update(chunk)
-            if self._bytes > self._limits.max_source_bytes:
-                raise self._abort("failed", "source_too_large")
-            if self._bytes > self._expected_size:
+            if self.bytes_read > self._expected_size:
                 raise self._abort("failed", "source_changed")
             return chunk
-        self._done = True
-        if self._bytes != self._expected_size or self.sha256 != self._expected_sha256:
+        if self.bytes_read != self._expected_size or not hmac.compare_digest(
+            self.sha256, self._expected_sha256
+        ):
             raise self._abort("failed", "source_changed")
         raise StopIteration
 
@@ -1214,7 +1185,11 @@ class ImportAccumulator:
             "rejection_counts": tuple(sorted(self._counts.items())),
             "rejections": tuple(self._rejections),
         }
-        unsealed = {k: _report_value(v) for k, v in fields.items()}
+        unsealed = {
+            **fields,
+            "rejection_counts": dict(self._counts),
+            "rejections": [asdict(rejection) for rejection in self._rejections],
+        }
         return ImportReport(**fields, report_sha256=_canonical_sha256(unsealed))  # type: ignore[arg-type]
 
 
