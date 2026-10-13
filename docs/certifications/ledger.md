@@ -11126,3 +11126,19 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   checks. License exemption removed (RED on the pre-F1 tree, 21 failures); strict RFC 3339 with 11 generated variants
   per date-time field (V8/V9 RED); whole-schema pre-scan, additionalProperties strict, frozen /changes, independent dedupe
   (V3 RED). V1-V9, L1, L2, D1, G1, V11-V14 RED; V10 GREEN (field always null on the live mount; advisory). Test-only.
+
+## 2026-10-13T13:26Z — RETURNED: FTF-0516 UI (r4), FTF-0904 (r6)
+- **FTF-0516 (UI): RETURNED** (round 3 → 4, tests + CI; PR #748, merge 8616e81b333ace2ff10748dd6307b650f91a450c, head
+  c1e6116c; production ea0256a6 = evidence_hash). Producer session_01Vs4gfGV3xD2Y3sjFwBGkbQ ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 114680946154; gate 114674621374 (1413 vitest tests). No production
+  violation: real P1 router on PG16 R1-R13, U1/U3/U4, RV/RV2/RV3, U5, PG1 paging all correct. 151 faults, 141 RED; 20/21
+  ruled strict-parse faults RED. Return: F30 GREEN (generator never varies value/element types); the producer's own new
+  checks R4-S3/R4-D6/R4-R2 unpinned; UI CHECKLIST (f) real-API CI test missing although the P1 routes are live.
+- **FTF-0904: RETURNED** (round 5 → 6; PR #749, merge 1719f05d5429a45cd5fc85d1c0ac865b729e703f, head 2f01ecb0). Producers
+  session_017V8ZEAjvrXg89NTtdpk2R2, session_01Whptx7tmZPrjHL8mmTHqwa ≠ certifier. CI: ci-verdict 114954719711; gate
+  114945781573 "FTF-0904 Log redaction tests: all checks passed", no SyntaxWarning. Length caps fixed (0/49 JWT, 0/35
+  escaped-value leaks); 306 long-secret and 2,832 timing runs clean; not flaky. Return: (Control-plane correction) the
+  round-5 ruling's suggested `(?<![_\-])eyJ` lookbehind re-exposes JWTs glued after `_`/`-` in 7 contexts - required fix;
+  the long-secret sweep checks only the whole marker (V-JWT-SIG-BOUND-40, V-BEARER-BOUND-500, V-SK-BOUND-500 GREEN) and
+  its base64 case is vacuous (V-B64-BOUND-500 GREEN); no logging-path long-secret sweep; no _PAIR/_BASE64_RUN/_USERINFO
+  time shapes (Q-PAIR-OVERLAP, Q-PAIR-KEY-WS-QUAD, Q-B64-NO-LOOKBEHIND > 20 s at 64 KB, GREEN).
