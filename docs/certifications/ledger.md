@@ -11142,3 +11142,16 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   the long-secret sweep checks only the whole marker (V-JWT-SIG-BOUND-40, V-BEARER-BOUND-500, V-SK-BOUND-500 GREEN) and
   its base64 case is vacuous (V-B64-BOUND-500 GREEN); no logging-path long-secret sweep; no _PAIR/_BASE64_RUN/_USERINFO
   time shapes (Q-PAIR-OVERLAP, Q-PAIR-KEY-WS-QUAD, Q-B64-NO-LOOKBEHIND > 20 s at 64 KB, GREEN).
+
+## 2026-10-13T16:44Z — RETURNED: FTF-0502 (r2); process note
+- **FTF-0502: RETURNED** (round 1 → 2; PR #756, merge 081258117ad7b54d9fdb701b6a5e086bd3ae99b5, head bdbcd77f). Producer
+  session_014eb1RZDqBdz3dG7AVtYJcs ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 115394189762; gate
+  115377977787 "all checks passed"; mutation 27/27. Built before FTF-0502-P1 against its own codes/types. Reproduced:
+  4301-digit int and 100k-deep array crash the generator mid-stream; duplicate keys, NaN/Inf/1e999, lone surrogates
+  accepted; content leaks in messages; raw ConnectionResetError after records yielded; 64 MiB line buffered (136 MB); no
+  content-type gate, mapping, candidate or record_id; line-rule defects; F3/F4/F7 GREEN; no integration test. Ruling: the
+  Backlog order P1 → 0502 is binding; FTF-0502 is rebuilt after P1 certifies. FTF-0502 stays PROVISIONAL as a returned
+  item; its L1 claim is against an incomplete contract.
+- **Process note:** FTF-0517 round 2 (#600, merged 2026-10-08T00:20Z) and FTF-1206 round 5 (#650, merged
+  2026-10-08T19:29Z) were never verified: check-ins listed only merges since the previous check-in. Both are now being
+  verified; each check-in also lists every merged relay PR whose item is still PROVISIONAL with no verdict after its merge.
