@@ -122,8 +122,10 @@ STRICT_JSON_CODES: Final = frozenset(
 REJECTION_CODES: Final = frozenset(
     {
         "canonical_schema_invalid",
+        "column_count_mismatch",
         "invalid_event_timestamp",
         "mapping_type_mismatch",
+        "nul_character",
         "record_too_large",
         "required_field_empty",
         "required_field_missing",
@@ -136,12 +138,19 @@ REJECTION_CODES: Final = frozenset(
 
 FAILURE_CODES: Final = frozenset(
     {
+        "csv_structure_invalid",
         "deadline_exceeded",
+        "duplicate_header",
+        "field_too_large",
+        "invalid_encoding",
+        "mapping_column_missing",
         "source_changed",
         "source_too_large",
         "source_unavailable",
         "stream_not_consumed",
+        "too_many_columns",
         "too_many_rejections",
+        "unexpected_bom",
     }
 )
 
