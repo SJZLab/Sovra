@@ -475,6 +475,13 @@ def test_run_goes_through_the_native_adapter_under_real_inspect() -> None:
         and all(s.scores for s in log.samples)
         and result.inspect_version == inspect_ai.__version__ == "0.3.269",
     )
+    samples_by_id = {str(s.id): s for s in log.samples}
+    check(
+        "FTF-R004-P3-AC3",
+        "the Inspect scorer reports CORRECT for the completed case (the scorer actually reads "
+        "adapter_status, not a constant)",
+        samples_by_id["case-001"].scores[bridge._SCORER_NAME].value == bridge.CORRECT,
+    )
     import hashlib
 
     check(
@@ -489,6 +496,13 @@ def test_run_goes_through_the_native_adapter_under_real_inspect() -> None:
         "FTF-R004-P3-AC3",
         "a preflight refusal is recorded as preflight_refused and invoke is never called",
         refused.invokes == [] and {c.status for c in res.cases} == {"preflight_refused"},
+    )
+    refused_log = read_eval_log(res.log_path)
+    check(
+        "FTF-R004-P3-AC3",
+        "the Inspect scorer reports INCORRECT for a case that never completed, "
+        "not the same constant score as a completed case",
+        refused_log.samples[0].scores[bridge._SCORER_NAME].value == bridge.INCORRECT,
     )
     # adapter exception: typed, content-free row
     boom = _Spy(
@@ -735,11 +749,37 @@ def test_hook_applies_p2_and_p1_to_model_traffic() -> None:
         result.verdict == "preserved" and kept.parity_checks == 1,
     )
     changed = _hook({"temperature": 0.7, "max_tokens": 64})
+    changed_exc: BaseException | None = None
+    try:
+        changed.check_generation_parity(_chat(), forward_generation_config=True)
+    except BridgeError as exc:
+        changed_exc = exc
     check(
         "FTF-R004-P3-AC6",
         "a request whose setting differs from the approved baseline is blocked even when forwarded",
-        _code(changed.check_generation_parity, _chat(), forward_generation_config=True)
-        == "generation_config_parity_blocked",
+        isinstance(changed_exc, BridgeError)
+        and changed_exc.code == "generation_config_parity_blocked",
+    )
+    check(
+        "FTF-R004-P3-AC6",
+        f"the refusal detail names the blocking key(s) (got {changed_exc!s}), never the bare "
+        "verdict word, so an empty join never silently falls back to the wrong value",
+        str(changed_exc) == "generation_config_parity_blocked: temperature",
+    )
+    original_compare = bridge.compare_generation_parity
+    fake_result = SimpleNamespace(verdict="BLOCKED", blocking_keys=())
+    bridge.compare_generation_parity = lambda *a, **k: fake_result
+    try:
+        exact_match_code = _code(
+            _hook().check_generation_parity, _chat(), forward_generation_config=True
+        )
+    finally:
+        bridge.compare_generation_parity = original_compare
+    check(
+        "FTF-R004-P3-AC6",
+        f"a verdict differing only by case from 'blocked' is not treated as blocked -- the "
+        f"check is an identity match, not normalized (got {exact_match_code})",
+        exact_match_code == "NO_RAISE",
     )
 
 
@@ -1085,6 +1125,35 @@ def test_case_rows_hold_the_adapters_exact_values() -> None:
         slow.cases[0].deadline_exceeded is True
         and _run(case_set=_case_set(recs[3:])).cases[0].deadline_exceeded is False,
     )
+    # Exactly at the deadline (elapsed == deadline_seconds) must NOT count as exceeded --
+    # calls `_run_case` directly (no Inspect orchestration around it) so the clock is
+    # read exactly twice (started, then elapsed) and the pairing is exact, not approximate.
+    boundary_case = _case_set(recs[3:]).cases[0]
+    boundary_adapter = build_isolated_tool_backend_adapter()
+    boundary_state = bridge._RunState(
+        adapter=boundary_adapter,
+        cases={boundary_case.case_key: boundary_case},
+        run_id="run-boundary",
+        tenant_namespace="tenant-a",
+        agent_manifest_id=MANIFEST_ID,
+        binding=ModelBinding("n/a", "n/a"),
+        deadline_seconds=5.0,
+        pinned_attestation=boundary_adapter.attest(),
+        pinned_describe=boundary_adapter.describe(),
+    )
+    boundary_ticks = iter([0.0, 5.0])
+    original_monotonic = bridge.time.monotonic
+    bridge.time.monotonic = lambda: next(boundary_ticks)
+    try:
+        boundary_record = bridge._run_case(boundary_state, boundary_case)
+    finally:
+        bridge.time.monotonic = original_monotonic
+    check(
+        "FTF-R004-P3-AC3",
+        "a call whose elapsed time exactly equals the deadline is not exceeded "
+        "(strictly greater-than, not greater-than-or-equal)",
+        boundary_record.status == "completed" and boundary_record.deadline_exceeded is False,
+    )
     for label, bad_id in (
         ("upper-cased", "CASE-D"),
         ("padded", " case-d"),
@@ -1179,6 +1248,21 @@ def test_case_adapter_gap_closures() -> None:
         len(_case_set([_record("Case-A", "t", "s", {}), _record("case-a", "t", "s", {})]).cases)
         == 2,
     )
+    for label, other_id in (("upper-cased", "CASE-ID-1"), ("padded", " case-id-1")):
+        check(
+            "FTF-R004-P3-AC2",
+            f"a case id that is {label} is a distinct id, not a duplicate of the exact string "
+            "already seen (case_id identity, not normalized)",
+            len(
+                _case_set(
+                    [
+                        _record("id-a", "t", "s", {}, id="case-id-1"),
+                        _record("id-b", "t", "s", {}, id=other_id),
+                    ]
+                ).cases
+            )
+            == 2,
+        )
 
     def nest(levels: int) -> dict[str, Any]:
         value: Any = "x"
@@ -1211,6 +1295,27 @@ def test_case_adapter_gap_closures() -> None:
         check(
             "FTF-R004-P3-AC2",
             f"purpose {purpose!r} is not 'development' -> refused (got {code})",
+            code == "unsupported_suite_purpose" and calls == [],
+        )
+    for purpose in ("Final", " final", "FINAL", "final "):
+        calls = []
+        originals = _patch_store(_FakeSuite(purpose, "locked"), [(_records(), None)], calls)
+        try:
+            code = _code(
+                load_locked_development_suite,
+                None,
+                None,
+                project_id=uuid.UUID(PROJECT_ID),
+                suite_id=uuid.UUID(SUITE_ID),
+                role="x",
+            )
+        finally:
+            _restore_store(originals)
+        check(
+            "FTF-R004-P3-AC2",
+            f"purpose {purpose!r} is not the exact string 'final' -> the sealed-suite refusal "
+            f"never fires; it falls through to unsupported-purpose (got {code}), proving the "
+            "'final' check is an identity match, not normalized",
             code == "unsupported_suite_purpose" and calls == [],
         )
     loaded = _load(_FakeSuite("development", "locked"), [(_records(), None)], [])
