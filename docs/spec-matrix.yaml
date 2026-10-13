@@ -7394,16 +7394,56 @@ FTF-0501:
   proving_symbol: build_direct_upload_router
   proving_test: tests/tasks/test_ftf_0501.py
 FTF-0502:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: JSONL importer
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
-    FTF-0506
-  proof_state: UNPROVEN
+  evidence_hash: 0eada57097f55ccb2a7203768aeef377a5a4f093
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
+    FTF-0506 (all CERTIFIED, confirmed before relying on them). Path refined from the packet's
+    generic services/training-worker/data/jsonl_importer.py to workers/data/jsonl_importer.py
+    (this repo's real SOURCE_ROOT, same precedent FTF-0506/FTF-0507/FTF-0508/FTF-0517 already
+    established).
+
+
+    Built: import_jsonl(lines, *, source_type, tool_schemas, tool_argument_validator,
+    max_line_bytes) is a pure, synchronous generator (no DB/network) over an iterable of raw
+    bytes lines. Every line in `lines` produces exactly one yielded ImportedRecord or
+    QuarantinedRow -- the real, executable form of this task's own negative_acceptance
+    ("...produce quarantine/errors, not silent loss"), proven directly
+    (test_every_line_produces_exactly_one_item) and by fault injection (silently dropping a
+    not-bytes line instead of quarantining it was shown to fail 5 separate checks, then
+    reverted byte-identical). Reuses FTF-0506's already-CERTIFIED normalize_conversation for
+    every record (never a second, independently invented schema checker) and FTF-0508's
+    already-CERTIFIED MAX_CANONICAL_RECORD_BYTES (Section 67.3, 2MiB) as the raw-line bound,
+    checked by byte length before any decode or parse is attempted.
+
+
+    Negative acceptance, each with its own quarantine code and real underlying error text
+    (never a generic placeholder): malformed UTF-8 (malformed_utf8), an oversize line
+    (line_too_large, checked before decode/parse), malformed JSON (malformed_json), a non-object
+    top-level JSON value (not_an_object), and a non-bytes line (not_bytes_line, e.g. an
+    already-decoded str that would defeat the UTF-8 check). "Mixed critical schemas" is read
+    against the one real schema check this repository has for a parsed record's shape
+    (FTF-0506's normalize_conversation): a source mixing differently-shaped rows (e.g. a Section
+    7 messages-array row alongside a prompt/completion row with no "messages" key at all) has
+    each row judged and quarantined on its own real ConversationNormalizationError text
+    (schema_invalid) -- disclosed in the module's own docstring as this task's own interpretation,
+    since the packet names no second, independently invented "critical schema" concept.
+
+
+    Disclosed, not invented: this importer forwards every parsed JSON object straight through as
+    FTF-0506's own raw_record and never extracts or guesses a record_id/group_key from any
+    particular raw field -- Section 9's own cross-record grouping keys are a later pipeline
+    concern once a specific source's own field for that identity is known
+    (test_record_id_and_group_id_are_never_invented_by_the_importer). No live caller yet (no
+    dataset-import pipeline route exists yet in this repository), same disclosed precedent
+    FTF-0506/FTF-0507/FTF-0508 already established -- proving_symbol stays blank. Not
+    self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0502.py
 FTF-0503:
   certification_state: NONE
   criticality: MUST
