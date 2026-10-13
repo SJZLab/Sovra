@@ -24696,3 +24696,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-13T14:51Z — Control plane: Backlog refill
 - **Queued:** FTF-1504, FTF-0502-P1, FTF-0502, FTF-0504, FTF-0503, FTF-0505 (newly ready after FTF-0501). Advisory: FTF-0501 finalize accepts macro/external-link parts in a plain .xlsx.
+
+## 2026-10-13T16:44Z — Control plane: FTF-0502 returned
+- **Returned:** FTF-0502 r2 (0k): rebuild on FTF-0502-P1 after P1 certifies. **Process:** #600 (FTF-0517) and #650 (FTF-1206) found unverified; verifiers running.
