@@ -66,7 +66,7 @@ from app.model_versions import model_version_schema as version_schema  # noqa: E
 
 CID = "FTF-H010-P2"
 MODULE_PATH = ROOT / "apps" / "api" / "app" / "model_versions" / "model_import_validation.py"
-MIGRATION_PATH = ROOT / "apps" / "api" / "alembic" / "versions" / "0029_model_import_validation.py"
+MIGRATION_PATH = ROOT / "apps" / "api" / "alembic" / "versions" / "0030_model_import_validation.py"
 
 _failures: list[str] = []
 CHECK_COUNT = [0]

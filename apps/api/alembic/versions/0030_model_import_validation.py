@@ -45,9 +45,19 @@ connection and no migration can invent one, so the constraint is enforced on eve
 updated row and not re-checked against those legacy rows; the claim refuses such a row
 (`job_invalid`) instead of validating it.
 
-Revision ID: 0029_model_import_validation
-Revises: 0028_model_import_state_machine
+Revision ID: 0030_model_import_validation
+Revises: 0029_artifact_ready_license
 Create Date: 2026-10-10
+
+Renumbered from 0029 to 0030 (2026-10-13): this migration and 0029_artifact_ready_license
+were each independently claimed off 0028_model_import_state_machine by different relay
+sessions working concurrently, forking the Alembic chain into two heads once both merged
+to main -- "Multiple head revisions are present for given argument 'head'", failing every
+integration job that runs `alembic upgrade head`. Per QUEUE.md's own serialization rule
+("take the next free number at claim time... renumber if another lands first"),
+0029_artifact_ready_license landed on main first, so this migration is renumbered to the
+next free slot and rechained onto it. No schema change: the two migrations touch disjoint
+tables (trainable_artifacts vs. model_import_jobs).
 """
 
 from __future__ import annotations
@@ -57,8 +67,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "0029_model_import_validation"
-down_revision = "0028_model_import_state_machine"
+revision = "0030_model_import_validation"
+down_revision = "0029_artifact_ready_license"
 branch_labels = None
 depends_on = None
 
@@ -309,7 +319,7 @@ def downgrade() -> None:
     ).scalar_one()
     if null_reference_rows:
         raise RuntimeError(
-            "cannot downgrade 0029: endpoint model_versions rows with a NULL endpoint_reference "
+            "cannot downgrade 0030: endpoint model_versions rows with a NULL endpoint_reference "
             "exist and the 0009 constraint cannot hold them (no data is deleted)"
         )
     op.drop_constraint("ck_model_versions_kind_consistency", "model_versions", type_="check")
