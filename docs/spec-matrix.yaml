@@ -9878,7 +9878,7 @@ FTF-0904:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Log redaction
-  evidence_hash: c97190c388978b495d0d1a4e1a38b52d80b6be1a
+  evidence_hash: 4c0962ed2844d49cedb1d5f38fd8d5458e5a2980
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0903
@@ -10118,12 +10118,22 @@ FTF-0904:
     middle, three-quarters and end (not only the whole marker), the base64 case checks fragments
     of the encoded text, and a logging-path sweep runs a real top tier per rule sized to fit
     MAX_TEXT_LENGTH. New time shapes for `_PAIR`, `_BASE64_RUN`, `_USERINFO` and the JWT scan are
-    swept 8 KB..256 KB through both paths. tests/tasks/test_ftf_0904.py now has 67 faults (was
-    52), including Q-PAIR-OVERLAP, Q-PAIR-KEY-WS-QUAD, Q-B64-NO-LOOKBEHIND,
+    swept 8 KB..256 KB through both paths. tests/tasks/test_ftf_0904.py had 67 faults (was
+    56), including Q-PAIR-OVERLAP, Q-PAIR-KEY-WS-QUAD, Q-B64-NO-LOOKBEHIND,
     Q-USERINFO-NO-LOOKBEHIND, V-JWT-SIG-BOUND-40, V-BEARER-BOUND-500, V-SK-BOUND-500 and
     V-B64-BOUND-500; every fault turns the suite RED (full file run, exit 0 on the real module).
-    Still UNWIRED (blank proving_symbol). Submission:
+    Still UNWIRED (blank proving_symbol). Round 6 submission:
     docs/certifications/submissions/2026-10-13T1530Z-FTF-0904-r6.md.
+
+    Round 7 (tests only; production unchanged): the named Q-PAIR-KEY-WS-QUAD mutation
+    (`[(\[]\s*b?` -> `[(\[]\s*\s*b?`) is now its own fault and goes RED via new single-opener
+    shapes `"(" + " "*(n-1)` and `"[" + "\t"*(n-1)`; the round-6 `[^'"]*` variant is kept as
+    Q-PAIR-KEY-ANY-QUAD. Q-JWT-LOWER-IN-LOOP (the `_jwt_start` skip loop re-lowering the segment)
+    goes RED via `"aeyJ"*k + ".abcdef.g"` and `"x" + "eyJ"*k + ".abcdef.g"`. All four shapes are
+    swept 8 KB..256 KB through redact_text and the logging path with absolute bounds, plus a
+    negative test that a real JWT after glued starts is still redacted. 69 faults (was 67).
+    evidence_hash is the round-7 code commit. Submission:
+    docs/certifications/submissions/2026-10-13T2035Z-FTF-0904-r7.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0904.py

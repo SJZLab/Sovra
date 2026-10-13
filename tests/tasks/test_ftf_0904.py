@@ -1361,6 +1361,17 @@ def _adversarial_shape(label: str, size: int) -> str:
         return "( " * (size // 2)
     if label == "pair-backslash-value":
         return "('password', '" + "\\" * (size - 14)
+    # Round 7: a single opener followed by one long whitespace run (the named
+    # Q-PAIR-KEY-WS-QUAD shape: one start, so only a quadratic opener shows), and JWT-looking
+    # starts that are all glued after an alphanumeric (every "eyJ" is skipped by `_jwt_start`).
+    if label == "pair-paren-ws-run":
+        return "(" + " " * (size - 1)
+    if label == "pair-bracket-tab-run":
+        return "[" + "\t" * (size - 1)
+    if label == "jwt-glued-alnum-run":
+        return "aeyJ" * ((size - 9) // 4) + ".abcdef.g"
+    if label == "jwt-glued-x-run":
+        return "x" + "eyJ" * ((size - 10) // 3) + ".abcdef.g"
     if label == "base64-run-bad-tail":
         return "A" * (size - 3) + "==="
     if label == "base64-run-bad-tail-url":
@@ -1406,6 +1417,10 @@ _ALL_LABELS = (
     "base64-run-bad-tail-url",
     "userinfo-scheme-run",
     "userinfo-scheme-run-sep",
+    "pair-paren-ws-run",
+    "pair-bracket-tab-run",
+    "jwt-glued-alnum-run",
+    "jwt-glued-x-run",
 )
 _ADVERSARIAL = {label: _adversarial_shape(label, _SIZE) for label in _ALL_LABELS}
 
@@ -1576,7 +1591,8 @@ _ROUND4_QUADRATIC_LABELS = (
 )
 
 
-_ROUND6_LABELS = _ALL_LABELS[-9:]
+_ROUND6_LABELS = _ALL_LABELS[24:33]
+_ROUND7_LABELS = _ALL_LABELS[33:]
 
 
 def _timed_log(text: str) -> float | None:
@@ -1615,6 +1631,38 @@ def test_round6_every_rule_shape_sweep_through_both_paths() -> None:
                 f"{label} at {size} chars (logging path) took {logged}s",
                 logged is not None and logged < _LIMIT_SECONDS,
             )
+
+
+def test_round7_pair_whitespace_and_jwt_glued_shapes_through_both_paths() -> None:
+    """Round 7 (Q-PAIR-KEY-WS-QUAD, Q-JWT-LOWER-IN-LOOP): the single-opener whitespace runs
+    `"(" + " "*(n-1)` / `"[" + "\\t"*(n-1)` and the all-glued-"eyJ" runs `"aeyJ"*k + ".abcdef.g"`
+    / `"x" + "eyJ"*k + ".abcdef.g"` swept 8 KB..256 KB through BOTH `redact_text` and the logging
+    path, with an absolute bound at every size."""
+    for label in _ROUND7_LABELS:
+        for size in _SWEEP_SIZES:
+            text = _adversarial_shape(label, size)
+            elapsed, _ = _timed_redact(text)
+            check(
+                "FTF-0904-R10",
+                f"{label} at {size} chars (redact_text) took {elapsed}s",
+                elapsed is not None and elapsed < _LIMIT_SECONDS,
+            )
+            logged = _timed_log(text)
+            check(
+                "FTF-0904-R11",
+                f"{label} at {size} chars (logging path) took {logged}s",
+                logged is not None and logged < _LIMIT_SECONDS,
+            )
+
+
+def test_round7_glued_jwt_shapes_stay_redaction_correct() -> None:
+    """Negative on the real default code: the glued shapes are fast AND a real JWT after them is
+    still redacted (speed bought by skipping starts would be a leak, not linearity)."""
+    jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLWJ5dGVz"
+    for prefix in ("aeyJ" * 2000, "x" + "eyJ" * 2000):
+        _, out = _timed_redact(prefix + " " + jwt)
+        check("FTF-0904-R12", "a JWT after glued eyJ starts survived", jwt[:20] not in out)
+        check("FTF-0904-R12", f"no redaction marker in the tail: {out!r}", "[REDACTED]" in out)
 
 
 def test_every_rule_size_sweep_is_linear_not_quadratic() -> None:
@@ -2363,9 +2411,21 @@ FAULTS: list[tuple[str, str, str, int]] = [
         1,
     ),
     (
-        "Q-PAIR-KEY-WS-QUAD pair opener scans any non-quote run, not just whitespace (quadratic)",
+        "Q-PAIR-KEY-ANY-QUAD pair opener scans any non-quote run, not just whitespace (quadratic)",
         r"""[(\[]\s*b?(?P<q>""",
         r"""[(\[][^'"]*b?(?P<q>""",
+        1,
+    ),
+    (
+        "Q-PAIR-KEY-WS-QUAD pair opener gets a second adjacent whitespace scan (quadratic)",
+        r"""[(\[]\s*b?(?P<q>""",
+        r"""[(\[]\s*\s*b?(?P<q>""",
+        1,
+    ),
+    (
+        "Q-JWT-LOWER-IN-LOOP _jwt_start skip loop re-lowers the whole segment each step",
+        r'pos = lowered.find("eyj", pos + 1)',
+        r'pos = segment.lower().find("eyj", pos + 1)',
         1,
     ),
     (
