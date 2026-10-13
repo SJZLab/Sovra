@@ -33,6 +33,13 @@ its own output. A trace counts as *approved* only when an independent
 acceptance clause "reviewed ... independent review" stays BLOCKED_EXTERNAL
 (a human/Argilla step, `resource_gate`) and no review is minted here.
 
+Plain data in, our own objects out: `build_training_dataset` and
+`verify_trace_provenance` accept traces (and the builder, reviews) only as plain JSON
+data -- exact `dict`/`list`/`str`/`int`/`float`/`bool`/`None`, exact-`str` keys, checked
+recursively -- and construct their own `TrainingTrace`/`ReviewDecision` from it, so no
+caller-supplied object, subclass, method, attribute or hook is ever read after parsing
+(closes the object-model class: str/dict subclasses, shadowed attributes).
+
 Provenance is verified, not self-declared: `verify_trace_provenance`
 regenerates a trace from `GENERATOR_ID` and `provenance.index` and requires
 the recorded trace to equal it exactly (user turns, free-text tool arguments,
@@ -678,12 +685,19 @@ def _require_trace_shape(trace: Any) -> TrainingTrace:
     never a bare TypeError/AttributeError/KeyError further down."""
     if type(trace) is not TrainingTrace:
         raise TraceVerificationError("not a TrainingTrace")
-    if set(vars(trace)) != _TRACE_FIELD_NAMES:
+    # The instance __dict__ must be a plain dict: a dict subclass runs its own
+    # __iter__/__getitem__ on every read, so it can show the guards one trace and
+    # later reads another (or hide a shadowed to_dict). Read it once, into a snapshot.
+    instance_dict = vars(trace)
+    if type(instance_dict) is not dict:
+        raise TraceVerificationError("trace instance __dict__ is not a plain dict")
+    state = dict(instance_dict)
+    if set(state) != _TRACE_FIELD_NAMES:
         raise TraceVerificationError(
             "trace instance carries an attribute outside its declared fields"
         )
     for name in _STR_FIELDS:
-        value = getattr(trace, name)
+        value = state[name]
         if type(value) is not str or not value:
             raise TraceVerificationError(f"trace field {name} must be a non-empty string")
     if type(trace.critical) is not bool:
@@ -757,14 +771,47 @@ def _raw_final_answer(trace: TrainingTrace) -> str:
     return ""
 
 
-def verify_trace_provenance(trace: TrainingTrace) -> None:
+def _plain_copy(value: Any, what: str, depth: int = 0) -> Any:
+    """Rebuild `value` from exact plain JSON types only (`dict`, `list`, `str`,
+    `int`, `float`, `bool`, `None`; exact-`str` keys), checked recursively. The
+    copy is the only thing read afterwards, so no caller-supplied object, method,
+    attribute or hook (a str/dict subclass with a rigged `__eq__`/`__hash__`, a
+    shadowing instance attribute) can ever run against a decision."""
+    if depth > 64:
+        raise TraceVerificationError(f"{what}: nesting is too deep")
+    kind = type(value)
+    if value is None or kind in (str, int, float, bool):
+        return value
+    if kind is list:
+        return [_plain_copy(item, what, depth + 1) for item in value]
+    if kind is dict:
+        out: dict[str, Any] = {}
+        for key, item in value.items():
+            if type(key) is not str:
+                raise TraceVerificationError(f"{what}: not plain JSON data (non-str key)")
+            out[key] = _plain_copy(item, what, depth + 1)
+        return out
+    raise TraceVerificationError(f"{what}: not plain JSON data (unsupported type)")
+
+
+def _trace_from_plain(data: Any) -> TrainingTrace:
+    """Parse a caller's trace, given as plain JSON data, into our own
+    `TrainingTrace`. A `TrainingTrace` (or any other object) is refused."""
+    if type(data) is not dict:
+        raise TraceVerificationError("a trace must be a plain JSON object (dict)")
+    copied = _plain_copy(data, "trace")
+    if set(copied) != _TRACE_FIELD_NAMES:
+        raise TraceVerificationError("trace keys must be exactly the declared trace fields")
+    steps = copied["steps"]
+    if type(steps) is not list:
+        raise TraceVerificationError("trace steps must be a list")
+    copied["steps"] = tuple(steps)
+    return _require_trace_shape(TrainingTrace(**copied))
+
+
+def _check_provenance(trace: TrainingTrace) -> int:
     """Regenerate the trace from `GENERATOR_ID` and `provenance.index` and
-    require the recorded trace to equal it exactly; raise otherwise. This is
-    the one check that compares the caller's own (untrusted) trace against a
-    freshly generated reference, so it reads every field directly
-    (`_raw_trace_dict`) rather than through `to_dict()`, which a forged
-    instance attribute could shadow."""
-    _require_trace_shape(trace)
+    require it to equal the parsed trace exactly; return the index read once."""
     producer = trace.provenance.get("producer")
     index = trace.provenance.get("index")
     if producer not in (GENERATOR_ID,) or type(index) is not int or index < 0:
@@ -775,6 +822,16 @@ def verify_trace_provenance(trace: TrainingTrace) -> None:
         raise TraceVerificationError(
             f"{trace.trace_id}: trace differs from what the generator produces for its index"
         )
+    return index
+
+
+def verify_trace_provenance(trace: dict[str, Any]) -> None:
+    """Regenerate the trace from `GENERATOR_ID` and `provenance.index` and
+    require the recorded trace to equal it exactly; raise otherwise. The trace is
+    accepted only as plain JSON data (the `TrainingTrace.to_dict()` shape) and is
+    parsed into our own object first, so nothing the caller supplies is read after
+    parsing."""
+    _check_provenance(_trace_from_plain(trace))
 
 
 def verify_trace_replay(trace: TrainingTrace) -> None:
@@ -832,29 +889,39 @@ def _norm(value: str) -> str:
 _RESERVED_FIELDS = ("group_ids", "template_ids", "entity_titles", "answer_sha256s")
 
 
-def _check_reserved_shape(reserved: Any) -> ReservedFinalSuite:
-    """A reserved set must be real frozensets of strings: a bare string would be
-    split into characters (admitting the sealed id) and `{}` would read as 'none'."""
+_SealedSets = tuple[frozenset[str], frozenset[str], frozenset[str], frozenset[str]]
+
+
+def _snapshot_reserved(reserved: Any) -> _SealedSets:
+    """Read the caller's reserved suite exactly once into exact frozensets of plain
+    `str` (already normalised), in `_RESERVED_FIELDS` order. A set must be a real
+    frozenset of strings: a bare string would be split into characters (admitting
+    the sealed id) and `{}` would read as 'none'. Everything after this call uses
+    the snapshot, so no caller code (a `__dict__` key hook, `__getattr__`) can run
+    inside the per-trace loop."""
     if not isinstance(reserved, ReservedFinalSuite):
         raise TrainingDatasetError("reserved must be a ReservedFinalSuite")
+    sealed: list[frozenset[str]] = []
     for name in _RESERVED_FIELDS:
         members = getattr(reserved, name)
         if type(members) is not frozenset or not all(type(m) is str for m in members):
             raise TrainingDatasetError(f"reserved.{name} must be a frozenset of strings")
+        sealed.append(frozenset(_norm(m) for m in members))
+    return (sealed[0], sealed[1], sealed[2], sealed[3])
+
+
+def _check_reserved_shape(reserved: Any) -> ReservedFinalSuite:
+    _snapshot_reserved(reserved)
     return reserved
 
 
-def _check_reserved(trace: TrainingTrace, reserved: ReservedFinalSuite) -> None:
+def _check_reserved(trace: TrainingTrace, sealed: _SealedSets) -> None:
     """Case/whitespace-insensitive on both sides, so a re-cased copy of a
-    sealed id cannot slip past the held-out guard."""
-    answer_hash = _norm(hashlib.sha256(_raw_final_answer(trace).encode("utf-8")).hexdigest())
-    overlaps = (
-        (_norm(trace.group_id), {_norm(x) for x in reserved.group_ids}),
-        (_norm(trace.template_id), {_norm(x) for x in reserved.template_ids}),
-        (_norm(trace.entity_title), {_norm(x) for x in reserved.entity_titles}),
-        (answer_hash, {_norm(x) for x in reserved.answer_sha256s}),
-    )
-    if any({probe} & sealed for probe, sealed in overlaps):
+    sealed id cannot slip past the held-out guard. `sealed` is the entry snapshot
+    from `_snapshot_reserved`."""
+    answer_hash = hashlib.sha256(_raw_final_answer(trace).encode("utf-8")).hexdigest()
+    probes = (trace.group_id, trace.template_id, trace.entity_title, answer_hash)
+    if any(_norm(probe) in members for probe, members in zip(probes, sealed, strict=True)):
         raise HeldOutLeakageError(f"{trace.trace_id}: overlaps the sealed final suite")
 
 
@@ -883,27 +950,32 @@ def _validate_trace_shape(trace: Any) -> TrainingTrace:
     return trace
 
 
-def _validate_review(review: Any, trace_ids: set[str]) -> ReviewDecision:
-    # Exact types throughout: a ReviewDecision subclass, or a str subclass
-    # overriding __eq__/__hash__/strip(), could otherwise make a conflicting
-    # decision look consistent (the `decisions.setdefault`/set check below
-    # trusts `decision.__eq__`) or let a generator-identity reviewer's own
-    # `.strip()` lie its way past the independence check below.
-    if type(review) is not ReviewDecision:
-        raise ReviewIndependenceError("reviews must be ReviewDecision instances")
-    for name in ("trace_id", "reviewer_id", "decision"):
-        value = getattr(review, name)
-        if type(value) is not str or not value:
-            raise ReviewIndependenceError(f"review.{name} must be a non-empty string")
-    if review.decision not in _DECISIONS:
-        raise ReviewIndependenceError(f"unknown review decision: {review.decision!r}")
-    if review.trace_id not in trace_ids:
-        raise ReviewIndependenceError(f"review for unknown trace: {review.trace_id!r}")
+def _review_from_plain(data: Any, trace_ids: set[str]) -> ReviewDecision:
+    """Parse a caller's review, given as plain JSON data, into our own
+    `ReviewDecision`. The three fields are read once into locals that are used for
+    both validation and recording; a `ReviewDecision` (or any other object) is
+    refused."""
+    if type(data) is not dict:
+        raise ReviewIndependenceError("a review must be a plain JSON object (dict)")
+    fields_seen: dict[str, str] = {}
+    for key, value in data.items():
+        if type(key) is not str or type(value) is not str or not value:
+            raise ReviewIndependenceError("review fields must be non-empty plain strings")
+        fields_seen[key] = value
+    if set(fields_seen) != {"trace_id", "reviewer_id", "decision"}:
+        raise ReviewIndependenceError("review keys must be exactly trace_id, reviewer_id, decision")
+    trace_id = fields_seen["trace_id"]
+    reviewer_id = fields_seen["reviewer_id"]
+    decision = fields_seen["decision"]
+    if decision not in _DECISIONS:
+        raise ReviewIndependenceError(f"unknown review decision: {decision!r}")
+    if trace_id not in trace_ids:
+        raise ReviewIndependenceError(f"review for unknown trace: {trace_id!r}")
     # Admitted traces are all produced by GENERATOR_ID ("generator:..."), so a reviewer
     # carrying a generator identity is the producer reviewing its own output.
-    if _norm(review.reviewer_id).startswith("generator:"):
-        raise ReviewIndependenceError(f"{review.trace_id}: reviewer is not independent of producer")
-    return review
+    if _norm(reviewer_id).startswith("generator:"):
+        raise ReviewIndependenceError(f"{trace_id}: reviewer is not independent of producer")
+    return ReviewDecision(trace_id, reviewer_id, decision)
 
 
 def _floor_status(approved_count: int, family_count: int) -> tuple[bool, str]:
@@ -917,20 +989,26 @@ def _floor_status(approved_count: int, family_count: int) -> tuple[bool, str]:
 
 
 def build_training_dataset(
-    traces: tuple[TrainingTrace, ...] | list[TrainingTrace],
-    reviews: tuple[ReviewDecision, ...] | list[ReviewDecision] = (),
+    traces: tuple[dict[str, Any], ...] | list[dict[str, Any]],
+    reviews: tuple[dict[str, str], ...] | list[dict[str, str]] = (),
     *,
     reserved: ReservedFinalSuite | None = None,
 ) -> TrainingDataset:
-    """Verify every trace, then admit only independently approved ones."""
+    """Verify every trace, then admit only independently approved ones.
+
+    `traces` and `reviews` are plain JSON data only (the `TrainingTrace.to_dict()`
+    shape and `{"trace_id", "reviewer_id", "decision"}`): exact `dict`/`list`/`str`/
+    `int`/`float`/`bool`/`None`, exact-`str` keys, checked recursively. The builder
+    parses them into its own `TrainingTrace`/`ReviewDecision`; no caller-supplied
+    object, method, attribute or hook is read after parsing."""
     if not isinstance(traces, tuple | list) or not isinstance(reviews, tuple | list):
         raise TrainingDatasetError("traces and reviews must be sequences")
-    reserved = _check_reserved_shape(ReservedFinalSuite() if reserved is None else reserved)
+    sealed = _snapshot_reserved(ReservedFinalSuite() if reserved is None else reserved)
     by_id: dict[str, TrainingTrace] = {}
     seen_ids: set[str] = set()
     seen_indices: set[int] = set()
     for raw in traces:
-        trace = _validate_trace_shape(raw)
+        trace = _validate_trace_shape(_trace_from_plain(raw))
         if _norm(trace.trace_id) in seen_ids:
             raise TrainingDatasetError(f"duplicate trace_id: {trace.trace_id!r}")
         seen_ids.add(_norm(trace.trace_id))
@@ -941,28 +1019,25 @@ def build_training_dataset(
         # SecretInTraceError, a held-out overlap as HeldOutLeakageError) before
         # ever reaching the more generic provenance mismatch below.
         _scan_secrets(trace)
-        _check_reserved(trace, reserved)
-        verify_trace_provenance(trace)
-        index = trace.provenance["index"]
+        _check_reserved(trace, sealed)
+        index = _check_provenance(trace)
         if index in seen_indices:
             raise TrainingDatasetError(f"generator index {index} admitted more than once")
         seen_indices.add(index)
-        # verify_trace_provenance just proved `trace` is field-for-field
-        # identical to the generator's own output for `index`, so a repeated
-        # _scan_secrets/_check_reserved call on the regenerated object could
-        # never behave differently from the first pass above (same content,
-        # same deterministic functions) -- that would be dead code no test
-        # could ever kill. The real-backend replay has no first-pass
-        # counterpart at all, so it runs here, on the object the caller never
-        # touched, for the first and only time.
+        # The object that is admitted is the regenerated one, never the caller's, so
+        # the secret scan and the held-out check run on it too (the caller's
+        # object is only compared against it). The real-backend replay has no
+        # first-pass counterpart and runs here for the first time.
         regenerated = _generate_one(index)
+        _scan_secrets(regenerated)
+        _check_reserved(regenerated, sealed)
         verify_trace_replay(regenerated)
-        by_id[trace.trace_id] = regenerated
+        by_id[regenerated.trace_id] = regenerated
 
     trace_ids = set(by_id)
     decisions: dict[str, str] = {}
     for raw_review in reviews:
-        review = _validate_review(raw_review, trace_ids)
+        review = _review_from_plain(raw_review, trace_ids)
         if {decisions.setdefault(review.trace_id, review.decision)} != {review.decision}:
             raise ReviewIndependenceError(f"{review.trace_id}: conflicting review decisions")
 

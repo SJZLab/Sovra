@@ -1463,7 +1463,7 @@ def main() -> None:
     )
 
     def report_insert(
-        report_seq: int, detectors_reported_sql: str, detector_versions: dict
+        report_seq: int, detectors_reported_sql: str, detector_versions: Any
     ) -> tuple[bool, str]:  # noqa: E501
         return raw(
             org1_id,
@@ -1500,6 +1500,14 @@ def main() -> None:
     )
     ok, message = report_insert(23, "ARRAY[]::text[]", VERSIONS)
     check(f"positive control: all 7 required detectors is accepted ({message[:120]})", ok)
+
+    # N8: a JSON ARRAY holding the 7 names satisfies jsonb_exists_all, so only the
+    # jsonb_typeof(...) = 'object' clause refuses it.
+    expect(
+        "detector_versions as a JSON array of the 7 names is refused by the CHECK",
+        report_insert(24, "ARRAY[]::text[]", sorted(VERSIONS)),
+        "ck_dataset_quality_reports_detector_versions",
+    )
 
     # cross-tenant raw access
     cross_ok, cross_msg = raw(
@@ -1628,6 +1636,10 @@ def main() -> None:
     held_ds = make_dataset("routes-held", purpose="held_out_evaluation")
     held_report = record(held_ds, extra=(_extra("held_warn", (0, 1)),))
     held_issue = issue_of(held_report, "held_warn")
+    uni_ds = make_dataset("routes-unicode")
+    uni_report = record(uni_ds, extra=(_extra("uni_emoji", (0, 1)), _extra("uni_arabic", (0, 1))))
+    uni_emoji = issue_of(uni_report, "uni_emoji")
+    uni_arabic = issue_of(uni_report, "uni_arabic")
 
     with _running_app(app) as url:
         b = base(org1_id, p1_id, route_ds.id)
@@ -1868,6 +1880,73 @@ def main() -> None:
             )
         check("resolve-issue: malformed requests wrote nothing", counts() == before)
 
+        # Round 3 (N2/N6 surrogates, NUL): characters Postgres text cannot store
+        # must be a clean 400 from the real routes, never a 500 from psycopg.
+        def body_with(**over: Any) -> dict[str, Any]:
+            payload: dict[str, Any] = {
+                "quality_report_id": str(route_report.id),
+                "expected_resolution_version": 0,
+                "idempotency_key": uuid.uuid4().hex,
+                "resolutions": [item(route_warn, "exclude")],
+            }
+            payload.update(over)
+            return payload
+
+        bad_chars = (
+            ("a lone high surrogate", "\ud800"),
+            ("a lone low surrogate", "\udc00"),
+            ("a NUL character", "a\x00b"),
+        )
+        for label, bad in bad_chars:
+            for field in ("reason", "idempotency_key"):
+                bad_payload: Any = body_with()
+                if field == "reason":
+                    bad_payload["resolutions"][0]["reason"] = f"x{bad}y"
+                else:
+                    bad_payload["idempotency_key"] = f"k{bad}"
+                # json.dumps escapes the lone surrogate as a JSON \ud800 escape
+                result = _http(
+                    url, "POST", b + "/resolve-issue", ml, json.dumps(bad_payload).encode()
+                )
+                check(
+                    f"resolve-issue: {label} in {field} => 400 invalid_body (got {result.status})",
+                    result.status == 400 and result.json() == {"detail": "invalid_body"},
+                )
+        raw_surrogate = (
+            json.dumps(body_with(), ensure_ascii=False)
+            .replace("route review", "route @@ review")
+            .encode("utf-8")
+            .replace(b"@@", b"\xed\xa0\x80")
+        )
+        result = _http(url, "POST", b + "/resolve-issue", ml, raw_surrogate)
+        check(
+            f"resolve-issue: UTF-8 surrogate bytes => 400 invalid_body (got {result.status})",
+            result.status == 400 and result.json() == {"detail": "invalid_body"},
+        )
+        nul_filter = _http(url, "GET", b + "/issues?detector=a%00b", ml)
+        check(
+            f"issues: a NUL in the detector filter => 400 invalid_filter (got {nul_filter.status})",
+            nul_filter.status == 400 and nul_filter.json() == {"detail": "invalid_filter"},
+        )
+        # A lone surrogate cannot cross the wire in a query string: Starlette decodes the
+        # percent-escapes with errors="replace", so the server sees U+FFFD. It must stay a
+        # clean empty 200, never a 500 (the store-level surrogate refusal is pinned in the
+        # no-DB suite).
+        for escaped in ("%ED%A0%80", "%ED%B0%80"):
+            wire = _http(url, "GET", b + f"/issues?detector=a{escaped}b", ml)
+            check(
+                f"issues: surrogate bytes in the detector filter never 500 (got {wire.status})",
+                wire.status == 200 and wire.json()["items"] == [],
+            )
+        check("resolve-issue: unstorable characters wrote nothing", counts() == before)
+        accepted = _http(
+            url, "GET", b + "/issues?detector=" + urllib.parse.quote("pii_secrets\U0001f600"), ml
+        )
+        check(
+            f"positive control: an emoji in the filter is accepted (got {accepted.status})",
+            accepted.status == 200,
+        )
+
         waive_by_ml = post([item(route_warn, "waive")])
         check(
             "route: ml_engineer waive => 403 waive_not_permitted",
@@ -2025,6 +2104,177 @@ def main() -> None:
         check(
             "state=waived filter",
             len(_http(url, "GET", b + "/issues?state=waived", ml).json()["items"]) == 1,
+        )
+
+        # Round 4 (N9b/N9c): the product writes copy in two languages, so a non-ASCII
+        # and an astral-plane reason must each be a 201 and stored verbatim -- a reason
+        # validator that narrows to ASCII or to the BMP is a real regression.
+        ub = base(org1_id, p1_id, uni_ds.id)
+        uni_reasons = (
+            ("an emoji reason", uni_emoji, "reviewed \U0001f600 ok"),
+            ("an Arabic reason", uni_arabic, "مراجعة السجل"),
+        )
+        applied = 0  # a refused request must not shift the next case's expected version
+        for label, target, reason in uni_reasons:
+            created = _http(
+                url,
+                "POST",
+                ub + "/resolve-issue",
+                ml,
+                {
+                    "quality_report_id": str(uni_report.id),
+                    "expected_resolution_version": applied,
+                    "idempotency_key": uuid.uuid4().hex,
+                    "resolutions": [item(target, "exclude", reason=reason)],
+                },
+            )
+            check(
+                f"resolve-issue: {label} => 201 (got {created.status})",
+                created.status == 201,
+            )
+            applied += 1 if created.status == 201 else 0
+            stored = scalar(
+                "SELECT reason FROM dataset_issue_resolutions WHERE issue_id = :i",
+                i=target.issue_id,
+            )
+            check(
+                f"resolve-issue: {label} is stored verbatim (got {stored!r})",
+                stored == reason,
+            )
+            listed_reasons = {
+                r["reason"]
+                for r in _http(url, "GET", ub + "/issue-resolutions?limit=10", ml).json()["items"]
+            }
+            check(
+                f"issue-resolutions: {label} is returned verbatim",
+                reason in listed_reasons,
+            )
+
+        # Round 5 (boundary table, Control-plane ruling): every length-validated text input
+        # on these routes gets one table through the REAL route and REAL Postgres --
+        # min and max in ASCII, Arabic and astral (emoji) text store verbatim and are
+        # listed verbatim; one past the max, empty and whitespace-only are a 400 that
+        # writes nothing. Lengths are CHARACTERS, never UTF-8 bytes.
+        bd_scripts = (("ASCII", "x"), ("Arabic", "ب"), ("emoji", "\U0001f600"))
+        bd_ds = make_dataset("routes-boundary")
+        bd_extras = tuple(_extra(f"bd_{n}", (0, 1)) for n in range(13))
+        bd_report = record(bd_ds, extra=bd_extras)
+        bd_issues = [issue_of(bd_report, f"bd_{n}") for n in range(13)]
+        bd_spare = bd_issues[12]  # only ever sent in refused requests
+        bb = base(org1_id, p1_id, bd_ds.id)
+
+        def bd_version() -> int:
+            return int(_http(url, "GET", bb + "/quality-report", ml).json()["resolution_version"])
+
+        def bd_post(
+            issue: qstore.DatasetQualityIssue, *, reason: str, key: str, version: int
+        ) -> _Response:
+            return _http(
+                url,
+                "POST",
+                bb + "/resolve-issue",
+                ml,
+                {
+                    "quality_report_id": str(bd_report.id),
+                    "expected_resolution_version": version,
+                    "idempotency_key": key,
+                    "resolutions": [item(issue, "exclude", reason=reason)],
+                },
+            )
+
+        bd_cursor = 0
+
+        def bd_accept(label: str, *, reason: str, key: str) -> None:
+            nonlocal bd_cursor
+            issue = bd_issues[bd_cursor]
+            bd_cursor += 1
+            version = bd_version()
+            created = bd_post(issue, reason=reason, key=key, version=version)
+            check(f"boundary: {label} => 201 (got {created.status})", created.status == 201)
+            row = scalar(
+                "SELECT reason || '|' || idempotency_key FROM dataset_issue_resolutions "
+                "WHERE issue_id = :i",
+                i=issue.issue_id,
+            )
+            check(
+                f"boundary: {label} is stored verbatim (got {str(row)[:20]!r}...)",
+                row == f"{reason}|{key}",
+            )
+            listed = _http(url, "GET", bb + "/issue-resolutions?limit=200", ml).json()["items"]
+            check(
+                f"boundary: {label} is listed verbatim",
+                any(r["issue_id"] == issue.issue_id and r["reason"] == reason for r in listed),
+            )
+            check(
+                f"boundary: {label} advanced the resolution version by one",
+                bd_version() == version + 1,
+            )
+
+        def bd_refuse(label: str, *, reason: str, key: str) -> None:
+            written = counts()
+            version = bd_version()
+            refused = bd_post(bd_spare, reason=reason, key=key, version=version)
+            check(
+                f"boundary: {label} => 400 invalid_request (got {refused.status})",
+                refused.status == 400,
+            )
+            check(f"boundary: {label} wrote nothing", counts() == written)
+            check(f"boundary: {label} left the version alone", bd_version() == version)
+
+        key_n = 0
+
+        def fresh_key() -> str:
+            nonlocal key_n
+            key_n += 1
+            return f"bd-key-{key_n}"
+
+        for script, ch in bd_scripts:
+            bd_accept(f"a 1-character {script} reason", reason=ch, key=fresh_key())
+            bd_accept(f"a 2000-character {script} reason", reason=ch * 2000, key=fresh_key())
+            bd_refuse(f"a 2001-character {script} reason", reason=ch * 2001, key=fresh_key())
+        for label, bad in (("an empty", ""), ("a space-only", "   "), ("a tab/newline", "\t\n")):
+            bd_refuse(f"{label} reason", reason=bad, key=fresh_key())
+        for script, ch in bd_scripts:
+            bd_accept(f"a 1-character {script} idempotency key", reason="ok", key=ch)
+            bd_accept(f"a 200-character {script} idempotency key", reason="ok", key=ch * 200)
+            bd_refuse(f"a 201-character {script} idempotency key", reason="ok", key=ch * 201)
+        for label, bad in (("an empty", ""), ("a space-only", "   "), ("a tab/newline", "\t\n")):
+            bd_refuse(f"{label} idempotency key", reason="ok", key=bad)
+
+        # The detector filter: 1..64 characters is a 200; 65, empty and blank are a 400
+        # `invalid_filter` (a 64-character name matches no issue, so the page is empty).
+        for script, ch in bd_scripts:
+            for length in (1, 64):
+                wire = _http(
+                    url,
+                    "GET",
+                    bb + "/issues?detector=" + urllib.parse.quote(ch * length),
+                    ml,
+                )
+                check(
+                    f"boundary: a {length}-character {script} detector filter => 200 "
+                    f"(got {wire.status})",
+                    wire.status == 200 and wire.json()["items"] == [],
+                )
+            wire = _http(url, "GET", bb + "/issues?detector=" + urllib.parse.quote(ch * 65), ml)
+            check(
+                f"boundary: a 65-character {script} detector filter => 400 (got {wire.status})",
+                wire.status == 400 and wire.json() == {"detail": "invalid_filter"},
+            )
+        for label, bad in (("an empty", ""), ("a space-only", "%20%20"), ("a tab", "%09")):
+            wire = _http(url, "GET", bb + "/issues?detector=" + bad, ml)
+            check(
+                f"boundary: {label} detector filter => 400 (got {wire.status})",
+                wire.status == 400 and wire.json() == {"detail": "invalid_filter"},
+            )
+        check(
+            "boundary: refused requests left the spare issue open",
+            next(
+                i["state"]
+                for i in _http(url, "GET", bb + "/issues?limit=200", ml).json()["items"]
+                if i["issue_id"] == bd_spare.issue_id
+            )
+            == "open",
         )
 
     _finish()

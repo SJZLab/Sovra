@@ -257,11 +257,12 @@ def classify_training_capability(
         artifact is not None
         and artifact_availability is ArtifactAvailability.READY
         and _has_valid_weights_digest(artifact)
+        and license_approved
     ):
         capability = TrainingCapability.TRAINABLE_OPEN_WEIGHT
         detail = (
             "backed by a ready TrainableArtifact with a resolved weights_digest "
-            "(full_weight/adapter)"
+            "and an accepted license (full_weight/adapter)"
         )
     elif (
         probe is not None

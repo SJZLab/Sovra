@@ -465,6 +465,7 @@ class Fake(MlflowClient):
         self.versions: list[dict[str, Any]] = []
         self.models: dict[str, Mapping[str, str]] = {}
         self.after_create: Any = None
+        self.on_get_run: Any = None
 
     def _maybe(self, name: str) -> None:
         self.calls.append(name)
@@ -502,6 +503,19 @@ class Fake(MlflowClient):
                     {"key": k, "value": v, "timestamp": t, "step": st} for k, v, t, st in metrics
                 )
                 run.setdefault("logged", []).append((list(metrics), dict(params or {})))
+
+    def get_run(self, run_id: str) -> dict[str, Any]:
+        # The read-back after the completion write. Not recorded in `calls`
+        # (existing call-order assertions stay about writes); `fail["get_run"]`
+        # and `on_get_run` let a test make the read-back fail or tamper.
+        if "get_run" in self.fail:
+            raise self.fail["get_run"]
+        if self.on_get_run is not None:
+            self.on_get_run(self)
+        for run in self.runs:
+            if run["info"]["run_id"] == run_id:
+                return run
+        raise MlflowNotFoundError("no such run")
 
     def finish_run(self, run_id: str, *, status: str, end_time_ms: int) -> None:
         self._maybe("finish")

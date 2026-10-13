@@ -41,19 +41,21 @@ API_ROOT = ROOT / "apps" / "api"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(API_ROOT))
 
+from packages.security import external_provider_denial  # noqa: E402
 from packages.security.external_provider_denial import (  # noqa: E402
     AuditContext,
     ExternalProviderDecision,
     ExternalProviderDeniedError,
     ExternalProviderRequest,
+    InvalidProviderRequestError,
     ProviderApproval,
     authorize_external_provider,
 )
-from sqlalchemy import create_engine, func, select  # noqa: E402
-from sqlalchemy.exc import DBAPIError  # noqa: E402
+from sqlalchemy import create_engine, func, select, text  # noqa: E402
+from sqlalchemy.exc import DBAPIError, SQLAlchemyError  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
-from app.auth.audit_event_writer import AuditEvent  # noqa: E402
+from app.auth.audit_event_writer import AuditEvent, write_audit_event  # noqa: E402
 from app.auth.organization_workspace_schema import APP_ROLE_NAME, Organization  # noqa: E402
 from app.auth.tenant_isolation_query_guards import tenant_scoped_session  # noqa: E402
 
@@ -265,6 +267,198 @@ def main() -> None:
         org2_sees_org1 == 0 and org2_visible == 0,
     )
     check("FTF-0908-R2-1", "org1 reads its own five denial rows", org1_denials == len(cases))
+
+    # -- 5. Round 3: the denial must not break the caller's tenant-scoped session.
+    #    (a) two denials in one session: both typed, both durable.
+    two_ids = (f"req-two-a-{uuid.uuid4().hex[:8]}", f"req-two-b-{uuid.uuid4().hex[:8]}")
+    outcomes: list[str] = []
+    after_counts: list[int] = []
+    try:
+        with tenant_scoped_session(factory, org1_id) as session:
+            for request_id in two_ids:
+                try:
+                    authorize_external_provider(
+                        _request(profile="zero_egress"),
+                        _approval(),
+                        AuditContext(session, org1_id, "system", "actor-0908", request_id),
+                    )
+                except ExternalProviderDeniedError as exc:
+                    outcomes.append(exc.code)
+                except SQLAlchemyError as exc:
+                    outcomes.append(f"db-error: {type(exc).__name__}")
+                # (b) tenant visibility after a denial is unchanged.
+                try:
+                    after_counts.append(
+                        session.execute(
+                            select(func.count())
+                            .select_from(AuditEvent)
+                            .where(AuditEvent.action == "external_provider.denied")
+                        ).scalar_one()
+                    )
+                except SQLAlchemyError as exc:
+                    outcomes.append(f"read-error: {type(exc).__name__}")
+    except SQLAlchemyError as exc:
+        outcomes.append(f"db-error: {type(exc).__name__}")
+    check(
+        "FTF-0908-R3-1",
+        f"two denials in one tenant_scoped_session give two typed denials (got {outcomes})",
+        outcomes == ["external_provider_profile_blocked"] * 2,
+    )
+    check(
+        "FTF-0908-R3-1",
+        f"both denials left a durable row ({[len(denied_rows(i)) for i in two_ids]})",
+        [len(denied_rows(i)) for i in two_ids] == [1, 1],
+    )
+    check(
+        "FTF-0908-R3-1",
+        f"the caller's session still sees its tenant's rows after each denial (got {after_counts};"
+        f" tenant has {len(cases) + 2})",
+        after_counts == [len(cases) + 1, len(cases) + 2],
+    )
+
+    #    (c) a caller's pending (unflushed) row is never committed by a denial.
+    pending_ids = {
+        "unflushed": f"req-pend-u-{uuid.uuid4().hex[:8]}",
+        "flushed": f"req-pend-f-{uuid.uuid4().hex[:8]}",
+    }
+    for kind, pending_request in pending_ids.items():
+        pending_marker = f"caller.pending.{kind}.{uuid.uuid4().hex[:8]}"
+        outcome_kind = "no-error"
+        try:
+            with tenant_scoped_session(factory, org1_id) as session:
+                write_audit_event(
+                    session,
+                    organization_id=org1_id,
+                    actor_type="system",
+                    actor_id="caller-work",
+                    action=pending_marker,
+                    resource_type="caller",
+                    resource_id="pending",
+                    request_id=f"{pending_request}-work",
+                )
+                if kind == "flushed":
+                    session.flush()
+                try:
+                    authorize_external_provider(
+                        _request(profile="zero_egress"),
+                        _approval(),
+                        AuditContext(session, org1_id, "system", "actor-0908", pending_request),
+                    )
+                    outcome_kind = "allowed"
+                except InvalidProviderRequestError as exc:
+                    outcome_kind = exc.code
+                    raise
+                except ExternalProviderDeniedError:
+                    outcome_kind = "denied"
+                    raise
+        except (InvalidProviderRequestError, ExternalProviderDeniedError):
+            pass
+        with Session(owner_engine) as owner:
+            persisted = owner.execute(
+                select(func.count())
+                .select_from(AuditEvent)
+                .where(AuditEvent.action == pending_marker)
+            ).scalar_one()
+        check(
+            "FTF-0908-R3-2",
+            f"{kind}: a denial does not commit the caller's pending row (persisted {persisted})",
+            persisted == 0,
+        )
+        check(
+            "FTF-0908-R3-2",
+            f"{kind}: a session with uncommitted work is refused as "
+            f"external_provider_invalid_request before any decision (got {outcome_kind})",
+            outcome_kind == "external_provider_invalid_request",
+        )
+        check(
+            "FTF-0908-R3-2",
+            f"{kind}: nothing is audited for a refused request",
+            denied_rows(pending_request) == [],
+        )
+
+    # -- R4-1 (round 5). The post-commit tenant re-bind must be transaction-local. The denial
+    # is caught INSIDE the tenant_scoped_session block, so the scope exits normally and
+    # COMMITS -- a session-level re-bind (set_config(.., false)) survives that commit (a
+    # rollback would undo it, which is why catching outside the block could not see it).
+    # The pool has NO reset guard and pool_size=1, so the next checkout is the same backend.
+    bare_engine = create_engine(
+        _app_role_url(migration_url, app_password), pool_size=1, max_overflow=0
+    )
+
+    def bare_factory() -> Session:
+        return Session(bare_engine)
+
+    def probe_denial_leak() -> tuple[bool, object, int]:
+        """Deny inside the scope, exit it normally, then check a fresh checkout."""
+        with tenant_scoped_session(bare_factory, org1_id) as session:
+            inside_pid = session.execute(text("SELECT pg_backend_pid()")).scalar_one()
+            try:
+                authorize_external_provider(
+                    _request(profile="zero_egress"),
+                    _approval(),
+                    AuditContext(
+                        session, org1_id, "system", "actor-0908", f"req-r5-{uuid.uuid4().hex[:8]}"
+                    ),
+                )
+            except ExternalProviderDeniedError:
+                pass
+        with bare_engine.connect() as fresh:
+            fresh_pid = fresh.execute(text("SELECT pg_backend_pid()")).scalar_one()
+            guc = fresh.execute(
+                text("SELECT current_setting('app.current_organization_id', true)")
+            ).scalar_one()
+            visible = fresh.execute(select(func.count()).select_from(Organization)).scalar_one()
+        return (fresh_pid == inside_pid, guc, visible)
+
+    same_backend, guc, visible = probe_denial_leak()
+    check(
+        "FTF-0908-R4-1",
+        "the fresh checkout reuses the denial's backend (the probe can see a leak)",
+        same_backend,
+    )
+    check(
+        "FTF-0908-R4-1",
+        f"a fresh checkout after a committed-scope denial has no tenant context (guc={guc!r})",
+        guc in (None, ""),
+    )
+    check(
+        "FTF-0908-R4-1",
+        f"a fresh checkout after a committed-scope denial sees 0 tenant rows (visible={visible})",
+        visible == 0,
+    )
+
+    # -- R5-2. Faults reddened in THIS job. F2: the re-bind replaced by a hand-written
+    # session-level set_config. F2g: a module-local `set_tenant_context` doing the same
+    # with the call text in external_provider_denial unchanged (the round-3 leak).
+    def leaky_rebind(session: Session, organization_id: uuid.UUID | None) -> None:
+        session.execute(
+            text("SELECT set_config('app.current_organization_id', :org_id, false)"),
+            {"org_id": "" if organization_id is None else str(organization_id)},
+        )
+
+    for fault_id, patched_name in (("F2", "set_tenant_context"), ("F2g", "set_tenant_context")):
+        original = getattr(external_provider_denial, patched_name)
+        setattr(external_provider_denial, patched_name, leaky_rebind)
+        try:
+            f_same, f_guc, f_visible = probe_denial_leak()
+        finally:
+            setattr(external_provider_denial, patched_name, original)
+            with bare_engine.connect() as cleanup:
+                cleanup.execute(text("SELECT set_config('app.current_organization_id', '', false)"))
+                cleanup.commit()
+        check(
+            f"FTF-0908-R5-2-{fault_id}",
+            f"{fault_id}: a session-level re-bind leaks the tenant "
+            f"(same_backend={f_same}, guc={f_guc!r}, visible_rows={f_visible})",
+            f_same and f_guc == str(org1_id) and f_visible == 1,
+        )
+    same_backend, guc, visible = probe_denial_leak()
+    check(
+        "FTF-0908-R5-2",
+        f"real code is clean again after the faults are reverted (guc={guc!r}, visible={visible})",
+        guc in (None, "") and visible == 0,
+    )
+    bare_engine.dispose()
 
     _finish()
 

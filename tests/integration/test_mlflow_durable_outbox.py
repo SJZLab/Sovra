@@ -26,6 +26,21 @@ R2-D7  run-level drift on the real server: an extra metric, a changed hash tag
        tag-only check would say SYNCED) is FAILED with drift codes and the run
        is not overwritten; a drifted run found via the durable outbox fails
        the row with `run drift:`.
+R6-1   drift is computed regardless of the completion tag, on the real
+       server: a completed run whose payload tag was deleted and then
+       re-logged differently (R6-1a), and a run tampered with before its
+       own completion write ever ran (R6-1b), both fail the real outbox
+       row with `run drift:`, never SYNCED.
+R7-Q1  strictness comes from Factory's own record, not the live status: a
+       completed run (payload tag intact) whose status was flipped back to
+       RUNNING is FAILED with `run drift:` (status_changed, and the deleted
+       hash tag as hash_missing), end to end through the real outbox row.
+R7-Q2  the run is read back before SYNCED: a metric altered right after the
+       completion write (0.99 against 0.875) fails the real row.
+R7-D2  / D3b / D8 on real Postgres: a row another worker already resolved is
+       never rewritten by a stale outcome; the disagreement is reported with
+       the stored truth; and the row is locked (FOR UPDATE) so a worker that
+       resolves it between record()'s read and write cannot be overwritten.
 R2-D8  Law 17 on real model versions: READY reads READY; a version flipped to
        PENDING_REGISTRATION / FAILED_REGISTRATION in the server's own store is
        reported as such, never clean; forged approval tags change nothing.
@@ -50,6 +65,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from datetime import UTC, datetime
@@ -71,6 +87,8 @@ from packages.integrations.mlflow.reconcile import (  # noqa: E402
     TAG_KEY,
     TAG_ORG,
     TAG_PAYLOAD,
+    OutboxEntry,
+    OutboxRowResolvedError,
     RetryPolicy,
     RunConflictError,
     SyncState,
@@ -97,6 +115,7 @@ from app.component_bindings.component_binding_crud import (  # noqa: E402
     create_component_binding,
     get_component_binding,
     get_component_status_projection,
+    record_sync_outcome,
 )
 from app.db.tenant_context import TenantContext, tenant_scoped_session_for  # noqa: E402
 
@@ -699,6 +718,308 @@ def main() -> int:
             [e.state for e in drift_sweep] == [SyncState.FAILED]
             and row["status"] == "failed"
             and str(row["last_error"]).startswith("run drift:"),
+        )
+
+        # R6-1a: a completed run's own payload tag deleted, then a metric
+        # re-logged with a different value, on the real server. A tag-gated
+        # check would read the missing tag as "never finished" and silently
+        # rewrite over the tamper; it must instead fail with drift.
+        job11 = uuid.uuid4()
+        run11 = make_run(a_id, job11)
+        results.save(run11)
+        pre11 = sync_run(client, env_a.outbox.add(run11))
+        check("R6-1", "the run was really finished first", pre11.state == SyncState.SYNCED)
+        run_id11 = pre11.mlflow_run_id
+        assert isinstance(run_id11, str)
+        proj.raw(port, "POST", "/runs/delete-tag", {"run_id": run_id11, "key": TAG_PAYLOAD})
+        proj.raw(
+            port,
+            "POST",
+            "/runs/log-metric",
+            {
+                "run_id": run_id11,
+                "key": "eval/accuracy",
+                "value": 0.111,
+                # A later timestamp than the original completion write, so
+                # this is genuinely the "latest" value MLflow itself would
+                # report -- not an artifact of an earlier fake timestamp
+                # losing to the real one.
+                "timestamp": run11.completed_at_ms + 1,
+                "step": 0,
+            },
+        )
+        tags11 = {t["key"]: t["value"] for t in client.get_run(run_id11)["data"]["tags"]}
+        check("R6-1", "the payload tag is really gone before the sweep", TAG_PAYLOAD not in tags11)
+        swept11 = sync_pending(client, env_a.outbox, now_ms=now_ms())
+        entry11 = next((e for e in swept11 if e.run.job_id == job11), None)
+        row11 = outbox_row(owner_url, a_id, job11)
+        check(
+            "R6-1",
+            "deleted-tag-and-re-logged is failed with drift, never synced",
+            entry11 is not None
+            and entry11.state == SyncState.FAILED
+            and row11["status"] == "failed"
+            and str(row11["last_error"]).startswith("run drift:"),
+        )
+
+        # R6-1b: a run that exists (e.g. an interrupted prior attempt) but
+        # was never finished already carries a metric value that disagrees
+        # with what Factory is about to write -- before Factory's own
+        # completion write has ever run, so there is no payload tag at all
+        # yet to gate on.
+        job12 = uuid.uuid4()
+        run12 = make_run(a_id, job12)
+        results.save(run12)
+        key12 = logical_run_key(a_id, job12)
+        run_id12 = client.create_run(
+            exp_a, run_name=key12, tags={TAG_KEY: key12, TAG_ORG: str(a_id)}
+        )
+        proj.raw(
+            port,
+            "POST",
+            "/runs/log-metric",
+            {"run_id": run_id12, "key": "eval/accuracy", "value": 0.111, "timestamp": 1, "step": 0},
+        )
+        env_a.outbox.add(run12)
+        swept12 = sync_pending(client, env_a.outbox, now_ms=now_ms())
+        entry12 = next((e for e in swept12 if e.run.job_id == job12), None)
+        row12 = outbox_row(owner_url, a_id, job12)
+        check(
+            "R6-1",
+            "tampered-before-completion is failed with drift, never synced",
+            entry12 is not None
+            and entry12.state == SyncState.FAILED
+            and row12["status"] == "failed"
+            and str(row12["last_error"]).startswith("run drift:"),
+        )
+        check(
+            "R6-1",
+            "the run was never finished over the tampered value",
+            client.get_run(run_id12)["info"].get("status") != "FINISHED",
+        )
+
+        # R7-Q1: a completed run (payload tag intact) whose status was flipped
+        # back to RUNNING, and whose hash tag was deleted, is not "still being
+        # written": strictness comes from Factory's own completion tag.
+        for label, delete_hash in (("Q1", True), ("Q1b", False)):
+            job_q = uuid.uuid4()
+            run_q = make_run(a_id, job_q)
+            results.save(run_q)
+            pre_q = sync_run(client, env_a.outbox.add(run_q))  # row stays pending
+            check(
+                f"R7-{label}", "the run was really finished first", pre_q.state == SyncState.SYNCED
+            )
+            run_id_q = pre_q.mlflow_run_id
+            assert isinstance(run_id_q, str)
+            proj.raw(port, "POST", "/runs/update", {"run_id": run_id_q, "status": "RUNNING"})
+            if delete_hash:
+                proj.raw(
+                    port,
+                    "POST",
+                    "/runs/delete-tag",
+                    {"run_id": run_id_q, "key": "factory.hash.artifact_sha256"},
+                )
+            live_q = client.get_run(run_id_q)
+            check(
+                f"R7-{label}",
+                "the live run is RUNNING with its payload tag intact",
+                live_q["info"].get("status") == "RUNNING"
+                and TAG_PAYLOAD in {t["key"]: t["value"] for t in live_q["data"]["tags"]},
+            )
+            swept_q = sync_pending(client, env_a.outbox, now_ms=now_ms())
+            entry_q = next((e for e in swept_q if e.run.job_id == job_q), None)
+            row_q = outbox_row(owner_url, a_id, job_q)
+            check(
+                f"R7-{label}",
+                "flipped-to-RUNNING is failed with status_changed, never SYNCED",
+                entry_q is not None
+                and entry_q.state == SyncState.FAILED
+                and "status_changed" in entry_q.drift
+                and row_q["status"] == "failed"
+                and str(row_q["last_error"]).startswith("run drift:")
+                and "status_changed" in str(row_q["last_error"]),
+            )
+            if delete_hash:
+                check(
+                    "R7-Q1",
+                    "the deleted hash tag is drift too, not suppressed",
+                    entry_q is not None
+                    and "hash_missing:factory.hash.artifact_sha256" in entry_q.drift,
+                )
+
+        # R7-Q2: a value altered right after the completion write is caught by
+        # the read-back; the real row fails instead of reading SYNCED.
+        class TamperingClient(MlflowClient):
+            """Alters the accuracy metric (later timestamp, so it is the value
+            MLflow reports) right after the run is finished."""
+
+            def finish_run(self, run_id: str, *, status: str, end_time_ms: int) -> None:
+                super().finish_run(run_id, status=status, end_time_ms=end_time_ms)
+                proj.raw(
+                    port,
+                    "POST",
+                    "/runs/log-metric",
+                    {
+                        "run_id": run_id,
+                        "key": "eval/accuracy",
+                        "value": 0.99,
+                        "timestamp": end_time_ms + 1,
+                        "step": 0,
+                    },
+                )
+
+        job_t = uuid.uuid4()
+        run_t = make_run(a_id, job_t)
+        results.save(run_t)
+        env_a.outbox.add(run_t)
+        tamperer = TamperingClient(f"http://127.0.0.1:{port}", loop_policy, timeout=5)
+        swept_t = sync_pending(tamperer, env_a.outbox, now_ms=now_ms())
+        entry_t = next((e for e in swept_t if e.run.job_id == job_t), None)
+        row_t = outbox_row(owner_url, a_id, job_t)
+        check(
+            "R7-Q2",
+            "0.99 against Factory's 0.875 is failed with metric_changed, never SYNCED",
+            entry_t is not None
+            and entry_t.state == SyncState.FAILED
+            and "metric_changed:eval/accuracy" in entry_t.drift
+            and row_t["status"] == "failed"
+            and str(row_t["last_error"]).startswith("run drift:"),
+        )
+
+        # R7-D2: a stale PENDING outcome over a row another worker resolved.
+        def stale_entry(run: TrackedRun, state: str, **over: object) -> OutboxEntry:
+            fields: dict[str, object] = {
+                "entry_id": logical_run_key(run.organization_id, run.job_id),
+                "run": run,
+                "state": state,
+                "attempts": 7,
+                "last_error": "late write",
+            }
+            fields.update(over)
+            return OutboxEntry(**fields)  # type: ignore[arg-type]
+
+        def resolve_elsewhere(
+            run: TrackedRun, outcome: str, *, external_id: str | None, error: str | None
+        ) -> None:
+            """Another worker (its own session) resolves the row."""
+            with tenant_scoped_session_for(env_a.factory, env_a.context) as other:
+                resolved = record_sync_outcome(
+                    other,
+                    env_a.context,
+                    component_binding_id=binding_ids[a_id],
+                    factory_job_id=run.job_id,
+                    idempotency_key=f"mlflow:{run.payload_sha256()}",
+                    outcome=outcome,
+                    external_id=external_id,
+                    error=error,
+                    actor=ACTOR,
+                )
+                resolved.attempt_count = 2
+
+        job_d2 = uuid.uuid4()
+        run_d2 = make_run(a_id, job_d2)
+        results.save(run_d2)
+        env_a.outbox.add(run_d2)
+        resolve_elsewhere(run_d2, "succeeded", external_id="mlflow-elsewhere", error=None)
+        try:
+            env_a.outbox.record(stale_entry(run_d2, SyncState.PENDING))
+            check("R7-D2", "the stale PENDING outcome is reported", False)
+        except OutboxRowResolvedError as exc:
+            check("R7-D2", "the report carries the stored success", exc.status == "succeeded")
+        row_d2 = outbox_row(owner_url, a_id, job_d2)
+        check(
+            "R7-D2",
+            "the resolved row is untouched on real Postgres",
+            row_d2["status"] == "succeeded"
+            and row_d2["attempt_count"] == 2
+            and row_d2["last_error"] is None
+            and row_d2["external_id"] == "mlflow-elsewhere",
+        )
+
+        # R7-D3b: a SYNCED outcome over a row another worker failed is reported
+        # with the stored truth, never as SYNCED.
+        job_d3 = uuid.uuid4()
+        run_d3 = make_run(a_id, job_d3)
+        results.save(run_d3)
+        env_a.outbox.add(run_d3)
+        resolve_elsewhere(run_d3, "failed", external_id=None, error="run drift: elsewhere")
+        raced = stale_entry(run_d3, SyncState.SYNCED, mlflow_run_id="mlflow-mine")
+        try:
+            env_a.outbox.record(raced)
+            check("R7-D3b", "the SYNCED-over-failed disagreement is reported", False)
+        except OutboxRowResolvedError as exc:
+            exc.apply_to(raced)
+        check(
+            "R7-D3b",
+            "the caller is told the stored truth (FAILED, the row's error)",
+            raced.state == SyncState.FAILED and raced.last_error == "run drift: elsewhere",
+        )
+        row_d3 = outbox_row(owner_url, a_id, job_d3)
+        check(
+            "R7-D3b",
+            "the failed row was not rewritten",
+            row_d3["status"] == "failed"
+            and row_d3["attempt_count"] == 2
+            and row_d3["last_error"] == "run drift: elsewhere"
+            and row_d3["external_id"] is None,
+        )
+
+        # R7-D8: the interleaving. Worker 1 holds the row and resolves it;
+        # worker 2's record() starts meanwhile. Without the row lock worker 2
+        # reads `pending` and rewrites last_error/attempt_count after worker 1
+        # commits. With it, worker 2 waits, then sees the resolved row.
+        job_d8 = uuid.uuid4()
+        run_d8 = make_run(a_id, job_d8)
+        results.save(run_d8)
+        env_a.outbox.add(run_d8)
+        late = stale_entry(run_d8, SyncState.PENDING, last_error="late write", attempts=9)
+        outcome: dict[str, object] = {}
+
+        def worker_two() -> None:
+            try:
+                env_a.outbox.record(late)
+                outcome["result"] = "recorded"
+            except OutboxRowResolvedError as exc:
+                outcome["result"] = exc.status
+            except Exception as exc:  # noqa: BLE001 - surfaced through the check below
+                outcome["result"] = f"error: {exc!r}"
+
+        thread = threading.Thread(target=worker_two)
+        with tenant_scoped_session_for(env_a.factory, env_a.context) as holder:
+            env_a.outbox._row(holder, run_d8.job_id, lock=True)
+            thread.start()
+            time.sleep(1.5)  # worker 2 is now inside record()
+            check(
+                "R7-D8",
+                "worker 2 waits on the locked row (it has not finished)",
+                thread.is_alive(),
+            )
+            resolved_row = record_sync_outcome(
+                holder,
+                env_a.context,
+                component_binding_id=binding_ids[a_id],
+                factory_job_id=run_d8.job_id,
+                idempotency_key=f"mlflow:{run_d8.payload_sha256()}",
+                outcome="succeeded",
+                external_id="mlflow-worker-one",
+                actor=ACTOR,
+            )
+            resolved_row.attempt_count = 2
+        thread.join(30)
+        check("R7-D8", "worker 2 finished after worker 1 committed", not thread.is_alive())
+        check(
+            "R7-D8",
+            f"worker 2 saw the resolved row ({outcome.get('result')!r})",
+            outcome.get("result") == "succeeded",
+        )
+        row_d8 = outbox_row(owner_url, a_id, job_d8)
+        check(
+            "R7-D8",
+            "worker 2 did not rewrite last_error/attempt_count on the resolved row",
+            row_d8["status"] == "succeeded"
+            and row_d8["attempt_count"] == 2
+            and row_d8["last_error"] is None
+            and row_d8["external_id"] == "mlflow-worker-one",
         )
 
         # R2-D8: Law 17 on real model versions.

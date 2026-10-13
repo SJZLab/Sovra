@@ -57,6 +57,10 @@ _RUN_ID = re.compile(r"^[0-9a-f]{32}$")
 # Whitespace, control characters (incl. DEL) and backslashes never appear in an
 # approved internal artifact location.
 _UNSAFE_SOURCE_CHARS = re.compile(r"[\x00-\x20\x7f\\]")
+# A control character here (CR/LF above all) would otherwise reach
+# http.client's own header-value validation as a raw, uncaught ValueError
+# that echoes the token; refused before any header is ever built.
+_UNSAFE_TOKEN_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 _MAX_METRICS, _MAX_PARAMS, _MAX_TAGS = 1000, 100, 100
 
 
@@ -179,6 +183,14 @@ class MlflowClient:
             payload = json.dumps(body, allow_nan=False).encode("utf-8")
             headers["Content-Type"] = "application/json"
         if self._token:
+            if _UNSAFE_TOKEN_CHARS.search(self._token):
+                # A control character (CRLF above all) in the token would
+                # otherwise reach http.client's own header validation, whose
+                # ValueError echoes the raw header value -- the token itself
+                # -- and is not an MlflowClientError a caller's except can
+                # catch. Refused here, before any header is ever built, with
+                # a static message that never carries the token.
+                raise TrackingRejectedError("token contains control characters")
             headers["Authorization"] = f"Bearer {self._token}"
         failure: MlflowClientError | None = None
         try:
@@ -194,6 +206,12 @@ class MlflowClient:
             failure = TrackingRejectedError(self._scrub(f"destination denied by policy: {exc}"))
         except (OutboundGuardError, OSError) as exc:
             failure = TrackingUnavailableError(self._scrub(f"MLflow unreachable: {exc}"))
+        except ValueError:
+            # Defense in depth for any other transport-level ValueError
+            # (e.g. a header built from something other than the token):
+            # a static message, never the exception's own text, so a value
+            # that embeds a secret can never be echoed back.
+            failure = TrackingRejectedError("MLflow request could not be sent")
         if failure is not None:
             # Raised outside the handler so the original exception (whose text
             # could carry request data) is not chained onto the one we raise.

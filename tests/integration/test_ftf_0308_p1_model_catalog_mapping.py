@@ -235,6 +235,9 @@ def _artifact(org_id: uuid.UUID, name: str, status: str) -> TrainableArtifact:
         model_family="llama",
         base_model_revision="a" * 40,
         license_id="mit",
+        # FTF-0305-F1: migration 0029 refuses `ready` without an accepted license.
+        license_accepted_by="seed" if status == "ready" else None,
+        license_accepted_at=datetime.now(UTC) if status == "ready" else None,
         status=status,
     )
 

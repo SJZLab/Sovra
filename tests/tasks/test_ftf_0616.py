@@ -35,6 +35,9 @@ guard in the file on disk, confirm the happy-path-shaped call that should
 have been refused now reaches the gateway instead, then restore
 byte-identical) proving the guard is load-bearing, not merely present.
 
+Follow-up FTF-0616-F1 (deployment fingerprint, cache bypass) is pinned in
+tests/tasks/test_ftf_0616_f1.py, which reuses this file's gateway harness.
+
 Run directly: python3 tests/tasks/test_ftf_0616.py
 """
 
@@ -43,6 +46,7 @@ from __future__ import annotations
 import atexit
 import ipaddress
 import json
+import os
 import shutil
 import socket
 import ssl
@@ -2369,6 +2373,209 @@ def test_r6_calibration_alias_matching_is_exact_not_normalised() -> None:
                     "R7-2",
                     f"an alias echo in {label} ({verdict}) is genuinely different bytes "
                     "from the configured NFC alias: MODEL_MISMATCH, never a verdict",
+                    result.state is judge.LlmJudgeState.MODEL_MISMATCH and result.passed is None,
+                )
+
+
+# -- Round 8: generated (not hand-picked) echo-identity variants -------------------------
+# Round 7 closed the Unicode-normalisation class with a fixed variant list and the
+# verifier still found two untested corners (R6f, R6m). Round 8 derives the variants from
+# Unicode properties instead, at both comparison points (judge id and alias).
+
+_R8_REQUIRED_EDGE_CODEPOINTS = (
+    "\r",
+    "\n",
+    "\u00a0",
+    "\u3000",
+    "\u200b",
+    "\u200c",
+    "\u200d",
+    "\u2060",
+    "\ufeff",
+)
+_R8_FULL_SWEEP = os.environ.get("FTF_0616_FULL_SWEEP") == "1"
+_R8_STRIDE = 1 if _R8_FULL_SWEEP else 7  # deterministic sample step over the generated pools
+_R8_POOLS: dict[str, object] = {}
+
+
+def _r8_pools() -> tuple[list[str], dict[str, list[str]], list[str]]:
+    """(whitespace-like code points, ASCII char -> compatibility look-alikes, code points
+    whose NFKC is '-'), all derived from `unicodedata` over every non-surrogate code point."""
+    if not _R8_POOLS:
+        space_like: list[str] = []
+        lookalikes: dict[str, list[str]] = {}
+        dashes: list[str] = []
+        for cp in range(0x110000):
+            if 0xD800 <= cp < 0xE000:
+                continue
+            ch = chr(cp)
+            if ch.isspace() or unicodedata.category(ch) in ("Cc", "Cf", "Zs", "Zl", "Zp"):
+                space_like.append(ch)
+            if ch.isascii():
+                continue
+            for form in ("NFKC", "NFKD"):
+                folded = unicodedata.normalize(form, ch).casefold()
+                if len(folded) == 1 and folded.isascii():
+                    lookalikes.setdefault(folded, []).append(ch)
+                    break
+            if unicodedata.normalize("NFKC", ch) == "-":
+                dashes.append(ch)
+        _R8_POOLS["pools"] = (space_like, lookalikes, dashes)
+    return _R8_POOLS["pools"]  # type: ignore[return-value]
+
+
+def _generated_echo_variants(base: str) -> list[tuple[str, str, bool]]:
+    """(label, echo, always) for `base`. `always` marks the variants that must run under
+    BOTH verdicts; the rest run under a pass/fail alternation chosen by index."""
+    space_like, lookalikes, dashes = _r8_pools()
+    out: list[tuple[str, str, bool]] = []
+    required = [c for c in _R8_REQUIRED_EDGE_CODEPOINTS]
+    sampled = [c for i, c in enumerate(space_like) if i % _R8_STRIDE == 0 and c not in required]
+    for ch in required + sampled:
+        always = ch in required
+        name = f"U+{ord(ch):04X}"
+        mid = len(base) // 2
+        out.append((f"{name} leading", ch + base, always))
+        out.append((f"{name} inner", base[:mid] + ch + base[mid:], always))
+        out.append((f"{name} trailing", base + ch, always))
+    for pos, ascii_ch in enumerate(base):
+        pool = lookalikes.get(ascii_ch.casefold(), [])
+        for i, ch in enumerate(pool):
+            if i % _R8_STRIDE == 0 or ch in ("\u2011", "\u2010"):
+                out.append((f"U+{ord(ch):04X} at {pos}", base[:pos] + ch + base[pos + 1 :], False))
+    for ch in dict.fromkeys([*dashes, "\u2010", "\u2011"]):
+        for pos, ascii_ch in enumerate(base):
+            if ascii_ch == "-":
+                out.append(
+                    (f"dash U+{ord(ch):04X} at {pos}", base[:pos] + ch + base[pos + 1 :], True)
+                )
+    for label, echo in (
+        ("upper", base.upper()),
+        ("title", base.title()),
+        ("swapcase", base.swapcase()),
+        ("casefold-of-upper", base.upper().casefold()),
+    ):
+        if echo != base:
+            out.append((f"case form {label}", echo, True))
+    return [v for v in out if v[1] != base]
+
+
+def _r8_echo_is_refused(
+    echo: str, verdict: str, *, judge_id: str, aliases: tuple[str, ...]
+) -> judge.LlmJudgeResult:
+    _reset_gateway()
+    _GATEWAY.body = _success_body(_verdict_json(verdict), model=echo)
+    return _grade(
+        _PORT,
+        judge_model_id=judge_id,
+        approved_judge_model_ids=frozenset({judge_id, echo, *aliases}),
+        calibration=_calibration(judge_model_id=judge_id, judge_model_aliases=aliases),
+    )
+
+
+def test_r8_generated_unicode_variants_are_never_accepted_at_either_comparison_point() -> None:
+    if _PORT == 0:
+        return
+    judge_id = "judge-model-v1"
+    alias = "judge-model-v1-2026-01"
+    checked = {"judge id": 0, "alias": 0}
+    bad: dict[str, list[str]] = {"judge id": [], "alias": []}
+    for point, base in (("judge id", judge_id), ("alias", alias)):
+        for index, (label, echo, always) in enumerate(_generated_echo_variants(base)):
+            verdicts = ("pass", "fail") if always else (("pass", "fail")[index % 2],)
+            for verdict in verdicts:
+                if point == "judge id":
+                    result = _r8_echo_is_refused(echo, verdict, judge_id=judge_id, aliases=())
+                else:
+                    result = _r8_echo_is_refused(echo, verdict, judge_id=judge_id, aliases=(alias,))
+                checked[point] += 1
+                if not (
+                    result.state is judge.LlmJudgeState.MODEL_MISMATCH
+                    and result.passed is None
+                    and result.resolved_model == echo
+                ):
+                    bad[point].append(f"{label} ({verdict})")
+    for point in ("judge id", "alias"):
+        check(
+            "R8-1",
+            f"{checked[point]} generated Unicode variants at the {point} comparison are all "
+            f"MODEL_MISMATCH with passed None (accepted: {bad[point][:5]})",
+            checked[point] >= 150 and not bad[point],
+        )
+    # the sample must always carry the verifier's named code points at both ends and inner
+    for base in (judge_id, alias):
+        labels = {label for label, _, _ in _generated_echo_variants(base)}
+        missing = [
+            f"U+{ord(c):04X} {pos}"
+            for c in _R8_REQUIRED_EDGE_CODEPOINTS
+            for pos in ("leading", "inner", "trailing")
+            if f"U+{ord(c):04X} {pos}" not in labels
+        ]
+        check("R8-1", f"the sample for {base!r} always includes the named code points", not missing)
+        check(
+            "R8-1",
+            f"the sample for {base!r} includes U+2011 as a hyphen substitute",
+            any(label.startswith("dash U+2011") for label in labels),
+        )
+
+
+def _r8_configured_forms(base: str) -> tuple[tuple[str, str, str], ...]:
+    """(label, configured value, the normalised form a fault would collapse it to)."""
+    return (
+        ("fullwidth letter", "\uff4a" + base[1:], base),
+        (
+            "NFD composed character",
+            unicodedata.normalize("NFD", "caf\u00e9-" + base),
+            "caf\u00e9-" + base,
+        ),
+        ("trailing NBSP", base + "\u00a0", base),
+        ("trailing space", base + " ", base),
+        ("trailing U+3000", base + "\u3000", base),
+        ("leading U+3000", "\u3000" + base, base),
+        ("zero-width prefix", "\u200b" + base, base),
+        ("BOM prefix", "\ufeff" + base, base),
+        ("trailing LF", base + "\n", base),
+        ("U+2011 hyphen", base.replace("-", "\u2011"), base),
+    )
+
+
+def test_r8_configured_side_normalisation_is_refused_at_both_comparison_points() -> None:
+    if _PORT == 0:
+        return
+    for point in ("judge id", "alias"):
+        for label, configured, collapsed in _r8_configured_forms("judge-model-v1"):
+            for verdict in ("pass", "fail"):
+                judge_id = configured if point == "judge id" else "other-judge-v9"
+                aliases = (configured,) if point == "alias" else ()
+                # control: the exact configured value is echoed back -> a verdict
+                _reset_gateway()
+                _GATEWAY.body = _success_body(_verdict_json(verdict), model=configured)
+                result = _grade(
+                    _PORT,
+                    judge_model_id=judge_id,
+                    approved_judge_model_ids=frozenset({judge_id, configured, collapsed}),
+                    calibration=_calibration(judge_model_id=judge_id, judge_model_aliases=aliases),
+                )
+                check(
+                    "R8-2",
+                    f"{point}: the exact configured {label} echo is a verdict ({verdict})",
+                    result.passed is (verdict == "pass"),
+                )
+                # the normalised echo is a different string: never a verdict
+                if collapsed == configured:
+                    continue
+                _reset_gateway()
+                _GATEWAY.body = _success_body(_verdict_json(verdict), model=collapsed)
+                result = _grade(
+                    _PORT,
+                    judge_model_id=judge_id,
+                    approved_judge_model_ids=frozenset({judge_id, configured, collapsed}),
+                    calibration=_calibration(judge_model_id=judge_id, judge_model_aliases=aliases),
+                )
+                check(
+                    "R8-2",
+                    f"{point}: the normalised echo of a configured {label} is MODEL_MISMATCH "
+                    f"({verdict})",
                     result.state is judge.LlmJudgeState.MODEL_MISMATCH and result.passed is None,
                 )
 

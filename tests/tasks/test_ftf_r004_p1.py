@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# mypy: disable-error-code="arg-type,call-arg,var-annotated,dict-item"
+# mypy: disable-error-code="arg-type,call-arg,var-annotated,dict-item,index,call-overload,operator,return-value"
 # ruff: noqa: E501
 """FTF-R004-P1 -- Inspect bridge generation-config parity comparator.
 
@@ -55,9 +55,12 @@ sys.path.insert(0, str(ROOT))
 
 from workers.evaluation.adapters.inspect_adapter.generation_config_parity import (  # noqa: E402
     CONTENT_KEYS,
+    EXTRA_BODY_SETTINGS_KEYS,
+    GENERATION_SETTINGS_KEYS,
     REASON_BRIDGE_DEFAULT_INHERITED,
     REASON_GENERATION_CONFIG_CHANGED,
     REASON_GENERATION_CONFIG_DROPPED,
+    ContentDigest,
     DeclaredGenerationChange,
     GenerationConfigParityError,
     GenerationParityResult,
@@ -642,12 +645,12 @@ def test_whitespace_only_key_is_legal_and_not_merged_with_a_stripped_key() -> No
     check(
         CID,
         "a whitespace-only key is accepted, not treated as an empty key",
-        capture_effective_generation_settings({" ": 1}) == {" ": 1},
+        set(capture_effective_generation_settings({" ": 1})) == {" "},
     )
     check(
         CID,
         "a tab-only key is accepted",
-        capture_effective_generation_settings({"\t": 1}) == {"\t": 1},
+        set(capture_effective_generation_settings({"\t": 1})) == {"\t"},
     )
     result = compare(
         {" temperature": 0.7, "temperature ": 0.8}, {" temperature": 0.7, "temperature ": 0.8}, {}
@@ -661,8 +664,8 @@ def test_whitespace_only_key_is_legal_and_not_merged_with_a_stripped_key() -> No
 
 def test_content_key_exclusion_is_case_and_whitespace_exact() -> None:
     """A key that is not byte-for-byte 'messages'/'tools'/etc. is not the
-    real content field -- it is captured as its own (unknown) setting,
-    never silently excluded by a case/whitespace-normalized match."""
+    real content field -- it is captured as its own (unknown) setting, as a
+    digest, never silently excluded by a case/whitespace-normalized match."""
     settings = capture_effective_generation_settings(
         {
             "Messages": "not-the-real-field",
@@ -673,8 +676,9 @@ def test_content_key_exclusion_is_case_and_whitespace_exact() -> None:
     check(
         CID,
         "only the byte-exact 'messages' key is excluded as content",
-        settings == {"Messages": "not-the-real-field", " messages": "also-not-the-real-field"}
-        and "messages" not in settings,
+        set(settings) == {"Messages", " messages"}
+        and all(type(value) is ContentDigest for value in settings.values())
+        and "not-the-real-field" not in repr(settings),
     )
 
 
@@ -1148,27 +1152,24 @@ def test_cyclic_or_over_deep_values_raise_typed_error() -> None:
     )
 
 
-def test_scrub_content_recurses_into_lists_tuples_and_preserves_nested_keys() -> None:
-    """Kills the 'disable the list/tuple recursion branch' and 'fold a
-    nested dict key' mutants in _scrub_content: a CONTENT_KEYS leak nested
-    inside a list or tuple element must still be scrubbed, and a nested
-    dict's own key must survive byte-exact, never stripped or lowercased."""
-    canary = "CANARY-r004p1-r2-nested-container"
+def test_allow_listed_values_are_kept_whole_with_nested_keys_byte_exact() -> None:
+    """Round 3: the allow-list never looks at key names inside a kept value.
+    A nested key that happens to be named like a content key is part of the
+    setting (a JSON-schema property), not content, so it survives; list and
+    tuple elements and nested dict keys are copied byte-exact."""
     list_settings = capture_effective_generation_settings(
-        {"logit_bias": [{"messages": canary}, {"ok": 1}]}
+        {"logit_bias": [{"messages": "m"}, {"ok": 1}]}
     )
     check(
         CID,
-        "a CONTENT_KEYS leak nested inside a list element is scrubbed",
-        list_settings == {"logit_bias": [{}, {"ok": 1}]},
+        "a content-named key nested inside a list element of a kept value survives",
+        list_settings == {"logit_bias": [{"messages": "m"}, {"ok": 1}]},
     )
-    tuple_settings = capture_effective_generation_settings(
-        {"logit_bias": ("a", {"messages": canary})}
-    )
+    tuple_settings = capture_effective_generation_settings({"logit_bias": ("a", {"messages": "m"})})
     check(
         CID,
-        "a CONTENT_KEYS leak nested inside a tuple element is scrubbed",
-        tuple_settings == {"logit_bias": ("a", {})},
+        "a content-named key nested inside a tuple element of a kept value survives",
+        tuple_settings == {"logit_bias": ("a", {"messages": "m"})},
     )
     key_settings = capture_effective_generation_settings({"response_format": {" Type ": "x"}})
     check(
@@ -1176,18 +1177,15 @@ def test_scrub_content_recurses_into_lists_tuples_and_preserves_nested_keys() ->
         "a nested dict's own key survives byte-exact, never stripped or lowercased",
         key_settings == {"response_format": {" Type ": "x"}},
     )
-    # The nested exclusion check itself (not just the output key) must be
-    # byte-exact: a key that only matches a CONTENT_KEYS member after
-    # folding (case/whitespace) is a different, legitimate key and must
-    # survive, not be wrongly dropped.
     nested_fold_settings = capture_effective_generation_settings(
         {"extra_body": {" Messages ": "keep", "messages": "drop"}}
     )
     check(
         CID,
-        "a nested key that only folds to a content key (not an exact match) is kept, "
-        "while the exact 'messages' is scrubbed",
-        nested_fold_settings == {"extra_body": {" Messages ": "keep"}},
+        "extra_body: the exact 'messages' child is dropped; a child that only folds to a "
+        "content key is an ordinary unknown child and is digested, not dropped",
+        set(nested_fold_settings["extra_body"]) == {" Messages "}
+        and type(nested_fold_settings["extra_body"][" Messages "]) is ContentDigest,
     )
 
 
@@ -1281,18 +1279,650 @@ def test_captured_settings_are_deep_copied() -> None:
         and settings["stop"] == ["a", "b"]
         and settings["response_format"] == {"type": "json"},
     )
-    # dict/list are already rebuilt fresh by the recursive scrub, so they
-    # cannot expose a missing leaf-level deepcopy. A genuinely mutable
-    # *leaf* (not a dict/list/tuple) is the only thing that can: a
-    # bytearray is returned as-is without copy.deepcopy, so mutating the
-    # caller's original object would otherwise mutate the captured one too.
-    mutable_leaf_body: dict[str, Any] = {"logit_bias": bytearray(b"abc")}
-    leaf_settings = capture_effective_generation_settings(mutable_leaf_body)
-    mutable_leaf_body["logit_bias"].extend(b"xyz")
+    # A genuinely mutable leaf (a bytearray) cannot be snapshotted by the
+    # typed copy, so it is refused with the module's own error instead of
+    # being returned by reference.
     check(
         CID,
-        "a mutable non-container leaf (bytearray) is deep-copied, not returned by reference",
-        leaf_settings["logit_bias"] == bytearray(b"abc"),
+        "a mutable non-container leaf (bytearray) is refused, never returned by reference",
+        raises(lambda: capture_effective_generation_settings({"logit_bias": bytearray(b"abc")})),
+    )
+
+
+# --------------------------------------------------------------------------
+# Round 3 (L2 return, 2026-10-09T12:10Z): allow-list capture, digests, typed values
+# --------------------------------------------------------------------------
+
+
+def _captured_blocks(key: str, before_value: object, after_value: object) -> bool:
+    """A settings change that goes through capture on both sides must block."""
+    approved = capture_effective_generation_settings({key: before_value})
+    seen_before = capture_effective_generation_settings({key: before_value})
+    seen_after = capture_effective_generation_settings({key: after_value})
+    result = compare(approved, seen_before, seen_after)
+    return result.verdict == "blocked" and result.changed_keys == (key,)
+
+
+def test_g1_schema_property_changes_stay_visible_through_capture() -> None:
+    """G1: the old recursive scrub deleted content-named keys at any depth,
+    erasing real JSON-schema properties. Changing the type of a property
+    named `model`, `input` or `user` must block, in each carrier."""
+    for name in ("model", "input", "user", "messages", "tools"):
+
+        def schema(kind: str, name: str = name) -> dict[str, Any]:
+            return {"type": "object", "properties": {name: {"type": kind}}}
+
+        check(
+            CID,
+            f"response_format schema property {name!r} string -> integer blocks",
+            _captured_blocks(
+                "response_format",
+                {"type": "json_schema", "json_schema": {"schema": schema("string")}},
+                {"type": "json_schema", "json_schema": {"schema": schema("integer")}},
+            ),
+        )
+        check(
+            CID,
+            f"Responses text.format schema property {name!r} string -> integer blocks",
+            _captured_blocks(
+                "text",
+                {"format": {"type": "json_schema", "schema": schema("string")}},
+                {"format": {"type": "json_schema", "schema": schema("integer")}},
+            ),
+        )
+    before_body = {"extra_body": {"guided_json": {"properties": {"user": {"type": "string"}}}}}
+    after_body = {"extra_body": {"guided_json": {"properties": {"user": {"type": "integer"}}}}}
+    approved = capture_effective_generation_settings(before_body)
+    result = compare(
+        approved,
+        capture_effective_generation_settings(before_body),
+        capture_effective_generation_settings(after_body),
+    )
+    check(
+        CID,
+        "extra_body.guided_json schema property 'user' string -> integer blocks",
+        result.verdict == "blocked" and result.changed_keys == ("extra_body",),
+    )
+    kept = capture_effective_generation_settings(before_body)
+    check(
+        CID,
+        "...and the kept value really contains the property (not erased)",
+        kept["extra_body"] == {"guided_json": {"properties": {"user": {"type": "string"}}}},
+    )
+
+
+def test_g2_nested_non_string_keys_are_kept_and_compared_by_exact_type() -> None:
+    """G2 (fault F14: filter non-string nested keys out): an int-key
+    logit_bias rewrite must block, and keys are compared by exact type."""
+    check(
+        CID,
+        "capture keeps an int-keyed logit_bias entry",
+        capture_effective_generation_settings({"logit_bias": {50256: -100.0}})
+        == {"logit_bias": {50256: -100.0}},
+    )
+    check(
+        CID,
+        "an int-key logit_bias rewrite blocks through capture",
+        _captured_blocks("logit_bias", {50256: -100.0}, {50256: 0.0}),
+    )
+    check(
+        CID,
+        "a dropped int-key entry blocks through capture",
+        _captured_blocks("logit_bias", {50256: -100.0, 7: 1.0}, {7: 1.0}),
+    )
+    check(
+        CID,
+        "an int key re-serialised as a string key blocks",
+        _captured_blocks("logit_bias", {1: 0.5}, {"1": 0.5}),
+    )
+    check(
+        CID,
+        "a True key is not the int key 1",
+        _captured_blocks("logit_bias", {1: 0.5}, {True: 0.5}),
+    )
+    check(
+        CID,
+        "an identical int-keyed value is preserved",
+        compare(
+            {"logit_bias": {50256: -100.0}},
+            {"logit_bias": {50256: -100.0}},
+            {"logit_bias": {50256: -100.0}},
+        ).verdict
+        == "preserved",
+    )
+    check(
+        CID,
+        "a tuple (unhashable-by-contract here) mapping key is refused with the module's error",
+        raises(lambda: capture_effective_generation_settings({"logit_bias": {(1, 2): 1}})),
+    )
+    check(
+        CID,
+        "a non-string extra_body key is refused with the module's error",
+        raises(lambda: capture_effective_generation_settings({"extra_body": {5: "x"}})),
+    )
+
+
+class _Boom:
+    def __eq__(self, other: object) -> bool:
+        raise ValueError("eq blew up")
+
+    def __hash__(self) -> int:
+        return 1
+
+    def __deepcopy__(self, memo: object) -> object:
+        raise TypeError("deepcopy blew up")
+
+
+class _StrSub(str):
+    pass
+
+
+class _IntSub(int):
+    pass
+
+
+def test_g3_any_copy_or_equality_failure_is_the_modules_typed_error() -> None:
+    """G3 (fault F18): a Lock, generator, MappingProxyType, an object whose
+    __eq__/__deepcopy__ raises, or a str/int subclass must raise
+    GenerationConfigParityError at every entry point -- never a bare
+    TypeError/ValueError/KeyError, never a verdict."""
+    import threading
+    from types import MappingProxyType
+
+    def gen() -> Any:
+        yield 1
+
+    bad_values = {
+        "a Lock": threading.Lock(),
+        "a generator": gen(),
+        "a MappingProxyType": MappingProxyType({"a": 1}),
+        "an object whose __eq__ raises": _Boom(),
+        "a str subclass": _StrSub("x"),
+        "an int subclass": _IntSub(1),
+        "a bytearray": bytearray(b"x"),
+        "a set": {1},
+        "a frozenset": frozenset({1}),
+        "a complex": 1j,
+        "a function": gen,
+    }
+    for label, bad in bad_values.items():
+        nested = {"x": [bad]}
+        check(
+            CID,
+            f"capture refuses {label} (allow-listed key)",
+            raises(
+                lambda nested=nested: capture_effective_generation_settings({"logit_bias": nested})
+            ),
+        )
+        check(
+            CID,
+            f"capture refuses {label} (unknown key, digested)",
+            raises(lambda bad=bad: capture_effective_generation_settings({"zz_unknown": bad})),
+        )
+        check(
+            CID,
+            f"capture refuses {label} (extra_body child)",
+            raises(
+                lambda bad=bad: capture_effective_generation_settings(
+                    {"extra_body": {"top_k": bad}}
+                )
+            ),
+        )
+        check(
+            CID,
+            f"approved {label} is refused",
+            raises(
+                lambda bad=bad: compare(
+                    {"temperature": bad}, {"temperature": 1}, {"temperature": 1}
+                )
+            ),
+        )
+        check(
+            CID,
+            f"observed_before {label} is refused",
+            raises(
+                lambda bad=bad: compare(
+                    {"temperature": 1}, {"temperature": bad}, {"temperature": 1}
+                )
+            ),
+        )
+        check(
+            CID,
+            f"observed_after {label} is refused",
+            raises(
+                lambda bad=bad: compare(
+                    {"temperature": 1}, {"temperature": 1}, {"temperature": bad}
+                )
+            ),
+        )
+        check(
+            CID,
+            f"observed_after {label} is refused even when before is None",
+            raises(lambda bad=bad: compare({"temperature": 1}, None, {"temperature": bad})),
+        )
+        check(
+            CID,
+            f"observed_before {label} is refused even when after is None",
+            raises(lambda bad=bad: compare({"temperature": 1}, {"temperature": bad}, None)),
+        )
+        check(
+            CID,
+            f"DeclaredGenerationChange refuses {label}",
+            raises(lambda bad=bad: DeclaredGenerationChange(VALID_DIGEST, {"temperature": bad})),
+        )
+        check(
+            CID,
+            f"DeclaredGenerationChange refuses {label} nested in a list",
+            raises(lambda bad=bad: DeclaredGenerationChange(VALID_DIGEST, {"stop": [bad]})),
+        )
+
+
+def test_g4_loose_collections_are_refused_not_compared_by_python_equality() -> None:
+    """G4: frozenset({True}) == frozenset({1}) and MappingProxyType({'s': True})
+    == MappingProxyType({'s': 1}) under Python ==; neither may ever be
+    `preserved`. They are refused with the module's own error."""
+    from types import MappingProxyType
+
+    check(
+        CID,
+        "frozenset({True}) vs frozenset({1}) raises the module's error, never preserved",
+        raises(
+            lambda: compare(
+                {"logit_bias": frozenset({True})},
+                {"logit_bias": frozenset({True})},
+                {"logit_bias": frozenset({1})},
+            )
+        ),
+    )
+    check(
+        CID,
+        "MappingProxyType({'strict': True}) vs ({'strict': 1}) raises the module's error",
+        raises(
+            lambda: compare(
+                {"response_format": MappingProxyType({"strict": True})},
+                {"response_format": MappingProxyType({"strict": True})},
+                {"response_format": MappingProxyType({"strict": 1})},
+            )
+        ),
+    )
+    check(
+        CID,
+        "the dict form of the same pair is a change (type-exact), not preserved",
+        _captured_blocks("response_format", {"strict": True}, {"strict": 1}),
+    )
+
+
+def test_g5_unlisted_keys_are_never_captured_verbatim() -> None:
+    """G5: content keys outside CONTENT_KEYS must not survive capture. They
+    are not on the allow-list, so each is held as a ContentDigest only."""
+    canary = "CANARY-r004p1-r3-g5"
+    for key, value in (
+        ("suffix", canary),
+        ("system", canary),
+        ("documents", [{"text": canary}]),
+        ("chat_template", canary),
+        ("chat_template_kwargs", {"enable_thinking": canary}),
+        ("safety_identifier", canary),
+        ("prompt_cache_key", canary),
+        ("web_search_options", {"user_location": {"city": canary}}),
+    ):
+        settings = capture_effective_generation_settings({"temperature": 0.7, key: value})
+        check(
+            CID,
+            f"{key!r}: the canary never survives capture",
+            canary not in repr(settings),
+        )
+        check(
+            CID,
+            f"{key!r}: held as a ContentDigest so a bridge rewrite is still visible",
+            key in settings and type(settings[key]) is ContentDigest,
+        )
+        check(
+            CID,
+            f"{key!r} is not an allow-listed or content key",
+            key not in GENERATION_SETTINGS_KEYS
+            and key not in EXTRA_BODY_SETTINGS_KEYS
+            and key not in CONTENT_KEYS,
+        )
+    changed = compare(
+        capture_effective_generation_settings({"system": "CANARY-sys-A"}),
+        capture_effective_generation_settings({"system": "CANARY-sys-A"}),
+        capture_effective_generation_settings({"system": "CANARY-sys-B"}),
+    )
+    check(
+        CID,
+        "a rewritten unlisted key blocks without ever exposing either value",
+        changed.verdict == "blocked"
+        and changed.changed_keys == ("system",)
+        and "CANARY-sys" not in repr(changed),
+    )
+    same = compare(
+        capture_effective_generation_settings({"system": "a"}),
+        capture_effective_generation_settings({"system": "a"}),
+        capture_effective_generation_settings({"system": "a"}),
+    )
+    check(CID, "an unchanged unlisted key is preserved", same.verdict == "preserved")
+    dropped = compare(
+        capture_effective_generation_settings({"system": "a"}),
+        capture_effective_generation_settings({"system": "a"}),
+        capture_effective_generation_settings({}),
+    )
+    check(
+        CID,
+        "a dropped unlisted key blocks",
+        dropped.verdict == "blocked" and dropped.dropped_keys == ("system",),
+    )
+    inherited = compare({}, {}, capture_effective_generation_settings({"system": "a"}))
+    check(
+        CID,
+        "an unlisted key that appears only after the bridge is an inherited default",
+        inherited.verdict == "blocked" and inherited.inherited_default_keys == ("system",),
+    )
+
+
+def test_content_digest_is_canonical_type_tagged_and_validated() -> None:
+    def digest_of(value: object) -> ContentDigest:
+        return capture_effective_generation_settings({"zz": value})["zz"]
+
+    check(CID, "digest is stable for equal content", digest_of("x") == digest_of("x"))
+    check(CID, "digest differs for different content", digest_of("x") != digest_of("y"))
+    check(
+        CID,
+        "digest ignores dict insertion order",
+        digest_of({"a": 1, "b": 2}) == digest_of({"b": 2, "a": 1}),
+    )
+    check(
+        CID,
+        "digest is type-tagged: 1, True, 1.0 and '1' are four different digests",
+        len({digest_of(1), digest_of(True), digest_of(1.0), digest_of("1")}) == 4,
+    )
+    check(
+        CID,
+        "digest tells list, tuple and dict apart",
+        len({digest_of([1]), digest_of((1,)), digest_of({1: 1})}) == 3,
+    )
+    check(
+        CID,
+        "digest tells str keys from int keys",
+        digest_of({"1": 1}) != digest_of({1: 1}),
+    )
+    check(
+        CID,
+        "digest separates adjacent values (['a,b'] vs ['a','b'])",
+        digest_of(["a,b"]) != digest_of(["a", "b"]),
+    )
+    check(
+        CID,
+        "digest ignores dict order inside a list",
+        digest_of([{"a": 1, "b": 2}]) == digest_of([{"b": 2, "a": 1}]),
+    )
+    check(
+        CID,
+        "digest ignores dict order inside a tuple",
+        digest_of(({"a": 1, "b": 2},)) == digest_of(({"b": 2, "a": 1},)),
+    )
+    check(CID, "digest handles bytes", digest_of(b"x") != digest_of("x"))
+    check(CID, "digest handles None", digest_of(None) != digest_of("None"))
+    value = digest_of("CANARY-digest-value")
+    check(
+        CID,
+        "a digest is 64 lowercase hex and its repr never contains the value",
+        len(value.sha256) == 64
+        and all(c in "0123456789abcdef" for c in value.sha256)
+        and "CANARY-digest-value" not in repr(value),
+    )
+    check(
+        CID,
+        "ContentDigest rejects a non-hex64 value",
+        raises(lambda: ContentDigest("zz")) and raises(lambda: ContentDigest("A" * 64)),
+    )
+    check(CID, "ContentDigest rejects a non-str value", raises(lambda: ContentDigest(5)))
+    check(
+        CID,
+        "a ContentDigest is accepted back as a settings value by compare",
+        compare({"zz": value}, {"zz": value}, {"zz": value}).verdict == "preserved",
+    )
+    check(
+        CID,
+        "digest of a deep value over the nesting bound raises the module's error",
+        raises(lambda: capture_effective_generation_settings({"zz": _nested(65)})),
+    )
+
+
+def test_extra_body_children_follow_the_extra_body_allow_list() -> None:
+    canary = "CANARY-r004p1-r3-extra"
+    settings = capture_effective_generation_settings(
+        {
+            "extra_body": {
+                "top_k": 5,
+                "guided_json": {"type": "object"},
+                "messages": [{"content": canary}],
+                "input": canary,
+                "secret_prompt_cache": canary,
+            }
+        }
+    )
+    body = settings["extra_body"]
+    check(
+        CID,
+        "allow-listed extra_body children are kept verbatim",
+        body["top_k"] == 5 and body["guided_json"] == {"type": "object"},
+    )
+    check(
+        CID,
+        "content-keyed extra_body children are dropped outright",
+        "messages" not in body and "input" not in body,
+    )
+    check(
+        CID,
+        "other extra_body children are digests, never the value",
+        type(body["secret_prompt_cache"]) is ContentDigest and canary not in repr(settings),
+    )
+    check(
+        CID,
+        "a non-mapping extra_body is digested, not kept",
+        type(capture_effective_generation_settings({"extra_body": canary})["extra_body"])
+        is ContentDigest,
+    )
+    check(
+        CID,
+        "every guided-decoding extra_body key is allow-listed",
+        {
+            "guided_json",
+            "guided_regex",
+            "guided_choice",
+            "guided_grammar",
+            "guided_decoding_backend",
+        }
+        <= set(EXTRA_BODY_SETTINGS_KEYS)
+        and set(GENERATION_SETTINGS_KEYS) <= set(EXTRA_BODY_SETTINGS_KEYS),
+    )
+
+
+def test_allow_list_membership_is_byte_exact_for_every_key_check() -> None:
+    """A key that only matches an allow-listed name after case/whitespace
+    folding is an unknown key: it is digested, never kept verbatim and never
+    treated as the extra_body container."""
+    for variant in ("TEMPERATURE", " temperature", "temperature ", "Top_P"):
+        settings = capture_effective_generation_settings({variant: 0.7})
+        check(
+            CID,
+            f"{variant!r} is not the allow-listed key: digested, not kept",
+            type(settings[variant]) is ContentDigest,
+        )
+    nested = capture_effective_generation_settings({"EXTRA_BODY": {"top_k": 5}, " extra_body": {}})
+    check(
+        CID,
+        "a folded extra_body name is digested, not unpacked as the container",
+        type(nested["EXTRA_BODY"]) is ContentDigest
+        and type(nested[" extra_body"]) is ContentDigest,
+    )
+    inner = capture_effective_generation_settings(
+        {"extra_body": {" top_k": 1, "TOP_K": 2, "top_k ": 3, "top_k": 4}}
+    )["extra_body"]
+    check(
+        CID,
+        "folded extra_body child names are digested; the exact one is kept",
+        inner["top_k"] == 4
+        and all(type(inner[name]) is ContentDigest for name in (" top_k", "TOP_K", "top_k ")),
+    )
+
+
+def test_top_level_and_extra_body_keys_must_be_exact_str() -> None:
+    check(
+        CID,
+        "a str-subclass top-level key is refused",
+        raises(lambda: capture_effective_generation_settings({_StrSub("temperature"): 1})),
+    )
+    check(
+        CID,
+        "a str-subclass settings key is refused in compare",
+        raises(lambda: compare({_StrSub("temperature"): 1}, {}, {})),
+    )
+    check(
+        CID,
+        "a str-subclass extra_body key is refused",
+        raises(
+            lambda: capture_effective_generation_settings({"extra_body": {_StrSub("top_k"): 1}})
+        ),
+    )
+    check(
+        CID,
+        "an empty top-level key is still refused",
+        raises(lambda: capture_effective_generation_settings({"": 1})),
+    )
+
+
+def test_supported_scalar_and_container_types_are_accepted_and_copied() -> None:
+    value = {
+        "none": None,
+        "bool": True,
+        "int": 1,
+        "float": 0.5,
+        "str": "s",
+        "bytes": b"b",
+        "list": [1, [2]],
+        "tuple": (1, (2,)),
+        "dict": {"a": {"b": 1}},
+    }
+    settings = capture_effective_generation_settings({"response_format": value})
+    check(CID, "every supported type round-trips equal", settings["response_format"] == value)
+    check(
+        CID,
+        "...as an independent copy, not the caller's object",
+        settings["response_format"] is not value
+        and settings["response_format"]["list"] is not value["list"]
+        and settings["response_format"]["dict"] is not value["dict"],
+    )
+    check(
+        CID,
+        "list and tuple are kept as list and tuple",
+        type(settings["response_format"]["list"]) is list
+        and type(settings["response_format"]["tuple"]) is tuple,
+    )
+    check(
+        CID,
+        "a list and a tuple with the same items are different values",
+        _captured_blocks("stop", [1, 2], (1, 2)),
+    )
+    check(
+        CID,
+        "lists of different length are different",
+        _captured_blocks("stop", [1, 2], [1, 2, 3]),
+    )
+    check(
+        CID, "lists differing in one item are different", _captured_blocks("stop", [1, 2], [1, 3])
+    )
+    check(
+        CID,
+        "dicts with the same keys but a different nested value are different",
+        _captured_blocks("response_format", {"a": {"b": 1}}, {"a": {"b": 2}}),
+    )
+    check(
+        CID,
+        "dicts with different key sets are different",
+        _captured_blocks("response_format", {"a": 1}, {"a": 1, "b": 2}),
+    )
+    check(
+        CID,
+        "floats are compared exactly",
+        _captured_blocks("temperature", 0.7, 0.7000000001),
+    )
+    check(CID, "bytes are compared exactly", _captured_blocks("logit_bias", b"a", b"b"))
+
+
+def test_r4_digest_is_sensitive_to_nested_values_order_length_and_duplicates() -> None:
+    """Round 4 (QUEUE 0n): a change that goes through capture on both sides
+    must block, for every shape the digest covers. Faults FG3/FG6 (keys-only
+    digest), FG/FG2 (list/tuple order ignored), FG4 (only first element
+    kept), FG5 (de-duplicated elements) each leave one of these `preserved`."""
+    # 1. nested value inside a digested dict (digested top-level and digested extra_body child)
+    check(
+        CID,
+        "web_search_options.search_context_size change blocks through capture",
+        _captured_blocks(
+            "web_search_options", {"search_context_size": "low"}, {"search_context_size": "high"}
+        ),
+    )
+    for before_v, after_v in ((True, False), (False, True), (1, True), ("a", "b")):
+        check(
+            CID,
+            f"extra_body.chat_template_kwargs.enable_thinking {before_v!r}->{after_v!r} blocks",
+            _captured_blocks(
+                "extra_body",
+                {"chat_template_kwargs": {"enable_thinking": before_v}},
+                {"chat_template_kwargs": {"enable_thinking": after_v}},
+            ),
+        )
+    check(
+        CID,
+        "an unknown extra_body child with the same key names but a changed nested value blocks",
+        _captured_blocks(
+            "extra_body", {"unknown_child": {"k": {"j": 1}}}, {"unknown_child": {"k": {"j": 2}}}
+        ),
+    )
+    check(
+        CID,
+        "a deeply nested value change in a digested top-level key blocks",
+        _captured_blocks("zz", {"a": {"b": {"c": [1]}}}, {"a": {"b": {"c": [2]}}}),
+    )
+    # 2. list / tuple reorder
+    check(CID, "list reorder blocks", _captured_blocks("zz", [1, 2], [2, 1]))
+    check(CID, "tuple reorder blocks", _captured_blocks("zz", (1, 2), (2, 1)))
+    check(
+        CID,
+        "reorder of stop_token_ids blocks",
+        _captured_blocks("stop_token_ids", [1, 2, 3], [3, 2, 1]),
+    )
+    check(
+        CID,
+        "reorder nested in a digested dict blocks",
+        _captured_blocks("zz", {"k": [1, 2]}, {"k": [2, 1]})
+        and _captured_blocks("zz", {"k": (1, 2)}, {"k": (2, 1)}),
+    )
+    # 3. length and duplicates
+    check(CID, "[2,1] -> [2] blocks", _captured_blocks("zz", [2, 1], [2]))
+    check(CID, "[1] -> [1,1] blocks", _captured_blocks("zz", [1], [1, 1]))
+    check(CID, "[1,1] -> [1] blocks", _captured_blocks("zz", [1, 1], [1]))
+    check(CID, "(1,) -> (1,1) blocks", _captured_blocks("zz", (1,), (1, 1)))
+    check(
+        CID,
+        "stop_token_ids [2,1] -> [2] blocks through capture",
+        _captured_blocks("stop_token_ids", [2, 1], [2]),
+    )
+    check(
+        CID,
+        "stop_token_ids [2] -> [2,1] blocks through capture",
+        _captured_blocks("stop_token_ids", [2], [2, 1]),
+    )
+    # an identical value must still be preserved (the sensitivity is not over-blocking)
+    same = capture_effective_generation_settings(
+        {"stop_token_ids": [2, 1], "web_search_options": {"search_context_size": "low"}}
+    )
+    check(
+        CID,
+        "identical digested settings stay preserved",
+        compare(same, same, same).verdict == "preserved",
     )
 
 
