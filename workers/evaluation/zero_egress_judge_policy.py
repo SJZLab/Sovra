@@ -572,6 +572,7 @@ def authorize_human_judgment(
     role = lookup_org_role(session_factory, reviewer_issuer, reviewer_subject, organization_id)
     if not _has_role(role, REVIEWER_ROLES):
         raise HumanReviewerNotAuthorizedError()
+    assert role is not None  # _has_role(None, ...) is always False, so the raise above covers it
     if (reviewer_issuer, reviewer_subject) == (producer_issuer, producer_subject) or (
         _normalised(reviewer_issuer),
         _normalised(reviewer_subject),
