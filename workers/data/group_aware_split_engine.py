@@ -86,7 +86,12 @@ class SplitEngineError(ValueError):
 
 
 def _text(value: object, name: str) -> str:
-    if not isinstance(value, str) or not value or value.isspace():
+    # Exact type, not isinstance: a str subclass with the same text but foreign hash/eq
+    # (or just a stray subclass) must never pass as a group key or record id -- the
+    # union-find below keys a dict by this value, so a foreign hash/eq would silently
+    # fail to merge with an identical-looking plain str and split one family across
+    # two groups (and therefore two roles) instead of raising.
+    if type(value) is not str or not value or value.isspace():
         raise SplitEngineError(f"{name} must be a non-empty string")
     return value
 
@@ -211,7 +216,11 @@ def allocate_splits(spec: SplitSpec, records: Sequence[SplitRecord]) -> SplitMan
         for key in rec.group_keys:
             _text(key, "group key")
             parent.setdefault(key, key)
-        if rec.preassigned_role is not None and rec.preassigned_role not in _IS_EVAL:
+        if rec.preassigned_role is not None and (
+            # Type-checked before the membership test: an unhashable preassigned_role
+            # ([] or {}) must raise this module's own error, never a raw TypeError.
+            type(rec.preassigned_role) is not str or rec.preassigned_role not in _IS_EVAL
+        ):
             raise SplitEngineError(f"preassigned_role must be None or one of {ROLES}")
         if rec.event_time is not None:
             _int(rec.event_time, "event_time", 0, _MAX_TIME)
@@ -280,8 +289,16 @@ def verify_manifest(manifest: SplitManifest) -> None:
     roles_in_group: dict[str, set[str]] = {}
     role_by_record: dict[str, str] = {}
     group_by_record: dict[str, str] = {}
-    for record_id, role, group_id in manifest.assignments:
-        if role not in _IS_EVAL:
+    for entry in manifest.assignments:
+        # Structure and type checked before any dict lookup: a malformed entry (wrong
+        # arity, a list instead of a tuple, or an unhashable/non-str field) must raise
+        # this module's own error, never a raw TypeError or unpack ValueError.
+        if not isinstance(entry, tuple) or len(entry) != 3:
+            raise SplitEngineError("manifest has a malformed assignment")
+        record_id, role, group_id = entry
+        if type(record_id) is not str or type(group_id) is not str:
+            raise SplitEngineError("manifest has a malformed assignment")
+        if type(role) is not str or role not in _IS_EVAL:
             raise SplitEngineError("manifest has an unknown role")
         roles_in_group.setdefault(group_id, set()).add(role)
         role_by_record[record_id] = role
