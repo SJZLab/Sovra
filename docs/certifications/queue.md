@@ -24710,3 +24710,7 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-13T20:07Z — Control plane: FTF-0502-P1 returned
 - **Returned:** FTF-0502-P1 r2 (0j): catalog names; wrap raw HTTP errors; bounded-resource tests; integration via the real upload routes.
+
+## 2026-10-13T21:22Z — Control plane: FTF-1206 CERTIFIED (145/302); FTF-0503 returned; importer-order ruling
+- **Returned:** FTF-0503 r2 (0b). **Ruling:** no importer claimed or merged before FTF-0502-P1 certifies; #766 waits.
+- **Certified:** FTF-1206 (#763, merge e5f6e5ee327ba60bdae73b43eda2e31a0dc02da3); UNWIRED.
