@@ -3583,7 +3583,15 @@ def _failing(error: BaseException, at: int) -> FakeS3:
 
 
 def _variants_of_code(code: str) -> list[str]:
-    return [code.upper(), f" {code}", f"{code} ", f"{code}\n", f"\t{code}", code.title(), code + "\x00"]
+    return [
+        code.upper(),
+        f" {code}",
+        f"{code} ",
+        f"{code}\n",
+        f"\t{code}",
+        code.title(),
+        code + "\x00",
+    ]
 
 
 def test_ctor_catalogs_are_exact_matches() -> None:
@@ -3604,18 +3612,64 @@ def test_ctor_catalogs_are_exact_matches() -> None:
         check("CTOR-1", f"{name}(None) is refused", raises(ValueError, factory, None) is not None)
     for state in ("failed", "blocked"):
         for code in sorted(ic.FAILURE_CODES):
-            check("CTOR-1", f"ImportAborted({state}, {code}) is constructible", ic.ImportAborted(state, code).args != ())
+            check(
+                "CTOR-1",
+                f"ImportAborted({state}, {code}) is constructible",
+                ic.ImportAborted(state, code).args != (),
+            )
             for variant in _variants_of_code(code):
-                check("CTOR-1", f"ImportAborted code {variant!r} refused", raises(ValueError, ic.ImportAborted, state, variant) is not None)
+                check(
+                    "CTOR-1",
+                    f"ImportAborted code {variant!r} refused",
+                    raises(ValueError, ic.ImportAborted, state, variant) is not None,
+                )
         for variant in _variants_of_code(state):
-            check("CTOR-1", f"ImportAborted state {variant!r} refused", raises(ValueError, ic.ImportAborted, variant, "source_changed") is not None)
-    check("CTOR-1", "an abort carries its state and code", (ic.ImportAborted("blocked", "source_unavailable").state, ic.ImportAborted("blocked", "source_unavailable").failure_code) == ("blocked", "source_unavailable"))
-    check("CTOR-1", "an abort reads state:code", str(ic.ImportAborted("failed", "source_changed")) == "failed:source_changed")
-    check("CTOR-1", "a mapping_invalid refusal reads mapping_invalid: reason", str(ic.MappingInvalidError("bad_value")) == "mapping_invalid: bad_value")
-    check("CTOR-1", "a mapping_unsupported refusal reads mapping_unsupported", str(ic.MappingUnsupportedError()) == "mapping_unsupported" and ic.MappingUnsupportedError().code == "mapping_unsupported")
-    check("CTOR-1", "a row error without a slot reads as its code", str(ic.RowMappingError("unmapped_role")) == "unmapped_role" and ic.RowMappingError("unmapped_role").slot is None)
-    check("CTOR-1", "a row error with a slot reads code@slot", str(ic.RowMappingError("unmapped_role", "messages[1]")) == "unmapped_role@messages[1]")
-    check("CTOR-1", "a strict-JSON error reads as its code", str(ic.StrictJsonError("invalid_json")) == "invalid_json")
+            check(
+                "CTOR-1",
+                f"ImportAborted state {variant!r} refused",
+                raises(ValueError, ic.ImportAborted, variant, "source_changed") is not None,
+            )
+    check(
+        "CTOR-1",
+        "an abort carries its state and code",
+        (
+            ic.ImportAborted("blocked", "source_unavailable").state,
+            ic.ImportAborted("blocked", "source_unavailable").failure_code,
+        )
+        == ("blocked", "source_unavailable"),
+    )
+    check(
+        "CTOR-1",
+        "an abort reads state:code",
+        str(ic.ImportAborted("failed", "source_changed")) == "failed:source_changed",
+    )
+    check(
+        "CTOR-1",
+        "a mapping_invalid refusal reads mapping_invalid: reason",
+        str(ic.MappingInvalidError("bad_value")) == "mapping_invalid: bad_value",
+    )
+    check(
+        "CTOR-1",
+        "a mapping_unsupported refusal reads mapping_unsupported",
+        str(ic.MappingUnsupportedError()) == "mapping_unsupported"
+        and ic.MappingUnsupportedError().code == "mapping_unsupported",
+    )
+    check(
+        "CTOR-1",
+        "a row error without a slot reads as its code",
+        str(ic.RowMappingError("unmapped_role")) == "unmapped_role"
+        and ic.RowMappingError("unmapped_role").slot is None,
+    )
+    check(
+        "CTOR-1",
+        "a row error with a slot reads code@slot",
+        str(ic.RowMappingError("unmapped_role", "messages[1]")) == "unmapped_role@messages[1]",
+    )
+    check(
+        "CTOR-1",
+        "a strict-JSON error reads as its code",
+        str(ic.StrictJsonError("invalid_json")) == "invalid_json",
+    )
 
 
 def test_ctor_whitespace_outside_strings_is_not_nesting() -> None:
@@ -3623,15 +3677,42 @@ def test_ctor_whitespace_outside_strings_is_not_nesting() -> None:
         padded = "[" + pad * 300 + "1" + pad * 300 + "]"
         if pad == "\u00a0":
             continue  # a no-break space is not JSON whitespace
-        check("CTOR-2", f"300 x {pad!r} inside one array is depth 1", _code(padded, max_depth=1) is None)
+        check(
+            "CTOR-2",
+            f"300 x {pad!r} inside one array is depth 1",
+            _code(padded, max_depth=1) is None,
+        )
         deep = "[" * 65 + pad * 300 + "]" * 65
-        check("CTOR-2", f"65 arrays with 300 x {pad!r} of padding is still too deep", _code(deep) == "depth_exceeded")
+        check(
+            "CTOR-2",
+            f"65 arrays with 300 x {pad!r} of padding is still too deep",
+            _code(deep) == "depth_exceeded",
+        )
         opened = "[" * 64 + pad * 300 + "1" + "]" * 64
-        check("CTOR-2", f"64 arrays with 300 x {pad!r} of padding is allowed", _code(opened) is None)
-    check("CTOR-2", "escaped backslash then quote ends the string", _code('["\\\\", [[[[1]]]]]', max_depth=6) is None)
-    check("CTOR-2", "an escaped quote does not end the string", _code('["\\"[[[[[[", [1]]', max_depth=2) is None)
-    check("CTOR-2", "a quote inside a string after an escaped backslash ends it", _code('["a\\\\"]', max_depth=1) is None)
-    check("CTOR-2", "unbalanced closers never lower the depth below what was opened", _code("]]]]]]" + "[" * 5, max_depth=4) == "depth_exceeded" or _code("]]]]]]" + "[" * 5, max_depth=4) == "invalid_json")
+        check(
+            "CTOR-2", f"64 arrays with 300 x {pad!r} of padding is allowed", _code(opened) is None
+        )
+    check(
+        "CTOR-2",
+        "escaped backslash then quote ends the string",
+        _code('["\\\\", [[[[1]]]]]', max_depth=6) is None,
+    )
+    check(
+        "CTOR-2",
+        "an escaped quote does not end the string",
+        _code('["\\"[[[[[[", [1]]', max_depth=2) is None,
+    )
+    check(
+        "CTOR-2",
+        "a quote inside a string after an escaped backslash ends it",
+        _code('["a\\\\"]', max_depth=1) is None,
+    )
+    check(
+        "CTOR-2",
+        "unbalanced closers never lower the depth below what was opened",
+        _code("]]]]]]" + "[" * 5, max_depth=4) == "depth_exceeded"
+        or _code("]]]]]]" + "[" * 5, max_depth=4) == "invalid_json",
+    )
 
 
 def test_src_inconsistent_comparisons_are_exact() -> None:
@@ -3654,7 +3735,11 @@ def test_src_inconsistent_comparisons_are_exact() -> None:
             setattr(row, field, value)
             session.flush()
             err = raises(source_module.DatasetSourceInconsistentError, _open, session, train, fake)
-            check("SRC-5", f"upload session {field}={value!r} is not the verified value", err is not None)
+            check(
+                "SRC-5",
+                f"upload session {field}={value!r} is not the verified value",
+                err is not None,
+            )
             setattr(row, field, original)
             session.flush()
         dataset = session.get(store.Dataset, train.dataset_id)
@@ -3663,10 +3748,387 @@ def test_src_inconsistent_comparisons_are_exact() -> None:
         dataset.verified_sha256 = original_sha.upper()
         session.flush()
         err = raises(source_module.DatasetSourceInconsistentError, _open, session, train, fake)
-        check("SRC-5", "a dataset whose digest differs from its session only by case is inconsistent", err is not None)
+        check(
+            "SRC-5",
+            "a dataset whose digest differs from its session only by case is inconsistent",
+            err is not None,
+        )
         dataset.verified_sha256 = original_sha
         session.flush()
-        check("SRC-5", "...and restored it opens again", _open(session, train, fake).expected_sha256 == original_sha)
+        check(
+            "SRC-5",
+            "...and restored it opens again",
+            _open(session, train, fake).expected_sha256 == original_sha,
+        )
+
+
+# --- survivors: boundaries, reasons, variants --------------------------------------------
+
+
+def _reason(doc: object) -> str | None:
+    exc = raises(ic.MappingInvalidError, ic.mapping_from_object, doc)
+    return None if exc is None else exc.reason
+
+
+def test_surv_mapping_reasons_and_boundaries() -> None:
+    check("SURV-1", "a missing shape is wrong_type", _reason({}) == "wrong_type")
+    check("SURV-1", "a non-str shape is wrong_type", _reason({"shape": 5}) == "wrong_type")
+    check("SURV-1", "an unknown shape is bad_shape", _reason({"shape": "x"}) == "bad_shape")
+    check(
+        "SURV-1",
+        "a non-object is not_an_object",
+        _reason([]) == "not_an_object" and _reason(None) == "not_an_object",
+    )
+    for shape in (" messages", "MESSAGES", "messages\n", "prompt_completion ", "Messages_Json"):
+        check("SURV-1", f"shape {shape!r} is bad_shape", _reason({"shape": shape}) == "bad_shape")
+    for shape in ("grouped_rows", "grouped_multi_row"):
+        check(
+            "SURV-1",
+            f"shape {shape} is unsupported only when exact",
+            _reason({"shape": " " + shape}) == "bad_shape",
+        )
+    for value in (5, None, True, ["reject"], support.StrSub("reject")):
+        doc = messages_doc()
+        doc["on_unmapped_message_keys"] = value
+        check(
+            "SURV-1",
+            f"on_unmapped_message_keys={value!r} is bad_value",
+            _reason(doc) == "bad_value",
+        )
+    for variant in (" reject", "Reject", "ignore ", "IGNORE"):
+        doc = messages_doc()
+        doc["on_unmapped_message_keys"] = variant
+        check(
+            "SURV-1",
+            f"on_unmapped_message_keys={variant!r} is bad_value",
+            _reason(doc) == "bad_value",
+        )
+    for length, ok in ((ic.MAX_NAME_LENGTH, True), (ic.MAX_NAME_LENGTH + 1, False)):
+        doc = prompt_completion_doc()
+        doc["prompt"] = {"key": "k" * length}
+        check("SURV-2", f"slot key of {length} chars -> {ok}", (_reason(doc) is None) is ok)
+        doc = messages_doc()
+        doc["messages_pointer"] = "/" + "p" * (length - 1)
+        check("SURV-2", f"pointer of {length} chars -> {ok}", (_reason(doc) is None) is ok)
+        doc = messages_doc()
+        doc["role_map"] = {"r" * length: "user"}
+        check("SURV-2", f"role_map key of {length} chars -> {ok}", (_reason(doc) is None) is ok)
+    for count, ok in ((ic.MAX_ROLE_MAP_ENTRIES, True), (ic.MAX_ROLE_MAP_ENTRIES + 1, False)):
+        doc = messages_doc()
+        doc["role_map"] = {f"r{i}": "user" for i in range(count)}
+        check("SURV-2", f"role_map of {count} entries -> {ok}", (_reason(doc) is None) is ok)
+        doc = messages_doc()
+        doc["json"]["ignored_top_level_keys"] = [f"k{i}" for i in range(count)]
+        check("SURV-2", f"{count} ignored_top_level_keys -> {ok}", (_reason(doc) is None) is ok)
+    base = json.dumps(prompt_completion_doc(), separators=(",", ":"))
+    for extra, ok in ((0, True), (1, False)):
+        text = base + " " * (ic.MAX_MAPPING_BYTES - len(base.encode()) + extra)
+        exc = raises(ic.MappingInvalidError, ic.parse_mapping, text)
+        check(
+            "SURV-2",
+            f"a mapping document of MAX+{extra} bytes -> {ok}",
+            (exc is None) is ok and (ok or exc.reason == "too_large"),
+        )
+    for shape, make in BASES.items():
+        base_doc = make()
+        for path, node in walk(base_doc):
+            if not isinstance(node, dict) or path == ("role_map",):
+                continue
+            for key in list(node):
+                for variant in (" " + key, key.upper(), key + " ", key.title()):
+                    if variant == key or variant in node:
+                        continue
+                    doc = make()
+                    get_at(doc, path)[variant] = get_at(doc, path)[key]
+                    check(
+                        "SURV-3",
+                        f"{shape}: extra key {variant!r} next to {key!r} is refused",
+                        is_invalid(doc),
+                    )
+    for kind in (" key", "KEY", "Header ", "INDEX", "Letters", "key\n"):
+        doc = prompt_completion_doc()
+        bare = kind.strip().lower()
+        doc["prompt"] = {kind: 0 if bare == "index" else ("A" if bare == "letters" else "p")}
+        check("SURV-3", f"slot kind {kind!r} is bad_slot", _reason(doc) == "bad_slot")
+    for kind_value in (5, None, ["key"]):
+        doc = prompt_completion_doc()
+        doc["prompt"] = kind_value
+        check("SURV-3", f"slot {kind_value!r} is wrong_type", _reason(doc) == "wrong_type")
+    doc = prompt_completion_doc()
+    doc["prompt"] = {"key": "a", "header": "b"}
+    check("SURV-3", "a slot with two addresses is bad_slot", _reason(doc) == "bad_slot")
+    for pointer in (" ", "\n", "  "):
+        check(
+            "SURV-3",
+            f"pointer {pointer!r} is bad_pointer",
+            _reason(_pointer_doc(pointer)) == "bad_pointer",
+        )
+    for pointer in ("/ ", "/ - ", "/ -", "/-a", "/A", "/ x /y"):
+        check("SURV-3", f"pointer {pointer!r} is accepted", not is_invalid(_pointer_doc(pointer)))
+    check(
+        "SURV-3",
+        "'/-' is refused but '/ - ' is a key",
+        is_invalid(_pointer_doc("/-")) and not is_invalid(_pointer_doc("/ - ")),
+    )
+    for pointer in ("/", "/a/", "//"):
+        check(
+            "SURV-3",
+            f"pointer {pointer!r} (empty token) is refused",
+            is_invalid(_pointer_doc(pointer)),
+        )
+    check(
+        "SURV-3",
+        "resolve_pointer finds exactly-cased keys",
+        ic.resolve_pointer({"A": 1}, ("A",)) == (True, 1)
+        and ic.resolve_pointer({"a": 1}, ("A",)) == (False, None)
+        and ic.resolve_pointer({" a": 1}, ("a",)) == (False, None),
+    )
+    mixed = messages_doc()
+    mixed.update(
+        {
+            "role_key": "Role",
+            "content_key": " Text",
+            "tool_calls_key": "Calls",
+            "tool_call_id_key": "Id ",
+            "name_key": "NAME",
+            "on_unmapped_message_keys": "ignore",
+        }
+    )
+    m = mapping_of(mixed)
+    turn = {
+        "Role": "human",
+        "ROLE": "gpt",
+        " Text": "t",
+        "Text": "x",
+        "Calls": [{"id": "c"}],
+        "calls": 1,
+        "Id ": "i",
+        "id": 2,
+        "NAME": "n",
+        "name": "z",
+    }
+    got = ic.apply_mapping(m, {"conversation": {"turns": [turn]}})
+    check(
+        "SURV-3",
+        "message key names are matched exactly (case, padding)",
+        got.raw_record["messages"][0]
+        == {
+            "role": "user",
+            "content": "t",
+            "tool_calls": [{"id": "c"}],
+            "tool_call_id": "i",
+            "name": "n",
+        },
+    )  # type: ignore[index]
+    rej = mapping_of({**mixed, "on_unmapped_message_keys": "reject"})
+    for stray in ("role", "Role ", " role", "text", "Text", "TEXT", " NAME", "calls", "ID"):
+        t2 = {"Role": "human", " Text": "t", stray: "v"}
+        check(
+            "SURV-3",
+            f"stray message key {stray!r} is unmapped_message_key",
+            _row_error(rej, {"conversation": {"turns": [t2]}})
+            == ("unmapped_message_key", "messages[0]"),
+        )
+    for key in ("tool_calls_key", "tool_call_id_key", "name_key"):
+        for bad in (None, 5, True, ""):
+            doc = messages_doc()
+            doc[key] = bad
+            check("SURV-3", f"{key}={bad!r} is refused (null is not 'absent')", is_invalid(doc))
+
+
+def test_surv_read_slot_kinds_are_exact() -> None:
+    m = _pc()
+    for kind in (" key", "KEY", "Header", "key "):
+        odd = replace(m, prompt=ic.Slot(kind, "p"))
+        check(
+            "SURV-4",
+            f"a Slot of kind {kind!r} addresses nothing on an object row",
+            _row_error(odd, {"p": "q", "c": "a"}) == ("required_field_missing", "prompt"),
+        )
+    for kind, value in (
+        (" index", 0),
+        ("INDEX", 0),
+        ("Letters", "A"),
+        (" letters", "A"),
+        ("HEADER", "h"),
+        (" header", "h"),
+    ):
+        odd = replace(m, prompt=ic.Slot(kind, value), completion=ic.Slot("index", 1))
+        check(
+            "SURV-4",
+            f"a Slot of kind {kind!r} addresses nothing on a tabular row",
+            _row_error(odd, ["h", "a"], headers=["h", "c"]) == ("required_field_missing", "prompt"),
+        )
+    by_index = replace(m, prompt=ic.Slot("index", 0), completion=ic.Slot("index", 1), system=None)
+    check(
+        "SURV-4",
+        "a str row is not a row",
+        _row_error(by_index, "qa") == ("required_field_missing", "prompt"),
+    )
+    check(
+        "SURV-4",
+        "a bytes row is not a row",
+        _row_error(by_index, b"qa") == ("required_field_missing", "prompt"),
+    )
+    check("SURV-4", "a list row is a row", _row_error(by_index, ["q", "a"]) is None)
+    check(
+        "SURV-4",
+        "a key lookup is exact",
+        _row_error(replace(m, prompt=ic.Slot("key", "P")), {"p": "q", "c": "a"})
+        == ("required_field_missing", "prompt"),
+    )
+
+
+def test_surv_timestamp_needs_an_offset() -> None:
+    m = _pc({"metadata": {"event_timestamp": {"key": "ts"}}})
+    for value in ("2026-10-13T10:00:00", "2026-10-13 10:00:00", "2026-10-13T10:00:00.5"):
+        check(
+            "SURV-5",
+            f"naive timestamp {value!r} is refused",
+            _row_error(m, {"p": "q", "c": "a", "ts": value})
+            == ("invalid_event_timestamp", "metadata.event_timestamp"),
+        )
+    check(
+        "SURV-5",
+        "an offset timestamp is accepted",
+        _row_error(m, {"p": "q", "c": "a", "ts": "2026-10-13T10:00:00+00:00"}) is None,
+    )
+    other = _pc({"metadata": {"language": {"key": "ts"}}})
+    check(
+        "SURV-5",
+        "only event_timestamp is validated as a timestamp",
+        _row_error(other, {"p": "q", "c": "a", "ts": "not a time"}) is None,
+    )
+
+
+def test_surv_report_guards_trip_on_their_own() -> None:
+    report = _sample_report()
+    fields = _report_fields(report)
+
+    def resealed(**over: Any) -> dict[str, Any]:
+        values = {**fields, **over}
+        probe = object.__new__(ic.ImportReport)
+        for name, value in values.items():
+            object.__setattr__(probe, name, value)
+        values["report_sha256"] = ic._canonical_sha256(probe.body())
+        return values
+
+    check("SURV-6", "a correctly resealed report builds", ic.ImportReport(**resealed()) == report)
+    for label, over in (
+        ("unknown state", {"state": "weird"}),
+        ("state with different case", {"state": "Completed"}),
+        ("completed with a failure_code", {"failure_code": "source_changed"}),
+        ("failed without a failure_code", {"state": "failed"}),
+        ("blocked without a failure_code", {"state": "blocked"}),
+        ("unknown failure_code", {"state": "failed", "failure_code": "nope"}),
+        ("failure_code with different case", {"state": "failed", "failure_code": "Source_Changed"}),
+        ("failure_code padded", {"state": "failed", "failure_code": " source_changed"}),
+        ("records_seen too high", {"records_seen": 99}),
+        ("records_seen too low", {"records_seen": 0}),
+    ):
+        check(
+            "SURV-6",
+            f"{label} is refused on its own guard",
+            raises(ValueError, ic.ImportReport, **resealed(**over)) is not None,
+        )
+    for state, code in (("failed", "source_changed"), ("blocked", "source_unavailable")):
+        check(
+            "SURV-6",
+            f"{state}/{code} is a valid report",
+            ic.ImportReport(**resealed(state=state, failure_code=code)).state == state,
+        )
+    for bad_sha in (
+        report.report_sha256.upper(),
+        " " + report.report_sha256,
+        report.report_sha256 + " ",
+    ):
+        check(
+            "SURV-6",
+            "a report_sha256 that differs only in case or padding is refused",
+            raises(ValueError, ic.ImportReport, **{**fields, "report_sha256": bad_sha}) is not None,
+        )
+    check(
+        "SURV-6",
+        "RowRejection refuses code variants",
+        all(
+            raises(ValueError, ic.RowRejection, "line:1", v) is not None
+            for v in _variants_of_code("unmapped_role")
+        ),
+    )
+    check(
+        "SURV-6",
+        "the body lists each rejection with all three fields",
+        list(report.body()["rejections"])
+        == [
+            {"locator": "line:2", "code": "unmapped_role", "slot": "messages[0]"},
+            {"locator": "line:3", "code": "record_too_large", "slot": None},
+        ],
+    )  # type: ignore[call-overload]
+    check(
+        "SURV-6",
+        "the body holds rejection_counts as an object",
+        report.body()["rejection_counts"] == {"unmapped_role": 1, "record_too_large": 1},
+    )
+
+
+def test_surv_reader_edges() -> None:
+    reader = _reader(PAYLOAD)
+    check("SURV-7", "bytes_read starts at zero", reader.bytes_read == 0)
+    check("SURV-7", "a reader is its own iterator", iter(reader) is reader)
+    next(reader)
+    check("SURV-7", "bytes_read follows the stream", reader.bytes_read == 4)
+    check(
+        "SURV-7", "the deadline is exposed for the importer loop", reader.deadline.check() is None
+    )
+    drained = _reader(PAYLOAD)
+    for _ in drained:
+        pass
+    check(
+        "SURV-7",
+        "after the end every further read stays at the end",
+        raises(StopIteration, next, drained) is not None
+        and raises(StopIteration, next, drained) is not None,
+    )
+    check(
+        "SURV-7",
+        "a digest in the wrong case is not a digest",
+        raises(
+            ValueError,
+            ic.ChunkReader,
+            [b"x"],
+            expected_size=1,
+            expected_sha256=support.sha256_hex(PAYLOAD).upper(),
+        )
+        is not None,
+    )
+    clock = support.FakeClock()
+    pulled: list[int] = []
+    limits = replace(ic.DEFAULT_LIMITS, deadline_seconds=1.0)
+    reader2 = ic.ChunkReader(
+        support.split_chunks(PAYLOAD, 4),
+        expected_size=len(PAYLOAD),
+        expected_sha256=support.sha256_hex(PAYLOAD),
+        limits=limits,
+        clock=clock,
+    )
+    for _ in reader2:
+        pass
+
+    def events() -> Iterator[ic.ImportEvent]:
+        for i in range(10):
+            pulled.append(i)
+            if i == 1:
+                clock.advance(5.0)
+            yield _accepted(i)
+
+    report = _import(events(), reader2, limits=limits)
+    check(
+        "SURV-7",
+        "the importer loop stops at the deadline instead of draining the events",
+        (report.state, report.failure_code) == ("failed", "deadline_exceeded")
+        and len(pulled) == 2
+        and report.records_accepted == 1,
+    )
 
 
 # --- wiring -------------------------------------------------------------------------
