@@ -11216,3 +11216,11 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   production violation. 34/37 faults RED. Ruling: F19d (refusal raises a sibling GatewayPolicyError subclass) is not
   clause-level - every decision is unchanged, production raises RouteChangeNotAuthorizedError, no consumer depends on the
   subclass; advisory to assert exact classes. F7c/F9b hand-picked variants of closed classes. UNWIRED.
+
+## 2026-10-13T22:52Z — RETURNED: FTF-0517 (r4)
+- **FTF-0517: RETURNED** (round 3 → 4; PR #765, merge b08a8900c3ee2f709e8f2c868ad466f06e4fbcdc, head 68962b00). Producer
+  session_01JiPHdfhvLuQViXzs5qSbnw ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 115522031442; gate
+  115489488759 "all checks passed"; mutation 94/94. V3/V42 RED; 62/67 faults RED; no production violation in 336 sparse
+  random graphs. Return: the property test is vacuous (1 group, 1 role per configuration), so N9/N10/N12 union-truncation
+  faults stay GREEN (unclosed members of the class, not hand-picked variants); N13 exact-type at position 0 only; raw
+  TypeErrors from verify_manifest incl. the named assignments=None case; N8 masked by zero counts.

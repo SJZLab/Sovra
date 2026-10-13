@@ -24714,3 +24714,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-13T21:22Z — Control plane: FTF-1206 CERTIFIED (145/302); FTF-0503 returned; importer-order ruling
 - **Returned:** FTF-0503 r2 (0b). **Ruling:** no importer claimed or merged before FTF-0502-P1 certifies; #766 waits.
 - **Certified:** FTF-1206 (#763, merge e5f6e5ee327ba60bdae73b43eda2e31a0dc02da3); UNWIRED.
+
+## 2026-10-13T22:52Z — Control plane: FTF-0517 returned
+- **Returned:** FTF-0517 r4 (0f): non-vacuous sparse-pool property test; exact-type keys at every position; verify_manifest input structure.
