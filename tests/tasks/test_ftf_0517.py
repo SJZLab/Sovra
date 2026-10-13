@@ -889,23 +889,37 @@ def test_keys_roles_and_seed_require_exact_str_type() -> None:
         )
 
 
-def manifest_with_raw_assignments(assignments: tuple[Any, ...]) -> SplitManifest:
+_ALL_ZERO_COUNTS = (
+    ("train", 0, 0),
+    ("validation", 0, 0),
+    ("development_eval", 0, 0),
+    ("final_qualification", 0, 0),
+)
+
+
+def manifest_with_raw_assignments(
+    assignments: tuple[Any, ...],
+    counts: tuple[tuple[str, int, int], ...] = _ALL_ZERO_COUNTS,
+    status: str = "insufficient",
+) -> SplitManifest:
     base = SplitManifest(
         strategy=STRATEGY,
         seed="s",
         ratios=(70, 10, 10, 10),
         cutoff=None,
         assignments=assignments,
-        counts=(
-            ("train", 0, 0),
-            ("validation", 0, 0),
-            ("development_eval", 0, 0),
-            ("final_qualification", 0, 0),
-        ),
-        status="insufficient",
+        counts=counts,
+        status=status,
         manifest_sha256="",
     )
     return replace(base, manifest_sha256=compute_manifest_sha256(base))
+
+
+def _one_record_counts(role: str) -> tuple[tuple[str, int, int], ...]:
+    """Counts for a single-entry manifest whose one record has role `role` -- so the
+    counts/status are self-consistent with the assignment, and only the ONE guard a
+    test targets can still raise (mirrors the `rebuilt()` helper above)."""
+    return tuple((r, 1, 1) if r == role else (r, 0, 0) for r in ROLES)
 
 
 def test_verify_manifest_rejects_malformed_assignment_entries() -> None:
@@ -913,8 +927,6 @@ def test_verify_manifest_rejects_malformed_assignment_entries() -> None:
         ((("a", "train", "c", "d"),), "a 4-tuple assignment"),
         ((("a",),), "a 1-tuple assignment"),
         ((["a", "train", "g"],), "a list instead of a tuple"),
-        (((1, "train", "g"),), "a non-str record_id"),
-        ((("a", "train", 5),), "a non-str group_id"),
         ((("a", [], "g"),), "an unhashable (list) role"),
         ((("a", {}, "g"),), "an unhashable (dict) role"),
         ((("a", 1, "g"),), "a non-str (int) role"),
@@ -923,6 +935,23 @@ def test_verify_manifest_rejects_malformed_assignment_entries() -> None:
         check(
             CID,
             f"verify_manifest refuses {label}, not a raw TypeError/ValueError",
+            raises(lambda b=bad: verify_manifest(b)),
+        )
+    # These two give counts/status self-consistent with a "train" acceptance, so the
+    # record_id/group_id type check is the ONLY thing that can still raise -- otherwise
+    # a coincidental counts mismatch against the placeholder all-zero counts above would
+    # raise for the wrong reason and hide a dropped or bypassed type check.
+    for bad_assignments, label in (
+        (((1, "train", "g"),), "a non-str (int) record_id"),
+        ((("a", "train", 5),), "a non-str (int) group_id"),
+    ):
+        bad = manifest_with_raw_assignments(
+            bad_assignments, counts=_one_record_counts("train"), status="insufficient"
+        )
+        check(
+            CID,
+            f"verify_manifest refuses {label}, not a raw TypeError/ValueError, even with"
+            " otherwise-consistent counts",
             raises(lambda b=bad: verify_manifest(b)),
         )
 
