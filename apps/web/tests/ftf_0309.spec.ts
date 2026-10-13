@@ -526,6 +526,53 @@ test("FTF-0309-F39 a re-check that fails clears the earlier result: alert shown,
   expect(screen.queryByTestId("declared-vram")).toBeNull();
 });
 
+// ---- Round 4 (relay/FTF-0309-r4): strict-parse table + the availability blocker text ----
+
+const STRICT_PARSE_CASES: Array<[string, Record<string, unknown>]> = [
+  ["catalog_version negative", { catalog_version: -1 }],
+  ["catalog_version non-integer", { catalog_version: 1.5 }],
+  ["catalog_version a numeric string", { catalog_version: "3" }],
+  ["catalog_version missing", {}],
+  ["evidence missing", {}],
+  ["evidence null", { evidence: null }],
+  [
+    "tool_call_probe_present a string",
+    { evidence: { ...capabilities().evidence, tool_call_probe_present: "false" } },
+  ],
+  ["access an unapproved role name", { access: "admin" }],
+  ["access wrong case", { access: "Granted" }],
+  ["capability an unknown enum value", { capability: "fake_capability" }],
+  ["availability wrong case", { artifact: { ...capabilities().artifact, availability: "READY" } }],
+  ["trainable a string", { trainable: "true" }],
+];
+
+for (const [name, patch] of STRICT_PARSE_CASES) {
+  test(`FTF-0309-O33 strict parse: ${name} is malformed, no Train, onTrain never fires`, async () => {
+    const body = capabilities() as Record<string, unknown>;
+    if (name === "catalog_version missing") delete body.catalog_version;
+    else if (name === "evidence missing") delete body.evidence;
+    else Object.assign(body, patch);
+    const onTrain = await load(ok(body));
+    expect(screen.getByRole("alert").textContent).toContain("malformed");
+    expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+    expect(onTrain).not.toHaveBeenCalled();
+  });
+}
+
+test("FTF-0309-G4 an unmapped artifact (availability none) is blocked with the exact 'not ready' reason", async () => {
+  await load(ok(capabilities({ artifact: { ...capabilities().artifact, availability: "none" } })));
+  expect(train().disabled).toBe(true);
+  expect(screen.getByText("Trainable artifact is none, not ready")).toBeTruthy();
+});
+
+test("FTF-0309-G4b a revoked artifact (availability archived) is blocked with the exact 'not ready' reason", async () => {
+  await load(
+    ok(capabilities({ artifact: { ...capabilities().artifact, availability: "archived" } })),
+  );
+  expect(train().disabled).toBe(true);
+  expect(screen.getByText("Trainable artifact is archived, not ready")).toBeTruthy();
+});
+
 test("FTF-0309-F7 a 200 whose body is still being read when the model switches is ignored", async () => {
   let release: (value: unknown) => void = () => {};
   vi.stubGlobal(

@@ -136,8 +136,17 @@ def _now() -> datetime:
 
 
 def _fetch_or_raise(
-    session: Session, context: TenantContext, artifact_id: uuid.UUID
+    session: Session,
+    context: TenantContext,
+    artifact_id: uuid.UUID,
+    *,
+    lock: bool = False,
 ) -> TrainableArtifact:
+    """`lock=True` takes `SELECT ... FOR UPDATE` on the (tenant-scoped) row
+    and refreshes any already-loaded copy, so concurrent transitions
+    (`accept_license`/`revoke_license`/`mark_ready`/`archive_artifact`/
+    edits) serialize and each pure transition sees the committed state
+    (FTF-0305-F1)."""
     if not isinstance(artifact_id, uuid.UUID):
         raise ArtifactNotFoundError(f"artifact_id must be a uuid.UUID, got {artifact_id!r}")
     try:
@@ -145,6 +154,8 @@ def _fetch_or_raise(
     except ResourceAuthorizationError as exc:
         raise ArtifactNotFoundError(str(exc)) from exc
     statement = select(TrainableArtifact).where(TrainableArtifact.id == artifact_id)
+    if lock:
+        statement = statement.with_for_update().execution_options(populate_existing=True)
     result = execute_tenant_scoped(session, context.organization_id, statement)
     row = result.scalars().one_or_none()
     if row is None:
@@ -389,7 +400,7 @@ def update_artifact(
     minimum_gpu_profile: dict[str, object] | None = None,
     actor: ActorInfo,
 ) -> TrainableArtifact:
-    artifact = _fetch_or_raise(session, context, artifact_id)
+    artifact = _fetch_or_raise(session, context, artifact_id, lock=True)
     apply_edits(
         artifact,
         display_name=display_name,
@@ -425,7 +436,7 @@ def accept_license(
     """`accepted_by` is always `actor.actor_id` -- the real authenticated
     principal's own subject -- never a client-supplied field (see this
     module's own docstring)."""
-    artifact = _fetch_or_raise(session, context, artifact_id)
+    artifact = _fetch_or_raise(session, context, artifact_id, lock=True)
     changed = apply_accept_license(artifact, accepted_by=actor.actor_id)
     if changed:
         write_audit_event(
@@ -455,7 +466,7 @@ def revoke_license(
     every mutating route in `artifact_routes.py` keeps catching exactly
     one state-conflict exception type for a 409, matching
     `accept_license`/`mark_ready`'s own existing convention."""
-    artifact = _fetch_or_raise(session, context, artifact_id)
+    artifact = _fetch_or_raise(session, context, artifact_id, lock=True)
     try:
         changed = _apply_revoke_license(artifact)
     except LicenseAcceptanceError as exc:
@@ -481,7 +492,7 @@ def mark_ready(
     *,
     actor: ActorInfo,
 ) -> TrainableArtifact:
-    artifact = _fetch_or_raise(session, context, artifact_id)
+    artifact = _fetch_or_raise(session, context, artifact_id, lock=True)
     changed = apply_mark_ready(artifact)
     if changed:
         write_audit_event(
@@ -504,7 +515,7 @@ def archive_artifact(
     *,
     actor: ActorInfo,
 ) -> TrainableArtifact:
-    artifact = _fetch_or_raise(session, context, artifact_id)
+    artifact = _fetch_or_raise(session, context, artifact_id, lock=True)
     if not apply_archive(artifact):
         return artifact
     write_audit_event(

@@ -231,6 +231,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0402.py
       - name: FTF-0305 negative-test proof (License acceptance workflow catches real defects, real local sockets, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0305.py
+      - name: FTF-0305-F1 negative-test proof (license-gated trainability, row-lock shape, 0029 shape, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0305_f1.py
       - name: FTF-0302 negative-test proof (Hugging Face artifact resolver catches real defects, real local HTTPS sockets, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0302.py
       - name: FTF-0303 negative-test proof (Private S3 artifact resolver catches real defects, real local signed sockets, no DB required)
@@ -305,6 +307,12 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0507.py
       - name: FTF-0508 negative-test proof (Record schema validator, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0508.py
+      - name: FTF-0502-P1 negative-test proof (Dataset import common contract, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0502_p1.py
+      - name: FTF-0502 negative-test proof (JSONL importer, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0502.py
+      - name: FTF-0503 negative-test proof (JSON importer, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0503.py
       - name: FTF-0206 negative-test proof (`/model_group/info` enrichment, no DB required)
         # Same watchdog finding as FTF-0205 above -- this is the FTF-0206
         # half of that gap, now closeable since this task's test file
@@ -424,6 +432,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_1305.py
       - name: FTF-0616 negative-test proof (LLM judge adapter, no DB required; real local gateway over HTTPS)
         run: uv run python3 tests/tasks/test_ftf_0616.py
+      - name: FTF-0616-F1 negative-test proof (judge deployment fingerprint + cache bypass, no DB required; real local gateway over HTTPS)
+        run: uv run python3 tests/tasks/test_ftf_0616_f1.py
       - name: FTF-04A02 negative-test proof (GitHub App/token read-only secret integration, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a02.py
       - name: FTF-04A03 negative-test proof (GitHub accessible-repository listing connector, no DB required)
@@ -464,6 +474,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0308_p1.py
       - name: FTF-0309-P1 negative-test proof (training-capability read API -- route seams over real HTTP, contract, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0309_p1.py
+      - name: FTF-0310 negative-test proof (capability contract checker -- stdlib schema checker, generated negative table, source matrix, fault injection, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0310.py
       - name: FTF-0602-P1 negative-test proof (evaluation cases -- migration SQL + RLS/GRANT shape + fault injection, real routes over the real store on SQLite, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0602_p1.py
       - name: FTF-0501-P1 negative-test proof (dataset uploads -- migration SQL + RLS/GRANT/freeze-trigger shape + fault injection, store on SQLite, read routes, mounted app, no DB required)
@@ -500,6 +512,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_r004_p2.py
       - name: FTF-R004-P3 negative-test proof (pinned Inspect worker + case adapter + native runtime bridge over the real isolated tool backend, no DB/network required)
         run: uv run python3 tests/tasks/test_ftf_r004_p3.py
+      - name: FTF-H010-P3a negative-test proof (pure import-artifact validators -- file allow-list, strict JSON, safetensors header, adapter/base shapes, fault-injected module copies, no DB/network required)
+        run: uv run python3 tests/tasks/test_ftf_h010_p3a.py
       - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
         run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check
@@ -1379,6 +1393,39 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real License acceptance workflow (revoke-license) evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0305_license_acceptance_workflow.py
+
+  artifact-transition-race-integration:
+    # FTF-0305-F1: real Postgres proof that mark_ready/revoke_license (and the other
+    # artifact transitions) serialize on a row lock, the 0029 CHECK refuses ready without a
+    # license, and the migration refuses to run over a violating row.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' artifact-transition-race-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest FTF-0004/FTF-0102/FTF-0104/FTF-0105/FTF-H003/FTF-0106/FTF-0201/FTF-0301/FTF-0401/FTF-0402 already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0305f1
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0305f1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0305f1
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove artifact transitions serialize and ready needs a license (FTF-0305-F1) against the live database
+        run: uv run python3 tests/integration/test_ftf_0305_f1_artifact_transition_race.py
 
   tool-schema-crud-integration:
     # FTF-0404: real Postgres Tool schema CRUD evidence. Two real
@@ -2781,6 +2828,44 @@ jobs:
       - name: Prove the real training-capability read API evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0309_p1_model_capabilities.py
 
+  capability-contract-integration:
+    # FTF-0310: real artifact, mapping and capability routers on a real uvicorn
+    # server over PostgreSQL 16. Every shipped source type x artifact status x
+    # license state x mapped/unmapped cell (72) has its capability, mapping and
+    # change responses validated against the frozen 03 contract, trainable is
+    # true only for a mapped, ready, license-approved artifact, an upstream-only
+    # model and unresolvable names are never trainable, and a generated negative
+    # table derived from the real responses is rejected --
+    # tests/integration/test_ftf_0310_capability_contract.py.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' capability-contract-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0310
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0310"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0310
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real capability contract evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_0310_capability_contract.py
+
   evaluation-case-integration:
     # FTF-0602-P1: real Postgres evidence for EvaluationCase persistence
     # (migration 0023): upgrade/downgrade/upgrade, ENABLE+FORCE RLS and a
@@ -2902,6 +2987,106 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real upload routes against PostgreSQL 16 and SeaweedFS
         run: uv run python3 tests/integration/test_ftf_0501_routes_postgres_s3.py
+      - name: Prove the abandoned-upload sweeper against PostgreSQL 16 and SeaweedFS
+        # FTF-0501 round 3: SeaweedFS lists no Initiated, so age comes from the session's
+        # expires_at (read as sovra_app); paging past 1000 uploads; exit codes through main().
+        run: uv run python3 tests/integration/test_ftf_0501_sweeper_postgres_s3.py
+
+  resumable-upload-ui-real-api-integration:
+    # FTF-0501-UI round 2 (UI CHECKLIST f): the real resumable-upload component
+    # (apps/web/components/dataset-factory/resumable_dataset_upload_ui.tsx, Vitest +
+    # jsdom) against the real upload router on a real uvicorn server over PostgreSQL 16
+    # as sovra_app and the live SeaweedFS S3 API, part size at S3's 5 MiB minimum:
+    # multi-part upload and finalize, connection drop + reload + resume of ONLY the
+    # missing parts, a foreign organization's path refused -- then an independent check
+    # of the Datasets, sessions and stored objects --
+    # tests/integration/test_ftf_0501_ui_real_api.py (spec:
+    # apps/web/tests/real_api/ftf_0501_ui_real_api.realapi.ts).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' resumable-upload-ui-real-api-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0501ui
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0501ui"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0501ui
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Install JS/TS dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Prove the real upload UI against the real router, PostgreSQL 16 and SeaweedFS
+        run: uv run python3 tests/integration/test_ftf_0501_ui_real_api.py
+
+  dataset-quality-ui-real-api-integration:
+    # FTF-0516 UI round 5 (UI CHECKLIST f): the real issue-resolution component
+    # (apps/web/components/dataset-factory/dataset_issue_resolution_ui.tsx, Vitest + jsdom)
+    # against the real build_dataset_quality_router on a real uvicorn server over PostgreSQL 16
+    # as sovra_app: exclude with server before/after evidence, correct with an uppercase-typed
+    # successor, waive 403 for ml_engineer and recorded for workspace_admin, a stale-view 409,
+    # a lost response + another decision + identical retry (one row), a detector failure with
+    # no control, a foreign dataset 404 -- then an independent check of the stored rows --
+    # tests/integration/test_ftf_0516_ui_real_api.py (spec:
+    # apps/web/tests/real_api/ftf_0516_ui_real_api.realapi.ts).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' dataset-quality-ui-real-api-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0516ui
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0516ui"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0516ui
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Install JS/TS dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Prove the real quality-issue UI against the real router and PostgreSQL 16
+        run: uv run python3 tests/integration/test_ftf_0516_ui_real_api.py
 
   dataset-upload-hardening-integration:
     # FTF-0501-P2: real Postgres evidence for migration 0025: a closed
@@ -3147,6 +3332,45 @@ jobs:
       - name: Prove the real candidate-selection + persisted-audit evidence against the live database
         run: uv run python3 tests/integration/test_ftf_04a18_candidate_selection.py
 
+  dataset-import-source-integration:
+    # FTF-0502-P1: the dataset source reader (apps/api/app/datasets/dataset_object_source.py)
+    # over PostgreSQL 16 as the restricted sovra_app role and the live SeaweedFS S3 API:
+    # datasets made by the real FTF-0501-P1 store functions, streamed bytes hashing to
+    # Dataset.verified_sha256, foreign-org / foreign-project / missing / hidden held-out
+    # datasets all the same DatasetNotFoundError, raw sovra_app SQL under another tenant
+    # seeing and planting nothing, exactly one GET of the session key and no LIST, and a
+    # truncated object or a mid-stream stop of S3 ending in blocked/source_unavailable --
+    # tests/integration/test_ftf_0502_p1_dataset_source_postgres_s3.py. The test boots the
+    # compose `s3` service itself when nothing answers.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' dataset-import-source-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0502p1
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0502p1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0502p1
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the dataset source reader against PostgreSQL 16 and SeaweedFS
+        run: uv run python3 tests/integration/test_ftf_0502_p1_dataset_source_postgres_s3.py
+
   model-import-integration:
     # FTF-H010-P1: real Postgres evidence for the model import fields +
     # import-validation jobs slice (migration 0027): upgrade/downgrade/upgrade,
@@ -3262,8 +3486,11 @@ jobs:
       - s3-minio-versioned-source-integration
       - direct-upload-s3-integration
       - direct-upload-routes-integration
+      - resumable-upload-ui-real-api-integration
+      - dataset-quality-ui-real-api-integration
       - oidc-provider-integration
       - license-acceptance-workflow-integration
+      - artifact-transition-race-integration
       - tool-schema-crud-integration
       - critical-behavior-requirements-integration
       - budget-policy-integration
@@ -3293,6 +3520,7 @@ jobs:
       - external-provider-denial-integration
       - model-catalog-mapping-integration
       - model-capabilities-integration
+      - capability-contract-integration
       - evaluation-case-integration
       - dataset-upload-integration
       - dataset-upload-hardening-integration
@@ -3305,6 +3533,7 @@ jobs:
       - model-import-integration
       - candidate-selection-integration
       - inspect-target-bridge-integration
+      - dataset-import-source-integration
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

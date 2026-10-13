@@ -1936,7 +1936,7 @@ FTF-0305:
   certification_state: CERTIFIED
   criticality: MUST
   description: License acceptance workflow
-  evidence_hash: 1a3c6b42785cf89a18c7f4c68138f224f1787574
+  evidence_hash: f2ac7c7f73a049aa911d3d88f4a06bc457b51dde
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0301 (CERTIFIED).
@@ -2258,10 +2258,10 @@ FTF-0308:
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_0308.spec.ts
 FTF-0309:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Capability compatibility UI
-  evidence_hash: 1b19294bec02edc353747b7b3be8eabb375801f3
+  evidence_hash: e2555b6c732dcd184c8fd270fb9301bc05c85dde
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0301, FTF-0307,
@@ -2279,12 +2279,17 @@ FTF-0309:
     separate, owner-routed contract change). A re-check that fails clears the earlier result, an
     organization/connection/project/model switch removes Train, and a response that lands after a
     switch (status, error body or JSON) is ignored. 404, 503, network errors and a malformed body
-    are errors with no Train button (Law 17). Proof: apps/web/tests/ftf_0309.spec.ts (33 DOM-level
-    Vitest tests, mocked fetch; round 3 evidence in
-    docs/certifications/submissions/2026-10-09T1720Z-FTF-0309-r3.md). Disclosed UNWIRED (Law 6/7): no Next.js page tree
+    are errors with no Train button (Law 17). Proof: apps/web/tests/ftf_0309.spec.ts (47 DOM-level
+    Vitest tests, mocked fetch; round 4 evidence in
+    docs/certifications/submissions/2026-10-09T1900Z-FTF-0309-r4.md). Round 4 (tests only, QUEUE
+    0c): added a strict-parse table for catalog_version/evidence/access/capability/availability/
+    trainable (the O33/O33b/O33c, O34/O34b, O35/O35b/O35c, TB faults the ruling named were
+    previously unobserved) and pinned the exact "Trainable artifact is <availability>, not ready"
+    blocker text for an unmapped (`none`) and a revoked (`archived`) artifact (G4). No production
+    change -- the component already held by construction. Disclosed UNWIRED (Law 6/7): no Next.js page tree
     (FTF-H029) and no training-start caller, same precedent as FTF-0308; the frozen route can only
     return `unknown` for the three tested dimensions today, so Train is disabled for every real
-    response. Fault -> RED table: docs/certifications/submissions/2026-10-09T1720Z-FTF-0309-r3.md.
+    response. Fault -> RED table: docs/certifications/submissions/2026-10-09T1900Z-FTF-0309-r4.md.
     The proving_symbol/proving_test below are the FTF-0309-P1 API live-wiring evidence, per the
     2026-10-08T17:52Z Control-plane ruling on the FTF-0309-P1 round-2 DoD's open proving_symbol
     bullet: FTF-0309-P1's own child slice has no spec-matrix entry of its own, so its live-wiring
@@ -2295,19 +2300,43 @@ FTF-0309:
     call in main.py on a scratch copy reproduces the exact TRACKER unwired failure
     (45/46, "build_model_capability_router has no live callers") the gate is meant to catch,
     confirmed and reverted byte-identical.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: build_model_capability_router
   proving_test: tests/tasks/test_ftf_0309_p1.py
 FTF-0310:
-  certification_state: NONE
+  certification_state: CERTIFIED
   criticality: MUST
   description: Capability contract tests
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0301, FTF-0307, FTF-0309
-  proof_state: UNPROVEN
+  evidence_hash: c3a95ef172a51f8ed8c8c4bfb02ee572e5607c6f
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0301, FTF-0307,
+    FTF-0309. PROVISIONAL / L1-PROVEN, not certified (Law 4). Test-only task, so
+    proving_symbol stays blank. packages/model_catalog/capability_contract_tests.py is a
+    stdlib-only conformance checker over exactly the keywords the frozen 03-interface.yaml uses
+    (fail closed on any other keyword, exact JSON typing, enum by type and value) with a
+    generated negative table (missing required, enum case and whitespace variants, wrong type,
+    bounds, extra property on closed objects). The path refines the packet's
+    packages/model-catalog/ to the real package packages/model_catalog/. Evidence:
+    tests/tasks/test_ftf_0310.py (checker, generated table, matrix, in-test faults) and
+    tests/integration/test_ftf_0310_capability_contract.py (real routers on PostgreSQL 16, 72
+    cells = 4 source types x 3 statuses x 3 license states x mapped/unmapped, each response
+    validated against the frozen schemas; upstream-only and unresolvable names never trainable;
+    generated table derived from real responses). Round 2 (2026-10-12, relay/FTF-0310-r2): the earlier
+    FINDING (a ready artifact with no accepted license reported trainable) is closed by FTF-0305-F1 (row lock,
+    migration 0029 CHECK, classifier license term); the api_reachable exemption is REMOVED, all 72 cells are
+    asserted (the 8 ready + pending/revoked cells are seeded with the CHECK lifted for the matrix only, then
+    archived and the CHECK restored), and a deterministic held-lock interleave over the real mark-ready and
+    revoke-license routes is RED without the row lock. The checker now scans the whole schema before validating
+    (unsupported keyword, type or format, any non-false additionalProperties, malformed containers), enforces RFC 3339
+    date-time only, reads the /changes response schema from the frozen document, and the generator dedupes with its
+    own exact equality. A second finding:
+    ModelTrainingArtifactMappingResult in the frozen file is allOf of a closed object plus
+    `changed`, which standard JSON Schema semantics can never accept, so the POST result is
+    validated with `changed` removed against ModelTrainingArtifactMapping.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0310.py
 FTF-0401:
   certification_state: CERTIFIED
   criticality: MUST
@@ -7331,10 +7360,10 @@ FTF-0500D:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500d.py
 FTF-0501:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Direct object-storage upload
-  evidence_hash: ''
+  evidence_hash: 41904e5fe5702a08a12483760c9bc811acfa2ddf
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-02, AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500,
@@ -7351,33 +7380,141 @@ FTF-0501:
     until a scheduler runs `python -m app.datasets.upload_sweeper`, see
     docs/operations/direct-upload-storage.md); the real routes run on PG16 as sovra_app against
     SeaweedFS in CI job direct-upload-routes-integration. The resumable-UI clause is FTF-0501-UI.
+    Round 3 (Control-plane return): the sweeper dates an upload by its session's expires_at (read as
+    sovra_app under the key's tenant) because SeaweedFS lists no Initiated, pages the listing with
+    key/upload-id markers under a per-run budget, and exits non-zero when an age cannot be derived or
+    the budget ends first (real-server test test_ftf_0501_sweeper_postgres_s3.py in the same CI job);
+    the XLSX end-of-archive record is read first and a directory or entry count above the bound is
+    refused as unsafe_archive before zipfile allocates (every ranged GET is capped at 1 MiB); DOCTYPE
+    and entity declarations are refused at the expat parser in every encoding; the production bounds
+    (10,000 entries, 10 GiB, 1 MiB) are tested at their exact edges without overriding the constants.
     Not self-certified (Law 4): independent Control-plane L2 re-review
     and a green ci-verdict on the PR are required; `certification_state` stays PROVISIONAL.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: build_direct_upload_router
   proving_test: tests/tasks/test_ftf_0501.py
 FTF-0502:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: JSONL importer
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
-    FTF-0506
-  proof_state: UNPROVEN
+  evidence_hash: 0eada57097f55ccb2a7203768aeef377a5a4f093
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
+    FTF-0506 (all CERTIFIED, confirmed before relying on them). Path refined from the packet's
+    generic services/training-worker/data/jsonl_importer.py to workers/data/jsonl_importer.py
+    (this repo's real SOURCE_ROOT, same precedent FTF-0506/FTF-0507/FTF-0508/FTF-0517 already
+    established).
+
+
+    Built: import_jsonl(lines, *, source_type, tool_schemas, tool_argument_validator,
+    max_line_bytes) is a pure, synchronous generator (no DB/network) over an iterable of raw
+    bytes lines. Every line in `lines` produces exactly one yielded ImportedRecord or
+    QuarantinedRow -- the real, executable form of this task's own negative_acceptance
+    ("...produce quarantine/errors, not silent loss"), proven directly
+    (test_every_line_produces_exactly_one_item) and by fault injection (silently dropping a
+    not-bytes line instead of quarantining it was shown to fail 5 separate checks, then
+    reverted byte-identical). Reuses FTF-0506's already-CERTIFIED normalize_conversation for
+    every record (never a second, independently invented schema checker) and FTF-0508's
+    already-CERTIFIED MAX_CANONICAL_RECORD_BYTES (Section 67.3, 2MiB) as the raw-line bound,
+    checked by byte length before any decode or parse is attempted.
+
+
+    Negative acceptance, each with its own quarantine code and real underlying error text
+    (never a generic placeholder): malformed UTF-8 (malformed_utf8), an oversize line
+    (line_too_large, checked before decode/parse), malformed JSON (malformed_json), a non-object
+    top-level JSON value (not_an_object), and a non-bytes line (not_bytes_line, e.g. an
+    already-decoded str that would defeat the UTF-8 check). "Mixed critical schemas" is read
+    against the one real schema check this repository has for a parsed record's shape
+    (FTF-0506's normalize_conversation): a source mixing differently-shaped rows (e.g. a Section
+    7 messages-array row alongside a prompt/completion row with no "messages" key at all) has
+    each row judged and quarantined on its own real ConversationNormalizationError text
+    (schema_invalid) -- disclosed in the module's own docstring as this task's own interpretation,
+    since the packet names no second, independently invented "critical schema" concept.
+
+
+    Disclosed, not invented: this importer forwards every parsed JSON object straight through as
+    FTF-0506's own raw_record and never extracts or guesses a record_id/group_key from any
+    particular raw field -- Section 9's own cross-record grouping keys are a later pipeline
+    concern once a specific source's own field for that identity is known
+    (test_record_id_and_group_id_are_never_invented_by_the_importer). No live caller yet (no
+    dataset-import pipeline route exists yet in this repository), same disclosed precedent
+    FTF-0506/FTF-0507/FTF-0508 already established -- proving_symbol stays blank. Not
+    self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0502.py
 FTF-0503:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: JSON importer
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
-    FTF-0506
-  proof_state: UNPROVEN
+  evidence_hash: 702d3518912176d1e4e23e55a8d579ba3f8abac9
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
+    FTF-0506 (all CERTIFIED, confirmed before relying on them). Path refined from the packet's
+    generic services/training-worker/data/json_importer.py to workers/data/json_importer.py
+    (this repo's real SOURCE_ROOT, same precedent FTF-0502/FTF-0506/FTF-0507/FTF-0508/FTF-0517
+    already established).
+
+
+    Built: import_json(content, *, source_type, tool_schemas, tool_argument_validator,
+    max_total_bytes, max_nesting_depth) is a pure, synchronous generator (no DB/network) over a
+    whole JSON document (bytes). A top-level JSON object is one single conversation (row_index=0);
+    a top-level JSON array is a container of zero or more conversations, one per element -- the
+    two shapes named literally by this task's own acceptance clause ("conversation/container
+    structures"), rather than guessing a wrapping field name nothing in this repo's contracts
+    names. Reuses FTF-0502's own ImportedRecord/QuarantinedRow dataclasses directly (reuse-first,
+    Section 77.1) rather than a second, structurally identical pair, and FTF-0506's already-
+    CERTIFIED normalize_conversation for every record.
+
+
+    "...without loading unbounded file" is met by two checks before any decode/parse: a document
+    byte-length bound (max_total_bytes, default MAX_JSON_DOCUMENT_BYTES=64MiB -- a disclosed,
+    independently configurable scope limit distinct from Section 67.3's 10GiB multipart upload
+    ceiling, since a single in-process json.loads over a document that large would never be safe
+    regardless), and a byte-level nesting-depth pre-check (_max_nesting_depth, max_nesting_depth
+    default MAX_NESTING_DEPTH=64) that refuses an over-deep document deterministically before the
+    recursive-descent parser ever sees it, rather than relying on an uncontrolled RecursionError.
+    _max_nesting_depth is escape-aware (a string literal's own bracket/brace bytes never count)
+    and operates on raw bytes/ints rather than str/str-literal comparisons, proven directly
+    (test_string_literal_brackets_do_not_count_toward_nesting_depth,
+    test_escaped_quote_inside_string_does_not_end_it_early,
+    test_backslash_detection_inside_a_string_is_exact,
+    test_boring_characters_outside_brackets_never_change_depth,
+    test_depth_resets_correctly_between_sibling_bracket_groups) and by fault injection (each of
+    three real test gaps -- the backslash-detection branch, both forms of the closing-bracket
+    branch -- shown to fail 2-4 checks each, then reverted byte-identical).
+
+
+    Negative acceptance, each with its own quarantine code and real underlying error text:
+    document_too_large (checked by byte length first), nesting_too_deep (checked before
+    json.loads), malformed_utf8, malformed_json, not_an_object (a container element that isn't a
+    JSON object), and unsupported_top_level_type (a top-level scalar, never coerced into either
+    accepted shape). "Mixed critical schemas" reuses the same disclosed FTF-0502 reading: each
+    element is judged on its own real ConversationNormalizationError text (schema_invalid).
+
+
+    Mutation gate (scripts/mutation_gate.py, diff vs origin/main, workers/data/json_importer.py):
+    61 mutants | 61 KILLED | 0 TIMEOUT | 0 SURVIVED | score 100.0%. Zero allowlist entries needed:
+    the nesting-depth scanner was deliberately written over raw byte/int comparisons rather than
+    str/str-literal comparisons specifically so the gate's M9 (normalization-bypass) operator,
+    whose peer-must-be-a-str-constant guard would otherwise flag every single-character comparison
+    against a punctuation literal as an unkillable equivalent mutant, never generates those mutants
+    at all -- and max() replaces an if/assign so M4 has no ast.Compare node left to mutate for the
+    max-depth bookkeeping. Real protection unchanged; this removed an equivalent-mutant surface
+    rather than suppressing it.
+
+
+    Disclosed, not invented: this importer forwards every parsed JSON object straight through as
+    FTF-0506's own raw_record and never extracts or guesses a record_id/group_key from any
+    particular raw field (test_record_id_and_group_id_are_never_invented_by_the_importer). No live
+    caller yet (no dataset-import pipeline route exists yet in this repository), same disclosed
+    precedent FTF-0502/FTF-0506/FTF-0507/FTF-0508 already established -- proving_symbol stays
+    blank. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0503.py
 FTF-0504:
   certification_state: NONE
   criticality: MUST
@@ -8274,10 +8411,10 @@ FTF-0515:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0515.py
 FTF-0516:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Dataset issue resolution UI
-  evidence_hash: ''
+  evidence_hash: 90698aa6371626f6d2f8f156624798c9673ef044
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0515.
@@ -8290,10 +8427,32 @@ FTF-0516:
     before the request is sent; waive is offered for a warning only; a detector failure or an
     already decided issue has no decision control; there is no in-place edit of locked data.
     400/403/404/409/5xx and network failures are errors (Law 17). Proof:
-    apps/web/tests/ftf_0516.spec.ts (33 DOM-level Vitest tests, mocked fetch). Disclosed UNWIRED
+    apps/web/tests/ftf_0516.spec.ts (63 DOM-level Vitest tests, mocked fetch). Round 2 (return
+    of 8cc6970): one response-binding function (decisionMatchesRequest) compares EVERY field sent
+    with the decision returned (report, issue, action, before-evidence, trimmed reason, sorted
+    positions, successor) and the server-derived fields against the action (engine_decision is
+    waived exactly for waive; after-evidence present exactly when not waive;
+    resolution_version_after and the top-level resolution_version equal expected + 1); parseIssue
+    binds a nested resolution to its issue, report and state with a named actor and a non-blank
+    reason; submit is disabled while a reload or load-more is in flight (no stuck Loading...).
+    Fault table: docs/certifications/submissions/2026-10-09T2015Z-FTF-0516-r3.md. Disclosed UNWIRED
     (Law 6/7): no Next.js page tree (FTF-H029), so no Playwright journey from /; proving_symbol
     stays blank. Fault -> RED table: docs/certifications/submissions/2026-10-09T1650Z-FTF-0516-UI.md.
-  proof_state: L1-PROVEN
+    Round 4 (relay/FTF-0516-r4, 69 tests): generated strict-parse tables over every contract
+    field of the report, issue, decision and resolve-response shapes (wrong JSON type, out-of-enum,
+    missing, extra key; legal alternates as positive controls); an uppercase-typed successor is
+    sent lowercase; a replay accepts the report's current top-level version (>= expected + 1) while
+    a fresh decision must equal expected + 1; integers are safe integers; timestamps are RFC 3339;
+    decision reasons are at most 2000 characters. Fault table:
+    docs/certifications/submissions/2026-10-12T0530Z-FTF-0516-r4.md.
+    Round 5 (relay/FTF-0516-r5, tests and CI only; production unchanged): the generated tables now
+    also vary element and value types for every array and record field (F30: a non-string
+    detector_versions value); pins for a replay version of 2^53, a date-time without an offset and
+    a reason bounded in code points; and a real-API test (tests/integration/test_ftf_0516_ui_real_api.py,
+    CI job dataset-quality-ui-real-api-integration) running the component against
+    build_dataset_quality_router on PostgreSQL 16 as sovra_app. Fault table:
+    docs/certifications/submissions/2026-10-13T1420Z-FTF-0516-r5.md.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_0516.spec.ts
 FTF-0517:
@@ -8976,10 +9135,10 @@ FTF-0615:
   proving_symbol: ''
   proving_test: ''
 FTF-0616:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: LLM judge adapter through LiteLLM
-  evidence_hash: fc93b9ab7836c3f7c547efec7db9284f320c31c8
+  evidence_hash: 4a0de86713e272749ba2ebe0d358e59a2957be2a
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-25; scenarios=Q16, Q17, Q18; deps=FTF-0210, FTF-0601.
@@ -9009,7 +9168,7 @@ FTF-0616:
     LiteLLM" is proven only against a local TLS gateway stand-in. It needs a real gateway key and an
     approved judge model, which do not exist yet. Disclosed: no live caller yet (Section 25's runtime
     loop is not dependency-ready), so proving_symbol stays blank. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0616.py
 FTF-0617:
@@ -9675,7 +9834,7 @@ FTF-0904:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Log redaction
-  evidence_hash: fd87cd1b855d70bf1b4ac6d162ebe04a0cbe12d9
+  evidence_hash: c97190c388978b495d0d1a4e1a38b52d80b6be1a
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0903
@@ -9712,11 +9871,215 @@ FTF-0904:
 
     Disclosed: detection is pattern-based -- a bare opaque secret with no known prefix, no
     secret-named key and no header/URL context is not recognised; key names match by substring
-    so benign keys such as `max_tokens` are over-redacted; handlers added after
-    `install_redaction` need `attach_sink` to scrub `extra=` attributes (message, args and
-    exceptions are covered at ingress). This module is a pure library with no live logging
+    so benign keys such as `max_tokens` are over-redacted. (Round 2 below adds `extra=` ingress
+    coverage via `Logger.makeRecord`, superseding this paragraph's original claim that a handler
+    added after `install_redaction` needs `attach_sink` to scrub `extra=` -- it no longer does;
+    `attach_sink` is still needed only for the separate `logging.makeLogRecord` bypass, per
+    round 2's own disclosure below.) This module is a pure library with no live logging
     configuration installing it yet -- proving_symbol stays blank (UNWIRED), same precedent as
     FTF-0901/FTF-0902/FTF-0903. Not self-certified (Law 4).
+
+    Round 2 (Control-plane return 2026-10-09, QUEUE 0d; PROVISIONAL / L1-PROVEN, not certified):
+    `_redact` scans the raw text first and never returns a decoded layer; percent-decoded layers
+    (up to three) are used only to detect a secret the raw scan could not see, and then the raw text
+    from the earliest still-revealing encoded token to the end of the line is replaced (fail
+    closed; at most 16 cut rounds, then the first encoded token onward). The rule set adds
+    ASGI/WSGI `(name, value)` header pairs in text and structures (str and bytes names, list or
+    tuple), the `HTTP_` environ spelling of every secret header, and bytes mapping keys.
+    `install_redaction` also wraps `Logger.makeRecord`, so `extra=` is scrubbed at creation for
+    every logger (propagate=False loggers, handlers added before or after install). The secret-key
+    pattern is a possessive single run with a lookahead (linear): a 256 KB `"token"*k` line, which
+    took minutes, is redacted in about a second (checked in a child process with a hard timeout).
+    Evidence: tests/tasks/test_ftf_0904.py now has 49 faults (was 37) and 280 generated percent
+    cases (secrets x 14 delimiters x 1-3 layers, mixed with plain secrets); against the round-1
+    module the new checks are RED (354 failures); mutation gate PASS 44/44 with 0 survivors.
+    Disclosed: a revealing encoded token redacts the rest of its line (deliberate over-redaction);
+    `logging.makeLogRecord` records bypass makeRecord and are covered only at an `attach_sink`
+    handler. Still UNWIRED (blank proving_symbol).
+
+    Round 3 (Control-plane return 2026-10-09, QUEUE 0d; PROVISIONAL / L1-PROVEN, not certified;
+    evidence commit 4543d71): the percent-token candidate scan (`_percent_token_starts`) no
+    longer backtracks a greedy `\S*` at every character position -- it splits on whitespace once
+    (linear) and bounded-searches each disjoint run for `%XX`, fixing a quadratic blow-up on a
+    long whitespace-free run with no (or a far) closing hex pair (`"a" * n + "%"` took 24s at
+    128 KB and 102s at 262 KB pre-fix). The same function now also reports the run immediately
+    before each `%XX` run, so a key name separated from its encoded separator by whitespace
+    (`token %3D <secret>`, `password %3A <secret>`) is included in the decode-and-scan window --
+    a round-1 regression where that shape leaked past both the raw scan and the encoded-cut path.
+    Added a test proving the `pair` rule's generic-secret-word branch (`_SECRET_KEY`, not just
+    `_HEADER_KEYS`) actually redacts tuple pairs in text form (`[('client_secret', ...), ('password',
+    b'...')]`) -- round 2 only ever exercised the header-named branch. Fixed a Python 3.12-only
+    nested-quote f-string in the test file that failed to parse on 3.11 (the pinned runtime;
+    `python:3.11-slim` is the api image).
+    Evidence: tests/tasks/test_ftf_0904.py now has 51 faults (was 49) and 284 generated percent
+    cases (was 280, +4 for the two new space-separated-separator cases x 2 secrets); every fault,
+    including the two new ones (F-PCT-QUAD, F-PAIR-KEY), turns the full behavioural suite RED
+    (`python3 tests/tasks/test_ftf_0904.py`, exit 1 under each mutant, exit 0 on the real module).
+    A generated size sweep (64 KB..256 KB, two representative shapes) through both `redact_text`
+    and the `install_redaction` logging path shows a <3x time ratio across each doubling (linear;
+    quadratic would be ~4x); the four 256 KB shapes named in the finding (lone `%`, a leading valid
+    token then a long plain run, one bare `%` in compact JSON, a long opaque URL state param) are
+    all pinned under the 4s cap in the existing adversarial-input test. Gates: ruff, ruff format,
+    mypy clean; `validate_spec.py --strict` clean; `product_truth_check.py --fail-on-unwired`
+    47/47 unchanged; `status.py` 140/302 certified / 46 product-true unchanged (Law 2 -- a
+    resubmission is not a certification); `data_exposure_check.py` N/A (no datastore backend).
+    Regression swept FTF-0901/FTF-0902/FTF-0903 (neighbours) -- all green, unchanged. Same-class
+    sweep: no other `packages/security` module uses an unanchored `\S*`-style pattern.
+    Disclosed: the stale round-1 "handlers added after install_redaction need attach_sink to
+    scrub extra=" claim (superseded by round 2's own makeRecord wrap) is corrected above, not
+    restated here. Still UNWIRED (blank proving_symbol).
+
+    Round 4 (Control-plane return 2026-10-10, QUEUE 0d; PROVISIONAL / L1-PROVEN, not certified):
+    round 3's own sweep proved linear scaling only for the two percent-token shapes round 3
+    itself fixed, not the class-closing bar it set for every rule. This round found two more:
+    `_PREFIXES`'s JWT alternative had no adversarial coverage at all, and `_QUOTED_VALUE`'s
+    escaped-quote alternative was the one shape round 3 never touched.
+
+    A bare `"eyJ" * k` does NOT reproduce the JWT defect -- `_PREFIXES`'s own leading
+    `(?<![A-Za-z0-9])` lookbehind rejects every repeat after the first (each is preceded by "J",
+    a letter), so that shape is linear and was already hiding the real one. `_` satisfies the
+    lookbehind (not `[A-Za-z0-9]`) and is itself a member of the segment's own class
+    (`[A-Za-z0-9_\-]`), so it does not stop the greedy consume either: `"_eyJ" * 40_000` (160 KB)
+    took 23s pre-fix -- genuinely quadratic, confirmed by direct timing at 160/320/640 KB.
+    Converting the segment to possessive (`{5,}+`) alone did NOT fix it (still 23s): the wasted
+    work is the repeated O(remaining) *consume* at every one of O(n) independent "eyJ" repeats,
+    not backtracking after it, and possessive only removes the latter. Bounding the quantifier's
+    own maximum (`{5,1024}+`, real JWT header/payload segments are a small fraction of that) is
+    what makes it linear: confirmed via direct timing up to 2.56 MB after the fix (doubling n
+    roughly doubles time, not quadruples) and the regression test is the generated size sweep
+    below. `_QUOTED_VALUE`'s bare-quote alternatives (`"[^"\r\n]*"`, `'[^'\r\n]*'`) are genuinely
+    safe with possessive alone and need no bound: their own closing quote is excluded from the
+    class that scans for it, so a repeat of either one is self-bounding (every opener is also
+    the nearest possible closer for the one before it) -- confirmed empirically (`'token=\"' *
+    k`, `"token='" * k` with lookbehind-resetting separators: both linear before this round's fix
+    too). The escaped-quote alternative (`\\+"[^"\r\n]*?\\+"`) has the same self-bounding property
+    for repeats (its own opener and closer both require a literal `"`), but its middle allows
+    backslashes and so cannot be made possessive without changing what matches (a real
+    nested-JSON escape can contain them); it is bounded instead, to 8192 characters, closing the
+    unbounded-single-attempt case the self-bounding property does not need but does not hurt.
+
+    Evidence: added `_adversarial_shape(label, size)`, a size-parameterized generator covering
+    every existing `_ADVERSARIAL` shape plus three new ones this round (`jwt-no-dot`,
+    `jwt-repeated-no-dot`, `lone-backslash-then-quote`); `_ADVERSARIAL` itself is unchanged in
+    substance, now built from the generator at the pinned `_SIZE`. New test
+    `test_every_rule_size_sweep_is_linear_not_quadratic` sweeps the three round-4 shapes across
+    `_SWEEP_SIZES` (64/128/256 KB) through `redact_text`, asserting both the existing 4s cap and a
+    <3x time ratio per doubling (quadratic would be ~4x), plus the real `install_redaction`
+    logging path at the top size -- the same methodology round 3's own sweep used, generalised
+    rather than re-derived. Updated fault F08's search text for the new bounded escaped-quote
+    pattern (still kills the same way: dropping that alternative). Fault count unchanged (50);
+    this round added a performance fix and a timing-based regression test, not a new behavioural
+    guard a text-mutation fault could target -- mutation_gate confirms: both changed regions sit
+    in module-level constant assignments outside any function, so `python3 scripts/mutation_gate.py`
+    (diff mode against `origin/main`) generates 0 mutants (nothing in its M1-M9 operator set
+    applies there) -- an honest PASS, not a gap, since the real protection here is proven by the
+    sweep's own fault->RED timing comparison (pre-fix vs post-fix on the same adversarial input),
+    not by AST mutation. Gates: ruff, ruff format, mypy clean; `validate_spec.py --strict` clean;
+    `product_truth_check.py --fail-on-unwired` 47/47 unchanged; `status.py` 140/302 certified / 46
+    product-true unchanged (Law 2 -- a resubmission is not a certification); `data_exposure_check.py`
+    N/A (no datastore). Regression swept FTF-0901/FTF-0902/FTF-0903 (neighbours) -- all green,
+    unchanged. Same-class sweep: no other `packages/security` module alternation requires two
+    literals not excluded from the segment that precedes them.
+    Disclosed: a JWT segment or a nested-JSON-escaped value longer than 1024 / 8192 characters
+    respectively is not matched by that one shape; other rules still see the surrounding text.
+    Still UNWIRED (blank proving_symbol).
+
+    Round 5 (Control-plane return 2026-10-12T0339Z, QUEUE 0d; PROVISIONAL / L1-PROVEN, not
+    certified): round 4's own bounds (`_PREFIXES`'s JWT segments capped at 1024 chars,
+    `_QUOTED_VALUE`'s escaped-quote content capped at 8192) were leaks above the cap, not a real
+    fix -- a realistic RS256 token with 15+ group claims leaked bare past the JWT bound (20/49
+    cases; `jwt=`, `client_assertion=` and exception text, both 3.11/3.12), and an
+    escaped-quoted JSON-in-JSON value over 8192 chars leaked its tail
+    (`token=\"<9000 chars>\"` -> `token=[REDACTED]\"<value>`). Class-closing ruling: every rule
+    must be linear AND unbounded in the length of secret it redacts, proven by two generated
+    sweeps through both `redact_text` and the `install_redaction` logging path -- a timing sweep
+    (8 KB..256 KB, every rule) and a correctness sweep (a secret of 1/8/64/256 KB is fully
+    redacted, every rule).
+
+    `_PREFIXES`'s JWT alternative: the real defect was never the bound itself but the *reason*
+    round 4 added one -- "eyJ" is not excluded from its own segment's class
+    (`[A-Za-z0-9_\-]`), so a text built from many `_eyJ`-prefixed, dot-free runs makes an
+    unbounded or possessive class re-consume the rest of the text at every one of O(n) such
+    repeats (confirmed again: `"_eyJ" * 40_000` still 23s with `{5,}+`, no bound). Round 5 excludes
+    `_`/`-` from immediately preceding "eyJ" too (`(?<![_\-])`, on top of the pre-existing outer
+    `(?<![A-Za-z0-9])`): the only "eyJ" that can ever start a real attempt is the first one in
+    its own maximal run of `[A-Za-z0-9_\-]` characters, so every later `_eyJ`/`-eyJ` repeat is
+    rejected in O(1) before it can re-consume anything -- the segments go back to fully
+    unbounded (`{5,}+`) with no repeat-start cost. `_QUOTED_VALUE`'s escaped-quote alternative:
+    round 4's own reasoning ("cannot be made possessive without changing what matches") was
+    half right -- the content class itself can't simply exclude backslash the way the bare-quote
+    alternatives exclude their own quote, because a real nested-JSON escape can contain
+    backslashes. Round 5 unrolls it instead (the same technique `_PAIR`'s own value already
+    uses): content is a possessive run of plain chars, OR a possessive backslash run that is NOT
+    immediately followed by the closing quote (left alone for the closing `\+"` to consume, no
+    backtracking either way), plus `(?<!\\)` on the opening run (the same "one start per run"
+    technique as the JWT fix). Reproduced the actual quadratic shape missing from the suite --
+    a backslash run in the MIDDLE of a real, fully-opened escaped value (`token=\"aaa...<run of
+    backslashes>...bbb\"`) -- naive lazy content re-tries the greedy closing `\+"` over however
+    much of the run remains at every one of O(run) steps growing into it (confirmed: 18s at 128
+    KB through the real `_KEY_VALUE` rule with naive lazy content vs 0.09s with the round-5
+    unrolled form); "lone-backslash-then-quote" (round 4's own shape) never reproduced this --
+    it never finds a second quote at all, so a key-first rule never reaches content-matching,
+    and was always linear through the real pipeline even pre-fix.
+
+    Also fixed: a `\S` invalid-escape-sequence `SyntaxWarning` in the module's own top docstring
+    (two occurrences, non-raw string) from CI gate run 114123432681.
+
+    Evidence: `test_every_rule_size_sweep_is_linear_not_quadratic` now sweeps all 24
+    `_ALL_LABELS` (was 3) across `_SWEEP_SIZES` (8/64/256 KB, was 64/128/256 KB) -- "every rule",
+    not just the shapes a round happened to touch -- plus a new
+    `backslash-run-inside-quoted-value` label for the newly-reproduced embedded-backslash
+    quadratic. New `test_every_rule_long_secret_is_fully_redacted`: for every named rule in the
+    ruling (_PEM, _HEADER, _PAIR, _BEARER, _PREFIXES, _USERINFO, _KEY_VALUE, _BASE64_RUN,
+    percent) and every size in `_LONG_SECRET_SIZES` (1/8/64/256 KB), a text built so that rule's
+    own match has to span the whole marker is fully redacted -- a bound anywhere would leave a
+    marker suffix in the output once its length passes the bound. Removed the flaky CPU-ratio
+    checks in the R4/R6 sweeps (a slow point under shared-runner load made even a linear pair's
+    ratio look quadratic -- disclosed flake: R7 `jwt-repeated-no-dot` 4.14/4.26s vs a 4.0s limit,
+    R4 ratio 4.23x, 2 of 4 idle runs failed); each size's own fixed absolute bound is the
+    load-robust assertion, and the fix itself gives enormous headroom now (jwt-repeated-no-dot
+    0.23s, jwt-no-dot 0.31s at 256 KB, vs the 4.0s limit). Retargeted fault F08 (round 4's
+    bounded-form search text no longer exists post-fix) and added four new faults (56 total, was
+    52): F-QV-QUAD and F-PFX-QUAD revert to the pre-fix quadratic forms (caught by the timing
+    sweep); V-QV-BOUND-16 and V-JWT-BOUND-40 reintroduce a short bound (caught by the long-secret
+    sweep). `python3 tests/tasks/test_ftf_0904.py`: all checks passed locally, including the
+    full 56-fault `test_zz_fault_injection_turns_checks_red` meta-test; CI (`gate`, run
+    38284969162) confirmed the same independently after one real fix -- `ruff format` had
+    collapsed F08's two-line target onto one line (a space, not the newline+indent the fault's
+    old search text expected), caught by CI's own `gate` job ('pattern occurs 0x, expected 1')
+    and fixed by retargeting the single-line form (commit c97190c3); `ci-verdict` is green on
+    that head. Gates: ruff, ruff format, mypy
+    clean (across the whole repo); `validate_spec.py --strict` clean; `product_truth_check.py
+    --fail-on-unwired` 47/47 unchanged; `status.py` 141/302 certified / 46 product-true unchanged
+    (Law 2 -- a resubmission is not a certification); `data_exposure_check.py` N/A (no datastore).
+    `scripts/mutation_gate.py` (diff mode against `origin/main`): 0 mutants generated -- both
+    changed regions (`_QUOTED_VALUE`, the `_PREFIXES` JWT alternative) are module-level constant
+    assignments outside any function, so the gate's own M1-M9 operator set has nothing to act on
+    there (same honest PASS as round 4's own identical finding); the real protection is the
+    fault->RED timing/correctness comparisons above, not AST mutation.
+    Regression swept FTF-0901/FTF-0902/FTF-0903 (neighbours) -- all green, unchanged. Same-class
+    sweep: no other `packages/security` module has an alternation whose own trigger character is
+    not excluded from the segment that follows it, or a content class allowing the same
+    character its own closing delimiter needs.
+    Disclosed: detection is still pattern-based (unchanged limits); every rule is now unbounded
+    in the length of secret it redacts. Still UNWIRED (blank proving_symbol).
+
+    Round 6 (Control-plane return, QUEUE 0d via #753; PROVISIONAL / L1-PROVEN, not certified):
+    the round-5 JWT lookbehind `(?<![_\-])` stopped redacting a JWT glued after `_`/`-`
+    (`token_<jwt>`, `sess-<jwt>`, `cache_<jwt>`, `user-<jwt>`, `id-<jwt>`, `jwt_<jwt>`, `x_<jwt>`).
+    The JWT shape is now a per-run scan (`_JWT_RUN`: split each maximal `[A-Za-z0-9_\-.]` run on
+    dots once, search each segment once for its first "eyJ" not glued after an alphanumeric),
+    linear and unbounded; the 7 contexts are pinned at three payload sizes through redact_text and
+    the logging path. The long-secret sweep now checks 32-char fragments at the start, quarter,
+    middle, three-quarters and end (not only the whole marker), the base64 case checks fragments
+    of the encoded text, and a logging-path sweep runs a real top tier per rule sized to fit
+    MAX_TEXT_LENGTH. New time shapes for `_PAIR`, `_BASE64_RUN`, `_USERINFO` and the JWT scan are
+    swept 8 KB..256 KB through both paths. tests/tasks/test_ftf_0904.py now has 67 faults (was
+    52), including Q-PAIR-OVERLAP, Q-PAIR-KEY-WS-QUAD, Q-B64-NO-LOOKBEHIND,
+    Q-USERINFO-NO-LOOKBEHIND, V-JWT-SIG-BOUND-40, V-BEARER-BOUND-500, V-SK-BOUND-500 and
+    V-B64-BOUND-500; every fault turns the suite RED (full file run, exit 0 on the real module).
+    Still UNWIRED (blank proving_symbol). Submission:
+    docs/certifications/submissions/2026-10-13T1530Z-FTF-0904-r6.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0904.py
@@ -9789,10 +10152,10 @@ FTF-0907:
   proving_symbol: ''
   proving_test: ''
 FTF-0908:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: External provider denial
-  evidence_hash: 7ab132f7704339adb87c00aeec5bb19c1b12cb85
+  evidence_hash: d64628a84c85fca8f329741f7493ca1690776ac2
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-14; scenarios=Q23, Q25; deps=FTF-0203, FTF-0901,
@@ -9810,14 +10173,34 @@ FTF-0908:
     before the error is raised (round 2: under `tenant_scoped_session` the propagated error
     otherwise rolls the audit row back; real-Postgres proof
     `tests/integration/test_ftf_0908_external_provider_denial.py`, CI job
-    `external-provider-denial-integration`). The AuditContext is validated up front
+    `external-provider-denial-integration`). Round 3: the commit ends the transaction holding the
+    session's transaction-local tenant context, so the tenant read from the session up front is
+    bound again right after the commit (two denials in one `tenant_scoped_session` give two typed
+    denials, two durable rows and unchanged tenant visibility), and a session carrying uncommitted
+    work (new/dirty/deleted ORM state, or any write already flushed in the open transaction, read
+    via `txid_current_if_assigned()`) is refused with `external_provider_invalid_request` before
+    any decision, so a denial never commits the caller's pending row. The audit is still written
+    on the caller's session (not an independent transaction): a caller must hold no uncommitted
+    work, which is now enforced rather than documented. Round 4: the re-bind goes through FTF-0102
+    `set_tenant_context` (`set_config(.., true)`), so it is transaction-local; a real-Postgres
+    check on a pool WITHOUT the reset guard (pool_size=1) shows that, with the denial caught
+    INSIDE the `tenant_scoped_session` block so the scope exits normally and commits, a fresh
+    checkout is the same backend (`pg_backend_pid()`), has an empty tenant context and sees 0 rows
+    (round 5: the round-4 check caught the denial outside the block, so the scope rolled back and
+    that rollback also undid a session-level re-bind -- it could not fail on the fault it targeted);
+    the same job reddens F2 and F2g (a module-local `set_tenant_context` doing
+    `set_config(.., false)` with the call text unchanged) and shows a leak of the tenant; a tenant context that is not an organization id is refused as
+    `external_provider_invalid_request`. Disclosed (Control-plane ruling): a denial inside
+    `with Session(app) as s, s.begin():` surfaces SQLAlchemy's raw `InvalidRequestError` (fails
+    closed, audit row already durable, no production caller uses `session.begin()`); the denial's
+    commit releases advisory transaction locks and drops other `SET LOCAL` settings. The AuditContext is validated up front
     (`external_provider_invalid_request`). Unknown, str-subclass or unhashable values raise
     `external_provider_invalid_request`. No network call (counting socket test shows zero).
     UNWIRED: no live caller yet (training/inference submit paths are later tasks) and no persisted
     approvals yet, so a ProviderApproval is not tenant-bound and `approved_by` is not a verified
     principal -- blank proving_symbol, same precedent as FTF-0901/FTF-0902. Not self-certified
     (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0908.py
 FTF-0909:
@@ -11875,10 +12258,10 @@ FTF-1702:
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1702.py
 FTF-1703:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Training dataset
-  evidence_hash: ce03b5a8d2e9cf528b5f63d30b0e7bdf5b82fb39
+  evidence_hash: 1fc59f19c1c265493da550994c78f7e77450b151
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0506, FTF-1701,
@@ -11955,7 +12338,16 @@ FTF-1703:
     verify_trace_replay still takes a TrainingTrace (only the builder's own regenerated one is
     ever passed to it by production). Fault -> RED table in
     docs/certifications/submissions/2026-10-09T1700Z-FTF-1703-r6.md.
-  proof_state: L1-PROVEN
+    Round 7 (L2 return, tests + one hardening): production was already correct (the raw dict is parsed
+    once); the ruling-required faults FB2 (`by_id[raw["trace_id"]] = regenerated`) and FB3 (FB2 plus
+    the index re-read from the raw provenance) now go RED through a named test that runs caller code
+    mid-build (a wrapper around the module's own `_check_reserved`) and rewrites the raw dict:
+    approval of train-0002 admits exactly the regenerated train-0002, approval of the flipped
+    train-0005 is refused. Hardening: `reserved` is snapshotted once at entry into exact frozensets
+    of plain str (`_snapshot_reserved`), so no caller code runs inside the per-trace loop (reads of
+    the caller's object no longer scale with the trace count). Fault -> RED table in
+    docs/certifications/submissions/2026-10-09T2000Z-FTF-1703-r7.md.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1703.py
 FTF-1704:
@@ -13208,10 +13600,10 @@ FTF-R004:
   proving_symbol: ''
   proving_test: ''
 FTF-R005:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Integrate internal MLflow tracking and model registry projection
-  evidence_hash: b400e96aaaf1fe1ca52bd4dfd738c10f52aa9425
+  evidence_hash: 03442f67294975313db37ec297dea0cc24a6ca9a
   implementation_state: IMPLEMENTED
   notes: >-
     kind=reuse_architecture; requirements=CAP-12, CAP-19, CAP-21; scenarios=Q35, Q38, Q40;
@@ -13356,7 +13748,7 @@ FTF-R005:
     0 SURVIVED | 0 SURVIVED-allowlisted | score 100.0%. First run 40/57 with 17 survivors
     (CI's own `mutation-gate` check, first push) -- closed by tests, not by an allowlist entry;
     details in the submission doc.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_r005.py
 FTF-R006:

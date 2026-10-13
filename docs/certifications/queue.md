@@ -24634,3 +24634,76 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-09T16:19Z — Control plane: FTF-0516-P1 slice CERTIFIED; 3 returned (136/302)
 - **Certified slice:** FTF-0516-P1 (#695). **Returned:** FTF-0309 r3 (0c), FTF-R005 r7 (0e), FTF-R004-P1 r4 (0n).
 - **Un-parked:** FTF-0516 UI (Backlog). **Pending:** FTF-0616 #690.
+
+## 2026-10-09T18:18Z — Control plane: slices FTF-H010-P1 and FTF-R004-P2 CERTIFIED; 3 returned (136/302)
+- **Certified slices:** FTF-H010-P1 (#699), FTF-R004-P2 (#702). **Returned:** FTF-0309 r4 (0c), FTF-0904 r2 (0d), FTF-1703 r7 (0g).
+- **Pending:** FTF-0616 #690. FTF-R004-P3 becomes ready once FTF-R004-P1 certifies.
+
+## 2026-10-09T18:33Z — Control plane: FTF-0616 CERTIFIED (137/302)
+- **Certified:** FTF-0616 for the adapter scope (#690, merge 4a0de86713e272749ba2ebe0d358e59a2957be2a); real-judge clause BLOCKED_EXTERNAL.
+
+## 2026-10-09T20:10Z — Control plane: FTF-0309 CERTIFIED (138/302)
+- **Certified:** FTF-0309 (#713, merge e2555b6c732dcd184c8fd270fb9301bc05c85dde); UNWIRED, not product-true (Law 7). **Certified slice:** FTF-R004-P1 (#707). **Returned:** FTF-0516 UI r2 (0c).
+- **Pending:** FTF-0908 #693, FTF-R005 #708. New Backlog: FTF-0616-F1, FTF-0617, FTF-H010-P2..P4.
+
+## 2026-10-09T20:35Z — Control plane: FTF-0908 returned
+- **Returned:** FTF-0908 r4 (0m): pin the tenant re-bind's transaction locality (fault F2 leaks on a pool without the reset guard). **Pending:** FTF-R005 #708.
+
+## 2026-10-09T21:05Z — Control plane: FTF-R005 CERTIFIED (139/302)
+- **Certified:** FTF-R005 (#708, merge 03442f67294975313db37ec297dea0cc24a6ca9a); UNWIRED. Wiring-task observations O1-O4 in the ledger.
+
+## 2026-10-09T21:56Z — Control plane: FTF-1703 CERTIFIED (140/302)
+- **Certified:** FTF-1703 (#714, merge 1fc59f19c1c265493da550994c78f7e77450b151) for the in-sandbox scope; ">=1000 reviewed" BLOCKED_EXTERNAL; UNWIRED.
+
+## 2026-10-09T22:11Z — Control plane: FTF-0516 UI and FTF-0904 returned
+- **Returned:** FTF-0516 UI r3 (0c): generated strict-parse table; uppercase-successor and replay-version false errors. FTF-0904 r3 (0d): linear percent tokenisation with a generated size sweep; pin V12; encoded-separator regression; 3.11 parse.
+
+## 2026-10-09T22:27Z — Control plane: FTF-0501 API passed; FTF-0501-UI returned
+- **Passed L2:** FTF-0501 API (#692). **Returned:** FTF-0501-UI r2 (0j). **Ruling:** UI CHECKLIST in QUEUE item 0.
+
+## 2026-10-10T00:10Z — Control plane: FTF-0908 returned (tests only)
+- **Returned:** FTF-0908 r5 (0m): catch the denial inside the scope so a session-level re-bind (F2, F2g) goes RED in the real-PG job; production unchanged.
+
+## 2026-10-10T02:27Z — Control plane: FTF-0501-UI returned
+- **Returned:** FTF-0501-UI r3 (0j): pin UF3 progress counts; terminal unsafe_archive with a drift-proof 422 vocabulary; pin B34.
+
+## 2026-10-10T02:41Z — Control plane: FTF-0908 CERTIFIED (141/302); FTF-0904 returned
+- **Certified:** FTF-0908 (#730, merge d64628a84c85fca8f329741f7493ca1690776ac2); UNWIRED.
+- **Returned:** FTF-0904 r4 (0d): `_PREFIXES` JWT and `_QUOTED_VALUE` quadratics; generated every-rule size sweep through both paths.
+
+## 2026-10-10T03:57Z — Control plane: FTF-H010-P2 ruling
+- **Ruled:** FTF-H010-P2 park resolved (route 3: NULL endpoint_reference for gateway-alias imports; FTF-1001 requalified with P2). P2 re-queued.
+
+## 2026-10-10T15:50Z — Control plane: FTF-H010-P3a and FTF-0616-F1 returned
+- **Returned:** FTF-H010-P3a r2 (0e): bound the shape product and dimension range; pin negative dims, lora_A rank, PEFT prefix.
+- **Returned:** FTF-0616-F1 r2 (0g), tests only; FTF-0616 requalification partial (no regression; uncapped mutation moves to F1 r2).
+
+## 2026-10-10T16:15Z — Control plane: FTF-0305 decertified (140/302); FTF-0310 returned
+- **Decertified:** FTF-0305 → PROVISIONAL (reproduced revoked-license-trainable race). **New:** FTF-0305-F1 (0b, top priority). **Returned:** FTF-0310 r2 (0k).
+
+## 2026-10-10T16:34Z — Control plane: FTF-0501 CERTIFIED (141/302)
+- **Certified:** FTF-0501 (API #692 + UI #736, merge 41904e5fe5702a08a12483760c9bc811acfa2ddf); UI UNWIRED, not product-true. Product-true corrected to 44.
+
+## 2026-10-12T03:39Z — Control plane: FTF-0904 returned
+- **Returned:** FTF-0904 r5 (0d): length caps leak long JWTs/escaped values; ruling: linear and unbounded, long-secret sweep per rule; deflake.
+
+## 2026-10-13T12:55Z — Control plane: FTF-0305 re-certified; FTF-0310 CERTIFIED (143/302)
+- **Certified:** FTF-0305-F1 (#747) → FTF-0305 re-certified; FTF-0301/0307/0309-P1 requalified. FTF-0310 (#751).
+
+## 2026-10-13T13:26Z — Control plane: FTF-0516 UI and FTF-0904 returned
+- **Returned:** FTF-0516 UI r4 (0c): F30 value/element-type generation; pin R4-S3/R4-D6/R4-R2; real-API CI test (UI CHECKLIST f).
+- **Returned:** FTF-0904 r6 (0d): JWT after `_`/`-` (ruling corrected); fragment-level long-secret checks; logging-path long-secret sweep; every-rule time shapes.
+
+## 2026-10-13T14:51Z — Control plane: Backlog refill
+- **Queued:** FTF-1504, FTF-0502-P1, FTF-0502, FTF-0504, FTF-0503, FTF-0505 (newly ready after FTF-0501). Advisory: FTF-0501 finalize accepts macro/external-link parts in a plain .xlsx.
+
+## 2026-10-13T16:44Z — Control plane: FTF-0502 returned
+- **Returned:** FTF-0502 r2 (0k): rebuild on FTF-0502-P1 after P1 certifies. **Process:** #600 (FTF-0517) and #650 (FTF-1206) found unverified; verifiers running.
+
+## 2026-10-13T17:43Z — Control plane: FTF-0516 CERTIFIED (144/302); FTF-0517, FTF-1206 returned
+- **Returned:** FTF-0517 r3 (0f): 3+-key bridges and a key-level property test; exact-type keys.
+- **Returned:** FTF-1206 r6 (0h), tests only: pin approver authority to the current org policy (F19).
+- **Certified:** FTF-0516 (#754, merge 90698aa6371626f6d2f8f156624798c9673ef044); UNWIRED (144/302).
+
+## 2026-10-13T18:55Z — Control plane: FTF-0904 returned
+- **Returned:** FTF-0904 r7 (0d), tests + spec-matrix only: the named pair-whitespace fault, JWT skip-loop shapes, evidence_hash. Stopping rule set.

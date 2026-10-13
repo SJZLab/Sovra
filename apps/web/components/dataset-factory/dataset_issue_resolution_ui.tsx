@@ -110,6 +110,7 @@ const REASON_MAX = 2000;
 const PAGE_SIZE = 50;
 const SHA256 = /^[0-9a-f]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DATE_TIME = /^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/;
 const ACTIONS: IssueAction[] = ["exclude", "correct", "new_version", "waive"];
 const ROLES = ["ml_engineer", "workspace_admin", "organization_admin"];
 
@@ -199,8 +200,11 @@ function isSha(value: unknown): value is string {
 function isUuid(value: unknown): value is string {
   return typeof value === "string" && UUID.test(value);
 }
+function isDateTime(value: unknown): value is string {
+  return typeof value === "string" && DATE_TIME.test(value) && !Number.isNaN(Date.parse(value));
+}
 function isCount(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 function isIntArray(value: unknown): value is number[] {
   return Array.isArray(value) && value.every(isCount);
@@ -237,14 +241,16 @@ export function parseResolution(body: unknown): DatasetIssueResolution | null {
     isSha(body.before_evidence_sha256) &&
     (body.after_evidence_sha256 === null || isSha(body.after_evidence_sha256)) &&
     isStr(body.reason) &&
-    body.reason !== "" &&
+    body.reason.trim() !== "" &&
+    [...body.reason].length <= REASON_MAX &&
     isStr(body.actor_id) &&
+    body.actor_id.trim() !== "" &&
     isStr(body.actor_role) &&
     ROLES.includes(body.actor_role) &&
     typeof body.resolution_version_after === "number" &&
-    Number.isInteger(body.resolution_version_after) &&
+    Number.isSafeInteger(body.resolution_version_after) &&
     body.resolution_version_after >= 1 &&
-    isStr(body.created_at);
+    isDateTime(body.created_at);
   return ok ? (body as unknown as DatasetIssueResolution) : null;
 }
 
@@ -286,7 +292,12 @@ export function parseIssue(body: unknown): DatasetQualityIssue | null {
     (body.state === "open" || body.state === "resolved" || body.state === "waived") &&
     (body.resolution === null ? true : resolution !== null) &&
     // A decided issue carries its decision; an open one does not.
-    (body.state === "open" ? body.resolution === null : body.resolution !== null);
+    (body.state === "open" ? body.resolution === null : body.resolution !== null) &&
+    // The nested decision is this issue's own, on this issue's report, and agrees with its state.
+    (resolution === null ||
+      (resolution.issue_id === body.issue_id &&
+        resolution.quality_report_id === body.report_id &&
+        resolution.engine_decision === body.state));
   return ok ? ({ ...body, resolution } as unknown as DatasetQualityIssue) : null;
 }
 
@@ -336,8 +347,8 @@ export function parseReport(body: unknown): DatasetQualityReport | null {
     typeof body.blocks_training === "boolean" &&
     isStr(body.residual_risk_disclosure) &&
     body.residual_risk_disclosure !== "" &&
-    isStr(body.created_at) &&
-    isStr(body.updated_at);
+    isDateTime(body.created_at) &&
+    isDateTime(body.updated_at);
   return ok ? (body as unknown as DatasetQualityReport) : null;
 }
 
@@ -384,7 +395,7 @@ function parseResolveResponse(body: unknown): {
   if (
     !isUuid(body.quality_report_id) ||
     typeof body.resolution_version !== "number" ||
-    !Number.isInteger(body.resolution_version) ||
+    !Number.isSafeInteger(body.resolution_version) ||
     body.resolution_version < 1 ||
     typeof body.replayed !== "boolean" ||
     items === null ||
@@ -421,6 +432,43 @@ export function allowedActions(issue: DatasetQualityIssue): IssueAction[] {
   return issue.severity === "warning" ? ACTIONS : ACTIONS.filter((action) => action !== "waive");
 }
 
+/** What a decision request asked for; the 2xx response must echo every field of it. */
+export interface SentDecision {
+  reportId: string;
+  expectedVersion: number;
+  issueId: string;
+  action: IssueAction;
+  beforeEvidence: string;
+  reason: string;
+  positions: number[];
+  successor: string | null;
+}
+
+/**
+ * The single response-binding check: EVERY field sent is compared with the decision returned, and
+ * every server-derived field is checked against the action. A hand-picked subset does not close
+ * this class (a swapped reason, positions, successor or version would be shown as recorded).
+ */
+export function decisionMatchesRequest(
+  decision: DatasetIssueResolution,
+  sent: SentDecision,
+): boolean {
+  const waive = sent.action === "waive";
+  return (
+    decision.quality_report_id === sent.reportId &&
+    decision.issue_id === sent.issueId &&
+    decision.action === sent.action &&
+    decision.before_evidence_sha256 === sent.beforeEvidence &&
+    decision.reason === sent.reason &&
+    decision.engine_decision === (waive ? "waived" : "resolved") &&
+    (waive ? decision.after_evidence_sha256 === null : decision.after_evidence_sha256 !== null) &&
+    decision.successor_dataset_id === sent.successor &&
+    decision.excluded_batch_positions.length === sent.positions.length &&
+    decision.excluded_batch_positions.every((p, i) => p === sent.positions[i]) &&
+    decision.resolution_version_after === sent.expectedVersion + 1
+  );
+}
+
 interface Draft {
   action: IssueAction;
   reason: string;
@@ -435,6 +483,11 @@ interface Loaded {
   issues: DatasetQualityIssue[];
   next: string | null;
   resolutions: DatasetIssueResolution[];
+}
+
+/** Positions as they are sent: strictly increasing whatever the click order (toggling never duplicates). */
+function sentPositions(draft: Draft): number[] {
+  return [...draft.positions].sort((a, b) => a - b);
 }
 
 function newKey(): string {
@@ -568,6 +621,9 @@ export function DatasetIssueResolutionUI({
     loaded && selected ? (loaded.issues.find((i) => i.issue_id === selected) ?? null) : null;
   const reason = validReason(draft.reason);
   const successorOk = isUuid(draft.successor.trim());
+  // The server stores and echoes UUIDs lowercase; send the canonical form so an uppercase-typed
+  // successor is not reported as a mismatched response.
+  const successorSent = draft.successor.trim().toLowerCase();
   const needsSuccessor = draft.action === "correct" || draft.action === "new_version";
   const problems: string[] = [];
   if (issue) {
@@ -585,7 +641,8 @@ export function DatasetIssueResolutionUI({
     }
     if (needsSuccessor && !successorOk) problems.push("A successor dataset id (UUID) is required.");
   }
-  const canSubmit = !!issue && !!loaded && problems.length === 0 && !submitting;
+  // A submit during a reload would supersede it (stuck "Loading..."); decide on settled data only.
+  const canSubmit = !!issue && !!loaded && problems.length === 0 && !submitting && !loading;
 
   function buildBody(report: DatasetQualityReport, target: DatasetQualityIssue): string {
     const item: Record<string, unknown> = {
@@ -595,9 +652,9 @@ export function DatasetIssueResolutionUI({
       expected_before_evidence_sha256: target.evidence_sha256,
     };
     if (draft.action === "exclude") {
-      item.excluded_batch_positions = [...new Set(draft.positions)].sort((a, b) => a - b);
+      item.excluded_batch_positions = sentPositions(draft);
     }
-    if (needsSuccessor) item.successor_dataset_id = draft.successor.trim();
+    if (needsSuccessor) item.successor_dataset_id = successorSent;
     return JSON.stringify({
       quality_report_id: report.id,
       expected_resolution_version: report.resolution_version,
@@ -611,6 +668,16 @@ export function DatasetIssueResolutionUI({
     const sent = issue;
     const sentAction = draft.action;
     const bodyText = buildBody(report, sent);
+    const expected: SentDecision = {
+      reportId: report.id,
+      expectedVersion: report.resolution_version,
+      issueId: sent.issue_id,
+      action: sentAction,
+      beforeEvidence: sent.evidence_sha256,
+      reason: reason as string,
+      positions: sentAction === "exclude" ? sentPositions(draft) : [],
+      successor: needsSuccessor ? successorSent : null,
+    };
     // The same key only for a retry of an identical request that did not conclude.
     if (attempt.current === null || attempt.current.body !== bodyText) {
       attempt.current = { body: bodyText, key: newKey() };
@@ -628,7 +695,6 @@ export function DatasetIssueResolutionUI({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...JSON.parse(bodyText), idempotency_key: key }),
       });
-      if (stale()) return;
       if (!response.ok) {
         const message = await readErrorDetail(response);
         if (!stale()) {
@@ -639,22 +705,25 @@ export function DatasetIssueResolutionUI({
       }
       const parsed = parseResolveResponse(await response.json());
       if (stale()) return;
-      const decision = parsed?.items.find((item) => item.issue_id === sent.issue_id) ?? null;
+      const decision = parsed?.items[0] ?? null;
       if (
         parsed === null ||
         parsed.quality_report_id !== report.id ||
+        // A replay returns the report's CURRENT version, which later decisions on other issues may
+        // have raised; only a fresh decision lands exactly on expected + 1. The decision's own
+        // resolution_version_after is bound to expected + 1 either way.
+        (parsed.replayed
+          ? parsed.resolution_version < expected.expectedVersion + 1
+          : parsed.resolution_version !== expected.expectedVersion + 1) ||
         parsed.items.length !== 1 ||
         decision === null ||
-        decision.quality_report_id !== report.id ||
-        decision.action !== sentAction ||
-        decision.before_evidence_sha256 !== sent.evidence_sha256
+        !decisionMatchesRequest(decision, expected)
       ) {
         setError("resolution response does not match the request");
         return;
       }
       attempt.current = null;
       setRecorded(decision);
-      setDraft(EMPTY_DRAFT);
       setSelected(null);
       // Reload so the state, evidence and resolution version shown are the server's, not ours.
       setSubmitting(false);
@@ -731,7 +800,7 @@ export function DatasetIssueResolutionUI({
             ))}
           </ul>
           {loaded.next !== null ? (
-            <button type="button" onClick={() => void loadMore()} disabled={loading}>
+            <button type="button" onClick={() => void loadMore()} disabled={loading || submitting}>
               Load more issues
             </button>
           ) : null}

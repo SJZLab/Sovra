@@ -102,12 +102,31 @@ def _outcome(request: Any, approval: Any = None, audit: Any = None) -> str:
         return exc.code
 
 
-class _RecordingSession:
-    """Collects rows the real `write_audit_event` adds and every commit, in order."""
+class _Result:
+    def __init__(self, row: tuple[Any, ...]) -> None:
+        self.row = row
 
-    def __init__(self) -> None:
+    def one(self) -> tuple[Any, ...]:
+        return self.row
+
+
+class _RecordingSession:
+    """Collects rows the real `write_audit_event` adds and every commit, in order.
+
+    `tenant` (the bound context)/`has_writes` stand in for the two values the module reads from the
+    caller's transaction; `executed` records every statement it runs (the
+    tenant re-bind after the commit is one of them).
+    """
+
+    def __init__(self, tenant: str = "", has_writes: bool = False) -> None:
         self.added: list[Any] = []
         self.events: list[str] = []
+        self.new: list[Any] = []
+        self.dirty: list[Any] = []
+        self.deleted: list[Any] = []
+        self.bound = tenant  # the transaction-local tenant context; a commit ends it
+        self.has_writes = has_writes
+        self.executed: list[tuple[str, Any]] = []
 
     def add(self, row: Any) -> None:
         self.added.append(row)
@@ -115,6 +134,13 @@ class _RecordingSession:
 
     def commit(self) -> None:
         self.events.append("commit")
+        self.bound = ""
+
+    def execute(self, statement: Any, params: Any = None) -> _Result:
+        self.executed.append((str(statement), params))
+        if params is not None:
+            self.bound = params["org_id"]
+        return _Result((self.bound, self.has_writes))
 
 
 def _audit(session: _RecordingSession) -> AuditContext:
@@ -466,11 +492,12 @@ def test_malformed_values_raise_the_typed_error() -> None:
             check("FTF-0908-NEG4", f"malformed approval raised {type(exc).__name__}", False)
 
 
-class _TxSession:
+class _TxSession(_RecordingSession):
     """Models the enclosing tenant-scoped session: rows survive only if committed,
     and the propagated error rolls back everything not yet committed."""
 
     def __init__(self) -> None:
+        super().__init__()
         self.pending: list[Any] = []
         self.persisted: list[Any] = []
 
@@ -786,13 +813,32 @@ sys.path.insert(0, {root!r}); sys.path.insert(0, {api!r})
 from packages.security.external_provider_denial import *
 class S(str): pass
 class Rec:
-    def __init__(self): self.added = []; self.events = []
+    def __init__(self, bound="", writes=False, new=None, dirty=None, deleted=None):
+        self.added = []; self.events = []; self.bound = bound; self.writes = writes
+        self.new = new or []; self.dirty = dirty or []; self.deleted = deleted or []
     def add(self, row): self.added.append(row); self.events.append("add")
-    def commit(self): self.events.append("commit")
+    def commit(self): self.events.append("commit"); self.bound = ""
+    def execute(self, stmt, params=None):
+        if params is not None: self.bound = params["org_id"]; self.events.append("bind")
+        class R:
+            def one(_, b=self.bound, w=self.writes): return (b, w)
+        return R()
 class NoCommit:
     def add(self, row): pass
+    def execute(self, stmt, params=None): pass
+    new = dirty = deleted = ()
 class NoAdd:
     def commit(self): pass
+    def execute(self, stmt, params=None): pass
+    new = dirty = deleted = ()
+class NoTracked:
+    def add(self, row): pass
+    def commit(self): pass
+    def execute(self, stmt, params=None): pass
+class NoExecute:
+    def add(self, row): pass
+    def commit(self): pass
+    new = dirty = deleted = ()
 def appr(**o):
     f = dict(provider="acme", purposes=frozenset(PURPOSES), approved_by="a", account="x",
              region="eu", retention_terms="30d", training_terms="t", inference_terms="i",
@@ -848,6 +894,34 @@ ctx = AuditContext(rec, ORG, "worker", "actor-9", "req-9")
 run(req("inference", org="zero_egress"), appr(), ctx)
 out["audit"] = [r.details_json for r in rec.added]
 out["audit_events"] = rec.events
+# R3-1: the tenant context a commit discards is bound again; a second denial works.
+recr = Rec(bound=str(uuid.UUID(int=5)))
+run(req("inference", org="zero_egress"), appr(), AuditContext(recr, ORG, "worker", "a", "r"))
+out["rebound_tenant"] = [recr.bound, recr.events]
+rec_two = Rec(bound=str(uuid.UUID(int=5)))
+ctx_two = AuditContext(rec_two, ORG, "worker", "a", "r")
+out["second_denial"] = [run(req(org="zero_egress"), appr(), ctx_two) for _ in range(2)]
+out["second_denial_rows"] = len(rec_two.added)
+recn = Rec()
+run(req(org="zero_egress"), appr(), AuditContext(recn, ORG, "worker", "a", "r"))
+out["no_context_no_rebind"] = recn.events
+# R4-1: a tenant context that is not an organization id is refused typed, before any write.
+recx = Rec(bound="org-77")
+out["non_uuid_tenant"] = [
+    run(req("inference", org="zero_egress"), appr(), AuditContext(recx, ORG, "worker", "a", "r")),
+    recx.events, len(recx.added),
+]
+# R3-2: pending work on the caller's session is refused before any decision.
+for name, kw in (
+    ("new", dict(new=[1])), ("dirty", dict(dirty=[1])), ("deleted", dict(deleted=[1])),
+    ("flushed", dict(writes=True)),
+):
+    recp = Rec(**kw)
+    out["pending_" + name] = [
+        run(req(org="zero_egress"), appr(), AuditContext(recp, ORG, "system", "a", "r")),
+        run(req(), appr(), AuditContext(recp, ORG, "system", "a", "r")),
+        recp.events,
+    ]
 out["audit_row"] = [
     [str(r.organization_id), r.actor_type, r.actor_id, r.request_id, r.resource_id]
     for r in rec.added
@@ -864,6 +938,8 @@ for name, c in (
     ("session_none", AuditContext(None, ORG, "system", "a", "r")),
     ("session_nocommit", AuditContext(NoCommit(), ORG, "system", "a", "r")),
     ("session_noadd", AuditContext(NoAdd(), ORG, "system", "a", "r")),
+    ("session_noexecute", AuditContext(NoExecute(), ORG, "system", "a", "r")),
+    ("session_notracked", AuditContext(NoTracked(), ORG, "system", "a", "r")),
     ("org_str", AuditContext(recb, str(ORG), "system", "a", "r")),
     ("actor_type", AuditContext(recb, ORG, "admin", "a", "r")),
     ("actor_id", AuditContext(recb, ORG, "system", "a b", "r")),
@@ -1075,15 +1151,104 @@ _MUTATIONS: list[tuple[str, str, str, tuple[str, ...]]] = [
     ),
     (
         "audit-session-commit-unchecked",
-        r'for method in \("add", "commit"\):',
-        'for method in ("add",):',
+        r'for method in \("add", "commit", "execute"\):',
+        'for method in ("add", "execute"):',
         ("bad_audit_session_nocommit",),
     ),
     (
         "audit-session-add-unchecked",
-        r'for method in \("add", "commit"\):',
-        'for method in ("commit",):',
+        r'for method in \("add", "commit", "execute"\):',
+        'for method in ("commit", "execute"):',
         ("bad_audit_session_none", "bad_audit_session_noadd"),
+    ),
+    (
+        "audit-session-execute-unchecked",
+        r'for method in \("add", "commit", "execute"\):',
+        'for method in ("add", "commit"):',
+        ("bad_audit_session_noexecute",),
+    ),
+    (
+        "audit-session-tracking-attrs-unchecked",
+        r"        if getattr\(audit\.session, tracked, None\) is None:\n",
+        "        if False:\n",
+        ("bad_audit_session_notracked",),
+    ),
+    (
+        "audit-session-tracking-attrs-no-raise",
+        r"(getattr\(audit\.session, tracked, None\) is None:\n)            raise "
+        r'InvalidProviderRequestError\("audit session must be a database session"\)',
+        r"\1            pass",
+        ("bad_audit_session_notracked",),
+    ),
+    (
+        "tenant-not-rebound-after-commit",
+        r"        if tenant is not None:\n",
+        "        if False:\n",
+        ("rebound_tenant", "second_denial"),
+    ),
+    (
+        "rebind-uses-audit-org-not-session-tenant",
+        r"set_tenant_context\(audit\.session, tenant\)",
+        "set_tenant_context(audit.session, audit.organization_id)",
+        ("rebound_tenant", "no_context_no_rebind"),
+    ),
+    (
+        "rebind-unconditional",
+        r"        if tenant is not None:\n",
+        "        if True:\n",
+        ("no_context_no_rebind",),
+    ),
+    (
+        "non-uuid-tenant-raw-valueerror",
+        r"        raise InvalidProviderRequestError\(\n"
+        r'            "audit session tenant context is not an organization id"\n'
+        r"        \) from None\n",
+        "        raise\n",
+        ("non_uuid_tenant",),
+    ),
+    (
+        "pending-guard-skipped",
+        r"        tenant = _bound_tenant\(audit\)\n",
+        "        tenant = ''\n",
+        ("pending_new", "pending_dirty", "pending_deleted", "pending_flushed"),
+    ),
+    (
+        "pending-unit-of-work-ignored",
+        r"    if session\.new or session\.dirty or session\.deleted:\n",
+        "    if False:\n",
+        ("pending_new", "pending_dirty", "pending_deleted"),
+    ),
+    (
+        "pending-new-ignored",
+        r"session\.new or session\.dirty",
+        "session.dirty",
+        ("pending_new",),
+    ),
+    (
+        "pending-dirty-ignored",
+        r"session\.dirty or session\.deleted",
+        "session.deleted",
+        ("pending_dirty",),
+    ),
+    (
+        "pending-deleted-ignored",
+        r"or session\.deleted:",
+        ":",
+        ("pending_deleted",),
+    ),
+    (
+        "pending-flushed-ignored",
+        r"    if has_writes:\n",
+        "    if False:\n",
+        ("pending_flushed",),
+    ),
+    (
+        "pending-guard-early-return-allowed-only",
+        r"    session = audit\.session\n",
+        "    session = audit.session\n"
+        "    if not (session.new or session.dirty or session.deleted):\n"
+        "        return ''\n",
+        ("pending_flushed",),
     ),
     (
         "audit-org-type-unchecked",
@@ -1181,12 +1346,24 @@ def test_each_guard_is_load_bearing() -> None:
         == [[str(uuid.UUID(int=77)), "worker", "actor-9", "req-9", "inference"]]
         and baseline.get("mismatch_account") == "external_provider_approval_mismatch"
         and baseline.get("bad_audit_events") == []
+        and baseline.get("rebound_tenant") == [str(uuid.UUID(int=5)), ["add", "commit", "bind"]]
+        and baseline.get("non_uuid_tenant") == ["external_provider_invalid_request", [], 0]
+        and baseline.get("second_denial") == ["external_provider_profile_blocked"] * 2
+        and baseline.get("second_denial_rows") == 2
+        and baseline.get("no_context_no_rebind") == ["add", "commit"]
+        and all(
+            baseline.get("pending_" + n)
+            == ["external_provider_invalid_request", "external_provider_invalid_request", []]
+            for n in ("new", "dirty", "deleted", "flushed")
+        )
         and all(
             baseline.get("bad_audit_" + n) == "external_provider_invalid_request"
             for n in (
                 "session_none",
                 "session_nocommit",
                 "session_noadd",
+                "session_noexecute",
+                "session_notracked",
                 "org_str",
                 "actor_type",
                 "actor_id",
