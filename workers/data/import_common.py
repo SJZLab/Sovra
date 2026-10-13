@@ -960,6 +960,9 @@ class BlankLine:
 ImportEvent = AcceptedRecord | RowRejection | BlankLine
 
 
+_STATE_NEEDS_FAILURE_CODE: Final = {"completed": False, "failed": True, "blocked": True}
+
+
 @dataclass(frozen=True)
 class ImportReport:
     state: str
@@ -988,9 +991,10 @@ class ImportReport:
         return values
 
     def __post_init__(self) -> None:
-        if self.state not in ("completed", "failed", "blocked"):
+        needs_failure_code = _STATE_NEEDS_FAILURE_CODE.get(self.state)
+        if needs_failure_code is None:
             raise ValueError("unknown state")
-        if (self.state == "completed") != (self.failure_code is None):
+        if needs_failure_code != (self.failure_code is not None):
             raise ValueError("failure_code is set exactly when the import did not complete")
         if self.failure_code is not None and self.failure_code not in FAILURE_CODES:
             raise ValueError("unknown failure code")
