@@ -351,7 +351,9 @@ def _round3_checks(
             created_jobs.append(job_id)
             _set_tenant(session, org1_id)
             session.execute(
-                text("UPDATE model_import_jobs SET state = 'validating', claim_epoch = 1, lease_expires_at = now() + interval '1 hour' WHERE id = :id"),
+                text(
+                    "UPDATE model_import_jobs SET state = 'validating', claim_epoch = 1, lease_expires_at = now() + interval '1 hour' WHERE id = :id"
+                ),
                 {"id": str(job_id)},
             )
             session.execute(
@@ -1271,7 +1273,9 @@ def main() -> None:
 
         _set_tenant(session, org1_id)
         session.execute(
-            text("UPDATE model_import_jobs SET state = 'validating', claim_epoch = 1, lease_expires_at = now() + interval '1 hour' WHERE id = :id"),
+            text(
+                "UPDATE model_import_jobs SET state = 'validating', claim_epoch = 1, lease_expires_at = now() + interval '1 hour' WHERE id = :id"
+            ),
             {"id": str(job_b)},
         )
         session.execute(
@@ -1654,7 +1658,9 @@ def main() -> None:
         _set_tenant(session, org1_id)
         try:
             session.execute(
-                text("UPDATE model_import_jobs SET state = 'validating', claim_epoch = 1, lease_expires_at = now() + interval '1 hour' WHERE id = :id"),
+                text(
+                    "UPDATE model_import_jobs SET state = 'validating', claim_epoch = 1, lease_expires_at = now() + interval '1 hour' WHERE id = :id"
+                ),
                 {"id": str(grant_job)},
             )
             session.commit()
