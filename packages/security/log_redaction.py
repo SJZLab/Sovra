@@ -62,9 +62,9 @@ backtracking could never find a different one, only waste time). JWT
 shape is found per maximal `[A-Za-z0-9_\\-.]` run (split on dots once, first "eyJ" per segment
 searched once), not by a regex that re-scans at every "eyJ" repeat: that keeps it linear with no
 bound on the segment length AND still redacts a JWT glued after `_`/`-` (`token_<jwt>`,
-`sess-<jwt>`), which the round-5 `(?<![_\\-])` lookbehind let through (round 6). The escaped-quoted-value shape
-allows backslashes in its own middle, so it cannot simply be made possessive
-the way the bare-quote shapes are; round 4 bounded its content to 8192 chars,
+`sess-<jwt>`), which the round-5 `(?<![_\\-])` lookbehind let through (round 6).
+The escaped-quoted-value shape allows backslashes in its own middle, so it cannot simply be
+made possessive the way the bare-quote shapes are; round 4 bounded its content to 8192 chars,
 which is the same leak-above-the-cap problem. Round 5 replaces the bound with
 an unrolled loop (alternating a possessive run of plain chars with a
 possessive backslash run that is not immediately followed by the closing

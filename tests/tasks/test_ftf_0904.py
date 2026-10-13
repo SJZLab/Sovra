@@ -109,9 +109,7 @@ def _secret_values() -> dict[str, str]:
 
 SECRETS = _secret_values()
 PEM = (
-    "-----BEGIN RSA PRIVATE KEY-----\n"
-    "MIIEowIBAAKCAQEA" + _ALNUM + "\n"
-    "-----END RSA PRIVATE KEY-----"
+    "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA" + _ALNUM + "\n-----END RSA PRIVATE KEY-----"
 )
 
 
@@ -1785,7 +1783,6 @@ def test_every_rule_long_secret_through_the_logging_path() -> None:
             )
 
 
-
 _JWT_CONTEXTS = ("token_", "sess-", "cache_", "user-", "id-", "jwt_", "x_")
 
 
@@ -1821,8 +1818,17 @@ def test_jwt_glued_after_underscore_or_dash_is_redacted() -> None:
                 not any(piece in seen for piece in pieces),
             )
     # negative: the real default code leaves a non-JWT lookalike alone (no dots, glued to alnum)
-    for benign in ("token_eyJ", "x_eyJab.cd", "abceyJabcdef.ghijkl.mnopqr", "eyJ.a.b"):
-        check("FTF-0904-J3", f"benign lookalike {benign!r} altered", lr.redact_text(benign) == benign)
+    for benign in (
+        "token_eyJ",
+        "x_eyJab.cd",
+        "abceyJabcdef.ghijkl.mnopqr",
+        "eyJ.a.b",
+        "eyJabcdef.abc.defgh",
+        "eyJabc.abcdefgh.ijklmn",
+    ):
+        check(
+            "FTF-0904-J3", f"benign lookalike {benign!r} altered", lr.redact_text(benign) == benign
+        )
 
 
 def test_jwt_runs_inside_other_text_keep_their_neighbours() -> None:
@@ -2370,15 +2376,18 @@ def _run_mutant(fault_id: str, old: str, new: str, count: int) -> tuple[bool, st
             "FTF0904_BEHAVIOUR_ONLY": "1",
             "PYTHONDONTWRITEBYTECODE": "1",
         }
-        result = subprocess.run(
-            [sys.executable, str(Path(__file__).resolve())],
-            capture_output=True,
-            text=True,
-            env=env,
-            cwd=tmp,
-            timeout=300,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                [sys.executable, str(Path(__file__).resolve())],
+                capture_output=True,
+                text=True,
+                env=env,
+                cwd=tmp,
+                timeout=300,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return True, "mutant made the suite exceed 300 s (catastrophic regex): killed"
     return result.returncode != 0, (result.stdout + result.stderr)[-300:]
 
 
