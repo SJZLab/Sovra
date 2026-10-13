@@ -58,18 +58,13 @@ unbounded in the length of secret it redacts (Section 65.4/round-5 ruling: a
 bounded match is a leak, not a performance safeguard) -- the key rule and the
 bare-quoted-value shapes are possessive (the closing quote is excluded from the
 class that scans for it, so there is only ever one possible split point --
-backtracking could never find a different one, only waste time). The JWT
-shape's two required dots are not excluded from the segment before each one,
-so a repeat of the "eyJ" prefix alone (not itself excluded either) could
-re-scan the rest of the text at every repeat with nothing to stop it; round 4
-capped the segment length to stop that, which is itself a leak above the cap
-(round 5), so instead the "eyJ" start is also excluded from being preceded by
-`_`/`-` (on top of the existing not-preceded-by-alnum check): the only "eyJ"
-that can ever start a real attempt is the first one in its own maximal run of
-`[A-Za-z0-9_\\-]` characters, so the segments stay fully unbounded (`{5,}+`)
-without the repeat-start cost coming back. The escaped-quoted-value shape
-allows backslashes in its own middle, so it cannot simply be made possessive
-the way the bare-quote shapes are; round 4 bounded its content to 8192 chars,
+backtracking could never find a different one, only waste time). JWT
+shape is found per maximal `[A-Za-z0-9_\\-.]` run (split on dots once, first "eyJ" per segment
+searched once), not by a regex that re-scans at every "eyJ" repeat: that keeps it linear with no
+bound on the segment length AND still redacts a JWT glued after `_`/`-` (`token_<jwt>`,
+`sess-<jwt>`), which the round-5 `(?<![_\\-])` lookbehind let through (round 6).
+The escaped-quoted-value shape allows backslashes in its own middle, so it cannot simply be
+made possessive the way the bare-quote shapes are; round 4 bounded its content to 8192 chars,
 which is the same leak-above-the-cap problem. Round 5 replaces the bound with
 an unrolled loop (alternating a possessive run of plain chars with a
 possessive backslash run that is not immediately followed by the closing
@@ -201,23 +196,46 @@ _PREFIXES = re.compile(
     r"|(?:AKIA|ASIA|AGPA|AIDA|AROA)[A-Z0-9]{16}"
     r"|hf_[A-Za-z0-9]{20,}"
     r"|AIza[0-9A-Za-z_\-]{35,}"
-    # This alternative needs TWO literals ('.') that a run of the segment's own alphabet never
-    # has to contain -- "eyJ" is not itself excluded from `[A-Za-z0-9_\-]`, so a text built from
-    # many `eyJ`-prefixed, dot-free runs (each satisfying the outer `(?<![A-Za-z0-9])` lookbehind
-    # on the one before it, since `_`/`-` are not alnum) makes an *unbounded* greedy or possessive
-    # class re-consume the rest of the text at every one of O(n) such positions: possessive only
-    # removes the backtrack, not that repeated O(remaining) consume (confirmed: `"_eyJ" * 40_000`
-    # still took 23s with `{5,}+`). Round 4 capped the segment at 1024 chars to bound that cost --
-    # a leak above the cap, not a real fix (round 5). Round 5 instead excludes `_`/`-` from
-    # immediately preceding "eyJ" too (`(?<![_\-])`, on top of the pre-existing outer
-    # `(?<![A-Za-z0-9])`): the only "eyJ" that can ever start a real attempt is the first one in
-    # its own maximal run of `[A-Za-z0-9_\-]` characters, so every later `_eyJ`/`-eyJ` repeat is
-    # rejected in O(1) before it can re-consume anything, and the segments can stay fully
-    # unbounded (`{5,}+`) without the repeat-start cost coming back.
-    r"|(?<![_\-])eyJ[A-Za-z0-9_\-]{5,}+\.[A-Za-z0-9_\-]{5,}+\.[A-Za-z0-9_\-]*+"
     r")",
     re.I,
 )
+# JWT-shaped spans are found per run, not by a regex that must re-scan from every "eyJ": a
+# regex whose segments are unbounded re-consumes the rest of a dot-free run at every "eyJ" repeat
+# (quadratic), and one that refuses a start after `_`/`-` (the round-5 form) lets `token_<jwt>`,
+# `sess-<jwt>` and the like through. Instead each maximal run of `[A-Za-z0-9_\-.]` is split on
+# its dots once and each segment is searched once for its first "eyJ" (not glued after an
+# alphanumeric): linear in the run, no bound on how much is redacted.
+_JWT_RUN = re.compile(r"[A-Za-z0-9_\-.]++")
+_JWT_MIN_SEGMENT = 5
+
+
+def _jwt_start(segment: str) -> int:
+    """Offset of the first "eyJ" in `segment` that is not preceded by an alphanumeric and has at
+    least `_JWT_MIN_SEGMENT` characters after it, or -1. Only the first candidate is tried: any
+    later one has fewer characters left."""
+    lowered = segment.lower()  # the rule has always been case-insensitive
+    pos = lowered.find("eyj")
+    while pos > 0 and segment[pos - 1].isalnum():
+        pos = lowered.find("eyj", pos + 1)
+    return pos if pos >= 0 and len(segment) - pos - 3 >= _JWT_MIN_SEGMENT else -1
+
+
+def _redact_jwts_in_run(match: re.Match[str]) -> str:
+    run = match.group(0)
+    segments = run.split(".")
+    out: list[str] = []
+    i = 0
+    while i < len(segments):
+        start = _jwt_start(segments[i]) if i + 2 < len(segments) else -1
+        if start >= 0 and len(segments[i + 1]) >= _JWT_MIN_SEGMENT:
+            out.append(segments[i][:start] + REDACTED)
+            i += 3
+        else:
+            out.append(segments[i])
+            i += 1
+    return ".".join(out)
+
+
 _USERINFO = re.compile(r"(?P<scheme>(?<![A-Za-z0-9+.\-])[A-Za-z][A-Za-z0-9+.\-]*://)[^/\s?#]*@")
 _KEY_VALUE = re.compile(
     rf"(?P<key>(?<![\w.\-]){_SECRET_KEY})(?P<sep>{_SEP})"
@@ -237,10 +255,12 @@ _RULES: tuple[tuple[str, Any], ...] = (
     ("pair", _PAIR),
     ("bearer", _BEARER),
     ("prefix", _PREFIXES),
+    ("jwt", _JWT_RUN),
     ("userinfo", _USERINFO),
     ("key_value", _KEY_VALUE),
 )
-_REPLACEMENTS: Mapping[str, str] = {
+_REPLACEMENTS: Mapping[str, str | Callable[[re.Match[str]], str]] = {
+    "jwt": _redact_jwts_in_run,
     "header": rf"\g<key>\g<sep>{REDACTED}",
     "pair": rf"\g<pre>{REDACTED}",
     "bearer": rf"\g<scheme> {REDACTED}",

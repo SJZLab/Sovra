@@ -10003,6 +10003,23 @@ FTF-0904:
     character its own closing delimiter needs.
     Disclosed: detection is still pattern-based (unchanged limits); every rule is now unbounded
     in the length of secret it redacts. Still UNWIRED (blank proving_symbol).
+
+    Round 6 (Control-plane return, QUEUE 0d via #753; PROVISIONAL / L1-PROVEN, not certified):
+    the round-5 JWT lookbehind `(?<![_\-])` stopped redacting a JWT glued after `_`/`-`
+    (`token_<jwt>`, `sess-<jwt>`, `cache_<jwt>`, `user-<jwt>`, `id-<jwt>`, `jwt_<jwt>`, `x_<jwt>`).
+    The JWT shape is now a per-run scan (`_JWT_RUN`: split each maximal `[A-Za-z0-9_\-.]` run on
+    dots once, search each segment once for its first "eyJ" not glued after an alphanumeric),
+    linear and unbounded; the 7 contexts are pinned at three payload sizes through redact_text and
+    the logging path. The long-secret sweep now checks 32-char fragments at the start, quarter,
+    middle, three-quarters and end (not only the whole marker), the base64 case checks fragments
+    of the encoded text, and a logging-path sweep runs a real top tier per rule sized to fit
+    MAX_TEXT_LENGTH. New time shapes for `_PAIR`, `_BASE64_RUN`, `_USERINFO` and the JWT scan are
+    swept 8 KB..256 KB through both paths. tests/tasks/test_ftf_0904.py now has 67 faults (was
+    52), including Q-PAIR-OVERLAP, Q-PAIR-KEY-WS-QUAD, Q-B64-NO-LOOKBEHIND,
+    Q-USERINFO-NO-LOOKBEHIND, V-JWT-SIG-BOUND-40, V-BEARER-BOUND-500, V-SK-BOUND-500 and
+    V-B64-BOUND-500; every fault turns the suite RED (full file run, exit 0 on the real module).
+    Still UNWIRED (blank proving_symbol). Submission:
+    docs/certifications/submissions/2026-10-13T1530Z-FTF-0904-r6.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0904.py
