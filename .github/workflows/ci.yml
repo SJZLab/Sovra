@@ -3034,6 +3034,54 @@ jobs:
       - name: Prove the real upload UI against the real router, PostgreSQL 16 and SeaweedFS
         run: uv run python3 tests/integration/test_ftf_0501_ui_real_api.py
 
+  dataset-quality-ui-real-api-integration:
+    # FTF-0516 UI round 5 (UI CHECKLIST f): the real issue-resolution component
+    # (apps/web/components/dataset-factory/dataset_issue_resolution_ui.tsx, Vitest + jsdom)
+    # against the real build_dataset_quality_router on a real uvicorn server over PostgreSQL 16
+    # as sovra_app: exclude with server before/after evidence, correct with an uppercase-typed
+    # successor, waive 403 for ml_engineer and recorded for workspace_admin, a stale-view 409,
+    # a lost response + another decision + identical retry (one row), a detector failure with
+    # no control, a foreign dataset 404 -- then an independent check of the stored rows --
+    # tests/integration/test_ftf_0516_ui_real_api.py (spec:
+    # apps/web/tests/real_api/ftf_0516_ui_real_api.realapi.ts).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' dataset-quality-ui-real-api-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0516ui
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0516ui"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0516ui
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Install JS/TS dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Prove the real quality-issue UI against the real router and PostgreSQL 16
+        run: uv run python3 tests/integration/test_ftf_0516_ui_real_api.py
+
   dataset-upload-hardening-integration:
     # FTF-0501-P2: real Postgres evidence for migration 0025: a closed
     # (rejected / expired / verified) upload session cannot be reopened or
@@ -3358,6 +3406,7 @@ jobs:
       - direct-upload-s3-integration
       - direct-upload-routes-integration
       - resumable-upload-ui-real-api-integration
+      - dataset-quality-ui-real-api-integration
       - oidc-provider-integration
       - license-acceptance-workflow-integration
       - artifact-transition-race-integration
