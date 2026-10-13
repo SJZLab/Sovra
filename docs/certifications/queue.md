@@ -24699,3 +24699,8 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-13T16:44Z — Control plane: FTF-0502 returned
 - **Returned:** FTF-0502 r2 (0k): rebuild on FTF-0502-P1 after P1 certifies. **Process:** #600 (FTF-0517) and #650 (FTF-1206) found unverified; verifiers running.
+
+## 2026-10-13T17:43Z — Control plane: FTF-0516 CERTIFIED (144/302); FTF-0517, FTF-1206 returned
+- **Returned:** FTF-0517 r3 (0f): 3+-key bridges and a key-level property test; exact-type keys.
+- **Returned:** FTF-1206 r6 (0h), tests only: pin approver authority to the current org policy (F19).
+- **Certified:** FTF-0516 (#754, merge 90698aa6371626f6d2f8f156624798c9673ef044); UNWIRED (144/302).

@@ -1,8 +1,8 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-13T16:44Z. Source: `python3 scripts/status.py` on main.
-- **Status: 143/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
+Updated: 2026-10-13T17:43Z. Source: `python3 scripts/status.py` on main.
+- **Status: 144/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   status.py prints 47 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
@@ -12,6 +12,10 @@ Updated: 2026-10-13T16:44Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-13T17:43Z:**
+  - CERTIFIED: FTF-0516 (dataset issue resolution UI), after 5 UI rounds; real-API CI test on PG16 in place. UNWIRED until FTF-H029.
+  - Returned: FTF-1206 r6, tests only (#650, verified late): production is correct, but no test checks that approver authority comes from the CURRENT org policy rather than the grant.
+  - Returned: FTF-0517 r3 (#600, verified late): production keeps families together in every probe, but no test uses records with 3+ linkage keys (two faults GREEN); exact-type keys required.
 - **2026-10-13T16:44Z:**
   - Returned: FTF-0502 r2 (built before its prerequisite FTF-0502-P1; crashes on huge numbers/deep nesting, silently accepts duplicate keys/NaN, leaks content in errors, no outage handling or integration test). Rebuild after P1 certifies.
   - Verifying: FTF-0516 UI (#754), FTF-0904 r6 (#757), and FTF-0517 r2 (#600) and FTF-1206 r5 (#650), which merged 2026-10-08 but were missed by earlier check-ins.
