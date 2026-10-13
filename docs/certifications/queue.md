@@ -24693,3 +24693,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-13T13:26Z — Control plane: FTF-0516 UI and FTF-0904 returned
 - **Returned:** FTF-0516 UI r4 (0c): F30 value/element-type generation; pin R4-S3/R4-D6/R4-R2; real-API CI test (UI CHECKLIST f).
 - **Returned:** FTF-0904 r6 (0d): JWT after `_`/`-` (ruling corrected); fragment-level long-secret checks; logging-path long-secret sweep; every-rule time shapes.
+
+## 2026-10-13T14:51Z — Control plane: Backlog refill
+- **Queued:** FTF-1504, FTF-0502-P1, FTF-0502, FTF-0504, FTF-0503, FTF-0505 (newly ready after FTF-0501). Advisory: FTF-0501 finalize accepts macro/external-link parts in a plain .xlsx.

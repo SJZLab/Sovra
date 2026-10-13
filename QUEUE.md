@@ -10203,6 +10203,415 @@ docs/spec-matrix.yaml. It never invents criteria.)
   - Faults that must go RED: a source variant dropped from the matrix; the checker accepting an extra property; enum check casefolded; trainable allowed for an upstream-only model (mutate the real router); revoked license ignored; the schema loaded from a copy instead of the frozen file.
   - Must not edit the certified FTF-0301/0307/0309-P1 modules or the frozen contracts; a found contract mismatch is reported as a finding, not fixed in place. proving_symbol stays blank (test-only task).
 
+- **Dataset importer family FTF-0502..0505 + common slice FTF-0502-P1** (Control-plane design 2026-10-13; FINE_TUNING_FACTORY_RELEASE_1.md §7, §7A.10, §8–8.2, §9, §10, §67.1–67.5, §77, §81; FTF-0501 CERTIFIED 2026-10-10 (#692 + #736, merge 41904e5) made all four dependency-ready; FTF-0500, FTF-0506 and FTF-0508 CERTIFIED). Contract per task: `python tools/r1_handoff.py packet <ID> --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Contract owner FTF-0500: read `packages/contracts/openapi/05-interface.yaml` and `jsonschema/05-domain.schema.json`, and add no path. FTF-0502-P1 refines FTF-0502 under "For each card" step (3). It adds no criteria: the denominator stays 302 and no ADR applies.
+  - Order (one lane): FTF-0502-P1 → FTF-0502 → FTF-0504 → FTF-0503 → FTF-0505. With more lanes, the importers run in parallel after P1 (no shared write set).
+  - Common rules (every item in this family):
+    - Path refinement, recorded: the packet's `services/training-worker/data/<x>.py` becomes `workers/data/<x>.py`, the real SOURCE_ROOT (FTF-0506/0508 precedent).
+    - No migration, route, UI, contract edit, runtime dependency, secret or keyed service. Stdlib only: `json`, `csv`, `codecs`, `zipfile`, `xml.parsers.expat`, `hashlib`, `tempfile`.
+    - Reuse, do not re-implement:
+      - FTF-0506 `normalize_conversation` (the only place a record becomes canonical);
+      - FTF-0508 `MAX_CANONICAL_RECORD_BYTES` (2 MiB, §67.3) and its candidate shape (`validate_record_batch` must report 0 issues on every accepted candidate);
+      - P1's `import_common` (limits, mapping, chunk reader, report, codes);
+      - FTF-0501's `S3Client.stream_object` through P1's `open_dataset_source`.
+      - An importer may not edit `import_common.py`. A needed change is a serialized edit that re-runs every landed importer suite (Law 15).
+    - Importers never read anything but the chunk iterable they are given. No listing, no other dataset, no file path from a mapping, no network: `sys.addaudithook` sees no `socket.*`, `subprocess.*`, `os.system`, `exec` or `import` of data during an import. Only XLSX opens one anonymous `tempfile.TemporaryFile`.
+    - Importer choice is by the session's server-verified content type (§8.1 step 3), never by file name. Each importer refuses a dataset whose `verified_content_type` is not its own, with `content_type_not_supported_by_importer`, before reading a byte. Test: the 5 `SUPPORTED_CONTENT_TYPES` × 4 importers.
+    - Law 17:
+      - A chunk-source exception (storage outage, connection reset) gives report state `blocked`, `source_unavailable`.
+      - A recomputed source sha256 ≠ `Dataset.verified_sha256`, or more bytes than `verified_size_bytes`, gives `failed`, `source_changed`.
+      - The deadline gives `failed`, `parse_timeout`.
+      - More than `max_rejections` rejected rows gives `failed`, `too_many_rejections`.
+      - In each case no record is usable: the contract is that records are provisional until the final report says `completed`, and the tests assert the consumer gets no `completed` report.
+    - Refuse, never truncate (§67.2 "Field truncation ... forbidden", §67.3 "Bound ... record bytes and nesting"). An oversized record or field is a row rejection or a fatal error. It is never cut, padded or coerced.
+    - No type inference anywhere: every cell or field is kept as the exact source string unless the mapping explicitly applies `json_parse`. Arabic, RTL marks, combining marks, ZWJ/ZWNJ and emoji are kept byte-exact (no NFC/NFKC/casefold/strip).
+    - Never sets or changes purpose:
+      - The report copies `dataset_purpose` from the Dataset row.
+      - No mapping slot can set a purpose. A data field named `purpose`, `split` or `heldout` is never read unless it is mapped as a plain metadata label.
+      - No label is invented: an unmapped `quality_label` is absent, never `approved` (§9 "Preassigned evaluation-only data cannot be reclassified into training by an import heuristic", §67.2).
+    - Content-free errors (META-LEAK):
+      - Reports, rejections and exceptions carry only a code from P1's closed catalog, the mapping slot name from a closed set, and importer-generated structural locators (1-based line / row / element / sheet index, column letters, byte offset). They never carry a header text, sheet name, JSON key, value or a FTF-0506 exception message (its messages can echo data, e.g. `unmapped role {role!r}`).
+      - Exceptions are converted with `raise ... from None`.
+      - One shared META-LEAK check (P1's test helper) runs over `traceback.format_exception` of every raised error (cause, context, notes, args), every report and rejection field, and captured log records, with markers planted in contents, headers, keys, sheet names and file bytes.
+    - Generated tables, not hand-picked cases:
+      - stdlib generators with a fixed seed plus exhaustive `itertools.product` over the axes named per item;
+      - chunk-boundary independence: every input in the tables is also fed in 1-byte and 7-byte chunks, and split at every byte offset for inputs ≤ 4 KiB. The candidates and `report_sha256` must be identical.
+      - Host-dependent behaviour (`csv`, `expat`, `zipfile`) is pinned by tests that the verifier repeats on Python 3.12 (PRE-SUBMIT SELF-ATTACK, neutral host).
+    - Bounded resources:
+      - `tracemalloc` peak for a 64 MiB input stays within 1.5× the peak for a 1 MiB input with the same maximum record size (memory independent of file size);
+      - a maximum-size record fed in 1-byte chunks finishes inside a fixed budget (no quadratic rescans);
+      - every limit is tested at max−1 / max / max+1 without overriding the production constants.
+    - Real integration (each item adds its own additive ci.yml job plus verdict `needs`, following `direct-upload-routes-integration`):
+      - PG16 as `sovra_app` (never the migration owner) plus live SeaweedFS (the test boots the compose `s3` service itself, the `s3lab` precedent).
+      - The fixture file is uploaded through the real FTF-0501 routes on uvicorn and finalized into a real Dataset. It is opened through `open_dataset_source` and imported, and every accepted candidate passes FTF-0508 `validate_record_batch` with 0 issues.
+      - Mid-stream outage (`s3lab.compose("stop","s3")`, the 0501 precedent, or a truncating TCP relay) → `blocked`.
+      - Foreign-org dataset → identical to a missing one.
+      - Held-out dataset not readable with `include_held_out=False`.
+    - Every DoD bullet has its own behavioural fault→RED row. Uncapped mutation gate at 0 survivors over each new module. PRE-SUBMIT SELF-ATTACK and SAME-CLASS SWEEP across the sibling importers.
+    - Disclosed, every item:
+      - UNWIRED: no route, dispatcher or activity calls the importers (durable dispatch FTF-0801/H016; persistence and the detector run are the proposed FTF-0502-P2; the MappingSpec UI is FTF-H011). `proving_symbol` stays blank.
+      - "Parse in isolated worker" / "resource-limited worker" (§8.1 step 5, §67.3) is a deployment property not proven here.
+  - **FTF-0502-P1 Dataset import common contract and verified-source reader (pure + one read-only DB/S3 function; ready now)** (§7, §8.1 steps 1–7, §9, §67.2, §67.3; deps FTF-0500, FTF-0501, FTF-0506, FTF-0508, all CERTIFIED; no lock beyond its own write set).
+    - Files:
+      - `workers/data/import_common.py` (pure, stdlib);
+      - `apps/api/app/datasets/dataset_object_source.py` (read-only);
+      - `tests/tasks/test_ftf_0502_p1.py`;
+      - `tests/tasks/import_test_support.py` (shared generators + META-LEAK checker, reused by 0502–0505);
+      - `tests/integration/test_ftf_0502_p1_dataset_source_postgres_s3.py`;
+      - additive ci.yml job `dataset-import-source-integration` + verdict `needs`.
+    - `import_common.py` provides:
+      - `ImportLimits` (frozen):
+        - `max_source_bytes` = 10 GiB (§67.3);
+        - `max_record_bytes` = FTF-0508 `MAX_CANONICAL_RECORD_BYTES` (import it; do not re-declare);
+        - `max_depth` = 64;
+        - `max_rejections` = 10,000;
+        - `preview_max_records` = 20 (§67.3 "preview max20");
+        - `deadline_seconds`.
+        - A caller may lower a limit and never raise one above the default: a higher value raises, because §67.3 says larger limits need "capability/load evidence".
+      - `parse_mapping(document: str) -> ImportMapping`, the single MappingSpec parser (H011 must reuse it):
+        - plain JSON: duplicate keys refused, NaN/Infinity/`1e999` refused;
+        - exact types (`type(x) is str/int/bool/dict/list`, no subclasses or caller objects);
+        - an exact allow-list per shape, with `mapping_sha256` over canonical JSON.
+        - Shapes:
+          - `messages`: a JSON pointer (RFC 6901, exact keys, `~0`/`~1`, decimal indices without leading zeros) to a messages array; explicit per-message key names for role/content/tool_calls/tool_call_id/name; an explicit `role_map` of exact str → FTF-0506 `ALLOWED_ROLES`; and a required `on_unmapped_message_keys ∈ {reject, ignore}` with no default.
+          - `prompt_completion`: required `prompt`/`completion` slots and an optional `system`. Produces `[system?, user, assistant]`.
+          - `messages_json`: one field/column holding a JSON messages array, parsed strictly. This is how tabular sources carry tool calls.
+        - Optional slots: `group_key`, and `metadata` with closed keys {`language`, `task_category`, `consent`, `quality_label`, `source_record_id`, `event_timestamp`}. `event_timestamp` must be ISO 8601 with an offset, and the source string is kept as-is.
+        - Format blocks: `csv` {encoding, delimiter, has_header, header_row}, `xlsx` {sheet_name, header_row}, `json` {container, ignored_top_level_keys}.
+        - Tabular slots address a column by exact header text or by 0-based index / column letters.
+        - Grouped multi-row conversations → `mapping_unsupported` (disclosed).
+      - `apply_mapping` builds the raw record. Missing required slot → `required_field_missing`; empty string in a required tabular slot → `required_field_empty`; wrong type → `mapping_type_mismatch`; role not in `role_map` → `unmapped_role`. An empty optional slot is omitted and never defaulted.
+      - `normalize_mapped_record` calls FTF-0506 `normalize_conversation(source_type, source_record_index, raw_record, tool_schemas, tool_argument_validator, group_key, record_id)`:
+        - `record_id` = uuid5(fixed namespace, `dataset_sha256:mapping_sha256:index`), so it is deterministic and content-free.
+        - `ConversationNormalizationError` → `canonical_schema_invalid`, plus at most the message index parsed from the structural `messages[N]` prefix.
+      - `to_dataset_record_candidate` builds the §6.11 candidate exactly as FTF-0508 accepts it: `record_index` (0-based source ordinal, counting rejected rows and not blank lines), `schema_version`, `source_type`, `content`, `record_sha256` = lineage.raw_sha256, `normalized_sha256` = canonical_hash, `quality_status="pending"`, `pii_status="unscanned"`, `tool_schema_status ∈ {not_applicable, valid}`.
+      - `strict_loads(data, *, max_depth)`:
+        - a linear depth pre-scan outside strings before `json.loads` (no `RecursionError` path);
+        - duplicate keys → `duplicate_key`;
+        - NaN/Infinity, and floats that overflow to inf → `non_finite_number`;
+        - an int over CPython's digit limit → `number_out_of_range`;
+        - a lone surrogate after decoding → `invalid_unicode`.
+        - The rules are the same as FTF-0607 `parse_strict_json`, but that module is not imported: it lives in a separate deployable (`workers/evaluation`). Record this.
+      - `ChunkReader`:
+        - wraps `Iterable[bytes]`, computes sha256 and the byte count, and enforces `expected_size`/`max_source_bytes`;
+        - converts any exception raised by the source iterator into `blocked` / `source_unavailable` (never `completed` or `failed`);
+        - checks the deadline;
+        - at end of stream compares to `expected_sha256` and gives `source_changed` on a mismatch.
+      - The report and events:
+        - `RowRejection(locator, code, slot)`.
+        - `ImportReport(state ∈ {completed, failed, blocked}, failure_code, importer, importer_version, mapping_sha256, dataset_purpose, expected_sha256, source_sha256, source_bytes, source_schema_sha256 | None, records_seen, records_accepted, records_rejected, blank_lines, rejection_counts, rejections, report_sha256)`.
+        - Invariant: `records_seen == records_accepted + records_rejected`.
+        - `report_sha256` covers canonical JSON of every field except itself.
+        - `REJECTION_CODES` and `FAILURE_CODES` are closed frozensets. A test asserts every code any module emits is in the catalog.
+      - `preview(events, limit)` with `limit ≤ preview_max_records` (21 raises). It uses the same code path as a full import.
+    - `dataset_object_source.py`: `open_dataset_source(session, context, *, project_id, dataset_id, include_held_out, storage)` (keyword-only, `include_held_out` has no default) → `DatasetObjectSource(dataset_id, purpose, source_type, verified_content_type, expected_sha256, expected_size, chunks)`.
+      - It loads the Dataset through FTF-0501-P1 `get_dataset`, so foreign, missing and hidden-held-out all raise the same `DatasetNotFoundError`. It then loads the dataset's own upload session row and its `object_key`, as `sovra_app` under the tenant context.
+      - It streams only that key with `S3Client.stream_object`. There is no listing call, and no caller string reaches storage.
+      - Storage errors surface from the iterator as FTF-0501's `UploadStorageUnavailableError` (content-free).
+      - It never returns the key and never writes.
+    - DoD tests:
+      - Pure:
+        - strict mapping-parse table: for every allow-listed key, each of missing, extra, int-for-str, bool-for-int, float, null, list, nested object, duplicate key, NaN and a str subclass → `mapping_invalid`;
+        - JSON-pointer table (escapes, leading-zero index, `-`, empty token, non-ASCII keys exact);
+        - `role_map` exactness, using property-generated Unicode variants (reuse the FTF-0616 round-8 generator) of `user`/`assistant`, none of which is accepted;
+        - limits table (lower accepted, higher refused, max−1/max/max+1);
+        - `strict_loads` table (depth 63/64/65 and 100,000; duplicate keys at every level; NaN/±Infinity/1e999/-1e999; 4300/4301-digit ints; lone and paired surrogate escapes);
+        - ChunkReader table (exact size; size+1; sha mismatch at the last byte; the iterator raising at chunk 0, mid-stream and at the end; deadline);
+        - candidate table (every accepted candidate passes `validate_record_batch` with 0 issues);
+        - determinism across runs and `PYTHONHASHSEED`;
+        - META-LEAK with markers in values, keys and FTF-0506 messages.
+      - Integration (PG16 as `sovra_app` + SeaweedFS, real FTF-0501 routes):
+        - streamed bytes hash to `Dataset.verified_sha256`;
+        - foreign-org and foreign-project dataset raise exactly the missing error;
+        - a held-out dataset is refused with `include_held_out=False` and readable with `True`;
+        - a request counter on the S3 client shows exactly one GET of the session key and no LIST;
+        - a mid-stream stop of `s3` → `UploadStorageUnavailableError` → ChunkReader `blocked`.
+    - Faults that must go RED:
+      - duplicate keys accepted (mapping or `strict_loads`);
+      - 1e999 accepted;
+      - the depth pre-scan removed;
+      - a limit raisable above its default;
+      - sha mismatch → completed;
+      - a source exception → completed or failed (must be blocked);
+      - deadline ignored;
+      - `too_many_rejections` → completed;
+      - the FTF-0506 message copied into a rejection;
+      - a data `purpose`/`split` field read;
+      - `quality_label` defaulted;
+      - `record_id` from uuid4 (report sha unstable);
+      - the role map compared after casefold/strip/NFKC;
+      - `include_held_out` given a default of True;
+      - the reader lists the bucket or accepts a caller key;
+      - a foreign dataset distinguishable from a missing one;
+      - `from None` removed.
+  - **FTF-0502 JSONL importer** (§7, §8.1, §67.2, §67.3; packet acceptance "Stream JSONL per record and report exact row/schema failures with bounded memory"; negative "Malformed UTF-8/line, huge record and mixed critical schemas produce quarantine/errors, not silent loss"; deps FTF-0500/0501/0506 CERTIFIED + FTF-0502-P1).
+    - Files:
+      - `workers/data/jsonl_importer.py`;
+      - `tests/tasks/test_ftf_0502.py`;
+      - `tests/integration/test_ftf_0502_jsonl_import_postgres_s3.py`;
+      - ci.yml job `jsonl-import-integration` + verdict `needs`.
+    - `import_jsonl(chunks, *, mapping, expected_sha256, expected_size, verified_content_type, dataset_purpose, source_type, limits, tool_schemas, tool_argument_validator)` yields accepted candidates and `RowRejection`s, and finally one `ImportReport`. Accepted types: `application/jsonl` and `application/x-ndjson` only.
+    - Line rules:
+      - Only LF delimits; one trailing CR before LF is removed. U+2028/U+2029 inside strings are not delimiters.
+      - A UTF-8 BOM is accepted only at byte 0 of the file. A BOM anywhere else → `invalid_json`.
+      - UTF-16/32 (BOM or NUL pattern) → fatal `unsupported_encoding`.
+      - A whitespace-only line counts in `blank_lines` and is not a record.
+      - Each line is decoded as strict UTF-8 on its own. A bad line → `invalid_utf8` and the next line still imports.
+      - Each line must be exactly one JSON object through P1 `strict_loads`. Otherwise `record_not_object` / `invalid_json` / `duplicate_key` / `non_finite_number` / `nesting_too_deep` / `invalid_unicode`.
+      - A line longer than `max_record_bytes` → `record_too_large`. Its bytes are discarded up to the next LF without buffering, and the following lines continue.
+      - The line buffer keeps a scan offset: no rescan from the start and no `buf += chunk` quadratic growth.
+    - Mixed critical schemas (negative acceptance): lines that map, lines missing required slots, unmapped roles, non-objects and invalid canonical records interleave. Each gets its code and locator. The `records_seen` invariant and per-code counts are exact, and nothing is dropped silently.
+    - Generated tables:
+      - invalid-UTF-8 classes × position in the line (start/middle/end/split across a chunk): overlong, encoded surrogate `ED A0 80`, truncated multibyte, `FF`/`FE`, CESU-8, stray continuation;
+      - line-ending axis: LF / CRLF / no final newline / CR-only / mixed / blank / whitespace-only;
+      - BOM position axis;
+      - size axis: max−1 / max / max+1 / 64 MiB, delivered in 1-byte chunks;
+      - depth axis;
+      - duplicate-key-at-depth axis;
+      - number axis: NaN, ±Infinity, 1e999, 4301 digits;
+      - non-object axis: array, string, number, null, true;
+      - trailing-garbage axis: `{}{}`, `{} x`, `{}\u0000`;
+      - an Arabic/RTL/emoji/ZWJ/formula-prefix content table, preserved byte-exact in the canonical content.
+    - Faults that must go RED:
+      - the line cap off by one;
+      - an unbounded buffer (memory test);
+      - a quadratic rescan (1-byte-chunk budget);
+      - an oversized line swallowing the following lines;
+      - one bad UTF-8 line failing the whole file;
+      - a mid-file BOM accepted;
+      - CR left in the record;
+      - blank lines not counted;
+      - a non-object accepted;
+      - trailing garbage accepted;
+      - the invariant broken (a rejected row not counted);
+      - the content-type check removed (a CSV dataset parsed as JSONL);
+      - decoding with `errors="replace"`.
+  - **FTF-0504 CSV importer** (§8.1, §67.2 "Select sheet/header/encoding/delimiter", §67.3 "Spreadsheet/CSV exports neutralize formula execution without mutating canonical training content"; packet acceptance "Use explicit header/encoding/delimiter/column mapping; preserve strings, IDs and Arabic text"; negative "CSV formula text is not evaluated; leading-zero identifiers and quoted multiline fields remain intact"; deps FTF-0500/0501/0506 + FTF-0502-P1).
+    - Files:
+      - `workers/data/csv_importer.py`;
+      - `tests/tasks/test_ftf_0504.py`;
+      - `tests/integration/test_ftf_0504_csv_import_postgres_s3.py`;
+      - ci.yml job `csv-import-integration` + verdict `needs`.
+    - Accepted type: `text/csv` only.
+    - Everything is explicit, with no `csv.Sniffer` and no guessing:
+      - `encoding` ∈ {`utf-8`, `utf-8-sig`, `utf-16-le`, `utf-16-be`, `windows-1256`}, decoded strictly. A decode error is fatal `invalid_encoding` with the physical line, because the reader cannot resync. A UTF-8 BOM under `utf-8` → fatal `unexpected_bom` (choose `utf-8-sig`).
+      - `delimiter` ∈ {`,`, `;`, `\t`, `|`}; `quotechar` `"`; `strict=True`; `newline=''`.
+      - `has_header` and `header_row` are explicit. Columns match header text exactly: no strip, casefold or NFC; two headers differing only in case or whitespace are distinct. A duplicate header → fatal `duplicate_header`; a mapped column missing → fatal `mapping_column_missing`.
+      - Disclosed: through upload only UTF-8 CSV passes FTF-0501's sniff today.
+    - Row rules:
+      - Field count ≠ header count → `column_count_mismatch`; the row is never padded or cut.
+      - `[]` (a blank line) counts in `blank_lines`.
+      - A NUL in a mapped field → `nul_character`. Python 3.11's `csv` accepts NUL, so the importer checks it.
+      - `field_size_limit` = `max_record_bytes`; exceeding it → fatal `field_too_large`.
+      - An unterminated quote at EOF → fatal `csv_structure_invalid`.
+      - More than 16,384 columns → fatal `too_many_columns`.
+      - The locator is the logical record number plus the starting physical line (`reader.line_num`), never header text.
+    - Preservation: every field stays the exact decoded str, with no type inference.
+      - Leading zeros, `-0`, `1e5`, `0x1F`, Arabic-Indic digits, `TRUE`, `NaN` and ` 12 ` survive.
+      - Quoted multiline fields keep their exact embedded CRLF / LF / CR.
+      - Formula-looking text (`=`, `+`, `-`, `@`, leading TAB/CR, full-width `＝`, the DDE `=cmd|' /C calc'!A0`) is kept byte-exact in the canonical content and never evaluated (audit hook: no subprocess, no socket).
+      - Export neutralization is the export task's job, not the importer's.
+      - The source schema digest is sha256 over the exact header cells, in order.
+    - Generated tables:
+      - encoding × Arabic/RTL/combining/emoji corpus (round-trip byte-exact);
+      - a wrong declared encoding for each encoding's bytes;
+      - delimiter × quoting (a field containing the delimiter, a doubled quote, CR, LF, CRLF) × line ending (LF/CRLF/CR);
+      - a header table (duplicates, case/whitespace/NFC variants, a missing mapped column);
+      - a ragged-row table;
+      - the preservation table above × column position;
+      - a formula-prefix table × quoted/unquoted;
+      - a size table (field max−1/max/max+1; 1-byte chunks).
+    - Faults that must go RED:
+      - the delimiter or encoding guessed (Sniffer or a fallback);
+      - any int/float/bool conversion;
+      - a formula prefix stripped, escaped or quoted in the canonical content;
+      - embedded CRLF normalized;
+      - the header matched after strip or casefold;
+      - a duplicate header accepted;
+      - a ragged row padded or truncated;
+      - `errors="replace"`/`"ignore"`;
+      - a BOM silently accepted under `utf-8`;
+      - the field-size cap removed;
+      - NUL dropped silently;
+      - the physical line number off by one in a multiline record.
+  - **FTF-0503 JSON importer** (§7, §8.1, §67.3 "oversized nested JSON"; packet acceptance "Parse approved JSON conversation/container structures into canonical records without loading unbounded file"; negative "Deep nesting, malformed objects and unsupported structures fail with actionable mapping errors"; deps FTF-0500/0501/0506 + FTF-0502-P1).
+    - Files:
+      - `workers/data/json_importer.py`;
+      - `tests/tasks/test_ftf_0503.py`;
+      - `tests/integration/test_ftf_0503_json_import_postgres_s3.py`;
+      - ci.yml job `json-import-integration` + verdict `needs`.
+    - Accepted type: `application/json` only.
+    - Approved containers are named explicitly in the mapping:
+      - `"$"`: a root array of records;
+      - `"/<key>"`: exactly one key of the root object holding the array. Every other root key must be listed in `ignored_top_level_keys`, else fatal `unmapped_top_level_key`. Each ignored value is scanned, bounded by `max_record_bytes` and the depth limit, and not retained.
+      - `"$record"`: a root object that is one record (≤ `max_record_bytes`).
+      - Anything deeper or different → `mapping_unsupported`.
+    - Streaming (no whole-document `json.loads`): a linear byte scanner tracks string, escape and depth state and splits the container's elements.
+      - Each element is ≤ `max_record_bytes` and parsed with P1 `strict_loads`.
+      - An oversized element is skipped by scanning, without buffering, and rejected as `record_too_large`; the next element continues.
+      - Element-level errors (duplicate key, NaN, invalid unicode, not an object, canonical schema) are row rejections with the element ordinal.
+      - Structure errors are fatal with the byte offset: trailing comma, missing comma, unbalanced bracket, a bad token between elements, a root scalar, the container not found or not an array, a duplicate root key, trailing data after the root, depth > `max_depth`.
+      - Actionable means the code plus the mapping's own container pointer; never document content.
+      - UTF-8 only (BOM at byte 0 allowed); UTF-16/32 → `unsupported_encoding`.
+      - An empty container → `completed` with 0 records (honest; split gates handle size).
+    - Generated tables:
+      - a seeded random JSON document generator (strings with escaped quotes, backslashes, brackets and braces inside strings, `\u` escapes, surrogate pairs, every whitespace kind between tokens, nested arrays/objects up to the depth limit) for a differential test: for every valid document, scanner elements + `strict_loads` equal `json.loads(whole)[container]` element by element, and every mutated invalid document fails in both;
+      - container × shape table (root array; mapped key with ignored siblings; unmapped sibling; duplicate root key; container not an array; `$record`; scalar root; nested container pointer);
+      - depth 63/64/65/100,000 inside and outside the container;
+      - element size max−1/max/max+1 in 1-byte chunks;
+      - memory: peak for a 64 MiB container stays within 1.5× of a 1 MiB one.
+    - Faults that must go RED:
+      - a split inside a string at an escaped quote;
+      - the depth bound off by one;
+      - a trailing comma accepted;
+      - an oversized element buffered (memory test) or ending the import;
+      - an unmapped root key accepted;
+      - a duplicate root key accepted;
+      - whole-document `json.loads` used (memory test);
+      - the differential test mismatch;
+      - a container pointer resolved after casefold;
+      - an empty container reported as `failed` or invented records.
+  - **FTF-0505 XLSX importer** (§8.1, §67.2, §67.3 "Quarantine malformed archives, zip bombs, path traversal, entity expansion ... XLSX support is values-only: no macro execution/external link retrieval; reject or surface formulas instead of trusting stale cached values"; packet acceptance "Read XLSX sheets/columns through explicit UI mapping without evaluating formulas/macros"; negative "ZIP/XML bombs, encrypted/unsupported workbook, formula-only critical data and excessive cells fail safely"; deps FTF-0500/0501/0506 + FTF-0502-P1).
+    - Files:
+      - `workers/data/xlsx_importer.py`;
+      - `workers/data/ooxml_safety.py` (pure archive/XML safety primitives, public);
+      - `tests/tasks/test_ftf_0505.py`;
+      - `tests/integration/test_ftf_0505_xlsx_import_postgres_s3.py`;
+      - ci.yml job `xlsx-import-integration` + verdict `needs`.
+    - Accepted type: the XLSX content type only.
+    - Reuse: port FTF-0501's checks into `ooxml_safety.py` (end-of-archive totals before `zipfile` allocates; ≤ 10,000 entries; directory ≤ 4 MiB; `[Content_Types].xml` ≤ 1 MiB; DOCTYPE refused at the expat parser in every encoding; traversal/absolute/backslash names).
+      - Do not edit `direct_object_storage_upload.py`. A drift test imports both modules and pins the bounds equal.
+      - Reuse FTF-0501's malicious-package fixture builders (`tests/tasks/test_ftf_0501.py` `_zip`, `_xlsx`, `_zip64_tail`) by import.
+      - Follow-up FTF-0501-F1 (Control plane) moves `inspect_xlsx` onto `ooxml_safety`.
+    - Reading:
+      - The chunks are spooled to one anonymous `tempfile.TemporaryFile` (mode 0600, deleted on close; never a named path) while ChunkReader hashes them. Bytes beyond `expected_size` → `source_changed`.
+      - `zipfile` opens the archive only after the sha matches.
+      - Every XML part is parsed incrementally with expat: a DOCTYPE handler refuses; parameter entity parsing is NEVER; there is no external entity resolution.
+      - Decompressed bytes are counted per part and in total against caps, and the counts are never trusted from the directory.
+      - Part names are compared case-insensitively for duplicates (OPC part names are case-insensitive) → `unsafe_archive`.
+      - An encrypted entry flag or compression other than stored/deflate → `unsupported_workbook`.
+    - Workbook refusals (fatal, before any cell is read):
+      - an OLE/CFB container (encrypted/password workbook) or a non-zip → `unsupported_workbook`;
+      - strict OOXML namespaces, a template or a non-`sheet.main+xml` workbook type → `unsupported_workbook`;
+      - `xl/vbaProject.bin`, `activeX`, `embeddings`, or any macro-enabled type, even inside an `.xlsx`-typed package → `unsafe_workbook`. FTF-0501 finalize does not catch these today (Decision 8).
+      - `xl/externalLinks/*`, any relationship with `TargetMode="External"` (workbook or sheet rels), `xl/connections.xml` or query tables → `external_link_present`, never retrieved.
+    - Sheet selection:
+      - The mapping's `sheet_name` matches the workbook's `<sheet name>` exactly.
+      - Names equal after casefold (impossible in Excel, so crafted) → `duplicate_sheet_name`.
+      - A hidden or veryHidden sheet is used only when named explicitly, never chosen automatically.
+      - The sheet target resolves through the workbook rels inside `xl/`. Traversal, an absolute path or an external target → `unsafe_archive`.
+    - Cells:
+      - `<f>` present (including a shared `<f t="shared" si=".."/>` with no text, and array formulas) in a mapped column → row rejection `formula_cell`. The cached `<v>` is never used, and `t="str"` counts as a formula result.
+      - `t="s"` takes the shared string by index; an index out of range or not an int → fatal `xlsx_malformed`.
+      - Rich-text runs are concatenated exactly; `<rPh>` is excluded.
+      - ECMA-376 `_xHHHH_` escapes are decoded (`_x005F_` → `_`).
+      - `t="inlineStr"` is used as-is. `n`, `b` and `d` keep the literal `<v>` text (no float conversion and no date-serial interpretation, disclosed). `t="e"` in a mapped column → `cell_error_value`.
+      - Rows and cells must strictly increase by `r` (implicit refs allowed). A duplicate or decreasing ref → fatal `xlsx_malformed`.
+      - The header row is explicit; a duplicate header → fatal `duplicate_header`.
+      - Merged ranges hold a value only in the top-left cell, so a missing required value → `required_field_empty`.
+    - Bounds (refuse, never truncate):
+      - row > 1,048,576 or column > XFD → fatal `sheet_out_of_bounds`;
+      - cells read > `max_cells` → fatal `too_many_cells`;
+      - sharedStrings decompressed > its cap (default 256 MiB, recorded as the job memory quota; raising it needs load evidence) → fatal `limit_exceeded`;
+      - any cell > `max_record_bytes` → `field_too_large`.
+      - The dimension `ref` is ignored (untrusted).
+      - The source schema digest is sha256 over the sheet index plus the exact header cells.
+    - Generated fixtures: stdlib `zipfile` + XML strings only. No openpyxl (not a dependency, and adding one is an ask-first item).
+    - Generated tables:
+      - cell type {s, inlineStr, str, n, b, e, d, none} × formula {none, normal, shared-empty, array} × column {mapped, unmapped};
+      - shared strings (plain, rich runs, `rPh`, `xml:space`, `_xHHHH_` incl. `_x000D_`/`_x005F_`, index −1/0/last/last+1/non-int);
+      - an archive-attack table (zip bomb past the caps; the 10,001-entry zip64 tail; a 4 MiB+1 directory; DOCTYPE/ENTITY in a sheet / sharedStrings / rels in UTF-8 and UTF-16; case-insensitive duplicate part; traversal/absolute/backslash sheet targets; an encrypted entry; an unsupported compression method);
+      - a workbook-type table (CFB/encrypted, strict OOXML, template, macro-enabled type, vbaProject in a plain package, activeX, embeddings);
+      - an external-link table (externalLinks part, an External rel in the workbook and in sheet rels, connections.xml);
+      - a sheet table (exact/case-variant name, hidden, veryHidden, missing, duplicate);
+      - a bounds table (row 1,048,576/1,048,577; column XFD/XFE; cells max−1/max/max+1; sharedStrings cap ±1);
+      - preservation (Arabic, RTL, leading zeros in text cells, formula-looking plain strings preserved, not rejected).
+    - Faults that must go RED:
+      - the cached `<v>` used for a formula cell;
+      - a shared empty `<f/>` treated as a value;
+      - vbaProject accepted in a plain package;
+      - an External rel or connections.xml accepted;
+      - DOCTYPE accepted in a sheet part;
+      - the case-insensitive duplicate check removed;
+      - a traversal sheet target followed;
+      - strict OOXML parsed as transitional;
+      - each bound off by one;
+      - a shared-string index out of range read as an empty string;
+      - `_xHHHH_` not decoded, or decoded twice;
+      - a hidden sheet chosen automatically;
+      - the sheet matched after casefold;
+      - the sharedStrings cap removed;
+      - an error cell imported as text;
+      - the spool accepting bytes beyond `expected_size`;
+      - the end-of-archive pre-check removed;
+      - a named temp path, or the file not deleted.
+- **FTF-1504 IDOR suite** (Control-plane design 2026-10-13; §45, §47, §52, §65.1–65.2, §77, §81; packet acceptance "Guess foreign IDs across every nested API and object download/export endpoint"; negative "404 masking alone insufficient if side effect/data still occurs; check actual state/access"; deps FTF-0106, FTF-0501, FTF-1501 all CERTIFIED; DoD `python tools/r1_handoff.py packet FTF-1504 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; contract owner FTF-1501: reuse `ScenarioResult`/`TenantIsolationEvidence`/`build_evidence` from `tests/security/tenant_isolation_suite.py` and do not edit `15-interface.yaml`). Ready now.
+  - Files:
+    - `tests/security/idor_suite.py` (harness, registry, runner; a standalone script like the 1501/1503 suites);
+    - `tests/tasks/test_ftf_1504.py` (no-DB: inventory completeness, generators, comparator, faults);
+    - `tests/integration/test_ftf_1504_idor_postgres_s3.py` (or `main()` of the suite);
+    - an additive ci.yml job `idor-suite-integration` + verdict `needs` + `tests/unit/test_ci_policy.py` coverage.
+  - No production code, migration, contract, runtime dependency, secret or keyed service.
+  - If the suite finds a real IDOR, do not allowlist it: park that route/slot with the reproduction, and the Control plane slices the fix against the owning task (Law 15).
+  - Live surface (generated, never hand-listed): the REAL `app.main.create_app()` with the 0103A environment, flattened with FTF-0103A's `_flatten_routes`. Reuse it by import from `tests/tasks/test_ftf_0103a.py` or move it to a shared helper with that test re-run.
+    - Today: 29 mounted routers (28 under `/api/v1` plus `/auth`), 108 `/api/v1` route-verbs (count it and print it; do not hard-code it).
+    - Requests go over a real socket to uvicorn (1501 precedent).
+    - Auth is the real `SessionPrincipalResolver` with the app's own signing key and real `memberships` rows written through `membership_admin_cli`. Sessions are minted with the same function the OIDC callback uses (disclosed: the OP round-trip itself is proven by FTF-0103A).
+    - The app DB role is `sovra_app`, refused otherwise via 1501's `assert_not_superuser_role`.
+  - Registry and how new routes join:
+    - `ROUTE_REGISTRY[(method, path_template)] = RouteSpec(path_slots, query_slots, body_slots, seed, destructive)`. Every `{param}` gets a resource kind, auto-checked against the path.
+    - Query id slots: `project_id` on catalog/capability/probe routes, `artifact_id` on mapping changes. Pagination cursors (`after`) are marked `cursor` with a reason; they compare by value and resolve no row.
+    - Body slots: every request-body property ending `_id`/`_ids` (recursive into arrays/objects) in the frozen OpenAPI (01..17-interface) must be registered. For the 25 uncontracted route-verbs (Decision 10), the slots are declared by hand, cross-checked against each route module's body allow-list frozensets (every `*_id` name in them must be registered), and the list is recorded as a contract gap.
+    - The completeness gate runs in `tests/tasks/test_ftf_1504.py`, in the `gate` job with no DB: live set == registry keys exactly, and every path/contract/allow-list id is registered. A PR that adds a `/api/v1` route without registering it fails `gate`.
+    - Object download/export: no such route is live today (checked; FTF-0501's part-urls issues PUT grants only). The registry has the kinds `download` and `export` with zero routes and a test that any future route whose response carries a storage URL must declare one. Disclosed.
+  - Matrix (generated: route-verb × id slot × id class × principal role):
+    - Id classes:
+      - `foreign_org`: org B's real object of the same kind;
+      - `foreign_project`: a same-org object in project P2 addressed under P1;
+      - `foreign_parent`: same project, another parent. Examples: case/suite, evidence/manifest, snapshot/connection, candidate/snapshot, issue/dataset, model under another LiteLLM connection;
+      - `hidden_purpose`: a held-out dataset or upload session for `ml_engineer`, which the routes promise is the same 404;
+      - `foreign_name`: a model name in org B's catalog under A's own connection;
+      - `missing`: a fresh uuid4 never issued;
+      - `own`: the positive control.
+      - For the `organization_id` path param, `foreign_org` (B) vs `missing` (random) must both be the identical 403 `role_not_authorized`.
+    - Roles: every role in the route's `require_role` allowed set, introspected from the guard's closure (`allowed`), as FTF-0103A does (generated, not trimmed to org admin). One disallowed role per route is also checked to be uniform (the full RBAC matrix is FTF-1502).
+    - Body slots get the same classes, placed in an otherwise valid body.
+  - Assertions per cell:
+    - Indistinguishable: for every non-`own` class, status, raw body bytes and every header except `date` are byte-identical to the `missing` response for the same route, slot and role. No marker planted in org B / P2 objects (names, descriptions, refs) appears anywhere.
+    - Positive control: `own` must differ from `missing`. Otherwise the slot is vacuous and the suite is RED. A slot that cannot be exercised (a dependency not available) is `NOT_EXERCISED` with a code and fails the run unless the Control plane allowlists it in the entry; none is allowlisted now.
+    - Side effects (the negative acceptance), before and after each request:
+      - DB digest: as the migration owner, for observation only, md5 of every row of every table in `public`, enumerated from `information_schema` (never hand-listed), including `audit_events`.
+      - Storage digest: the SeaweedFS bucket object listing plus multipart uploads and parts.
+      - Outbound counters on every local stand-in the seeds point at: the H005/0309-P1 local TLS LiteLLM gateway harness, a GitHub API stand-in, the component-binding endpoint stand-in, and the OpenBao dev server where the job has one.
+      - The foreign-class delta must equal the missing-class delta. Expected: both empty. If a route writes a denial audit, the two must be equal after masking `id`, `created_at` and `request_id`, and must never name org B's id or row.
+    - Storage-layer IDOR: own part-url grants with the object key path swapped to org B's session key are refused by SeaweedFS (signature), and B's parts are unchanged. A foreign `part-urls`/`parts`/`finalize` returns no URL and makes no S3 call (counted).
+    - Destructive verbs (DELETE, revoke, lock, select, finalize, reserve/release) run the foreign classes and `missing` first, then the control on a disposable seed.
+  - Seeds: two orgs (A, B); two projects in A (P1, P2) and one in B; two parents per nested kind; every kind the registry names. Seeds go through the real API as the org admin wherever a create route exists, otherwise through the certified store function as `sovra_app` under tenant context, never raw owner SQL. A real FTF-0501 upload and finalize into SeaweedFS creates the datasets; FTF-0516-P1 `record_quality_report` creates the issue rows.
+  - Evidence: one content-free `ScenarioResult` per cell (route template, method, slot, class, role, status, passed) through 1501's `build_evidence`, written as a JSON artifact, plus totals per route. Bodies are never recorded.
+  - CI: the job uses PG16 (pinned digest as `direct-upload-routes-integration`) and boots the compose `s3` itself. The runtime budget is recorded in the submission.
+  - Faults that must go RED (each its own row; inject into a copy of the real app or by monkeypatching one real store in-process):
+    - a demo route answering 403 for foreign and 404 for missing;
+    - a route answering 404 but inserting a row;
+    - a route answering 404 but calling the gateway stand-in;
+    - a 404 with a different body or an extra header;
+    - a foreign marker echoed in a 404 body;
+    - a live route deleted from the registry;
+    - a path param without a kind;
+    - an unregistered contract `_id` field;
+    - an unregistered allow-list `_id` name;
+    - the role set trimmed to `organization_admin`;
+    - a positive control that 404s (vacuous slot);
+    - the app run as the migration owner;
+    - real-route faults:
+      - `evaluation_case` GET not filtering by `suite_id`;
+      - `part-urls` not checking the project;
+      - the dataset issue lookup not checking the dataset;
+      - the model-catalog `project_id` query slot not checked;
+    - the DB digest table list hand-trimmed (drop `audit_events`) so a side-effect fault stays green, which must itself be caught by the enumeration test.
+  - Disclosed:
+    - Worker, cache and model-serving paths and object download/export routes do not exist yet. Whichever task adds one registers it, and the gate enforces that.
+    - Timing side channels are not measured.
+    - The 25 uncontracted route-verbs are listed as a contract gap.
+
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
 - **FTF-H010-P2 Import-validation activity, job fencing and endpoint-only import: PARKED (unclear DoD, contradiction with certified FTF-1001), 2026-10-10T02:30Z, lane C.**
   - **2026-10-10T03:57Z: RESOLVED by Control-plane ruling (route 3, see the FTF-H010-P2 Backlog entry).** P2 is back in the Backlog; claim `relay/FTF-H010-P2-r2`. This entry is history.
