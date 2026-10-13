@@ -307,6 +307,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0507.py
       - name: FTF-0508 negative-test proof (Record schema validator, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0508.py
+      - name: FTF-0502-P1 negative-test proof (Dataset import common contract, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0502_p1.py
       - name: FTF-0206 negative-test proof (`/model_group/info` enrichment, no DB required)
         # Same watchdog finding as FTF-0205 above -- this is the FTF-0206
         # half of that gap, now closeable since this task's test file
@@ -3324,6 +3326,45 @@ jobs:
       - name: Prove the real candidate-selection + persisted-audit evidence against the live database
         run: uv run python3 tests/integration/test_ftf_04a18_candidate_selection.py
 
+  dataset-import-source-integration:
+    # FTF-0502-P1: the dataset source reader (apps/api/app/datasets/dataset_object_source.py)
+    # over PostgreSQL 16 as the restricted sovra_app role and the live SeaweedFS S3 API:
+    # datasets made by the real FTF-0501-P1 store functions, streamed bytes hashing to
+    # Dataset.verified_sha256, foreign-org / foreign-project / missing / hidden held-out
+    # datasets all the same DatasetNotFoundError, raw sovra_app SQL under another tenant
+    # seeing and planting nothing, exactly one GET of the session key and no LIST, and a
+    # truncated object or a mid-stream stop of S3 ending in blocked/source_unavailable --
+    # tests/integration/test_ftf_0502_p1_dataset_source_postgres_s3.py. The test boots the
+    # compose `s3` service itself when nothing answers.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' dataset-import-source-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0502p1
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0502p1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0502p1
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the dataset source reader against PostgreSQL 16 and SeaweedFS
+        run: uv run python3 tests/integration/test_ftf_0502_p1_dataset_source_postgres_s3.py
+
   model-import-integration:
     # FTF-H010-P1: real Postgres evidence for the model import fields +
     # import-validation jobs slice (migration 0027): upgrade/downgrade/upgrade,
@@ -3449,6 +3490,7 @@ jobs:
       - mlflow-durable-outbox-integration
       - model-import-integration
       - candidate-selection-integration
+      - dataset-import-source-integration
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
