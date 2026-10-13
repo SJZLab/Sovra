@@ -2322,11 +2322,15 @@ FTF-0310:
     tests/integration/test_ftf_0310_capability_contract.py (real routers on PostgreSQL 16, 72
     cells = 4 source types x 3 statuses x 3 license states x mapped/unmapped, each response
     validated against the frozen schemas; upstream-only and unresolvable names never trainable;
-    generated table derived from real responses). FINDING, reported not fixed: the capability
-    route reports trainable_open_weight for a ready artifact with no accepted license (8 of the
-    72 cells), because classify_training_capability does not check license_approved. The public
-    API cannot create that state (mark-ready requires an accepted license, revoke-license
-    demotes ready to registered), so it needs a direct database write. A second finding:
+    generated table derived from real responses). Round 2 (2026-10-12, relay/FTF-0310-r2): the earlier
+    FINDING (a ready artifact with no accepted license reported trainable) is closed by FTF-0305-F1 (row lock,
+    migration 0029 CHECK, classifier license term); the api_reachable exemption is REMOVED, all 72 cells are
+    asserted (the 8 ready + pending/revoked cells are seeded with the CHECK lifted for the matrix only, then
+    archived and the CHECK restored), and a deterministic held-lock interleave over the real mark-ready and
+    revoke-license routes is RED without the row lock. The checker now scans the whole schema before validating
+    (unsupported keyword, type or format, any non-false additionalProperties, malformed containers), enforces RFC 3339
+    date-time only, reads the /changes response schema from the frozen document, and the generator dedupes with its
+    own exact equality. A second finding:
     ModelTrainingArtifactMappingResult in the frozen file is allOf of a closed object plus
     `changed`, which standard JSON Schema semantics can never accept, so the POST result is
     validated with `changed` removed against ModelTrainingArtifactMapping.
@@ -9723,7 +9727,7 @@ FTF-0904:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Log redaction
-  evidence_hash: 4543d719c9ebee1c3529bce5ada211a3bfa3a989
+  evidence_hash: c97190c388978b495d0d1a4e1a38b52d80b6be1a
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0903
@@ -9872,6 +9876,86 @@ FTF-0904:
     Disclosed: a JWT segment or a nested-JSON-escaped value longer than 1024 / 8192 characters
     respectively is not matched by that one shape; other rules still see the surrounding text.
     Still UNWIRED (blank proving_symbol).
+
+    Round 5 (Control-plane return 2026-10-12T0339Z, QUEUE 0d; PROVISIONAL / L1-PROVEN, not
+    certified): round 4's own bounds (`_PREFIXES`'s JWT segments capped at 1024 chars,
+    `_QUOTED_VALUE`'s escaped-quote content capped at 8192) were leaks above the cap, not a real
+    fix -- a realistic RS256 token with 15+ group claims leaked bare past the JWT bound (20/49
+    cases; `jwt=`, `client_assertion=` and exception text, both 3.11/3.12), and an
+    escaped-quoted JSON-in-JSON value over 8192 chars leaked its tail
+    (`token=\"<9000 chars>\"` -> `token=[REDACTED]\"<value>`). Class-closing ruling: every rule
+    must be linear AND unbounded in the length of secret it redacts, proven by two generated
+    sweeps through both `redact_text` and the `install_redaction` logging path -- a timing sweep
+    (8 KB..256 KB, every rule) and a correctness sweep (a secret of 1/8/64/256 KB is fully
+    redacted, every rule).
+
+    `_PREFIXES`'s JWT alternative: the real defect was never the bound itself but the *reason*
+    round 4 added one -- "eyJ" is not excluded from its own segment's class
+    (`[A-Za-z0-9_\-]`), so a text built from many `_eyJ`-prefixed, dot-free runs makes an
+    unbounded or possessive class re-consume the rest of the text at every one of O(n) such
+    repeats (confirmed again: `"_eyJ" * 40_000` still 23s with `{5,}+`, no bound). Round 5 excludes
+    `_`/`-` from immediately preceding "eyJ" too (`(?<![_\-])`, on top of the pre-existing outer
+    `(?<![A-Za-z0-9])`): the only "eyJ" that can ever start a real attempt is the first one in
+    its own maximal run of `[A-Za-z0-9_\-]` characters, so every later `_eyJ`/`-eyJ` repeat is
+    rejected in O(1) before it can re-consume anything -- the segments go back to fully
+    unbounded (`{5,}+`) with no repeat-start cost. `_QUOTED_VALUE`'s escaped-quote alternative:
+    round 4's own reasoning ("cannot be made possessive without changing what matches") was
+    half right -- the content class itself can't simply exclude backslash the way the bare-quote
+    alternatives exclude their own quote, because a real nested-JSON escape can contain
+    backslashes. Round 5 unrolls it instead (the same technique `_PAIR`'s own value already
+    uses): content is a possessive run of plain chars, OR a possessive backslash run that is NOT
+    immediately followed by the closing quote (left alone for the closing `\+"` to consume, no
+    backtracking either way), plus `(?<!\\)` on the opening run (the same "one start per run"
+    technique as the JWT fix). Reproduced the actual quadratic shape missing from the suite --
+    a backslash run in the MIDDLE of a real, fully-opened escaped value (`token=\"aaa...<run of
+    backslashes>...bbb\"`) -- naive lazy content re-tries the greedy closing `\+"` over however
+    much of the run remains at every one of O(run) steps growing into it (confirmed: 18s at 128
+    KB through the real `_KEY_VALUE` rule with naive lazy content vs 0.09s with the round-5
+    unrolled form); "lone-backslash-then-quote" (round 4's own shape) never reproduced this --
+    it never finds a second quote at all, so a key-first rule never reaches content-matching,
+    and was always linear through the real pipeline even pre-fix.
+
+    Also fixed: a `\S` invalid-escape-sequence `SyntaxWarning` in the module's own top docstring
+    (two occurrences, non-raw string) from CI gate run 114123432681.
+
+    Evidence: `test_every_rule_size_sweep_is_linear_not_quadratic` now sweeps all 24
+    `_ALL_LABELS` (was 3) across `_SWEEP_SIZES` (8/64/256 KB, was 64/128/256 KB) -- "every rule",
+    not just the shapes a round happened to touch -- plus a new
+    `backslash-run-inside-quoted-value` label for the newly-reproduced embedded-backslash
+    quadratic. New `test_every_rule_long_secret_is_fully_redacted`: for every named rule in the
+    ruling (_PEM, _HEADER, _PAIR, _BEARER, _PREFIXES, _USERINFO, _KEY_VALUE, _BASE64_RUN,
+    percent) and every size in `_LONG_SECRET_SIZES` (1/8/64/256 KB), a text built so that rule's
+    own match has to span the whole marker is fully redacted -- a bound anywhere would leave a
+    marker suffix in the output once its length passes the bound. Removed the flaky CPU-ratio
+    checks in the R4/R6 sweeps (a slow point under shared-runner load made even a linear pair's
+    ratio look quadratic -- disclosed flake: R7 `jwt-repeated-no-dot` 4.14/4.26s vs a 4.0s limit,
+    R4 ratio 4.23x, 2 of 4 idle runs failed); each size's own fixed absolute bound is the
+    load-robust assertion, and the fix itself gives enormous headroom now (jwt-repeated-no-dot
+    0.23s, jwt-no-dot 0.31s at 256 KB, vs the 4.0s limit). Retargeted fault F08 (round 4's
+    bounded-form search text no longer exists post-fix) and added four new faults (56 total, was
+    52): F-QV-QUAD and F-PFX-QUAD revert to the pre-fix quadratic forms (caught by the timing
+    sweep); V-QV-BOUND-16 and V-JWT-BOUND-40 reintroduce a short bound (caught by the long-secret
+    sweep). `python3 tests/tasks/test_ftf_0904.py`: all checks passed locally, including the
+    full 56-fault `test_zz_fault_injection_turns_checks_red` meta-test; CI (`gate`, run
+    38284969162) confirmed the same independently after one real fix -- `ruff format` had
+    collapsed F08's two-line target onto one line (a space, not the newline+indent the fault's
+    old search text expected), caught by CI's own `gate` job ('pattern occurs 0x, expected 1')
+    and fixed by retargeting the single-line form (commit c97190c3); `ci-verdict` is green on
+    that head. Gates: ruff, ruff format, mypy
+    clean (across the whole repo); `validate_spec.py --strict` clean; `product_truth_check.py
+    --fail-on-unwired` 47/47 unchanged; `status.py` 141/302 certified / 46 product-true unchanged
+    (Law 2 -- a resubmission is not a certification); `data_exposure_check.py` N/A (no datastore).
+    `scripts/mutation_gate.py` (diff mode against `origin/main`): 0 mutants generated -- both
+    changed regions (`_QUOTED_VALUE`, the `_PREFIXES` JWT alternative) are module-level constant
+    assignments outside any function, so the gate's own M1-M9 operator set has nothing to act on
+    there (same honest PASS as round 4's own identical finding); the real protection is the
+    fault->RED timing/correctness comparisons above, not AST mutation.
+    Regression swept FTF-0901/FTF-0902/FTF-0903 (neighbours) -- all green, unchanged. Same-class
+    sweep: no other `packages/security` module has an alternation whose own trigger character is
+    not excluded from the segment that follows it, or a content class allowing the same
+    character its own closing delimiter needs.
+    Disclosed: detection is still pattern-based (unchanged limits); every rule is now unbounded
+    in the length of secret it redacts. Still UNWIRED (blank proving_symbol).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0904.py
