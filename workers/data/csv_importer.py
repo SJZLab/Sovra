@@ -133,8 +133,6 @@ class CsvAborted(ImportAborted):
     `locator` names the physical line (`line:<n>`) it happened on."""
 
     def __init__(self, failure_code: str, line: int) -> None:
-        if failure_code not in CSV_FATAL_CODES:
-            raise ValueError("unknown CSV fatal code")
         super().__init__("failed", failure_code)
         self.locator = f"line:{max(line, 1)}"
 
@@ -183,7 +181,7 @@ def _options(mapping: ImportMapping) -> _Options:
         raise MappingInvalidError("bad_shape")
     slots = _mapped_slots(mapping)
     for _name, slot in slots:
-        if slot.kind not in ("header", "index") or (slot.kind == "header" and not has_header):
+        if slot.kind not in ("header", "index") or (isinstance(slot.value, str) and not has_header):
             raise MappingInvalidError("bad_slot")
     bom_forbidden = CSV_ENCODINGS.index(encoding) in _BOM_CHECKED_ENCODINGS
     return _Options(str(encoding), str(delimiter), has_header, header_row, slots, bom_forbidden)

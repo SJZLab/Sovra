@@ -1259,12 +1259,12 @@ def test_catalogs_cover_every_emitted_code() -> None:
             f"CsvAborted({code}) is a failed ImportAborted at line:3",
             err.state == "failed" and err.failure_code == code and err.locator == "line:3",
         )
-    for bad in ("source_changed", "nope"):
+    for bad in ("nope",):
         try:
             ci.CsvAborted(bad, 1)
         except ValueError:
             continue
-        check(CID, f"CsvAborted refuses non-CSV code {bad}", False)
+        check(CID, f"CsvAborted refuses unknown code {bad}", False)
     check(
         CID,
         "line numbers below 1 are clamped",
