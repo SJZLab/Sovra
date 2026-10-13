@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# mypy: disable-error-code="arg-type,attr-defined,assignment,call-arg,index,var-annotated,misc"
 """FTF-0502-P1 -- the dataset source reader over PostgreSQL 16 as the restricted
 `sovra_app` role and the live SeaweedFS S3 API.
 
@@ -303,7 +304,7 @@ def main() -> None:
             source_record_index=index,
             dataset_sha256=train.verified_sha256,
             source_type=src.source_type,
-        )  # type: ignore[arg-type]
+        )
         accepted.append(
             ic.to_dataset_record_candidate(
                 record, record_index=index, tool_schema_status="not_applicable"

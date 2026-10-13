@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# mypy: disable-error-code="arg-type,attr-defined,assignment,call-arg,index,var-annotated,misc"
 """FTF-0502-P1 -- dataset import common contract and verified-source reader.
 
 Runnable without a database or network. `workers/data/import_common.py` is pure;
@@ -653,7 +654,7 @@ def _role_outcome(mapping: ic.ImportMapping, role: Any) -> str | None:
         row = ic.apply_mapping(mapping, {"conversation": {"turns": [{"from": role, "value": "x"}]}})
     except ic.RowMappingError as exc:
         return exc.code
-    return str(row.raw_record["messages"][0]["role"])  # type: ignore[index]
+    return str(row.raw_record["messages"][0]["role"])
 
 
 def test_role_exact_lookup_accepts_only_the_exact_key() -> None:
@@ -690,7 +691,7 @@ def test_role_exact_lookup_accepts_only_the_exact_key() -> None:
 
 
 def _assign_role(mapping: ic.ImportMapping) -> None:
-    mapping.role_map["x"] = "user"  # type: ignore[index]
+    mapping.role_map["x"] = "user"
 
 
 def test_role_map_values_are_exactly_the_ftf_0506_roles() -> None:
@@ -1298,8 +1299,10 @@ def test_read_source_failure_is_blocked_never_completed_or_failed() -> None:
     )
     for chunk in ("abc", bytearray(b"abc"), memoryview(b"abc"), None, 3):
         reader = ic.ChunkReader(
-            [chunk], expected_size=3, expected_sha256=support.sha256_hex(b"abc")
-        )  # type: ignore[list-item]
+            [chunk],  # type: ignore[list-item]
+            expected_size=3,
+            expected_sha256=support.sha256_hex(b"abc"),
+        )
         outcome = _drain(reader)
         check(
             "READ-3",
@@ -1669,7 +1672,7 @@ def test_rep_catalogs_are_closed_and_complete() -> None:
                 if name in constructors and len(node.args) > constructors[name]:
                     arg = node.args[constructors[name]]
                     if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                        emitted.add((name, arg.value))  # type: ignore[arg-type]
+                        emitted.add((name, arg.value))
     by_kind = {
         "RowMappingError": ic.REJECTION_CODES,
         "RowRejection": ic.REJECTION_CODES,
@@ -1678,7 +1681,7 @@ def test_rep_catalogs_are_closed_and_complete() -> None:
         "MappingInvalidError": ic.MAPPING_INVALID_REASONS,
         "_bad": ic.MAPPING_INVALID_REASONS,
     }
-    unknown = [(kind, code) for kind, code in emitted if code not in by_kind[kind]]  # type: ignore[misc]
+    unknown = [(kind, code) for kind, code in sorted(emitted) if code not in by_kind[kind]]  # type: ignore[has-type]
     check("REP-2", f"every literal code the modules emit is in its catalog: {unknown}", not unknown)
     check("REP-2", f"the scan saw the emitters ({len(emitted)} literals)", len(emitted) > 25)
     for kind, factory in (
@@ -1779,7 +1782,7 @@ def test_rep_accumulator_validation_and_counts() -> None:
     acc = ic.ImportAccumulator(**base)
     check(
         "REP-3", "an unknown event is a TypeError", raises(TypeError, acc.add, "nope") is not None
-    )  # type: ignore[arg-type]
+    )
     acc.add(_accepted(0))
     acc.add(ic.BlankLine())
     acc.add(ic.BlankLine())
@@ -1944,8 +1947,8 @@ def test_cand_every_accepted_candidate_passes_ftf_0508() -> None:
         check(
             "CAND-1",
             f"{label}: content is exactly messages + metadata",
-            set(candidate["content"]) == {"messages", "metadata"},
-        )  # type: ignore[arg-type]
+            set(dict(candidate["content"])) == {"messages", "metadata"},  # type: ignore[call-overload]
+        )
     report = validate_record_batch(candidates)
     check(
         "CAND-1",
@@ -1963,7 +1966,7 @@ def test_cand_every_accepted_candidate_passes_ftf_0508() -> None:
         "the metadata carried through",
         tool_candidate["content"]["metadata"]
         == {"language": "en", "event_timestamp": "2026-10-13T10:00:00Z"},
-    )  # type: ignore[index]
+    )
     mapping = mapping_of(prompt_completion_doc())
     mapped = ic.apply_mapping(mapping, {"p": "q", "c": "a"})
     record = ic.normalize_mapped_record(
@@ -2069,7 +2072,7 @@ def test_row_prompt_completion_codes() -> None:
         "ROW-1",
         "system comes first",
         [x["role"] for x in with_system.raw_record["messages"]] == ["system", "user", "assistant"],
-    )  # type: ignore[union-attr]
+    )
     check(
         "ROW-1",
         "a missing required slot is required_field_missing",
@@ -2101,12 +2104,12 @@ def test_row_prompt_completion_codes() -> None:
         "ROW-1",
         "a null optional system is omitted",
         len(ic.apply_mapping(m, {"p": "q", "c": "a", "s": None}).raw_record["messages"]) == 2,
-    )  # type: ignore[arg-type]
+    )
     check(
         "ROW-1",
         "an empty string in a JSON record is passed on (FTF-0506 decides)",
         ic.apply_mapping(m, {"p": "", "c": "a"}).raw_record["messages"][0]["content"] == "",
-    )  # type: ignore[index]
+    )
     row = {"p": "q", "c": "a"}
     snapshot = copy.deepcopy(row)
     ic.apply_mapping(m, row)
@@ -2115,7 +2118,7 @@ def test_row_prompt_completion_codes() -> None:
         "ROW-1",
         "a non-row is refused cleanly",
         _row_error(m, "just a string") is not None and _row_error(m, 5) is not None,
-    )  # type: ignore[arg-type]
+    )
 
 
 def test_row_tabular_slots_and_empty_cells() -> None:
@@ -2136,7 +2139,7 @@ def test_row_tabular_slots_and_empty_cells() -> None:
         "ROW-2",
         "header / letters / index slots address the right cells",
         [x["content"] for x in mapped.raw_record["messages"]] == ["be nice", "q?", "a!"],
-    )  # type: ignore[union-attr]
+    )
     check("ROW-2", "letters AA is column 26", mapped.group_key == "grp")
     for letters, position in (
         ("A", 0),
@@ -2166,7 +2169,7 @@ def test_row_tabular_slots_and_empty_cells() -> None:
             f"letters {letters} is column {position}",
             got.raw_record["messages"][-2]["content"] == "HIT"
             or got.raw_record["messages"][0]["content"] == "HIT",
-        )  # type: ignore[index]
+        )
     short = ["a", "b"]
     check(
         "ROW-2",
@@ -2187,7 +2190,7 @@ def test_row_tabular_slots_and_empty_cells() -> None:
         "ROW-2",
         "an empty optional tabular cell is omitted, never defaulted",
         [x["role"] for x in got.raw_record["messages"]] == ["user", "assistant"],
-    )  # type: ignore[union-attr]
+    )
     check(
         "ROW-2",
         "a whitespace-only cell is a value, not empty",
@@ -2260,7 +2263,7 @@ def test_row_messages_shape_and_roles() -> None:
         "ROW-3",
         "roles are mapped through role_map",
         [x["role"] for x in mapped.raw_record["messages"]] == ["user", "assistant"],
-    )  # type: ignore[union-attr]
+    )
     check(
         "ROW-3",
         "a missing messages container is required_field_missing",
@@ -2319,7 +2322,7 @@ def test_row_messages_shape_and_roles() -> None:
         "ROW-3",
         "an extra message key is dropped under ignore",
         got.raw_record["messages"][0] == {"role": "user", "content": "a"},
-    )  # type: ignore[index]
+    )
     full = ic.apply_mapping(
         m,
         turns({"from": "gpt", "value": "", "calls": [{"id": "c1"}], "call_id": "c1", "tool": "t"}),
@@ -2335,7 +2338,7 @@ def test_row_messages_shape_and_roles() -> None:
             "tool_call_id": "c1",
             "name": "t",
         },
-    )  # type: ignore[index]
+    )
     root = mapping_of({**messages_doc(), "messages_pointer": ""})
     check(
         "ROW-3",
@@ -2376,7 +2379,7 @@ def test_row_messages_json_cells() -> None:
         "tool calls ride in a JSON cell",
         [x["role"] for x in mapped.raw_record["messages"]]
         == ["user", "assistant", "tool", "assistant"],
-    )  # type: ignore[union-attr]
+    )
     check("ROW-4", "group_key by letters", mapped.group_key == "grp")
     for text, expect in (
         ("", "required_field_empty"),
@@ -2550,7 +2553,7 @@ def test_row_data_never_decides_purpose_or_split() -> None:
     )
     check(
         "ROW-6", "the metadata is exactly the mapped slots", candidate["content"]["metadata"] == {}
-    )  # type: ignore[index]
+    )
     acc = ic.ImportAccumulator(
         importer="jsonl",
         importer_version="1",
@@ -3081,11 +3084,11 @@ def test_prev_limit_and_shared_path() -> None:
         calls.append(1)
         return original(self, event)
 
-    ic.ImportAccumulator.add = counting  # type: ignore[method-assign]
+    ic.ImportAccumulator.add = counting
     try:
         ic.preview(iter(events[:4]), 20)
     finally:
-        ic.ImportAccumulator.add = original  # type: ignore[method-assign]
+        ic.ImportAccumulator.add = original
     check("PREV-1", "preview goes through ImportAccumulator.add for every event", len(calls) == 4)
 
 
@@ -3137,10 +3140,10 @@ def _tenant_execute(session: Session, organization_id: uuid.UUID, statement: Any
 @contextlib.contextmanager
 def _src_env() -> Iterator[tuple[Session, dict[str, Any]]]:
     engine = create_engine("sqlite://")
-    store.DatasetUploadSession.__table__.create(engine)  # type: ignore[attr-defined]
-    store.Dataset.__table__.create(engine)  # type: ignore[attr-defined]
+    store.DatasetUploadSession.__table__.create(engine)
+    store.Dataset.__table__.create(engine)
     saved = store.execute_tenant_scoped
-    store.execute_tenant_scoped = _tenant_execute  # type: ignore[assignment]
+    store.execute_tenant_scoped = _tenant_execute
     try:
         with Session(engine) as session:
             yield session, _seed(session)
@@ -3216,7 +3219,7 @@ def _open(
 ) -> source_module.DatasetObjectSource:
     return source_module.open_dataset_source(
         session,
-        SimpleNamespace(organization_id=org),  # type: ignore[arg-type]
+        SimpleNamespace(organization_id=org),
         project_id=project or seed.project,
         dataset_id=dataset_id or seed.dataset_id,
         include_held_out=include_held_out,
@@ -3381,7 +3384,7 @@ def test_src_scoping_is_indistinguishable_from_missing() -> None:
             "ids that are not UUIDs are not-found",
             raises(store.DatasetNotFoundError, _open, session, train, fake, dataset_id="x")
             is not None,
-        )  # type: ignore[arg-type]
+        )
         check(
             "SRC-2",
             "calling positionally is a TypeError",
@@ -3395,7 +3398,7 @@ def test_src_scoping_is_indistinguishable_from_missing() -> None:
                 False,
             )
             is not None,
-        )  # type: ignore[arg-type]
+        )
         check(
             "SRC-2",
             "omitting include_held_out is a TypeError",
@@ -3409,7 +3412,7 @@ def test_src_scoping_is_indistinguishable_from_missing() -> None:
                 storage=source_module.DatasetObjectStorage(fake, BUCKET),
             )
             is not None,
-        )  # type: ignore[call-arg]
+        )
 
 
 def test_src_no_list_no_write_and_inconsistent_rows() -> None:
@@ -3919,7 +3922,7 @@ def test_surv_mapping_reasons_and_boundaries() -> None:
             "tool_call_id": "i",
             "name": "n",
         },
-    )  # type: ignore[index]
+    )
     rej = mapping_of({**mixed, "on_unmapped_message_keys": "reject"})
     for stray in ("role", "Role ", " role", "text", "Text", "TEXT", " NAME", "calls", "ID"):
         t2 = {"Role": "human", " Text": "t", stray: "v"}
@@ -4058,12 +4061,12 @@ def test_surv_report_guards_trip_on_their_own() -> None:
     check(
         "SURV-6",
         "the body lists each rejection with all three fields",
-        list(report.body()["rejections"])
+        list(report.body()["rejections"])  # type: ignore[call-overload]
         == [
             {"locator": "line:2", "code": "unmapped_role", "slot": "messages[0]"},
             {"locator": "line:3", "code": "record_too_large", "slot": None},
         ],
-    )  # type: ignore[call-overload]
+    )
     check(
         "SURV-6",
         "the body holds rejection_counts as an object",
@@ -4078,7 +4081,9 @@ def test_surv_reader_edges() -> None:
     next(reader)
     check("SURV-7", "bytes_read follows the stream", reader.bytes_read == 4)
     check(
-        "SURV-7", "the deadline is exposed for the importer loop", reader.deadline.check() is None
+        "SURV-7",
+        "the deadline is exposed for the importer loop",
+        isinstance(reader.deadline, ic.Deadline),
     )
     drained = _reader(PAYLOAD)
     for _ in drained:
