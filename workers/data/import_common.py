@@ -992,10 +992,8 @@ class ImportReport:
 
     def __post_init__(self) -> None:
         needs_failure_code = _STATE_NEEDS_FAILURE_CODE.get(self.state)
-        if needs_failure_code is None:
-            raise ValueError("unknown state")
         if needs_failure_code != (self.failure_code is not None):
-            raise ValueError("failure_code is set exactly when the import did not complete")
+            raise ValueError("state must be known and failure_code set exactly when not completed")
         if self.failure_code is not None and self.failure_code not in FAILURE_CODES:
             raise ValueError("unknown failure code")
         if self.records_seen != self.records_accepted + self.records_rejected:
