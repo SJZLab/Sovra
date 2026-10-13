@@ -11104,3 +11104,25 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   match length - JWT payload > 1024 chars and escaped values > 8192 chars leak verbatim (reproduced, regressions from
   round 3); F-QV-QUAD, V-JWT-BOUND-40, V-QV-BOUND-16 GREEN; suite flaky on an unmutated module (2/4 idle runs).
   Ruling: a bounded match is a leak; linear AND unbounded, proven by a time sweep and a long-secret sweep for every rule.
+
+## 2026-10-13T12:55Z — RE-CERTIFIED: FTF-0305 (with FTF-0305-F1); CERTIFIED: FTF-0310 (143/302)
+- **FTF-0305-F1: CERTIFIED; FTF-0305: RE-CERTIFIED** (PR #747, merge f2ac7c7f73a049aa911d3d88f4a06bc457b51dde, head 5bae00ba). Producer
+  session_01EqJQMypxNq9kZ65P4sDA8d ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent from the PR. CI: ci-verdict
+  114675640935; artifact-transition-race-integration 114670917858 (PG16.15) "FTF-0305-F1 real transition-race proof: all
+  checks passed" with real ck_trainable_artifacts_ready_needs_license refusals; gate 114670865885 (step log tail not
+  retrievable; step success + local run). Local PG16 as sovra_app: 101 + 17 checks. The v738 race script now ends
+  ('registered', None, None), mapping 409, capabilities not trainable. 94 probes: all 25 ordered transition pairs x 2
+  start states blocked on the row lock with no ready-without-license; cross-tenant not blocked and not visible; 105
+  concurrent HTTP trials clean; every SourceType x license state trainable only when accepted+ready; migration 0029 refuses
+  typed on 26 violators without changing data, upgrades without rewriting, downgrade restores the 0028 snapshot. 22
+  faults: the four QUEUE-named faults RED behaviourally; GREEN: equivalents V15/V20, V4-V6 caught only by code-shape
+  checks, V22 (route always reports license_approved true - an FTF-0309-P1 response-field gap outside F1's clauses;
+  advisory follow-up). Law 15: FTF-0301, FTF-0305, FTF-0307, FTF-0309-P1 REQUALIFIED (suites + real-PG integrations on
+  fresh databases). Advisories: CHECK keys on license_accepted_at only (license_accepted_by cleared by a direct write
+  keeps trainable); 0029 pre-check under RLS gives a raw CheckViolation for a non-BYPASSRLS migrator.
+- **FTF-0310: CERTIFIED** (round 2; PR #751, merge c3a95ef172a51f8ed8c8c4bfb02ee572e5607c6f, head 095be832; FTF-0305-F1 is an ancestor). Producer
+  session_01KdYbu7mBmksg3TyJQLRo3y ≠ certifier. CI: ci-verdict 114956990062; capability-contract-integration 114950762593
+  "all checks passed (72 cells ...)" with no FINDING or exemption; gate 114950652083. Local 302 unit + 657 integration
+  checks. License exemption removed (RED on the pre-F1 tree, 21 failures); strict RFC 3339 with 11 generated variants
+  per date-time field (V8/V9 RED); whole-schema pre-scan, additionalProperties strict, frozen /changes, independent dedupe
+  (V3 RED). V1-V9, L1, L2, D1, G1, V11-V14 RED; V10 GREEN (field always null on the live mount; advisory). Test-only.

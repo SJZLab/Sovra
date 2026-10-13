@@ -1933,10 +1933,10 @@ FTF-0304:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0304.py
 FTF-0305:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: License acceptance workflow
-  evidence_hash: 1a3c6b42785cf89a18c7f4c68138f224f1787574
+  evidence_hash: f2ac7c7f73a049aa911d3d88f4a06bc457b51dde
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0301 (CERTIFIED).
@@ -1992,7 +1992,7 @@ FTF-0305:
     narrowing (revocation only, no live training/serving caller yet) matches the
     FTF-0103/FTF-0104/FTF-0105/FTF-H003 disclosed-gap precedent, not a hidden gap. evidence_hash
     here points at the merge commit (`1a3c6b4`), matching the FTF-0402 convention.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: apply_revoke_license
   proving_test: tests/tasks/test_ftf_0305.py
 FTF-0306:
@@ -2304,10 +2304,10 @@ FTF-0309:
   proving_symbol: build_model_capability_router
   proving_test: tests/tasks/test_ftf_0309_p1.py
 FTF-0310:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Capability contract tests
-  evidence_hash: ''
+  evidence_hash: c3a95ef172a51f8ed8c8c4bfb02ee572e5607c6f
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0301, FTF-0307,
@@ -2334,7 +2334,7 @@ FTF-0310:
     ModelTrainingArtifactMappingResult in the frozen file is allOf of a closed object plus
     `changed`, which standard JSON Schema semantics can never accept, so the POST result is
     validated with `changed` removed against ModelTrainingArtifactMapping.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0310.py
 FTF-0401:
