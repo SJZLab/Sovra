@@ -3939,6 +3939,44 @@ def test_surv_mapping_reasons_and_boundaries() -> None:
             check("SURV-3", f"{key}={bad!r} is refused (null is not 'absent')", is_invalid(doc))
 
 
+def test_surv_message_key_lookups_are_exact() -> None:
+    reject = mapping_of(messages_doc())
+    for stray in (" from", "FROM", "Value ", "CALLS", "Call_Id", "tool "):
+        turn = {"from": "human", "value": "t", stray: "v"}
+        check(
+            "SURV-8",
+            f"stray key {stray!r} next to the mapped keys is unmapped_message_key",
+            _row_error(reject, {"conversation": {"turns": [turn]}})
+            == ("unmapped_message_key", "messages[0]"),
+        )
+    for policy in ("REJECT", " reject", "Reject"):
+        odd = replace(reject, on_unmapped_message_keys=policy)
+        turn = {"from": "human", "value": "t", "extra": 1}
+        check(
+            "SURV-8",
+            f"a policy of {policy!r} is not 'reject'",
+            _row_error(odd, {"conversation": {"turns": [turn]}}) is None,
+        )
+    ignore = mapping_of({**messages_doc(), "on_unmapped_message_keys": "ignore"})
+    lower_only: dict[str, Any] = {"from": "gpt", "value": "t", "CALLS": 1, "Call_Id": 2, "TOOL": 3}
+    got = ic.apply_mapping(ignore, {"conversation": {"turns": [lower_only]}})
+    check(
+        "SURV-8",
+        "optional keys are looked up by their exact names only",
+        got.raw_record["messages"][0] == {"role": "assistant", "content": "t"},
+    )
+    mixed = mapping_of(
+        {**messages_doc(), "tool_calls_key": "Calls", "on_unmapped_message_keys": "ignore"}
+    )
+    lowered = {"from": "gpt", "value": "t", "calls": [{"id": "c"}]}
+    got = ic.apply_mapping(mixed, {"conversation": {"turns": [lowered]}})
+    check(
+        "SURV-8",
+        "a mapped key 'Calls' is not satisfied by 'calls'",
+        got.raw_record["messages"][0] == {"role": "assistant", "content": "t"},
+    )
+
+
 def test_surv_read_slot_kinds_are_exact() -> None:
     m = _pc()
     for kind in (" key", "KEY", "Header", "key "):
@@ -4018,8 +4056,10 @@ def test_surv_report_guards_trip_on_their_own() -> None:
 
     check("SURV-6", "a correctly resealed report builds", ic.ImportReport(**resealed()) == report)
     for label, over in (
-        ("unknown state", {"state": "weird"}),
-        ("state with different case", {"state": "Completed"}),
+        ("unknown state", {"state": "weird", "failure_code": "source_changed"}),
+        ("state with different case", {"state": "Failed", "failure_code": "source_changed"}),
+        ("state padded", {"state": "failed ", "failure_code": "source_changed"}),
+        ("state completed with different case", {"state": "Completed", "failure_code": None}),
         ("completed with a failure_code", {"failure_code": "source_changed"}),
         ("failed without a failure_code", {"state": "failed"}),
         ("blocked without a failure_code", {"state": "blocked"}),

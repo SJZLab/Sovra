@@ -485,9 +485,8 @@ def _obj(value: object, required: Iterable[str], optional: Iterable[str]) -> dic
     for key in value:
         if key not in required_set and key not in optional_set:
             raise _bad("unknown_key")
-    for key in required_set:
-        if key not in value:
-            raise _bad("missing_key")
+    if required_set - value.keys():
+        raise _bad("missing_key")
     return value
 
 
