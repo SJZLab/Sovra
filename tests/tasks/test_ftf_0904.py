@@ -1831,6 +1831,30 @@ def test_jwt_glued_after_underscore_or_dash_is_redacted() -> None:
         )
 
 
+def test_jwt_segment_floors_are_exact() -> None:
+    """Round 6 (mutation gate): the JWT shape needs 5+ chars after "eyJ", a 5+ char second
+    segment and a SECOND dot (a third, possibly empty, segment). Each boundary is pinned on
+    both sides, so `>=`/`>` and `<`/`<=` flips on any of them are RED."""
+    redacted = {
+        "eyJ12345.abcde.x": "[REDACTED]",
+        "eyJ12345.abcde.": "[REDACTED]",
+        "ab.eyJ12345.abcde.x": "ab.[REDACTED]",
+    }
+    for text, want in redacted.items():
+        check(
+            "FTF-0904-J5",
+            f"{text!r} -> {lr.redact_text(text)!r}, want {want!r}",
+            lr.redact_text(text) == want,
+        )
+    for benign in (
+        "eyJ1234.abcde.x",  # 4 chars after eyJ
+        "eyJ12345.abcd.x",  # 4-char payload segment
+        "eyJ12345.abcdefgh",  # no second dot
+        "eyJ12345.abcdefgh/more",  # no second dot
+    ):
+        check("FTF-0904-J6", f"benign {benign!r} altered", lr.redact_text(benign) == benign)
+
+
 def test_jwt_runs_inside_other_text_keep_their_neighbours() -> None:
     """A JWT inside a longer line removes only the JWT: text on both sides and a second JWT on
     the same line (separated by a dot-less gap) behave independently."""

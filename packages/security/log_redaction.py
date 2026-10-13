@@ -222,8 +222,6 @@ def _jwt_start(segment: str) -> int:
 
 def _redact_jwts_in_run(match: re.Match[str]) -> str:
     run = match.group(0)
-    if "eyj" not in run.lower():
-        return run
     segments = run.split(".")
     out: list[str] = []
     i = 0
