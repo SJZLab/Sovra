@@ -1456,6 +1456,138 @@ test("FTF-0516-RV a replay with a higher top-level version and a matching decisi
   );
 });
 
+test("FTF-0516-R4-S3 a replayed response whose top-level version is 2^53 is not recorded", async () => {
+  for (const version of [2 ** 53, 2 ** 53 + 2, Number.MAX_SAFE_INTEGER + 1]) {
+    for (const replayed of [true, false]) {
+      cleanup();
+      replies = defaults();
+      calls = [];
+      await loaded();
+      review(ISSUE_OPEN);
+      type(reasonBox(), "because");
+      fireEvent.click(screen.getByLabelText("position 0"));
+      replies["POST resolve-issue"] = posted({}, { replayed, resolution_version: version });
+      await submit();
+      const label = `replayed=${replayed} version=${version}`;
+      expect(screen.queryByTestId("recorded-decision"), label).toBeNull();
+      expect(screen.getByRole("alert").textContent, label).toMatch(
+        /^(resolution response does not match the request|malformed.*)$/,
+      );
+    }
+  }
+  // positive control: the largest safe integer is a well-formed (if implausible) replay version
+  cleanup();
+  replies = defaults();
+  calls = [];
+  await loaded();
+  review(ISSUE_OPEN);
+  type(reasonBox(), "because");
+  fireEvent.click(screen.getByLabelText("position 0"));
+  replies["POST resolve-issue"] = posted({}, { replayed: true, resolution_version: 2 ** 53 - 1 });
+  await submit();
+  expect(screen.getByTestId("recorded-decision")).toBeTruthy();
+});
+
+test("FTF-0516-R4-D6 a date-time without a UTC offset (or with an invalid calendar value) is malformed everywhere it is parsed", async () => {
+  const noOffset = [
+    "2026-10-09T08:00:00",
+    "2026-10-09T08:00:00.123",
+    "2026-10-09 08:00:00Z",
+    "2026-10-09",
+  ];
+  for (const bad of noOffset) {
+    for (const field of ["created_at", "updated_at"]) {
+      await loadsMalformed(
+        "GET quality-report",
+        { ...report(), [field]: bad },
+        `report ${field}=${bad}`,
+      );
+    }
+    await loadsMalformed(
+      "GET issue-resolutions",
+      { items: [{ ...resolution(), created_at: bad }] },
+      `resolution created_at=${bad}`,
+    );
+    await loadsMalformed(
+      "GET issues",
+      {
+        items: [
+          issue(ISSUE_DONE, {
+            state: "resolved",
+            resolution: { ...resolution(), created_at: bad },
+          }),
+        ],
+        next_after: null,
+      },
+      `nested created_at=${bad}`,
+    );
+  }
+  // positive controls: Z, +hh:mm and -hh:mm with and without fractional seconds still load
+  for (const good of [
+    "2026-10-09T08:00:00Z",
+    "2026-10-09T08:00:00.5+03:00",
+    "2026-10-09T08:00:00-05:30",
+  ]) {
+    await loadsFine(
+      "GET quality-report",
+      { ...report(), created_at: good, updated_at: good },
+      `report ${good}`,
+    );
+  }
+});
+
+test("FTF-0516-R4-R2 a response reason is bounded in code points, not UTF-16 units: 2000 emoji recorded, 2001 malformed", async () => {
+  const emoji = (n: number) => "\u{1F600}".repeat(n);
+  expect(emoji(2000).length).toBe(4000); // 4000 UTF-16 units: a .length bound would wrongly refuse this
+  await loadsFine(
+    "GET issue-resolutions",
+    { items: [{ ...resolution(), reason: emoji(2000) }] },
+    "2000 emoji",
+  );
+  await loadsMalformed(
+    "GET issue-resolutions",
+    { items: [{ ...resolution(), reason: emoji(2001) }] },
+    "2001 emoji",
+  );
+  await loadsMalformed(
+    "GET issues",
+    {
+      items: [
+        issue(ISSUE_DONE, {
+          state: "resolved",
+          resolution: { ...resolution(), reason: emoji(2001) },
+        }),
+      ],
+      next_after: null,
+    },
+    "nested 2001 emoji",
+  );
+  // through a real submit: a 2000-emoji reason is sent whole and its echo is recorded
+  cleanup();
+  replies = defaults();
+  calls = [];
+  await loaded();
+  review(ISSUE_OPEN);
+  type(reasonBox(), emoji(2000));
+  fireEvent.click(screen.getByLabelText("position 0"));
+  replies["POST resolve-issue"] = posted({ reason: emoji(2000) });
+  await submit();
+  const item = (sentBody().resolutions as Array<Record<string, unknown>>)[0];
+  expect(item?.reason).toBe(emoji(2000));
+  expect(screen.getByTestId("recorded-decision")).toBeTruthy();
+  // and an echo of 2001 emoji is never recorded
+  cleanup();
+  replies = defaults();
+  calls = [];
+  await loaded();
+  review(ISSUE_OPEN);
+  type(reasonBox(), emoji(2000));
+  fireEvent.click(screen.getByLabelText("position 0"));
+  replies["POST resolve-issue"] = posted({ reason: emoji(2001) });
+  await submit();
+  expect(screen.queryByTestId("recorded-decision")).toBeNull();
+});
+
 // ---- Generated strict-parse table: EVERY response field x wrong JSON type / out-of-enum / missing ----
 //
 // Each field of the four response shapes is described once by the set of values the frozen contract
@@ -1510,7 +1642,11 @@ const REPORT_SPEC: Record<string, Spec> = {
   dataset_sha256: { legal: [sha("1"), sha("0")] },
   report_seq: { legal: [1, 9], also: intMin(1) },
   report_sha256: { legal: [sha("2")] },
-  detector_versions: { legal: [{}, { pii: "1" }] },
+  detector_versions: {
+    legal: [{}, { pii: "1" }],
+    also: (v) =>
+      typeof v === "object" && v !== null && !Array.isArray(v) && Object.values(v).every(isAnyStr),
+  },
   detectors_reported: {
     legal: [[], ["pii"], [""]],
     also: (v) => Array.isArray(v) && v.every(isAnyStr),
@@ -1560,7 +1696,11 @@ const ISSUE_SPEC: Record<string, Spec> = {
   },
   message_sha256: { legal: [sha("9")] },
   batch_positions: { legal: [[], [0, 2, 5]] },
-  record_indices: { legal: [[], [10, null, 12], [null]] },
+  record_indices: {
+    legal: [[], [10, null, 12], [null]],
+    also: (v) =>
+      Array.isArray(v) && v.every((e) => e === null || (Number.isSafeInteger(e) && e >= 0)),
+  },
   evidence_digest: { legal: [null, sha("8")] },
   is_detector_failure: { legal: [true, false] },
   evidence_sha256: { legal: [EVIDENCE] },
@@ -1581,14 +1721,46 @@ const ENUM_OUT = [
   "Blocking",
 ];
 
+// Wrong ELEMENT / VALUE types (FTF-0516 round-4 ruling, item 1): for every field whose legal values
+// include an array, every array of one wrong element (and a legal array with one wrong element
+// appended); for every field whose legal values include a record, every record with one wrong value.
+const ELEMENT_POOL: unknown[] = [null, -1, 1.5, 2 ** 53, true, false, {}, [], [1], "x"];
+function structuralCandidates(spec: Spec): unknown[] {
+  const out: unknown[] = [];
+  for (const l of spec.legal) {
+    if (Array.isArray(l)) {
+      for (const e of ELEMENT_POOL) {
+        out.push([e], [...l, e]);
+      }
+    } else if (typeof l === "object" && l !== null) {
+      for (const e of ELEMENT_POOL) {
+        out.push({ pii: e }, { "": e }, { ...l, extra_detector: e });
+      }
+    }
+  }
+  return out;
+}
+const ENUM_FIELDS = ["action", "engine_decision", "actor_role", "severity", "state"];
+function candidatesFor(field: string, spec: Spec): unknown[] {
+  const seen = new Set<string>();
+  const all = [
+    ...POOL,
+    ...(ENUM_FIELDS.includes(field) ? ENUM_OUT : []),
+    ...structuralCandidates(spec),
+  ];
+  return all.filter((v) => {
+    const k = JSON.stringify(v);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
 function mutations(spec: Record<string, Spec>, base: () => Record<string, unknown>) {
   const out: Array<{ label: string; body: Record<string, unknown>; legal: boolean }> = [];
   for (const [field, fieldSpec] of Object.entries(spec)) {
     const { legal } = fieldSpec;
-    const enumField = ["action", "engine_decision", "actor_role", "severity", "state"].includes(
-      field,
-    );
-    const candidates = [...POOL, ...(enumField ? ENUM_OUT : [])];
+    const candidates = candidatesFor(field, fieldSpec);
     for (const value of candidates) {
       if (isLegalValue(fieldSpec, value) || fieldSpec.skip?.some((k) => same(k, value))) continue;
       out.push({
@@ -1729,7 +1901,7 @@ test("FTF-0516-T4 generated table: page wrappers and the resolve response reject
     await submitWith(reply, `resolve ${key} missing`);
   }
   for (const [field, fieldSpec] of Object.entries(RESOLUTION_SPEC)) {
-    for (const value of POOL) {
+    for (const value of candidatesFor(field, fieldSpec)) {
       if (isLegalValue(fieldSpec, value)) continue;
       await submitWith(
         posted({ [field]: value }),

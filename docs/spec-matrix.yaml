@@ -8314,7 +8314,7 @@ FTF-0516:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Dataset issue resolution UI
-  evidence_hash: ea0256a6fd9ec751693b607f9567414b160eb21c
+  evidence_hash: aa6c45edc84d99d451fe66e5b0726b9fc963ef05
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0515.
@@ -8345,6 +8345,13 @@ FTF-0516:
     a fresh decision must equal expected + 1; integers are safe integers; timestamps are RFC 3339;
     decision reasons are at most 2000 characters. Fault table:
     docs/certifications/submissions/2026-10-12T0530Z-FTF-0516-r4.md.
+    Round 5 (relay/FTF-0516-r5, tests and CI only; production unchanged): the generated tables now
+    also vary element and value types for every array and record field (F30: a non-string
+    detector_versions value); pins for a replay version of 2^53, a date-time without an offset and
+    a reason bounded in code points; and a real-API test (tests/integration/test_ftf_0516_ui_real_api.py,
+    CI job dataset-quality-ui-real-api-integration) running the component against
+    build_dataset_quality_router on PostgreSQL 16 as sovra_app. Fault table:
+    docs/certifications/submissions/2026-10-13T1420Z-FTF-0516-r5.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_0516.spec.ts
