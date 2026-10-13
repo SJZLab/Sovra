@@ -559,7 +559,7 @@ def allow_list_id_names(source: str) -> set[str]:
     names: set[str] = set()
     for statement in tree.body:
         value: ast.AST | None = None
-        if isinstance(statement, (ast.Assign, ast.AnnAssign)):
+        if isinstance(statement, ast.Assign | ast.AnnAssign):
             value = statement.value
         if value is not None:
             names |= _const_ids(value)
