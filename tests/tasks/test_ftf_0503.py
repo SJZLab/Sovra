@@ -278,6 +278,53 @@ def test_escaped_quote_inside_string_does_not_end_it_early() -> None:
     )
 
 
+def test_boring_characters_outside_brackets_never_change_depth() -> None:
+    # Mutation: the closing-bracket check `ch == "}" or ch == "]"` -> `ch !=
+    # "}" or ch == "]"`. That change makes depth decrement on almost every
+    # non-"}" character, including plain digits/commas that appear outside
+    # any string or bracket. A document with several such "boring" chars
+    # *before* real nesting would, under the mutation, push `depth` deeply
+    # negative first -- so the real nesting's own increments never climb
+    # back above the initial `max_depth` of 0, and the returned value drops
+    # from the true 3 down to 0.
+    check(
+        CID,
+        "digits/commas outside any bracket/string never affect measured depth",
+        _max_nesting_depth("1,2,[[[]]]") == 3,
+    )
+
+
+def test_depth_resets_correctly_between_sibling_bracket_groups() -> None:
+    # Mutation: `ch == "}" or ch == "]"` -> `ch == "}" and ch == "]"` (always
+    # False for a single character) -- closing brackets would never
+    # decrement `depth` at all. A shallow bracket group followed by a
+    # deeper, independent sibling group would then have the second group's
+    # depth wrongly measured relative to the first group's leftover depth
+    # instead of starting back at 0.
+    check(
+        CID,
+        "depth correctly returns to 0 after a closed sibling group, so a "
+        "later group's own nesting is measured from a clean baseline",
+        _max_nesting_depth("[]" + "[[[]]]") == 3,
+    )
+
+
+def test_backslash_detection_inside_a_string_is_exact() -> None:
+    # Mutation: `ch == "\\"` -> `ch != "\\"` inside the in-string branch.
+    # That flips which characters start an escape sequence: almost every
+    # non-backslash character would wrongly arm `escape_next`, which then
+    # consumes (and effectively un-escapes) the *next* character -- including
+    # a real closing quote, which would never end the string, so a bracket
+    # right after it is wrongly swallowed as "still inside the string"
+    # instead of counted as real structural nesting.
+    check(
+        CID,
+        "a plain (no-backslash) string followed by a real bracket: the "
+        "closing quote is detected correctly and the bracket counts",
+        _max_nesting_depth('"ab"[') == 1,
+    )
+
+
 def test_malformed_json_is_quarantined() -> None:
     (item,) = list(import_json(b"{not valid json", source_type="upload"))
     check(
@@ -325,6 +372,13 @@ def test_container_element_not_object_is_quarantined() -> None:
         CID, "element 3 (a nested array) is quarantined not_an_object", codes[3] == "not_an_object"
     )
     check(CID, "element 4 (valid) is not quarantined", codes[4] is None)
+    # Mutation: `row_index=row_index` -> a hard-coded `0` inside `_quarantine`.
+    # Each result's own real position must be preserved, not collapsed to 0.
+    check(
+        CID,
+        "every result (quarantined or not) carries its own real position, not a hard-coded 0",
+        [r.row_index for r in results] == [0, 1, 2, 3, 4],
+    )
 
 
 def test_mixed_shape_elements_are_each_quarantined_with_their_own_reason() -> None:
