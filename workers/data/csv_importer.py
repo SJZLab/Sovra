@@ -123,7 +123,8 @@ IMPORTER_VERSION: Final = "1"
 SOURCE_TYPE: Final = "upload"
 
 _EOL: Final = re.compile(r"\r\n|\r|\n")
-_BOM_CHECKED_ENCODINGS: Final = ("utf-8", "utf-16-le", "utf-16-be")
+# Indexes into CSV_ENCODINGS: utf-8, utf-16-le, utf-16-be (utf-8-sig consumes its BOM).
+_BOM_CHECKED_ENCODINGS: Final = (0, 2, 3)
 _FIELD_LIMIT_MESSAGE: Final = "field larger than field limit"
 
 
@@ -151,6 +152,7 @@ class _Options:
     has_header: bool
     header_row: int
     slots: tuple[tuple[str, Slot], ...]
+    bom_forbidden: bool
 
 
 def _mapped_slots(mapping: ImportMapping) -> tuple[tuple[str, Slot], ...]:
@@ -175,8 +177,6 @@ def _options(mapping: ImportMapping) -> _Options:
     has_header, header_row = block["has_header"], block["header_row"]
     if encoding not in CSV_ENCODINGS or delimiter not in CSV_DELIMITERS:
         raise MappingInvalidError("bad_value")
-    if type(has_header) is not bool or type(header_row) is not int:
-        raise MappingInvalidError("wrong_type")
     if not has_header and header_row != 0:
         raise MappingInvalidError("bad_value")
     if mapping.messages_pointer is not None:
@@ -185,7 +185,8 @@ def _options(mapping: ImportMapping) -> _Options:
     for _name, slot in slots:
         if slot.kind not in ("header", "index") or (slot.kind == "header" and not has_header):
             raise MappingInvalidError("bad_slot")
-    return _Options(str(encoding), str(delimiter), has_header, header_row, slots)
+    bom_forbidden = CSV_ENCODINGS.index(encoding) in _BOM_CHECKED_ENCODINGS
+    return _Options(str(encoding), str(delimiter), has_header, header_row, slots, bom_forbidden)
 
 
 def _schema_sha256(headers: list[str]) -> str:
@@ -233,7 +234,7 @@ class CsvEventStream(Iterator[ImportEvent]):
                 raise CsvAborted("invalid_encoding", self._lines_emitted + 1) from None
             if first and text:
                 first = False
-                if self._options.encoding in _BOM_CHECKED_ENCODINGS and text[0] == "﻿":
+                if self._options.bom_forbidden and text[0] == "﻿":
                     raise CsvAborted("unexpected_bom", 1)
             if text:
                 yield text
@@ -308,7 +309,7 @@ class CsvEventStream(Iterator[ImportEvent]):
     def _positions(self, headers: list[str] | None, width: int) -> list[tuple[str, int]]:
         positions: list[tuple[str, int]] = []
         for name, slot in self._options.slots:
-            if slot.kind == "header":
+            if isinstance(slot.value, str):
                 assert headers is not None
                 if slot.value not in headers:
                     raise CsvAborted("mapping_column_missing", self._lines_emitted)
@@ -457,8 +458,6 @@ def run_csv_import(
         for event in stream:
             reader.deadline.check()
             accumulator.add(event)
-        for _ in reader:
-            raise ImportAborted("failed", "stream_not_consumed")
     except ImportAborted as exc:
         aborted = exc
     accumulator.source_schema_sha256 = stream.source_schema_sha256

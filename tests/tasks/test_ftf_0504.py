@@ -34,6 +34,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests" / "tasks"))
+sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 import import_test_support as support  # noqa: E402
 from workers.data import csv_importer as ci  # noqa: E402
@@ -782,6 +783,176 @@ def test_size_limits() -> None:
         CID,
         "the csv module's global field size limit is restored",
         csv.field_size_limit() == default,
+    )
+
+
+def test_line_cap_is_exact() -> None:
+    limits = ic.ImportLimits(max_record_bytes=64)  # a physical line may hold 130 characters
+    for chars in (130, 131):
+        body = ("x," * 70)[: chars - 1] + "\n"
+        for tail in (body, body[:-1]):
+            for chunk in (None, 1, 5):
+                data = b"q,a\n" + tail.encode()
+                _events, outcome = collect(data, limits=limits, chunk=chunk)
+                size = len(tail)
+                got = outcome.report.failure_code == "field_too_large"
+                check(CID, f"line of {size} chars chunk={chunk}: fatal={got}", got == (size > 130))
+
+
+def test_record_size_cap_is_exact() -> None:
+    limits = ic.ImportLimits(max_record_bytes=64)
+    ok = csv_bytes([["q", "a"], ["x" * 32, "y" * 32]])
+    over = csv_bytes([["q", "a"], ["x" * 32, "y" * 33]])
+    events, outcome = collect(ok, limits=limits)
+    check(CID, "mapped fields adding to exactly max are accepted", len(accepted(events)) == 1)
+    _events, outcome = collect(over, limits=limits)
+    check(
+        CID,
+        "one byte more is record_too_large",
+        [r.code for r in outcome.report.rejections] == ["record_too_large"],
+    )
+    arabic = csv_bytes([["q", "a"], ["م" * 16, "y" * 32]])
+    _events, outcome = collect(arabic, limits=limits)
+    check(CID, "the cap counts UTF-8 bytes, not characters", outcome.report.records_rejected == 0)
+    arabic = csv_bytes([["q", "a"], ["م" * 17, "y" * 32]])
+    _events, outcome = collect(arabic, limits=limits)
+    check(CID, "34 bytes of Arabic + 32 is over", outcome.report.records_rejected == 1)
+
+
+def test_index_slot_equal_to_width_is_missing() -> None:
+    _events, outcome = collect(
+        b"1,2\n3,4\n", has_header=False, prompt={"index": 0}, completion={"index": 2}
+    )
+    check(CID, "index == width is fatal", outcome.report.failure_code == "mapping_column_missing")
+    _events, outcome = collect(
+        b"1,2\n3,4\n", has_header=False, prompt={"index": 0}, completion={"index": 1}
+    )
+    check(CID, "index == width-1 is fine", outcome.report.state == "completed")
+
+
+def test_foreign_slot_kinds_are_refused_even_if_hand_built() -> None:
+    import dataclasses
+
+    base = build_mapping()
+    for kind in ("HEADER", " header", "header ", "Index", "key", "letters"):
+        value: str | int = 0 if kind.strip().lower() == "index" else "q"
+        hand = dataclasses.replace(base, prompt=ic.Slot(kind, value))
+        try:
+            ci.csv_events(make_reader(b"q,a\n"), hand, dataset_sha256="0" * 64)
+        except ic.MappingInvalidError as exc:
+            check(CID, f"slot kind {kind!r} refused as bad_slot", exc.reason == "bad_slot")
+        else:
+            check(CID, f"slot kind {kind!r} refused", False)
+
+
+def test_fatal_codes_are_matched_exactly() -> None:
+    for bad in (" invalid_encoding", "INVALID_ENCODING", "invalid_encoding ", "Invalid_Encoding"):
+        try:
+            ci.CsvAborted(bad, 1)
+        except ValueError:
+            continue
+        check(CID, f"CsvAborted refuses {bad!r}", False)
+
+
+def test_tool_schemas_and_validator_are_forwarded() -> None:
+    import json as _json
+
+    from app.services.json_schema_tool_validation import validate_instance
+
+    schema = {
+        "type": "object",
+        "properties": {"order_id": {"type": "string"}},
+        "required": ["order_id"],
+        "additionalProperties": False,
+    }
+
+    def conversation(arguments: dict[str, object]) -> str:
+        return _json.dumps(
+            [
+                {"role": "user", "content": "where is my order"},
+                {
+                    "role": "assistant",
+                    "content": [],
+                    "tool_calls": [{"id": "c1", "name": "lookup_order", "arguments": arguments}],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "c1",
+                    "name": "lookup_order",
+                    "content": [{"type": "json", "value": {"status": "shipped"}}],
+                },
+            ]
+        )
+
+    mapping = ic.parse_mapping(
+        '{"shape":"messages_json","messages":{"header":"m"},"role_key":"role","content_key":"content",'
+        '"role_map":{"user":"user","assistant":"assistant","tool":"tool"},'
+        '"tool_calls_key":"tool_calls","tool_call_id_key":"tool_call_id","name_key":"name",'
+        '"on_unmapped_message_keys":"reject",'
+        '"csv":{"encoding":"utf-8","delimiter":",","has_header":true,"header_row":0}}'
+    )
+    data = csv_bytes([["m"], [conversation({"order_id": "abc"})], [conversation({"x": 1})]])
+    sha = hashlib.sha256(data).hexdigest()
+    events: list[ic.AcceptedRecord] = []
+    outcome = ci.run_csv_import(
+        make_reader(data),
+        mapping,
+        dataset_purpose="training",
+        expected_sha256=sha,
+        tool_schemas={"lookup_order": schema},
+        tool_argument_validator=validate_instance,
+        on_accepted=lambda c: events.append(ic.AcceptedRecord(c)),
+    )
+    check(CID, "the conforming tool call is accepted", len(events) == 1)
+    check(
+        CID, "its tool schema status is valid", events[0].candidate["tool_schema_status"] == "valid"
+    )
+    check(
+        CID,
+        "the non-conforming call is rejected by the forwarded validator",
+        [r.code for r in outcome.report.rejections] == ["canonical_schema_invalid"],
+    )
+    stream = ci.csv_events(
+        make_reader(data),
+        mapping,
+        dataset_sha256=sha,
+        tool_schemas={"lookup_order": schema},
+        tool_argument_validator=validate_instance,
+    )
+    result = ic.preview(stream, 5)
+    check(
+        CID,
+        "csv_events forwards them too",
+        len(result.accepted) == 1 and len(result.rejections) == 1,
+    )
+
+
+def test_deadline_is_checked_between_events() -> None:
+    data = csv_bytes([["q", "a"], ["1", "x"], ["2", "y"], ["3", "z"]])
+    clock = support.FakeClock()
+    reader = ic.ChunkReader(
+        [data],
+        expected_size=len(data),
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+        clock=clock,
+    )
+    seen: list[object] = []
+
+    def advance(candidate: object) -> None:
+        seen.append(candidate)
+        clock.advance(10_000)
+
+    outcome = ci.run_csv_import(
+        reader,
+        build_mapping(),
+        dataset_purpose="training",
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+        on_accepted=advance,
+    )
+    check(
+        CID,
+        "a single chunk cannot hide a passed deadline",
+        outcome.report.failure_code == "deadline_exceeded" and len(seen) == 1,
     )
 
 
