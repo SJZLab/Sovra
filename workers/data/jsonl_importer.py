@@ -194,7 +194,7 @@ def _stream(
             )
             continue
 
-        if len(line.strip()) == 0:
+        if not line or line.isspace():
             yield _quarantine(row_index, "blank_line", "line is empty or whitespace-only")
             continue
 

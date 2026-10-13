@@ -471,6 +471,86 @@ def test_max_line_bytes_must_be_positive() -> None:
         except JsonlImportError:
             raised = True
         check(CID, f"max_line_bytes={bad_value} raises JsonlImportError immediately", raised)
+    # Boundary: 1 is the smallest *valid* value (mutation: `< 1` -> `<= 1` would wrongly reject it).
+    raised_at_one = False
+    try:
+        import_jsonl(jsonl_bytes(_VALID_A), source_type="upload", max_line_bytes=1)
+    except JsonlImportError:
+        raised_at_one = True
+    check(CID, "max_line_bytes=1 is accepted at the call level (1 is positive)", not raised_at_one)
+
+
+def test_line_length_bound_is_strictly_greater_than() -> None:
+    # Mutation boundary: `len(line) > max_line_bytes` vs `>=`. A line whose length
+    # is exactly max_line_bytes must be accepted, not quarantined.
+    line = b'{"messages": [{"role": "user", "content": "hi"}]}'
+    (result,) = list(import_jsonl([line], source_type="upload", max_line_bytes=len(line)))
+    check(
+        CID,
+        "a line exactly max_line_bytes long is accepted ('exceeding' means strictly over)",
+        isinstance(result, ImportedRecord),
+    )
+    (too_big,) = list(import_jsonl([line], source_type="upload", max_line_bytes=len(line) - 1))
+    check(
+        CID,
+        "one byte over max_line_bytes is quarantined",
+        isinstance(too_big, QuarantinedRow) and too_big.code == "line_too_large",
+    )
+
+
+def test_only_trailing_crlf_is_stripped_not_leading() -> None:
+    # Mutation: `.rstrip(b"\\r\\n")` -> `.strip(b"\\r\\n")` would also strip a
+    # leading \r/\n. Proven observably, not just by inspection: pad a valid
+    # line with a leading \r\n so that only an .rstrip (trailing-only) keeps it
+    # over max_line_bytes, while a (buggy) .strip would bring it back under.
+    core = b'{"messages": [{"role": "user", "content": "hi"}]}'
+    padded = b"\r\n" + core
+    check(CID, "sanity: the padded line is exactly 2 bytes longer", len(padded) == len(core) + 2)
+    (result,) = list(import_jsonl([padded], source_type="upload", max_line_bytes=len(core) + 1))
+    check(
+        CID,
+        "a leading \\r\\n is never stripped (only a trailing one is) -- the line "
+        "including the leading bytes is still over max_line_bytes and is quarantined",
+        isinstance(result, QuarantinedRow) and result.code == "line_too_large",
+    )
+
+
+def test_source_type_matching_is_exact_not_normalized() -> None:
+    # Mutation: `source_type not in SUPPORTED_SOURCE_TYPES` -> the compared
+    # value normalized (`.strip().lower()`) first. Section 6.8F's own dialect
+    # enum is exact-match only -- a case or whitespace variant of a real value
+    # must still be refused, not silently accepted as equivalent.
+    for bad in ("Upload", "UPLOAD", " upload", "upload "):
+        raised = False
+        try:
+            import_jsonl(jsonl_bytes(_VALID_A), source_type=bad)
+        except JsonlImportError:
+            raised = True
+        check(
+            CID,
+            f"source_type={bad!r} (a case/whitespace variant) is refused, exact-match only",
+            raised,
+        )
+
+
+def test_lines_non_iterable_value_raises_immediately() -> None:
+    # Mutation: the `except TypeError: raise JsonlImportError(...)` body
+    # replaced with `pass`, which would let a non-iterable `lines` through
+    # silently (the call would still return, just never yield anything useful
+    # once consumed -- actually iterating it would raise a bare TypeError
+    # instead of this module's own typed error).
+    for bad_lines in (42, None, 3.14):
+        raised = False
+        try:
+            import_jsonl(bad_lines, source_type="upload")  # type: ignore[arg-type]
+        except JsonlImportError:
+            raised = True
+        check(
+            CID,
+            f"lines={bad_lines!r} (not iterable at all) raises JsonlImportError immediately, "
+            "not a bare TypeError",
+            raised,
+        )
 
 
 def test_empty_source_yields_nothing_and_does_not_raise() -> None:
