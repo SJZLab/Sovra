@@ -24704,3 +24704,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 - **Returned:** FTF-0517 r3 (0f): 3+-key bridges and a key-level property test; exact-type keys.
 - **Returned:** FTF-1206 r6 (0h), tests only: pin approver authority to the current org policy (F19).
 - **Certified:** FTF-0516 (#754, merge 90698aa6371626f6d2f8f156624798c9673ef044); UNWIRED (144/302).
+
+## 2026-10-13T18:55Z — Control plane: FTF-0904 returned
+- **Returned:** FTF-0904 r7 (0d), tests + spec-matrix only: the named pair-whitespace fault, JWT skip-loop shapes, evidence_hash. Stopping rule set.
