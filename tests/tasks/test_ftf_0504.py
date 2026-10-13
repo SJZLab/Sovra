@@ -952,7 +952,7 @@ def test_deadline_is_checked_between_events() -> None:
     check(
         CID,
         "a single chunk cannot hide a passed deadline",
-        outcome.report.failure_code == "deadline_exceeded" and len(seen) == 1,
+        outcome.report.failure_code == "parse_timeout" and len(seen) == 1,
     )
 
 
@@ -1176,8 +1176,8 @@ def test_source_failures_are_never_completed() -> None:
     )
     check(
         CID,
-        "a deadline passing mid-import is failed/deadline_exceeded",
-        outcome_holder[0].report.failure_code == "deadline_exceeded",
+        "a deadline passing mid-import is failed/parse_timeout",
+        outcome_holder[0].report.failure_code == "parse_timeout",
     )
 
 
