@@ -161,32 +161,46 @@ class JsonImportError(ValueError):
     document-level or row-level problem is a `QuarantinedRow` instead."""
 
 
-def _max_nesting_depth(text: str) -> int:
-    """Counts the deepest `{`/`[` nesting actually reached in `text`,
-    ignoring any bracket characters that appear inside a JSON string
-    literal. Escape-aware: a `\\"` inside a string never ends it early, and
-    the character immediately after any `\\` is always treated as part of
-    the string, never as a structural character."""
+_BACKSLASH = 0x5C  # "\\"
+_QUOTE = 0x22  # '"'
+_OPEN_BRACE = 0x7B  # "{"
+_OPEN_BRACKET = 0x5B  # "["
+_CLOSE_BRACE = 0x7D  # "}"
+_CLOSE_BRACKET = 0x5D  # "]"
+
+
+def _max_nesting_depth(content: bytes) -> int:
+    """Counts the deepest `{`/`[` nesting actually reached in `content`,
+    ignoring any bracket bytes that appear inside a JSON string literal.
+    Escape-aware: a `\\"` inside a string never ends it early, and the byte
+    immediately after any `\\` is always treated as part of the string,
+    never as a structural byte.
+
+    Operates directly on the raw, not-yet-decoded `bytes` (never a `str`):
+    every structural byte this function looks for (`{`, `}`, `[`, `]`, `"`,
+    `\\`) is a single-byte ASCII code point, and every UTF-8 continuation or
+    multi-byte lead byte is always `>= 0x80` -- so scanning raw bytes can
+    never mistake part of a multi-byte character for one of these, and this
+    check can run before (and regardless of) UTF-8 decoding."""
     depth = 0
     max_depth = 0
     in_string = False
     escape_next = False
-    for ch in text:
+    for byte in content:
         if in_string:
             if escape_next:
                 escape_next = False
-            elif ch == "\\":
+            elif byte == _BACKSLASH:
                 escape_next = True
-            elif ch == '"':
+            elif byte == _QUOTE:
                 in_string = False
             continue
-        if ch == '"':
+        if byte == _QUOTE:
             in_string = True
-        elif ch == "{" or ch == "[":
+        elif byte == _OPEN_BRACE or byte == _OPEN_BRACKET:
             depth += 1
-            if depth > max_depth:
-                max_depth = depth
-        elif ch == "}" or ch == "]":
+            max_depth = max(max_depth, depth)
+        elif byte == _CLOSE_BRACE or byte == _CLOSE_BRACKET:
             depth -= 1
     return max_depth
 
@@ -240,13 +254,7 @@ def _stream(
         )
         return
 
-    try:
-        decoded = content.decode("utf-8", errors="strict")
-    except UnicodeDecodeError as exc:
-        yield _quarantine(0, "malformed_utf8", f"document is not valid UTF-8: {exc}")
-        return
-
-    depth = _max_nesting_depth(decoded)
+    depth = _max_nesting_depth(content)
     if depth > max_nesting_depth:
         yield _quarantine(
             0,
@@ -254,6 +262,12 @@ def _stream(
             f"document nesting reaches depth {depth}, exceeding the configured "
             f"max of {max_nesting_depth}",
         )
+        return
+
+    try:
+        decoded = content.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        yield _quarantine(0, "malformed_utf8", f"document is not valid UTF-8: {exc}")
         return
 
     try:

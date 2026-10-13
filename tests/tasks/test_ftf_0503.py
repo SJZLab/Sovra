@@ -240,7 +240,7 @@ def test_string_literal_brackets_do_not_count_toward_nesting_depth() -> None:
     # the measured depth -- only real structural nesting counts.
     payload = {"messages": [{"role": "user", "content": "{" * 200 + "[" * 200}]}
     content = json_bytes(payload)
-    depth = _max_nesting_depth(content.decode("utf-8"))
+    depth = _max_nesting_depth(content)
     check(
         CID,
         "brackets inside a JSON string literal are never counted as structural "
@@ -268,7 +268,7 @@ def test_escaped_quote_inside_string_does_not_end_it_early() -> None:
     check(
         CID, "sanity: the dumped text contains an escaped quote", '\\"' in content.decode("utf-8")
     )
-    depth = _max_nesting_depth(content.decode("utf-8"))
+    depth = _max_nesting_depth(content)
     check(
         CID,
         "the escaped quote never ends the string early, so the trailing "
@@ -290,7 +290,7 @@ def test_boring_characters_outside_brackets_never_change_depth() -> None:
     check(
         CID,
         "digits/commas outside any bracket/string never affect measured depth",
-        _max_nesting_depth("1,2,[[[]]]") == 3,
+        _max_nesting_depth(b"1,2,[[[]]]") == 3,
     )
 
 
@@ -305,7 +305,7 @@ def test_depth_resets_correctly_between_sibling_bracket_groups() -> None:
         CID,
         "depth correctly returns to 0 after a closed sibling group, so a "
         "later group's own nesting is measured from a clean baseline",
-        _max_nesting_depth("[]" + "[[[]]]") == 3,
+        _max_nesting_depth(b"[]" + b"[[[]]]") == 3,
     )
 
 
@@ -321,7 +321,7 @@ def test_backslash_detection_inside_a_string_is_exact() -> None:
         CID,
         "a plain (no-backslash) string followed by a real bracket: the "
         "closing quote is detected correctly and the bracket counts",
-        _max_nesting_depth('"ab"[') == 1,
+        _max_nesting_depth(b'"ab"[') == 1,
     )
 
 
