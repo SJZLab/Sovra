@@ -11155,3 +11155,26 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
 - **Process note:** FTF-0517 round 2 (#600, merged 2026-10-08T00:20Z) and FTF-1206 round 5 (#650, merged
   2026-10-08T19:29Z) were never verified: check-ins listed only merges since the previous check-in. Both are now being
   verified; each check-in also lists every merged relay PR whose item is still PROVISIONAL with no verdict after its merge.
+
+## 2026-10-13T17:43Z — CERTIFIED: FTF-0516 (144/302); RETURNED: FTF-0517 (r3), FTF-1206 (r6)
+- **FTF-0517: RETURNED** (round 2 → 3; PR #600, merge aab048eab1e3e9dc89250527fd6d7f2fde44a5d8, head d596893a; verified
+  2026-10-13 at main 694247cf, FTF-0517 files identical to the merge). Producers session_01M6PUZDwx7dSwgToeFa7nWu (r2),
+  session_01Q1B9x7DYUJR1TpXchAqFkJ (r1) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 113084173976; gate
+  113081811438 "all checks passed". All round-2 faults RED; 40/42 verifier faults RED; random-graph probes 0 crossings.
+  Return: V3 (union only first two keys) and V42 (union only last key) GREEN - no test record has > 2 keys; str-subclass
+  key splits a family (exact-type ruling); raw TypeErrors on [] / {} / malformed manifest.
+- **FTF-1206: RETURNED** (round 5 → 6, tests only; PR #650, merge c57518ae3c574f72d834c82bd4f096f319858729, head 3ba7b643;
+  verified 2026-10-13 at main 694247cf, files identical). Producer session_01MdGt1NvNbMm8F8qpsUxJ3S ≠ certifier. CI:
+  ci-verdict 113494197106; gate 113490370474 "FTF-1206 Organization policy control tests: all checks passed";
+  organization-gateway-policy-integration 113490501114. Round-5 fixes in place; 171 + 15 probes no production violation;
+  28/31 faults RED. Return: F19 (approver checked against the grant instead of the current org policy) GREEN in every
+  suite - a revoked approver could authorize via a stale grant with no test noticing. Ruling: distinct clause, not a
+  round-3 variant.
+- **FTF-0516: CERTIFIED** (UI round 4 per QUEUE, relay branch r5; PR #754, merge 90698aa6371626f6d2f8f156624798c9673ef044, head 958e01b8; API slice
+  FTF-0516-P1 certified #695). Producer session_011GFbz6Fd5m311VChpcaRB9 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR,
+  absent from the PR. CI: ci-verdict 115371009213; dataset-quality-ui-real-api-integration 115352979500 (PG16.15, R1-R7,
+  "all checks passed"); gate 115352833401 (1416 vitest tests). F30 RED via value/element-type generation; R4-S3/R4-D6/R4-R2
+  pinned; UI CHECKLIST (f) met with an independent DB re-read. Round-3 real-router and mocked probes reproduce identically
+  and correct; new type probes all malformed with 0 Review buttons and 0 POSTs; 2000/2001 code-point bound exact. Faults:
+  145/151 RED (6 classified equivalents), X19-X32 11/14 RED (X26/X27/X32 hand-picked variants of the pinned R4-D6 class,
+  production rejects them; advisory), 11/11 real-API harness faults RED. UNWIRED (proving_symbol blank) until FTF-H029.

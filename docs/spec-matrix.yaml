@@ -8351,10 +8351,10 @@ FTF-0515:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0515.py
 FTF-0516:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Dataset issue resolution UI
-  evidence_hash: aa6c45edc84d99d451fe66e5b0726b9fc963ef05
+  evidence_hash: 90698aa6371626f6d2f8f156624798c9673ef044
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0515.
@@ -8392,7 +8392,7 @@ FTF-0516:
     CI job dataset-quality-ui-real-api-integration) running the component against
     build_dataset_quality_router on PostgreSQL 16 as sovra_app. Fault table:
     docs/certifications/submissions/2026-10-13T1420Z-FTF-0516-r5.md.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_0516.spec.ts
 FTF-0517:
