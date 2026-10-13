@@ -15,7 +15,9 @@ FTF-0501 already verified. This module is the only way they get them:
   is no listing call, and the key is never returned or put in an error.
 - The returned `chunks` iterator makes exactly one GET. A storage failure
   surfaces from the iterator as `UploadStorageUnavailableError` (content-free,
-  `from None`: the original exception can carry the signed URL and key). A stream
+  `from None`: the original exception can carry the signed URL, the key or, for
+  `http.client.IncompleteRead`, object bytes). Every exception the stream raises
+  is converted, not only the ones a caller expects. A stream
   that ends before the verified size is the same outage, not a changed object:
   the object is immutable, and a dropped connection reads as a clean end.
 
@@ -24,7 +26,6 @@ This module never writes.
 
 from __future__ import annotations
 
-import urllib.error
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -95,9 +96,13 @@ def _stream(storage: DatasetObjectStorage, key: str, expected_size: int) -> Iter
         raise UploadStorageUnavailableError(
             f"stream_object: storage answered {exc.status_code} {exc.code}"
         ) from None
-    except (OSError, urllib.error.URLError, TimeoutError, ValueError) as exc:
+    except UploadStorageUnavailableError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - any storage-side failure is an outage; the original can carry object bytes
+        # http.client.IncompleteRead carries the partial object bytes and
+        # BadStatusLine the raw status line: neither may leave this module.
         raise UploadStorageUnavailableError(
-            f"stream_object: storage unreachable ({type(exc).__name__})"
+            f"stream_object: storage failed ({type(exc).__name__})"
         ) from None
     if received < expected_size:
         # An immutable, verified object cannot get shorter: the connection ended

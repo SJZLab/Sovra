@@ -115,7 +115,7 @@ STRICT_JSON_CODES: Final = frozenset(
         "non_finite_number",
         "number_out_of_range",
         "invalid_unicode",
-        "depth_exceeded",
+        "nesting_too_deep",
     }
 )
 
@@ -132,25 +132,40 @@ REJECTION_CODES: Final = frozenset(
         "unmapped_message_key",
         "unmapped_role",
         "invalid_utf8",
+        "record_not_object",
+        "formula_cell",
+        "cell_error_value",
     }
     | STRICT_JSON_CODES
 )
 
 FAILURE_CODES: Final = frozenset(
     {
+        "content_type_not_supported_by_importer",
         "csv_structure_invalid",
-        "deadline_exceeded",
         "duplicate_header",
+        "duplicate_sheet_name",
+        "external_link_present",
         "field_too_large",
         "invalid_encoding",
+        "limit_exceeded",
         "mapping_column_missing",
+        "parse_timeout",
+        "sheet_out_of_bounds",
         "source_changed",
         "source_too_large",
         "source_unavailable",
         "stream_not_consumed",
+        "too_many_cells",
         "too_many_columns",
         "too_many_rejections",
         "unexpected_bom",
+        "unmapped_top_level_key",
+        "unsafe_archive",
+        "unsafe_workbook",
+        "unsupported_encoding",
+        "unsupported_workbook",
+        "xlsx_malformed",
     }
 )
 
@@ -326,7 +341,7 @@ def _scan_depth(text: str, max_depth: int) -> None:
             case "[" | "{":
                 depth += 1
                 if depth > max_depth:
-                    raise StrictJsonError("depth_exceeded")
+                    raise StrictJsonError("nesting_too_deep")
             case "]" | "}":
                 depth -= 1
 
@@ -1025,7 +1040,7 @@ class Deadline:
 
     def check(self) -> None:
         if self._clock() > self._limit:
-            raise ImportAborted("failed", "deadline_exceeded")
+            raise ImportAborted("failed", "parse_timeout")
 
 
 class ChunkReader(Iterator[bytes]):

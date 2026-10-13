@@ -6,7 +6,9 @@
 `tests/tasks/test_ftf_0502_p1.py` proves the module over SQLite with a fake object
 store. This suite proves what only the real services can:
 
-I1  Datasets made by the real FTF-0501-P1 store functions: the bytes streamed back
+I1  Datasets made by uploading through the real FTF-0501 routes on uvicorn (create ->
+    presigned PUT to the real bucket -> finalize, so the server hashed and sniffed the
+    bytes itself; no store function with a self-declared hash): the bytes streamed back
     from the real bucket hash to `Dataset.verified_sha256` and a ChunkReader over them
     completes with the declared size
 I2  a foreign organization's dataset, a foreign project's dataset, a missing id and a
@@ -27,13 +29,15 @@ Run: python3 tests/integration/test_ftf_0502_p1_dataset_source_postgres_s3.py
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import http.client
 import importlib.util
 import json
-import os
 import sys
+import urllib.parse
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -41,14 +45,19 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
+from fastapi import FastAPI  # noqa: E402
 from sqlalchemy import create_engine, text  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 from workers.data import import_common as ic  # noqa: E402
 
 from app.auth.organization_workspace_schema import Organization, Workspace  # noqa: E402
+from app.auth.rbac_middleware import Role  # noqa: E402
 from app.datasets import dataset_object_source as source_module  # noqa: E402
 from app.datasets import dataset_upload_store as store  # noqa: E402
 from app.datasets import direct_object_storage_upload as dos  # noqa: E402
+from app.datasets.direct_object_storage_upload_routes import (  # noqa: E402
+    build_direct_upload_router,
+)
 from app.db.tenant_context import TenantContext, tenant_scoped_session_for  # noqa: E402
 from app.projects.project_schema import Project  # noqa: E402
 from app.services.storage_semantics_client import S3Client  # noqa: E402
@@ -184,10 +193,49 @@ def main() -> None:
 
     conn1, conn2 = seed_connection(org1_id, p1_id), seed_connection(org2_id, p2_id)
     ctx1, ctx2 = TenantContext(organization_id=org1_id), TenantContext(organization_id=org2_id)
-    actor = store.UploadActor(actor_type="user", actor_id="user-0502", request_id="req-0502")
+
+    settings = dos.UploadStorageSettings(endpoint, credentials, bucket)
+    fixture = p1._Fixture({"org1": org1_id, "org2": org2_id})
+    app = FastAPI()
+    app.include_router(
+        build_direct_upload_router(
+            factory,
+            principal_resolver=fixture.principal_resolver,
+            role_lookup=fixture.role_lookup,
+            storage_factory=lambda: settings,
+            clock=lambda: datetime.now(UTC),
+        )
+    )
+    servers = contextlib.ExitStack()
+    base = servers.enter_context(p1._running_app(app))
+    principals = {
+        ("org1", "training"): fixture.header_for("org1", Role.ML_ENGINEER),
+        ("org1", "held_out_evaluation"): fixture.header_for("org1", Role.WORKSPACE_ADMIN),
+        ("org2", "training"): fixture.header_for("org2", Role.ML_ENGINEER),
+    }
+    org_ids = {"org1": org1_id, "org2": org2_id}
+
+    def route(method: str, path: str, body: Any, principal: str) -> tuple[int, Any]:
+        parsed = urllib.parse.urlparse(base)
+        headers = {"X-Test-Principal": principal}
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode()
+            headers["Content-Type"] = "application/json"
+        http_conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=120)
+        try:
+            http_conn.request(method, path, body=data, headers=headers)
+            response = http_conn.getresponse()
+            raw = response.read()
+        finally:
+            http_conn.close()
+        try:
+            return response.status, json.loads(raw)
+        except ValueError:
+            return response.status, raw
 
     def make_dataset(
-        ctx: TenantContext,
+        org_label: str,
         project_id: uuid.UUID,
         connection: uuid.UUID,
         data: bytes,
@@ -195,47 +243,83 @@ def main() -> None:
         purpose: str = "training",
         store_bytes: bytes | None = None,
     ) -> tuple[store.Dataset, str]:
-        with tenant_scoped_session_for(factory, ctx) as session:
-            record = store.create_upload_session(
-                session,
-                ctx,
-                project_id=project_id,
-                connection_id=connection,
-                purpose=purpose,
-                declared_size_bytes=len(data),
-                declared_sha256=sha(data),
-                declared_content_type="application/jsonl",
-                max_bytes=len(data) * 2,
-                ttl=timedelta(hours=1),
-                now=datetime.now(UTC),
-                actor=actor,
+        """Uploads `data` through the real FTF-0501 routes and returns the Dataset the
+        server created. `store_bytes`, when given, overwrites the verified object in the
+        bucket afterwards (storage damaged after verification)."""
+        principal = principals[(org_label, purpose)]
+        collection = (
+            f"/api/v1/organizations/{org_ids[org_label]}/projects/{project_id}/upload-sessions"
+        )
+        status, created = route(
+            "POST",
+            collection,
+            {
+                "dataset_source_connection_id": str(connection),
+                "purpose": purpose,
+                "declared_size_bytes": len(data),
+                "declared_sha256": sha(data),
+                "declared_content_type": "application/jsonl",
+            },
+            principal,
+        )
+        check(f"fixture {name}: create session answers 201 (got {status} {created})", status == 201)
+        session_id = created["id"]
+        part_size, part_count = created["part_size_bytes"], created["part_count"]
+        status, granted = route(
+            "POST",
+            f"{collection}/{session_id}/part-urls",
+            {"part_numbers": list(range(1, part_count + 1))},
+            principal,
+        )
+        check(f"fixture {name}: part-urls answers 200 (got {status})", status == 200)
+        for grant in granted["parts"]:
+            number = grant["part_number"]
+            piece = data[(number - 1) * part_size : number * part_size]
+            put_status = s3lab._put(grant["url"], piece)
+            check(
+                f"fixture {name}: part {number} PUT answers 200 (got {put_status})",
+                put_status == 200,
             )
-            session_id, key = record.id, record.object_key
-        client.put_object(bucket, key, data if store_bytes is None else store_bytes)
-        with tenant_scoped_session_for(factory, ctx) as session:
-            dataset = store.record_upload_verified_and_create_dataset(
+        status, done = route(
+            "POST", f"{collection}/{session_id}/finalize", {"dataset_name": name}, principal
+        )
+        check(f"fixture {name}: finalize answers 201 (got {status} {done})", status == 201)
+        with owner_engine.connect() as raw_conn:
+            row = raw_conn.execute(
+                text(
+                    "SELECT d.id, s.object_key FROM datasets d JOIN dataset_upload_sessions s "
+                    "ON s.id = d.upload_session_id WHERE s.id = :sid"
+                ),
+                {"sid": uuid.UUID(session_id)},
+            ).one()
+        dataset_id, key = row[0], str(row[1])
+        if store_bytes is not None:
+            client.put_object(bucket, key, store_bytes)
+        with tenant_scoped_session_for(
+            factory, TenantContext(organization_id=org_ids[org_label])
+        ) as session:
+            dataset = store.get_dataset(
                 session,
-                ctx,
+                TenantContext(organization_id=org_ids[org_label]),
                 project_id=project_id,
-                upload_session_id=session_id,
-                dataset_name=name,
-                verified_size_bytes=len(data),
-                verified_sha256=sha(data),
-                verified_content_type="application/jsonl",
-                now=datetime.now(UTC),
-                actor=actor,
+                dataset_id=dataset_id,
+                include_held_out=True,
             )
+        check(
+            f"fixture {name}: the route-created Dataset carries the server-verified hash",
+            dataset.verified_sha256 == sha(data) and dataset.verified_size_bytes == len(data),
+        )
         return dataset, key
 
     def line(i: int) -> bytes:
         return json.dumps({"prompt": f"question {i}", "completion": f"answer {i}"}).encode() + b"\n"
 
     small = b"".join(line(i) for i in range(500))
-    train, train_key = make_dataset(ctx1, p1_id, conn1, small, "train")
+    train, train_key = make_dataset("org1", p1_id, conn1, small, "train")
     held, held_key = make_dataset(
-        ctx1, p1_id, conn1, small + line(999), "held", purpose="held_out_evaluation"
+        "org1", p1_id, conn1, small + line(999), "held", purpose="held_out_evaluation"
     )
-    foreign, _ = make_dataset(ctx2, p2_id, conn2, small + line(7), "foreign")
+    foreign, _ = make_dataset("org2", p2_id, conn2, small + line(7), "foreign")
 
     def open_source(
         ctx: TenantContext,
@@ -398,7 +482,7 @@ def main() -> None:
     check("I3 it is refused with include_held_out=False", failures["hidden held-out"] is not None)
 
     # ---- I5: truncated in storage, then S3 stopped mid-stream ---------------------------
-    truncated, _ = make_dataset(ctx1, p1_id, conn1, small, "truncated", store_bytes=small[:-1000])
+    truncated, _ = make_dataset("org1", p1_id, conn1, small, "truncated", store_bytes=small[:-1000])
     src = open_source(ctx1, p1_id, truncated.id)
     outcome = None
     try:
@@ -414,9 +498,10 @@ def main() -> None:
         and (outcome.state, outcome.failure_code) == ("blocked", "source_unavailable"),
     )
 
-    big = os.urandom(MIB) * 96
-    large_a, _ = make_dataset(ctx1, p1_id, conn1, big, "large-a")
-    large_b, _ = make_dataset(ctx1, p1_id, conn1, big + b"x", "large-b")
+    # JSONL-looking text (the route sniffs the bytes), 96 MiB: two upload parts.
+    big = (line(1) * (MIB // len(line(1)) + 1))[:MIB] * 96
+    large_a, _ = make_dataset("org1", p1_id, conn1, big, "large-a")
+    large_b, _ = make_dataset("org1", p1_id, conn1, big + b"x", "large-b")
     raw = open_source(ctx1, p1_id, large_a.id)
     via_reader_src = open_source(ctx1, p1_id, large_b.id)
     via_reader = ic.ChunkReader(
@@ -461,6 +546,7 @@ def main() -> None:
         and (verdict.state, verdict.failure_code) == ("blocked", "source_unavailable"),
     )
 
+    servers.close()
     app_engine.dispose()
     owner_engine.dispose()
     if booted_here:

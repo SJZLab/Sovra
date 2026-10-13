@@ -948,7 +948,7 @@ def _mixed(depth: int) -> str:
 
 def test_json_depth_boundary_and_pre_scan() -> None:
     for kind in ("array", "object", "mixed"):
-        for depth, expect in ((63, None), (64, None), (65, "depth_exceeded")):
+        for depth, expect in ((63, None), (64, None), (65, "nesting_too_deep")):
             check(
                 "JSON-1", f"{kind} depth {depth} -> {expect}", _code(_nest(depth, kind)) == expect
             )
@@ -956,18 +956,18 @@ def test_json_depth_boundary_and_pre_scan() -> None:
         for kind in ("array", "object"):
             check(
                 "JSON-1",
-                f"{kind} depth {depth} is depth_exceeded (no RecursionError)",
-                _code(_nest(depth, kind)) == "depth_exceeded",
+                f"{kind} depth {depth} is nesting_too_deep (no RecursionError)",
+                _code(_nest(depth, kind)) == "nesting_too_deep",
             )
         check(
             "JSON-1",
-            f"unclosed depth {depth} is depth_exceeded",
-            _code("[" * depth) == "depth_exceeded",
+            f"unclosed depth {depth} is nesting_too_deep",
+            _code("[" * depth) == "nesting_too_deep",
         )
     check(
         "JSON-1",
         "bytes input is scanned the same way",
-        _code(("[" * 65 + "]" * 65).encode()) == "depth_exceeded",
+        _code(("[" * 65 + "]" * 65).encode()) == "nesting_too_deep",
     )
     check("JSON-1", "brackets inside strings do not count", _code('["' + "[" * 5000 + '"]') is None)
     check(
@@ -981,7 +981,7 @@ def test_json_depth_boundary_and_pre_scan() -> None:
     check(
         "JSON-1",
         "a lower max_depth applies",
-        _code("[[1]]", max_depth=1) == "depth_exceeded" and _code("[[1]]", max_depth=2) is None,
+        _code("[[1]]", max_depth=1) == "nesting_too_deep" and _code("[[1]]", max_depth=2) is None,
     )
     check("JSON-1", "depth 0 containers: a scalar is fine", _code("1", max_depth=1) is None)
     for bad in (0, -1, True, 1.5, None, "64"):
@@ -993,7 +993,7 @@ def test_json_depth_boundary_and_pre_scan() -> None:
     check(
         "JSON-1",
         "the default depth is 64",
-        _code(_nest(64, "array")) is None and _code(_nest(65, "array")) == "depth_exceeded",
+        _code(_nest(64, "array")) is None and _code(_nest(65, "array")) == "nesting_too_deep",
     )
 
 
@@ -1343,9 +1343,9 @@ def test_read_deadline() -> None:
     outcome = raises(ic.ImportAborted, next, reader)
     check(
         "READ-4",
-        "past the deadline is failed/deadline_exceeded",
+        "past the deadline is failed/parse_timeout",
         outcome is not None
-        and (outcome.state, outcome.failure_code) == ("failed", "deadline_exceeded"),
+        and (outcome.state, outcome.failure_code) == ("failed", "parse_timeout"),
     )
     check(
         "READ-4", "the deadline abort is sticky", raises(ic.ImportAborted, next, reader) is outcome
@@ -1361,7 +1361,7 @@ def test_read_deadline() -> None:
     check(
         "READ-4",
         "a stale deadline wins before the source is asked again",
-        outcome is not None and outcome.failure_code == "deadline_exceeded",
+        outcome is not None and outcome.failure_code == "parse_timeout",
     )
     deadline = ic.Deadline(5.0, clock2)
     deadline.check()
@@ -1514,8 +1514,8 @@ def test_read_run_import_states() -> None:
     report = _import(slow_events(), reader4)
     check(
         "READ-6",
-        "a deadline that passes between records is failed/deadline_exceeded",
-        (report.state, report.failure_code) == ("failed", "deadline_exceeded"),
+        "a deadline that passes between records is failed/parse_timeout",
+        (report.state, report.failure_code) == ("failed", "parse_timeout"),
     )
 
     seen: list[object] = []
@@ -2387,7 +2387,7 @@ def test_row_messages_json_cells() -> None:
         ('[{"role":"user","role":"x","content":"a"}]', "duplicate_key"),
         ('[{"role":"user","content":NaN}]', "non_finite_number"),
         ('[{"role":"user","content":1e999}]', "non_finite_number"),
-        ("[" * 65 + "]" * 65, "depth_exceeded"),
+        ("[" * 65 + "]" * 65, "nesting_too_deep"),
         ('[{"role":"user","content":"\\ud800"}]', "invalid_unicode"),
         ("9" * 4301, "number_out_of_range"),
         ("{}", "mapping_type_mismatch"),
@@ -3561,15 +3561,34 @@ def test_src_storage_failures_are_content_free_and_block_the_import() -> None:
             outcome is not None
             and (outcome.state, outcome.failure_code) == ("failed", "source_changed"),
         )
-        fake = FakeS3()
-        fake.fail_at, fake.error = 1, RuntimeError(marker)
-        src = _open(session, train, fake)
-        err = raises(RuntimeError, lambda: b"".join(src.chunks))
-        check(
-            "SRC-4",
-            "an error that is not a storage error is not relabelled as one",
-            err is not None and not isinstance(err, UploadStorageUnavailableError),
-        )
+        import http.client
+
+        for odd in (
+            RuntimeError(marker),
+            KeyError(marker),
+            http.client.IncompleteRead(marker.encode(), 100),
+            http.client.BadStatusLine(marker),
+            http.client.RemoteDisconnected(marker),
+            UnicodeDecodeError("utf-8", marker.encode(), 0, 1, marker),
+        ):
+            fake = FakeS3()
+            fake.fail_at, fake.error = 1, odd
+            src = _open(session, train, fake)
+            err = raises(UploadStorageUnavailableError, _join, src.chunks)
+            label = type(odd).__name__
+            check(
+                "SRC-4",
+                f"{label}: any exception out of the stream is an outage, converted",
+                err is not None,
+            )
+            if err is not None:
+                check(
+                    "SRC-4",
+                    f"{label}: nothing from the original (partial bytes, status line) survives",
+                    support.leaked_markers(err, [marker]) == []
+                    and err.__cause__ is None
+                    and err.__suppress_context__,
+                )
 
 
 def _join(chunks: Iterator[bytes]) -> bytes:
@@ -3580,6 +3599,363 @@ def _failing(error: BaseException, at: int) -> FakeS3:
     fake = FakeS3()
     fake.fail_at, fake.error = at, error
     return fake
+
+
+# --- SRC-5: a real HTTP endpoint that dies mid-response -------------------------------
+
+
+@contextlib.contextmanager
+def _raw_http_endpoint(response: bytes) -> Iterator[int]:
+    """A TCP server that answers every request with the exact `response` bytes
+    and closes the connection: the way to make `http.client` raise
+    IncompleteRead / BadStatusLine from a real socket."""
+    import socket
+    import threading
+
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(8)
+    server.settimeout(0.2)
+    stop = threading.Event()
+
+    def serve() -> None:
+        while not stop.is_set():
+            try:
+                conn, _ = server.accept()
+            except (TimeoutError, OSError):
+                continue
+            with conn:
+                conn.settimeout(2)
+                with contextlib.suppress(OSError):
+                    conn.recv(65536)
+                    conn.sendall(response)
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    try:
+        yield server.getsockname()[1]
+    finally:
+        stop.set()
+        thread.join(2)
+        server.close()
+
+
+def _real_client(port: int) -> Any:
+    from app.services.storage_semantics_client import S3Client, S3Credentials, S3Endpoint
+
+    return S3Client(S3Endpoint("http", "127.0.0.1", port), S3Credentials("AKIATEST", "secret"), 2.0)
+
+
+def test_src_real_socket_failures_never_leak_object_bytes() -> None:
+    marker = support.make_marker("objbytes")
+    body = (marker * 3).encode()
+    head = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+    scenarios = {
+        # the chunk header promises 4096 bytes, the connection ends after `body`
+        "chunked response cut mid-chunk": head + b"1000\r\n" + body,
+        "chunked response cut after a whole chunk": head
+        + f"{len(body):x}\r\n".encode()
+        + body
+        + b"\r\n",
+        "garbage status line": (marker + "\r\n\r\n").encode(),
+        "content-length longer than the body": (
+            b"HTTP/1.1 200 OK\r\nContent-Length: 100000\r\nConnection: close\r\n\r\n" + body
+        ),
+    }
+    with _src_env() as (session, seeds):
+        train = seeds["train"]
+        for label, response in scenarios.items():
+            with _raw_http_endpoint(response) as port:
+                src = _open(session, train, _real_client(port))
+                caught = raises(UploadStorageUnavailableError, _join, src.chunks)
+            check(
+                "SRC-5",
+                f"{label}: UploadStorageUnavailableError, not a raw http.client error",
+                caught is not None,
+            )
+            if caught is not None:
+                check(
+                    "SRC-5",
+                    f"{label}: no object bytes, marker or key anywhere in the error or its chain",
+                    support.leaked_markers(caught, [marker, train.key]) == []
+                    and caught.__cause__ is None
+                    and (caught.__context__ is None or caught.__suppress_context__),
+                )
+            with _raw_http_endpoint(response) as port:
+                outcome = _drain(
+                    ic.ChunkReader(
+                        _open(session, train, _real_client(port)).chunks,
+                        expected_size=len(SRC_BYTES),
+                        expected_sha256=support.sha256_hex(SRC_BYTES),
+                    )
+                )
+            check(
+                "SRC-5",
+                f"{label}: the import is blocked/source_unavailable",
+                outcome is not None
+                and (outcome.state, outcome.failure_code) == ("blocked", "source_unavailable"),
+            )
+
+
+# --- CAT: the code catalog is the one the FTF-0502..0505 entries name -----------------
+
+_EXPECTED_STRICT_JSON = {
+    "invalid_json",
+    "duplicate_key",
+    "non_finite_number",
+    "number_out_of_range",
+    "invalid_unicode",
+    "nesting_too_deep",
+}
+_EXPECTED_ROW_ONLY = {
+    "canonical_schema_invalid",
+    "cell_error_value",
+    "column_count_mismatch",
+    "formula_cell",
+    "invalid_event_timestamp",
+    "invalid_utf8",
+    "mapping_type_mismatch",
+    "nul_character",
+    "record_not_object",
+    "record_too_large",
+    "required_field_empty",
+    "required_field_missing",
+    "unmapped_message_key",
+    "unmapped_role",
+}
+_EXPECTED_FAILURE = {
+    "content_type_not_supported_by_importer",
+    "csv_structure_invalid",
+    "duplicate_header",
+    "duplicate_sheet_name",
+    "external_link_present",
+    "field_too_large",
+    "invalid_encoding",
+    "limit_exceeded",
+    "mapping_column_missing",
+    "parse_timeout",
+    "sheet_out_of_bounds",
+    "source_changed",
+    "source_too_large",
+    "source_unavailable",
+    "stream_not_consumed",
+    "too_many_cells",
+    "too_many_columns",
+    "too_many_rejections",
+    "unexpected_bom",
+    "unmapped_top_level_key",
+    "unsafe_archive",
+    "unsafe_workbook",
+    "unsupported_encoding",
+    "unsupported_workbook",
+    "xlsx_malformed",
+}
+# Every code the FTF-0502 / 0503 / 0504 / 0505 QUEUE.md entries name as a row
+# rejection or a fatal failure, and which catalog each belongs to.
+_NAMED_BY_IMPORTERS = {
+    "nesting_too_deep": "row",
+    "parse_timeout": "failure",
+    "content_type_not_supported_by_importer": "failure",
+    "record_not_object": "row",
+    "unsupported_encoding": "failure",
+    "invalid_json": "row",
+    "duplicate_key": "row",
+    "non_finite_number": "row",
+    "invalid_unicode": "row",
+    "invalid_utf8": "row",
+    "record_too_large": "row",
+    "nul_character": "row",
+    "required_field_empty": "row",
+    "column_count_mismatch": "row",
+    "formula_cell": "row",
+    "cell_error_value": "row",
+    "invalid_encoding": "failure",
+    "unexpected_bom": "failure",
+    "duplicate_header": "failure",
+    "mapping_column_missing": "failure",
+    "field_too_large": "failure",
+    "csv_structure_invalid": "failure",
+    "too_many_columns": "failure",
+    "unmapped_top_level_key": "failure",
+    "unsafe_archive": "failure",
+    "unsupported_workbook": "failure",
+    "unsafe_workbook": "failure",
+    "external_link_present": "failure",
+    "duplicate_sheet_name": "failure",
+    "xlsx_malformed": "failure",
+    "sheet_out_of_bounds": "failure",
+    "too_many_cells": "failure",
+    "limit_exceeded": "failure",
+    "source_changed": "failure",
+    "source_unavailable": "failure",
+    "too_many_rejections": "failure",
+}
+
+
+def test_cat_catalog_is_exactly_the_one_the_importer_entries_name() -> None:
+    check(
+        "CAT-1",
+        "STRICT_JSON_CODES is exactly the pinned set",
+        set(ic.STRICT_JSON_CODES) == _EXPECTED_STRICT_JSON,
+    )
+    check(
+        "CAT-1",
+        "REJECTION_CODES is exactly the pinned row codes plus the strict-JSON codes",
+        set(ic.REJECTION_CODES) == _EXPECTED_ROW_ONLY | _EXPECTED_STRICT_JSON,
+    )
+    check(
+        "CAT-1",
+        "FAILURE_CODES is exactly the pinned set",
+        set(ic.FAILURE_CODES) == _EXPECTED_FAILURE,
+    )
+    for code, kind in sorted(_NAMED_BY_IMPORTERS.items()):
+        catalog = ic.REJECTION_CODES if kind == "row" else ic.FAILURE_CODES
+        other = ic.FAILURE_CODES if kind == "row" else ic.REJECTION_CODES
+        check(
+            "CAT-2",
+            f"{code} is a {kind} code the importers can emit",
+            code in catalog and code not in other,
+        )
+    for gone in ("depth_exceeded", "deadline_exceeded"):
+        check(
+            "CAT-3",
+            f"the pre-ruling name {gone} is gone from every catalog",
+            gone not in ic.REJECTION_CODES | ic.FAILURE_CODES | ic.STRICT_JSON_CODES,
+        )
+    raised = raises(ic.StrictJsonError, ic.strict_loads, "[" * 65 + "]" * 65)
+    check(
+        "CAT-3",
+        "strict_loads past max_depth raises nesting_too_deep",
+        raised is not None and raised.code == "nesting_too_deep",
+    )
+    clock = support.FakeClock()
+    reader = ic.ChunkReader(
+        [b"x"],
+        expected_size=1,
+        expected_sha256=support.sha256_hex(b"x"),
+        limits=ic.ImportLimits(deadline_seconds=1.0),
+        clock=clock,
+    )
+    clock.advance(5.0)
+    outcome = _drain(reader)
+    check(
+        "CAT-3",
+        "a passed deadline gives failed/parse_timeout",
+        outcome is not None
+        and (outcome.state, outcome.failure_code) == ("failed", "parse_timeout"),
+    )
+
+
+# --- RES: memory and time do not depend on the size of the file ------------------------
+
+
+def _hash_of_zero_chunks(chunk: int, count: int) -> str:
+    digest = hashlib.sha256()
+    block = bytes(chunk)
+    for _ in range(count):
+        digest.update(block)
+    return digest.hexdigest()
+
+
+def _peak_for_stream(chunk_size: int, chunk_count: int) -> int:
+    import tracemalloc
+
+    def source() -> Iterator[bytes]:
+        for _ in range(chunk_count):
+            yield bytes(chunk_size)
+
+    reader = ic.ChunkReader(
+        source(),
+        expected_size=chunk_size * chunk_count,
+        expected_sha256=_hash_of_zero_chunks(chunk_size, chunk_count),
+    )
+    tracemalloc.start()
+    try:
+        tracemalloc.reset_peak()
+        total = sum(len(piece) for piece in reader)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert total == chunk_size * chunk_count
+    return peak
+
+
+def test_res_memory_is_independent_of_file_size() -> None:
+    mib = 1024 * 1024
+    # The baseline holds two chunks (the one being yielded and the next one the
+    # source has already built), which is the steady state of any stream; a
+    # one-chunk baseline would make a correct reader look 2x.
+    small = _peak_for_stream(mib, 2)
+    large = _peak_for_stream(mib, 64)
+    check(
+        "RES-1",
+        f"ChunkReader peak for 64 MiB ({large}) is within 1.5x of the peak for 2 MiB ({small})",
+        large <= small * 1.5,
+    )
+    small7 = _peak_for_stream(7 * 1024, 1)
+    large7 = _peak_for_stream(7 * 1024, 4096)
+    check(
+        "RES-1",
+        f"...and with 7 KiB chunks: 28 MiB ({large7}) within 1.5x of 7 KiB ({small7})",
+        large7 <= max(small7, 64 * 1024) * 1.5,
+    )
+
+
+def test_res_one_byte_chunks_are_linear() -> None:
+    import time
+
+    size = 256 * 1024
+    data = bytes(range(256)) * (size // 256)
+    reader = ic.ChunkReader(
+        support.split_chunks(data, 1),
+        expected_size=size,
+        expected_sha256=support.sha256_hex(data),
+    )
+    started = time.monotonic()
+    joined = b"".join(reader)
+    elapsed = time.monotonic() - started
+    check("RES-2", "a 256 KiB input in 1-byte chunks is read back exactly", joined == data)
+    check(
+        "RES-2",
+        f"...inside a fixed budget (took {elapsed:.2f}s; quadratic re-hashing needs ~20s)",
+        elapsed < 5.0,
+    )
+
+
+def test_res_chunk_boundaries_do_not_change_the_result() -> None:
+    data = bytes(range(256)) * 3
+    digest = support.sha256_hex(data)
+    flipped = data[:-1] + bytes([data[-1] ^ 1])
+
+    def run(payload: bytes, pieces: list[bytes]) -> tuple[bytes, tuple[str, str] | None]:
+        reader = ic.ChunkReader(pieces, expected_size=len(data), expected_sha256=digest)
+        out = bytearray()
+        try:
+            for piece in reader:
+                out += piece
+        except ic.ImportAborted as exc:
+            return bytes(out), (exc.state, exc.failure_code)
+        return bytes(out), None
+
+    layouts: list[tuple[str, list[bytes]]] = [
+        ("1-byte chunks", support.split_chunks(data, 1)),
+        ("7-byte chunks", support.split_chunks(data, 7)),
+    ]
+    layouts += [(f"split at offset {i}", [data[:i], data[i:]]) for i in range(len(data) + 1)]
+    for label, pieces in layouts:
+        got, verdict = run(data, pieces)
+        check("RES-3", f"{label}: the exact bytes and a clean end", got == data and verdict is None)
+    for label, pieces in (
+        ("1-byte chunks", support.split_chunks(flipped, 1)),
+        ("7-byte chunks", support.split_chunks(flipped, 7)),
+        *[(f"split at offset {i}", [flipped[:i], flipped[i:]]) for i in range(len(data) + 1)],
+    ):
+        _, verdict = run(flipped, pieces)
+        check(
+            "RES-3",
+            f"{label}: a flipped last byte is failed/source_changed wherever the split falls",
+            verdict == ("failed", "source_changed"),
+        )
 
 
 # --- constructors, catalogs and whitespace ---------------------------------------------
@@ -3689,7 +4065,7 @@ def test_ctor_whitespace_outside_strings_is_not_nesting() -> None:
         check(
             "CTOR-2",
             f"65 arrays with 300 x {pad!r} of padding is still too deep",
-            _code(deep) == "depth_exceeded",
+            _code(deep) == "nesting_too_deep",
         )
         opened = "[" * 64 + pad * 300 + "1" + "]" * 64
         check(
@@ -3713,7 +4089,7 @@ def test_ctor_whitespace_outside_strings_is_not_nesting() -> None:
     check(
         "CTOR-2",
         "unbalanced closers never lower the depth below what was opened",
-        _code("]]]]]]" + "[" * 5, max_depth=4) == "depth_exceeded"
+        _code("]]]]]]" + "[" * 5, max_depth=4) == "nesting_too_deep"
         or _code("]]]]]]" + "[" * 5, max_depth=4) == "invalid_json",
     )
 
@@ -4170,7 +4546,7 @@ def test_surv_reader_edges() -> None:
     check(
         "SURV-7",
         "the importer loop stops at the deadline instead of draining the events",
-        (report.state, report.failure_code) == ("failed", "deadline_exceeded")
+        (report.state, report.failure_code) == ("failed", "parse_timeout")
         and len(pulled) == 2
         and report.records_accepted == 1,
     )
