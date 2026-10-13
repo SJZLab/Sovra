@@ -11046,3 +11046,154 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   connection `base_url` to project readers. Route 1 rejected: origin does not distinguish the paths.
 - Verifier note: `tests/tasks/*.py` files must be run as scripts (as CI does); under pytest, `check()` collects
   failures without failing the run.
+
+## 2026-10-10T15:50Z — RETURNED: FTF-H010-P3a (r2), FTF-0616-F1 (r2)
+- **FTF-H010-P3a (child slice): RETURNED** (round 1 → 2; PR #734, merge f5c83e684f9ec4ccdfddce81acbe153f7f36ffd5, head
+  3a4ad850). Producer session_01R99cJq84qwmYQqJPyrs3pn ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict green;
+  gate job 114121370854 "OK -- 111088 checks in 62 suite runs, 61 faults RED". No artifact execution (audit hook), codes-only
+  errors; 292 probes; 18 verifier faults RED. Return: unbounded shape product reproduced (quadratic; 139 s at 4.2 MB;
+  dimensions > 2^64-1 accepted); negative-dimension, lora_A rank and PEFT-prefix clauses unpinned (faults GREEN or caught
+  only by the patch-text guard).
+- **FTF-0616-F1 (follow-up on FTF-0616): RETURNED** (round 1 → 2, tests only; PR #720, merge
+  2c7967a589cab64b488234b72b0bbdf971df08f7, head 8b099b3b). Producer session_01YBNR44CU4yRUVTWaWkzAVD ≠ certifier. CI:
+  ci-verdict 114087693892; gate 114079326937 (live TLS); mutation-gate 114079326756 ran in diff mode. Production correct
+  (72 pure + 35 wire probes, 0 violations; 25 of 34 verifier faults RED). Return: golden request test self-referential
+  (G-MAXTOK/G-STREAM/G-SYSMSG/G-ENSUREASCII GREEN); header value and name normalisers GREEN against the FTF-0616
+  property-generated Unicode ruling (V-STRIP reproduced on the wire); submission misstates the mutation scope.
+- **FTF-0616 Law 15 requalification at 2c7967a5: PARTIAL, no regression found.** Whole suite passes in default mode and
+  with FTF_0616_FULL_SWEEP=1 (local live TLS and CI); FTF-0616 lines unchanged (additive diff); round-8 behaviour identical.
+  The verifier's uncapped whole-file mutation run did not finish (the verifier stopped on an API usage limit). FTF-0616
+  stays CERTIFIED; the uncapped mutation is required at F1 round 2's verification.
+
+## 2026-10-10T16:15Z — DECERTIFIED: FTF-0305 (140/302); RETURNED: FTF-0310 (r2); new item FTF-0305-F1
+- **FTF-0305: CERTIFIED → PROVISIONAL (requalification required, Law 2/15).** Evidence: the FTF-0310 L2 verifier (PR #738
+  review, scratchpad v738 race_interleave.py) ran the real `mark_ready` and `revoke_license` crud transactions in a fixed
+  interleave on PG16 as sovra_app; final row (`ready`, NULL, NULL); real mapping POST 200; real capabilities GET 200
+  `trainable: true, capability: trainable_open_weight, license_approved: false`. No direct database write. This violates
+  FTF-0305's negative acceptance "Unaccepted/revoked license blocks training/serving". Causes: `_fetch_or_raise` takes no
+  row lock or version check; the FTF-0307 classifier ignores `license_approved` for trainability. Fix routed as
+  FTF-0305-F1 (QUEUE item 0b) with Law 15 requalification of FTF-0301, FTF-0307 and FTF-0309-P1 paths.
+- **FTF-0310: RETURNED** (round 1 → 2; PR #738, merge 825e8263f1e4838f763704aa030cfaf58f6f443e, head e5ad0582). Producer
+  session_01QoD43Fh5FsA5vmV1zB4WQg ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 114126691508;
+  capability-contract-integration 114124516554 (72 cells, 8 FINDING lines for the exempted license cells); gate
+  114124474947. Return: the 8 license cells are exempted by `api_reachable()` on a refuted premise; date-time checking
+  is not RFC 3339 (V8/V9 GREEN); checker ignores non-false additionalProperties; V3 GREEN in integration.
+
+## 2026-10-10T16:34Z — CERTIFIED: FTF-0501 (141/302)
+- **FTF-0501: CERTIFIED.** API half: PR #692 (merge b99723744b582685793be7c494fe6f1fc0100fa2), passed L2 2026-10-09 and
+  re-passed at #727 and #736. Resumable UI slice FTF-0501-UI: round 3, PR #736 (merge 41904e5fe5702a08a12483760c9bc811acfa2ddf, head 8107dd71), production
+  change `unsafe_archive` terminal. Session comparison: producers session_01W5sGbcHuyQj4HWKtsmQnKB (API),
+  session_01Cz8ktmhVtwPfswTkMft7yJ / session_014ggVH3xe8FEvP7NERrLSnc / session_01YagVF3XQsQyi4yTUXXcE1J /
+  session_01LzDqGuFqZSWvUYNaUNaVLf (UI rounds) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent from every PR. CI:
+  ci-verdict 114114763764; resumable-upload-ui-real-api-integration 114110976715 (PG16 + SeaweedFS R1-R3 passed); gate
+  114110937411 (1407 vitest tests, "FTF-0501 direct upload tests: all checks passed"); API jobs green. Local: UI spec
+  1073/1073; real-API suite on PG16 as sovra_app + SeaweedFS; all API suites. 156 component probes + real-router RP1/
+  RP12/RP13 (unsafe archives terminal, server session rejected) clean; 99 faults, 88 RED incl. UF3 (4 tests), UA1-UA7,
+  B34, DR1-DR3; GREEN only equivalents and hand-picked variants of the closed stale-reply class (B34b-f) plus DR4/DR5
+  (drift test regex; client default fail-safe). Advisories: opt-in storageOrigin pin (FTF-H029 mount should pass it),
+  lenient timestamp parse, expired grant still used (S3 refuses). The upload API (build_direct_upload_router) is live;
+  the resumable UI is UNWIRED until FTF-H029, so FTF-0501 is not counted product-true (Law 7, FTF-0309 precedent).
+- **Correction:** product-true after FTF-0305's decertification is 44 (FTF-0305 carried proving_symbol
+  apply_revoke_license); the 16:15Z entry said 45.
+
+## 2026-10-12T03:39Z — RETURNED: FTF-0904 (r5)
+- **FTF-0904: RETURNED** (round 4 → 5; PR #739, merge 62674e861da6447c849787137942f5992e159c94, head 50347cb3). Producer
+  session_018NKAtbgQu3JkMkM7NkRbCg (production commit b82d6d12 has no trailer) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR.
+  CI: ci-verdict 114126560924; gate 114123432681 "FTF-0904 Log redaction tests: all checks passed" (SyntaxWarning on the
+  docstring); mutation 0 mutants. Quadratics closed (99-shape x 6-size sweep linear, 2376 runs). Return: the fix caps
+  match length - JWT payload > 1024 chars and escaped values > 8192 chars leak verbatim (reproduced, regressions from
+  round 3); F-QV-QUAD, V-JWT-BOUND-40, V-QV-BOUND-16 GREEN; suite flaky on an unmutated module (2/4 idle runs).
+  Ruling: a bounded match is a leak; linear AND unbounded, proven by a time sweep and a long-secret sweep for every rule.
+
+## 2026-10-13T12:55Z — RE-CERTIFIED: FTF-0305 (with FTF-0305-F1); CERTIFIED: FTF-0310 (143/302)
+- **FTF-0305-F1: CERTIFIED; FTF-0305: RE-CERTIFIED** (PR #747, merge f2ac7c7f73a049aa911d3d88f4a06bc457b51dde, head 5bae00ba). Producer
+  session_01EqJQMypxNq9kZ65P4sDA8d ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent from the PR. CI: ci-verdict
+  114675640935; artifact-transition-race-integration 114670917858 (PG16.15) "FTF-0305-F1 real transition-race proof: all
+  checks passed" with real ck_trainable_artifacts_ready_needs_license refusals; gate 114670865885 (step log tail not
+  retrievable; step success + local run). Local PG16 as sovra_app: 101 + 17 checks. The v738 race script now ends
+  ('registered', None, None), mapping 409, capabilities not trainable. 94 probes: all 25 ordered transition pairs x 2
+  start states blocked on the row lock with no ready-without-license; cross-tenant not blocked and not visible; 105
+  concurrent HTTP trials clean; every SourceType x license state trainable only when accepted+ready; migration 0029 refuses
+  typed on 26 violators without changing data, upgrades without rewriting, downgrade restores the 0028 snapshot. 22
+  faults: the four QUEUE-named faults RED behaviourally; GREEN: equivalents V15/V20, V4-V6 caught only by code-shape
+  checks, V22 (route always reports license_approved true - an FTF-0309-P1 response-field gap outside F1's clauses;
+  advisory follow-up). Law 15: FTF-0301, FTF-0305, FTF-0307, FTF-0309-P1 REQUALIFIED (suites + real-PG integrations on
+  fresh databases). Advisories: CHECK keys on license_accepted_at only (license_accepted_by cleared by a direct write
+  keeps trainable); 0029 pre-check under RLS gives a raw CheckViolation for a non-BYPASSRLS migrator.
+- **FTF-0310: CERTIFIED** (round 2; PR #751, merge c3a95ef172a51f8ed8c8c4bfb02ee572e5607c6f, head 095be832; FTF-0305-F1 is an ancestor). Producer
+  session_01KdYbu7mBmksg3TyJQLRo3y ≠ certifier. CI: ci-verdict 114956990062; capability-contract-integration 114950762593
+  "all checks passed (72 cells ...)" with no FINDING or exemption; gate 114950652083. Local 302 unit + 657 integration
+  checks. License exemption removed (RED on the pre-F1 tree, 21 failures); strict RFC 3339 with 11 generated variants
+  per date-time field (V8/V9 RED); whole-schema pre-scan, additionalProperties strict, frozen /changes, independent dedupe
+  (V3 RED). V1-V9, L1, L2, D1, G1, V11-V14 RED; V10 GREEN (field always null on the live mount; advisory). Test-only.
+
+## 2026-10-13T13:26Z — RETURNED: FTF-0516 UI (r4), FTF-0904 (r6)
+- **FTF-0516 (UI): RETURNED** (round 3 → 4, tests + CI; PR #748, merge 8616e81b333ace2ff10748dd6307b650f91a450c, head
+  c1e6116c; production ea0256a6 = evidence_hash). Producer session_01Vs4gfGV3xD2Y3sjFwBGkbQ ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 114680946154; gate 114674621374 (1413 vitest tests). No production
+  violation: real P1 router on PG16 R1-R13, U1/U3/U4, RV/RV2/RV3, U5, PG1 paging all correct. 151 faults, 141 RED; 20/21
+  ruled strict-parse faults RED. Return: F30 GREEN (generator never varies value/element types); the producer's own new
+  checks R4-S3/R4-D6/R4-R2 unpinned; UI CHECKLIST (f) real-API CI test missing although the P1 routes are live.
+- **FTF-0904: RETURNED** (round 5 → 6; PR #749, merge 1719f05d5429a45cd5fc85d1c0ac865b729e703f, head 2f01ecb0). Producers
+  session_017V8ZEAjvrXg89NTtdpk2R2, session_01Whptx7tmZPrjHL8mmTHqwa ≠ certifier. CI: ci-verdict 114954719711; gate
+  114945781573 "FTF-0904 Log redaction tests: all checks passed", no SyntaxWarning. Length caps fixed (0/49 JWT, 0/35
+  escaped-value leaks); 306 long-secret and 2,832 timing runs clean; not flaky. Return: (Control-plane correction) the
+  round-5 ruling's suggested `(?<![_\-])eyJ` lookbehind re-exposes JWTs glued after `_`/`-` in 7 contexts - required fix;
+  the long-secret sweep checks only the whole marker (V-JWT-SIG-BOUND-40, V-BEARER-BOUND-500, V-SK-BOUND-500 GREEN) and
+  its base64 case is vacuous (V-B64-BOUND-500 GREEN); no logging-path long-secret sweep; no _PAIR/_BASE64_RUN/_USERINFO
+  time shapes (Q-PAIR-OVERLAP, Q-PAIR-KEY-WS-QUAD, Q-B64-NO-LOOKBEHIND > 20 s at 64 KB, GREEN).
+
+## 2026-10-13T16:44Z — RETURNED: FTF-0502 (r2); process note
+- **FTF-0502: RETURNED** (round 1 → 2; PR #756, merge 081258117ad7b54d9fdb701b6a5e086bd3ae99b5, head bdbcd77f). Producer
+  session_014eb1RZDqBdz3dG7AVtYJcs ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 115394189762; gate
+  115377977787 "all checks passed"; mutation 27/27. Built before FTF-0502-P1 against its own codes/types. Reproduced:
+  4301-digit int and 100k-deep array crash the generator mid-stream; duplicate keys, NaN/Inf/1e999, lone surrogates
+  accepted; content leaks in messages; raw ConnectionResetError after records yielded; 64 MiB line buffered (136 MB); no
+  content-type gate, mapping, candidate or record_id; line-rule defects; F3/F4/F7 GREEN; no integration test. Ruling: the
+  Backlog order P1 → 0502 is binding; FTF-0502 is rebuilt after P1 certifies. FTF-0502 stays PROVISIONAL as a returned
+  item; its L1 claim is against an incomplete contract.
+- **Process note:** FTF-0517 round 2 (#600, merged 2026-10-08T00:20Z) and FTF-1206 round 5 (#650, merged
+  2026-10-08T19:29Z) were never verified: check-ins listed only merges since the previous check-in. Both are now being
+  verified; each check-in also lists every merged relay PR whose item is still PROVISIONAL with no verdict after its merge.
+
+## 2026-10-13T17:43Z — CERTIFIED: FTF-0516 (144/302); RETURNED: FTF-0517 (r3), FTF-1206 (r6)
+- **FTF-0517: RETURNED** (round 2 → 3; PR #600, merge aab048eab1e3e9dc89250527fd6d7f2fde44a5d8, head d596893a; verified
+  2026-10-13 at main 694247cf, FTF-0517 files identical to the merge). Producers session_01M6PUZDwx7dSwgToeFa7nWu (r2),
+  session_01Q1B9x7DYUJR1TpXchAqFkJ (r1) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 113084173976; gate
+  113081811438 "all checks passed". All round-2 faults RED; 40/42 verifier faults RED; random-graph probes 0 crossings.
+  Return: V3 (union only first two keys) and V42 (union only last key) GREEN - no test record has > 2 keys; str-subclass
+  key splits a family (exact-type ruling); raw TypeErrors on [] / {} / malformed manifest.
+- **FTF-1206: RETURNED** (round 5 → 6, tests only; PR #650, merge c57518ae3c574f72d834c82bd4f096f319858729, head 3ba7b643;
+  verified 2026-10-13 at main 694247cf, files identical). Producer session_01MdGt1NvNbMm8F8qpsUxJ3S ≠ certifier. CI:
+  ci-verdict 113494197106; gate 113490370474 "FTF-1206 Organization policy control tests: all checks passed";
+  organization-gateway-policy-integration 113490501114. Round-5 fixes in place; 171 + 15 probes no production violation;
+  28/31 faults RED. Return: F19 (approver checked against the grant instead of the current org policy) GREEN in every
+  suite - a revoked approver could authorize via a stale grant with no test noticing. Ruling: distinct clause, not a
+  round-3 variant.
+- **FTF-0516: CERTIFIED** (UI round 4 per QUEUE, relay branch r5; PR #754, merge 90698aa6371626f6d2f8f156624798c9673ef044, head 958e01b8; API slice
+  FTF-0516-P1 certified #695). Producer session_011GFbz6Fd5m311VChpcaRB9 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR,
+  absent from the PR. CI: ci-verdict 115371009213; dataset-quality-ui-real-api-integration 115352979500 (PG16.15, R1-R7,
+  "all checks passed"); gate 115352833401 (1416 vitest tests). F30 RED via value/element-type generation; R4-S3/R4-D6/R4-R2
+  pinned; UI CHECKLIST (f) met with an independent DB re-read. Round-3 real-router and mocked probes reproduce identically
+  and correct; new type probes all malformed with 0 Review buttons and 0 POSTs; 2000/2001 code-point bound exact. Faults:
+  145/151 RED (6 classified equivalents), X19-X32 11/14 RED (X26/X27/X32 hand-picked variants of the pinned R4-D6 class,
+  production rejects them; advisory), 11/11 real-API harness faults RED. UNWIRED (proving_symbol blank) until FTF-H029.
+
+## 2026-10-13T18:55Z — RETURNED: FTF-0904 (r7)
+- **FTF-0904: RETURNED** (round 6 → 7, tests + spec-matrix only; PR #757, merge 694247cf318b308b7d4fc69c46044fdd33ddab3b,
+  head ae015d1b). Producer session_011QJjCshosS9eripRKj2b81 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict
+  115415928906; gate 115381938799 "FTF-0904 Log redaction tests: all checks passed" (55 min with faults). Production sound:
+  glued-JWT contexts redacted (0/198), P1 0/49, P2 0/35, long-secret 0/306, 3,360 timing runs linear, not flaky. Return:
+  the round-6-named Q-PAIR-KEY-WS-QUAD was filed as a different mutation and stays GREEN (> 30 s at 64 KB); Q-JWT-LOWER-
+  IN-LOOP GREEN (no shape reaches the skip loop); evidence_hash stale. Stopping rule: certifies after these three items
+  with no reproduced production violation.
+
+## 2026-10-13T20:07Z — RETURNED: FTF-0502-P1 (r2)
+- **FTF-0502-P1 (child slice of FTF-0502): RETURNED** (round 1 → 2; PR #758, merge 3f8ca9682ca7ad9ea86b5f8c193cb03c6d748547,
+  head 10211896). Producer session_01GnLMpxv8D3zPYhCXae6H6e ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: gate
+  115442252121 "FTF-0502-P1 dataset import common contract: all checks passed"; dataset-import-source-integration
+  115442389076 (PG16 + SeaweedFS, mid-stream stop) passed; ci-verdict and mutation gate green. Many probes held (strict
+  JSON, exact roles, limits, ChunkReader blocked/failed, 10 unauthorized-dataset variants indistinguishable). Return:
+  catalog names differ from the importer entries and refuse their codes; raw IncompleteRead/BadStatusLine escape with
+  `.partial` object bytes (reproduced); FE/FE2 bounded-resource faults GREEN; integration fixture bypasses the FTF-0501
+  routes. Ruling: P1 owns the catalog the importer entries name.

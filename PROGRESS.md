@@ -1,10 +1,10 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-10T03:57Z. Source: `python3 scripts/status.py` on main.
-- **Status: 141/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
-  status.py prints 46 product-true: it counts FTF-0309 through its live P1 API route, but the FTF-0309 screen stays
-  UNWIRED until FTF-H029, so it is not counted here (Law 7).
+Updated: 2026-10-13T20:07Z. Source: `python3 scripts/status.py` on main.
+- **Status: 144/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
+  status.py prints 47 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
+  (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
 - **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902,
   FTF-0500D, FTF-1002, FTF-0103A, FTF-0510, FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613, FTF-1305, FTF-0308, FTF-0602, FTF-0901 and FTF-1706 (2026-10-07/08), plus follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1, FTF-0608-F1 and FTF-04A21-F1.
@@ -12,6 +12,36 @@ Updated: 2026-10-10T03:57Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-13T20:07Z:**
+  - Returned: FTF-0502-P1 r2 (shared import framework): its error-code names differ from the ones the importer entries require, raw HTTP errors can escape with object bytes, memory/time bounds are unpinned, and the integration test bypasses the real upload routes. The importers wait on it.
+- **2026-10-13T18:55Z:**
+  - Returned: FTF-0904 r7, tests + spec-matrix only. Production is sound and the glued-JWT leak is fixed; one fault named in the round-6 return was filed under a different mutation and still passes, and the new JWT scanner's skip loop has no time shape. Stopping rule set: round 7 certifies once these land.
+- **2026-10-13T17:43Z:**
+  - CERTIFIED: FTF-0516 (dataset issue resolution UI), after 5 UI rounds; real-API CI test on PG16 in place. UNWIRED until FTF-H029.
+  - Returned: FTF-1206 r6, tests only (#650, verified late): production is correct, but no test checks that approver authority comes from the CURRENT org policy rather than the grant.
+  - Returned: FTF-0517 r3 (#600, verified late): production keeps families together in every probe, but no test uses records with 3+ linkage keys (two faults GREEN); exact-type keys required.
+- **2026-10-13T16:44Z:**
+  - Returned: FTF-0502 r2 (built before its prerequisite FTF-0502-P1; crashes on huge numbers/deep nesting, silently accepts duplicate keys/NaN, leaks content in errors, no outage handling or integration test). Rebuild after P1 certifies.
+  - Verifying: FTF-0516 UI (#754), FTF-0904 r6 (#757), and FTF-0517 r2 (#600) and FTF-1206 r5 (#650), which merged 2026-10-08 but were missed by earlier check-ins.
+- **2026-10-13T14:51Z:**
+  - Queued (newly ready after FTF-0501 certified): FTF-1504 (IDOR suite over every live /api/v1 route-verb, generated matrix, registry gate), FTF-0502-P1 (shared stdlib import framework + dataset object reader), then the JSONL/CSV/JSON/XLSX importers FTF-0502..0505. No migration, route, contract edit, new dependency or secret; results persistence is a later child (FTF-0502-P2). Noted for follow-up: FTF-0501 finalize accepts an .xlsx containing vbaProject.bin/externalLinks (the importer refuses these; FTF-0501-F1 would align the upload check).
+- **2026-10-13T13:26Z:**
+  - Returned: FTF-0904 r6. Production is linear and unbounded, but the round-5 ruling's suggested JWT form was wrong and re-exposes JWTs glued after `_`/`-` (corrected, required); the long-secret sweep could not detect truncated tails, and three time shapes were missing.
+  - Returned: FTF-0516 UI r4, tests + CI only (one ruled strict-parse fault still GREEN; pin the producer's own new checks; a committed real-API CI test per UI CHECKLIST (f)). No production violation found.
+- **2026-10-13T12:55Z:**
+  - RE-CERTIFIED: FTF-0305 with fix item FTF-0305-F1 (row-locked license/readiness transitions, DB CHECK ready ⇒ license accepted, license-gated trainability). FTF-0301, FTF-0307 and FTF-0309-P1 requalified (Law 15). The original race now fails closed.
+  - CERTIFIED: FTF-0310 (capability contract tests), after 2 rounds.
+- **2026-10-12T03:39Z:**
+  - No relay merges since 2026-10-10T04:02Z; relay and verifier sessions were stopped by an API usage limit (2026-10-10 ~04:00Z and again after ~16:40Z).
+  - Returned: FTF-0904 r5. The quadratics are fixed, but by capping match length, which leaks real JWTs over 1024 chars and escaped values over 8192 chars. Ruling: a bounded match is a leak; every rule must be linear and unbounded, with a long-secret sweep.
+- **2026-10-10T16:34Z:**
+  - CERTIFIED: FTF-0501 (direct object-storage upload), after the API (round 3) and resumable UI (round 3) both passed. The upload API is live; the UI is UNWIRED until FTF-H029, so product-true stays 44.
+- **2026-10-10T16:15Z:**
+  - DECERTIFIED to PROVISIONAL: FTF-0305 (license acceptance workflow). The FTF-0310 verifier reproduced, through real request transactions only, a ready artifact with a revoked license reported as trainable, violating FTF-0305's "revoked license blocks training". Fix item FTF-0305-F1 is top priority in QUEUE item 0; FTF-0305 re-certifies with it. Count 141 → 140.
+  - Returned: FTF-0310 r2 (license exemption removed once F1 lands; RFC 3339 date-time checking; checker strictness).
+- **2026-10-10T15:50Z:**
+  - Returned: FTF-0616-F1 r2, tests only (golden body self-referential; header name/value normalisers unpinned). FTF-0616 stays CERTIFIED: its suite and full Unicode sweep pass at the F1 merge; the uncapped mutation re-run was cut short and moves to F1 round 2 (Law 15).
+  - Returned: FTF-H010-P3a r2 (unbounded safetensors shape product - 139 s at 4.2 MB; three validator clauses unpinned).
 - **2026-10-10T03:57Z:**
   - FTF-H010-P2: the relay parked it on a real DoD contradiction (an alias is not an https URL). Ruled: a gateway-alias import stores `endpoint_reference` NULL with the alias in `external_provider_model_ref` (no fabricated URL, no exposure of the org-admin-only `base_url`); FTF-1001 is requalified with P2. P2 is back in the Backlog.
 - **2026-10-10T02:41Z:**

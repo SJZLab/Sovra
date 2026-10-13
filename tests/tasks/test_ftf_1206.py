@@ -1040,6 +1040,86 @@ def test_round5_identifier_pattern_edge_cases() -> None:
         )
 
 
+def test_round6_approver_authority_comes_from_current_org_policy() -> None:
+    # Round-5 return (F19): `actor not in org_policy.approvers` -> `actor not in
+    # grant.approvers` stayed GREEN. A revoked approver must not authorize a
+    # production route change through a stale grant, and a grant-only approver
+    # the organization never recognized must not authorize either.
+    original_policy = _policy()
+    grant = enforce_project_gateway_permission_request(
+        original_policy,
+        ProjectGatewayPermissionRequest(
+            registration_namespaces=frozenset(),
+            deployment_namespaces=frozenset({"factory-production"}),
+            approvers=frozenset({"user:jane"}),
+        ),
+    )
+    check(
+        "FTF-1206",
+        "round6 baseline: a current org approver named in the grant is authorized",
+        _accepts(
+            enforce_route_change_authority,
+            original_policy,
+            grant,
+            actor="user:jane",
+            target_deployment_namespace="factory-production",
+        )
+        is None,
+    )
+
+    # (a) the org removes user:jane after the grant was issued.
+    revoked_policy = OrganizationGatewayPolicy(
+        allowed_registration_namespaces=original_policy.allowed_registration_namespaces,
+        allowed_deployment_namespaces=original_policy.allowed_deployment_namespaces,
+        approvers=frozenset({"user:ahmed"}),
+    )
+    check(
+        "FTF-1206",
+        "round6 (a): an approver revoked by the org after the grant was issued "
+        "cannot authorize a route change through the stale grant",
+        _rejects(
+            enforce_route_change_authority,
+            revoked_policy,
+            grant,
+            actor="user:jane",
+            target_deployment_namespace="factory-production",
+        ),
+    )
+
+    # (b) a grant listing an approver the org never had (built directly, as a
+    # tampered or stale grant would be).
+    foreign_grant = ProjectGatewayGrant(
+        registration_namespaces=frozenset(),
+        deployment_namespaces=frozenset({"factory-production"}),
+        approvers=frozenset({"user:mallory"}),
+    )
+    check(
+        "FTF-1206",
+        "round6 (b): an approver only the grant lists, never the org, is refused",
+        _rejects(
+            enforce_route_change_authority,
+            original_policy,
+            foreign_grant,
+            actor="user:mallory",
+            target_deployment_namespace="factory-production",
+        ),
+    )
+
+    # (c) an org approver absent from the grant is still authorized: the
+    # organization's current policy, not the grant, is the authority.
+    check(
+        "FTF-1206",
+        "round6 (c): a current org approver not listed in the grant is authorized",
+        not _rejects(
+            enforce_route_change_authority,
+            original_policy,
+            grant,
+            actor="user:ahmed",
+            target_deployment_namespace="factory-production",
+        ),
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

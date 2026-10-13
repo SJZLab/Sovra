@@ -21,6 +21,12 @@ refused, empty input refused, multi-constraint (temporal) coverage.
 
 FTF-0517 round 2 additions: pinned golden, PYTHONHASHSEED, group counts, cutoff binding.
 
+FTF-0517 round 3 additions (returned: V3/V42 union-truncation faults GREEN because no test
+record carried 3+ linkage keys; exact-type keys/roles/assignments): test_bridge_keys_beyond_the_
+second_are_still_unioned, test_generated_key_level_property_no_key_crosses_roles,
+test_keys_roles_and_seed_require_exact_str_type, test_verify_manifest_rejects_malformed_
+assignment_entries.
+
 Run directly: python3 tests/tasks/test_ftf_0517.py
 """
 
@@ -28,6 +34,7 @@ from __future__ import annotations
 
 import inspect
 import os
+import random
 import subprocess
 import sys
 from dataclasses import FrozenInstanceError, replace
@@ -723,6 +730,231 @@ def test_manifest_hash_binds_group_ids_and_strategy() -> None:
 def test_negative_ratio_in_any_slot_refused() -> None:
     for ratios in ((70, -10, 20, 20), (70, 10, -10, 30), (110, -5, -5, 0), (70, 20, 20, -10)):
         check(CID, f"ratios {ratios} refused", raises(lambda r=ratios: spec(ratios=r)))
+
+
+def test_bridge_keys_beyond_the_second_are_still_unioned() -> None:
+    """Round-3 return: the union step folds every one of a record's own extra keys into
+    its group (`group_keys[1:]`). Two verifier mutations passed every pre-round-3 test here
+    because no record in this file carried 3+ keys: V3 truncates the union to `[1:2]`
+    (only the second key), V42 to `[-1:]` (only the last key). A 3-key record whose THIRD
+    key is the only bridge to a pinned group catches V3; a 3-key record whose MIDDLE key
+    is the only bridge catches V42."""
+    third_key_bridge = [
+        rec("v3a", "ka"),
+        rec("v3b", "kb", preassigned_role="final_qualification"),
+        rec("v3bridge", "ka", "kx", "kb"),
+    ]
+    m3 = allocate_splits(spec(), third_key_bridge)
+    roles3 = roles_of(m3)
+    check(
+        CID,
+        "a 3-key bridge record (third key is the only link) merges ka/kx/kb into one group",
+        len({g for _, _, g in m3.assignments}) == 1,
+    )
+    check(
+        CID,
+        "the merged family inherits its pinned member's role (catches V3's [1:2] truncation)",
+        set(roles3.values()) == {"final_qualification"},
+    )
+
+    fourth_key_bridge = [
+        rec("v3c", "kc"),
+        rec("v3d", "kd", preassigned_role="development_eval"),
+        rec("v3bridge2", "kc", "ky", "kd", "kz"),
+    ]
+    m4 = allocate_splits(spec(), fourth_key_bridge)
+    roles4 = roles_of(m4)
+    check(
+        CID,
+        "a 4-key bridge record (third key is the only link; a 4th key is filler) merges"
+        " every key into one group",
+        len({g for _, _, g in m4.assignments}) == 1,
+    )
+    check(
+        CID,
+        "the merged 4-key family inherits its pinned member's role (catches V3's [1:2]"
+        " truncation on a 4-key record too)",
+        set(roles4.values()) == {"development_eval"},
+    )
+
+    middle_key_bridge = [
+        rec("v42a", "wa"),
+        rec("v42b", "wmid", preassigned_role="validation"),
+        rec("v42bridge", "wa", "wmid", "wtail"),
+    ]
+    mm = allocate_splits(spec(), middle_key_bridge)
+    rolesm = roles_of(mm)
+    check(
+        CID,
+        "a 3-key bridge record whose MIDDLE key is the only link merges wa/wmid/wtail"
+        " into one group",
+        len({g for _, _, g in mm.assignments}) == 1,
+    )
+    check(
+        CID,
+        "the merged family inherits its pinned member's role (catches V42's [-1:] truncation)",
+        set(rolesm.values()) == {"validation"},
+    )
+
+
+def test_generated_key_level_property_no_key_crosses_roles() -> None:
+    """Class-closing property test (Control-plane round-3 ruling): over many fixed-seed,
+    randomly-overlapping 1-5-key records, across several ratio sets and with/without a
+    cutoff, no single linkage key value is ever attributed to two different roles in the
+    output, and every resulting manifest independently verifies."""
+    ratio_sets = ((70, 10, 10, 10), (25, 25, 25, 25), (1, 1, 1, 97), (40, 40, 10, 10))
+    pool = [f"pk-{i}" for i in range(60)]
+    for ratio_set in ratio_sets:
+        for cutoff in (None, 500):
+            rng = random.Random(f"ftf-0517-r3|{ratio_set}|{cutoff}")
+            records = []
+            for i in range(400):
+                n_keys = rng.randint(1, 5)
+                keys = tuple(rng.sample(pool, n_keys))
+                event_time = rng.randint(0, 1000) if cutoff is not None else None
+                records.append(rec(f"gen{i}", *keys, event_time=event_time))
+            m = allocate_splits(spec(ratios=ratio_set, cutoff=cutoff), records)
+            role_by_record = roles_of(m)
+            role_by_key: dict[str, set[str]] = {}
+            for r in records:
+                role = role_by_record[r.record_id]
+                for key in r.group_keys:
+                    role_by_key.setdefault(key, set()).add(role)
+            crossing = {k: v for k, v in role_by_key.items() if len(v) > 1}
+            check(
+                CID,
+                f"no linkage key crosses roles (ratios={ratio_set}, cutoff={cutoff})",
+                not crossing,
+            )
+            check(
+                CID,
+                f"the generated manifest independently verifies (ratios={ratio_set},"
+                f" cutoff={cutoff})",
+                not raises(lambda mm=m: verify_manifest(mm)),
+            )
+
+
+class _StrSubclass(str):
+    """Same text, ordinary inherited hash/eq -- type(x) is not str must still refuse it."""
+
+
+class _ForeignHashStr(str):
+    """Same text but a hash/eq that never matches a plain str with the same text. This is
+    the concrete mechanism by which an isinstance-only type check would let one family's
+    records silently split across two groups (and therefore two roles) instead of raising:
+    the union-find dict hashes this key differently from an identical-looking plain str."""
+
+    def __hash__(self) -> int:
+        return hash(("foreign", str(self)))
+
+    def __eq__(self, other: object) -> bool:
+        return False
+
+
+def test_keys_roles_and_seed_require_exact_str_type() -> None:
+    check(
+        CID,
+        "a str-subclass group key (ordinary hash/eq) is refused, not silently accepted",
+        raises(lambda: allocate_splits(spec(), [rec("s1", _StrSubclass("conv-1"))])),
+    )
+    foreign = _ForeignHashStr("conv-1")
+    check(
+        CID,
+        "a str-subclass group key with foreign hash/eq is refused rather than silently"
+        " splitting the plain-str family it claims to share a key with",
+        raises(
+            lambda: allocate_splits(spec(), [rec("s1", "conv-1"), rec("s2", foreign, "other-key")])
+        ),
+    )
+    for bad_key in (123, 1.5, True, [], {}, b"conv-1"):
+        check(
+            CID,
+            f"group key {bad_key!r} ({type(bad_key).__name__}) refused, not a raw TypeError",
+            raises(lambda k=bad_key: allocate_splits(spec(), [SplitRecord("s1", (k,))])),
+        )
+    check(
+        CID,
+        "a str-subclass record_id is refused",
+        raises(lambda: allocate_splits(spec(), [SplitRecord(_StrSubclass("r1"), ("g",))])),
+    )
+    check(CID, "a str-subclass seed is refused", raises(lambda: spec(seed=_StrSubclass("seed-1"))))
+    for bad_role in ([], {}, 123, True, _StrSubclass("train")):
+        check(
+            CID,
+            f"preassigned_role {bad_role!r} ({type(bad_role).__name__}) refused, not a raw"
+            " TypeError",
+            raises(
+                lambda b=bad_role: allocate_splits(spec(), [rec("u1", "ug", preassigned_role=b)])
+            ),
+        )
+
+
+_ALL_ZERO_COUNTS = (
+    ("train", 0, 0),
+    ("validation", 0, 0),
+    ("development_eval", 0, 0),
+    ("final_qualification", 0, 0),
+)
+
+
+def manifest_with_raw_assignments(
+    assignments: tuple[Any, ...],
+    counts: tuple[tuple[str, int, int], ...] = _ALL_ZERO_COUNTS,
+    status: str = "insufficient",
+) -> SplitManifest:
+    base = SplitManifest(
+        strategy=STRATEGY,
+        seed="s",
+        ratios=(70, 10, 10, 10),
+        cutoff=None,
+        assignments=assignments,
+        counts=counts,
+        status=status,
+        manifest_sha256="",
+    )
+    return replace(base, manifest_sha256=compute_manifest_sha256(base))
+
+
+def _one_record_counts(role: str) -> tuple[tuple[str, int, int], ...]:
+    """Counts for a single-entry manifest whose one record has role `role` -- so the
+    counts/status are self-consistent with the assignment, and only the ONE guard a
+    test targets can still raise (mirrors the `rebuilt()` helper above)."""
+    return tuple((r, 1, 1) if r == role else (r, 0, 0) for r in ROLES)
+
+
+def test_verify_manifest_rejects_malformed_assignment_entries() -> None:
+    for bad_assignments, label in (
+        ((("a", "train", "c", "d"),), "a 4-tuple assignment"),
+        ((("a",),), "a 1-tuple assignment"),
+        ((["a", "train", "g"],), "a list instead of a tuple"),
+        ((("a", [], "g"),), "an unhashable (list) role"),
+        ((("a", {}, "g"),), "an unhashable (dict) role"),
+        ((("a", 1, "g"),), "a non-str (int) role"),
+    ):
+        bad = manifest_with_raw_assignments(bad_assignments)
+        check(
+            CID,
+            f"verify_manifest refuses {label}, not a raw TypeError/ValueError",
+            raises(lambda b=bad: verify_manifest(b)),
+        )
+    # These two give counts/status self-consistent with a "train" acceptance, so the
+    # record_id/group_id type check is the ONLY thing that can still raise -- otherwise
+    # a coincidental counts mismatch against the placeholder all-zero counts above would
+    # raise for the wrong reason and hide a dropped or bypassed type check.
+    consistent_cases: tuple[tuple[tuple[Any, ...], str], ...] = (
+        (((1, "train", "g"),), "a non-str (int) record_id"),
+        ((("a", "train", 5),), "a non-str (int) group_id"),
+    )
+    for bad_assignments, label in consistent_cases:
+        bad = manifest_with_raw_assignments(
+            bad_assignments, counts=_one_record_counts("train"), status="insufficient"
+        )
+        check(
+            CID,
+            f"verify_manifest refuses {label}, not a raw TypeError/ValueError, even with"
+            " otherwise-consistent counts",
+            raises(lambda b=bad: verify_manifest(b)),
+        )
 
 
 def main() -> int:

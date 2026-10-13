@@ -8,8 +8,14 @@ uvicorn server over a live PostgreSQL 16 (never SQLite: no RLS) and validates ev
 response against the FROZEN 03 contract with `capability_contract_tests`:
 
   - every shipped source type x artifact status x license state x mapped/unmapped cell
-    (72 cells): the capability, mapping and change responses validate, and `trainable` is
-    true only for a mapped, ready artifact with an approved license;
+    (72 cells, none exempt): the capability, mapping and change responses validate, and
+    `trainable` is true only for a mapped, ready artifact with an approved license. The
+    ready + pending/revoked cells cannot be written while migration 0029's CHECK is in
+    place (asserted), so the test drops that CHECK for the matrix, seeds them directly,
+    proves the classifier and route still report trainable=false (defence in depth under
+    the CHECK and the FTF-0305-F1 row lock), then archives them and restores the CHECK;
+  - the FTF-0305-F1 mark-ready / revoke-license interleave over the real routes never
+    leaves a `ready` row without an accepted license;
   - an upstream-only model and unresolvable names (unknown, look-alike, trailing space,
     case variant) are exact-match, never trainable;
   - a generated negative table derived from the real responses is rejected by the checker.
@@ -67,6 +73,7 @@ from packages.litellm_client.v1_models_discovery import (  # noqa: E402
 )
 from packages.model_catalog import capability_contract_tests as cct  # noqa: E402
 from sqlalchemy import create_engine, text  # noqa: E402
+from sqlalchemy.exc import IntegrityError  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 
 from app.artifacts.artifact_routes import build_trainable_artifact_router  # noqa: E402
@@ -419,6 +426,27 @@ def main() -> None:
             s.execute(text(statement), params)
             s.commit()
 
+    check_name = "ck_trainable_artifacts_ready_needs_license"
+    check_state = {"dropped": False}
+
+    def drop_ready_license_check() -> None:
+        if not check_state["dropped"]:
+            sql(f"ALTER TABLE trainable_artifacts DROP CONSTRAINT {check_name}")
+            check_state["dropped"] = True
+
+    def restore_ready_license_check() -> None:
+        # Park every state the CHECK forbids, then re-add the CHECK exactly as migration 0029
+        # defines it; the restore itself proves no forbidden row is left behind.
+        sql(
+            "UPDATE trainable_artifacts SET status='archived', archived_at=now() "
+            "WHERE status='ready' AND license_accepted_at IS NULL"
+        )
+        sql(
+            f"ALTER TABLE trainable_artifacts ADD CONSTRAINT {check_name} "
+            "CHECK (status <> 'ready' OR license_accepted_at IS NOT NULL)"
+        )
+        check_state["dropped"] = False
+
     def violations(label: str, instance: Any, schema_name: str) -> list[str]:
         errs = cct.validate(instance, contract.schema(schema_name), root_doc)
         if errs:
@@ -427,19 +455,53 @@ def main() -> None:
             )
         return errs
 
+    # The /changes list schema is read from the frozen document, never an inline copy.
+    changes_schema = contract.response_schema(
+        "/api/v1/organizations/{organization_id}/connections/litellm/{connection_id}"
+        "/models/{model_name}/training-artifact/changes",
+        "get",
+        "200",
+    )
+    check(
+        CID, "the frozen /changes schema is closed", changes_schema["additionalProperties"] is False
+    )
+
     cells = matrix
     aliases = {i: f"cell-{i}" for i in range(len(cells))}
     discovery.result = _discovered(*aliases.values(), "upstream-only-model")
     validated = {"capabilities": 0, "mapping": 0, "changes": 0}
-    unreachable_cells: list[str] = []
-    findings: list[str] = []
+    unlicensed_ready_cells: list[str] = []
     seed_responses: dict[str, Any] = {}
 
     with _serve(app) as base:
+        probe_id = seed_artifact("huggingface", "check-probe")
+        for probe, statement in (
+            (
+                "clearing the license of a ready artifact",
+                "UPDATE trainable_artifacts SET license_accepted_by=NULL, "
+                "license_accepted_at=NULL WHERE id=:i",
+            ),
+            (
+                "clearing only license_accepted_at of a ready artifact",
+                "UPDATE trainable_artifacts SET license_accepted_at=NULL WHERE id=:i",
+            ),
+        ):
+            try:
+                sql(statement, i=probe_id)
+                refused = False
+            except IntegrityError as exc:
+                refused = check_name in str(exc)
+            check(CID, f"the database refuses {probe} (ck_..._ready_needs_license)", refused)
         for index, cell in enumerate(cells):
             alias = aliases[index]
             label = f"{index}:{cell['source_type']}/{cell['status']}/{cell['license']}/{'mapped' if cell['mapped'] else 'unmapped'}"
             art_id = seed_artifact(cell["source_type"], str(index))
+            if cell["status"] == "ready" and cell["license"] != "approved":
+                # FTF-0305-F1 / migration 0029: the database refuses this state while its CHECK
+                # exists (probed once, before the loop). Lift the CHECK for the matrix only, so the
+                # capability route is still proven to report trainable=false for it.
+                drop_ready_license_check()
+                unlicensed_ready_cells.append(label)
             if cell["mapped"]:
                 mapped = _request(
                     base,
@@ -476,8 +538,10 @@ def main() -> None:
                 )
             elif cell["license"] == "pending":
                 sql(
-                    "UPDATE trainable_artifacts SET license_accepted_by=NULL, license_accepted_at=NULL WHERE id=:i",
+                    "UPDATE trainable_artifacts SET license_accepted_by=NULL, "
+                    "license_accepted_at=NULL, status=:st WHERE id=:i",
                     i=art_id,
+                    st="ready" if cell["status"] == "ready" else "registered",
                 )
             if cell["status"] == "archived":
                 archived = _request(base, "DELETE", artifact_path(art_id), principal="admin1")
@@ -489,7 +553,7 @@ def main() -> None:
             elif cell["status"] == "registered" and cell["license"] != "revoked":
                 sql("UPDATE trainable_artifacts SET status='registered' WHERE id=:i", i=art_id)
             elif cell["status"] == "ready" and cell["license"] == "revoked":
-                # unreachable through the API: the real revoke demoted it to registered
+                # the real revoke demoted it to registered; the CHECK is lifted for this cell
                 sql("UPDATE trainable_artifacts SET status='ready' WHERE id=:i", i=art_id)
             if cell["license"] == "revoked" and cell["status"] == "registered":
                 # the real revoke route alone must have demoted the ready artifact
@@ -512,22 +576,17 @@ def main() -> None:
             validated["capabilities"] += 1
             violations(f"[{label}] capabilities", body, "ModelCapabilities")
             want = cct.expected_trainable(cell)
-            if cct.api_reachable(cell):
+            check(
+                CID,
+                f"[{label}] trainable is {want} (got {body.get('trainable')!r}, capability {body.get('capability')!r})",
+                body.get("trainable") is want,
+            )
+            if not want:
                 check(
                     CID,
-                    f"[{label}] trainable is {want} (got {body.get('trainable')!r}, capability {body.get('capability')!r})",
-                    body.get("trainable") is want,
+                    f"[{label}] a non-trainable cell never reports trainable_open_weight",
+                    body.get("capability") != "trainable_open_weight",
                 )
-                if not want:
-                    check(
-                        CID,
-                        f"[{label}] a non-trainable cell never reports trainable_open_weight",
-                        body.get("capability") != "trainable_open_weight",
-                    )
-            else:
-                unreachable_cells.append(label)
-                if body.get("trainable") is True:
-                    findings.append(label)
             mapping = _request(base, "GET", map_path(alias), principal="viewer1")
             check(CID, f"[{label}] mapping GET is 200 ({mapping.status})", mapping.status == 200)
             if mapping.status == 200:
@@ -549,21 +608,7 @@ def main() -> None:
             if changes.status == 200:
                 validated["changes"] += 1
                 changes_body = changes.json()
-                if cct.validate(
-                    changes_body,
-                    {
-                        "type": "object",
-                        "required": ["changes"],
-                        "additionalProperties": False,
-                        "properties": {
-                            "changes": {
-                                "type": "array",
-                                "items": contract.schema("ModelTrainingArtifactMappingChange"),
-                            }
-                        },
-                    },
-                    root_doc,
-                ):
+                if cct.validate(changes_body, changes_schema, root_doc):
                     FAILURES.append(
                         f"FAIL [{CID}] [{label}] changes list violates the frozen contract"
                     )
@@ -575,23 +620,26 @@ def main() -> None:
                 if changes_body["changes"]:
                     seed_responses.setdefault("change", changes_body["changes"][0])
 
-        for label in findings:
-            print(
-                f"FINDING [{CID}] [{label}]: the capability route reports trainable_open_weight for a ready "
-                "artifact with no accepted license. The public API cannot create this state (mark-ready "
-                "needs an accepted license; revoke-license demotes to registered), so it is reachable only "
-                "by a direct database write; classify_training_capability does not check license_approved."
-            )
+        restore_ready_license_check()
         check(
             CID,
-            f"{len(unreachable_cells)} API-unreachable cells were still schema-validated and listed",
-            len(unreachable_cells) == len(sources) * 2 * 2,
+            f"{len(unlicensed_ready_cells)} ready + pending/revoked cells were asserted, none exempt",
+            len(unlicensed_ready_cells) == len(sources) * 2 * 2,
         )
         check(
             CID,
             f"validated every cell's responses ({validated})",
             all(v == len(cells) for v in validated.values()),
         )
+        try:
+            sql(
+                "UPDATE trainable_artifacts SET status='ready', license_accepted_at=NULL "
+                "WHERE id=(SELECT id FROM trainable_artifacts ORDER BY created_at LIMIT 1)"
+            )
+            restored = False
+        except IntegrityError as exc:
+            restored = check_name in str(exc)
+        check(CID, "the restored CHECK refuses a ready artifact without a license again", restored)
 
         # Negative acceptance: an upstream-only model (listed by the gateway, no mapping) and
         # unresolvable names (unknown, Unicode look-alike, trailing space, case variant) are
@@ -650,6 +698,144 @@ def main() -> None:
                 f"{key}: generated table of {len(table)} cases, all rejected {wrongly[:2]}",
                 len(table) >= 10 and not wrongly,
             )
+
+    # A lax checker equality must stay visible: the generator's dedupe is independent of the
+    # checker's, so a casefolding / stripping `_json_equal` still faces the case variants (V3).
+    if "capabilities_trainable" in seed_responses:
+        caps_schema = contract.schema("ModelCapabilities")
+        real_equal = cct._json_equal
+
+        def casefold_equal(left: Any, right: Any) -> bool:
+            if type(left) is str and type(right) is str:
+                return left.strip().casefold() == right.strip().casefold()
+            return type(left) is type(right) and bool(left == right)
+
+        cct._json_equal = casefold_equal
+        try:
+            lax_table = cct.generate_negative_cases(
+                seed_responses["capabilities_trainable"], caps_schema, root_doc
+            )
+            lax_survivors = cct.assert_negative_cases_rejected(lax_table, caps_schema, root_doc)
+        finally:
+            cct._json_equal = real_equal
+        check(
+            CID,
+            f"a casefolding checker equality is caught by the real-response table ({len(lax_survivors)})",
+            len(lax_survivors) > 0,
+        )
+
+    # FTF-0305-F1 interleave over the real routes: mark-ready racing revoke-license never
+    # leaves a `ready` row without an accepted license (RED without the row lock and CHECK).
+    def held_interleave(label: str, held_statement: str, route_suffix: str) -> tuple[int, Any]:
+        """Hold a competing transaction's uncommitted write on one artifact row, fire the real
+        route at the same row, release, and return (HTTP status, final (status, license))."""
+        race_id = seed_artifact("huggingface", f"held-{label}")
+        sql("UPDATE trainable_artifacts SET status='registered' WHERE id=:i", i=race_id)
+        outcome: list[int] = []
+        with _serve(app) as held_base, owner_engine.connect() as holder:
+            holder.execute(text(held_statement), {"i": race_id})
+            thread = threading.Thread(
+                target=lambda: outcome.append(
+                    _request(
+                        held_base,
+                        "POST",
+                        artifact_path(race_id, route_suffix),
+                        principal="admin1",
+                        payload={},
+                    ).status
+                )
+            )
+            thread.start()
+            time.sleep(1.5)
+            holder.commit()
+            thread.join(30)
+        with Session(owner_engine) as s:
+            row = s.execute(
+                text("SELECT status, license_accepted_at FROM trainable_artifacts WHERE id=:i"),
+                {"i": race_id},
+            ).one()
+        return (outcome[0] if outcome else -1), (row[0], row[1])
+
+    # (1) a revoke commits its license clearing while mark-ready is in flight: mark-ready must
+    # re-read after the lock and refuse; without the row lock the stale read persists `ready`
+    # (the CHECK then turns it into a 500).
+    code, (final_status, final_license) = held_interleave(
+        "revoke-first",
+        "UPDATE trainable_artifacts SET license_accepted_by=NULL, license_accepted_at=NULL "
+        "WHERE id=:i",
+        "/mark-ready",
+    )
+    check(CID, f"revoke committed first: mark-ready is a clean 409 ({code})", code == 409)
+    check(
+        CID,
+        f"revoke committed first: never ready without a license ({final_status}, {final_license})",
+        not (final_status == "ready" and final_license is None) and final_status == "registered",
+    )
+    # (2) a mark-ready commits while revoke-license is in flight: the revoke must see `ready`
+    # and demote it, leaving no ready row with a cleared license.
+    code, (final_status, final_license) = held_interleave(
+        "ready-first",
+        "UPDATE trainable_artifacts SET status='ready' WHERE id=:i",
+        "/revoke-license",
+    )
+    check(CID, f"mark-ready committed first: revoke-license is a clean 200 ({code})", code == 200)
+    check(
+        CID,
+        f"mark-ready committed first: revoke demotes it, never ready without a license ({final_status}, {final_license})",
+        final_status == "registered" and final_license is None,
+    )
+
+    interleave_bad = 0
+    interleave_statuses: set[int] = set()
+    with _serve(app) as base:
+        for trial in range(12):
+            race_id = seed_artifact("huggingface", f"race-{trial}")
+            sql(
+                "UPDATE trainable_artifacts SET status='registered' WHERE id=:i",
+                i=race_id,
+            )
+            barrier = threading.Barrier(2)
+            outcomes: list[int] = []
+
+            def racer(
+                suffix_: str,
+                target: uuid.UUID = race_id,
+                gate: threading.Barrier = barrier,
+                sink: list[int] = outcomes,
+            ) -> None:
+                gate.wait(10)
+                sink.append(
+                    _request(
+                        base, "POST", artifact_path(target, suffix_), principal="admin1", payload={}
+                    ).status
+                )
+
+            threads = [
+                threading.Thread(target=racer, args=(suffix_,))
+                for suffix_ in ("/mark-ready", "/revoke-license")
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(30)
+            interleave_statuses.update(outcomes)
+            with Session(owner_engine) as s:
+                row = s.execute(
+                    text("SELECT status, license_accepted_at FROM trainable_artifacts WHERE id=:i"),
+                    {"i": race_id},
+                ).one()
+            if row[0] == "ready" and row[1] is None:
+                interleave_bad += 1
+        check(
+            CID,
+            f"mark-ready x revoke-license never leaves ready without a license ({interleave_bad}/12)",
+            interleave_bad == 0,
+        )
+        check(
+            CID,
+            f"every racing response is a clean 200/409, never a 500 ({sorted(interleave_statuses)})",
+            interleave_statuses <= {200, 409},
+        )
 
     if FAILURES:
         print(f"FTF-0310 capability contract real proof: {len(FAILURES)} failed")
