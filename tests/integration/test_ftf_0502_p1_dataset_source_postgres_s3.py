@@ -443,8 +443,10 @@ def main() -> None:
         caught is not None and bucket not in str(caught) and "tenants/" not in str(caught),
     )
     check(
-        "I5 the error is raised from None",
-        caught is not None and caught.__cause__ is None and caught.__suppress_context__,
+        "I5 the original error is neither the cause nor a visible context",
+        caught is not None
+        and caught.__cause__ is None
+        and (caught.__context__ is None or caught.__suppress_context__),
     )
     verdict = None
     try:

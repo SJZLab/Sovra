@@ -3579,6 +3579,96 @@ def _failing(error: BaseException, at: int) -> FakeS3:
     return fake
 
 
+# --- constructors, catalogs and whitespace ---------------------------------------------
+
+
+def _variants_of_code(code: str) -> list[str]:
+    return [code.upper(), f" {code}", f"{code} ", f"{code}\n", f"\t{code}", code.title(), code + "\x00"]
+
+
+def test_ctor_catalogs_are_exact_matches() -> None:
+    cases: list[tuple[str, Any, frozenset[str]]] = [
+        ("StrictJsonError", ic.StrictJsonError, ic.STRICT_JSON_CODES),
+        ("MappingInvalidError", ic.MappingInvalidError, ic.MAPPING_INVALID_REASONS),
+        ("RowMappingError", ic.RowMappingError, ic.REJECTION_CODES),
+    ]
+    for name, factory, catalog in cases:
+        for code in sorted(catalog):
+            check("CTOR-1", f"{name}({code!r}) is constructible", factory(code).args != ())
+            for variant in _variants_of_code(code):
+                check(
+                    "CTOR-1",
+                    f"{name}({variant!r}) is refused (exact catalog member only)",
+                    raises(ValueError, factory, variant) is not None,
+                )
+        check("CTOR-1", f"{name}(None) is refused", raises(ValueError, factory, None) is not None)
+    for state in ("failed", "blocked"):
+        for code in sorted(ic.FAILURE_CODES):
+            check("CTOR-1", f"ImportAborted({state}, {code}) is constructible", ic.ImportAborted(state, code).args != ())
+            for variant in _variants_of_code(code):
+                check("CTOR-1", f"ImportAborted code {variant!r} refused", raises(ValueError, ic.ImportAborted, state, variant) is not None)
+        for variant in _variants_of_code(state):
+            check("CTOR-1", f"ImportAborted state {variant!r} refused", raises(ValueError, ic.ImportAborted, variant, "source_changed") is not None)
+    check("CTOR-1", "an abort carries its state and code", (ic.ImportAborted("blocked", "source_unavailable").state, ic.ImportAborted("blocked", "source_unavailable").failure_code) == ("blocked", "source_unavailable"))
+    check("CTOR-1", "an abort reads state:code", str(ic.ImportAborted("failed", "source_changed")) == "failed:source_changed")
+    check("CTOR-1", "a mapping_invalid refusal reads mapping_invalid: reason", str(ic.MappingInvalidError("bad_value")) == "mapping_invalid: bad_value")
+    check("CTOR-1", "a mapping_unsupported refusal reads mapping_unsupported", str(ic.MappingUnsupportedError()) == "mapping_unsupported" and ic.MappingUnsupportedError().code == "mapping_unsupported")
+    check("CTOR-1", "a row error without a slot reads as its code", str(ic.RowMappingError("unmapped_role")) == "unmapped_role" and ic.RowMappingError("unmapped_role").slot is None)
+    check("CTOR-1", "a row error with a slot reads code@slot", str(ic.RowMappingError("unmapped_role", "messages[1]")) == "unmapped_role@messages[1]")
+    check("CTOR-1", "a strict-JSON error reads as its code", str(ic.StrictJsonError("invalid_json")) == "invalid_json")
+
+
+def test_ctor_whitespace_outside_strings_is_not_nesting() -> None:
+    for pad in (" ", "\n", "\t", "\r", "\u00a0".encode().decode()):
+        padded = "[" + pad * 300 + "1" + pad * 300 + "]"
+        if pad == "\u00a0":
+            continue  # a no-break space is not JSON whitespace
+        check("CTOR-2", f"300 x {pad!r} inside one array is depth 1", _code(padded, max_depth=1) is None)
+        deep = "[" * 65 + pad * 300 + "]" * 65
+        check("CTOR-2", f"65 arrays with 300 x {pad!r} of padding is still too deep", _code(deep) == "depth_exceeded")
+        opened = "[" * 64 + pad * 300 + "1" + "]" * 64
+        check("CTOR-2", f"64 arrays with 300 x {pad!r} of padding is allowed", _code(opened) is None)
+    check("CTOR-2", "escaped backslash then quote ends the string", _code('["\\\\", [[[[1]]]]]', max_depth=6) is None)
+    check("CTOR-2", "an escaped quote does not end the string", _code('["\\"[[[[[[", [1]]', max_depth=2) is None)
+    check("CTOR-2", "a quote inside a string after an escaped backslash ends it", _code('["a\\\\"]', max_depth=1) is None)
+    check("CTOR-2", "unbalanced closers never lower the depth below what was opened", _code("]]]]]]" + "[" * 5, max_depth=4) == "depth_exceeded" or _code("]]]]]]" + "[" * 5, max_depth=4) == "invalid_json")
+
+
+def test_src_inconsistent_comparisons_are_exact() -> None:
+    with _src_env() as (session, seeds):
+        fake = FakeS3()
+        train = seeds["train"]
+        row = session.get(store.DatasetUploadSession, train.session_id)
+        assert row is not None
+        good_sha = row.verified_sha256
+        for field, value in (
+            ("status", "VERIFIED"),
+            ("status", "verified "),
+            ("status", " verified"),
+            ("status", "Verified"),
+            ("verified_sha256", str(good_sha).upper()),
+            ("verified_sha256", f" {good_sha}"),
+            ("verified_sha256", f"{good_sha} "),
+        ):
+            original = getattr(row, field)
+            setattr(row, field, value)
+            session.flush()
+            err = raises(source_module.DatasetSourceInconsistentError, _open, session, train, fake)
+            check("SRC-5", f"upload session {field}={value!r} is not the verified value", err is not None)
+            setattr(row, field, original)
+            session.flush()
+        dataset = session.get(store.Dataset, train.dataset_id)
+        assert dataset is not None
+        original_sha = dataset.verified_sha256
+        dataset.verified_sha256 = original_sha.upper()
+        session.flush()
+        err = raises(source_module.DatasetSourceInconsistentError, _open, session, train, fake)
+        check("SRC-5", "a dataset whose digest differs from its session only by case is inconsistent", err is not None)
+        dataset.verified_sha256 = original_sha
+        session.flush()
+        check("SRC-5", "...and restored it opens again", _open(session, train, fake).expected_sha256 == original_sha)
+
+
 # --- wiring -------------------------------------------------------------------------
 
 
