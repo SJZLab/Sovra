@@ -24689,3 +24689,7 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-13T12:55Z — Control plane: FTF-0305 re-certified; FTF-0310 CERTIFIED (143/302)
 - **Certified:** FTF-0305-F1 (#747) → FTF-0305 re-certified; FTF-0301/0307/0309-P1 requalified. FTF-0310 (#751).
+
+## 2026-10-13T13:26Z — Control plane: FTF-0516 UI and FTF-0904 returned
+- **Returned:** FTF-0516 UI r4 (0c): F30 value/element-type generation; pin R4-S3/R4-D6/R4-R2; real-API CI test (UI CHECKLIST f).
+- **Returned:** FTF-0904 r6 (0d): JWT after `_`/`-` (ruling corrected); fragment-level long-secret checks; logging-path long-secret sweep; every-rule time shapes.

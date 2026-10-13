@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-13T12:55Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-13T13:26Z. Source: `python3 scripts/status.py` on main.
 - **Status: 143/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   status.py prints 47 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,9 @@ Updated: 2026-10-13T12:55Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-13T13:26Z:**
+  - Returned: FTF-0904 r6. Production is linear and unbounded, but the round-5 ruling's suggested JWT form was wrong and re-exposes JWTs glued after `_`/`-` (corrected, required); the long-secret sweep could not detect truncated tails, and three time shapes were missing.
+  - Returned: FTF-0516 UI r4, tests + CI only (one ruled strict-parse fault still GREEN; pin the producer's own new checks; a committed real-API CI test per UI CHECKLIST (f)). No production violation found.
 - **2026-10-13T12:55Z:**
   - RE-CERTIFIED: FTF-0305 with fix item FTF-0305-F1 (row-locked license/readiness transitions, DB CHECK ready ⇒ license accepted, license-gated trainability). FTF-0301, FTF-0307 and FTF-0309-P1 requalified (Law 15). The original race now fails closed.
   - CERTIFIED: FTF-0310 (capability contract tests), after 2 rounds.
