@@ -941,10 +941,11 @@ def test_verify_manifest_rejects_malformed_assignment_entries() -> None:
     # record_id/group_id type check is the ONLY thing that can still raise -- otherwise
     # a coincidental counts mismatch against the placeholder all-zero counts above would
     # raise for the wrong reason and hide a dropped or bypassed type check.
-    for bad_assignments, label in (
+    consistent_cases: tuple[tuple[tuple[Any, ...], str], ...] = (
         (((1, "train", "g"),), "a non-str (int) record_id"),
         ((("a", "train", 5),), "a non-str (int) group_id"),
-    ):
+    )
+    for bad_assignments, label in consistent_cases:
         bad = manifest_with_raw_assignments(
             bad_assignments, counts=_one_record_counts("train"), status="insufficient"
         )
