@@ -261,6 +261,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0202.py
       - name: FTF-1501 negative-test proof (Tenant isolation suite's own evidence/guard logic catches real defects, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1501.py
+      - name: FTF-1504 negative-test proof (IDOR suite route registry covers the live API; comparators catch real defects, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_1504.py
       - name: FTF-1001 negative-test proof (ModelVersion schema/API catches real defects, real local sockets, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1001.py
       - name: FTF-1401 negative-test proof (API load-test measurement/aggregation catches real defects, no DB required)
