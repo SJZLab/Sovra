@@ -1,11 +1,10 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-12T03:39Z. Source: `python3 scripts/status.py` on main.
-- **Status: 141/302 certified · 44 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
-  status.py prints 46 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
-  (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7). Correction: the
-  previous entry said 45 after FTF-0305's decertification; FTF-0305 had a live proving symbol, so the figure was 44.
+Updated: 2026-10-13T12:55Z. Source: `python3 scripts/status.py` on main.
+- **Status: 143/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
+  status.py prints 47 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
+  (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
 - **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902,
   FTF-0500D, FTF-1002, FTF-0103A, FTF-0510, FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613, FTF-1305, FTF-0308, FTF-0602, FTF-0901 and FTF-1706 (2026-10-07/08), plus follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1, FTF-0608-F1 and FTF-04A21-F1.
@@ -13,6 +12,9 @@ Updated: 2026-10-12T03:39Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-13T12:55Z:**
+  - RE-CERTIFIED: FTF-0305 with fix item FTF-0305-F1 (row-locked license/readiness transitions, DB CHECK ready ⇒ license accepted, license-gated trainability). FTF-0301, FTF-0307 and FTF-0309-P1 requalified (Law 15). The original race now fails closed.
+  - CERTIFIED: FTF-0310 (capability contract tests), after 2 rounds.
 - **2026-10-12T03:39Z:**
   - No relay merges since 2026-10-10T04:02Z; relay and verifier sessions were stopped by an API usage limit (2026-10-10 ~04:00Z and again after ~16:40Z).
   - Returned: FTF-0904 r5. The quadratics are fixed, but by capping match length, which leaks real JWTs over 1024 chars and escaped values over 8192 chars. Ruling: a bounded match is a leak; every rule must be linear and unbounded, with a long-secret sweep.
