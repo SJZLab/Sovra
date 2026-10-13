@@ -3942,7 +3942,7 @@ def test_surv_mapping_reasons_and_boundaries() -> None:
 def test_surv_message_key_lookups_are_exact() -> None:
     reject = mapping_of(messages_doc())
     for stray in (" from", "FROM", "Value ", "CALLS", "Call_Id", "tool "):
-        turn = {"from": "human", "value": "t", stray: "v"}
+        turn: dict[str, Any] = {"from": "human", "value": "t", stray: "v"}
         check(
             "SURV-8",
             f"stray key {stray!r} next to the mapped keys is unmapped_message_key",
@@ -3951,7 +3951,7 @@ def test_surv_message_key_lookups_are_exact() -> None:
         )
     for policy in ("REJECT", " reject", "Reject"):
         odd = replace(reject, on_unmapped_message_keys=policy)
-        turn: dict[str, Any] = {"from": "human", "value": "t", "extra": 1}
+        turn = {"from": "human", "value": "t", "extra": 1}
         check(
             "SURV-8",
             f"a policy of {policy!r} is not 'reject'",
