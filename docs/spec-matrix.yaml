@@ -7516,16 +7516,30 @@ FTF-0503:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0503.py
 FTF-0504:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: CSV importer
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
-    FTF-0506
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
+    FTF-0506 (CERTIFIED) and FTF-0502-P1 (PROVISIONAL). Path refined to workers/data/csv_importer.py.
+    Built on FTF-0502-P1 (ChunkReader, ImportAccumulator, apply_mapping, normalize_mapped_record,
+    to_dataset_record_candidate, ImportReport): explicit encoding (5), delimiter (4), has_header and
+    header_row from the MappingSpec csv block, strict incremental decode, exact-text header match,
+    byte-exact fields (no type inference, formula text and embedded CRLF/LF/CR kept), fatal codes
+    (invalid_encoding, unexpected_bom, duplicate_header, mapping_column_missing, field_too_large,
+    csv_structure_invalid, too_many_columns) and row rejections (column_count_mismatch,
+    nul_character). Additive catalog edit in import_common.py: those 7 + 2 codes added to
+    FAILURE_CODES / REJECTION_CODES (test_ftf_0502_p1 still passes). Disclosed: locator is
+    line:<start physical line>; the real-PG16/SeaweedFS integration job
+    (csv-import-integration) is NOT built - no import route/table exists to call the importer
+    (BLOCKED_DEPENDENCY, not skipped); no live caller, so proving_symbol stays blank.
+    Mutation gate: 98 run | 97 KILLED | 1 TIMEOUT | 0 SURVIVED.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0504.py
+
 FTF-0505:
   certification_state: NONE
   criticality: MUST
@@ -8486,6 +8500,36 @@ FTF-0517:
     augmentation and token-packed batches are out of scope; sample-size adequacy is Section 69's job. No
     live caller yet (the dataset import runtime is not dependency-ready), so proving_symbol stays blank,
     same precedent as the sibling modules. Not self-certified (Law 4).
+
+
+    Round 3 (Control-plane return, QUEUE 0f via #762/#600; PROVISIONAL / L1-PROVEN, not
+    certified): the verifier's round-2 review found all round-2 faults RED and 0 crossings over
+    hundreds of random-graph probes, but two mutations of the union step stayed GREEN because no
+    test record carried 3+ linkage keys -- V3 (`group_keys[1:]` -> `[1:2]`, unioning only the
+    second key) and V42 (`[1:]` -> `[-1:]`, unioning only the last key). Production's union logic
+    was already correct (every key past the first is unioned); the gap was test coverage, closed
+    with 3- and 4-key bridge records whose third or middle key is the only link to a pinned
+    group, plus a fixed-seed generated property test (400 records, 1-5 overlapping keys, 4 ratio
+    sets x with/without a cutoff) asserting no linkage key is ever attributed to two roles. One
+    real production fix: `_text` now requires `type(value) is str`, not `isinstance`, closing a
+    silent-split hole where a str subclass with foreign hash/eq and the same text as a plain-str
+    key hashes differently in the union-find dict and fails to merge with it (`type(x) is str`
+    ruling, same class as FTF-1206/FTF-1703); `preassigned_role` and `verify_manifest`'s
+    assignment entries are now type-checked before any dict membership test or unpacking, so an
+    unhashable or malformed value raises SplitEngineError instead of a raw TypeError/ValueError.
+    Every listed fault shown RED via direct fault injection, reverted byte-identical.
+    `scripts/mutation_gate.py --files workers/data/group_aware_split_engine.py --timeout 20`:
+    133 run, 131 KILLED, 2 TIMEOUT, 0 SURVIVED, score 100.0%, PASS (one prior run was killed by
+    the 30-minute background backstop on an infinite-loop mutant in `_find`'s loop condition; the
+    file was restored with `git checkout --` before anything else, and a re-run with a 20s
+    per-mutant timeout found and fixed a real test-helper gap: `manifest_with_raw_assignments`'s
+    placeholder all-zero counts had been masking two record_id/group_id type-check mutants
+    behind a later, coincidental counts-mismatch rejection). Gates: ruff, ruff format, mypy clean;
+    validate_spec.py --strict clean; product_truth_check.py --fail-on-unwired unchanged 47/47;
+    status.py unchanged 144/302 certified / 47 product-true (Law 2); data_exposure_check.py N/A
+    (no datastore). No other module imports this one (grep-confirmed), so no dependent regression
+    sweep beyond this file's own suite (all green). Still UNWIRED (blank proving_symbol).
+    Submission: docs/certifications/submissions/2026-10-13T1904Z-FTF-0517-r3.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0517.py

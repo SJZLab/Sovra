@@ -24707,3 +24707,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-13T18:55Z — Control plane: FTF-0904 returned
 - **Returned:** FTF-0904 r7 (0d), tests + spec-matrix only: the named pair-whitespace fault, JWT skip-loop shapes, evidence_hash. Stopping rule set.
+
+## 2026-10-13T20:07Z — Control plane: FTF-0502-P1 returned
+- **Returned:** FTF-0502-P1 r2 (0j): catalog names; wrap raw HTTP errors; bounded-resource tests; integration via the real upload routes.

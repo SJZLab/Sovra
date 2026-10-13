@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-13T18:55Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-13T20:07Z. Source: `python3 scripts/status.py` on main.
 - **Status: 144/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   status.py prints 47 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,8 @@ Updated: 2026-10-13T18:55Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-13T20:07Z:**
+  - Returned: FTF-0502-P1 r2 (shared import framework): its error-code names differ from the ones the importer entries require, raw HTTP errors can escape with object bytes, memory/time bounds are unpinned, and the integration test bypasses the real upload routes. The importers wait on it.
 - **2026-10-13T18:55Z:**
   - Returned: FTF-0904 r7, tests + spec-matrix only. Production is sound and the glued-JWT leak is fixed; one fault named in the round-6 return was filed under a different mutation and still passes, and the new JWT scanner's skip loop has no time shape. Stopping rule set: round 7 certifies once these land.
 - **2026-10-13T17:43Z:**

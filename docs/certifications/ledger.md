@@ -11187,3 +11187,13 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   the round-6-named Q-PAIR-KEY-WS-QUAD was filed as a different mutation and stays GREEN (> 30 s at 64 KB); Q-JWT-LOWER-
   IN-LOOP GREEN (no shape reaches the skip loop); evidence_hash stale. Stopping rule: certifies after these three items
   with no reproduced production violation.
+
+## 2026-10-13T20:07Z — RETURNED: FTF-0502-P1 (r2)
+- **FTF-0502-P1 (child slice of FTF-0502): RETURNED** (round 1 → 2; PR #758, merge 3f8ca9682ca7ad9ea86b5f8c193cb03c6d748547,
+  head 10211896). Producer session_01GnLMpxv8D3zPYhCXae6H6e ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: gate
+  115442252121 "FTF-0502-P1 dataset import common contract: all checks passed"; dataset-import-source-integration
+  115442389076 (PG16 + SeaweedFS, mid-stream stop) passed; ci-verdict and mutation gate green. Many probes held (strict
+  JSON, exact roles, limits, ChunkReader blocked/failed, 10 unauthorized-dataset variants indistinguishable). Return:
+  catalog names differ from the importer entries and refuse their codes; raw IncompleteRead/BadStatusLine escape with
+  `.partial` object bytes (reproduced); FE/FE2 bounded-resource faults GREEN; integration fixture bypasses the FTF-0501
+  routes. Ruling: P1 owns the catalog the importer entries name.
