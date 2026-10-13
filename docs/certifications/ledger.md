@@ -11178,3 +11178,12 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   and correct; new type probes all malformed with 0 Review buttons and 0 POSTs; 2000/2001 code-point bound exact. Faults:
   145/151 RED (6 classified equivalents), X19-X32 11/14 RED (X26/X27/X32 hand-picked variants of the pinned R4-D6 class,
   production rejects them; advisory), 11/11 real-API harness faults RED. UNWIRED (proving_symbol blank) until FTF-H029.
+
+## 2026-10-13T18:55Z — RETURNED: FTF-0904 (r7)
+- **FTF-0904: RETURNED** (round 6 → 7, tests + spec-matrix only; PR #757, merge 694247cf318b308b7d4fc69c46044fdd33ddab3b,
+  head ae015d1b). Producer session_011QJjCshosS9eripRKj2b81 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict
+  115415928906; gate 115381938799 "FTF-0904 Log redaction tests: all checks passed" (55 min with faults). Production sound:
+  glued-JWT contexts redacted (0/198), P1 0/49, P2 0/35, long-secret 0/306, 3,360 timing runs linear, not flaky. Return:
+  the round-6-named Q-PAIR-KEY-WS-QUAD was filed as a different mutation and stays GREEN (> 30 s at 64 KB); Q-JWT-LOWER-
+  IN-LOOP GREEN (no shape reaches the skip loop); evidence_hash stale. Stopping rule: certifies after these three items
+  with no reproduced production violation.
