@@ -12019,16 +12019,102 @@ FTF-1504:
   proving_symbol: ''
   proving_test: ''
 FTF-1505:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Secret scanning
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26; deps=FTF-0006, FTF-0904,
-    FTF-1501
-  proof_state: UNPROVEN
+  evidence_hash: PLACEHOLDER_CODE_COMMIT
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26;
+    deps=FTF-0006, FTF-0904, FTF-1501 (all three CERTIFIED, confirmed before
+    relying on them). `shared_lock_required` is empty (confirmed via
+    `tools/r1_handoff.py packet FTF-1505`); contract_owner is FTF-1501 --
+    this task reuses that module's own `ScenarioResult`/`build_evidence`
+    directly rather than re-deriving an evidence shape, and touches neither
+    `packages/contracts/openapi/15-interface.yaml` nor
+    `packages/contracts/jsonschema/15-domain.schema.json`.
+
+    Built for real: `tests/security/secret_scanning.py`. Reuse was checked,
+    not assumed, before being built around: FTF-0904's own `redact_text`
+    was tried first as the detector (it already classifies most of the same
+    secret shapes) and rejected after reproducing the failure directly
+    against this repo's own `apps/api` -- it fires on any `<identifier
+    containing a secret keyword>: <anything>` pair (`tokenizer: LineageFact`,
+    `credentials: S3Credentials`), correct for redacting free-form log
+    prose, wrong precision for a release-blocking static scan. Built a
+    dedicated, shape-only rule set instead (AWS/GitHub/Slack/Google/Hugging
+    Face/OpenAI/Stripe token shapes, PEM blocks, three-part JWTs,
+    bearer/basic headers, and a quoted non-placeholder value assigned to a
+    secret-named key) -- requires an actual credential-shaped VALUE, never
+    merely a key NAME, the same shape-over-keyword discipline
+    gitleaks/trufflehog/detect-secrets use. Verified empirically against this
+    repository's real, current production tree, full history (2,610
+    commits) and real checked-in evidence artifacts: zero false positives
+    from ordinary code (one single real hit, a `SECRET-EXPECTED-ANSWER-...`
+    Playwright test fixture in `apps/web/tests/ftf_0602.spec.ts`, allowlisted
+    by exact value + file glob + justification in the committed
+    `tests/security/secret_scan_allowlist.yaml`, the same shape FTF-1506's
+    own `dependency_scan_policy.yaml` already established).
+
+    Acceptance clause 1 ("Scan current source/history/artifacts/log samples
+    with seeded harmless secret markers") MET for all four named targets:
+    `source`/`artifact` scan every git-tracked file under the real
+    `SOURCE_ROOTS` production directories and `docs/certifications`/
+    `docs/progress` respectively; `history` scans every ADDED line in every
+    commit that ever touched those same directories across the entire
+    history (`git log --all -p`), proven for real with a disposable
+    temporary git repository (a key committed then removed from the working
+    tree is still found by `scan_history` and provably absent from
+    `scan_source`); `log_samples` captures a real sample from the actual,
+    already-certified FTF-0904 `install_redaction` pipeline (reused
+    unmodified, never re-implemented) with seeded, obviously-fake
+    `CANARY`-style markers covering each rule family, confirming detection
+    on the raw pre-redaction line and a clean real sink output.
+    `ScenarioResult`/`build_evidence` reused directly from
+    `tests/security/tenant_isolation_suite.py`: one result per scanned UNIT
+    (file/commit/seeded-check), so an all-clean scan is still real,
+    non-vacuous evidence (Law 1) rather than a "zero results" error.
+
+    negative_acceptance ("Scanner omissions/excluded production dirs and
+    actual exposed credential are release blockers") met by construction:
+    `assert_dirs_covered` fails closed the moment a configured directory
+    exists on disk but this suite's own file-inclusion logic covers zero
+    tracked files in it -- proven RED with a real git-ignored production
+    directory in a disposable temp repo, then GREEN once actually tracked;
+    `evaluate`/`main` raise `SecretScanError` the instant one real,
+    non-allowlisted secret shape is found anywhere, never silently
+    downgraded to a warning. Fault-injection (Law 1, shown able to fail
+    first): a logger with no sink wired at all is shown to leak a seeded
+    AWS-shaped marker verbatim before the real `install_redaction`-wired
+    path is shown to redact it.
+
+    Real, current-state proof: a direct run of
+    `python3 tests/security/secret_scanning.py` against this repository's
+    own real production tree, full history and checked-in evidence
+    artifacts (2,175 scanned units) comes back 0 blocking findings;
+    `tests/tasks/test_ftf_1505.py`'s own
+    `test_real_module_run_against_this_repository_is_clean` exercises that
+    exact real run as a subprocess and is wired into the `gate` CI job
+    (`.github/workflows/ci.yml`), so a real future leak fails CI, not merely
+    a mocked unit test.
+
+    DISCLOSED, NOT MET -- ephemeral CI-run JSON artifacts
+    (`reports/mutation-gate.json`, `reports/ci-verdict.json`) are never
+    committed to git, so a from-clean-checkout run of this suite's
+    `artifact` target covers zero of them; it scans them too whenever one
+    happens to be present on disk at scan time, but that is incidental, not
+    guaranteed coverage -- the same disclosed-gap class FTF-1501 already
+    carries for worker/storage/cache paths that do not exist yet in this
+    repository. DISCLOSED -- the `quoted_secret_assignment` rule's
+    placeholder-exclusion list and 16-character/charset heuristic is a
+    documented approximation (no formal entropy measure), the same
+    disclosed-precision tradeoff FTF-1506's own severity/CVSS mapping
+    documents for its own domain. Not self-certified (Law 4) --
+    `certification_state` stays PROVISIONAL, `proof_state` stays
+    L1-PROVEN, pending independent Control-plane L2 review.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_1505.py
 FTF-1506:
   certification_state: CERTIFIED
   criticality: MUST
