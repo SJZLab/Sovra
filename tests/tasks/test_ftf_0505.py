@@ -3168,6 +3168,40 @@ def test_header_row_past_the_byte_cap_is_fatal_field_too_large() -> None:
     )
 
 
+def test_header_row_byte_cap_is_exact() -> None:
+    """The MAX_HEADER_ROW_BYTES boundary itself, not just comfortably past
+    it: exactly at the cap must not trip it (pins `>`, not `>=`). Three
+    cells, each well under the per-cell `max_record_bytes` default (2 MiB),
+    so only the row-level bound is exercised."""
+
+    def header_of(sizes: list[int]) -> bytes:
+        cells = "".join(
+            f'<c r="{col_letters(i)}1" t="inlineStr"><is><t>{"x" * size}</t></is></c>'
+            for i, size in enumerate(sizes)
+        )
+        raw = f'{XML_HEAD}<worksheet xmlns="{MAIN}"><sheetData><row r="1">{cells}</row></sheetData></worksheet>'
+        return book(raw_sheet=raw)
+
+    cap = xi.MAX_HEADER_ROW_BYTES
+    third = cap // 3
+    at_cap = [third, third, cap - 2 * third]
+    assert sum(at_cap) == cap
+    over_cap = [third, third, cap - 2 * third + 1]
+
+    _e, outcome = run(header_of(at_cap), header_row=0)
+    check(
+        CID,
+        f"{sum(at_cap)} bytes (exactly the cap) does not trip field_too_large",
+        outcome.report.failure_code != "field_too_large",
+    )
+    _e, outcome = run(header_of(over_cap), header_row=0)
+    check(
+        CID,
+        f"{sum(over_cap)} bytes (cap + 1) is fatal field_too_large",
+        failed_with(outcome, "field_too_large"),
+    )
+
+
 def test_shared_strings_do_not_cost_more_than_their_byte_cap_regardless_of_script() -> None:
     """A non-Latin-1 character anywhere in a Python `str` widens that whole
     string's own storage to 2 or 4 bytes per character -- not only the wide
