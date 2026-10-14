@@ -83,6 +83,7 @@ route exists yet to call it; `proving_symbol` stays blank, as for the sibling im
 
 from __future__ import annotations
 
+import enum
 import hashlib
 import json
 import re
@@ -115,7 +116,6 @@ from workers.data.import_common import (
     to_dataset_record_candidate,
 )
 from workers.data.ooxml_safety import (
-    CONTENT_TYPES_PART,
     MACRO_PART_PREFIXES,
     MAX_CONTENT_TYPES_BYTES,
     MAX_DIRECTORY_BYTES,
@@ -137,6 +137,7 @@ from workers.data.ooxml_safety import (
 )
 
 __all__ = [
+    "DEFAULT_XLSX_LIMITS",
     "XLSX_CONTENT_TYPES",
     "XLSX_FATAL_CODES",
     "XLSX_MAX_COLUMN",
@@ -181,20 +182,16 @@ _PKG_REL_NS: Final = "http://schemas.openxmlformats.org/package/2006/relationshi
 _CT_NS: Final = "http://schemas.openxmlformats.org/package/2006/content-types"
 _REL_WORKSHEET: Final = _DOC_REL_NS + "/worksheet"
 _REL_SHARED_STRINGS: Final = _DOC_REL_NS + "/sharedStrings"
-_WORKBOOK_CONTENT_TYPE: Final = (
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
-)
 _WORKBOOK_PART: Final = "xl/workbook.xml"
-_WORKBOOK_RELS_PART: Final = "xl/_rels/workbook.xml.rels"
+_CONTENT_TYPES_KEY: Final = "[content_types].xml"  # CONTENT_TYPES_PART, casefolded
+_WORKBOOK_RELS_KEY: Final = "xl/_rels/workbook.xml.rels"
 _EXTERNAL_PREFIXES: Final = ("xl/externallinks/", "xl/querytables/")
 _EXTERNAL_PARTS: Final = frozenset({"xl/connections.xml"})
-_CELL_TYPES: Final = frozenset({"s", "inlineStr", "str", "n", "b", "e", "d"})
 _CELL_REF: Final = re.compile(r"([A-Z]{1,3})([1-9][0-9]*)")
 _ROW_NUMBER: Final = re.compile(r"[1-9][0-9]*")
 _SHARED_INDEX: Final = re.compile(r"[0-9]{1,9}")
 _XML_ESCAPE: Final = re.compile(r"_x([0-9A-Fa-f]{4})_")
 _SURROGATE: Final = re.compile("[\ud800-\udfff]")
-_MAX_DIGITS: Final = 12  # a longer row number is out of bounds without building a huge int
 
 
 _XLSX_LIMIT_DEFAULTS: Final = {
@@ -321,7 +318,7 @@ class _Scanner:
         self.path: list[str | None] = []
         self.events = 0
 
-    def _enter(self, name: str, root: str) -> str | None:
+    def _enter(self, name: str, root: str) -> None:
         self.events += 1
         if len(self.path) >= MAX_XML_DEPTH:
             raise OoxmlRefused("unsafe_archive")
@@ -329,7 +326,10 @@ class _Scanner:
         if not self.path and local != root:
             raise _root_refusal(name)
         self.path.append(local)
-        return local
+
+    def tick(self, *_args: object) -> None:
+        """A comment or processing instruction: proof the parser is making progress."""
+        self.events += 1
 
 
 class _SharedStringsScanner(_Scanner):
@@ -340,22 +340,20 @@ class _SharedStringsScanner(_Scanner):
         self._runs: list[str] = []
         self._piece: list[str] = []
         self._size = 0
-        self._collect = False
+        self._in_text = False
 
     def start(self, name: str, _attrs: object) -> None:
-        local = self._enter(name, "sst")
-        if self._collect:
+        self._enter(name, "sst")
+        if self._in_text:
             raise OoxmlRefused("xlsx_malformed")
         if _ends(self.path, "sst", "si"):
             self._runs, self._size = [], 0
-        elif local == "t" and (
-            _ends(self.path, "sst", "si", "t") or _ends(self.path, "sst", "si", "r", "t")
-        ):
-            self._collect, self._piece = True, []
+        elif _ends(self.path, "sst", "si", "t") or _ends(self.path, "sst", "si", "r", "t"):
+            self._in_text, self._piece = True, []
 
     def chars(self, data: str) -> None:
         self.events += 1
-        if not self._collect:
+        if not self._in_text:
             return
         self._size += len(data)
         if self._size > self._max_string:
@@ -364,21 +362,47 @@ class _SharedStringsScanner(_Scanner):
 
     def end(self, _name: str) -> None:
         self.events += 1
-        if self._collect:
+        if self._in_text:
             self._runs.append("".join(self._piece))
-            self._collect = False
+            self._in_text = False
         elif _ends(self.path, "sst", "si"):
             self.strings.append(decode_xml_escapes("".join(self._runs)))
         self.path.pop()
 
-    def tick(self, *_args: object) -> None:
-        self.events += 1
+
+class _Kind(enum.Enum):
+    """What a cell holds: its stored text, a formula (result never used) or an error."""
+
+    VALUE = enum.auto()
+    FORMULA = enum.auto()
+    ERROR = enum.auto()
+
+
+class _Type(enum.Enum):
+    """The cell `t` attribute, as far as this importer treats it differently."""
+
+    SHARED = enum.auto()  # s: an index into the shared strings
+    INLINE = enum.auto()  # inlineStr
+    FORMULA_RESULT = enum.auto()  # str: a formula's string result
+    ERROR = enum.auto()  # e
+    LITERAL = enum.auto()  # n, b, d (and no t): the literal <v> text
+
+
+_CELL_TYPES: Final = {
+    "s": _Type.SHARED,
+    "inlineStr": _Type.INLINE,
+    "str": _Type.FORMULA_RESULT,
+    "e": _Type.ERROR,
+    "n": _Type.LITERAL,
+    "b": _Type.LITERAL,
+    "d": _Type.LITERAL,
+}
 
 
 @dataclass
 class _RawRow:
     number: int
-    cells: dict[int, tuple[str, str]]  # column -> (kind, text); kind: value | formula | error
+    cells: dict[int, tuple[_Kind, str]]
     nonblank: bool
 
 
@@ -399,10 +423,10 @@ class _SheetScanner(_Scanner):
         self._cells = 0
         self._last_row = 0
         self._last_col = -1
-        self._row_cells: dict[int, tuple[str, str]] = {}
+        self._row_cells: dict[int, tuple[_Kind, str]] = {}
         self._nonblank = False
         self._col = 0
-        self._type = "n"
+        self._type = _Type.LITERAL
         self._has_f = False
         self._has_v = False
         self._has_is = False
@@ -410,7 +434,8 @@ class _SheetScanner(_Scanner):
         self._inline: list[str] = []
         self._piece: list[str] = []
         self._cell_chars = 0
-        self._collect = ""
+        self._in_v = False
+        self._in_t = False
 
     def _fatal(self, code: str) -> XlsxAborted:
         return XlsxAborted(code, self.row_number or None)
@@ -418,29 +443,28 @@ class _SheetScanner(_Scanner):
     # -- handlers -----------------------------------------------------------------
 
     def start(self, name: str, attrs: Mapping[str, str]) -> None:
-        local = self._enter(name, "worksheet")
+        self._enter(name, "worksheet")
         path = self.path
-        if self._collect:
+        if self._in_v or self._in_t:
             raise self._fatal("xlsx_malformed")
-        if local == "row" and _ends(path, "worksheet", "sheetData", "row"):
+        if _ends(path, "worksheet", "sheetData", "row"):
             self._start_row(attrs)
-        elif local == "c" and _ends(path, "worksheet", "sheetData", "row", "c"):
+        elif _ends(path, "worksheet", "sheetData", "row", "c"):
             self._start_cell(attrs)
         elif _ends(path, "worksheet", "sheetData", "row", "c", "v"):
             if self._has_v:
                 raise self._fatal("xlsx_malformed")
-            self._has_v, self._collect, self._piece = True, "v", []
+            self._has_v, self._in_v, self._piece = True, True, []
         elif _ends(path, "worksheet", "sheetData", "row", "c", "f"):
             self._has_f = True
         elif _ends(path, "worksheet", "sheetData", "row", "c", "is"):
             if self._has_is:
                 raise self._fatal("xlsx_malformed")
             self._has_is = True
-        elif local == "t" and (
-            _ends(path, "worksheet", "sheetData", "row", "c", "is", "t")
-            or _ends(path, "worksheet", "sheetData", "row", "c", "is", "r", "t")
+        elif _ends(path, "worksheet", "sheetData", "row", "c", "is", "t") or _ends(
+            path, "worksheet", "sheetData", "row", "c", "is", "r", "t"
         ):
-            self._collect, self._piece = "t", []
+            self._in_t, self._piece = True, []
 
     def _start_row(self, attrs: Mapping[str, str]) -> None:
         given = attrs.get("r")
@@ -449,7 +473,7 @@ class _SheetScanner(_Scanner):
         else:
             if not _ROW_NUMBER.fullmatch(given):
                 raise XlsxAborted("xlsx_malformed", self._last_row or None)
-            number = XLSX_MAX_ROW + 1 if len(given) > _MAX_DIGITS else int(given)
+            number = _row_number(given)
         self.row_number = number
         if number > XLSX_MAX_ROW:
             raise self._fatal("sheet_out_of_bounds")
@@ -459,9 +483,11 @@ class _SheetScanner(_Scanner):
         self._row_cells, self._nonblank = {}, False
 
     def _start_cell(self, attrs: Mapping[str, str]) -> None:
-        cell_type = attrs.get("t")
-        if cell_type is not None and cell_type not in _CELL_TYPES:
-            raise self._fatal("xlsx_malformed")
+        cell_type = _Type.LITERAL
+        if "t" in attrs:
+            if attrs["t"] not in _CELL_TYPES:
+                raise self._fatal("xlsx_malformed")
+            cell_type = _CELL_TYPES[attrs["t"]]
         reference = attrs.get("r")
         if reference is None:
             column = self._last_col + 1
@@ -471,10 +497,9 @@ class _SheetScanner(_Scanner):
                 raise self._fatal("xlsx_malformed")
             letters, digits = found.groups()
             column = _column_index(letters)
-            row = XLSX_MAX_ROW + 1 if len(digits) > _MAX_DIGITS else int(digits)
-            if column >= XLSX_MAX_COLUMN or row > XLSX_MAX_ROW:
+            if _row_number(digits) > XLSX_MAX_ROW:
                 raise self._fatal("sheet_out_of_bounds")
-            if row != self.row_number:
+            if _row_number(digits) != self.row_number:
                 raise self._fatal("xlsx_malformed")
         if column >= XLSX_MAX_COLUMN:
             raise self._fatal("sheet_out_of_bounds")
@@ -484,7 +509,7 @@ class _SheetScanner(_Scanner):
         if self._cells > self._max_cells:
             raise self._fatal("too_many_cells")
         self._last_col, self._col = column, column
-        self._type = cell_type or "n"
+        self._type = cell_type
         self._has_f = self._has_v = self._has_is = False
         self._v_text = ""
         self._inline = []
@@ -492,7 +517,7 @@ class _SheetScanner(_Scanner):
 
     def chars(self, data: str) -> None:
         self.events += 1
-        if not self._collect:
+        if not (self._in_v or self._in_t):
             return
         self._cell_chars += len(data)
         if self._cell_chars > self._max_cell_chars:
@@ -502,12 +527,12 @@ class _SheetScanner(_Scanner):
     def end(self, _name: str) -> None:
         self.events += 1
         path = self.path
-        if self._collect == "v" and _ends(path, "worksheet", "sheetData", "row", "c", "v"):
+        if self._in_v:
             self._v_text = "".join(self._piece)
-            self._collect = ""
-        elif self._collect == "t":
+            self._in_v = False
+        elif self._in_t:
             self._inline.append("".join(self._piece))
-            self._collect = ""
+            self._in_t = False
         elif _ends(path, "worksheet", "sheetData", "row", "c"):
             self._finish_cell()
         elif _ends(path, "worksheet", "sheetData", "row"):
@@ -515,31 +540,33 @@ class _SheetScanner(_Scanner):
             self._row_cells = {}
         path.pop()
 
-    def tick(self, *_args: object) -> None:
-        self.events += 1
-
     def _finish_cell(self) -> None:
-        cell_type = self._type
-        kind, text = "value", ""
-        if self._has_f or cell_type == "str":
-            kind = "formula"
-        elif cell_type == "e":
-            kind = "error"
-        elif cell_type == "s":
+        kind, text = _Kind.VALUE, ""
+        if self._has_f or self._type is _Type.FORMULA_RESULT:
+            kind = _Kind.FORMULA
+        elif self._type is _Type.ERROR:
+            kind = _Kind.ERROR
+        elif self._type is _Type.SHARED:
             if not self._has_v or not _SHARED_INDEX.fullmatch(self._v_text):
                 raise self._fatal("xlsx_malformed")
             index = int(self._v_text)
             if index >= len(self._shared):
                 raise self._fatal("xlsx_malformed")
             text = self._shared[index]
-        elif cell_type == "inlineStr":
+        elif self._type is _Type.INLINE:
             text = decode_xml_escapes("".join(self._inline))
         else:  # n, b, d: the literal <v> text
             text = self._v_text
-        if kind != "value" or text != "":
+        if kind is not _Kind.VALUE or text != "":
             self._nonblank = True
         if self.wanted is None or self._col in self.wanted:
             self._row_cells[self._col] = (kind, text)
+
+
+def _row_number(digits: str) -> int:
+    """A row number written as `digits`; anything of 8 digits or more is past the
+    1,048,576 rows of a sheet and is not turned into an int."""
+    return XLSX_MAX_ROW + 1 if len(digits) > len(str(XLSX_MAX_ROW)) else int(digits)
 
 
 def _column_index(letters: str) -> int:
@@ -592,20 +619,15 @@ def _read_small(
 
 
 def _resolve_target(target: str) -> str:
-    """A relationship target, relative to `xl/`, as a part name. An absolute path,
-    a backslash, a `..` segment, an empty segment or a URL is `unsafe_archive` /
-    `xlsx_malformed`: the only thing followed is a relative path inside the package."""
-    if not target:
-        raise OoxmlRefused("xlsx_malformed")
+    """A relationship target, relative to `xl/`, as a part name. An absolute path, a
+    backslash, a `..` segment or a URL is `unsafe_archive`: the only thing followed is a
+    relative path inside the package. Whether such a part exists is the caller's check."""
     if target.startswith("/") or "\\" in target or ":" in target:
         raise OoxmlRefused("unsafe_archive")
     segments = target.split("/")
     if ".." in segments:
         raise OoxmlRefused("unsafe_archive")
-    segments = [s for s in segments if s != "."]
-    if not segments or any(not s for s in segments):
-        raise OoxmlRefused("xlsx_malformed")
-    return "xl/" + "/".join(segments)
+    return "xl/" + "/".join(segment for segment in segments if segment != ".")
 
 
 def _content_types(document: bytes) -> tuple[dict[str, str], list[str]]:
@@ -696,18 +718,18 @@ def open_package(
     for folded in parts:
         if folded.startswith(_EXTERNAL_PREFIXES) or folded in _EXTERNAL_PARTS:
             raise OoxmlRefused("external_link_present")
-    if CONTENT_TYPES_PART.casefold() not in parts or _WORKBOOK_PART not in parts:
+    if _CONTENT_TYPES_KEY not in parts or _WORKBOOK_PART not in parts:
         raise OoxmlRefused("unsupported_workbook")
     budget = PartBudget(limits.max_total_uncompressed_bytes)
 
     overrides, declared = _content_types(
-        _read_small(
-            archive, parts[CONTENT_TYPES_PART.casefold()], budget, tick, cap=MAX_CONTENT_TYPES_BYTES
-        )
+        _read_small(archive, parts[_CONTENT_TYPES_KEY], budget, tick, cap=MAX_CONTENT_TYPES_BYTES)
     )
     if any("macroenabled" in kind.lower() or "vbaproject" in kind.lower() for kind in declared):
         raise OoxmlRefused("unsafe_workbook")
-    if overrides.get("/" + _WORKBOOK_PART) != _WORKBOOK_CONTENT_TYPE:
+    if overrides.get("/" + _WORKBOOK_PART) != (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
+    ):
         raise OoxmlRefused("unsupported_workbook")
 
     rels: dict[str, list[dict[str, str]]] = {}
@@ -721,9 +743,9 @@ def open_package(
     folded_names = [name.casefold() for name, _rid in sheets]
     if len(set(folded_names)) != len(folded_names):
         raise OoxmlRefused("duplicate_sheet_name")
-    if _WORKBOOK_RELS_PART.casefold() not in rels:
+    if _WORKBOOK_RELS_KEY not in rels:
         raise OoxmlRefused("xlsx_malformed")
-    by_id = {r["Id"]: r for r in rels[_WORKBOOK_RELS_PART.casefold()] if "Id" in r}
+    by_id = {r["Id"]: r for r in rels[_WORKBOOK_RELS_KEY] if "Id" in r}
     matches = [i for i, (name, _rid) in enumerate(sheets) if name == sheet_name]
     if not matches:
         raise XlsxAborted("mapping_column_missing")
@@ -945,7 +967,7 @@ class XlsxEventStream(Iterator[ImportEvent]):
         width = max(raw.cells) + 1
         headers = [""] * width
         for column, (kind, text) in raw.cells.items():
-            if kind != "value":
+            if kind is not _Kind.VALUE:
                 raise XlsxAborted("xlsx_malformed", raw.number)
             headers[column] = text
         named = [header for header in headers if header]
@@ -965,10 +987,10 @@ class XlsxEventStream(Iterator[ImportEvent]):
         row = [""] * width
         total = 0
         for name, position in positions:
-            kind, text = raw.cells.get(position, ("value", ""))
-            if kind == "formula":
+            kind, text = raw.cells.get(position, (_Kind.VALUE, ""))
+            if kind is _Kind.FORMULA:
                 return RowRejection(locator, "formula_cell", name)
-            if kind == "error":
+            if kind is _Kind.ERROR:
                 return RowRejection(locator, "cell_error_value", name)
             if "\x00" in text:
                 return RowRejection(locator, "nul_character", name)
@@ -1068,7 +1090,6 @@ def run_xlsx_import(
     aborted: ImportAborted | None = None
     try:
         for event in stream:
-            reader.deadline.check()
             accumulator.add(event)
     except ImportAborted as exc:
         aborted = exc

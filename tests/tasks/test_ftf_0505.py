@@ -19,6 +19,7 @@ test_formula_only_critical_data, test_xml_bomb_*, test_unsupported_*.
 Run directly: python3 tests/tasks/test_ftf_0505.py
 """
 
+# ruff: noqa: E501
 from __future__ import annotations
 
 import dataclasses
@@ -69,6 +70,17 @@ XLSX_TYPE = xi.XLSX_CONTENT_TYPE
 XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 
 
+def store_text(text: str) -> str:
+    """Text as a spreadsheet writer stores it in a string element: markup escaped, a literal
+    `_xHHHH_` sequence protected as `_x005F_xHHHH_`, CR (which XML would normalise to LF)
+    and the other control characters as `_xHHHH_` escapes."""
+    text = re.sub(r"_(x[0-9A-Fa-f]{4}_)", r"_x005F_\1", text)
+    text = escape(text)
+    return "".join(
+        f"_x{ord(ch):04X}_" if ord(ch) < 0x20 and ch not in "\t\n" else ch for ch in text
+    )
+
+
 class Shared:
     def __init__(self) -> None:
         self.strings: list[str] = []
@@ -90,7 +102,14 @@ def S(text: str) -> Cell:
 
 def IS(text: str) -> Cell:
     """An inline-string cell."""
-    return Cell(lambda ref, _s: f'<c r="{ref}" t="inlineStr"><is><t>{escape(text)}</t></is></c>')
+    return Cell(
+        lambda ref, _s: f'<c r="{ref}" t="inlineStr"><is><t>{store_text(text)}</t></is></c>'
+    )
+
+
+def RIS(raw: str) -> Cell:
+    """An inline-string cell whose stored text is exactly `raw` (escapes included)."""
+    return Cell(lambda ref, _s: f'<c r="{ref}" t="inlineStr"><is><t>{raw}</t></is></c>')
 
 
 def N(text: str, t: str | None = None) -> Cell:
@@ -153,7 +172,7 @@ def sheet_xml(rows: list[list[Cell]], shared: Shared, *, first_row: int = 1, ns:
 
 
 def shared_xml(strings: list[str]) -> str:
-    items = "".join(f"<si><t>{escape(s)}</t></si>" for s in strings)
+    items = "".join(f"<si><t>{store_text(s)}</t></si>" for s in strings)
     return f'{XML_HEAD}<sst xmlns="{MAIN}">{items}</sst>'
 
 
@@ -298,7 +317,7 @@ def run(
     *,
     chunk: int | None = None,
     limits: ic.ImportLimits = ic.DEFAULT_LIMITS,
-    xlsx_limits: xi.XlsxLimits = xi.XlsxLimits(),
+    xlsx_limits: xi.XlsxLimits = xi.DEFAULT_XLSX_LIMITS,
     on_accepted: Callable[[Any], None] | None = None,
     **mapping_kwargs: Any,
 ) -> tuple[list[ic.ImportEvent], xi.XlsxImportOutcome]:
@@ -678,7 +697,7 @@ def test_lone_surrogate_and_nul_escapes_reject_the_row() -> None:
         ("NUL escape", "a_x0000_b", "nul_character"),
         ("reversed pair", "_xDE00__xD83D_", "invalid_unicode"),
     ):
-        events, outcome = run(book([[IS("q"), IS("a")], [IS(text), IS("x")]]))
+        events, outcome = run(book([[IS("q"), IS("a")], [RIS(text), IS("x")]]))
         check(
             CID,
             f"{label}: row rejected {code}",
@@ -686,7 +705,7 @@ def test_lone_surrogate_and_nul_escapes_reject_the_row() -> None:
             and outcome.report.rejections == (ic.RowRejection("row:2", code, "prompt"),),
         )
     # the same text in an UNMAPPED column does not matter
-    events, outcome = run(book([[IS("q"), IS("a"), IS("n")], [IS("p"), IS("c"), IS("a_x0000_b")]]))
+    events, outcome = run(book([[IS("q"), IS("a"), IS("n")], [IS("p"), IS("c"), RIS("a_x0000_b")]]))
     check(CID, "NUL in an unmapped column is ignored", len(accepted(events)) == 1)
 
 
@@ -694,13 +713,13 @@ def test_lone_surrogate_and_nul_escapes_reject_the_row() -> None:
 
 
 def test_header_exactness() -> None:
-    for label, header, kwargs in (
-        ("case differs", "Q", {}),
-        ("trailing space", "q ", {}),
-        ("leading space", " q", {}),
-        ("NFD vs NFC", "q́", {}),
+    for label, header in (
+        ("case differs", "Q"),
+        ("trailing space", "q "),
+        ("leading space", " q"),
+        ("NFD vs NFC", "q\u0301"),
     ):
-        _events, outcome = run(book([[IS(header), IS("a")], [IS("p"), IS("c")]]), **kwargs)
+        _events, outcome = run(book([[IS(header), IS("a")], [IS("p"), IS("c")]]))
         check(
             CID,
             f"{label}: the mapped header is absent -> mapping_column_missing",
@@ -1268,7 +1287,7 @@ def test_limits_can_be_lowered_never_raised() -> None:
         default = getattr(xi.XlsxLimits(), name)
         for bad in (default + 1, 0, -1, True, 1.5, "5"):
             try:
-                xi.XlsxLimits(**{name: bad})
+                xi.XlsxLimits(**{name: bad})  # type: ignore[arg-type]
             except ValueError:
                 continue
             check(CID, f"XlsxLimits({name}={bad!r}) is refused", False)
@@ -2248,7 +2267,7 @@ def test_spool_is_anonymous_private_and_closed() -> None:
     check(
         CID,
         "a preview holds its spool until closed",
-        {fd for fd, _t in open_spool_descriptors()} - before,
+        bool({fd for fd, _t in open_spool_descriptors()} - before),
     )
     stream.close()
     check(
@@ -2364,11 +2383,11 @@ def test_a_full_disk_for_the_spool_is_blocked_not_a_verdict() -> None:
             raise OSError(errno.ENOSPC, "No space left on device")
 
     original = tempfile.TemporaryFile
-    tempfile.TemporaryFile = lambda *a, **k: FullDisk()  # type: ignore[assignment,misc]
+    tempfile.TemporaryFile = lambda *a, **k: FullDisk()  # type: ignore[assignment]
     try:
         _e, outcome = run(GOOD)
     finally:
-        tempfile.TemporaryFile = original  # type: ignore[misc]
+        tempfile.TemporaryFile = original
     check(
         CID,
         "ENOSPC on the spool is blocked/source_unavailable",
@@ -2522,7 +2541,7 @@ def test_tool_schemas_and_validator_are_forwarded() -> None:
         expected_sha256=hashlib.sha256(data).hexdigest(),
         tool_schemas={"t": {"type": "object"}},
         tool_argument_validator=validator,
-    )  # type: ignore[arg-type]
+    )
     check(CID, "the tool argument validator is reached through the importer", len(calls) >= 1)
 
 
@@ -2561,7 +2580,7 @@ def test_meta_leak_markers_never_reach_the_report() -> None:
         "an archive failure names no member name",
         not support.leaked_markers((outcome.report, outcome.fatal_locator), [m_val]),
     )
-    _e, outcome = run(book(extra=[(f"xl/vbaProject.bin", m_val.encode())]))
+    _e, outcome = run(book(extra=[("xl/vbaProject.bin", m_val.encode())]))
     check(
         CID,
         "a macro failure names no content",
@@ -2705,6 +2724,882 @@ def test_drift_against_ftf_0501_upload_checks() -> None:
     }
     for label, data in refused.items():
         check(CID, f"{label}: refused here too", run(data)[1].report.state == "failed")
+
+
+# --- generated tables and properties -----------------------------------------------------
+
+CELL_KINDS = ("s", "inlineStr", "str", "n", "b", "e", "d", "none")
+FORMULAS = ("none", "normal", "shared-empty", "array")
+
+
+def generated_cell(kind: str, formula: str, ref: str, sst: Shared, text: str) -> str:
+    attr = "" if kind == "none" else f' t="{kind}"'
+    f = {
+        "none": "",
+        "normal": "<f>A1+1</f>",
+        "shared-empty": '<f t="shared" si="3"/>',
+        "array": f'<f t="array" ref="{ref}">1</f>',
+    }[formula]
+    if kind == "s":
+        return f'<c r="{ref}"{attr}>{f}<v>{sst.add(text)}</v></c>'
+    if kind == "inlineStr":
+        return f'<c r="{ref}"{attr}>{f}<is><t>{escape(text)}</t></is></c>'
+    return f'<c r="{ref}"{attr}>{f}<v>{escape(text)}</v></c>'
+
+
+def test_generated_cell_type_by_formula_by_column_table() -> None:
+    for kind in CELL_KINDS:
+        for formula in FORMULAS:
+            for mapped in (True, False):
+                sst = Shared()
+                header = (
+                    '<row r="1"><c r="A1" t="inlineStr"><is><t>q</t></is></c>'
+                    '<c r="B1" t="inlineStr"><is><t>a</t></is></c>'
+                    '<c r="C1" t="inlineStr"><is><t>n</t></is></c></row>'
+                )
+                target = "B2" if mapped else "C2"
+                cells = {
+                    "A2": '<c r="A2" t="inlineStr"><is><t>P</t></is></c>',
+                    "B2": '<c r="B2" t="inlineStr"><is><t>C</t></is></c>',
+                    "C2": '<c r="C2" t="inlineStr"><is><t>N</t></is></c>',
+                }
+                cells[target] = generated_cell(kind, formula, target, sst, "VALUE")
+                raw = (
+                    f'{XML_HEAD}<worksheet xmlns="{MAIN}"><sheetData>{header}<row r="2">'
+                    f"{cells['A2']}{cells['B2']}{cells['C2']}</row></sheetData></worksheet>"
+                )
+                data = book(raw_sheet=raw, shared_override=shared_xml(sst.strings).encode())
+                events, outcome = run(data)
+                label = f"type={kind} formula={formula} mapped={mapped}"
+                is_formula = formula != "none" or kind == "str"
+                if not mapped:
+                    check(
+                        CID,
+                        f"{label}: an unmapped cell never rejects the row",
+                        len(accepted(events)) == 1 and not outcome.report.rejections,
+                    )
+                elif is_formula:
+                    check(
+                        CID,
+                        f"{label}: formula_cell",
+                        outcome.report.rejections
+                        == (ic.RowRejection("row:2", "formula_cell", "completion"),),
+                    )
+                elif kind == "e":
+                    check(
+                        CID,
+                        f"{label}: cell_error_value",
+                        outcome.report.rejections
+                        == (ic.RowRejection("row:2", "cell_error_value", "completion"),),
+                    )
+                else:
+                    got = accepted(events)
+                    check(
+                        CID,
+                        f"{label}: imported as the literal text",
+                        len(got) == 1 and texts(got[0]) == ["P", "VALUE"],
+                    )
+
+
+def random_text(rng: Any) -> str:
+    alphabet = [
+        "a", "b", " ", "1", "0", "٠", "م", "ر", "é", "́", "😀", "&", "<", ">", '"', "'",
+        "=", "+", "-", "@", "\t", "‏", "‮", "_", "x", " ", "ß", "İ",
+    ]  # fmt: skip
+    return "".join(rng.choice(alphabet) for _ in range(rng.randint(1, 12)))
+
+
+def xml_safe(text: str) -> str:
+    """The way a spreadsheet writer stores `text`: markup escaped, tab / CR / LF kept
+    literal where XML allows (CR as an _x000D_ escape, which XML would normalise away)."""
+    return (
+        escape(text).replace("\r", "_x000D_").replace("_x", "_x005F_x")
+        if "_x" in text
+        else escape(text)
+    )
+
+
+def test_random_workbooks_round_trip_exactly() -> None:
+    import random
+
+    rng = random.Random(505)
+    for case in range(120):
+        count = rng.randint(1, 12)
+        pairs = [(random_text(rng), random_text(rng)) for _ in range(count)]
+        rows = [[S("q"), S("a")]]
+        for prompt, completion in pairs:
+            first = S(prompt) if rng.random() < 0.5 else IS(prompt)
+            second = S(completion) if rng.random() < 0.5 else IS(completion)
+            rows.append([first, second])
+        data = book(rows)
+        chunk = rng.choice([None, 1, 7, 100, 4096])
+        events, outcome = run(data, chunk=chunk)
+        got = [texts(c) for c in accepted(events)]
+        # whitespace-only / empty strings are empty cells to the mapping
+        expected = [[p, c] for p, c in pairs if p != "" and c != ""]
+        check(
+            CID,
+            f"random workbook #{case} chunk={chunk}: every text survives exactly",
+            outcome.report.state == "completed" and got == expected,
+        )
+
+
+def test_encodings_of_the_xml_parts_are_read_by_expat() -> None:
+    sheet = sheet_xml([[IS("q"), IS("a")], [IS("مرحبا"), IS("ok")]], Shared())
+    for label, payload in (
+        ("utf-8", sheet.encode("utf-8")),
+        ("utf-8 with a BOM", b"\xef\xbb\xbf" + sheet.encode("utf-8")),
+        ("utf-16", utf16(sheet)),
+        ("utf-16-be", sheet.replace('encoding="UTF-8"', 'encoding="UTF-16BE"').encode("utf-16-be")),
+    ):
+        events, outcome = run(book(raw_sheet=payload))
+        got = [texts(c) for c in accepted(events)]
+        check(
+            CID,
+            f"a {label} sheet part imports",
+            outcome.report.state == "completed" and got == [["مرحبا", "ok"]],
+        )
+    shared = shared_xml(["q", "a", "مرحبا"])
+    cells = [
+        [RAWC('<c r="{ref}" t="s"><v>0</v></c>'), RAWC('<c r="{ref}" t="s"><v>1</v></c>')],
+        [RAWC('<c r="{ref}" t="s"><v>2</v></c>'), IS("ok")],
+    ]
+    events, outcome = run(book(cells, shared_override=utf16(shared)))
+    check(
+        CID,
+        "a UTF-16 sharedStrings part imports",
+        [texts(c) for c in accepted(events)] == [["مرحبا", "ok"]],
+    )
+
+
+def test_rejected_rows_consume_a_record_index() -> None:
+    rows = [
+        [S("q"), S("a")],
+        [S("bad"), F()],
+        [S("good"), S("x")],
+        [S("bad2"), E()],
+        [S("good2"), S("y")],
+    ]
+    events, outcome = run(book(rows))
+    check(
+        CID,
+        "record_index counts every data row, rejected or not",
+        [c["record_index"] for c in accepted(events)] == [1, 3]
+        and outcome.report.records_seen == 4,
+    )
+
+
+def test_sheet_names_with_markup_characters_match_exactly() -> None:
+    for name in ("A&B", "A<B>", 'say "hi"', "it's", "مرحبا", "a b", "Sheet.1", "x" * 31):
+        events, outcome = run(book(sheet=name), sheet=name)
+        check(
+            CID,
+            f"sheet {name!r} is found by its exact name",
+            outcome.report.state == "completed" and len(accepted(events)) == 1,
+        )
+
+
+def test_memory_is_bounded_by_the_row_not_the_sheet() -> None:
+    import tracemalloc
+
+    rows = 40_000
+    body = "".join(
+        f'<row r="{r}"><c r="A{r}" t="inlineStr"><is><t>prompt {r} {"x" * 60}</t></is></c>'
+        f'<c r="B{r}" t="inlineStr"><is><t>answer {r}</t></is></c></row>'
+        for r in range(2, rows + 2)
+    )
+    head = '<row r="1"><c r="A1" t="inlineStr"><is><t>q</t></is></c><c r="B1" t="inlineStr"><is><t>a</t></is></c></row>'
+    raw = f'{XML_HEAD}<worksheet xmlns="{MAIN}"><sheetData>{head}{body}</sheetData></worksheet>'
+    data = book(raw_sheet=raw)
+    size = len(raw)
+    count = [0]
+    tracemalloc.start()
+    try:
+        tracemalloc.reset_peak()
+        outcome = xi.run_xlsx_import(
+            make_reader(data, 64 * 1024),
+            build_mapping(),
+            verified_content_type=XLSX_TYPE,
+            dataset_purpose="training",
+            expected_sha256=hashlib.sha256(data).hexdigest(),
+            on_accepted=lambda _c: count.__setitem__(0, count[0] + 1),
+        )
+        _current, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    check(CID, "the large sheet imported", outcome.report.state == "completed" and count[0] == rows)
+    check(CID, f"peak memory {peak} is far below the {size} byte sheet", peak < size // 3)
+
+
+def test_concurrent_imports_with_different_limits_do_not_interfere() -> None:
+    import threading
+
+    data = sized_sheet(40)
+    results: dict[str, str] = {}
+
+    def worker(name: str, limits: xi.XlsxLimits) -> None:
+        for _ in range(5):
+            _e, outcome = run(data, xlsx_limits=limits)
+            results[name] = f"{outcome.report.state}:{outcome.report.failure_code}"
+
+    threads = [
+        threading.Thread(target=worker, args=("low", xi.XlsxLimits(max_cells=10))),
+        threading.Thread(target=worker, args=("default", xi.XlsxLimits())),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    check(
+        CID,
+        "the low-limit import fails on its own limit",
+        results["low"] == "failed:too_many_cells",
+    )
+    check(CID, "the default import is untouched by it", results["default"] == "completed:None")
+
+
+def test_directory_padding_counts_against_the_total_cap() -> None:
+    pad = b"\x00" * (3 * 1024 * 1024)
+    data = with_extra(GOOD, ("docProps/pad.bin", pad))
+    cap = xi.XlsxLimits(max_total_uncompressed_bytes=1024 * 1024)
+    _e, outcome = run(data, xlsx_limits=cap)
+    check(
+        CID,
+        "a never-read member still counts against the declared total",
+        failed_with(outcome, "unsafe_archive"),
+    )
+    check(
+        CID,
+        "and the same archive imports under the default cap",
+        run(data)[1].report.state == "completed",
+    )
+
+
+def test_part_names_that_differ_only_by_whitespace_or_folding_rules() -> None:
+    near = t501._zip([*members_of(GOOD), ("docProps/a.txt", b"1"), ("docProps/a.txt ", b"2")])
+    check(
+        CID,
+        "names differing by a trailing space are distinct parts",
+        run(near)[1].report.state == "completed",
+    )
+    sharp = t501._zip([*members_of(GOOD), ("docProps/ß.txt", b"1"), ("docProps/SS.txt", b"2")])
+    check(
+        CID,
+        "names equal only after Unicode casefold are duplicates",
+        failed_with(run(sharp)[1], "unsafe_archive"),
+    )
+    dotted = t501._zip([*members_of(GOOD), ("docProps/İ.txt", b"1"), ("docProps/i̇.txt", b"2")])
+    check(
+        CID,
+        "casefold-equal names (dotted capital I) are duplicates",
+        failed_with(run(dotted)[1], "unsafe_archive"),
+    )
+
+
+# --- the defensive layers, each killed on its own -------------------------------------------
+
+
+class _LyingArchive:
+    """A zip reader whose members inflate to more than their directory claims: what a
+    `zipfile` that stopped enforcing the declared size would hand over."""
+
+    def __init__(self, produced: int) -> None:
+        self._produced = produced
+
+    def open(self, _info: object) -> Any:
+        outer = self
+
+        class Handle:
+            def __init__(self) -> None:
+                self.left = outer._produced
+
+            def __enter__(self) -> Handle:
+                return self
+
+            def __exit__(self, *_a: object) -> None:
+                return None
+
+            def read(self, size: int) -> bytes:
+                take = min(size, self.left)
+                self.left -= take
+                return b"\x00" * take
+
+        return Handle()
+
+
+def drain(archive: Any, *, part_cap: int, remaining: int, code: str = "unsafe_archive") -> str:
+    try:
+        total = sum(
+            len(block)
+            for block in ox.read_part_blocks(
+                archive,
+                zipfile.ZipInfo("x"),
+                part_cap=part_cap,
+                budget=ox.PartBudget(remaining),
+                over_cap_code=code,
+            )
+        )
+    except ox.OoxmlRefused as exc:
+        return exc.code
+    return f"read {total}"
+
+
+def test_bytes_are_counted_as_they_are_read_not_as_the_directory_claims() -> None:
+    block = ox.READ_BLOCK_BYTES
+    lying = _LyingArchive(3 * block)
+    big = 10 * block
+    check(
+        CID,
+        "within both caps the part is read whole",
+        drain(lying, part_cap=big, remaining=big) == f"read {3 * block}",
+    )
+    check(
+        CID,
+        "exactly at the part cap is allowed",
+        drain(lying, part_cap=3 * block, remaining=big) == f"read {3 * block}",
+    )
+    check(
+        CID,
+        "one byte over the part cap raises the part's own code",
+        drain(lying, part_cap=3 * block - 1, remaining=big, code="limit_exceeded")
+        == "limit_exceeded",
+    )
+    check(
+        CID,
+        "exactly at the archive-wide budget is allowed",
+        drain(lying, part_cap=big, remaining=3 * block) == f"read {3 * block}",
+    )
+    check(
+        CID,
+        "one byte over the archive-wide budget is unsafe_archive",
+        drain(lying, part_cap=big, remaining=3 * block - 1) == "unsafe_archive",
+    )
+    check(
+        CID,
+        "the part cap is checked even when the budget is huge",
+        drain(lying, part_cap=block, remaining=10**12, code="limit_exceeded") == "limit_exceeded",
+    )
+    ticks: list[int] = []
+    list(
+        ox.read_part_blocks(
+            lying,
+            zipfile.ZipInfo("x"),
+            part_cap=big,
+            budget=ox.PartBudget(big),
+            tick=lambda: ticks.append(1),
+        )
+    )
+    check(
+        CID, "the caller's tick runs before every block (and once more at the end)", len(ticks) == 4
+    )
+    budget = ox.PartBudget(100)
+    budget.spend(100)
+    check(CID, "spending exactly the budget leaves zero", budget.remaining == 0)
+    try:
+        budget.spend(1)
+    except ox.OoxmlRefused as exc:
+        check(CID, "spending past the budget is unsafe_archive", exc.code == "unsafe_archive")
+    else:
+        check(CID, "spending past the budget is refused", False)
+
+    # a part that raises while it is read is a damaged entry, never a crash
+    class Broken:
+        def open(self, _i: object) -> Any:
+            raise zipfile.BadZipFile("Bad CRC-32")
+
+    check(
+        CID,
+        "a damaged entry is xlsx_malformed",
+        drain(Broken(), part_cap=big, remaining=big) == "xlsx_malformed",
+    )
+
+
+def test_a_malformed_part_that_mentions_a_declaration_is_an_attempt() -> None:
+    def verdict(part: str, payload: bytes) -> str:
+        outcome = run(with_member(GOOD, part, payload))[1]
+        return str(outcome.report.failure_code)
+
+    wb = "xl/workbook.xml"
+    ns = f' xmlns="{MAIN}"'.encode()
+    mentions = [
+        ("lower-case doctype", b"<workbook" + ns + b"><!doctype x></workbook>"),
+        ("upper-case doctype", b"<workbook" + ns + b"><!DOCTYPE x></workbook>"),
+        ("entity declaration", b"<workbook" + ns + b'><!ENTITY a "b"></workbook>'),
+        ("mixed-case entity", b"<workbook" + ns + b'><!Entity a "b"></workbook>'),
+        ("utf-16 doctype", f"<workbook{ns.decode()}><!DOCTYPE x></workbook>".encode("utf-16")),
+        (
+            "utf-16-le doctype",
+            b"\xff\xfe" + f"<workbook{ns.decode()}><!DOCTYPE x>".encode("utf-16-le"),
+        ),
+        (
+            "utf-16-be doctype",
+            b"\xfe\xff" + f"<workbook{ns.decode()}><!DOCTYPE x>".encode("utf-16-be"),
+        ),
+    ]
+    for label, payload in mentions:
+        check(
+            CID,
+            f"a malformed workbook mentioning a {label} is unsafe_archive",
+            verdict(wb, payload) == "unsafe_archive",
+        )
+    for label, payload in (
+        ("plain garbage", b"<workbook" + ns + b"><sheets></workbook>"),
+        (
+            "a comment that says doctype-ish",
+            b"<workbook" + ns + b"><!-- doc type --><sheets></workbook>",
+        ),
+        ("an unrelated declaration word", b"<workbook" + ns + b"><ENTITLEMENT></workbook>"),
+    ):
+        check(
+            CID,
+            f"a malformed workbook with {label} is xlsx_malformed",
+            verdict(wb, payload) == "xlsx_malformed",
+        )
+    check(
+        CID,
+        "a malformed [Content_Types].xml that mentions an entity is unsafe_archive",
+        verdict("[Content_Types].xml", b'<Types><!ENTITY a "b"></Types>') == "unsafe_archive",
+    )
+    check(
+        CID,
+        "a malformed rels part that mentions a doctype is unsafe_archive",
+        verdict("xl/_rels/workbook.xml.rels", b"<Relationships><!DOCTYPE x></Relationships>")
+        == "unsafe_archive",
+    )
+    check(
+        CID,
+        "a malformed rels part otherwise is xlsx_malformed",
+        verdict("xl/_rels/workbook.xml.rels", b"<Relationships>") == "xlsx_malformed",
+    )
+
+
+def test_namespaces_and_element_names_are_matched_exactly() -> None:
+    sheet = sheet_xml([[IS("q"), IS("a")], [IS("p"), IS("c")]], Shared())
+    upper_ns = MAIN.upper()
+    cases = [
+        (
+            "an upper-cased worksheet namespace",
+            book(raw_sheet=sheet.replace(MAIN, upper_ns)),
+            "xlsx_malformed",
+        ),
+        (
+            "an upper-cased workbook namespace",
+            book(replace={"xl/workbook.xml": workbook_xml(ns=upper_ns).encode()}),
+            "xlsx_malformed",
+        ),
+        (
+            "an upper-cased sharedStrings namespace",
+            book(shared_override=shared_xml(["x"]).replace(MAIN, upper_ns).encode()),
+            "xlsx_malformed",
+        ),
+        (
+            "an upper-cased content-types namespace (no Override is seen)",
+            book(
+                replace={
+                    "[Content_Types].xml": content_types().replace(CT_NS, CT_NS.upper()).encode()
+                }
+            ),
+            "unsupported_workbook",
+        ),
+        (
+            "an upper-cased relationships namespace (no relationship is seen)",
+            book(
+                replace={
+                    "xl/_rels/workbook.xml.rels": workbook_rels().replace(PKG, PKG.upper()).encode()
+                }
+            ),
+            "xlsx_malformed",
+        ),
+    ]
+    for label, data, code in cases:
+        check(CID, f"{label}: fatal {code}", failed_with(run(data)[1], code))
+    # an upper-cased element name is a different, unknown element and is not read as data
+    events, outcome = run(book(raw_sheet=sheet.replace("<row", "<Row").replace("</row", "</Row")))
+    check(
+        CID,
+        "<Row> is not a row",
+        failed_with(outcome, "mapping_column_missing") and not accepted(events),
+    )
+    events, _o = run(
+        book(
+            raw_sheet=sheet.replace("<is>", "<IS>")
+            .replace("</is>", "</IS>")
+            .replace("<t>", "<T>")
+            .replace("</t>", "</T>")
+        )
+    )
+    check(CID, "<IS>/<T> are not inline text", not accepted(events))
+    si_upper = f'{XML_HEAD}<sst xmlns="{MAIN}"><si><T>seen?</T></si></sst>'
+    rows = [[IS("q"), IS("a")], [RAWC('<c r="{ref}" t="s"><v>0</v></c>'), IS("x")]]
+    events, outcome = run(book(rows, shared_override=si_upper.encode()))
+    check(
+        CID,
+        "<T> in sharedStrings is not text: the string is empty",
+        codes(outcome) == ["required_field_empty"],
+    )
+
+
+def test_shared_strings_structure_faults() -> None:
+    rows = [[IS("q"), IS("a")], [RAWC('<c r="{ref}" t="s"><v>0</v></c>'), IS("x")]]
+    bad = f'{XML_HEAD}<sst xmlns="{MAIN}"><si><t>a<b/>c</t></si></sst>'
+    check(
+        CID,
+        "an element inside a shared-string <t> is fatal",
+        failed_with(run(book(rows, shared_override=bad.encode()))[1], "xlsx_malformed"),
+    )
+    spaced = (
+        f'{XML_HEAD}<sst xmlns="{MAIN}">'
+        + " " * 5000
+        + "<si><t>ok</t></si>"
+        + " \n " * 5000
+        + "</sst>"
+    )
+    events, outcome = run(
+        book(rows, shared_override=spaced.encode()), limits=ic.ImportLimits(max_record_bytes=50)
+    )
+    check(CID, "whitespace between <si> elements is not string content", len(accepted(events)) == 1)
+    runs = (
+        f'{XML_HEAD}<sst xmlns="{MAIN}"><si>'
+        + "<r><t>"
+        + "x" * 30
+        + "</t></r>"
+        + "<r><t>"
+        + "y" * 30
+        + "</t></r></si></sst>"
+    )
+    _e, outcome = run(
+        book(rows, shared_override=runs.encode()), limits=ic.ImportLimits(max_record_bytes=50)
+    )
+    check(
+        CID,
+        "runs of one string add up against the string bound",
+        failed_with(outcome, "field_too_large"),
+    )
+    truncated = f'{XML_HEAD}<sst xmlns="{MAIN}"><si><t>never closed'
+    check(
+        CID,
+        "a truncated sharedStrings part is fatal xlsx_malformed",
+        failed_with(run(book(rows, shared_override=truncated.encode()))[1], "xlsx_malformed"),
+    )
+    gone = book(
+        rows,
+        rel_extra="",
+        replace={
+            "xl/_rels/workbook.xml.rels": workbook_rels(shared=False)
+            .replace(
+                "</Relationships>",
+                f'<Relationship Id="rIdS" Type="{REL}/sharedStrings" Target="missing.xml"/></Relationships>',
+            )
+            .encode()
+        },
+    )
+    check(
+        CID,
+        "a sharedStrings relationship to a missing part is xlsx_malformed",
+        failed_with(run(gone)[1], "xlsx_malformed"),
+    )
+    no_shared = book(
+        [[IS("q"), IS("a")], [IS("p"), IS("c")]],
+        replace={"xl/_rels/workbook.xml.rels": workbook_rels(shared=False).encode()},
+        drop=("xl/sharedStrings.xml",),
+    )
+    check(
+        CID,
+        "a workbook with no sharedStrings part at all imports inline strings",
+        run(no_shared)[1].report.state == "completed",
+    )
+    s_without = book(
+        rows,
+        replace={"xl/_rels/workbook.xml.rels": workbook_rels(shared=False).encode()},
+        drop=("xl/sharedStrings.xml",),
+    )
+    check(
+        CID,
+        "t=s with no shared-strings table is fatal, not an empty string",
+        failed_with(run(s_without)[1], "xlsx_malformed"),
+    )
+    for target, label in (("../x.xml", "traversal"), ("/xl/sharedStrings.xml", "absolute")):
+        data = book(
+            rows,
+            replace={
+                "xl/_rels/workbook.xml.rels": workbook_rels(shared=False)
+                .replace(
+                    "</Relationships>",
+                    f'<Relationship Id="rIdS" Type="{REL}/sharedStrings" Target="{target}"/></Relationships>',
+                )
+                .encode()
+            },
+        )
+        check(
+            CID,
+            f"a sharedStrings target with {label} is unsafe_archive",
+            failed_with(run(data)[1], "unsafe_archive"),
+        )
+
+
+def test_content_types_entries_must_be_complete() -> None:
+    for label, extra in (
+        ("an Override with no PartName", '<Override ContentType="application/xml"/>'),
+        ("an Override with no ContentType", '<Override PartName="/xl/x.xml"/>'),
+        ("a Default with no ContentType", '<Default Extension="bin"/>'),
+    ):
+        data = book(ct_extra=extra)
+        check(CID, f"{label}: xlsx_malformed", failed_with(run(data)[1], "xlsx_malformed"))
+    data = book(ct_extra='<Default Extension="bin" ContentType="application/octet-stream"/>')
+    check(CID, "a complete extra Default is fine", run(data)[1].report.state == "completed")
+
+
+def test_mapped_headers_match_in_both_directions() -> None:
+    sheet = book([[IS("q"), IS("Aa")], [IS("p"), IS("c")]])
+    for label, kwargs in (
+        ("an upper-case mapping against a lower-case header", {"prompt": {"header": "Q"}}),
+        ("a mapping with a trailing space", {"prompt": {"header": "q "}}),
+        ("a lower-case mapping against a mixed-case header", {"completion": {"header": "aa"}}),
+        ("a mapping with a leading space", {"completion": {"header": " Aa"}}),
+        ("an upper-cased mapping of a mixed-case header", {"completion": {"header": "AA"}}),
+    ):
+        kwargs.setdefault("completion", {"header": "Aa"})
+        _e, outcome = run(sheet, **kwargs)
+        check(CID, f"{label}: no column", failed_with(outcome, "mapping_column_missing"))
+    events, _o = run(sheet, completion={"header": "Aa"})
+    check(CID, "the exact header maps", len(accepted(events)) == 1)
+
+
+def test_unmapped_columns_are_dropped_after_the_header_across_blocks() -> None:
+    # more than one 64 KiB block of rows with several unmapped columns each
+    unmapped = "".join(
+        f'<c r="{col_letters(i)}{{r}}" t="inlineStr"><is><t>{"z" * 20}</t></is></c>'
+        for i in range(2, 8)
+    )
+    header = '<row r="1"><c r="A1" t="inlineStr"><is><t>q</t></is></c><c r="B1" t="inlineStr"><is><t>a</t></is></c></row>'
+    body = "".join(
+        f'<row r="{r}"><c r="A{r}" t="inlineStr"><is><t>p{r}</t></is></c><c r="B{r}" t="inlineStr"><is><t>c{r}</t></is></c>{unmapped.replace("{r}", str(r))}</row>'
+        for r in range(2, 1200)
+    )
+    raw = f'{XML_HEAD}<worksheet xmlns="{MAIN}"><sheetData>{header}{body}</sheetData></worksheet>'
+    check(CID, "the sheet spans several inflate blocks", len(raw) > 3 * ox.READ_BLOCK_BYTES)
+    events, outcome = run(book(raw_sheet=raw))
+    got = [texts(c) for c in accepted(events)]
+    check(
+        CID,
+        "every row maps the right two columns",
+        got == [[f"p{r}", f"c{r}"] for r in range(2, 1200)],
+    )
+    # the same sheet, one row of which has an unmapped formula after the header was read
+    bad = raw.replace(
+        f'<c r="C1100" t="inlineStr"><is><t>{"z" * 20}</t></is></c>',
+        '<c r="C1100"><f>1</f><v>1</v></c>',
+    )
+    events, outcome = run(book(raw_sheet=bad))
+    check(
+        CID,
+        "an unmapped formula cell never rejects, however late",
+        outcome.report.state == "completed" and len(accepted(events)) == 1198,
+    )
+
+
+def test_a_malformed_row_number_is_located_at_the_last_good_row() -> None:
+    head = f'{XML_HEAD}<worksheet xmlns="{MAIN}"><sheetData>'
+    ok = '<row r="1"><c r="A1" t="inlineStr"><is><t>q</t></is></c><c r="B1" t="inlineStr"><is><t>a</t></is></c></row>'
+    _e, outcome = run(book(raw_sheet=head + ok + '<row r="x"/></sheetData></worksheet>'))
+    check(
+        CID,
+        "a bad row number after row 1 is located at row:1",
+        failed_with(outcome, "xlsx_malformed") and outcome.fatal_locator == "row:1",
+    )
+    _e, outcome = run(book(raw_sheet=head + '<row r="x"/></sheetData></worksheet>'))
+    check(
+        CID,
+        "a bad first row has no row to name",
+        failed_with(outcome, "xlsx_malformed") and outcome.fatal_locator is None,
+    )
+
+
+def test_row_and_column_bounds_are_exact_at_the_digit_boundary() -> None:
+    def cell_book(ref: str, row_attr: str) -> bytes:
+        raw = f'{XML_HEAD}<worksheet xmlns="{MAIN}"><sheetData><row r="{row_attr}"><c r="{ref}" t="inlineStr"><is><t>x</t></is></c></row></sheetData></worksheet>'
+        return book(raw_sheet=raw)
+
+    for row, ok in (
+        ("999999", True),
+        ("1000000", True),
+        ("1048576", True),
+        ("1048577", False),
+        ("9999999", False),
+        ("10000000", False),
+        ("99999999", False),
+    ):
+        _e, outcome = run(cell_book(f"A{row}", row))
+        out = outcome.report.failure_code == "sheet_out_of_bounds"
+        check(CID, f"row {row} is {'inside' if ok else 'outside'} the sheet", out is (not ok))
+        _e, outcome = run(cell_book("A1", row))
+        out = outcome.report.failure_code == "sheet_out_of_bounds"
+        check(
+            CID,
+            f"<row r={row}> alone is {'inside' if ok else 'outside'} the sheet",
+            out is (not ok),
+        )
+    for ref, ok in (
+        ("XFC1", True),
+        ("XFD1", True),
+        ("XFE1", False),
+        ("XFZ1", False),
+        ("YAA1", False),
+    ):
+        _e, outcome = run(cell_book(ref, "1"))
+        out = outcome.report.failure_code == "sheet_out_of_bounds"
+        check(CID, f"column of {ref} is {'inside' if ok else 'outside'} the sheet", out is (not ok))
+    _e, outcome = run(cell_book("A2", "1"))
+    check(
+        CID,
+        "a cell reference naming another row is malformed, not out of bounds",
+        failed_with(outcome, "xlsx_malformed"),
+    )
+    _e, outcome = run(cell_book("XFE2000000", "1"))
+    check(
+        CID,
+        "an out-of-range reference beats a row mismatch",
+        failed_with(outcome, "sheet_out_of_bounds"),
+    )
+
+
+def test_names_are_folded_the_unicode_way() -> None:
+    long_s = "ſ"  # LATIN SMALL LETTER LONG S: casefolds to "s", lower() keeps it
+    cases = [
+        (
+            "an externalLinks part spelled with a long s",
+            book(extra=[(f"xl/externalLink{long_s}/e.xml", b"<e/>")]),
+            "external_link_present",
+        ),
+        (
+            "a queryTables part spelled with a long s",
+            book(extra=[(f"xl/queryTable{long_s}/q.xml", b"<q/>")]),
+            "external_link_present",
+        ),
+        (
+            "a macrosheets part spelled with a long s",
+            book(extra=[(f"xl/macro{long_s}heets/m.xml", b"<m/>")]),
+            "unsafe_workbook",
+        ),
+    ]
+    for label, data, code in cases:
+        check(CID, f"{label}: fatal {code}", failed_with(run(data)[1], str(code)))
+    # a sheet / sharedStrings target and the member it names differ only by Unicode folding
+    sheet = sheet_xml([[IS("q"), IS("a")], [IS("p"), IS("c")]], Shared()).encode()
+    data = t501._zip(
+        [(n, d) for n, d in members_of(book()) if n != "xl/worksheets/sheet1.xml"]
+        + [(f"xl/worksheets/shee{long_s}.xml", sheet)]
+    )
+    rels = workbook_rels([("rId1", "worksheets/shees.xml")]).encode()
+    data = with_member(data, "xl/_rels/workbook.xml.rels", rels)
+    check(
+        CID,
+        "a sheet target equal to its member only after folding resolves",
+        run(data)[1].report.state == "completed",
+    )
+    shared = shared_xml(["x"]).encode()
+    data = t501._zip(
+        [
+            (n, d)
+            for n, d in members_of(book([[IS("q"), IS("a")], [IS("p"), IS("c")]]))
+            if n != "xl/sharedStrings.xml"
+        ]
+        + [(f"xl/{long_s}haredStrings.xml", shared)]
+    )
+    rels = workbook_rels().replace("sharedStrings.xml", "sharedStrings.xml").encode()
+    data = with_member(data, "xl/_rels/workbook.xml.rels", rels)
+    check(
+        CID,
+        "a sharedStrings member spelled with a long s resolves",
+        run(data)[1].report.state == "completed",
+    )
+    # [Content_Types].xml and the workbook relationships are found whatever their case
+    renamed = t501._zip(
+        [
+            (
+                "[CONTENT_TYPES].XML"
+                if n == "[Content_Types].xml"
+                else "XL/_RELS/WORKBOOK.XML.RELS"
+                if n == "xl/_rels/workbook.xml.rels"
+                else n,
+                d,
+            )
+            for n, d in members_of(book())
+        ]
+    )
+    check(
+        CID,
+        "OPC part names are case-insensitive for the package's own parts",
+        run(renamed)[1].report.state == "completed",
+    )
+
+
+def test_end_record_reader_matches_ftf_0501_on_generated_tails() -> None:
+    import random
+
+    from app.datasets import direct_object_storage_upload as dos
+
+    rng = random.Random(0x0505)
+    eocd = b"PK\x05\x06"
+    for case in range(4000):
+        parts: list[bytes] = [bytes(rng.randrange(256) for _ in range(rng.randint(0, 40)))]
+        for _ in range(rng.randint(0, 3)):
+            comment = bytes(rng.randrange(256) for _ in range(rng.choice([0, 0, 1, 5, 18, 30])))
+            if rng.random() < 0.5:
+                comment = eocd + comment
+            parts.append(
+                t501._end_record(
+                    rng.randrange(70_000) & 0xFFFF,
+                    rng.randrange(2**32),
+                    rng.randrange(2**32),
+                    comment,
+                )
+            )
+            if rng.random() < 0.3:
+                parts.append(
+                    t501._zip64_tail(
+                        rng.randrange(80_000),
+                        rng.randrange(2**40),
+                        rng.randrange(2**40),
+                        locator=rng.random() < 0.8,
+                    )
+                )
+        tail = b"".join(parts)
+        if rng.random() < 0.3:
+            tail = tail[: max(0, len(tail) - rng.randint(0, 25))]
+        if rng.random() < 0.2:
+            tail += bytes(rng.randrange(256) for _ in range(rng.randint(1, 3)))
+        got, want = ox.end_record_totals(tail), dos._end_record_totals(tail)
+        if got != want:
+            check(CID, f"generated tail #{case} read differently: {got} vs {want}", False)
+            break
+    else:
+        check(CID, "4000 generated tails read exactly as FTF-0501 reads them", True)
+    # hand-built cases that pin each branch of the reader
+    only = t501._end_record(7, 1234, 99)
+    check(
+        CID,
+        "a bare record with no comment is read in place",
+        ox.end_record_totals(only) == (7, 1234, 99),
+    )
+    fake_inside = t501._end_record(1, 2, 3, eocd + b"\x00" * 14 + b"\x05\x00") + b"\x00" * 3
+    check(
+        CID,
+        "a signature inside a comment does not hide the real record",
+        ox.end_record_totals(fake_inside) == dos._end_record_totals(fake_inside),
+    )
+    commented = t501._end_record(9, 8, 7, b"x" * 50)
+    check(
+        CID,
+        "a record with a comment is found by searching",
+        ox.end_record_totals(commented) == (9, 8, 7),
+    )
+    nonzero = b"junk" + t501._end_record(4, 5, 6)[:-2] + b"\x02\x00" + b"ab"
+    check(
+        CID,
+        "a record whose comment length is non-zero is searched for",
+        ox.end_record_totals(nonzero) == dos._end_record_totals(nonzero),
+    )
 
 
 def main() -> int:
