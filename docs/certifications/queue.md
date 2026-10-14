@@ -24799,3 +24799,15 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-14T20:19Z — Control plane: FTF-0503 returned (r4, small)
 - **Returned:** FTF-0503 r4 (0b): preview TypeError, chunk-independent records before encoding errors, sha pins; stopping rule.
+
+## 2026-10-14T21:57Z — Control plane: FTF-1602 CERTIFIED
+- **Certified:** FTF-1602 (#789, merge 963a0af45915a50014d870b5db2bdbe798e6780c) under the stopping rule; evidence_hash rebound by the Control plane; UNWIRED.
+
+## 2026-10-14T21:57Z — Control plane: FTF-0504 CERTIFIED
+- **Certified:** FTF-0504 (#802, merge 6d31a4608e93c6d5bae407ad4d158ac205d5ad92) under the stopping rule; UNWIRED.
+
+## 2026-10-14T21:57Z — Control plane: FTF-0518 returned (r3)
+- **Returned:** FTF-0518 r3 (0f): mirror saturation hub (F22), forgery disclosure wording; stopping rule.
+
+## 2026-10-14T21:57Z — Control plane: FTF-H010-P3a returned (r3)
+- **Returned:** FTF-H010-P3a r3 (0e): boundary rows, dotted target suffixes, behavioural kills only; stopping rule.

@@ -7645,10 +7645,10 @@ FTF-0503:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0503.py
 FTF-0504:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: CSV importer
-  evidence_hash: fe13caf7dbec8a10ab358f1e3bade73fe378190e
+  evidence_hash: 6d31a4608e93c6d5bae407ad4d158ac205d5ad92
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
@@ -7673,7 +7673,7 @@ FTF-0504:
     text and cannot be detected by strict decoding (the preview/mapping UI, FTF-H011, must show
     decoded samples before approval); no live route caller, so proving_symbol stays blank.
     Mutation gate (round 2): 122 run | 118 KILLED | 4 TIMEOUT | 0 SURVIVED (see docs/certifications/submissions/2026-10-14T0230Z-FTF-0504.md). Round 3: see docs/certifications/submissions/2026-10-14T0900Z-FTF-0504-r3.md.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0504.py
 
@@ -12290,10 +12290,10 @@ FTF-1601:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1601.py
 FTF-1602:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Object storage backup
-  evidence_hash: 47ca830e452409b12a3a30d7a9ae8728dd1db791
+  evidence_hash: 963a0af45915a50014d870b5db2bdbe798e6780c
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-32; scenarios=Q29, Q30; deps=FTF-0004, FTF-1002, FTF-1601
@@ -12391,11 +12391,12 @@ FTF-1602:
     adds G1b (the same forged, shrunk record applied to restore, which previously could have
     restored 3 of 4 objects as a silent, false success). Fault -> RED for all three confirmed by
     mutating scripts/object_storage_backup.py on disk and restoring it byte-identical afterward
-    (see the round-6 submission's Fault -> RED table). evidence_hash stays pinned to 47ca830
-    (round 4), per Control plane's round-6 ruling (QUEUE 0i item 4) -- round 6 touches no
-    production line, so nothing rebinds it. Whole-file mutation gate (uncapped) re-run clean; see
+    (see the round-6 submission's Fault -> RED table). Correction (Control plane, 2026-10-14): the earlier claim that evidence_hash stays pinned
+    to 47ca830 per the round-6 ruling was wrong - the ruling required a rebind, and round 5 changed
+    scripts/object_storage_backup.py (6d436104); evidence_hash is rebound to the round-6 merge 963a0af4 at
+    L2 certification. Whole-file mutation gate (uncapped) re-run clean; see
     the round-6 submission for the exact count. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1602.py
 FTF-1603:

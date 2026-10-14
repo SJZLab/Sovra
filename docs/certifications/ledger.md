@@ -11470,3 +11470,45 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   verifier's uncapped run 322/322, 12 timeouts, 0 survivors). All seven round-3 classes fixed. Return: preview TypeError;
   records before a fatal invalid_encoding depend on chunk size; V-SHA-FIRST-CHAR-COMPARE and V-ENC-OFFSET-PENDING-IGNORED
   GREEN; misstated mutation claim; stale evidence_hash. Stopping rule set.
+
+## 2026-10-14T21:57Z — CERTIFIED: FTF-1602
+- **FTF-1602: CERTIFIED** (round 6, under the Control-plane stopping rule; PR #789, merge 963a0af45915a50014d870b5db2bdbe798e6780c, head f6628fb2). Producers
+  session_01QfH4EDfw4JyZF6MaJJ8GPf, session_01LfpVEG21xjpeidAgbXBp7L (earlier rounds session_017p4BuRpvUsXr4X4Hp9DZnt and
+  others) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. scripts/object_storage_backup.py byte-identical to round 5
+  (sha256 0858d6ca…). CI: ci-verdict 116091160678; object-storage-backup-integration 116042989845 (real SeaweedFS, 19 tests)
+  and gate 116042852933 "all checks passed". Local: unit 44 functions; real SeaweedFS 19/19; uncapped mutation 405/405.
+  Round-6 items met: F7 create-side `now` table with zero store calls (RED unit + real), unit Q7 swap (G7 RED in unit),
+  ABA rebuilt on the Q2 shape (G1/G1b RED in the attack check, unit + real), Q4a note corrected; all earlier faults RED.
+  Probes: 12 bad-`now` shapes 0 writes; 7 ABA timing variants held; 11 scope variants refused; Q1-Q7 incl. Q4a/Q4b held.
+  The producer did not rebind evidence_hash (still 47ca830, round 4) and the note misstated the ruling; the Control plane
+  rebinds evidence_hash to the merge and corrects the note in this record (the verifier's offered alternative). Relay
+  docs PR #811 repeats the false "no production line changed in round 5" claim (6d436104 changed it) - do not merge as is.
+  Advisories: raising-tzinfo raw ValueError (closed class); F7d `now or datetime.now(UTC)` GREEN (hand-picked). UNWIRED.
+
+## 2026-10-14T21:57Z — CERTIFIED: FTF-0504
+- **FTF-0504: CERTIFIED** (round 4, under the stopping rule; PR #802, merge 6d31a4608e93c6d5bae407ad4d158ac205d5ad92, head b688db08). Producer
+  session_01X2nNH1ddiFbkeJTtuG9pPp (earlier rounds session_01Jo27En7iDrKgCGWP3zAQgU, session_01NaZZXQEiaHC7wqpLTq4gUC,
+  session_01R7UTG7i8fws9ir2DLJUXXE) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI: ci-verdict 116042983951;
+  gate 116004706397 (0504 + P1/0502/0503/0505 "all checks passed"); csv-import-integration 116004826398 (real stop);
+  mutation 39/39. Round-4 items: record-cap row at the production constant (V-RECORD-CAP-PROD-ONLY RED), first/last-char
+  hash rows (prefix/suffix compare faults RED), str-subclass locator refused, typed preview refusal for 18 malformed
+  dataset_sha256 shapes with 0 bytes read, truncated BOM -> invalid_encoding line:1. Outage control discriminating
+  (no-op stop RED 3/3; 16 MiB control reads every byte via FTF-0502-P1-F1 windows). Probes: 64 single-char hash flips,
+  locator oracle 275,702 imports 0 wrong, 240 concurrent imports, 3,000-report digest neutrality. 60/63 faults RED; GREEN
+  only hand-picked variants of closed classes. Advisories: assert bytes_read == 0 on the malformed-hash test; a valid
+  1-2 byte non-BOM control row. evidence_hash set to the merge (the PR left fe13caf7 from round 3). UNWIRED.
+
+## 2026-10-14T21:57Z — RETURNED: FTF-0518 (r3)
+- **FTF-0518: RETURNED** (round 2 → 3; PR #803, merge 343eda8627c271e58da64f21f08be93f01d7a3c4, head e220469b). Producer
+  session_01X2nNH1ddiFbkeJTtuG9pPp ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 116064257830; gate
+  116017354223 "all checks passed"; mutation-gate success. Production correct: verify_report cross-check refuses the
+  closed forgery class (14/14) without overreach (11/11); F13/F14/F8/F16-F21/F24 RED; scan output byte-identical to round
+  1. Return: F22 (mirror of F14) GREEN; forgery disclosure over-claims. Stopping rule set.
+
+## 2026-10-14T21:57Z — RETURNED: FTF-H010-P3a (r3)
+- **FTF-H010-P3a (child slice): RETURNED** (round 2 → 3, tests only; PR #745, merge 139d1f4cef6f7f4af7f0cd936f83918ccc9ce2a6,
+  head 650c2c41). Producer session_01MyyyioLQTi6E2LearNYiQz ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict
+  116078401482; gate 116030679927 "OK -- 123688 checks in 68 suite runs, 67 faults RED, 0 failing"; mutation 39/41 + 2
+  timeouts. All four round-1 fixes class-closing; 365 probes 0 unexpected. Return: element-count `>=` fault and
+  last-component target fault caught only by a patch-text guard (no behavioural row); the mutation gate counted the text
+  guard as a kill. Stopping rule set. Advisory for P3: 100 MB header parse ~4.2 GB / 27 s.
