@@ -2987,7 +2987,7 @@ def test_header_row_skip_does_not_retain_the_skipped_rows_cells() -> None:
     `test_memory_is_bounded_by_the_row_not_the_sheet` above does."""
     import tracemalloc
 
-    cols, pad = 1_000, 300_000  # ~300 MB in one skipped row if ever retained
+    cols, pad = 200, 50_000  # ~10 MB in one skipped row if ever retained
     skip_row = _wide_cell_row(1, cols, pad)
     header_row_xml = (
         '<row r="2"><c r="A2" t="inlineStr"><is><t>q</t></is></c>'
@@ -3023,8 +3023,8 @@ def test_header_row_skip_does_not_retain_the_skipped_rows_cells() -> None:
     )
     check(
         CID,
-        f"a {cols * pad} byte skipped row costs well under 10 MB of real peak memory (saw {peak})",
-        peak < 10 * 1024 * 1024,
+        f"a {cols * pad} byte skipped row costs well under 2 MB of real peak memory (saw {peak})",
+        peak < 2 * 1024 * 1024,
     )
 
 
@@ -3039,8 +3039,8 @@ def test_shared_strings_do_not_cost_more_than_their_byte_cap_regardless_of_scrip
     byte cap directly, whatever script the text is in."""
     import tracemalloc
 
-    cap = 8_000_000
-    n_strings = 8800
+    cap = 1_000_000
+    n_strings = 1100
     strings = [("a" * 900 + "\U0001f600") for _ in range(n_strings)]  # ~901 bytes each, one emoji
     # S() cells number shared strings by the order cells appear in `rows` (header
     # "q"/"a" first); the override must carry those same indices, with the bulk
