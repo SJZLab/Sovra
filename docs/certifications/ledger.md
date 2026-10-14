@@ -11420,3 +11420,18 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   QP-BOUNDED-64/4096, QP-QUAD-DELIM-LOOKAHEAD, QP-NFKC-FIRST-LAYER-ONLY GREEN; three claimed faults missing from FAULTS.
 - **FTF-0904: stays CERTIFIED** (Control-plane ruling): no leak regression; the idempotence regression is cosmetic garbling
   of already-redacted values, fixed first in F1 r2, with which the requalification completes (FTF-0616-F1 precedent).
+
+## 2026-10-14T18:11Z — OWNER DECISION: Control plane merges [GOVERNANCE] PRs
+- Live owner instruction (2026-10-14 ~16:35Z, Control-plane session session_01QVznorVMjnmcttUhyDnoGR): "Merge the
+  governance PRs without waiting me now and all coming ones." The Control plane merges [GOVERNANCE] PRs on a green
+  ci-verdict on the current head (updating a stale branch with main first); every other ask-first rule is unchanged.
+
+## 2026-10-14T18:11Z — RETURNED: FTF-0502 (r4)
+- **FTF-0502: RETURNED** (round 3 → 4; PR #793, merge 4b6dc4171f2425bbc299912b97f94c11badf83ba, head 108833ed). Producer
+  session_015f8kwfjs7Suf1My6UGmah5 (PR body; commits carry no Claude-Session trailer) ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 115923296742; gate 115919663141 and jsonl-import-integration
+  115919671862 "all checks passed"; mutation 17/17. Held: expected-sha mismatch (0 bytes read), shared fatal_locator
+  reused and digest-neutral (3,000 imports), chunking, line cap at the production constant, time budget, leaks.
+  Return: outage check passes 3/3 with a no-op stop; memory check allows linear growth (retain-all GREEN); sha-compare
+  precision faults GREEN; preview TypeError; stale evidence_hash; missing trailers. Stopping rule: round 4 certifies once
+  these land with no production violation.
