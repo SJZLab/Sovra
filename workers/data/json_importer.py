@@ -131,10 +131,10 @@ _LBRACE: Final = 0x7B
 _RBRACE: Final = 0x7D
 _NOT_A_VALUE_START: Final = frozenset({_COMMA, _COLON, _RBRACKET, _RBRACE})
 
-_ARRAY_SPELLING, _RECORD_SPELLING = JSON_ROOT_CONTAINERS
 _MODE_ARRAY: Final = 0  # json.container "$"
 _MODE_RECORD: Final = 1  # json.container "$record"
 _MODE_KEY: Final = 2  # json.container "/<key>"
+_ROOT_MODES: Final = dict(zip(JSON_ROOT_CONTAINERS, (_MODE_ARRAY, _MODE_RECORD), strict=True))
 
 _NOT_WS: Final = re.compile(rb"[^ \t\n\r]")
 # A closing quote, or a backslash with the byte it escapes (absent at the end of a chunk).
@@ -175,10 +175,9 @@ def container_key(container: object) -> tuple[int, str]:
     non-string)."""
     if type(container) is not str:
         raise MappingUnsupportedError
-    if container == _ARRAY_SPELLING:
-        return _MODE_ARRAY, ""
-    if container == _RECORD_SPELLING:
-        return _MODE_RECORD, ""
+    root_mode = _ROOT_MODES.get(container)
+    if root_mode is not None:
+        return root_mode, ""
     if not container.startswith("/") or "/" in container[1:]:
         raise MappingUnsupportedError
     return _MODE_KEY, container[1:].replace("~1", "/").replace("~0", "~")

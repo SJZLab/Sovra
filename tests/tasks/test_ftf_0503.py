@@ -589,6 +589,32 @@ def test_ignored_values_are_scanned_and_not_retained() -> None:
     )
 
 
+def test_ignored_values_are_not_held_in_memory() -> None:
+    mib = 1024 * 1024
+    body = b'{"_meta":"' + b"m" * (3 * mib // 2) + b'","rows":[' + dump(rec("after", "ok")) + b"]}"
+    reader = make_reader(body, 4096)
+    mapping = build_mapping()
+    digest = hashlib.sha256(body).hexdigest()
+    got: list[object] = []
+    tracemalloc.start()
+    outcome = jm.run_json_import(
+        reader,
+        mapping,
+        verified_content_type=JSON,
+        dataset_purpose="training",
+        expected_sha256=digest,
+        on_accepted=got.append,
+    )
+    _current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    check(
+        CID,
+        f"a 1.5 MiB ignored value is scanned and the record after it imports ({fatal(outcome)})",
+        outcome.report.state == "completed" and len(got) == 1,
+    )
+    check(CID, f"and it is not retained (peak {peak} bytes)", peak < 256 * 1024)
+
+
 def test_ignored_value_over_the_record_limit_is_a_limit_failure() -> None:
     limits = ic.ImportLimits(max_record_bytes=200)
     big = b'{"_meta":"' + b"x" * 300 + b'","rows":[]}'
