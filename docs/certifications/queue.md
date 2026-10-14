@@ -24791,6 +24791,22 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-14T18:11Z — Control plane: FTF-0502 returned (r4)
 - **Returned:** FTF-0502 r4 (0k): same-dataset outage control, real memory bound, sha precision, preview TypeError, trailers; stopping rule.
 
+## 2026-10-14T18:54Z — PR #799 merged (FTF-0503 round 3; green ci-verdict)
+- **Merged, PROVISIONAL (Law 4, not self-certified):** PR #799 (FTF-0503 round 3, 0b) merged on a
+  fully green `ci-verdict` (run `38607515325`), no merge conflict, new `json-import-integration`
+  job included. Round 3 replaces the round-2 whole-document scanner with a byte-level JSON
+  grammar state machine (every open container's own expectation tracked, fatal `json_malformed`
+  at a real byte offset instead of a fixed `object:0`), closes WHOLE-DOCUMENT-BUFFERED,
+  EXPECTED-SHA-MISMATCH-COMPLETES, STRUCTURE-ERRORS-NOT-FATAL, OVERSIZE-ELEMENT-ENDS-IMPORT and
+  UTF8-BOM-REFUSED (docs/certifications/queue.md 2026-10-13T23:59Z return), and adds a real
+  PG16+SeaweedFS integration test with a proven mid-stream-stop control. Two capped mutation-gate
+  samples (50/320 then 100/322, both disclosed survivors in `_accept_key`) and CI's own full
+  uncapped run both logged in `docs/certifications/submissions/2026-10-14T1420Z-FTF-0503-r3.md`.
+  Recorded here and in `docs/spec-matrix.yaml` via this non-`[relay]`-titled doc PR, matching the
+  precedent PR #788 set for FTF-0503 round 2 (shared-file edits are forbidden inside `[relay]`
+  PRs). `certification_state` stays PROVISIONAL / `proof_state` stays L1-PROVEN — independent
+  Control-plane L2 review of round 3 is still the next step.
+
 ## 2026-10-14T20:19Z — Control plane: FTF-0502-P1-F1 CERTIFIED (child slice)
 - **Certified:** FTF-0502-P1-F1 (#798, merge e57b4f98bdaa2e8e13298d5e743e3940cb1cfd56); FTF-0502-P1 requalified; count unchanged.
 

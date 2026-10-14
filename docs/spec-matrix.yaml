@@ -7655,6 +7655,14 @@ FTF-0503:
     contribution, completing the submission rather than duplicating the implementation. Not
     self-certified (Law 4) -- both sessions' work awaits the same independent Control-plane L2
     review.
+
+
+    PR #799 (round 3, docs/certifications/queue.md 2026-10-14T09:46Z "FTF-0503 returned") merged
+    2026-10-14T18:54Z on a fully green ci-verdict (run 38607515325, no merge conflict,
+    json-import-integration included) -- recording the real CI result per the CI contract; this
+    is not a certification (Law 4). certification_state stays PROVISIONAL / proof_state stays
+    L1-PROVEN pending independent Control-plane L2 review of round 3's own content (byte-level
+    grammar scanner, no fatal oversize tier, sha cross-check, real PG16+SeaweedFS integration).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0503.py
