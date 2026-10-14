@@ -2252,11 +2252,12 @@ def test_spool_is_anonymous_private_and_closed() -> None:
         "no descriptor leaks after a fatal archive problem",
         {fd for fd, _t in open_spool_descriptors()} <= before,
     )
+    preview_book = book([[S("q"), S("a")]] + [[S(f"r{i}"), S("x")] for i in range(30)])
     stream = xi.xlsx_events(
-        make_reader(book([[S("q"), S("a")]] + [[S(f"r{i}"), S("x")] for i in range(30)])),
+        make_reader(preview_book),
         build_mapping(),
         verified_content_type=XLSX_TYPE,
-        dataset_sha256="0" * 64,
+        dataset_sha256=hashlib.sha256(preview_book).hexdigest(),
     )
     result = ic.preview(stream, 5)
     check(
@@ -3988,6 +3989,158 @@ def test_the_shared_strings_root_must_be_an_sst_in_the_main_namespace() -> None:
         )
     _e, outcome = run(book(inline, shared_override=f'{XML_HEAD}<sst xmlns="{MAIN}"/>'.encode()))
     check(CID, "an empty sst is fine", outcome.report.state == "completed")
+
+
+def test_a_hash_the_caller_expects_that_the_reader_did_not_verify_fails() -> None:
+    good_sha = hashlib.sha256(GOOD).hexdigest()
+    other = hashlib.sha256(GOOD + b"x").hexdigest()
+    seen: list[object] = []
+    # the reader is verified for the real bytes; the caller expects another dataset's hash
+    outcome = xi.run_xlsx_import(
+        make_reader(GOOD),
+        build_mapping(),
+        verified_content_type=XLSX_TYPE,
+        dataset_purpose="training",
+        expected_sha256=other,
+        on_accepted=seen.append,
+    )
+    check(
+        CID,
+        "a mismatch between the expected and the verified hash is failed/source_changed",
+        failed_with(outcome, "source_changed"),
+    )
+    check(
+        CID,
+        "and not one record is accepted or tagged with the wrong hash",
+        not seen and outcome.report.records_accepted == 0,
+    )
+    check(
+        CID,
+        "the report still shows both hashes",
+        outcome.report.expected_sha256 == other and outcome.report.source_sha256 == good_sha,
+    )
+    stream = xi.xlsx_events(
+        make_reader(GOOD), build_mapping(), verified_content_type=XLSX_TYPE, dataset_sha256=other
+    )
+    result = ic.preview(stream, 3)
+    check(
+        CID,
+        "a preview fails the same way: nothing accepted, not complete",
+        not result.accepted and not result.complete,
+    )
+    stream.close()
+    ok = xi.run_xlsx_import(
+        make_reader(GOOD),
+        build_mapping(),
+        verified_content_type=XLSX_TYPE,
+        dataset_purpose="training",
+        expected_sha256=good_sha,
+    )
+    check(
+        CID,
+        "the matching hash imports",
+        ok.report.state == "completed" and ok.report.records_accepted == 1,
+    )
+
+
+def test_the_report_carries_the_purpose_it_was_given() -> None:
+    for purpose in ("training", "held_out_evaluation", "validation"):
+        outcome = xi.run_xlsx_import(
+            make_reader(GOOD),
+            build_mapping(),
+            verified_content_type=XLSX_TYPE,
+            dataset_purpose=purpose,
+            expected_sha256=hashlib.sha256(GOOD).hexdigest(),
+        )
+        check(
+            CID,
+            f"dataset_purpose {purpose!r} is taken from the caller, not the data",
+            outcome.report.dataset_purpose == purpose,
+        )
+    try:
+        xi.run_xlsx_import(
+            make_reader(GOOD),
+            build_mapping(),
+            verified_content_type=XLSX_TYPE,
+            dataset_purpose="Not A Purpose",
+            expected_sha256=hashlib.sha256(GOOD).hexdigest(),
+        )
+    except ValueError:
+        check(CID, "a purpose that is not a plain name is refused", True)
+    else:
+        check(CID, "a purpose that is not a plain name is refused", False)
+
+
+def test_every_split_point_of_a_small_workbook_gives_the_same_report() -> None:
+    small = book([[IS("q"), IS("a")], [IS("p"), IS("c")]], method=zipfile.ZIP_STORED)
+    check(CID, "the workbook is small enough for an every-split-point table", len(small) <= 4096)
+    base = run(small)[1].report.report_sha256
+    bad = 0
+    for cut in range(1, len(small)):
+        reader = ic.ChunkReader(
+            [small[:cut], small[cut:]],
+            expected_size=len(small),
+            expected_sha256=hashlib.sha256(small).hexdigest(),
+        )
+        outcome = xi.run_xlsx_import(
+            reader,
+            build_mapping(),
+            verified_content_type=XLSX_TYPE,
+            dataset_purpose="training",
+            expected_sha256=hashlib.sha256(small).hexdigest(),
+        )
+        bad += outcome.report.report_sha256 != base
+    check(CID, f"all {len(small) - 1} two-piece splits give one report ({bad} differ)", bad == 0)
+
+
+def test_size_boundaries_at_the_production_constants() -> None:
+    cap = ic.DEFAULT_LIMITS.max_record_bytes
+    check(CID, "the production record cap is 2 MiB", cap == 2 * 1024 * 1024)
+    unmapped = [[IS("q"), IS("a"), IS("n")], [IS("p"), IS("c"), IS("x" * cap)]]
+    events, outcome = run(book(unmapped))
+    check(
+        CID,
+        "an unmapped cell of exactly the cap imports",
+        outcome.report.state == "completed" and len(accepted(events)) == 1,
+    )
+    over = [[IS("q"), IS("a"), IS("n")], [IS("p"), IS("c"), IS("x" * (cap + 1))]]
+    _e, outcome = run(book(over))
+    check(
+        CID, "one character more is fatal field_too_large", failed_with(outcome, "field_too_large")
+    )
+    wide = [[IS("q"), IS("a")], [IS("x" * (cap - 1)), IS("y")]]
+    events, outcome = run(book(wide))
+    check(
+        CID,
+        "mapped fields adding up to exactly the cap are accepted by the size rule",
+        outcome.report.failure_code is None and "record_too_large" not in codes(outcome),
+    )
+    wide = [[IS("q"), IS("a")], [IS("x" * cap), IS("y")]]
+    _e, outcome = run(book(wide))
+    check(CID, "one byte more is record_too_large", codes(outcome) == ["record_too_large"])
+    # a maximum-size cell read in one-byte chunks stays linear (the compressed bytes are few)
+    import time
+
+    started = time.monotonic()
+    _e, outcome = run(book(unmapped), chunk=1)
+    check(
+        CID,
+        "a cap-size cell in 1-byte chunks completes quickly",
+        outcome.report.state == "completed" and time.monotonic() - started < 30,
+    )
+    # a shared string of exactly the cap and one more
+    shared = shared_xml(["x" * cap]).encode()
+    rows = [
+        [IS("q"), IS("a"), IS("n")],
+        [IS("p"), IS("c"), RAWC('<c r="{ref}" t="s"><v>0</v></c>')],
+    ]
+    _e, outcome = run(book(rows, shared_override=shared))
+    check(CID, "a shared string of exactly the cap loads", outcome.report.state == "completed")
+    shared = shared_xml(["x" * (cap + 1)]).encode()
+    _e, outcome = run(book(rows, shared_override=shared))
+    check(
+        CID, "one character more is fatal field_too_large", failed_with(outcome, "field_too_large")
+    )
 
 
 def main() -> int:

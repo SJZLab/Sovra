@@ -643,12 +643,36 @@ def main() -> None:
         + b"".join(
             f'<row r="{i}"><c r="A{i}" t="inlineStr"><is><t>{"p" * 40}</t></is></c>'
             f'<c r="B{i}" t="inlineStr"><is><t>c</t></is></c></row>'.encode()
-            for i in range(2, 880_001)
+            for i in range(2, 380_001)
         )
         + b"</sheetData></worksheet>"
     )
     stored = t505.book(small, sheet=sheet_marker, raw_sheet=big_sheet, method=0)
     large, _ = make_dataset("org1", p1_id, conn1, stored, "large")
+
+    # Control: the same dataset read to its end with S3 left running completes. Without this a
+    # stream that SeaweedFS cuts short by itself would make the stop below look effective.
+    control_source = open_source(ctx1, p1_id, large.id)
+    control_reader = ic.ChunkReader(
+        control_source.chunks,
+        expected_size=control_source.expected_size,
+        expected_sha256=control_source.expected_sha256,
+    )
+    control = ic.preview(
+        xi.xlsx_events(
+            control_reader,
+            mapping,
+            verified_content_type=control_source.verified_content_type,
+            dataset_sha256=control_source.expected_sha256,
+        ),
+        1,
+    )
+    check(
+        f"X5 control: with S3 running the large dataset is read to its end "
+        f"({control_reader.bytes_read}/{control_source.expected_size}) and yields a record",
+        control_reader.bytes_read == control_source.expected_size and len(control.accepted) == 1,
+    )
+
     large_source = open_source(ctx1, p1_id, large.id)
     stopped: list[bool] = []
 
@@ -679,6 +703,11 @@ def main() -> None:
         stopped == [True]
         and (outcome.report.state, outcome.report.failure_code)
         == ("blocked", "source_unavailable"),
+    )
+    check(
+        f"X5 the stop cut the read short ({reader.bytes_read}/{large_source.expected_size} bytes) "
+        "where the control read everything",
+        reader.bytes_read < large_source.expected_size,
     )
 
     # ---- X6: nothing planted leaks anywhere -------------------------------------------------

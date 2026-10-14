@@ -85,6 +85,7 @@ from __future__ import annotations
 
 import enum
 import hashlib
+import hmac
 import json
 import re
 import tempfile
@@ -879,13 +880,17 @@ class XlsxEventStream(Iterator[ImportEvent]):
 
     def _spool(self, spool: IO[bytes]) -> None:
         """Copies the whole source into `spool`. `ChunkReader` has verified its byte
-        count and sha256 by the time it stops, so the archive is opened only after."""
+        count and its own declared sha256 by the time it stops; the sha256 the caller
+        expects (the dataset's verified hash, which also names every record) must be the
+        same bytes, or nothing is imported."""
         try:
             for chunk in self._reader:
                 spool.write(chunk)
             spool.flush()
         except OSError:
             raise ImportAborted("blocked", "source_unavailable") from None
+        if not hmac.compare_digest(self._reader.sha256, self._dataset_sha256):
+            raise ImportAborted("failed", "source_changed")
 
     def _rows(self, package: _Package, scanner: _SheetScanner) -> Iterator[_RawRow]:
         parser = new_xml_parser()
