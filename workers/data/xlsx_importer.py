@@ -177,6 +177,8 @@ SOURCE_TYPE: Final = "upload"
 
 _MAIN_NS: Final = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 _STRICT_NS: Final = "http://purl.oclc.org/ooxml/spreadsheetml/main"
+# Namespaces are matched exactly (they are case-sensitive URIs); read through this table.
+_NAMESPACES: Final = {"main": _MAIN_NS, "strict": _STRICT_NS}
 _DOC_REL_NS: Final = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 _PKG_REL_NS: Final = "http://schemas.openxmlformats.org/package/2006/relationships"
 _CT_NS: Final = "http://schemas.openxmlformats.org/package/2006/content-types"
@@ -227,7 +229,7 @@ class XlsxAborted(ImportAborted):
     package as a whole is at fault."""
 
     def __init__(self, failure_code: str, row: int | None = None) -> None:
-        if failure_code not in XLSX_FATAL_CODES:
+        if XLSX_FATAL_CODES.isdisjoint((failure_code,)):
             raise ValueError("not an XLSX fatal code")
         super().__init__("failed", failure_code)
         self.locator = None if row is None else f"row:{max(row, 1)}"
@@ -284,8 +286,6 @@ def decode_xml_escapes(text: str) -> str:
     `_x005F_x0041_` is the literal text `_x0041_`. UTF-16 surrogate escapes that
     form a pair are joined; a lone one stays a lone surrogate for the caller to
     refuse."""
-    if "_x" not in text:
-        return text
     out = _XML_ESCAPE.sub(lambda match: chr(int(match.group(1), 16)), text)
     if _SURROGATE.search(out):
         out = out.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "surrogatepass")
@@ -298,7 +298,7 @@ def decode_xml_escapes(text: str) -> str:
 def _local(name: str) -> str | None:
     """The local name of an element in the SpreadsheetML main namespace, else None."""
     namespace, _sep, local = name.rpartition(" ")
-    return local if namespace == _MAIN_NS else None
+    return local if namespace == _NAMESPACES["main"] else None
 
 
 def _ends(path: list[str | None], *suffix: str) -> bool:
@@ -307,7 +307,9 @@ def _ends(path: list[str | None], *suffix: str) -> bool:
 
 def _root_refusal(name: str) -> OoxmlRefused:
     return OoxmlRefused(
-        "unsupported_workbook" if name.rpartition(" ")[0] == _STRICT_NS else "xlsx_malformed"
+        "unsupported_workbook"
+        if name.rpartition(" ")[0] == _NAMESPACES["strict"]
+        else "xlsx_malformed"
     )
 
 
@@ -318,14 +320,11 @@ class _Scanner:
         self.path: list[str | None] = []
         self.events = 0
 
-    def _enter(self, name: str, root: str) -> None:
+    def _enter(self, name: str) -> None:
         self.events += 1
         if len(self.path) >= MAX_XML_DEPTH:
             raise OoxmlRefused("unsafe_archive")
-        local = _local(name)
-        if not self.path and local != root:
-            raise _root_refusal(name)
-        self.path.append(local)
+        self.path.append(_local(name))
 
     def tick(self, *_args: object) -> None:
         """A comment or processing instruction: proof the parser is making progress."""
@@ -343,7 +342,9 @@ class _SharedStringsScanner(_Scanner):
         self._in_text = False
 
     def start(self, name: str, _attrs: object) -> None:
-        self._enter(name, "sst")
+        if not self.path and _local(name) != "sst":
+            raise _root_refusal(name)
+        self._enter(name)
         if self._in_text:
             raise OoxmlRefused("xlsx_malformed")
         if _ends(self.path, "sst", "si"):
@@ -443,7 +444,9 @@ class _SheetScanner(_Scanner):
     # -- handlers -----------------------------------------------------------------
 
     def start(self, name: str, attrs: Mapping[str, str]) -> None:
-        self._enter(name, "worksheet")
+        if not self.path and _local(name) != "worksheet":
+            raise _root_refusal(name)
+        self._enter(name)
         path = self.path
         if self._in_v or self._in_t:
             raise self._fatal("xlsx_malformed")

@@ -634,9 +634,9 @@ def main() -> None:
     )
 
     big_header = (
-        '<row r="1"><c r="A1" t="inlineStr"><is><t>q</t></is></c>'
-        '<c r="B1" t="inlineStr"><is><t>a</t></is></c></row>'
-    ).encode()
+        b'<row r="1"><c r="A1" t="inlineStr"><is><t>q</t></is></c>'
+        b'<c r="B1" t="inlineStr"><is><t>a</t></is></c></row>'
+    )
     big_sheet = (
         f'{t505.XML_HEAD}<worksheet xmlns="{t505.MAIN}"><sheetData>'.encode()
         + big_header

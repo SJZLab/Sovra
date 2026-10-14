@@ -2633,7 +2633,14 @@ def test_catalogs_cover_every_emitted_code() -> None:
             f"XlsxAborted({code}) with no row has no locator",
             xi.XlsxAborted(code).locator is None,
         )
-    for bad in ("nope", "source_changed", "csv_structure_invalid"):
+    for bad in (
+        "nope",
+        "source_changed",
+        "csv_structure_invalid",
+        "XLSX_MALFORMED",
+        " xlsx_malformed",
+        "xlsx_malformed\n",
+    ):
         try:
             xi.XlsxAborted(bad, 1)
         except ValueError:
@@ -2644,7 +2651,7 @@ def test_catalogs_cover_every_emitted_code() -> None:
         "row numbers below 1 are clamped",
         xi.XlsxAborted("xlsx_malformed", 0).locator == "row:1",
     )
-    for bad in ("nope", "parse_timeout_x"):
+    for bad in ("nope", "parse_timeout_x", "UNSAFE_ARCHIVE", " unsafe_archive", "unsafe_archive "):
         try:
             ox.OoxmlRefused(bad)
         except ValueError:
@@ -3098,7 +3105,7 @@ def test_bytes_are_counted_as_they_are_read_not_as_the_directory_claims() -> Non
     ticks: list[int] = []
     list(
         ox.read_part_blocks(
-            lying,
+            lying,  # type: ignore[arg-type]
             zipfile.ZipInfo("x"),
             part_cap=big,
             budget=ox.PartBudget(big),
@@ -3367,13 +3374,14 @@ def test_content_types_entries_must_be_complete() -> None:
 
 def test_mapped_headers_match_in_both_directions() -> None:
     sheet = book([[IS("q"), IS("Aa")], [IS("p"), IS("c")]])
-    for label, kwargs in (
+    attempts: list[tuple[str, dict[str, Any]]] = [
         ("an upper-case mapping against a lower-case header", {"prompt": {"header": "Q"}}),
         ("a mapping with a trailing space", {"prompt": {"header": "q "}}),
         ("a lower-case mapping against a mixed-case header", {"completion": {"header": "aa"}}),
         ("a mapping with a leading space", {"completion": {"header": " Aa"}}),
         ("an upper-cased mapping of a mixed-case header", {"completion": {"header": "AA"}}),
-    ):
+    ]
+    for label, kwargs in attempts:
         kwargs.setdefault("completion", {"header": "Aa"})
         _e, outcome = run(sheet, **kwargs)
         check(CID, f"{label}: no column", failed_with(outcome, "mapping_column_missing"))
@@ -3566,8 +3574,8 @@ def test_end_record_reader_matches_ftf_0501_on_generated_tails() -> None:
             parts.append(
                 t501._end_record(
                     rng.randrange(70_000) & 0xFFFF,
-                    rng.randrange(2**32),
-                    rng.randrange(2**32),
+                    rng.choice([rng.randrange(2**32), 0x06054B50]),
+                    rng.choice([rng.randrange(2**32), 0x06054B50]),
                     comment,
                 )
             )
@@ -3671,6 +3679,46 @@ def test_entry_count_is_checked_again_after_the_directory_is_read() -> None:
         "a directory holding 10,001 entries is refused though its end record claims 5",
         failed_with(outcome, "unsafe_archive"),
     )
+
+
+def test_foreign_slot_kinds_are_refused_even_if_hand_built() -> None:
+    base = build_mapping()
+    for kind in (
+        "key",
+        "Key",
+        "KEY",
+        "HEADER",
+        " header",
+        "header ",
+        "Index",
+        "LETTERS",
+        "",
+        "pointer",
+        "col",
+    ):
+        hand = dataclasses.replace(base, prompt=ic.Slot(kind, "q"))
+        reader = make_reader(GOOD)
+        try:
+            xi.xlsx_events(
+                hand_reader := reader,
+                hand,
+                verified_content_type=XLSX_TYPE,
+                dataset_sha256="0" * 64,
+            )
+        except ic.MappingInvalidError as exc:
+            check(
+                CID,
+                f"slot kind {kind!r}: bad_slot before a byte is read",
+                str(exc).endswith("bad_slot") and hand_reader.bytes_read == 0,
+            )
+        else:
+            check(CID, f"slot kind {kind!r} is refused", False)
+    for kind, value in (("header", "q"), ("index", 0), ("letters", "A")):
+        hand = dataclasses.replace(base, prompt=ic.Slot(kind, value))
+        xi.xlsx_events(
+            make_reader(GOOD), hand, verified_content_type=XLSX_TYPE, dataset_sha256="0" * 64
+        )
+    check(CID, "the three tabular slot kinds are accepted", True)
 
 
 def main() -> int:

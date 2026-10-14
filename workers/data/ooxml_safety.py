@@ -107,7 +107,7 @@ class OoxmlRefused(Exception):  # noqa: N818 - a verdict about the whole package
     """The package or part cannot be read safely. `code` is a failure code."""
 
     def __init__(self, code: str) -> None:
-        if code not in _CODES:
+        if _CODES.isdisjoint((code,)):
             raise ValueError("unknown refusal code")
         super().__init__(code)
         self.code = code

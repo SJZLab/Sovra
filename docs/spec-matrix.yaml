@@ -7530,16 +7530,43 @@ FTF-0504:
   proving_test: tests/tasks/test_ftf_0504.py
 
 FTF-0505:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: XLSX importer
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
-    FTF-0506
-  proof_state: UNPROVEN
+  evidence_hash: 0000000000000000000000000000000000000000
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
+    FTF-0506 (CERTIFIED) and FTF-0502-P1 (CERTIFIED). Paths refined to workers/data/xlsx_importer.py
+    and workers/data/ooxml_safety.py (public archive / XML safety primitives, ported from FTF-0501's
+    upload-time inspect_xlsx and pinned equal to it by a drift and differential test). Built on
+    FTF-0502-P1 (ChunkReader, ImportAccumulator, apply_mapping, normalize_mapped_record,
+    to_dataset_record_candidate, ImportReport); import_common.py is untouched (every code used was
+    already in its catalogs). Values only: formula cells (<f>, shared, array, t=str) reject their
+    row (formula_cell) and the cached <v> is never used, error cells reject (cell_error_value),
+    macro carriers (vbaProject.bin, activeX, embeddings, macro sheets, macro-enabled types) are
+    unsafe_workbook and external links (externalLinks, connections, queryTables, any External
+    relationship) external_link_present, neither opened nor fetched. Archive bounds (10,000
+    entries, 4 MiB directory, end-of-archive totals read before zipfile allocates, declared and
+    counted decompressed bytes, traversal / absolute / backslash / casefold-duplicate names,
+    encrypted or unsupported-compression entries), every XML part parsed incrementally by expat
+    with any DOCTYPE refused in every encoding, a token-length guard and a nesting bound; OLE/CFB
+    (encrypted), strict OOXML, templates and non-zip are unsupported_workbook. Explicit sheet
+    (exact name, no fallback, hidden sheets only when named, casefold-duplicate names fatal) and
+    header row; header / index / letters slots; exact cell text (shared and inline strings, rich
+    runs, rPh excluded, _xHHHH_ decoded once); numbers / booleans / dates keep their literal text.
+    Bounds refused, never truncated: sheet_out_of_bounds, too_many_cells (max_cells), limit_exceeded
+    (shared strings, 256 MiB), field_too_large. The source is spooled to one anonymous 0600
+    TemporaryFile while ChunkReader hashes it; the archive is opened only after the sha matched.
+    Real PG16 + SeaweedFS evidence through the FTF-0501 routes in job xlsx-import-integration
+    (tests/integration/test_ftf_0505_xlsx_import_postgres_s3.py). Disclosed: locator is row:<n>
+    (sheet row); a sheet named in the mapping that does not exist is mapping_column_missing (the
+    shared FAILURE_CODES catalog has no sheet-specific code and this task does not edit it); no live
+    route caller, so proving_symbol stays blank.
+    Mutation gate: MUTATION_SUMMARY (see docs/certifications/submissions/SUBMISSION_FILE).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0505.py
 FTF-0506:
   certification_state: CERTIFIED
   criticality: MUST
