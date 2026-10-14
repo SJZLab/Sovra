@@ -7517,6 +7517,20 @@ FTF-0503:
     ruff/mypy clean repo-wide (521 source files). validate_spec.py --strict clean. product_truth_check.py
     --fail-on-unwired: unchanged -- proving_symbol stays blank, same disclosed precedent every
     sibling importer already established (no live import route exists yet in this repository).
+
+
+    Mutation-gate follow-up (2026-10-14T08:30Z, same round, PR #781): the "proposed equivalent
+    mutant" classification above did not hold on review. Slot.kind is a plain str field (not a
+    validated enum at the dataclass level); the one existing test for this line
+    (test_non_key_slot_is_mapping_invalid) mixes a "header" slot with a "key" slot, so under the
+    != -> == mutant the loop still raises bad_slot via the "key" slot alone, masking the real gap --
+    no test gave an all-"key" mapping (must pass) or a case/whitespace variant of "key" built
+    outside _slot() via dataclasses.replace (must still be refused, not normalized). Added
+    test_all_key_slots_pass_options_without_raising and test_slot_kind_match_is_exact_no_normalization;
+    both mutants independently hand-confirmed killed (mutant applied, matching test failed, file
+    restored byte-identical) before the automated gate. Real CI re-run: mutation-gate 200/200
+    KILLED, 0 SURVIVED, score 100.0% (run 38526627731). Merged as 63c2d7b. certification_state stays
+    PROVISIONAL / proof_state stays L1-PROVEN (Law 4) -- awaiting Control-plane L2 re-review.
     Regression swept after every pass: test_ftf_0502_p1.py, test_ftf_0502.py, test_ftf_0504.py,
     test_ftf_0506.py, test_ftf_0507.py, test_ftf_0508.py, test_ftf_0517.py -- all clean.
 
