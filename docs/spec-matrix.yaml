@@ -7533,7 +7533,7 @@ FTF-0505:
   certification_state: PROVISIONAL
   criticality: MUST
   description: XLSX importer
-  evidence_hash: 0000000000000000000000000000000000000000
+  evidence_hash: 8ec743b0e44386639139207f4b949c913a9e3565
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
@@ -7563,7 +7563,7 @@ FTF-0505:
     (sheet row); a sheet named in the mapping that does not exist is mapping_column_missing (the
     shared FAILURE_CODES catalog has no sheet-specific code and this task does not edit it); no live
     route caller, so proving_symbol stays blank.
-    Mutation gate: MUTATION_SUMMARY (see docs/certifications/submissions/SUBMISSION_FILE).
+    Mutation gate: 404 run | 403 KILLED | 1 TIMEOUT | 0 SURVIVED (see docs/certifications/submissions/2026-10-14T0800Z-FTF-0505.md).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0505.py
