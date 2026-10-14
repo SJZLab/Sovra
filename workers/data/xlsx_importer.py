@@ -45,9 +45,10 @@ Fatal versus rejected. A problem the reader cannot resynchronise after (a malfor
 or out-of-order cell reference, an index into the shared strings that does not exist,
 an oversize cell, too many cells, a row or column beyond the sheet bounds, a missing
 or repeated header) ends the import: the report's `state` is `failed` and
-`failure_code` is the code. The sheet row it happened on is returned beside the
-report (`XlsxImportOutcome.fatal_locator`, `row:<n>`), or None for a problem with the
-package as a whole. A problem confined to one row becomes a `RowRejection`.
+`failure_code` is the code. The sheet row it happened on is the report's own
+`fatal_locator` (`row:<n>`, the shared `ImportReport`/`LocatedImportReport` field),
+or None for a problem with the package as a whole. A problem confined to one row
+becomes a `RowRejection`.
 
 Disclosed choices (each pinned by a test):
 
@@ -185,6 +186,7 @@ _PKG_REL_NS: Final = "http://schemas.openxmlformats.org/package/2006/relationshi
 _CT_NS: Final = "http://schemas.openxmlformats.org/package/2006/content-types"
 _REL_WORKSHEET: Final = _DOC_REL_NS + "/worksheet"
 _REL_SHARED_STRINGS: Final = _DOC_REL_NS + "/sharedStrings"
+_REL_VBA_PROJECT: Final = _DOC_REL_NS + "/vbaProject"
 _WORKBOOK_PART: Final = "xl/workbook.xml"
 _CONTENT_TYPES_KEY: Final = "[content_types].xml"  # CONTENT_TYPES_PART, casefolded
 _WORKBOOK_RELS_KEY: Final = "xl/_rels/workbook.xml.rels"
@@ -239,7 +241,6 @@ class XlsxAborted(ImportAborted):
 @dataclass(frozen=True)
 class XlsxImportOutcome:
     report: ImportReport
-    fatal_locator: str | None
 
 
 @dataclass(frozen=True)
@@ -333,9 +334,19 @@ class _Scanner:
 
 
 class _SharedStringsScanner(_Scanner):
+    """Collects the `sst` part's strings as UTF-8 bytes, not `str`: every string
+    stays in the package for the life of the import (it is looked up by index,
+    possibly many times, until the sheet is done), so its storage width matters.
+    A single non-Latin-1 character (common in a multilingual workbook) widens a
+    whole Python `str` to 2 or 4 bytes per character for every character in it,
+    not only the wide one; at the cap this cost ~3.4x the declared memory
+    quota. `bytes` has no such per-object width and tracks the byte cap exactly.
+    Decoded back to `str` once, only for a string actually referenced by a cell
+    (`_SheetScanner._finish_cell`)."""
+
     def __init__(self, max_string: int) -> None:
         super().__init__()
-        self.strings: list[str] = []
+        self.strings: list[bytes] = []
         self._max_string = max_string
         self._runs: list[str] = []
         self._piece: list[str] = []
@@ -368,7 +379,7 @@ class _SharedStringsScanner(_Scanner):
             self._runs.append("".join(self._piece))
             self._in_text = False
         elif _ends(self.path, "sst", "si"):
-            self.strings.append(decode_xml_escapes("".join(self._runs)))
+            self.strings.append(decode_xml_escapes("".join(self._runs)).encode("utf-8"))
         self.path.pop()
 
 
@@ -412,9 +423,20 @@ class _SheetScanner(_Scanner):
     """Turns the SpreadsheetML of one worksheet into `_RawRow`s as expat feeds it.
 
     `wanted` is the set of columns whose cells are kept (None: all); a cell outside
-    it is still validated and counted, only its text is not stored."""
+    it is still validated and counted, only its text is not stored.
 
-    def __init__(self, shared: list[str], max_cells: int, max_cell_chars: int) -> None:
+    `header_row` is the caller's own skip count (the number of non-blank rows
+    before the header). Until that many non-blank rows have actually completed,
+    a row's cells are validated and counted but never retained — only whether the
+    row is blank matters for a row the caller is going to discard unread, and
+    retaining every cell's text regardless (`wanted` is still None at that point,
+    since the header has not been read yet) once let an attacker who never
+    intends to supply a real header turn one wide, deeply padded row into a
+    multi-hundred-megabyte-to-gigabyte transient peak from a small upload."""
+
+    def __init__(
+        self, shared: list[bytes], max_cells: int, max_cell_chars: int, header_row: int
+    ) -> None:
         super().__init__()
         self.rows: deque[_RawRow] = deque()
         self.wanted: frozenset[int] | None = None
@@ -422,6 +444,9 @@ class _SheetScanner(_Scanner):
         self._shared = shared
         self._max_cells = max_cells
         self._max_cell_chars = max_cell_chars
+        self._header_row = header_row
+        self._non_blank_seen = 0
+        self._keep_full_row = header_row <= 0
         self._cells = 0
         self._last_row = 0
         self._last_col = -1
@@ -485,6 +510,7 @@ class _SheetScanner(_Scanner):
             raise self._fatal("xlsx_malformed")
         self._last_row, self._last_col = number, -1
         self._row_cells, self._nonblank = {}, False
+        self._keep_full_row = self._non_blank_seen >= self._header_row
 
     def _start_cell(self, attrs: Mapping[str, str]) -> None:
         cell_type = _Type.LITERAL
@@ -541,6 +567,8 @@ class _SheetScanner(_Scanner):
             self._finish_cell()
         elif _ends(path, "worksheet", "sheetData", "row"):
             self.rows.append(_RawRow(self.row_number, self._row_cells, self._nonblank))
+            if self._nonblank:
+                self._non_blank_seen += 1
             self._row_cells = {}
         path.pop()
 
@@ -556,14 +584,14 @@ class _SheetScanner(_Scanner):
             index = int(self._v_text)
             if index >= len(self._shared):
                 raise self._fatal("xlsx_malformed")
-            text = self._shared[index]
+            text = self._shared[index].decode("utf-8")
         elif self._type is _Type.INLINE:
             text = decode_xml_escapes("".join(self._inline))
         else:  # n, b, d: the literal <v> text
             text = self._v_text
         if kind is not _Kind.VALUE or text != "":
             self._nonblank = True
-        if self.wanted is None or self._col in self.wanted:
+        if self._keep_full_row and (self.wanted is None or self._col in self.wanted):
             self._row_cells[self._col] = (kind, text)
 
 
@@ -610,7 +638,7 @@ class _Package:
     archive: zipfile.ZipFile
     sheet: zipfile.ZipInfo
     sheet_index: int
-    shared: list[str]
+    shared: list[bytes]
     budget: PartBudget
 
 
@@ -762,8 +790,13 @@ def open_package(
     for folded, info in parts.items():
         if folded.endswith(".rels"):
             rels[folded] = _relationships(_read_small(archive, info, budget, tick))
-            if any(r.get("TargetMode", "").lower() == "external" for r in rels[folded]):
+            if any(r.get("TargetMode", "").strip().lower() == "external" for r in rels[folded]):
                 raise OoxmlRefused("external_link_present")
+            if any(r.get("Type") == _REL_VBA_PROJECT for r in rels[folded]):
+                # Defence in depth: a vbaProject target reached only through a
+                # relationship Type, not through its own part name or a declared
+                # content type (both already refused above and below).
+                raise OoxmlRefused("unsafe_workbook")
 
     sheets = _workbook_sheets(_read_small(archive, parts[_WORKBOOK_PART], budget, tick))
     folded_names = [name.casefold() for name, _rid in sheets]
@@ -786,7 +819,7 @@ def open_package(
     if sheet_part not in parts:
         raise OoxmlRefused("xlsx_malformed")
 
-    shared: list[str] = []
+    shared: list[bytes] = []
     for item in by_id.values():
         if item.get("Type") == _REL_SHARED_STRINGS and "Target" in item:
             part = _resolve_target(item["Target"]).casefold()
@@ -806,7 +839,7 @@ def _load_shared_strings(
     tick: Callable[[], None],
     cap: int,
     max_string_chars: int,
-) -> list[str]:
+) -> list[bytes]:
     scanner = _SharedStringsScanner(max_string_chars)
     parser = new_xml_parser()
     parser.StartElementHandler = scanner.start
@@ -958,7 +991,10 @@ class XlsxEventStream(Iterator[ImportEvent]):
     def _sheet_events(self, package: _Package) -> Iterator[ImportEvent]:
         options = self._options
         scanner = _SheetScanner(
-            package.shared, self._xlsx_limits.max_cells, self._limits.max_record_bytes
+            package.shared,
+            self._xlsx_limits.max_cells,
+            self._limits.max_record_bytes,
+            options.header_row,
         )
         headers: list[str] | None = None
         positions: list[tuple[str, int]] = []
@@ -1121,6 +1157,9 @@ def run_xlsx_import(
         stream.close()
     accumulator.source_schema_sha256 = stream.source_schema_sha256
     report = accumulator.report(
-        source_sha256=reader.sha256, source_bytes=reader.bytes_read, aborted=aborted
+        source_sha256=reader.sha256,
+        source_bytes=reader.bytes_read,
+        aborted=aborted,
+        fatal_locator=aborted.locator if isinstance(aborted, XlsxAborted) else None,
     )
-    return XlsxImportOutcome(report, aborted.locator if isinstance(aborted, XlsxAborted) else None)
+    return XlsxImportOutcome(report)

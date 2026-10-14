@@ -376,7 +376,7 @@ def test_basic_import_candidates_and_report() -> None:
     check(CID, "no rejections", report.records_rejected == 0 and report.records_seen == 2)
     check(CID, "prompt/completion preserved", texts(cands[0]) == ["hi", "there"])
     check(CID, "record_index is the 0-based ordinal", cands[1]["record_index"] == 1)
-    check(CID, "no fatal locator", outcome.fatal_locator is None)
+    check(CID, "no fatal locator", outcome.report.fatal_locator is None)
     check(CID, "importer name", report.importer == "xlsx" and report.importer_version == "1")
     check(
         CID,
@@ -656,7 +656,7 @@ def test_shared_string_index_table() -> None:
             CID,
             f"index {label} is fatal xlsx_malformed at row:2, never an empty string",
             failed_with(outcome, "xlsx_malformed")
-            and outcome.fatal_locator == "row:2"
+            and outcome.report.fatal_locator == "row:2"
             and not accepted(_events),
         )
     # an index cell with no <v> at all
@@ -739,7 +739,7 @@ def test_duplicate_header_is_fatal_even_when_unmapped() -> None:
     check(
         CID,
         "a repeated header cell is fatal duplicate_header at the header row",
-        failed_with(outcome, "duplicate_header") and outcome.fatal_locator == "row:1",
+        failed_with(outcome, "duplicate_header") and outcome.report.fatal_locator == "row:1",
     )
     data = book([[IS("q"), IS("a"), IS("x"), IS("X")], [IS("p"), IS("c"), IS("1"), IS("2")]])
     check(CID, "case-different headers are distinct", run(data)[1].report.state == "completed")
@@ -818,7 +818,7 @@ def test_formula_or_error_in_the_header_row_is_fatal() -> None:
         check(
             CID,
             f"{label} header cell is fatal xlsx_malformed at row:1",
-            failed_with(outcome, "xlsx_malformed") and outcome.fatal_locator == "row:1",
+            failed_with(outcome, "xlsx_malformed") and outcome.report.fatal_locator == "row:1",
         )
 
 
@@ -1251,7 +1251,7 @@ def test_cell_count_bound_is_exact() -> None:
             CID,
             f"max_cells={cap}: {cap + 2} cells is fatal too_many_cells",
             failed_with(outcome, "too_many_cells")
-            and (outcome.fatal_locator or "").startswith("row:"),
+            and (outcome.report.fatal_locator or "").startswith("row:"),
         )
     # one cell over, not two
     one_over = book(
@@ -1321,7 +1321,7 @@ def test_shared_strings_cap_is_exact_and_fatal() -> None:
     check(
         CID,
         "one byte over the cap is fatal limit_exceeded",
-        failed_with(outcome, "limit_exceeded") and outcome.fatal_locator is None,
+        failed_with(outcome, "limit_exceeded") and outcome.report.fatal_locator is None,
     )
 
 
@@ -1628,7 +1628,7 @@ def test_archive_attack_table() -> None:
     check(
         CID,
         "a fatal archive problem names no row",
-        run(with_extra(GOOD, ("../e", b"x")))[1].fatal_locator is None,
+        run(with_extra(GOOD, ("../e", b"x")))[1].report.fatal_locator is None,
     )
 
 
@@ -1980,13 +1980,13 @@ def test_malformed_xml_and_structure() -> None:
     check(
         CID,
         "a structure fault in row 2 is located at row:2",
-        failed_with(outcome, "xlsx_malformed") and outcome.fatal_locator == "row:2",
+        failed_with(outcome, "xlsx_malformed") and outcome.report.fatal_locator == "row:2",
     )
     _e, outcome = run(book(raw_sheet=head + ok_row + "<row"))
     check(
         CID,
         "a truncated tail is located at the last row read",
-        failed_with(outcome, "xlsx_malformed") and outcome.fatal_locator == "row:1",
+        failed_with(outcome, "xlsx_malformed") and outcome.report.fatal_locator == "row:1",
     )
     # foreign-namespace elements and unknown attributes are skipped
     foreign = (
@@ -2115,7 +2115,7 @@ def test_workbook_type_table() -> None:
     check(
         CID,
         "a fatal workbook verdict names no row",
-        run(book(extra=[("xl/vbaProject.bin", b"M")]))[1].fatal_locator is None,
+        run(book(extra=[("xl/vbaProject.bin", b"M")]))[1].report.fatal_locator is None,
     )
 
 
@@ -2561,31 +2561,33 @@ def test_meta_leak_markers_never_reach_the_report() -> None:
         sheet=m_sheet[:30],
     )
     _e, outcome = run(data, sheet=m_sheet[:30])
-    leaks = support.leaked_markers((outcome.report, outcome.fatal_locator), [m_val, m_head, m_row])
+    leaks = support.leaked_markers(
+        (outcome.report, outcome.report.fatal_locator), [m_val, m_head, m_row]
+    )
     check(CID, f"no content in the report ({leaks})", not leaks)
     _e, outcome = run(book([[IS("q"), IS("a"), IS(m_head), IS(m_head)]]))
     check(
         CID,
         "a duplicate-header failure names no header text",
-        not support.leaked_markers((outcome.report, outcome.fatal_locator), [m_head]),
+        not support.leaked_markers((outcome.report, outcome.report.fatal_locator), [m_head]),
     )
     _e, outcome = run(book(), sheet=m_sheet[:30])
     check(
         CID,
         "a missing-sheet failure names no sheet text",
-        not support.leaked_markers((outcome.report, outcome.fatal_locator), [m_sheet[:30]]),
+        not support.leaked_markers((outcome.report, outcome.report.fatal_locator), [m_sheet[:30]]),
     )
     _e, outcome = run(with_extra(GOOD, (f"../{m_val}.xml", b"x")))
     check(
         CID,
         "an archive failure names no member name",
-        not support.leaked_markers((outcome.report, outcome.fatal_locator), [m_val]),
+        not support.leaked_markers((outcome.report, outcome.report.fatal_locator), [m_val]),
     )
     _e, outcome = run(book(extra=[("xl/vbaProject.bin", m_val.encode())]))
     check(
         CID,
         "a macro failure names no content",
-        not support.leaked_markers((outcome.report, outcome.fatal_locator), [m_val]),
+        not support.leaked_markers((outcome.report, outcome.report.fatal_locator), [m_val]),
     )
     _e, outcome = run(
         book(raw_sheet=f"{XML_HEAD}<worksheet xmlns='{MAIN}'><sheetData><row>{m_val}")
@@ -2593,7 +2595,7 @@ def test_meta_leak_markers_never_reach_the_report() -> None:
     check(
         CID,
         "an XML failure names no content",
-        not support.leaked_markers((outcome.report, outcome.fatal_locator), [m_val]),
+        not support.leaked_markers((outcome.report, outcome.report.fatal_locator), [m_val]),
     )
     try:
         xi.xlsx_events(
@@ -2955,6 +2957,140 @@ def test_memory_is_bounded_by_the_row_not_the_sheet() -> None:
     )
 
 
+def _wide_cell_row(row_number: int, cols: int, pad: int) -> str:
+    cells = "".join(
+        f'<c r="{_col_letters(c)}{row_number}" t="inlineStr"><is><t>{"z" * pad}</t></is></c>'
+        for c in range(cols)
+    )
+    return f'<row r="{row_number}">{cells}</row>'
+
+
+def _col_letters(zero_based: int) -> str:
+    n = zero_based + 1
+    letters = ""
+    while n:
+        n, remainder = divmod(n - 1, 26)
+        letters = chr(65 + remainder) + letters
+    return letters
+
+
+def test_header_row_skip_does_not_retain_the_skipped_rows_cells() -> None:
+    """HEADER-ROW-UNBOUNDED-MEMORY: `header_row` tells the importer to skip some
+    number of non-blank rows before taking the header. Before this fix, every
+    cell of every row was kept in full (`wanted` is still None: the header has
+    not been read yet) even for a row the caller is about to discard unread --
+    so one wide, deeply padded row the caller will never use could turn a
+    roughly one-megabyte upload into a transient gigabyte-scale peak, 'ZIP/XML
+    bombs fail safely' notwithstanding. `tracemalloc`, started only after the
+    attack payload itself is built (so building it is never counted against
+    the import), isolates the import's own peak exactly as the sibling
+    `test_memory_is_bounded_by_the_row_not_the_sheet` above does."""
+    import tracemalloc
+
+    cols, pad = 1_000, 300_000  # ~300 MB in one skipped row if ever retained
+    skip_row = _wide_cell_row(1, cols, pad)
+    header_row_xml = (
+        '<row r="2"><c r="A2" t="inlineStr"><is><t>q</t></is></c>'
+        '<c r="B2" t="inlineStr"><is><t>a</t></is></c></row>'
+    )
+    data_row_xml = (
+        '<row r="3"><c r="A3" t="inlineStr"><is><t>hi</t></is></c>'
+        '<c r="B3" t="inlineStr"><is><t>there</t></is></c></row>'
+    )
+    raw = (
+        f'{XML_HEAD}<worksheet xmlns="{MAIN}"><sheetData>'
+        f"{skip_row}{header_row_xml}{data_row_xml}</sheetData></worksheet>"
+    )
+    data = book(raw_sheet=raw)
+    reader = make_reader(data, 64 * 1024)
+    tracemalloc.start()
+    try:
+        outcome = xi.run_xlsx_import(
+            reader,
+            build_mapping(header_row=1),
+            verified_content_type=XLSX_TYPE,
+            dataset_purpose="training",
+            expected_sha256=hashlib.sha256(data).hexdigest(),
+            on_accepted=lambda _c: None,
+        )
+        _current, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    check(
+        CID,
+        "the sheet with a wide skipped row before the header still imports",
+        outcome.report.state == "completed",
+    )
+    check(
+        CID,
+        f"a {cols * pad} byte skipped row costs well under 10 MB of real peak memory (saw {peak})",
+        peak < 10 * 1024 * 1024,
+    )
+
+
+def test_shared_strings_do_not_cost_more_than_their_byte_cap_regardless_of_script() -> None:
+    """A non-Latin-1 character anywhere in a Python `str` widens that whole
+    string's own storage to 2 or 4 bytes per character -- not only the wide
+    character's own, every character in it -- so storing the `sst` part's
+    strings as `str` cost up to ~3.4x the declared `max_shared_strings_bytes`
+    quota for an ordinary multilingual workbook (one emoji or non-Latin-1
+    letter per otherwise-ASCII string). Stored as `bytes` (decoded back to
+    `str` only for a string a cell actually uses), the real peak tracks the
+    byte cap directly, whatever script the text is in."""
+    import tracemalloc
+
+    cap = 8_000_000
+    n_strings = 8800
+    strings = [("a" * 900 + "\U0001f600") for _ in range(n_strings)]  # ~901 bytes each, one emoji
+    # S() cells number shared strings by the order cells appear in `rows` (header
+    # "q"/"a" first); the override must carry those same indices, with the bulk
+    # payload strings appended after, purely to fill the aggregate budget.
+    sst = shared_xml(["q", "a", strings[0], "x", *strings[1:]]).encode("utf-8")
+    rows = [[S("q"), S("a")], [S(strings[0]), S("x")]]
+    data = book(rows, shared_override=sst)
+    limits = xi.XlsxLimits(max_shared_strings_bytes=cap)
+    reader = make_reader(data)
+    tracemalloc.start()
+    try:
+        outcome = xi.run_xlsx_import(
+            reader,
+            build_mapping(),
+            verified_content_type=XLSX_TYPE,
+            dataset_purpose="training",
+            expected_sha256=hashlib.sha256(data).hexdigest(),
+            xlsx_limits=limits,
+            on_accepted=lambda _c: None,
+        )
+        _current, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    check(
+        CID,
+        "the aggregate cap still stops a multilingual shared-strings part",
+        failed_with(outcome, "limit_exceeded"),
+    )
+    check(
+        CID,
+        f"peak memory ({peak}) stays within 2x the {cap} byte cap, not the ~3.4x a wide "
+        "Python str would cost",
+        peak < 2 * cap,
+    )
+    # A small, correctness-only round trip: a non-Latin-1 shared string still
+    # decodes back to exactly itself once looked up by a real cell.
+    word = "café \U0001f600 مرحبا"
+    small_sst = shared_xml(["q", "a", word, "x"]).encode("utf-8")
+    small_data = book(
+        [[S("q"), S("a")], [S(word), S("x")]],
+        shared_override=small_sst,
+    )
+    events2, outcome2 = run(small_data)
+    check(
+        CID,
+        "a non-Latin-1 shared string round-trips exactly through the bytes-backed store",
+        outcome2.report.state == "completed" and texts(accepted(events2)[0]) == [word, "x"],
+    )
+
+
 def test_concurrent_imports_with_different_limits_do_not_interfere() -> None:
     import threading
 
@@ -3136,6 +3272,84 @@ def test_bytes_are_counted_as_they_are_read_not_as_the_directory_claims() -> Non
         "a damaged entry is xlsx_malformed",
         drain(Broken(), part_cap=big, remaining=big) == "xlsx_malformed",
     )
+
+    # ZLIB-ERROR-ESCAPES: a corrupt deflate stream raises zlib.error, not one of
+    # the exception types read_part_blocks mapped before this fix.
+    class BrokenZlib:
+        def open(self, _i: object) -> Any:
+            return self
+
+        def __enter__(self) -> Any:
+            return self
+
+        def __exit__(self, *_a: object) -> None:
+            return None
+
+        def read(self, _size: int) -> bytes:
+            import zlib
+
+            raise zlib.error("Error -3 while decompressing data: invalid code lengths set")
+
+    check(
+        CID,
+        "a corrupt deflate stream (zlib.error) is xlsx_malformed, not an unhandled crash",
+        drain(BrokenZlib(), part_cap=big, remaining=big) == "xlsx_malformed",
+    )
+
+
+def _corrupt_deflate_byte(data: bytes, member: str, byte_offset: int, xor: int = 0xFF) -> bytes:
+    """`data`, a valid zip, with one byte of `member`'s own compressed stream
+    flipped — a real, on-the-wire corrupt deflate stream, not a mock."""
+    buf = bytearray(data)
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        info = archive.getinfo(member)
+    header = info.header_offset
+    name_len, extra_len = struct.unpack("<HH", bytes(buf[header + 26 : header + 30]))
+    start = header + 30 + name_len + extra_len
+    buf[start + byte_offset] ^= xor
+    return bytes(buf)
+
+
+def test_a_real_corrupt_deflate_stream_is_xlsx_malformed_not_a_crash() -> None:
+    """ZLIB-ERROR-ESCAPES, end to end: `run_xlsx_import` over an archive whose
+    sheet part's own compressed bytes (not its CRC, not its header) are
+    corrupted. Before this fix, `zlib.error` propagated out of `run_xlsx_import`
+    uncaught; it must come back as an ordinary `failed`/`xlsx_malformed` report,
+    the same as any other damaged entry."""
+    import zlib
+
+    padding = "pad " * 400  # compresses well; several blocks before the corrupt byte
+    rows = [[S("q"), S("a")], [S(padding), S("x")], [S("hi"), S("there")]]
+    data = book(rows)
+    seen_malformed = 0
+    for offset in range(4, 40):
+        corrupted = _corrupt_deflate_byte(data, "xl/worksheets/sheet1.xml", offset)
+        try:
+            with (
+                zipfile.ZipFile(io.BytesIO(corrupted)) as archive,
+                archive.open("xl/worksheets/sheet1.xml") as handle,
+            ):
+                handle.read()
+        except zlib.error:
+            pass
+        else:
+            continue  # this particular flip happened not to break decompression
+        reader = make_reader(corrupted, expected_sha=hashlib.sha256(corrupted).hexdigest())
+        outcome = xi.run_xlsx_import(
+            reader,
+            build_mapping(),
+            verified_content_type=XLSX_TYPE,
+            dataset_purpose="training",
+            expected_sha256=hashlib.sha256(corrupted).hexdigest(),
+            on_accepted=lambda _c: None,
+        )
+        check(
+            CID,
+            f"byte offset {offset}: a real zlib.error completes as failed/xlsx_malformed",
+            failed_with(outcome, "xlsx_malformed"),
+        )
+        seen_malformed += 1
+    check(CID, "at least one flipped byte actually produced a real zlib.error", seen_malformed > 0)
 
 
 def test_a_malformed_part_that_mentions_a_declaration_is_an_attempt() -> None:
@@ -3430,13 +3644,13 @@ def test_a_malformed_row_number_is_located_at_the_last_good_row() -> None:
     check(
         CID,
         "a bad row number after row 1 is located at row:1",
-        failed_with(outcome, "xlsx_malformed") and outcome.fatal_locator == "row:1",
+        failed_with(outcome, "xlsx_malformed") and outcome.report.fatal_locator == "row:1",
     )
     _e, outcome = run(book(raw_sheet=head + '<row r="x"/></sheetData></worksheet>'))
     check(
         CID,
         "a bad first row has no row to name",
-        failed_with(outcome, "xlsx_malformed") and outcome.fatal_locator is None,
+        failed_with(outcome, "xlsx_malformed") and outcome.report.fatal_locator is None,
     )
 
 
@@ -3885,6 +4099,53 @@ def test_targets_are_folded_the_unicode_way_on_the_target_side_too() -> None:
         CID,
         "TargetMode is matched case-insensitively",
         failed_with(run(book(rel_extra=ext))[1], "external_link_present"),
+    )
+
+
+def test_target_mode_padded_with_whitespace_is_still_external() -> None:
+    """Ruling (c), 2026-10-14T13:02Z: a bare `.lower()` comparison, with no
+    `.strip()`, let `TargetMode=" External "` (or a trailing/leading space,
+    tab or newline of any kind) through as neither matching `"external"` nor
+    being treated as absent — the fault this test pins."""
+    for label, padded in (
+        ("leading space", " External"),
+        ("trailing space", "External "),
+        ("both sides", " External "),
+        ("tab", "External\t"),
+        ("newline", "External\n"),
+    ):
+        ext = (
+            f'<Relationship Id="rIdX" Type="{REL}/externalLink" '
+            f'Target="http://127.0.0.1:9/x" TargetMode="{padded}"/>'
+        )
+        check(
+            CID,
+            f"TargetMode={padded!r} ({label}) is still external_link_present",
+            failed_with(run(book(rel_extra=ext))[1], "external_link_present"),
+        )
+
+
+def test_vba_project_reached_only_through_a_relationship_type_is_refused() -> None:
+    """Ruling (c): the macro-carrier check so far only looks at the PART NAME
+    (`xl/vbaProject.bin`, `MACRO_PART_PREFIXES`) and the declared content type.
+    A relationship can point at a vbaProject part under any other name, with no
+    macro-enabled content type declared for it at all; this defence-in-depth
+    check catches that by relationship `Type` alone."""
+    vba_type = f"{REL}/vbaProject"
+    rel_extra = f'<Relationship Id="rIdVba" Type="{vba_type}" Target="notVbaAtAll.bin"/>'
+    data = with_member(
+        book(rel_extra=rel_extra), "xl/notVbaAtAll.bin", b"\xccMacro bytes, no declared type\xcc"
+    )
+    check(
+        CID,
+        "a vbaProject relationship Type alone is unsafe_workbook, whatever the target is named",
+        failed_with(run(data)[1], "unsafe_workbook"),
+    )
+    plain = f'<Relationship Id="rIdPlain" Type="{REL}/styles" Target="styles.xml"/>'
+    check(
+        CID,
+        "and an ordinary relationship Type is untouched by this check",
+        run(book(rel_extra=plain))[1].report.state == "completed",
     )
 
 

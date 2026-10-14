@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import struct
 import zipfile
+import zlib
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Final
@@ -247,6 +248,7 @@ def read_part_blocks(
         ValueError,
         OSError,
         struct.error,
+        zlib.error,
     ):
         raise OoxmlRefused("xlsx_malformed") from None
 
