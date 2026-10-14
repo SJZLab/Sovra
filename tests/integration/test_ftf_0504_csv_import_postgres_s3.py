@@ -530,8 +530,10 @@ def main() -> None:
     )
 
     # ---- C5 (first half): an invalid-bytes run leaks nothing -------------------------------
-    bad = csv_data[:2000] + b"\xff\xfe" + marker.encode() + csv_data[2000:]
-    bad_set, _ = make_dataset("org1", p1_id, conn1, bad, "bad-bytes")
+    # The upload route refuses non-UTF-8 text, so the dataset is verified with good bytes and
+    # the stored object is then damaged in place (same length, two invalid bytes).
+    bad = csv_data[:2000] + b"\xff\xfe" + csv_data[2002:]
+    bad_set, _ = make_dataset("org1", p1_id, conn1, csv_data, "bad-bytes", store_bytes=bad)
     outcome, candidates, _reader = import_dataset(open_source(ctx1, p1_id, bad_set.id))
     leak_values.append((outcome.report, outcome.fatal_locator))
     check(
