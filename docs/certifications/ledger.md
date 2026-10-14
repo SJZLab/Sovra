@@ -11244,3 +11244,15 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   mutation of dataset_object_source.py 31/31. GREEN: FF (equivalent), FE5 (hand-picked retention variant unreachable at
   1 MiB chunks; non-blocking). Advisories: RES-1 2 MiB baseline (single-chunk effect, justified); expected_sha256 vs declared
   hash mismatch still completes (importers must fail it - ruling in QUEUE). UNWIRED.
+
+## 2026-10-14T01:22Z — CERTIFIED: FTF-0517
+- **FTF-0517: CERTIFIED** (round 4 per QUEUE, relay branch r6; PR #772, merge 042d82331196e99e5f7091597fd987914a0a6c2b, head 4f5428c4). Producer
+  session_01LFcCEnvzBry7SbewU1AkWx (earlier rounds session_01JiPHdfhvLuQViXzs5qSbnw, session_01M6PUZDwx7dSwgToeFa7nWu,
+  session_01Q1B9x7DYUJR1TpXchAqFkJ) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent from the PR. CI: ci-verdict
+  115617513579; gate 115596481498 "all checks passed"; mutation 58/58. Sparse-pool property test (4,000 keys, 213-241
+  groups, 4 roles per configuration) RED alone under V3, V42, N9, N10, N12 and more; exact-type keys at every position
+  (N13 RED); verify_manifest structure checked before hashing; N8 RED. 79/84 faults RED (GREEN S6/S9/S11/S15/S17: ratio/
+  cutoff type relaxations and subclass entries with no clause impact). Probes: 195 sparse graphs, 300/300 against an
+  independent connected-components oracle, 2000-key bridge, threads and hash seeds - no violation. Advisories: 4301+-digit
+  ratio/cutoff and lone-surrogate ids raise raw ValueError subclasses (fail closed); rehash structure-table cases; old
+  60-key property test still vacuous. UNWIRED.
