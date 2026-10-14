@@ -2068,6 +2068,78 @@ def _raises(exc_type: type[BaseException], fn, *args: object, **kwargs: object) 
 # ---------------------------------------------------------------------------
 
 # (id, old, new): `old` must occur in the real module exactly `count` times.
+# --- FTF-0904-F1: bare secret-valued query parameters and the percent-encoded fullwidth `=` ---
+
+_F1_NAMES = ("key", "sig", "auth", "session", "jwt", "code", "state")
+_F1_VALUE = "Zq7Lm2Xv9Rt4Hn8Kc3Pw6Yb1"  # no prefix, no JWT shape: only the parameter name binds it
+_F1_SEPARATORS = {
+    "plain": "=",
+    "percent": "%3D",
+    "double-percent": "%253D",
+    "fullwidth": "＝",
+    "percent-fullwidth": "%EF%BC%9D",
+}
+
+
+def _f1_cases() -> list[tuple[str, str]]:
+    cases: list[tuple[str, str]] = []
+    for name in _F1_NAMES:
+        for cased in (name, name.upper(), name.capitalize()):
+            for sep_label, sep in _F1_SEPARATORS.items():
+                pair = f"{cased}{sep}{_F1_VALUE}"
+                for pos_label, template in (
+                    ("first", "GET /x?{p} HTTP/1.1"),
+                    ("middle", "GET /x?a=1&{p}&b=2 HTTP/1.1"),
+                    ("last", "GET /x?a=1&{p}"),
+                    ("semicolon", "GET /x?a=1;{p}"),
+                    ("fragment", "redirect https://h/cb#{p}"),
+                    ("callback", "GET /auth/callback?{p}&other=1 HTTP/1.1"),
+                ):
+                    cases.append(
+                        (f"{name}/{cased}/{sep_label}/{pos_label}", template.format(p=pair))
+                    )
+    return cases
+
+
+def test_f1_bare_secret_query_parameters_are_redacted() -> None:
+    for label, text in _f1_cases():
+        out = lr.redact_text(text)
+        check("FTF-0904-F1", f"{label}: leaked {out!r}", _F1_VALUE not in out)
+    # the OAuth callback with both live credentials, unencoded: the shape the bug report names
+    out = lr.redact_text(f"GET /auth/callback?code={_F1_VALUE}&state={_F1_VALUE}2 HTTP/1.1")
+    check("FTF-0904-F1", f"callback code+state leaked {out!r}", "Zq7Lm2" not in out)
+    check("FTF-0904-F1", "callback path kept", "/auth/callback" in out)
+
+
+def test_f1_cases_through_the_logging_path() -> None:
+    for label, text in _f1_cases()[::5]:
+        with _Harness() as h:
+            logging.getLogger("t").error("%s", text)
+            logging.getLogger("t").error(text)
+            found = leaked([_F1_VALUE], h.outputs())
+        check("FTF-0904-F1", f"{label}: end-to-end leak {found}", not found)
+
+
+def test_f1_benign_look_alikes_survive() -> None:
+    for text in (
+        "GET /x?keyboard=us&codec=h264&statement=ok&sigma=1 HTTP/1.1",
+        "state_of=running code_path=/srv keys=3",
+        "the code=5 and state=ok words outside any query string",
+        "GET /x?a=1&mykey=zzz",
+    ):
+        check(
+            "FTF-0904-F1",
+            f"benign text changed: {lr.redact_text(text)!r}",
+            lr.redact_text(text) == text,
+        )
+    out = lr.redact_text(f"GET /x?state=ok HTTP/1.1 {_F1_VALUE}")
+    check(
+        "FTF-0904-F1",
+        "the rule never removes text outside the parameter value",
+        "GET /x?state=" in out,
+    )
+
+
 FAULTS: list[tuple[str, str, str, int]] = [
     # --- rules removed one at a time -------------------------------------------------
     ("F01 header rule removed", '    ("header", _HEADER),\n', "", 1),
@@ -2438,6 +2510,54 @@ FAULTS: list[tuple[str, str, str, int]] = [
         "Q-USERINFO-NO-LOOKBEHIND URL scheme may start inside a run (quadratic)",
         r"(?P<scheme>(?<![A-Za-z0-9+.\-])[A-Za-z]",
         r"(?P<scheme>[A-Za-z]",
+        1,
+    ),
+    (
+        "F1-key query parameter name dropped from the rule",
+        "(?:key|sig|auth|session|jwt|code|state)",
+        "(?:sig|auth|session|jwt|code|state)",
+        1,
+    ),
+    (
+        "F1-sig query parameter name dropped from the rule",
+        "(?:key|sig|auth|session|jwt|code|state)",
+        "(?:key|auth|session|jwt|code|state)",
+        1,
+    ),
+    (
+        "F1-auth query parameter name dropped from the rule",
+        "(?:key|sig|auth|session|jwt|code|state)",
+        "(?:key|sig|session|jwt|code|state)",
+        1,
+    ),
+    (
+        "F1-session query parameter name dropped from the rule",
+        "(?:key|sig|auth|session|jwt|code|state)",
+        "(?:key|sig|auth|jwt|code|state)",
+        1,
+    ),
+    (
+        "F1-jwt query parameter name dropped from the rule",
+        "(?:key|sig|auth|session|jwt|code|state)",
+        "(?:key|sig|auth|session|code|state)",
+        1,
+    ),
+    (
+        "F1-code query parameter name dropped from the rule",
+        "(?:key|sig|auth|session|jwt|code|state)",
+        "(?:key|sig|auth|session|jwt|state)",
+        1,
+    ),
+    (
+        "F1-state query parameter name dropped from the rule",
+        "(?:key|sig|auth|session|jwt|code|state)",
+        "(?:key|sig|auth|session|jwt|code)",
+        1,
+    ),
+    (
+        "F1-rule key not exact (matches inside longer names)",
+        "(?P<key>(?<=[?&;#])(?:",
+        "(?P<key>(?<=[?&;#])(?:\\w*",
         1,
     ),
 ]
