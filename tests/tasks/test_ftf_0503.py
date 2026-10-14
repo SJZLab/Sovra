@@ -407,6 +407,13 @@ def test_content_type_match_is_exact_not_normalized() -> None:
 
 
 def test_oversize_element_exact_boundaries() -> None:
+    # Round 3 (return finding 5): round 2's fatal field_too_large tier (an
+    # element past a "generous" 2*max_record_bytes+2 bound ended the whole
+    # import) is gone. The scanner already knows an element's exact span
+    # before parsing it, so there is no cost reason to abort the document
+    # over one oversize element -- every size over the limit is now the
+    # same RowRejection record_too_large, and the import always continues,
+    # from one byte over up to a span many times the limit.
     def element_of_length(target_len: int) -> dict[str, object]:
         base = {"messages": [{"role": "user", "content": ""}]}
         pad_len = target_len - len(json.dumps(base))
@@ -414,7 +421,6 @@ def test_oversize_element_exact_boundaries() -> None:
         return {"messages": [{"role": "user", "content": "x" * pad_len}]}
 
     max_record_bytes = 200
-    generous = 2 * max_record_bytes + 2
     limits = ic.ImportLimits(max_record_bytes=max_record_bytes)
 
     at_limit = element_of_length(max_record_bytes)
@@ -426,29 +432,20 @@ def test_oversize_element_exact_boundaries() -> None:
         outcome.report.records_accepted == 1,
     )
 
-    over_limit = element_of_length(max_record_bytes + 1)
-    outcome = run(jdump([over_limit]), container="", limits=limits)
-    check(
-        CID,
-        "max_record_bytes + 1: RowRejection record_too_large, not fatal",
-        any(r.code == "record_too_large" for r in outcome.report.rejections),
-    )
-
-    at_generous = element_of_length(generous)
-    outcome = run(jdump([at_generous]), container="", limits=limits)
-    check(
-        CID,
-        "exactly the generous 2*max_record_bytes+2 bound: RowRejection record_too_large, not fatal",
-        any(r.code == "record_too_large" for r in outcome.report.rejections),
-    )
-
-    over_generous = element_of_length(generous + 1)
-    outcome = run(jdump([over_generous]), container="", limits=limits)
-    check(
-        CID,
-        "generous bound + 1: fatal field_too_large",
-        (outcome.report.state, outcome.report.failure_code) == ("failed", "field_too_large"),
-    )
+    for label, over_by in (("+1", 1), ("+2x", max_record_bytes), ("+10x", max_record_bytes * 9)):
+        over_limit = element_of_length(max_record_bytes + over_by)
+        outcome = run(jdump([VALID_A, over_limit, VALID_B]), container="", limits=limits)
+        check(
+            CID,
+            f"max_record_bytes {label} over: RowRejection record_too_large, never fatal",
+            (outcome.report.state, outcome.report.failure_code) == ("completed", None)
+            and any(r.code == "record_too_large" for r in outcome.report.rejections),
+        )
+        check(
+            CID,
+            f"max_record_bytes {label} over: the import continues (both neighbours accepted)",
+            outcome.report.records_accepted == 2,
+        )
 
 
 def test_tool_schemas_and_validator_are_forwarded() -> None:
@@ -815,23 +812,30 @@ def test_record_not_object_is_rejected() -> None:
 
 
 def test_oversize_element_tiers() -> None:
+    # Round 3: there is only one tier left (record_too_large, never fatal),
+    # whether the element is barely over the limit or wildly over it -- a
+    # tiny limit against an otherwise-ordinary element exercises the cheap
+    # character-count short-circuit in _emit_record (the element is never
+    # sliced or encoded at all once its own span length alone already
+    # proves it is oversize).
     small_row = row("x" * 40)
     element_text = json.dumps(small_row)
     below_limits = ic.ImportLimits(max_record_bytes=len(element_text) - 5)
     outcome = run(jdump([small_row]), container="", limits=below_limits)
     check(
         CID,
-        "between max_record_bytes and the generous 2x+2 bound: RowRejection record_too_large, "
-        "not fatal",
+        "just over max_record_bytes: RowRejection record_too_large, not fatal",
         bool(outcome.report.rejections) and outcome.report.rejections[0].code == "record_too_large",
     )
     tiny_limits = ic.ImportLimits(max_record_bytes=10)
     outcome2 = run(jdump([small_row]), container="", limits=tiny_limits)
     check(
         CID,
-        "over the generous 2*max_record_bytes+2 bound: fatal field_too_large, found by span "
-        "length alone",
-        (outcome2.report.state, outcome2.report.failure_code) == ("failed", "field_too_large"),
+        "wildly over max_record_bytes (span length alone proves it): RowRejection "
+        "record_too_large, never fatal",
+        (outcome2.report.state, outcome2.report.failure_code) == ("completed", None)
+        and bool(outcome2.report.rejections)
+        and outcome2.report.rejections[0].code == "record_too_large",
     )
 
 
@@ -862,13 +866,18 @@ def test_over_cap_document_loses_only_the_document_not_elements() -> None:
 # --- BOM / encoding (round-1: "BOM refused, UTF-16/32 not unsupported_encoding") -
 
 
-def test_bom_is_refused() -> None:
+def test_bom_is_accepted_and_stripped() -> None:
+    # Round 3 (return finding 4): round 2 followed RFC 8259's letter and
+    # refused a leading UTF-8 BOM as fatal. jsonl_importer already accepts
+    # and strips the same byte sequence for the same real-world reason
+    # (common exporters emit one); round 3 matches that discipline instead
+    # of being stricter than its own sibling importer.
     data = b"\xef\xbb\xbf" + jdump([VALID_A])
     outcome = run(data, container="")
     check(
         CID,
-        "a UTF-8 BOM is fatal unexpected_bom (RFC 8259 forbids it)",
-        (outcome.report.state, outcome.report.failure_code) == ("failed", "unexpected_bom"),
+        "a UTF-8 BOM is stripped and the document imports normally, not refused",
+        outcome.report.state == "completed" and outcome.report.records_accepted == 1,
     )
 
 
@@ -1036,6 +1045,195 @@ def test_law_17_states() -> None:
     )
 
 
+# --- EXPECTED-SHA-MISMATCH-COMPLETES (round 3 return finding 2) ------------------
+
+
+def test_expected_sha_mismatch_is_source_changed_before_any_byte() -> None:
+    # A reader built for one hash, handed to run_json_import with a
+    # *different* expected_sha256: round 2 never compared the two, so every
+    # record imported and was tagged with the caller's own (wrong) hash,
+    # and only the reader's own end-of-stream self-check could have
+    # noticed a real tamper -- too late, after records were already
+    # accepted. jsonl_importer round 3 already fixes the identical gap the
+    # same way: compare before a byte is read.
+    data = jdump([VALID_A, VALID_B])
+    real_sha = hashlib.sha256(data).hexdigest()
+    wrong_sha = hashlib.sha256(data + b"x").hexdigest()
+    reader = make_reader(data, expected_sha=real_sha)
+    outcome = ji.run_json_import(
+        reader,
+        build_mapping(container=""),
+        verified_content_type="application/json",
+        dataset_purpose="t",
+        expected_sha256=wrong_sha,
+    )
+    check(
+        CID,
+        "a caller's expected_sha256 that disagrees with the reader's own declared hash is "
+        "failed/source_changed, not completed with every record tagged under the wrong hash",
+        (outcome.report.state, outcome.report.failure_code) == ("failed", "source_changed"),
+    )
+    check(CID, "...before any record is accepted", outcome.report.records_accepted == 0)
+    check(CID, "...and before any byte is even read", outcome.report.source_bytes == 0)
+
+
+def test_expected_sha_agreement_still_imports() -> None:
+    # The mirror of the fault above: when the caller's expected_sha256
+    # genuinely matches the reader's own declared hash, nothing changes.
+    data = jdump([VALID_A])
+    sha = hashlib.sha256(data).hexdigest()
+    reader = make_reader(data, expected_sha=sha)
+    outcome = ji.run_json_import(
+        reader,
+        build_mapping(container=""),
+        verified_content_type="application/json",
+        dataset_purpose="t",
+        expected_sha256=sha,
+    )
+    check(
+        CID,
+        "a caller's expected_sha256 that genuinely agrees with the reader's own imports normally",
+        outcome.report.state == "completed" and outcome.report.records_accepted == 1,
+    )
+
+
+# --- STRUCTURE-ERRORS-NOT-FATAL (round 3 return finding 3) -----------------------
+
+
+def test_adjacent_literal_and_string_is_fatal_not_dropped() -> None:
+    # Round 2's own real, reproduced defect: a bare literal directly
+    # abutting a string with no separator (no comma, no real terminator in
+    # between) was scanned straight through the quote as "more literal
+    # text", stopping only at whichever real terminator character the
+    # *embedded string's own content* happened to contain -- here, a `]`
+    # inside the string `"]"`. The array "closed" two characters later,
+    # the third, perfectly valid element ("2") silently lost, and the
+    # import reported `completed` with no error at all.
+    text = '[1, 1"]", 2]'
+    outcome = run(text.encode(), container="")
+    check(
+        CID,
+        "a bare literal directly abutting a quote (no separator) is fatal json_malformed, "
+        "never a silently truncated array",
+        (outcome.report.state, outcome.report.failure_code) == ("failed", "json_malformed"),
+    )
+    check(
+        CID,
+        "...and the real byte offset is where the scan actually found the problem, not the "
+        "fixed object:0 placeholder round 2 used for every document-level failure",
+        outcome.report.fatal_locator not in (None, "object:0"),
+    )
+
+
+def test_mismatched_bracket_types_are_fatal() -> None:
+    # Round 2's `_skip_value` tracked bracket *depth* only (any open
+    # bracket +1, any close bracket -1), so `[1, 2}` -- an array "closed"
+    # by a brace -- was silently accepted as one well-formed value.
+    for label, text in (
+        ("array closed by a brace", "[1, 2}"),
+        ("object closed by a bracket", '{"a":1]'),
+        ("nested array closed by a brace", "[1,[2,3}]"),
+    ):
+        raised = False
+        try:
+            ji._skip_value(text, 0)
+        except ji._Unterminated:
+            raised = True
+        check(CID, f"_skip_value({label!r}): _Unterminated, never silently accepted", raised)
+
+    outcome = run(b'[{"messages": [{"role": "user", "content": "x"}]}, [1, 2}]', container="")
+    check(
+        CID,
+        "a mismatched bracket pair inside a document-level array is fatal json_malformed, not "
+        "silently accepted as one complete element",
+        (outcome.report.state, outcome.report.failure_code) == ("failed", "json_malformed"),
+    )
+
+
+def test_fatal_locator_is_a_real_byte_offset() -> None:
+    # Pins the byte-offset locator precisely (not merely "not object:0")
+    # for a simple, unambiguous case: truncated mid-array.
+    text = '[{"messages":[{"role":"user","content":"x"}]}, '
+    outcome = run(text.encode(), container="")
+    check(
+        CID,
+        "a document that ends mid-element is fatal json_malformed located at the real byte "
+        f"offset the scan was at (expected object:{len(text)})",
+        (outcome.report.state, outcome.report.failure_code) == ("failed", "json_malformed")
+        and outcome.report.fatal_locator == f"object:{len(text)}",
+    )
+
+
+def test_fatal_locator_is_the_shared_located_import_report_field() -> None:
+    # FATAL-LOCATOR-OUTSIDE-IMPORTREPORT (round 3): fatal_locator now lives
+    # in the one shared `ImportReport.fatal_locator` field every format
+    # importer feeds (`LocatedImportReport`), not a second, independently
+    # tracked field on `JsonImportOutcome` -- the property is a read-only
+    # proxy, never a field of its own.
+    outcome = run(b"not json", container="")
+    check(
+        CID,
+        "a fatal outcome's report is the shared LocatedImportReport subclass",
+        isinstance(outcome.report, ic.LocatedImportReport),
+    )
+    check(
+        CID,
+        "JsonImportOutcome.fatal_locator delegates to report.fatal_locator, not a second field",
+        outcome.fatal_locator == outcome.report.fatal_locator and outcome.fatal_locator is not None,
+    )
+    check(
+        CID,
+        "'fatal_locator' is not JsonImportOutcome's own dataclass field",
+        "fatal_locator" not in {f.name for f in dataclasses.fields(ji.JsonImportOutcome)},
+    )
+    completed = run(jdump([VALID_A]), container="")
+    check(
+        CID,
+        "a completed report is the plain ImportReport, not LocatedImportReport",
+        type(completed.report) is ic.ImportReport and completed.fatal_locator is None,
+    )
+
+
+# --- UTF-16/32 detected by a leading NUL, not only a recognised BOM --------------
+
+
+def test_utf16_detected_by_leading_nul_without_a_bom() -> None:
+    # jsonl_importer's own `_first` check: a NUL byte among the first four
+    # bytes means UTF-16/32 even without one of the four recognised BOM
+    # signatures (a UTF-16BE document with no BOM at all, for example,
+    # starts every ASCII character with a NUL high byte).
+    data = "[1]".encode("utf-16-be")  # no BOM, but every other byte is 0x00
+    check(CID, "fixture actually has a NUL in its first four bytes", b"\x00" in data[:4])
+    outcome = run(data, container="")
+    check(
+        CID,
+        "a NUL byte among the first four bytes (no recognised BOM needed) is fatal "
+        "unsupported_encoding",
+        (outcome.report.state, outcome.report.failure_code) == ("failed", "unsupported_encoding"),
+    )
+
+
+# --- oversize element never materialised (round 3: cheap char-count short-circuit) -
+
+
+def test_wildly_oversize_element_is_rejected_without_materialising_it() -> None:
+    # The char-count check in _emit_record must reject a span many times
+    # over the limit *before* ever slicing or encoding it -- proven here
+    # with a span whose raw text (a 50x-over-limit field) would itself be
+    # expensive to slice/encode if the short-circuit were ever bypassed,
+    # alongside a genuine neighbour that still imports.
+    limits = ic.ImportLimits(max_record_bytes=200)
+    huge = row("x" * 50_000)
+    outcome = run(jdump([VALID_A, huge, VALID_B]), container="", limits=limits)
+    check(
+        CID,
+        "a span 50x+ over max_record_bytes is RowRejection record_too_large, never fatal",
+        (outcome.report.state, outcome.report.failure_code) == ("completed", None)
+        and any(r.code == "record_too_large" for r in outcome.report.rejections),
+    )
+    check(CID, "...and both real neighbours still import", outcome.report.records_accepted == 2)
+
+
 # --- deterministic record_id (round-1: "no deterministic record_id") ------------
 
 
@@ -1145,6 +1343,58 @@ def test_memory_is_linear_not_quadratic() -> None:
         "record count (the round-1 defect measured 62x and growing)",
         max(ratios) <= 10.0 and max(ratios) / min(ratios) <= 3.0,
     )
+
+
+def test_memory_is_bounded_not_whole_document() -> None:
+    # Round 3 (return finding 1, "WHOLE-DOCUMENT-BUFFERED"): round 2 read
+    # the entire source into a bytearray, then bytes, then one decoded str
+    # before ever locating one element -- three full-document copies live
+    # at once, measured at 62x a 1 MiB document and over 3x a 64 MiB one
+    # (sibling CSV/JSONL's own established contract is 1.5x). A document
+    # large enough to make "the whole thing was buffered" obvious (8 MiB,
+    # many small records, fed in realistic 64 KiB chunks -- the same
+    # chunking test_memory_huge_record_is_discarded_not_buffered in
+    # test_ftf_0502.py uses, not one single whole-document chunk) must peak
+    # nowhere near its own size if the streaming cursor really only ever
+    # holds one record's own span plus a small lookahead -- bounded in
+    # MiB, not scaling with document size.
+    mapping = build_mapping(container="")
+    medium_n, big_n = 1_500, 4_000  # ~3.0 MiB and ~8.0 MiB of ~2 KiB records
+    medium_peak, medium_size, _ = _peak_for_n_records(mapping, medium_n)
+    big_peak, big_size, accepted = _peak_for_n_records(mapping, big_n)
+    check(CID, f"{big_n} records: every record accepted", accepted == big_n)
+    check(
+        CID,
+        f"a {big_size / 1_048_576:.1f} MiB document ({big_size / medium_size:.1f}x a "
+        f"{medium_size / 1_048_576:.1f} MiB one) peaks at {big_peak / 1_048_576:.2f} MiB, not "
+        f"growing anywhere near proportionally to the smaller document's own peak "
+        f"({medium_peak / 1_048_576:.2f} MiB) -- bounded, not scaling with document size",
+        big_peak < 2 * medium_peak,
+    )
+    check(
+        CID,
+        f"peak ({big_peak / 1_048_576:.2f} MiB) stays a small fraction of the document's own size "
+        f"({big_size / 1_048_576:.1f} MiB) -- the cursor is genuinely pruned, not merely parsed "
+        "lazily over one still-fully-resident buffer (round 1's own direct json.loads held the "
+        "whole thing at once by construction; round 2 held three full copies)",
+        big_peak < big_size / 2,
+    )
+
+
+def _peak_for_n_records(mapping: ic.ImportMapping, n: int) -> tuple[int, int, int]:
+    data = jdump([row("x" * 2000) for _ in range(n)])
+    reader = make_reader(data, chunk=65536)
+    tracemalloc.start()
+    outcome = ji.run_json_import(
+        reader,
+        mapping,
+        verified_content_type="application/json",
+        dataset_purpose="t",
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+    )
+    _current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    return peak, len(data), outcome.report.records_accepted
 
 
 # --- scanner mutation-sensitivity (same style as round 1's depth-scanner tests) --
