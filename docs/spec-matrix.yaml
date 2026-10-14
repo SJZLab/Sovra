@@ -8748,7 +8748,7 @@ FTF-0518:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Split leakage detector
-  evidence_hash: 32c392cb99e5914d59234005bf373749ec1ef7da
+  evidence_hash: 433a9260422765a30250f45340786cc500ebe3cf
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-23; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0513,
