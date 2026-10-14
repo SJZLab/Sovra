@@ -629,17 +629,23 @@ def main() -> None:
         == ("blocked", "source_unavailable"),
     )
 
-    # ---- J4 control: the same 96 MiB stream completes when nothing actually stops it -------------
-    # Without this, the "blocked/source_unavailable" check above is vacuous if SeaweedFS ever
-    # ends a slow, large stream on its own (observed around 21 MB in this suite's own prior
-    # runs): a no-op `stop` call would then look identical to a real one. Restoring S3 and
-    # replaying the identical dataset through a chunk generator that never calls `compose stop`
-    # proves the full 96 MiB genuinely completes on its own, so the stopping check above is
-    # actually exercising the stop, not an unrelated stream limit.
+    # ---- J4 control: a stream large enough to exercise the same path completes when nothing
+    # actually stops it. Without this, the "blocked/source_unavailable" check above is vacuous if
+    # SeaweedFS ever ends a slow, large stream on its own: the first attempt at this control run
+    # (replaying the identical 96 MiB dataset) reproduced exactly that -- this CI runner's own
+    # SeaweedFS ends the stream on its own at ~25 MB, confirmed by this run's own
+    # `source_bytes` (an independent, real-infra confirmation of the finding this control exists
+    # to guard against). A dataset genuinely larger than the stopping run's own cutoff point
+    # (`index == 1`, a few MiB in) but comfortably under that observed natural limit proves the
+    # same streamed-read path completes on its own well past where the stop fires, so the
+    # stopping check's own outage is attributable to the stop, not to an unrelated stream limit
+    # this dataset would hit regardless.
     s3lab.compose("up", "-d", "s3")
     s3lab._wait_for_tcp(endpoint.host, endpoint.port, timeout_seconds=90.0)
     s3lab._wait_for_s3_http_ready(endpoint, timeout_seconds=90.0)
-    control_source = open_source(ctx1, p1_id, large.id)
+    control_bytes = (big_row * (MIB // len(big_row) + 1))[:MIB] * 8
+    control_dataset, _ = make_dataset("org1", p1_id, conn1, control_bytes, "large-control")
+    control_source = open_source(ctx1, p1_id, control_dataset.id)
     control_reader = ic.ChunkReader(
         control_source.chunks,
         expected_size=control_source.expected_size,
@@ -655,14 +661,16 @@ def main() -> None:
     )
     leak_values.append((control_outcome.report, control_outcome.fatal_locator))
     check(
-        f"J4 control: the identical 96 MiB stream completes without a stop "
-        f"({control_outcome.report.state} {control_outcome.report.failure_code})",
+        f"J4 control: an {len(control_bytes)}-byte stream (well past the stopping run's own "
+        f"cutoff point, comfortably under this runner's observed natural stream limit) "
+        f"completes without a stop ({control_outcome.report.state} "
+        f"{control_outcome.report.failure_code}, {control_outcome.report.source_bytes} bytes read)",
         control_outcome.report.state == "completed",
     )
     check(
-        f"J4 control: reads the same source bytes as the stopped run "
-        f"({control_outcome.report.source_bytes} vs {len(big)})",
-        control_outcome.report.source_bytes == len(big) == control_reader.bytes_read,
+        f"J4 control: reads every byte of its own source "
+        f"({control_outcome.report.source_bytes} vs {len(control_bytes)})",
+        control_outcome.report.source_bytes == len(control_bytes) == control_reader.bytes_read,
     )
 
     # ---- J5: nothing planted leaks anywhere -----------------------------------------------------

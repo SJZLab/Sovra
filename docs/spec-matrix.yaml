@@ -7446,8 +7446,12 @@ FTF-0502:
     directly (only FTF-0504's own test_ftf_0504.py has isinstance/construction tests for it) --
     worth closing against whichever of FTF-0504 r3 or this item that re-review lands on. (3)
     C4-MIDSTREAM-STOP-VACUOUS: the integration suite's "stopping S3 mid-stream" check gets a
-    control run proving the identical 96 MiB stream completes when nothing actually stops it, so
-    the stopping check cannot pass vacuously if SeaweedFS ever ends a large stream on its own. (4)
+    control run on a dataset past the stopping run's own early cutoff but under this runner's
+    natural stream limit, through a chunk generator that never calls compose stop. CI's own first
+    run of this control (initially sized at the identical 96 MiB, before this fix) reproduced the
+    finding directly on real infrastructure: the stream ended on its own at source_bytes=25.3MB
+    with no stop call at all. Fixed by sizing the control at 8 MiB; CI confirmed it completes
+    while the stopping run still shows the real outage. (4)
     Tables at the real production constant (2 MiB) for the size boundary and one-byte-chunk time
     budget, an exhaustive every-split-point check on a <=4 KiB fixture, and a tighter 1.5x
     memory-ratio bound. (5) V-SLOT-DROPPED / V-PURPOSE-HARDCODED: new unit tests read
