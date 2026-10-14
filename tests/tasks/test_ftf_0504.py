@@ -24,7 +24,10 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import random
+import re
 import sys
+import threading
 import tracemalloc
 import unicodedata
 from collections.abc import Iterator
@@ -1352,6 +1355,331 @@ def test_memory_is_bounded_by_the_record_not_the_source() -> None:
     check(
         CID, f"peak for a 64x larger source stays within 1.5x ({peaks})", peaks[1] <= peaks[0] * 1.5
     )
+
+
+# --- round 2 (FTF-0504 RETURN items 1-4) -----------------------------------------------
+
+
+def _drive(parser: ci._Parser, text: str, size: int) -> list[tuple[int, list[str]]]:
+    rows: list[tuple[int, list[str]]] = []
+    for at in range(0, len(text), size):
+        rows.extend(parser.feed(text[at : at + size]))
+    rows.extend(parser.finish())
+    return rows
+
+
+def _reference(text: str, delimiter: str) -> tuple[list[list[str]] | None, str | None]:
+    """The csv module (strict) over the same text split at CR, LF or CRLF."""
+    lines = [m.group() for m in re.finditer(r"[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+$", text)]
+    saved = csv.field_size_limit(10**9)
+    try:
+        return list(csv.reader(lines, delimiter=delimiter, strict=True)), None
+    except csv.Error:
+        return None, "error"
+    finally:
+        csv.field_size_limit(saved)
+
+
+def test_parser_matches_the_csv_module_on_generated_inputs() -> None:
+    """Differential: the state machine agrees with CPython's strict reader on
+    thousands of generated texts at every chunking, rows and errors alike."""
+    rng = random.Random(504)
+    alphabet = ["a", "b", ",", ";", '"', '"', "\n", "\r", "\r\n", " ", "\x00", "\u0645"]
+    mismatches = 0
+    total = 0
+    for _ in range(3000):
+        text = "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 24)))
+        delimiter = rng.choice([",", ";"])
+        expected, expected_error = _reference(text, delimiter)
+        for size in (1, 2, 3, 7, 1000):
+            total += 1
+            parser = ci._Parser(delimiter, 10**6, 10**6)
+            try:
+                got = [row for _line, row in _drive(parser, text, size)]
+                got_error = None
+            except ci.CsvAborted:
+                got, got_error = None, "error"
+            if got != expected or got_error != expected_error:
+                mismatches += 1
+    check(
+        CID,
+        f"parser == csv.reader on {total} generated cases ({mismatches} differ)",
+        mismatches == 0,
+    )
+
+
+def test_parser_start_lines_count_physical_lines_for_every_chunking() -> None:
+    text = 'a,b\r\n"x\r\ny\nz",2\n\n\r\nlast,"q""q"'
+    for size in (1, 2, 3, 5, 100):
+        rows = _drive(ci._Parser(",", 10**6, 10**6), text, size)
+        check(
+            CID,
+            f"start lines chunk={size}: {[line for line, _ in rows]}",
+            [line for line, _ in rows] == [1, 2, 5, 6, 7],
+        )
+
+
+def test_invalid_encoding_locator_is_chunk_independent() -> None:
+    cases = {
+        "utf-8": (b"q,a\nok,fine\nok2,fine\nbad,\xff\xfe\nafter,x\n", 4),
+        "windows-1256": None,
+        "utf-16-le": (
+            "q,a\nok,fine\nok2,fine\n".encode("utf-16-le")
+            + b"\x00\xd8"
+            + "x\n".encode("utf-16-le"),
+            4,
+        ),
+        "utf-16-be": (
+            "q,a\nok,fine\nok2,fine\n".encode("utf-16-be")
+            + b"\xd8\x00"
+            + "x\n".encode("utf-16-be"),
+            4,
+        ),
+        "utf-8-sig": (b"\xef\xbb\xbfq,a\nok,fine\nok2,fine\nbad,\xff\n", 4),
+    }
+    for encoding, case in cases.items():
+        if case is None:
+            continue
+        data, line = case
+        seen = set()
+        for size in list(range(1, 14)) + [64, 10**6]:
+            _events, outcome = collect(data, chunk=size, encoding=encoding)
+            seen.add((outcome.report.failure_code, outcome.fatal_locator))
+        check(
+            CID,
+            f"{encoding}: one outcome for every chunking: {seen}",
+            seen == {("invalid_encoding", f"line:{line}")},
+        )
+    quoted = b'q,a\n"multi\nline\r\nfield",x\n"bad \xff",y\n'
+    seen = set()
+    for size in list(range(1, 12)) + [10**6]:
+        _events, outcome = collect(quoted, chunk=size)
+        seen.add((outcome.report.failure_code, outcome.fatal_locator))
+    check(
+        CID, f"bad bytes after a multiline record: {seen}", seen == {("invalid_encoding", "line:5")}
+    )
+    # bytes ending mid-sequence: located at the line the sequence starts on
+    truncated = b"q,a\nok,fine\nlast,\xd8"
+    seen = set()
+    for size in (1, 2, 5, 10**6):
+        _events, outcome = collect(truncated, chunk=size)
+        seen.add((outcome.report.failure_code, outcome.fatal_locator))
+    check(CID, f"truncated tail: {seen}", seen == {("invalid_encoding", "line:3")})
+
+
+def test_an_earlier_structure_error_beats_a_later_bad_byte_for_every_chunking() -> None:
+    data = b'q,a\nok,"bad"x\nlater,\xff\n'
+    seen = set()
+    for size in list(range(1, 10)) + [10**6]:
+        _events, outcome = collect(data, chunk=size)
+        seen.add((outcome.report.failure_code, outcome.fatal_locator))
+    check(CID, f"structure error first: {seen}", seen == {("csv_structure_invalid", "line:2")})
+
+
+def test_concurrent_imports_with_different_limits_do_not_interfere() -> None:
+    small = ic.ImportLimits(max_record_bytes=200)
+    row = b"x" * 150 + b",y\n"
+    data = b"q,a\n" + row * 20
+    before = csv.field_size_limit()
+    results: list[tuple[str, int]] = []
+    errors: list[BaseException] = []
+    barrier = threading.Barrier(8)
+
+    def worker(use_small: bool) -> None:
+        try:
+            barrier.wait()
+            for _ in range(15):
+                lim = small if use_small else ic.DEFAULT_LIMITS
+                big = b"q,a\n" + (b"y" * 5000) + b",z\n"
+                payload = data if use_small else big
+                _e, outcome = collect(payload, limits=lim, chunk=997)
+                results.append((outcome.report.state, outcome.report.records_accepted))
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(i % 2 == 0,)) for i in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    check(CID, f"no worker crashed: {errors[:1]}", not errors)
+    check(
+        CID,
+        "every mixed-limit import completed",
+        all(state == "completed" for state, _ in results) and len(results) == 8 * 15,
+    )
+    check(CID, "the csv module's global limit was never touched", csv.field_size_limit() == before)
+
+
+def test_one_logical_record_is_capped_across_physical_lines() -> None:
+    limits = ic.ImportLimits(max_record_bytes=64)  # a record may hold 130 characters
+    header = b"q,a\n"
+    for chars in (130, 131):
+        # one logical record of `chars` characters in all (terminator included),
+        # made of quoted multiline fields that are each under the 64-character field cap
+        quoted = b'"' + b"x\n" * 20 + b'"'
+        record = b"ok," + quoted + b"," + quoted + b","
+        record += b"p" * (chars - 1 - len(record)) + b"\n"
+        total = len(record)
+        for chunk in (None, 1, 5):
+            _e, outcome = collect(header + record, limits=limits, chunk=chunk)
+            fatal = outcome.report.failure_code == "field_too_large"
+            check(
+                CID,
+                f"record of {total} chars chunk={chunk}: fatal={fatal}",
+                total == chars and fatal == (total > 130),
+            )
+    # one quoted field of 60 short lines is over the field cap although no line is
+    lines = b'ok,"' + b"ab\n" * 60 + b'"\n'
+    for chunk in (None, 1, 9):
+        _e, outcome = collect(header + lines, limits=limits, chunk=chunk)
+        check(
+            CID,
+            f"many short lines in one record is fatal chunk={chunk}",
+            outcome.report.failure_code == "field_too_large",
+        )
+    _e, outcome = collect(header + lines, limits=limits)
+    check(
+        CID,
+        "located on the physical line where the field cap was crossed",
+        outcome.fatal_locator == "line:23",
+    )
+
+
+def test_wide_record_memory_is_bounded() -> None:
+    """A 64 MiB single logical record of multiline unmapped fields is refused
+    after the cap, not accepted whole."""
+    target = 64 * 1024**2
+    piece = (b"x" * 99 + b"\n") * 10_000  # 1 MB of short lines
+
+    def source() -> Iterator[bytes]:
+        yield b'q,a,extra\nq1,a1,"'
+        for _ in range(target // len(piece)):
+            yield piece
+        yield b'"\n'
+
+    size = len(b'q,a,extra\nq1,a1,"') + (target // len(piece)) * len(piece) + 2
+    digest = hashlib.sha256()
+    for part in source():
+        digest.update(part)
+    reader = ic.ChunkReader(source(), expected_size=size, expected_sha256=digest.hexdigest())
+    tracemalloc.start()
+    outcome = ci.run_csv_import(
+        reader,
+        build_mapping(),
+        verified_content_type="text/csv",
+        dataset_purpose="training",
+        expected_sha256=digest.hexdigest(),
+    )
+    _current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    check(
+        CID,
+        f"a 64 MiB record is fatal field_too_large ({outcome.report.failure_code})",
+        outcome.report.failure_code == "field_too_large",
+    )
+    check(
+        CID, f"peak {peak / 2**20:.1f} MiB stays far below the record's size", peak < 24 * 1024**2
+    )
+    check(CID, "nothing was read past the cap", reader.bytes_read < 8 * 1024**2)
+
+
+def test_content_type_gate_refuses_everything_but_csv_before_a_byte() -> None:
+    supported = [
+        "application/json",
+        "application/jsonl",
+        "application/x-ndjson",
+        "text/csv",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ]
+    data = b"q,a\nx,y\n"
+    for content_type in supported:
+        chunks_read: list[int] = []
+
+        def chunks(log: list[int] = chunks_read) -> Iterator[bytes]:
+            log.append(1)
+            yield data
+
+        reader = ic.ChunkReader(
+            chunks(),
+            expected_size=len(data),
+            expected_sha256=hashlib.sha256(data).hexdigest(),
+        )
+        outcome = ci.run_csv_import(
+            reader,
+            build_mapping(),
+            verified_content_type=content_type,
+            dataset_purpose="training",
+            expected_sha256=hashlib.sha256(data).hexdigest(),
+        )
+        if content_type == "text/csv":
+            check(
+                CID,
+                "text/csv is imported",
+                outcome.report.state == "completed" and outcome.report.records_accepted == 1,
+            )
+            continue
+        check(
+            CID,
+            f"{content_type} is refused",
+            outcome.report.state == "failed"
+            and outcome.report.failure_code == "content_type_not_supported_by_importer"
+            and outcome.report.records_seen == 0,
+        )
+        check(
+            CID,
+            f"{content_type}: not one byte was read",
+            reader.bytes_read == 0 and not chunks_read,
+        )
+    for odd in (
+        None,
+        "",
+        "TEXT/CSV",
+        "text/csv ",
+        "text/csv; charset=utf-8",
+        b"text/csv",
+        5,
+        "text/plain",
+    ):
+        reader = make_reader(data)
+        outcome = ci.run_csv_import(
+            reader,
+            build_mapping(),
+            verified_content_type=odd,  # type: ignore[arg-type]
+            dataset_purpose="training",
+            expected_sha256=hashlib.sha256(data).hexdigest(),
+        )
+        check(
+            CID,
+            f"{odd!r} is refused with the closed code",
+            outcome.report.failure_code == "content_type_not_supported_by_importer"
+            and reader.bytes_read == 0,
+        )
+
+    class Shouting(str):
+        pass
+
+    reader = make_reader(data)
+    outcome = ci.run_csv_import(
+        reader,
+        build_mapping(),
+        verified_content_type=Shouting("text/csv"),
+        dataset_purpose="training",
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+    )
+    check(
+        CID,
+        "a str subclass is refused",
+        outcome.report.failure_code == "content_type_not_supported_by_importer",
+    )
+    stream = ci.csv_events(
+        make_reader(data),
+        build_mapping(),
+        verified_content_type="application/json",
+        dataset_sha256="0" * 64,
+    )
+    result = ic.preview(stream, 5)
+    check(CID, "preview takes the same gate", result.accepted == () and not result.complete)
 
 
 def main() -> int:
