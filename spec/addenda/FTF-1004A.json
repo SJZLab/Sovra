@@ -1,0 +1,40 @@
+{
+  "_comment": "Release 1 task addendum (owner-approved 2026-10-14, ADR docs/adr/0004-small-task-specific-models.md). spec/tasks.json stays the frozen 300-task source for tools/r1_handoff.py; this file is the contract. Denominator: 304.",
+  "required": true,
+  "status": "NOT_STARTED",
+  "evidence": [],
+  "ready": false,
+  "id": "FTF-1004A",
+  "title": "Classifier serving via vLLM pooling runner behind LiteLLM (explicit supported classification adapter)",
+  "kind": "retained_feature",
+  "dependencies": ["FTF-1001", "FTF-1002", "FTF-1003", "FTF-1005", "FTF-04A25", "FTF-1201"],
+  "sections": "3,34-38,66,68,77-79,81",
+  "requirements": ["AF-27", "CAP-12", "CAP-19"],
+  "qualification_scenarios": ["Q07", "Q20", "Q21"],
+  "security": "Pooling runner on the same private, authenticated serving network as FTF-1003; admin surface private; no runtime model/adapter loading; VLLM_NO_USAGE_STATS=1, DO_NOT_TRACK=1; per-tenant artifact prefix; route registered only in the Factory-owned LiteLLM namespace.",
+  "observability": "Content-free: request count, latency, label distribution counts, invalid-response count; never input text.",
+  "resource_gate": "Pinned vLLM build with the pooling/classify runner at the onboarding-gate version; CPU build acceptable for mechanics on a tiny classifier, GPU for qualified load. Org LiteLLM gateway with a classification-capable route, else BLOCKED_ADMIN_ACTION (Section 38), never bypassed.",
+  "database_changes": "None expected (deployment/serving records from FTF-1001/FTF-1003); any new table follows ENABLE+FORCE RLS and data_exposure_check.",
+  "api_contract": "Serving controller deploys a classifier ModelVersion with runner=pooling/classify; adapter `describe` declares protocol classification for the bound step key; readiness probe uses the classify endpoint, not chat.",
+  "files": [
+    "workers/deploy/vllm/classifier_serving.py",
+    "workers/deploy/vllm/classification_protocol_adapter.py",
+    "tests/tasks/test_ftf_1004a.py",
+    "tests/integration/test_ftf_1004a_vllm_pooling_classifier.py"
+  ],
+  "acceptance": [
+    "Deploy a verified classifier artifact with the pinned vLLM pooling/classify runner, prove readiness with an uncached classify probe whose returned label set and order match the artifact's signed id2label, reach it through the organization's LiteLLM route with resolved route identity, and bind it only to a target step whose runtime adapter declares the classification protocol.",
+    "Independent review, exact merged commit, real relevant integration and negative-test evidence recorded."
+  ],
+  "negative_acceptance": [
+    "Label-map, num_labels, tokenizer or base-digest mismatch, a chat-protocol step binding, a runner flag unsupported at the pinned version, a missing gateway classification route (BLOCKED_ADMIN_ACTION) or a direct client-to-vLLM bypass of LiteLLM cannot produce a ready, bindable endpoint."
+  ],
+  "verification_commands": [
+    "python scripts/validate_spec.py --strict",
+    "python scripts/data_exposure_check.py --backends postgres_rls,s3_identity --fail-on-exposure",
+    "python scripts/product_truth_check.py --fail-on-unwired",
+    "uv run python3 tests/tasks/test_ftf_1004a.py",
+    "uv run python3 tests/integration/test_ftf_1004a_vllm_pooling_classifier.py"
+  ],
+  "contract_owner": "FTF-1001"
+}

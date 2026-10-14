@@ -20,13 +20,16 @@ default logging config, over a real socket -- with no database:
    as TLS verify) makes the factory raise during startup; the traceback that
    `sys.excepthook` prints still appears, redacted, and the canary never does.
    This also pins "install first": an install placed after settings are read
-   would miss these exceptions.
+   would miss these exceptions. W1-BOOT-FAIL-MP repeats it under `--workers 2`
+   and `--reload`, where the factory runs in a spawned child and the exception
+   is printed by multiprocessing via `traceback.print_exc()`.
 4. W1-INSTALL: after `create_app()` the record factory and `Logger.makeRecord`
    scrub at ingress, every uvicorn handler and `logging.lastResort` carry the
    redacting filter and formatter, and no handler still renders through
    uvicorn's `AccessFormatter` (which needs the raw args ingress removes).
    W1-HOOKS: in the same process, an exception escaping a thread, one raised
-   in `__del__` (unraisable) and a `warnings.warn` carrying canaries print
+   in `__del__` (unraisable), a `warnings.warn` and direct
+   `traceback.print_exception` / `print_exc` calls carrying canaries print
    their usual headers with the canary redacted.
 5. Fault injection (Law 1): each mutation is applied to a *copy* of
    apps/api/app, served from that copy, and must turn the checks RED.
@@ -40,6 +43,7 @@ Run directly: python3 tests/tasks/test_ftf_0904_w1.py
 
 from __future__ import annotations
 
+import contextlib
 import http.client
 import json
 import os
@@ -236,6 +240,62 @@ def _check_boot_failures(app_dir: Path, fails: list[str]) -> None:
             fails.append(f"{tag}: no redacted traceback on stderr")
 
 
+MP_MODES = (("--workers", "2"), ("--reload",))
+
+
+def _check_multiprocess_boot_failures(app_dir: Path, fails: list[str]) -> None:
+    """Under --workers/--reload the failing factory runs in a spawned child."""
+    for mode in MP_MODES:
+        canary = generate_canary().value
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = Path(tmp) / "out.log"
+            with out_path.open("wb") as out:
+                proc = subprocess.Popen(
+                    [
+                        sys.executable,
+                        "-m",
+                        "uvicorn",
+                        "app.main:create_app",
+                        "--factory",
+                        "--host",
+                        "127.0.0.1",
+                        "--port",
+                        str(_free_port()),
+                        "--app-dir",
+                        str(app_dir),
+                        *mode,
+                        *(["--reload-dir", tmp] if mode == ("--reload",) else []),
+                    ],
+                    cwd=tmp,
+                    env=_env(str(ROOT), SOVRA_MAX_TRAINING_BUDGET_USD=f"password={canary}"),
+                    stdout=out,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+                deadline = time.monotonic() + 60
+                try:
+                    while time.monotonic() < deadline and proc.poll() is None:
+                        if "ConfigurationError" in out_path.read_text(errors="replace"):
+                            time.sleep(2)
+                            break
+                        time.sleep(0.3)
+                finally:
+                    for sig in (signal.SIGTERM, signal.SIGKILL):
+                        with contextlib.suppress(ProcessLookupError):
+                            os.killpg(proc.pid, sig)
+                        try:
+                            proc.wait(timeout=10)
+                            break
+                        except subprocess.TimeoutExpired:
+                            continue
+            text = out_path.read_text(encoding="utf-8", errors="replace")
+        tag = f"[{CRITERION}-W1-BOOT-FAIL-MP] {' '.join(mode)}"
+        if canary in text:
+            fails.append(f"{tag}: the canary in the setting reached the process output")
+        if "ConfigurationError" not in text or REDACTED not in text:
+            fails.append(f"{tag}: no redacted startup traceback from the child process")
+
+
 _INSTALL_PROBE = """
 import json, logging, logging.config
 from uvicorn.config import LOGGING_CONFIG
@@ -271,6 +331,15 @@ u = Unraisable()
 del u
 gc.collect()
 warnings.warn("token=" + canary)
+import io, traceback
+try:
+    raise KeyError("client_secret=" + canary)
+except KeyError:
+    traceback.print_exc()
+    traceback.print_exception(*sys.exc_info())
+    sink = io.StringIO()
+    traceback.print_exception(*sys.exc_info(), None, sink)
+    sys.stderr.write(sink.getvalue())
 """
 
 
@@ -307,10 +376,15 @@ def _check_install(app_dir: Path, fails: list[str]) -> None:
     tag = f"[{CRITERION}-W1-HOOKS]"
     if canary in proc.stdout + proc.stderr:
         fails.append(f"{tag} a thread/unraisable/warning canary reached the process output")
-    for header in ("Exception in thread w1-probe", "Exception ignored in", "UserWarning"):
+    for header in (
+        "Exception in thread w1-probe",
+        "Exception ignored in",
+        "UserWarning",
+        "KeyError",
+    ):
         if header not in proc.stderr:
             fails.append(f"{tag} {header!r} no longer prints on stderr")
-    if proc.stderr.count(REDACTED) < 3:
+    if proc.stderr.count(REDACTED) < 6:
         fails.append(f"{tag} the thread/unraisable/warning output is not redacted")
 
 
@@ -318,6 +392,7 @@ def run_checks(app_dir: Path) -> list[str]:
     fails: list[str] = []
     _check_install(app_dir, fails)
     _check_boot_failures(app_dir, fails)
+    _check_multiprocess_boot_failures(app_dir, fails)
     _serve_and_probe(app_dir, fails)
     return fails
 
@@ -363,6 +438,19 @@ FAULTS: list[tuple[str, str, list[tuple[str, str]]]] = [
                 "            text += redact_exception(exc)\n",
                 '            text += "".join(__import__("traceback").format_exception(exc))\n',
             )
+        ],
+    ),
+    (
+        "F13-no-print-exception-hook",
+        SETUP,
+        [("        traceback.print_exception = _mark(_print_exception)\n", "        pass\n")],
+    ),
+    (
+        "F14-no-traceback-hooks",
+        SETUP,
+        [
+            ("        traceback.print_exception = _mark(_print_exception)\n", "        pass\n"),
+            ("        traceback.print_exc = _mark(_print_exc)\n", "        pass\n"),
         ],
     ),
     ("F12-install-late", "main.py", [(CALL, ""), ("    return app\n", CALL + "    return app\n")]),

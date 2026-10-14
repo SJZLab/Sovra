@@ -7397,7 +7397,7 @@ FTF-0502:
   certification_state: PROVISIONAL
   criticality: MUST
   description: JSONL importer
-  evidence_hash: 0ce7406e2423d10dbf9bb02140b5089fe83ff495
+  evidence_hash: 9b2e93fd1d9942c0a4dcc8852a1a1637dbb89b3a
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
@@ -7424,7 +7424,41 @@ FTF-0502:
     ImportedRecord / QuarantinedRow remain in the module only because
     workers/data/json_importer.py (FTF-0503, rebuilt in its own item) still imports them;
     no live route calls the importer yet, so proving_symbol stays blank. Not self-certified
-    (Law 4). See docs/certifications/submissions/2026-10-14T0500Z-FTF-0502.md.
+    (Law 4).
+
+
+    Round 3 (2026-10-14, return docs/certifications/queue.md 2026-10-14T08:18Z "FTF-0502 RETURN
+    -> round 3"): fixed all five return items. (1) EXPECTED-SHA-MISMATCH-COMPLETES: a caller's
+    own expected_sha256 (tags every record/the report) is now cross-checked against the
+    ChunkReader's own declared hash before a byte is read -- previously only the reader's own
+    end-of-stream check covered its own value, so the two could silently diverge and still
+    complete. (2) FATAL-LOCATOR-OUTSIDE-IMPORTREPORT: this round's own import_common.py edit for
+    it was superseded by a merge conflict -- FTF-0504 r3 (PR #786, merged first) independently
+    added the one shared mechanism (ImportAccumulator.report(fatal_locator=...) returning a
+    LocatedImportReport subclass when a locator is given, ImportReport.fatal_locator staying None
+    on the base class otherwise), ahead of the Control-plane serialization ruling's own intended
+    order. Resolved by dropping this round's own now-redundant import_common.py/P1-test edits
+    entirely (reverted byte-identical to pre-round-3) and reusing FTF-0504 r3's already-merged
+    mechanism unchanged: jsonl_importer.py's own fix needed no change at all -- it already called
+    accumulator.report(fatal_locator=...) and exposed JsonlImportOutcome.fatal_locator as a
+    property over report.fatal_locator, both already compatible with the merged design. Note for
+    Control plane: FTF-0502-P1's own test suite was not extended to cover LocatedImportReport
+    directly (only FTF-0504's own test_ftf_0504.py has isinstance/construction tests for it) --
+    worth closing against whichever of FTF-0504 r3 or this item that re-review lands on. (3)
+    C4-MIDSTREAM-STOP-VACUOUS: the integration suite's "stopping S3 mid-stream" check gets a
+    control run on a dataset past the stopping run's own early cutoff but under this runner's
+    natural stream limit, through a chunk generator that never calls compose stop. CI's own first
+    run of this control (initially sized at the identical 96 MiB, before this fix) reproduced the
+    finding directly on real infrastructure: the stream ended on its own at source_bytes=25.3MB
+    with no stop call at all. Fixed by sizing the control at 8 MiB; CI confirmed it completes
+    while the stopping run still shows the real outage. (4)
+    Tables at the real production constant (2 MiB) for the size boundary and one-byte-chunk time
+    budget, an exhaustive every-split-point check on a <=4 KiB fixture, and a tighter 1.5x
+    memory-ratio bound. (5) V-SLOT-DROPPED / V-PURPOSE-HARDCODED: new unit tests read
+    RowRejection.slot directly (this file's own codes() helper had always dropped it) and
+    exercise a non-"training" dataset_purpose (previously hardcoded in run()/collect(), not
+    overridable). certification_state stays PROVISIONAL, proof_state stays L1-PROVEN (Law 2).
+    See docs/certifications/submissions/2026-10-14T1115Z-FTF-0502-r3.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0502.py
@@ -7517,6 +7551,20 @@ FTF-0503:
     ruff/mypy clean repo-wide (521 source files). validate_spec.py --strict clean. product_truth_check.py
     --fail-on-unwired: unchanged -- proving_symbol stays blank, same disclosed precedent every
     sibling importer already established (no live import route exists yet in this repository).
+
+
+    Mutation-gate follow-up (2026-10-14T08:30Z, same round, PR #781): the "proposed equivalent
+    mutant" classification above did not hold on review. Slot.kind is a plain str field (not a
+    validated enum at the dataclass level); the one existing test for this line
+    (test_non_key_slot_is_mapping_invalid) mixes a "header" slot with a "key" slot, so under the
+    != -> == mutant the loop still raises bad_slot via the "key" slot alone, masking the real gap --
+    no test gave an all-"key" mapping (must pass) or a case/whitespace variant of "key" built
+    outside _slot() via dataclasses.replace (must still be refused, not normalized). Added
+    test_all_key_slots_pass_options_without_raising and test_slot_kind_match_is_exact_no_normalization;
+    both mutants independently hand-confirmed killed (mutant applied, matching test failed, file
+    restored byte-identical) before the automated gate. Real CI re-run: mutation-gate 200/200
+    KILLED, 0 SURVIVED, score 100.0% (run 38526627731). Merged as 63c2d7b. certification_state stays
+    PROVISIONAL / proof_state stays L1-PROVEN (Law 4) -- awaiting Control-plane L2 re-review.
     Regression swept after every pass: test_ftf_0502_p1.py, test_ftf_0502.py, test_ftf_0504.py,
     test_ftf_0506.py, test_ftf_0507.py, test_ftf_0508.py, test_ftf_0517.py -- all clean.
 
@@ -9473,6 +9521,23 @@ FTF-0708:
   proof_state: UNPROVEN
   proving_symbol: ''
   proving_test: ''
+FTF-0708A:
+  certification_state: NONE
+  criticality: MUST
+  description: Sequence-classification-head training (seq_cls_lora; owner-approved integration-form change)
+  evidence_hash: ''
+  implementation_state: ABSENT
+  notes: >-
+    Owner-approved Release 1 addendum (2026-10-14), docs/adr/0004-small-task-specific-models.md.
+    The contract is spec/addenda/FTF-0708A.json; tools/r1_handoff.py covers only the frozen 300.
+    kind=retained_feature; requirements=CAP-09, AF-17, CAP-19; scenarios=Q10, Q13;
+    deps=FTF-R003, FTF-0701, FTF-0712, FTF-0713, FTF-0519, FTF-0307. Training method seq_cls_lora only:
+    HF Transformers Trainer + PEFT SEQ_CLS inside the pinned Axolotl compatibility tuple, under the FTF-R003
+    supervisor (owner-approved integration-form change). BLOCKED: FTF-R003/0701/0712/0713/0519 ABSENT; the
+    qualified run needs a real GPU (gpu_driver BLOCKED_EXTERNAL). Denominator 304.
+  proof_state: UNPROVEN
+  proving_symbol: ''
+  proving_test: ''
 FTF-0709:
   certification_state: NONE
   criticality: MUST
@@ -10025,6 +10090,9 @@ FTF-0904:
   evidence_hash: 5a0f708c29a61e7fe0fea3fc25ef838b7f5471df
   implementation_state: IMPLEMENTED
   notes: >-
+    WIRED 2026-10-14 via FTF-0904-W1 (child slice, CERTIFIED, PR #792 merge b4d401fc): create_app() calls
+    install_api_log_redaction() -> install_redaction() first; live-path proof tests/tasks/test_ftf_0904_w1.py
+    (real uvicorn factory, access log, startup failures incl. --workers/--reload children, hooks; faults F1-F14).
     kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0903
     (both CERTIFIED). Path: packages/security/log_redaction.py.
 
@@ -10279,7 +10347,7 @@ FTF-0904:
     evidence_hash is the round-7 code commit. Submission:
     docs/certifications/submissions/2026-10-13T2035Z-FTF-0904-r7.md.
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: install_redaction
   proving_test: tests/tasks/test_ftf_0904.py
 FTF-0905:
   certification_state: CERTIFIED
@@ -10654,6 +10722,23 @@ FTF-1004:
   evidence_hash: ''
   implementation_state: ABSENT
   notes: kind=retained_feature; requirements=AF-27; scenarios=Q07, Q20; deps=FTF-1001, FTF-1002, FTF-1003
+  proof_state: UNPROVEN
+  proving_symbol: ''
+  proving_test: ''
+FTF-1004A:
+  certification_state: NONE
+  criticality: MUST
+  description: Classifier serving via vLLM pooling runner behind LiteLLM (explicit supported classification adapter)
+  evidence_hash: ''
+  implementation_state: ABSENT
+  notes: >-
+    Owner-approved Release 1 addendum (2026-10-14), docs/adr/0004-small-task-specific-models.md.
+    The contract is spec/addenda/FTF-1004A.json; tools/r1_handoff.py covers only the frozen 300.
+    kind=retained_feature; requirements=AF-27, CAP-12, CAP-19; scenarios=Q07, Q20, Q21;
+    deps=FTF-1001, FTF-1002, FTF-1003, FTF-1005, FTF-04A25, FTF-1201. vLLM pooling/classify runner as an
+    explicit supported adapter (Section 36; owner-approved integration-form change); reached only through the
+    organization's LiteLLM route, else BLOCKED_ADMIN_ACTION. Does not depend on FTF-0708A. BLOCKED: FTF-1003
+    and FTF-1005 ABSENT. Denominator 304.
   proof_state: UNPROVEN
   proving_symbol: ''
   proving_test: ''

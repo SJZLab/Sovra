@@ -24744,9 +24744,43 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-14T08:18Z — Control plane: FTF-0502 returned
 - **Returned:** FTF-0502 r3 (0k): sha mismatch, the shared fatal_locator field (serialized ruling), outage control run, tables.
 
+## 2026-10-14T08:30Z — PROVISIONAL: FTF-0503 r2 merged (#781); mutation gate closed at 100%
+- **Submitted:** closes out the 2026-10-13T21:22Z return note's own disclosed gap. #781's own mutation-gate run
+  (`scripts/mutation_gate.py`, diff mode, `--max-mutants 200`, same CI job) had reported 2 survivors in
+  `workers/data/json_importer.py:257` (`_options`, `slot.kind != "key"`) and the PR's own body proposed them as
+  equivalent mutants, deferring to Control-plane classification since `docs/certifications/mutation-allowlist.yaml`
+  is relay-forbidden. On review that classification didn't hold: `import_common.Slot.kind` is a plain `str`, not a
+  validated enum, and the one existing test for that line mixes a `"header"` slot with a `"key"` slot, so under
+  the `!=`→`==` mutant the loop still raises `bad_slot` via the `"key"` slot alone — the test can't distinguish an
+  all-`"key"` mapping (must pass) from a mixed one. Added `test_all_key_slots_pass_options_without_raising` and
+  `test_slot_kind_match_is_exact_no_normalization` (`tests/tasks/test_ftf_0503.py`); both mutants independently
+  confirmed killed by hand (mutant applied, matching test failed, reverted byte-identical) before relying on the
+  automated gate. Real CI re-run on the pushed commit: `mutation-gate` **200/200 KILLED, 0 SURVIVED, score 100.0%**
+  (run `38526627731`, job `115728721461`); full `gate` (188 steps) and `ci-verdict` green; merged as `63c2d7b`.
+  Full detail: `docs/certifications/submissions/2026-10-14T0700Z-FTF-0503-r2-mutation-fix.md`.
+  Needs L2 verification by a different session (Law 4) — `certification_state` stays `PROVISIONAL`,
+  `proof_state` stays `L1-PROVEN`. The PG16 + SeaweedFS integration test through the real FTF-0501 routes, named
+  by the original return note, is still disclosed as not done this round.
+
 ## 2026-10-14T09:46Z — FTF-0904-W1 returned (r2 submitted)
 - **Returned:** FTF-0904-W1 r1 (excepthook bypass; late install unpinned). **Round 2 submitted** in the same PR: redacting
   exception/warning hooks, W1-BOOT-FAIL and W1-HOOKS checks, faults F7-F12. Needs L2 from a separate session.
 
 ## 2026-10-14T09:46Z — Control plane: FTF-0503 returned
 - **Returned:** FTF-0503 r3 (0b): streaming scanner, sha mismatch, fatal structure errors, BOM, oversize rows, integration.
+
+## 2026-10-14T11:30Z — FTF-0904-W1 returned (r3 submitted)
+- **Returned:** FTF-0904-W1 r2 (multiprocess startup traceback). **Round 3 submitted**: redacting traceback printers,
+  W1-BOOT-FAIL-MP (--workers 2, --reload), faults F13-F14. L2 from the separate verifier session.
+
+## 2026-10-14T13:02Z — Control plane: FTF-0505 returned
+- **Returned:** FTF-0505 r2 (0d): zlib.error mapping, bounded header retention, 4 pinned clauses, shared fatal_locator; rulings on byte cap and ImportLimits.
+
+## 2026-10-14T14:23Z — Control plane: FTF-0904-W1 CERTIFIED (child slice)
+- **Certified:** FTF-0904-W1 (#792, merge b4d401fc1fb1222c65ad4778b5aee2e1461a99c1) by separate verifier session; FTF-0904 WIRED (product-true 46).
+
+## 2026-10-14T14:23Z — Control plane: FTF-0518 returned
+- **Returned:** FTF-0518 r2 (0f): F14/F13/F8 tests, gate requires all methods for clear. Sliced FTF-0512-F1.
+
+## 2026-10-14T14:23Z — Control plane: FTF-0504 returned (r4, small)
+- **Returned:** FTF-0504 r4 (0c): record-cap row, full-hash compare, str-subclass locator, preview TypeError, truncated BOM; stopping rule.
