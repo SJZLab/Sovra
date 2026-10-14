@@ -15,10 +15,19 @@ default logging config, over a real socket -- with no database:
    method, path, `<param>=[REDACTED]` and the status code -- redaction must not
    turn the access log into failure markers or "--- Logging error ---" blocks.
 3. W1-STARTUP: uvicorn's own lifecycle lines still print through the sink.
+   W1-BOOT-FAIL: a secret-shaped bad setting (`password=<canary>` as the
+   training budget, `token=<canary>` as the privacy policy, `api_key=<canary>`
+   as TLS verify) makes the factory raise during startup; the traceback that
+   `sys.excepthook` prints still appears, redacted, and the canary never does.
+   This also pins "install first": an install placed after settings are read
+   would miss these exceptions.
 4. W1-INSTALL: after `create_app()` the record factory and `Logger.makeRecord`
    scrub at ingress, every uvicorn handler and `logging.lastResort` carry the
    redacting filter and formatter, and no handler still renders through
    uvicorn's `AccessFormatter` (which needs the raw args ingress removes).
+   W1-HOOKS: in the same process, an exception escaping a thread, one raised
+   in `__del__` (unraisable) and a `warnings.warn` carrying canaries print
+   their usual headers with the canary redacted.
 5. Fault injection (Law 1): each mutation is applied to a *copy* of
    apps/api/app, served from that copy, and must turn the checks RED.
 
@@ -81,9 +90,10 @@ def _full_app_env() -> dict[str, str]:
     }
 
 
-def _env(pythonpath: str) -> dict[str, str]:
+def _env(pythonpath: str, **overrides: str) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith("SOVRA_")}
     env.update(_full_app_env())
+    env.update(overrides)
     env["PYTHONPATH"] = pythonpath
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     return env
@@ -186,6 +196,46 @@ def _serve_and_probe(app_dir: Path, fails: list[str]) -> None:
         fails.append(f"[{CRITERION}-W1-STARTUP] uvicorn's lifecycle lines no longer print")
 
 
+BOOT_FAILURES = (
+    ("SOVRA_MAX_TRAINING_BUDGET_USD", "password={}"),
+    ("SOVRA_PRIVACY_POLICY", "token={}"),
+    ("SOVRA_TLS_VERIFY", "api_key={}"),
+)
+
+
+def _check_boot_failures(app_dir: Path, fails: list[str]) -> None:
+    """A startup exception is printed by sys.excepthook, outside logging."""
+    for var, template in BOOT_FAILURES:
+        canary = generate_canary().value
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "app.main:create_app",
+                "--factory",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(_free_port()),
+                "--app-dir",
+                str(app_dir),
+            ],
+            cwd=str(ROOT),
+            env=_env(str(ROOT), **{var: template.format(canary)}),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        tag = f"[{CRITERION}-W1-BOOT-FAIL] {var}"
+        if proc.returncode == 0:
+            fails.append(f"{tag}: a bad setting did not stop startup")
+        if canary in proc.stdout + proc.stderr:
+            fails.append(f"{tag}: the canary in the setting reached the process output")
+        if "Traceback (most recent call last):" not in proc.stderr or REDACTED not in proc.stderr:
+            fails.append(f"{tag}: no redacted traceback on stderr")
+
+
 _INSTALL_PROBE = """
 import json, logging, logging.config
 from uvicorn.config import LOGGING_CONFIG
@@ -207,12 +257,27 @@ print(json.dumps({
                  for h in logging.getLogger(n).handlers],
     "last_resort": sunk(logging.lastResort),
 }))
+import sys, threading, warnings, gc
+canary = sys.argv[1]
+def boom():
+    raise RuntimeError("api_key=" + canary)
+t = threading.Thread(target=boom, name="w1-probe")
+t.start()
+t.join()
+class Unraisable:
+    def __del__(self):
+        raise ValueError("password=" + canary)
+u = Unraisable()
+del u
+gc.collect()
+warnings.warn("token=" + canary)
 """
 
 
 def _check_install(app_dir: Path, fails: list[str]) -> None:
+    canary = generate_canary().value
     proc = subprocess.run(
-        [sys.executable, "-c", _INSTALL_PROBE],
+        [sys.executable, "-c", _INSTALL_PROBE, canary],
         cwd=str(ROOT),
         env=_env(f"{app_dir}{os.pathsep}{ROOT}"),
         capture_output=True,
@@ -239,28 +304,73 @@ def _check_install(app_dir: Path, fails: list[str]) -> None:
             fails.append(f"[{CRITERION}-W1-INSTALL] a `{name}` handler uses AccessFormatter")
     if not (got["last_resort"][0] and got["last_resort"][1]):
         fails.append(f"[{CRITERION}-W1-INSTALL] logging.lastResort has no redacting sink")
+    tag = f"[{CRITERION}-W1-HOOKS]"
+    if canary in proc.stdout + proc.stderr:
+        fails.append(f"{tag} a thread/unraisable/warning canary reached the process output")
+    for header in ("Exception in thread w1-probe", "Exception ignored in", "UserWarning"):
+        if header not in proc.stderr:
+            fails.append(f"{tag} {header!r} no longer prints on stderr")
+    if proc.stderr.count(REDACTED) < 3:
+        fails.append(f"{tag} the thread/unraisable/warning output is not redacted")
 
 
 def run_checks(app_dir: Path) -> list[str]:
     fails: list[str] = []
     _check_install(app_dir, fails)
+    _check_boot_failures(app_dir, fails)
     _serve_and_probe(app_dir, fails)
     return fails
 
 
 SETUP = "log_redaction_setup.py"
-FAULTS: list[tuple[str, str, str, str]] = [
-    ("F1-no-call", "main.py", "    install_api_log_redaction()\n", ""),
-    ("F2-keep-access-formatter", SETUP, "if isinstance(formatter, AccessFormatter):", "if False:"),
-    ("F3-no-ingress", SETUP, "    install_redaction()\n", ""),
-    ("F4-no-uvicorn-sink", SETUP, "            attach_sink(handler)\n", "            pass\n"),
-    ("F5-no-last-resort", SETUP, "        attach_sink(logging.lastResort)\n", "        pass\n"),
-    ("F6-skip-access-logger", SETUP, '"uvicorn.error", "uvicorn.access")', '"uvicorn.error")'),
+CALL = "    install_api_log_redaction()\n"
+FAULTS: list[tuple[str, str, list[tuple[str, str]]]] = [
+    ("F1-no-call", "main.py", [(CALL, "")]),
+    (
+        "F2-keep-access-formatter",
+        SETUP,
+        [("if isinstance(formatter, AccessFormatter):", "if False:")],
+    ),
+    ("F3-no-ingress", SETUP, [("    install_redaction()\n", "")]),
+    ("F4-no-uvicorn-sink", SETUP, [("            attach_sink(handler)\n", "            pass\n")]),
+    ("F5-no-last-resort", SETUP, [("        attach_sink(logging.lastResort)\n", "        pass\n")]),
+    ("F6-skip-access-logger", SETUP, [('"uvicorn.error", "uvicorn.access")', '"uvicorn.error")')]),
+    (
+        "F7-no-excepthook",
+        SETUP,
+        [("        sys.excepthook = _mark(_excepthook)\n", "        pass\n")],
+    ),
+    (
+        "F8-no-thread-hook",
+        SETUP,
+        [("        threading.excepthook = _mark(_thread_excepthook)\n", "        pass\n")],
+    ),
+    (
+        "F9-no-unraisable-hook",
+        SETUP,
+        [("        sys.unraisablehook = _mark(_unraisablehook)\n", "        pass\n")],
+    ),
+    (
+        "F10-no-warning-hook",
+        SETUP,
+        [("        warnings.showwarning = _mark(_showwarning)\n", "        pass\n")],
+    ),
+    (
+        "F11-raw-traceback",
+        SETUP,
+        [
+            (
+                "            text += redact_exception(exc)\n",
+                '            text += "".join(__import__("traceback").format_exception(exc))\n',
+            )
+        ],
+    ),
+    ("F12-install-late", "main.py", [(CALL, ""), ("    return app\n", CALL + "    return app\n")]),
 ]
 
 
 def run_faults() -> None:
-    for label, rel, old, new in FAULTS:
+    for label, rel, edits in FAULTS:
         with tempfile.TemporaryDirectory() as tmp:
             copy = Path(tmp) / "api"
             shutil.copytree(
@@ -268,10 +378,12 @@ def run_faults() -> None:
             )
             target = copy / "app" / rel
             text = target.read_text(encoding="utf-8")
-            if text.count(old) != 1:
+            if any(text.count(old) != 1 for old, _ in edits):
                 FAILURES.append(f"[{CRITERION}-W1-FAULT] {label}: mutation site not found once")
                 continue
-            target.write_text(text.replace(old, new), encoding="utf-8")
+            for old, new in edits:
+                text = text.replace(old, new)
+            target.write_text(text, encoding="utf-8")
             fails = run_checks(copy)
             if fails:
                 print(f"  fault {label}: RED ({fails[0]})")

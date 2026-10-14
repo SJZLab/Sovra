@@ -11318,3 +11318,22 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   ImportReport.fatal_locator edit for the importer family; FTF-0504 r3 reuses it. Advisory (second confirmation of
   P-LARGE): SeaweedFS ends slowly read downloads, so JSONL > ~20 MB cannot finish through open_dataset_source (fails
   closed, blocked); source-layer follow-up. NUL in the first 4 bytes makes the whole file fatal (fails closed).
+
+## 2026-10-14T09:46Z — RETURNED: FTF-0904-W1 (r2)
+- **FTF-0904-W1 (child slice): RETURNED** (round 1 → 2; PR #779, merge 25ecc13668826383f3d239106aefa539f403f51d, head
+  840f579f). Producer: the Control-plane session session_01QVznorVMjnmcttUhyDnoGR (owner-requested); verifier: separate
+  session session_0161278Aosjx54vgoMAk3jN6 (Law 4). CI: gate 115694035388 "FTF-0904-W1 live log redaction tests: all
+  checks passed"; ci-verdict 115719250007. Held: every logging path in every uvicorn mode (debug/trace/no-access-log/colors/
+  2 workers), 500 tracebacks, app loggers with extra=, headers not logged; F1-F6 and verifier faults G2-G7 RED. Return:
+  (1) an exception escaping create_app() is printed by sys.excepthook outside logging - a secret-shaped bad setting
+  reaches stderr raw; (2) the install call moved late stayed GREEN. Rule-set gaps (key, sig, auth, session, jwt, code,
+  state, percent-encoded fullwidth '=') reproduce in redact_text itself → FTF-0904-F1 (Law 15).
+
+## 2026-10-14T09:46Z — RETURNED: FTF-0503 (r3)
+- **FTF-0503: RETURNED** (round 2 → 3; PR #781, merge 63c2d7b026c2f0f9e9938db47a2e425cb999c17d, head c2c0fef4; record
+  PR #788). Producers session_01RMzi9P3PkjFrJohRUdi9MC, session_01SDbGVaZPBUNR9c4bgKSUWm (r1 session_01XVwUcrzcU4AG5dFB7ecRmx)
+  ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 115756332292; gate 115728721347 "all checks passed";
+  mutation 200/200 capped (237 generated). import_common edit additive (json_malformed; parse_pointer exported), P1
+  tests extended, P1/0502/0504 suites green. Return: whole document buffered (64 MiB → 200 MiB peak, 62.6x); expected
+  sha mismatch completes; structure errors not fatal (silent element loss, 542/2,119 invalid mutants complete); UTF-8
+  BOM refused; oversize element fatal; no integration suite/job; 10 observable faults GREEN.

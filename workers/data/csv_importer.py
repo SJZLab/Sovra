@@ -24,8 +24,8 @@ Fatal versus rejected. A problem the reader cannot resynchronise after (bad
 encoding, an unterminated quote, a stray quote, an oversize field, too many
 columns, a BOM under `utf-8`, a missing or repeated header) ends the import:
 the report's `state` is `failed` and `failure_code` is the code. The physical
-line it happened on is returned beside the report (`CsvImportOutcome.
-fatal_locator`, `line:<n>`), because `ImportReport` has no field for it. A
+line it happened on (`line:<n>`) is the report's `fatal_locator` (a `LocatedImportReport`,
+inside the report digest). A
 problem confined to one record becomes a `RowRejection` and the import goes on.
 
 Disclosed choices (each pinned by a test):
@@ -75,6 +75,7 @@ from __future__ import annotations
 import codecs
 import copy
 import hashlib
+import hmac
 import json
 import re
 from collections.abc import Callable, Iterator, Mapping
@@ -163,7 +164,6 @@ class _BadBytes(Exception):  # noqa: N818 - internal control flow, turned into C
 @dataclass(frozen=True)
 class CsvImportOutcome:
     report: ImportReport
-    fatal_locator: str | None
 
 
 @dataclass(frozen=True)
@@ -412,8 +412,8 @@ class CsvEventStream(Iterator[ImportEvent]):
             snapshot = copy.copy(decoder)
             try:
                 text = decoder.decode(chunk)
-            except UnicodeDecodeError as exc:
-                valid = self._valid_prefix(snapshot, chunk, exc.start)
+            except UnicodeDecodeError:
+                valid = self._valid_prefix(snapshot, chunk)
                 if valid:
                     self._check_bom(valid, first)
                     yield valid
@@ -434,14 +434,21 @@ class CsvEventStream(Iterator[ImportEvent]):
             raise CsvAborted("unexpected_bom", 1)
 
     @staticmethod
-    def _valid_prefix(snapshot: codecs.IncrementalDecoder, chunk: bytes, start: int) -> str:
-        """The text of `chunk` before the error at `start` (an offset into the
-        decoder's pending bytes followed by `chunk`)."""
-        pending = len(snapshot.getstate()[0])
-        try:
-            return snapshot.decode(chunk[: max(start - pending, 0)])
-        except UnicodeDecodeError:  # pragma: no cover - the prefix was valid
-            return ""
+    def _valid_prefix(snapshot: codecs.IncrementalDecoder, chunk: bytes) -> str:
+        """The text of `chunk` before its first bad byte, given the decoder as it was
+        before the chunk. The error offset a codec reports is not a reliable cut (a
+        `utf-8-sig` decoder counts it after the BOM it strips), so the longest prefix
+        that decodes is searched for: if a prefix decodes, so does every shorter one."""
+        good, bad = 0, len(chunk)  # chunk[:good] decodes; chunk[:bad] does not
+        while bad - good > 1:
+            middle = (good + bad) // 2
+            try:
+                copy.copy(snapshot).decode(chunk[:middle])
+            except UnicodeDecodeError:
+                bad = middle
+            else:
+                good = middle
+        return copy.copy(snapshot).decode(chunk[:good])
 
     def _rows(self) -> Iterator[tuple[int, list[str]]]:
         parser = self._parser
@@ -475,6 +482,12 @@ class CsvEventStream(Iterator[ImportEvent]):
             or self._verified_content_type not in CSV_CONTENT_TYPES
         ):
             raise ImportAborted("failed", "content_type_not_supported_by_importer")
+        if not hmac.compare_digest(
+            # the hash the source was declared with, known before a byte is read
+            self._reader._expected_sha256,
+            self._dataset_sha256,
+        ):
+            raise ImportAborted("failed", "source_changed")
         options = self._options
         headers: list[str] | None = None
         width: int | None = None
@@ -616,6 +629,9 @@ def run_csv_import(
         aborted = exc
     accumulator.source_schema_sha256 = stream.source_schema_sha256
     report = accumulator.report(
-        source_sha256=reader.sha256, source_bytes=reader.bytes_read, aborted=aborted
+        source_sha256=reader.sha256,
+        source_bytes=reader.bytes_read,
+        aborted=aborted,
+        fatal_locator=aborted.locator if isinstance(aborted, CsvAborted) else None,
     )
-    return CsvImportOutcome(report, aborted.locator if isinstance(aborted, CsvAborted) else None)
+    return CsvImportOutcome(report)

@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-14T08:18Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-14T09:46Z. Source: `python3 scripts/status.py` on main.
 - **Status: 147/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   status.py prints 47 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,9 @@ Updated: 2026-10-14T08:18Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-14T09:46Z:**
+  - FTF-0904-W1 returned by its separate-session verifier (startup exceptions printed raw by sys.excepthook); round 2 adds redacting exception/warning hooks and a boot-failure test. FTF-0904-F1 sliced for the redaction rule gaps it found (key, sig, auth, session, jwt, OAuth code/state).
+  - Returned: FTF-0503 r3 (whole document buffered 62x; sha mismatch completes; invalid documents complete with silent element loss; UTF-8 BOM refused; oversize element ends import; no integration suite).
 - **2026-10-14T08:18Z:**
   - CERTIFIED (child slice): FTF-0616-F1, judge deployment fingerprint + cache bypass; FTF-0616 requalified (uncapped mutation 339/339). FTF-0617 is unblocked.
   - Returned: FTF-0502 r3 (expected-sha mismatch completes; fatal locator outside ImportReport; outage check vacuous; tables). Serialization ruling: FTF-0502 r3 adds the one shared ImportReport.fatal_locator field; FTF-0504 reuses it.
