@@ -247,9 +247,8 @@ class JsonEventStream(Iterator[ImportEvent]):
         self._ctx = _CTX_ELEMENT
         self._shape = _V_NONE
         self._value_start = 0
-        self._buf = bytearray()
+        self._buf: bytearray | None = bytearray()  # None once the value outgrew `_cap`
         self._cap = limits.max_record_bytes
-        self._over = False
         self._stack = bytearray()
         self._extra_depth = 0
         self._in_string = False
@@ -415,8 +414,7 @@ class JsonEventStream(Iterator[ImportEvent]):
         self._phase = _VALUE
         self._ctx = ctx
         self._shape = _V_NONE
-        self._buf.clear()
-        self._over = False
+        self._buf = bytearray()
         self._stack.clear()
         self._extra_depth = 0
         self._in_string = False
@@ -425,17 +423,21 @@ class JsonEventStream(Iterator[ImportEvent]):
         self._cap = _KEY_CAP if ctx == _CTX_KEY else self._limits.max_record_bytes
 
     def _retain(self, chunk: bytes, start: int, end: int) -> None:
-        if self._over or end <= start:
+        buf = self._buf
+        if buf is None:
             return
-        if len(self._buf) + (end - start) > self._cap:
-            self._over = True
-            self._buf.clear()
+        if len(buf) + (end - start) > self._cap:
+            self._buf = None
             if self._ctx == _CTX_KEY:
                 raise JsonAborted("unmapped_top_level_key", self._value_start)
             if self._ctx == _CTX_IGNORED:
                 raise JsonAborted("field_too_large", self._value_start)
             return
-        self._buf += memoryview(chunk)[start:end]
+        buf += memoryview(chunk)[start:end]
+
+    def _value_bytes(self) -> bytes:
+        assert self._buf is not None
+        return bytes(self._buf)
 
     def _skip_string(self, chunk: bytes, i: int) -> tuple[int, bool]:
         """Advances over string content; True when the closing quote was consumed."""
@@ -561,7 +563,7 @@ class JsonEventStream(Iterator[ImportEvent]):
     def _accept_key(self) -> None:
         offset = self._value_start
         try:
-            key = json.loads(bytes(self._buf))
+            key = json.loads(self._value_bytes())
         except ValueError:
             raise JsonAborted("json_malformed", offset) from None
         if key == self._container_key:
@@ -581,17 +583,17 @@ class JsonEventStream(Iterator[ImportEvent]):
 
     def _check_ignored(self) -> None:
         try:
-            strict_loads(bytes(self._buf), max_depth=self._limits.max_depth)
+            strict_loads(self._value_bytes(), max_depth=self._limits.max_depth)
         except StrictJsonError:
             raise JsonAborted("json_malformed", self._value_start) from None
 
     def _emit_record(self, index: int) -> Iterator[ImportEvent]:
         locator = f"record:{index}"
-        if self._over:
+        if self._buf is None:
             yield RowRejection(locator, "record_too_large")
             return
         try:
-            parsed = strict_loads(bytes(self._buf), max_depth=self._limits.max_depth)
+            parsed = strict_loads(self._value_bytes(), max_depth=self._limits.max_depth)
         except StrictJsonError as exc:
             yield RowRejection(locator, exc.code)
             return

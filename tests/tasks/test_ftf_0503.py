@@ -1940,6 +1940,176 @@ def test_prompt_completion_slot_is_reported() -> None:
     )
 
 
+def test_first_four_bytes_are_judged_before_the_source_can_fail() -> None:
+    bom32 = b"\xff\xfe\x00\x00"
+    for chunk_bytes in (bom32, b"[" + b"\x00\x00\x00"):
+        source = support.ExplodingSource([chunk_bytes], ConnectionResetError("gone"), at=1)
+        reader = ic.ChunkReader(
+            source, expected_size=100, expected_sha256=hashlib.sha256(b"x").hexdigest()
+        )
+        out = ji.run_json_import(
+            reader,
+            build_mapping(container=""),
+            verified_content_type="application/json",
+            dataset_purpose="training",
+            expected_sha256=hashlib.sha256(b"x").hexdigest(),
+        )
+        check(
+            CID,
+            f"a source that fails right after its first 4 bytes {chunk_bytes!r} still gets "
+            f"the encoding verdict ({verdict(out)})",
+            verdict(out) == ("failed", "unsupported_encoding", "object:0"),
+        )
+
+
+def test_literals_split_across_chunks_inside_a_nested_value() -> None:
+    element = (
+        b'{"messages":[{"role":"user","content":"x"}],"n":12345.5e+10,"t":true,"z":null,'
+        b'"neg":-0.25,"list":[1,22,333]}'
+    )
+    data = b"[" + element + b"," + element + b"]"
+    base = run(data, container="")
+    check(CID, "baseline imports both", base.report.records_accepted == 2)
+    for chunk in range(1, 40):
+        out = run(data, container="", chunk=chunk)
+        check(
+            CID,
+            f"chunk={chunk}: numbers and words cut anywhere inside a nested value import alike",
+            essence(out.report) == essence(base.report),
+        )
+
+
+def test_grammar_errors_inside_a_value_are_fatal_at_their_byte() -> None:
+    # (document, the exact text whose first byte is where the scanner must stop)
+    cases = [
+        (b'[{"a" 1}]', b"1"),
+        (b'[{"a":1 2}]', b"2"),
+        (b'[{"a":1 "b":2}]', b'"b"'),
+        (b"[[1 2]]", b"2]"),
+        (b'[{"a":1,}]', b"}]"),
+        (b'[{"a":}]', b"}]"),
+        (b"[{,}]", b",}"),
+        (b'[{"a":1}:]', b":]"),
+        (b'[{"a"::1}]', b":1"),
+        (b'[{"a":1:2}]', b":2"),
+        (b"[{1:2}]", b"1:2"),
+        (b"[{[]:1}]", b"[]:1"),
+        (b"[{{}:1}]", b"{}:1"),
+        (b"[[,1]]", b",1"),
+        (b"[[1,,2]]", b",2"),
+        (b"[[1,]]", b"]]"),
+        (b'[{"a":[1}]', b"}]"),
+        (b"[[1}]", b"}]"),
+        (b'[{"a":1]]', b"]]"),
+        (b'[{"a" : "b" "c"}]', b'"c"'),
+        (b'[{"a":tru e}]', b"e}"),
+        (b'[{"a":x}]', b"x}"),
+        (b'[{"a":1}x]', b"x]"),
+        (b'["a" "b"]', b'"b"'),
+        (b"[[] []]", b"[]]"),
+        (b"[{}{}]", b"{}]"),
+        (b'[{"k":{"j":[{"i":}]}}]', b"}]}}]"),
+    ]
+    for data, where in cases:
+        offset = data.index(where)
+        for chunk in (None, 1, 3):
+            out = run(data, container="", chunk=chunk)
+            check(
+                CID,
+                f"{data!r} (chunk={chunk}): fatal json_malformed at byte {offset} "
+                f"(got {verdict(out)})",
+                verdict(out) == ("failed", "json_malformed", f"object:{offset}"),
+            )
+    good = [
+        b'[{"a":1}]',
+        b'[{"a":[1,2,{"b":[]}],"c":{}}]',
+        b'[{"a" : 1 , "b" : [ ] , "c" : { } }]',
+        b'[{"a":"x:y,z]}","b":-1.5e3}]',
+    ]
+    for data in good:
+        out = run(data, container="")
+        check(
+            CID,
+            f"{data!r}: valid nested grammar is not refused ({verdict(out)})",
+            out.report.state == "completed",
+        )
+
+
+def test_exact_tracking_depth_boundary() -> None:
+    cap = ji._STACK_CAP
+    # `cap` open brackets (the element itself is level 1): the mismatch is still caught ...
+    exact = b"[" + b"[" * cap + b"}" + b"]" * cap + b"]"
+    out = run(exact, container="")
+    check(
+        CID,
+        f"a mismatch at the deepest exactly-tracked level is fatal ({verdict(out)})",
+        verdict(out) == ("failed", "json_malformed", f"object:{cap + 1}"),
+    )
+    # ... one level deeper only brackets are counted (documented limit).
+    beyond = b"[" + b"[" * (cap + 1) + b"}" + b"]" * cap + b"]"
+    out = run(beyond, container="")
+    check(
+        CID,
+        "one level deeper only brackets are counted: the element is a nesting_too_deep row and "
+        f"the import carries on ({verdict(out)})",
+        out.report.state == "completed"
+        and [r.code for r in out.report.rejections] == ["nesting_too_deep"],
+    )
+
+
+def test_values_far_deeper_than_the_exact_limit_do_not_lose_elements() -> None:
+    n = 1100
+    cases = {
+        "arrays": b"[" * n + b"]" * n,
+        "objects": b'{"a":' * n + b"1" + b"}" * n,
+        "mixed": b'[{"a":' * (n // 2) + b"[]" + b"}]" * (n // 2),
+        "strings with brackets": b"[" * n + b'"]}[{"' + b"]" * n,
+    }
+    for label, deep in cases.items():
+        data = b"[" + deep + b"," + G + b"," + deep + b"]"
+        for chunk in (None, 1, 7, 1000):
+            out = run(data, container="", chunk=chunk)
+            check(
+                CID,
+                f"{label} (chunk={chunk}): three elements, the middle one accepted "
+                f"({verdict(out)} seen={out.report.records_seen})",
+                out.report.state == "completed"
+                and out.report.records_seen == 3
+                and out.report.records_accepted == 1
+                and [r.code for r in out.report.rejections] == ["nesting_too_deep"] * 2,
+            )
+    unbalanced = b"[" + b"[" * n + b"]" * (n - 1) + b"," + G + b"]"
+    out = run(unbalanced, container="")
+    check(
+        CID,
+        f"a deep value that never closes swallows the rest and is fatal ({verdict(out)})",
+        out.report.state == "failed" and out.report.failure_code == "json_malformed",
+    )
+
+
+def test_ignored_keys_that_differ_only_in_case_are_distinct_keys() -> None:
+    data = b'{"_Meta": 1, "_meta": 2, "rows": [' + G + b"]}"
+    out = run(data, container="/rows", ignored_top_level_keys=["_Meta", "_meta"])
+    check(
+        CID,
+        f"two declared ignored keys that differ only in case do not collide ({verdict(out)})",
+        out.report.state == "completed" and out.report.records_accepted == 1,
+    )
+    out = run(data, container="/rows", ignored_top_level_keys=["_meta"])
+    check(
+        CID,
+        "'_Meta' is not the declared '_meta'",
+        out.report.failure_code == "unmapped_top_level_key",
+    )
+    padded_key = b'{" rows": [' + G + b"]}"
+    out = run(padded_key, container="/rows")
+    check(
+        CID,
+        "' rows' is not the container 'rows' (no trimming)",
+        out.report.failure_code == "unmapped_top_level_key",
+    )
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
