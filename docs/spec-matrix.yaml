@@ -12125,14 +12125,41 @@ FTF-1602:
     Python itself treats as naive) is refused up front instead of surfacing a later raw error.
     New real-SeaweedFS evidence: N concurrent real creates never collide (each gets a distinct id
     and independently, permanently verifies); a forced shared-id interleaving (Control plane's own
-    "B checks the id, A runs in full, B writes") never reports false success for either caller,
-    via the same private id seam a real caller cannot reach; the pinned record read ignores a
-    transient, unretained forged version injected between the pinned listing and the pinned read
-    (G1), confirmed against the real server that the genuine, COMPLIANCE-retained record itself
-    cannot be deleted or replaced at all; and the post-read re-list refuses a same-count,
-    different-identity swap (G7), with an inline comparison showing a count/delete-marker/
-    is_latest-only version of that same check would miss it. Whole-file mutation gate (uncapped):
-    405/405 killed, 0 survivors. Not self-certified (Law 4).
+    "B checks the id, A runs in full, B writes"), via the same private id seam a real caller
+    cannot reach, is what the test actually asserts: B (the second writer onto the shared id)
+    never reports false success, and A's own earlier run -- which did complete and return a
+    record at call time -- is left permanently unverifiable afterward by B's later write onto the
+    same key; the real fix is that no two real calls are ever given the same id, not that this
+    race is individually safe. The pinned record read ignores a transient, unretained forged
+    version injected between the pinned listing and the pinned read (G1), confirmed against the
+    real server that the genuine, COMPLIANCE-retained record itself cannot be deleted or replaced
+    at all; and the post-read re-list refuses a same-count, different-identity swap (G7), with an
+    inline comparison showing a count/delete-marker/is_latest-only version of that same check
+    would miss it. Whole-file mutation gate (uncapped): 405/405 killed, 0 survivors. Not
+    self-certified (Law 4).
+    Round 6 (QUEUE 0i, tests + spec-matrix only; production unchanged since round 5):
+    F7-CREATE-NOW-VALIDATED-LATE -- a unit and real-server table of bad `now` shapes (naive,
+    tzinfo set but utcoffset() is None, str, int, a datetime subclass) proves `create_backup`
+    refuses before making a single call to either store (a counting double on both suites), not
+    only before writing; fault -> RED by moving the check below the blob-read loop (the round-4
+    Q5 shape) reproduces the hazard. G7-COUNT-ONLY-RELIST gained a unit twin
+    (`test_round6_relist_identity_swap_is_refused_in_unit`) of the existing real-server test --
+    round 5 only proved this guard on the real suite, so a regression there stayed green in unit.
+    G1/G1b were rebuilt on the Q2 shape (a forged, unretained version PUT the first time the
+    record is listed, DELETEd the first time retention is checked -- both calls `_load_record`
+    always makes, regardless of which method it uses to read the content) in both suites: round
+    5's own ABA test only reddened through a local double standing in for the content-read method
+    by name, which a real production mutation (get_latest instead of the pinned get_version) does
+    not call at all, so the primary attack-check assertion itself stayed green against that exact
+    mutation (confirmed this round); the rebuilt test asserts on `verify_backup`'s/
+    `restore_backup`'s own real return value directly, with no self-referential demonstration, and
+    adds G1b (the same forged, shrunk record applied to restore, which previously could have
+    restored 3 of 4 objects as a silent, false success). Fault -> RED for all three confirmed by
+    mutating scripts/object_storage_backup.py on disk and restoring it byte-identical afterward
+    (see the round-6 submission's Fault -> RED table). evidence_hash stays pinned to 47ca830
+    (round 4), per Control plane's round-6 ruling (QUEUE 0i item 4) -- round 6 touches no
+    production line, so nothing rebinds it. Whole-file mutation gate (uncapped) re-run clean; see
+    the round-6 submission for the exact count. Not self-certified (Law 4).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1602.py

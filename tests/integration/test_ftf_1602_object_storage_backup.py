@@ -807,14 +807,105 @@ def test_shared_backup_id_collision_is_never_silently_successful(client: S3Clien
     )
 
 
-def test_pinned_record_read_ignores_a_transient_unretained_swap(client: S3Client) -> None:
-    """G1: `_load_record` must read the exact version id it pinned at the first listing, never
-    "whatever is latest". A real backup's own record is COMPLIANCE-retained and provably cannot
-    itself be deleted or replaced on the real server (checked below as this test's own setup), so
-    the narrowest real attack left is a forged, *unretained* version that briefly becomes "the
-    latest" at the same key between the pinned listing and the pinned read, then is removed again
-    (a plain delete, allowed since nothing retains it) before the re-list runs."""
+def test_now_validated_before_any_store_call_on_real_server(client: S3Client) -> None:
+    """F7-CREATE-NOW-VALIDATED-LATE, real server: a bad `now` must be refused before
+    `create_backup` makes a single real S3 call -- the round-4 Q5 hazard is a bad `now` discovered
+    only after blobs are already written WORM-retained on a real server, which can never be
+    undone. Since the check fires before any call, this needs no working object write path: the
+    negative control (a genuine `now` backs up for real) is what proves the stores are live."""
     source_bucket, target_bucket, src, dst = _setup_shared(client)
+    refs = _seed(client, source_bucket)
+
+    class CountingStore(S3ObjectStore):
+        def __init__(self, client: S3Client, bucket: str) -> None:
+            super().__init__(client, bucket)
+            self.calls = 0
+
+        def list_versions(self, key: str) -> list[VersionInfo]:
+            self.calls += 1
+            return super().list_versions(key)
+
+        def get_version(self, key: str, version_id: str) -> bytes:
+            self.calls += 1
+            return super().get_version(key, version_id)
+
+        def version_metadata(self, key: str, version_id: str) -> dict[str, str]:
+            self.calls += 1
+            return super().version_metadata(key, version_id)
+
+        def get_latest(self, key: str) -> bytes:
+            self.calls += 1
+            return super().get_latest(key)
+
+        def put_retained(self, key: str, body: bytes, *, retain_until: datetime) -> str:
+            self.calls += 1
+            return super().put_retained(key, body, retain_until=retain_until)
+
+        def retention_until(self, key: str):
+            self.calls += 1
+            return super().retention_until(key)
+
+    class SneakyDatetime(datetime):
+        """Exact-type check only (round 5 convention) -- a subclass must not slip through."""
+
+    bad_nows: list[tuple[str, object]] = [
+        ("naive", datetime(2026, 10, 8, 12, 0, 0)),
+        ("str", "2026-10-08T12:00:00Z"),
+        ("int", 1760000000),
+        ("datetime subclass", SneakyDatetime(2026, 10, 8, 12, 0, 0, tzinfo=UTC)),
+    ]
+    for label, bad_now in bad_nows:
+        counting_source = CountingStore(client, source_bucket)
+        counting_target = CountingStore(client, target_bucket)
+        err = raises_backup_error(
+            create_backup,
+            refs,
+            source=counting_source,
+            target=counting_target,
+            known_key_refs=frozenset({"kms/recoverable"}),
+            retain_days=30,
+            now=bad_now,
+        )
+        check(
+            "FTF-1602-F7",
+            f"now={label}: refused before touching source or target on the real server "
+            f"(source calls={counting_source.calls}, target calls={counting_target.calls})",
+            err is not None
+            and "timezone-aware" in str(err)
+            and counting_source.calls == 0
+            and counting_target.calls == 0,
+        )
+
+    good_source = CountingStore(client, source_bucket)
+    good_target = CountingStore(client, target_bucket)
+    record = create_backup(
+        refs,
+        source=good_source,
+        target=good_target,
+        known_key_refs=frozenset({"kms/recoverable"}),
+        retain_days=30,
+    )
+    check(
+        "FTF-1602-F7",
+        "negative: a genuine now proceeds and does touch both real stores",
+        record.blob_count == len(refs) and good_source.calls > 0 and good_target.calls > 0,
+    )
+
+
+def test_round6_aba_record_read_and_restore_resist_a_transient_forged_version_on_real_server(
+    client: S3Client,
+) -> None:
+    """G1/G1b (round 6), the Q2 shape. The round-5 ABA test only reddened through a local double
+    that stood in for `_load_record`'s own read method by name (`FaultyLatestInsteadOfPinned`) --
+    a real regression that changes *which* method is called (get_latest instead of
+    get_version(pinned)) made that double's hook never fire, so the primary attack-check
+    assertion itself stayed green on a real production mutation (confirmed this round). This
+    version hooks `list_versions` (always called first) and `retention_until` (always called
+    right after the read, before the re-list) instead of the content-read method, so it reddens
+    through whichever method `_load_record` actually uses to read the content -- the assertion is
+    on `verify_backup`'s/`restore_backup`'s own real return value, never a self-referential
+    demonstration standing in for production (see "Fault -> RED" in the submission)."""
+    source_bucket, target_bucket, src, dst = _setup(client)
     record = _backup(src, dst, _seed(client, source_bucket))
     record_key = f"backups/o/{record.backup_id}/backup-record.json"
     real_versions = [
@@ -836,59 +927,72 @@ def test_pinned_record_read_ignores_a_transient_unretained_swap(client: S3Client
     )
 
     forged_data = json.loads(client.get_object(target_bucket, record_key)[0])
-    forged_data["created_at"] = "2099-01-01T00:00:00Z"
+    dropped = forged_data["entries"].pop(0)
+    forged_data["blobs"] = [b for b in forged_data["blobs"] if b[0] != dropped["sha256"]]
+    forged_data["object_count"] = len(forged_data["entries"])
+    forged_data["blob_count"] = len(forged_data["blobs"])
+    forged_data["total_bytes"] = sum(size for _, size in forged_data["blobs"])
+    _rehash(forged_data)
     forged = json.dumps(forged_data).encode()
 
-    class TransientSwap(S3ObjectStore):
-        def get_version(self, key: str, version_id: str) -> bytes:
+    class Q2Race(S3ObjectStore):
+        """A forged, UNretained record version is PUT the first time the record is listed
+        (whichever read method production calls next would see it as "latest" if it ever reads
+        "latest"), and DELETEd the first time retention is checked -- always right after the
+        read, before the re-list. Being unretained, the real server allows the delete (the
+        narrowest real attack: round 5 already proved the genuine, COMPLIANCE-retained version
+        itself cannot be touched this way)."""
+
+        def __init__(self, client: S3Client, bucket: str) -> None:
+            super().__init__(client, bucket)
+            self._forged_version: str | None = None
+            self._record_list_calls = 0
+
+        def list_versions(self, key: str) -> list[VersionInfo]:
+            listed = super().list_versions(key)
             if key == record_key:
-                self._client.put_object(target_bucket, key, forged)
-            return super().get_version(key, version_id)
+                self._record_list_calls += 1
+                if self._record_list_calls == 1:
+                    put = self._client.put_object(target_bucket, key, forged)
+                    self._forged_version = put["version_id"]
+            return listed
 
         def retention_until(self, key: str):
-            if key == record_key:
-                current = [
-                    v
-                    for v in self._client.list_object_versions(target_bucket, prefix=key)
-                    if v.get("Key") == key
-                ]
-                newest = current[0]["VersionId"] if current else None
-                if newest and newest != real_id:
-                    self._client.delete_object(target_bucket, key, version_id=newest)
+            if key == record_key and self._forged_version is not None:
+                try:
+                    self._client.delete_object(target_bucket, key, version_id=self._forged_version)
+                except S3Error:
+                    pass
+                self._forged_version = None
             return super().retention_until(key)
 
-    swapped = TransientSwap(client, target_bucket)
-    result = verify_backup(swapped, record.backup_id, organization_id="o")
+    race = Q2Race(client, target_bucket)
+    try:
+        result = verify_backup(race, record.backup_id, organization_id="o")
+        g1_ok = result == record and result.object_count == 4
+    except ObjectStorageBackupError:
+        g1_ok = False
     check(
         "FTF-1602-G1",
-        "verify reads the pinned version's real content, not the transient forged one",
-        result == record and result.created_at != "2099-01-01T00:00:00Z",
-    )
-    again_versions = [
-        v
-        for v in client.list_object_versions(target_bucket, prefix=record_key)
-        if v.get("Key") == record_key
-    ]
-    check(
-        "FTF-1602-G1",
-        "the transient forged version left no trace: the key has exactly its one real version",
-        len(again_versions) == 1 and again_versions[0]["VersionId"] == real_id,
+        "verify reads the genuine, pinned record -- never the transient forged one (real)",
+        g1_ok,
     )
 
-    # Fault -> RED: a store whose "pinned" read calls get_latest instead would be fooled into
-    # parsing the forged content during the exact same window.
-    class FaultyLatestInsteadOfPinned(TransientSwap):
-        def get_version(self, key: str, version_id: str) -> bytes:  # noqa: ARG002
-            if key == record_key:
-                self._client.put_object(target_bucket, key, forged)
-            return self.get_latest(key)
-
-    faulty = FaultyLatestInsteadOfPinned(client, target_bucket)
-    faulty_result = verify_backup(faulty, record.backup_id, organization_id="o")
+    race2 = Q2Race(client, target_bucket)
+    restore_bucket, clean = _clean_bucket(client)
+    try:
+        restored = restore_backup(race2, clean, record.backup_id, organization_id="o")
+        g1b_ok = (
+            len(restored.restored) == 4
+            and len([v for v in _all_keys(client, restore_bucket) if "VersionId" in v]) == 4
+        )
+    except ObjectStorageBackupError:
+        g1b_ok = False
     check(
-        "FTF-1602-G1",
-        "fault -> RED: get_latest instead of the pinned version id reads the forged content",
-        faulty_result.created_at == "2099-01-01T00:00:00Z",
+        "FTF-1602-G1b",
+        "restore writes every genuine object -- never only the forged record's shrunk subset"
+        " (real)",
+        g1b_ok,
     )
 
 

@@ -2790,6 +2790,246 @@ def test_round5_backup_id_is_always_generated() -> None:
     )
 
 
+class CountingStore(MemStore):
+    """Counts every `ObjectStore` call it receives (round 6, F7): a typed `now` refusal must
+    make zero of these, on either `source` or `target` -- the real hazard (round 4, Q5) is a bad
+    `now` discovered only after blobs are already written WORM-retained on a real server, which
+    can never be undone once it happens."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    def list_versions(self, key: str) -> list[VersionInfo]:
+        self.calls += 1
+        return super().list_versions(key)
+
+    def get_version(self, key: str, version_id: str) -> bytes:
+        self.calls += 1
+        return super().get_version(key, version_id)
+
+    def version_metadata(self, key: str, version_id: str) -> dict[str, str]:
+        self.calls += 1
+        return super().version_metadata(key, version_id)
+
+    def put_restored(self, key: str, body: bytes, *, metadata: Any) -> str:
+        self.calls += 1
+        return super().put_restored(key, body, metadata=metadata)
+
+    def get_latest(self, key: str) -> bytes:
+        self.calls += 1
+        return super().get_latest(key)
+
+    def put_retained(self, key: str, body: bytes, *, retain_until: datetime) -> str:
+        self.calls += 1
+        return super().put_retained(key, body, retain_until=retain_until)
+
+    def retention_until(self, key: str) -> datetime | None:
+        self.calls += 1
+        return super().retention_until(key)
+
+
+def _counting_clone(store: MemStore) -> CountingStore:
+    twin = CountingStore()
+    twin.versions = {k: list(v) for k, v in store.versions.items()}
+    twin.metadata = dict(store.metadata)
+    return twin
+
+
+def test_round6_now_validated_before_any_store_call() -> None:
+    """F7-CREATE-NOW-VALIDATED-LATE: every bad `now` shape must be refused before `create_backup`
+    makes a single `source` or `target` call. A naive datetime, a `tzinfo` set but
+    `utcoffset() is None` (round 5), a plain `str`/`int`, and a `datetime` subclass are all exact
+    types a hostile or merely buggy caller could pass."""
+    source, refs = meta_fixture()
+
+    class SneakyDatetime(datetime):
+        """Exact-type check only (round 5 convention) -- a subclass must not slip through."""
+
+    bad_nows: list[tuple[str, object]] = [
+        ("naive", datetime(2026, 10, 8, 12, 0, 0)),
+        (
+            "tzinfo set but utcoffset() is None",
+            datetime(2026, 10, 8, 12, 0, 0, tzinfo=_NoOffsetTz()),
+        ),
+        ("str", "2026-10-08T12:00:00Z"),
+        ("int", 1760000000),
+        ("datetime subclass", SneakyDatetime(2026, 10, 8, 12, 0, 0, tzinfo=UTC)),
+    ]
+    for label, bad_now in bad_nows:
+        counting_source = _counting_clone(source)
+        counting_target = CountingStore()
+        err = outcome(
+            create_backup,
+            refs,
+            source=counting_source,
+            target=counting_target,
+            known_key_refs=frozenset({"kms/a"}),
+            retain_days=30,
+            now=cast(Any, bad_now),
+        )
+        check(
+            "FTF-1602-F7",
+            f"now={label}: refused before touching source or target "
+            f"(source calls={counting_source.calls}, target calls={counting_target.calls})",
+            typed(err, "timezone-aware")
+            and counting_source.calls == 0
+            and counting_target.calls == 0,
+        )
+
+    # Negative control: a genuine `now` does proceed and does touch both stores -- proving the
+    # zero-calls assertions above are because of the refusal, not because CountingStore never
+    # counts anything.
+    good_source = _counting_clone(source)
+    good_target = CountingStore()
+    record = create_backup(
+        refs,
+        source=good_source,
+        target=good_target,
+        known_key_refs=frozenset({"kms/a"}),
+        retain_days=30,
+        now=NOW,
+    )
+    check(
+        "FTF-1602-F7",
+        "negative: a genuine now proceeds and does touch both stores",
+        record.blob_count == len(refs) and good_source.calls > 0 and good_target.calls > 0,
+    )
+
+
+class RelistSwapStore(MemStore):
+    """Q7 (round 6): the unit-level twin of the real-server G7 attack
+    (`test_record_relist_identity_swap_is_refused_on_real_server`) -- the record's second listing
+    (the post-read re-list) answers a same-count, different-identity version."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._record_list_calls = 0
+
+    def list_versions(self, key: str) -> list[VersionInfo]:
+        if key == RECORD_KEY:
+            self._record_list_calls += 1
+            if self._record_list_calls == 2:
+                real = super().list_versions(key)
+                forged_id = f"forged-{real[0].version_id}" if real else "forged"
+                return [VersionInfo(version_id=forged_id, is_latest=True, is_delete_marker=False)]
+        return super().list_versions(key)
+
+
+def test_round6_relist_identity_swap_is_refused_in_unit() -> None:
+    """G7-COUNT-ONLY-RELIST, unit: the real-server G7 test was the only coverage of this guard --
+    a regression here stayed GREEN in the unit suite. Added as its own unit twin."""
+    _, target, _, _record = backed_up()
+    swap = RelistSwapStore()
+    swap.versions = {k: list(v) for k, v in target.versions.items()}
+    swap.retention = dict(target.retention)
+    err = outcome(verify_backup, swap, "b1", organization_id="o", now=NOW)
+    check(
+        "FTF-1602-G7",
+        "a re-list reporting a same-count, different-identity version is refused (unit)",
+        typed(err, "changed while it was being read"),
+    )
+
+    # Fault -> RED: a count/delete-marker/is_latest-only re-list check (the weakened guard the
+    # finding names) is satisfied by this exact forged, differently-identified version, where the
+    # real guard (which also compares version_id) is not.
+    def count_shape_only_check(first: list[VersionInfo], second: list[VersionInfo]) -> bool:
+        return len(second) == 1 and not second[0].is_delete_marker and second[0].is_latest
+
+    probe = RelistSwapStore()
+    probe.versions = {k: list(v) for k, v in target.versions.items()}
+    probe.retention = dict(target.retention)
+    first = probe.list_versions(RECORD_KEY)
+    second = probe.list_versions(RECORD_KEY)
+    check(
+        "FTF-1602-G7",
+        "fault -> RED: a count-shape-only re-list check misses the identity swap (unit)",
+        len(first) == 1
+        and count_shape_only_check(first, second)
+        and first[0].version_id != second[0].version_id,
+    )
+
+
+class Q2RaceStore(MemStore):
+    """Q2 shape (round 6): a forged record version is written right after the record's FIRST
+    listing -- a version a correct pinned read must never be fooled by -- and is deleted again
+    right after the read completes (when retention is checked), before the re-list runs. Unlike
+    round 5's `RaceStore` (which leaves the extra version in place, so the re-list's own COUNT
+    check alone catches it, regardless of whether the pinned-read guard exists), this hooks
+    `list_versions` (always called first, whichever read method production goes on to call next)
+    and `retention_until` (always called right after the read, before the re-list), so it reddens
+    through whichever method actually reads the record -- not only a specific method name."""
+
+    def __init__(self, forged: bytes) -> None:
+        super().__init__()
+        self.forged = forged
+        self._forged_version: str | None = None
+        self._record_list_calls = 0
+
+    def list_versions(self, key: str) -> list[VersionInfo]:
+        listed = super().list_versions(key)
+        if key == RECORD_KEY:
+            self._record_list_calls += 1
+            if self._record_list_calls == 1:
+                self._forged_version = self.put_retained(
+                    RECORD_KEY, self.forged, retain_until=NOW + timedelta(days=30)
+                )
+        return listed
+
+    def retention_until(self, key: str) -> datetime | None:
+        if key == RECORD_KEY and self._forged_version is not None:
+            self.versions[RECORD_KEY] = [
+                (vid, body)
+                for vid, body in self.versions[RECORD_KEY]
+                if vid != self._forged_version
+            ]
+            self._forged_version = None
+        return super().retention_until(key)
+
+
+def test_round6_aba_record_read_and_restore_resist_a_transient_forged_version() -> None:
+    """G1/G1b (round 6), the Q2 shape. The round-5 ABA test only reddened through a local double
+    that stood in for `_load_record`'s own read method by name (`FaultyLatestInsteadOfPinned`) --
+    a real regression that changes *which* method is called (get_latest instead of
+    get_version(pinned)) made that double's hook never fire, so the real attack check itself
+    stayed green. This version hooks the methods `_load_record` always calls regardless of which
+    read method it uses for the content itself (`list_versions`, `retention_until`), so the
+    assertion is on `verify_backup`'s/`restore_backup`'s own real return value -- never a
+    self-referential demonstration standing in for production."""
+    _, target, refs, record = backed_up()
+    forged = shrunk_record(target)  # retained, internally consistent, missing one entry (3 of 4)
+
+    race = Q2RaceStore(forged)
+    race.versions = {k: list(v) for k, v in target.versions.items()}
+    race.retention = dict(target.retention)
+    try:
+        result = verify_backup(race, "b1", organization_id="o", now=NOW)
+        g1_ok = result == record and result.object_count == len(refs)
+    except ObjectStorageBackupError:
+        g1_ok = False
+    check(
+        "FTF-1602-G1",
+        "verify reads the genuine, pinned record -- never the transient forged one (unit)",
+        g1_ok,
+    )
+
+    race2 = Q2RaceStore(forged)
+    race2.versions = {k: list(v) for k, v in target.versions.items()}
+    race2.retention = dict(target.retention)
+    destination = MemStore()
+    try:
+        restored = restore(race2, destination)
+        g1b_ok = len(restored.restored) == len(refs) and len(destination.versions) == len(refs)
+    except ObjectStorageBackupError:
+        g1b_ok = False
+    check(
+        "FTF-1602-G1b",
+        "restore writes every genuine object -- never only the forged record's shrunk subset"
+        " (unit)",
+        g1b_ok,
+    )
+
+
 def main() -> int:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
