@@ -11256,3 +11256,17 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   independent connected-components oracle, 2000-key bridge, threads and hash seeds - no violation. Advisories: 4301+-digit
   ratio/cutoff and lone-surrogate ids raise raw ValueError subclasses (fail closed); rehash structure-table cases; old
   60-key property test still vacuous. UNWIRED.
+
+## 2026-10-14T02:42Z — CERTIFIED: FTF-0904
+- **FTF-0904: CERTIFIED** (round 7; PR #768, merge 5a0f708c29a61e7fe0fea3fc25ef838b7f5471df, head 7b397a7e). Producer session_018przUEwyVfFtXnVGLCVK2J ≠
+  certifier session_01QVznorVMjnmcttUhyDnoGR, absent from the PR. Certified under the Control-plane stopping rule (QUEUE 0d,
+  2026-10-13T18:55Z): all three round-7 test items landed and no production violation was reproduced. Production
+  packages/security/log_redaction.py byte-identical to round 6 (c8352a2b, sha256 d080fc73…). CI: ci-verdict 115581355452;
+  gate 115555363496 full 69-fault run "all checks passed". Round-7 items: Q-PAIR-KEY-WS-QUAD named and RED (R10 redact_text
+  + R11 logging path, 8K/64K/256K, 4 s bound); Q-JWT-LOWER-IN-LOOP RED (mutant 19-27 s at 256K vs 0.33-0.36 s real);
+  evidence_hash 4c0962ed, FAULTS 69. Local full run rc 0 (3537 s); 4/4 idle runs green. Probes: P1 0/49, P2 0/35,
+  long-secret 0/306, ls6 0/198, same-segment glued contexts 0/30, 16-thread 0 leaks, differential 0 regressions;
+  504 + 1,716 timing runs linear, 0 timeouts. GREEN faults are hand-picked variants of closed classes (non-blocking per
+  ruling): J-SKIP-GIVEUP, Q-PAIR-WS-AFTER-KEY/COMMA-QUAD, Q-JWT-SLICE-IN-LOOP, Q-JWT-PREFIX-SLICE, isalnum->isalpha.
+  Advisories: A1 same-run glued JWT contexts (`accessKeyJwt_`, `token_aeyJ_`); A2 `'("password"' + " "*n` shapes; A3 a
+  scaling check for sub-4 s quadratics; A4 percent shapes >4 s at 256K (linear) and unpinned _PREFIXES caps. UNWIRED.

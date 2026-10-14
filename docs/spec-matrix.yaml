@@ -9875,10 +9875,10 @@ FTF-0903:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0903.py
 FTF-0904:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Log redaction
-  evidence_hash: 4c0962ed2844d49cedb1d5f38fd8d5458e5a2980
+  evidence_hash: 5a0f708c29a61e7fe0fea3fc25ef838b7f5471df
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0903
@@ -10134,7 +10134,7 @@ FTF-0904:
     negative test that a real JWT after glued starts is still redacted. 69 faults (was 67).
     evidence_hash is the round-7 code commit. Submission:
     docs/certifications/submissions/2026-10-13T2035Z-FTF-0904-r7.md.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0904.py
 FTF-0905:

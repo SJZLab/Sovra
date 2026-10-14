@@ -24724,3 +24724,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-14T01:22Z — Control plane: FTF-0517 CERTIFIED
 - **Certified:** FTF-0517 (#772, merge 042d82331196e99e5f7091597fd987914a0a6c2b); UNWIRED.
+
+## 2026-10-14T02:42Z — Control plane: FTF-0904 CERTIFIED
+- **Certified:** FTF-0904 (#768, merge 5a0f708c29a61e7fe0fea3fc25ef838b7f5471df); UNWIRED.
