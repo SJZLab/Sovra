@@ -24790,3 +24790,12 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-14T18:11Z — Control plane: FTF-0502 returned (r4)
 - **Returned:** FTF-0502 r4 (0k): same-dataset outage control, real memory bound, sha precision, preview TypeError, trailers; stopping rule.
+
+## 2026-10-14T20:19Z — Control plane: FTF-0502-P1-F1 CERTIFIED (child slice)
+- **Certified:** FTF-0502-P1-F1 (#798, merge e57b4f98bdaa2e8e13298d5e743e3940cb1cfd56); FTF-0502-P1 requalified; count unchanged.
+
+## 2026-10-14T20:19Z — Control plane: FTF-0505 returned (r3)
+- **Returned:** FTF-0505 r3 (0d): header row bound, decode-after-gate, surrogate, archive-error class, pins, rulings (a)/(b).
+
+## 2026-10-14T20:19Z — Control plane: FTF-0503 returned (r4, small)
+- **Returned:** FTF-0503 r4 (0b): preview TypeError, chunk-independent records before encoding errors, sha pins; stopping rule.
