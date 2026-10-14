@@ -30167,3 +30167,73 @@ product-true (`scripts/status.py`). New owner-actions line added (PR #705 merge)
 (FTF-0616, FTF-04A31) are unchanged. `BLOCKER.md` unchanged — no live entries. Next priority per `QUEUE.md`'s
 own Active-list order: the IMPORTER ORDER lane (FTF-0505, in flight as draft PR #782 from another lane) and
 items `0b`'s own still-disclosed PG16+SeaweedFS integration gap, not yet attempted by any shift.
+
+## 2026-10-14T16:52:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-0fzssb` — FTF-0505 round 2
+## merged (PR #801, 140/140 mutants killed)
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly. STEP 0.1: read `BLOCKER.md`
+(every entry RESOLVED, no live blocker), `QUEUE.md`'s "Owner actions — current" and "Active"/"Backlog"/"Parked"
+sections, and `docs/certifications/queue.md`'s tail, all fresh this shift. STEP 0.2: no `cognee-cli` binary in
+this sandbox — text-search fallback declared, same as every prior shift.
+
+Returned work first: listed every open `[relay]` PR via the GitHub API (#794, #793, #789, #759, #745, #742,
+#732, #709). Every one already had an open claim or was already parked (FTF-H010-P3a-r2, #745, on the
+`ci_policy.py` regex collision `[GOVERNANCE]` PR #705 was blocking — #705 merged independently during this
+shift, by a different session, clearing that park; not re-verified by this shift since it owns no part of
+that item). `0c` (FTF-0504) had already been fixed to round 3 (PR #786, merged) by shift start; a
+Control-plane doc-only PR (#797, open at shift start, merged independently during this shift) returns it to
+round 4, but that return was not yet on `main`'s committed `QUEUE.md` at the time this shift picked its item,
+and round 4 is not this shift's own work. `0b` (FTF-0503, returned to round 3) had no open PR but sits later
+in `QUEUE.md`'s own Active-list order than `0d`.
+
+**Picked `0d` — FTF-0505 round 2** (the Control-plane return of 2026-10-14T13:02Z), the next unclaimed item in
+`QUEUE.md`'s own Active order with no open PR. Claimed `relay/FTF-0505-r2` with a plain push; opened the
+`[relay]`-titled PR once real commits existed.
+
+**P/E/V**, full detail in `docs/certifications/submissions/2026-10-14T1500Z-FTF-0505-r2.md`: fixed all five
+return items (`zlib.error` mapping in `read_part_blocks`; a real ~1 GB RSS peak from one wide pre-header row,
+closed by tracking the scanner's own non-blank-row count; a real ~3.8–4x shared-strings memory cost for
+multilingual text versus ASCII at an identical cap, closed by storing shared strings as `bytes` instead of
+`str`; the fatal-locator field moved onto the shared `ImportReport`/`LocatedImportReport`; `TargetMode`
+compared after `.strip()`; a vbaProject reached only through a relationship `Type` now also refused). Two
+measurement methodology pitfalls were found and corrected before trusting either memory repro: an in-process
+`ru_maxrss` measurement polluted by the test harness's own payload-construction cost (fixed by using
+`tracemalloc` started only after construction, matching the sheet's own sibling memory test's pattern), and a
+too-slow pair of new tests (full suite 21.6s, up from a 14.1s baseline) that would have made the local
+mutation-gate run impractical (shrunk ~10x, same signal, re-verified).
+
+Every fix independently self-attacked (reverted alone, confirmed the matching new test goes RED, restored,
+confirmed green). Mutation gate (diff mode, exactly as CI runs it, `--max-mutants 200`): first run, 141 run /
+139 KILLED / 1 TIMEOUT / **1 SURVIVED** / score 99.3%. The survivor (`_SheetScanner.__init__`'s own
+`header_row <= 0` initializer) was investigated, not reported as-is: `_start_row` always overwrites it before
+any cell is ever read, so no input could tell its two branches apart — a genuine equivalent mutant.
+`docs/certifications/mutation-allowlist.yaml` is relay-forbidden, so removed the dead computation itself
+instead of allowlisting it. Re-run: 140 run / 139 KILLED / 1 TIMEOUT / **0 SURVIVED** / score 100.0%.
+
+ruff / ruff format / mypy clean repo-wide; `validate_spec --strict` clean; `product_truth_check
+--fail-on-unwired` 47/47 (unchanged, no live route caller); `status.py` unchanged at shift start (147/302);
+`data_exposure_check` clean (no table/bucket/identity touched, Law 18). Pushed PR #801. `ci-verdict`'s first
+run on the pushed head caught a real, this-PR's-own regression: `xlsx-import-integration` failed with
+`AttributeError: 'XlsxImportOutcome' object has no attribute 'fatal_locator'` at
+`tests/integration/test_ftf_0505_xlsx_import_postgres_s3.py:443` — the fatal-locator field move had touched
+the unit test file but not this integration suite's own five call sites. Fixed (same mechanical rename),
+could not re-run locally (no Docker daemon in this sandbox, same disclosed limit as recent sibling-importer
+integration work), pushed, and CI's own re-run confirmed it: `ci-verdict` green, all 72 checks including
+`xlsx-import-integration` and `mutation-gate` passed. Merged PR #801 (`4a467666`) per CLAUDE.md "Do without
+asking: merge on green + L1 doc (PROVISIONAL)".
+
+**V (certification)** — per Law 4, not self-certified: FTF-0505's `certification_state` stays `PROVISIONAL`,
+`proof_state` stays `L1-PROVEN`. Independent Control-plane L2 re-review is required before certification.
+Recorded the closure (`evidence_hash` set to the merge commit `4a467666f44b6209e868b229bc86f0a2c25516f3`) in
+a separate, non-`[relay]`-titled PR — not editable from inside the `[relay]`-titled PR itself per the
+no-shared-file-edits rule.
+
+Deferred, disclosed in the submission rather than silently dropped: ruling (b)'s `import_common.py`
+cap-location move (serialized after FTF-0502 r3) — FTF-0502 r3 (#793) merged independently during this
+shift, so that dependency is now clear for whichever shift next claims FTF-0505 round 3, if Control plane
+returns it again; re-pinning every already-GREEN named clause and full production-constant/every-offset
+evidence tables were not redone this round either.
+
+STEP 3: this file, the submission, and the shift log (`docs/progress/2026-10-14T1500Z-relay.md`) all updated
+this shift. STEP 4 stop condition (a): PR #801 merged PROVISIONAL, awaiting Control-plane L2 re-review — one
+item per shift, per this list's own precedent. No new owner ask. `BLOCKER.md` unchanged — no live entries.
