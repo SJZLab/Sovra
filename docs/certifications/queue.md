@@ -24738,6 +24738,12 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-14T06:52Z — Control plane: FTF-1602 returned
 - **Returned:** FTF-1602 r6 (0i), tests only: F7, unit G7, real ABA test for G1/G1b, spec-matrix notes; stopping rule.
 
+## 2026-10-14T08:18Z — Control plane: FTF-0616-F1 CERTIFIED (child slice)
+- **Certified:** FTF-0616-F1 (#750, merge 02961dbe0a005967ee5d82e0a1ee10fd2c8bf9a5); FTF-0616 requalified (uncapped mutation 339/339); count unchanged.
+
+## 2026-10-14T08:18Z — Control plane: FTF-0502 returned
+- **Returned:** FTF-0502 r3 (0k): sha mismatch, the shared fatal_locator field (serialized ruling), outage control run, tables.
+
 ## 2026-10-14T08:30Z — PROVISIONAL: FTF-0503 r2 merged (#781); mutation gate closed at 100%
 - **Submitted:** closes out the 2026-10-13T21:22Z return note's own disclosed gap. #781's own mutation-gate run
   (`scripts/mutation_gate.py`, diff mode, `--max-mutants 200`, same CI job) had reported 2 survivors in
