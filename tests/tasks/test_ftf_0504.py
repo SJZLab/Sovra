@@ -382,6 +382,20 @@ def test_truncated_bom_is_invalid_encoding_not_a_silent_empty_import() -> None:
         "a full 3-byte BOM with no content after it completes as an empty source",
         outcome.report.state == "completed" and outcome.report.records_seen == 0,
     )
+    # a genuinely empty (0-byte) source is not a truncated BOM: it must complete, not
+    # be mistaken for the 1-2 byte truncated-prefix case the fix above guards against
+    _events, outcome = collect(
+        b"",
+        encoding="utf-8-sig",
+        has_header=False,
+        prompt={"index": 0},
+        completion={"index": 1},
+    )
+    check(
+        CID,
+        "a genuinely empty source under utf-8-sig completes, not invalid_encoding",
+        outcome.report.state == "completed" and outcome.report.records_seen == 0,
+    )
 
 
 def test_delimiter_quote_line_ending_table() -> None:

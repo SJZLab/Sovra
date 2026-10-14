@@ -121,6 +121,7 @@ CSV_DELIMITERS: Final = (",", ";", "\t", "|")
 CSV_CONTENT_TYPES: Final = frozenset({"text/csv"})
 CSV_MAX_COLUMNS: Final = 16_384
 _SHA256_PATTERN: Final = re.compile(r"[0-9a-f]{64}")
+_UTF8_SIG_INDEX: Final = CSV_ENCODINGS.index("utf-8-sig")
 CSV_FATAL_CODES: Final = frozenset(
     {
         "csv_structure_invalid",
@@ -423,7 +424,8 @@ class CsvEventStream(Iterator[ImportEvent]):
                 self._check_bom(text, first)
                 first = False
                 yield text
-        if self._options.encoding == "utf-8-sig" and first and 0 < self._reader.bytes_read < 3:
+        is_utf8_sig = CSV_ENCODINGS.index(self._options.encoding) == _UTF8_SIG_INDEX
+        if is_utf8_sig and first and 0 < self._reader.bytes_read < 3:
             # utf-8-sig's own incremental decoder buffers a strict prefix of the 3-byte BOM
             # (`\xef` or `\xef\xbb`) and silently decodes it to "" at end-of-stream instead of
             # raising: `first` still true plus fewer than 3 bytes read means every byte so far
