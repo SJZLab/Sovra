@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-14T05:16Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-14T06:52Z. Source: `python3 scripts/status.py` on main.
 - **Status: 147/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   status.py prints 47 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,10 @@ Updated: 2026-10-14T05:16Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-14T06:52Z:**
+  - Returned: FTF-0504 r3 (utf-8-sig locator off by the BOM; expected-sha mismatch completes; outage check vacuous; evidence gaps). Ruling: fatal locator as one additive optional ImportReport field.
+  - Returned: FTF-1602 r6, tests only (production correct): create-side `now` fault F7, unit Q7 swap, a real ABA attack test, spec-matrix notes. Stopping rule set.
+  - FTF-0904-W1 merged PROVISIONAL (#779, merge 25ecc136); L2 runs in a separate session (session_0161278Aosjx54vgoMAk3jN6), not this one (Law 4). [GOVERNANCE] #777 (action digest pins) merged.
 - **2026-10-14T05:16Z:**
   - Backlog refill: FTF-0518, FTF-1704, FTF-0906, FTF-1505 sliced (Control-plane design; no ask-first item).
   - FTF-0904-W1 (owner-requested): FTF-0904 redaction installed in create_app(); uvicorn access log no longer prints query-string secrets. PROVISIONAL, needs an independent L2.

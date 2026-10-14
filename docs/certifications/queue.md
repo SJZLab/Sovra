@@ -24731,3 +24731,9 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-14T05:16Z — PROVISIONAL: FTF-0904-W1 (live log redaction wiring)
 - **Submitted:** child slice of FTF-0904, built by the Control-plane session at the owner's live request (2026-10-14).
   Needs L2 verification by a different session (Law 4). Test: tests/tasks/test_ftf_0904_w1.py (gate job), faults F1-F6.
+
+## 2026-10-14T06:52Z — Control plane: FTF-0504 returned
+- **Returned:** FTF-0504 r3 (0c): utf-8-sig locator, sha mismatch, discriminating outage check, evidence; fatal-locator ruling.
+
+## 2026-10-14T06:52Z — Control plane: FTF-1602 returned
+- **Returned:** FTF-1602 r6 (0i), tests only: F7, unit G7, real ABA test for G1/G1b, spec-matrix notes; stopping rule.
