@@ -1039,7 +1039,7 @@ class LocatedImportReport(ImportReport):
 
     def __post_init__(self) -> None:
         if (
-            self.state == "completed"
+            not _STATE_NEEDS_FAILURE_CODE.get(self.state)
             or type(self.fatal_locator) is not str
             or not _LOCATOR_PATTERN.fullmatch(self.fatal_locator)
         ):
@@ -1089,6 +1089,8 @@ class ChunkReader(Iterator[bytes]):
         self._iterator: Iterator[bytes] = iter(source)
         self._expected_size = expected_size
         self._expected_sha256 = expected_sha256
+        # the sha256 this source was declared to have (known before a byte is read)
+        self.expected_sha256 = expected_sha256
         self._limits = limits
         self.deadline = Deadline(limits.deadline_seconds, clock)
         self._hash = hashlib.sha256()
@@ -1098,11 +1100,6 @@ class ChunkReader(Iterator[bytes]):
     @property
     def sha256(self) -> str:
         return self._hash.hexdigest()
-
-    @property
-    def expected_sha256(self) -> str:
-        """The sha256 this source was declared to have (known before a byte is read)."""
-        return self._expected_sha256
 
     def _abort(self, state: str, code: str) -> ImportAborted:
         self._aborted = ImportAborted(state, code)
