@@ -27,6 +27,11 @@ second_are_still_unioned, test_generated_key_level_property_no_key_crosses_roles
 test_keys_roles_and_seed_require_exact_str_type, test_verify_manifest_rejects_malformed_
 assignment_entries.
 
+FTF-0517 round 6 (returned r4: the property test collapsed into one group; exact-type keys
+checked at position 0 only; verify_manifest raised raw TypeErrors): test_sparse_pool_property_
+is_not_vacuous, test_str_subclass_keys_refused_at_every_position, test_verify_manifest_
+validates_structure_before_hashing, test_verify_manifest_list_entry_with_consistent_counts.
+
 Run directly: python3 tests/tasks/test_ftf_0517.py
 """
 
@@ -955,6 +960,147 @@ def test_verify_manifest_rejects_malformed_assignment_entries() -> None:
             " otherwise-consistent counts",
             raises(lambda b=bad: verify_manifest(b)),
         )
+
+
+def _sparse_property_records(
+    rng: random.Random, pool: list[str], cutoff: int | None, n: int = 400
+) -> list[SplitRecord]:
+    records = []
+    for i in range(n):
+        keys = tuple(rng.sample(pool, rng.randint(1, 5)))
+        event_time = rng.randint(0, 1000) if cutoff is not None else None
+        records.append(rec(f"sp{i}", *keys, event_time=event_time))
+    return records
+
+
+def test_sparse_pool_property_is_not_vacuous() -> None:
+    """Round-6 return: the round-3 property test drew keys from a 60-key pool, so every
+    configuration collapsed into one group and one role and no union-truncation fault
+    (V3 [1:2], V42 [-1:], N9 [1:3], N10 [1:4], N12 5-key never unioned) could fail it.
+    Here the pool is 4,000 keys, so each configuration keeps many independent groups; the
+    test asserts that explicitly (>= 20 groups, >= 2 roles) before the no-crossing claim."""
+    pool = [f"sk-{i}" for i in range(4000)]
+    for ratio_set in ((70, 10, 10, 10), (25, 25, 25, 25), (40, 40, 10, 10)):
+        for cutoff in (None, 500):
+            rng = random.Random(f"ftf-0517-r6|{ratio_set}|{cutoff}")
+            records = _sparse_property_records(rng, pool, cutoff)
+            m = allocate_splits(spec(ratios=ratio_set, cutoff=cutoff), records)
+            role_by_record = roles_of(m)
+            groups = {g for _, _, g in m.assignments}
+            check(
+                CID,
+                f"sparse property configuration is non-vacuous: >= 20 groups"
+                f" (got {len(groups)}; ratios={ratio_set}, cutoff={cutoff})",
+                len(groups) >= 20,
+            )
+            check(
+                CID,
+                f"sparse property configuration is non-vacuous: >= 2 roles"
+                f" (got {len(set(role_by_record.values()))}; ratios={ratio_set}, cutoff={cutoff})",
+                len(set(role_by_record.values())) >= 2,
+            )
+            role_by_key: dict[str, set[str]] = {}
+            for r in records:
+                for key in r.group_keys:
+                    role_by_key.setdefault(key, set()).add(role_by_record[r.record_id])
+            crossing = {k: v for k, v in role_by_key.items() if len(v) > 1}
+            check(
+                CID,
+                f"no linkage key crosses roles in the sparse pool"
+                f" (ratios={ratio_set}, cutoff={cutoff}, crossing={len(crossing)})",
+                not crossing,
+            )
+            check(
+                CID,
+                f"sparse manifest independently verifies (ratios={ratio_set}, cutoff={cutoff})",
+                not raises(lambda mm=m: verify_manifest(mm)),
+            )
+
+
+def test_str_subclass_keys_refused_at_every_position() -> None:
+    """Round-6 return N13: the exact-type check applied to group_keys[0] only would still
+    let a foreign-hash str at positions 1-4 split a family. Each position, with both the
+    ordinary subclass and the foreign-hash subclass, must be refused."""
+    plain = ["k0", "k1", "k2", "k3", "k4"]
+    for position in range(5):
+        for cls in (_StrSubclass, _ForeignHashStr):
+            keys = list(plain)
+            keys[position] = cls(keys[position])
+            check(
+                CID,
+                f"{cls.__name__} group key at position {position} is refused",
+                raises(lambda k=tuple(keys): allocate_splits(spec(), [rec("p1", *k)])),
+            )
+    families = [rec(f"f{i}", "conv-1", "x", _ForeignHashStr("conv-1")) for i in range(3)]
+    check(
+        CID,
+        "a foreign-hash key at position 2 cannot split a plain-str family",
+        raises(lambda: allocate_splits(spec(), families)),
+    )
+
+
+def test_verify_manifest_validates_structure_before_hashing() -> None:
+    """Round-6 return: verify_manifest called compute_manifest_sha256 before checking
+    structure, so assignments=None / 5, entries 5 / None, set / bytes fields and
+    ratios=None raised raw TypeError. Every field is a SplitEngineError instead."""
+    good = allocate_splits(spec(), many(30))
+    verify_manifest(good)
+    bad_manifests: list[tuple[str, SplitManifest]] = [
+        ("assignments=None", replace(good, assignments=None)),
+        ("assignments=5", replace(good, assignments=5)),
+        ("assignments is a list", replace(good, assignments=list(good.assignments))),
+        ("assignments is a set", replace(good, assignments={("a", "train", "g")})),
+        ("assignments is bytes", replace(good, assignments=b"abc")),
+        ("entry is 5", replace(good, assignments=(5,))),
+        ("entry is None", replace(good, assignments=(None,))),
+        ("entry is a set", replace(good, assignments=({"a", "train", "g"},))),
+        ("entry is bytes", replace(good, assignments=(b"abc",))),
+        ("ratios=None", replace(good, ratios=None)),
+        ("ratios is a list", replace(good, ratios=[70, 10, 10, 10])),
+        ("ratios has a bytes slot", replace(good, ratios=(b"7", 10, 10, 10))),
+        ("ratios wrong arity", replace(good, ratios=(70, 10, 20))),
+        ("ratios contain a bool", replace(good, ratios=(True, 10, 10, 10))),
+        ("cutoff is a set", replace(good, cutoff={1})),
+        ("cutoff is bytes", replace(good, cutoff=b"1")),
+        ("cutoff is a bool", replace(good, cutoff=True)),
+        ("seed is bytes", replace(good, seed=b"s")),
+        ("seed is None", replace(good, seed=None)),
+        ("strategy is a set", replace(good, strategy={"x"})),
+        ("strategy is None", replace(good, strategy=None)),
+        ("counts=None", replace(good, counts=None)),
+        ("counts is a list", replace(good, counts=list(good.counts))),
+        ("status is bytes", replace(good, status=b"ready")),
+        ("manifest_sha256 is None", replace(good, manifest_sha256=None)),
+        ("manifest_sha256 is bytes", replace(good, manifest_sha256=b"x")),
+    ]
+    for label, bad in bad_manifests:
+        check(
+            CID,
+            f"verify_manifest refuses {label} with SplitEngineError, not a raw exception",
+            raises(lambda b=bad: verify_manifest(b)),
+        )
+
+
+def test_verify_manifest_list_entry_with_consistent_counts() -> None:
+    """Round-6 return N8: the list-instead-of-tuple entry was masked by all-zero placeholder
+    counts. With counts that match the one record, ONLY the entry-type guard can refuse it."""
+    for entry, label in (
+        (["a", "train", "g"], "a list entry"),
+        (("a", "train", "g", "x"), "a 4-tuple entry"),
+        (("a", "train"), "a 2-tuple entry"),
+    ):
+        bad = manifest_with_raw_assignments(
+            (entry,), counts=_one_record_counts("train"), status="insufficient"
+        )
+        check(
+            CID,
+            f"verify_manifest refuses {label} even with self-consistent counts",
+            raises(lambda b=bad: verify_manifest(b)),
+        )
+    ok = manifest_with_raw_assignments(
+        (("a", "train", "g"),), counts=_one_record_counts("train"), status="insufficient"
+    )
+    verify_manifest(ok)
 
 
 def main() -> int:
