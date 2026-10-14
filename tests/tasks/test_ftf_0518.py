@@ -1100,6 +1100,11 @@ def test_reviews_bind_only_review_required_findings() -> None:
         ),
         ("decision leakage", sl.LeakageReview(review_required.finding_id, "r", "leakage", "why")),
         ("decision blank", sl.LeakageReview(review_required.finding_id, "r", "", "why")),
+        (
+            "decision padded",
+            sl.LeakageReview(review_required.finding_id, "r", " not_leakage", "why"),
+        ),
+        ("decision upper", sl.LeakageReview(review_required.finding_id, "r", "NOT_LEAKAGE", "why")),
         ("non-str reviewer", sl.LeakageReview(review_required.finding_id, 7, "not_leakage", "why")),  # type: ignore[arg-type]
         (
             "str-subclass rationale",
@@ -1531,6 +1536,394 @@ def test_report_integrity() -> None:
         except sl.LeakageEngineError:
             built = False
         check(cid, f"finding {field}={bad!r} is refused", not built)
+
+
+def forged(report: sl.LeakageReport, **changes: Any) -> sl.LeakageReport:
+    """`report` with fields changed and the hash recomputed over the new fields: a report a
+    forger who can run this module's own hash function would produce."""
+    changed = replace(report, **changes)
+    return replace(changed, report_sha256=sl.compute_report_sha256(changed))
+
+
+def refused(report: sl.LeakageReport) -> bool:
+    try:
+        sl.verify_report(report)
+    except sl.LeakageEngineError:
+        return True
+    return False
+
+
+def test_self_sealed_forgeries_are_refused() -> None:
+    cid = "LK-FORGERY"
+    report = seeded_report()
+    blocking = next(f for f in report.findings if f.disposition == "blocking")
+    soft = next(f for f in report.findings if f.disposition == "review_required")
+    check(cid, "fixture: the genuine report verifies", not refused(report))
+    check(
+        cid,
+        "fixture: the forger's hash function reproduces the genuine hash",
+        forged(report).report_sha256 == report.report_sha256,
+    )
+    review = sl.LeakageReview(soft.finding_id, "r", "not_leakage", "why")
+    cases = {
+        "clear with findings": forged(report, status="clear"),
+        "leakage_found with a blocked reason": forged(
+            report, reason_code="semantic_scan_saturated"
+        ),
+        "blocked status with no reason": forged(report, status="blocked"),
+        "issues without invalid_input": forged(
+            report, issues=(sl.LeakageIssue("invalid_record", "x", None),)
+        ),
+        "a finding with another id": forged(
+            report,
+            findings=(
+                replace(blocking, record_id_b="someone-else"),
+                *[f for f in report.findings if f is not blocking],
+            ),
+        ),
+        "a blocking finding downgraded": forged(
+            report,
+            findings=(
+                replace(blocking, disposition="review_required"),
+                *[f for f in report.findings if f is not blocking],
+            ),
+        ),
+        "a review_required finding upgraded": forged(
+            report,
+            findings=(
+                replace(soft, disposition="blocking"),
+                *[f for f in report.findings if f is not soft],
+            ),
+        ),
+        "a finding repeated": forged(report, findings=(*report.findings, report.findings[0])),
+        "a review of a blocking finding": forged(
+            report, reviews=(sl.LeakageReview(blocking.finding_id, "r", "not_leakage", "why"),)
+        ),
+        "a review of an unknown finding": forged(
+            report, reviews=(sl.LeakageReview("e" * 64, "r", "not_leakage", "why"),)
+        ),
+        "a finding reviewed twice": forged(report, reviews=(review, review)),
+        "a blank rationale": forged(
+            report, reviews=(sl.LeakageReview(soft.finding_id, "r", "not_leakage", " "),)
+        ),
+        "a review decision of leakage": forged(
+            report, reviews=(sl.LeakageReview(soft.finding_id, "r", "leakage", "why"),)
+        ),
+    }
+    for label, bad in cases.items():
+        check(cid, f"{label}: refused even though the hash covers it", refused(bad))
+        try:
+            sl.assert_leakage_clear(bad, "training")
+            cleared = True
+        except (sl.LeakageEngineError, sl.LeakageBlockedError):
+            cleared = False
+        check(cid, f"{label}: the gate refuses it", not cleared)
+    # the property itself never trusts a review of a blocking finding
+    loose = replace(
+        report, reviews=(sl.LeakageReview(blocking.finding_id, "r", "not_leakage", "why"),)
+    )
+    check(
+        cid,
+        "unreviewed_findings keeps a blocking finding even if a review names it",
+        blocking in loose.unreviewed_findings and soft in loose.unreviewed_findings,
+    )
+    check(
+        cid,
+        "and drops a review_required finding that was reviewed",
+        soft not in replace(report, reviews=(review,)).unreviewed_findings
+        and blocking in replace(report, reviews=(review,)).unreviewed_findings,
+    )
+    # unsealed edits of fields that only the hash binds
+    blocked = scan(
+        [*solo("a", "train", 3), *solo("b", "final_qualification", 3)], route=BLOCKED_ROUTE
+    )
+    check(cid, "fixture: a blocked report verifies", not refused(blocked))
+    check(
+        cid,
+        "a blocked report's reason cannot change to another blocked reason",
+        refused(replace(blocked, reason_code="security_profile_route_not_authorized")),
+    )
+    check(cid, "nor to a failed one", refused(replace(blocked, reason_code="manifest_invalid")))
+    check(cid, "nor to none", refused(replace(blocked, reason_code=None)))
+    bad_hash = replace(records_for_issue(), report_sha256="0" * 64)
+    invalid = records_for_issue()
+    check(cid, "fixture: a failed/invalid_input report verifies", not refused(invalid))
+    check(
+        cid,
+        "its issues cannot change",
+        refused(replace(invalid, issues=(sl.LeakageIssue("invalid_content", "t", None),))),
+    )
+    check(cid, "nor vanish", refused(replace(invalid, issues=())))
+    check(cid, "and a wrong hash is refused", refused(bad_hash))
+    check(
+        cid,
+        "a hash with non-ASCII characters is refused, not a crash",
+        refused(replace(report, report_sha256="\u00e9" * 64)),
+    )
+    check(cid, "an empty hash is refused", refused(replace(report, report_sha256="")))
+    check(
+        cid,
+        "an uppercase copy of the right hash is refused",
+        refused(replace(report, report_sha256=report.report_sha256.upper())),
+    )
+
+
+def records_for_issue() -> sl.LeakageReport:
+    t = record("t", "alpha one", "1")
+    f = record("f", "beta two", "2")
+    manifest, recs = split([(t, "train", ("g1",)), (f, "final_qualification", ("g2",))])
+    return sl.detect_split_leakage(
+        manifest, [replace(recs[0], record_sha256="nope"), recs[1]], route=ROUTE
+    )
+
+
+def test_constructors_validate_their_fields() -> None:
+    cid = "LK-CONSTRUCT"
+    report = seeded_report()
+    first = report.findings[0]
+    soft = next(f for f in report.findings if f.scores)
+
+    def built(make: Any) -> bool:
+        try:
+            make()
+        except sl.LeakageEngineError:
+            return False
+        return True
+
+    for label, scores in (
+        ("scores a list", [("char_ngram_similarity", 0.5)]),
+        ("an entry a list", (["char_ngram_similarity", 0.5],)),
+        ("an entry of three", (("char_ngram_similarity", 0.5, 1),)),
+        ("an entry of one", (("char_ngram_similarity",),)),
+        ("a name that is not text", ((7, 0.5),)),
+        ("a value that is an int", (("char_ngram_similarity", 1),)),
+        ("a value that is a bool", (("char_ngram_similarity", True),)),
+        ("a value that is text", (("char_ngram_similarity", "0.5"),)),
+    ):
+        check(
+            cid,
+            f"finding {label} is refused",
+            not built(lambda scores=scores: replace(soft, scores=scores)),
+        )
+    check(
+        cid,
+        "a finding with proper float scores is built",
+        built(lambda: replace(soft, scores=(("a", 0.5),))),
+    )
+    check(cid, "and with none", built(lambda: replace(first, scores=())))
+    for field, bad in (
+        ("record_id_a", ""),
+        ("record_id_b", " "),
+        ("record_id_a", support.StrSub("x")),
+        ("prior_source_label", ""),
+        ("prior_source_label", 7),
+        ("finding_id", 7),
+    ):
+        check(
+            cid,
+            f"finding {field}={bad!r} is refused",
+            not built(lambda f=field, b=bad: replace(first, **{f: b})),
+        )
+    check(
+        cid,
+        "a finding's own label may be None or text",
+        built(lambda: replace(first, prior_source_label=None))
+        and built(lambda: replace(first, prior_source_label="c1")),
+    )
+    for label, make in (
+        ("issue code", lambda: sl.LeakageIssue("other", "x", None)),
+        (
+            "issue code subclass",
+            lambda: sl.LeakageIssue(support.StrSub("invalid_record"), "x", None),
+        ),
+        ("issue code unhashable", lambda: sl.LeakageIssue([], "x", None)),
+        ("issue record_id int", lambda: sl.LeakageIssue("invalid_record", 5, None)),
+        ("issue record_id blank", lambda: sl.LeakageIssue("invalid_record", " ", None)),
+        ("issue label int", lambda: sl.LeakageIssue("invalid_record", "x", 5)),
+        ("issue label blank", lambda: sl.LeakageIssue("invalid_record", "x", "")),
+    ):
+        check(cid, f"{label} is refused", not built(make))
+    check(
+        cid,
+        "an issue may carry no ids",
+        built(lambda: sl.LeakageIssue("invalid_record", None, None)),
+    )
+    for label, changes in (
+        ("findings a list", {"findings": list(report.findings)}),
+        ("findings with a non-finding", {"findings": ("x",)}),
+        ("issues a list", {"issues": [sl.LeakageIssue("invalid_record", None, None)]}),
+        ("issues with a non-issue", {"issues": ("x",)}),
+        ("reviews a list", {"reviews": []}),
+        ("reviews with a non-review", {"reviews": ("x",)}),
+        ("methods_run a list", {"methods_run": list(sl.METHODS)}),
+        ("methods_run unknown", {"methods_run": ("bogus",)}),
+        ("methods_not_run a string", {"methods_not_run": "embedding"}),
+        ("methods_not_run unknown", {"methods_not_run": ("bogus",)}),
+        ("report_sha256 an int", {"report_sha256": 5}),
+        ("reason_code unknown", {"reason_code": "bogus"}),
+        ("status subclass", {"status": support.StrSub("clear")}),
+    ):
+        check(cid, f"report {label} is refused", not built(lambda c=changes: replace(report, **c)))
+    for label, make in (
+        (
+            "a source with two records of one id",
+            lambda: prior_source(
+                "c", "final_qualification", [record("dup", "a b", "c"), record("dup", "d e", "f")]
+            ),
+        ),
+    ):
+        check(cid, f"{label} is refused", not built(make))
+    check(
+        cid,
+        "a source with distinct ids is built",
+        built(
+            lambda: prior_source(
+                "c", "final_qualification", [record("p1", "a b", "c"), record("p2", "d e", "f")]
+            )
+        ),
+    )
+    t = record("t", "alpha one", "1")
+    f = record("f", "beta two", "2")
+    manifest, recs = split([(t, "train", ("g1",)), (f, "final_qualification", ("g2",))])
+    edge = 1_000_000
+    check(
+        cid,
+        "max_findings and max_semantic_partners accept 1,000,000",
+        built(
+            lambda: sl.detect_split_leakage(
+                manifest, recs, route=ROUTE, max_findings=edge, max_semantic_partners=edge
+            )
+        ),
+    )
+    check(
+        cid,
+        "max_findings refuses 1,000,001",
+        not built(
+            lambda: sl.detect_split_leakage(manifest, recs, route=ROUTE, max_findings=edge + 1)
+        ),
+    )
+    check(
+        cid,
+        "max_semantic_partners refuses 1,000,001",
+        not built(
+            lambda: sl.detect_split_leakage(
+                manifest, recs, route=ROUTE, max_semantic_partners=edge + 1
+            )
+        ),
+    )
+    check(
+        cid,
+        "max_findings accepts 1",
+        built(lambda: sl.detect_split_leakage(manifest, recs, route=ROUTE, max_findings=1)),
+    )
+
+
+def test_reviews_must_be_a_real_sequence() -> None:
+    cid = "LK-REVIEW-SEQ"
+    report = semantic_only_report()
+    reviews = [sl.LeakageReview(f.finding_id, "r", "not_leakage", "why") for f in report.findings]
+
+    def refused_call(arg: Any) -> bool:
+        try:
+            sl.apply_leakage_reviews(report, arg)
+            return False
+        except sl.LeakageEngineError:
+            return True
+
+    check(cid, "fixture: there is something to review", len(reviews) >= 1)
+    check(cid, "a list is accepted", not refused_call(reviews))
+    check(cid, "a tuple is accepted", not refused_call(tuple(reviews)))
+    check(cid, "a generator of valid reviews is refused", refused_call(r for r in reviews))
+    check(
+        cid,
+        "a set of valid reviews is refused",
+        refused_call({r.finding_id: r for r in reviews}.values()),
+    )
+    check(cid, "a string is refused", refused_call("abc"))
+    check(cid, "None is refused", refused_call(None))
+    for decision in (" not_leakage", "not_leakage ", "NOT_LEAKAGE", "Not_Leakage", "not leakage"):
+        check(
+            cid,
+            f"decision {decision!r} is refused",
+            refused_call([sl.LeakageReview(report.findings[0].finding_id, "r", decision, "why")]),
+        )
+
+
+def test_group_findings_are_bounded_and_deduplicated() -> None:
+    cid = "LK-GROUP-LIMIT"
+    left = [
+        (
+            record(
+                f"l{i}", f"left unrelated words number {i} aaa{i}", "x", keys=("shared",), index=i
+            ),
+            "train",
+            (f"gl{i}",),
+        )
+        for i in range(6)
+    ]
+    right = [
+        (
+            record(
+                f"r{i}", f"right other phrases count {i} bbb{i}", "y", keys=("shared",), index=i
+            ),
+            "final_qualification",
+            (f"gr{i}",),
+        )
+        for i in range(6)
+    ]
+    full = scan([*left, *right], max_findings=1000)
+    groups = [f for f in full.findings if f.method == "group"]
+    check(
+        cid,
+        f"every cross-role pair of one shared key is found ({len(groups)}/36)",
+        len(groups) == 36,
+    )
+    check(
+        cid,
+        "and none is invented between records of one role",
+        all({f.role_a, f.role_b} == {"train", "final_qualification"} for f in groups),
+    )
+    limited = scan([*left, *right], max_findings=5)
+    check(
+        cid,
+        f"over the limit: blocked/finding_limit_exceeded with at most 5 findings "
+        f"({limited.status}/{limited.reason_code}/{len(limited.findings)})",
+        limited.reason_code == "finding_limit_exceeded" and 0 < len(limited.findings) <= 5,
+    )
+    check(
+        cid,
+        "the group stage stopped at the limit rather than running on",
+        len([f for f in limited.findings if f.method == "group"]) == len(limited.findings),
+    )
+    a = record("a", "first unrelated sentence about turbines", "x", keys=("k1", "k2"))
+    b = record("b", "second unrelated sentence about harbours", "y", keys=("k1", "k2"))
+    twice = scan(
+        [(a, "train", ("ga",)), (b, "final_qualification", ("gb",)), *solo("pad", "validation", 2)],
+        max_findings=1,
+    )
+    check(
+        cid,
+        f"two shared keys are one finding, and one finding fits a limit of 1 "
+        f"({twice.status}/{twice.reason_code}, {len(twice.findings)})",
+        twice.reason_code is None and [f.method for f in twice.findings] == ["group"],
+    )
+    same_key_twice = scan(
+        [(a, "train", ("ga",)), (b, "final_qualification", ("gb",)), *solo("pad", "validation", 2)]
+    )
+    check(
+        cid,
+        "the same pair is never reported twice for a method",
+        len([f for f in same_key_twice.findings if f.method == "group"]) == 1,
+    )
+    over = scan(
+        [(a, "train", ("ga",)), (b, "final_qualification", ("gb",)), *solo("pad", "validation", 2)],
+        max_findings=1,
+    )
+    check(
+        cid,
+        "no false limit when an existing finding is met again at the limit",
+        over.reason_code is None,
+    )
 
 
 def test_methods_catalog() -> None:

@@ -73,12 +73,13 @@ model; no persistence of findings or reviews (needs a later migration); no live 
 from __future__ import annotations
 
 import hashlib
+import hmac
 import itertools
 import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Final
+from typing import Any, Final
 
 from packages.security.security_profile_enforcement import (
     Destination,
@@ -170,17 +171,41 @@ _ISSUE_BY_DETECTOR_CODE: Final = {
     "missing_hash": "invalid_record_hash",
     "unknown_content": "invalid_content",
 }
-_SCORE_NAMES: Final = (
-    "char_ngram_similarity",
-    "embedding_cosine_similarity",
-    "structural_match",
-    "token_jaccard_similarity",
-)
 _SEMANTIC_THRESHOLD_FIELDS: Final = (
     ("char_ngram", "char_ngram_similarity", "character_ngram_similarity"),
     ("token_jaccard", "token_jaccard_similarity", "token_jaccard_similarity"),
     ("embedding", "embedding_cosine_similarity", "embedding_cosine_similarity"),
 )
+
+
+# Closed tables instead of string comparisons: every key below is a validated enum member, so a
+# lookup cannot be fooled by case or padding and has no "normalised" variant to test.
+_DISPOSITION: Final = {
+    (method, reason): (
+        "blocking"
+        if reason == "consumed_final_reuse" or method in HASH_METHODS
+        else "review_required"
+    )
+    for method in METHODS
+    for reason in REASONS
+}
+_IS_BLOCKING: Final = {"blocking": True, "review_required": False}
+_REASON_STATUS: Final[dict[str | None, str | None]] = {
+    None: None,
+    **{code: "failed" for code in FAILED_CODES},
+    **{code: "blocked" for code in BLOCKED_CODES},
+}
+_CROSS_ROLE: Final = {(a, b): "cross_role" for a in ROLES for b in ROLES if a != b}
+# (current role, prior role) -> reason; prior development / final against current train or
+# validation, and prior final against current final. Anything else is not checked.
+_PRIOR_PAIR: Final = {
+    (current, prior): (
+        "consumed_final_reuse" if current == prior == "final_qualification" else "prior_campaign"
+    )
+    for current in ROLES
+    for prior in PRIOR_ROLES
+    if current in ("train", "validation") or current == prior == "final_qualification"
+}
 
 
 class LeakageEngineError(ValueError):
@@ -306,12 +331,6 @@ class EmbeddingRoute:
 # ---------------------------------------------------------------------------
 
 
-def _expected_disposition(method: str, reason: str) -> str:
-    if reason == "consumed_final_reuse" or method in HASH_METHODS:
-        return "blocking"
-    return "review_required"
-
-
 @dataclass(frozen=True)
 class LeakageFinding:
     finding_id: str
@@ -408,9 +427,11 @@ class LeakageReport:
 
     @property
     def unreviewed_findings(self) -> tuple[LeakageFinding, ...]:
-        reviewed = {review.finding_id for review in self.reviews}
+        reviewed = {review.finding_id: review for review in self.reviews}
         return tuple(
-            f for f in self.findings if f.disposition == "blocking" or f.finding_id not in reviewed
+            f
+            for f in self.findings
+            if _IS_BLOCKING[f.disposition] or reviewed.get(f.finding_id) is None
         )
 
 
@@ -477,11 +498,28 @@ def _finding_id(
 
 
 def _derived_status(report: LeakageReport) -> str:
-    if report.reason_code in FAILED_CODES:
-        return "failed"
-    if report.reason_code in BLOCKED_CODES:
-        return "blocked"
-    return "leakage_found" if report.findings else "clear"
+    return _REASON_STATUS[report.reason_code] or ("leakage_found" if report.findings else "clear")
+
+
+def _canonical_report(report: LeakageReport) -> LeakageReport:
+    """`report` as this module would have sealed it: issues imply `invalid_input`, and the status
+    follows from the reason and the findings. Its hash is what `report_sha256` must be."""
+    interim = replace(report, reason_code="invalid_input" if report.issues else report.reason_code)
+    return replace(interim, status=_derived_status(interim))
+
+
+def _canonical_finding(finding: LeakageFinding) -> LeakageFinding:
+    return replace(
+        finding,
+        finding_id=_finding_id(
+            finding.method,
+            finding.reason,
+            (finding.record_id_a, finding.role_a),
+            (finding.record_id_b, finding.role_b),
+            finding.prior_source_label,
+        ),
+        disposition=_DISPOSITION[(finding.method, finding.reason)],
+    )
 
 
 def _check_review(review: object) -> LeakageReview:
@@ -489,49 +527,36 @@ def _check_review(review: object) -> LeakageReview:
         raise LeakageEngineError("reviews must contain LeakageReview values")
     _sha(review.finding_id, "finding_id")
     _text(review.reviewer_id, "reviewer_id", _MAX_REVIEWER)
-    if type(review.decision) is not str or review.decision != "not_leakage":
-        raise LeakageEngineError("decision must be 'not_leakage'")
+    _member(review.decision, ("not_leakage",), "decision")
     _text(review.rationale, "rationale", _MAX_RATIONALE)
     return review
 
 
 def verify_report(report: LeakageReport) -> None:
     """Raises `LeakageEngineError` unless `report` is exactly what this module sealed: its hash
-    covers every field, every finding id and disposition follow from the finding itself, the
-    status follows from the reason and findings, and every review binds a `review_required`
-    finding once."""
+    covers every field and agrees with the status its reason and findings imply, every finding
+    id and disposition follow from the finding itself, and every review binds a distinct
+    `review_required` finding."""
     if not isinstance(report, LeakageReport):
         raise LeakageEngineError("report must be a LeakageReport")
-    if report.report_sha256 != compute_report_sha256(report):
-        raise LeakageEngineError("report hash does not match its content")
-    if report.status != _derived_status(report):
-        raise LeakageEngineError("report status does not match its reason and findings")
-    if report.issues and report.reason_code != "invalid_input":
-        raise LeakageEngineError("a report with issues must be invalid_input")
-    by_id: dict[str, LeakageFinding] = {}
+    stored = report.report_sha256.encode()
+    # The hash must cover the report as it stands AND agree with the status and reason it implies.
+    for candidate in (report, _canonical_report(report)):
+        if not hmac.compare_digest(stored, compute_report_sha256(candidate).encode()):
+            raise LeakageEngineError("report hash does not match its content")
     for finding in report.findings:
-        label = finding.prior_source_label
-        expected_id = _finding_id(
-            finding.method,
-            finding.reason,
-            (finding.record_id_a, finding.role_a),
-            (finding.record_id_b, finding.role_b),
-            label,
-        )
-        if finding.finding_id != expected_id or finding.finding_id in by_id:
-            raise LeakageEngineError("a finding id does not follow from its fields")
-        if finding.disposition != _expected_disposition(finding.method, finding.reason):
-            raise LeakageEngineError("a finding disposition does not follow from its method")
-        by_id[finding.finding_id] = finding
-    seen: set[str] = set()
+        if finding != _canonical_finding(finding):
+            raise LeakageEngineError("a finding id or disposition does not follow from its fields")
+    by_id = {finding.finding_id: finding for finding in report.findings}
+    if len(by_id) != len(report.findings):
+        raise LeakageEngineError("a finding id is repeated")
     for review in report.reviews:
         _check_review(review)
         target = by_id.get(review.finding_id)
-        if target is None or target.disposition != "review_required":
+        if target is None or _IS_BLOCKING[target.disposition]:
             raise LeakageEngineError("a review does not bind a review_required finding")
-        if review.finding_id in seen:
-            raise LeakageEngineError("a finding is reviewed twice")
-        seen.add(review.finding_id)
+    if len({review.finding_id for review in report.reviews}) != len(report.reviews):
+        raise LeakageEngineError("a finding is reviewed twice")
 
 
 def apply_leakage_reviews(report: LeakageReport, reviews: Sequence[LeakageReview]) -> LeakageReport:
@@ -539,21 +564,21 @@ def apply_leakage_reviews(report: LeakageReport, reviews: Sequence[LeakageReview
     a second review of one finding, a review of a `blocking` finding or a blank reviewer /
     rationale raises `LeakageEngineError`; the original report is not touched."""
     verify_report(report)
-    if type(reviews) not in (tuple, list):
+    if not isinstance(reviews, tuple | list):
         raise LeakageEngineError("reviews must be a tuple or list")
     by_id = {f.finding_id: f for f in report.findings}
-    reviewed = {review.finding_id for review in report.reviews}
+    reviewed = {review.finding_id: True for review in report.reviews}
     added: list[LeakageReview] = []
     for review in reviews:
         _check_review(review)
         target = by_id.get(review.finding_id)
         if target is None:
             raise LeakageEngineError("a review names an unknown finding")
-        if target.disposition != "review_required":
+        if _IS_BLOCKING[target.disposition]:
             raise LeakageEngineError("a blocking finding cannot be reviewed away")
-        if review.finding_id in reviewed:
+        if reviewed.get(review.finding_id, False):
             raise LeakageEngineError("a finding can be reviewed only once")
-        reviewed.add(review.finding_id)
+        reviewed[review.finding_id] = True
         added.append(review)
     merged = tuple(sorted((*report.reviews, *added), key=lambda r: r.finding_id))
     return _sealed(replace(report, reviews=merged))
@@ -566,7 +591,7 @@ def assert_leakage_clear(report: LeakageReport, stage: str) -> None:
     _member(stage, STAGES, "stage")
     verify_report(report)
     open_ids = tuple(sorted(f.finding_id for f in report.unreviewed_findings))
-    if report.status in ("blocked", "failed") or open_ids:
+    if report.reason_code is not None or open_ids:
         raise LeakageBlockedError(stage, open_ids, report.reason_code)
 
 
@@ -586,16 +611,18 @@ class _Entry:
 
 
 def _pair_reason(a: _Entry, b: _Entry) -> str | None:
-    if a.label is None and b.label is None:
-        return "cross_role" if a.role != b.role else None
-    if a.label is not None and b.label is not None:
-        return None
-    current, prior = (a, b) if a.label is None else (b, a)
-    if prior.role == "final_qualification" and current.role == "final_qualification":
-        return "consumed_final_reuse"
-    if current.role in ("train", "validation"):
-        return "prior_campaign"
+    if a.label is None:
+        if b.label is None:
+            return _CROSS_ROLE.get((a.role, b.role))
+        return _PRIOR_PAIR.get((a.role, b.role))
+    if b.label is None:
+        return _PRIOR_PAIR.get((b.role, a.role))
     return None
+
+
+def _order(entry: _Entry) -> tuple[bool, int]:
+    """Current records before prior ones, then by position."""
+    return entry.label is not None, entry.position
 
 
 class _Collector:
@@ -618,11 +645,7 @@ class _Collector:
         reason = _pair_reason(a, b)
         if reason is None:
             return True
-        first, second = (a, b) if a.position < b.position else (b, a)
-        if a.label is None and b.label is not None:
-            first, second = a, b
-        elif b.label is None and a.label is not None:
-            first, second = b, a
+        first, second = sorted((a, b), key=_order)
         label = first.label or second.label
         finding_id = _finding_id(
             method,
@@ -631,7 +654,7 @@ class _Collector:
             (second.record_id, second.role),
             label,
         )
-        if finding_id in self.items:
+        if self.items.get(finding_id) is not None:
             return True
         if len(self.items) >= self.limit:
             self.full = True
@@ -640,7 +663,7 @@ class _Collector:
             finding_id=finding_id,
             method=method,
             reason=reason,
-            disposition=_expected_disposition(method, reason),
+            disposition=_DISPOSITION[(method, reason)],
             record_id_a=first.record_id,
             role_a=first.role,
             record_id_b=second.record_id,
@@ -652,15 +675,15 @@ class _Collector:
 
 
 def _bucket_pairs(members: Sequence[_Entry]) -> Sequence[tuple[_Entry, _Entry]]:
-    """Pairs of `members` that belong to different pair-classes, without ever walking pairs that
-    cannot be findings (a huge same-role bucket costs one pass, not a quadratic one)."""
-    classes: dict[tuple[bool, str], list[_Entry]] = {}
+    """Pairs of `members` that belong to different pair-classes (source and role), without ever
+    walking pairs that cannot be findings: a huge same-role bucket costs one pass, not a quadratic
+    one. `members` arrive in position order, so the classes and the pairs do too."""
+    classes: dict[tuple[str | None, str], list[_Entry]] = {}
     for entry in members:
-        classes.setdefault((entry.label is None, entry.role), []).append(entry)
-    ordered = [classes[key] for key in sorted(classes)]
+        classes.setdefault((entry.label, entry.role), []).append(entry)
     return [
         pair
-        for left, right in itertools.combinations(ordered, 2)
+        for left, right in itertools.combinations(classes.values(), 2)
         for pair in itertools.product(left, right)
     ]
 
@@ -722,23 +745,21 @@ def _route_code(route: EmbeddingRoute) -> str | None:
         enforce_effect(request, route.authorization)
     except SecurityProfileEnforcementError as exc:
         return exc.code
-    if route.destination.kind != "internal":
+    if route.destination.provider is not None:  # only an internal destination has no provider
         return "embedding_provider_unavailable"
     return None
 
 
 def _issues_from(
-    detector_issues: Sequence[object], entries: Sequence[_Entry], into: set[LeakageIssue]
+    detector_issues: Sequence[Any], entries: Sequence[_Entry], into: set[LeakageIssue]
 ) -> None:
     for issue in detector_issues:
-        position = getattr(issue, "batch_position", -1)
-        code = _ISSUE_BY_DETECTOR_CODE.get(getattr(issue, "code", ""), "invalid_record")
-        entry = entries[position] if 0 <= position < len(entries) else None
+        entry = entries[issue.batch_position]
         into.add(
             LeakageIssue(
-                code=code,
-                record_id=entry.record_id if entry else None,
-                source_label=entry.label if entry else None,
+                code=_ISSUE_BY_DETECTOR_CODE.get(issue.code, "invalid_record"),
+                record_id=entry.record_id,
+                source_label=entry.label,
             )
         )
 
@@ -869,9 +890,7 @@ def detect_split_leakage(
                 collector.add("agent_trace_structural", a, b, scores)
 
     findings = tuple(sorted(collector.items.values(), key=lambda f: f.finding_id))
-    issue_list = tuple(
-        sorted(issues, key=lambda i: (i.code, i.record_id or "", i.source_label or ""))
-    )
+    issue_list = tuple(sorted(issues, key=repr))
     semantic_ran = route_code is None and not saturated
     reason: str | None = None
     if issue_list:
