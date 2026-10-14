@@ -242,16 +242,70 @@ _KEY_VALUE = re.compile(
     rf"""(?P<val>\[REDACTED\]|{_QUOTED_VALUE}|[^\s&,;"'}}\])]+)""",
     re.I,
 )
-# FTF-0904-F1: bare, generic query-parameter names that carry live credentials (`?key=`, `?sig=`,
-# OAuth `?code=`/`?state=` on a callback). They cannot join `_SECRET_KEY_WORDS`: that list matches a
-# word *inside* a key run and also binds structured keys, so `state`/`code`/`key` would redact
-# `{"state": "running"}` and `monkey=1`. This rule is the exact name only, directly after a
-# query/fragment delimiter, so `keyboard=`, `codec=`, `state_of=` and prose `code=5` survive.
-_QUERY_SECRET_PARAM = re.compile(
-    r"(?P<key>(?<=[?&;#])(?:key|sig|auth|session|jwt|code|state))(?P<sep>=)"
-    r"""(?P<val>[^\s&,;"'}\])]+)""",
-    re.I,
+# FTF-0904-F1: generic credential-carrying parameter names (`?key=`, `?sig=`, OAuth `?code=` and
+# `?state=` on a callback, session ids, one-time codes). They cannot join `_SECRET_KEY_WORDS`: that
+# list matches a word *inside* a key run and also binds structured keys, so `state`/`code`/`key`
+# would redact `{"state": "running"}` and `monkey=1`. Round 2 (QP-NAME-CLASS, QP-POS-SERIALIZED):
+# the rule binds a parameter *name class* -- the LAST word of the name (split on `_ - .` and
+# camelCase) is one of `_QUERY_PARAM_NAMES` -- so `session_key`, `sessionKey`, `auth_code`,
+# `oauth_verifier`, `PHPSESSID` and `connect.sid` are covered, while `keyboard=`, `codec=`,
+# `monkey=`, `state_of=` and `code_path=` (last word not a name) survive. The name needs no `?` in
+# front of it: a query serialized without one (`str(request.query_params)`), a urlencoded form body
+# and a name after a space/quote/`/` are the same leak. Over-redaction (`state=CA`, prose `code=5`)
+# is FTF-0904's design.
+_QUERY_PARAM_NAMES = frozenset(
+    {
+        "key",
+        "sig",
+        "auth",
+        "session",
+        "jwt",
+        "code",
+        "state",
+        "verifier",
+        "ticket",
+        "otp",
+        "pass",
+        "sid",
+        "sessid",
+        "phpsessid",
+        "jsessionid",
+    }
 )
+# One start per maximal key run (lookbehind) and a possessive run: linear, no restart inside a run.
+_QUERY_ASSIGN = re.compile(r"(?<![\w.\-])(?P<key>[\w.\-]++)(?P<sep>=)")
+# `[REDACTED]` is consumed whole (with anything glued to it) so the rule is idempotent: running it
+# over its own output (the logging sink re-redacts the formatted line) never grows the marker.
+_QUERY_VALUE = re.compile(r"""\[REDACTED\][^\s&,;"'}\])]*+|[^\s&,;"'}\])]++""")
+_NAME_WORD_SPLIT = re.compile(r"[_.\-]+")
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+def _is_query_param_name(name: str) -> bool:
+    words = [w for w in _NAME_WORD_SPLIT.split(_CAMEL_BOUNDARY.sub("_", name)) if w]
+    return bool(words) and words[-1].lower() in _QUERY_PARAM_NAMES
+
+
+class _QueryParamRule:
+    """Duck-types `re.Pattern.sub(repl, text)` for `_RULES` (the replacement is built in)."""
+
+    def sub(self, _repl: object, text: str) -> str:
+        out: list[str] = []
+        pos = 0
+        for match in _QUERY_ASSIGN.finditer(text):
+            if match.start() < pos or not _is_query_param_name(match.group("key")):
+                continue
+            value = _QUERY_VALUE.match(text, match.end())
+            if value is None:
+                continue
+            out.append(text[pos : match.end()])
+            out.append(REDACTED)
+            pos = value.end()
+        out.append(text[pos:])
+        return "".join(out)
+
+
+_QUERY_SECRET_PARAM = _QueryParamRule()
 _BASE64_RUN = re.compile(
     r"(?<![A-Za-z0-9+/_\-])(?P<body>[A-Za-z0-9+/_\-]{16,})={0,2}(?![A-Za-z0-9+/_=\-])"
 )
@@ -277,7 +331,6 @@ _REPLACEMENTS: Mapping[str, str | Callable[[re.Match[str]], str]] = {
     "bearer": rf"\g<scheme> {REDACTED}",
     "userinfo": rf"\g<scheme>{REDACTED}@",
     "key_value": rf"\g<key>\g<sep>{REDACTED}",
-    "query_param": rf"\g<key>\g<sep>{REDACTED}",
 }
 
 _SECRET_KEY_NAME = re.compile(rf"(?:{_HEADER_KEYS})|{_SECRET_KEY}", re.I)
