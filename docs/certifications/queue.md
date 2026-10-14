@@ -24775,3 +24775,12 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-14T13:02Z — Control plane: FTF-0505 returned
 - **Returned:** FTF-0505 r2 (0d): zlib.error mapping, bounded header retention, 4 pinned clauses, shared fatal_locator; rulings on byte cap and ImportLimits.
+
+## 2026-10-14T14:23Z — Control plane: FTF-0904-W1 CERTIFIED (child slice)
+- **Certified:** FTF-0904-W1 (#792, merge b4d401fc1fb1222c65ad4778b5aee2e1461a99c1) by separate verifier session; FTF-0904 WIRED (product-true 46).
+
+## 2026-10-14T14:23Z — Control plane: FTF-0518 returned
+- **Returned:** FTF-0518 r2 (0f): F14/F13/F8 tests, gate requires all methods for clear. Sliced FTF-0512-F1.
+
+## 2026-10-14T14:23Z — Control plane: FTF-0504 returned (r4, small)
+- **Returned:** FTF-0504 r4 (0c): record-cap row, full-hash compare, str-subclass locator, preview TypeError, truncated BOM; stopping rule.
