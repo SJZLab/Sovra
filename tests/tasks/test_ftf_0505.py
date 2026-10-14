@@ -430,7 +430,7 @@ def test_content_type_gate_refuses_everything_but_xlsx_before_a_byte() -> None:
             failed_with(outcome, "content_type_not_supported_by_importer")
             and reader.bytes_read == 0,
         )
-    for bad_type in (None, 5, XLSX_TYPE.encode()):
+    for bad_type in (None, 5, XLSX_TYPE.encode(), support.StrSub(XLSX_TYPE)):
         reader = make_reader(data)
         outcome = xi.run_xlsx_import(
             reader,
@@ -441,7 +441,10 @@ def test_content_type_gate_refuses_everything_but_xlsx_before_a_byte() -> None:
         )
         check(
             CID,
-            f"{bad_type!r}: refused by exact type",
+            # V-CT-GATE-STR-SUBCLASS: a `str` subclass with the exact right
+            # value (`isinstance` would wrongly accept it) is refused too --
+            # the check is `type(x) is not str`, not `isinstance`.
+            f"{bad_type!r} ({type(bad_type).__name__}): refused by exact type",
             failed_with(outcome, "content_type_not_supported_by_importer"),
         )
 
@@ -783,6 +786,17 @@ def test_header_row_offset_and_blank_rows() -> None:
         "header_row=2 skips both and finds nothing mapped",
         failed_with(outcome, "mapping_column_missing"),
     )
+    # V-NONBLANK-SEEN-ALL-ROWS: a skipped row with no text at all -- only a
+    # formula cell, or only an error cell -- is still non-blank (kind != VALUE)
+    # and must still count toward header_row's own skip count.
+    for label, odd_cell in (("a formula cell", F()), ("an error cell", E())):
+        skip_only_formula = [[odd_cell], [IS("q"), IS("a")], [IS("p"), IS("c")]]
+        events, outcome = run(book(skip_only_formula), header_row=1)
+        check(
+            CID,
+            f"a skipped row of only {label} still counts as the one non-blank row to skip",
+            outcome.report.state == "completed" and len(accepted(events)) == 1,
+        )
     rows = [[IS("q"), IS("a")], [IS("")], [IS("p"), IS("c")], [EMPTY(), EMPTY()]]
     events, outcome = run(book(rows))
     check(
@@ -1166,6 +1180,75 @@ def test_messages_json_column_carries_a_conversation() -> None:
     )
 
 
+def test_tool_schema_status_is_valid_only_when_the_record_has_a_tool_call() -> None:
+    """V-TOOL-STATUS-ALWAYS-NA: `tool_schema_status` must track whether the
+    accepted record actually has a tool call, not be a constant -- a mutant
+    hardcoding "not_applicable" would otherwise pass every other check in
+    this file (none of them exercises a record that has a tool call)."""
+    import json
+
+    from app.services.json_schema_tool_validation import validate_instance
+
+    schema = {
+        "type": "object",
+        "properties": {"order_id": {"type": "string"}},
+        "required": ["order_id"],
+        "additionalProperties": False,
+    }
+    conversation = json.dumps(
+        [
+            {"role": "user", "content": "where is my order"},
+            {
+                "role": "assistant",
+                "content": [],
+                "tool_calls": [
+                    {"id": "c1", "name": "lookup_order", "arguments": {"order_id": "abc"}}
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "c1",
+                "name": "lookup_order",
+                "content": [{"type": "json", "value": {"status": "shipped"}}],
+            },
+        ]
+    )
+    text = (
+        '{"shape":"messages_json","messages":{"header":"conv"},"role_key":"role",'
+        '"content_key":"content","role_map":{"user":"user","assistant":"assistant","tool":"tool"},'
+        '"tool_calls_key":"tool_calls","tool_call_id_key":"tool_call_id","name_key":"name",'
+        '"on_unmapped_message_keys":"reject","xlsx":{"sheet_name":"Data","header_row":0}}'
+    )
+    plain = json.dumps([{"role": "user", "content": "hi"}])
+    data = book([[IS("conv")], [IS(conversation)], [IS(plain)]])
+    events: list[dict[str, object]] = []
+    outcome = xi.run_xlsx_import(
+        make_reader(data),
+        ic.parse_mapping(text),
+        verified_content_type=XLSX_TYPE,
+        dataset_purpose="training",
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+        tool_schemas={"lookup_order": schema},
+        tool_argument_validator=validate_instance,
+        on_accepted=lambda c: events.append(dict(c)),
+    )
+    check(
+        CID,
+        "both rows accepted",
+        outcome.report.state == "completed" and len(events) == 2,
+    )
+    check(
+        CID,
+        "the row with a conforming tool call is tool_schema_status valid",
+        events[0]["tool_schema_status"] == "valid",
+    )
+    check(
+        CID,
+        "the plain row with no tool call is not_applicable",
+        events[1]["tool_schema_status"] == "not_applicable",
+    )
+
+
 # --- bounds -----------------------------------------------------------------------------
 
 
@@ -1237,19 +1320,19 @@ def sized_sheet(cells: int) -> bytes:
 
 def test_cell_count_bound_is_exact() -> None:
     for cap in (10, 11, 12):
-        limits = xi.XlsxLimits(max_cells=cap)
+        limits = ic.ImportLimits(max_xlsx_cells=cap)
         at_cap = sized_sheet(cap)
-        _e, outcome = run(at_cap, xlsx_limits=limits)
+        _e, outcome = run(at_cap, limits=limits)
         check(
             CID,
-            f"max_cells={cap}: exactly {cap} cells completes",
+            f"max_xlsx_cells={cap}: exactly {cap} cells completes",
             outcome.report.state == "completed",
         )
         over = sized_sheet(cap + 2)
-        _e, outcome = run(over, xlsx_limits=limits)
+        _e, outcome = run(over, limits=limits)
         check(
             CID,
-            f"max_cells={cap}: {cap + 2} cells is fatal too_many_cells",
+            f"max_xlsx_cells={cap}: {cap + 2} cells is fatal too_many_cells",
             failed_with(outcome, "too_many_cells")
             and (outcome.report.fatal_locator or "").startswith("row:"),
         )
@@ -1262,13 +1345,13 @@ def test_cell_count_bound_is_exact() -> None:
     )
     check(
         CID,
-        "cap-1 is fatal for max_cells=2 (3 cells)",
-        failed_with(run(one_over, xlsx_limits=xi.XlsxLimits(max_cells=2))[1], "too_many_cells"),
+        "cap-1 is fatal for max_xlsx_cells=2 (3 cells)",
+        failed_with(run(one_over, limits=ic.ImportLimits(max_xlsx_cells=2))[1], "too_many_cells"),
     )
     check(
         CID,
-        "cap exactly met passes for max_cells=3",
-        run(one_over, xlsx_limits=xi.XlsxLimits(max_cells=3))[1].report.state == "completed",
+        "cap exactly met passes for max_xlsx_cells=3",
+        run(one_over, limits=ic.ImportLimits(max_xlsx_cells=3))[1].report.state == "completed",
     )
     # unmapped and empty cells count too
     cells = "".join(f'<c r="{col_letters(i)}1"/>' for i in range(20))
@@ -1277,32 +1360,39 @@ def test_cell_count_bound_is_exact() -> None:
         CID,
         "empty cells count toward the cap",
         failed_with(
-            run(book(raw_sheet=raw), xlsx_limits=xi.XlsxLimits(max_cells=19))[1], "too_many_cells"
+            run(book(raw_sheet=raw), limits=ic.ImportLimits(max_xlsx_cells=19))[1],
+            "too_many_cells",
         ),
     )
 
 
 def test_limits_can_be_lowered_never_raised() -> None:
-    for name in ("max_cells", "max_shared_strings_bytes", "max_total_uncompressed_bytes"):
-        default = getattr(xi.XlsxLimits(), name)
-        for bad in (default + 1, 0, -1, True, 1.5, "5"):
-            try:
-                xi.XlsxLimits(**{name: bad})  # type: ignore[arg-type]
-            except ValueError:
-                continue
-            check(CID, f"XlsxLimits({name}={bad!r}) is refused", False)
-        xi.XlsxLimits(**{name: default})
-        xi.XlsxLimits(**{name: 1})
-    check(CID, "the cell default is 50,000,000", xi.XlsxLimits().max_cells == 50_000_000)
+    check(
+        CID,
+        "the total-uncompressed-bytes default is the FTF-0501 10 GiB",
+        xi.XlsxLimits().max_total_uncompressed_bytes == 10 * 1024**3,
+    )
+    for bad in (
+        xi.XlsxLimits().max_total_uncompressed_bytes + 1,
+        0,
+        -1,
+        True,
+        1.5,
+        "5",
+    ):
+        try:
+            xi.XlsxLimits(max_total_uncompressed_bytes=bad)  # type: ignore[arg-type]
+        except ValueError:
+            continue
+        check(CID, f"XlsxLimits(max_total_uncompressed_bytes={bad!r}) is refused", False)
+    xi.XlsxLimits(max_total_uncompressed_bytes=1)
+    # max_cells and the shared-strings byte cap moved to the shared ImportLimits
+    # (FTF-0502-P1's own LIM-1/LIM-2 pin their defaults and lower-only table).
+    check(CID, "the cell default is 50,000,000", ic.DEFAULT_LIMITS.max_xlsx_cells == 50_000_000)
     check(
         CID,
         "the shared-strings default is 256 MiB",
-        xi.XlsxLimits().max_shared_strings_bytes == 256 * 1024**2,
-    )
-    check(
-        CID,
-        "the total default is the FTF-0501 10 GiB",
-        xi.XlsxLimits().max_total_uncompressed_bytes == 10 * 1024**3,
+        ic.DEFAULT_LIMITS.max_xlsx_shared_strings_bytes == 256 * 1024**2,
     )
 
 
@@ -1310,14 +1400,14 @@ def test_shared_strings_cap_is_exact_and_fatal() -> None:
     body = "<si><t>" + "x" * 200 + "</t></si>"
     data = sst_book(body, ["0", "0"])
     real = len(zipfile.ZipFile(io.BytesIO(data)).read("xl/sharedStrings.xml"))
-    ok = xi.XlsxLimits(max_shared_strings_bytes=real)
+    ok = ic.ImportLimits(max_xlsx_shared_strings_bytes=real)
     check(
         CID,
         "a shared-strings part exactly at the cap loads",
-        run(data, xlsx_limits=ok)[1].report.state == "completed",
+        run(data, limits=ok)[1].report.state == "completed",
     )
-    low = xi.XlsxLimits(max_shared_strings_bytes=real - 1)
-    _e, outcome = run(data, xlsx_limits=low)
+    low = ic.ImportLimits(max_xlsx_shared_strings_bytes=real - 1)
+    _e, outcome = run(data, limits=low)
     check(
         CID,
         "one byte over the cap is fatal limit_exceeded",
@@ -1962,6 +2052,13 @@ def test_malformed_xml_and_structure() -> None:
         (
             "row number zero",
             head + '<row r="0"><c r="A0"/></row></sheetData></worksheet>',
+            "xlsx_malformed",
+        ),
+        (
+            # V-ROW-NUMBER-NONCANONICAL: the <row> element's own `r`, not just
+            # a cell reference's row digits (already covered above).
+            "leading-zero row number on the row element itself",
+            head + '<row r="01"><c r="A1"/></row></sheetData></worksheet>',
             "xlsx_malformed",
         ),
         ("negative row", head + '<row r="-1"/></sheetData></worksheet>', "xlsx_malformed"),
@@ -3048,7 +3145,7 @@ def test_shared_strings_do_not_cost_more_than_their_byte_cap_regardless_of_scrip
     sst = shared_xml(["q", "a", strings[0], "x", *strings[1:]]).encode("utf-8")
     rows = [[S("q"), S("a")], [S(strings[0]), S("x")]]
     data = book(rows, shared_override=sst)
-    limits = xi.XlsxLimits(max_shared_strings_bytes=cap)
+    limits = ic.ImportLimits(max_xlsx_shared_strings_bytes=cap)
     reader = make_reader(data)
     tracemalloc.start()
     try:
@@ -3058,7 +3155,7 @@ def test_shared_strings_do_not_cost_more_than_their_byte_cap_regardless_of_scrip
             verified_content_type=XLSX_TYPE,
             dataset_purpose="training",
             expected_sha256=hashlib.sha256(data).hexdigest(),
-            xlsx_limits=limits,
+            limits=limits,
             on_accepted=lambda _c: None,
         )
         _current, peak = tracemalloc.get_traced_memory()
@@ -3091,20 +3188,93 @@ def test_shared_strings_do_not_cost_more_than_their_byte_cap_regardless_of_scrip
     )
 
 
+def test_shared_strings_rss_at_the_real_production_cap() -> None:
+    """The round-2 test above only ever ran at a 1 MiB toy cap -- real bytes
+    retained (`tracemalloc`, Python-level) track the cap almost exactly, but
+    process RSS (real pages touched, including the C-level zlib/expat/malloc
+    overhead `tracemalloc` cannot see) is a separate question, and only shows
+    up at a realistic scale. Measured in a fresh subprocess, never this
+    process (which has already built the attack payload itself, and that
+    construction cost -- unrelated to the import -- would otherwise dominate
+    any same-process RSS reading)."""
+    import subprocess
+
+    script = f"""
+import ctypes, hashlib, sys
+sys.path.insert(0, {str(ROOT)!r})
+sys.path.insert(0, {str(ROOT / "tests" / "tasks")!r})
+import import_test_support as support
+from workers.data import import_common as ic
+from workers.data import xlsx_importer as xi
+import test_ftf_0505 as t
+
+cap = 256 * 1024 ** 2
+n_strings = int(cap / 900) + 5000  # comfortably past the cap, not just under it
+strings = [("a" * 900 + "\\U0001f600") for _ in range(n_strings)]
+sst = t.shared_xml(["q", "a", *strings]).encode("utf-8")
+data = t.book([[t.S("q"), t.S("a")], [t.S("hi"), t.S("there")]], shared_override=sst)
+
+ctypes.CDLL("libc.so.6").malloc_trim(0)
+def vmrss_kb():
+    with open("/proc/self/status") as f:
+        for line in f:
+            if line.startswith("VmRSS"):
+                return int(line.split()[1])
+
+baseline = vmrss_kb()
+reader = t.make_reader(data, 64 * 1024)
+outcome = xi.run_xlsx_import(
+    reader,
+    t.build_mapping(),
+    verified_content_type=t.XLSX_TYPE,
+    dataset_purpose="training",
+    expected_sha256=hashlib.sha256(data).hexdigest(),
+    limits=ic.ImportLimits(max_xlsx_shared_strings_bytes=cap),
+    on_accepted=lambda c: None,
+)
+after = vmrss_kb()
+print(outcome.report.state, outcome.report.failure_code, baseline, after)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, timeout=120
+    )
+    check(
+        CID,
+        f"the RSS subprocess ran cleanly: {result.stderr[-2000:]}",
+        result.returncode == 0,
+    )
+    if result.returncode != 0:
+        return
+    state, code, baseline_kb, after_kb = result.stdout.strip().split()
+    cap = 256 * 1024**2
+    delta_bytes = (int(after_kb) - int(baseline_kb)) * 1024
+    check(
+        CID,
+        "the aggregate cap still stops a multilingual shared-strings part at real scale",
+        state == "failed" and code == "limit_exceeded",
+    )
+    check(
+        CID,
+        f"real process RSS for the import itself ({delta_bytes} bytes, "
+        f"{delta_bytes / cap:.2f}x the {cap}-byte cap) stays within 2x it",
+        delta_bytes < 2 * cap,
+    )
+
+
 def test_concurrent_imports_with_different_limits_do_not_interfere() -> None:
     import threading
 
     data = sized_sheet(40)
     results: dict[str, str] = {}
 
-    def worker(name: str, limits: xi.XlsxLimits) -> None:
+    def worker(name: str, limits: ic.ImportLimits) -> None:
         for _ in range(5):
-            _e, outcome = run(data, xlsx_limits=limits)
+            _e, outcome = run(data, limits=limits)
             results[name] = f"{outcome.report.state}:{outcome.report.failure_code}"
 
     threads = [
-        threading.Thread(target=worker, args=("low", xi.XlsxLimits(max_cells=10))),
-        threading.Thread(target=worker, args=("default", xi.XlsxLimits())),
+        threading.Thread(target=worker, args=("low", ic.ImportLimits(max_xlsx_cells=10))),
+        threading.Thread(target=worker, args=("default", ic.DEFAULT_LIMITS)),
     ]
     for t in threads:
         t.start()
@@ -3637,6 +3807,55 @@ def test_unmapped_columns_are_dropped_after_the_header_across_blocks() -> None:
     )
 
 
+def test_many_wide_unmapped_shared_string_cells_cost_little_memory() -> None:
+    """V-WANTED-NOT-APPLIED: once `wanted` is set (well after the header, past
+    several inflate blocks), a row's unmapped cells must really be skipped --
+    not decoded, not retained -- or thousands of large unmapped references to
+    one shared string would cost real memory despite being thrown away. A
+    mutant that stops applying `wanted` would still pass every output-only
+    test (`_map_row` only ever reads the mapped positions), so only a memory
+    measurement like this one catches it."""
+    import tracemalloc
+
+    big_index = 0
+    last = 202
+    filler_rows = "".join(
+        f'<row r="{r}"><c r="A{r}" t="inlineStr"><is><t>p{r} {"x" * 1400}</t></is></c>'
+        f'<c r="B{r}" t="inlineStr"><is><t>c{r}</t></is></c></row>'
+        for r in range(2, last)  # several 64 KiB inflate blocks of filler, few rows
+    )
+    unmapped = "".join(
+        f'<c r="{col_letters(i)}{last}" t="s"><v>{big_index}</v></c>' for i in range(2, 2002)
+    )
+    attack_row = (
+        f'<row r="{last}"><c r="A{last}" t="inlineStr"><is><t>plast</t></is></c>'
+        f'<c r="B{last}" t="inlineStr"><is><t>clast</t></is></c>{unmapped}</row>'
+    )
+    header = '<row r="1"><c r="A1" t="inlineStr"><is><t>q</t></is></c><c r="B1" t="inlineStr"><is><t>a</t></is></c></row>'
+    raw = f'{XML_HEAD}<worksheet xmlns="{MAIN}"><sheetData>{header}{filler_rows}{attack_row}</sheetData></worksheet>'
+    check(CID, "the attack row is past several inflate blocks", len(raw) > 4 * ox.READ_BLOCK_BYTES)
+    big_string = "Y" * (1024 * 1024)  # 1 MiB, referenced 2,000 times by unmapped cells
+    sst = shared_xml([big_string]).encode("utf-8")
+    data = book(raw_sheet=raw, shared_override=sst)
+    tracemalloc.start()
+    try:
+        events, outcome = run(data)
+        _current, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    check(
+        CID,
+        "the sheet with 2,000 unmapped references to a 1 MiB string still completes",
+        outcome.report.state == "completed" and len(accepted(events)) == last - 1,
+    )
+    check(
+        CID,
+        f"peak memory ({peak}) stays within a few times the 1 MiB string's own "
+        "size (the shared-strings table itself), not 2,000 decoded copies of it",
+        peak < 4 * len(big_string),
+    )
+
+
 def test_a_malformed_row_number_is_located_at_the_last_good_row() -> None:
     head = f'{XML_HEAD}<worksheet xmlns="{MAIN}"><sheetData>'
     ok = '<row r="1"><c r="A1" t="inlineStr"><is><t>q</t></is></c><c r="B1" t="inlineStr"><is><t>a</t></is></c></row>'
@@ -4147,6 +4366,18 @@ def test_vba_project_reached_only_through_a_relationship_type_is_refused() -> No
         "and an ordinary relationship Type is untouched by this check",
         run(book(rel_extra=plain))[1].report.state == "completed",
     )
+    # Advisory: Excel's own, non-transitional vbaProject relationship type
+    # (not the OOXML transitional one above) is defence in depth too.
+    ms_vba_type = "http://schemas.microsoft.com/office/2006/relationships/vbaProject"
+    ms_rel_extra = f'<Relationship Id="rIdVbaMs" Type="{ms_vba_type}" Target="alsoNotVba.bin"/>'
+    ms_data = with_member(
+        book(rel_extra=ms_rel_extra), "xl/alsoNotVba.bin", b"\xccMacro bytes, no declared type\xcc"
+    )
+    check(
+        CID,
+        "Excel's own vbaProject relationship type is unsafe_workbook too",
+        failed_with(run(ms_data)[1], "unsafe_workbook"),
+    )
 
 
 def test_a_header_made_of_a_space_is_a_real_header() -> None:
@@ -4256,9 +4487,12 @@ def test_a_hash_the_caller_expects_that_the_reader_did_not_verify_fails() -> Non
     good_sha = hashlib.sha256(GOOD).hexdigest()
     other = hashlib.sha256(GOOD + b"x").hexdigest()
     seen: list[object] = []
-    # the reader is verified for the real bytes; the caller expects another dataset's hash
+    # the reader is verified for the real bytes; the caller expects another dataset's hash --
+    # PREVIEW-SHA-TYPEERROR class: caught against the reader's own pinned hash before a byte
+    # of the source is read, same as the sibling importers (FTF-0502/0503/0504).
+    reader = make_reader(GOOD)
     outcome = xi.run_xlsx_import(
-        make_reader(GOOD),
+        reader,
         build_mapping(),
         verified_content_type=XLSX_TYPE,
         dataset_purpose="training",
@@ -4272,13 +4506,13 @@ def test_a_hash_the_caller_expects_that_the_reader_did_not_verify_fails() -> Non
     )
     check(
         CID,
-        "and not one record is accepted or tagged with the wrong hash",
-        not seen and outcome.report.records_accepted == 0,
+        "before one record is accepted and before a byte is read",
+        not seen and outcome.report.records_accepted == 0 and reader.bytes_read == 0,
     )
     check(
         CID,
-        "the report still shows both hashes",
-        outcome.report.expected_sha256 == other and outcome.report.source_sha256 == good_sha,
+        "the report names the hash the caller expected",
+        outcome.report.expected_sha256 == other,
     )
     stream = xi.xlsx_events(
         make_reader(GOOD), build_mapping(), verified_content_type=XLSX_TYPE, dataset_sha256=other
@@ -4302,6 +4536,30 @@ def test_a_hash_the_caller_expects_that_the_reader_did_not_verify_fails() -> Non
         "the matching hash imports",
         ok.report.state == "completed" and ok.report.records_accepted == 1,
     )
+
+
+def test_a_single_hex_character_anywhere_in_the_hash_is_a_mismatch() -> None:
+    """V-SHA-FIRST-LAST: `hmac.compare_digest` must see the whole 64-character
+    hash, not a prefix or suffix -- pins the comparison at the first character,
+    the last, and the middle (character 32), so a regression to a truncated
+    comparison (e.g. the first or last few characters only) goes red."""
+    good_sha = hashlib.sha256(GOOD).hexdigest()
+    for position in (0, 32, 63):
+        flipped_digit = "0" if good_sha[position] != "0" else "1"
+        other = good_sha[:position] + flipped_digit + good_sha[position + 1 :]
+        reader = make_reader(GOOD, expected_sha=good_sha)
+        outcome = xi.run_xlsx_import(
+            reader,
+            build_mapping(),
+            verified_content_type=XLSX_TYPE,
+            dataset_purpose="training",
+            expected_sha256=other,
+        )
+        check(
+            CID,
+            f"one hex character differing at position {position}: source_changed, 0 bytes read",
+            failed_with(outcome, "source_changed") and reader.bytes_read == 0,
+        )
 
 
 def test_the_report_carries_the_purpose_it_was_given() -> None:

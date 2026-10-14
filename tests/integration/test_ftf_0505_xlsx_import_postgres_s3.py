@@ -378,6 +378,7 @@ def main() -> None:
         chunk_size: int | None = None,
         content_type: str | None = None,
         xlsx_limits: xi.XlsxLimits = xi.DEFAULT_XLSX_LIMITS,
+        limits: ic.ImportLimits = ic.DEFAULT_LIMITS,
         use_mapping: ic.ImportMapping = mapping,
     ) -> tuple[xi.XlsxImportOutcome, list[dict[str, object]], ic.ChunkReader]:
         chunks: Any = source.chunks
@@ -394,6 +395,7 @@ def main() -> None:
             dataset_purpose=source.purpose,
             expected_sha256=source.expected_sha256,
             xlsx_limits=xlsx_limits,
+            limits=limits,
             on_accepted=lambda candidate: candidates.append(dict(candidate)),
         )
         return outcome, candidates, reader
@@ -553,18 +555,20 @@ def main() -> None:
         + b" " * (6 * MIB)
         + b"</sheetData></worksheet>"
     )
-    attacks: list[tuple[str, bytes, str, xi.XlsxLimits]] = [
+    attacks: list[tuple[str, bytes, str, xi.XlsxLimits, ic.ImportLimits]] = [
         (
             "vbaProject.bin in a plain package",
             t505.book(small, sheet=sheet_marker, extra=[("xl/vbaProject.bin", marker.encode())]),
             "unsafe_workbook",
             xi.XlsxLimits(),
+            ic.DEFAULT_LIMITS,
         ),
         (
             "an external relationship",
             t505.book(small, sheet=sheet_marker, rel_extra=ext),
             "external_link_present",
             xi.XlsxLimits(),
+            ic.DEFAULT_LIMITS,
         ),
         (
             "strict OOXML",
@@ -579,18 +583,21 @@ def main() -> None:
             ),
             "unsupported_workbook",
             xi.XlsxLimits(),
+            ic.DEFAULT_LIMITS,
         ),
         (
             "an Excel 4 macro sheet",
             t505.book(small, sheet=sheet_marker, extra=[("xl/macrosheets/sheet1.xml", b"<m/>")]),
             "unsafe_workbook",
             xi.XlsxLimits(),
+            ic.DEFAULT_LIMITS,
         ),
         (
             "a decompression bomb past a lowered cap",
             t505.book(small, sheet=sheet_marker, raw_sheet=bomb_sheet),
             "unsafe_archive",
             xi.XlsxLimits(max_total_uncompressed_bytes=MIB),
+            ic.DEFAULT_LIMITS,
         ),
         (
             "an oversize shared-strings table past a lowered cap",
@@ -600,13 +607,14 @@ def main() -> None:
                 shared_override=t505.shared_xml(["x" * 200_000] * 6).encode(),
             ),
             "limit_exceeded",
-            xi.XlsxLimits(max_shared_strings_bytes=MIB),
+            xi.XlsxLimits(),
+            ic.ImportLimits(max_xlsx_shared_strings_bytes=MIB),
         ),
     ]
-    for label, data, code, limits in attacks:
+    for label, data, code, xlsx_limits, limits in attacks:
         attack_set, _ = make_dataset("org1", p1_id, conn1, data, f"attack-{code}")
         outcome, candidates, _reader = import_dataset(
-            open_source(ctx1, p1_id, attack_set.id), xlsx_limits=limits
+            open_source(ctx1, p1_id, attack_set.id), xlsx_limits=xlsx_limits, limits=limits
         )
         leak_values.append((outcome.report, outcome.report.fatal_locator))
         check(
