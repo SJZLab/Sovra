@@ -7534,7 +7534,7 @@ FTF-0504:
   certification_state: PROVISIONAL
   criticality: MUST
   description: CSV importer
-  evidence_hash: d0e9862ed35e0154f0ddce191d38a3e3b2d6e562
+  evidence_hash: fe13caf7dbec8a10ab358f1e3bade73fe378190e
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
