@@ -24721,3 +24721,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-13T23:59Z — Control plane: FTF-0502-P1 certified (slice); FTF-0504 returned
 - **Returned:** FTF-0504 r2 (0c): rebuild on certified P1; locator, global field limit, wide-record cap, content-type gate, integration.
 - **Certified slice:** FTF-0502-P1 (#770, merge 507ce05a422ad5addb94a1700172fa348f871662); importers may proceed (catalog rule updated).
+
+## 2026-10-14T01:22Z — Control plane: FTF-0517 CERTIFIED
+- **Certified:** FTF-0517 (#772, merge 042d82331196e99e5f7091597fd987914a0a6c2b); UNWIRED.
