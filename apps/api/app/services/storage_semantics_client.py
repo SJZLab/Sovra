@@ -652,7 +652,7 @@ class S3Client:
                 raise S3Error(exc.code, "Unknown", exc.reason or "", "") from exc
             with resp:
                 span = _parse_content_range(resp.headers.get("Content-Range"))
-                window_etag = (resp.headers.get("ETag") or "").strip()
+                window_etag = resp.headers.get("ETag") or ""
                 if resp.status != 206 or span is None or span[0] != offset or not window_etag:
                     raise S3Error(resp.status, "UnexpectedWindow", "window answer", "")
                 first, last, size = span

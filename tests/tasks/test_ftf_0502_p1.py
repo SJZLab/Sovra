@@ -4911,6 +4911,74 @@ def test_win_reader_end_to_end_over_the_real_client() -> None:
             )
 
 
+def test_win_content_range_parser_is_exact() -> None:
+    from app.services.storage_semantics_client import _parse_content_range as parse
+
+    good = {
+        "bytes 0-9/10": (0, 9, 10),
+        "bytes 5-5/10": (5, 5, 10),
+        "bytes 0-0/1": (0, 0, 1),
+        "bytes 8-15/100": (8, 15, 100),
+    }
+    for value, want in good.items():
+        check("WIN-11", f"{value!r} parses to {want}", parse(value) == want)
+    bad = [
+        None,
+        "",
+        "garbage",
+        "items 0-9/10",
+        "bytes",
+        "bytes 0-9",
+        "bytes 0-9/*",
+        "bytes */10",
+        "bytes 9-0/10",
+        "bytes 0-10/10",
+        "bytes 0-11/10",
+        "bytes 0-9/9",
+        "bytes -1-5/10",
+        "bytes +1-5/10",
+        "bytes 1-x/10",
+        "bytes x-5/10",
+        "bytes 1-5/x",
+        "bytes 1-5/",
+        "bytes -5/10",
+        "bytes \u0663-5/10",
+        "bytes 1-\u0665/10",
+        "bytes 1-5/\u0661\u0660",
+    ]
+    for value in bad:
+        check("WIN-11", f"{value!r} is refused", _outcome(lambda v=value: parse(v)) is None)
+
+
+def test_win_etag_is_compared_exactly_and_status_text_kept() -> None:
+    from app.services.storage_semantics_client import S3Error, S3ObjectChanged
+
+    data = b"q" * 64
+
+    def swap(srv: WindowServer, n: int) -> None:
+        if n == 2:
+            srv.objects[f"/{BUCKET}/k"] = (data, "ABCdef")
+
+    with WindowServer({f"/{BUCKET}/k": (data, "abcdef")}, swap) as srv:
+        srv.ignore_if_match = True
+        got = _outcome(lambda: _windows(srv.client(), "k", window_bytes=16))
+        check(
+            "WIN-12",
+            "an ETag that differs only by case is a different version",
+            isinstance(got, S3ObjectChanged),
+        )
+    with WindowServer({f"/{BUCKET}/k": (data, "e1")}) as srv:
+        srv.status_override = 503
+        got = _outcome(lambda: _windows(srv.client(), "k"))
+        check(
+            "WIN-12",
+            "a failed window keeps the HTTP reason text",
+            isinstance(got, S3Error)
+            and got.status_code == 503
+            and got.message == "Service Unavailable",
+        )
+
+
 def test_win_chunk_reader_only_trusts_a_true_source_changed_marker() -> None:
     def failing(exc: BaseException) -> Any:
         def gen() -> Iterator[bytes]:
