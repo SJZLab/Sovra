@@ -888,9 +888,11 @@
       "blockers": []
     },
     "FTF-0517": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "042d82331196e99e5f7091597fd987914a0a6c2b"
+      ],
       "independent_review": null,
       "blockers": []
     },

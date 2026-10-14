@@ -8475,10 +8475,10 @@ FTF-0516:
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_0516.spec.ts
 FTF-0517:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Group-aware split engine
-  evidence_hash: ''
+  evidence_hash: 042d82331196e99e5f7091597fd987914a0a6c2b
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-23; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0500D,
@@ -8535,7 +8535,7 @@ FTF-0517:
     (no datastore). No other module imports this one (grep-confirmed), so no dependent regression
     sweep beyond this file's own suite (all green). Still UNWIRED (blank proving_symbol).
     Submission: docs/certifications/submissions/2026-10-13T1904Z-FTF-0517-r3.md.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0517.py
 FTF-0518:
