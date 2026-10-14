@@ -10610,6 +10610,47 @@ docs/spec-matrix.yaml. It never invents criteria.)
     - The 25 uncontracted route-verbs are listed as a contract gap.
 
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
+- **FTF-1602 round 5: PARKED (3 falsified hypotheses on one CI failure), 2026-10-09T10:10Z, lane B.**
+  - What failed: PR #672 (`relay/FTF-1602-r5`): the CI job `object-storage-backup-integration` dies about 45 s into its
+    test step on every run of the full round-5 file (runs 37899436881 a2, 37911808469, and the probes below), with no
+    retrievable log (the job log API returns 404; the step stays `in_progress`; runner death signature, not a test
+    failure). Everything else in the run is green: unit file, mutation gate 405/405 (per the PR), relay-policy, gate.
+    r4 passed the same job (run 37843516353, 60 s); PR #658's run passed it at 08:33Z.
+  - Tried (each a stated hypothesis, each falsified by a CI run): (1) branch behind main -> merged main (run
+    37911808469, same death); (2) the new 6-thread test kills the runner -> made it serial (37913326565, same death);
+    (3) bisect by test selection with `ci-focus`: r4 test file -> normal log, 14 tests in 8 s (37913521112); the four
+    new tests as pairs {concurrent, pinned} and {relist, shared} -> both pass (37913710576, 37914178962); all
+    existing tests without the four new ones -> passes (37914617993). So every subset passes and only the full 18-test
+    file dies: a cumulative or interaction effect, not one bad test.
+  - Not tried / unknown: the cause. Suspects: SeaweedFS 3.99 (`-master.volumeSizeLimitMB=64`, one collection per bucket,
+    about 3 buckets per test) exhausting runner disk, memory or volume slots as buckets accumulate; or an interaction
+    between G1's unretained-version writes and later tests. The log is lost with the runner, so it cannot be read.
+  - Route options: (1) Control plane approves an additive diagnostic step in `object-storage-backup-integration`
+    (runs before the test step: background `df -h`/`free -m`/`docker stats` sampler written to a file and uploaded by a
+    new `if: always()` artifact step), then re-queue; (2) split the round-5 real-server proofs into two integration
+    test files run as two additive jobs (each subset is proven to pass), keeping every test; (3) clean up per test
+    (delete each test's three buckets at the end) so the fixture never accumulates state, which also removes the
+    suspected cause; (4) periodically recycle the SeaweedFS fixture (`docker compose down -v` + `up -d s3`, re-wait
+    ready) every N test functions inside this file's own `main()`, bounding accumulated collections/volumes without
+    touching any test or `.github/workflows/ci.yml`. Recommended: (3) with (4) as the fallback, (2) after that.
+  - **2026-10-09T17:10Z, read-only re-check (no Docker in this sandbox, so unverified):** corroborates the volume-slot
+    suspicion above with a concrete precedent — `infra/docker/docker-compose.yml`'s own comment on the SeaweedFS
+    service documents an earlier, near-identical death in `test_storage_semantics.py` ("no free volumes left" after
+    ~2 of ~11 unique buckets, each bucket its own collection that eagerly grows to 7 volumes), fixed there with
+    `-master.volumeSizeLimitMB=64`. This file's 18 tests create roughly 45 unique buckets, about 4x that prior
+    threshold even with the fix in place — consistent with every tested subset (8-14 tests) passing and only the
+    full 18-test run dying. Raises confidence in (3)/(4) above; still needs a real run to confirm.
+  - State left: PR #672 is open and ready with the intended round-5 files; its `ci-verdict` is red on this one job only.
+    The unit-level proofs, submission and spec-matrix notes are as the PR describes.
+  - **2026-10-13T12:53Z, merge-conflict maintenance (this shift, no new diagnosis):** `main` had advanced past this
+    branch's own merge-base through several unrelated merges; merged `origin/main` into `relay/FTF-1602-r5` in a
+    worktree and found one real conflict, in this file's own "## Parked" section (an append-order collision with the
+    now-resolved FTF-H010-P2 entry and this branch's own stale FTF-0516 parked entry — FTF-0516 is confirmed unparked
+    elsewhere in this file's own "## Active" list, item 0c, round 3, so that stale entry is dropped here rather than
+    carried forward). No code, test, or `docs/certifications/queue.md`/`docs/spec-matrix.yaml` content was touched
+    beyond this one append-order resolution. The CI-hang root cause above is still unconfirmed and still needs a real
+    CI run to resolve; this merge only keeps the branch current against `main` so a future unpark is not also fighting
+    a stale diff.
 - **FTF-H010-P2 Import-validation activity, job fencing and endpoint-only import: PARKED (unclear DoD, contradiction with certified FTF-1001), 2026-10-10T02:30Z, lane C.**
   - **2026-10-10T03:57Z: RESOLVED by Control-plane ruling (route 3, see the FTF-H010-P2 Backlog entry).** P2 is back in the Backlog; claim `relay/FTF-H010-P2-r2`. This entry is history.
   - What failed: nothing was implemented. The DoD says the success path inserts the ModelVersion "through the `ModelVersion` constructor ... `endpoint_reference = external_provider_model_ref = ref` verbatim". Reproduced on `main` (d64628a): `ModelVersion(import_kind="endpoint", endpoint_reference="ft-gpt-4o-mini-acme", ...)` raises `ModelVersionValidationError: endpoint_reference must use https://, got scheme ''`, because `validate_endpoint_reference` (model_version_schema.py, FTF-1001) requires an `https://` URL with a host. A discovered gateway alias (`/v1/models` id) is not a URL, so the happy path can never succeed for a real alias; the `ck_model_versions_kind_consistency` CHECK also makes `endpoint_reference` NOT NULL for `import_kind='endpoint'`.

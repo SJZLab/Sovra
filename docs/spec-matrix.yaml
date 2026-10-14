@@ -12095,7 +12095,24 @@ FTF-1602:
     unchanged in kind; the round-4 diff-scoped gate figure is in the submission. Real-SeaweedFS
     race and reuse tests have their first run in CI. Disclosed, not a return reason: a forged
     record that is the only version, with no expected hash supplied, is still accepted.
-    Not self-certified (Law 4).
+    Round 5 (QUEUE 0i): `create_backup` no longer accepts a `backup_id` at all -- it always
+    generates its own (a private `_new_backup_id` seam, patched only by tests), closing the real
+    defect a caller-chosen id risked: two concurrent calls sharing one id could leave one caller
+    holding a `BackupRecord` for a backup the other call's own write makes immediately
+    unverifiable, since the real server has no conditional (If-None-Match) write. `create_backup`/
+    `verify_backup` now require `type(now) is datetime and now.utcoffset() is not None`, not only
+    `tzinfo is not None`, so a tzinfo that is set but whose `utcoffset()` answers None (which
+    Python itself treats as naive) is refused up front instead of surfacing a later raw error.
+    New real-SeaweedFS evidence: N concurrent real creates never collide (each gets a distinct id
+    and independently, permanently verifies); a forced shared-id interleaving (Control plane's own
+    "B checks the id, A runs in full, B writes") never reports false success for either caller,
+    via the same private id seam a real caller cannot reach; the pinned record read ignores a
+    transient, unretained forged version injected between the pinned listing and the pinned read
+    (G1), confirmed against the real server that the genuine, COMPLIANCE-retained record itself
+    cannot be deleted or replaced at all; and the post-read re-list refuses a same-count,
+    different-identity swap (G7), with an inline comparison showing a count/delete-marker/
+    is_latest-only version of that same check would miss it. Whole-file mutation gate (uncapped):
+    405/405 killed, 0 survivors. Not self-certified (Law 4).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1602.py
