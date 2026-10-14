@@ -12,8 +12,8 @@ Line rules (each pinned by a test):
   removed from the byte stream before any line is cut. A BOM anywhere else is
   part of its line and fails `invalid_json`. UTF-16 / UTF-32 (a BOM, or a NUL
   among the first four bytes) end the import `failed` / `unsupported_encoding`,
-  located at `line:1` (`JsonlImportOutcome.fatal_locator`), before a record is
-  read.
+  located at `line:1` (`JsonlImportOutcome.report.fatal_locator`), before a record
+  is read.
 - A line that is empty or only ASCII whitespace is a blank line: counted in
   `blank_lines`, never a record. The final line needs no LF.
 - Every line is decoded as strict UTF-8 on its own (`invalid_utf8`; the next
@@ -142,14 +142,13 @@ class JsonlAborted(ImportAborted):
 @dataclass(frozen=True)
 class JsonlImportOutcome:
     """`fatal_locator` lives in `report.fatal_locator` (the one shared field every
-    format importer feeds, FTF-0502 r3): this is a read-only convenience, never a
-    second, independently tracked copy of it."""
+    format importer feeds, FTF-0502 r3): callers read `outcome.report.fatal_locator`
+    directly. There is deliberately no convenience property here -- a property whose
+    only statement forwards to the one real field is an equivalent mutant waiting to
+    happen (an inserted duplicate of its own return expression changes nothing a test
+    could ever observe), not a second, independently tracked copy of the locator."""
 
     report: ImportReport
-
-    @property
-    def fatal_locator(self) -> str | None:
-        return self.report.fatal_locator
 
 
 def _check_mapping(mapping: ImportMapping) -> None:
