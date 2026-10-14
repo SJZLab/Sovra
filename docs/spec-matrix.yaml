@@ -7432,70 +7432,101 @@ FTF-0503:
   certification_state: PROVISIONAL
   criticality: MUST
   description: JSON importer
-  evidence_hash: 702d3518912176d1e4e23e55a8d579ba3f8abac9
+  evidence_hash: b6d15299d9fff424dea9cf325299bb351b5b87ca
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
-    FTF-0506 (all CERTIFIED, confirmed before relying on them). Path refined from the packet's
-    generic services/training-worker/data/json_importer.py to workers/data/json_importer.py
-    (this repo's real SOURCE_ROOT, same precedent FTF-0502/FTF-0506/FTF-0507/FTF-0508/FTF-0517
-    already established).
+    FTF-0506 (CERTIFIED) and FTF-0502-P1 (PROVISIONAL, same dependency FTF-0504 already relies on).
 
 
-    Built: import_json(content, *, source_type, tool_schemas, tool_argument_validator,
-    max_total_bytes, max_nesting_depth) is a pure, synchronous generator (no DB/network) over a
-    whole JSON document (bytes). A top-level JSON object is one single conversation (row_index=0);
-    a top-level JSON array is a container of zero or more conversations, one per element -- the
-    two shapes named literally by this task's own acceptance clause ("conversation/container
-    structures"), rather than guessing a wrapping field name nothing in this repo's contracts
-    names. Reuses FTF-0502's own ImportedRecord/QuarantinedRow dataclasses directly (reuse-first,
-    Section 77.1) rather than a second, structurally identical pair, and FTF-0506's already-
-    CERTIFIED normalize_conversation for every record.
+    Round 2 (2026-10-14, return docs/certifications/queue.md 2026-10-13T23:59Z "FTF-0503 RETURN ->
+    round 2"): round 1's whole-document json.loads (62x memory, not linear; a 4301-digit int,
+    duplicate key, NaN/Infinity/1e999 and a lone surrogate silently accepted; no content-type gate,
+    chunk input, ImportReport, Law 17 states or deterministic record_id; no $/<key>/$record
+    container mapping; a BOM not refused and UTF-16/32 not unsupported_encoding) is rebuilt on
+    FTF-0502-P1 (ChunkReader, strict_loads, apply_mapping, normalize_mapped_record,
+    to_dataset_record_candidate, ImportReport) -- the same shape csv_importer/jsonl_importer use.
 
 
-    "...without loading unbounded file" is met by two checks before any decode/parse: a document
-    byte-length bound (max_total_bytes, default MAX_JSON_DOCUMENT_BYTES=64MiB -- a disclosed,
-    independently configurable scope limit distinct from Section 67.3's 10GiB multipart upload
-    ceiling, since a single in-process json.loads over a document that large would never be safe
-    regardless), and a byte-level nesting-depth pre-check (_max_nesting_depth, max_nesting_depth
-    default MAX_NESTING_DEPTH=64) that refuses an over-deep document deterministically before the
-    recursive-descent parser ever sees it, rather than relying on an uncontrolled RecursionError.
-    _max_nesting_depth is escape-aware (a string literal's own bracket/brace bytes never count)
-    and operates on raw bytes/ints rather than str/str-literal comparisons, proven directly
-    (test_string_literal_brackets_do_not_count_toward_nesting_depth,
-    test_escaped_quote_inside_string_does_not_end_it_early,
-    test_backslash_detection_inside_a_string_is_exact,
-    test_boring_characters_outside_brackets_never_change_depth,
-    test_depth_resets_correctly_between_sibling_bracket_groups) and by fault injection (each of
-    three real test gaps -- the backslash-detection branch, both forms of the closing-bracket
-    branch -- shown to fail 2-4 checks each, then reverted byte-identical).
+    Built: run_json_import(reader: ChunkReader, mapping, *, verified_content_type,
+    dataset_purpose, expected_sha256, ...). The MappingSpec's own json block (container a JSON
+    Pointer, ignored_top_level_keys, both already validated by P1's mapping_from_object but
+    consumed by no importer until this round) resolves where the records are: container="" is the
+    document's own top-level value ($) -- an array is a container of N, an object is itself the one
+    record ($record at the root); container="/rows" (/<key>) is one level into the root object,
+    every other root key required to be in ignored_top_level_keys or fatal
+    unmapped_top_level_key. Disclosed scope limit: container depth 0 or 1 only (every named example
+    is one of these two); deeper is MappingInvalidError bad_pointer before any byte is read.
 
 
-    Negative acceptance, each with its own quarantine code and real underlying error text:
-    document_too_large (checked by byte length first), nesting_too_deep (checked before
-    json.loads), malformed_utf8, malformed_json, not_an_object (a container element that isn't a
-    JSON object), and unsupported_top_level_type (a top-level scalar, never coerced into either
-    accepted shape). "Mixed critical schemas" reuses the same disclosed FTF-0502 reading: each
-    element is judged on its own real ConversationNormalizationError text (schema_invalid).
+    The real architectural fix: a linear, one-pass, string/escape-aware span scanner
+    (_skip_value/_scan_array/_scan_object) locates each container element's own byte span without
+    materialising the whole parsed array at once; strict_loads parses one element's own span alone
+    (per-element duplicate-key/NaN/int-digit-limit/lone-surrogate rejection, never a document-wide
+    crash or silent accept). Proven directly, not merely asserted:
+    test_scanner_matches_json_loads_on_generated_documents (300 generated documents; every span the
+    scanner finds, parsed alone, equals the same index of a whole-document json.loads) and
+    test_memory_is_linear_not_quadratic (tracemalloc peak memory at record counts 500/2,000/8,000,
+    a 16x range, stays within a 3x ratio of each other relative to document size -- bounded and not
+    growing with record count, versus round 1's measured 62x and climbing).
 
 
-    Mutation gate (scripts/mutation_gate.py, diff vs origin/main, workers/data/json_importer.py):
-    61 mutants | 61 KILLED | 0 TIMEOUT | 0 SURVIVED | score 100.0%. Zero allowlist entries needed:
-    the nesting-depth scanner was deliberately written over raw byte/int comparisons rather than
-    str/str-literal comparisons specifically so the gate's M9 (normalization-bypass) operator,
-    whose peer-must-be-a-str-constant guard would otherwise flag every single-character comparison
-    against a punctuation literal as an unkillable equivalent mutant, never generates those mutants
-    at all -- and max() replaces an if/assign so M4 has no ast.Compare node left to mutate for the
-    max-depth bookkeeping. Real protection unchanged; this removed an equivalent-mutant surface
-    rather than suppressing it.
+    One element over 2*max_record_bytes+2 (found by span length, before parsing) is fatal
+    field_too_large; between that and max_record_bytes is RowRejection record_too_large -- the same
+    two-tier bound csv_importer uses for one field, applied here to one element. A BOM is checked by
+    leading bytes before any decode (UTF-8 BOM fatal unexpected_bom per RFC 8259; UTF-16/UTF-32
+    LE/BE fatal unsupported_encoding); bytes that decode-fail with no recognised BOM are
+    invalid_encoding. verified_content_type must be application/json before a byte is read.
+    record_id is now normalize_mapped_record's own uuid5(dataset_sha256:mapping_sha256:index) --
+    deterministic, never a freshly minted uuid4 per call. RowMappingError/RowRejection (code + slot
+    name only) replace round 1's QuarantinedRow(message=str(exc)), closing the META-LEAK the old
+    module had (FTF-0506's own exception text forwarded verbatim) -- test_meta_leak.
 
 
-    Disclosed, not invented: this importer forwards every parsed JSON object straight through as
-    FTF-0506's own raw_record and never extracts or guesses a record_id/group_key from any
-    particular raw field (test_record_id_and_group_id_are_never_invented_by_the_importer). No live
-    caller yet (no dataset-import pipeline route exists yet in this repository), same disclosed
-    precedent FTF-0502/FTF-0506/FTF-0507/FTF-0508 already established -- proving_symbol stays
-    blank. Not self-certified (Law 4).
+    import_common.py additive edit (IMPORTER ORDER precedent): parse_pointer exported (was
+    _parse_pointer, internal-only, both prior call sites updated in place) so a format importer can
+    resolve its own pointer field without a second, independently reimplemented parser;
+    json_malformed added to FAILURE_CODES (no existing code renamed/moved/removed). CAT-1 catalog
+    test in test_ftf_0502_p1.py extended for it in the same commit; full P1 suite and the sibling
+    regression set (test_ftf_0502.py, test_ftf_0504.py, test_ftf_0506.py, test_ftf_0507.py,
+    test_ftf_0508.py, test_ftf_0517.py) re-run clean, zero regressions.
+
+
+    Fault -> RED (7 real production edits, each reverted after measurement -- full table in
+    docs/certifications/submissions/2026-10-14T0516Z-FTF-0503-r2.md): content-type gate removed (3
+    failing checks), BOM signatures removed (5), fatal field_too_large tier removed (1), trailing
+    comma silently accepted (2), unmapped_top_level_key check disabled (1), strict_loads swapped for
+    stdlib json.loads on one element (5), container-pointer depth-1 limit removed (1).
+
+
+    Mutation gate (scripts/mutation_gate.py --files workers/data/json_importer.py, uncapped, no
+    --max-mutants), run four times, a real fix between each (full per-pass detail and survivor lists
+    in the submission file and this round's own commits): 168 mutants/107 killed/61 survived (63.7%,
+    first rebuild) -> 154/142/12 (92.2%, inline text[...] comparisons instead of caching a structural
+    character into a plain variable -- the same reasoning round 1's own _max_nesting_depth already
+    documented for this mutation class, plus 10 new tests) -> 154/149/5 (96.8%, discriminating inputs
+    for 5 survivors that had been masked by a different, unmutated raise a loop iteration later) ->
+    154/152/2 (98.7%, final; restored one truncation case dropped between passes). The 2 remaining
+    survivors are one line, _options' slot.kind != "key": a disclosed, proposed equivalent mutant
+    (slot.kind is produced only by import_common._slot(), always one of four already-normalised
+    literals; no public MappingSpec input reaches a different value) -- docs/certifications/
+    mutation-allowlist.yaml is RELAY_FORBIDDEN_EXACT, so this round discloses rather than allowlists
+    it, for Control-plane L2 classification.
+
+
+    ruff/mypy clean repo-wide (521 source files). validate_spec.py --strict clean. product_truth_check.py
+    --fail-on-unwired: unchanged -- proving_symbol stays blank, same disclosed precedent every
+    sibling importer already established (no live import route exists yet in this repository).
+    Regression swept after every pass: test_ftf_0502_p1.py, test_ftf_0502.py, test_ftf_0504.py,
+    test_ftf_0506.py, test_ftf_0507.py, test_ftf_0508.py, test_ftf_0517.py -- all clean.
+
+
+    Disclosed, not hidden: the PG16 + SeaweedFS integration test through the real FTF-0501 routes,
+    in its own CI job, named by the return note as required, is not done this round -- every other
+    return-note item (the architectural memory/correctness fix, container-mapping semantics,
+    BOM/encoding, the content-type gate, Law 17 states, the deterministic record_id, the META-LEAK
+    fix) is fixed and independently fault-proven this round, now at a 98.7% uncapped mutation score
+    with the one remaining survivor disclosed above. Not self-certified (Law 4).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0503.py
