@@ -533,10 +533,13 @@ def _check_review(review: object) -> LeakageReview:
 
 
 def verify_report(report: LeakageReport) -> None:
-    """Raises `LeakageEngineError` unless `report` is exactly what this module sealed: its hash
-    covers every field and agrees with the status its reason and findings imply, every finding
-    id and disposition follow from the finding itself, and every review binds a distinct
-    `review_required` finding."""
+    """Raises `LeakageEngineError` for a report that is internally inconsistent: its hash must
+    cover every field and agree with the status its reason and findings imply, every finding id
+    and disposition must follow from the finding itself, every review must bind a distinct
+    `review_required` finding, and a clear or leakage_found report must have run every method.
+    This is a consistency check, not authentication: an unkeyed sha256 cannot refuse a fully
+    self-consistent forgery (findings dropped, status re-derived, hash recomputed -- accepted by
+    design, pinned by G7/G7b/G7c). Authenticity of a report belongs to FTF-0519 persistence."""
     if not isinstance(report, LeakageReport):
         raise LeakageEngineError("report must be a LeakageReport")
     stored = report.report_sha256.encode()

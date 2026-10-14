@@ -1065,6 +1065,78 @@ def test_saturation_counts_both_sides_of_a_pair() -> None:
     )
 
 
+def test_saturation_counts_the_lowest_position_hub() -> None:
+    """Mirror of `test_saturation_counts_both_sides_of_a_pair` (F22): counting saturation only on
+    `batch_position_b` also passes the F14 hub test, because there the hub is always the larger
+    position. Here the hub is a current `train` record whose id sorts first, so it is batch
+    position 0 and always `batch_position_a` of its own pairs; its partners are prior
+    `final_qualification` records that share nothing with each other, so each partner stays at 1
+    (under the cap) while the hub alone reaches it."""
+    cid = "LK-SATURATION-F22"
+    n_partners = 4
+    phrases = [_random_phrase(seed) for seed in range(n_partners)]
+    hub_text = " ".join(phrases)
+    hub_placed = [(record("a-hub", hub_text, "ok", keys=("hub-g",)), "train", ("hub-g",))]
+    partner_records = [
+        record(f"partner-{i}", phrase, "ok", keys=(f"pg-{i}",)) for i, phrase in enumerate(phrases)
+    ]
+    prior = (prior_source("prior-partners", "final_qualification", partner_records),)
+    report = scan(hub_placed, prior=prior, max_semantic_partners=n_partners)
+    check(
+        cid,
+        f"the lowest-position hub alone reaches the cap: blocked/semantic_scan_saturated "
+        f"({report.status}/{report.reason_code})",
+        report.status == "blocked" and report.reason_code == "semantic_scan_saturated",
+    )
+    # fixture check against the detector this module calls: the hub is always batch_position_a
+    # (position 0) and pairs with every partner once, no partner with another partner
+    batch = [
+        {
+            "record_index": i,
+            "record_sha256": "a" * 64,
+            "normalized_sha256": "b" * 64,
+            "content": {
+                "messages": [{"role": "user", "content": [{"type": "text", "text": text}]}],
+                "metadata": {},
+            },
+            "purpose": purpose,
+        }
+        for i, (text, purpose) in enumerate(
+            [(hub_text, "training")] + [(p, "held_out_evaluation") for p in phrases]
+        )
+    ]
+    near = sl.detect_near_duplicates(
+        batch,
+        thresholds=NearDuplicateThresholds(0.0, 0.0, 0.0),
+        max_candidates_per_record=n_partners,
+    )
+    hub_pairs = [c for c in near.candidates if 0 in (c.batch_position_a, c.batch_position_b)]
+    other_pairs = [c for c in near.candidates if 0 not in (c.batch_position_a, c.batch_position_b)]
+    check(
+        cid,
+        f"fixture: the hub pairs with every one of the {n_partners} partners ({len(hub_pairs)})",
+        len(hub_pairs) == n_partners,
+    )
+    check(cid, "fixture: no partner pairs with another partner", len(other_pairs) == 0)
+    check(
+        cid,
+        "fixture: the hub is always the lowest (first) batch position in its own pairs",
+        all(c.batch_position_a == 0 for c in hub_pairs),
+    )
+    under = scan(hub_placed, prior=prior, max_semantic_partners=n_partners - 1)
+    check(
+        cid,
+        f"a cap one below the hub's true count still saturates ({under.status}/{under.reason_code})",
+        under.status == "blocked" and under.reason_code == "semantic_scan_saturated",
+    )
+    over = scan(hub_placed, prior=prior, max_semantic_partners=n_partners + 1)
+    check(
+        cid,
+        f"a cap above the hub's true count does not saturate ({over.status}/{over.reason_code})",
+        over.reason_code != "semantic_scan_saturated",
+    )
+
+
 # --- the gate ---------------------------------------------------------------------------
 
 
