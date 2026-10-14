@@ -1755,6 +1755,16 @@ def test_self_sealed_forgeries_are_refused() -> None:
         "clear claiming nothing ran at all": forged(
             clean, methods_run=(), methods_not_run=sl.METHODS
         ),
+        # isolated, one field at a time: methods_run wrong alone (methods_not_run left at its
+        # genuine, correct value) and methods_not_run wrong alone (methods_run left correct) --
+        # catches an "and" in place of the required "or" between the two field checks, which
+        # the combined-forgery cases above (both fields wrong at once) cannot tell apart.
+        "clear with methods_run wrong but methods_not_run still correct": forged(
+            clean, methods_run=sl.HASH_METHODS
+        ),
+        "clear with methods_not_run wrong but methods_run still correct": forged(
+            clean, methods_not_run=(sl.METHODS[0],)
+        ),
         "leakage_found with a blocked reason": forged(
             report, reason_code="semantic_scan_saturated"
         ),
