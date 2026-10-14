@@ -7514,8 +7514,11 @@ FTF-0504:
     byte-exact fields (no type inference, formula text and embedded CRLF/LF/CR kept), fatal codes
     (invalid_encoding, unexpected_bom, duplicate_header, mapping_column_missing, field_too_large,
     csv_structure_invalid, too_many_columns) and row rejections (column_count_mismatch,
-    nul_character). Additive catalog edit in import_common.py: those 7 + 2 codes added to
-    FAILURE_CODES / REJECTION_CODES (test_ftf_0502_p1 still passes). Round 2: own resumable CSV
+    nul_character), every one already in P1's FAILURE_CODES / REJECTION_CODES (no catalog edit). Round 3 makes the
+    single additive import_common.py edit the Control plane allowed: an optional `fatal_locator` on the report
+    (`LocatedImportReport`, inside the digest; a report without one keeps its fields, body and digest -- pinned by
+    golden digests and the unedited FTF-0502-P1 suite) and a read-only `ChunkReader.expected_sha256`; an expected hash
+    that is not the reader's declared hash is failed/source_changed before a byte is read. Round 2: own resumable CSV
     parser (no csv module, so no process-global field limit), invalid_encoding located at the same
     physical line for every chunking, one logical record capped across physical lines, and the
     verified_content_type gate (only text/csv; else failed content_type_not_supported_by_importer
@@ -7524,7 +7527,7 @@ FTF-0504:
     locator is line:<start physical line>; a valid-but-wrong declared encoding imports as garbled
     text and cannot be detected by strict decoding (the preview/mapping UI, FTF-H011, must show
     decoded samples before approval); no live route caller, so proving_symbol stays blank.
-    Mutation gate: 122 run | 118 KILLED | 4 TIMEOUT | 0 SURVIVED (see docs/certifications/submissions/2026-10-14T0230Z-FTF-0504.md).
+    Mutation gate (round 2): 122 run | 118 KILLED | 4 TIMEOUT | 0 SURVIVED (see docs/certifications/submissions/2026-10-14T0230Z-FTF-0504.md). Round 3: see docs/certifications/submissions/2026-10-14T0900Z-FTF-0504-r3.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0504.py

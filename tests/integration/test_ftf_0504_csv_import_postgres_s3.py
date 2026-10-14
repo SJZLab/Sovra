@@ -433,7 +433,7 @@ def main() -> None:
             open_source(ctx1, p1_id, train.id), chunk_size=chunk_size
         )
         report = outcome.report
-        leak_values.append((report, outcome.fatal_locator))
+        leak_values.append((report, outcome.report.fatal_locator))
         check(
             f"C1 {label}: completed ({report.state} {report.failure_code})",
             report.state == "completed" and report.failure_code is None,
@@ -482,7 +482,7 @@ def main() -> None:
     counting = CountingClient(client)
     jsonl_source = open_source(ctx1, p1_id, jsonl_set.id, storage_client=counting)
     outcome, candidates, reader = import_dataset(jsonl_source)
-    leak_values.append((outcome.report, outcome.fatal_locator))
+    leak_values.append((outcome.report, outcome.report.fatal_locator))
     check(
         f"C2 a JSONL dataset is refused ({outcome.report.state} {outcome.report.failure_code})",
         outcome.report.state == "failed"
@@ -535,13 +535,13 @@ def main() -> None:
     bad = csv_data[:2000] + b"\xff\xfe" + csv_data[2002:]
     bad_set, _ = make_dataset("org1", p1_id, conn1, csv_data, "bad-bytes", store_bytes=bad)
     outcome, candidates, _reader = import_dataset(open_source(ctx1, p1_id, bad_set.id))
-    leak_values.append((outcome.report, outcome.fatal_locator))
+    leak_values.append((outcome.report, outcome.report.fatal_locator))
     check(
         f"C5 invalid bytes are fatal invalid_encoding with a line locator "
         f"({outcome.report.failure_code} "
-        f"{outcome.fatal_locator})",
+        f"{outcome.report.fatal_locator})",
         outcome.report.failure_code == "invalid_encoding"
-        and str(outcome.fatal_locator).startswith("line:"),
+        and str(outcome.report.fatal_locator).startswith("line:"),
     )
 
     # ---- C4: truncated in storage, then S3 stopped mid-stream ---------------------------------
@@ -549,7 +549,7 @@ def main() -> None:
         "org1", p1_id, conn1, csv_data, "truncated", store_bytes=csv_data[:-1000]
     )
     outcome, _candidates, _reader = import_dataset(open_source(ctx1, p1_id, truncated.id))
-    leak_values.append((outcome.report, outcome.fatal_locator))
+    leak_values.append((outcome.report, outcome.report.fatal_locator))
     check(
         f"C4 an object shorter than its verified size is blocked/source_unavailable "
         f"({outcome.report.state} {outcome.report.failure_code})",
@@ -593,7 +593,7 @@ def main() -> None:
         expected_sha256=large_source.expected_sha256,
         on_accepted=lambda _candidate: None,
     )
-    leak_values.append((outcome.report, outcome.fatal_locator))
+    leak_values.append((outcome.report, outcome.report.fatal_locator))
     check(
         f"C4 stopping S3 mid-stream is blocked/source_unavailable "
         f"({outcome.report.state} {outcome.report.failure_code})",

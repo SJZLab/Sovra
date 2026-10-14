@@ -25,7 +25,7 @@ encoding, an unterminated quote, a stray quote, an oversize field, too many
 columns, a BOM under `utf-8`, a missing or repeated header) ends the import:
 the report's `state` is `failed` and `failure_code` is the code. The physical
 line it happened on (`line:<n>`) is the report's `fatal_locator` (a `LocatedImportReport`,
-inside the report digest); `CsvImportOutcome.fatal_locator` reads it. A
+inside the report digest). A
 problem confined to one record becomes a `RowRejection` and the import goes on.
 
 Disclosed choices (each pinned by a test):
@@ -164,11 +164,6 @@ class _BadBytes(Exception):  # noqa: N818 - internal control flow, turned into C
 @dataclass(frozen=True)
 class CsvImportOutcome:
     report: ImportReport
-
-    @property
-    def fatal_locator(self) -> str | None:
-        """Where a fatal problem happened: `ImportReport.fatal_locator`."""
-        return self.report.fatal_locator
 
 
 @dataclass(frozen=True)

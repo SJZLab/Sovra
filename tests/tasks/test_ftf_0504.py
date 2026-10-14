@@ -212,7 +212,7 @@ def test_basic_import_candidates_and_report() -> None:
     check(CID, "no rejections", report.records_rejected == 0 and report.records_seen == 2)
     check(CID, "prompt/completion preserved", texts(cands[0]) == ["hi", "there"])
     check(CID, "record_index is the 0-based source ordinal", cands[1]["record_index"] == 1)
-    check(CID, "no fatal locator", outcome.fatal_locator is None)
+    check(CID, "no fatal locator", outcome.report.fatal_locator is None)
     check(
         CID, "importer name recorded", report.importer == "csv" and report.importer_version == "1"
     )
@@ -280,7 +280,7 @@ def test_wrong_declared_encoding_is_fatal_not_garbled() -> None:
         check(
             CID,
             f"{label}: a physical line is reported",
-            (outcome.fatal_locator or "").startswith("line:"),
+            (outcome.report.fatal_locator or "").startswith("line:"),
         )
 
 
@@ -290,7 +290,8 @@ def test_invalid_encoding_reports_the_physical_line() -> None:
     check(
         CID,
         "invalid utf-8 on line 3",
-        outcome.report.failure_code == "invalid_encoding" and outcome.fatal_locator == "line:3",
+        outcome.report.failure_code == "invalid_encoding"
+        and outcome.report.fatal_locator == "line:3",
     )
     truncated = b"q,a\nok,fine\nlast,\xd8\xa7"[:-1]
     _events, outcome = collect(truncated)
@@ -307,7 +308,8 @@ def test_bom_handling() -> None:
     check(
         CID,
         "BOM under utf-8 is fatal unexpected_bom",
-        outcome.report.failure_code == "unexpected_bom" and outcome.fatal_locator == "line:1",
+        outcome.report.failure_code == "unexpected_bom"
+        and outcome.report.fatal_locator == "line:1",
     )
     events, outcome = collect(b"\xef\xbb\xbf" + body, encoding="utf-8-sig")
     check(
@@ -436,7 +438,7 @@ def test_duplicate_header_is_fatal_even_when_unmapped() -> None:
         CID,
         "duplicate header fatal",
         outcome.report.failure_code == "duplicate_header"
-        and outcome.fatal_locator == "line:1"
+        and outcome.report.fatal_locator == "line:1"
         and not accepted(events),
     )
     data = csv_bytes([["q", "a", "q"], ["1", "2", "3"]])
@@ -750,7 +752,7 @@ def test_size_limits() -> None:
                     f"field {size} chunk={chunk}: fatal field_too_large",
                     outcome.report.failure_code == "field_too_large"
                     and outcome.report.state == "failed"
-                    and outcome.fatal_locator == "line:2",
+                    and outcome.report.fatal_locator == "line:2",
                 )
             else:
                 ok = (
@@ -998,7 +1000,7 @@ def test_structure_errors_are_fatal() -> None:
             check(
                 CID,
                 f"{label} chunk={chunk}: a line is reported",
-                (outcome.fatal_locator or "").startswith("line:"),
+                (outcome.report.fatal_locator or "").startswith("line:"),
             )
 
 
@@ -1009,7 +1011,8 @@ def test_too_many_columns() -> None:
     check(
         CID,
         "16,385 columns is fatal too_many_columns",
-        outcome.report.failure_code == "too_many_columns" and outcome.fatal_locator == "line:1",
+        outcome.report.failure_code == "too_many_columns"
+        and outcome.report.fatal_locator == "line:1",
     )
     ok = [f"c{i}" for i in range(ci.CSV_MAX_COLUMNS)]
     events, outcome = collect(
@@ -1244,21 +1247,21 @@ def test_meta_leak_markers_never_reach_the_report() -> None:
     events, outcome = collect(data)
     leaks = support.leaked_markers(outcome.report, [m_val, m_head, m_row])
     check(CID, f"no content in the report ({leaks})", not leaks)
-    leaks = support.leaked_markers(outcome.fatal_locator, [m_val, m_head, m_row])
+    leaks = support.leaked_markers(outcome.report.fatal_locator, [m_val, m_head, m_row])
     check(CID, "no content in the fatal locator", not leaks)
     bad = csv_bytes([["q", "a", m_head, m_head]])
     _events, outcome = collect(bad)
     check(
         CID,
         "a duplicate-header failure names no header text",
-        not support.leaked_markers((outcome.report, outcome.fatal_locator), [m_head]),
+        not support.leaked_markers((outcome.report, outcome.report.fatal_locator), [m_head]),
     )
     broken = f'q,a\n"{m_val}'.encode()
     _events, outcome = collect(broken)
     check(
         CID,
         "a structure failure names no content",
-        not support.leaked_markers((outcome.report, outcome.fatal_locator), [m_val]),
+        not support.leaked_markers((outcome.report, outcome.report.fatal_locator), [m_val]),
     )
     try:
         ci.csv_events(
@@ -1445,7 +1448,7 @@ def test_invalid_encoding_locator_is_chunk_independent() -> None:
         seen = set()
         for size in list(range(1, 14)) + [64, 10**6]:
             _events, outcome = collect(data, chunk=size, encoding=encoding)
-            seen.add((outcome.report.failure_code, outcome.fatal_locator))
+            seen.add((outcome.report.failure_code, outcome.report.fatal_locator))
         check(
             CID,
             f"{encoding}: one outcome for every chunking: {seen}",
@@ -1455,7 +1458,7 @@ def test_invalid_encoding_locator_is_chunk_independent() -> None:
     seen = set()
     for size in list(range(1, 12)) + [10**6]:
         _events, outcome = collect(quoted, chunk=size)
-        seen.add((outcome.report.failure_code, outcome.fatal_locator))
+        seen.add((outcome.report.failure_code, outcome.report.fatal_locator))
     check(
         CID, f"bad bytes after a multiline record: {seen}", seen == {("invalid_encoding", "line:5")}
     )
@@ -1464,7 +1467,7 @@ def test_invalid_encoding_locator_is_chunk_independent() -> None:
     seen = set()
     for size in (1, 2, 5, 10**6):
         _events, outcome = collect(truncated, chunk=size)
-        seen.add((outcome.report.failure_code, outcome.fatal_locator))
+        seen.add((outcome.report.failure_code, outcome.report.fatal_locator))
     check(CID, f"truncated tail: {seen}", seen == {("invalid_encoding", "line:3")})
 
 
@@ -1478,7 +1481,7 @@ def test_bom_is_refused_even_when_bad_bytes_follow_in_the_same_chunk() -> None:
                 CID,
                 f"{encoding} chunk={size}: the BOM wins over later bad bytes",
                 outcome.report.failure_code == "unexpected_bom"
-                and outcome.fatal_locator == "line:1",
+                and outcome.report.fatal_locator == "line:1",
             )
 
 
@@ -1487,7 +1490,7 @@ def test_an_earlier_structure_error_beats_a_later_bad_byte_for_every_chunking() 
     seen = set()
     for size in list(range(1, 10)) + [10**6]:
         _events, outcome = collect(data, chunk=size)
-        seen.add((outcome.report.failure_code, outcome.fatal_locator))
+        seen.add((outcome.report.failure_code, outcome.report.fatal_locator))
     check(CID, f"structure error first: {seen}", seen == {("csv_structure_invalid", "line:2")})
 
 
@@ -1557,7 +1560,7 @@ def test_one_logical_record_is_capped_across_physical_lines() -> None:
     check(
         CID,
         "located on the physical line where the field cap was crossed",
-        outcome.fatal_locator == "line:23",
+        outcome.report.fatal_locator == "line:23",
     )
 
 
@@ -1752,12 +1755,12 @@ def test_invalid_bytes_are_located_identically_at_every_split_point_for_every_en
         check(
             CID,
             f"{encoding}: whole source gives {expected}",
-            (whole.report.failure_code, whole.fatal_locator) == expected,
+            (whole.report.failure_code, whole.report.fatal_locator) == expected,
         )
         wrong = 0
         for cut in range(1, len(data)):
             got = _split_outcome(data, [cut], encoding)
-            if (got.report.failure_code, got.fatal_locator) != expected:
+            if (got.report.failure_code, got.report.fatal_locator) != expected:
                 wrong += 1
         check(
             CID,
@@ -1769,7 +1772,7 @@ def test_invalid_bytes_are_located_identically_at_every_split_point_for_every_en
             check(
                 CID,
                 f"{encoding}: chunks of {size} agree",
-                (got.report.failure_code, got.fatal_locator) == expected,
+                (got.report.failure_code, got.report.fatal_locator) == expected,
             )
 
 
@@ -1779,7 +1782,7 @@ def test_a_structure_error_just_before_a_bad_byte_wins_at_every_split_point() ->
         data = _encode(before, encoding) + bad + _after_bad_unit(encoding)
         expected = ("csv_structure_invalid", f"line:{_line_of(before)}")
         outcomes = {
-            (r.report.failure_code, r.fatal_locator)
+            (r.report.failure_code, r.report.fatal_locator)
             for r in (_split_outcome(data, [cut], encoding) for cut in range(0, len(data)))
             if True
         }
@@ -1793,7 +1796,7 @@ def test_a_structure_error_just_before_a_bad_byte_wins_at_every_split_point() ->
             check(
                 CID,
                 f"{encoding}: chunks of {size} give the structure error",
-                (got.report.failure_code, got.fatal_locator) == expected,
+                (got.report.failure_code, got.report.fatal_locator) == expected,
             )
 
 
@@ -1804,7 +1807,7 @@ def test_held_over_bytes_do_not_shift_the_locator() -> None:
         check(
             CID,
             f"split at {cut}: invalid_encoding at line:3",
-            (got.report.failure_code, got.fatal_locator) == ("invalid_encoding", "line:3"),
+            (got.report.failure_code, got.report.fatal_locator) == ("invalid_encoding", "line:3"),
         )
     bom = b"\xef\xbb\xbfq,a\nbad,x\n\xff\n"
     for cut in range(1, len(bom)):
@@ -1812,13 +1815,15 @@ def test_held_over_bytes_do_not_shift_the_locator() -> None:
         check(
             CID,
             f"utf-8-sig split at {cut}: line:3",
-            (got.report.failure_code, got.fatal_locator) == ("invalid_encoding", "line:3"),
+            (got.report.failure_code, got.report.fatal_locator) == ("invalid_encoding", "line:3"),
         )
     big = b"\xef\xbb\xbfq,a\n" + b"r,x\n" * 1000 + b"\xff\n"
     got = _split_outcome(big, [1024 * 1024], "utf-8-sig")
-    check(CID, "at 1 MiB chunks line 1002 is still line 1002", got.fatal_locator == "line:1002")
+    check(
+        CID, "at 1 MiB chunks line 1002 is still line 1002", got.report.fatal_locator == "line:1002"
+    )
     got = _split_outcome(big, list(range(1000, len(big), 1000)), "utf-8-sig")
-    check(CID, "and at 1000-byte chunks", got.fatal_locator == "line:1002")
+    check(CID, "and at 1000-byte chunks", got.report.fatal_locator == "line:1002")
 
 
 def test_valid_documents_give_one_report_at_every_split_point_for_every_encoding() -> None:
@@ -1886,7 +1891,7 @@ def test_the_locator_lives_in_the_report_and_its_digest() -> None:
     check(
         CID,
         "the report carries the fatal locator",
-        report.fatal_locator == "line:3" and outcome.fatal_locator == "line:3",
+        report.fatal_locator == "line:3" and outcome.report.fatal_locator == "line:3",
     )
     check(
         CID,
