@@ -24743,3 +24743,10 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-14T08:18Z — Control plane: FTF-0502 returned
 - **Returned:** FTF-0502 r3 (0k): sha mismatch, the shared fatal_locator field (serialized ruling), outage control run, tables.
+
+## 2026-10-14T09:46Z — FTF-0904-W1 returned (r2 submitted)
+- **Returned:** FTF-0904-W1 r1 (excepthook bypass; late install unpinned). **Round 2 submitted** in the same PR: redacting
+  exception/warning hooks, W1-BOOT-FAIL and W1-HOOKS checks, faults F7-F12. Needs L2 from a separate session.
+
+## 2026-10-14T09:46Z — Control plane: FTF-0503 returned
+- **Returned:** FTF-0503 r3 (0b): streaming scanner, sha mismatch, fatal structure errors, BOM, oversize rows, integration.

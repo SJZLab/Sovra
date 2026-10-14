@@ -15,21 +15,111 @@ fail on every request and the redacting sink would print only the failure
 marker. Its handlers therefore get uvicorn's `DefaultFormatter` with the
 same level prefix and the (already redacted) rendered message: the same
 access line, minus the request-line styling.
+
+Some exception text never passes through logging: an exception that escapes
+the factory (e.g. a `ConfigurationError` quoting a bad setting) is printed by
+`sys.excepthook`, one that escapes a thread by `threading.excepthook`, and one
+raised in `__del__` by `sys.unraisablehook`, and a warning by
+`warnings.showwarning`. Each is replaced with a writer that prints only
+redacted text to stderr (or the warning's own file), or the constant failure
+marker if redaction itself fails. (`logging.captureWarnings` is not used: with
+no root handler it attaches a NullHandler and warnings would vanish.)
 """
 
 from __future__ import annotations
 
 import logging
+import sys
+import threading
+import warnings
+from types import TracebackType
+from typing import Any
 
-from packages.security.log_redaction import attach_sink, install_redaction
+from packages.security.log_redaction import (
+    REDACTION_FAILED_MARKER,
+    attach_sink,
+    install_redaction,
+    redact_exception,
+    redact_text,
+)
 from uvicorn.logging import AccessFormatter, DefaultFormatter
 
 UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
+_MARK = "_ftf0904_w1_redacting"
+
+
+def _write_redacted(header: str, exc: BaseException | None, file: Any = None) -> None:
+    try:
+        text = redact_text(header) if header else ""
+        if exc is not None:
+            text += redact_exception(exc)
+    except Exception:
+        text = REDACTION_FAILED_MARKER + "\n"
+    try:
+        stream = file if file is not None else sys.stderr
+        stream.write(text)
+        stream.flush()
+    except Exception:
+        pass
+
+
+def _excepthook(
+    exc_type: type[BaseException], exc: BaseException | None, tb: TracebackType | None
+) -> None:
+    _write_redacted("", exc)
+
+
+def _thread_excepthook(args: Any) -> None:
+    if args.exc_type is SystemExit:
+        return
+    name = getattr(args.thread, "name", None) or "unknown"
+    _write_redacted(f"Exception in thread {name}:\n", args.exc_value)
+
+
+def _unraisablehook(args: Any) -> None:
+    try:
+        header = f"{args.err_msg or 'Exception ignored in'}: {args.object!r}\n"
+    except Exception:
+        header = "Exception ignored in: <unrepresentable object>\n"
+    _write_redacted(header, args.exc_value)
+
+
+def _showwarning(
+    message: Warning | str,
+    category: type[Warning],
+    filename: str,
+    lineno: int,
+    file: Any = None,
+    line: str | None = None,
+) -> None:
+    try:
+        header = warnings.formatwarning(message, category, filename, lineno, line)
+    except Exception:
+        header = f"{getattr(category, '__name__', 'Warning')}: <unformattable warning>\n"
+    _write_redacted(header, None, file)
+
+
+def _mark(hook: Any) -> Any:
+    setattr(hook, _MARK, True)
+    return hook
+
+
+def _install_exception_hooks() -> None:
+    if not getattr(sys.excepthook, _MARK, False):
+        sys.excepthook = _mark(_excepthook)
+    if not getattr(threading.excepthook, _MARK, False):
+        threading.excepthook = _mark(_thread_excepthook)
+    if not getattr(sys.unraisablehook, _MARK, False):
+        sys.unraisablehook = _mark(_unraisablehook)
+    if not getattr(warnings.showwarning, _MARK, False):
+        warnings.showwarning = _mark(_showwarning)
 
 
 def install_api_log_redaction() -> None:
-    """Ingress + sink redaction for the root, uvicorn and last-resort handlers. Idempotent."""
+    """Ingress + sink redaction for the root, uvicorn and last-resort handlers,
+    plus redacting hooks for exceptions printed outside logging. Idempotent."""
     install_redaction()
+    _install_exception_hooks()
     for name in UVICORN_LOGGERS:
         for handler in logging.getLogger(name).handlers:
             formatter = handler.formatter
