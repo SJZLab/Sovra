@@ -227,7 +227,7 @@ def test_unmapped_top_level_key_is_fatal() -> None:
 
 def test_container_pointer_missing_is_fatal() -> None:
     doc: dict[str, object] = {"nope": []}
-    outcome = run(jdump(doc), container="/rows")
+    outcome = run(jdump(doc), container="/rows", ignored_top_level_keys=["nope"])
     check(
         CID,
         "a container pointer absent from the document is fatal mapping_column_missing",
@@ -245,12 +245,13 @@ def test_container_depth_over_one_is_mapping_invalid() -> None:
             verified_content_type="application/json",
             dataset_sha256="0" * 64,
         )
-    except ic.MappingInvalidError as exc:
+    except ic.MappingUnsupportedError as exc:
         raised = exc
     check(
         CID,
-        "a container pointer deeper than one level is MappingInvalidError (disclosed scope limit)",
-        raised is not None and raised.reason == "bad_pointer",
+        "a container pointer deeper than one level is MappingUnsupportedError "
+        "(mapping_unsupported), before a byte is read",
+        raised is not None and raised.code == "mapping_unsupported",
     )
 
 
@@ -315,61 +316,9 @@ def test_nested_container_trailing_garbage_after_root_is_json_malformed() -> Non
     )
 
 
-def test_scan_array_truncation_table() -> None:
-    for label, text in (
-        ("nothing after [", "["),
-        ("nothing after a value", "[1"),
-        # A second value where only a comma or ']' is valid: looping back to
-        # the top of _scan_array's own loop would otherwise re-enter
-        # _skip_value at the same position and raise there instead, masking
-        # whether this exact check still runs -- "[1 2]" instead finds a
-        # second, syntactically fine literal ("2"), so only this check's own
-        # raise distinguishes the real code from a "pass" in its place.
-        ("neither comma nor ] after a value", "[1 2]"),
-    ):
-        raised = False
-        try:
-            ji._scan_array(text, 0)
-        except ji._Unterminated:
-            raised = True
-        check(CID, f"_scan_array({label!r}): _Unterminated", raised)
-
-
-def test_scan_object_truncation_table() -> None:
-    for label, text in (
-        ("nothing after {", "{"),
-        ("nothing after a key", '{"a"'),
-        # Same reasoning as _scan_array above: a next character that is
-        # itself a quote (not merely absent) would let a "pass" in place of
-        # this exact raise fall through into parsing a second, well-formed
-        # member instead of hitting any other check.
-        ("next char exists but is not ':'", '{"a" "b":1}'),
-        ("nothing after the colon", '{"a":'),
-        ("nothing after a value", '{"a":1'),
-        ("neither comma nor } after a value", '{"a":1 "b":2}'),
-        ("a key with an invalid escape", '{"\\q":1}'),
-    ):
-        raised = False
-        try:
-            ji._scan_object(text, 0)
-        except ji._Unterminated:
-            raised = True
-        check(CID, f"_scan_object({label!r}): _Unterminated", raised)
-
-
-def test_scan_object_empty_root_is_not_malformed() -> None:
-    # The "if pos < length and text[pos] == '}': return" early return for a
-    # genuinely empty object matters observably: without it, the next check
-    # ("if pos >= length or text[pos] != '\"': raise") would wrongly refuse
-    # a syntactically valid empty object as _Unterminated.
-    members, end = ji._scan_object("{}", 0)
-    check(CID, "an empty object scans as zero members, not _Unterminated", members == [])
-    check(CID, "...consumed through the closing brace", end == 2)
-
-
 def test_container_key_match_is_exact_not_normalized() -> None:
     doc = {"Rows": [VALID_A], "_meta": {}}
-    outcome = run(jdump(doc), container="/rows", ignored_top_level_keys=["_meta"])
+    outcome = run(jdump(doc), container="/rows", ignored_top_level_keys=["_meta", "Rows"])
     check(
         CID,
         "a differently-cased top-level key ('Rows') never matches the mapping's own "
@@ -443,11 +392,15 @@ def test_oversize_element_exact_boundaries() -> None:
     )
 
     over_generous = element_of_length(generous + 1)
-    outcome = run(jdump([over_generous]), container="", limits=limits)
+    outcome = run(jdump([over_generous, VALID_A]), container="", limits=limits)
     check(
         CID,
-        "generous bound + 1: fatal field_too_large",
-        (outcome.report.state, outcome.report.failure_code) == ("failed", "field_too_large"),
+        "far over the limit (the old 2x+2 tier): still one record_too_large row, never fatal, "
+        "and the next element imports",
+        outcome.report.state == "completed"
+        and [(r.locator, r.code) for r in outcome.report.rejections]
+        == [("record:0", "record_too_large")]
+        and outcome.report.records_accepted == 1,
     )
 
 
@@ -608,7 +561,7 @@ def test_container_key_case_mismatch_against_the_document_is_refused() -> None:
     # the *document's* key was differently cased. Here the *mapping's own*
     # declared container key is differently cased than a document key that
     # would otherwise match -- also refused, exact match on both sides.
-    mapping = build_mapping(container="/Rows")
+    mapping = build_mapping(container="/Rows", ignored_top_level_keys=["rows"])
     doc = {"rows": [VALID_A]}
     outcome = ji.run_json_import(
         make_reader(jdump(doc)),
@@ -826,12 +779,13 @@ def test_oversize_element_tiers() -> None:
         bool(outcome.report.rejections) and outcome.report.rejections[0].code == "record_too_large",
     )
     tiny_limits = ic.ImportLimits(max_record_bytes=10)
-    outcome2 = run(jdump([small_row]), container="", limits=tiny_limits)
+    outcome2 = run(jdump([small_row, small_row]), container="", limits=tiny_limits)
     check(
         CID,
-        "over the generous 2*max_record_bytes+2 bound: fatal field_too_large, found by span "
-        "length alone",
-        (outcome2.report.state, outcome2.report.failure_code) == ("failed", "field_too_large"),
+        "far over the limit: every oversize element is its own record_too_large row and the "
+        "import continues (it is never fatal field_too_large)",
+        outcome2.report.state == "completed"
+        and [r.code for r in outcome2.report.rejections] == ["record_too_large"] * 2,
     )
 
 
@@ -862,13 +816,26 @@ def test_over_cap_document_loses_only_the_document_not_elements() -> None:
 # --- BOM / encoding (round-1: "BOM refused, UTF-16/32 not unsupported_encoding") -
 
 
-def test_bom_is_refused() -> None:
-    data = b"\xef\xbb\xbf" + jdump([VALID_A])
-    outcome = run(data, container="")
+def test_utf8_bom_is_accepted_at_byte_zero_only() -> None:
+    data = b"\xef\xbb\xbf" + jdump([VALID_A, VALID_B])
+    for chunk in (None, 1, 2, 3, 4, 5):
+        outcome = run(data, container="", chunk=chunk)
+        check(
+            CID,
+            f"a UTF-8 BOM at byte 0 is skipped, chunk={chunk}",
+            outcome.report.state == "completed" and outcome.report.records_accepted == 2,
+        )
+    outcome = run(jdump([VALID_A]) + b"\xef\xbb\xbf", container="")
     check(
         CID,
-        "a UTF-8 BOM is fatal unexpected_bom (RFC 8259 forbids it)",
-        (outcome.report.state, outcome.report.failure_code) == ("failed", "unexpected_bom"),
+        "a BOM after the document is fatal json_malformed, never skipped",
+        outcome.report.failure_code == "json_malformed",
+    )
+    outcome = run(b"[" + b"\xef\xbb\xbf" + jdump(VALID_A) + b"]", container="")
+    check(
+        CID,
+        "a BOM between tokens is fatal json_malformed",
+        outcome.report.failure_code == "json_malformed",
     )
 
 
@@ -1099,26 +1066,6 @@ def _random_row(i: int, rng: random.Random) -> dict[str, object]:
     }
 
 
-def test_scanner_matches_json_loads_on_generated_documents() -> None:
-    rng = random.Random(12345)
-    for trial in range(300):
-        n = rng.randint(0, 6)
-        doc = [_random_row(i, rng) for i in range(n)]
-        text = json.dumps(doc)
-        expected = json.loads(text)
-        spans, end = ji._scan_array(text, 0)
-        check(CID, f"trial {trial}: scanner consumes the whole array", end == len(text))
-        check(CID, f"trial {trial}: scanner finds exactly {n} elements", len(spans) == n)
-        for idx, (s, e) in enumerate(spans):
-            got = ic.strict_loads(text[s:e])
-            check(
-                CID,
-                f"trial {trial} element {idx}: the scanner's own span, parsed alone, equals "
-                "the same index of a whole-document json.loads",
-                got == expected[idx],
-            )
-
-
 def test_memory_is_linear_not_quadratic() -> None:
     mapping = build_mapping(container="")
     ratios: list[float] = []
@@ -1148,67 +1095,6 @@ def test_memory_is_linear_not_quadratic() -> None:
 
 
 # --- scanner mutation-sensitivity (same style as round 1's depth-scanner tests) --
-
-
-def test_skip_value_string_escape_handling() -> None:
-    text = '"a \\"quoted\\" [thing]" tail'
-    end = ji._skip_value(text, 0)
-    check(
-        CID,
-        "an escaped quote inside a string never ends it early",
-        text[:end] == '"a \\"quoted\\" [thing]"',
-    )
-
-
-def test_skip_value_unterminated_string_raises() -> None:
-    raised = False
-    try:
-        ji._skip_value('"never closes', 0)
-    except ji._Unterminated:
-        raised = True
-    check(CID, "an unterminated string raises _Unterminated", raised)
-
-
-def test_skip_value_unterminated_container_raises() -> None:
-    raised = False
-    try:
-        ji._skip_value("[1,2,{", 0)
-    except ji._Unterminated:
-        raised = True
-    check(CID, "an unclosed bracket raises _Unterminated", raised)
-
-
-def test_scan_array_trailing_comma_raises() -> None:
-    raised = False
-    try:
-        ji._scan_array("[1,2,]", 0)
-    except ji._Unterminated:
-        raised = True
-    check(CID, "a trailing comma is _Unterminated, not a silently-accepted empty element", raised)
-
-
-def test_scan_array_empty() -> None:
-    spans, end = ji._scan_array("[ ]", 0)
-    check(CID, "an empty (whitespace-only) array yields zero spans", spans == [])
-    check(CID, "...and consumes through the closing bracket", end == 3)
-
-
-def test_scan_object_duplicate_member_key_is_ambiguous() -> None:
-    # Root-level container discovery is a structural scan, not a strict_loads
-    # parse (module docstring, disclosed): a duplicate root key is caught as
-    # an ambiguous match, not as STRICT_JSON_CODES duplicate_key.
-    members, _end = ji._scan_object('{"a": 1, "a": 2}', 0)
-    keys = [k for k, _s, _e in members]
-    check(
-        CID, "both members of a duplicate root key are returned (not collapsed)", keys == ["a", "a"]
-    )
-
-
-def test_bracket_inside_string_never_affects_scanning() -> None:
-    text = '["{[all fake brackets]}", "real", 1]'
-    spans, end = ji._scan_array(text, 0)
-    check(CID, "brackets inside a string literal never change element boundaries", len(spans) == 3)
-    check(CID, "...and the array is still fully consumed", end == len(text))
 
 
 # --- catalog ----------------------------------------------------------------------
@@ -1283,6 +1169,967 @@ def test_fault_table_smoke() -> None:
             )
         else:
             check(CID, f"{label}: baseline accepted", outcome.report.records_accepted >= 1)
+
+
+# --- round 3 --------------------------------------------------------------------------------
+
+G = json.dumps(VALID_A).encode()
+H = json.dumps(VALID_B).encode()
+OTHER_SHA = hashlib.sha256(b"a different source").hexdigest()
+
+
+def essence(report: ic.ImportReport) -> tuple[object, ...]:
+    """Everything in a report except what legitimately depends on how the source was cut into
+    chunks: how many bytes had been pulled when a fatal problem stopped the read."""
+    return (
+        report.state,
+        report.failure_code,
+        report.fatal_locator,
+        report.records_seen,
+        report.records_accepted,
+        report.records_rejected,
+        report.rejections,
+        report.source_schema_sha256,
+    )
+
+
+def verdict(outcome: ji.JsonImportOutcome) -> tuple[str, str | None, str | None]:
+    report = outcome.report
+    return report.state, report.failure_code, report.fatal_locator
+
+
+def at(data: bytes, needle: bytes, nth: int = 0) -> int:
+    pos = -1
+    for _ in range(nth + 1):
+        pos = data.index(needle, pos + 1)
+    return pos
+
+
+def test_expected_sha_mismatch_fails_before_any_record() -> None:
+    data = jdump([VALID_A, VALID_B])
+    got: list[object] = []
+    outcome = ji.run_json_import(
+        make_reader(data),  # declared (and verified) for hash Y ...
+        build_mapping(container=""),
+        verified_content_type="application/json",
+        dataset_purpose="training",
+        expected_sha256=OTHER_SHA,  # ... but the caller expects X
+        on_accepted=got.append,
+    )
+    report = outcome.report
+    check(
+        CID,
+        "a reader declared for another hash ends failed / source_changed",
+        (report.state, report.failure_code) == ("failed", "source_changed"),
+    )
+    check(
+        CID,
+        "and nothing was read, accepted or tagged with the wrong hash",
+        not got and report.records_seen == 0 and report.source_bytes == 0,
+    )
+    stream = ji.json_events(
+        make_reader(data),
+        build_mapping(container=""),
+        verified_content_type="application/json",
+        dataset_sha256=OTHER_SHA,
+    )
+    try:
+        next(stream)
+        raised = None
+    except ic.ImportAborted as exc:
+        raised = exc.failure_code
+    check(CID, "json_events refuses on its first next()", raised == "source_changed")
+    near = hashlib.sha256(data).hexdigest()
+    near = near[:-1] + ("0" if near[-1] != "0" else "1")
+    out = ji.run_json_import(
+        make_reader(data),
+        build_mapping(container=""),
+        verified_content_type="application/json",
+        dataset_purpose="training",
+        expected_sha256=near,
+    )
+    check(CID, "a one-digit difference is refused too", out.report.failure_code == "source_changed")
+    check(
+        CID, "the matching hash still imports", run(data, container="").report.records_accepted == 2
+    )
+
+
+def test_fatal_locator_is_in_the_report_at_the_byte_offset() -> None:
+    data = b"[" + G + b" x]"
+    outcome = run(data, container="")
+    report = outcome.report
+    check(
+        CID,
+        "the fatal locator is the report's own sealed field, at the offending byte",
+        report.fatal_locator == f"object:{at(data, b'x')}"
+        and isinstance(report, ic.LocatedImportReport),
+    )
+    check(
+        CID,
+        "a completed import has none",
+        run(jdump([VALID_A]), container="").report.fatal_locator is None,
+    )
+    check(
+        CID,
+        "a source problem that is not a document problem has none",
+        run(data[:-1], container="", chunk=7).report.fatal_locator is not None
+        and make_changed_source().report.fatal_locator is None,
+    )
+
+
+def make_changed_source() -> ji.JsonImportOutcome:
+    data = jdump([VALID_A])
+    reader = make_reader(data[:-1] + b" ", expected_sha=hashlib.sha256(data).hexdigest())
+    return ji.run_json_import(
+        reader,
+        build_mapping(container=""),
+        verified_content_type="application/json",
+        dataset_purpose="training",
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+    )
+
+
+# (label, document, mapping kwargs, expected failure_code, offset of the problem)
+def structure_cases() -> list[tuple[str, bytes, dict[str, Any], str, int]]:
+    root: dict[str, Any] = {"container": ""}
+    nested: dict[str, Any] = {"container": "/rows", "ignored_top_level_keys": ["_meta"]}
+    cases: list[tuple[str, bytes, dict[str, Any], str, int]] = []
+
+    def add(label: str, data: bytes, kwargs: dict[str, Any], code: str, offset: int) -> None:
+        cases.append((label, data, kwargs, code, offset))
+
+    d = b"[" + G + b', 1"]", ' + G + b"]"
+    add(
+        "quote after a literal (the dropped-element case)", d, root, "json_malformed", at(d, b'"]"')
+    )
+    d = b"[" + G + b", :, " + G + b"]"
+    add("colon as an element", d, root, "json_malformed", at(d, b", :") + 2)
+    d = b"[" + G + b", x, " + G + b"]"
+    add("letter as an element", d, root, "json_malformed", at(d, b"x"))
+    d = b"[" + G + b" " + G + b"]"
+    add("missing comma", d, root, "json_malformed", 1 + len(G) + 1)
+    d = b"[" + G + b",," + G + b"]"
+    add("doubled comma", d, root, "json_malformed", at(d, b",,") + 1)
+    d = b"[" + G + b",]"
+    add("trailing comma", d, root, "json_malformed", len(d) - 1)
+    d = b"[" + G
+    add("unclosed array", d, root, "json_malformed", len(d))
+    d = b"[" + G + b"}"
+    add("array closed by a brace", d, root, "json_malformed", len(d) - 1)
+    d = b'[{"a":[1}]'
+    add("brace closing a bracket", d, root, "json_malformed", at(d, b"}"))
+    d = b'[{"a":{"b":1]}]'
+    add("bracket closing a brace", d, root, "json_malformed", at(d, b"]"))
+    d = b'["abc'
+    add("unclosed string", d, root, "json_malformed", len(d))
+    d = b"[" + G + b"] x"
+    add("garbage after the document", d, root, "json_malformed", len(d) - 1)
+    d = b"[" + G + b"][" + G + b"]"
+    add("two documents", d, root, "json_malformed", 1 + len(G) + 1)
+    add("empty document", b"", root, "json_malformed", 0)
+    add("whitespace only", b" \n\t ", root, "json_malformed", 4)
+    add("scalar document", b"42", root, "json_malformed", 0)
+    add("string document", b'"abc"', root, "json_malformed", 0)
+    d = b"[1 2]"
+    add("two literals", d, root, "json_malformed", at(d, b"2"))
+    d = b"[" + G + b"]]"
+    add("extra closing bracket", d, root, "json_malformed", len(d) - 1)
+    d = b"{" + b'"rows": 5}'
+    add("container value is a scalar", d, nested, "json_malformed", at(d, b"5"))
+    d = b'{"rows": "text"}'
+    add("container value is a string", d, nested, "json_malformed", at(d, b'"text"'))
+    d = b"[1,2]"
+    add("nested container under an array root", d, nested, "json_malformed", 0)
+    d = b'{"rows": [' + G + b'] "_meta": 1}'
+    add("missing comma between top-level members", d, nested, "json_malformed", at(d, b'"_meta"'))
+    d = b'{"rows": [' + G + b"],}"
+    add("trailing comma in the root object", d, nested, "json_malformed", len(d) - 1)
+    d = b'{"rows" [' + G + b"]}"
+    add("missing colon", d, nested, "json_malformed", at(d, b"["))
+    d = b"{rows: [" + G + b"]}"
+    add("unquoted key", d, nested, "json_malformed", at(d, b"r"))
+    d = b'{"rows": [' + G + b'], "_meta": {"a": 1,}}'
+    add("trailing comma inside an ignored value", d, nested, "json_malformed", at(d, b",}") + 1)
+    d = b'{"rows": [' + G + b'], "_meta": {"a": 1, "a": 2}}'
+    add("duplicate key inside an ignored value", d, nested, "json_malformed", at(d, b'{"a"'))
+    d = b'{"rows": [' + G + b'], "_meta": ' + b"[" * 100_000 + b"]" * 100_000 + b"}"
+    add("100k-deep ignored value", d, nested, "json_malformed", at(d, b"[[["))
+    d = b'{"rows": [' + G + b'], "_meta": "' + b"x" * (5 * 1024 * 1024) + b'"}'
+    add("5 MiB ignored value", d, nested, "field_too_large", at(d, b'"xxx'))
+    d = b'{"_meta": 1, "_meta": 2, "rows": []}'
+    add("duplicate ignored key", d, nested, "json_malformed", at(d, b'"_meta"', 1))
+    d = b'{"rows": [], "rows": []}'
+    add("duplicate container key", d, nested, "mapping_column_missing", at(d, b'"rows"', 1))
+    d = b'{"_meta": 1}'
+    add("container key absent", d, nested, "mapping_column_missing", len(d) - 1)
+    add("empty root object, container absent", b"{}", nested, "mapping_column_missing", 1)
+    d = b'{"rows": [], "other": 1}'
+    add("unmapped key", d, nested, "unmapped_top_level_key", at(d, b'"other"'))
+    d = b'{"rows": [], "' + b"k" * 5000 + b'": 1}'
+    add("over-long unmapped key", d, nested, "unmapped_top_level_key", at(d, b'"kkk'))
+    d = b'{"rows": [' + G + b"]} "
+    add("whitespace after a nested document is fine, then EOF is a clean end", d, nested, "", -1)
+    return cases
+
+
+def test_structure_errors_are_fatal_with_byte_offsets_at_every_chunking() -> None:
+    for label, data, kwargs, code, offset in structure_cases():
+        base = run(data, **kwargs)
+        if code == "":
+            check(CID, f"{label}: completes", base.report.state == "completed")
+            continue
+        check(
+            CID,
+            f"{label}: fatal {code} at byte {offset} (got {verdict(base)})",
+            verdict(base) == ("failed", code, f"object:{offset}"),
+        )
+        for chunk in (1, 2, 3, 7, 64, 4096):
+            other = run(data, chunk=chunk, **kwargs)
+            check(
+                CID,
+                f"{label}: chunk={chunk} gives the same report",
+                essence(other.report) == essence(base.report),
+            )
+
+
+def test_a_structure_error_never_drops_elements_silently() -> None:
+    # The round-2 defect: [G, 1"]", G] completed with two rows and lost the third element.
+    for data in (b"[" + G + b', 1"]", ' + G + b"]", b"[" + G + b", :, " + G + b"]"):
+        outcome = run(data, container="")
+        check(
+            CID,
+            "a document that json.loads refuses never completes with fewer rows than elements",
+            outcome.report.state == "failed",
+        )
+
+
+def test_utf8_encoding_offsets_and_edge_cases() -> None:
+    good = "[" + json.dumps(VALID_A) + "]"
+    bad_in_string = good.encode().replace(b"hello", b"he\xffllo")
+    bad_byte = bytes([0xFF])
+    out = run(bad_in_string, container="")
+    check(
+        CID,
+        "an invalid byte inside a string is fatal invalid_encoding at that byte",
+        verdict(out) == ("failed", "invalid_encoding", f"object:{bad_in_string.index(bad_byte)}"),
+    )
+    for chunk in (None, 1, 2, 3):
+        out = run(b'["x' + "م".encode()[:1], container="", chunk=chunk)
+        check(
+            CID,
+            f"a source ending inside a multibyte character is invalid_encoding, chunk={chunk}",
+            verdict(out) == ("failed", "invalid_encoding", "object:3"),
+        )
+    arabic = json.dumps(
+        {"messages": [{"role": "user", "content": "مرحبا بالعالم"}]}, ensure_ascii=False
+    )
+    data = ("[" + arabic + "," + arabic + "]").encode()
+    for chunk in (1, 2, 3, 5):
+        out = run(data, container="", chunk=chunk)
+        check(
+            CID,
+            f"multibyte characters split across chunks import (chunk={chunk})",
+            out.report.records_accepted == 2 and out.report.state == "completed",
+        )
+    limits = ic.ImportLimits(max_record_bytes=64)
+    big = b'{"messages":[{"role":"user","content":"' + b"x" * 200 + b"\xff" + b'y"}]}'
+    out = run(b"[" + big + b"]", container="", limits=limits)
+    check(
+        CID,
+        "invalid UTF-8 inside a skipped oversize element is still fatal invalid_encoding",
+        verdict(out) == ("failed", "invalid_encoding", f"object:{1 + big.index(bad_byte)}"),
+    )
+    out = run(b"\xef\xbb\xbf[" + b"\xff", container="")
+    check(
+        CID,
+        "offsets count the BOM",
+        verdict(out) == ("failed", "invalid_encoding", "object:4"),
+    )
+
+
+def test_utf16_utf32_without_bom_are_unsupported_encoding() -> None:
+    for label, data in (
+        ("utf-16-le", "[]".encode("utf-16-le")),
+        ("utf-16-be", "[]".encode("utf-16-be")),
+        ("utf-32-le", "[]".encode("utf-32-le")),
+        ("utf-32-be", "[]".encode("utf-32-be")),
+        ("nul second byte", b"[\x00]"),
+    ):
+        for chunk in (None, 1):
+            out = run(data, container="", chunk=chunk)
+            check(
+                CID,
+                f"{label} without a BOM (chunk={chunk}): fatal unsupported_encoding",
+                verdict(out) == ("failed", "unsupported_encoding", "object:0"),
+            )
+    out = run(b"[ \x00]", container="")
+    check(
+        CID,
+        "a NUL after the first four bytes is a document problem, not an encoding verdict",
+        out.report.failure_code == "json_malformed" or out.report.records_seen == 0,
+    )
+
+
+def test_oversize_elements_are_rows_and_the_import_continues() -> None:
+    limits = ic.ImportLimits(max_record_bytes=300)
+    huge = row("x" * 5000)
+    big = jdump([VALID_A, huge, VALID_B, huge, huge, VALID_A])
+    for chunk in (None, 1, 7, 100):
+        out = run(big, container="", limits=limits, chunk=chunk)
+        check(
+            CID,
+            f"every oversize element is one record_too_large row, the rest import (chunk={chunk})",
+            out.report.state == "completed"
+            and [(r.locator, r.code) for r in out.report.rejections]
+            == [
+                ("record:1", "record_too_large"),
+                ("record:3", "record_too_large"),
+                ("record:4", "record_too_large"),
+            ]
+            and out.report.records_accepted == 3,
+        )
+    nested_doc = b'{"rows": ' + big + b', "_meta": {"a": 1}}'
+    out = run(nested_doc, container="/rows", ignored_top_level_keys=["_meta"], limits=limits)
+    check(CID, "and under a nested container", out.report.records_accepted == 3)
+
+
+def test_oversize_element_is_skipped_without_buffering() -> None:
+    piece = b"x" * (64 * 1024)
+    head = b'[{"messages":[{"role":"user","content":"'
+    tail = b'"}]}, ' + G + b"]"
+    body = [head + piece] + [piece] * 1023 + [tail]
+    size = sum(len(p) for p in body)
+    digest = hashlib.sha256(b"".join(body)).hexdigest()
+    reader = ic.ChunkReader(body, expected_size=size, expected_sha256=digest)
+    got: list[object] = []
+    tracemalloc.start()
+    out = ji.run_json_import(
+        reader,
+        build_mapping(container=""),
+        verified_content_type="application/json",
+        dataset_purpose="training",
+        expected_sha256=digest,
+        on_accepted=got.append,
+    )
+    _current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    check(
+        CID,
+        "a 64 MiB element is one rejection and the next element imports",
+        [(r.locator, r.code) for r in out.report.rejections] == [("record:0", "record_too_large")]
+        and len(got) == 1
+        and out.report.state == "completed",
+    )
+    check(CID, f"peak memory {peak} is far below the element size", peak < 8 * 1024 * 1024 < size)
+
+
+def test_memory_ratio_between_sizes_is_within_one_and_a_half() -> None:
+    mapping = build_mapping(container="")
+
+    def peak_for(mib: int) -> int:
+        element = jdump(row("y" * 3000)) + b","
+        pieces = (
+            [b"[" + element]
+            + [element * 16] * (mib * 16 - 1)
+            + [element + jdump(row("end")) + b"]"]
+        )
+        size = sum(len(p) for p in pieces)
+        digest = hashlib.sha256(b"".join(pieces)).hexdigest()
+        reader = ic.ChunkReader(pieces, expected_size=size, expected_sha256=digest)
+        tracemalloc.start()
+        out = ji.run_json_import(
+            reader,
+            mapping,
+            verified_content_type="application/json",
+            dataset_purpose="training",
+            expected_sha256=digest,
+            on_accepted=lambda _c: None,
+        )
+        _current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        assert out.report.state == "completed", out.report
+        return peak
+
+    small, large = peak_for(1), peak_for(64)
+    check(
+        CID,
+        f"peak for 64 MiB ({large}) is within 1.5x of the peak for 1 MiB ({small})",
+        large <= 1.5 * small,
+    )
+
+
+def test_chunking_every_offset_of_small_documents() -> None:
+    nested = b'{"_meta": {"a": [1, {"b": "}]"}]}, "rows": [' + G + b", 42, " + H + b"]}\r\n"
+    sources: list[tuple[bytes, dict[str, Any]]] = [
+        (b"[" + G + b" ,\n" + H + b"]\r\n", {"container": ""}),
+        (b"\xef\xbb\xbf[" + G + b"]", {"container": ""}),
+        (nested, {"container": "/rows", "ignored_top_level_keys": ["_meta"]}),
+        (b"[" + G + b', 1"]", ' + G + b"]", {"container": ""}),
+        (
+            b'{"rows": [' + G + b'], "_meta": {"a": 1,}}',
+            {"container": "/rows", "ignored_top_level_keys": ["_meta"]},
+        ),
+        (
+            b"[" + json.dumps(row("مرحبا"), ensure_ascii=False).encode() + b"]",
+            {"container": ""},
+        ),
+        (b"[" + G + b', "a\\"b", -1.5e+3, true, null, [], {}]', {"container": ""}),
+    ]
+    for data, kwargs in sources:
+        base = run(data, **kwargs)
+        mapping = build_mapping(**kwargs)
+        digest = hashlib.sha256(data).hexdigest()
+        same = True
+        for cut in range(1, len(data)):
+            reader = ic.ChunkReader(
+                [data[:cut], data[cut:]], expected_size=len(data), expected_sha256=digest
+            )
+            got = ji.run_json_import(
+                reader,
+                mapping,
+                verified_content_type="application/json",
+                dataset_purpose="training",
+                expected_sha256=digest,
+            )
+            if essence(got.report) != essence(base.report):
+                same = False
+                check(CID, f"split at {cut} of {len(data)} bytes differs from the whole", False)
+                break
+        if same:
+            check(CID, f"every split point of a {len(data)}-byte document agrees", True)
+
+
+def random_text(rng: random.Random) -> str:
+    return "".join(
+        rng.choices(string.ascii_letters + ' {}[]",:\\\n0123456789مرحبا', k=rng.randint(1, 30))
+    )
+
+
+def test_differential_valid_documents_match_json_loads() -> None:
+    rng = random.Random(503)
+    for trial in range(250):
+        n = rng.randint(0, 7)
+        elements: list[object] = []
+        expected_texts: list[str] = []
+        expected_bad: list[int] = []
+        for i in range(n):
+            kind = rng.randrange(6)
+            if kind == 0:
+                elements.append(rng.choice([1, 2.5, "s", None, True, [1, {"a": []}]]))
+                expected_bad.append(i)
+            else:
+                text = random_text(rng)
+                elements.append(row(text))
+                expected_texts.append(text)
+        indent = rng.choice([None, 0, 1, 3])
+        sep = rng.choice([None, (",", ":")])
+        text = json.dumps(elements, indent=indent, separators=sep, ensure_ascii=rng.random() < 0.5)
+        data = text.encode()
+        assert json.loads(text) == elements
+        if rng.random() < 0.5:
+            wrapper = {"rows": elements, "_meta": {"k": [1, 2, {"z": "}"}]}}
+            text = json.dumps(wrapper, indent=indent, ensure_ascii=False)
+            data = text.encode()
+            kwargs: dict[str, Any] = {"container": "/rows", "ignored_top_level_keys": ["_meta"]}
+        else:
+            kwargs = {"container": ""}
+        for chunk in (None, 1, 13):
+            got: list[dict[str, object]] = []
+            mapping = build_mapping(**kwargs)
+            reader = make_reader(data, chunk)
+            out = ji.run_json_import(
+                reader,
+                mapping,
+                verified_content_type="application/json",
+                dataset_purpose="training",
+                expected_sha256=hashlib.sha256(data).hexdigest(),
+                on_accepted=lambda c, got=got: got.append(dict(c)),  # type: ignore[misc]
+            )
+            texts_ = [
+                part["text"]
+                for c in got
+                for m in c["content"]["messages"]  # type: ignore[index]
+                for part in m["content"]
+            ]
+            ok = (
+                out.report.state == "completed"
+                and texts_ == expected_texts
+                and [int(r.locator.split(":")[1]) for r in out.report.rejections] == expected_bad
+                and out.report.records_seen == n
+            )
+            if not ok:
+                check(
+                    CID,
+                    f"trial {trial} chunk {chunk}: differs from json.loads ({text[:80]!r})",
+                    False,
+                )
+                break
+    check(CID, "250 generated valid documents agree with json.loads", True)
+
+
+def test_differential_invalid_mutants_never_lose_elements() -> None:
+    rng = random.Random(5030)
+    tried = invalid_seen = 0
+    for _trial in range(120):
+        n = rng.randint(1, 5)
+        texts_ = [random_text(rng) for _ in range(n)]
+        elements = [row(t) for t in texts_]
+        if rng.random() < 0.5:
+            doc = json.dumps(elements, indent=rng.choice([None, 1]))
+            kwargs: dict[str, Any] = {"container": ""}
+        else:
+            doc = json.dumps({"_meta": {"a": [1]}, "rows": elements})
+            kwargs = {"container": "/rows", "ignored_top_level_keys": ["_meta"]}
+        for _ in range(25):
+            pos = rng.randrange(len(doc))
+            op = rng.randrange(3)
+            ch = rng.choice('[]{}",:\\ x1')
+            mutant = doc[:pos] + ("" if op == 0 else ch) + doc[pos + (1 if op != 1 else 0) :]
+            tried += 1
+            try:
+                json.loads(mutant)
+                valid = True
+            except ValueError:
+                valid = False
+                invalid_seen += 1
+            out = run(mutant.encode(), **kwargs)
+            if valid:
+                # a mutant json.loads accepts must not be refused for its structure
+                bad = out.report.failure_code == "json_malformed"
+                if bad:
+                    check(CID, f"valid mutant refused as malformed: {mutant[:80]!r}", False)
+                continue
+            if out.report.state == "failed":
+                continue
+            # completed: nothing may be lost or invented, and what was accepted is the original
+            accepted_ok = out.report.records_seen == n
+            if not accepted_ok:
+                check(
+                    CID,
+                    f"invalid mutant completed with {out.report.records_seen}/{n}: {mutant[:60]!r}",
+                    False,
+                )
+    check(
+        CID,
+        f"{invalid_seen} of {tried} mutants were invalid JSON and none lost an element",
+        invalid_seen > 500,
+    )
+
+
+def collect_accepted(
+    data: bytes, **kwargs: Any
+) -> tuple[list[dict[str, object]], ji.JsonImportOutcome]:
+    got: list[dict[str, object]] = []
+    mapping_kwargs = {k: v for k, v in kwargs.items() if k not in ("limits", "purpose")}
+    mapping = build_mapping(**mapping_kwargs)
+    limits = kwargs.get("limits", ic.DEFAULT_LIMITS)
+    out = ji.run_json_import(
+        make_reader(data, limits=limits),
+        mapping,
+        verified_content_type="application/json",
+        dataset_purpose=kwargs.get("purpose", "training"),
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+        limits=limits,
+        on_accepted=lambda c: got.append(dict(c)),
+    )
+    return got, out
+
+
+def test_depth_limit_boundary_is_exact() -> None:
+    depth = 3  # {"messages": [ {"role": ...} ]}
+    for limit, accepted_ in ((depth, True), (depth - 1, False)):
+        limits = ic.ImportLimits(max_depth=limit)
+        out = run(jdump([VALID_A]), container="", limits=limits)
+        codes_ = [r.code for r in out.report.rejections]
+        check(
+            CID,
+            f"max_depth={limit} on a depth-{depth} element: "
+            f"{'accepted' if accepted_ else 'nesting_too_deep'}",
+            (out.report.records_accepted == 1) == accepted_
+            and (codes_ == [] if accepted_ else codes_ == ["nesting_too_deep"]),
+        )
+    limits = ic.ImportLimits(max_depth=4)
+    ignored_ok = b'{"rows": [' + G + b'], "_meta": [[[[1]]]]}'
+    ignored_deep = b'{"rows": [' + G + b'], "_meta": [[[[[1]]]]]}'
+    check(
+        CID,
+        "an ignored value at the depth limit is fine",
+        run(
+            ignored_ok, container="/rows", ignored_top_level_keys=["_meta"], limits=limits
+        ).report.state
+        == "completed",
+    )
+    check(
+        CID,
+        "an ignored value one level deeper is fatal json_malformed",
+        run(
+            ignored_deep, container="/rows", ignored_top_level_keys=["_meta"], limits=limits
+        ).report.failure_code
+        == "json_malformed",
+    )
+
+
+def test_container_key_and_ignored_keys_are_matched_exactly() -> None:
+    kwargs: dict[str, Any] = {"container": "/rows", "ignored_top_level_keys": ["_meta"]}
+    for key in ("_META", "_Meta", "_meta ", "\\u005fmeta2"):
+        data = b'{"rows": [' + G + b'], "' + key.encode() + b'": 1}'
+        out = run(data, **kwargs)
+        check(
+            CID,
+            f"top-level key {key!r} is not the declared '_meta'",
+            out.report.failure_code == "unmapped_top_level_key",
+        )
+    escaped = b'{"rows": [' + G + b'], "\\u005fmeta": 1}'
+    check(
+        CID,
+        "a key spelled with a JSON escape is the same key as the declared one",
+        run(escaped, **kwargs).report.state == "completed",
+    )
+    twice = b'{"rows": [' + G + b'], "rows": [' + H + b"]}"
+    out = run(twice, **kwargs)
+    check(
+        CID,
+        "a duplicate container key is fatal, never first-wins or last-wins",
+        out.report.failure_code == "mapping_column_missing",
+    )
+
+
+def test_whitespace_is_exactly_the_json_set() -> None:
+    spaced = (
+        b"\r\n\t [ \r\n"
+        + G.replace(b",", b" ,\r\n\t").replace(b":", b"\t:\r")
+        + b" \n,\t"
+        + H
+        + b"\r\n ]\r\n"
+    )
+    out = run(spaced, container="")
+    check(CID, "space, tab, CR and LF are whitespace everywhere", out.report.records_accepted == 2)
+    for label, ws in (
+        ("form feed", b"\x0c"),
+        ("vertical tab", b"\x0b"),
+        ("no-break space", "\u00a0".encode()),
+        ("zero-width no-break space", "\ufeff".encode()),
+        ("NEL", "\u0085".encode()),
+    ):
+        out = run(b"[" + ws + G + b"]", container="")
+        check(
+            CID,
+            f"{label} is not JSON whitespace: fatal json_malformed at its byte",
+            verdict(out) == ("failed", "json_malformed", "object:1"),
+        )
+        out = run(b"[" + G + ws + b"]", container="")
+        check(
+            CID, f"{label} after a value is fatal too", out.report.failure_code == "json_malformed"
+        )
+
+
+def test_row_indexes_slots_and_purpose() -> None:
+    data = jdump([1, row("a"), {"messages": [{"role": "user"}]}, row("b")])
+    got, out = collect_accepted(data, container="", purpose="evaluation")
+    check(
+        CID,
+        "rejected elements keep their position: accepted records carry indexes 1 and 3",
+        [c["record_index"] for c in got] == [1, 3],
+    )
+    check(
+        CID,
+        "rejections are located at their element index",
+        [(r.locator, r.code) for r in out.report.rejections]
+        == [("record:0", "record_not_object"), ("record:2", out.report.rejections[1].code)],
+    )
+    check(CID, "the slot of a mapping rejection is kept", out.report.rejections[1].slot is not None)
+    check(
+        CID,
+        "dataset_purpose is carried into the report, not fixed",
+        out.report.dataset_purpose == "evaluation",
+    )
+    got2, out2 = collect_accepted(data, container="", purpose="held_out")
+    check(CID, "...for any purpose", out2.report.dataset_purpose == "held_out" and len(got2) == 2)
+
+
+def test_schema_sha_is_over_the_sorted_top_level_keys() -> None:
+    first = b'{"zeta": 1, "rows": [], "alpha": [2]}'
+    second = b'{"alpha": [2], "zeta": 1, "rows": []}'
+    kwargs: dict[str, Any] = {"container": "/rows", "ignored_top_level_keys": ["zeta", "alpha"]}
+    sha = hashlib.sha256(
+        json.dumps(["alpha", "rows", "zeta"], separators=(",", ":")).encode()
+    ).hexdigest()
+    for data in (first, second):
+        out = run(data, **kwargs)
+        check(
+            CID,
+            "source_schema_sha256 is sha256 of the sorted key list, whatever the document's order",
+            out.report.source_schema_sha256 == sha,
+        )
+    check(
+        CID,
+        "a root container has no schema hash",
+        run(jdump([VALID_A]), container="").report.source_schema_sha256 is None,
+    )
+
+
+def test_tool_schema_status_follows_the_record() -> None:
+    call = {
+        "messages": [
+            {"role": "user", "content": "q"},
+            {
+                "role": "assistant",
+                "content": [],
+                "tool_calls": [{"id": "c1", "name": "t", "arguments": {}}],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "c1",
+                "name": "t",
+                "content": [{"type": "json", "value": {}}],
+            },
+        ]
+    }
+    mapping_text_ = json.dumps(
+        {
+            "shape": "messages",
+            "messages_pointer": "/messages",
+            "role_key": "role",
+            "content_key": "content",
+            "tool_calls_key": "tool_calls",
+            "tool_call_id_key": "tool_call_id",
+            "name_key": "name",
+            "role_map": {"user": "user", "assistant": "assistant", "tool": "tool"},
+            "on_unmapped_message_keys": "ignore",
+            "json": {"container": "", "ignored_top_level_keys": []},
+        }
+    )
+    from app.services.json_schema_tool_validation import validate_instance
+
+    data = jdump([call, VALID_A])
+    got: list[dict[str, object]] = []
+    out = ji.run_json_import(
+        make_reader(data),
+        ic.parse_mapping(mapping_text_),
+        verified_content_type="application/json",
+        dataset_purpose="training",
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+        tool_schemas={"t": {"type": "object", "properties": {}, "additionalProperties": False}},
+        tool_argument_validator=validate_instance,
+        on_accepted=lambda c: got.append(dict(c)),
+    )
+    statuses = [c.get("tool_schema_status") for c in got]
+    check(
+        CID,
+        f"a record with tool calls is 'valid', one without is 'not_applicable' ({statuses})",
+        out.report.records_accepted == 2 and statuses == ["valid", "not_applicable"],
+    )
+
+
+def test_prompt_completion_slot_is_reported() -> None:
+    mapping = ic.parse_mapping(
+        json.dumps(
+            {
+                "shape": "prompt_completion",
+                "prompt": {"key": "q"},
+                "completion": {"key": "a"},
+                "json": {"container": "", "ignored_top_level_keys": []},
+            }
+        )
+    )
+    data = jdump([{"q": "x"}, {"q": "x", "a": "y"}])
+    out = ji.run_json_import(
+        make_reader(data),
+        mapping,
+        verified_content_type="application/json",
+        dataset_purpose="training",
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+    )
+    check(
+        CID,
+        "a missing mapped field names its slot",
+        [(r.locator, r.code, r.slot) for r in out.report.rejections]
+        == [("record:0", "required_field_missing", "completion")],
+    )
+
+
+def test_first_four_bytes_are_judged_before_the_source_can_fail() -> None:
+    bom32 = b"\xff\xfe\x00\x00"
+    for chunk_bytes in (bom32, b"[" + b"\x00\x00\x00"):
+        source = support.ExplodingSource([chunk_bytes], ConnectionResetError("gone"), at=1)
+        reader = ic.ChunkReader(
+            source, expected_size=100, expected_sha256=hashlib.sha256(b"x").hexdigest()
+        )
+        out = ji.run_json_import(
+            reader,
+            build_mapping(container=""),
+            verified_content_type="application/json",
+            dataset_purpose="training",
+            expected_sha256=hashlib.sha256(b"x").hexdigest(),
+        )
+        check(
+            CID,
+            f"a source that fails right after its first 4 bytes {chunk_bytes!r} still gets "
+            f"the encoding verdict ({verdict(out)})",
+            verdict(out) == ("failed", "unsupported_encoding", "object:0"),
+        )
+
+
+def test_literals_split_across_chunks_inside_a_nested_value() -> None:
+    element = (
+        b'{"messages":[{"role":"user","content":"x"}],"n":12345.5e+10,"t":true,"z":null,'
+        b'"neg":-0.25,"list":[1,22,333]}'
+    )
+    data = b"[" + element + b"," + element + b"]"
+    base = run(data, container="")
+    check(CID, "baseline imports both", base.report.records_accepted == 2)
+    for chunk in range(1, 40):
+        out = run(data, container="", chunk=chunk)
+        check(
+            CID,
+            f"chunk={chunk}: numbers and words cut anywhere inside a nested value import alike",
+            essence(out.report) == essence(base.report),
+        )
+
+
+def test_grammar_errors_inside_a_value_are_fatal_at_their_byte() -> None:
+    # (document, the exact text whose first byte is where the scanner must stop)
+    cases = [
+        (b'[{"a" 1}]', b"1"),
+        (b'[{"a":1 2}]', b"2"),
+        (b'[{"a":1 "b":2}]', b'"b"'),
+        (b"[[1 2]]", b"2]"),
+        (b'[{"a":1,}]', b"}]"),
+        (b'[{"a":}]', b"}]"),
+        (b"[{,}]", b",}"),
+        (b'[{"a":1}:]', b":]"),
+        (b'[{"a"::1}]', b":1"),
+        (b'[{"a":1:2}]', b":2"),
+        (b"[{1:2}]", b"1:2"),
+        (b"[{[]:1}]", b"[]:1"),
+        (b"[{{}:1}]", b"{}:1"),
+        (b"[[,1]]", b",1"),
+        (b"[[1,,2]]", b",2"),
+        (b"[[1,]]", b"]]"),
+        (b'[{"a":[1}]', b"}]"),
+        (b"[[1}]", b"}]"),
+        (b'[{"a":1]]', b"]]"),
+        (b'[{"a" : "b" "c"}]', b'"c"'),
+        (b'[{"a":tru e}]', b"e}"),
+        (b'[{"a":x}]', b"x}"),
+        (b'[{"a":1}x]', b"x]"),
+        (b'["a" "b"]', b'"b"'),
+        (b"[[] []]", b"[]]"),
+        (b"[{}{}]", b"{}]"),
+        (b'[{"k":{"j":[{"i":}]}}]', b"}]}}]"),
+    ]
+    for data, where in cases:
+        offset = data.index(where)
+        for chunk in (None, 1, 3):
+            out = run(data, container="", chunk=chunk)
+            check(
+                CID,
+                f"{data!r} (chunk={chunk}): fatal json_malformed at byte {offset} "
+                f"(got {verdict(out)})",
+                verdict(out) == ("failed", "json_malformed", f"object:{offset}"),
+            )
+    good = [
+        b'[{"a":1}]',
+        b'[{"a":[1,2,{"b":[]}],"c":{}}]',
+        b'[{"a" : 1 , "b" : [ ] , "c" : { } }]',
+        b'[{"a":"x:y,z]}","b":-1.5e3}]',
+    ]
+    for data in good:
+        out = run(data, container="")
+        check(
+            CID,
+            f"{data!r}: valid nested grammar is not refused ({verdict(out)})",
+            out.report.state == "completed",
+        )
+
+
+def test_exact_tracking_depth_boundary() -> None:
+    cap = ji._STACK_CAP
+    # `cap` open brackets (the element itself is level 1): the mismatch is still caught ...
+    exact = b"[" + b"[" * cap + b"}" + b"]" * cap + b"]"
+    out = run(exact, container="")
+    check(
+        CID,
+        f"a mismatch at the deepest exactly-tracked level is fatal ({verdict(out)})",
+        verdict(out) == ("failed", "json_malformed", f"object:{cap + 1}"),
+    )
+    # ... one level deeper only brackets are counted (documented limit).
+    beyond = b"[" + b"[" * (cap + 1) + b"}" + b"]" * cap + b"]"
+    out = run(beyond, container="")
+    check(
+        CID,
+        "one level deeper only brackets are counted: the element is a nesting_too_deep row and "
+        f"the import carries on ({verdict(out)})",
+        out.report.state == "completed"
+        and [r.code for r in out.report.rejections] == ["nesting_too_deep"],
+    )
+
+
+def test_values_far_deeper_than_the_exact_limit_do_not_lose_elements() -> None:
+    n = 1100
+    cases = {
+        "arrays": b"[" * n + b"]" * n,
+        "objects": b'{"a":' * n + b"1" + b"}" * n,
+        "mixed": b'[{"a":' * (n // 2) + b"[]" + b"}]" * (n // 2),
+        "strings with brackets": b"[" * n + b'"]}[{"' + b"]" * n,
+    }
+    for label, deep in cases.items():
+        data = b"[" + deep + b"," + G + b"," + deep + b"]"
+        for chunk in (None, 1, 7, 1000):
+            out = run(data, container="", chunk=chunk)
+            check(
+                CID,
+                f"{label} (chunk={chunk}): three elements, the middle one accepted "
+                f"({verdict(out)} seen={out.report.records_seen})",
+                out.report.state == "completed"
+                and out.report.records_seen == 3
+                and out.report.records_accepted == 1
+                and [r.code for r in out.report.rejections] == ["nesting_too_deep"] * 2,
+            )
+    unbalanced = b"[" + b"[" * n + b"]" * (n - 1) + b"," + G + b"]"
+    out = run(unbalanced, container="")
+    check(
+        CID,
+        f"a deep value that never closes swallows the rest and is fatal ({verdict(out)})",
+        out.report.state == "failed" and out.report.failure_code == "json_malformed",
+    )
+
+
+def test_ignored_keys_that_differ_only_in_case_are_distinct_keys() -> None:
+    data = b'{"_Meta": 1, "_meta": 2, "rows": [' + G + b"]}"
+    out = run(data, container="/rows", ignored_top_level_keys=["_Meta", "_meta"])
+    check(
+        CID,
+        f"two declared ignored keys that differ only in case do not collide ({verdict(out)})",
+        out.report.state == "completed" and out.report.records_accepted == 1,
+    )
+    out = run(data, container="/rows", ignored_top_level_keys=["_meta"])
+    check(
+        CID,
+        "'_Meta' is not the declared '_meta'",
+        out.report.failure_code == "unmapped_top_level_key",
+    )
+    padded_key = b'{" rows": [' + G + b"]}"
+    out = run(padded_key, container="/rows")
+    check(
+        CID,
+        "' rows' is not the container 'rows' (no trimming)",
+        out.report.failure_code == "unmapped_top_level_key",
+    )
+
+
+def test_duplicate_ignored_key_is_detected_without_normalizing_the_key() -> None:
+    # Mutation-gate survivor (json_importer.py `_accept_key`): the duplicate lookup must use the key
+    # exactly as declared; a strip()/lower() lookup misses a duplicate of a mixed-case key.
+    for declared in ("_Meta", " _meta "):
+        key = json.dumps(declared).encode()
+        data = b"{" + key + b": 1, " + key + b": 2, " + b'"rows": [' + G + b"]}"
+        out = run(data, container="/rows", ignored_top_level_keys=[declared])
+        check(
+            CID,
+            f"duplicate ignored key {declared!r} is json_malformed ({verdict(out)})",
+            out.report.state != "completed" and out.report.failure_code == "json_malformed",
+        )
 
 
 def main() -> int:
