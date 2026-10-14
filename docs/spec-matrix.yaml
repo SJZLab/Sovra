@@ -7448,7 +7448,7 @@ FTF-0503:
   certification_state: PROVISIONAL
   criticality: MUST
   description: JSON importer
-  evidence_hash: 8cbeeab1b12d39bb7702860dee9394900da09f77
+  evidence_hash: b6d15299d9fff424dea9cf325299bb351b5b87ca
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
