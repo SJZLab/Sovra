@@ -8271,7 +8271,7 @@ FTF-0511:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0511.py
 FTF-0512:
-  certification_state: CERTIFIED
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Normalized duplicate detector
   evidence_hash: bdd9c0e0a07da1ca5b18306277c50f841acc8ee7
@@ -8369,7 +8369,22 @@ FTF-0512:
     genuinely still progressing via per-job step polling before treating
     the wait as normal rather than a hang. No blocking defect found.
     Merged PR #284 (`bdd9c0e0a07da1ca5b18306277c50f841acc8ee7`).
-  proof_state: L2-CERTIFIED
+
+    FTF-0512-F1 (Law 15 requalification, PROVISIONAL until Control-plane L2;
+    relay `relay/FTF-0512-F1-r1`): `_normalize_text` now folds NFKC, strips
+    Unicode Cf characters (before NFKC, so an invisible character cannot
+    split a composition sequence) and REMOVES generated UUIDs/timestamps
+    instead of replacing them with a placeholder word, so a value present on
+    one side only no longer separates two records. Proven by
+    `tests/tasks/test_ftf_0512_f1.py` (gate job): a generated table of
+    letters x look-alike classes x positions, one-sided generated values in
+    four positions, Cf characters inside a UUID/timestamp, a negative suite
+    on the real default code (different outcomes, tool arguments, tool-call
+    ids and JSON values stay distinct), a differential against a frozen copy
+    of the pre-F1 normalization (only the three intended pairs change), and
+    11 in-memory faults, each RED. Mutation gate 5/5 killed.
+
+  proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0512.py
 FTF-0513:
