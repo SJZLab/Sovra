@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-14T02:42Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-14T05:16Z. Source: `python3 scripts/status.py` on main.
 - **Status: 147/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   status.py prints 47 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,10 @@ Updated: 2026-10-14T02:42Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-14T05:16Z:**
+  - Backlog refill: FTF-0518, FTF-1704, FTF-0906, FTF-1505 sliced (Control-plane design; no ask-first item).
+  - FTF-0904-W1 (owner-requested): FTF-0904 redaction installed in create_app(); uvicorn access log no longer prints query-string secrets. PROVISIONAL, needs an independent L2.
+  - Owner decisions (live): OpenSearch for FTF-R006's Argilla search backend; all workflow actions pinned by commit digest (§52, [GOVERNANCE] #777, merged).
 - **2026-10-14T02:42Z:**
   - CERTIFIED: FTF-0904 (log redaction), after 7 rounds, under the round-7 stopping rule. UNWIRED.
 - **2026-10-14T01:22Z:**

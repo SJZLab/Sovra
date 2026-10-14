@@ -24727,3 +24727,7 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-14T02:42Z — Control plane: FTF-0904 CERTIFIED
 - **Certified:** FTF-0904 (#768, merge 5a0f708c29a61e7fe0fea3fc25ef838b7f5471df); UNWIRED.
+
+## 2026-10-14T05:16Z — PROVISIONAL: FTF-0904-W1 (live log redaction wiring)
+- **Submitted:** child slice of FTF-0904, built by the Control-plane session at the owner's live request (2026-10-14).
+  Needs L2 verification by a different session (Law 4). Test: tests/tasks/test_ftf_0904_w1.py (gate job), faults F1-F6.
