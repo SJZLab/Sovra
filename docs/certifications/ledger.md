@@ -11224,3 +11224,23 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   random graphs. Return: the property test is vacuous (1 group, 1 role per configuration), so N9/N10/N12 union-truncation
   faults stay GREEN (unclosed members of the class, not hand-picked variants); N13 exact-type at position 0 only; raw
   TypeErrors from verify_manifest incl. the named assignments=None case; N8 masked by zero counts.
+
+## 2026-10-13T23:59Z — CERTIFIED: slice FTF-0502-P1; RETURNED: FTF-0504 (r2); importer-order ruling updated
+- **FTF-0504: RETURNED** (round 1 → 2; PR #766, merge 78c8211bb34b4a370d298c1e55f7e8b5f41d0ed5, head 117f0148; merged
+  2026-10-13T21:21:38Z, one minute before the importer-order ruling). Producer session_01R7UTG7i8fws9ir2DLJUXXE ≠ certifier.
+  CI: gate 115511564228 "all checks passed"; mutation 97 killed + 1 timeout; ci-verdict 115543259098; no integration job.
+  Builds on P1 (its 9-code catalog edit is superseded by P1 r2). Reproduced: chunk-size-dependent encoding locator;
+  process-global csv.field_size_limit race (102-144/300 valid imports failed); unbounded single wide record (61 MiB → 69 MiB
+  peak); no content-type gate. Missing: integration test + CI job, generated tables, META-LEAK over tracebacks/logs.
+  Ruling: wrong-but-valid declared encoding is disclosed (FTF-H011 preview must show decoded samples).
+- **FTF-0502-P1 (child slice of FTF-0502): CERTIFIED** (round 2; PR #770, merge 507ce05a422ad5addb94a1700172fa348f871662, head c10b4b85). Producer
+  session_01VfxMSF5Fe8UxsFtHvaqbQq (round 1 session_01GnLMpxv8D3zPYhCXae6H6e) ≠ certifier, absent from the PR. CI: gate
+  115557959813 "FTF-0502-P1 dataset import common contract: all checks passed"; dataset-import-source-integration
+  115558053946 (real FTF-0501 routes, compose s3 stopped mid-stream) passed; mutation 15/15; ci-verdict 115575526457. Local:
+  66 tests / 5,892 checks; real PG16 + SeaweedFS integration incl. mid-stream stop. Catalog matches every code the
+  importer entries name (disjoint catalogs); `_stream` wraps every non-storage exception from None (54 injected + 12
+  malformed-socket probes, 0 leaks); RES-1 memory ratio 1.00 at 4/64 KiB chunks, 1-byte-chunk 2 MiB read in 0.95 s;
+  every-offset tables clean. All round-1 and new faults RED (FE, FE2, FV, FW-FX6, FY1-FY8, FE3/FE4/FE2b, IFM/IFD); uncapped
+  mutation of dataset_object_source.py 31/31. GREEN: FF (equivalent), FE5 (hand-picked retention variant unreachable at
+  1 MiB chunks; non-blocking). Advisories: RES-1 2 MiB baseline (single-chunk effect, justified); expected_sha256 vs declared
+  hash mismatch still completes (importers must fail it - ruling in QUEUE). UNWIRED.

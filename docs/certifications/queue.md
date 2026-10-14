@@ -24717,3 +24717,7 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-13T22:52Z — Control plane: FTF-0517 returned
 - **Returned:** FTF-0517 r4 (0f): non-vacuous sparse-pool property test; exact-type keys at every position; verify_manifest input structure.
+
+## 2026-10-13T23:59Z — Control plane: FTF-0502-P1 certified (slice); FTF-0504 returned
+- **Returned:** FTF-0504 r2 (0c): rebuild on certified P1; locator, global field limit, wide-record cap, content-type gate, integration.
+- **Certified slice:** FTF-0502-P1 (#770, merge 507ce05a422ad5addb94a1700172fa348f871662); importers may proceed (catalog rule updated).
