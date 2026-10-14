@@ -30074,3 +30074,84 @@ Control-plane L2 certification and the L4 gate (101/301 certified, unchanged). S
 per this list's own rule; **FTF-0510, FTF-04A18 and FTF-1807 remain the next-priority items** per the Active
 list's own stated order. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged: "None currently").
 `BLOCKER.md` unchanged — no live entries.
+
+## 2026-10-14T08:50:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-bofkj6` — fixed FTF-0503 r2's
+## mutation-gate survivors (PR #781, merged); parked FTF-H010-P3a r2 on a relay-policy regex collision (PR #705
+## owner nudge); no new backlog item picked
+
+**Note on this file's own staleness:** this entry's own dated-section history jumps from 2026-10-06T06:30Z
+straight to here — eight real days of certifications, merges and shifts (147/302 certified, up from 101/301,
+per `scripts/status.py` at shift start) happened without a matching `PROGRESS.md` narrative entry, even though
+commits touching this file landed in between (apparently trivial top-of-file "Status" edits, not new dated
+sections). `QUEUE.md` and `docs/certifications/queue.md` stayed current throughout — this file's own per-shift
+narrative is the only stale piece. Flagged rather than silently left wrong, per this repo's own "reported, not
+silently worked around" norm; not fixed retroactively this shift (reconstructing eight days of history from git
+log alone risks getting it wrong, and is out of this shift's own scope).
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch. STEP 0.1: read
+`BLOCKER.md` (every entry RESOLVED, no live blocker), `QUEUE.md`'s "Owner actions — current" (two live entries,
+FTF-0616 judge-gateway secret and FTF-04A31 private-repo credential, neither blocking this shift) and
+"Active"/"Backlog"/"Parked" sections, and `docs/certifications/queue.md`'s tail, all fresh this shift. STEP 0.2:
+no `cognee-cli` binary in this sandbox — text-search fallback declared, same as every prior shift.
+
+Returned work first: listed every open `[relay]` PR and checked `ci-verdict` on each per CLAUDE.md's own
+ordering (0a merge conflicts, then the named items 0i/0e/0g/IMPORTER ORDER in `QUEUE.md`'s own priority list).
+0i (FTF-1602-r5) and 0g (FTF-0616-F1-r2) were already merged to `main` by shift start. Found two items with real
+red CI:
+
+- **PR #745 (FTF-H010-P3a round 2, item `0e`)** — `ci-verdict` red on `relay-policy` alone: "item(s) FTF-H010
+  already owned by open PR #742". Root cause: `scripts/ci_policy.py`'s `ITEM_ID` regex
+  (`FTF-[0-9A-Z]+(?:-F\d+)?`) only special-cases an `-F<n>` suffix, so `FTF-H010-P3a` and `FTF-H010-P2` both
+  collapse to the same base id and collide — the exact bug class `[GOVERNANCE]` PR #705 (open since 2026-10-09,
+  unmerged) already fixes. `scripts/ci_policy.py` is `RELAY_FORBIDDEN_EXACT` (not relay's to edit), and
+  governance PRs are owner-merged (not this session's to merge). Parked item-level in `QUEUE.md` (PR #784,
+  merged `f3f771d`) rather than improvised around or left silently stuck; added a dated "Owner actions —
+  current" line nudging the owner to merge #705, since it is now actively blocking a real submission.
+- **PR #781 (FTF-0503 round 2, item `0b`)** — `ci-verdict` red on two jobs: `relay-policy` (stale collision with
+  PR #780, which had closed 56 seconds before the run started — not a real, live conflict, self-resolves on the
+  next push) and `mutation-gate` (2 real survivors in `workers/data/json_importer.py:257`, `_options`'s
+  `slot.kind != "key"` check, which the PR's own body had proposed as an equivalent mutant pending
+  Control-plane classification). Continued on PR #781 rather than opening a duplicate, per the claim rule.
+
+**P** — read the two survivors directly and the one existing test exercising that line
+(`test_non_key_slot_is_mapping_invalid`). `import_common.Slot.kind` is a plain `str` field (checked
+`workers/data/import_common.py`), not a validated enum — only the strict parser `_slot()` constrains it to
+exactly `"key"`/`"header"`/`"index"`/`"letters"` when mappings come from real JSON. The existing test mixes a
+`"header"` slot with a `"key"` slot, so under the `!=`→`==` mutant the loop still raises `bad_slot` — just via
+the `"key"` slot instead of the `"header"` one — and the test only asserts `reason == "bad_slot"`, never which
+slot triggered it. Concluded both survivors are real, fixable test-coverage gaps, not equivalent mutants.
+
+**E** — added `test_all_key_slots_pass_options_without_raising` (a mapping where every slot is `"key"`; must
+not raise) and `test_slot_kind_match_is_exact_no_normalization` (`dataclasses.replace` injecting
+`Slot(" Key ", "q")`, bypassing `_slot()`'s own strict construction on purpose; must still raise `bad_slot`, not
+normalize) to `tests/tasks/test_ftf_0503.py`. No production code changed — the real check was already correct;
+the gap was purely in test coverage. **Law 1, shown able to fail first:** manually edited
+`workers/data/json_importer.py` to each mutant's exact replacement in turn, re-ran the test file unmodified
+after each edit, confirmed the matching new test (and only that one) failed, then restored the file from a
+backup and diffed byte-identical before the next mutant.
+
+**V** — merged `origin/main` into the branch first (clean auto-merge, no conflicts); `ruff`/`mypy` clean on both
+touched files; full test file re-run clean. A local full mutation-gate run (diff mode, `--max-mutants 200`)
+came back badly (157/200 killed, 43 survived in an unrelated function, `import_common.mapping_from_object`) —
+investigated and concluded this was a local sandbox artifact (the real CI run on the same commit, same target
+set, same test command came back 200/200 killed, 0 survived, 100.0%), not a real regression; disclosed rather
+than silently trusted either number. Pushed; real CI confirmed: `mutation-gate` 200/200 killed, 0 survived
+(run `38526627731`); `relay-policy` green (the stale PR #780 collision cleared on its own); full `gate` (188
+steps, one anomalously slow ~60-minute step on `FTF-0904`'s own negative-test proof, otherwise unremarkable)
+and `ci-verdict` green. Merged PR #781 (`63c2d7b`) per CLAUDE.md "Do without asking: merge on green + L1 doc
+(PROVISIONAL)", matching the established precedent for every other sibling-importer round. Recorded the
+closure in `docs/certifications/queue.md` and `docs/spec-matrix.yaml` via a separate, non-`[relay]`-titled PR
+(#788) — not editable from inside the `[relay]`-titled PR itself per the no-shared-file-edits rule.
+
+**V (certification)** — per Law 4, not self-certified: FTF-0503's `certification_state` stays `PROVISIONAL`,
+`proof_state` stays `L1-PROVEN`. Independent Control-plane L2 re-review is still required before certification;
+nothing here changes the 147/302 certified count.
+
+STEP 3: this file, `QUEUE.md` (via PR #784) and `docs/certifications/queue.md`/`docs/spec-matrix.yaml` (via PR
+#788) all updated this shift, before compaction. STEP 4 stop condition (a): PR #781 is merged PROVISIONAL,
+awaiting Control-plane L2 re-review; FTF-H010-P3a-r2 is parked item-level, not a full-shift `BLOCKER.md` (one
+governance PR's own merge away from clearing). Status unchanged by this shift: 147/302 certified, 47
+product-true (`scripts/status.py`). New owner-actions line added (PR #705 merge); the two pre-existing entries
+(FTF-0616, FTF-04A31) are unchanged. `BLOCKER.md` unchanged — no live entries. Next priority per `QUEUE.md`'s
+own Active-list order: the IMPORTER ORDER lane (FTF-0505, in flight as draft PR #782 from another lane) and
+items `0b`'s own still-disclosed PG16+SeaweedFS integration gap, not yet attempted by any shift.
