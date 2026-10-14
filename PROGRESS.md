@@ -3,6 +3,7 @@
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
 Updated: 2026-10-14T06:52Z. Source: `python3 scripts/status.py` on main.
 - **Status: 147/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
+- 2026-10-14T09:40Z certifier: FTF-0904-W1 slice CERTIFIED (#779); 147/302 unchanged.
   status.py prints 47 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.

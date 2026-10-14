@@ -11292,3 +11292,14 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   G1 RED only incidentally, G1b GREEN in unit; spec-matrix Q4a note overclaims, evidence_hash stale. Stopping rule: round 6
   certifies once these land with no production violation. Advisory: a tzinfo whose utcoffset() raises gives raw ValueError
   (hand-picked variant of the closed typed-`now` class).
+
+## 2026-10-14T09:40Z — CERTIFIED (slice): FTF-0904-W1
+- **FTF-0904-W1: CERTIFIED** (child slice of certified FTF-0904; PR #779, merge 25ecc13, head 840f579f). Producer
+  session_01QVznorVMjnmcttUhyDnoGR (Control plane; sole commit) ≠ certifier session_01WJXX7GmTgoDTRqnFdoEKow, absent from the PR. Diff re-read:
+  `install_api_log_redaction()` (apps/api/app/log_redaction_setup.py) called first in `create_app()`; AccessFormatter swapped for
+  DefaultFormatter on redacted message; additive ci.yml gate step only. CI: ci-verdict 115719250007 success on head 840f579f
+  (run 38515749565). Re-ran `uv run python3 tests/tasks/test_ftf_0904_w1.py` locally: all checks passed, F1-F6 each RED.
+  Own fault injection: deleting the `install_api_log_redaction()` call in main.py -> 24 failures incl. FTF-0904-W1-LEAK
+  (`token` canary reached process output); file restored. product_truth_check 47/47 (W1 has no spec-matrix criterion/proving_symbol,
+  so no matrix change). Slice certification: denominator/certified count unchanged (147/302). Disclosed, not blocking: OAuth
+  `code`/`state` on /auth/callback not redacted (FTF-0904 rule-set follow-up, Law 15). Wired in the served app path.

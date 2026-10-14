@@ -24737,3 +24737,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-14T06:52Z — Control plane: FTF-1602 returned
 - **Returned:** FTF-1602 r6 (0i), tests only: F7, unit G7, real ABA test for G1/G1b, spec-matrix notes; stopping rule.
+
+## 2026-10-14T09:40Z — Certifier: FTF-0904-W1 CERTIFIED (slice)
+- **Certified slice:** FTF-0904-W1 (#779, merge 25ecc13); certifier session_01WJXX7GmTgoDTRqnFdoEKow. 147/302 unchanged. **Not certified:** FTF-1602 r6 (#789) is open/unmerged, CI not final.
