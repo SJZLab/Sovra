@@ -24784,3 +24784,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-14T14:23Z — Control plane: FTF-0504 returned (r4, small)
 - **Returned:** FTF-0504 r4 (0c): record-cap row, full-hash compare, str-subclass locator, preview TypeError, truncated BOM; stopping rule.
+
+## 2026-10-14T16:30Z — Control plane: FTF-0904-F1 returned
+- **Returned:** FTF-0904-F1 r2 (0g): idempotence guard first, serialized/form positions, generated name class, sweeps, FAULTS.
