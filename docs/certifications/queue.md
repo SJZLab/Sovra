@@ -24787,3 +24787,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-14T16:30Z — Control plane: FTF-0904-F1 returned
 - **Returned:** FTF-0904-F1 r2 (0g): idempotence guard first, serialized/form positions, generated name class, sweeps, FAULTS.
+
+## 2026-10-14T18:11Z — Control plane: FTF-0502 returned (r4)
+- **Returned:** FTF-0502 r4 (0k): same-dataset outage control, real memory bound, sha precision, preview TypeError, trailers; stopping rule.
