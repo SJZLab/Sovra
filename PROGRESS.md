@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-14T11:30Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-14T13:02Z. Source: `python3 scripts/status.py` on main.
 - **Status: 147/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   status.py prints 47 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,8 @@ Updated: 2026-10-14T11:30Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-14T13:02Z:**
+  - Returned: FTF-0505 r2 (raw zlib.error escapes; header rows unbounded - 499 KiB upload to 1.57 GB RSS; 4 clauses GREEN). Rulings: field cap in bytes; XLSX limits move into ImportLimits as its one serialized edit.
 - **2026-10-14T11:30Z:**
   - FTF-0904-W1 r2 returned by its separate verifier (startup exception in a --workers/--reload child printed raw by multiprocessing); round 3 redacts traceback.print_exception/print_exc and tests both modes. PR #790 (a routine "[certifier]" PR certifying W1 r1) is superseded by the independent RETURN.
 - **2026-10-14T09:46Z:**
