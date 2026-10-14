@@ -7397,7 +7397,7 @@ FTF-0502:
   certification_state: PROVISIONAL
   criticality: MUST
   description: JSONL importer
-  evidence_hash: 2e63b14fd63e93530d8bc07bf74c13760335e3ea
+  evidence_hash: 9b2e93fd1d9942c0a4dcc8852a1a1637dbb89b3a
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
