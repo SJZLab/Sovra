@@ -97,9 +97,13 @@ class CountingClient:
         self._inner = inner
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
 
-    def stream_object(self, bucket: str, key: str, *, chunk_size: int = MIB) -> Any:
-        self.calls.append(("stream_object", (bucket, key)))
-        return self._inner.stream_object(bucket, key, chunk_size=chunk_size)
+    def stream_object_windows(
+        self, bucket: str, key: str, *, window_bytes: int = 8 * MIB, chunk_size: int = MIB
+    ) -> Any:
+        self.calls.append(("stream_object_windows", (bucket, key)))
+        return self._inner.stream_object_windows(
+            bucket, key, window_bytes=window_bytes, chunk_size=chunk_size
+        )
 
     def __getattr__(self, name: str) -> Any:
         target = getattr(self._inner, name)
@@ -362,8 +366,8 @@ def main() -> None:
         == ("training", "upload", "application/jsonl"),
     )
     check(
-        f"I4 exactly one GET of the session's own key and nothing else: {counting.calls}",
-        counting.calls == [("stream_object", (bucket, train_key))],
+        f"I4 exactly one windowed read of the session's own key and nothing else: {counting.calls}",
+        counting.calls == [("stream_object_windows", (bucket, train_key))],
     )
     check("I4 the object key is not in the returned source", train_key not in repr(src))
 
@@ -502,6 +506,51 @@ def main() -> None:
     big = (line(1) * (MIB // len(line(1)) + 1))[:MIB] * 96
     large_a, _ = make_dataset("org1", p1_id, conn1, big, "large-a")
     large_b, _ = make_dataset("org1", p1_id, conn1, big + b"x", "large-b")
+    # ---- I6: a dataset past SeaweedFS's single-GET cutoff, read at an importer's pace ---
+    # (F1: the old single long GET was ended by the server at ~18-21 MB, so any dataset
+    # over ~20 MB ended blocked.) 96 MiB, 1 MiB per second, windows of 8 MiB.
+    import time
+
+    paced = open_source(ctx1, p1_id, large_a.id)
+    paced_reader = ic.ChunkReader(
+        paced.chunks, expected_size=paced.expected_size, expected_sha256=paced.expected_sha256
+    )
+    paced_total = 0
+    paced_error: BaseException | None = None
+    try:
+        for piece in paced_reader:
+            paced_total += len(piece)
+            time.sleep(1.0)
+    except BaseException as exc:  # noqa: BLE001 - the test inspects the type
+        paced_error = exc
+    check(
+        f"I6 a 96 MiB dataset consumed at 1 MiB/s completes with the right sha ({paced_error})",
+        paced_error is None
+        and paced_total == len(big) == paced.expected_size
+        and paced_reader.sha256 == paced.expected_sha256 == sha(big),
+    )
+
+    # ---- I7: overwritten between windows -> failed / source_changed, never spliced -----
+    mid = (line(1) * (MIB // len(line(1)) + 1))[:MIB] * 24
+    mid_dataset, mid_key = make_dataset("org1", p1_id, conn1, mid, "mid")
+    mid_src = open_source(ctx1, p1_id, mid_dataset.id)
+    mid_reader = ic.ChunkReader(
+        mid_src.chunks, expected_size=mid_src.expected_size, expected_sha256=mid_src.expected_sha256
+    )
+    check("I7 the first megabyte streams", len(next(mid_reader)) == MIB)
+    client.put_object(bucket, mid_key, mid[::-1])
+    mid_verdict: ic.ImportAborted | None = None
+    try:
+        for _ in mid_reader:
+            pass
+    except ic.ImportAborted as exc:
+        mid_verdict = exc
+    check(
+        f"I7 an object overwritten between windows ends failed/source_changed ({mid_verdict})",
+        mid_verdict is not None
+        and (mid_verdict.state, mid_verdict.failure_code) == ("failed", "source_changed"),
+    )
+
     raw = open_source(ctx1, p1_id, large_a.id)
     via_reader_src = open_source(ctx1, p1_id, large_b.id)
     via_reader = ic.ChunkReader(

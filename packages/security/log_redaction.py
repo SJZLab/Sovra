@@ -242,6 +242,16 @@ _KEY_VALUE = re.compile(
     rf"""(?P<val>\[REDACTED\]|{_QUOTED_VALUE}|[^\s&,;"'}}\])]+)""",
     re.I,
 )
+# FTF-0904-F1: bare, generic query-parameter names that carry live credentials (`?key=`, `?sig=`,
+# OAuth `?code=`/`?state=` on a callback). They cannot join `_SECRET_KEY_WORDS`: that list matches a
+# word *inside* a key run and also binds structured keys, so `state`/`code`/`key` would redact
+# `{"state": "running"}` and `monkey=1`. This rule is the exact name only, directly after a
+# query/fragment delimiter, so `keyboard=`, `codec=`, `state_of=` and prose `code=5` survive.
+_QUERY_SECRET_PARAM = re.compile(
+    r"(?P<key>(?<=[?&;#])(?:key|sig|auth|session|jwt|code|state))(?P<sep>=)"
+    r"""(?P<val>[^\s&,;"'}\])]+)""",
+    re.I,
+)
 _BASE64_RUN = re.compile(
     r"(?<![A-Za-z0-9+/_\-])(?P<body>[A-Za-z0-9+/_\-]{16,})={0,2}(?![A-Za-z0-9+/_=\-])"
 )
@@ -258,6 +268,7 @@ _RULES: tuple[tuple[str, Any], ...] = (
     ("jwt", _JWT_RUN),
     ("userinfo", _USERINFO),
     ("key_value", _KEY_VALUE),
+    ("query_param", _QUERY_SECRET_PARAM),
 )
 _REPLACEMENTS: Mapping[str, str | Callable[[re.Match[str]], str]] = {
     "jwt": _redact_jwts_in_run,
@@ -266,6 +277,7 @@ _REPLACEMENTS: Mapping[str, str | Callable[[re.Match[str]], str]] = {
     "bearer": rf"\g<scheme> {REDACTED}",
     "userinfo": rf"\g<scheme>{REDACTED}@",
     "key_value": rf"\g<key>\g<sep>{REDACTED}",
+    "query_param": rf"\g<key>\g<sep>{REDACTED}",
 }
 
 _SECRET_KEY_NAME = re.compile(rf"(?:{_HEADER_KEYS})|{_SECRET_KEY}", re.I)
@@ -320,7 +332,7 @@ def _reveals_secret(segment: str) -> bool:
     """True if any percent-decoded layer (up to three) of `segment` contains a secret shape."""
     layer = segment
     for _ in range(_MAX_DECODE_LAYERS):
-        layer = unquote(layer)
+        layer = _normalise(unquote(layer))  # a decoded fullwidth `=` is `=` once NFKC'd (F1)
         if _scan(layer, _BASE64_LAYERS) != layer:
             return True
     return False

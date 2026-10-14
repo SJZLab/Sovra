@@ -87,6 +87,7 @@ __all__ = [
     "mapping_from_object",
     "normalize_mapped_record",
     "parse_mapping",
+    "parse_pointer",
     "preview",
     "resolve_pointer",
     "run_import",
@@ -148,6 +149,7 @@ FAILURE_CODES: Final = frozenset(
         "external_link_present",
         "field_too_large",
         "invalid_encoding",
+        "json_malformed",
         "limit_exceeded",
         "mapping_column_missing",
         "parse_timeout",
@@ -552,7 +554,13 @@ def _slot(value: object) -> Slot:
     raise _bad("bad_slot")
 
 
-def _parse_pointer(value: object) -> tuple[str, ...]:
+def parse_pointer(value: object) -> tuple[str, ...]:
+    """Parses a JSON-Pointer-shaped MappingSpec string (`""` or `/a/b/0`) into
+    its unescaped tokens. Raises `MappingInvalidError` (`bad_pointer`,
+    `wrong_type`). Exported so a format importer that reads its own pointer
+    field straight from `mapping.document` (the way `csv_importer` reads its
+    own `csv` block) can resolve it without a second, independently
+    reimplemented parser (FTF-0503's `json` block `container` field)."""
     if type(value) is not str:
         raise _bad("wrong_type")
     if value == "":
@@ -636,7 +644,7 @@ def _validate_formats(obj: dict[str, object]) -> None:
         _count(xlsx_block["header_row"], 1_000_000)
     if "json" in obj:
         json_block = _obj(obj["json"], ("container", "ignored_top_level_keys"), ())
-        _parse_pointer(json_block["container"])
+        parse_pointer(json_block["container"])
         ignored = json_block["ignored_top_level_keys"]
         if type(ignored) is not list or len(ignored) > MAX_ROLE_MAP_ENTRIES:
             raise _bad("wrong_type")
@@ -687,7 +695,7 @@ def mapping_from_object(obj: object) -> ImportMapping:
             raise _bad("bad_value")
         on_unmapped = policy
         if spec.pointer_based:
-            pointer = _parse_pointer(body["messages_pointer"])
+            pointer = parse_pointer(body["messages_pointer"])
         else:
             messages_slot = _slot(body["messages"])
     else:
@@ -1006,6 +1014,10 @@ class ImportReport:
     rejection_counts: tuple[tuple[str, int], ...]
     rejections: tuple[RowRejection, ...]
     report_sha256: str
+    # Where a fatal problem happened (`line:<n>` / `row:<n>` ...). Additive and optional: None
+    # here, and a `LocatedImportReport` (below) when there is one, so a report without a
+    # locator keeps exactly the fields, the body and the digest it had before.
+    fatal_locator = None  # deliberately unannotated: not a dataclass field
 
     def body(self) -> dict[str, object]:
         """Every field except `report_sha256`, as canonical-JSON-ready data."""
@@ -1024,6 +1036,23 @@ class ImportReport:
             raise ValueError("records_seen must equal records_accepted + records_rejected")
         if self.report_sha256 != _canonical_sha256(self.body()):
             raise ValueError("report_sha256 does not cover this report")
+
+
+@dataclass(frozen=True)
+class LocatedImportReport(ImportReport):
+    """An `ImportReport` that ends at a fatal problem whose location is known; the
+    locator is inside the report digest."""
+
+    fatal_locator: str = ""  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if (
+            not _STATE_NEEDS_FAILURE_CODE.get(self.state)
+            or type(self.fatal_locator) is not str
+            or not _LOCATOR_PATTERN.fullmatch(self.fatal_locator)
+        ):
+            raise ValueError("fatal_locator must be a structural locator on a non-completed report")
+        super().__post_init__()
 
 
 @dataclass(frozen=True)
@@ -1102,7 +1131,11 @@ class ChunkReader(Iterator[bytes]):
                 chunk = next(self._iterator)
             except StopIteration:
                 break
-            except Exception:  # noqa: BLE001 - any source failure is an outage, never a verdict
+            except Exception as exc:  # noqa: BLE001 - any source failure is an outage, never a verdict
+                if getattr(exc, "source_changed", False) is True:
+                    # The source itself says the verified object changed under
+                    # the read (a version difference between two windows).
+                    raise self._abort("failed", "source_changed") from None
                 raise self._abort("blocked", "source_unavailable") from None
             if type(chunk) is not bytes:
                 raise self._abort("blocked", "source_unavailable")
@@ -1190,6 +1223,7 @@ class ImportAccumulator:
         source_sha256: str,
         source_bytes: int,
         aborted: ImportAborted | None = None,
+        fatal_locator: str | None = None,
     ) -> ImportReport:
         importer, version, mapping_sha256, purpose, expected = self._meta
         fields: dict[str, object] = {
@@ -1215,6 +1249,13 @@ class ImportAccumulator:
             "rejection_counts": dict(self._counts),
             "rejections": [asdict(rejection) for rejection in self._rejections],
         }
+        if fatal_locator is not None:
+            unsealed["fatal_locator"] = fatal_locator
+            return LocatedImportReport(
+                **fields,  # type: ignore[arg-type]
+                fatal_locator=fatal_locator,
+                report_sha256=_canonical_sha256(unsealed),
+            )
         return ImportReport(**fields, report_sha256=_canonical_sha256(unsealed))  # type: ignore[arg-type]
 
 

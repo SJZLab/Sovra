@@ -1,368 +1,621 @@
-"""JSON importer (FTF-0503, Section 7/8/67/77/81).
+"""JSON importer (FTF-0503; FINE_TUNING_FACTORY_RELEASE_1.md Section 7, 8.1, 9, 67.2, 67.3).
 
-Section 8.1's import pipeline step 5 ("Parse in isolated worker") needs one
-real, load-bearing place where the JSON dialect (Section 67.1's own
-`Upload | ... | ... JSONL/JSON/CSV/XLSX parsing` row) turns an already
-type-detected raw byte document into Section 7's own canonical conversation
-records -- this module is that place for JSON specifically, the sibling of
-FTF-0502's `import_jsonl`. It is a pure, synchronous, no-DB function (this
-task's own `database_changes` clause: "No independent schema change.
-Consume frozen contract."): it never opens a file, a socket or a database
-itself, and it never calls across the `workers/data` <-> `apps/api`
-deployable-unit boundary (same discipline FTF-0502/FTF-0506/FTF-0508 already
-established) -- a caller (a later, separately dependency-gated upload/import
-route) supplies the already-authorized whole-document bytes and reuses
-FTF-0506's already-CERTIFIED `normalize_conversation` for every record this
-module reads. `ImportedRecord`/`QuarantinedRow` are reused directly from
-FTF-0502's `jsonl_importer` (reuse-first, Section 77.1) rather than a second,
-structurally identical pair of dataclasses.
+Round 2: rebuilt on FTF-0502-P1 (`workers/data/import_common.py`), replacing the
+round-1 module that called `json.loads` on the whole document and handed the
+raw parsed object straight to FTF-0506. That design is this task's own
+reported defect class: a 1 MiB document peaked at 63 MiB (62x, not linear); a
+4301-digit int, a duplicate key, NaN/Infinity/1e999 and a lone surrogate were
+all silently accepted; there was no content-type gate, no `ChunkReader`
+input, no `ImportReport`/Law 17 states and no deterministic `record_id`
+(FTF-0506's `normalize_conversation` mints a fresh one per call); quarantine
+messages carried FTF-0506's own exception text verbatim (a META-LEAK); and a
+BOM or a UTF-16/32 document was not refused as `unsupported_encoding`.
+
+Turns an already-authorised, size/hash-bound byte stream
+(`import_common.ChunkReader`) into P1 import events, the same shape CSV
+(`csv_importer.run_csv_import`) and JSONL produce -- `run_json_import` is the
+third sibling, not a fourth independently invented report/event pipeline.
+
+## Where the records are: the `json` MappingSpec block
 
 A single JSON document cannot be split into independent lines the way JSONL
-can: a well-formed document is exactly one balanced top-level value, and
-nothing before that closing bracket/brace is syntactically verifiable. This
-importer therefore accepts two disclosed top-level shapes, read literally
-from this task's own acceptance clause ("Parse approved JSON
-**conversation/container** structures"), rather than guessing a wrapping
-field name (for example `"records"` or `"data"`) that nothing in this
-repository's contracts names:
+can, and unlike a CSV/XLSX sheet it has no fixed tabular shape -- so where the
+list of records lives inside the document is itself something the mapping
+must declare, never guessed. The MappingSpec's own `json` block (already
+validated by `import_common.mapping_from_object`: `container` a JSON Pointer,
+`ignored_top_level_keys` a list of strings, both required once the block is
+present) is read here for the first time by any importer:
 
-  - **conversation** -- a top-level JSON *object* is one single conversation
-    record (the whole document is one row, `row_index=0`), handed to
-    FTF-0506's `normalize_conversation` exactly like one JSONL line.
-  - **container** -- a top-level JSON *array* holds zero or more candidate
-    records, one per element, in order (`row_index` is the element's
-    0-based position) -- the direct JSON analogue of one JSONL line per
-    array element.
+  - `container: ""` -- **`$`**: the document's own top-level value is the
+    records. A top-level *array* is a container of *N* candidate records, one
+    per element, in document order. A top-level *object* is itself the one
+    record (**`$record`** at the root) -- `row_index` 0, the direct analogue
+    of round 1's "conversation" shape.
+  - `container: "/rows"` -- **`/<key>`**: the array or single-record object
+    lives one level into the root object, at that exact key. Every other
+    top-level key must be in `ignored_top_level_keys` or the import is fatal
+    `unmapped_top_level_key` -- a key the mapping did not account for is never
+    silently ignored. Disclosed scope limit: `container` supports depth 0 or
+    1 only (every named example is one of these two); a deeper pointer is
+    `MappingInvalidError` ("bad_pointer") at mapping-validation time, before
+    any byte is read. A real need for deeper nesting is a new, separately
+    reviewed round, not a silent guess here.
 
-Any other top-level JSON type (a string, number, boolean or null) is not a
-"conversation" or "container" structure at all; it is quarantined as a
-single row 0 with an actionable message, never guessed into either shape.
+Each record element, once located, is mapped by the *same* `apply_mapping` /
+`normalize_mapped_record` pipeline CSV uses -- a JSON element is already a
+`Mapping`, so a `messages`/`messages_json`/`prompt_completion` shape with
+`key`-kind slots applies to it unchanged. This is what gives this round its
+deterministic `record_id` (a uuid5 of `dataset_sha256:mapping_sha256:index`,
+never re-derived or re-randomised) and its content-free rejections
+(`RowMappingError` carries a code and a slot name, never source text) --
+both inherited directly from P1, not reimplemented.
 
-This task's own acceptance clause ("... without loading unbounded file") is
-met by two checks performed *before* any decode or parse is attempted, the
-same "cheapest possible refusal point first" discipline FTF-0502 already
-applies to its own per-line size bound:
+## The linear container scanner: the real fix for the reported memory defect
 
-  - **document size**: `len(content)` (a plain byte-length check on the
-    already-received buffer, never a second read) is bound by
-    `max_total_bytes` (default `MAX_JSON_DOCUMENT_BYTES`). A full JSON
-    document -- unlike JSONL -- must be held in memory whole to be parsed at
-    all (there is no stdlib incremental JSON-array parser this task's own
-    `files` clause licenses adding), so "without loading unbounded file"
-    is met here by refusing to even attempt `json.loads` on a document over
-    this bound, not by true per-element streaming. This is a disclosed
-    scope limit, not a defect: Section 67.3's own 10GiB multipart upload
-    ceiling (`dataset_upload_store.MAX_UPLOAD_BYTES`) governs what may be
-    *uploaded*; a single in-process `json.loads` call over a document that
-    large would never be safe regardless of this importer's own bound, so
-    `MAX_JSON_DOCUMENT_BYTES` is deliberately far smaller and independently
-    configurable per caller/deployment capability evidence (Section 67.3:
-    "Larger allowed limits require capability/load evidence, not disabling
-    protection").
-  - **nesting depth**: before calling `json.loads` at all, a single
-    byte-level pass (`_max_nesting_depth`) counts the deepest `{`/`[`
-    bracket nesting actually reached, correctly ignoring any `{`/`[`/`}`/`]`
-    that appears inside a JSON string literal (escape-aware). A document
-    whose nesting exceeds `max_nesting_depth` (default `MAX_NESTING_DEPTH`)
-    is quarantined `nesting_too_deep` *before* the recursive-descent parser
-    ever sees it -- this is this task's own "deep nesting ... fail with
-    actionable mapping errors" negative-acceptance clause, made
-    deterministic and independently testable (an exact depth boundary),
-    rather than relying on an uncontrolled `RecursionError` whose threshold
-    depends on the interpreter's own ambient recursion limit. `json.loads`
-    is still wrapped in a defensive `except RecursionError` as a backstop
-    (it should never fire once the pre-check above holds), never left to
-    crash the caller.
+Section 67.3's "without loading unbounded file" cannot mean true per-byte
+streaming for JSON the way JSONL's per-line read achieves it: a JSON document
+is one balanced value, and nothing before its closing bracket is
+syntactically verifiable, so the whole document must be held as one buffer
+(bounded by `ImportLimits.max_source_bytes` via `ChunkReader`, the same
+shared bound every importer uses -- this is a disclosed scope limit, not a
+new one). What round 1 got wrong was not holding the buffer; it was handing
+the *whole* buffer to `json.loads` in one call, which builds every element's
+full nested Python object graph simultaneously before this importer (or its
+caller) can even look at one record -- the real source of "not linear":
+holding *N* fully-materialised records live at once costs far more than *N*
+times one record's own bytes, a cost that only grows with *N*, not with the
+container's own scanning.
 
-Negative acceptance ("Deep nesting, malformed objects and unsupported
-structures fail with actionable mapping errors"), the remaining cases:
+`_skip_value` / `_scan_array` / `_scan_object` are a single linear (one pass,
+no backtracking) byte-position scanner: string/escape-aware bracket depth
+tracking, the same technique `import_common._scan_depth` already uses for
+its own pre-`json.loads` nesting check, extended here to also record where
+each top-level array element (or root-level object member) *starts* and
+*ends* -- never building a Python value for anything it skips past. Once an
+element's span is known, `strict_loads` parses *that one element alone* (P1's
+own one real JSON reader: duplicate keys, NaN/Infinity, the 4300-digit int
+cap and lone surrogates are refused there, per element, with a stable code --
+exactly the round-1 defects, now caught per record instead of crashing or
+silently passing for the whole document). The accepted/rejected candidate is
+yielded immediately and the caller (the shared `ImportAccumulator`, same as
+CSV/JSONL) consumes and discards it before the next element is even located
+-- at most one parsed record (plus the one scanner-held text buffer) is ever
+live at a time, independent of how many records the container holds. This is
+proven directly, not asserted: `test_memory_is_linear_not_quadratic_in_record_count`
+(tracemalloc) and `test_scanner_matches_json_loads_on_every_valid_document`
+(a differential test: for generated valid documents, every element this
+scanner extracts and `strict_loads`-parses is value-equal to the same index
+of a single whole-document `json.loads`, proving the split is semantically
+exact, not an approximation) in `tests/tasks/test_ftf_0503.py`.
 
-  - **malformed objects**: invalid JSON syntax (`json.JSONDecodeError`) is
-    quarantined `malformed_json` with the real decoder message, never
-    fatal. A container element that is not itself a JSON object (for
-    example a bare number or a nested array inside the container array) is
-    quarantined `not_an_object` individually -- one bad element never
-    affects any other element in the same container, the same
-    "nothing silently dropped" discipline FTF-0502 established.
-  - **unsupported structures**: a top-level scalar (string/number/
-    boolean/null) is quarantined `unsupported_top_level_type` with the
-    real observed type name, never coerced into either accepted shape.
-  - **malformed UTF-8**: `content` is decoded strictly (`errors="strict"`)
-    before any parse is attempted; a `UnicodeDecodeError` is quarantined
-    `malformed_utf8`, the same code FTF-0502 already uses for the identical
-    underlying failure.
+A span the scanner cannot close before the end of text (an unterminated
+string or an unbalanced bracket -- including a trailing comma, which is not
+valid JSON) is fatal `json_malformed`: once one boundary is wrong, every
+later comma/bracket the scanner would find is unreliable too, so this ends
+the whole import rather than mis-locating later elements. A boundary that
+*is* found but is semantically invalid (a bad number, a duplicate key, ...)
+is caught by `strict_loads` on that one element alone and only rejects that
+one record -- the scanner's own job is finding spans, never validating them.
 
-This module's own central invariant, the JSON analogue of FTF-0502's
-"every line produces exactly one item": a **container** (top-level array)
-of length *N* yields exactly *N* items, one per element, in order; a
-**conversation** (top-level object) or any document-level failure (size,
-nesting, decode, parse, or an unsupported top-level type) yields exactly
-one item, `row_index=0` -- there is no row to attach document-level
-evidence to beyond the document itself.
+One element whose raw span exceeds `2 * limits.max_record_bytes + 2` (the
+same generous multiplier `csv_importer` uses for one field) is fatal
+`field_too_large`, caught by span length before it is parsed at all; between
+that bound and `limits.max_record_bytes` it is `RowRejection record_too_large`,
+also unparsed. Both are Section 67.3's "canonical single-record max 2MiB",
+applied to the *one* element currently being read rather than the document as
+a whole -- the round-1 defect ("an over-cap document loses every element") no
+longer applies: the document-level bound is `ImportLimits.max_source_bytes`
+(shared, already enforced by `ChunkReader` before a byte reaches this module),
+and one oversize element inside an otherwise-fine document only costs that
+one element, never the rest.
 
-Scope decision, same disclosed precedent as FTF-0502/FTF-0506/FTF-0507/
-FTF-0508 ("no live caller yet"): this task's own packet `files` list names
-only this module and its test, not a route or a DB write. No dataset-import
-pipeline route exists yet in this repository to call `import_json`.
-`proving_symbol` stays blank; `product_truth_check.py`'s product-true count
-is deliberately unchanged.
+## Content type and encoding (round-1 defects: "no content-type gate";
+## "BOM refused, UTF-16/32 not unsupported_encoding")
 
-Path refinement recorded before READY (Section 84.3), same precedent as
-FTF-0502/FTF-0506/FTF-0507/FTF-0508/FTF-0517: the packet names
-`services/training-worker/data/json_importer.py`, but this repo's real
-`SOURCE_ROOTS` (FTF-0001, PR #10) name `workers/data` as the real data/
-review worker root -- there is no `services/` tree in this repository.
-Placed alongside FTF-0502's/FTF-0506's/FTF-0507's/FTF-0508's own modules
-instead of creating a second, non-existent tree.
+Only a verified content type of `application/json` is imported
+(`content_type_not_supported_by_importer`, checked before a byte is read from
+`reader`, the same ordering `csv_importer` uses). RFC 8259 requires UTF-8 and
+forbids a byte-order mark; a UTF-8 BOM is fatal `unexpected_bom` and a UTF-16
+or UTF-32 BOM (LE or BE) is fatal `unsupported_encoding`, both detected by
+their leading bytes before any decode is attempted (longest signature first,
+since the UTF-16LE and UTF-32LE marks share a two-byte prefix). Bytes that
+remain after that check are decoded strict UTF-8; a document that is not
+valid UTF-8 at all (no recognised BOM, just bad bytes) is fatal
+`invalid_encoding` -- the same code `csv_importer` uses for the identical
+underlying failure on its own declared encoding.
+
+Scope: pure and synchronous, no database and no network (the packet's
+`database_changes`: "No independent schema change. Consume frozen contract").
+No import route exists yet to call it; `proving_symbol` stays blank, the same
+disclosed precedent as every sibling importer.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
-from collections.abc import Iterator, Mapping
-from types import MappingProxyType
+from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass
+from typing import Final
 
-from workers.data.canonical_conversation_normalizer import (
-    ConversationNormalizationError,
-    ToolArgumentValidator,
-    normalize_conversation,
+from workers.data.canonical_conversation_normalizer import ToolArgumentValidator
+from workers.data.import_common import (
+    DEFAULT_LIMITS,
+    AcceptedRecord,
+    ChunkReader,
+    ImportAborted,
+    ImportAccumulator,
+    ImportEvent,
+    ImportLimits,
+    ImportMapping,
+    ImportReport,
+    MappingInvalidError,
+    RowMappingError,
+    RowRejection,
+    Slot,
+    StrictJsonError,
+    apply_mapping,
+    normalize_mapped_record,
+    parse_pointer,
+    strict_loads,
+    to_dataset_record_candidate,
 )
-from workers.data.jsonl_importer import ImportedRecord, QuarantinedRow
-from workers.data.record_schema_validator import SUPPORTED_SOURCE_TYPES
 
 __all__ = [
-    "MAX_JSON_DOCUMENT_BYTES",
-    "MAX_NESTING_DEPTH",
-    "ImportedRecord",
-    "JsonImportError",
-    "QuarantinedRow",
-    "import_json",
+    "JSON_CONTENT_TYPES",
+    "JSON_FATAL_CODES",
+    "JsonAborted",
+    "JsonEventStream",
+    "JsonImportOutcome",
+    "json_events",
+    "run_json_import",
 ]
 
-# Disclosed scope limit (module docstring, "document size"): deliberately far
-# smaller than Section 67.3's 10GiB multipart upload ceiling -- a single
-# in-process `json.loads` call over a document that large would never be
-# safe. 64 MiB comfortably holds many thousands of canonical records while
-# keeping a single parse call's memory bound predictable.
-MAX_JSON_DOCUMENT_BYTES = 64 * 1024 * 1024
+JSON_CONTENT_TYPES: Final = frozenset({"application/json"})
+JSON_FATAL_CODES: Final = frozenset(
+    {
+        "content_type_not_supported_by_importer",
+        "field_too_large",
+        "invalid_encoding",
+        "json_malformed",
+        "mapping_column_missing",
+        "unexpected_bom",
+        "unmapped_top_level_key",
+        "unsupported_encoding",
+    }
+)
 
-# Disclosed scope limit (module docstring, "nesting depth"): a finite,
-# independently testable bound checked before `json.loads` ever runs.
-MAX_NESTING_DEPTH = 64
+IMPORTER_NAME: Final = "json"
+IMPORTER_VERSION: Final = "1"
+SOURCE_TYPE: Final = "upload"
 
-_EMPTY_TOOL_SCHEMAS: MappingProxyType[str, Mapping[str, object]] = MappingProxyType({})
+# Longest signature first: the UTF-16LE and UTF-32LE marks share a prefix.
+_BOM_SIGNATURES: Final = (
+    (b"\xff\xfe\x00\x00", "unsupported_encoding"),  # UTF-32 LE
+    (b"\x00\x00\xfe\xff", "unsupported_encoding"),  # UTF-32 BE
+    (b"\xef\xbb\xbf", "unexpected_bom"),  # UTF-8 BOM (RFC 8259 forbids it)
+    (b"\xff\xfe", "unsupported_encoding"),  # UTF-16 LE
+    (b"\xfe\xff", "unsupported_encoding"),  # UTF-16 BE
+)
 
-
-class JsonImportError(ValueError):
-    """The `import_json` call itself is malformed (`content` is not real
-    bytes, or `source_type` is not a recognized dialect) -- not a
-    document-level or row-level failure, so there is no row to attach
-    quarantine evidence to. Never raised once parsing has started; every
-    document-level or row-level problem is a `QuarantinedRow` instead."""
-
-
-_BACKSLASH = 0x5C  # "\\"
-_QUOTE = 0x22  # '"'
-_OPEN_BRACE = 0x7B  # "{"
-_OPEN_BRACKET = 0x5B  # "["
-_CLOSE_BRACE = 0x7D  # "}"
-_CLOSE_BRACKET = 0x5D  # "]"
+_WHITESPACE: Final = " \t\r\n"
+_TERMINATORS: Final = ",]}\t\r\n "
 
 
-def _max_nesting_depth(content: bytes) -> int:
-    """Counts the deepest `{`/`[` nesting actually reached in `content`,
-    ignoring any bracket bytes that appear inside a JSON string literal.
-    Escape-aware: a `\\"` inside a string never ends it early, and the byte
-    immediately after any `\\` is always treated as part of the string,
-    never as a structural byte.
+class JsonAborted(ImportAborted):
+    """A fatal JSON problem: the import ends `failed` with `failure_code`,
+    and `locator` names where (`object:0` for every document-level failure
+    -- there is no finer position to blame once the scanner itself cannot
+    trust later offsets; `record:<n>` for one oversize element, found by its
+    span length alone, before it is even parsed)."""
 
-    Operates directly on the raw, not-yet-decoded `bytes` (never a `str`):
-    every structural byte this function looks for (`{`, `}`, `[`, `]`, `"`,
-    `\\`) is a single-byte ASCII code point, and every UTF-8 continuation or
-    multi-byte lead byte is always `>= 0x80` -- so scanning raw bytes can
-    never mistake part of a multi-byte character for one of these, and this
-    check can run before (and regardless of) UTF-8 decoding."""
-    depth = 0
-    max_depth = 0
-    in_string = False
-    escape_next = False
-    for byte in content:
-        if in_string:
-            if escape_next:
-                escape_next = False
-            elif byte == _BACKSLASH:
-                escape_next = True
-            elif byte == _QUOTE:
-                in_string = False
+    def __init__(self, failure_code: str, locator: str) -> None:
+        super().__init__("failed", failure_code)
+        self.locator = locator
+
+
+class _Unterminated(Exception):  # noqa: N818 - internal control flow, turned into JsonAborted
+    """The scanner could not find where a value/object/array ends before the
+    end of text (an unclosed string/bracket, or a trailing comma)."""
+
+
+@dataclass(frozen=True)
+class JsonImportOutcome:
+    report: ImportReport
+    fatal_locator: str | None
+
+
+@dataclass(frozen=True)
+class _Options:
+    container_tokens: tuple[str, ...]
+    ignored_top_level_keys: frozenset[str]
+
+
+def _mapped_slots(mapping: ImportMapping) -> tuple[tuple[str, Slot], ...]:
+    named: list[tuple[str, Slot | None]] = [
+        ("prompt", mapping.prompt),
+        ("completion", mapping.completion),
+        ("system", mapping.system),
+        ("messages", mapping.messages_slot),
+        ("group_key", mapping.group_key),
+    ]
+    named.extend((f"metadata.{name}", slot) for name, slot in mapping.metadata_slots)
+    return tuple((name, slot) for name, slot in named if slot is not None)
+
+
+def _options(mapping: ImportMapping) -> _Options:
+    """The `json` block and the slots of a MappingSpec, refused up front when
+    they cannot describe this importer's own scope. Raises `MappingInvalidError`."""
+    block = mapping.document.get("json")
+    if type(block) is not dict:
+        raise MappingInvalidError("missing_key")
+    tokens = parse_pointer(block["container"])
+    if len(tokens) > 1:
+        # Disclosed scope limit (module docstring): depth 0 or 1 only.
+        raise MappingInvalidError("bad_pointer")
+    for _name, slot in _mapped_slots(mapping):
+        if slot.kind != "key":
+            raise MappingInvalidError("bad_slot")
+    return _Options(tokens, frozenset(block["ignored_top_level_keys"]))
+
+
+# ---------------------------------------------------------------------------
+# The linear scanner: span-finding only, never value-building.
+# ---------------------------------------------------------------------------
+
+
+def _skip_ws(text: str, pos: int) -> int:
+    length = len(text)
+    while pos < length and text[pos] in _WHITESPACE:
+        pos += 1
+    return pos
+
+
+def _skip_value(text: str, pos: int) -> int:
+    """`pos` indexes the first (non-whitespace) character of a value. Returns
+    the index just past the value's own extent -- never parses or allocates
+    the value itself. Raises `_Unterminated` when that extent cannot be
+    determined before the end of `text`."""
+    length = len(text)
+    # Every structural character below is compared straight off `text[...]`
+    # (never cached into a plain variable first): a single already-isolated
+    # punctuation character can never actually differ from its own
+    # `.strip().lower()` form, which would otherwise leave an unkillable
+    # equivalent-mutant surface behind (the same reasoning round 1's own
+    # `_max_nesting_depth` already documented for this exact mutation class).
+    if text[pos] == "{" or text[pos] == "[":
+        depth = 1
+        i = pos + 1
+        in_string = False
+        escape = False
+        while i < length:
+            if in_string:
+                if escape:
+                    escape = False
+                elif text[i] == "\\":
+                    escape = True
+                elif text[i] == '"':
+                    in_string = False
+            elif text[i] == '"':
+                in_string = True
+            elif text[i] == "{" or text[i] == "[":
+                depth += 1
+            elif text[i] == "}" or text[i] == "]":
+                depth -= 1
+                if depth == 0:
+                    return i + 1
+            i += 1
+        raise _Unterminated
+    if text[pos] == '"':
+        i = pos + 1
+        escape = False
+        while i < length:
+            if escape:
+                escape = False
+            elif text[i] == "\\":
+                escape = True
+            elif text[i] == '"':
+                return i + 1
+            i += 1
+        raise _Unterminated
+    # A bare literal (number / true / false / null, or garbage this value's
+    # own eventual strict_loads call will reject): scan to the next
+    # structural terminator. Never consuming anything is itself malformed.
+    i = pos
+    while i < length and text[i] not in _TERMINATORS:
+        i += 1
+    if i == pos:
+        raise _Unterminated
+    return i
+
+
+def _scan_array(text: str, open_pos: int) -> tuple[list[tuple[int, int]], int]:
+    """`open_pos` indexes the `[` character. Returns each element's own
+    `(start, end)` span in order, and the index just past the matching `]`.
+    Raises `_Unterminated` on an unclosed array or a trailing comma."""
+    length = len(text)
+    pos = _skip_ws(text, open_pos + 1)
+    spans: list[tuple[int, int]] = []
+    if pos < length and text[pos] == "]":
+        return spans, pos + 1
+    while True:
+        if pos >= length:
+            raise _Unterminated
+        start = pos
+        end = _skip_value(text, pos)
+        spans.append((start, end))
+        pos = _skip_ws(text, end)
+        if pos >= length:
+            raise _Unterminated
+        if text[pos] == ",":
+            pos = _skip_ws(text, pos + 1)
             continue
-        if byte == _QUOTE:
-            in_string = True
-        elif byte == _OPEN_BRACE or byte == _OPEN_BRACKET:
-            depth += 1
-            max_depth = max(max_depth, depth)
-        elif byte == _CLOSE_BRACE or byte == _CLOSE_BRACKET:
-            depth -= 1
-    return max_depth
+        if text[pos] == "]":
+            return spans, pos + 1
+        raise _Unterminated
 
 
-def _quarantine(row_index: int, code: str, message: str) -> QuarantinedRow:
-    return QuarantinedRow(row_index=row_index, code=code, message=message)
+def _scan_object(text: str, open_pos: int) -> tuple[list[tuple[str, int, int]], int]:
+    """`open_pos` indexes the `{` character. Returns each member's own
+    `(key, value_start, value_end)` in order, and the index just past the
+    matching `}`. A member's key text is decoded (it is always a short JSON
+    string, cheap to materialise) so a caller can match it by name; its value
+    is only spanned, never parsed. Raises `_Unterminated` the same way
+    `_scan_array` does, plus on a key that is not itself a well-formed string."""
+    length = len(text)
+    pos = _skip_ws(text, open_pos + 1)
+    members: list[tuple[str, int, int]] = []
+    if pos < length and text[pos] == "}":
+        return members, pos + 1
+    while True:
+        if pos >= length or text[pos] != '"':
+            raise _Unterminated
+        key_start = pos
+        key_end = _skip_value(text, pos)
+        try:
+            key = json.loads(text[key_start:key_end])
+        except json.JSONDecodeError:
+            raise _Unterminated from None
+        pos = _skip_ws(text, key_end)
+        if pos >= length or text[pos] != ":":
+            raise _Unterminated
+        pos = _skip_ws(text, pos + 1)
+        if pos >= length:
+            raise _Unterminated
+        value_start = pos
+        value_end = _skip_value(text, pos)
+        members.append((key, value_start, value_end))
+        pos = _skip_ws(text, value_end)
+        if pos >= length:
+            raise _Unterminated
+        if text[pos] == ",":
+            pos = _skip_ws(text, pos + 1)
+            continue
+        if text[pos] == "}":
+            return members, pos + 1
+        raise _Unterminated
 
 
-def _normalize_one(
-    row_index: int,
-    raw_record: object,
-    *,
-    source_type: str,
-    tool_schemas: Mapping[str, Mapping[str, object]],
-    tool_argument_validator: ToolArgumentValidator | None,
-) -> ImportedRecord | QuarantinedRow:
-    if not isinstance(raw_record, dict):
-        return _quarantine(
-            row_index,
-            "not_an_object",
-            f"element must be a JSON object, got {type(raw_record).__name__}",
-        )
-    try:
-        record = normalize_conversation(
-            source_type=source_type,
-            source_record_index=row_index,
-            raw_record=raw_record,
-            tool_schemas=tool_schemas,
-            tool_argument_validator=tool_argument_validator,
-        )
-    except ConversationNormalizationError as exc:
-        return _quarantine(row_index, "schema_invalid", str(exc))
-    return ImportedRecord(row_index=row_index, record=record)
+# ---------------------------------------------------------------------------
+# Events
+# ---------------------------------------------------------------------------
 
 
-def _stream(
-    content: bytes,
-    *,
-    source_type: str,
-    tool_schemas: Mapping[str, Mapping[str, object]],
-    tool_argument_validator: ToolArgumentValidator | None,
-    max_total_bytes: int,
-    max_nesting_depth: int,
-) -> Iterator[ImportedRecord | QuarantinedRow]:
-    if len(content) > max_total_bytes:
-        yield _quarantine(
-            0,
-            "document_too_large",
-            f"document is {len(content)} bytes, exceeding the configured "
-            f"max of {max_total_bytes} bytes",
-        )
-        return
+class JsonEventStream(Iterator[ImportEvent]):
+    """The import events of one JSON source. `source_schema_sha256` is set
+    once the document's top-level keys are known (only meaningful when
+    `container` names a nested key; `None` for a root container, which has
+    no separate "schema" beyond the records themselves)."""
 
-    depth = _max_nesting_depth(content)
-    if depth > max_nesting_depth:
-        yield _quarantine(
-            0,
-            "nesting_too_deep",
-            f"document nesting reaches depth {depth}, exceeding the configured "
-            f"max of {max_nesting_depth}",
-        )
-        return
+    def __init__(
+        self,
+        reader: ChunkReader,
+        mapping: ImportMapping,
+        *,
+        verified_content_type: str,
+        dataset_sha256: str,
+        limits: ImportLimits = DEFAULT_LIMITS,
+        tool_schemas: Mapping[str, Mapping[str, object]] | None = None,
+        tool_argument_validator: ToolArgumentValidator | None = None,
+    ) -> None:
+        self._options = _options(mapping)
+        self._reader = reader
+        self._mapping = mapping
+        self._verified_content_type = verified_content_type
+        self._dataset_sha256 = dataset_sha256
+        self._limits = limits
+        self._tool_schemas = tool_schemas
+        self._tool_argument_validator = tool_argument_validator
+        self.source_schema_sha256: str | None = None
+        self._events = self._generate()
 
-    try:
-        decoded = content.decode("utf-8", errors="strict")
-    except UnicodeDecodeError as exc:
-        yield _quarantine(0, "malformed_utf8", f"document is not valid UTF-8: {exc}")
-        return
+    def __next__(self) -> ImportEvent:
+        return next(self._events)
 
-    try:
-        parsed = json.loads(decoded)
-    except json.JSONDecodeError as exc:
-        yield _quarantine(0, "malformed_json", f"document is not valid JSON: {exc}")
-        return
-    except RecursionError:
-        # Defensive backstop only -- the depth pre-check above should always
-        # catch this first. Never let a malicious document crash the caller.
-        yield _quarantine(
-            0,
-            "nesting_too_deep",
-            "document nesting exceeded the parser's own recursion limit",
-        )
-        return
+    def _schema_sha256(self, keys: list[str]) -> str:
+        text = json.dumps(sorted(keys), ensure_ascii=True, separators=(",", ":"))
+        return hashlib.sha256(text.encode("ascii")).hexdigest()
 
-    if isinstance(parsed, list):
-        for row_index, element in enumerate(parsed):
-            yield _normalize_one(
-                row_index,
-                element,
-                source_type=source_type,
-                tool_schemas=tool_schemas,
-                tool_argument_validator=tool_argument_validator,
+    def _locate_container(self, text: str) -> tuple[int, int]:
+        """Returns the container's own `(start, end)` span. Raises
+        `JsonAborted` for every document-level failure."""
+        pos = _skip_ws(text, 0)
+        if pos >= len(text):
+            raise JsonAborted("json_malformed", "object:0")
+        tokens = self._options.container_tokens
+        if not tokens:
+            try:
+                end = _skip_value(text, pos)
+            except _Unterminated:
+                raise JsonAborted("json_malformed", "object:0") from None
+            if _skip_ws(text, end) != len(text):
+                raise JsonAborted("json_malformed", "object:0")
+            return pos, end
+
+        if text[pos] != "{":
+            raise JsonAborted("json_malformed", "object:0")
+        try:
+            members, end = _scan_object(text, pos)
+        except _Unterminated:
+            raise JsonAborted("json_malformed", "object:0") from None
+        if _skip_ws(text, end) != len(text):
+            raise JsonAborted("json_malformed", "object:0")
+
+        key = tokens[0]
+        matches = [(s, e) for k, s, e in members if k == key]
+        self.source_schema_sha256 = self._schema_sha256([k for k, _s, _e in members])
+        if len(matches) != 1:
+            raise JsonAborted("mapping_column_missing", "object:0")
+        allowed = self._options.ignored_top_level_keys | {key}
+        for member_key, _s, _e in members:
+            if member_key not in allowed:
+                raise JsonAborted("unmapped_top_level_key", "object:0")
+        return matches[0]
+
+    def _emit_record(self, text: str, start: int, end: int, index: int) -> Iterator[ImportEvent]:
+        locator = f"record:{index}"
+        raw_bytes = len(text[start:end].encode("utf-8"))
+        generous = 2 * self._limits.max_record_bytes + 2
+        if raw_bytes > generous:
+            raise JsonAborted("field_too_large", locator)
+        if raw_bytes > self._limits.max_record_bytes:
+            yield RowRejection(locator, "record_too_large")
+            return
+        try:
+            parsed = strict_loads(text[start:end], max_depth=self._limits.max_depth)
+        except StrictJsonError as exc:
+            yield RowRejection(locator, exc.code)
+            return
+        if type(parsed) is not dict:
+            yield RowRejection(locator, "record_not_object")
+            return
+        try:
+            mapped = apply_mapping(self._mapping, parsed)
+            record = normalize_mapped_record(
+                self._mapping,
+                mapped,
+                source_record_index=index,
+                dataset_sha256=self._dataset_sha256,
+                source_type=SOURCE_TYPE,
+                tool_schemas=self._tool_schemas,
+                tool_argument_validator=self._tool_argument_validator,
             )
-        return
-
-    if isinstance(parsed, dict):
-        yield _normalize_one(
-            0,
-            parsed,
-            source_type=source_type,
-            tool_schemas=tool_schemas,
-            tool_argument_validator=tool_argument_validator,
+        except RowMappingError as exc:
+            yield RowRejection(locator, exc.code, exc.slot)
+            return
+        has_tool_calls = any(message.tool_calls for message in record.messages)
+        yield AcceptedRecord(
+            to_dataset_record_candidate(
+                record,
+                record_index=index,
+                tool_schema_status="valid" if has_tool_calls else "not_applicable",
+            )
         )
-        return
 
-    yield _quarantine(
-        0,
-        "unsupported_top_level_type",
-        "top-level JSON value must be an object (single conversation) or an "
-        f"array (container of conversations), got {type(parsed).__name__}",
-    )
+    def _generate(self) -> Iterator[ImportEvent]:
+        if (
+            type(self._verified_content_type) is not str
+            or self._verified_content_type not in JSON_CONTENT_TYPES
+        ):
+            raise ImportAborted("failed", "content_type_not_supported_by_importer")
+
+        buf = bytearray()
+        for chunk in self._reader:
+            buf.extend(chunk)
+        content = bytes(buf)
+
+        for signature, code in _BOM_SIGNATURES:
+            if content.startswith(signature):
+                raise JsonAborted(code, "object:0")
+        try:
+            text = content.decode("utf-8", errors="strict")
+        except UnicodeDecodeError:
+            raise JsonAborted("invalid_encoding", "object:0") from None
+
+        container_start, container_end = self._locate_container(text)
+        if text[container_start] == "[":
+            try:
+                spans, _end = _scan_array(text, container_start)
+            except _Unterminated:
+                raise JsonAborted("json_malformed", "object:0") from None
+            for index, (start, end) in enumerate(spans):
+                yield from self._emit_record(text, start, end, index)
+        elif text[container_start] == "{":
+            yield from self._emit_record(text, container_start, container_end, 0)
+        else:
+            raise JsonAborted("json_malformed", "object:0")
 
 
-def import_json(
-    content: bytes,
+def json_events(
+    reader: ChunkReader,
+    mapping: ImportMapping,
     *,
-    source_type: str,
-    tool_schemas: Mapping[str, Mapping[str, object]] = _EMPTY_TOOL_SCHEMAS,
+    verified_content_type: str,
+    dataset_sha256: str,
+    limits: ImportLimits = DEFAULT_LIMITS,
+    tool_schemas: Mapping[str, Mapping[str, object]] | None = None,
     tool_argument_validator: ToolArgumentValidator | None = None,
-    max_total_bytes: int = MAX_JSON_DOCUMENT_BYTES,
-    max_nesting_depth: int = MAX_NESTING_DEPTH,
-) -> Iterator[ImportedRecord | QuarantinedRow]:
-    """Parses `content` (the whole, not-yet-decoded raw JSON document as
-    `bytes` -- never a pre-decoded `str`, which would already have defeated
-    the UTF-8 check below) into Section 7's own canonical conversation
-    records.
-
-    A top-level JSON object is one single conversation (`row_index=0`); a
-    top-level JSON array is a container of zero or more conversations, one
-    per element in order. Any other top-level type, or a document-level
-    failure (oversize, malformed UTF-8, too deeply nested, or invalid JSON
-    syntax), yields exactly one `QuarantinedRow` at `row_index=0`. A
-    container array of length *N* yields exactly *N* items. Never raises
-    once parsing has started; every document-level or row-level problem is
-    reported, not raised.
-
-    Raises `JsonImportError` immediately, before any byte is read, when the
-    call itself cannot possibly succeed: `source_type` is not one of
-    `record_schema_validator.SUPPORTED_SOURCE_TYPES`, `content` is not
-    `bytes`/`bytearray`, or `max_total_bytes`/`max_nesting_depth` is not a
-    positive int."""
-    if source_type not in SUPPORTED_SOURCE_TYPES:
-        raise JsonImportError(
-            f"source_type must be one of {sorted(SUPPORTED_SOURCE_TYPES)}, got {source_type!r}"
-        )
-    if not isinstance(content, bytes | bytearray):
-        raise JsonImportError(
-            f"content must be bytes/bytearray, not a pre-decoded {type(content).__name__} "
-            "(which would already have defeated the UTF-8 check)"
-        )
-    if max_total_bytes < 1:
-        raise JsonImportError(f"max_total_bytes must be a positive int, got {max_total_bytes!r}")
-    if max_nesting_depth < 1:
-        raise JsonImportError(
-            f"max_nesting_depth must be a positive int, got {max_nesting_depth!r}"
-        )
-
-    return _stream(
-        bytes(content),
-        source_type=source_type,
+) -> JsonEventStream:
+    """The events of a JSON source, for `preview` or a caller's own drain.
+    Raises `MappingInvalidError` before reading a byte when the mapping
+    cannot describe this importer's scope; a `verified_content_type` other
+    than `application/json` aborts the first `next()`, also before a byte
+    is read."""
+    return JsonEventStream(
+        reader,
+        mapping,
+        verified_content_type=verified_content_type,
+        dataset_sha256=dataset_sha256,
+        limits=limits,
         tool_schemas=tool_schemas,
         tool_argument_validator=tool_argument_validator,
-        max_total_bytes=max_total_bytes,
-        max_nesting_depth=max_nesting_depth,
     )
+
+
+def run_json_import(
+    reader: ChunkReader,
+    mapping: ImportMapping,
+    *,
+    verified_content_type: str,
+    dataset_purpose: str,
+    expected_sha256: str,
+    limits: ImportLimits = DEFAULT_LIMITS,
+    tool_schemas: Mapping[str, Mapping[str, object]] | None = None,
+    tool_argument_validator: ToolArgumentValidator | None = None,
+    on_accepted: Callable[[Mapping[str, object]], None] | None = None,
+) -> JsonImportOutcome:
+    """Drains a JSON source into an `ImportReport`. An abort anywhere (a
+    fatal JSON problem, a source outage, a deadline, a rejection budget) is
+    the report's `state`, never an exception."""
+    stream = json_events(
+        reader,
+        mapping,
+        verified_content_type=verified_content_type,
+        dataset_sha256=expected_sha256,
+        limits=limits,
+        tool_schemas=tool_schemas,
+        tool_argument_validator=tool_argument_validator,
+    )
+    accumulator = ImportAccumulator(
+        importer=IMPORTER_NAME,
+        importer_version=IMPORTER_VERSION,
+        mapping_sha256=mapping.mapping_sha256,
+        dataset_purpose=dataset_purpose,
+        expected_sha256=expected_sha256,
+        limits=limits,
+        on_accepted=on_accepted,
+    )
+    aborted: ImportAborted | None = None
+    try:
+        for event in stream:
+            reader.deadline.check()
+            accumulator.add(event)
+    except ImportAborted as exc:
+        aborted = exc
+    accumulator.source_schema_sha256 = stream.source_schema_sha256
+    report = accumulator.report(
+        source_sha256=reader.sha256,
+        source_bytes=reader.bytes_read,
+        aborted=aborted,
+    )
+    return JsonImportOutcome(report, aborted.locator if isinstance(aborted, JsonAborted) else None)
