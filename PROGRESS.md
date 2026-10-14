@@ -1,9 +1,9 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-14T13:02Z. Source: `python3 scripts/status.py` on main.
-- **Status: 147/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
-  status.py prints 47 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
+Updated: 2026-10-14T14:23Z. Source: `python3 scripts/status.py` on main.
+- **Status: 147/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
+  status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
 - **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902,
@@ -12,6 +12,14 @@ Updated: 2026-10-14T13:02Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-14T14:23Z:**
+  - CERTIFIED (child slice): FTF-0904-W1, live log redaction wiring (owner-requested), after 3 rounds verified by a separate session. FTF-0904 is now WIRED: product-true 46. Follow-up FTF-0904-W1-F1 (traceback printer kwargs) sliced.
+  - Returned: FTF-0518 r2 (scan correct; 3 clause faults GREEN - saturation counting, route-before-semantic, duplicate id - and a gate gap accepting a self-sealed "clear" report with semantic methods not run). FTF-0512-F1 sliced (look-alike normalization gaps).
+  - Returned: FTF-0504 r4, small (all round-3 fixes hold; 3 test pins GREEN, preview hash TypeError, truncated BOM). Stopping rule set.
+- **2026-10-14T14:09Z:**
+  - Owner decision (live, 2026-10-14): bring ScaleDown's ideas into Sovra, not its hosted API (keyed external service, breaks ZERO_EGRESS). (1) Route an agent's routine sub-steps to small fine-tuned models, judged by cost per successful agent task; (2) constrained/structured output; (3) encoder / sequence-classification-head models. Item 3 changes how Axolotl and vLLM are integrated, and the owner approved that explicitly ("Add item 3 too").
+  - Ideas 1-2 are existing scope: child slices FTF-1304-S1 (compound per-step cost attribution) and FTF-0213-S1 (constrained-choice enforcement and output-token probe) added to the Backlog, ready now.
+  - Idea 3: ADR 0004 (docs/adr/0004-small-task-specific-models.md) adds addenda FTF-0708A (seq_cls_lora training: Transformers Trainer + PEFT SEQ_CLS inside the pinned Axolotl tuple, under the FTF-R003 supervisor) and FTF-1004A (vLLM pooling/classify runner as an explicit adapter, behind LiteLLM). Contracts in spec/addenda/; REFERENCE_REPOSITORIES.md integration-form updated. Denominator 302 → 304. Both are BLOCKED (FTF-R003/0701/0712/0713/0519 and FTF-1003/1005 absent; GPU BLOCKED_EXTERNAL).
 - **2026-10-14T13:02Z:**
   - Returned: FTF-0505 r2 (raw zlib.error escapes; header rows unbounded - 499 KiB upload to 1.57 GB RSS; 4 clauses GREEN). Rulings: field cap in bytes; XLSX limits move into ImportLimits as its one serialized edit.
 - **2026-10-14T11:30Z:**

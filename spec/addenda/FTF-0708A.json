@@ -1,0 +1,40 @@
+{
+  "_comment": "Release 1 task addendum (owner-approved 2026-10-14, ADR docs/adr/0004-small-task-specific-models.md). spec/tasks.json stays the frozen 300-task source for tools/r1_handoff.py; this file is the contract. Denominator: 304.",
+  "required": true,
+  "status": "NOT_STARTED",
+  "evidence": [],
+  "ready": false,
+  "id": "FTF-0708A",
+  "title": "Sequence-classification-head training (seq_cls_lora; owner-approved integration-form change)",
+  "kind": "retained_feature",
+  "dependencies": ["FTF-R003", "FTF-0701", "FTF-0712", "FTF-0713", "FTF-0519", "FTF-0307"],
+  "sections": "13-17,31,33-34,68,70,77-78,81",
+  "requirements": ["CAP-09", "AF-17", "CAP-19"],
+  "qualification_scenarios": ["Q10", "Q13"],
+  "security": "Same training-worker boundary as FTF-R003: mirrored/local model+tokenizer only, HF_HUB_OFFLINE=1, trust_remote_code false, no hub push, no external report_to callbacks, AXOLOTL_DO_NOT_TRACK/DO_NOT_TRACK/HF telemetry off, network denied; no final-suite mount; tenant-scoped artifact prefix.",
+  "observability": "Content-free metrics only: loss, per-class counts, macro-F1/per-class recall on validation, grad norm, step timings; no text, labels-with-text or record ids in logs.",
+  "resource_gate": "Real GPU (gpu_driver currently BLOCKED_EXTERNAL) for the qualified run; a CPU run on a locally constructed tiny encoder proves mechanics only and is labelled so. Unavailable required evidence is BLOCKED_EXTERNAL, never skipped.",
+  "database_changes": "None: method value seq_cls_lora lives in FTF-0701's training-config schema (reserved there), label map and head config live in the signed artifact manifest (FTF-1002 lineage). If a table proves necessary it gets ENABLE+FORCE RLS tenant_isolation, no DELETE for sovra_app, data_exposure_check and a cross-tenant test.",
+  "api_contract": "TrainingJobSpec(method=seq_cls_lora, label_set, step_binding_key) -> EngineRunReceipt / verified checkpoint and merged classifier artifact; no public training service invented.",
+  "files": [
+    "workers/training/trainers/seq_cls/dataset_renderer.py",
+    "workers/training/trainers/seq_cls/seq_cls_trainer.py",
+    "workers/training/trainers/seq_cls/artifact_packaging.py",
+    "tests/tasks/test_ftf_0708a.py",
+    "tests/integration/test_ftf_0708a_seq_cls_training.py"
+  ],
+  "acceptance": [
+    "From an approved immutable train/validation split, render (input, label) pairs from canonical records whose supervised target is a member of the step's declared label set, train a PEFT SEQ_CLS adapter plus head on AutoModelForSequenceClassification under the FTF-R003 supervisor, with real gradients updating only adapter and head tensors, validation-only early stopping, and package a merged, hash-verified classifier artifact (weights, config with id2label/label2id, tokenizer, label-set hash, base digest, dataset hashes, config hash, library tuple) that reloads and reproduces validation predictions.",
+    "Independent review, exact merged commit, real relevant integration and negative-test evidence recorded."
+  ],
+  "negative_acceptance": [
+    "A target outside the label set, label-map/num_labels mismatch, frozen-base update, nonfinite loss, single-class or empty-class training split, final-suite or development-suite source, remote model download or trust_remote_code requirement fails the run; seq_cls_lora is never a silent fallback for a chat LoRA job, and no library outside the pinned compatibility tuple is loaded."
+  ],
+  "verification_commands": [
+    "python scripts/validate_spec.py --strict",
+    "python scripts/data_exposure_check.py --backends postgres_rls,s3_identity --fail-on-exposure",
+    "uv run python3 tests/tasks/test_ftf_0708a.py",
+    "uv run python3 tests/integration/test_ftf_0708a_seq_cls_training.py"
+  ],
+  "contract_owner": "FTF-0701"
+}

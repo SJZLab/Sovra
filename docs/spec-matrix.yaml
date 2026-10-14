@@ -9455,6 +9455,23 @@ FTF-0708:
   proof_state: UNPROVEN
   proving_symbol: ''
   proving_test: ''
+FTF-0708A:
+  certification_state: NONE
+  criticality: MUST
+  description: Sequence-classification-head training (seq_cls_lora; owner-approved integration-form change)
+  evidence_hash: ''
+  implementation_state: ABSENT
+  notes: >-
+    Owner-approved Release 1 addendum (2026-10-14), docs/adr/0004-small-task-specific-models.md.
+    The contract is spec/addenda/FTF-0708A.json; tools/r1_handoff.py covers only the frozen 300.
+    kind=retained_feature; requirements=CAP-09, AF-17, CAP-19; scenarios=Q10, Q13;
+    deps=FTF-R003, FTF-0701, FTF-0712, FTF-0713, FTF-0519, FTF-0307. Training method seq_cls_lora only:
+    HF Transformers Trainer + PEFT SEQ_CLS inside the pinned Axolotl compatibility tuple, under the FTF-R003
+    supervisor (owner-approved integration-form change). BLOCKED: FTF-R003/0701/0712/0713/0519 ABSENT; the
+    qualified run needs a real GPU (gpu_driver BLOCKED_EXTERNAL). Denominator 304.
+  proof_state: UNPROVEN
+  proving_symbol: ''
+  proving_test: ''
 FTF-0709:
   certification_state: NONE
   criticality: MUST
@@ -10007,6 +10024,9 @@ FTF-0904:
   evidence_hash: 5a0f708c29a61e7fe0fea3fc25ef838b7f5471df
   implementation_state: IMPLEMENTED
   notes: >-
+    WIRED 2026-10-14 via FTF-0904-W1 (child slice, CERTIFIED, PR #792 merge b4d401fc): create_app() calls
+    install_api_log_redaction() -> install_redaction() first; live-path proof tests/tasks/test_ftf_0904_w1.py
+    (real uvicorn factory, access log, startup failures incl. --workers/--reload children, hooks; faults F1-F14).
     kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0903
     (both CERTIFIED). Path: packages/security/log_redaction.py.
 
@@ -10261,7 +10281,7 @@ FTF-0904:
     evidence_hash is the round-7 code commit. Submission:
     docs/certifications/submissions/2026-10-13T2035Z-FTF-0904-r7.md.
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: install_redaction
   proving_test: tests/tasks/test_ftf_0904.py
 FTF-0905:
   certification_state: CERTIFIED
@@ -10636,6 +10656,23 @@ FTF-1004:
   evidence_hash: ''
   implementation_state: ABSENT
   notes: kind=retained_feature; requirements=AF-27; scenarios=Q07, Q20; deps=FTF-1001, FTF-1002, FTF-1003
+  proof_state: UNPROVEN
+  proving_symbol: ''
+  proving_test: ''
+FTF-1004A:
+  certification_state: NONE
+  criticality: MUST
+  description: Classifier serving via vLLM pooling runner behind LiteLLM (explicit supported classification adapter)
+  evidence_hash: ''
+  implementation_state: ABSENT
+  notes: >-
+    Owner-approved Release 1 addendum (2026-10-14), docs/adr/0004-small-task-specific-models.md.
+    The contract is spec/addenda/FTF-1004A.json; tools/r1_handoff.py covers only the frozen 300.
+    kind=retained_feature; requirements=AF-27, CAP-12, CAP-19; scenarios=Q07, Q20, Q21;
+    deps=FTF-1001, FTF-1002, FTF-1003, FTF-1005, FTF-04A25, FTF-1201. vLLM pooling/classify runner as an
+    explicit supported adapter (Section 36; owner-approved integration-form change); reached only through the
+    organization's LiteLLM route, else BLOCKED_ADMIN_ACTION. Does not depend on FTF-0708A. BLOCKED: FTF-1003
+    and FTF-1005 ABSENT. Denominator 304.
   proof_state: UNPROVEN
   proving_symbol: ''
   proving_test: ''
