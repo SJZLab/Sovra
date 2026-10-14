@@ -53,23 +53,29 @@ recognised -- that is what the canary-secret ledger and the content-free
 telemetry schemas are for. Key names are matched by substring, so benign keys
 such as `max_tokens` are redacted too (over-redaction by design). Records that bypass
 the logger (`logging.makeLogRecord`) are covered only at a handler with
-`attach_sink`. Detection runs in time linear in the input: the key rule and the
+`attach_sink`. Detection runs in time linear in the input AND every rule is
+unbounded in the length of secret it redacts (Section 65.4/round-5 ruling: a
+bounded match is a leak, not a performance safeguard) -- the key rule and the
 bare-quoted-value shapes are possessive (the closing quote is excluded from the
 class that scans for it, so there is only ever one possible split point --
-backtracking could never find a different one, only waste time). The JWT shape's
-two required dots are not excluded from the segment before each one, so a repeat of
-the "eyJ" prefix alone (not itself excluded either) can re-scan the rest of the
-text at every repeat with nothing to stop it; that segment is bounded, not just
-possessive, to 1024 characters (comfortably over any real JWT header or payload
-segment). The escaped-quoted-value shape allows backslashes in its own middle and
-so cannot be made possessive without changing what matches, so it is bounded
-instead, to 8192 characters -- a nested-JSON-escaped value or a JWT segment past
-either bound is not matched by that one shape (other rules still see the
-surrounding text). Percent-encoded-secret candidates are found by splitting on
-whitespace once (not by backtracking a greedy `\S*` at every character position,
-which was quadratic on a long run with no closing hex pair), and each of the
-bounded cut rounds then does at most `log2(candidates)` `_reveals_secret` probes.
-This module is a pure library: no
+backtracking could never find a different one, only waste time). JWT
+shape is found per maximal `[A-Za-z0-9_\\-.]` run (split on dots once, first "eyJ" per segment
+searched once), not by a regex that re-scans at every "eyJ" repeat: that keeps it linear with no
+bound on the segment length AND still redacts a JWT glued after `_`/`-` (`token_<jwt>`,
+`sess-<jwt>`), which the round-5 `(?<![_\\-])` lookbehind let through (round 6).
+The escaped-quoted-value shape allows backslashes in its own middle, so it cannot simply be
+made possessive the way the bare-quote shapes are; round 4 bounded its content to 8192 chars,
+which is the same leak-above-the-cap problem. Round 5 replaces the bound with
+an unrolled loop (alternating a possessive run of plain chars with a
+possessive backslash run that is not immediately followed by the closing
+quote) plus the same not-preceded-by-backslash exclusion on the opening run,
+so a lone, unterminated backslash run and a backslash run embedded in the
+middle of a real value are both a single linear pass, with no upper bound on
+how much of the value gets redacted. Percent-encoded-secret candidates are
+found by splitting on whitespace once (not by backtracking a greedy `\\S*` at
+every character position, which was quadratic on a long run with no closing
+hex pair), and each of the bounded cut rounds then does at most
+`log2(candidates)` `_reveals_secret` probes. This module is a pure library: no
 live logging configuration installs it yet; that wiring is a separate
 dependency-gated task, disclosed in docs/spec-matrix.yaml with a blank
 `proving_symbol`.
@@ -156,9 +162,16 @@ _SEP = r"""\\*["']?[ \t]*[:=][ \t]*"""
 # preceding class, so there is only ever one possible split point -- giving back characters on
 # failure can never find a different one, only waste time re-checking positions already ruled
 # out. The escaped-quote alternative's middle allows backslashes (a real nested-JSON escape can
-# contain them), so it cannot be made possessive without changing what matches; it is bounded
-# instead (disclosed below) to cap the cost of an unterminated escape run.
-_QUOTED_VALUE = r"""\\+"[^"\r\n]{0,8192}?\\+"|"[^"\r\n]*+"|'[^'\r\n]*+'"""
+# contain them), so its content cannot simply exclude backslashes the way the bare-quote
+# alternatives exclude their own quote. Round 4 bounded it to 8192 chars instead -- a leak above
+# the cap, not a real fix (round 5). Round 5 unrolls it instead, the same technique `_PAIR`'s own
+# value already uses: content is a possessive run of plain chars, OR a possessive backslash run
+# that is NOT immediately followed by the closing quote (so a backslash run that *is* followed
+# by a quote is left alone for the closing `\\+"` to consume, with no backtracking either way).
+# `(?<!\\)` on the opening run means only the first backslash of a maximal backslash run can ever
+# start an attempt -- the same "one start per run" fix as the JWT shape below -- so a long,
+# unterminated backslash run (no second quote at all) is one linear scan, not O(n) restarts.
+_QUOTED_VALUE = r'(?<!\\)\\++"(?:[^"\\\r\n]++|\\++(?!"))*+\\+"' r"""|"[^"\r\n]*+"|'[^'\r\n]*+'"""
 
 _PEM = re.compile(
     r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|\Z)",
@@ -183,20 +196,46 @@ _PREFIXES = re.compile(
     r"|(?:AKIA|ASIA|AGPA|AIDA|AROA)[A-Z0-9]{16}"
     r"|hf_[A-Za-z0-9]{20,}"
     r"|AIza[0-9A-Za-z_\-]{35,}"
-    # Bounded and possessive (`{5,1024}+`): unlike every alternative above, this one needs TWO
-    # literals ('.') that a run of the segment's own alphabet never has to contain -- "eyJ" is
-    # not itself excluded from `[A-Za-z0-9_\-]`, so a text built from many `eyJ`-prefixed, dot-
-    # free runs (each satisfying the lookbehind on the one before it) makes an *unbounded*
-    # greedy or possessive class re-consume the rest of the text at every one of O(n) such
-    # positions: possessive only removes the backtrack, not that repeated O(remaining) consume,
-    # so it alone is not enough (confirmed: `"_eyJ" * 40_000` still took 23s with `{5,}+`, and
-    # still scaled linearly but with a large constant at `{5,4096}+`). A segment longer than
-    # 1024 characters (real JWT header/payload segments are a small fraction of that) is not
-    # matched by this rule; other rules still see the surrounding text.
-    r"|eyJ[A-Za-z0-9_\-]{5,1024}+\.[A-Za-z0-9_\-]{5,1024}+\.[A-Za-z0-9_\-]*+"
     r")",
     re.I,
 )
+# JWT-shaped spans are found per run, not by a regex that must re-scan from every "eyJ": a
+# regex whose segments are unbounded re-consumes the rest of a dot-free run at every "eyJ" repeat
+# (quadratic), and one that refuses a start after `_`/`-` (the round-5 form) lets `token_<jwt>`,
+# `sess-<jwt>` and the like through. Instead each maximal run of `[A-Za-z0-9_\-.]` is split on
+# its dots once and each segment is searched once for its first "eyJ" (not glued after an
+# alphanumeric): linear in the run, no bound on how much is redacted.
+_JWT_RUN = re.compile(r"[A-Za-z0-9_\-.]++")
+_JWT_MIN_SEGMENT = 5
+
+
+def _jwt_start(segment: str) -> int:
+    """Offset of the first "eyJ" in `segment` that is not preceded by an alphanumeric and has at
+    least `_JWT_MIN_SEGMENT` characters after it, or -1. Only the first candidate is tried: any
+    later one has fewer characters left."""
+    lowered = segment.lower()  # the rule has always been case-insensitive
+    pos = lowered.find("eyj")
+    while pos > 0 and segment[pos - 1].isalnum():
+        pos = lowered.find("eyj", pos + 1)
+    return pos if pos >= 0 and len(segment) - pos - 3 >= _JWT_MIN_SEGMENT else -1
+
+
+def _redact_jwts_in_run(match: re.Match[str]) -> str:
+    run = match.group(0)
+    segments = run.split(".")
+    out: list[str] = []
+    i = 0
+    while i < len(segments):
+        start = _jwt_start(segments[i]) if i + 2 < len(segments) else -1
+        if start >= 0 and len(segments[i + 1]) >= _JWT_MIN_SEGMENT:
+            out.append(segments[i][:start] + REDACTED)
+            i += 3
+        else:
+            out.append(segments[i])
+            i += 1
+    return ".".join(out)
+
+
 _USERINFO = re.compile(r"(?P<scheme>(?<![A-Za-z0-9+.\-])[A-Za-z][A-Za-z0-9+.\-]*://)[^/\s?#]*@")
 _KEY_VALUE = re.compile(
     rf"(?P<key>(?<![\w.\-]){_SECRET_KEY})(?P<sep>{_SEP})"
@@ -216,10 +255,12 @@ _RULES: tuple[tuple[str, Any], ...] = (
     ("pair", _PAIR),
     ("bearer", _BEARER),
     ("prefix", _PREFIXES),
+    ("jwt", _JWT_RUN),
     ("userinfo", _USERINFO),
     ("key_value", _KEY_VALUE),
 )
-_REPLACEMENTS: Mapping[str, str] = {
+_REPLACEMENTS: Mapping[str, str | Callable[[re.Match[str]], str]] = {
+    "jwt": _redact_jwts_in_run,
     "header": rf"\g<key>\g<sep>{REDACTED}",
     "pair": rf"\g<pre>{REDACTED}",
     "bearer": rf"\g<scheme> {REDACTED}",

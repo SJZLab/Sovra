@@ -9,6 +9,10 @@ over exactly the JSON Schema / OpenAPI keywords the frozen file uses. The
 
 Rules the checker enforces:
 
+- The checker scans the WHOLE reachable schema before validating, so an
+  unsupported keyword, type or format, or a non-`false` `additionalProperties`,
+  raises even in a branch the instance never walks.
+- `date-time` is RFC 3339 only (offset mandatory, seconds mandatory).
 - The contract is loaded from the one frozen path only, `load_frozen_contract`
   refuses any other file (a copy could silently drift) and returns its sha256.
 - Fail closed: a schema keyword outside `SUPPORTED_KEYWORDS` /
@@ -32,6 +36,7 @@ package directory is `packages/model_catalog/`.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import uuid
 from collections.abc import Callable
@@ -49,7 +54,6 @@ __all__ = [
     "FrozenContract",
     "NegativeCase",
     "UnsupportedSchemaError",
-    "api_reachable",
     "assert_negative_cases_rejected",
     "capability_matrix",
     "expected_trainable",
@@ -120,6 +124,19 @@ class FrozenContract:
             raise ContractError(f"unknown frozen schema {name!r}")
         return {"$ref": f"#/components/schemas/{name}"}
 
+    def response_schema(self, path: str, method: str, status: str) -> dict[str, Any]:
+        """The inline response schema the frozen file declares for one operation
+        (read from the frozen document, never an inline copy)."""
+        try:
+            schema = self.document["paths"][path][method]["responses"][status]["content"][
+                "application/json"
+            ]["schema"]
+        except (KeyError, TypeError) as exc:
+            raise ContractError(f"no frozen response schema for {method} {path} {status}") from exc
+        if type(schema) is not dict:
+            raise ContractError(f"frozen response schema for {method} {path} {status} is invalid")
+        return schema
+
     def enum_values(self, name: str) -> tuple[str, ...]:
         values = self.document["components"]["schemas"][name]["enum"]
         return tuple(values)
@@ -185,13 +202,27 @@ def _uuid_ok(value: str) -> bool:
     return True
 
 
+_RFC3339_RE = re.compile(
+    r"([0-9]{4})-([0-9]{2})-([0-9]{2})[Tt]([0-9]{2}):([0-9]{2}):([0-9]{2})"
+    r"(\.[0-9]+)?([Zz]|[+-]([0-9]{2}):([0-9]{2}))"
+)
+
+
 def _datetime_ok(value: str) -> bool:
-    text = value[:-1] + "+00:00" if value.endswith("Z") else value
-    if "T" not in text:
+    """RFC 3339 `date-time`: full date, `T`, HH:MM:SS, optional fraction and a
+    mandatory `Z` or +/-HH:MM offset. Naive, hour-only, no-seconds, `+0000`,
+    ISO week/ordinal and basic (no separator) forms are all refused."""
+    match = _RFC3339_RE.fullmatch(value)
+    if match is None:
+        return False
+    year, month, day, hour, minute, second = (int(match.group(i)) for i in range(1, 7))
+    if second > 60:  # 60 is the RFC 3339 leap second
         return False
     try:
-        datetime.fromisoformat(text)
+        datetime(year, month, day, hour, minute, min(second, 59))
     except ValueError:
+        return False
+    if match.group(9) is not None and (int(match.group(9)) > 23 or int(match.group(10)) > 59):
         return False
     return True
 
@@ -206,9 +237,53 @@ def _format_ok(value: str, name: Any) -> bool:
     return check(value)
 
 
+def _scan_schema(node: Any, root: dict[str, Any], path: str, seen: set[str]) -> None:
+    """Fail closed on the WHOLE reachable schema, not only the branches a given
+    instance happens to walk: an unsupported keyword, type or format, a
+    non-`false` `additionalProperties`, or a malformed container raises."""
+    if type(node) is not dict:
+        raise UnsupportedSchemaError(f"schema at {path} is not an object")
+    unknown = set(node) - SUPPORTED_KEYWORDS - ANNOTATION_KEYWORDS
+    if unknown:
+        raise UnsupportedSchemaError(f"unsupported keyword(s) at {path}: {sorted(unknown)}")
+    if "additionalProperties" in node and node["additionalProperties"] is not False:
+        raise UnsupportedSchemaError(
+            f"unsupported additionalProperties at {path}: only `false` is enforced"
+        )
+    if "type" in node:
+        names = node["type"] if type(node["type"]) is list else [node["type"]]
+        for name in names:
+            if type(name) is not str or name not in _TYPE_CHECKS:
+                raise UnsupportedSchemaError(f"unsupported type {name!r} at {path}")
+    if "format" in node and (
+        type(node["format"]) is not str or node["format"] not in _FORMAT_CHECKS
+    ):
+        raise UnsupportedSchemaError(f"unsupported format {node['format']!r} at {path}")
+    if "$ref" in node:
+        ref = node["$ref"]
+        target = _resolve(ref, root)
+        if ref not in seen:
+            seen.add(ref)
+            _scan_schema(target, root, ref, seen)
+    for keyword in ("allOf", "oneOf"):
+        if keyword in node:
+            if type(node[keyword]) is not list:
+                raise UnsupportedSchemaError(f"{keyword} at {path} is not a list")
+            for index, sub in enumerate(node[keyword]):
+                _scan_schema(sub, root, f"{path}.{keyword}[{index}]", seen)
+    if "properties" in node:
+        if type(node["properties"]) is not dict:
+            raise UnsupportedSchemaError(f"properties at {path} is not an object")
+        for key, sub in node["properties"].items():
+            _scan_schema(sub, root, f"{path}.{key}", seen)
+    if "items" in node:
+        _scan_schema(node["items"], root, f"{path}[]", seen)
+
+
 def validate(instance: Any, schema: dict[str, Any], root: dict[str, Any]) -> list[str]:
     """Return the list of violations ([] when valid). `root` is the OpenAPI
     document used to resolve `$ref`."""
+    _scan_schema(schema, root, "$", set())
     errors: list[str] = []
     _validate(instance, schema, root, "$", errors)
     return errors
@@ -284,6 +359,43 @@ class NegativeCase:
 
     def __repr__(self) -> str:
         return f"NegativeCase({self.category}, {self.path})"
+
+
+def _same_exactly(left: Any, right: Any) -> bool:
+    """Exact JSON identity for the generator's own dedupe. Deliberately NOT
+    `_json_equal`: a checker whose equality is lax must not also make the
+    generator skip the very candidates that would expose it."""
+    return json.dumps(left, sort_keys=True, allow_nan=False) == json.dumps(
+        right, sort_keys=True, allow_nan=False
+    )
+
+
+def _datetime_variants(value: str) -> list[str]:
+    """Non-RFC 3339 renderings of a valid date-time (naive, hour-only, no
+    seconds, offset without colon, basic format, space separator, date only,
+    week date, ordinal date)."""
+    match = _RFC3339_RE.fullmatch(value)
+    if match is None:
+        return []
+    date, clock = value[:10], value[11:]
+    offset = match.group(8)
+    body = clock[: len(clock) - len(offset)]
+    hh, mm = body[:2], body[3:5]
+    year, month, day = date[:4], date[5:7], date[8:10]
+    compact_offset = offset.replace(":", "")
+    return [
+        f"{date}T{body}",
+        f"{date}T{hh}{offset}",
+        f"{date}T{hh}:{mm}{offset}",
+        f"{date}T{body}{compact_offset}",
+        f"{date}T{body}{offset[:3]}" if offset[0] in "+-" else f"{date}T{body}+00",
+        f"{year}{month}{day}T{hh}{mm}{body[6:]}{offset}",
+        f"{date} {body}{offset}",
+        f"{date}{offset}",
+        date,
+        f"{year}-W41-3T{body}{offset}",
+        f"{year}-280T{body}{offset}",
+    ]
 
 
 def _deepcopy(value: Any) -> Any:
@@ -408,7 +520,7 @@ def generate_negative_cases(
                 candidates.extend(["not-in-enum", None, 0, 1, True, False])
                 tried: list[Any] = list(view["enum"])
                 for candidate in candidates:
-                    if any(_json_equal(candidate, other) for other in tried):
+                    if any(_same_exactly(candidate, other) for other in tried):
                         continue
                     tried.append(candidate)
                     cases.append(
@@ -423,6 +535,13 @@ def generate_negative_cases(
                 if "format" in view:
                     bad = "not-a-" + view["format"]
                     cases.append(NegativeCase("format", label, set_at(path, bad)))
+                    if view["format"] == "date-time":
+                        for variant in _datetime_variants(value):
+                            cases.append(
+                                NegativeCase(
+                                    "format_datetime", f"{label}:{variant!r}", set_at(path, variant)
+                                )
+                            )
             if type(value) is int and "minimum" in view:
                 cases.append(NegativeCase("minimum", label, set_at(path, view["minimum"] - 1)))
         if type(value) is dict:
@@ -489,12 +608,3 @@ def expected_trainable(cell: dict[str, Any]) -> bool:
     """The frozen rule: trainable only for a mapped, ready artifact whose
     license is approved."""
     return bool(cell["mapped"] and cell["status"] == "ready" and cell["license"] == "approved")
-
-
-def api_reachable(cell: dict[str, Any]) -> bool:
-    """False for a cell the public API can never produce: `mark-ready` requires
-    an accepted license and `revoke-license` demotes a ready artifact to
-    `registered`, so a `ready` artifact without an approved license exists only
-    through a direct database write. Such a cell is still schema-checked, but its
-    trainability is reported as a finding, not asserted."""
-    return not (cell["status"] == "ready" and cell["license"] != "approved")

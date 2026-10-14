@@ -395,6 +395,15 @@ def discover_candidates(
                 method_state = MethodState.AVAILABLE
         elif capability is not TrainingCapability.INFERENCE_ONLY:
             reasons.append("capability_unknown")
+            # FTF-0305-F1: the classifier no longer calls a ready artifact without an accepted
+            # license trainable, so name the real cause instead of only "capability_unknown".
+            if (
+                artifact is not None
+                and artifact.status == "ready"
+                and artifact.license_accepted_at is None
+            ):
+                license_state = LicenseState.NOT_ACCEPTED
+                reasons.append("license_not_accepted")
 
         privacy_state = PrivacyState.AVAILABLE
         if capability is not TrainingCapability.UNKNOWN and profile_rank >= _ZERO_EGRESS_RANK:

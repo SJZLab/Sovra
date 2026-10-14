@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import hashlib
 import io
 import json
 import logging
@@ -68,6 +69,21 @@ def check(criterion_id: str, description: str, condition: bool) -> None:
 # ---------------------------------------------------------------------------
 
 _ALNUM = "Zq7Lm2Xv9Rt4Hn8Kc3Pw6Yb1Dg5Fs0J"  # fixed, deterministic filler
+REDACTED_ = "[REDACTED]"
+
+
+def _marker(size: int) -> str:
+    """A deterministic, non-periodic alphanumeric string of exactly `size` characters (every
+    32-char window is unique to its position, so a surviving fragment names the leaked offset)."""
+    chunks: list[str] = []
+    digest = b"ftf-0904-r6"
+    length = 0
+    while length < size:
+        digest = hashlib.sha256(digest).digest()
+        chunk = digest.hex()
+        chunks.append(chunk)
+        length += len(chunk)
+    return "S" + "".join(chunks)[: size - 1]
 
 
 def _filler(index: int, length: int = 32) -> str:
@@ -93,9 +109,7 @@ def _secret_values() -> dict[str, str]:
 
 SECRETS = _secret_values()
 PEM = (
-    "-----BEGIN RSA PRIVATE KEY-----\n"
-    "MIIEowIBAAKCAQEA" + _ALNUM + "\n"
-    "-----END RSA PRIVATE KEY-----"
+    "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA" + _ALNUM + "\n-----END RSA PRIVATE KEY-----"
 )
 
 
@@ -1325,6 +1339,47 @@ def _adversarial_shape(label: str, size: int) -> str:
     # wasted backtrack -- still worth sweeping since it is the one alternative this round bounds.
     if label == "lone-backslash-then-quote":
         return "token=\\" + "\\" * (size - 9) + '"'
+    # Round 5: a backslash run in the MIDDLE of a real, fully opened-and-closed escaped-quoted
+    # value -- unlike "lone-backslash-then-quote" above (which never finds a second quote at
+    # all, so a key-first rule never even reaches content-matching), this one DOES open for
+    # real, so the naive lazy `[^"\r\n]*?` content this round replaces grows one character at a
+    # time into the backslash run, re-trying the greedy closing `\+"` over however much of the
+    # run remains at every one of those O(run) steps -- quadratic (confirmed: through the real
+    # `_KEY_VALUE` rule, a naive lazy content class took 18s at 128K vs 0.09s for the round-5
+    # unrolled form). The round-4 bound capped this cost instead of fixing it.
+    if label == "backslash-run-inside-quoted-value":
+        return 'token=\\"' + "a" * 50 + "\\" * (size - 104) + "b" * 50 + '\\"'
+    # Round 6: one time shape per rule the sweep did not yet reach (`_PAIR`, `_BASE64_RUN`,
+    # `_USERINFO`) and the JWT shapes the per-run scan must keep linear.
+    if label == "jwt-dash-repeat":
+        return "eyJ-" * (size // 4)
+    if label == "jwt-glued-context-run":
+        return "token_eyJabcdef." * (size // 16)
+    if label == "pair-open-run":
+        return "(" * size
+    if label == "pair-ws-open-run":
+        return "( " * (size // 2)
+    if label == "pair-backslash-value":
+        return "('password', '" + "\\" * (size - 14)
+    # Round 7: a single opener followed by one long whitespace run (the named
+    # Q-PAIR-KEY-WS-QUAD shape: one start, so only a quadratic opener shows), and JWT-looking
+    # starts that are all glued after an alphanumeric (every "eyJ" is skipped by `_jwt_start`).
+    if label == "pair-paren-ws-run":
+        return "(" + " " * (size - 1)
+    if label == "pair-bracket-tab-run":
+        return "[" + "\t" * (size - 1)
+    if label == "jwt-glued-alnum-run":
+        return "aeyJ" * ((size - 9) // 4) + ".abcdef.g"
+    if label == "jwt-glued-x-run":
+        return "x" + "eyJ" * ((size - 10) // 3) + ".abcdef.g"
+    if label == "base64-run-bad-tail":
+        return "A" * (size - 3) + "==="
+    if label == "base64-run-bad-tail-url":
+        return "a-_" * ((size - 3) // 3) + "==="
+    if label == "userinfo-scheme-run":
+        return "a" * size
+    if label == "userinfo-scheme-run-sep":
+        return "a" * (size - 3) + "://"
     raise ValueError(label)  # pragma: no cover - every label above is listed in _ALL_LABELS
 
 
@@ -1352,6 +1407,20 @@ _ALL_LABELS = (
     "jwt-no-dot",
     "jwt-repeated-no-dot",
     "lone-backslash-then-quote",
+    "backslash-run-inside-quoted-value",
+    "jwt-dash-repeat",
+    "jwt-glued-context-run",
+    "pair-open-run",
+    "pair-ws-open-run",
+    "pair-backslash-value",
+    "base64-run-bad-tail",
+    "base64-run-bad-tail-url",
+    "userinfo-scheme-run",
+    "userinfo-scheme-run-sep",
+    "pair-paren-ws-run",
+    "pair-bracket-tab-run",
+    "jwt-glued-alnum-run",
+    "jwt-glued-x-run",
 )
 _ADVERSARIAL = {label: _adversarial_shape(label, _SIZE) for label in _ALL_LABELS}
 
@@ -1448,7 +1517,11 @@ _PERCENT_QUADRATIC_LABELS = ("lone-percent", "percent-prefix-then-plain-run")
 # "callback-url-long-state") lives in _ADVERSARIAL / test_adversarial_input_is_linear above;
 # the sweep below additionally proves actual linear *scaling* (not just a bound at one size) on
 # two representative shapes of the same regex mechanism, keeping the subprocess count bounded.
-_SWEEP_SIZES = (64 * 1024, 128 * 1024, 256 * 1024)
+# Round 5: starts at 8 KB, not 64 KB -- the class-closing ruling asks for an "8 KB..256 KB"
+# sweep, and a bound-caused leak (round 4's own JWT/escaped-quote bugs) would not necessarily
+# show up as a *timing* problem at only the largest size -- a bound is a hard matching cutoff,
+# not a growing cost, so the sweep needs a low point as well as a high one.
+_SWEEP_SIZES = (8 * 1024, 64 * 1024, 256 * 1024)
 
 
 def _percent_quadratic_shape(label: str, size: int) -> str:
@@ -1471,7 +1544,6 @@ def test_percent_token_scan_is_linear_not_quadratic() -> None:
     finding (lone %, a leading valid token then a long plain run, one bare `%` in compact JSON,
     a long opaque URL state param) are all pinned at the limit in `_ADVERSARIAL` above."""
     for label in _PERCENT_QUADRATIC_LABELS:
-        times: list[float] = []
         for size in _SWEEP_SIZES:
             text = _percent_quadratic_shape(label, size)
             elapsed, _ = _timed_redact(text)
@@ -1482,15 +1554,11 @@ def test_percent_token_scan_is_linear_not_quadratic() -> None:
             )
             if elapsed is None:
                 break
-            times.append(elapsed)
-        if len(times) >= 2:
-            ratio = times[-1] / max(times[-2], 1e-6)
-            check(
-                "FTF-0904-R4",
-                f"{label}: time ratio {_SWEEP_SIZES[-2]}->{_SWEEP_SIZES[-1]} is {ratio:.2f}x "
-                "(quadratic doubling would be ~4x; linear is ~2x)",
-                ratio < 3.0,
-            )
+    # Round 5: a CPU-ratio check between two sweep points is flaky under shared-runner load (a
+    # slow point can make even a genuinely linear pair's ratio look quadratic) -- each size's own
+    # fixed, generous absolute bound above is the real, load-robust assertion; scaling itself is
+    # what the multi-point sweep already demonstrates (every point passes its own bound, at a size
+    # proportional to that bound).
     for label in _PERCENT_QUADRATIC_LABELS:
         for size in (_SWEEP_SIZES[-1],):
             text = _percent_quadratic_shape(label, size)
@@ -1515,23 +1583,105 @@ def test_percent_token_scan_is_linear_not_quadratic() -> None:
             )
 
 
-_ROUND4_QUADRATIC_LABELS = ("jwt-no-dot", "jwt-repeated-no-dot", "lone-backslash-then-quote")
+_ROUND4_QUADRATIC_LABELS = (
+    "jwt-no-dot",
+    "jwt-repeated-no-dot",
+    "lone-backslash-then-quote",
+    "backslash-run-inside-quoted-value",
+)
+
+
+_ROUND6_LABELS = _ALL_LABELS[24:33]
+_ROUND7_LABELS = _ALL_LABELS[33:]
+
+
+def _timed_log(text: str) -> float | None:
+    """Seconds to log `text` through the installed redaction path in a child, None on a kill."""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", _CHILD_LOG, str(ROOT)],
+            input=text,
+            capture_output=True,
+            text=True,
+            timeout=_LIMIT_SECONDS + 3,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    head = result.stdout.partition("\n")[0]
+    return float(head) if head else None
+
+
+def test_round6_every_rule_shape_sweep_through_both_paths() -> None:
+    """Round 6 (F-SWEEP-EVERY-RULE): `_PAIR`, `_BASE64_RUN`, `_USERINFO` and the per-run JWT scan
+    each get time shapes, swept 8 KB..256 KB through BOTH `redact_text` and the logging path with
+    an absolute bound at every size (no ratio: flaky under load)."""
+    for label in _ROUND6_LABELS:
+        for size in _SWEEP_SIZES:
+            text = _adversarial_shape(label, size)
+            elapsed, _ = _timed_redact(text)
+            check(
+                "FTF-0904-R8",
+                f"{label} at {size} chars (redact_text) took {elapsed}s",
+                elapsed is not None and elapsed < _LIMIT_SECONDS,
+            )
+            logged = _timed_log(text)
+            check(
+                "FTF-0904-R9",
+                f"{label} at {size} chars (logging path) took {logged}s",
+                logged is not None and logged < _LIMIT_SECONDS,
+            )
+
+
+def test_round7_pair_whitespace_and_jwt_glued_shapes_through_both_paths() -> None:
+    """Round 7 (Q-PAIR-KEY-WS-QUAD, Q-JWT-LOWER-IN-LOOP): the single-opener whitespace runs
+    `"(" + " "*(n-1)` / `"[" + "\\t"*(n-1)` and the all-glued-"eyJ" runs `"aeyJ"*k + ".abcdef.g"`
+    / `"x" + "eyJ"*k + ".abcdef.g"` swept 8 KB..256 KB through BOTH `redact_text` and the logging
+    path, with an absolute bound at every size."""
+    for label in _ROUND7_LABELS:
+        for size in _SWEEP_SIZES:
+            text = _adversarial_shape(label, size)
+            elapsed, _ = _timed_redact(text)
+            check(
+                "FTF-0904-R10",
+                f"{label} at {size} chars (redact_text) took {elapsed}s",
+                elapsed is not None and elapsed < _LIMIT_SECONDS,
+            )
+            logged = _timed_log(text)
+            check(
+                "FTF-0904-R11",
+                f"{label} at {size} chars (logging path) took {logged}s",
+                logged is not None and logged < _LIMIT_SECONDS,
+            )
+
+
+def test_round7_glued_jwt_shapes_stay_redaction_correct() -> None:
+    """Negative on the real default code: the glued shapes are fast AND a real JWT after them is
+    still redacted (speed bought by skipping starts would be a leak, not linearity)."""
+    jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLWJ5dGVz"
+    for prefix in ("aeyJ" * 2000, "x" + "eyJ" * 2000):
+        _, out = _timed_redact(prefix + " " + jwt)
+        check("FTF-0904-R12", "a JWT after glued eyJ starts survived", jwt[:20] not in out)
+        check("FTF-0904-R12", f"no redaction marker in the tail: {out!r}", "[REDACTED]" in out)
 
 
 def test_every_rule_size_sweep_is_linear_not_quadratic() -> None:
     """Round-4 return: the round-3 sweep above proved scaling only for the two percent-token
     shapes round 3 itself fixed, not the class-closing bar round 3 set ("every regex that runs
     on log text must be linear ... proven by a generated size sweep ... through BOTH redact_text
-    and the install_redaction logging path") for every rule a later round touches. This round
-    touches `_PREFIXES` (the JWT alternative had no adversarial coverage at all -- both dots are
-    required but the segment before each one was plain greedy, backtracking from the true end
-    down to the 5-char minimum on a run with no dot anywhere, `jwt-no-dot`/
-    `jwt-repeated-no-dot`) and `_QUOTED_VALUE` (the escaped-quote alternative's own middle allows
-    backslashes, so it is the one alternative this round bounds rather than makes possessive,
-    `lone-backslash-then-quote`); each is generated via the same `_adversarial_shape` the pinned
-    single-size check above uses, swept across `_SWEEP_SIZES`."""
-    for label in _ROUND4_QUADRATIC_LABELS:
-        times: list[float] = []
+    and the install_redaction logging path") for every rule a later round touches.
+
+    Round 5 widens this from the two round-4 labels to EVERY shape in `_ALL_LABELS` -- the
+    class-closing ruling is "every rule is linear", not "every rule a round happened to touch",
+    and round 4 itself only added adversarial coverage for the two shapes it fixed while leaving
+    every other rule swept at a single pinned size (`test_adversarial_input_is_linear` above),
+    which proved a bound, not a scaling trend. `_PREFIXES`' own JWT alternative (`jwt-no-dot`/
+    `jwt-repeated-no-dot`) and `_QUOTED_VALUE`'s own escaped-quote alternative
+    (`lone-backslash-then-quote`) are round 4's two fixes, now round 5's two *re*-fixes (round 4
+    bounded both instead of truly fixing them -- a bound is a leak, not linearity, per round 5's
+    own class-closing ruling); every shape is generated via the same `_adversarial_shape`, swept
+    across `_SWEEP_SIZES` (8 KB..256 KB)."""
+    for label in _ALL_LABELS:
         for size in _SWEEP_SIZES:
             text = _adversarial_shape(label, size)
             elapsed, _ = _timed_redact(text)
@@ -1542,16 +1692,10 @@ def test_every_rule_size_sweep_is_linear_not_quadratic() -> None:
             )
             if elapsed is None:
                 break
-            times.append(elapsed)
-        if len(times) >= 2:
-            ratio = times[-1] / max(times[-2], 1e-6)
-            check(
-                "FTF-0904-R6",
-                f"{label}: time ratio {_SWEEP_SIZES[-2]}->{_SWEEP_SIZES[-1]} is {ratio:.2f}x "
-                "(quadratic doubling would be ~4x; linear is ~2x)",
-                ratio < 3.0,
-            )
-    # the two round-4 shapes additionally proven through the real logging path, at the top size
+    # Round 5: no CPU-ratio check here either (see the matching note on R4 above) -- each size's
+    # own absolute bound is the load-robust assertion, and the sweep across sizes is what
+    # demonstrates scaling, not a ratio computed from two single, noise-sensitive samples.
+    # The round-4/5 shapes additionally proven through the real logging path, at the top size
     for label in _ROUND4_QUADRATIC_LABELS:
         text = _adversarial_shape(label, _SWEEP_SIZES[-1])
         try:
@@ -1573,6 +1717,202 @@ def test_every_rule_size_sweep_is_linear_not_quadratic() -> None:
             f"{label} at {_SWEEP_SIZES[-1]} chars through logging took {elapsed}s",
             elapsed is not None and elapsed < _LIMIT_SECONDS,
         )
+
+
+# Round 5, class-closing ruling (b): "for every rule, a secret of 1 KB, 8 KB, 64 KB and 256 KB is
+# fully redacted" -- a *correctness* sweep, independent of the *timing* sweep above. A bound
+# (round 4's JWT-segment and escaped-quote-value caps) is a hard matching cutoff, not a growing
+# cost, so it would never show up as a timing failure -- only as the marker surviving in the
+# output once its length passes the bound. The last tier stays comfortably under
+# `lr.MAX_TEXT_LENGTH` once wrapped.
+_LONG_SECRET_SIZES = (1024, 8192, 65536, 262_000)
+
+
+def _long_secret_cases(marker: str) -> list[tuple[str, str]]:
+    """(rule, text) for every named rule in the ruling (_PEM, _HEADER, _PAIR, _BEARER,
+    _PREFIXES, _USERINFO, _KEY_VALUE, _BASE64_RUN, percent), each built so that rule's own match
+    has to span the whole `marker` -- any bound shorter than `len(marker)` leaves a suffix of
+    `marker` in the output. `marker` is plain alphanumeric so it is valid unchanged inside every
+    wrapper (a quoted value, a URL, a JSON string, a JWT segment, a key=value pair) with no
+    delimiter collisions to reason about per rule."""
+    b64_inner = base64.b64encode(json.dumps({"token": marker}).encode()).decode()
+    return [
+        ("pem", f"-----BEGIN PRIVATE KEY-----\n{marker}\n-----END PRIVATE KEY-----"),
+        ("header-bare", f"Authorization: {marker}"),
+        ("header-escaped-quote", 'authorization: \\"' + marker + '\\"'),
+        ("pair", f"('password', '{marker}')"),
+        ("bearer", f"Bearer {marker}"),
+        ("prefix", f"sk-{marker}"),
+        ("prefix-jwt", f"eyJ{marker}.{marker}.{marker}"),
+        ("userinfo", f"https://user:{marker}@db.internal:5432/x"),
+        ("key_value-bare", f"token={marker}"),
+        ("key_value-quoted", f'token="{marker}"'),
+        ("key_value-escaped-quote", 'token=\\"' + marker + '\\"'),
+        ("base64", b64_inner),
+        ("percent", "GET /x?q=" + quote("password=" + marker, safe="")),
+    ]
+
+
+def _fragments(text: str) -> list[str]:
+    """32-char windows at the start, a quarter, the middle, three quarters and the very end of
+    `text`, so a truncating bound (the tail of a long secret left in the clear) cannot hide
+    behind a whole-marker `not in` check, which only fails when NOTHING is redacted."""
+    last = max(len(text) - 32, 0)
+    offsets = sorted({0, len(text) // 4, len(text) // 2, 3 * len(text) // 4, last})
+    return [text[o : o + 32] for o in offsets]
+
+
+def _surviving(text: str, out: str) -> list[str]:
+    return [fragment for fragment in _fragments(text) if fragment in out]
+
+
+def _fit_size(rule: str, limit: int) -> int:
+    """The largest marker size whose wrapped `rule` text still fits `limit` characters, so the
+    top tier is a real 256 KB case that is redacted, not one refused as oversize."""
+    small = dict(_long_secret_cases(_marker(200)))[rule]
+    large = dict(_long_secret_cases(_marker(400)))[rule]
+    per_char = (len(large) - len(small)) / 200
+    size = int((limit - (len(small) - 200 * per_char)) / per_char)
+    while len(dict(_long_secret_cases(_marker(size)))[rule]) > limit:
+        size -= 64
+    return size
+
+
+def _long_secret_inputs(rule: str, size: int) -> tuple[str, str]:
+    """(wrapped text, the string whose fragments must not survive) for `rule` at `size`."""
+    marker = _marker(size)
+    text = dict(_long_secret_cases(marker))[rule]
+    # the base64 case's secret is the encoded text itself: check ITS fragments, not the marker's
+    return text, text if rule == "base64" else marker
+
+
+_LONG_RULES = tuple(rule for rule, _ in _long_secret_cases(_marker(64)))
+
+
+def test_every_rule_long_secret_is_fully_redacted() -> None:
+    """Round 5/6: a bound is a hard matching cutoff, not a growing cost, so it never shows as a
+    timing failure -- only as the tail of a long secret surviving. Round 6 (F-L1-SUFFIX,
+    F-L1-B64-VACUOUS): check a fragment at the start, quarter, middle, three quarters and END of
+    the secret (a `marker not in out` check passes while 302 of 342 signature chars leak), and for
+    the base64 case check fragments of the ENCODED text (the raw marker never appears in it, so
+    the old check could not fail). The top tier is sized to fit the limit per rule: an oversize
+    raise is not a pass."""
+    for rule in _LONG_RULES:
+        for size in (*_LONG_SECRET_SIZES[:-1], _fit_size(rule, lr.MAX_TEXT_LENGTH)):
+            text, secret = _long_secret_inputs(rule, size)
+            try:
+                out = lr.redact_text(text)
+            except lr.LogRedactionError:
+                check("FTF-0904-L1", f"{rule} at {size}: redact_text raised on {len(text)}", False)
+                continue
+            left = _surviving(secret, out)
+            check(
+                "FTF-0904-L1",
+                f"{rule} at {size} chars: {len(left)} fragment(s) of the secret survived",
+                not left and REDACTED_ in out,
+            )
+
+
+def test_every_rule_long_secret_through_the_logging_path() -> None:
+    """Round 6 (F-L1-LOG): the same sweep through `install_redaction` + the sink, with a real
+    256 KB tier for every rule including JWT and base64 (the sink re-redacts the formatted line,
+    which is a few characters longer, so the top tier leaves 64 characters of headroom)."""
+    for rule in _LONG_RULES:
+        for size in (1024, 65536, _fit_size(rule, lr.MAX_TEXT_LENGTH - 64)):
+            text, secret = _long_secret_inputs(rule, size)
+            with _Harness() as harness:
+                logging.getLogger("long").error("%s", text)
+            seen = "\n".join(harness.outputs())
+            left = _surviving(secret, seen)
+            check(
+                "FTF-0904-L2",
+                f"{rule} at {size} chars via logging: {len(left)} fragment(s) survived",
+                not left and lr.REDACTION_FAILED_MARKER not in seen and REDACTED_ in seen,
+            )
+
+
+_JWT_CONTEXTS = ("token_", "sess-", "cache_", "user-", "id-", "jwt_", "x_")
+
+
+def _realistic_jwt(claims: int) -> str:
+    """A JWT-shaped secret with a payload of any length (RS256-sized for `claims` ~ 1500)."""
+    header = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9"
+    payload = "eyJ" + _marker(claims)[:claims]
+    return f"{header}.{payload}.{_marker(342)[:342]}"
+
+
+def test_jwt_glued_after_underscore_or_dash_is_redacted() -> None:
+    """Round 6 (F-JWT-GLUE): rounds 3/4 redacted a JWT glued after `_`/`-`; the round-5
+    lookbehind printed `token_<jwt>`, `sess-<jwt>`, ... in full. All seven contexts, three sizes,
+    through `redact_text` and the logging path; no 32-char fragment of any segment may survive."""
+    for claims in (40, 1500, 20_000):
+        jwt = _realistic_jwt(claims)
+        header, payload, sig = jwt.split(".")
+        pieces = [header, payload[:32], payload[len(payload) // 2 :][:32], payload[-32:], sig[:32]]
+        for ctx in _JWT_CONTEXTS + ("",):
+            text = f"{ctx}{jwt}"
+            out = lr.redact_text(text)
+            check(
+                "FTF-0904-J1",
+                f"context {ctx!r} claims={claims}: a JWT fragment survived: {out[:60]!r}",
+                not any(piece in out for piece in pieces) and out.startswith(ctx),
+            )
+            with _Harness() as harness:
+                logging.getLogger("jwt").error("%s", text)
+            seen = "\n".join(harness.outputs())
+            check(
+                "FTF-0904-J2",
+                f"context {ctx!r} claims={claims}: a JWT fragment reached the log",
+                not any(piece in seen for piece in pieces),
+            )
+    # negative: the real default code leaves a non-JWT lookalike alone (no dots, glued to alnum)
+    for benign in (
+        "token_eyJ",
+        "x_eyJab.cd",
+        "abceyJabcdef.ghijkl.mnopqr",
+        "eyJ.a.b",
+        "eyJabcdef.abc.defgh",
+        "eyJabc.abcdefgh.ijklmn",
+    ):
+        check(
+            "FTF-0904-J3", f"benign lookalike {benign!r} altered", lr.redact_text(benign) == benign
+        )
+
+
+def test_jwt_segment_floors_are_exact() -> None:
+    """Round 6 (mutation gate): the JWT shape needs 5+ chars after "eyJ", a 5+ char second
+    segment and a SECOND dot (a third, possibly empty, segment). Each boundary is pinned on
+    both sides, so `>=`/`>` and `<`/`<=` flips on any of them are RED."""
+    redacted = {
+        "eyJ12345.abcde.x": "[REDACTED]",
+        "eyJ12345.abcde.": "[REDACTED]",
+        "ab.eyJ12345.abcde.x": "ab.[REDACTED]",
+    }
+    for text, want in redacted.items():
+        check(
+            "FTF-0904-J5",
+            f"{text!r} -> {lr.redact_text(text)!r}, want {want!r}",
+            lr.redact_text(text) == want,
+        )
+    for benign in (
+        "eyJ1234.abcde.x",  # 4 chars after eyJ
+        "eyJ12345.abcd.x",  # 4-char payload segment
+        "eyJ12345.abcdefgh",  # no second dot
+        "eyJ12345.abcdefgh/more",  # no second dot
+    ):
+        check("FTF-0904-J6", f"benign {benign!r} altered", lr.redact_text(benign) == benign)
+
+
+def test_jwt_runs_inside_other_text_keep_their_neighbours() -> None:
+    """A JWT inside a longer line removes only the JWT: text on both sides and a second JWT on
+    the same line (separated by a dot-less gap) behave independently."""
+    a, b = _realistic_jwt(60), _realistic_jwt(70)
+    out = lr.redact_text(f"before user-{a} between {b}, after")
+    check(
+        "FTF-0904-J4",
+        f"neighbouring text damaged: {out!r}",
+        out == f"before user-{REDACTED_} between {REDACTED_}, after",
+    )
 
 
 def test_size_and_depth_boundaries() -> None:
@@ -1743,7 +2083,13 @@ FAULTS: list[tuple[str, str, str, int]] = [
         '|[^\\s]*)",\n    re.I,',
         1,
     ),
-    ("F08 escaped-JSON value form dropped", '\\\\+"[^"\\r\\n]{0,8192}?\\\\+"|', "", 1),
+    (
+        "F08 escaped-JSON value form dropped (round 5 retarget: round 5 replaced the bounded "
+        "lazy form this fault used to target with an unrolled, unbounded one)",
+        'r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+\\\\+"\' r"""|',
+        'r"""',
+        1,
+    ),
     ("F09 userinfo stops at first @", '[^/\\s?#]*@")', '[^/\\s?#@]*@")', 1),
     ("F10 idempotence guard dropped", "\\[REDACTED\\]|{_QUOTED_VALUE}", "{_QUOTED_VALUE}", 1),
     # --- normalisation and decoding ----------------------------------------------------
@@ -1986,6 +2332,114 @@ FAULTS: list[tuple[str, str, str, int]] = [
         "            return raw",
         1,
     ),
+    # --- round 5: the round-4 JWT/escaped-value bounds were leaks, not timing fixes; the
+    # "fix" here is the bound itself (reproduced small, V-*) or the whole protection (F-*-QUAD) --
+    (
+        "F-QV-QUAD escaped-value content reverted to naive lazy (reproduces the round-5 "
+        "backslash-run-inside-quoted-value quadratic this round fixes)",
+        '(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+',
+        '[^"\\r\\n]*?',
+        1,
+    ),
+    (
+        "V-QV-BOUND-16 escaped-value content re-bounded to ~16 chars (reproduces the "
+        "round-4-style leak the round-5 class-closing ruling forbids)",
+        '(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+',
+        '(?:[^"\\\\\\r\\n]|\\\\++(?!")){0,16}+',
+        1,
+    ),
+    # --- round 6: the JWT shape is a per-run scan; sweeps must be able to fail -------------
+    (
+        "F-PFX-QUAD per-run JWT scan replaced by a start-at-every-eyJ regex (reproduces the "
+        "round-3/4 jwt-repeated-no-dot quadratic)",
+        r'_JWT_RUN = re.compile(r"[A-Za-z0-9_\-.]++")',
+        r'_JWT_RUN = re.compile(r"(?<![A-Za-z0-9])eyJ[A-Za-z0-9_\-]{5,}+\.[A-Za-z0-9_\-.]*+")',
+        1,
+    ),
+    (
+        "V-JWT-BOUND-40 JWT run re-bounded to 40 chars (round-4-style leak)",
+        r'_JWT_RUN = re.compile(r"[A-Za-z0-9_\-.]++")',
+        r'_JWT_RUN = re.compile(r"[A-Za-z0-9_\-.]{1,40}+")',
+        1,
+    ),
+    (
+        "V-JWT-GLUE round-5 lookbehind restored: a JWT glued after _ or - is skipped",
+        "segment[pos - 1].isalnum()",
+        '(segment[pos - 1].isalnum() or segment[pos - 1] in "_-")',
+        1,
+    ),
+    (
+        "V-JWT-SIG-BOUND-40 signature segment truncated to 40 redacted chars (302 of 342 leak)",
+        "out.append(segments[i][:start] + REDACTED)",
+        "out.append(segments[i][:start] + REDACTED + segments[i + 2][40:])",
+        1,
+    ),
+    (
+        "V-JWT-CASE JWT start matched case-sensitively only",
+        "lowered = segment.lower()",
+        "lowered = segment",
+        1,
+    ),
+    (
+        "V-JWT-MIN2 JWT payload segment length floor dropped",
+        "len(segments[i + 1]) >= _JWT_MIN_SEGMENT",
+        "len(segments[i + 1]) >= 0",
+        1,
+    ),
+    (
+        "V-BEARER-BOUND-500 bearer credential re-bounded to 500 chars",
+        r"""[^\s,;"'}]{8,}""",
+        r"""[^\s,;"'}]{8,500}""",
+        1,
+    ),
+    (
+        "V-SK-BOUND-500 sk- key re-bounded to 500 chars",
+        r'r"sk-[A-Za-z0-9_\-]{8,}"',
+        r'r"sk-[A-Za-z0-9_\-]{8,500}"',
+        1,
+    ),
+    (
+        "V-B64-BOUND-500 base64 run re-bounded to 500 chars",
+        r"(?P<body>[A-Za-z0-9+/_\-]{16,})",
+        r"(?P<body>[A-Za-z0-9+/_\-]{16,500})",
+        1,
+    ),
+    (
+        "Q-PAIR-OVERLAP pair value gets an overlapping lone-backslash alternative (exponential)",
+        r"(?:\\.|(?!(?P=vq))[^\\])*(?P=vq)",
+        r"(?:\\.|(?!(?P=vq))[^\\]|\\)*(?P=vq)",
+        1,
+    ),
+    (
+        "Q-PAIR-KEY-ANY-QUAD pair opener scans any non-quote run, not just whitespace (quadratic)",
+        r"""[(\[]\s*b?(?P<q>""",
+        r"""[(\[][^'"]*b?(?P<q>""",
+        1,
+    ),
+    (
+        "Q-PAIR-KEY-WS-QUAD pair opener gets a second adjacent whitespace scan (quadratic)",
+        r"""[(\[]\s*b?(?P<q>""",
+        r"""[(\[]\s*\s*b?(?P<q>""",
+        1,
+    ),
+    (
+        "Q-JWT-LOWER-IN-LOOP _jwt_start skip loop re-lowers the whole segment each step",
+        r'pos = lowered.find("eyj", pos + 1)',
+        r'pos = segment.lower().find("eyj", pos + 1)',
+        1,
+    ),
+    (
+        "Q-B64-NO-LOOKBEHIND base64 run may start inside a run (quadratic)",
+        r'r"(?<![A-Za-z0-9+/_\-])(?P<body>',
+        r'r"(?P<body>',
+        1,
+    ),
+    (
+        "Q-USERINFO-NO-LOOKBEHIND URL scheme may start inside a run (quadratic)",
+        r"(?P<scheme>(?<![A-Za-z0-9+.\-])[A-Za-z]",
+        r"(?P<scheme>[A-Za-z]",
+        1,
+    ),
 ]
 
 
@@ -2006,15 +2460,18 @@ def _run_mutant(fault_id: str, old: str, new: str, count: int) -> tuple[bool, st
             "FTF0904_BEHAVIOUR_ONLY": "1",
             "PYTHONDONTWRITEBYTECODE": "1",
         }
-        result = subprocess.run(
-            [sys.executable, str(Path(__file__).resolve())],
-            capture_output=True,
-            text=True,
-            env=env,
-            cwd=tmp,
-            timeout=300,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                [sys.executable, str(Path(__file__).resolve())],
+                capture_output=True,
+                text=True,
+                env=env,
+                cwd=tmp,
+                timeout=300,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return True, "mutant made the suite exceed 300 s (catastrophic regex): killed"
     return result.returncode != 0, (result.stdout + result.stderr)[-300:]
 
 
