@@ -30072,3 +30072,96 @@ Control-plane L2 certification and the L4 gate (101/301 certified, unchanged). S
 per this list's own rule; **FTF-0510, FTF-04A18 and FTF-1807 remain the next-priority items** per the Active
 list's own stated order. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged: "None currently").
 `BLOCKER.md` unchanged — no live entries.
+
+## 2026-10-14T15:30:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-da6v91` — FTF-1602
+## round 6 parked (recurring infra death), FTF-0503 round 3 resubmitted after a dual-session
+## collision; PR #799 opened
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
+STEP 0.1: read `BLOCKER.md` (all entries RESOLVED, no live blocker), `QUEUE.md`'s "Owner actions —
+current" (one live entry: `[GOVERNANCE]` PR #705 open since 2026-10-09, now actively blocking PR
+#745 via the relay-policy item-ID regex collapse bug — owner-only to merge, nothing new for this
+shift to do there), "Active"/"Parked" sections, and `docs/certifications/queue.md`'s tail, all
+fresh this shift. STEP 0.2: no `cognee-cli` binary in this sandbox — text-search fallback
+declared, same as every prior shift.
+
+**Returned work first.** Listed every open `[relay]` PR and checked `ci-verdict`/CI status on each:
+- PR #745 (`FTF-H010-P3a round 2`): `ci-verdict` red on `relay-policy` alone — the already-escalated
+  regex-collapse collision with PR #742 (QUEUE.md Parked entry dated 2026-10-14T07:00Z, Owner
+  actions). No new relay action; owner must merge PR #705.
+- PR #793 (`FTF-0502 round 3`): `mutation-gate` red with exactly one survivor, a `JsonImportOutcome.
+  fatal_locator` trivial-getter mutant (`insert return self.report.fatal_locator first`) — verified by
+  hand this is a genuine equivalent mutant (the function's own single return statement, duplicated as
+  an early return, is byte-identical code with no observable behavioural difference; relay cannot
+  edit `docs/certifications/mutation-allowlist.yaml`, `RELAY_FORBIDDEN_EXACT`). Already disclosed by
+  the PR's own prior commits ("record the real mutation-gate result (47/48, 1 proposed equivalent)").
+  Nothing further for relay; awaiting Control-plane L2 classification.
+- PR #789 (`FTF-1602 round 6`): `ci-verdict` red on `object-storage-backup-integration` only —
+  **this is the item this shift actually worked.** See below.
+- PR #790, #788, #792, #794, #759, #732, #709: no action needed this shift (certifier PR, docs-only
+  record PR, or not yet in a state needing relay intervention).
+
+**FTF-1602 round 6 — PARKED, not retried a 4th time.** `object-storage-backup-integration` died at
+~39–55s into "Prove the real object-storage backup evidence against the live S3 fixture" (step stays
+`in_progress`, job `failure`, log 404s) on PR #789's run `38550062060`, identical to the already-used
+one sanctioned re-run and to a prior code-level fix attempt (switch the new G1/G1b test to the shared
+`_setup_shared` bucket pair, commit f7c0a9d) that did not resolve it. Independently re-confirmed this
+shift via `get_workflow_job` (the exact same runner-death signature: step left `in_progress`, job
+`completed`/`failure` at 39s) and by attempting the log download myself (`get_workflow_run_logs_url` +
+direct `curl` to the signed blob URL: `CONNECT tunnel failed, response 403` — the identical sandbox
+egress block the implementing session already hit). This is the same recurring class already
+diagnosed and parked once before for this exact test file (QUEUE.md's own "FTF-1602 round 5" entry:
+SeaweedFS volume-slot exhaustion as unique bucket/collection pairs accumulate across the file's ~45+
+buckets) — round 6's own fix only addressed its own two new tests, not the file-wide accumulation the
+round-5 entry's own route options (2)/(3) target, so the recurrence isn't a new mystery. Parked in
+QUEUE.md "## Parked" (new dated entry, 2026-10-14T13:05Z) with the three unexercised route options
+(delete each test's own buckets at teardown; periodically recycle the SeaweedFS fixture; a
+Control-plane-approved diagnostic step) and posted a PR comment on #789 explaining the park and
+closing the thread the implementing session's own two comments had left open asking for help. PR
+#789's own real changes (F7 now-check, unit G7 twin, Q2-shape G1/G1b rebuild) are untouched and ready
+— only this one pre-existing integration job is red.
+
+**FTF-0503 round 3 — the Active list's own next-priority item (0b).** Full saga, because it is
+unusual:
+
+1. Began a complete, independent implementation from scratch: a `_Cursor` class (incrementally
+   UTF-8-decoded, prunable `str`-like view fed from `ChunkReader`'s chunks) replacing round 2's
+   whole-document buffering; fixed two real, independently reproduced scanner bugs (a bracket-depth
+   counter that let a mismatched `[1, 2}` pass, and a bare-literal scanner that let a token directly
+   abutting a quote swallow through to a wrong boundary — reproduced directly: `[1, 1"]", 2]` on
+   round 2's own module returned `state: completed` with the third element silently dropped); removed
+   the fatal oversize tier; moved `fatal_locator` onto the shared `ImportReport` field; accepted a
+   UTF-8 BOM. Built a new integration test + CI job. Extensive unit-test hardening across several
+   mutation-gate passes (local score climbed 75.9% → 83.9% → 84.9% → 86.4%, 27 final survivors, each
+   individually reproduced and classed into six genuinely equivalent categories — trivial-getter,
+   decoder-reentry, boundary-tie-no-op, isolated-char normalization, redundant-shortcut, chunk-merge-
+   safe — documented in full in this session's own commit history).
+2. On `git push`, discovered the branch `relay/FTF-0503-r3` **already existed on the remote** with
+   four real, substantial commits from a **separate, concurrent relay session**
+   (`Claude-Session: .../session_01TQCApsTmqruB1E7ZN6Fy3d`) — a genuine dual-claim race (both
+   sessions started from the same `origin/main` tip; neither branch existed when the other began).
+   That implementation (a true byte-level JSON grammar state machine, more structurally sophisticated
+   than this session's own string-cursor design) passed its own 69-test suite and addressed the same
+   four return findings plus the integration suite and CI job.
+3. **Decision: defer, do not open a competing duplicate PR.** Per CLAUDE.md's "one PR per item" and
+   the `relay-policy` collision check's own purpose, renamed this session's own completed work to
+   `relay/FTF-0503-r3-alt-session` (pushed, no PR opened — preserved for reference, not submitted) and
+   reviewed the other session's branch instead: ran `ruff`/`mypy` (found and fixed two real `mypy`
+   errors in its test file — a misplaced `type: ignore` and two dict-unpacking call sites mypy
+   couldn't verify), ran two independent mutation-gate samples (50/320 mutants: 96.0%; after the
+   implementing session's own follow-up commit fixed 11 of its own survivors, a second 100/322
+   sample: 98.0%, 2 disclosed survivors), and wrote the submission documentation
+   (`docs/certifications/submissions/2026-10-14T1420Z-FTF-0503-r3.md`) and `docs/spec-matrix.yaml`
+   entry neither session had written yet. Rebased onto the implementing session's latest commit
+   (which landed mid-review), re-verified, pushed, and opened **PR #799**
+   (`[relay] FTF-0503: round 3 — true byte-level grammar scanner, no fatal oversize tier, sha
+   cross-check`), with the dual-session provenance disclosed in both the PR body and the submission
+   file.
+
+STEP 3: this file, `QUEUE.md` and `docs/certifications/queue.md` all updated this shift (queue.md
+append is Control-plane's own next step, not duplicated here). STEP 4 stop condition (a): FTF-0503
+round 3 (PR #799) and the already-open FTF-1002/FTF-0502/etc. backlog all await Control-plane L2
+certification. Stopping here — this shift's own two worked items (FTF-1602 round-6 park, FTF-0503
+round-3 resubmission) are both at their own correct stopping point (park entry + PR comment; PR
+opened and awaiting review). No new owner ask beyond the pre-existing PR #705 entry (unchanged).
+`BLOCKER.md` unchanged — no live entries.

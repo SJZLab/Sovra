@@ -10704,6 +10704,49 @@ docs/spec-matrix.yaml. It never invents criteria.)
     - The 25 uncontracted route-verbs are listed as a contract gap.
 
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
+- **FTF-1602 round 6: PARKED (same recurring `object-storage-backup-integration` runner death as round 5), 2026-10-14T13:05Z.**
+  - What failed: PR #789 (`claude/wizardly-fermat-p0hviw`, "[relay] FTF-1602: round 6 — F7 now-check, unit G7
+    twin, Q2-shape G1/G1b rebuild") hit the identical death signature already documented in this file's own
+    "FTF-1602 round 5" entry below: `object-storage-backup-integration` dies ~39-55s into the "Prove the real
+    object-storage backup evidence against the live S3 fixture" step (step stays `in_progress`, job
+    `conclusion: failure`, job log 404s) while every other job on the same run (incl. `gate`, `relay-policy`,
+    `mutation-gate`) is green. Confirmed on run `38550062060` by this round-6 session's own two PR comments
+    (2026-10-14T10:30Z, 10:35Z): one sanctioned re-run already used (identical death on the original push and
+    the rerun, before any code change); a hypothesis fix (switch the new G1/G1b real test from a dedicated
+    `_setup(client)` bucket pair to the shared `_setup_shared(client)` pair, commit f7c0a9d) did NOT resolve it
+    — the post-fix push (this run) died identically. The session then re-audited every new `S3Client` call
+    against `storage_semantics_client.py`'s real signatures (all matched), compared the rebuilt test against
+    round 5's original, proven-good pattern (no difference found), and could not get the actual failing output
+    from any access path (`get_job_logs` direct, `run_id`+`failed_only`, and the signed blob-storage URL the
+    tool hands back — all return 404/blocked from that session's sandbox).
+  - Independently re-verified this shift (a different session): `get_workflow_job` on the same failing job
+    (115805822269) confirms the step-level signature exactly (step 5 "Prove the real object-storage backup
+    evidence..." status `in_progress` with no `completed_at`, while the job itself is `completed`/`failure` at
+    39s) — a runner-death signature, not a raised test assertion. Re-attempted the log download this session's
+    own way (`get_workflow_run_logs_url` + direct `curl` to the signed `results-receiver.actions.githubusercontent.com`
+    blob URL): `CONNECT tunnel failed, response 403` — the same class of sandbox egress block the round-6 session
+    hit, confirmed independently rather than taken on faith. No new diagnostic avenue is available to a relay
+    session without either a code change speculative enough to not be justified by evidence, or the Control-plane
+    diagnostic step round 5's own entry already asks for.
+  - Why this isn't being retried a 4th time: this is the exact, already-diagnosed round-5 class (SeaweedFS
+    volume-slot exhaustion as more unique bucket/collection pairs accumulate across this file's ~45+ buckets;
+    see the round-5 entry below for the full precedent and `docker-compose.yml`'s own `-master.volumeSizeLimitMB=64`
+    comment). Round 6 made one genuine, reasonable attempt at the round-5 entry's own route-option spirit (reduce
+    unique bucket pairs by reusing a shared one for the new test) and it was insufficient — the underlying
+    accumulation across the full 18+-test file is still what the round-5 entry's own route options (3)/(4) target,
+    and neither has actually been implemented yet (round 6 only reused an existing shared pair for its own two new
+    tests, not a cleanup-after-every-test or periodic-fixture-recycle mechanism file-wide).
+  - Route options (same three the round-5 entry already named, still unexercised): (1) Control plane approves an
+    additive diagnostic step (`df -h`/`free -m` sampler, `if: always()` artifact upload) in
+    `object-storage-backup-integration` so the actual resource exhaustion (or absence of one) is finally visible,
+    then re-queue; (2) delete each test's own buckets at the end of that test (bounds accumulated
+    collections/volumes without touching the CI workflow); (3) periodically recycle the SeaweedFS fixture
+    (`docker compose down -v` + `up -d s3`, re-wait ready) every N test functions inside this file's own `main()`.
+    Recommended: (2) first (smallest, most local change, directly removes the suspected accumulation), (3) as
+    fallback, (1) if both still fail to reproduce a fix so the real cause is finally visible.
+  - State left: PR #789 is open with round 6's real, intended production/test changes (F7 now-check, unit G7
+    twin, Q2-shape G1/G1b rebuild) — none of that work is suspected or reverted; only this one pre-existing,
+    recurring integration job is red. No further relay action on this item until a route option above is chosen.
 - **FTF-H010-P3a round 2: PARKED (relay-policy item-ID regex collapse, false collision), 2026-10-14T07:00Z.**
   - What failed: PR #745 (`relay/FTF-H010-P3a-r2`)'s `ci-verdict` fails on `relay-policy` alone: "item(s)
     FTF-H010 already owned by open PR #742". `scripts/ci_policy.py`'s `ITEM_ID` regex
