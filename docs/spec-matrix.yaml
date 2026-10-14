@@ -7627,7 +7627,9 @@ FTF-0505:
     every already-GREEN named clause; full production-constant/every-offset evidence tables; a fresh
     xlsx-import-integration run (unchanged by this round's diff). Full detail:
     docs/certifications/submissions/2026-10-14T1500Z-FTF-0505-r2.md.
-    Mutation gate (round 2): see that submission.
+    Mutation gate (round 2): 140 run | 139 KILLED | 1 TIMEOUT | 0 SURVIVED | 0 SURVIVED-allowlisted | score 100.0%
+    (one real equivalent mutant found and removed by deleting the dead code it lived in, not allowlisted --
+    see the submission).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0505.py
