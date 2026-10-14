@@ -7517,7 +7517,7 @@ FTF-0504:
     nul_character), every one already in P1's FAILURE_CODES / REJECTION_CODES (no catalog edit). Round 3 makes the
     single additive import_common.py edit the Control plane allowed: an optional `fatal_locator` on the report
     (`LocatedImportReport`, inside the digest; a report without one keeps its fields, body and digest -- pinned by
-    golden digests and the unedited FTF-0502-P1 suite) and a read-only `ChunkReader.expected_sha256`; an expected hash
+    golden digests and the unedited FTF-0502-P1 suite); an expected hash
     that is not the reader's declared hash is failed/source_changed before a byte is read. Round 2: own resumable CSV
     parser (no csv module, so no process-global field limit), invalid_encoding located at the same
     physical line for every chunking, one logical record capped across physical lines, and the

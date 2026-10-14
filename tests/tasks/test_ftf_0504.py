@@ -2029,11 +2029,6 @@ def test_an_expected_hash_other_than_the_readers_fails_before_a_record() -> None
         "the matching hash imports",
         ok.report.state == "completed" and ok.report.records_accepted == 5,
     )
-    check(
-        CID,
-        "the reader exposes the hash it was declared with",
-        make_reader(data).expected_sha256 == hashlib.sha256(data).hexdigest(),
-    )
 
 
 def test_the_report_carries_the_purpose_it_was_given() -> None:

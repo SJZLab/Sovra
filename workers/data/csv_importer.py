@@ -482,7 +482,11 @@ class CsvEventStream(Iterator[ImportEvent]):
             or self._verified_content_type not in CSV_CONTENT_TYPES
         ):
             raise ImportAborted("failed", "content_type_not_supported_by_importer")
-        if not hmac.compare_digest(self._reader.expected_sha256, self._dataset_sha256):
+        if not hmac.compare_digest(
+            # the hash the source was declared with, known before a byte is read
+            self._reader._expected_sha256,
+            self._dataset_sha256,
+        ):
             raise ImportAborted("failed", "source_changed")
         options = self._options
         headers: list[str] | None = None

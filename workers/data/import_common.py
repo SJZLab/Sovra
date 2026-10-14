@@ -1089,8 +1089,6 @@ class ChunkReader(Iterator[bytes]):
         self._iterator: Iterator[bytes] = iter(source)
         self._expected_size = expected_size
         self._expected_sha256 = expected_sha256
-        # the sha256 this source was declared to have (known before a byte is read)
-        self.expected_sha256 = expected_sha256
         self._limits = limits
         self.deadline = Deadline(limits.deadline_seconds, clock)
         self._hash = hashlib.sha256()
