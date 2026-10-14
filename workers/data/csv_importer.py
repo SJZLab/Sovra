@@ -317,15 +317,7 @@ class _Parser:
                     position += 1
                     self._quoted_cr = False
                     self._state = _QUOTED
-                elif text[position] == delimiter:
-                    self._save_field()
-                    self._bump(1)
-                    position += 1
-                elif text[position] in "\r\n":
-                    self._save_field()
-                    position = self._terminate(text, position)
-                    yield self._record()
-                else:
+                else:  # an empty field, a delimiter or a line break is _IN_FIELD's job
                     self._state = _IN_FIELD
             elif state == _QUOTED:
                 end = text.find('"', position)
