@@ -194,6 +194,7 @@ def main() -> None:
                 "--reporter=verbose",
                 "--config",
                 "vitest.real-api.config.ts",
+                "ftf_0501_ui_real_api",
             ],
             cwd=ROOT,
             env=env,

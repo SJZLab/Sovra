@@ -9312,41 +9312,17 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
    - **GRADER CHECKLIST addition (same-class sweep):** never test membership of a raw input in a dict or set before
      checking its type. An unhashable value ([] or {}) must raise the module's own error, not TypeError.
    - **UI CHECKLIST (Control-plane ruling 2026-10-09, every apps/web UI slice; class-closing, from FTF-0309/0516/0501-UI returns):** (a) a generated strict-parse table over EVERY response field (wrong JSON type, value outside each enum, missing required field), each asserting malformed + no action control; (b) ONE binding function comparing every field sent with the response, a fault per field; (c) identity: drafts/results keyed by organization, project and connection, reset on any prop change; (d) no simulated progress or success: only a typed 2xx with a bound body counts; (e) typed errors: 5xx, non-JSON and unknown codes are retryable and keep state, never success or terminal rejection (Law 17); (f) a real-API test against the real router in a CI job when the backing routes exist. A hand-picked subset does not close a class.
-   - **0b. FTF-0305-F1 License/readiness race and license-gated trainability (production + tests; HIGHEST PRIORITY - reproduced defect in certified code).** Control-plane 2026-10-10T16:15Z. FTF-0305 is moved back to PROVISIONAL until this certifies (Law 2/15). Claim `relay/FTF-0305-F1-r1`. Found by the FTF-0310 verifier (#738, v738): a deterministic interleave of the real `mark_ready` and `revoke_license` request transactions (`artifact_crud.py` `_fetch_or_raise` has no row lock or version check) leaves the row (`ready`, license NULL, NULL); the real mapping POST then returns 200 and the real capabilities GET returns `trainable: true, capability: trainable_open_weight, license_approved: false`. This violates FTF-0305 "Unaccepted/revoked license blocks training/serving" and the classifier ignores `license_approved` for trainability.
-     Required:
-     1. Serialize artifact transitions: `accept_license`, `revoke_license`, `mark_ready` and `archive_artifact` read the row with `SELECT ... FOR UPDATE` (tenant-scoped) before applying the pure transition; a real-PG16 test (as sovra_app) runs the deterministic interleave and concurrent trials and asserts no row is ever `ready` without an accepted license.
-     2. Defence in depth: an additive migration (next free number at claim time; take the `migration:application` lock) adds CHECK (status <> 'ready' OR license_accepted_at IS NOT NULL); the upgrade refuses with a typed error if any existing row violates it (never deletes or rewrites data); downgrade drops only that CHECK; data_exposure_check passes.
-     3. Trainability requires an accepted license: `training_capability_classifier.py` makes `trainable` false (and the capability not `trainable_*`) unless `license_approved`; the capabilities route therefore never reports trainable for pending/revoked/absent licenses. Test every SourceType x license state.
-     4. Faults that must go RED: row lock removed; CHECK dropped; classifier ignoring license_approved; route deriving trainable without the license term.
-     5. Law 15: this edits certified FTF-0301/0305 (`artifact_crud.py`), FTF-0307 (classifier) and possibly FTF-0309-P1 code paths; the verifier re-runs their full suites and real-PG integrations and reports REQUALIFIED lines; FTF-0305 re-certifies with this item. Optional: the NUL byte in a model name returns HTTP 500 from `get_entry` (fails closed) - return the typed unknown/400 instead.
-   - **0c. FTF-0516 UI round 3 (tests + small production).** Work in apps/web/components/dataset-factory/dataset_issue_resolution_ui.tsx, apps/web/tests/ftf_0516.spec.ts and the round submission. Claim `relay/FTF-0516-r3`. Verifier findings (96391fa, #717: round-2 items 1-3 fixed - one `decisionMatchesRequest` over every field sent, nested resolutions bound to their issue, submit disabled while loading; real P1 router on PG16 R1-R13 all correct; 84 of 106 faults RED; no false success reproduced):
-     FTF-0516 RETURN -> round 3, tests + small production. Class-closing ruling (FTF-0309 r4 precedent): a generated strict-parse table over EVERY response field - wrong JSON type, value outside each enum, missing required field - each asserting "malformed", no decision controls and no submit; hand-picked cases do not close this.
-     1. Strict-parse table so these GREEN faults go RED: F09 F20 F22 F24 F26 F27 F28 F29 F30 F31 F33 F34 F35 F36 F37 F61 F62 F63 F65 F66 F68 (F40 is now equivalent). Visible today: F24 shows decision controls for `is_detector_failure: 0` (server still refuses); F33 shows "Blocks training yes" for the string "false". Add each to the submission fault table.
-     2. False error (U1, real PG16): a correction with an uppercase successor UUID is recorded (stored lowercase) but the UI shows "resolution response does not match the request", and an identical retry repeats it. Lowercase the successor before sending (or compare case-insensitively); test uppercase-typed/lowercase-echo; a fault must go RED.
-     3. False error (RV, real PG16): on a 200 replay the frozen API returns the report's CURRENT top-level `resolution_version`, so `resolution_version === expected + 1` rejects a legitimate replay after a decision on another issue. Require equality only when not replayed (or `>= expected + 1`), keep `resolution_version_after === expected + 1`; replace the spec case "top version high" with "a replay with a higher top-level version and a matching decision is recorded"; add a fault.
-     4. Update evidence_hash; keep UNWIRED disclosed (FTF-H029). Optional: bind waive to `waived` in parseResolution (Pn5/Pn6).
-   - **0d. FTF-0904 round 5 (production + tests).** Work in packages/security/log_redaction.py and tests/tasks/test_ftf_0904.py. Claim `relay/FTF-0904-r5`. Verifier findings (62674e8, #739: the round-3 quadratics are gone - `eyJ-`*n 124 s → 1.3 s, `token=\"`+backslashes 35-47 s → 2-3 s; a 99-shape x 6-size sweep through both paths on 3.11 and 3.12 is linear everywhere):
-     FTF-0904 RETURN -> round 5. Class-closing ruling (adds to round 3's): linearity must never come from an upper bound on what a rule can match - a bounded match is a leak. Every rule is linear AND unbounded in the length it redacts, proven by TWO generated sweeps through BOTH redact_text and the install_redaction logging path: (a) the 8 KB..256 KB adversarial-time sweep for EVERY rule (_PEM, _HEADER, _PAIR, _BEARER, _PREFIXES, _USERINFO, _KEY_VALUE, _BASE64_RUN, percent) with a load-robust absolute bound per size (no CPU-ratio checks); (b) a long-secret sweep: for every rule, a secret of 1 KB, 8 KB, 64 KB and 256 KB is fully redacted.
-     1. F-JWT-BOUND (reproduced): `{5,1024}+` leaks every JWT whose payload segment exceeds 1024 chars verbatim - a realistic RS256 token with 15+ group claims leaks bare, in `jwt=`, `client_assertion=` and exception text, both paths, 3.11 and 3.12 (20/49 cases; round 3 leaked 0/49). Make the JWT alternative linear with no upper bound (verified option: one start per run via `(?<![_\-])eyJ…{5,}+`, 49/49 redacted). Fault V-JWT-BOUND-40 (`{5,40}+`) must go RED.
-     2. F-QV-BOUND (reproduced): `{0,8192}?` leaks escaped-quoted values over 8192 chars (`token=\"<9000>\"` → `token=[REDACTED]"<value>`). Use an unbounded linear (unrolled or possessive) form keeping the JSON-in-JSON behaviour. Fault V-QV-BOUND-16 must go RED.
-     3. F-QV-QUAD stays GREEN (no suite shape is `token=\"` / `authorization: \"` + a backslash run): sweep (a) above must include it; FAULTS entries F-PFX-QUAD and F-QV-QUAD must go RED.
-     4. Flaky on an unmutated module (R7 `jwt-repeated-no-dot` 4.14/4.26 s vs a 4.0 s limit; R4 ratio 4.23x; 2 of 4 idle runs failed): remove ratio checks, use robust absolute bounds.
-     5. Fix the docstring `\S` SyntaxWarning (still in CI gate 114123432681); update evidence_hash (still 4543d719) and the fault count (52). Every production commit carries its Claude-Session trailer (b82d6d12 has none).
-   - **0f. FTF-0517 round 2 (tests + one docstring line).** Work in tests/tasks/test_ftf_0517.py. Claim `relay/FTF-0517-r2`. Verifier findings (each listed fault must go RED):
-     FTF-0517 RETURN -> round 2, tests only (db26d03, #591). Production is deterministic and correct; mutation 117/119 killed, 2 timeouts, 0 survived; 60 hand faults, 14 survive (several real). Tests to add in tests/tasks/test_ftf_0517.py:
-     1. Pinned golden: for a fixed spec and fixed records (e.g. 200 records keyed conv-i plus tmpl-(i%30)), assert the exact manifest_sha256, the exact counts and a few exact (record_id, role, group_id) triples; also run a subprocess under PYTHONHASHSEED=0 and 777 and compare hashes (kills hash() instead of SHA-256, reversed slot mapping, ratio off-by-one, strategy dropped from the bucket input).
-     2. Exact group counts in m.counts (e.g. 30 groups in the template case) - a group count equal to the record count survives today.
-     3. On a cutoff run, m.cutoff == cutoff, and tampering with it is refused.
-     4. A post-cutoff group preassigned `validation` is refused; a pre-cutoff group preassigned `validation` is honoured.
-     5. The manifest hash changes when only group_id values change, and when `strategy` changes.
-     6. A negative ratio in the validation or dev slot, e.g. (70,-10,20,20), is refused.
-     Also (docstring only): state in the module docstring that the caller must call quality_issue_engine.assert_clear_for_split before allocate_splits; the wiring task enforces it.
-   - **0h. FTF-1206 round 5 (production + tests).** Work in packages/litellm_client/organization_policy_control.py and tests/tasks/test_ftf_1206.py. Claim `relay/FTF-1206-r5`. Verifier findings (77812af, #635: all round-3 items hold; 19 faults RED; each listed fault must go RED; run faults with PYTHONDONTWRITEBYTECODE=1 and revert byte-identical):
-     FTF-1206 RETURN -> round 5, production + tests. Required:
-     1. Negative acceptance reproduced: validate_namespace and validate_approver_identity accept any `isinstance(value, str)`, so a str subclass whose __hash__/__eq__ alias a canonical value passes: a request namespace `Alias("someone-elses-ns")` aliasing "factory-candidates" got a grant for "someone-elses-ns"; an actor `Who("user:mallory")` aliasing "user:jane", and a subclass target aliasing "factory-production", were authorized. Require `type(value) is str`; tests that such a request gets no grant and such a route change is refused. Fault: isinstance restored.
-     2. Identifier patterns (tests): refuse "factory-production\n" and "user:jane\n" (fault fullmatch->match), a trailing separator "factory-"/"factory."/"factory:" (fault: trailing separator allowed), "factory/production" (fault: '/' allowed), "é", "İstanbul", "１２" and a Cyrillic-homoglyph "factory-prоduction" (fault: \w for [A-Za-z0-9]), and 129 chars refused vs 128 accepted (faults {0,126}->{0,600} and ->{0,125}). Test both validators directly and through OrganizationGatewayPolicy and ProjectGatewayPermissionRequest construction. FTF-1206A persists whatever these validators accept.
-     3. Record RED for every fault in 1 and 2 in the submission.
-     Optional: ProjectGatewayGrant does not validate its fields; bypass_requested is not type-checked; the stale "no backing table yet" note; a grant carries no organization_id, so org A's grant is accepted against org B's policy.
+   - **0d. FTF-0904 round 7 (tests + spec-matrix only; production is sound).** Work in tests/tasks/test_ftf_0904.py and docs/spec-matrix.yaml only. Claim `relay/FTF-0904-r7`. Verifier findings (694247c, #757: Control-plane correction in place - all 7 `_`/`-`-glued JWT contexts redacted (0/198 leaks vs 126 on round 5); fragment-level long-secret checks, non-vacuous base64, logging-path 256 KB tiers all in place; P1 0/49, P2 0/35, 306 long-secret checks 0 leaks; 3,360 timing runs linear; 4/4 idle runs green):
+     FTF-0904 RETURN -> round 7. Stopping rule (Control plane): with production sound and the class-closing rulings in place, round 7 certifies once these three test items land and no production violation is reproduced; a newly hand-picked variant of a closed class will not block.
+     1. Q-PAIR-KEY-WS-QUAD as named in round 6 (`[(\[]\s*b?` → `[(\[]\s*\s*b?`, > 30 s at 64 KB on `"(" + " "*n`) is still GREEN: the submission filed a different mutation (`[(\[][^'"]*`) under that ID. Add `"(" + " "*(n-1)` and `"[" + "\t"*(n-1)` to the pair sweep at 8K/64K/256K through both paths with absolute bounds, add the named mutation (RED), and keep your `[^'"]*` variant under a new ID.
+     2. Q-JWT-LOWER-IN-LOOP (the `_jwt_start` skip loop re-lowering the segment: 5.3 s text / 23 s logging at 256 KB) is GREEN - no JWT time shape reaches the alnum-skip loop. Add `"aeyJ"*k + ".abcdef.g"` and `"x" + "eyJ"*k + ".abcdef.g"` through both paths; the fault must go RED.
+     3. Set evidence_hash to the round-7 code commit and correct the fault-count note ("was 56", not 52).
+   - **0f. FTF-0517 round 4 (tests + one verify_manifest input fix).** Work in tests/tasks/test_ftf_0517.py and workers/data/group_aware_split_engine.py. Claim `relay/FTF-0517-r4`. Verifier findings (b08a890, #765: V3 and V42 now RED via 3/4-key bridges; str-subclass keys, record_id, seed and []/{}/set preassigned_role refused; 62 of 67 faults RED; mutation 94/94; 336 sparse random graphs on the real code: 0 crossings):
+     FTF-0517 RETURN -> round 4. The class-closing property test cannot fail - every one of its 8 configurations collapses into 1 group and 1 role - so the class is not yet closed:
+     1. Rebuild the property test over a sparse key pool (1,000+ keys) and assert at least 20 groups and at least 2 roles per configuration; on its own it must go RED under V3, V42, N9 (`[1:]`→`[1:3]`), N10 (`[1:]`→`[1:4]`) and N12 (5-key records never unioned). Under N9/N12 178-187 of 200 real-shaped families cross and verify_manifest accepts them.
+     2. N13 (exact-type check on `group_keys[0]` only) is GREEN - a str-subclass key at position 1 splits 181/200 families. Add str-subclass keys at positions 1-4.
+     3. verify_manifest still raises a raw TypeError for `assignments=None` (the round-2 case named in the return), `assignments=5`, entries `5`/`None`, set/bytes fields, and `ratios=None`, from compute_manifest_sha256 before the guard. Validate the structure before hashing → SplitEngineError, with tests.
+     4. N8 (list instead of tuple entry) is GREEN because the case uses all-zero placeholder counts; re-run with consistent counts. Add fault rows for N8, N9, N10, N12, N13.
    - **0i. FTF-1602 round 5 (production + tests).** Work in scripts/object_storage_backup.py, tests/tasks/test_ftf_1602.py and tests/integration/test_ftf_1602_object_storage_backup.py. Claim `relay/FTF-1602-r5`. Verifier findings (947ee2f, #655: the pinned record read refuses every race point tried on real SeaweedFS; sequential backup_id reuse refused; naive/str `now` refused in verify and restore; real SeaweedFS 14/14; uncapped whole-file mutation 405/405; each listed fault must go RED):
      FTF-1602 RETURN -> round 5. Required:
      1. Concurrent create with one backup_id (Law 17): one caller gets a success BackupRecord whose backup is immediately unverifiable on real SeaweedFS (6/6 threaded trials, Q4); SeaweedFS 3.99 does not enforce If-None-Match, so a conditional write is not a fix. Control-plane ruling: `create_backup` generates the backup_id itself (uuid4) and no longer takes it from the caller; if a caller-chosen id is kept anywhere (CLI), give each attempt its own record key and make verify require exactly one record. Real-SeaweedFS test of the Q4a interleaving (B checks the id, A runs in full, B writes): no call returns success for a backup another call can make unverifiable.
@@ -9367,11 +9343,26 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      2. Value normalisers GREEN: V-STRIP (reproduced on the wire: trailing 0x1F/0x1C/0x85 give fingerprint 'dep' instead of None; 'dep-pad   ' loses its trailing spaces) and V-NFKC (NBSP -> 'dep x', U+00AA -> 'depax'). Replace the hand-picked value list with property-generated variants (every Cc/Cf/Z*/isspace code point, NFKC/NFKD look-alikes, latin-1 0x80-0xFF on the wire) at leading/inner/trailing positions asserting None, plus verbatim equality for accepted values.
      3. Name normalisers GREEN at the direct-call level: N-STRIP, N-NFKC (+casefold), N-DROPCF. Add property-generated header-name variants (substitution and insertion of every generated code point, NFKC/NFKD/casefold look-alikes, whitespace, Cf).
      4. The submission says the mutation covered the "whole changed file", but CI ran in diff mode (133 mutants in changed functions, not the 339 whole-file mutants) and no FTF_0616_FULL_SWEEP=1 run is recorded: record the exact commands and counts, and run the uncapped whole-file mutation.
-   - **0k. FTF-0310 round 2 (tests; item (1) waits on FTF-0305-F1).** Work in packages/model-catalog/capability_contract_tests.py, tests/tasks/test_ftf_0310.py, its integration test and the submission. Claim `relay/FTF-0310-r2` after FTF-0305-F1 merges (items 2-3 can start now). Verifier findings (825e826, #738: real resolution across 72 cells on PG16 and CI; 17 extra unresolvable variants, cross-tenant and revoked-connection probes all correct; V1-V7 RED except V3 in integration):
-     FTF-0310 RETURN -> round 2.
-     1. F-LICENSE-EXEMPT: `api_reachable()` exempts exactly the 8 ready + pending/revoked cells, and the submission's claim that this state "needs a direct DB write" is refuted (see FTF-0305-F1). Remove the exemption, assert trainable=false for every ready + pending/revoked cell, and add the interleave as a real-PG test (RED before FTF-0305-F1, GREEN after).
-     2. F-DATETIME: `_datetime_ok` accepts non-RFC 3339 values (naive, hour-only, no seconds, +0000, ISO week date, basic format); faults V8 (naive `evidence.discovery_checked_at`) and V9 (`created_at` without seconds/offset) stay GREEN. Enforce RFC 3339 (full date, T, HH:MM:SS, optional fraction, mandatory Z or +/-HH:MM) and generate naive/no-seconds/basic-format variants for every date-time field; V8/V9 RED.
-     3. Checker: refuse a non-false `additionalProperties` (schema-valued or `true` is silently ignored today) and pre-scan the whole schema for unsupported keywords; read the /changes schema from the frozen path, not an inline copy; generator dedupe must not reuse the checker equality (V3 GREEN in integration); fix the stale docstring.
+   - **IMPORTER ORDER (Control-plane ruling 2026-10-13T21:22Z, binding):** FTF-0502-P1 must be CERTIFIED before any of FTF-0502, FTF-0503, FTF-0504 or FTF-0505 is claimed or merged. #756 (FTF-0502) and #761 (FTF-0503) were built ahead of P1 against their own code catalogs and both returned; open #766 (FTF-0504) must not merge - convert it to draft and rebase it on certified P1. Work P1 (0j) first.
+   - **0b. FTF-0503 JSON importer round 2 (rebuild on FTF-0502-P1; claim only after P1 is CERTIFIED).** Claim `relay/FTF-0503-r2` once P1 certifies, then re-implement against the QUEUE.md "FTF-0503 JSON importer" entry. Verifier findings (396577c, #761: depth handling held; 6 faults RED; it imports the returned FTF-0502 r1 types, not P1):
+     FTF-0503 RETURN -> round 2. Reproduced: whole-document `json.loads` (63 MiB peak 168 MB, 62x vs 1 MiB - not linear); a 4301-digit int crashes the import mid-stream; duplicate keys, NaN, 1e999, lone \ud800 accepted silently; a 3 MiB element accepted and an over-cap document loses every element; content leaks (role text, byte values) in messages; no `$`/`/<key>`/`$record` container mapping; BOM refused, UTF-16/32 not `unsupported_encoding`; no content-type gate, chunk input, ImportReport, Law 17 states or deterministic record_id; limits raisable and loosely typed; source labels reach metadata unmapped. Named faults F2 (split at escaped quote) and F3 (trailing comma) stay GREEN, plus F9/F10. Required: everything in the entry, built on P1 (strict_loads per element, P1 catalog, chunk reader, report), a linear container scanner with a differential test against json.loads, generated/chunk/memory tables, PG16 + SeaweedFS integration through the real FTF-0501 routes in its own CI job, uncapped mutation 0 survivors.
+   - **0j. FTF-0502-P1 round 2 (production + tests; blocks FTF-0502..0505).** Work in workers/data/import_common.py, apps/api/app/datasets/dataset_object_source.py, their tests and the integration test. Claim `relay/FTF-0502-P1-r2`. Verifier findings (3f8ca96, #758: strict_loads, mapping parser, exact role lookup, limits and ChunkReader probes all held; 10 unauthorized-dataset variants on real PG16 + SeaweedFS raise one identical DatasetNotFoundError; storage 403/404/down → blocked; 21 faults RED; production memory 64 MiB vs 1 MiB ratio 0.97):
+     FTF-0502-P1 RETURN -> round 2. Control-plane ruling: the code catalog is the one the FTF-0502..0505 QUEUE entries name; P1 owns it and the importers never edit it.
+     1. CATALOG-NAMES: rename `depth_exceeded` → `nesting_too_deep` and `deadline_exceeded` → `parse_timeout`; add `content_type_not_supported_by_importer`, `record_not_object`, `unsupported_encoding` and every other code the FTF-0502..0505 entries name. Pin the catalog with a test and fault rows.
+     2. STORAGE-ERROR-ESCAPE (reproduced): `_stream` lets `http.client.HTTPException` (IncompleteRead, BadStatusLine) escape raw from `chunks`, and `IncompleteRead.partial` carries object bytes. Wrap every non-UploadStorageUnavailableError into `UploadStorageUnavailableError ... from None`; test a chunked endpoint cut mid-chunk and a bad status line with the META-LEAK helper.
+     3. BOUNDED-RESOURCES: faults FE (ChunkReader keeps every chunk) and FE2 (quadratic re-hash) stay GREEN. Add a tracemalloc test (64 MiB within 1.5x of 1 MiB), a max-size input in 1-byte chunks inside a fixed budget, and 1-byte/7-byte/every-offset ChunkReader tables; FE and FE2 RED.
+     4. INTEGRATION-ROUTES: create the fixture by uploading through the real FTF-0501 routes on uvicorn and finalizing (reuse test_ftf_0501_routes_postgres_s3.py), not via store functions with self-declared hashes; then read it with open_dataset_source.
+     5. Mutation gate 0 survivors with recorded deltas. Optional: lowered max_depth honoured for messages_json cells; preview tells blocked from failed; column letters beyond XFD refused.
+   - **0k. FTF-0502 JSONL importer round 2 (rebuild on FTF-0502-P1; claim only after P1 is CERTIFIED).** Control-plane ruling: the Backlog order FTF-0502-P1 → FTF-0502 is binding; #756 built FTF-0502 first with its own codes and types, pre-empting P1. Claim `relay/FTF-0502-r2` once P1 certifies, then re-implement against the QUEUE.md "FTF-0502 JSONL importer" entry. Verifier findings (0812581, #756: 27/27 mutants killed on the code that exists; no PG16/SeaweedFS path exists to test):
+     FTF-0502 RETURN -> round 2. Required (all reproduced):
+     1. MIDSTREAM-CRASH: a 4301-digit int (ValueError) and a 100,000-deep array (RecursionError) abort the generator and lose every later line. Use P1 strict_loads → number_out_of_range / nesting_too_deep as row rejections.
+     2. Silent acceptance: duplicate key (last wins), NaN/±Infinity/1e999, lone \ud800 import as clean records → duplicate_key / non_finite_number / invalid_unicode.
+     3. META-LEAK: QuarantinedRow.message carries FTF-0506 text with record content and UnicodeDecodeError byte values. Closed codes plus structural locators only, raised `from None`.
+     4. Law 17: a source ConnectionResetError propagates raw after earlier records were yielded as final; no ImportReport and no blocked/source_unavailable, source_changed, parse_timeout, too_many_rejections.
+     5. Bounded memory: input is pre-split lines, not chunks; a 64 MiB over-cap line peaks at 136 MB. Consume P1's chunk reader; tracemalloc 64 MiB vs 1 MiB within 1.5x; 1-byte and 7-byte chunk-boundary tables.
+     6. Contract signature: verified_content_type (refuse a non-JSONL dataset before reading a byte), sha/size, mapping → FTF-0508 candidate, validate_record_batch, deterministic record_id.
+     7. Line rules: BOM at byte 0 accepted; UTF-16 fatal unsupported_encoding; strip exactly one trailing CR; blank lines counted in blank_lines, not rejected. Faults F3 (CR left), F4 (mid-file BOM accepted), F7 (trailing garbage accepted) must go RED.
+     8. Evidence: generated tables, the PG16 + SeaweedFS integration test through the real FTF-0501 routes in its own CI job inside ci-verdict (add a per-item job; do not add steps to `gate`), mutation 0 survivors.
    - **0o.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
      (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613, FTF-1305, FTF-0308, FTF-0602, FTF-0901 and FTF-1706 are CERTIFIED (2026-10-07/08); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
@@ -9585,7 +9576,7 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
     language/group fields that §68.2/§69.2 and FTF-0602 need, so they are added; the live error convention is
     `{"detail": code}`, not §40's envelope; FTF-0501's "resumable UI" clause is not in its file list and stays with
     FTF-0501's own refinement.
-- FTF-0305-F1, FTF-0310, FTF-H010-P3a, FTF-0616-F1, FTF-0516, FTF-0517, FTF-1206, FTF-1602 and FTF-0904 are returned work in item 0 above.
+- FTF-0502-P1, FTF-0502, FTF-0503, FTF-H010-P3a, FTF-0616-F1, FTF-0517, FTF-1602 and FTF-0904 are returned work in item 0 above.
 - **FTF-0501-UI Resumable dataset upload UI** (child slice of FTF-0501; Control-plane design 2026-10-08T17:00Z; §8.1, §67.1 "Multipart resumable upload", §72.2; deps FTF-0501 round 2 API). DoD: `tools/r1_handoff.py packet FTF-0501`, "resumable UI" clause.
   A real file picker in apps/web on the five FTF-0501 routes (create session, part grants, list parts, finalize, read): dataset purpose, per-part progress, pause/resume after a page reload or network drop by listing uploaded parts and re-requesting only missing part URLs, and the typed finalize outcome (accepted, 409 incomplete, 410 expired, 422 hash/type/size, 503 storage outage) shown as visible states - never a fake success (Law 17).
   No secrets, part URLs or file bytes in localStorage (§72.2); presigned URLs are held in memory only.
@@ -10213,6 +10204,415 @@ docs/spec-matrix.yaml. It never invents criteria.)
   - Deterministic negative schema table: for each frozen response schema, a generated case per required field missing, per enum value outside the enum (including case/whitespace variants), per wrong JSON type, and an extra property where `additionalProperties: false` - the checker must reject each. A generated table, not hand-picked cases (FTF-0616 lesson).
   - Faults that must go RED: a source variant dropped from the matrix; the checker accepting an extra property; enum check casefolded; trainable allowed for an upstream-only model (mutate the real router); revoked license ignored; the schema loaded from a copy instead of the frozen file.
   - Must not edit the certified FTF-0301/0307/0309-P1 modules or the frozen contracts; a found contract mismatch is reported as a finding, not fixed in place. proving_symbol stays blank (test-only task).
+
+- **Dataset importer family FTF-0502..0505 + common slice FTF-0502-P1** (Control-plane design 2026-10-13; FINE_TUNING_FACTORY_RELEASE_1.md §7, §7A.10, §8–8.2, §9, §10, §67.1–67.5, §77, §81; FTF-0501 CERTIFIED 2026-10-10 (#692 + #736, merge 41904e5) made all four dependency-ready; FTF-0500, FTF-0506 and FTF-0508 CERTIFIED). Contract per task: `python tools/r1_handoff.py packet <ID> --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Contract owner FTF-0500: read `packages/contracts/openapi/05-interface.yaml` and `jsonschema/05-domain.schema.json`, and add no path. FTF-0502-P1 refines FTF-0502 under "For each card" step (3). It adds no criteria: the denominator stays 302 and no ADR applies.
+  - Order (one lane): FTF-0502-P1 → FTF-0502 → FTF-0504 → FTF-0503 → FTF-0505. With more lanes, the importers run in parallel after P1 (no shared write set).
+  - Common rules (every item in this family):
+    - Path refinement, recorded: the packet's `services/training-worker/data/<x>.py` becomes `workers/data/<x>.py`, the real SOURCE_ROOT (FTF-0506/0508 precedent).
+    - No migration, route, UI, contract edit, runtime dependency, secret or keyed service. Stdlib only: `json`, `csv`, `codecs`, `zipfile`, `xml.parsers.expat`, `hashlib`, `tempfile`.
+    - Reuse, do not re-implement:
+      - FTF-0506 `normalize_conversation` (the only place a record becomes canonical);
+      - FTF-0508 `MAX_CANONICAL_RECORD_BYTES` (2 MiB, §67.3) and its candidate shape (`validate_record_batch` must report 0 issues on every accepted candidate);
+      - P1's `import_common` (limits, mapping, chunk reader, report, codes);
+      - FTF-0501's `S3Client.stream_object` through P1's `open_dataset_source`.
+      - An importer may not edit `import_common.py`. A needed change is a serialized edit that re-runs every landed importer suite (Law 15).
+    - Importers never read anything but the chunk iterable they are given. No listing, no other dataset, no file path from a mapping, no network: `sys.addaudithook` sees no `socket.*`, `subprocess.*`, `os.system`, `exec` or `import` of data during an import. Only XLSX opens one anonymous `tempfile.TemporaryFile`.
+    - Importer choice is by the session's server-verified content type (§8.1 step 3), never by file name. Each importer refuses a dataset whose `verified_content_type` is not its own, with `content_type_not_supported_by_importer`, before reading a byte. Test: the 5 `SUPPORTED_CONTENT_TYPES` × 4 importers.
+    - Law 17:
+      - A chunk-source exception (storage outage, connection reset) gives report state `blocked`, `source_unavailable`.
+      - A recomputed source sha256 ≠ `Dataset.verified_sha256`, or more bytes than `verified_size_bytes`, gives `failed`, `source_changed`.
+      - The deadline gives `failed`, `parse_timeout`.
+      - More than `max_rejections` rejected rows gives `failed`, `too_many_rejections`.
+      - In each case no record is usable: the contract is that records are provisional until the final report says `completed`, and the tests assert the consumer gets no `completed` report.
+    - Refuse, never truncate (§67.2 "Field truncation ... forbidden", §67.3 "Bound ... record bytes and nesting"). An oversized record or field is a row rejection or a fatal error. It is never cut, padded or coerced.
+    - No type inference anywhere: every cell or field is kept as the exact source string unless the mapping explicitly applies `json_parse`. Arabic, RTL marks, combining marks, ZWJ/ZWNJ and emoji are kept byte-exact (no NFC/NFKC/casefold/strip).
+    - Never sets or changes purpose:
+      - The report copies `dataset_purpose` from the Dataset row.
+      - No mapping slot can set a purpose. A data field named `purpose`, `split` or `heldout` is never read unless it is mapped as a plain metadata label.
+      - No label is invented: an unmapped `quality_label` is absent, never `approved` (§9 "Preassigned evaluation-only data cannot be reclassified into training by an import heuristic", §67.2).
+    - Content-free errors (META-LEAK):
+      - Reports, rejections and exceptions carry only a code from P1's closed catalog, the mapping slot name from a closed set, and importer-generated structural locators (1-based line / row / element / sheet index, column letters, byte offset). They never carry a header text, sheet name, JSON key, value or a FTF-0506 exception message (its messages can echo data, e.g. `unmapped role {role!r}`).
+      - Exceptions are converted with `raise ... from None`.
+      - One shared META-LEAK check (P1's test helper) runs over `traceback.format_exception` of every raised error (cause, context, notes, args), every report and rejection field, and captured log records, with markers planted in contents, headers, keys, sheet names and file bytes.
+    - Generated tables, not hand-picked cases:
+      - stdlib generators with a fixed seed plus exhaustive `itertools.product` over the axes named per item;
+      - chunk-boundary independence: every input in the tables is also fed in 1-byte and 7-byte chunks, and split at every byte offset for inputs ≤ 4 KiB. The candidates and `report_sha256` must be identical.
+      - Host-dependent behaviour (`csv`, `expat`, `zipfile`) is pinned by tests that the verifier repeats on Python 3.12 (PRE-SUBMIT SELF-ATTACK, neutral host).
+    - Bounded resources:
+      - `tracemalloc` peak for a 64 MiB input stays within 1.5× the peak for a 1 MiB input with the same maximum record size (memory independent of file size);
+      - a maximum-size record fed in 1-byte chunks finishes inside a fixed budget (no quadratic rescans);
+      - every limit is tested at max−1 / max / max+1 without overriding the production constants.
+    - Real integration (each item adds its own additive ci.yml job plus verdict `needs`, following `direct-upload-routes-integration`):
+      - PG16 as `sovra_app` (never the migration owner) plus live SeaweedFS (the test boots the compose `s3` service itself, the `s3lab` precedent).
+      - The fixture file is uploaded through the real FTF-0501 routes on uvicorn and finalized into a real Dataset. It is opened through `open_dataset_source` and imported, and every accepted candidate passes FTF-0508 `validate_record_batch` with 0 issues.
+      - Mid-stream outage (`s3lab.compose("stop","s3")`, the 0501 precedent, or a truncating TCP relay) → `blocked`.
+      - Foreign-org dataset → identical to a missing one.
+      - Held-out dataset not readable with `include_held_out=False`.
+    - Every DoD bullet has its own behavioural fault→RED row. Uncapped mutation gate at 0 survivors over each new module. PRE-SUBMIT SELF-ATTACK and SAME-CLASS SWEEP across the sibling importers.
+    - Disclosed, every item:
+      - UNWIRED: no route, dispatcher or activity calls the importers (durable dispatch FTF-0801/H016; persistence and the detector run are the proposed FTF-0502-P2; the MappingSpec UI is FTF-H011). `proving_symbol` stays blank.
+      - "Parse in isolated worker" / "resource-limited worker" (§8.1 step 5, §67.3) is a deployment property not proven here.
+  - **FTF-0502-P1 Dataset import common contract and verified-source reader (pure + one read-only DB/S3 function; ready now)** (§7, §8.1 steps 1–7, §9, §67.2, §67.3; deps FTF-0500, FTF-0501, FTF-0506, FTF-0508, all CERTIFIED; no lock beyond its own write set).
+    - Files:
+      - `workers/data/import_common.py` (pure, stdlib);
+      - `apps/api/app/datasets/dataset_object_source.py` (read-only);
+      - `tests/tasks/test_ftf_0502_p1.py`;
+      - `tests/tasks/import_test_support.py` (shared generators + META-LEAK checker, reused by 0502–0505);
+      - `tests/integration/test_ftf_0502_p1_dataset_source_postgres_s3.py`;
+      - additive ci.yml job `dataset-import-source-integration` + verdict `needs`.
+    - `import_common.py` provides:
+      - `ImportLimits` (frozen):
+        - `max_source_bytes` = 10 GiB (§67.3);
+        - `max_record_bytes` = FTF-0508 `MAX_CANONICAL_RECORD_BYTES` (import it; do not re-declare);
+        - `max_depth` = 64;
+        - `max_rejections` = 10,000;
+        - `preview_max_records` = 20 (§67.3 "preview max20");
+        - `deadline_seconds`.
+        - A caller may lower a limit and never raise one above the default: a higher value raises, because §67.3 says larger limits need "capability/load evidence".
+      - `parse_mapping(document: str) -> ImportMapping`, the single MappingSpec parser (H011 must reuse it):
+        - plain JSON: duplicate keys refused, NaN/Infinity/`1e999` refused;
+        - exact types (`type(x) is str/int/bool/dict/list`, no subclasses or caller objects);
+        - an exact allow-list per shape, with `mapping_sha256` over canonical JSON.
+        - Shapes:
+          - `messages`: a JSON pointer (RFC 6901, exact keys, `~0`/`~1`, decimal indices without leading zeros) to a messages array; explicit per-message key names for role/content/tool_calls/tool_call_id/name; an explicit `role_map` of exact str → FTF-0506 `ALLOWED_ROLES`; and a required `on_unmapped_message_keys ∈ {reject, ignore}` with no default.
+          - `prompt_completion`: required `prompt`/`completion` slots and an optional `system`. Produces `[system?, user, assistant]`.
+          - `messages_json`: one field/column holding a JSON messages array, parsed strictly. This is how tabular sources carry tool calls.
+        - Optional slots: `group_key`, and `metadata` with closed keys {`language`, `task_category`, `consent`, `quality_label`, `source_record_id`, `event_timestamp`}. `event_timestamp` must be ISO 8601 with an offset, and the source string is kept as-is.
+        - Format blocks: `csv` {encoding, delimiter, has_header, header_row}, `xlsx` {sheet_name, header_row}, `json` {container, ignored_top_level_keys}.
+        - Tabular slots address a column by exact header text or by 0-based index / column letters.
+        - Grouped multi-row conversations → `mapping_unsupported` (disclosed).
+      - `apply_mapping` builds the raw record. Missing required slot → `required_field_missing`; empty string in a required tabular slot → `required_field_empty`; wrong type → `mapping_type_mismatch`; role not in `role_map` → `unmapped_role`. An empty optional slot is omitted and never defaulted.
+      - `normalize_mapped_record` calls FTF-0506 `normalize_conversation(source_type, source_record_index, raw_record, tool_schemas, tool_argument_validator, group_key, record_id)`:
+        - `record_id` = uuid5(fixed namespace, `dataset_sha256:mapping_sha256:index`), so it is deterministic and content-free.
+        - `ConversationNormalizationError` → `canonical_schema_invalid`, plus at most the message index parsed from the structural `messages[N]` prefix.
+      - `to_dataset_record_candidate` builds the §6.11 candidate exactly as FTF-0508 accepts it: `record_index` (0-based source ordinal, counting rejected rows and not blank lines), `schema_version`, `source_type`, `content`, `record_sha256` = lineage.raw_sha256, `normalized_sha256` = canonical_hash, `quality_status="pending"`, `pii_status="unscanned"`, `tool_schema_status ∈ {not_applicable, valid}`.
+      - `strict_loads(data, *, max_depth)`:
+        - a linear depth pre-scan outside strings before `json.loads` (no `RecursionError` path);
+        - duplicate keys → `duplicate_key`;
+        - NaN/Infinity, and floats that overflow to inf → `non_finite_number`;
+        - an int over CPython's digit limit → `number_out_of_range`;
+        - a lone surrogate after decoding → `invalid_unicode`.
+        - The rules are the same as FTF-0607 `parse_strict_json`, but that module is not imported: it lives in a separate deployable (`workers/evaluation`). Record this.
+      - `ChunkReader`:
+        - wraps `Iterable[bytes]`, computes sha256 and the byte count, and enforces `expected_size`/`max_source_bytes`;
+        - converts any exception raised by the source iterator into `blocked` / `source_unavailable` (never `completed` or `failed`);
+        - checks the deadline;
+        - at end of stream compares to `expected_sha256` and gives `source_changed` on a mismatch.
+      - The report and events:
+        - `RowRejection(locator, code, slot)`.
+        - `ImportReport(state ∈ {completed, failed, blocked}, failure_code, importer, importer_version, mapping_sha256, dataset_purpose, expected_sha256, source_sha256, source_bytes, source_schema_sha256 | None, records_seen, records_accepted, records_rejected, blank_lines, rejection_counts, rejections, report_sha256)`.
+        - Invariant: `records_seen == records_accepted + records_rejected`.
+        - `report_sha256` covers canonical JSON of every field except itself.
+        - `REJECTION_CODES` and `FAILURE_CODES` are closed frozensets. A test asserts every code any module emits is in the catalog.
+      - `preview(events, limit)` with `limit ≤ preview_max_records` (21 raises). It uses the same code path as a full import.
+    - `dataset_object_source.py`: `open_dataset_source(session, context, *, project_id, dataset_id, include_held_out, storage)` (keyword-only, `include_held_out` has no default) → `DatasetObjectSource(dataset_id, purpose, source_type, verified_content_type, expected_sha256, expected_size, chunks)`.
+      - It loads the Dataset through FTF-0501-P1 `get_dataset`, so foreign, missing and hidden-held-out all raise the same `DatasetNotFoundError`. It then loads the dataset's own upload session row and its `object_key`, as `sovra_app` under the tenant context.
+      - It streams only that key with `S3Client.stream_object`. There is no listing call, and no caller string reaches storage.
+      - Storage errors surface from the iterator as FTF-0501's `UploadStorageUnavailableError` (content-free).
+      - It never returns the key and never writes.
+    - DoD tests:
+      - Pure:
+        - strict mapping-parse table: for every allow-listed key, each of missing, extra, int-for-str, bool-for-int, float, null, list, nested object, duplicate key, NaN and a str subclass → `mapping_invalid`;
+        - JSON-pointer table (escapes, leading-zero index, `-`, empty token, non-ASCII keys exact);
+        - `role_map` exactness, using property-generated Unicode variants (reuse the FTF-0616 round-8 generator) of `user`/`assistant`, none of which is accepted;
+        - limits table (lower accepted, higher refused, max−1/max/max+1);
+        - `strict_loads` table (depth 63/64/65 and 100,000; duplicate keys at every level; NaN/±Infinity/1e999/-1e999; 4300/4301-digit ints; lone and paired surrogate escapes);
+        - ChunkReader table (exact size; size+1; sha mismatch at the last byte; the iterator raising at chunk 0, mid-stream and at the end; deadline);
+        - candidate table (every accepted candidate passes `validate_record_batch` with 0 issues);
+        - determinism across runs and `PYTHONHASHSEED`;
+        - META-LEAK with markers in values, keys and FTF-0506 messages.
+      - Integration (PG16 as `sovra_app` + SeaweedFS, real FTF-0501 routes):
+        - streamed bytes hash to `Dataset.verified_sha256`;
+        - foreign-org and foreign-project dataset raise exactly the missing error;
+        - a held-out dataset is refused with `include_held_out=False` and readable with `True`;
+        - a request counter on the S3 client shows exactly one GET of the session key and no LIST;
+        - a mid-stream stop of `s3` → `UploadStorageUnavailableError` → ChunkReader `blocked`.
+    - Faults that must go RED:
+      - duplicate keys accepted (mapping or `strict_loads`);
+      - 1e999 accepted;
+      - the depth pre-scan removed;
+      - a limit raisable above its default;
+      - sha mismatch → completed;
+      - a source exception → completed or failed (must be blocked);
+      - deadline ignored;
+      - `too_many_rejections` → completed;
+      - the FTF-0506 message copied into a rejection;
+      - a data `purpose`/`split` field read;
+      - `quality_label` defaulted;
+      - `record_id` from uuid4 (report sha unstable);
+      - the role map compared after casefold/strip/NFKC;
+      - `include_held_out` given a default of True;
+      - the reader lists the bucket or accepts a caller key;
+      - a foreign dataset distinguishable from a missing one;
+      - `from None` removed.
+  - **FTF-0502 JSONL importer** (§7, §8.1, §67.2, §67.3; packet acceptance "Stream JSONL per record and report exact row/schema failures with bounded memory"; negative "Malformed UTF-8/line, huge record and mixed critical schemas produce quarantine/errors, not silent loss"; deps FTF-0500/0501/0506 CERTIFIED + FTF-0502-P1).
+    - Files:
+      - `workers/data/jsonl_importer.py`;
+      - `tests/tasks/test_ftf_0502.py`;
+      - `tests/integration/test_ftf_0502_jsonl_import_postgres_s3.py`;
+      - ci.yml job `jsonl-import-integration` + verdict `needs`.
+    - `import_jsonl(chunks, *, mapping, expected_sha256, expected_size, verified_content_type, dataset_purpose, source_type, limits, tool_schemas, tool_argument_validator)` yields accepted candidates and `RowRejection`s, and finally one `ImportReport`. Accepted types: `application/jsonl` and `application/x-ndjson` only.
+    - Line rules:
+      - Only LF delimits; one trailing CR before LF is removed. U+2028/U+2029 inside strings are not delimiters.
+      - A UTF-8 BOM is accepted only at byte 0 of the file. A BOM anywhere else → `invalid_json`.
+      - UTF-16/32 (BOM or NUL pattern) → fatal `unsupported_encoding`.
+      - A whitespace-only line counts in `blank_lines` and is not a record.
+      - Each line is decoded as strict UTF-8 on its own. A bad line → `invalid_utf8` and the next line still imports.
+      - Each line must be exactly one JSON object through P1 `strict_loads`. Otherwise `record_not_object` / `invalid_json` / `duplicate_key` / `non_finite_number` / `nesting_too_deep` / `invalid_unicode`.
+      - A line longer than `max_record_bytes` → `record_too_large`. Its bytes are discarded up to the next LF without buffering, and the following lines continue.
+      - The line buffer keeps a scan offset: no rescan from the start and no `buf += chunk` quadratic growth.
+    - Mixed critical schemas (negative acceptance): lines that map, lines missing required slots, unmapped roles, non-objects and invalid canonical records interleave. Each gets its code and locator. The `records_seen` invariant and per-code counts are exact, and nothing is dropped silently.
+    - Generated tables:
+      - invalid-UTF-8 classes × position in the line (start/middle/end/split across a chunk): overlong, encoded surrogate `ED A0 80`, truncated multibyte, `FF`/`FE`, CESU-8, stray continuation;
+      - line-ending axis: LF / CRLF / no final newline / CR-only / mixed / blank / whitespace-only;
+      - BOM position axis;
+      - size axis: max−1 / max / max+1 / 64 MiB, delivered in 1-byte chunks;
+      - depth axis;
+      - duplicate-key-at-depth axis;
+      - number axis: NaN, ±Infinity, 1e999, 4301 digits;
+      - non-object axis: array, string, number, null, true;
+      - trailing-garbage axis: `{}{}`, `{} x`, `{}\u0000`;
+      - an Arabic/RTL/emoji/ZWJ/formula-prefix content table, preserved byte-exact in the canonical content.
+    - Faults that must go RED:
+      - the line cap off by one;
+      - an unbounded buffer (memory test);
+      - a quadratic rescan (1-byte-chunk budget);
+      - an oversized line swallowing the following lines;
+      - one bad UTF-8 line failing the whole file;
+      - a mid-file BOM accepted;
+      - CR left in the record;
+      - blank lines not counted;
+      - a non-object accepted;
+      - trailing garbage accepted;
+      - the invariant broken (a rejected row not counted);
+      - the content-type check removed (a CSV dataset parsed as JSONL);
+      - decoding with `errors="replace"`.
+  - **FTF-0504 CSV importer** (§8.1, §67.2 "Select sheet/header/encoding/delimiter", §67.3 "Spreadsheet/CSV exports neutralize formula execution without mutating canonical training content"; packet acceptance "Use explicit header/encoding/delimiter/column mapping; preserve strings, IDs and Arabic text"; negative "CSV formula text is not evaluated; leading-zero identifiers and quoted multiline fields remain intact"; deps FTF-0500/0501/0506 + FTF-0502-P1).
+    - Files:
+      - `workers/data/csv_importer.py`;
+      - `tests/tasks/test_ftf_0504.py`;
+      - `tests/integration/test_ftf_0504_csv_import_postgres_s3.py`;
+      - ci.yml job `csv-import-integration` + verdict `needs`.
+    - Accepted type: `text/csv` only.
+    - Everything is explicit, with no `csv.Sniffer` and no guessing:
+      - `encoding` ∈ {`utf-8`, `utf-8-sig`, `utf-16-le`, `utf-16-be`, `windows-1256`}, decoded strictly. A decode error is fatal `invalid_encoding` with the physical line, because the reader cannot resync. A UTF-8 BOM under `utf-8` → fatal `unexpected_bom` (choose `utf-8-sig`).
+      - `delimiter` ∈ {`,`, `;`, `\t`, `|`}; `quotechar` `"`; `strict=True`; `newline=''`.
+      - `has_header` and `header_row` are explicit. Columns match header text exactly: no strip, casefold or NFC; two headers differing only in case or whitespace are distinct. A duplicate header → fatal `duplicate_header`; a mapped column missing → fatal `mapping_column_missing`.
+      - Disclosed: through upload only UTF-8 CSV passes FTF-0501's sniff today.
+    - Row rules:
+      - Field count ≠ header count → `column_count_mismatch`; the row is never padded or cut.
+      - `[]` (a blank line) counts in `blank_lines`.
+      - A NUL in a mapped field → `nul_character`. Python 3.11's `csv` accepts NUL, so the importer checks it.
+      - `field_size_limit` = `max_record_bytes`; exceeding it → fatal `field_too_large`.
+      - An unterminated quote at EOF → fatal `csv_structure_invalid`.
+      - More than 16,384 columns → fatal `too_many_columns`.
+      - The locator is the logical record number plus the starting physical line (`reader.line_num`), never header text.
+    - Preservation: every field stays the exact decoded str, with no type inference.
+      - Leading zeros, `-0`, `1e5`, `0x1F`, Arabic-Indic digits, `TRUE`, `NaN` and ` 12 ` survive.
+      - Quoted multiline fields keep their exact embedded CRLF / LF / CR.
+      - Formula-looking text (`=`, `+`, `-`, `@`, leading TAB/CR, full-width `＝`, the DDE `=cmd|' /C calc'!A0`) is kept byte-exact in the canonical content and never evaluated (audit hook: no subprocess, no socket).
+      - Export neutralization is the export task's job, not the importer's.
+      - The source schema digest is sha256 over the exact header cells, in order.
+    - Generated tables:
+      - encoding × Arabic/RTL/combining/emoji corpus (round-trip byte-exact);
+      - a wrong declared encoding for each encoding's bytes;
+      - delimiter × quoting (a field containing the delimiter, a doubled quote, CR, LF, CRLF) × line ending (LF/CRLF/CR);
+      - a header table (duplicates, case/whitespace/NFC variants, a missing mapped column);
+      - a ragged-row table;
+      - the preservation table above × column position;
+      - a formula-prefix table × quoted/unquoted;
+      - a size table (field max−1/max/max+1; 1-byte chunks).
+    - Faults that must go RED:
+      - the delimiter or encoding guessed (Sniffer or a fallback);
+      - any int/float/bool conversion;
+      - a formula prefix stripped, escaped or quoted in the canonical content;
+      - embedded CRLF normalized;
+      - the header matched after strip or casefold;
+      - a duplicate header accepted;
+      - a ragged row padded or truncated;
+      - `errors="replace"`/`"ignore"`;
+      - a BOM silently accepted under `utf-8`;
+      - the field-size cap removed;
+      - NUL dropped silently;
+      - the physical line number off by one in a multiline record.
+  - **FTF-0503 JSON importer** (§7, §8.1, §67.3 "oversized nested JSON"; packet acceptance "Parse approved JSON conversation/container structures into canonical records without loading unbounded file"; negative "Deep nesting, malformed objects and unsupported structures fail with actionable mapping errors"; deps FTF-0500/0501/0506 + FTF-0502-P1).
+    - Files:
+      - `workers/data/json_importer.py`;
+      - `tests/tasks/test_ftf_0503.py`;
+      - `tests/integration/test_ftf_0503_json_import_postgres_s3.py`;
+      - ci.yml job `json-import-integration` + verdict `needs`.
+    - Accepted type: `application/json` only.
+    - Approved containers are named explicitly in the mapping:
+      - `"$"`: a root array of records;
+      - `"/<key>"`: exactly one key of the root object holding the array. Every other root key must be listed in `ignored_top_level_keys`, else fatal `unmapped_top_level_key`. Each ignored value is scanned, bounded by `max_record_bytes` and the depth limit, and not retained.
+      - `"$record"`: a root object that is one record (≤ `max_record_bytes`).
+      - Anything deeper or different → `mapping_unsupported`.
+    - Streaming (no whole-document `json.loads`): a linear byte scanner tracks string, escape and depth state and splits the container's elements.
+      - Each element is ≤ `max_record_bytes` and parsed with P1 `strict_loads`.
+      - An oversized element is skipped by scanning, without buffering, and rejected as `record_too_large`; the next element continues.
+      - Element-level errors (duplicate key, NaN, invalid unicode, not an object, canonical schema) are row rejections with the element ordinal.
+      - Structure errors are fatal with the byte offset: trailing comma, missing comma, unbalanced bracket, a bad token between elements, a root scalar, the container not found or not an array, a duplicate root key, trailing data after the root, depth > `max_depth`.
+      - Actionable means the code plus the mapping's own container pointer; never document content.
+      - UTF-8 only (BOM at byte 0 allowed); UTF-16/32 → `unsupported_encoding`.
+      - An empty container → `completed` with 0 records (honest; split gates handle size).
+    - Generated tables:
+      - a seeded random JSON document generator (strings with escaped quotes, backslashes, brackets and braces inside strings, `\u` escapes, surrogate pairs, every whitespace kind between tokens, nested arrays/objects up to the depth limit) for a differential test: for every valid document, scanner elements + `strict_loads` equal `json.loads(whole)[container]` element by element, and every mutated invalid document fails in both;
+      - container × shape table (root array; mapped key with ignored siblings; unmapped sibling; duplicate root key; container not an array; `$record`; scalar root; nested container pointer);
+      - depth 63/64/65/100,000 inside and outside the container;
+      - element size max−1/max/max+1 in 1-byte chunks;
+      - memory: peak for a 64 MiB container stays within 1.5× of a 1 MiB one.
+    - Faults that must go RED:
+      - a split inside a string at an escaped quote;
+      - the depth bound off by one;
+      - a trailing comma accepted;
+      - an oversized element buffered (memory test) or ending the import;
+      - an unmapped root key accepted;
+      - a duplicate root key accepted;
+      - whole-document `json.loads` used (memory test);
+      - the differential test mismatch;
+      - a container pointer resolved after casefold;
+      - an empty container reported as `failed` or invented records.
+  - **FTF-0505 XLSX importer** (§8.1, §67.2, §67.3 "Quarantine malformed archives, zip bombs, path traversal, entity expansion ... XLSX support is values-only: no macro execution/external link retrieval; reject or surface formulas instead of trusting stale cached values"; packet acceptance "Read XLSX sheets/columns through explicit UI mapping without evaluating formulas/macros"; negative "ZIP/XML bombs, encrypted/unsupported workbook, formula-only critical data and excessive cells fail safely"; deps FTF-0500/0501/0506 + FTF-0502-P1).
+    - Files:
+      - `workers/data/xlsx_importer.py`;
+      - `workers/data/ooxml_safety.py` (pure archive/XML safety primitives, public);
+      - `tests/tasks/test_ftf_0505.py`;
+      - `tests/integration/test_ftf_0505_xlsx_import_postgres_s3.py`;
+      - ci.yml job `xlsx-import-integration` + verdict `needs`.
+    - Accepted type: the XLSX content type only.
+    - Reuse: port FTF-0501's checks into `ooxml_safety.py` (end-of-archive totals before `zipfile` allocates; ≤ 10,000 entries; directory ≤ 4 MiB; `[Content_Types].xml` ≤ 1 MiB; DOCTYPE refused at the expat parser in every encoding; traversal/absolute/backslash names).
+      - Do not edit `direct_object_storage_upload.py`. A drift test imports both modules and pins the bounds equal.
+      - Reuse FTF-0501's malicious-package fixture builders (`tests/tasks/test_ftf_0501.py` `_zip`, `_xlsx`, `_zip64_tail`) by import.
+      - Follow-up FTF-0501-F1 (Control plane) moves `inspect_xlsx` onto `ooxml_safety`.
+    - Reading:
+      - The chunks are spooled to one anonymous `tempfile.TemporaryFile` (mode 0600, deleted on close; never a named path) while ChunkReader hashes them. Bytes beyond `expected_size` → `source_changed`.
+      - `zipfile` opens the archive only after the sha matches.
+      - Every XML part is parsed incrementally with expat: a DOCTYPE handler refuses; parameter entity parsing is NEVER; there is no external entity resolution.
+      - Decompressed bytes are counted per part and in total against caps, and the counts are never trusted from the directory.
+      - Part names are compared case-insensitively for duplicates (OPC part names are case-insensitive) → `unsafe_archive`.
+      - An encrypted entry flag or compression other than stored/deflate → `unsupported_workbook`.
+    - Workbook refusals (fatal, before any cell is read):
+      - an OLE/CFB container (encrypted/password workbook) or a non-zip → `unsupported_workbook`;
+      - strict OOXML namespaces, a template or a non-`sheet.main+xml` workbook type → `unsupported_workbook`;
+      - `xl/vbaProject.bin`, `activeX`, `embeddings`, or any macro-enabled type, even inside an `.xlsx`-typed package → `unsafe_workbook`. FTF-0501 finalize does not catch these today (Decision 8).
+      - `xl/externalLinks/*`, any relationship with `TargetMode="External"` (workbook or sheet rels), `xl/connections.xml` or query tables → `external_link_present`, never retrieved.
+    - Sheet selection:
+      - The mapping's `sheet_name` matches the workbook's `<sheet name>` exactly.
+      - Names equal after casefold (impossible in Excel, so crafted) → `duplicate_sheet_name`.
+      - A hidden or veryHidden sheet is used only when named explicitly, never chosen automatically.
+      - The sheet target resolves through the workbook rels inside `xl/`. Traversal, an absolute path or an external target → `unsafe_archive`.
+    - Cells:
+      - `<f>` present (including a shared `<f t="shared" si=".."/>` with no text, and array formulas) in a mapped column → row rejection `formula_cell`. The cached `<v>` is never used, and `t="str"` counts as a formula result.
+      - `t="s"` takes the shared string by index; an index out of range or not an int → fatal `xlsx_malformed`.
+      - Rich-text runs are concatenated exactly; `<rPh>` is excluded.
+      - ECMA-376 `_xHHHH_` escapes are decoded (`_x005F_` → `_`).
+      - `t="inlineStr"` is used as-is. `n`, `b` and `d` keep the literal `<v>` text (no float conversion and no date-serial interpretation, disclosed). `t="e"` in a mapped column → `cell_error_value`.
+      - Rows and cells must strictly increase by `r` (implicit refs allowed). A duplicate or decreasing ref → fatal `xlsx_malformed`.
+      - The header row is explicit; a duplicate header → fatal `duplicate_header`.
+      - Merged ranges hold a value only in the top-left cell, so a missing required value → `required_field_empty`.
+    - Bounds (refuse, never truncate):
+      - row > 1,048,576 or column > XFD → fatal `sheet_out_of_bounds`;
+      - cells read > `max_cells` → fatal `too_many_cells`;
+      - sharedStrings decompressed > its cap (default 256 MiB, recorded as the job memory quota; raising it needs load evidence) → fatal `limit_exceeded`;
+      - any cell > `max_record_bytes` → `field_too_large`.
+      - The dimension `ref` is ignored (untrusted).
+      - The source schema digest is sha256 over the sheet index plus the exact header cells.
+    - Generated fixtures: stdlib `zipfile` + XML strings only. No openpyxl (not a dependency, and adding one is an ask-first item).
+    - Generated tables:
+      - cell type {s, inlineStr, str, n, b, e, d, none} × formula {none, normal, shared-empty, array} × column {mapped, unmapped};
+      - shared strings (plain, rich runs, `rPh`, `xml:space`, `_xHHHH_` incl. `_x000D_`/`_x005F_`, index −1/0/last/last+1/non-int);
+      - an archive-attack table (zip bomb past the caps; the 10,001-entry zip64 tail; a 4 MiB+1 directory; DOCTYPE/ENTITY in a sheet / sharedStrings / rels in UTF-8 and UTF-16; case-insensitive duplicate part; traversal/absolute/backslash sheet targets; an encrypted entry; an unsupported compression method);
+      - a workbook-type table (CFB/encrypted, strict OOXML, template, macro-enabled type, vbaProject in a plain package, activeX, embeddings);
+      - an external-link table (externalLinks part, an External rel in the workbook and in sheet rels, connections.xml);
+      - a sheet table (exact/case-variant name, hidden, veryHidden, missing, duplicate);
+      - a bounds table (row 1,048,576/1,048,577; column XFD/XFE; cells max−1/max/max+1; sharedStrings cap ±1);
+      - preservation (Arabic, RTL, leading zeros in text cells, formula-looking plain strings preserved, not rejected).
+    - Faults that must go RED:
+      - the cached `<v>` used for a formula cell;
+      - a shared empty `<f/>` treated as a value;
+      - vbaProject accepted in a plain package;
+      - an External rel or connections.xml accepted;
+      - DOCTYPE accepted in a sheet part;
+      - the case-insensitive duplicate check removed;
+      - a traversal sheet target followed;
+      - strict OOXML parsed as transitional;
+      - each bound off by one;
+      - a shared-string index out of range read as an empty string;
+      - `_xHHHH_` not decoded, or decoded twice;
+      - a hidden sheet chosen automatically;
+      - the sheet matched after casefold;
+      - the sharedStrings cap removed;
+      - an error cell imported as text;
+      - the spool accepting bytes beyond `expected_size`;
+      - the end-of-archive pre-check removed;
+      - a named temp path, or the file not deleted.
+- **FTF-1504 IDOR suite** (Control-plane design 2026-10-13; §45, §47, §52, §65.1–65.2, §77, §81; packet acceptance "Guess foreign IDs across every nested API and object download/export endpoint"; negative "404 masking alone insufficient if side effect/data still occurs; check actual state/access"; deps FTF-0106, FTF-0501, FTF-1501 all CERTIFIED; DoD `python tools/r1_handoff.py packet FTF-1504 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; contract owner FTF-1501: reuse `ScenarioResult`/`TenantIsolationEvidence`/`build_evidence` from `tests/security/tenant_isolation_suite.py` and do not edit `15-interface.yaml`). Ready now.
+  - Files:
+    - `tests/security/idor_suite.py` (harness, registry, runner; a standalone script like the 1501/1503 suites);
+    - `tests/tasks/test_ftf_1504.py` (no-DB: inventory completeness, generators, comparator, faults);
+    - `tests/integration/test_ftf_1504_idor_postgres_s3.py` (or `main()` of the suite);
+    - an additive ci.yml job `idor-suite-integration` + verdict `needs` + `tests/unit/test_ci_policy.py` coverage.
+  - No production code, migration, contract, runtime dependency, secret or keyed service.
+  - If the suite finds a real IDOR, do not allowlist it: park that route/slot with the reproduction, and the Control plane slices the fix against the owning task (Law 15).
+  - Live surface (generated, never hand-listed): the REAL `app.main.create_app()` with the 0103A environment, flattened with FTF-0103A's `_flatten_routes`. Reuse it by import from `tests/tasks/test_ftf_0103a.py` or move it to a shared helper with that test re-run.
+    - Today: 29 mounted routers (28 under `/api/v1` plus `/auth`), 108 `/api/v1` route-verbs (count it and print it; do not hard-code it).
+    - Requests go over a real socket to uvicorn (1501 precedent).
+    - Auth is the real `SessionPrincipalResolver` with the app's own signing key and real `memberships` rows written through `membership_admin_cli`. Sessions are minted with the same function the OIDC callback uses (disclosed: the OP round-trip itself is proven by FTF-0103A).
+    - The app DB role is `sovra_app`, refused otherwise via 1501's `assert_not_superuser_role`.
+  - Registry and how new routes join:
+    - `ROUTE_REGISTRY[(method, path_template)] = RouteSpec(path_slots, query_slots, body_slots, seed, destructive)`. Every `{param}` gets a resource kind, auto-checked against the path.
+    - Query id slots: `project_id` on catalog/capability/probe routes, `artifact_id` on mapping changes. Pagination cursors (`after`) are marked `cursor` with a reason; they compare by value and resolve no row.
+    - Body slots: every request-body property ending `_id`/`_ids` (recursive into arrays/objects) in the frozen OpenAPI (01..17-interface) must be registered. For the 25 uncontracted route-verbs (Decision 10), the slots are declared by hand, cross-checked against each route module's body allow-list frozensets (every `*_id` name in them must be registered), and the list is recorded as a contract gap.
+    - The completeness gate runs in `tests/tasks/test_ftf_1504.py`, in the `gate` job with no DB: live set == registry keys exactly, and every path/contract/allow-list id is registered. A PR that adds a `/api/v1` route without registering it fails `gate`.
+    - Object download/export: no such route is live today (checked; FTF-0501's part-urls issues PUT grants only). The registry has the kinds `download` and `export` with zero routes and a test that any future route whose response carries a storage URL must declare one. Disclosed.
+  - Matrix (generated: route-verb × id slot × id class × principal role):
+    - Id classes:
+      - `foreign_org`: org B's real object of the same kind;
+      - `foreign_project`: a same-org object in project P2 addressed under P1;
+      - `foreign_parent`: same project, another parent. Examples: case/suite, evidence/manifest, snapshot/connection, candidate/snapshot, issue/dataset, model under another LiteLLM connection;
+      - `hidden_purpose`: a held-out dataset or upload session for `ml_engineer`, which the routes promise is the same 404;
+      - `foreign_name`: a model name in org B's catalog under A's own connection;
+      - `missing`: a fresh uuid4 never issued;
+      - `own`: the positive control.
+      - For the `organization_id` path param, `foreign_org` (B) vs `missing` (random) must both be the identical 403 `role_not_authorized`.
+    - Roles: every role in the route's `require_role` allowed set, introspected from the guard's closure (`allowed`), as FTF-0103A does (generated, not trimmed to org admin). One disallowed role per route is also checked to be uniform (the full RBAC matrix is FTF-1502).
+    - Body slots get the same classes, placed in an otherwise valid body.
+  - Assertions per cell:
+    - Indistinguishable: for every non-`own` class, status, raw body bytes and every header except `date` are byte-identical to the `missing` response for the same route, slot and role. No marker planted in org B / P2 objects (names, descriptions, refs) appears anywhere.
+    - Positive control: `own` must differ from `missing`. Otherwise the slot is vacuous and the suite is RED. A slot that cannot be exercised (a dependency not available) is `NOT_EXERCISED` with a code and fails the run unless the Control plane allowlists it in the entry; none is allowlisted now.
+    - Side effects (the negative acceptance), before and after each request:
+      - DB digest: as the migration owner, for observation only, md5 of every row of every table in `public`, enumerated from `information_schema` (never hand-listed), including `audit_events`.
+      - Storage digest: the SeaweedFS bucket object listing plus multipart uploads and parts.
+      - Outbound counters on every local stand-in the seeds point at: the H005/0309-P1 local TLS LiteLLM gateway harness, a GitHub API stand-in, the component-binding endpoint stand-in, and the OpenBao dev server where the job has one.
+      - The foreign-class delta must equal the missing-class delta. Expected: both empty. If a route writes a denial audit, the two must be equal after masking `id`, `created_at` and `request_id`, and must never name org B's id or row.
+    - Storage-layer IDOR: own part-url grants with the object key path swapped to org B's session key are refused by SeaweedFS (signature), and B's parts are unchanged. A foreign `part-urls`/`parts`/`finalize` returns no URL and makes no S3 call (counted).
+    - Destructive verbs (DELETE, revoke, lock, select, finalize, reserve/release) run the foreign classes and `missing` first, then the control on a disposable seed.
+  - Seeds: two orgs (A, B); two projects in A (P1, P2) and one in B; two parents per nested kind; every kind the registry names. Seeds go through the real API as the org admin wherever a create route exists, otherwise through the certified store function as `sovra_app` under tenant context, never raw owner SQL. A real FTF-0501 upload and finalize into SeaweedFS creates the datasets; FTF-0516-P1 `record_quality_report` creates the issue rows.
+  - Evidence: one content-free `ScenarioResult` per cell (route template, method, slot, class, role, status, passed) through 1501's `build_evidence`, written as a JSON artifact, plus totals per route. Bodies are never recorded.
+  - CI: the job uses PG16 (pinned digest as `direct-upload-routes-integration`) and boots the compose `s3` itself. The runtime budget is recorded in the submission.
+  - Faults that must go RED (each its own row; inject into a copy of the real app or by monkeypatching one real store in-process):
+    - a demo route answering 403 for foreign and 404 for missing;
+    - a route answering 404 but inserting a row;
+    - a route answering 404 but calling the gateway stand-in;
+    - a 404 with a different body or an extra header;
+    - a foreign marker echoed in a 404 body;
+    - a live route deleted from the registry;
+    - a path param without a kind;
+    - an unregistered contract `_id` field;
+    - an unregistered allow-list `_id` name;
+    - the role set trimmed to `organization_admin`;
+    - a positive control that 404s (vacuous slot);
+    - the app run as the migration owner;
+    - real-route faults:
+      - `evaluation_case` GET not filtering by `suite_id`;
+      - `part-urls` not checking the project;
+      - the dataset issue lookup not checking the dataset;
+      - the model-catalog `project_id` query slot not checked;
+    - the DB digest table list hand-trimmed (drop `audit_events`) so a side-effect fault stays green, which must itself be caught by the enumeration test.
+  - Disclosed:
+    - Worker, cache and model-serving paths and object download/export routes do not exist yet. Whichever task adds one registers it, and the gate enforces that.
+    - Timing side channels are not measured.
+    - The 25 uncontracted route-verbs are listed as a contract gap.
 
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
 - **FTF-1602 round 5: PARKED (3 falsified hypotheses on one CI failure), 2026-10-09T10:10Z, lane B.**
@@ -12137,7 +12537,7 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
 - FTF-0402 — Project security profile. CERTIFIED 2026-09-20, PR #141,
   merge commit `a6ef1d9`. See `docs/certifications/ledger.md` (FTF-0402
   entry) for the full independent-review narrative.
-- FTF-0305 — License acceptance workflow. **DECERTIFIED 2026-10-10T16:15Z → PROVISIONAL** (reproduced revoked-license-trainable race; requalifies with FTF-0305-F1, QUEUE item 0b). Original certification record below.
+- FTF-0305 — License acceptance workflow. **DECERTIFIED 2026-10-10T16:15Z → PROVISIONAL** (reproduced revoked-license-trainable race; requalifies with FTF-0305-F1, QUEUE item 0b). Original certification record below. **RE-CERTIFIED 2026-10-13T12:55Z** with FTF-0305-F1 (PR #747, merge `f2ac7c7f73a049aa911d3d88f4a06bc457b51dde`).
 - FTF-0305 — License acceptance workflow. CERTIFIED 2026-09-20, PR #144,
   merge commit `1a3c6b4`. Independent Control-plane review triggered by
   the `pull_request.opened` webhook: session-ID check clean against all 3
@@ -13608,6 +14008,10 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
 - FTF-1703 — Training dataset. CERTIFIED 2026-10-09 for the in-sandbox scope, PR #714 (merge `1fc59f19c1c265493da550994c78f7e77450b151`); the ">=1000 reviewed" clause stays BLOCKED_EXTERNAL (Argilla/human review; group floor reports not met); UNWIRED.
 - FTF-0908 — External provider denial. CERTIFIED 2026-10-10, PR #730 (merge `d64628a84c85fca8f329741f7493ca1690776ac2`; production from round 4, #719); UNWIRED (no live caller yet, disclosed).
 - FTF-0501 — Direct object-storage upload. CERTIFIED 2026-10-10, API PR #692 (merge `b99723744b582685793be7c494fe6f1fc0100fa2`) + resumable UI PR #736 (merge `41904e5fe5702a08a12483760c9bc811acfa2ddf`); the upload API is live (build_direct_upload_router); the resumable UI is UNWIRED until FTF-H029, so FTF-0501 is not counted product-true (Law 7).
+- FTF-0305-F1 — License/readiness race and license-gated trainability (fix item). CERTIFIED 2026-10-13, PR #747 (merge `f2ac7c7f73a049aa911d3d88f4a06bc457b51dde`); FTF-0305 re-certified; FTF-0301/0307/0309-P1 requalified (Law 15).
+- FTF-0310 — Capability contract tests. CERTIFIED 2026-10-13, PR #751 (merge `c3a95ef172a51f8ed8c8c4bfb02ee572e5607c6f`); test-only (proving_symbol blank).
+- FTF-0516 — Dataset issue resolution UI. CERTIFIED 2026-10-13, PR #754 (merge `90698aa6371626f6d2f8f156624798c9673ef044`; API slice FTF-0516-P1 #695); UNWIRED until FTF-H029, not product-true (Law 7).
+- FTF-1206 — Organization policy control. CERTIFIED 2026-10-13, PR #763 (merge `e5f6e5ee327ba60bdae73b43eda2e31a0dc02da3`); persistence via certified FTF-1206A; UNWIRED (proving_symbol blank).
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
