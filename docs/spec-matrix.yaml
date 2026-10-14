@@ -7397,7 +7397,7 @@ FTF-0502:
   certification_state: PROVISIONAL
   criticality: MUST
   description: JSONL importer
-  evidence_hash: 0ce7406e2423d10dbf9bb02140b5089fe83ff495
+  evidence_hash: 2e63b14fd63e93530d8bc07bf74c13760335e3ea
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
@@ -7424,7 +7424,28 @@ FTF-0502:
     ImportedRecord / QuarantinedRow remain in the module only because
     workers/data/json_importer.py (FTF-0503, rebuilt in its own item) still imports them;
     no live route calls the importer yet, so proving_symbol stays blank. Not self-certified
-    (Law 4). See docs/certifications/submissions/2026-10-14T0500Z-FTF-0502.md.
+    (Law 4).
+
+
+    Round 3 (2026-10-14, return docs/certifications/queue.md 2026-10-14T08:18Z "FTF-0502 RETURN
+    -> round 3"): fixed all five return items. (1) EXPECTED-SHA-MISMATCH-COMPLETES: a caller's
+    own expected_sha256 (tags every record/the report) is now cross-checked against the
+    ChunkReader's own declared hash before a byte is read -- previously only the reader's own
+    end-of-stream check covered its own value, so the two could silently diverge and still
+    complete. (2) FATAL-LOCATOR-OUTSIDE-IMPORTREPORT: the one shared import_common.py edit this
+    round (per the Control-plane serialization ruling) -- an additive ImportReport.fatal_locator
+    (default None, omitted from body()/the digest when unset, so every existing report hashes
+    unchanged); JsonlImportOutcome.fatal_locator is now a property over report.fatal_locator, not
+    a second untracked field. (3) C4-MIDSTREAM-STOP-VACUOUS: the integration suite's "stopping S3
+    mid-stream" check gets a control run proving the identical 96 MiB stream completes when
+    nothing actually stops it, so the stopping check cannot pass vacuously if SeaweedFS ever ends
+    a large stream on its own. (4) Tables at the real production constant (2 MiB) for the size
+    boundary and one-byte-chunk time budget, an exhaustive every-split-point check on a <=4 KiB
+    fixture, and a tighter 1.5x memory-ratio bound. (5) V-SLOT-DROPPED / V-PURPOSE-HARDCODED: new
+    unit tests read RowRejection.slot directly (this file's own codes() helper had always dropped
+    it) and exercise a non-"training" dataset_purpose (previously hardcoded in run()/collect(),
+    not overridable). certification_state stays PROVISIONAL, proof_state stays L1-PROVEN (Law 2).
+    See docs/certifications/submissions/2026-10-14T1115Z-FTF-0502-r3.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0502.py
