@@ -1571,6 +1571,247 @@ def test_catalog_covers_every_emitted_code() -> None:
     check(CID, "the import saw all those kinds", len(emitted) >= 8)
 
 
+# --- round 3 ---------------------------------------------------------------------------
+
+OTHER_SHA = hashlib.sha256(b"a different source").hexdigest()
+
+
+def test_expected_sha_mismatch_fails_before_any_record() -> None:
+    data = line("q1", "a1") + b"\n" + line("q2", "a2") + b"\n"
+    got: list[object] = []
+    outcome = ji.run_jsonl_import(
+        make_reader(data),  # declared (and verified) for hash Y ...
+        build_mapping(),
+        verified_content_type=JSONL,
+        dataset_purpose="training",
+        expected_sha256=OTHER_SHA,  # ... but the caller expects X
+        on_accepted=got.append,
+    )
+    report = outcome.report
+    check(
+        CID,
+        "a reader declared for another hash ends failed / source_changed",
+        report.state == "failed" and report.failure_code == "source_changed",
+    )
+    check(
+        CID,
+        "and no record was accepted, rejected or tagged with the wrong hash",
+        not got and report.records_seen == 0 and report.source_bytes == 0,
+    )
+    stream = ji.jsonl_events(
+        make_reader(data),
+        build_mapping(),
+        verified_content_type=JSONL,
+        dataset_sha256=OTHER_SHA,
+    )
+    try:
+        next(stream)
+        raised = None
+    except ic.ImportAborted as exc:
+        raised = exc.failure_code
+    check(CID, "jsonl_events refuses on its first next()", raised == "source_changed")
+    ok = run(data)
+    check(CID, "the matching hash still imports", ok.report.state == "completed")
+    # negative: a one-character difference in the expected hash is enough
+    near = data and hashlib.sha256(data).hexdigest()
+    near = near[:-1] + ("0" if near[-1] != "0" else "1")
+    out = ji.run_jsonl_import(
+        make_reader(data),
+        build_mapping(),
+        verified_content_type=JSONL,
+        dataset_purpose="training",
+        expected_sha256=near,
+    )
+    check(CID, "a near-miss hash is refused too", out.report.failure_code == "source_changed")
+
+
+def test_fatal_locator_is_inside_the_report() -> None:
+    data = b"\xff\xfe" + "{}".encode("utf-16-le")
+    outcome = run(data)
+    report = outcome.report
+    check(
+        CID,
+        "the fatal locator is the report's own field",
+        report.fatal_locator == "line:1" and outcome.fatal_locator == report.fatal_locator,
+    )
+    check(CID, "on a LocatedImportReport", isinstance(report, ic.LocatedImportReport))
+    events = list(
+        ji.import_jsonl(
+            [data],
+            mapping=build_mapping(),
+            expected_sha256=hashlib.sha256(data).hexdigest(),
+            expected_size=len(data),
+            verified_content_type=JSONL,
+            dataset_purpose="training",
+        )
+    )
+    last = events[-1]
+    check(
+        CID,
+        "import_jsonl's final report carries it",
+        isinstance(last, ic.ImportReport) and last.fatal_locator == "line:1",
+    )
+    try:
+        ic.LocatedImportReport(
+            **{f: getattr(report, f) for f in report.__dataclass_fields__ if f != "fatal_locator"},
+            fatal_locator="line:2",
+        )
+        moved = True
+    except ValueError:
+        moved = False
+    check(CID, "the digest covers the locator: another line fails the seal", not moved)
+    done = run(line("q", "a") + b"\n")
+    check(
+        CID,
+        "a completed import has no locator",
+        done.report.fatal_locator is None and done.fatal_locator is None,
+    )
+    changed = data + b"x"
+    out = ji.run_jsonl_import(
+        make_reader(changed[:-1], expected_sha=hashlib.sha256(changed).hexdigest()),
+        build_mapping(),
+        verified_content_type=JSONL,
+        dataset_purpose="training",
+        expected_sha256=hashlib.sha256(changed).hexdigest(),
+    )
+    check(
+        CID,
+        "a source problem that is not a line problem has no locator",
+        out.report.state == "failed" and out.report.fatal_locator is None,
+    )
+
+
+def test_size_boundary_at_the_production_constant() -> None:
+    limit = ic.DEFAULT_LIMITS.max_record_bytes
+    check(CID, "the production line cap is the FTF-0508 cap", limit == 2 * 1024 * 1024)
+    follower = line("after", "ok")
+    for eol in (b"\n", b"\r\n"):
+        for delta, accepted_ in ((-1, True), (0, True), (1, False)):
+            data = padded("q", "a", limit + delta) + eol + follower + eol
+            for chunk in (None, 4096, 1 << 20):
+                got, outcome = collect(data, chunk=chunk)
+                want = [] if accepted_ else [("line:1", "record_too_large")]
+                check(
+                    CID,
+                    f"production limit{delta:+d} eol={eol!r} chunk={chunk}",
+                    outcome.report.state == "completed"
+                    and codes(outcome) == want
+                    and [texts(c)[0] for c in got] == (["q", "after"] if accepted_ else ["after"])
+                    and outcome.report.records_seen == 2,
+                )
+
+
+def test_time_max_record_in_one_byte_chunks_has_a_budget() -> None:
+    limit = ic.DEFAULT_LIMITS.max_record_bytes
+    data = padded("q", "a", limit) + b"\n" + line("after", "ok") + b"\n"
+    started = time.monotonic()
+    got, outcome = collect(data, chunk=1)
+    elapsed = time.monotonic() - started
+    check(
+        CID,
+        "a 2 MiB record in 1-byte chunks imports with its follower",
+        len(got) == 2 and outcome.report.state == "completed",
+    )
+    check(CID, f"and inside a fixed budget ({elapsed:.1f}s of 120s)", elapsed < 120)
+
+
+def test_chunking_every_offset_of_small_inputs() -> None:
+    sources = [
+        line("q1", "a1") + b"\n" + b"\n" + b"{bad\n" + line("q2", "مرحبا") + b"\r\n",
+        b"\xef\xbb\xbf" + line("q", "a") + b"\r\n" + b"\xff\n" + line("z", "y"),
+        b"[1]\n" + padded("q", "a", 200) + b"\r\n\r\n",
+        b"\n\n\n",
+        b"",
+    ]
+    for data in sources:
+        base_got, base = collect(data)
+        seven_got, seven = collect(data, chunk=7)
+        check(
+            CID,
+            f"7-byte chunks give the same result ({len(data)} bytes)",
+            seven_got == base_got and seven.report == base.report,
+        )
+        for cut in range(1, len(data)):
+            reader = ic.ChunkReader(
+                [data[:cut], data[cut:]],
+                expected_size=len(data),
+                expected_sha256=hashlib.sha256(data).hexdigest(),
+            )
+            got: list[dict[str, object]] = []
+            out = ji.run_jsonl_import(
+                reader,
+                build_mapping(),
+                verified_content_type=JSONL,
+                dataset_purpose="training",
+                expected_sha256=hashlib.sha256(data).hexdigest(),
+                on_accepted=lambda c, got=got: got.append(dict(c)),  # type: ignore[misc]
+            )
+            if got != base_got or out.report != base.report:
+                check(CID, f"split at {cut} of {len(data)} bytes differs", False)
+                break
+        else:
+            check(CID, f"every split point of a {len(data)}-byte input agrees", True)
+
+
+def test_memory_ratio_between_sizes_is_within_one_and_a_half() -> None:
+    def peak_for(mib: int) -> int:
+        record = line("q", "a") + b"\n"
+        count = (mib * 1024 * 1024) // len(record)
+        pieces = [record * 1024] * (count // 1024)
+        size = sum(len(piece) for piece in pieces)
+        digest = hashlib.sha256()
+        for piece in pieces:
+            digest.update(piece)
+        reader = ic.ChunkReader(pieces, expected_size=size, expected_sha256=digest.hexdigest())
+        tracemalloc.start()
+        ji.run_jsonl_import(
+            reader,
+            build_mapping(),
+            verified_content_type=JSONL,
+            dataset_purpose="training",
+            expected_sha256=digest.hexdigest(),
+            on_accepted=lambda _c: None,
+        )
+        _current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        return peak
+
+    small, large = peak_for(1), peak_for(64)
+    check(
+        CID,
+        f"peak for 64 MiB ({large}) is within 1.5x of the peak for 1 MiB ({small})",
+        large <= 1.5 * small,
+    )
+
+
+def test_report_fields_slot_and_non_training_purpose() -> None:
+    mapping = (
+        '{"shape":"prompt_completion","prompt":{"key":"q"},"completion":{"key":"a"},'
+        '"metadata":{"quality_label":{"key":"ql"}}}'
+    )
+    data = line("q", "a", ql=[1]) + b"\n" + line("q2", "a2") + b"\n"
+    outcome = run(data, mapping=mapping)
+    slots = [r.slot for r in outcome.report.rejections]
+    check(
+        CID,
+        f"a rejected mapped value names its slot ({slots})",
+        outcome.report.records_rejected == 1 and slots and all(slots),
+    )
+    for purpose in ("evaluation", "held_out"):
+        out = ji.run_jsonl_import(
+            make_reader(line("q", "a") + b"\n"),
+            build_mapping(),
+            verified_content_type=JSONL,
+            dataset_purpose=purpose,
+            expected_sha256=hashlib.sha256(line("q", "a") + b"\n").hexdigest(),
+        )
+        check(
+            CID,
+            f"dataset_purpose {purpose!r} is carried into the report, not hardcoded",
+            out.report.dataset_purpose == purpose,
+        )
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:

@@ -12,7 +12,7 @@ Line rules (each pinned by a test):
   removed from the byte stream before any line is cut. A BOM anywhere else is
   part of its line and fails `invalid_json`. UTF-16 / UTF-32 (a BOM, or a NUL
   among the first four bytes) end the import `failed` / `unsupported_encoding`,
-  located at `line:1` (`JsonlImportOutcome.fatal_locator`), before a record is
+  located at `line:1` (`ImportReport.fatal_locator`, inside the report digest), before a record is
   read.
 - A line that is empty or only ASCII whitespace is a blank line: counted in
   `blank_lines`, never a record. The final line needs no LF.
@@ -56,6 +56,7 @@ FTF-0503 is rebuilt on FTF-0502-P1.
 
 from __future__ import annotations
 
+import hmac
 import json
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
@@ -132,7 +133,12 @@ class JsonlAborted(ImportAborted):
 @dataclass(frozen=True)
 class JsonlImportOutcome:
     report: ImportReport
-    fatal_locator: str | None
+
+    @property
+    def fatal_locator(self) -> str | None:
+        """Where a fatal problem happened; read from the report, where it is sealed in
+        the digest (`ImportReport.fatal_locator`)."""
+        return self.report.fatal_locator
 
 
 def _check_mapping(mapping: ImportMapping) -> None:
@@ -261,6 +267,12 @@ class JsonlEventStream(Iterator[ImportEvent]):
             or self._verified_content_type not in JSONL_CONTENT_TYPES
         ):
             raise ImportAborted("failed", "content_type_not_supported_by_importer")
+        if not hmac.compare_digest(
+            # the hash the source was declared with, known before a byte is read
+            self._reader._expected_sha256,
+            self._dataset_sha256,
+        ):
+            raise ImportAborted("failed", "source_changed")
         record_index = 0
         for number, line in self._lines():
             if line is not None and (not line or line.isspace()):
@@ -377,9 +389,12 @@ def _drive(
     except ImportAborted as exc:
         aborted = exc
     report = accumulator.report(
-        source_sha256=reader.sha256, source_bytes=reader.bytes_read, aborted=aborted
+        source_sha256=reader.sha256,
+        source_bytes=reader.bytes_read,
+        aborted=aborted,
+        fatal_locator=aborted.locator if isinstance(aborted, JsonlAborted) else None,
     )
-    yield JsonlImportOutcome(report, aborted.locator if isinstance(aborted, JsonlAborted) else None)
+    yield JsonlImportOutcome(report)
 
 
 def run_jsonl_import(
