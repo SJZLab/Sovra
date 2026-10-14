@@ -24750,3 +24750,7 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-14T09:46Z — Control plane: FTF-0503 returned
 - **Returned:** FTF-0503 r3 (0b): streaming scanner, sha mismatch, fatal structure errors, BOM, oversize rows, integration.
+
+## 2026-10-14T11:30Z — FTF-0904-W1 returned (r3 submitted)
+- **Returned:** FTF-0904-W1 r2 (multiprocess startup traceback). **Round 3 submitted**: redacting traceback printers,
+  W1-BOOT-FAIL-MP (--workers 2, --reload), faults F13-F14. L2 from the separate verifier session.
