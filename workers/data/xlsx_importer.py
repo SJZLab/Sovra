@@ -466,8 +466,8 @@ class _SheetScanner(_Scanner):
     caller-chosen, so a wide, deeply padded header row could otherwise turn a
     small upload into a multi-hundred-megabyte-to-gigabyte transient peak;
     `MAX_HEADER_ROW_BYTES` bounds the real bytes retained for it (`_row_bytes`,
-    checked only while `wanted` is still None -- a mapped data row's few,
-    caller-chosen columns are never counted against it)."""
+    accumulated for every kept cell; see `_bound_row_bytes` for why it can
+    never fire for an ordinary mapped data row)."""
 
     def __init__(
         self, shared: list[bytes], max_cells: int, max_cell_chars: int, header_row: int
@@ -642,8 +642,7 @@ class _SheetScanner(_Scanner):
             # length -- no decode needed -- is what counts against
             # `MAX_HEADER_ROW_BYTES` below.
             if keep:
-                if self.wanted is None:
-                    self._bound_row_bytes(len(raw))
+                self._bound_row_bytes(len(raw))
                 text = raw.decode("utf-8", "surrogatepass")
         elif self._type is _Type.INLINE:
             joined = "".join(self._inline)
@@ -651,27 +650,29 @@ class _SheetScanner(_Scanner):
                 self._nonblank = True
             if keep:
                 text = decode_xml_escapes(joined)
-                if self.wanted is None:
-                    self._bound_row_bytes(len(text.encode("utf-8", "surrogatepass")))
+                self._bound_row_bytes(len(text.encode("utf-8", "surrogatepass")))
         else:  # n, b, d: the literal <v> text
             if self._v_text:
                 self._nonblank = True
             if keep:
                 text = self._v_text
-                if self.wanted is None:
-                    self._bound_row_bytes(len(text.encode("utf-8", "surrogatepass")))
+                self._bound_row_bytes(len(text.encode("utf-8", "surrogatepass")))
         if keep:
             self._row_cells[self._col] = (kind, text)
 
     def _bound_row_bytes(self, size: int) -> None:
-        """Only while `wanted` is still None (the header row, or a row ahead of
-        it that is kept in full for want of a mapping to narrow it): the
-        number of cells here is attacker-chosen, so their total retained
-        bytes gets its own bound, same as any other "part read whole" in this
-        importer. A mapped data row's few, caller-chosen `wanted` columns are
-        never counted here -- each is already bounded per cell by
-        `max_cell_chars`, and the column count is the caller's own, not an
-        attacker's."""
+        """Called for every cell this row keeps. When `wanted` is already set
+        (an ordinary mapped data row), the number of kept cells is the
+        caller's own small, fixed set, and each is already bounded per cell
+        by `max_cell_chars` with the whole row bounded again by the shared
+        `max_record_bytes` ceiling (`record_too_large` in `_map_row`) -- a
+        ceiling that can only be lowered, never raised past its own default,
+        which is itself below `MAX_HEADER_ROW_BYTES`, so this bound can never
+        fire for a mapped row. It matters only while `wanted` is still None
+        (the header row, or a row ahead of it kept in full for want of a
+        mapping to narrow it yet): there, the number of cells is
+        attacker-chosen, not caller-chosen, and this is the only bound on
+        their total retained bytes."""
         self._row_bytes += size
         if self._row_bytes > MAX_HEADER_ROW_BYTES:
             raise self._fatal("field_too_large")

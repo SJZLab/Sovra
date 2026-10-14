@@ -1709,6 +1709,12 @@ def test_archive_attack_table() -> None:
             "unsupported_workbook",
             xi.XlsxLimits(),
         ),
+        (
+            "a 'version needed to extract' field past 63",
+            version_needed_past_63(GOOD),
+            "xlsx_malformed",
+            xi.XlsxLimits(),
+        ),
     ]
     for label, data, code, limits in cases:
         events, outcome = run(data, xlsx_limits=limits)
@@ -1720,6 +1726,26 @@ def test_archive_attack_table() -> None:
         "a fatal archive problem names no row",
         run(with_extra(GOOD, ("../e", b"x")))[1].report.fatal_locator is None,
     )
+
+
+def version_needed_past_63(data: bytes) -> bytes:
+    """ARCHIVE-ERROR-ESCAPES: `data` rebuilt with the worksheet part's own
+    central-directory "version needed to extract" field raised past
+    zipfile's own `MAX_EXTRACT_VERSION` (63) -- a corrupt/hostile value no
+    legitimate writer emits for a stored entry, and not reachable through
+    `book()`/`zip_bytes()`, which never touch `ZipInfo.extract_version`.
+    `zipfile.ZipFile()` itself raises a raw `NotImplementedError` reading the
+    central directory for this; the importer must map it to a typed
+    `xlsx_malformed` failure, not let it escape."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as archive:
+        for name, payload in members_of(data):
+            info = zipfile.ZipInfo(name)
+            info.compress_type = zipfile.ZIP_STORED
+            if name == "xl/worksheets/sheet1.xml":
+                info.extract_version = 64
+            archive.writestr(info, payload)
+    return buffer.getvalue()
 
 
 def encrypted_entry(data: bytes) -> bytes:
@@ -3122,6 +3148,23 @@ def test_header_row_skip_does_not_retain_the_skipped_rows_cells() -> None:
         CID,
         f"a {cols * pad} byte skipped row costs well under 2 MB of real peak memory (saw {peak})",
         peak < 2 * 1024 * 1024,
+    )
+
+
+def test_header_row_past_the_byte_cap_is_fatal_field_too_large() -> None:
+    """`_bound_row_bytes`'s own cap (`MAX_HEADER_ROW_BYTES`, 4 MiB) must
+    actually fire, not just leave memory low: the header row itself
+    (`header_row=0`, so `wanted` is still None while these cells are kept)
+    adding up past it is a typed failure, not left to keep growing."""
+    cols, pad = 200, 50_000  # 10 MB of header cells, well past the 4 MiB bound
+    header_row_xml = _wide_cell_row(1, cols, pad)
+    raw = f'{XML_HEAD}<worksheet xmlns="{MAIN}"><sheetData>{header_row_xml}</sheetData></worksheet>'
+    data = book(raw_sheet=raw)
+    _e, outcome = run(data, header_row=0)
+    check(
+        CID,
+        "a header row past the 4 MiB retained-bytes bound is fatal field_too_large",
+        failed_with(outcome, "field_too_large"),
     )
 
 
