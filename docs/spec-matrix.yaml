@@ -7397,50 +7397,34 @@ FTF-0502:
   certification_state: PROVISIONAL
   criticality: MUST
   description: JSONL importer
-  evidence_hash: 0eada57097f55ccb2a7203768aeef377a5a4f093
+  evidence_hash: 0ce7406e2423d10dbf9bb02140b5089fe83ff495
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
-    FTF-0506 (all CERTIFIED, confirmed before relying on them). Path refined from the packet's
-    generic services/training-worker/data/jsonl_importer.py to workers/data/jsonl_importer.py
-    (this repo's real SOURCE_ROOT, same precedent FTF-0506/FTF-0507/FTF-0508/FTF-0517 already
-    established).
-
-
-    Built: import_jsonl(lines, *, source_type, tool_schemas, tool_argument_validator,
-    max_line_bytes) is a pure, synchronous generator (no DB/network) over an iterable of raw
-    bytes lines. Every line in `lines` produces exactly one yielded ImportedRecord or
-    QuarantinedRow -- the real, executable form of this task's own negative_acceptance
-    ("...produce quarantine/errors, not silent loss"), proven directly
-    (test_every_line_produces_exactly_one_item) and by fault injection (silently dropping a
-    not-bytes line instead of quarantining it was shown to fail 5 separate checks, then
-    reverted byte-identical). Reuses FTF-0506's already-CERTIFIED normalize_conversation for
-    every record (never a second, independently invented schema checker) and FTF-0508's
-    already-CERTIFIED MAX_CANONICAL_RECORD_BYTES (Section 67.3, 2MiB) as the raw-line bound,
-    checked by byte length before any decode or parse is attempted.
-
-
-    Negative acceptance, each with its own quarantine code and real underlying error text
-    (never a generic placeholder): malformed UTF-8 (malformed_utf8), an oversize line
-    (line_too_large, checked before decode/parse), malformed JSON (malformed_json), a non-object
-    top-level JSON value (not_an_object), and a non-bytes line (not_bytes_line, e.g. an
-    already-decoded str that would defeat the UTF-8 check). "Mixed critical schemas" is read
-    against the one real schema check this repository has for a parsed record's shape
-    (FTF-0506's normalize_conversation): a source mixing differently-shaped rows (e.g. a Section
-    7 messages-array row alongside a prompt/completion row with no "messages" key at all) has
-    each row judged and quarantined on its own real ConversationNormalizationError text
-    (schema_invalid) -- disclosed in the module's own docstring as this task's own interpretation,
-    since the packet names no second, independently invented "critical schema" concept.
-
-
-    Disclosed, not invented: this importer forwards every parsed JSON object straight through as
-    FTF-0506's own raw_record and never extracts or guesses a record_id/group_key from any
-    particular raw field -- Section 9's own cross-record grouping keys are a later pipeline
-    concern once a specific source's own field for that identity is known
-    (test_record_id_and_group_id_are_never_invented_by_the_importer). No live caller yet (no
-    dataset-import pipeline route exists yet in this repository), same disclosed precedent
-    FTF-0506/FTF-0507/FTF-0508 already established -- proving_symbol stays blank. Not
-    self-certified (Law 4).
+    FTF-0506 (CERTIFIED) and FTF-0502-P1 (CERTIFIED, #770). Path refined to
+    workers/data/jsonl_importer.py. Round 2 rebuild on FTF-0502-P1 (ChunkReader, strict_loads,
+    apply_mapping, normalize_mapped_record, to_dataset_record_candidate, ImportAccumulator,
+    ImportReport): import_jsonl / run_jsonl_import / jsonl_events stream LF-delimited lines
+    (one trailing CR removed; U+2028/2029 are data), each decoded as strict UTF-8 on its own
+    (invalid_utf8, the next line still imports) and parsed as exactly one JSON object through
+    strict_loads (invalid_json, duplicate_key, non_finite_number, number_out_of_range,
+    nesting_too_deep, invalid_unicode, record_not_object). A line over max_record_bytes is
+    record_too_large and is discarded as it arrives (no buffering, followers import); the
+    line buffer is capped at max_record_bytes+1 and each chunk is searched once, so memory and
+    time do not depend on the chunking. A UTF-8 BOM is accepted at byte 0 only; UTF-16/32
+    (BOM or NUL pattern) is fatal unsupported_encoding at line:1; blank lines are counted
+    apart from records; only application/jsonl and application/x-ndjson are imported (else
+    failed content_type_not_supported_by_importer before a byte is read). A candidate whose
+    canonical (ASCII-escaped) content would exceed MAX_CANONICAL_RECORD_BYTES is rejected
+    record_too_large so every accepted candidate passes FTF-0508. Source outage is blocked /
+    source_unavailable, a changed source is failed / source_changed, never completed. Real PG16
+    + SeaweedFS evidence through the FTF-0501 routes in job jsonl-import-integration
+    (tests/integration/test_ftf_0502_jsonl_import_postgres_s3.py). Disclosed: locator is
+    line:<physical line>; source_schema_sha256 stays None (no header); the round-1 row types
+    ImportedRecord / QuarantinedRow remain in the module only because
+    workers/data/json_importer.py (FTF-0503, rebuilt in its own item) still imports them;
+    no live route calls the importer yet, so proving_symbol stays blank. Not self-certified
+    (Law 4). See docs/certifications/submissions/2026-10-14T0500Z-FTF-0502.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0502.py
