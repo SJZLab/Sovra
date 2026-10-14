@@ -280,6 +280,20 @@ def test_nested_container_root_not_object_is_json_malformed() -> None:
         "json_malformed",
         (outcome.report.state, outcome.report.failure_code) == ("failed", "json_malformed"),
     )
+    # A root whose own first character happens to be immediately followed by
+    # text that *scans* like valid object-member content is still refused:
+    # the root-shape check runs first and unconditionally, it is never
+    # skipped merely because a later structural scan would otherwise
+    # "succeed" by coincidence (it would here, into an unrelated "a": "b"
+    # member, mapping_column_missing instead -- a materially different,
+    # wrong verdict this test pins against).
+    outcome = run(b'0"a":"b"}', container="/rows", ignored_top_level_keys=[])
+    check(
+        CID,
+        "a root that is not an object is fatal json_malformed even when the bytes after "
+        "its own first character happen to parse as object members",
+        (outcome.report.state, outcome.report.failure_code) == ("failed", "json_malformed"),
+    )
 
 
 def test_nested_container_unterminated_root_is_json_malformed() -> None:
@@ -304,7 +318,13 @@ def test_scan_array_truncation_table() -> None:
     for label, text in (
         ("nothing after [", "["),
         ("nothing after a value", "[1"),
-        ("neither comma nor ] after a value", "[1}"),
+        # A second value where only a comma or ']' is valid: looping back to
+        # the top of _scan_array's own loop would otherwise re-enter
+        # _skip_value at the same position and raise there instead, masking
+        # whether this exact check still runs -- "[1 2]" instead finds a
+        # second, syntactically fine literal ("2"), so only this check's own
+        # raise distinguishes the real code from a "pass" in its place.
+        ("neither comma nor ] after a value", "[1 2]"),
     ):
         raised = False
         try:
@@ -318,9 +338,13 @@ def test_scan_object_truncation_table() -> None:
     for label, text in (
         ("nothing after {", "{"),
         ("nothing after a key", '{"a"'),
-        ("nothing after the colon", '{"a":'),
+        # Same reasoning as _scan_array above: a next character that is
+        # itself a quote (not merely absent) would let a "pass" in place of
+        # this exact raise fall through into parsing a second, well-formed
+        # member instead of hitting any other check.
+        ("next char exists but is not ':'", '{"a" "b":1}'),
         ("nothing after a value", '{"a":1'),
-        ("neither comma nor } after a value", '{"a":1]'),
+        ("neither comma nor } after a value", '{"a":1 "b":2}'),
         ("a key with an invalid escape", '{"\\q":1}'),
     ):
         raised = False
@@ -329,6 +353,16 @@ def test_scan_object_truncation_table() -> None:
         except ji._Unterminated:
             raised = True
         check(CID, f"_scan_object({label!r}): _Unterminated", raised)
+
+
+def test_scan_object_empty_root_is_not_malformed() -> None:
+    # The "if pos < length and text[pos] == '}': return" early return for a
+    # genuinely empty object matters observably: without it, the next check
+    # ("if pos >= length or text[pos] != '\"': raise") would wrongly refuse
+    # a syntactically valid empty object as _Unterminated.
+    members, end = ji._scan_object("{}", 0)
+    check(CID, "an empty object scans as zero members, not _Unterminated", members == [])
+    check(CID, "...consumed through the closing brace", end == 2)
 
 
 def test_container_key_match_is_exact_not_normalized() -> None:
@@ -531,6 +565,62 @@ def test_deadline_is_checked_between_records_not_only_at_drain() -> None:
         (outcome.report.state, outcome.report.failure_code) == ("failed", "parse_timeout"),
     )
     check(CID, "...after accepting only the first record", outcome.report.records_accepted == 1)
+
+
+def test_missing_json_block_is_mapping_invalid() -> None:
+    mapping = ic.parse_mapping(
+        json.dumps(
+            {
+                "shape": "messages",
+                "messages_pointer": "/messages",
+                "role_key": "role",
+                "content_key": "content",
+                "role_map": {"user": "user"},
+                "on_unmapped_message_keys": "ignore",
+                # no "json" block at all -- optional per import_common's own
+                # _COMMON_KEYS, but this importer cannot locate any records
+                # without it.
+            }
+        )
+    )
+    raised = None
+    try:
+        ji.json_events(
+            make_reader(jdump(VALID_A)),
+            mapping,
+            verified_content_type="application/json",
+            dataset_sha256="0" * 64,
+        )
+    except ic.MappingInvalidError as exc:
+        raised = exc
+    check(
+        CID,
+        "a mapping with no json block at all is MappingInvalidError missing_key, not a "
+        "bare TypeError reaching the caller",
+        raised is not None and raised.reason == "missing_key",
+    )
+
+
+def test_container_key_case_mismatch_against_the_document_is_refused() -> None:
+    # The mirror of test_container_key_match_is_exact_not_normalized: there,
+    # the *document's* key was differently cased. Here the *mapping's own*
+    # declared container key is differently cased than a document key that
+    # would otherwise match -- also refused, exact match on both sides.
+    mapping = build_mapping(container="/Rows")
+    doc = {"rows": [VALID_A]}
+    outcome = ji.run_json_import(
+        make_reader(jdump(doc)),
+        mapping,
+        verified_content_type="application/json",
+        dataset_purpose="t",
+        expected_sha256=hashlib.sha256(jdump(doc)).hexdigest(),
+    )
+    check(
+        CID,
+        "mapping container '/Rows' never matches a document's lowercase 'rows' key -- "
+        "exact match on the mapping's own declared key too, not just the document's",
+        (outcome.report.state, outcome.report.failure_code) == ("failed", "mapping_column_missing"),
+    )
 
 
 def test_non_key_slot_is_mapping_invalid() -> None:
