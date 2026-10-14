@@ -7480,7 +7480,7 @@ FTF-0503:
   certification_state: PROVISIONAL
   criticality: MUST
   description: JSON importer
-  evidence_hash: b6d15299d9fff424dea9cf325299bb351b5b87ca
+  evidence_hash: ce4e7ed2
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
@@ -7655,6 +7655,13 @@ FTF-0503:
     contribution, completing the submission rather than duplicating the implementation. Not
     self-certified (Law 4) -- both sessions' work awaits the same independent Control-plane L2
     review.
+
+    Round 4 (2026-10-14, QUEUE.md 0b): a malformed or non-str dataset_sha256 is a typed
+    failed/source_changed before any read (json_events and preview); valid bytes before an invalid
+    UTF-8 byte are fed first, so accepted records do not depend on chunking; first/last hash
+    character and str-subclass content-type pins. Uncapped mutation run 20/20 killed (the earlier
+    note that CI ran the uncapped set was wrong: it was capped). See
+    docs/certifications/submissions/2026-10-14T2330Z-FTF-0503-r4.md. Not self-certified (Law 4).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0503.py
