@@ -87,6 +87,7 @@ __all__ = [
     "mapping_from_object",
     "normalize_mapped_record",
     "parse_mapping",
+    "parse_pointer",
     "preview",
     "resolve_pointer",
     "run_import",
@@ -148,6 +149,7 @@ FAILURE_CODES: Final = frozenset(
         "external_link_present",
         "field_too_large",
         "invalid_encoding",
+        "json_malformed",
         "limit_exceeded",
         "mapping_column_missing",
         "parse_timeout",
@@ -552,7 +554,13 @@ def _slot(value: object) -> Slot:
     raise _bad("bad_slot")
 
 
-def _parse_pointer(value: object) -> tuple[str, ...]:
+def parse_pointer(value: object) -> tuple[str, ...]:
+    """Parses a JSON-Pointer-shaped MappingSpec string (`""` or `/a/b/0`) into
+    its unescaped tokens. Raises `MappingInvalidError` (`bad_pointer`,
+    `wrong_type`). Exported so a format importer that reads its own pointer
+    field straight from `mapping.document` (the way `csv_importer` reads its
+    own `csv` block) can resolve it without a second, independently
+    reimplemented parser (FTF-0503's `json` block `container` field)."""
     if type(value) is not str:
         raise _bad("wrong_type")
     if value == "":
@@ -636,7 +644,7 @@ def _validate_formats(obj: dict[str, object]) -> None:
         _count(xlsx_block["header_row"], 1_000_000)
     if "json" in obj:
         json_block = _obj(obj["json"], ("container", "ignored_top_level_keys"), ())
-        _parse_pointer(json_block["container"])
+        parse_pointer(json_block["container"])
         ignored = json_block["ignored_top_level_keys"]
         if type(ignored) is not list or len(ignored) > MAX_ROLE_MAP_ENTRIES:
             raise _bad("wrong_type")
@@ -687,7 +695,7 @@ def mapping_from_object(obj: object) -> ImportMapping:
             raise _bad("bad_value")
         on_unmapped = policy
         if spec.pointer_based:
-            pointer = _parse_pointer(body["messages_pointer"])
+            pointer = parse_pointer(body["messages_pointer"])
         else:
             messages_slot = _slot(body["messages"])
     else:
