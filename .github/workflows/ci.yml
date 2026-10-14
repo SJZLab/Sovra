@@ -504,6 +504,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0903.py
       - name: FTF-0904 negative-test proof (log redaction -- secret headers/URLs/tokens/exception chains redacted at ingress and sink, redactor failure logs a constant marker only, fault-injected copies of the module, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0904.py
+      - name: FTF-0904-W1 live log redaction (real uvicorn factory + default log config over a socket -- secret query params never printed, access lines kept redacted, sinks installed, fault-injected copies of apps/api/app, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0904_w1.py
       - name: FTF-0905 negative-test proof (canary-secret generator -- unique prefixed markers, no real-secret collision, full-coverage leak ledger, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0905.py
       - name: FTF-H010-P1 negative-test proof (model import fields + import-validation jobs -- migration SQL + RLS/GRANT shape + fault injection, store on SQLite, route seams, mounted app, no DB required)
