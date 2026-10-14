@@ -120,6 +120,7 @@ CSV_ENCODINGS: Final = ("utf-8", "utf-8-sig", "utf-16-le", "utf-16-be", "windows
 CSV_DELIMITERS: Final = (",", ";", "\t", "|")
 CSV_CONTENT_TYPES: Final = frozenset({"text/csv"})
 CSV_MAX_COLUMNS: Final = 16_384
+_SHA256_PATTERN: Final = re.compile(r"[0-9a-f]{64}")
 CSV_FATAL_CODES: Final = frozenset(
     {
         "csv_structure_invalid",
@@ -422,6 +423,14 @@ class CsvEventStream(Iterator[ImportEvent]):
                 self._check_bom(text, first)
                 first = False
                 yield text
+        if self._options.encoding == "utf-8-sig" and first and 0 < self._reader.bytes_read < 3:
+            # utf-8-sig's own incremental decoder buffers a strict prefix of the 3-byte BOM
+            # (`\xef` or `\xef\xbb`) and silently decodes it to "" at end-of-stream instead of
+            # raising: `first` still true plus fewer than 3 bytes read means every byte so far
+            # decoded to nothing, which utf-8-sig only ever does for a truncated BOM (a plain
+            # byte decodes immediately to itself). Never let a corrupt, cut-off source look like
+            # a trivially empty, valid CSV.
+            raise _BadBytes
         try:
             # Every codec in CSV_ENCODINGS returns "" here or raises (fuzzed over all five), so
             # this only detects a sequence cut off at the end of the source.
@@ -482,10 +491,15 @@ class CsvEventStream(Iterator[ImportEvent]):
             or self._verified_content_type not in CSV_CONTENT_TYPES
         ):
             raise ImportAborted("failed", "content_type_not_supported_by_importer")
-        if not hmac.compare_digest(
-            # the hash the source was declared with, known before a byte is read
-            self._reader._expected_sha256,
-            self._dataset_sha256,
+        expected = self._dataset_sha256
+        if (
+            type(expected) is not str
+            or not _SHA256_PATTERN.fullmatch(expected)
+            or not hmac.compare_digest(
+                # the hash the source was declared with, known before a byte is read
+                self._reader._expected_sha256,
+                expected,
+            )
         ):
             raise ImportAborted("failed", "source_changed")
         options = self._options

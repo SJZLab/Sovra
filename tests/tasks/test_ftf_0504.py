@@ -343,6 +343,47 @@ def test_bom_handling() -> None:
     )
 
 
+def test_truncated_bom_is_invalid_encoding_not_a_silent_empty_import() -> None:
+    # utf-8-sig's own incremental decoder buffers a strict prefix of the 3-byte BOM
+    # (`\xef` or `\xef\xbb`) and decodes it to "" at end-of-stream without raising. A
+    # source cut off mid-BOM must never look like a trivially empty, valid CSV.
+    for prefix in (b"\xef", b"\xef\xbb"):
+        _events, outcome = collect(prefix, encoding="utf-8-sig")
+        check(
+            CID,
+            f"{len(prefix)}-byte truncated BOM (has_header=True) is invalid_encoding",
+            outcome.report.failure_code == "invalid_encoding"
+            and outcome.report.fatal_locator == "line:1",
+        )
+        _events, outcome = collect(
+            prefix,
+            encoding="utf-8-sig",
+            has_header=False,
+            prompt={"index": 0},
+            completion={"index": 1},
+        )
+        check(
+            CID,
+            f"{len(prefix)}-byte truncated BOM (has_header=False) is invalid_encoding, "
+            "not a silent empty completion",
+            outcome.report.failure_code == "invalid_encoding"
+            and outcome.report.fatal_locator == "line:1",
+        )
+    # a complete, 3-byte BOM with nothing after it is a legitimate empty source
+    _events, outcome = collect(
+        b"\xef\xbb\xbf",
+        encoding="utf-8-sig",
+        has_header=False,
+        prompt={"index": 0},
+        completion={"index": 1},
+    )
+    check(
+        CID,
+        "a full 3-byte BOM with no content after it completes as an empty source",
+        outcome.report.state == "completed" and outcome.report.records_seen == 0,
+    )
+
+
 def test_delimiter_quote_line_ending_table() -> None:
     values = [
         "plain",
@@ -1936,6 +1977,19 @@ def test_the_locator_lives_in_the_report_and_its_digest() -> None:
         except ValueError:
             continue
         check(CID, f"the locator {junk!r} is refused even when the digest covers it", False)
+
+    class _StrSubclass(str):
+        pass
+
+    # the pattern check (`_LOCATOR_PATTERN.fullmatch`) matches a str subclass exactly like
+    # a plain str, so only the exact `type(...) is not str` check stops one — a value a
+    # subclass instance shares with a real, valid locator, not a different string.
+    try:
+        sealed(report, _StrSubclass("line:7"))
+    except ValueError:
+        pass
+    else:
+        check(CID, "a str-subclass fatal_locator is refused even with a valid-looking value", False)
     _e, good = collect(csv_bytes([["q", "a"], ["x", "y"]]))
     check(
         CID,
@@ -2031,6 +2085,76 @@ def test_an_expected_hash_other_than_the_readers_fails_before_a_record() -> None
     )
 
 
+def test_sha_mismatch_detected_at_a_single_hex_character() -> None:
+    # `other` in the test above differs from the real hash almost everywhere; a
+    # comparison that only checked a prefix or a suffix of the 64 hex characters would
+    # still, by chance, catch a difference that large. Flipping exactly one character —
+    # the first, or the last — is the one case a prefix- or suffix-only comparison misses.
+    data = csv_bytes([["q", "a"], ["x", "y"]])
+    correct = hashlib.sha256(data).hexdigest()
+
+    def flip(hexdigest: str, position: int) -> str:
+        chars = list(hexdigest)
+        chars[position] = "0" if chars[position] != "0" else "1"
+        return "".join(chars)
+
+    for position, label in ((0, "first"), (-1, "last")):
+        flipped = flip(correct, position)
+        outcome = ci.run_csv_import(
+            make_reader(data),
+            build_mapping(),
+            verified_content_type="text/csv",
+            dataset_purpose="training",
+            expected_sha256=flipped,
+        )
+        check(
+            CID,
+            f"a hash differing only in its {label} hex character is failed/source_changed",
+            outcome.report.state == "failed" and outcome.report.failure_code == "source_changed",
+        )
+
+
+def test_malformed_dataset_sha256_is_a_typed_refusal_not_a_crash() -> None:
+    # `hmac.compare_digest` itself raises a raw TypeError on a non-str, or on a str with
+    # non-ASCII characters. `ic.preview()` always hands its own internal accumulator a
+    # valid, hardcoded dummy `expected_sha256` ("0" * 64) regardless of what a caller's
+    # `dataset_sha256` was — so on the preview path this TypeError, unguarded, would
+    # crash `CsvEventStream._generate()` instead of ending a typed `failed` report; it
+    # never reaches `run_csv_import`'s own, separate, eager `ImportAccumulator` check.
+    data = csv_bytes([["q", "a"], ["x", "y"]])
+    for bad in (None, "é" * 64):
+        stream = ci.csv_events(
+            make_reader(data),
+            build_mapping(),
+            verified_content_type="text/csv",
+            dataset_sha256=bad,  # type: ignore[arg-type]
+        )
+        result = ic.preview(stream, 3)
+        check(
+            CID,
+            f"preview with dataset_sha256={bad!r} is a typed refusal, nothing read",
+            not result.accepted and not result.complete,
+        )
+        # draining the stream directly (no preview, no run_csv_import) must raise the
+        # typed ImportAborted its own docstring promises, never a raw TypeError.
+        stream = ci.csv_events(
+            make_reader(data),
+            build_mapping(),
+            verified_content_type="text/csv",
+            dataset_sha256=bad,  # type: ignore[arg-type]
+        )
+        try:
+            list(stream)
+        except ic.ImportAborted as exc:
+            check(
+                CID,
+                f"draining the stream with dataset_sha256={bad!r} raises source_changed",
+                exc.state == "failed" and exc.failure_code == "source_changed",
+            )
+        else:
+            check(CID, f"draining the stream with dataset_sha256={bad!r} aborts", False)
+
+
 def test_the_report_carries_the_purpose_it_was_given() -> None:
     data = csv_bytes([["q", "a"], ["x", "y"]])
     for purpose in ("training", "held_out_evaluation", "validation"):
@@ -2083,6 +2207,17 @@ def test_size_boundaries_at_the_production_constants() -> None:
     check(
         CID,
         "past the record cap is fatal field_too_large",
+        outcome.report.failure_code == "field_too_large",
+    )
+    # the row above goes over by making one field itself bigger than the field cap, so it
+    # also trips the per-field check — it does not prove the record-level accumulation is
+    # enforced on its own. Two fields exactly AT the field cap, plus a third, empty field
+    # (no field individually over cap), is one byte over the record cap by accumulation only.
+    line = b"q,a,n\n" + b"x" * cap + b"," + b"y" * cap + b",\n"
+    _e, outcome = collect(line)
+    check(
+        CID,
+        "two cap-size fields plus a trailing empty field is fatal by record accumulation alone",
         outcome.report.failure_code == "field_too_large",
     )
 
