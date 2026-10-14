@@ -7527,6 +7527,72 @@ FTF-0503:
     BOM/encoding, the content-type gate, Law 17 states, the deterministic record_id, the META-LEAK
     fix) is fixed and independently fault-proven this round, now at a 98.7% uncapped mutation score
     with the one remaining survivor disclosed above. Not self-certified (Law 4).
+
+    Round 3 (2026-10-14, return docs/certifications/queue.md 2026-10-13T23:59Z "FTF-0503 RETURN ->
+    round 3"; full findings in docs/certifications/submissions/2026-10-14T1420Z-FTF-0503-r3.md):
+    replaces round 2's string/bracket scanner with a true byte-level grammar state machine, closing
+    all four reproduced findings.
+
+    (1) WHOLE-DOCUMENT-BUFFERED: round 2 held the whole document as one text buffer (measured 3.2 /
+    25 / 200 MiB peak for a 1 / 8 / 64 MiB document). The scanner is now a byte-level state machine
+    fed chunk by chunk: for every open `{`/`[` it tracks what that container expects next (a key, a
+    colon, a value, a comma or its closer) and the position in the grammar, so a result is
+    independent of where the chunks are cut; only the bytes of the *current* value are kept (up to
+    `max_record_bytes`), never the whole document. test_memory_ratio_between_sizes_is_within_one_and_
+    a_half pins the sibling-importer 1.5x contract directly; test_memory_is_linear_not_quadratic
+    keeps the round-2 record-count check too.
+
+    (2) EXPECTED-SHA-MISMATCH-COMPLETES: the caller's expected_sha256 is compared against the
+    reader's own declared hash before a byte is read, the same fix jsonl_importer round 3 applies.
+
+    (3) STRUCTURE-ERRORS-NOT-FATAL: round 2's own string/bracket-depth scanner let quote parity
+    shift silently -- `[G, 1"]", G]` completed and dropped the third element, with every fatal
+    locator fixed at `object:0`. The new per-container expectation state (not a bracket depth
+    counter) makes every grammar error -- a value starting with a character that cannot start a
+    JSON value, a missing or doubled comma/colon, a `]` closing a `{`, an unclosed string/bracket, a
+    trailing comma, trailing content after the document, a scalar where the container should be --
+    fatal `json_malformed` located at its own real byte offset. A value under an *ignored*
+    top-level key is still parsed strictly and bounded by max_record_bytes ("ignored" is not
+    "unchecked").
+
+    (4) OVERSIZE-ELEMENT-ENDS-IMPORT: an element over max_record_bytes is discarded as it arrives
+    (its structure still tracked so later elements are never mis-located) and becomes one
+    RowRejection record_too_large while the import continues -- no fatal tier.
+
+    Also: a UTF-8 BOM at byte 0 is accepted and skipped (round 2 refused it); a container pointer
+    deeper than one token is now MappingUnsupportedError (mapping_unsupported, already in
+    import_common.py's shared catalog -- no catalog edit this round) rather than folded into
+    json_malformed.
+
+    INTEGRATION-MISSING: closed. tests/integration/test_ftf_0503_json_import_postgres_s3.py (new) +
+    CI job json-import-integration (new, wired into ci-verdict) -- real PG16 as sovra_app + live
+    SeaweedFS through the real FTF-0501 routes, including a mid-stream S3 stop proven against a
+    control run (16 MiB completes with S3 left running) so a no-op stop cannot pass, and
+    damaged-storage cases located by byte offset.
+
+    Mutation gate (scripts/mutation_gate.py --base origin/main, diff mode): two samples, capped for
+    session time, not the full run. First (before the implementing session's own follow-up commit
+    847ac80, which fixed 11 survivors its own full run found): 50 of 320 mutants, 46 KILLED / 2
+    TIMEOUT / 2 SURVIVED / 96.0% in-sample. After rebasing onto 847ac80: 100 of 322 mutants, 92
+    KILLED / 6 TIMEOUT (both samples' timeouts are the accepted infinite-loop class) / 2 SURVIVED /
+    0 allowlisted / 98.0% in-sample -- both of this second sample's own survivors (JsonEventStream.
+    _accept_key, a duplicate-container-key raise and a key-comparison on an already exact-matched
+    ignored key) spot-checked by hand and disclosed in the submission file for Control-plane
+    classification, not yet proven equivalent or fixed. The repository's own CI mutation-gate job
+    runs the full, uncapped set against this PR's exact diff; that run, not either sample, is the
+    real gate.
+
+    Provenance: this round's own five commits (0c20d9a..847ac80) originated in a separate,
+    concurrent relay session that claimed and completed this item in parallel with another session
+    also working the Active queue's own top item -- a genuine dual-claim race, not a process
+    violation by either side (neither branch existed when the other started). That session pushed
+    working, tested code but no submission documentation and no PR. This entry, the matching
+    submission file, two real mypy errors in its own test file (a misplaced `type: ignore` on a
+    multi-line comprehension; two call sites unpacking a plain `dict[str, Any]` into named keyword
+    parameters mypy could not verify), and the mutation-gate sample above are this session's own
+    contribution, completing the submission rather than duplicating the implementation. Not
+    self-certified (Law 4) -- both sessions' work awaits the same independent Control-plane L2
+    review.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0503.py
