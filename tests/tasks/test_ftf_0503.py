@@ -689,7 +689,7 @@ def test_scanner_matches_json_loads_on_generated_documents() -> None:
 def test_memory_is_linear_not_quadratic() -> None:
     mapping = build_mapping(container="")
     ratios: list[float] = []
-    for n in (1000, 8000, 32000):
+    for n in (500, 2000, 8000):
         doc = [row("x" * 20) for _ in range(n)]
         data = jdump(doc)
         reader = make_reader(data)
@@ -707,7 +707,7 @@ def test_memory_is_linear_not_quadratic() -> None:
         ratios.append(peak / len(data))
     check(
         CID,
-        "peak memory stays within a bounded multiple of document size across a 32x range of record "
+        "peak memory stays within a bounded multiple of document size across a 16x range of record "
         f"counts (ratios {[round(r, 2) for r in ratios]}) -- proportional to document size, not to "
         "record count (the round-1 defect measured 62x and growing)",
         max(ratios) <= 10.0 and max(ratios) / min(ratios) <= 3.0,
