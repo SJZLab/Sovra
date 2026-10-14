@@ -131,6 +131,11 @@ _LBRACE: Final = 0x7B
 _RBRACE: Final = 0x7D
 _NOT_A_VALUE_START: Final = frozenset({_COMMA, _COLON, _RBRACKET, _RBRACE})
 
+_ARRAY_SPELLING, _RECORD_SPELLING = JSON_ROOT_CONTAINERS
+_MODE_ARRAY: Final = 0  # json.container "$"
+_MODE_RECORD: Final = 1  # json.container "$record"
+_MODE_KEY: Final = 2  # json.container "/<key>"
+
 _NOT_WS: Final = re.compile(rb"[^ \t\n\r]")
 # A closing quote, or a backslash with the byte it escapes (absent at the end of a chunk).
 _STRING_EVENT: Final = re.compile(rb'"|\\.?', re.DOTALL)
@@ -163,16 +168,20 @@ class ScannedElement:
     offset: int
 
 
-def container_key(container: object) -> tuple[str, str]:
-    """`("$", "")`, `("$record", "")` or `("key", <decoded key>)` for a `json.container`.
-    Raises `MappingUnsupportedError` for any other spelling (a deeper pointer, an empty one)."""
+def container_key(container: object) -> tuple[int, str]:
+    """`(mode, key)` for a `json.container`: `_MODE_ARRAY` / `_MODE_RECORD` with an empty key
+    for `"$"` / `"$record"`, `_MODE_KEY` with the decoded key for `"/<key>"`. Raises
+    `MappingUnsupportedError` for any other spelling (a deeper pointer, an empty one, a
+    non-string)."""
     if type(container) is not str:
         raise MappingUnsupportedError
-    if container in JSON_ROOT_CONTAINERS:
-        return container, ""
+    if container == _ARRAY_SPELLING:
+        return _MODE_ARRAY, ""
+    if container == _RECORD_SPELLING:
+        return _MODE_RECORD, ""
     if not container.startswith("/") or "/" in container[1:]:
         raise MappingUnsupportedError
-    return "key", container[1:].replace("~1", "/").replace("~0", "~")
+    return _MODE_KEY, container[1:].replace("~1", "/").replace("~0", "~")
 
 
 class _Cursor:
@@ -268,20 +277,20 @@ class JsonContainerScanner:
         if not c.skip_whitespace():
             raise self._truncated()
         first = c.byte
-        if self._mode == "$":
+        if self._mode == _MODE_ARRAY:
             if first == _LBRACE:
                 raise JsonAborted("container_not_array", c.offset)
             if first != _LBRACKET:
                 raise self._structure(c.offset)
             c.pos += 1
             yield from self._items(1)
-        elif self._mode == "$record":
+        elif self._mode == _MODE_RECORD:
             if first == _LBRACKET:
                 raise JsonAborted("container_not_found", c.offset)
             if first != _LBRACE:
                 raise self._structure(c.offset)
             start = c.offset
-            data, _over = self._value(0, True)
+            data = self._value(0, True)
             self._ordinal += 1
             yield ScannedElement(self._ordinal, data, start)
         else:
@@ -309,7 +318,7 @@ class JsonContainerScanner:
             if c.byte in _NOT_A_VALUE_START:
                 raise self._structure(c.offset)
             start = c.offset
-            data, _over = self._value(base, True)
+            data = self._value(base, True)
             self._ordinal += 1
             yield ScannedElement(self._ordinal, data, start)
             if not c.skip_whitespace():
@@ -347,8 +356,7 @@ class JsonContainerScanner:
                 raise self._truncated()
             if key in seen:
                 raise JsonAborted("duplicate_root_key", key_offset)
-            if key is not None:
-                seen.add(key)
+            seen.add(key)
             if key == self._key_name:
                 if c.byte != _LBRACKET:
                     raise JsonAborted("container_not_array", c.offset)
@@ -359,8 +367,7 @@ class JsonContainerScanner:
                 if c.byte in _NOT_A_VALUE_START:
                     raise self._structure(c.offset)
                 start = c.offset
-                _data, over = self._value(1, False)
-                if over:
+                if self._value(1, False) is None:
                     raise JsonAborted("limit_exceeded", start)
             else:
                 raise JsonAborted("unmapped_top_level_key", key_offset)
@@ -376,13 +383,13 @@ class JsonContainerScanner:
             raise JsonAborted("container_not_found", c.offset)
         c.pos += 1
 
-    def _key(self, offset: int) -> str | None:
-        """Reads the string key at the cursor. `None` for one too long to equal any mapped
-        name; a key that is not a valid JSON string is a structure error at `offset`."""
+    def _key(self, offset: int) -> str:
+        """Reads the string key at the cursor. One too long to equal any mapped name is
+        `unmapped_top_level_key` at `offset`; one that is not a valid JSON string is a
+        structure error there."""
         c = self._c
         c.pos += 1
         raw = bytearray()
-        too_long = False
         escaped = False
         while True:
             if not c.more():
@@ -405,16 +412,12 @@ class JsonContainerScanner:
                     break
                 if found.end() - found.start() == 1:
                     escaped = True
-            if not too_long:
-                raw += buf[start : pos - 1 if closed else pos]
-                if len(raw) > _MAX_KEY_BYTES:
-                    too_long = True
-                    raw.clear()
+            raw += buf[start : pos - 1 if closed else pos]
+            if len(raw) > _MAX_KEY_BYTES:
+                raise JsonAborted("unmapped_top_level_key", offset)
             c.pos = pos
             if closed:
                 break
-        if too_long:
-            return None
         try:
             key = strict_loads(b'"' + bytes(raw) + b'"')
         except StrictJsonError:
@@ -422,11 +425,11 @@ class JsonContainerScanner:
         assert type(key) is str
         return key
 
-    def _value(self, base: int, capture: bool) -> tuple[bytes | None, bool]:
+    def _value(self, base: int, capture: bool) -> bytes | None:
         """Scans one JSON value starting at the cursor (a non-whitespace byte that is not a
-        separator or closer). Returns `(bytes, False)` when `capture` is set and the value fits
-        `max_record_bytes`, else `(None, over)` with `over` set when it is longer. `base` is
-        the number of containers already open around it."""
+        separator or closer). Returns its bytes (empty when `capture` is not set), or `None`
+        when it is longer than `max_record_bytes`. `base` is the number of containers already
+        open around it."""
         c = self._c
         cap = self._cap
         limit = self._max_depth
@@ -514,9 +517,7 @@ class JsonContainerScanner:
             c.pos = pos
             if ended:
                 break
-        if capture and not over:
-            return bytes(kept), False
-        return None, over
+        return None if over else bytes(kept)
 
 
 # ---------------------------------------------------------------------------
@@ -555,7 +556,7 @@ def _check_mapping(mapping: ImportMapping) -> tuple[str, frozenset[str]]:
         mapping.group_key,
         *(slot for _name, slot in mapping.metadata_slots),
     ]
-    if any(slot is not None and slot.kind != "key" for slot in slots):
+    if {slot.kind for slot in slots if slot is not None} - {"key"}:
         raise MappingInvalidError("bad_slot")
     container = block["container"]
     container_key(container)

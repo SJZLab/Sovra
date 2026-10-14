@@ -460,6 +460,41 @@ def test_container_shape_table() -> None:
             ("failed", "json_structure_invalid", "offset:5"),
         ),
         (
+            "$record over a number",
+            b"42",
+            "$record",
+            (),
+            ("failed", "json_structure_invalid", "offset:0"),
+        ),
+        (
+            "$record over a string",
+            b'"rows"',
+            "$record",
+            (),
+            ("failed", "json_structure_invalid", "offset:0"),
+        ),
+        (
+            "$record over null",
+            b" null",
+            "$record",
+            (),
+            ("failed", "json_structure_invalid", "offset:1"),
+        ),
+        (
+            "$record over trailing data",
+            b'{"q":"a","a":"b"} 1',
+            "$record",
+            (),
+            ("failed", "json_structure_invalid", "offset:18"),
+        ),
+        (
+            "/rows over null",
+            b"null",
+            "/rows",
+            ("_meta",),
+            ("failed", "json_structure_invalid", "offset:0"),
+        ),
+        (
             "an escaped container key",
             b'{"r\\u006fws":[' + r1 + b"]}",
             "/rows",
@@ -1768,6 +1803,434 @@ def test_report_every_emitted_code_is_in_a_catalog() -> None:
         new <= ic.FAILURE_CODES and not (new & ic.REJECTION_CODES),
     )
     check(CID, "and each is emitted by this importer", new <= emitted_fatal)
+
+
+def test_container_key_spellings() -> None:
+    def unsupported(value: object) -> bool:
+        try:
+            jm.container_key(value)
+        except ic.MappingUnsupportedError:
+            return True
+        return False
+
+    modes = {jm.container_key(c)[0] for c in ("$", "$record", "/rows")}
+    check(CID, "the three spellings are three modes", len(modes) == 3)
+    check(
+        CID,
+        "$ and $record carry no key",
+        jm.container_key("$")[1] == jm.container_key("$record")[1] == "",
+    )
+    check(CID, "/a~1b decodes to a/b", jm.container_key("/a~1b")[1] == "a/b")
+    check(CID, "/a~0b decodes to a~b", jm.container_key("/a~0b")[1] == "a~b")
+    check(CID, "/~01 decodes to ~1", jm.container_key("/~01")[1] == "~1")
+    for value in (
+        5,
+        None,
+        b"$",
+        ["$"],
+        support.StrSub("$"),
+        support.StrSub("/rows"),
+        " $",
+        "$ ",
+        "$RECORD",
+        "$Record",
+        "$records",
+        "",
+        "rows",
+        "/a/b",
+        "/",
+    ):
+        if value == "/":
+            check(CID, "/ alone is the empty key, a valid spelling", not unsupported(value))
+            continue
+        check(CID, f"{value!r} is mapping_unsupported", unsupported(value))
+
+
+def test_encoding_is_decided_from_the_first_four_bytes() -> None:
+    for first, label in (
+        (b"\xff\xfe\x00\x00", "UTF-32 LE BOM"),
+        (b"\x00\x00\xfe\xff", "UTF-32 BE BOM"),
+    ):
+        source = support.ExplodingSource([first], ConnectionResetError("later"), at=1)
+        reader = ic.ChunkReader(source, expected_size=64, expected_sha256="0" * 64)
+        outcome = jm.run_json_import(
+            reader,
+            build_mapping(),
+            verified_content_type=JSON,
+            dataset_purpose="training",
+            expected_sha256="0" * 64,
+        )
+        check(
+            CID,
+            f"{label}: unsupported_encoding is decided before another byte is requested "
+            f"({fatal(outcome)})",
+            fatal(outcome) == ("failed", "unsupported_encoding", "offset:0"),
+        )
+
+
+def test_ignored_keys_are_compared_exactly() -> None:
+    for names, doc_keys in ((("a", " A "), (b"a", b" A ")), (("a", "A"), (b"a", b"A"))):
+        data = b"{" + b",".join(b'"' + k + b'":1' for k in doc_keys) + b',"rows":[]}'
+        outcome = run(data, ignored=names)
+        check(
+            CID,
+            f"keys {names} that differ only by case / padding are two keys, not a duplicate "
+            f"({fatal(outcome)})",
+            outcome.report.state == "completed",
+        )
+
+
+def test_container_keys_with_escapes_across_chunk_boundaries() -> None:
+    one = dump(rec("k", "v"))
+    cases = [
+        ("an escaped quote", b'{"a\\"b":[' + one + b"]}", "/" + 'a"b', ()),
+        ("an escaped backslash at the end", b'{"a\\\\":[' + one + b"]}", "/a\\", ()),
+        (
+            "an escaped backslash at the end of an ignored key",
+            b'{"x\\\\":1,"rows":[' + one + b"]}",
+            "/rows",
+            ("x\\",),
+        ),
+        ("a unicode escape", b'{"\\u00e9":[' + one + b"]}", "/\u00e9", ()),
+    ]
+    for label, data, container, ignored in cases:
+        for chunk in (None, 1, 2, 3, 5):
+            got, outcome = collect(data, container=container, ignored=ignored, chunk=chunk)
+            check(
+                CID,
+                f"{label} / chunk {chunk} ({fatal(outcome)})",
+                outcome.report.state == "completed" and len(got) == 1,
+            )
+
+
+def test_container_key_length_boundary() -> None:
+    name = "\U0001f600" * 256
+    raw = json.dumps(name).encode()
+    check(
+        CID, "fixture: a 256-character name written fully escaped is 3,072 bytes", len(raw) == 3074
+    )
+    data = b"{" + raw + b':1,"rows":[]}'
+    for chunk in (None, 7, 1000):
+        outcome = run(data, ignored=(name,), chunk=chunk)
+        check(
+            CID,
+            f"a key of 3,072 escaped bytes is still a mappable name / chunk {chunk} "
+            f"({fatal(outcome)})",
+            outcome.report.state == "completed",
+        )
+    for chunk in (None, 7, 1000):
+        too_long = b'{"' + b"a" * 3073 + b'":1,"rows":[]}'
+        outcome = run(too_long, ignored=(name,), chunk=chunk)
+        check(
+            CID,
+            f"a key over 3,072 bytes is unmapped_top_level_key at its quote / chunk {chunk} "
+            f"({fatal(outcome)})",
+            fatal(outcome) == ("failed", "unmapped_top_level_key", "offset:1"),
+        )
+    huge = b'{"' + b"a" * (8 * 1024 * 1024) + b'":1}'
+    reader = make_reader(huge, 65536)
+    mapping = build_mapping()
+    digest = hashlib.sha256(huge).hexdigest()
+    tracemalloc.start()
+    outcome = jm.run_json_import(
+        reader,
+        mapping,
+        verified_content_type=JSON,
+        dataset_purpose="training",
+        expected_sha256=digest,
+    )
+    _current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    check(
+        CID,
+        f"an 8 MiB key ends the import at once without being held (peak {peak})",
+        outcome.report.failure_code == "unmapped_top_level_key" and peak < 2 * 1024 * 1024,
+    )
+    bad_escape = b'{"\\x":1,"rows":[]}'
+    check(
+        CID,
+        "a key that is not a valid JSON string is a structure error at its quote",
+        fatal(run(bad_escape)) == ("failed", "json_structure_invalid", "offset:1"),
+    )
+    lone = b'{"\\ud800":1,"rows":[]}'
+    check(
+        CID,
+        "a key with a lone surrogate is a structure error at its quote",
+        fatal(run(lone)) == ("failed", "json_structure_invalid", "offset:1"),
+    )
+    check(
+        CID,
+        "a key holding a raw control character is a structure error at its quote",
+        fatal(run(b'{"a\x01":1,"rows":[]}')) == ("failed", "json_structure_invalid", "offset:1"),
+    )
+
+
+def test_depth_counts_the_first_byte_of_every_value() -> None:
+    rows = b'{"q":"a","a":"b"}'
+    nested_x = b'{"q":"a","a":"b","x":[]}'
+    cases = [
+        (
+            "$ elements at max_depth 1",
+            b"[" + rows + b"]",
+            "$",
+            (),
+            1,
+            ("failed", "limit_exceeded", "offset:1"),
+        ),
+        ("$ elements at max_depth 2", b"[" + rows + b"]", "$", (), 2, ("completed", None, None)),
+        (
+            "$ nested value at max_depth 2",
+            b"[" + nested_x + b"]",
+            "$",
+            (),
+            2,
+            ("failed", "limit_exceeded", "offset:" + str(1 + nested_x.index(b"[]"))),
+        ),
+        (
+            "$ nested value at max_depth 3",
+            b"[" + nested_x + b"]",
+            "$",
+            (),
+            3,
+            ("completed", None, None),
+        ),
+        (
+            "/rows elements at max_depth 2",
+            b'{"rows":[' + rows + b"]}",
+            "/rows",
+            (),
+            2,
+            ("failed", "limit_exceeded", "offset:9"),
+        ),
+        (
+            "/rows elements at max_depth 3",
+            b'{"rows":[' + rows + b"]}",
+            "/rows",
+            (),
+            3,
+            ("completed", None, None),
+        ),
+        (
+            "an ignored array at max_depth 1",
+            b'{"_meta":[],"rows":[]}',
+            "/rows",
+            ("_meta",),
+            1,
+            ("failed", "limit_exceeded", "offset:9"),
+        ),
+        (
+            "an ignored array at max_depth 2",
+            b'{"_meta":[],"rows":[]}',
+            "/rows",
+            ("_meta",),
+            2,
+            ("completed", None, None),
+        ),
+        (
+            "an ignored object at max_depth 2",
+            b'{"_meta":{"a":1},"rows":[]}',
+            "/rows",
+            ("_meta",),
+            2,
+            ("completed", None, None),
+        ),
+        (
+            "an ignored scalar at max_depth 1",
+            b'{"_meta":1,"rows":[]}',
+            "/rows",
+            ("_meta",),
+            1,
+            ("completed", None, None),
+        ),
+        (
+            "an ignored string at max_depth 1",
+            b'{"_meta":"[[","rows":[]}',
+            "/rows",
+            ("_meta",),
+            1,
+            ("completed", None, None),
+        ),
+        ("$record at max_depth 1", rows, "$record", (), 1, ("completed", None, None)),
+        (
+            "$record nested at max_depth 1",
+            nested_x,
+            "$record",
+            (),
+            1,
+            ("failed", "limit_exceeded", "offset:" + str(nested_x.index(b"[]"))),
+        ),
+        ("$record nested at max_depth 2", nested_x, "$record", (), 2, ("completed", None, None)),
+    ]
+    for label, data, container, ignored, depth, expected in cases:
+        for chunk in (None, 1):
+            outcome = run(
+                data,
+                container=container,
+                ignored=ignored,
+                chunk=chunk,
+                limits=ic.ImportLimits(max_depth=depth),
+            )
+            check(
+                CID,
+                f"{label} / chunk {chunk}: {expected} (got {fatal(outcome)})",
+                fatal(outcome) == expected,
+            )
+
+
+def test_size_canonical_boundary() -> None:
+    limit = ic.MAX_CANONICAL_RECORD_BYTES
+
+    def canonical(count: int) -> tuple[int, int]:
+        element = dump(rec("q" * count, "a"))
+        got, outcome = collect(b'{"rows":[' + element + b"]}")
+        if not got:
+            return limit + 1, len(element)
+        return len(json.dumps(got[0]["content"], sort_keys=True, separators=(",", ":"))), len(
+            element
+        )
+
+    low = 1000
+    base, _ = canonical(low)
+    count = low + (limit - base)
+    size, written = canonical(count)
+    check(CID, f"fixture reaches the canonical limit exactly ({size} vs {limit})", size == limit)
+    check(CID, "and the written element is under max_record_bytes", written < limit)
+    got, outcome = collect(b'{"rows":[' + dump(rec("q" * count, "a")) + b"]}")
+    check(CID, "a canonical size of exactly MAX_CANONICAL_RECORD_BYTES is accepted", len(got) == 1)
+    got, outcome = collect(b'{"rows":[' + dump(rec("q" * (count + 1), "a")) + b"]}")
+    check(
+        CID,
+        "one byte more is record_too_large",
+        codes(outcome) == [("record:1", "record_too_large")] and not got,
+    )
+
+
+def test_basic_tool_calls_reach_the_normalizer() -> None:
+    tools_mapping = MESSAGES.replace(
+        '"on_unmapped_message_keys":"ignore"',
+        '"on_unmapped_message_keys":"ignore","tool_calls_key":"tool_calls",'
+        '"tool_call_id_key":"tool_call_id","name_key":"name"',
+    )
+    schemas: dict[str, dict[str, object]] = {"lookup": {"type": "object"}}
+    validated: list[object] = []
+
+    def validator(schema: dict[str, object], instance: object, *, field_name: str = "x") -> None:
+        validated.append(instance)
+        if instance != {"id": "7"}:
+            raise ValueError("bad arguments")
+
+    def tool_record(arguments: dict[str, object]) -> dict[str, object]:
+        return {
+            "messages": [
+                {"role": "user", "content": "find 7"},
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{"id": "c1", "name": "lookup", "arguments": arguments}],
+                },
+                {"role": "tool", "content": "found", "tool_call_id": "c1", "name": "lookup"},
+                {"role": "assistant", "content": "done"},
+            ]
+        }
+
+    plain = {
+        "messages": [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "yo"}]
+    }
+    data = rows_doc([plain, tool_record({"id": "7"}), tool_record({"id": 7})])
+    digest = hashlib.sha256(data).hexdigest()
+
+    def go(**kwargs: Any) -> tuple[list[dict[str, object]], jm.JsonImportOutcome]:
+        got: list[dict[str, object]] = []
+        outcome = jm.run_json_import(
+            make_reader(data),
+            ic.parse_mapping(mapping_text("/rows", ("_meta",), tools_mapping)),
+            verified_content_type=JSON,
+            dataset_purpose="training",
+            expected_sha256=digest,
+            on_accepted=lambda candidate: got.append(dict(candidate)),
+            **kwargs,
+        )
+        return got, outcome
+
+    got, outcome = go(tool_schemas=schemas, tool_argument_validator=validator)
+    check(
+        CID,
+        "a validated tool call is valid, a plain record not_applicable",
+        [c["tool_schema_status"] for c in got] == ["not_applicable", "valid"],
+    )
+    check(
+        CID,
+        "arguments the validator refuses are canonical_schema_invalid",
+        codes(outcome) == [("record:3", "canonical_schema_invalid")],
+    )
+    check(CID, "the validator saw both tool calls", validated == [{"id": "7"}, {"id": 7}])
+    check(CID, "tool-call candidates pass FTF-0508", validate_record_batch(got).issues == ())
+    got, outcome = go(tool_schemas=schemas)
+    check(
+        CID,
+        "no validator: a tool call is refused, never accepted on trust",
+        [c for _, c in codes(outcome)] == ["canonical_schema_invalid"] * 2 and len(got) == 1,
+    )
+    got, outcome = go(tool_argument_validator=validator)
+    check(
+        CID,
+        "no schemas: an unmapped tool is refused",
+        [c for _, c in codes(outcome)] == ["canonical_schema_invalid"] * 2 and len(got) == 1,
+    )
+
+
+def test_report_deadline_is_checked_between_events() -> None:
+    data = rows_doc([rec(f"r{i}", "x") for i in range(6)])
+    clock = support.FakeClock()
+    reader = ic.ChunkReader(
+        [data],  # one chunk: only the per-event check can notice the deadline
+        expected_size=len(data),
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+        clock=clock,
+    )
+    seen: list[object] = []
+
+    def advance(candidate: object) -> None:
+        seen.append(candidate)
+        clock.advance(10_000)
+
+    outcome = jm.run_json_import(
+        reader,
+        build_mapping(),
+        verified_content_type=JSON,
+        dataset_purpose="training",
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+        on_accepted=advance,
+    )
+    check(
+        CID,
+        f"a passed deadline is failed/parse_timeout after the first record ({fatal(outcome)})",
+        outcome.report.failure_code == "parse_timeout" and len(seen) == 1,
+    )
+
+
+def test_mapping_source_type_is_exact() -> None:
+    for value in (" upload", "upload ", "UPLOAD", "Upload", "", "uploads", None, b"upload"):
+        try:
+            jm.json_events(
+                make_reader(b"[]"),
+                build_mapping(),
+                verified_content_type=JSON,
+                dataset_sha256="0" * 64,
+                source_type=value,  # type: ignore[arg-type]
+            )
+            raised = False
+        except ValueError:
+            raised = True
+        check(CID, f"source_type {value!r} is refused", raised)
+    stream = jm.json_events(
+        make_reader(b"[]"),
+        build_mapping(),
+        verified_content_type=JSON,
+        dataset_sha256="0" * 64,
+        source_type="upload",
+    )
+    check(CID, "source_type 'upload' is accepted", stream.container == "/rows")
 
 
 def test_wiring_ci_runs_this_test_and_the_integration_job() -> None:

@@ -7421,8 +7421,7 @@ FTF-0502:
     + SeaweedFS evidence through the FTF-0501 routes in job jsonl-import-integration
     (tests/integration/test_ftf_0502_jsonl_import_postgres_s3.py). Disclosed: locator is
     line:<physical line>; source_schema_sha256 stays None (no header); the round-1 row types
-    ImportedRecord / QuarantinedRow remain in the module only because
-    workers/data/json_importer.py (FTF-0503, rebuilt in its own item) still imports them;
+    ImportedRecord / QuarantinedRow were removed when FTF-0503 was rebuilt on FTF-0502-P1;
     no live route calls the importer yet, so proving_symbol stays blank. Not self-certified
     (Law 4). See docs/certifications/submissions/2026-10-14T0500Z-FTF-0502.md.
   proof_state: L1-PROVEN
@@ -7432,70 +7431,45 @@ FTF-0503:
   certification_state: PROVISIONAL
   criticality: MUST
   description: JSON importer
-  evidence_hash: 702d3518912176d1e4e23e55a8d579ba3f8abac9
+  evidence_hash: CODE_COMMIT_PLACEHOLDER
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
-    FTF-0506 (all CERTIFIED, confirmed before relying on them). Path refined from the packet's
-    generic services/training-worker/data/json_importer.py to workers/data/json_importer.py
-    (this repo's real SOURCE_ROOT, same precedent FTF-0502/FTF-0506/FTF-0507/FTF-0508/FTF-0517
-    already established).
-
-
-    Built: import_json(content, *, source_type, tool_schemas, tool_argument_validator,
-    max_total_bytes, max_nesting_depth) is a pure, synchronous generator (no DB/network) over a
-    whole JSON document (bytes). A top-level JSON object is one single conversation (row_index=0);
-    a top-level JSON array is a container of zero or more conversations, one per element -- the
-    two shapes named literally by this task's own acceptance clause ("conversation/container
-    structures"), rather than guessing a wrapping field name nothing in this repo's contracts
-    names. Reuses FTF-0502's own ImportedRecord/QuarantinedRow dataclasses directly (reuse-first,
-    Section 77.1) rather than a second, structurally identical pair, and FTF-0506's already-
-    CERTIFIED normalize_conversation for every record.
-
-
-    "...without loading unbounded file" is met by two checks before any decode/parse: a document
-    byte-length bound (max_total_bytes, default MAX_JSON_DOCUMENT_BYTES=64MiB -- a disclosed,
-    independently configurable scope limit distinct from Section 67.3's 10GiB multipart upload
-    ceiling, since a single in-process json.loads over a document that large would never be safe
-    regardless), and a byte-level nesting-depth pre-check (_max_nesting_depth, max_nesting_depth
-    default MAX_NESTING_DEPTH=64) that refuses an over-deep document deterministically before the
-    recursive-descent parser ever sees it, rather than relying on an uncontrolled RecursionError.
-    _max_nesting_depth is escape-aware (a string literal's own bracket/brace bytes never count)
-    and operates on raw bytes/ints rather than str/str-literal comparisons, proven directly
-    (test_string_literal_brackets_do_not_count_toward_nesting_depth,
-    test_escaped_quote_inside_string_does_not_end_it_early,
-    test_backslash_detection_inside_a_string_is_exact,
-    test_boring_characters_outside_brackets_never_change_depth,
-    test_depth_resets_correctly_between_sibling_bracket_groups) and by fault injection (each of
-    three real test gaps -- the backslash-detection branch, both forms of the closing-bracket
-    branch -- shown to fail 2-4 checks each, then reverted byte-identical).
-
-
-    Negative acceptance, each with its own quarantine code and real underlying error text:
-    document_too_large (checked by byte length first), nesting_too_deep (checked before
-    json.loads), malformed_utf8, malformed_json, not_an_object (a container element that isn't a
-    JSON object), and unsupported_top_level_type (a top-level scalar, never coerced into either
-    accepted shape). "Mixed critical schemas" reuses the same disclosed FTF-0502 reading: each
-    element is judged on its own real ConversationNormalizationError text (schema_invalid).
-
-
-    Mutation gate (scripts/mutation_gate.py, diff vs origin/main, workers/data/json_importer.py):
-    61 mutants | 61 KILLED | 0 TIMEOUT | 0 SURVIVED | score 100.0%. Zero allowlist entries needed:
-    the nesting-depth scanner was deliberately written over raw byte/int comparisons rather than
-    str/str-literal comparisons specifically so the gate's M9 (normalization-bypass) operator,
-    whose peer-must-be-a-str-constant guard would otherwise flag every single-character comparison
-    against a punctuation literal as an unkillable equivalent mutant, never generates those mutants
-    at all -- and max() replaces an if/assign so M4 has no ast.Compare node left to mutate for the
-    max-depth bookkeeping. Real protection unchanged; this removed an equivalent-mutant surface
-    rather than suppressing it.
-
-
-    Disclosed, not invented: this importer forwards every parsed JSON object straight through as
-    FTF-0506's own raw_record and never extracts or guesses a record_id/group_key from any
-    particular raw field (test_record_id_and_group_id_are_never_invented_by_the_importer). No live
-    caller yet (no dataset-import pipeline route exists yet in this repository), same disclosed
-    precedent FTF-0502/FTF-0506/FTF-0507/FTF-0508 already established -- proving_symbol stays
-    blank. Not self-certified (Law 4).
+    FTF-0506 (CERTIFIED) and FTF-0502-P1 (CERTIFIED, #770). Path refined to
+    workers/data/json_importer.py. Round 2 rebuild on FTF-0502-P1 (ChunkReader, strict_loads,
+    apply_mapping, normalize_mapped_record, to_dataset_record_candidate, ImportAccumulator,
+    ImportReport): import_json / run_json_import / json_events read the mapping's json.container
+    ("$" a root array, "/<key>" one root key holding the array with every other root key listed
+    in ignored_top_level_keys, "$record" a root object that is one record; anything deeper is
+    mapping_unsupported) with JsonContainerScanner, a linear streaming byte scanner (string,
+    escape, bracket-kind and depth state, regex jumps between interesting bytes, no whole-document
+    json.loads). Each element is at most max_record_bytes and is parsed alone by strict_loads;
+    element errors are row rejections with the element ordinal (record:<n>: duplicate_key,
+    non_finite_number, number_out_of_range, invalid_unicode, invalid_utf8, invalid_json,
+    record_not_object, mapping codes), an oversize element is skipped by scanning without being
+    buffered (record_too_large) and the next element still imports. Structure is fatal with the
+    byte offset and the mapping's own container pointer, never document content
+    (JsonImportOutcome.fatal_locator / fatal_container): json_structure_invalid (trailing /
+    missing comma, bad token, mismatched or unbalanced brackets, scalar root, empty or truncated
+    document, trailing data, non-JSON whitespace, BOM past byte 0), container_not_found,
+    container_not_array, duplicate_root_key, unmapped_top_level_key, limit_exceeded (depth over
+    max_depth with the root as depth 1, or an ignored value over max_record_bytes),
+    unsupported_encoding (UTF-16/32; a UTF-8 BOM at byte 0 is accepted and counted in offsets).
+    An empty container is completed with 0 records. Only application/json is imported (else
+    failed content_type_not_supported_by_importer before a byte is read). The one serialized,
+    additive import_common.py edit this needed (per the 2026-10-13 importer ruling): four
+    FAILURE_CODES (json_structure_invalid, container_not_found, container_not_array,
+    duplicate_root_key) and the "$" / "$record" spellings of json.container, with
+    test_ftf_0502_p1's CAT and MAP-11 checks extended in the same change; no code was renamed or
+    moved. The round-1 ImportedRecord / QuarantinedRow types were removed from jsonl_importer.
+    Real PG16 + SeaweedFS evidence through the FTF-0501 routes in job json-import-integration
+    (tests/integration/test_ftf_0503_json_import_postgres_s3.py), incl. a 96 MiB document in
+    bounded memory. Disclosed: locator is record:<1-based element ordinal>; the fatal location is
+    on the outcome (like JSONL's), not an ImportReport field; ignored root values and skipped
+    oversize elements are scanned structurally (strings, bracket kinds, depth) but not
+    validated as JSON; source_schema_sha256 stays None; no live route calls the importer yet, so
+    proving_symbol stays blank. Not self-certified (Law 4). See
+    docs/certifications/submissions/SUBMISSION_PLACEHOLDER.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0503.py
