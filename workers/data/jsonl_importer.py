@@ -56,6 +56,7 @@ FTF-0503 is rebuilt on FTF-0502-P1.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Final
@@ -85,8 +86,8 @@ from workers.data.import_common import (
     to_dataset_record_candidate,
 )
 from workers.data.record_schema_validator import (
+    MAX_CANONICAL_RECORD_BYTES,
     SUPPORTED_SOURCE_TYPES,
-    validate_record_batch,
 )
 
 __all__ = [
@@ -110,6 +111,13 @@ DEFAULT_SOURCE_TYPE: Final = "upload"
 _UTF8_BOM: Final = b"\xef\xbb\xbf"
 _UTF16_BOMS: Final = (b"\xff\xfe", b"\xfe\xff")
 _HEAD_BYTES: Final = 4
+_TABULAR_BLOCKS: Final = frozenset({"csv", "xlsx", "json"})
+
+
+def _canonical_size(content: object) -> int:
+    """The size FTF-0508 measures a record's content by (`record_schema_validator`
+    pins the same formula; a test compares the two at the limit)."""
+    return len(json.dumps(content, sort_keys=True, separators=(",", ":")).encode("utf-8"))
 
 
 class JsonlAborted(ImportAborted):
@@ -130,7 +138,7 @@ class JsonlImportOutcome:
 def _check_mapping(mapping: ImportMapping) -> None:
     """A MappingSpec that cannot describe a JSONL source is refused up front.
     Raises `MappingInvalidError`."""
-    if any(block in mapping.document for block in ("csv", "xlsx", "json")):
+    if not _TABULAR_BLOCKS.isdisjoint(mapping.document):
         raise MappingInvalidError("bad_shape")
     slots = [
         mapping.messages_slot,
@@ -295,8 +303,7 @@ class JsonlEventStream(Iterator[ImportEvent]):
             record_index=index,
             tool_schema_status="valid" if has_tool_calls else "not_applicable",
         )
-        issues = validate_record_batch([candidate]).issues
-        if any(issue.code == "content_too_large" for issue in issues):
+        if _canonical_size(candidate["content"]) > MAX_CANONICAL_RECORD_BYTES:
             return RowRejection(locator, "record_too_large")
         return AcceptedRecord(candidate)
 

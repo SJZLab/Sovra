@@ -1015,6 +1015,90 @@ def test_mapping_must_describe_a_jsonl_source() -> None:
             check(CID, f"{label}: run refuses it too", False)
 
 
+def test_canonical_size_boundary_matches_ftf_0508() -> None:
+    import json as _json
+
+    from workers.data.record_schema_validator import MAX_CANONICAL_RECORD_BYTES
+
+    def candidate_for(pad: int) -> dict[str, object]:
+        got, _ = collect(line("x" * pad, "a") + b"\n")
+        return got[0] if got else {}
+
+    def size(c: dict[str, object]) -> int:
+        return len(_json.dumps(c["content"], sort_keys=True, separators=(",", ":")).encode())
+
+    probe = size(candidate_for(10))
+    exact = MAX_CANONICAL_RECORD_BYTES - (probe - 10)  # q length giving the exact limit
+    at_limit = candidate_for(exact)
+    check(
+        CID,
+        "a record at exactly the canonical limit is accepted",
+        size(at_limit) == MAX_CANONICAL_RECORD_BYTES,
+    )
+    check(CID, "and FTF-0508 agrees (0 issues)", validate_record_batch([at_limit]).issues == ())
+    got, outcome = collect(line("x" * (exact + 1), "a") + b"\n")
+    check(
+        CID,
+        "one byte over the canonical limit is record_too_large",
+        got == [] and codes(outcome) == [("line:1", "record_too_large")],
+    )
+    over = dict(at_limit)
+    over["content"] = {**at_limit["content"], "metadata": {"pad": "x"}}  # type: ignore[dict-item]
+    check(CID, "FTF-0508 refuses what we refuse", validate_record_batch([over]).issues != ())
+
+
+def test_first_four_bytes_are_judged_before_the_source_can_fail() -> None:
+    data = b"\xff\xfe\x00\x00"
+    for chunks in ([data], [data[:1], data[1:]], [data[:3], data[3:]]):
+        source = support.ExplodingSource(chunks, ConnectionResetError("boom"))
+        reader = ic.ChunkReader(
+            source, expected_size=10, expected_sha256=hashlib.sha256(b"x").hexdigest()
+        )
+        outcome = ji.run_jsonl_import(
+            reader,
+            build_mapping(),
+            verified_content_type=JSONL,
+            dataset_purpose="training",
+            expected_sha256=hashlib.sha256(b"x").hexdigest(),
+        )
+        check(
+            CID,
+            f"{len(chunks)} chunk(s): a UTF-32 head is unsupported_encoding, not an outage",
+            outcome.report.failure_code == "unsupported_encoding",
+        )
+
+
+def test_mapping_slot_kinds_are_matched_exactly() -> None:
+    import dataclasses
+
+    mapping = build_mapping()
+    for kind in ("Key", "key ", " key", "KEY", "header"):
+        odd = dataclasses.replace(mapping, prompt=ic.Slot(kind, "q"))
+        try:
+            ji.jsonl_events(
+                make_reader(b""), odd, verified_content_type=JSONL, dataset_sha256="0" * 64
+            )
+        except ic.MappingInvalidError:
+            continue
+        check(CID, f"slot kind {kind!r} is refused", False)
+    for block in ("CSV", "csv ", "Json"):
+        odd = dataclasses.replace(mapping, document={**mapping.document, block: {}})
+        check(CID, f"unknown block {block!r} is not mistaken for a tabular block", _accepts(odd))
+    for block in ("csv", "xlsx", "json"):
+        odd = dataclasses.replace(mapping, document={**mapping.document, block: {}})
+        check(CID, f"block {block!r} is refused", not _accepts(odd))
+
+
+def _accepts(mapping: ic.ImportMapping) -> bool:
+    try:
+        ji.jsonl_events(
+            make_reader(b""), mapping, verified_content_type=JSONL, dataset_sha256="0" * 64
+        )
+    except ic.MappingInvalidError:
+        return False
+    return True
+
+
 def test_source_type_is_validated() -> None:
     for odd in ("", "UPLOAD", "nope", None, 5):
         try:
@@ -1153,7 +1237,7 @@ def test_deadline_and_rejection_budget() -> None:
     data = b"".join(line(f"r{i}", "x") + b"\n" for i in range(6))
     clock = support.FakeClock()
     reader = ic.ChunkReader(
-        support.split_chunks(data, 8),
+        [data],  # one chunk: only the per-event check can notice the deadline
         expected_size=len(data),
         expected_sha256=hashlib.sha256(data).hexdigest(),
         clock=clock,
