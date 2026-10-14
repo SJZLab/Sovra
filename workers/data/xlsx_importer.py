@@ -572,6 +572,28 @@ def _row_number(digits: str) -> int:
     return XLSX_MAX_ROW + 1 if len(digits) > len(str(XLSX_MAX_ROW)) else int(digits)
 
 
+def _header_position(value: str | int, headers: list[str]) -> int:
+    """The column whose header cell is exactly `value`, or -1 (an empty name selects nothing:
+    the gaps of a header row are not columns)."""
+    text = str(value)
+    return headers.index(text) if text and text in headers else -1
+
+
+def _letters_position(value: str | int, _headers: list[str]) -> int:
+    return _column_index(str(value))
+
+
+def _index_position(value: str | int, _headers: list[str]) -> int:
+    return int(value)
+
+
+_COLUMN_RESOLVERS: Final = {
+    "header": _header_position,
+    "letters": _letters_position,
+    "index": _index_position,
+}
+
+
 def _column_index(letters: str) -> int:
     index = 0
     for ch in letters:
@@ -746,9 +768,10 @@ def open_package(
     folded_names = [name.casefold() for name, _rid in sheets]
     if len(set(folded_names)) != len(folded_names):
         raise OoxmlRefused("duplicate_sheet_name")
-    if _WORKBOOK_RELS_KEY not in rels:
+    workbook_rels = rels.get(_WORKBOOK_RELS_KEY)
+    if workbook_rels is None:
         raise OoxmlRefused("xlsx_malformed")
-    by_id = {r["Id"]: r for r in rels[_WORKBOOK_RELS_KEY] if "Id" in r}
+    by_id = {r["Id"]: r for r in workbook_rels if "Id" in r}
     matches = [i for i, (name, _rid) in enumerate(sheets) if name == sheet_name]
     if not matches:
         raise XlsxAborted("mapping_column_missing")
@@ -897,14 +920,7 @@ class XlsxEventStream(Iterator[ImportEvent]):
         width = len(headers)
         positions: list[tuple[str, int]] = []
         for name, slot in self._options.slots:
-            if slot.kind == "header":
-                if slot.value == "" or slot.value not in headers:
-                    raise XlsxAborted("mapping_column_missing", row)
-                position = headers.index(str(slot.value))
-            elif slot.kind == "letters":
-                position = _column_index(str(slot.value))
-            else:
-                position = int(slot.value)
+            position = _COLUMN_RESOLVERS[slot.kind](slot.value, headers)
             if not 0 <= position < width:
                 raise XlsxAborted("mapping_column_missing", row)
             positions.append((name, position))

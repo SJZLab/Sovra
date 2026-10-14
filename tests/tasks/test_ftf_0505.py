@@ -3887,6 +3887,91 @@ def test_targets_are_folded_the_unicode_way_on_the_target_side_too() -> None:
     )
 
 
+def test_a_header_made_of_a_space_is_a_real_header() -> None:
+    data = book([[IS(" "), IS("a")], [IS("p"), IS("c")]])
+    events, outcome = run(data, prompt={"header": " "})
+    check(
+        CID,
+        "a header cell holding a single space is matched exactly",
+        len(accepted(events)) == 1 and texts(accepted(events)[0]) == ["p", "c"],
+    )
+    _e, outcome = run(data, prompt={"header": "  "})
+    check(CID, "two spaces are not one", failed_with(outcome, "mapping_column_missing"))
+
+
+def test_relationship_targets_with_stray_whitespace_name_nothing() -> None:
+    for target in (
+        "worksheets/sheet1.xml ",
+        " worksheets/sheet1.xml",
+        "worksheets/sheet1.xml\n",
+        "worksheets/ sheet1.xml",
+    ):
+        _e, outcome = run(book(sheet_target=target))
+        check(
+            CID,
+            f"sheet target {target!r} names no part: xlsx_malformed",
+            failed_with(outcome, "xlsx_malformed"),
+        )
+    rows = [[IS("q"), IS("a")], [RAWC('<c r="{ref}" t="s"><v>0</v></c>'), IS("x")]]
+    for target in ("sharedStrings.xml ", " sharedStrings.xml", "sharedStrings.xml\n"):
+        bad = workbook_rels(shared=False).replace(
+            "</Relationships>",
+            f'<Relationship Id="rIdS" Type="{REL}/sharedStrings" Target="{target}"/></Relationships>',
+        )
+        _e, outcome = run(book(rows, replace={"xl/_rels/workbook.xml.rels": bad.encode()}))
+        check(
+            CID,
+            f"sharedStrings target {target!r} names no part: xlsx_malformed",
+            failed_with(outcome, "xlsx_malformed"),
+        )
+
+
+def test_a_truncated_shared_strings_part_never_loads_what_came_before_the_damage() -> None:
+    rows = [[IS("q"), IS("a")], [RAWC('<c r="{ref}" t="s"><v>0</v></c>'), IS("x")]]
+    half = f'{XML_HEAD}<sst xmlns="{MAIN}"><si><t>seen</t></si><si><t>never closed'
+    _e, outcome = run(book(rows, shared_override=half.encode()))
+    check(
+        CID,
+        "a string table cut off after a complete entry is fatal, not partly loaded",
+        failed_with(outcome, "xlsx_malformed"),
+    )
+    broken = f'{XML_HEAD}<sst xmlns="{MAIN}"><si><t>seen</t></si></oops></sst>'
+    _e, outcome = run(book(rows, shared_override=broken.encode()))
+    check(
+        CID,
+        "so is one with a mismatched tag after a complete entry",
+        failed_with(outcome, "xlsx_malformed"),
+    )
+
+
+def test_token_guard_boundary_is_exact() -> None:
+    limit = ox.MAX_TOKEN_BYTES
+    guard = xi._check_progress
+
+    def refused(silent: int, before: int, after: int, size: int) -> bool:
+        try:
+            guard(silent, before, after, size)
+        except ox.OoxmlRefused as exc:
+            return exc.code == "unsafe_archive"
+        return False
+
+    check(CID, "a block with no event adds its size to the silent run", guard(100, 7, 7, 50) == 150)
+    check(
+        CID,
+        "a block with an event resets the run, whatever its size",
+        guard(limit, 7, 8, limit) == 0,
+    )
+    check(CID, "a run of exactly the limit is allowed", guard(0, 1, 1, limit) == limit)
+    check(CID, "and so is one that reaches it across blocks", guard(limit - 1, 1, 1, 1) == limit)
+    check(CID, "one byte past the limit is refused", refused(limit, 1, 1, 1))
+    check(CID, "in one block", refused(0, 1, 1, limit + 1))
+    check(
+        CID,
+        "a single event in the block that crosses the limit saves it",
+        not refused(limit, 1, 2, 1),
+    )
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
