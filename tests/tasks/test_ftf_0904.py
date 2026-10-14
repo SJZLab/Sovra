@@ -2169,8 +2169,8 @@ FAULTS: list[tuple[str, str, str, int]] = [
     ("F12 format characters kept", '("Cf", "Cc", "Cs", "Co", "Cn")', '("Cc", "Cs", "Co", "Cn")', 1),
     (
         "F13 no percent-decoding",
-        "        layer = unquote(layer)\n",
-        "        layer = layer\n",
+        "        layer = _normalise(unquote(layer))",
+        "        layer = _normalise(layer)",
         1,
     ),
     ("F14 one percent-decoding layer", "_MAX_DECODE_LAYERS = 3", "_MAX_DECODE_LAYERS = 1", 1),
