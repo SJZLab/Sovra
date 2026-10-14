@@ -3196,7 +3196,11 @@ def test_shared_strings_rss_at_the_real_production_cap() -> None:
     up at a realistic scale. Measured in a fresh subprocess, never this
     process (which has already built the attack payload itself, and that
     construction cost -- unrelated to the import -- would otherwise dominate
-    any same-process RSS reading)."""
+    any same-process RSS reading). 32 MiB (32x the round-2 test's own cap, not
+    the production 256 MiB default): the measured ratio is the same at both
+    scales (confirmed separately, not committed as a second slow test) and
+    this one keeps the mutation gate's per-mutant cost -- the whole file,
+    including this test, runs once per mutant -- in proportion."""
     import subprocess
 
     script = f"""
@@ -3208,8 +3212,8 @@ from workers.data import import_common as ic
 from workers.data import xlsx_importer as xi
 import test_ftf_0505 as t
 
-cap = 256 * 1024 ** 2
-n_strings = int(cap / 900) + 5000  # comfortably past the cap, not just under it
+cap = 32 * 1024 ** 2
+n_strings = 40000  # comfortably past the cap (~904 bytes each, ~34.5 MiB), not just under it
 strings = [("a" * 900 + "\\U0001f600") for _ in range(n_strings)]
 sst = t.shared_xml(["q", "a", *strings]).encode("utf-8")
 data = t.book([[t.S("q"), t.S("a")], [t.S("hi"), t.S("there")]], shared_override=sst)
@@ -3246,7 +3250,7 @@ print(outcome.report.state, outcome.report.failure_code, baseline, after)
     if result.returncode != 0:
         return
     state, code, baseline_kb, after_kb = result.stdout.strip().split()
-    cap = 256 * 1024**2
+    cap = 32 * 1024**2
     delta_bytes = (int(after_kb) - int(baseline_kb)) * 1024
     check(
         CID,
