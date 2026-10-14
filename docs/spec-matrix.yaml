@@ -7521,12 +7521,114 @@ FTF-0503:
     test_ftf_0506.py, test_ftf_0507.py, test_ftf_0508.py, test_ftf_0517.py -- all clean.
 
 
-    Disclosed, not hidden: the PG16 + SeaweedFS integration test through the real FTF-0501 routes,
-    in its own CI job, named by the return note as required, is not done this round -- every other
-    return-note item (the architectural memory/correctness fix, container-mapping semantics,
-    BOM/encoding, the content-type gate, Law 17 states, the deterministic record_id, the META-LEAK
-    fix) is fixed and independently fault-proven this round, now at a 98.7% uncapped mutation score
-    with the one remaining survivor disclosed above. Not self-certified (Law 4).
+    Round 3 (2026-10-14, return docs/certifications/queue.md 2026-10-13T23:59Z "FTF-0503 RETURN ->
+    round 3", full findings and clause-to-test mapping in docs/certifications/submissions/
+    2026-10-14T1310Z-FTF-0503-r3.md): closes all four reproduced findings.
+
+    (1) WHOLE-DOCUMENT-BUFFERED: round 2's own "linear scanner" claim above was true for *parsing*
+    (never one whole-document json.loads) but still read the entire source into a bytearray, then
+    bytes, then one decoded str before locating any element -- three full-document copies live at
+    once. Replaced with _Cursor: an incrementally UTF-8-decoded (codecs.getincrementaldecoder,
+    chunk-boundary safe), prunable str-like view fed on demand from ChunkReader's own chunks.
+    _skip_value/_scan_array/_scan_object are unchanged in interface (an IndexError-based exhaustion
+    check replaces the precomputed length check) so they still work, unmodified, against a plain str
+    in every existing direct unit test; _generate is the only caller that builds and drives a
+    _Cursor, pruning it after each record. Pruning is batched (a 1 MiB staged-discardable threshold)
+    rather than re-slicing the buffer on every record, which is itself an O(len(buffer)) copy and
+    was measured directly to make an early, unbatched version of this fix quadratic in practice.
+    test_memory_is_bounded_not_whole_document (realistic 64 KiB chunking): an 8 MiB document's peak
+    stays under 2x a ~3 MiB document's own peak and under half the document's own size -- bounded,
+    not scaling with document size, where the same test against the pre-fix module (git stash the
+    module fix alone) measured a 7.8 MiB document peaking at 24.57 MiB, 3.15x a 2.9 MiB document's
+    own peak.
+
+    (2) EXPECTED-SHA-MISMATCH-COMPLETES: a caller's expected_sha256 is now compared against
+    ChunkReader's own declared _expected_sha256 before a byte is read -- the identical fix
+    jsonl_importer round 3 already applies for the same gap.
+
+    (3) STRUCTURE-ERRORS-NOT-FATAL: two real scanner bugs, both reproduced directly against the
+    pre-fix module. _skip_value's bracket branch tracked nesting depth only ({/[ both +1, }/] both
+    -1), so a mismatched pair like [1, 2} was silently accepted as one complete value -- replaced
+    with a stack of the actual opening characters. A bare literal directly abutting a `"` with no
+    separator (1"]") was scanned straight through the quote as "more literal text" (the bare-literal
+    terminator set did not include `"`), stopping only at whichever real terminator character came
+    next -- which, crafted adversarially, can be a bracket belonging to an *embedded string's own
+    content*. Round 2's two independent passes over the same region (a whole-document _skip_value
+    check, and the real per-element _scan_array that actually emitted records) then silently
+    disagreed about where the array ends: reproduced directly, run_json_import on [1, 1"]", 2]
+    returned state == "completed" with only 2 of 3 real elements seen, no error at all. Round 3's
+    single unified pass (_scan_root -> _stream_array / _stream_object_for_container, no second
+    re-scan of the same region) plus `"` added to the bare-literal terminator set close this -- no
+    legitimate JSON literal ever abuts a quote, so no valid document's outcome changes. Structural
+    failures now carry a real byte-offset fatal_locator (object:<n>) instead of the fixed object:0
+    placeholder every document-level failure used before.
+
+    (4) OVERSIZE-ELEMENT-ENDS-IMPORT: the fatal field_too_large tier above is removed entirely --
+    unlike csv_importer, this scanner already knows an element's exact span via bracket/quote
+    tracking before parsing it, so there is no cost reason to ever abort the whole document over one
+    oversize element. Every size over max_record_bytes is RowRejection record_too_large and the
+    import continues, checked first by a cheap character-count lower bound so a wildly oversize span
+    is never sliced or encoded. JSON_FATAL_CODES no longer declares field_too_large.
+
+    Also closed: FATAL-LOCATOR-OUTSIDE-IMPORTREPORT (JsonImportOutcome.fatal_locator is now a
+    read-only property proxying to the shared import_common.LocatedImportReport.fatal_locator, the
+    identical shape jsonl_importer.JsonlImportOutcome already uses -- no second, independently
+    tracked field); UTF8-BOM-REFUSED (a leading UTF-8 BOM is now accepted and stripped, matching
+    jsonl_importer's own established discipline for the identical byte sequence, instead of being
+    stricter than its own sibling importer; unexpected_bom removed from JSON_FATAL_CODES; UTF-16/32
+    detection extended to a leading NUL byte with no BOM at all, matching jsonl_importer._first).
+
+    INTEGRATION-MISSING: tests/integration/test_ftf_0503_json_import_postgres_s3.py (new) + CI job
+    json-import-integration (new, wired into ci-verdict's needs) -- real PG16 as sovra_app + live
+    SeaweedFS through the real FTF-0501 upload routes: root-array and nested /rows container import
+    exactly (two chunkings, preview), the content-type gate before any storage call, tenant/held-out
+    scoping, damaged/truncated storage, and a mid-stream S3 stop proven against a control run over
+    the identical stream with no stop that must complete normally (the C4-MIDSTREAM-STOP-VACUOUS
+    class csv_importer's own round 3 had to fix, addressed here pre-emptively). Disclosed. not
+    hidden: not independently run against a live server from this sandbox (no Docker/Postgres/
+    SeaweedFS) -- compiles, imports cleanly (every real symbol it references resolves) and is
+    ruff/mypy clean; CI's own job run is this item's real verification, the same precedent every
+    sibling importer's first integration attempt already established.
+
+    Fault -> RED, Law 1 (full table in the submission file): git stash the module fix alone (keeping
+    every test change), re-run -- 22 of the new/changed checks failed, spanning every finding above;
+    git stash pop restored the fix byte-identical, full suite re-ran clean, 70/70.
+
+    Mutation gate (scripts/mutation_gate.py --base origin/main, diff mode, exactly as CI's
+    mutation-gate job runs it, uncapped): 199 run | 161 KILLED | 11 TIMEOUT | 27 SURVIVED | 0
+    allowlisted | score 86.4%. The 11 timeouts are infinite-loop mutants of _Cursor's own
+    exhaustion-check loops, the same accepted class other importers' own mutation runs already
+    document. Every survivor was individually reproduced by hand (apply the single mutant, run the
+    real test suite, read the actual outcome) and falls into one of six genuinely equivalent
+    classes, none fixable by any behavioural test: (1) JsonImportOutcome.fatal_locator's trivial
+    property-getter return (identical reasoning to jsonl_importer's own confirmed case); (2) five
+    _Cursor._grow internals (re-entering an already-finalized incremental decoder, or re-checking
+    an already-true done flag, both empirically confirmed to return the same value with no
+    resident-data change); (3) two exact tie-boundary comparisons (_Cursor.__getitem__'s slice
+    growth loop and _Cursor.prune's threshold check) where the "off by one iteration" the mutant
+    causes never changes the final returned substring or the final trimmed state, only how many
+    harmless extra internal steps get there; (4) seventeen single-already-isolated-character
+    comparisons (ch/c.strip().lower()) -- the same equivalent class round 1's own _max_nesting_depth
+    already established, extended here to every new scanner function; (5) _emit_record's cheap
+    character-count short-circuit (line 604), provably redundant with the exact byte-count check
+    immediately below it (line 612, itself mutation-killed), so removing only the short-circuit
+    never changes which records get rejected, only whether a possibly-huge span gets needlessly
+    sliced first; (6) _generate's BOM-sniffing head-byte count boundary, safe because the
+    incremental UTF-8 decoder is chunk-boundary-safe by construction, so merging one extra chunk
+    into the sniffed head never changes the final decoded text. Two real test-coverage gaps found
+    and fixed during this same pass (not survivors in the final run, but real defects in the first
+    uncapped attempt, 75.9%): _iter_object_members's colon-check and three of
+    _stream_object_for_container's own raises were masked by a later, un-mutated check reporting the
+    same generic code for the same crafted input -- fixed by asserting the exact fatal_locator byte
+    offset (not just the failure code) and, for two cases, by moving the fault to the first loop
+    iteration so a removed raise cannot silently reuse a stale value bound by an earlier,
+    successfully-parsed member.
+
+    ruff/mypy clean repo-wide. validate_spec.py --strict clean. product_truth_check.py
+    --fail-on-unwired: unchanged -- proving_symbol stays blank, same disclosed precedent. Regression
+    swept: test_ftf_0502_p1.py, test_ftf_0502.py, test_ftf_0504.py, test_ftf_0506.py,
+    test_ftf_0507.py, test_ftf_0508.py, test_ftf_0517.py -- all clean, zero regressions (none of
+    these files or import_common.py were touched by this round). Not self-certified (Law 4).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0503.py

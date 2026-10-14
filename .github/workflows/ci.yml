@@ -3543,6 +3543,49 @@ jobs:
       - name: Prove the JSONL importer against PostgreSQL 16 and SeaweedFS
         run: uv run python3 tests/integration/test_ftf_0502_jsonl_import_postgres_s3.py
 
+  json-import-integration:
+    # FTF-0503: the JSON importer (workers/data/json_importer.py) over PostgreSQL 16 as the
+    # restricted sovra_app role and the live SeaweedFS S3 API, through the real FTF-0501 upload
+    # routes and the FTF-0502-P1 dataset source reader: an application/json dataset (root array
+    # and nested /rows container) streamed from the bucket imports every good element exactly
+    # (Arabic, leading zeros, formula text) and gives every bad element its own code and
+    # record:<n> locator, a non-JSON dataset is refused before one storage call, foreign /
+    # missing / hidden held-out datasets read alike, damaged storage ends failed/source_changed,
+    # a truncated object ends blocked, a mid-stream S3 stop ends blocked proven against a
+    # control run over the identical stream with no stop (the control must complete, never
+    # itself fail -- the C4-MIDSTREAM-STOP-VACUOUS class a sibling importer's own earlier round
+    # had to fix), and nothing planted in the content or keys leaks into a report, locator or
+    # log record -- tests/integration/test_ftf_0503_json_import_postgres_s3.py. The test boots
+    # the compose `s3` service itself when nothing answers.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' json-import-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0503
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0503"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0503
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the JSON importer against PostgreSQL 16 and SeaweedFS
+        run: uv run python3 tests/integration/test_ftf_0503_json_import_postgres_s3.py
+
   ci-verdict:
     # THE result to read for "CI is green" (merge-on-green, certification, Control plane).
     # Fails on any failed or cancelled job, on any skipped job without a documented exemption
@@ -3626,6 +3669,7 @@ jobs:
       - dataset-import-source-integration
       - csv-import-integration
       - jsonl-import-integration
+      - json-import-integration
       - xlsx-import-integration
     runs-on: ubuntu-latest
     timeout-minutes: 5

@@ -344,6 +344,15 @@ def test_scan_object_truncation_table() -> None:
         # this exact raise fall through into parsing a second, well-formed
         # member instead of hitting any other check.
         ("next char exists but is not ':'", '{"a" "b":1}'),
+        # Round 3: the case above is masked -- disabling its own check still lets this
+        # exact input hit a *different*, un-mutated raise a few lines later ("neither
+        # comma nor } after a value"), so a mutant removing only the ':' check still
+        # shows _Unterminated and the table above cannot tell the two apart. This input
+        # instead shifts cleanly onto a bare-literal value ("5") that itself closes
+        # validly at "}", so disabling the ':' check here makes the whole call return
+        # successfully with a wrong member instead of raising at all -- a real, distinct
+        # negative control for that one check.
+        ("no colon, shifts onto a bare literal that would otherwise close cleanly", '{"a"55}'),
         ("nothing after the colon", '{"a":'),
         ("nothing after a value", '{"a":1'),
         ("neither comma nor } after a value", '{"a":1 "b":2}'),
@@ -1459,6 +1468,209 @@ def test_bracket_inside_string_never_affects_scanning() -> None:
     spans, end = ji._scan_array(text, 0)
     check(CID, "brackets inside a string literal never change element boundaries", len(spans) == 3)
     check(CID, "...and the array is still fully consumed", end == len(text))
+
+
+# --- _Cursor (round 3): direct, white-box tests of the streaming view itself -------
+
+
+def test_cursor_slicing_before_any_char_access() -> None:
+    # Every real caller reaches a slice (`cursor[start:end]`) only after already
+    # indexing through every position up to `end` one character at a time (that is
+    # how the scanner finds `end` in the first place), which already forces the
+    # cursor to grow far enough -- so a slice taken *first*, with nothing read yet,
+    # is the one case that actually exercises __getitem__'s own slice-branch growth
+    # loop rather than relying on it being a no-op in practice.
+    cursor = ji._Cursor(iter([b"hello world"]))
+    check(
+        CID, "a slice taken before any index access still grows far enough", cursor[0:5] == "hello"
+    )
+    check(CID, "...and a later slice past the first one", cursor[6:11] == "world")
+
+
+def test_cursor_slicing_across_multiple_chunks_before_access() -> None:
+    cursor = ji._Cursor(iter([b"ab", b"cd", b"ef", b"gh"]))
+    check(
+        CID,
+        "a slice spanning several not-yet-pulled chunks is still correct",
+        cursor[1:7] == "bcdefg",
+    )
+
+
+def test_cursor_prune_batches_at_the_exact_threshold_boundary() -> None:
+    # The real check is `>=`: once exactly _PRUNE_THRESHOLD characters are
+    # discardable, the buffer is actually trimmed. A `>` mutant would wait for one
+    # character past the threshold instead -- patch the threshold down so the test
+    # does not need to materialise a real 1 MiB buffer.
+    original = ji._Cursor._PRUNE_THRESHOLD
+    ji._Cursor._PRUNE_THRESHOLD = 100  # type: ignore[misc]
+    try:
+        cursor = ji._Cursor(iter([b"x" * 200]))
+        for i in range(200):
+            _ = cursor[i]
+        cursor.prune(99)
+        check(CID, "99 < threshold 100: not yet trimmed", cursor._base == 0)
+        cursor.prune(100)
+        check(
+            CID, "exactly at threshold 100: trimmed now, not deferred to 101", cursor._base == 100
+        )
+    finally:
+        ji._Cursor._PRUNE_THRESHOLD = original  # type: ignore[misc]
+
+
+def test_cursor_prune_never_moves_backward() -> None:
+    # prune() tracks the *maximum* position ever requested, not merely the latest
+    # one -- pruning to an earlier position than a previous call must never discard
+    # less than what was already staged.
+    original = ji._Cursor._PRUNE_THRESHOLD
+    ji._Cursor._PRUNE_THRESHOLD = 10  # type: ignore[misc]
+    try:
+        cursor = ji._Cursor(iter([b"x" * 50]))
+        for i in range(50):
+            _ = cursor[i]
+        cursor.prune(30)
+        cursor.prune(5)  # earlier than the previous call -- must not un-stage anything
+        check(
+            CID,
+            "a later, smaller prune() does not reduce what is already staged",
+            cursor._base == 30,
+        )
+    finally:
+        ji._Cursor._PRUNE_THRESHOLD = original  # type: ignore[misc]
+
+
+def test_cursor_grow_returns_false_once_truly_exhausted() -> None:
+    cursor = ji._Cursor(iter([b"ab"]))
+    check(CID, "data is available", cursor[0] == "a" and cursor[1] == "b")
+    raised = False
+    try:
+        cursor[2]
+    except IndexError:
+        raised = True
+    check(CID, "indexing past the real end of a short source raises IndexError", raised)
+    # Calling past exhaustion again must stay well-behaved (no crash, still raises).
+    raised_again = False
+    try:
+        cursor[5]
+    except IndexError:
+        raised_again = True
+    check(
+        CID,
+        "indexing further past exhaustion still raises IndexError, not something else",
+        raised_again,
+    )
+
+
+# --- nested-container structural faults (round 3: _stream_object_for_container is a
+# --- separate real implementation from the plain _iter_object_members, and needs its
+# --- own fault coverage -- not merely inherited from the plain-string scanner tests) -
+
+
+_NESTED_FAULT_TABLE: list[tuple[str, bytes, str]] = [
+    # (label, document, the exact fatal_locator the real check at that one specific
+    # raise site produces -- not merely "some json_malformed", which a later,
+    # un-mutated check elsewhere could also produce for the same input and mask
+    # which one actually fired, the same class of issue _scan_object's own colon
+    # check had)
+    # A key that is simply a bare literal with no separator before its own colon
+    # (`5:1`) is itself masked: the bare-literal scanner swallows straight through
+    # the colon (round 3's own fix for the bare-literal/quote adjacency bug does not
+    # help here, since the stop would only be a `"` or whitespace) and the resulting
+    # "5:1" key text fails json.loads for an unrelated reason (object:12 either way).
+    # A space before the colon isolates the number cleanly as its own key, so a
+    # mutant that skips the "must start with a quote" check lands on a completely
+    # different, later-reported code (unmapped_top_level_key/object:0) instead.
+    ("a non-string top-level key", b'{"rows":[], 5 :1}', "object:12"),
+    # These two put the malformed key *first* (no earlier member) rather than
+    # after "rows": both of this function's own key_end/key except-blocks only
+    # raise after an *earlier* loop iteration already bound that same local name,
+    # so a mutant removing only the raise (leaving the except body empty) silently
+    # reuses that still-live, stale value instead of crashing -- undetectable by
+    # locator/code alone when "rows" is parsed first. With no earlier iteration,
+    # the same mutant instead hits a genuine UnboundLocalError (key_end/key were
+    # never assigned at all), which main()'s own exception wrapper correctly
+    # reports as a failure.
+    ("an unterminated top-level key (first, nothing bound yet)", b'{"x', "object:1"),
+    ("a top-level key with an invalid escape (first, nothing bound yet)", b'{"\\q":1}', "object:1"),
+    ("a key with no colon after it", b'{"rows":[], "x" 1}', "object:16"),
+    ("nothing after the colon", b'{"rows":[], "x":', "object:16"),
+    ("a malformed non-target member value", b'{"rows":[], "x":[1,2}', "object:16"),
+    ("neither comma nor } after a member", b'{"rows":[] "x":1}', "object:11"),
+    ("the target value is an unclosed object", b'{"rows":{"a":1', "object:8"),
+]
+
+
+def test_nested_container_structural_fault_table() -> None:
+    for label, data, locator in _NESTED_FAULT_TABLE:
+        outcome = run(data, container="/rows", ignored_top_level_keys=["x"])
+        check(
+            CID,
+            f"{label}: fatal json_malformed, not silently accepted or the wrong code "
+            f"(got {outcome.report.state}/{outcome.report.failure_code})",
+            (outcome.report.state, outcome.report.failure_code) == ("failed", "json_malformed"),
+        )
+        check(
+            CID,
+            f"{label}: located exactly where this check's own raise fires ({locator}), not a "
+            f"different, later check's own position (got {outcome.fatal_locator})",
+            outcome.fatal_locator == locator,
+        )
+
+
+def test_nested_container_duplicate_target_key_is_ambiguous() -> None:
+    outcome = run(b'{"rows":[],"rows":[]}', container="/rows", ignored_top_level_keys=[])
+    check(
+        CID,
+        "a duplicate target key in a nested container is fatal mapping_column_missing, not the "
+        "second occurrence silently winning",
+        (outcome.report.state, outcome.report.failure_code) == ("failed", "mapping_column_missing"),
+    )
+
+
+def test_nested_container_target_value_scalar_is_fatal() -> None:
+    outcome = run(b'{"rows": 42}', container="/rows", ignored_top_level_keys=[])
+    check(
+        CID,
+        "a container key whose value is a scalar (neither array nor object) is fatal "
+        "json_malformed, not silently treated as a shape it is not",
+        (outcome.report.state, outcome.report.failure_code) == ("failed", "json_malformed"),
+    )
+
+
+# --- multi-byte content: char count under the limit, real UTF-8 bytes over it -----
+
+
+def test_multibyte_content_oversize_in_bytes_not_chars_is_rejected() -> None:
+    # The cheap character-count short-circuit in _emit_record is a *lower* bound on
+    # the real UTF-8 byte count -- it can never wrongly reject a record that fits,
+    # but a record whose character count is under the limit can still have more
+    # UTF-8 bytes than that once multi-byte characters are involved, and the exact
+    # encoded-byte check must still catch it. CJK characters (3 bytes each in UTF-8)
+    # with ensure_ascii=False keep them as raw multi-byte bytes in the JSON text
+    # itself, not \uXXXX escapes (which would make char and byte count equal).
+    content = "中" * 10
+    row_obj = {"messages": [{"role": "user", "content": content}]}
+    element_text = json.dumps(row_obj, ensure_ascii=False)
+    char_len = len(element_text)
+    byte_len = len(element_text.encode("utf-8"))
+    assert char_len < byte_len, "fixture must actually have more bytes than characters"
+    limits = ic.ImportLimits(max_record_bytes=(char_len + byte_len) // 2)
+    assert char_len <= limits.max_record_bytes < byte_len, "fixture must straddle the two counts"
+    data = json.dumps([row_obj], ensure_ascii=False).encode("utf-8")
+    reader = make_reader(data, limits=limits)
+    outcome = ji.run_json_import(
+        reader,
+        build_mapping(container=""),
+        verified_content_type="application/json",
+        dataset_purpose="t",
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+        limits=limits,
+    )
+    check(
+        CID,
+        "a record whose character count is under the limit but whose real UTF-8 byte "
+        "count is over it is still RowRejection record_too_large, not wrongly accepted",
+        any(r.code == "record_too_large" for r in outcome.report.rejections),
+    )
 
 
 # --- catalog ----------------------------------------------------------------------
