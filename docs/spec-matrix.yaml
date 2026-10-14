@@ -8581,16 +8581,44 @@ FTF-0517:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0517.py
 FTF-0518:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Split leakage detector
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-23; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0513,
-    FTF-0517
-  proof_state: UNPROVEN
+  evidence_hash: 32c392cb99e5914d59234005bf373749ec1ef7da
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-23; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0513,
+    FTF-0517 (all CERTIFIED). Path refined to workers/data/split_leakage_detector.py (FTF-0506/0513/0517
+    precedent). detect_split_leakage(manifest, records, prior_sources=, route=, thresholds=,
+    max_semantic_partners=, max_findings=) verifies the FTF-0517 manifest first (tampered ->
+    failed/manifest_invalid, never scanned; record set differing -> failed/record_set_mismatch), then
+    runs eight Section 10 methods over every pair class (current records in different roles; a
+    prior development/final record against current train/validation; a prior final record against the
+    current final role = consumed_final_reuse): exact_raw and canonical_normalized through FTF-0511
+    detect_exact_duplicates, text_normalized through FTF-0512 detect_normalized_duplicates, group by
+    linkage keys (the manifest group id plus each record's own keys), and char_ngram / token_jaccard /
+    embedding / agent_trace_structural through FTF-0513 detect_near_duplicates called with zero
+    thresholds, the configured thresholds then applied with >=. Methods 1-4 and consumed-final reuse
+    are blocking and cannot be reviewed away; semantic/structural cross-role and prior-campaign
+    findings are review_required. Before any semantic work FTF-0901 enforce_effect decides the data
+    surface route: a coded refusal is blocked with its code, an internal destination runs the
+    in-process hashing embedding, any other allowed destination is blocked/embedding_provider_unavailable.
+    A record reaching max_semantic_partners (FTF-0513's silent cap) is blocked/semantic_scan_saturated,
+    more than max_findings is blocked/finding_limit_exceeded, an unscannable record is
+    failed/invalid_input: never clear. The report names both record ids, both roles and the method,
+    carries no content or content hash, and finding_id / report_sha256 are SHA-256 of canonical JSON
+    (independent of PYTHONHASHSEED and input order). apply_leakage_reviews binds a LeakageReview only to a
+    review_required finding; assert_leakage_clear(report, final_freeze|training) raises
+    LeakageBlockedError unless the report is clear or every finding is reviewed not_leakage, always for
+    blocked/failed, and refuses a report whose hash does not cover it (self-sealed forgeries too).
+    Disclosed: the hashing embedding is a lexical proxy (FTF-0513); prior development vs current
+    development, same-role pairs and prior-vs-prior are not checked; no persistence of findings or
+    reviews; no live caller yet, so proving_symbol stays blank. Caller contract: FTF-0519 / the training
+    workflow calls this AND FTF-0515 assert_clear_for_training. Not self-certified (Law 4). See
+    docs/certifications/submissions/2026-10-14T0925Z-FTF-0518.md.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0518.py
 FTF-0519:
   certification_state: NONE
   criticality: MUST
