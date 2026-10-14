@@ -24790,3 +24790,34 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-14T18:11Z — Control plane: FTF-0502 returned (r4)
 - **Returned:** FTF-0502 r4 (0k): same-dataset outage control, real memory bound, sha precision, preview TypeError, trailers; stopping rule.
+
+## 2026-10-14T20:38Z — PROVISIONAL: FTF-1602 r6 merged (#789)
+- **Submitted:** answers the 2026-10-14T06:52Z return (QUEUE.md "0i"): F7-CREATE-NOW-VALIDATED-LATE proven in both
+  suites with a call-counting double (zero store calls on a bad `now`, both before and not merely instead of a
+  write); G7-COUNT-ONLY-RELIST gained a unit-level twin of the existing real-server test (round 5 only proved the
+  re-list identity guard on the real suite); G1/G1b rebuilt on the "Q2 shape" (a forged, unretained record version
+  PUT the first time the record is listed, deleted the first time retention is next checked — both calls
+  `_load_record` always makes, regardless of which method it uses to read the content). Round 5's own ABA test only
+  reddened through a local double standing in for the content-read method by name; applying the real one-line
+  production mutation (`get_latest` instead of the pinned `get_version`) directly to round 5's own test left its
+  primary assertion green, confirmed this round. The rebuilt test asserts on `verify_backup`'s/`restore_backup`'s
+  own real return value, with no self-referential demonstration, and adds G1b (the same forged record applied to
+  restore, which could previously have silently restored 3 of 4 objects as success). Production
+  (`scripts/object_storage_backup.py`) is unchanged — tests + spec-matrix only, matching the return's own "production
+  is correct" ruling. Fault → RED for all three confirmed by mutating the production file on disk and restoring it
+  byte-identical afterward (table in the submission). Whole-file uncapped mutation gate: 405/405 killed, 0 survivors
+  (one earlier same-session run reported a single survivor at `put_restored`'s header filter that did not
+  reproduce on a manual re-application of the identical mutation or on two independent re-runs — recorded as a
+  one-off flake, not a real gap). `object-storage-backup-integration` failed twice first (CI session logs were
+  unavailable via every access path tried, including the signed blob URL the tooling returned); a disk-exhaustion
+  diagnosis and partial fix (switch the 2 new real tests to the file's shared bucket pair) did not clear it; a
+  follow-up session correctly diagnosed the real cause (the file's 14 pre-existing dedicated-bucket real tests, not
+  this round's own additions, exhausting the runner's SeaweedFS volume slots across the whole suite — the same
+  class QUEUE.md's FTF-1602 round-5 entry already named) and fixed it by recycling the SeaweedFS fixture every 4
+  tests; `object-storage-backup-integration` and all 71 other checks (`gate`, `mutation-gate`, `relay-policy`,
+  `ci-verdict`) came back green on the next push (run `38619451951`) and the PR was merged (`963a0af`). Full
+  findings-to-fix mapping, the fault → RED table and the real-server CI history are in
+  `docs/certifications/submissions/2026-10-14T0922Z-FTF-1602-r6.md`. Not self-certified (Law 4) —
+  `certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN`, `evidence_hash` stays pinned to
+  `47ca830` (round 4; no production line changed in round 5 or round 6). Needs L2 verification by a different
+  session.
