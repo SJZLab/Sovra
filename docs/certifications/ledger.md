@@ -11292,3 +11292,29 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   G1 RED only incidentally, G1b GREEN in unit; spec-matrix Q4a note overclaims, evidence_hash stale. Stopping rule: round 6
   certifies once these land with no production violation. Advisory: a tzinfo whose utcoffset() raises gives raw ValueError
   (hand-picked variant of the closed typed-`now` class).
+
+## 2026-10-14T08:18Z — CERTIFIED (child slice): FTF-0616-F1; FTF-0616 requalified
+- **FTF-0616-F1: CERTIFIED** (child slice, round 2, tests only; PR #750, merge 02961dbe0a005967ee5d82e0a1ee10fd2c8bf9a5, head 733e07b7; production module
+  byte-identical to round 1, sha256 b888cf28). Producers session_013tQiFekDRUj9Lm7ADSLJTd, session_01WY29KQFBNWXnopkiLpcwKJ,
+  session_01GkRrV1pZn1LR3BmCLYVct6 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI: ci-verdict 115665638223; gate
+  115650268253 with live TLS: "FTF-0616 llm judge adapter tests: all checks passed", "FTF-0616-F1 judge fingerprint tests:
+  all checks passed". Local: both suites incl. FTF_0616_FULL_SWEEP=1. Round-1 fixes in place (golden round-8 bytes, value
+  normalisers swept over every code point, generated header-name pool). Probes 34/34 hold (full code space, length
+  1..256, statuses 100..599, wire probes on live TLS). Faults 27/28 RED incl. all 9 round-1 GREEN faults; GREEN only
+  G-HEADER-EXTRA (request headers never pinned - advisory).
+- **FTF-0616 Law 15 requalification: COMPLETE.** The uncapped whole-file mutation run was executed by the verifier:
+  339/339 killed, 0 timeouts (chunks 106 + 146 + 87, matching the 339-mutant dry run). Correction: the submission's
+  "uncapped 200/200" ran the default cap (no `--max-mutants 0`); this 339/339 run is the evidence of record. FTF-0616
+  stays CERTIFIED. Count unchanged. Advisories: request header set unpinned; two same-case x-litellm-model-id copies keep
+  the last value (FTF-0617 must not treat the header as tamper-evident); live-TLS checks return silently with no port.
+
+## 2026-10-14T08:18Z — RETURNED: FTF-0502 (r3)
+- **FTF-0502: RETURNED** (round 2 → 3; PR #778, merge 309e17af3c7a187ae29cd8b111d22e32a2411218, head eb6b3382). Producer
+  session_014U894sNcHjmQULfhwWLrjb (r1 session_014eb1RZDqBdz3dG7AVtYJcs) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR.
+  CI: ci-verdict 115702722653; gate 115683422403 "all checks passed"; jsonl-import-integration 115683488857 (PG16 +
+  SeaweedFS); mutation 73/73. Held: importer order, all round-1 defects, chunking (96,264 runs), content-type gate, Law 17,
+  memory, META-LEAK. Return: expected_sha256 mismatch completes (binding rule); fatal locator not in ImportReport; J4 stop
+  no-op stays GREEN; tables missing; V-SLOT-DROPPED GREEN. Serialization ruling: FTF-0502 r3 makes the one additive
+  ImportReport.fatal_locator edit for the importer family; FTF-0504 r3 reuses it. Advisory (second confirmation of
+  P-LARGE): SeaweedFS ends slowly read downloads, so JSONL > ~20 MB cannot finish through open_dataset_source (fails
+  closed, blocked); source-layer follow-up. NUL in the first 4 bytes makes the whole file fatal (fails closed).
