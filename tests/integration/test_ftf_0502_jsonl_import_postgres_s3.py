@@ -455,7 +455,7 @@ def main() -> None:
         )
         report = outcome.report
         reports.append(report)
-        leak_values.append((report, outcome.fatal_locator))
+        leak_values.append((report, outcome.report.fatal_locator))
         check(
             f"J1 {label}: completed ({report.state} {report.failure_code})",
             report.state == "completed" and report.failure_code is None,
@@ -517,7 +517,7 @@ def main() -> None:
     counting = CountingClient(client)
     csv_source = open_source(ctx1, p1_id, csv_set.id, storage_client=counting)
     outcome, candidates, reader = import_dataset(csv_source)
-    leak_values.append((outcome.report, outcome.fatal_locator))
+    leak_values.append((outcome.report, outcome.report.fatal_locator))
     check(
         f"J2 a CSV dataset is refused ({outcome.report.state} {outcome.report.failure_code})",
         outcome.report.state == "failed"
@@ -571,7 +571,7 @@ def main() -> None:
     bad = jsonl_data[:at] + b"\xff\xfe" + jsonl_data[at + 2 :]
     bad_set, _ = make_dataset("org1", p1_id, conn1, jsonl_data, "bad-bytes", store_bytes=bad)
     outcome, candidates, _reader = import_dataset(open_source(ctx1, p1_id, bad_set.id))
-    leak_values.append((outcome.report, outcome.fatal_locator))
+    leak_values.append((outcome.report, outcome.report.fatal_locator))
     damaged = [r for r in outcome.report.rejections if r.code == "invalid_utf8"]
     check(
         f"J4 the damaged line is rejected as invalid_utf8 with a line locator ({damaged})",
@@ -587,7 +587,7 @@ def main() -> None:
         "org1", p1_id, conn1, jsonl_data, "truncated", store_bytes=jsonl_data[:-1000]
     )
     outcome, _candidates, _reader = import_dataset(open_source(ctx1, p1_id, truncated.id))
-    leak_values.append((outcome.report, outcome.fatal_locator))
+    leak_values.append((outcome.report, outcome.report.fatal_locator))
     check(
         f"J4 an object shorter than its verified size is blocked/source_unavailable "
         f"({outcome.report.state} {outcome.report.failure_code})",
@@ -631,7 +631,7 @@ def main() -> None:
         expected_sha256=large_source.expected_sha256,
         on_accepted=lambda _candidate: None,
     )
-    leak_values.append((outcome.report, outcome.fatal_locator))
+    leak_values.append((outcome.report, outcome.report.fatal_locator))
     check(
         f"J4 stopping S3 mid-stream is blocked/source_unavailable "
         f"({outcome.report.state} {outcome.report.failure_code})",

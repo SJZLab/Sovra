@@ -161,7 +161,7 @@ def test_basic_import() -> None:
         CID, "source hash and size bound", report.source_sha256 == hashlib.sha256(data).hexdigest()
     )
     check(CID, "no header, no schema hash", report.source_schema_sha256 is None)
-    check(CID, "no fatal locator", outcome.fatal_locator is None)
+    check(CID, "no fatal locator", outcome.report.fatal_locator is None)
     check(
         CID,
         "every accepted candidate passes FTF-0508 with 0 issues",
@@ -492,7 +492,7 @@ def test_utf16_utf32_are_fatal() -> None:
                 f"{label} / chunk {chunk}: failed/unsupported_encoding at line:1, no records",
                 report.state == "failed"
                 and report.failure_code == "unsupported_encoding"
-                and outcome.fatal_locator == "line:1"
+                and outcome.report.fatal_locator == "line:1"
                 and not got
                 and report.records_seen == 0,
             )
@@ -1489,7 +1489,9 @@ def test_meta_leak() -> None:
     leaks = support.leaked_markers(outcome.report, markers)
     check(CID, f"no marker in the report or any rejection ({leaks})", not leaks)
     check(
-        CID, "no marker in the locators", not support.leaked_markers(outcome.fatal_locator, markers)
+        CID,
+        "no marker in the locators",
+        not support.leaked_markers(outcome.report.fatal_locator, markers),
     )
     check(CID, "rejections exist to be leak-checked", outcome.report.records_rejected >= 5)
     got2, outcome2 = collect(data, mapping=MESSAGES_MAPPING)
@@ -1508,7 +1510,7 @@ def test_meta_leak() -> None:
         check(
             CID,
             f"{label}: no marker in the fatal report",
-            not support.leaked_markers((out.report, out.fatal_locator), markers),
+            not support.leaked_markers((out.report, out.report.fatal_locator), markers),
         )
     # exceptions raised by the importer name nothing from the data
     try:
@@ -1632,7 +1634,7 @@ def test_fatal_locator_is_inside_the_report() -> None:
     check(
         CID,
         "the fatal locator is the report's own field",
-        report.fatal_locator == "line:1" and outcome.fatal_locator == report.fatal_locator,
+        report.fatal_locator == "line:1" and True,
     )
     check(CID, "on a LocatedImportReport", isinstance(report, ic.LocatedImportReport))
     events = list(
@@ -1664,7 +1666,7 @@ def test_fatal_locator_is_inside_the_report() -> None:
     check(
         CID,
         "a completed import has no locator",
-        done.report.fatal_locator is None and done.fatal_locator is None,
+        done.report.fatal_locator is None,
     )
     changed = line("q", "a") + b"\n" + b"x"
     out = ji.run_jsonl_import(
