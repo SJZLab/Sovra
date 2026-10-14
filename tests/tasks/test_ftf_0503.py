@@ -1646,8 +1646,11 @@ def test_differential_valid_documents_match_json_loads() -> None:
                 on_accepted=lambda c, got=got: got.append(dict(c)),  # type: ignore[misc]
             )
             texts_ = [
-                part["text"] for c in got for m in c["content"]["messages"] for part in m["content"]
-            ]  # type: ignore[index]
+                part["text"]
+                for c in got
+                for m in c["content"]["messages"]  # type: ignore[index]
+                for part in m["content"]
+            ]
             ok = (
                 out.report.state == "completed"
                 and texts_ == expected_texts
@@ -1748,16 +1751,21 @@ def test_depth_limit_boundary_is_exact() -> None:
     limits = ic.ImportLimits(max_depth=4)
     ignored_ok = b'{"rows": [' + G + b'], "_meta": [[[[1]]]]}'
     ignored_deep = b'{"rows": [' + G + b'], "_meta": [[[[[1]]]]]}'
-    kwargs = {"container": "/rows", "ignored_top_level_keys": ["_meta"], "limits": limits}
     check(
         CID,
         "an ignored value at the depth limit is fine",
-        run(ignored_ok, **kwargs).report.state == "completed",
+        run(
+            ignored_ok, container="/rows", ignored_top_level_keys=["_meta"], limits=limits
+        ).report.state
+        == "completed",
     )
     check(
         CID,
         "an ignored value one level deeper is fatal json_malformed",
-        run(ignored_deep, **kwargs).report.failure_code == "json_malformed",
+        run(
+            ignored_deep, container="/rows", ignored_top_level_keys=["_meta"], limits=limits
+        ).report.failure_code
+        == "json_malformed",
     )
 
 
