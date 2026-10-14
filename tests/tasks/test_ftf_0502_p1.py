@@ -4967,6 +4967,26 @@ def test_win_etag_is_compared_exactly_and_status_text_kept() -> None:
             "an ETag that differs only by case is a different version",
             isinstance(got, S3ObjectChanged),
         )
+
+    with WindowServer({f"/{BUCKET}/k": (data, "ABCdef")}) as srv:
+        check(
+            "WIN-12",
+            "an unchanged object whose ETag has upper-case letters reads to the end",
+            b"".join(_windows(srv.client(), "k", window_bytes=16)) == data,
+        )
+
+    def swap_lower(srv: WindowServer, n: int) -> None:
+        if n == 2:
+            srv.objects[f"/{BUCKET}/k"] = (data, "abcdef")
+
+    with WindowServer({f"/{BUCKET}/k": (data, "ABCdef")}, swap_lower) as srv:
+        srv.ignore_if_match = True
+        got = _outcome(lambda: _windows(srv.client(), "k", window_bytes=16))
+        check(
+            "WIN-12",
+            "the pinned ETag is not case-folded either",
+            isinstance(got, S3ObjectChanged),
+        )
     with WindowServer({f"/{BUCKET}/k": (data, "e1")}) as srv:
         srv.status_override = 503
         got = _outcome(lambda: _windows(srv.client(), "k"))
