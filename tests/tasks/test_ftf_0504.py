@@ -19,6 +19,7 @@ test_nul_*, test_size_*, test_structure_*, test_too_many_columns, test_source_*.
 Run directly: python3 tests/tasks/test_ftf_0504.py
 """
 
+# ruff: noqa: E501
 from __future__ import annotations
 
 import csv
@@ -211,7 +212,7 @@ def test_basic_import_candidates_and_report() -> None:
     check(CID, "no rejections", report.records_rejected == 0 and report.records_seen == 2)
     check(CID, "prompt/completion preserved", texts(cands[0]) == ["hi", "there"])
     check(CID, "record_index is the 0-based source ordinal", cands[1]["record_index"] == 1)
-    check(CID, "no fatal locator", outcome.fatal_locator is None)
+    check(CID, "no fatal locator", outcome.report.fatal_locator is None)
     check(
         CID, "importer name recorded", report.importer == "csv" and report.importer_version == "1"
     )
@@ -279,7 +280,7 @@ def test_wrong_declared_encoding_is_fatal_not_garbled() -> None:
         check(
             CID,
             f"{label}: a physical line is reported",
-            (outcome.fatal_locator or "").startswith("line:"),
+            (outcome.report.fatal_locator or "").startswith("line:"),
         )
 
 
@@ -289,7 +290,8 @@ def test_invalid_encoding_reports_the_physical_line() -> None:
     check(
         CID,
         "invalid utf-8 on line 3",
-        outcome.report.failure_code == "invalid_encoding" and outcome.fatal_locator == "line:3",
+        outcome.report.failure_code == "invalid_encoding"
+        and outcome.report.fatal_locator == "line:3",
     )
     truncated = b"q,a\nok,fine\nlast,\xd8\xa7"[:-1]
     _events, outcome = collect(truncated)
@@ -306,7 +308,8 @@ def test_bom_handling() -> None:
     check(
         CID,
         "BOM under utf-8 is fatal unexpected_bom",
-        outcome.report.failure_code == "unexpected_bom" and outcome.fatal_locator == "line:1",
+        outcome.report.failure_code == "unexpected_bom"
+        and outcome.report.fatal_locator == "line:1",
     )
     events, outcome = collect(b"\xef\xbb\xbf" + body, encoding="utf-8-sig")
     check(
@@ -435,7 +438,7 @@ def test_duplicate_header_is_fatal_even_when_unmapped() -> None:
         CID,
         "duplicate header fatal",
         outcome.report.failure_code == "duplicate_header"
-        and outcome.fatal_locator == "line:1"
+        and outcome.report.fatal_locator == "line:1"
         and not accepted(events),
     )
     data = csv_bytes([["q", "a", "q"], ["1", "2", "3"]])
@@ -749,7 +752,7 @@ def test_size_limits() -> None:
                     f"field {size} chunk={chunk}: fatal field_too_large",
                     outcome.report.failure_code == "field_too_large"
                     and outcome.report.state == "failed"
-                    and outcome.fatal_locator == "line:2",
+                    and outcome.report.fatal_locator == "line:2",
                 )
             else:
                 ok = (
@@ -997,7 +1000,7 @@ def test_structure_errors_are_fatal() -> None:
             check(
                 CID,
                 f"{label} chunk={chunk}: a line is reported",
-                (outcome.fatal_locator or "").startswith("line:"),
+                (outcome.report.fatal_locator or "").startswith("line:"),
             )
 
 
@@ -1008,7 +1011,8 @@ def test_too_many_columns() -> None:
     check(
         CID,
         "16,385 columns is fatal too_many_columns",
-        outcome.report.failure_code == "too_many_columns" and outcome.fatal_locator == "line:1",
+        outcome.report.failure_code == "too_many_columns"
+        and outcome.report.fatal_locator == "line:1",
     )
     ok = [f"c{i}" for i in range(ci.CSV_MAX_COLUMNS)]
     events, outcome = collect(
@@ -1243,21 +1247,21 @@ def test_meta_leak_markers_never_reach_the_report() -> None:
     events, outcome = collect(data)
     leaks = support.leaked_markers(outcome.report, [m_val, m_head, m_row])
     check(CID, f"no content in the report ({leaks})", not leaks)
-    leaks = support.leaked_markers(outcome.fatal_locator, [m_val, m_head, m_row])
+    leaks = support.leaked_markers(outcome.report.fatal_locator, [m_val, m_head, m_row])
     check(CID, "no content in the fatal locator", not leaks)
     bad = csv_bytes([["q", "a", m_head, m_head]])
     _events, outcome = collect(bad)
     check(
         CID,
         "a duplicate-header failure names no header text",
-        not support.leaked_markers((outcome.report, outcome.fatal_locator), [m_head]),
+        not support.leaked_markers((outcome.report, outcome.report.fatal_locator), [m_head]),
     )
     broken = f'q,a\n"{m_val}'.encode()
     _events, outcome = collect(broken)
     check(
         CID,
         "a structure failure names no content",
-        not support.leaked_markers((outcome.report, outcome.fatal_locator), [m_val]),
+        not support.leaked_markers((outcome.report, outcome.report.fatal_locator), [m_val]),
     )
     try:
         ci.csv_events(
@@ -1444,7 +1448,7 @@ def test_invalid_encoding_locator_is_chunk_independent() -> None:
         seen = set()
         for size in list(range(1, 14)) + [64, 10**6]:
             _events, outcome = collect(data, chunk=size, encoding=encoding)
-            seen.add((outcome.report.failure_code, outcome.fatal_locator))
+            seen.add((outcome.report.failure_code, outcome.report.fatal_locator))
         check(
             CID,
             f"{encoding}: one outcome for every chunking: {seen}",
@@ -1454,7 +1458,7 @@ def test_invalid_encoding_locator_is_chunk_independent() -> None:
     seen = set()
     for size in list(range(1, 12)) + [10**6]:
         _events, outcome = collect(quoted, chunk=size)
-        seen.add((outcome.report.failure_code, outcome.fatal_locator))
+        seen.add((outcome.report.failure_code, outcome.report.fatal_locator))
     check(
         CID, f"bad bytes after a multiline record: {seen}", seen == {("invalid_encoding", "line:5")}
     )
@@ -1463,7 +1467,7 @@ def test_invalid_encoding_locator_is_chunk_independent() -> None:
     seen = set()
     for size in (1, 2, 5, 10**6):
         _events, outcome = collect(truncated, chunk=size)
-        seen.add((outcome.report.failure_code, outcome.fatal_locator))
+        seen.add((outcome.report.failure_code, outcome.report.fatal_locator))
     check(CID, f"truncated tail: {seen}", seen == {("invalid_encoding", "line:3")})
 
 
@@ -1477,7 +1481,7 @@ def test_bom_is_refused_even_when_bad_bytes_follow_in_the_same_chunk() -> None:
                 CID,
                 f"{encoding} chunk={size}: the BOM wins over later bad bytes",
                 outcome.report.failure_code == "unexpected_bom"
-                and outcome.fatal_locator == "line:1",
+                and outcome.report.fatal_locator == "line:1",
             )
 
 
@@ -1486,7 +1490,7 @@ def test_an_earlier_structure_error_beats_a_later_bad_byte_for_every_chunking() 
     seen = set()
     for size in list(range(1, 10)) + [10**6]:
         _events, outcome = collect(data, chunk=size)
-        seen.add((outcome.report.failure_code, outcome.fatal_locator))
+        seen.add((outcome.report.failure_code, outcome.report.fatal_locator))
     check(CID, f"structure error first: {seen}", seen == {("csv_structure_invalid", "line:2")})
 
 
@@ -1556,7 +1560,7 @@ def test_one_logical_record_is_capped_across_physical_lines() -> None:
     check(
         CID,
         "located on the physical line where the field cap was crossed",
-        outcome.fatal_locator == "line:23",
+        outcome.report.fatal_locator == "line:23",
     )
 
 
@@ -1694,6 +1698,415 @@ def test_content_type_gate_refuses_everything_but_csv_before_a_byte() -> None:
     )
     result = ic.preview(stream, 5)
     check(CID, "preview takes the same gate", result.accepted == () and not result.complete)
+
+
+# --- round 3: decoder offsets, locator in the report, expected hash, production constants ---
+
+ENCODING_BAD_UNIT = {
+    "utf-8": b"\xff",
+    "utf-8-sig": b"\xff",
+    "utf-16-le": b"\x00\xd8",  # a lone high surrogate ...
+    "utf-16-be": b"\xd8\x00",
+}
+
+
+def _encode(text: str, encoding: str) -> bytes:
+    return text.encode("utf-8-sig" if encoding == "utf-8-sig" else encoding)
+
+
+def _after_bad_unit(encoding: str) -> bytes:
+    # ... followed by an ordinary character, so the surrogate is unpaired
+    return (
+        _encode("A", "utf-16-le" if encoding == "utf-16-le" else "utf-16-be")
+        if encoding.startswith("utf-16")
+        else b"A"
+    )
+
+
+def _split_outcome(data: bytes, cuts: list[int], encoding: str) -> ci.CsvImportOutcome:
+    pieces = [data[a:b] for a, b in zip([0, *cuts], [*cuts, len(data)], strict=True)]
+    reader = ic.ChunkReader(
+        pieces, expected_size=len(data), expected_sha256=hashlib.sha256(data).hexdigest()
+    )
+    return ci.run_csv_import(
+        reader,
+        build_mapping(encoding=encoding),
+        verified_content_type="text/csv",
+        dataset_purpose="training",
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+    )
+
+
+def _line_of(text: str) -> int:
+    return 1 + len(re.findall(r"\r\n|\r|\n", text))
+
+
+def test_invalid_bytes_are_located_identically_at_every_split_point_for_every_encoding() -> None:
+    before = 'q,a\r\nok,مرحبا\nx,"two\r\nlines"\rmore,é\n'
+    for encoding, bad in ENCODING_BAD_UNIT.items():
+        data = (
+            _encode(before, encoding)
+            + bad
+            + _after_bad_unit(encoding)
+            + _encode("tail,x\n", encoding)[len(_encode("", encoding)) :]
+        )
+        expected = ("invalid_encoding", f"line:{_line_of(before)}")
+        whole = _split_outcome(data, [], encoding)
+        check(
+            CID,
+            f"{encoding}: whole source gives {expected}",
+            (whole.report.failure_code, whole.report.fatal_locator) == expected,
+        )
+        wrong = 0
+        for cut in range(1, len(data)):
+            got = _split_outcome(data, [cut], encoding)
+            if (got.report.failure_code, got.report.fatal_locator) != expected:
+                wrong += 1
+        check(
+            CID,
+            f"{encoding}: every one of {len(data) - 1} two-piece splits agrees ({wrong} differ)",
+            wrong == 0,
+        )
+        for size in (1, 7, 1024 * 1024):
+            got = _split_outcome(data, list(range(size, len(data), size)), encoding)
+            check(
+                CID,
+                f"{encoding}: chunks of {size} agree",
+                (got.report.failure_code, got.report.fatal_locator) == expected,
+            )
+
+
+def test_a_structure_error_just_before_a_bad_byte_wins_at_every_split_point() -> None:
+    before = 'q,a\nok,"x"y'
+    for encoding, bad in ENCODING_BAD_UNIT.items():
+        data = _encode(before, encoding) + bad + _after_bad_unit(encoding)
+        expected = ("csv_structure_invalid", f"line:{_line_of(before)}")
+        outcomes = {
+            (r.report.failure_code, r.report.fatal_locator)
+            for r in (_split_outcome(data, [cut], encoding) for cut in range(0, len(data)))
+            if True
+        }
+        check(
+            CID,
+            f"{encoding}: {expected} at every split point, got {sorted(outcomes, key=str)}",
+            outcomes == {expected},
+        )
+        for size in (1, 7):
+            got = _split_outcome(data, list(range(size, len(data), size)), encoding)
+            check(
+                CID,
+                f"{encoding}: chunks of {size} give the structure error",
+                (got.report.failure_code, got.report.fatal_locator) == expected,
+            )
+
+
+def test_held_over_bytes_do_not_shift_the_locator() -> None:
+    data = b"q,a\nok,\xd9\x85\nx\xff\n"
+    for cut in range(1, len(data)):
+        got = _split_outcome(data, [cut], "utf-8")
+        check(
+            CID,
+            f"split at {cut}: invalid_encoding at line:3",
+            (got.report.failure_code, got.report.fatal_locator) == ("invalid_encoding", "line:3"),
+        )
+    bom = b"\xef\xbb\xbfq,a\nbad,x\n\xff\n"
+    for cut in range(1, len(bom)):
+        got = _split_outcome(bom, [cut], "utf-8-sig")
+        check(
+            CID,
+            f"utf-8-sig split at {cut}: line:3",
+            (got.report.failure_code, got.report.fatal_locator) == ("invalid_encoding", "line:3"),
+        )
+    big = b"\xef\xbb\xbfq,a\n" + b"r,x\n" * 1000 + b"\xff\n"
+    got = _split_outcome(big, [1024 * 1024], "utf-8-sig")
+    check(
+        CID, "at 1 MiB chunks line 1002 is still line 1002", got.report.fatal_locator == "line:1002"
+    )
+    got = _split_outcome(big, list(range(1000, len(big), 1000)), "utf-8-sig")
+    check(CID, "and at 1000-byte chunks", got.report.fatal_locator == "line:1002")
+
+
+def test_valid_documents_give_one_report_at_every_split_point_for_every_encoding() -> None:
+    text = 'q,a\r\nok,مرحبا\r\nx,"two\r\nlines"\rmore,é\n\n'
+    for encoding in ci.CSV_ENCODINGS:
+        body = text if encoding != "windows-1256" else text.replace("é", "e")
+        data = _encode(body, encoding)
+        base = _split_outcome(data, [], encoding).report.report_sha256
+        check(CID, f"{encoding}: the document is small enough for the table", len(data) <= 4096)
+        wrong = sum(
+            _split_outcome(data, [cut], encoding).report.report_sha256 != base
+            for cut in range(1, len(data))
+        )
+        check(
+            CID,
+            f"{encoding}: all {len(data) - 1} two-piece splits give one report ({wrong} differ)",
+            wrong == 0,
+        )
+        three = sum(
+            _split_outcome(data, [a, a + 3], encoding).report.report_sha256 != base
+            for a in range(1, len(data) - 3)
+        )
+        check(
+            CID,
+            f"{encoding}: all three-piece splits with a 3-byte middle give one report ({three} differ)",
+            three == 0,
+        )
+
+
+def test_wrong_declared_encoding_rows_for_utf8_sig_and_windows_1256() -> None:
+    arabic = "مرحبا"
+    cp1256 = csv_bytes([["q", "a"], [arabic, arabic]], encoding="windows-1256")
+    events, outcome = collect(cp1256, encoding="utf-8-sig")
+    check(
+        CID,
+        "windows-1256 bytes declared utf-8-sig: invalid_encoding, never garbled",
+        outcome.report.failure_code == "invalid_encoding" and not accepted(events),
+    )
+    utf8 = csv_bytes([["q", "a"], [arabic, arabic]])
+    events, outcome = collect(utf8, encoding="windows-1256")
+    got = accepted(events)
+    check(
+        CID,
+        "UTF-8 bytes declared windows-1256 import as other text (disclosed: undetectable)",
+        outcome.report.state == "completed" and len(got) == 1 and texts(got[0]) != [arabic, arabic],
+    )
+    events, outcome = collect(utf8, encoding="utf-8-sig")
+    check(
+        CID,
+        "plain UTF-8 declared utf-8-sig imports exactly (a BOM is optional)",
+        texts(accepted(events)[0]) == [arabic, arabic],
+    )
+    events, outcome = collect(b"\xef\xbb\xbf" + utf8, encoding="windows-1256")
+    check(
+        CID,
+        "UTF-8 with a BOM declared windows-1256 never completes as the original text",
+        not accepted(events) or texts(accepted(events)[0]) != [arabic, arabic],
+    )
+
+
+def test_the_locator_lives_in_the_report_and_its_digest() -> None:
+    bad = b"q,a\nok,fine\nbad,\xff\n"
+    _e, outcome = collect(bad)
+    report = outcome.report
+    check(
+        CID,
+        "the report carries the fatal locator",
+        report.fatal_locator == "line:3" and outcome.report.fatal_locator == "line:3",
+    )
+    check(
+        CID,
+        "it is a LocatedImportReport and an ImportReport",
+        isinstance(report, ic.LocatedImportReport) and isinstance(report, ic.ImportReport),
+    )
+    check(CID, "the digest covers it", report.body()["fatal_locator"] == "line:3")
+    for other in ("line:4", "row:3", "record:3"):
+        try:
+            ic.LocatedImportReport(
+                **{
+                    **{n: getattr(report, n) for n in ic.ImportReport.__dataclass_fields__},
+                    "fatal_locator": other,
+                }
+            )
+        except ValueError:
+            continue
+        check(CID, f"changing the locator to {other} without re-sealing is refused", False)
+
+    def sealed(base: ic.ImportReport, locator: str) -> ic.LocatedImportReport:
+        fields = {n: getattr(base, n) for n in ic.ImportReport.__dataclass_fields__}
+        fields["report_sha256"] = ic._canonical_sha256({**base.body(), "fatal_locator": locator})
+        return ic.LocatedImportReport(**fields, fatal_locator=locator)
+
+    check(
+        CID,
+        "a correctly sealed locator is accepted",
+        sealed(report, "line:7").fatal_locator == "line:7",
+    )
+    for junk in (
+        "",
+        "line:",
+        "line:x",
+        "header text",
+        "line:3 ",
+        "LINE:3",
+        "line:" + "9" * 19,
+        "line:3\n",
+    ):
+        try:
+            sealed(report, junk)
+        except ValueError:
+            continue
+        check(CID, f"the locator {junk!r} is refused even when the digest covers it", False)
+    _e, good = collect(csv_bytes([["q", "a"], ["x", "y"]]))
+    check(
+        CID,
+        "a completed report has no locator and is a plain ImportReport",
+        good.report.fatal_locator is None and type(good.report) is ic.ImportReport,
+    )
+    check(CID, "its body has no fatal_locator key", "fatal_locator" not in good.report.body())
+    try:
+        sealed(good.report, "line:1")
+    except ValueError:
+        check(CID, "a completed report cannot carry a locator", True)
+    else:
+        check(CID, "a completed report cannot carry a locator", False)
+    acc = ic.ImportAccumulator(
+        importer="csv",
+        importer_version="1",
+        mapping_sha256="a" * 64,
+        dataset_purpose="training",
+        expected_sha256="b" * 64,
+    )
+    acc.add(ic.RowRejection("line:3", "column_count_mismatch"))
+    acc.add(ic.BlankLine())
+    golden_ok = acc.report(source_sha256="b" * 64, source_bytes=10)
+    golden_bad = acc.report(
+        source_sha256="b" * 64,
+        source_bytes=10,
+        aborted=ic.ImportAborted("failed", "invalid_encoding"),
+    )
+    check(
+        CID,
+        "a report without a locator hashes exactly as before this field existed",
+        golden_ok.report_sha256
+        == "775dd8642fe7998ac8cd4166958088fc60f1f322e03b56b1827e8ee7f5529e22",
+    )
+    check(
+        CID,
+        "and so does a failed one",
+        golden_bad.report_sha256
+        == "b94031c533e7f9dca081ee7c265f73e86de0a8e4728bb38d9c485fc3331ee423",
+    )
+    located = acc.report(
+        source_sha256="b" * 64,
+        source_bytes=10,
+        aborted=ic.ImportAborted("failed", "invalid_encoding"),
+        fatal_locator="line:9",
+    )
+    check(
+        CID,
+        "the same report with a locator has another digest",
+        located.report_sha256 != golden_bad.report_sha256 and located.fatal_locator == "line:9",
+    )
+
+
+def test_an_expected_hash_other_than_the_readers_fails_before_a_record() -> None:
+    data = csv_bytes([["q", "a"]] + [[f"r{i}", "x"] for i in range(5)])
+    other = hashlib.sha256(data + b"x").hexdigest()
+    seen: list[object] = []
+    reader = make_reader(data)
+    outcome = ci.run_csv_import(
+        reader,
+        build_mapping(),
+        verified_content_type="text/csv",
+        dataset_purpose="training",
+        expected_sha256=other,
+        on_accepted=seen.append,
+    )
+    check(
+        CID,
+        "a reader verified for another hash is failed/source_changed",
+        outcome.report.state == "failed" and outcome.report.failure_code == "source_changed",
+    )
+    check(
+        CID,
+        "before one record is accepted and before a byte is read",
+        not seen and reader.bytes_read == 0,
+    )
+    stream = ci.csv_events(
+        make_reader(data), build_mapping(), verified_content_type="text/csv", dataset_sha256=other
+    )
+    result = ic.preview(stream, 3)
+    check(CID, "a preview fails the same way", not result.accepted and not result.complete)
+    ok = ci.run_csv_import(
+        make_reader(data),
+        build_mapping(),
+        verified_content_type="text/csv",
+        dataset_purpose="training",
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+    )
+    check(
+        CID,
+        "the matching hash imports",
+        ok.report.state == "completed" and ok.report.records_accepted == 5,
+    )
+
+
+def test_the_report_carries_the_purpose_it_was_given() -> None:
+    data = csv_bytes([["q", "a"], ["x", "y"]])
+    for purpose in ("training", "held_out_evaluation", "validation"):
+        outcome = ci.run_csv_import(
+            make_reader(data),
+            build_mapping(),
+            verified_content_type="text/csv",
+            dataset_purpose=purpose,
+            expected_sha256=hashlib.sha256(data).hexdigest(),
+        )
+        check(
+            CID,
+            f"dataset_purpose {purpose!r} comes from the caller, not the data",
+            outcome.report.dataset_purpose == purpose,
+        )
+
+
+def test_size_boundaries_at_the_production_constants() -> None:
+    cap = ic.DEFAULT_LIMITS.max_record_bytes
+    check(CID, "the production record cap is 2 MiB", cap == 2 * 1024 * 1024)
+    for chunk in (None, 4096):
+        events, outcome = collect(b"q,a\n" + b"x" * cap + b",y\n", chunk=chunk)
+        check(
+            CID,
+            f"a field of exactly {cap} characters is the largest field (chunk={chunk})",
+            outcome.report.failure_code is None
+            and outcome.report.records_rejected == 1
+            and codes_of(outcome) == ["record_too_large"],
+        )
+        _e, outcome = collect(b"q,a\n" + b"x" * (cap + 1) + b",y\n", chunk=chunk)
+        check(
+            CID,
+            f"one character more is fatal field_too_large (chunk={chunk})",
+            outcome.report.failure_code == "field_too_large",
+        )
+    events, outcome = collect(b"q,a\n" + b"x" * (cap - 1) + b",y\n")
+    check(
+        CID, "mapped fields adding up to exactly the cap are accepted", len(accepted(events)) == 1
+    )
+    # the logical record cap: twice the field cap plus two
+    line = b"q,a\n" + b"x" * cap + b"," + b"y" * (cap - 1) + b"\n"
+    _e, outcome = collect(line)
+    check(
+        CID,
+        "two cap-size fields in one record are inside the record cap",
+        outcome.report.failure_code != "field_too_large",
+    )
+    line = b"q,a\n" + b"x" * cap + b"," + b"y" * (cap + 1) + b"\n"
+    _e, outcome = collect(line)
+    check(
+        CID,
+        "past the record cap is fatal field_too_large",
+        outcome.report.failure_code == "field_too_large",
+    )
+
+
+def codes_of(outcome: ci.CsvImportOutcome) -> list[str]:
+    return [r.code for r in outcome.report.rejections]
+
+
+def test_a_max_size_record_in_one_byte_chunks_stays_linear() -> None:
+    import time
+
+    cap = ic.DEFAULT_LIMITS.max_record_bytes
+    data = b"q,a\n" + b"x" * cap + b",y\n"
+    started = time.monotonic()
+    _e, outcome = collect(data, chunk=1)
+    took = time.monotonic() - started
+    check(
+        CID,
+        f"a {cap}-character field in 1-byte chunks completes ({took:.1f}s) inside 120s",
+        outcome.report.state == "completed" and took < 120,
+    )
+    started = time.monotonic()
+    collect(data, chunk=7)
+    check(CID, "and 7-byte chunks are faster than 1-byte chunks", time.monotonic() - started < took)
 
 
 def main() -> int:

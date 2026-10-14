@@ -432,6 +432,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0613.py
       - name: FTF-0517 negative-test proof (Group-aware split engine, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0517.py
+      - name: FTF-0518 negative-test proof (Split leakage detector, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0518.py
       - name: FTF-1305 negative-test proof (Candidate ranking, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1305.py
       - name: FTF-0616 negative-test proof (LLM judge adapter, no DB required; real local gateway over HTTPS)
