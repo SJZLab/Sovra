@@ -117,6 +117,7 @@ def run(
     return ci.run_csv_import(
         reader,
         mapping,
+        verified_content_type="text/csv",
         dataset_purpose="training",
         expected_sha256=hashlib.sha256(data).hexdigest(),
         limits=limits,
@@ -137,6 +138,7 @@ def collect(
     outcome = ci.run_csv_import(
         reader,
         mapping,
+        verified_content_type="text/csv",
         dataset_purpose="training",
         expected_sha256=hashlib.sha256(data).hexdigest(),
         limits=limits,
@@ -838,7 +840,12 @@ def test_foreign_slot_kinds_are_refused_even_if_hand_built() -> None:
         value: str | int = 0 if kind.strip().lower() == "index" else "q"
         hand = dataclasses.replace(base, prompt=ic.Slot(kind, value))
         try:
-            ci.csv_events(make_reader(b"q,a\n"), hand, dataset_sha256="0" * 64)
+            ci.csv_events(
+                make_reader(b"q,a\n"),
+                hand,
+                verified_content_type="text/csv",
+                dataset_sha256="0" * 64,
+            )
         except ic.MappingInvalidError as exc:
             check(CID, f"slot kind {kind!r} refused as bad_slot", exc.reason == "bad_slot")
         else:
@@ -897,6 +904,7 @@ def test_tool_schemas_and_validator_are_forwarded() -> None:
     outcome = ci.run_csv_import(
         make_reader(data),
         mapping,
+        verified_content_type="text/csv",
         dataset_purpose="training",
         expected_sha256=sha,
         tool_schemas={"lookup_order": schema},
@@ -915,6 +923,7 @@ def test_tool_schemas_and_validator_are_forwarded() -> None:
     stream = ci.csv_events(
         make_reader(data),
         mapping,
+        verified_content_type="text/csv",
         dataset_sha256=sha,
         tool_schemas={"lookup_order": schema},
         tool_argument_validator=validate_instance,
@@ -945,6 +954,7 @@ def test_deadline_is_checked_between_events() -> None:
     outcome = ci.run_csv_import(
         reader,
         build_mapping(),
+        verified_content_type="text/csv",
         dataset_purpose="training",
         expected_sha256=hashlib.sha256(data).hexdigest(),
         on_accepted=advance,
@@ -1028,7 +1038,12 @@ def test_mapping_is_validated_before_a_byte_is_read() -> None:
     def refused(label: str, text: str, reason: str) -> None:
         reader = make_reader(b"q,a\n1,2\n")
         try:
-            ci.csv_events(reader, ic.parse_mapping(text), dataset_sha256="0" * 64)
+            ci.csv_events(
+                reader,
+                ic.parse_mapping(text),
+                verified_content_type="text/csv",
+                dataset_sha256="0" * 64,
+            )
         except ic.MappingInvalidError as exc:
             check(CID, f"{label}: reason {reason}", exc.reason == reason)
         except Exception as exc:  # noqa: BLE001
@@ -1073,6 +1088,7 @@ def test_messages_json_column_carries_a_conversation() -> None:
     outcome = ci.run_csv_import(
         reader,
         mapping,
+        verified_content_type="text/csv",
         dataset_purpose="training",
         expected_sha256=hashlib.sha256(data).hexdigest(),
     )
@@ -1127,6 +1143,7 @@ def test_source_failures_are_never_completed() -> None:
         outcome = ci.run_csv_import(
             reader,
             build_mapping(),
+            verified_content_type="text/csv",
             dataset_purpose="training",
             expected_sha256=hashlib.sha256(data).hexdigest(),
         )
@@ -1143,6 +1160,7 @@ def test_source_failures_are_never_completed() -> None:
     outcome = ci.run_csv_import(
         reader,
         build_mapping(),
+        verified_content_type="text/csv",
         dataset_purpose="training",
         expected_sha256=hashlib.sha256(data).hexdigest(),
     )
@@ -1169,6 +1187,7 @@ def test_source_failures_are_never_completed() -> None:
         ci.run_csv_import(
             reader,
             build_mapping(),
+            verified_content_type="text/csv",
             dataset_purpose="training",
             expected_sha256=hashlib.sha256(data).hexdigest(),
             on_accepted=advancing,
@@ -1195,7 +1214,10 @@ def test_rejection_budget_is_enforced() -> None:
 def test_preview_uses_the_same_events() -> None:
     data = csv_bytes([["q", "a"]] + [[f"r{i}", "x"] for i in range(30)])
     stream = ci.csv_events(
-        make_reader(data), build_mapping(), dataset_sha256=hashlib.sha256(data).hexdigest()
+        make_reader(data),
+        build_mapping(),
+        verified_content_type="text/csv",
+        dataset_sha256=hashlib.sha256(data).hexdigest(),
     )
     result = ic.preview(stream, 5)
     check(
@@ -1238,6 +1260,7 @@ def test_meta_leak_markers_never_reach_the_report() -> None:
         ci.csv_events(
             make_reader(data),
             ic.parse_mapping(mapping_text(encoding=m_val)),
+            verified_content_type="text/csv",
             dataset_sha256="0" * 64,
         )
     except Exception as exc:  # noqa: BLE001
@@ -1313,6 +1336,7 @@ def test_memory_is_bounded_by_the_record_not_the_source() -> None:
         outcome = ci.run_csv_import(
             reader,
             build_mapping(),
+            verified_content_type="text/csv",
             dataset_purpose="training",
             expected_sha256=sha,
             on_accepted=lambda _c: None,
