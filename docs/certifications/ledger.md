@@ -11348,3 +11348,16 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   multiprocessing's _bootstrap via traceback.print_exc() - raw. Disclosed: top-level SystemExit(str) printed by the
   interpreter (no live path). PR #790 ("[certifier]" FTF-0904-W1 r1 CERTIFIED, routine session_01WJXX7GmTgoDTRqnFdoEKow)
   is superseded by the independent RETURN and must not be merged.
+
+## 2026-10-14T13:02Z — RETURNED: FTF-0505 (r2)
+- **FTF-0505: RETURNED** (round 1 → 2; PR #782, merge 80fd4f90ba44715d16c4c000d6bccc2659675a5e, head 98482440). Producer
+  session_01Jo27En7iDrKgCGWP3zAQgU ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 115779848946; gate
+  115757402775 "all checks passed"; xlsx-import-integration 115757506383 (PG16 + SeaweedFS, real stop); mutation 199/200
+  + 1 timeout (capped, 404 generated). No import_common edit. Held: expected-sha mismatch, content-type gate, Law 17,
+  formulas never evaluated, shared-string index, sheet selection, traversal, macros/external links, DOCTYPE/XXE 80/80, zip
+  bombs, production constants, 6,834 split runs, 0 META-LEAK; outage check RED with a no-op stop. Return: raw zlib.error
+  escapes (577/6,000 fuzzed); pre-header/header rows unbounded (499 KiB → 1.57 GB RSS, completed); 4 observable faults
+  GREEN; sidecar fatal locator; evidence gaps. Rulings: field cap in bytes; XlsxLimits → ImportLimits (one serialized
+  edit after FTF-0502 r3). Advisories: sharedStrings at the cap ~0.94 GB RSS (folded into fix 2); FTF-0501 inspect_xlsx
+  likely does not catch zlib.error either (code reading) - add to the FTF-0501-F1 follow-up; relationship-only vbaProject
+  and " External" TargetMode accepted (never executed or fetched).

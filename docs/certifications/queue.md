@@ -24754,3 +24754,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-14T11:30Z — FTF-0904-W1 returned (r3 submitted)
 - **Returned:** FTF-0904-W1 r2 (multiprocess startup traceback). **Round 3 submitted**: redacting traceback printers,
   W1-BOOT-FAIL-MP (--workers 2, --reload), faults F13-F14. L2 from the separate verifier session.
+
+## 2026-10-14T13:02Z — Control plane: FTF-0505 returned
+- **Returned:** FTF-0505 r2 (0d): zlib.error mapping, bounded header retention, 4 pinned clauses, shared fatal_locator; rulings on byte cap and ImportLimits.
