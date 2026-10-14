@@ -1391,7 +1391,13 @@ def _adversarial_shape(label: str, size: int) -> str:
     if label == "qp-redacted-run":
         return "code=[REDACTED]" * (size // 15)
     if label == "qp-camel-run":
-        return "aB" * (size // 2) + "="
+        # `"aB" * (size // 2)` is already `size` chars when `size` is even (every sweep size
+        # is); the trailing "=" pushed the top 262144-char tier to 262145, one over
+        # MAX_TEXT_LENGTH, so redact_text raised LogRedactionError instead of exercising
+        # the camelCase scan at the real top size (the timing check still "passed" --
+        # `_timed_redact`'s child catches the error and still reports an elapsed time -- so
+        # this silently measured the oversize fail-closed path, not the shape itself).
+        return ("aB" * (size // 2))[: size - 1] + "="
     if label == "qp-name-then-delim-run":
         return "code=" + "&" * (size - 5)
     raise ValueError(label)  # pragma: no cover - every label above is listed in _ALL_LABELS
