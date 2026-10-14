@@ -277,41 +277,44 @@ def _skip_value(text: str, pos: int) -> int:
     the value itself. Raises `_Unterminated` when that extent cannot be
     determined before the end of `text`."""
     length = len(text)
-    ch = text[pos]
-    if ch == "{" or ch == "[":
+    # Every structural character below is compared straight off `text[...]`
+    # (never cached into a plain variable first): a single already-isolated
+    # punctuation character can never actually differ from its own
+    # `.strip().lower()` form, which would otherwise leave an unkillable
+    # equivalent-mutant surface behind (the same reasoning round 1's own
+    # `_max_nesting_depth` already documented for this exact mutation class).
+    if text[pos] == "{" or text[pos] == "[":
         depth = 1
         i = pos + 1
         in_string = False
         escape = False
         while i < length:
-            c = text[i]
             if in_string:
                 if escape:
                     escape = False
-                elif c == "\\":
+                elif text[i] == "\\":
                     escape = True
-                elif c == '"':
+                elif text[i] == '"':
                     in_string = False
-            elif c == '"':
+            elif text[i] == '"':
                 in_string = True
-            elif c == "{" or c == "[":
+            elif text[i] == "{" or text[i] == "[":
                 depth += 1
-            elif c == "}" or c == "]":
+            elif text[i] == "}" or text[i] == "]":
                 depth -= 1
                 if depth == 0:
                     return i + 1
             i += 1
         raise _Unterminated
-    if ch == '"':
+    if text[pos] == '"':
         i = pos + 1
         escape = False
         while i < length:
-            c = text[i]
             if escape:
                 escape = False
-            elif c == "\\":
+            elif text[i] == "\\":
                 escape = True
-            elif c == '"':
+            elif text[i] == '"':
                 return i + 1
             i += 1
         raise _Unterminated
@@ -530,15 +533,14 @@ class JsonEventStream(Iterator[ImportEvent]):
             raise JsonAborted("invalid_encoding", "object:0") from None
 
         container_start, container_end = self._locate_container(text)
-        head = text[container_start]
-        if head == "[":
+        if text[container_start] == "[":
             try:
                 spans, _end = _scan_array(text, container_start)
             except _Unterminated:
                 raise JsonAborted("json_malformed", "object:0") from None
             for index, (start, end) in enumerate(spans):
                 yield from self._emit_record(text, start, end, index)
-        elif head == "{":
+        elif text[container_start] == "{":
             yield from self._emit_record(text, container_start, container_end, 0)
         else:
             raise JsonAborted("json_malformed", "object:0")

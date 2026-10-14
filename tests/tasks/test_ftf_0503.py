@@ -262,6 +262,277 @@ def test_container_scalar_is_json_malformed() -> None:
     )
 
 
+def test_empty_or_whitespace_only_document_is_json_malformed() -> None:
+    for label, data in (("empty", b""), ("whitespace-only", b"   \n\t  ")):
+        outcome = run(data, container="")
+        check(
+            CID,
+            f"{label} document: fatal json_malformed, not an IndexError or a silent empty result",
+            (outcome.report.state, outcome.report.failure_code) == ("failed", "json_malformed"),
+        )
+
+
+def test_nested_container_root_not_object_is_json_malformed() -> None:
+    outcome = run(jdump([1, 2, 3]), container="/rows", ignored_top_level_keys=["_meta"])
+    check(
+        CID,
+        "a nested container whose document root is an array (not an object) is fatal "
+        "json_malformed",
+        (outcome.report.state, outcome.report.failure_code) == ("failed", "json_malformed"),
+    )
+
+
+def test_nested_container_unterminated_root_is_json_malformed() -> None:
+    outcome = run(b'{"rows": [', container="/rows", ignored_top_level_keys=[])
+    check(
+        CID,
+        "a nested container whose root object never closes is fatal json_malformed",
+        (outcome.report.state, outcome.report.failure_code) == ("failed", "json_malformed"),
+    )
+
+
+def test_nested_container_trailing_garbage_after_root_is_json_malformed() -> None:
+    outcome = run(b'{"rows": []} garbage', container="/rows", ignored_top_level_keys=[])
+    check(
+        CID,
+        "trailing content after a nested-container root object is fatal json_malformed",
+        (outcome.report.state, outcome.report.failure_code) == ("failed", "json_malformed"),
+    )
+
+
+def test_scan_array_truncation_table() -> None:
+    for label, text in (
+        ("nothing after [", "["),
+        ("nothing after a value", "[1"),
+        ("neither comma nor ] after a value", "[1}"),
+    ):
+        raised = False
+        try:
+            ji._scan_array(text, 0)
+        except ji._Unterminated:
+            raised = True
+        check(CID, f"_scan_array({label!r}): _Unterminated", raised)
+
+
+def test_scan_object_truncation_table() -> None:
+    for label, text in (
+        ("nothing after {", "{"),
+        ("nothing after a key", '{"a"'),
+        ("nothing after the colon", '{"a":'),
+        ("nothing after a value", '{"a":1'),
+        ("neither comma nor } after a value", '{"a":1]'),
+        ("a key with an invalid escape", '{"\\q":1}'),
+    ):
+        raised = False
+        try:
+            ji._scan_object(text, 0)
+        except ji._Unterminated:
+            raised = True
+        check(CID, f"_scan_object({label!r}): _Unterminated", raised)
+
+
+def test_container_key_match_is_exact_not_normalized() -> None:
+    doc = {"Rows": [VALID_A], "_meta": {}}
+    outcome = run(jdump(doc), container="/rows", ignored_top_level_keys=["_meta"])
+    check(
+        CID,
+        "a differently-cased top-level key ('Rows') never matches the mapping's own "
+        "'/rows' container -- exact match only, same discipline as role_map/_text_value",
+        (outcome.report.state, outcome.report.failure_code) == ("failed", "mapping_column_missing"),
+    )
+
+
+def test_ignored_top_level_keys_match_is_exact_not_normalized() -> None:
+    doc = {"rows": [VALID_A], " _meta": {}}
+    outcome = run(jdump(doc), container="/rows", ignored_top_level_keys=["_meta"])
+    check(
+        CID,
+        "a top-level key with incidental leading whitespace (' _meta') is never treated "
+        "as the declared '_meta' -- exact match only, so it is fatal unmapped_top_level_key",
+        (outcome.report.state, outcome.report.failure_code) == ("failed", "unmapped_top_level_key"),
+    )
+
+
+def test_content_type_match_is_exact_not_normalized() -> None:
+    for variant in (
+        " application/json",
+        "application/json ",
+        "APPLICATION/JSON",
+        "Application/Json",
+    ):
+        outcome = run(jdump([VALID_A]), container="", content_type=variant)
+        check(
+            CID,
+            f"content type {variant!r} (a case/whitespace variant) is refused -- exact "
+            "match only, the same discipline csv_importer's own content-type gate uses",
+            (outcome.report.state, outcome.report.failure_code)
+            == ("failed", "content_type_not_supported_by_importer"),
+        )
+
+
+def test_oversize_element_exact_boundaries() -> None:
+    def element_of_length(target_len: int) -> dict[str, object]:
+        base = {"messages": [{"role": "user", "content": ""}]}
+        pad_len = target_len - len(json.dumps(base))
+        assert pad_len >= 0
+        return {"messages": [{"role": "user", "content": "x" * pad_len}]}
+
+    max_record_bytes = 200
+    generous = 2 * max_record_bytes + 2
+    limits = ic.ImportLimits(max_record_bytes=max_record_bytes)
+
+    at_limit = element_of_length(max_record_bytes)
+    assert len(json.dumps(at_limit)) == max_record_bytes
+    outcome = run(jdump([at_limit]), container="", limits=limits)
+    check(
+        CID,
+        "exactly max_record_bytes: accepted, not rejected",
+        outcome.report.records_accepted == 1,
+    )
+
+    over_limit = element_of_length(max_record_bytes + 1)
+    outcome = run(jdump([over_limit]), container="", limits=limits)
+    check(
+        CID,
+        "max_record_bytes + 1: RowRejection record_too_large, not fatal",
+        any(r.code == "record_too_large" for r in outcome.report.rejections),
+    )
+
+    at_generous = element_of_length(generous)
+    outcome = run(jdump([at_generous]), container="", limits=limits)
+    check(
+        CID,
+        "exactly the generous 2*max_record_bytes+2 bound: RowRejection record_too_large, not fatal",
+        any(r.code == "record_too_large" for r in outcome.report.rejections),
+    )
+
+    over_generous = element_of_length(generous + 1)
+    outcome = run(jdump([over_generous]), container="", limits=limits)
+    check(
+        CID,
+        "generous bound + 1: fatal field_too_large",
+        (outcome.report.state, outcome.report.failure_code) == ("failed", "field_too_large"),
+    )
+
+
+def test_tool_schemas_and_validator_are_forwarded() -> None:
+    schema = {
+        "type": "object",
+        "properties": {"order_id": {"type": "string"}},
+        "required": ["order_id"],
+        "additionalProperties": False,
+    }
+    good_call = {
+        "messages": [
+            {"role": "user", "content": "where is my order"},
+            {
+                "role": "assistant",
+                "content": [],
+                "tool_calls": [
+                    {"id": "call_1", "name": "lookup_order", "arguments": {"order_id": "abc"}}
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "name": "lookup_order",
+                "content": [{"type": "json", "value": {"status": "shipped"}}],
+            },
+        ]
+    }
+    bad_call = {
+        "messages": [
+            {"role": "user", "content": "where is my order"},
+            {
+                "role": "assistant",
+                "content": [],
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "name": "lookup_order",
+                        "arguments": {"order_id": "abc", "extra": True},
+                    }
+                ],
+            },
+        ]
+    }
+    from app.services.json_schema_tool_validation import validate_instance
+
+    data = jdump([good_call, bad_call])
+    mapping = ic.parse_mapping(
+        json.dumps(
+            {
+                "shape": "messages",
+                "messages_pointer": "/messages",
+                "role_key": "role",
+                "content_key": "content",
+                "tool_calls_key": "tool_calls",
+                "tool_call_id_key": "tool_call_id",
+                "name_key": "name",
+                "role_map": {"user": "user", "assistant": "assistant", "tool": "tool"},
+                "on_unmapped_message_keys": "ignore",
+                "json": {"container": "", "ignored_top_level_keys": []},
+            }
+        )
+    )
+    reader = make_reader(data)
+    outcome = ji.run_json_import(
+        reader,
+        mapping,
+        verified_content_type="application/json",
+        dataset_purpose="t",
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+        tool_schemas={"lookup_order": schema},
+        tool_argument_validator=validate_instance,
+    )
+    check(CID, "two elements in, two accounted for", outcome.report.records_seen == 2)
+    check(
+        CID,
+        "tool_schemas/tool_argument_validator are forwarded to the real FTF-0405 "
+        "validate_instance: a conforming tool call imports",
+        outcome.report.records_accepted == 1,
+    )
+    check(
+        CID,
+        "a real schema violation is forwarded through as a genuine rejection, not "
+        "silently accepted",
+        any(r.code == "canonical_schema_invalid" for r in outcome.report.rejections),
+    )
+
+
+def test_deadline_is_checked_between_records_not_only_at_drain() -> None:
+    clock = support.FakeClock()
+    data = jdump([VALID_A, VALID_B, row("third")])
+    limits = ic.ImportLimits(deadline_seconds=10.0)
+    reader = ic.ChunkReader(
+        [data],
+        expected_size=len(data),
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+        limits=limits,
+        clock=clock,
+    )
+
+    def on_accepted(_candidate: Mapping[str, object]) -> None:
+        clock.advance(20.0)  # past the 10s deadline, as if processing were slow
+
+    outcome = ji.run_json_import(
+        reader,
+        build_mapping(container=""),
+        verified_content_type="application/json",
+        dataset_purpose="t",
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+        limits=limits,
+        on_accepted=on_accepted,
+    )
+    check(
+        CID,
+        "a deadline that expires between records (not only during the drain) is checked and "
+        "aborts the import failed/parse_timeout, rather than finishing every record regardless",
+        (outcome.report.state, outcome.report.failure_code) == ("failed", "parse_timeout"),
+    )
+    check(CID, "...after accepting only the first record", outcome.report.records_accepted == 1)
+
+
 def test_non_key_slot_is_mapping_invalid() -> None:
     raised = None
     try:
