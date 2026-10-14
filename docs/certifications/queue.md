@@ -24788,6 +24788,9 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-14T16:30Z — Control plane: FTF-0904-F1 returned
 - **Returned:** FTF-0904-F1 r2 (0g): idempotence guard first, serialized/form positions, generated name class, sweeps, FAULTS.
 
+## 2026-10-14T18:11Z — Control plane: FTF-0502 returned (r4)
+- **Returned:** FTF-0502 r4 (0k): same-dataset outage control, real memory bound, sha precision, preview TypeError, trailers; stopping rule.
+
 ## 2026-10-14T19:00Z — PR #802 merged (FTF-0504 round 4; green ci-verdict)
 - **Merged, PROVISIONAL (Law 4, not self-certified):** PR #802 (FTF-0504 round 4, 0c) merged on a
   fully green `ci-verdict` (run `38608276530`), no merge conflict. Round 4 closes all five
@@ -24802,3 +24805,12 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
   `docs/spec-matrix.yaml` via this non-`[relay]`-titled doc PR (shared-file edits are forbidden
   inside `[relay]` PRs). `certification_state` stays PROVISIONAL / `proof_state` stays
   L1-PROVEN — independent Control-plane L2 review of round 4 is still the next step.
+
+## 2026-10-14T20:19Z — Control plane: FTF-0502-P1-F1 CERTIFIED (child slice)
+- **Certified:** FTF-0502-P1-F1 (#798, merge e57b4f98bdaa2e8e13298d5e743e3940cb1cfd56); FTF-0502-P1 requalified; count unchanged.
+
+## 2026-10-14T20:19Z — Control plane: FTF-0505 returned (r3)
+- **Returned:** FTF-0505 r3 (0d): header row bound, decode-after-gate, surrogate, archive-error class, pins, rulings (a)/(b).
+
+## 2026-10-14T20:19Z — Control plane: FTF-0503 returned (r4, small)
+- **Returned:** FTF-0503 r4 (0b): preview TypeError, chunk-independent records before encoding errors, sha pins; stopping rule.

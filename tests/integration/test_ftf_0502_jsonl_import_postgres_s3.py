@@ -594,84 +594,74 @@ def main() -> None:
         (outcome.report.state, outcome.report.failure_code) == ("blocked", "source_unavailable"),
     )
 
+    # ---- J4 stop: the SAME dataset is imported twice -- once undisturbed (the control), once
+    # with S3 stopped mid-stream. The control must complete and read every byte, so the stop
+    # run's outage is attributable to the stop alone; a stop that did nothing leaves the stop
+    # run completing with every byte read, and the checks below go RED. (Round 3 used a 96 MiB
+    # dataset for the stop and an 8 MiB one for the control: SeaweedFS ends a stream that large
+    # on its own at ~20 MB, so a no-op stop still "ended blocked", and the control proved
+    # nothing about the stop dataset.) 16 MiB sits under that natural limit.
     big_row = json.dumps({"q": "q" * 40, "a": "a"}).encode() + b"\n"
-    big = (big_row * (MIB // len(big_row) + 1))[:MIB] * 96
+    big = (big_row * (MIB // len(big_row) + 1))[:MIB] * 16
     large, _ = make_dataset("org1", p1_id, conn1, big, "large")
-    large_source = open_source(ctx1, p1_id, large.id)
-    stopped: list[bool] = []
 
-    def stopping_chunks() -> Any:
-        for index, chunk in enumerate(large_source.chunks):
-            if index == 1 and not stopped:
-                stopped.append(True)
-                s3lab.compose("stop", "s3", check_exit=False)
-            yield chunk
+    def import_large() -> tuple[Any, Any, list[bool]]:
+        source = open_source(ctx1, p1_id, large.id)
+        stopped_at: list[bool] = []
 
-    reader = ic.ChunkReader(
-        stopping_chunks(),
-        expected_size=large_source.expected_size,
-        expected_sha256=large_source.expected_sha256,
-    )
-    outcome = ji.run_jsonl_import(
-        reader,
-        mapping,
-        verified_content_type=large_source.verified_content_type,
-        dataset_purpose=large_source.purpose,
-        expected_sha256=large_source.expected_sha256,
-        on_accepted=lambda _candidate: None,
-    )
-    leak_values.append((outcome.report, outcome.report.fatal_locator))
+        def chunks_with_stop() -> Any:
+            for index, chunk in enumerate(source.chunks):
+                if index == 1 and stop_mid_stream and not stopped_at:
+                    stopped_at.append(True)
+                    s3lab.compose("stop", "s3", check_exit=False)
+                yield chunk
+
+        reader = ic.ChunkReader(
+            chunks_with_stop(),
+            expected_size=source.expected_size,
+            expected_sha256=source.expected_sha256,
+        )
+        outcome = ji.run_jsonl_import(
+            reader,
+            mapping,
+            verified_content_type=source.verified_content_type,
+            dataset_purpose=source.purpose,
+            expected_sha256=source.expected_sha256,
+            on_accepted=lambda _candidate: None,
+        )
+        leak_values.append((outcome.report, outcome.report.fatal_locator))
+        return outcome, reader, stopped_at
+
+    stop_mid_stream = False
+    control_outcome, control_reader, control_stops = import_large()
     check(
-        f"J4 stopping S3 mid-stream is blocked/source_unavailable "
+        f"J4 control: the {len(big)}-byte dataset, undisturbed, completes "
+        f"({control_outcome.report.state} {control_outcome.report.failure_code})",
+        control_outcome.report.state == "completed" and control_stops == [],
+    )
+    check(
+        f"J4 control: reads every byte of the dataset "
+        f"({control_outcome.report.source_bytes} vs {len(big)})",
+        control_outcome.report.source_bytes == len(big) == control_reader.bytes_read,
+    )
+
+    stop_mid_stream = True
+    outcome, stop_reader, stops = import_large()
+    check(
+        f"J4 stopping S3 mid-stream of the same dataset is blocked/source_unavailable "
         f"({outcome.report.state} {outcome.report.failure_code})",
-        stopped == [True]
+        stops == [True]
         and (outcome.report.state, outcome.report.failure_code)
         == ("blocked", "source_unavailable"),
     )
-
-    # ---- J4 control: a stream large enough to exercise the same path completes when nothing
-    # actually stops it. Without this, the "blocked/source_unavailable" check above is vacuous if
-    # SeaweedFS ever ends a slow, large stream on its own: the first attempt at this control run
-    # (replaying the identical 96 MiB dataset) reproduced exactly that -- this CI runner's own
-    # SeaweedFS ends the stream on its own at ~25 MB, confirmed by this run's own
-    # `source_bytes` (an independent, real-infra confirmation of the finding this control exists
-    # to guard against). A dataset genuinely larger than the stopping run's own cutoff point
-    # (`index == 1`, a few MiB in) but comfortably under that observed natural limit proves the
-    # same streamed-read path completes on its own well past where the stop fires, so the
-    # stopping check's own outage is attributable to the stop, not to an unrelated stream limit
-    # this dataset would hit regardless.
+    check(
+        f"J4 the stopped run read fewer bytes than the control "
+        f"({stop_reader.bytes_read} vs {control_reader.bytes_read})",
+        stop_reader.bytes_read < control_reader.bytes_read,
+    )
     s3lab.compose("up", "-d", "s3")
     s3lab._wait_for_tcp(endpoint.host, endpoint.port, timeout_seconds=90.0)
     s3lab._wait_for_s3_http_ready(endpoint, timeout_seconds=90.0)
-    control_bytes = (big_row * (MIB // len(big_row) + 1))[:MIB] * 8
-    control_dataset, _ = make_dataset("org1", p1_id, conn1, control_bytes, "large-control")
-    control_source = open_source(ctx1, p1_id, control_dataset.id)
-    control_reader = ic.ChunkReader(
-        control_source.chunks,
-        expected_size=control_source.expected_size,
-        expected_sha256=control_source.expected_sha256,
-    )
-    control_outcome = ji.run_jsonl_import(
-        control_reader,
-        mapping,
-        verified_content_type=control_source.verified_content_type,
-        dataset_purpose=control_source.purpose,
-        expected_sha256=control_source.expected_sha256,
-        on_accepted=lambda _candidate: None,
-    )
-    leak_values.append((control_outcome.report, control_outcome.report.fatal_locator))
-    check(
-        f"J4 control: an {len(control_bytes)}-byte stream (well past the stopping run's own "
-        f"cutoff point, comfortably under this runner's observed natural stream limit) "
-        f"completes without a stop ({control_outcome.report.state} "
-        f"{control_outcome.report.failure_code}, {control_outcome.report.source_bytes} bytes read)",
-        control_outcome.report.state == "completed",
-    )
-    check(
-        f"J4 control: reads every byte of its own source "
-        f"({control_outcome.report.source_bytes} vs {len(control_bytes)})",
-        control_outcome.report.source_bytes == len(control_bytes) == control_reader.bytes_read,
-    )
 
     # ---- J5: nothing planted leaks anywhere -----------------------------------------------------
     logging.getLogger().removeHandler(log_handler)

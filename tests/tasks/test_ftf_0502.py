@@ -829,6 +829,81 @@ def test_memory_ratio_is_tightly_bounded() -> None:
     )
 
 
+def _streamed_peak(total: int, record_size: int, *, tail: bytes = b"") -> tuple[int, int]:
+    """(tracemalloc peak, accepted count) of importing ~`total` bytes of `record_size`-byte
+    rows. The source is generated lazily -- never held whole, never subtracted from the
+    peak -- so a retained line shows up in full."""
+
+    def rows() -> Any:
+        written = 0
+        index = 0
+        while written < total:
+            body = f"{index:09d}".encode() + b"x" * min(record_size - 60, 3000)
+            row = b'{"q":"' + body + b'","a":"y"}'
+            row = row + b" " * max(record_size - 1 - len(row), 0) + b"\n"
+            written += len(row)
+            index += 1
+            yield row
+        if tail:
+            yield tail
+
+    digest = hashlib.sha256()
+    size = 0
+    for row in rows():
+        digest.update(row)
+        size += len(row)
+    pending: list[bytes] = []
+
+    def chunks() -> Any:
+        for row in rows():
+            pending.append(row)
+            if sum(map(len, pending)) >= 65536:
+                yield b"".join(pending)
+                pending.clear()
+        if pending:
+            yield b"".join(pending)
+
+    reader = ic.ChunkReader(chunks(), expected_size=size, expected_sha256=digest.hexdigest())
+    counter = [0]
+    tracemalloc.start()
+    outcome = ji.run_jsonl_import(
+        reader,
+        build_mapping(),
+        verified_content_type=JSONL,
+        dataset_purpose="training",
+        expected_sha256=digest.hexdigest(),
+        on_accepted=lambda _c: counter.__setitem__(0, counter[0] + 1),
+    )
+    _current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert outcome.report.state == "completed", outcome.report
+    return peak, counter[0]
+
+
+def test_memory_peak_is_independent_of_the_source_size() -> None:
+    """MEMORY-RETENTION-UNPINNED: the peak for 64 MiB of rows is within 1.5x the peak for
+    1 MiB of rows, and within 1.5x the peak for 8 MiB holding max-size records -- compared
+    directly, nothing subtracted. Retaining every accepted line (64 MiB) or one in a hundred
+    (0.64 MiB) breaks the bound."""
+    small, small_count = _streamed_peak(1 * 1024 * 1024, 4096)
+    large, large_count = _streamed_peak(64 * 1024 * 1024, 4096)
+    cap = ic.DEFAULT_LIMITS.max_record_bytes
+    biggest, big_count = _streamed_peak(8 * 1024 * 1024, cap)
+    check(CID, "every row of every run is accepted", small_count > 0 and large_count > 0)
+    check(CID, "the max-size-record run accepted its records", big_count >= 4)
+    check(
+        CID,
+        f"64 MiB of rows peaks at {large} bytes, within 1.5x of 1 MiB of rows ({small})",
+        large < 1.5 * small,
+    )
+    check(
+        CID,
+        f"64 MiB of rows peaks at {large} bytes, within 1.5x of 8 MiB of max-size records "
+        f"({biggest})",
+        large < 1.5 * biggest,
+    )
+
+
 # --- strict JSON axes ------------------------------------------------------------------
 
 
@@ -1444,6 +1519,117 @@ def test_expected_sha256_must_match_the_readers_own_declared_hash() -> None:
         "content type is still checked before the hash cross-check",
         outcome4.report.failure_code == "content_type_not_supported_by_importer",
     )
+
+
+def _flip_hex(hexdigest: str, position: int) -> str:
+    chars = list(hexdigest)
+    chars[position] = "0" if chars[position] != "0" else "1"
+    return "".join(chars)
+
+
+def test_sha_mismatch_is_detected_at_a_single_hex_character() -> None:
+    """V-SHA-IGNORE-LAST-CHAR / V-SHA-IGNORE-FIRST-CHAR / V-SHA-COMPARE-PREFIX8: a caller hash
+    that differs from the reader's declared one in only the first, or only the last, hex
+    character is failed/source_changed with nothing read -- on the run path and the preview
+    path. A comparison that skipped either end, or compared a short prefix, passes the large
+    differences the test above uses."""
+    data = line("q", "a") + b"\n"
+    real = hashlib.sha256(data).hexdigest()
+    for position, label in ((0, "first"), (-1, "last"), (8, "ninth")):
+        flipped = _flip_hex(real, position)
+        assert flipped != real
+        reader = make_reader(data, expected_sha=real)
+        outcome = ji.run_jsonl_import(
+            reader,
+            build_mapping(),
+            verified_content_type=JSONL,
+            dataset_purpose="training",
+            expected_sha256=flipped,
+        )
+        check(
+            CID,
+            f"run: a hash differing only in its {label} hex character is "
+            f"failed/source_changed with nothing read",
+            (outcome.report.state, outcome.report.failure_code) == ("failed", "source_changed")
+            and reader.bytes_read == 0
+            and outcome.report.records_accepted == 0,
+        )
+        reader = make_reader(data, expected_sha=real)
+        result = ic.preview(
+            ji.jsonl_events(
+                reader, build_mapping(), verified_content_type=JSONL, dataset_sha256=flipped
+            ),
+            3,
+        )
+        check(
+            CID,
+            f"preview: a hash differing only in its {label} hex character reads nothing",
+            not result.accepted and not result.complete and reader.bytes_read == 0,
+        )
+    got, ok = collect(data)
+    check(CID, "the matching hash still imports", ok.report.state == "completed" and len(got) == 1)
+
+
+class _StrSubclass(str):
+    pass
+
+
+def test_malformed_dataset_sha256_is_a_typed_refusal_not_a_crash() -> None:
+    """PREVIEW-SHA-TYPEERROR: `hmac.compare_digest` raises a raw TypeError on a non-str, or a
+    str with non-ASCII characters. The preview path hands its accumulator a dummy hash, so
+    the stream's own check is the only one that sees the caller's value."""
+    data = line("q", "a") + b"\n"
+    real = hashlib.sha256(data).hexdigest()
+    bad_values: list[object] = [
+        None,
+        b"0" * 64,
+        7,
+        "\u00e9" * 64,
+        "",
+        real.upper(),
+        real[:-1],
+        real + "0",
+        _StrSubclass(real),
+    ]
+    for bad in bad_values:
+        label = repr(bad)[:40]
+        reader = make_reader(data, expected_sha=real)
+        stream = ji.jsonl_events(
+            reader,
+            build_mapping(),
+            verified_content_type=JSONL,
+            dataset_sha256=bad,  # type: ignore[arg-type]
+        )
+        try:
+            result = ic.preview(stream, 3)
+        except TypeError as exc:
+            check(CID, f"preview with dataset_sha256={label} raised a raw TypeError: {exc}", False)
+            continue
+        check(
+            CID,
+            f"preview with dataset_sha256={label} is a typed refusal, nothing read",
+            not result.accepted and not result.complete and reader.bytes_read == 0,
+        )
+        reader = make_reader(data, expected_sha=real)
+        stream = ji.jsonl_events(
+            reader,
+            build_mapping(),
+            verified_content_type=JSONL,
+            dataset_sha256=bad,  # type: ignore[arg-type]
+        )
+        try:
+            list(stream)
+        except ic.ImportAborted as exc:
+            check(
+                CID,
+                f"draining with dataset_sha256={label} aborts failed/source_changed",
+                (exc.state, exc.failure_code) == ("failed", "source_changed")
+                and reader.bytes_read == 0,
+            )
+        except TypeError as exc:
+            check(CID, f"draining with dataset_sha256={label} raised a raw TypeError: {exc}", False)
+        else:
+            check(CID, f"draining with dataset_sha256={label} must abort", False)
 
 
 # --- source failures --------------------------------------------------------------------
