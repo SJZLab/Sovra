@@ -7611,7 +7611,23 @@ FTF-0505:
     (sheet row); a sheet named in the mapping that does not exist is mapping_column_missing (the
     shared FAILURE_CODES catalog has no sheet-specific code and this task does not edit it); no live
     route caller, so proving_symbol stays blank.
-    Mutation gate: 404 run | 403 KILLED | 1 TIMEOUT | 0 SURVIVED (see docs/certifications/submissions/2026-10-14T0800Z-FTF-0505.md).
+    Mutation gate (round 1): 404 run | 403 KILLED | 1 TIMEOUT | 0 SURVIVED (see docs/certifications/submissions/2026-10-14T0800Z-FTF-0505.md).
+    Round 2 (2026-10-14T15:00Z, Control-plane return of 13:02Z): read_part_blocks (ooxml_safety.py)
+    now maps zlib.error to xlsx_malformed. _SheetScanner no longer retains a skipped (pre-header) row's
+    cell text -- only whether it is blank -- closing a real transient near-gigabyte RSS peak from a
+    single wide, deeply padded row in a roughly one-megabyte upload. Shared strings are now kept as
+    UTF-8 bytes, decoded to str only on lookup, closing a real ~3.8x memory-vs-declared-cap cost for a
+    multilingual (non-Latin-1) sharedStrings part, via the Control-plane-sanctioned "compact storage"
+    option (not the ImportLimits cap-location move, deferred below). TargetMode="External" is now
+    compared after .strip(); a vbaProject reached only through a relationship Type (never its own part
+    name or a declared content type) is now also unsafe_workbook. XlsxImportOutcome.fatal_locator
+    removed in favour of the shared ImportReport/LocatedImportReport field (no import_common.py edit:
+    that field already exists on main, landed by FTF-0504 r3). Deferred, disclosed: ruling (b)'s
+    import_common.py cap-location move (serialized after FTF-0502 r3, #793, still open); re-pinning
+    every already-GREEN named clause; full production-constant/every-offset evidence tables; a fresh
+    xlsx-import-integration run (unchanged by this round's diff). Full detail:
+    docs/certifications/submissions/2026-10-14T1500Z-FTF-0505-r2.md.
+    Mutation gate (round 2): see that submission.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0505.py
