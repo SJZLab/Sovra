@@ -158,6 +158,9 @@ _SAFETENSORS_DTYPE_SIZES: Mapping[str, int] = {
 }
 _TENSOR_KEYS = frozenset({"dtype", "shape", "data_offsets"})
 
+# The safetensors format stores every dimension as an unsigned 64-bit integer.
+_MAX_SHAPE_DIM = 2**64 - 1
+
 _LORA_KEY = re.compile(r"(.+)\.lora_([AB])\.weight")
 _PEFT_PREFIX = "base_model.model."
 _SURROGATES = re.compile("[\ud800-\udfff]")
@@ -566,13 +569,21 @@ def _tensor_info(name: str, entry: object) -> TensorInfo:
     offsets = entry["data_offsets"]
     if type(dtype) is not str or dtype not in _SAFETENSORS_DTYPE_SIZES:
         raise _header_error("dtype")
-    if type(shape) is not list or any(type(d) is not int or d < 0 for d in shape):
+    if type(shape) is not list or any(
+        type(d) is not int or d < 0 or d > _MAX_SHAPE_DIM for d in shape
+    ):
         raise _header_error("shape")
     if type(offsets) is not list or len(offsets) != 2 or any(type(o) is not int for o in offsets):
         raise _header_error("data_offsets")
-    expected = _SAFETENSORS_DTYPE_SIZES[dtype]
+    # Checked in order, like the format's own reader: the running element count must stay a u64,
+    # which also keeps every intermediate product small (a zero dimension later in the list does
+    # not excuse an earlier overflow).
+    elements = 1
     for dim in shape:
-        expected *= dim
+        elements *= dim
+        if elements > _MAX_SHAPE_DIM:
+            raise _header_error("shape")
+    expected = _SAFETENSORS_DTYPE_SIZES[dtype] * elements
     if offsets[1] - offsets[0] != expected:
         raise _header_error("size_mismatch")
     return TensorInfo(dtype=dtype, shape=tuple(shape), begin=offsets[0], end=offsets[1])
