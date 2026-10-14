@@ -845,13 +845,13 @@
       "blockers": []
     },
     "FTF-0512": {
-      "status": "CERTIFIED",
+      "status": "NOT_STARTED",
       "commits": [],
-      "evidence": [
-        "bdd9c0e0a07da1ca5b18306277c50f841acc8ee7"
-      ],
+      "evidence": [],
       "independent_review": null,
-      "blockers": []
+      "blockers": [
+        "DECERTIFIED 2026-10-14T23:44Z: FTF-0512-F1 (#812) merged a production regression into this module (NFKC digit merges -> false blocking leakage findings; quadratic NFKC at the 2 MiB cap); requalifies with FTF-0512-F1 round 2 (QUEUE item 0c)"
+      ]
     },
     "FTF-0513": {
       "status": "CERTIFIED",

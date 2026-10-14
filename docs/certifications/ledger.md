@@ -11512,3 +11512,15 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   timeouts. All four round-1 fixes class-closing; 365 probes 0 unexpected. Return: element-count `>=` fault and
   last-component target fault caught only by a patch-text guard (no behavioural row); the mutation gate counted the text
   guard as a kill. Stopping rule set. Advisory for P3: 100 MB header parse ~4.2 GB / 27 s.
+
+## 2026-10-14T23:44Z — DECERTIFIED: FTF-0512; RETURNED: FTF-0512-F1 (r2)
+- **FTF-0512-F1: RETURNED** (round 1 → 2; PR #812, merge faead7bee3d0ae5ea906d5facec6ca803903810a, head 848af688). Producer
+  session_01VojzMAj9r97yBUykfBtAun ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 116152473276; gate
+  116150085708 "FTF-0512-F1 look-alike gaps: all checks passed". Held: Cf removal (163/163), idempotence over all scalar
+  values, one-sided timestamp/UUID, no new Arabic collapse, corpus differential. Return: NFKC merges superscripts /
+  fractions / circled digits with adjacent digits ("10⁵" == "105") -> false blocking FTF-0518 finding; quadratic NFKC
+  (2.04 MB in 99.7 s vs 0.047 s); hand-picked Cf table; tool-id / tool-name / message-name / tool_call_id faults GREEN.
+- **FTF-0512: DECERTIFIED** (Law 15; the relay PR itself already set spec-matrix to PROVISIONAL, this record makes it official and syncs the trackers): the merged module now violates FTF-0512's negative acceptance (distinct texts merge)
+  and the linear-time rule, and its requalification run left four clause faults GREEN. CERTIFIED → PROVISIONAL; it
+  requalifies with FTF-0512-F1 round 2. Consumers FTF-0513/0515/0518 unaffected in certification state (0518 is
+  PROVISIONAL in flight). Count -1.

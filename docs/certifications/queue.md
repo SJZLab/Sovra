@@ -24858,3 +24858,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-14T21:57Z — Control plane: FTF-H010-P3a returned (r3)
 - **Returned:** FTF-H010-P3a r3 (0e): boundary rows, dotted target suffixes, behavioural kills only; stopping rule.
+
+## 2026-10-14T23:44Z — Control plane: FTF-0512 DECERTIFIED; FTF-0512-F1 returned
+- **Decertified:** FTF-0512 (Law 15, regression merged by #812). **Returned:** FTF-0512-F1 r2 (0c).
