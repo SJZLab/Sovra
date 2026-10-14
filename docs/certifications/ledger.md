@@ -11408,3 +11408,15 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   returns instead because item 1 (record cap at the production constant) was an explicit round-3 DoD line that the
   suite mislabels, and two typed-failure defects were found (preview hash TypeError; 1-2 BOM bytes swallowed). Stopping
   rule: round 4 certifies once these land with no production violation.
+
+## 2026-10-14T16:30Z — RETURNED: FTF-0904-F1 (r2); FTF-0904 requalification pending
+- **FTF-0904-F1: RETURNED** (round 1 → 2; PR #794, merge 467299c3baa3ff1149e4a4ff51aed605dae87b8a, head a67d5001). Producer
+  session_013bKGKdbYZ1RJbKCyCQrkpg ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 115924636041; gate
+  115873398599 full FTF-0904 suite "all checks passed" (78 min, 77 faults); W1 suite green. Law 15 requalification of
+  FTF-0904 at the merge: full suite 77/77 faults RED locally (4,699 s); round-7 probe set byte-identical (P1 49/49, P2 35/35,
+  long-secret 0/306, ls6 0/198, fail-closed 8/8, threads, glued 0/30); jwt6 differential 0 regressions over 300k strings;
+  984 old-shape timing runs linear. Return: no `[REDACTED]` guard on the new rule (live access lines `code=[REDACTED]]]]`);
+  contract names leak in serialized queries / form bodies; hand-picked 7-name list (49/71 other credential names leak);
+  QP-BOUNDED-64/4096, QP-QUAD-DELIM-LOOKAHEAD, QP-NFKC-FIRST-LAYER-ONLY GREEN; three claimed faults missing from FAULTS.
+- **FTF-0904: stays CERTIFIED** (Control-plane ruling): no leak regression; the idempotence regression is cosmetic garbling
+  of already-redacted values, fixed first in F1 r2, with which the requalification completes (FTF-0616-F1 precedent).
