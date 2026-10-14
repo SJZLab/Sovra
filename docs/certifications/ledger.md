@@ -11270,3 +11270,25 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   ruling): J-SKIP-GIVEUP, Q-PAIR-WS-AFTER-KEY/COMMA-QUAD, Q-JWT-SLICE-IN-LOOP, Q-JWT-PREFIX-SLICE, isalnum->isalpha.
   Advisories: A1 same-run glued JWT contexts (`accessKeyJwt_`, `token_aeyJ_`); A2 `'("password"' + " "*n` shapes; A3 a
   scaling check for sub-4 s quadratics; A4 percent shapes >4 s at 256K (linear) and unpinned _PREFIXES caps. UNWIRED.
+
+## 2026-10-14T06:52Z — RETURNED: FTF-0504 (r3)
+- **FTF-0504: RETURNED** (round 2 → 3; PR #775, merge d59d68232419416c5ab4b46da7dd8216d9b8acd7, head 182dcd72). Producer
+  session_01NaZZXQEiaHC7wqpLTq4gUC (r1 session_01R7UTG7i8fws9ir2DLJUXXE) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR.
+  CI: ci-verdict 115675106955; gate 115660606138 "all checks passed"; csv-import-integration 115660663774 (PG16 + SeaweedFS);
+  mutation 118/122 killed, 4 timeouts. Held: importer order, no import_common edit, own parser (401,153-parse differential,
+  0 mismatches), 64 MiB record refused under 8 MiB read, content-type gate, Law 17 outage states. Return: utf-8-sig
+  locator 3 bytes short (51/150 files; failure code chunk-dependent); expected_sha256 mismatch completes (catalog rule);
+  mid-stream stop no-op stays GREEN; V-PENDING-ZERO GREEN; evidence gaps. Ruling: fatal locator = one additive optional
+  ImportReport field, digest-neutral when None. Advisory P-LARGE: SeaweedFS ends slowly read downloads (~18 MB at the
+  importer's ~0.6 MiB/s), so imports over ~15-20 MB cannot finish through open_dataset_source; needs resumable/range reads
+  in the FTF-0502-P1/FTF-0501 source layer (Control-plane follow-up).
+
+## 2026-10-14T06:52Z — RETURNED: FTF-1602 (r6)
+- **FTF-1602: RETURNED** (round 5 → 6, tests only; PR #672, merge 724cfdd4b85d738c687677001f34a530260fe9f9, head 5892e5db).
+  Producers session_017p4BuRpvUsXr4X4Hp9DZnt (code) and others on the PR ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent.
+  CI: ci-verdict 115672292256; real SeaweedFS 115657809750 (18 tests) and gate 115657736993 "all checks passed"; mutation
+  61/61; local uncapped 405/405. Production correct: own uuid4 backup_id (caller id refused), Q4a/Q4b on real SeaweedFS all
+  verify, typed `now` before any write. Return: F7 (create `now` check after writes) GREEN in both suites; G7 GREEN in unit;
+  G1 RED only incidentally, G1b GREEN in unit; spec-matrix Q4a note overclaims, evidence_hash stale. Stopping rule: round 6
+  certifies once these land with no production violation. Advisory: a tzinfo whose utcoffset() raises gives raw ValueError
+  (hand-picked variant of the closed typed-`now` class).
