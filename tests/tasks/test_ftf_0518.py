@@ -1818,6 +1818,61 @@ def test_constructors_validate_their_fields() -> None:
     )
 
 
+def test_prior_sources_are_only_compared_with_current_records() -> None:
+    cid = "LK-PRIOR-PAIRS"
+    same_a = record("p", LONG_A, "z")
+    same_b = record("q", LONG_A, "z")
+    report = scan(
+        [*solo("tr", "train", 3), *solo("fi", "final_qualification", 2)],
+        prior=(
+            prior_source("c1", "final_qualification", [same_a]),
+            prior_source("c2", "development_eval", [same_b]),
+        ),
+    )
+    check(
+        cid,
+        f"identical records in two prior sources are not leakage ({report.status})",
+        report.status == "clear" and report.findings == (),
+    )
+    keyed_a = record("pa", "alpha prior one", "z", keys=("shared-prior",))
+    keyed_b = record("pb", "beta prior two", "z", keys=("shared-prior",))
+    report = scan(
+        solo("tr", "train", 3),
+        prior=(
+            prior_source("c1", "final_qualification", [keyed_a]),
+            prior_source("c2", "final_qualification", [keyed_b]),
+        ),
+    )
+    check(cid, "nor are keys shared by two prior sources", report.status == "clear")
+    duplicate = prior_source(
+        "c1",
+        "final_qualification",
+        [record("Dup", "a b", "c"), record("dup", "d e", "f"), record(" dup", "g h", "i")],
+    )
+    check(
+        cid,
+        "record ids that differ by case or padding are distinct in a prior source",
+        len(duplicate.records) == 3,
+    )
+    both = scan(
+        [*solo("tr", "train", 2), (record("cur", LONG_A, "z"), "train", ("gc",))],
+        prior=(
+            prior_source("c1", "final_qualification", [record("old", LONG_A, "z")]),
+            prior_source("c2", "development_eval", [record("old", LONG_A, "z")]),
+        ),
+    )
+    check(
+        cid,
+        "the same prior id in two sources gives separate findings per source",
+        {f.prior_source_label for f in both.findings} == {"c1", "c2"},
+    )
+    check(
+        cid,
+        "and the current record is always side a",
+        all(f.record_id_a == "cur" and f.record_id_b == "old" for f in both.findings),
+    )
+
+
 def test_reviews_must_be_a_real_sequence() -> None:
     cid = "LK-REVIEW-SEQ"
     report = semantic_only_report()

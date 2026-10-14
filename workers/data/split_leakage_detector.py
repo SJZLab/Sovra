@@ -610,14 +610,14 @@ class _Entry:
     keys: frozenset[str]
 
 
-def _pair_reason(a: _Entry, b: _Entry) -> str | None:
-    if a.label is None:
-        if b.label is None:
-            return _CROSS_ROLE.get((a.role, b.role))
-        return _PRIOR_PAIR.get((a.role, b.role))
-    if b.label is None:
-        return _PRIOR_PAIR.get((b.role, a.role))
-    return None
+def _pair_reason(first: _Entry, second: _Entry) -> str | None:
+    """The pair-class reason for two entries already in `_order`: current records come before
+    prior ones, so a prior `first` means two prior records, which are never compared."""
+    if first.label is not None:
+        return None
+    if second.label is None:
+        return _CROSS_ROLE.get((first.role, second.role))
+    return _PRIOR_PAIR.get((first.role, second.role))
 
 
 def _order(entry: _Entry) -> tuple[bool, int]:
@@ -642,10 +642,10 @@ class _Collector:
     ) -> bool:
         """Records one finding for the pair `(a, b)` if that pair class is checked. Returns
         False once the limit is hit."""
-        reason = _pair_reason(a, b)
+        first, second = sorted((a, b), key=_order)
+        reason = _pair_reason(first, second)
         if reason is None:
             return True
-        first, second = sorted((a, b), key=_order)
         label = first.label or second.label
         finding_id = _finding_id(
             method,
