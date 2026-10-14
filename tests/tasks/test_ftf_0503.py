@@ -343,6 +343,7 @@ def test_scan_object_truncation_table() -> None:
         # this exact raise fall through into parsing a second, well-formed
         # member instead of hitting any other check.
         ("next char exists but is not ':'", '{"a" "b":1}'),
+        ("nothing after the colon", '{"a":'),
         ("nothing after a value", '{"a":1'),
         ("neither comma nor } after a value", '{"a":1 "b":2}'),
         ("a key with an invalid escape", '{"\\q":1}'),
