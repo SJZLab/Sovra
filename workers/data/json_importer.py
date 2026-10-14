@@ -27,8 +27,11 @@ JSONL produce.
 
 The scanner is a byte-level state machine fed chunk by chunk, so every result
 is independent of where the chunks are cut. It tracks strings (and their
-escapes), a bracket-type stack for the value being read, and the position in
-the document grammar (after `[`, after a comma, after a key, ...). Only the
+escapes) and, for every open `{` / `[` of the value being read, what that
+container expects next (a key, a colon, a value, a comma or its closer), as
+well as the position in the document grammar (after `[`, after a comma, after
+a key, ...). That is the whole JSON grammar except the spelling of a bare
+literal (`01`, `tru`) and of an escape (`\\q`), which `strict_loads` judges. Only the
 bytes of the *current* value are kept, up to `limits.max_record_bytes`; a
 record element over that is discarded as it arrives (its structure is still
 tracked) and becomes one `record_too_large` row while the import continues.
@@ -37,9 +40,9 @@ Memory therefore does not depend on the document size.
 A value is parsed by P1's `strict_loads` alone (duplicate keys, NaN,
 4300-digit ints, lone surrogates, nesting depth), so a bad *value* costs one
 row. A bad *structure* -- a value starting with a character that cannot start
-a JSON value, a missing or doubled comma, a `]` closing a `{`, an unclosed
-string or bracket, a trailing comma, anything after the document's end, a
-scalar where the container should be -- is fatal `json_malformed`, located at
+a JSON value, a missing or doubled comma or colon, a `]` closing a `{`, an
+unclosed string or bracket, a trailing comma, anything after the document's
+end, a scalar where the container should be -- is fatal `json_malformed`, located at
 the byte offset where it was found (`object:<offset>` in the source,
 counting a UTF-8 BOM). A value under an ignored top-level key is parsed too
 (strictly) and must fit in `max_record_bytes` (`field_too_large`), because
@@ -137,7 +140,6 @@ _STACK_CAP: Final = 1024
 
 _WS: Final = re.compile(rb"[ \t\r\n]*")
 _STRING_RUN: Final = re.compile(rb'[^"\\]*')
-_NON_STRUCTURAL: Final = re.compile(rb'[^"{}\[\]]*')
 _LITERAL_RUN: Final = re.compile(rb"[A-Za-z0-9+\-.]*")
 _VALUE_LITERAL_START: Final = frozenset(b"-0123456789tfnNI")
 
@@ -156,6 +158,12 @@ _VALUE = 10  # reading one value; `_ctx` says whose
 _CTX_KEY, _CTX_IGNORED, _CTX_ELEMENT, _CTX_SINGLE = 0, 1, 2, 3
 # value shape
 _V_NONE, _V_NEST, _V_STRING, _V_LITERAL = 0, 1, 2, 3
+# what the innermost open container expects next (one byte per open container)
+_A_FIRST, _A_AFTER, _A_NEXT = 1, 2, 3  # array: value or `]` / `,` or `]` / a value
+_O_FIRST, _O_COLON, _O_VALUE, _O_AFTER, _O_NEXT = 4, 5, 6, 7, 8  # object
+_VALUE_STATES: Final = frozenset({_A_FIRST, _A_NEXT, _O_VALUE})
+_KEY_STATES: Final = frozenset({_O_FIRST, _O_NEXT})
+_STATE_AFTER_VALUE: Final = {_A_FIRST: _A_AFTER, _A_NEXT: _A_AFTER, _O_VALUE: _O_AFTER}
 
 
 class JsonAborted(ImportAborted):
@@ -245,6 +253,7 @@ class JsonEventStream(Iterator[ImportEvent]):
         self._stack = bytearray()
         self._extra_depth = 0
         self._in_string = False
+        self._in_literal = False
         self._escape = False
         self._index = 0
         self._keys: list[str] = []
@@ -411,6 +420,7 @@ class JsonEventStream(Iterator[ImportEvent]):
         self._stack.clear()
         self._extra_depth = 0
         self._in_string = False
+        self._in_literal = False
         self._escape = False
         self._cap = _KEY_CAP if ctx == _CTX_KEY else self._limits.max_record_bytes
 
@@ -453,7 +463,7 @@ class JsonEventStream(Iterator[ImportEvent]):
             self._value_start = base + i
             if c == _LBRACE or c == _LBRACKET:
                 self._shape = _V_NEST
-                self._stack.append(c)
+                self._stack.append(_A_FIRST if c == _LBRACKET else _O_FIRST)
                 i += 1
             elif c == _QUOTE:
                 self._shape = _V_STRING
@@ -472,33 +482,66 @@ class JsonEventStream(Iterator[ImportEvent]):
             elif self._in_string:
                 i, closed = self._skip_string(chunk, i)
                 self._in_string = not closed
+            elif self._in_literal:
+                i = _LITERAL_RUN.match(chunk, i).end()  # type: ignore[union-attr]
+                self._in_literal = i >= size
             else:
-                i = _NON_STRUCTURAL.match(chunk, i).end()  # type: ignore[union-attr]
+                i = _WS.match(chunk, i).end()  # type: ignore[union-attr]
                 if i >= size:
                     break
-                c = chunk[i]
+                done = self._token(chunk[i], base + i)
                 i += 1
-                if c == _QUOTE:
-                    self._in_string = True
-                elif c == _LBRACE or c == _LBRACKET:
-                    if len(self._stack) < _STACK_CAP:
-                        self._stack.append(c)
-                    else:
-                        self._extra_depth += 1
-                elif self._extra_depth:
-                    self._extra_depth -= 1
-                elif self._stack and (
-                    (c == _RBRACE and self._stack[-1] == _LBRACE)
-                    or (c == _RBRACKET and self._stack[-1] == _LBRACKET)
-                ):
-                    self._stack.pop()
-                    done = not self._stack
-                else:
-                    raise JsonAborted("json_malformed", base + i - 1)
         self._retain(chunk, start, i)
         if done:
             yield from self._complete()
         return i
+
+    def _token(self, c: int, offset: int) -> bool:
+        """One structural byte inside a `{...}` / `[...]` value, checked against what the
+        innermost container expects next. True when the outermost container closed."""
+        stack = self._stack
+        if self._extra_depth:  # deeper than the exact tracking: count brackets and strings only
+            if c == _QUOTE:
+                self._in_string = True
+            elif c == _LBRACE or c == _LBRACKET:
+                self._extra_depth += 1
+            elif c == _RBRACE or c == _RBRACKET:
+                self._extra_depth -= 1
+            return False
+        state = stack[-1]
+        if c == _QUOTE:
+            if state in _VALUE_STATES:
+                stack[-1] = _STATE_AFTER_VALUE[state]
+            elif state in _KEY_STATES:
+                stack[-1] = _O_COLON
+            else:
+                raise JsonAborted("json_malformed", offset)
+            self._in_string = True
+        elif c == _LBRACE or c == _LBRACKET:
+            if state not in _VALUE_STATES:
+                raise JsonAborted("json_malformed", offset)
+            stack[-1] = _STATE_AFTER_VALUE[state]
+            if len(stack) >= _STACK_CAP:
+                self._extra_depth = 1
+            else:
+                stack.append(_A_FIRST if c == _LBRACKET else _O_FIRST)
+        elif c in _VALUE_LITERAL_START:
+            if state not in _VALUE_STATES:
+                raise JsonAborted("json_malformed", offset)
+            stack[-1] = _STATE_AFTER_VALUE[state]
+            self._in_literal = True
+        elif c == _COMMA and state in (_A_AFTER, _O_AFTER):
+            stack[-1] = _A_NEXT if state == _A_AFTER else _O_NEXT
+        elif c == _COLON and state == _O_COLON:
+            stack[-1] = _O_VALUE
+        elif (c == _RBRACKET and state in (_A_FIRST, _A_AFTER)) or (
+            c == _RBRACE and state in (_O_FIRST, _O_AFTER)
+        ):
+            stack.pop()
+            return not stack
+        else:
+            raise JsonAborted("json_malformed", offset)
+        return False
 
     def _complete(self) -> Iterator[ImportEvent]:
         ctx = self._ctx

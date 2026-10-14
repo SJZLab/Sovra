@@ -1171,6 +1171,548 @@ def test_fault_table_smoke() -> None:
             check(CID, f"{label}: baseline accepted", outcome.report.records_accepted >= 1)
 
 
+# --- round 3 --------------------------------------------------------------------------------
+
+G = json.dumps(VALID_A).encode()
+H = json.dumps(VALID_B).encode()
+OTHER_SHA = hashlib.sha256(b"a different source").hexdigest()
+
+
+def essence(report: ic.ImportReport) -> tuple[object, ...]:
+    """Everything in a report except what legitimately depends on how the source was cut into
+    chunks: how many bytes had been pulled when a fatal problem stopped the read."""
+    return (
+        report.state,
+        report.failure_code,
+        report.fatal_locator,
+        report.records_seen,
+        report.records_accepted,
+        report.records_rejected,
+        report.rejections,
+        report.source_schema_sha256,
+    )
+
+
+def verdict(outcome: ji.JsonImportOutcome) -> tuple[str, str | None, str | None]:
+    report = outcome.report
+    return report.state, report.failure_code, report.fatal_locator
+
+
+def at(data: bytes, needle: bytes, nth: int = 0) -> int:
+    pos = -1
+    for _ in range(nth + 1):
+        pos = data.index(needle, pos + 1)
+    return pos
+
+
+def test_expected_sha_mismatch_fails_before_any_record() -> None:
+    data = jdump([VALID_A, VALID_B])
+    got: list[object] = []
+    outcome = ji.run_json_import(
+        make_reader(data),  # declared (and verified) for hash Y ...
+        build_mapping(container=""),
+        verified_content_type="application/json",
+        dataset_purpose="training",
+        expected_sha256=OTHER_SHA,  # ... but the caller expects X
+        on_accepted=got.append,
+    )
+    report = outcome.report
+    check(
+        CID,
+        "a reader declared for another hash ends failed / source_changed",
+        (report.state, report.failure_code) == ("failed", "source_changed"),
+    )
+    check(
+        CID,
+        "and nothing was read, accepted or tagged with the wrong hash",
+        not got and report.records_seen == 0 and report.source_bytes == 0,
+    )
+    stream = ji.json_events(
+        make_reader(data),
+        build_mapping(container=""),
+        verified_content_type="application/json",
+        dataset_sha256=OTHER_SHA,
+    )
+    try:
+        next(stream)
+        raised = None
+    except ic.ImportAborted as exc:
+        raised = exc.failure_code
+    check(CID, "json_events refuses on its first next()", raised == "source_changed")
+    near = hashlib.sha256(data).hexdigest()
+    near = near[:-1] + ("0" if near[-1] != "0" else "1")
+    out = ji.run_json_import(
+        make_reader(data),
+        build_mapping(container=""),
+        verified_content_type="application/json",
+        dataset_purpose="training",
+        expected_sha256=near,
+    )
+    check(CID, "a one-digit difference is refused too", out.report.failure_code == "source_changed")
+    check(
+        CID, "the matching hash still imports", run(data, container="").report.records_accepted == 2
+    )
+
+
+def test_fatal_locator_is_in_the_report_at_the_byte_offset() -> None:
+    data = b"[" + G + b" x]"
+    outcome = run(data, container="")
+    report = outcome.report
+    check(
+        CID,
+        "the fatal locator is the report's own sealed field, at the offending byte",
+        report.fatal_locator == f"object:{at(data, b'x')}"
+        and isinstance(report, ic.LocatedImportReport),
+    )
+    check(
+        CID,
+        "a completed import has none",
+        run(jdump([VALID_A]), container="").report.fatal_locator is None,
+    )
+    check(
+        CID,
+        "a source problem that is not a document problem has none",
+        run(data[:-1], container="", chunk=7).report.fatal_locator is not None
+        and make_changed_source().report.fatal_locator is None,
+    )
+
+
+def make_changed_source() -> ji.JsonImportOutcome:
+    data = jdump([VALID_A])
+    reader = make_reader(data[:-1] + b" ", expected_sha=hashlib.sha256(data).hexdigest())
+    return ji.run_json_import(
+        reader,
+        build_mapping(container=""),
+        verified_content_type="application/json",
+        dataset_purpose="training",
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+    )
+
+
+# (label, document, mapping kwargs, expected failure_code, offset of the problem)
+def structure_cases() -> list[tuple[str, bytes, dict[str, Any], str, int]]:
+    root: dict[str, Any] = {"container": ""}
+    nested: dict[str, Any] = {"container": "/rows", "ignored_top_level_keys": ["_meta"]}
+    cases: list[tuple[str, bytes, dict[str, Any], str, int]] = []
+
+    def add(label: str, data: bytes, kwargs: dict[str, Any], code: str, offset: int) -> None:
+        cases.append((label, data, kwargs, code, offset))
+
+    d = b"[" + G + b', 1"]", ' + G + b"]"
+    add(
+        "quote after a literal (the dropped-element case)", d, root, "json_malformed", at(d, b'"]"')
+    )
+    d = b"[" + G + b", :, " + G + b"]"
+    add("colon as an element", d, root, "json_malformed", at(d, b", :") + 2)
+    d = b"[" + G + b", x, " + G + b"]"
+    add("letter as an element", d, root, "json_malformed", at(d, b"x"))
+    d = b"[" + G + b" " + G + b"]"
+    add("missing comma", d, root, "json_malformed", 1 + len(G) + 1)
+    d = b"[" + G + b",," + G + b"]"
+    add("doubled comma", d, root, "json_malformed", at(d, b",,") + 1)
+    d = b"[" + G + b",]"
+    add("trailing comma", d, root, "json_malformed", len(d) - 1)
+    d = b"[" + G
+    add("unclosed array", d, root, "json_malformed", len(d))
+    d = b"[" + G + b"}"
+    add("array closed by a brace", d, root, "json_malformed", len(d) - 1)
+    d = b'[{"a":[1}]'
+    add("brace closing a bracket", d, root, "json_malformed", at(d, b"}"))
+    d = b'[{"a":{"b":1]}]'
+    add("bracket closing a brace", d, root, "json_malformed", at(d, b"]"))
+    d = b'["abc'
+    add("unclosed string", d, root, "json_malformed", len(d))
+    d = b"[" + G + b"] x"
+    add("garbage after the document", d, root, "json_malformed", len(d) - 1)
+    d = b"[" + G + b"][" + G + b"]"
+    add("two documents", d, root, "json_malformed", 1 + len(G) + 1)
+    add("empty document", b"", root, "json_malformed", 0)
+    add("whitespace only", b" \n\t ", root, "json_malformed", 4)
+    add("scalar document", b"42", root, "json_malformed", 0)
+    add("string document", b'"abc"', root, "json_malformed", 0)
+    d = b"[1 2]"
+    add("two literals", d, root, "json_malformed", at(d, b"2"))
+    d = b"[" + G + b"]]"
+    add("extra closing bracket", d, root, "json_malformed", len(d) - 1)
+    d = b"{" + b'"rows": 5}'
+    add("container value is a scalar", d, nested, "json_malformed", at(d, b"5"))
+    d = b'{"rows": "text"}'
+    add("container value is a string", d, nested, "json_malformed", at(d, b'"text"'))
+    d = b"[1,2]"
+    add("nested container under an array root", d, nested, "json_malformed", 0)
+    d = b'{"rows": [' + G + b'] "_meta": 1}'
+    add("missing comma between top-level members", d, nested, "json_malformed", at(d, b'"_meta"'))
+    d = b'{"rows": [' + G + b"],}"
+    add("trailing comma in the root object", d, nested, "json_malformed", len(d) - 1)
+    d = b'{"rows" [' + G + b"]}"
+    add("missing colon", d, nested, "json_malformed", at(d, b"["))
+    d = b"{rows: [" + G + b"]}"
+    add("unquoted key", d, nested, "json_malformed", at(d, b"r"))
+    d = b'{"rows": [' + G + b'], "_meta": {"a": 1,}}'
+    add("trailing comma inside an ignored value", d, nested, "json_malformed", at(d, b",}") + 1)
+    d = b'{"rows": [' + G + b'], "_meta": {"a": 1, "a": 2}}'
+    add("duplicate key inside an ignored value", d, nested, "json_malformed", at(d, b'{"a"'))
+    d = b'{"rows": [' + G + b'], "_meta": ' + b"[" * 100_000 + b"]" * 100_000 + b"}"
+    add("100k-deep ignored value", d, nested, "json_malformed", at(d, b"[[["))
+    d = b'{"rows": [' + G + b'], "_meta": "' + b"x" * (5 * 1024 * 1024) + b'"}'
+    add("5 MiB ignored value", d, nested, "field_too_large", at(d, b'"xxx'))
+    d = b'{"_meta": 1, "_meta": 2, "rows": []}'
+    add("duplicate ignored key", d, nested, "json_malformed", at(d, b'"_meta"', 1))
+    d = b'{"rows": [], "rows": []}'
+    add("duplicate container key", d, nested, "mapping_column_missing", at(d, b'"rows"', 1))
+    d = b'{"_meta": 1}'
+    add("container key absent", d, nested, "mapping_column_missing", len(d) - 1)
+    add("empty root object, container absent", b"{}", nested, "mapping_column_missing", 1)
+    d = b'{"rows": [], "other": 1}'
+    add("unmapped key", d, nested, "unmapped_top_level_key", at(d, b'"other"'))
+    d = b'{"rows": [], "' + b"k" * 5000 + b'": 1}'
+    add("over-long unmapped key", d, nested, "unmapped_top_level_key", at(d, b'"kkk'))
+    d = b'{"rows": [' + G + b"]} "
+    add("whitespace after a nested document is fine, then EOF is a clean end", d, nested, "", -1)
+    return cases
+
+
+def test_structure_errors_are_fatal_with_byte_offsets_at_every_chunking() -> None:
+    for label, data, kwargs, code, offset in structure_cases():
+        base = run(data, **kwargs)
+        if code == "":
+            check(CID, f"{label}: completes", base.report.state == "completed")
+            continue
+        check(
+            CID,
+            f"{label}: fatal {code} at byte {offset} (got {verdict(base)})",
+            verdict(base) == ("failed", code, f"object:{offset}"),
+        )
+        for chunk in (1, 2, 3, 7, 64, 4096):
+            other = run(data, chunk=chunk, **kwargs)
+            check(
+                CID,
+                f"{label}: chunk={chunk} gives the same report",
+                essence(other.report) == essence(base.report),
+            )
+
+
+def test_a_structure_error_never_drops_elements_silently() -> None:
+    # The round-2 defect: [G, 1"]", G] completed with two rows and lost the third element.
+    for data in (b"[" + G + b', 1"]", ' + G + b"]", b"[" + G + b", :, " + G + b"]"):
+        outcome = run(data, container="")
+        check(
+            CID,
+            "a document that json.loads refuses never completes with fewer rows than elements",
+            outcome.report.state == "failed",
+        )
+
+
+def test_utf8_encoding_offsets_and_edge_cases() -> None:
+    good = "[" + json.dumps(VALID_A) + "]"
+    bad_in_string = good.encode().replace(b"hello", b"he\xffllo")
+    bad_byte = bytes([0xFF])
+    out = run(bad_in_string, container="")
+    check(
+        CID,
+        "an invalid byte inside a string is fatal invalid_encoding at that byte",
+        verdict(out) == ("failed", "invalid_encoding", f"object:{bad_in_string.index(bad_byte)}"),
+    )
+    for chunk in (None, 1, 2, 3):
+        out = run(b'["x' + "م".encode()[:1], container="", chunk=chunk)
+        check(
+            CID,
+            f"a source ending inside a multibyte character is invalid_encoding, chunk={chunk}",
+            verdict(out) == ("failed", "invalid_encoding", "object:3"),
+        )
+    arabic = json.dumps(
+        {"messages": [{"role": "user", "content": "مرحبا بالعالم"}]}, ensure_ascii=False
+    )
+    data = ("[" + arabic + "," + arabic + "]").encode()
+    for chunk in (1, 2, 3, 5):
+        out = run(data, container="", chunk=chunk)
+        check(
+            CID,
+            f"multibyte characters split across chunks import (chunk={chunk})",
+            out.report.records_accepted == 2 and out.report.state == "completed",
+        )
+    limits = ic.ImportLimits(max_record_bytes=64)
+    big = b'{"messages":[{"role":"user","content":"' + b"x" * 200 + b"\xff" + b'y"}]}'
+    out = run(b"[" + big + b"]", container="", limits=limits)
+    check(
+        CID,
+        "invalid UTF-8 inside a skipped oversize element is still fatal invalid_encoding",
+        verdict(out) == ("failed", "invalid_encoding", f"object:{1 + big.index(bad_byte)}"),
+    )
+    out = run(b"\xef\xbb\xbf[" + b"\xff", container="")
+    check(
+        CID,
+        "offsets count the BOM",
+        verdict(out) == ("failed", "invalid_encoding", "object:4"),
+    )
+
+
+def test_utf16_utf32_without_bom_are_unsupported_encoding() -> None:
+    for label, data in (
+        ("utf-16-le", "[]".encode("utf-16-le")),
+        ("utf-16-be", "[]".encode("utf-16-be")),
+        ("utf-32-le", "[]".encode("utf-32-le")),
+        ("utf-32-be", "[]".encode("utf-32-be")),
+        ("nul second byte", b"[\x00]"),
+    ):
+        for chunk in (None, 1):
+            out = run(data, container="", chunk=chunk)
+            check(
+                CID,
+                f"{label} without a BOM (chunk={chunk}): fatal unsupported_encoding",
+                verdict(out) == ("failed", "unsupported_encoding", "object:0"),
+            )
+    out = run(b"[ \x00]", container="")
+    check(
+        CID,
+        "a NUL after the first four bytes is a document problem, not an encoding verdict",
+        out.report.failure_code == "json_malformed" or out.report.records_seen == 0,
+    )
+
+
+def test_oversize_elements_are_rows_and_the_import_continues() -> None:
+    limits = ic.ImportLimits(max_record_bytes=300)
+    huge = row("x" * 5000)
+    big = jdump([VALID_A, huge, VALID_B, huge, huge, VALID_A])
+    for chunk in (None, 1, 7, 100):
+        out = run(big, container="", limits=limits, chunk=chunk)
+        check(
+            CID,
+            f"every oversize element is one record_too_large row, the rest import (chunk={chunk})",
+            out.report.state == "completed"
+            and [(r.locator, r.code) for r in out.report.rejections]
+            == [
+                ("record:1", "record_too_large"),
+                ("record:3", "record_too_large"),
+                ("record:4", "record_too_large"),
+            ]
+            and out.report.records_accepted == 3,
+        )
+    nested_doc = b'{"rows": ' + big + b', "_meta": {"a": 1}}'
+    out = run(nested_doc, container="/rows", ignored_top_level_keys=["_meta"], limits=limits)
+    check(CID, "and under a nested container", out.report.records_accepted == 3)
+
+
+def test_oversize_element_is_skipped_without_buffering() -> None:
+    piece = b"x" * (64 * 1024)
+    head = b'[{"messages":[{"role":"user","content":"'
+    tail = b'"}]}, ' + G + b"]"
+    body = [head + piece] + [piece] * 1023 + [tail]
+    size = sum(len(p) for p in body)
+    digest = hashlib.sha256(b"".join(body)).hexdigest()
+    reader = ic.ChunkReader(body, expected_size=size, expected_sha256=digest)
+    got: list[object] = []
+    tracemalloc.start()
+    out = ji.run_json_import(
+        reader,
+        build_mapping(container=""),
+        verified_content_type="application/json",
+        dataset_purpose="training",
+        expected_sha256=digest,
+        on_accepted=got.append,
+    )
+    _current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    check(
+        CID,
+        "a 64 MiB element is one rejection and the next element imports",
+        [(r.locator, r.code) for r in out.report.rejections] == [("record:0", "record_too_large")]
+        and len(got) == 1
+        and out.report.state == "completed",
+    )
+    check(CID, f"peak memory {peak} is far below the element size", peak < 8 * 1024 * 1024 < size)
+
+
+def test_memory_ratio_between_sizes_is_within_one_and_a_half() -> None:
+    mapping = build_mapping(container="")
+
+    def peak_for(mib: int) -> int:
+        element = jdump(row("y" * 3000)) + b","
+        pieces = (
+            [b"[" + element]
+            + [element * 16] * (mib * 16 - 1)
+            + [element + jdump(row("end")) + b"]"]
+        )
+        size = sum(len(p) for p in pieces)
+        digest = hashlib.sha256(b"".join(pieces)).hexdigest()
+        reader = ic.ChunkReader(pieces, expected_size=size, expected_sha256=digest)
+        tracemalloc.start()
+        out = ji.run_json_import(
+            reader,
+            mapping,
+            verified_content_type="application/json",
+            dataset_purpose="training",
+            expected_sha256=digest,
+            on_accepted=lambda _c: None,
+        )
+        _current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        assert out.report.state == "completed", out.report
+        return peak
+
+    small, large = peak_for(1), peak_for(64)
+    check(
+        CID,
+        f"peak for 64 MiB ({large}) is within 1.5x of the peak for 1 MiB ({small})",
+        large <= 1.5 * small,
+    )
+
+
+def test_chunking_every_offset_of_small_documents() -> None:
+    nested = b'{"_meta": {"a": [1, {"b": "}]"}]}, "rows": [' + G + b", 42, " + H + b"]}\r\n"
+    sources: list[tuple[bytes, dict[str, Any]]] = [
+        (b"[" + G + b" ,\n" + H + b"]\r\n", {"container": ""}),
+        (b"\xef\xbb\xbf[" + G + b"]", {"container": ""}),
+        (nested, {"container": "/rows", "ignored_top_level_keys": ["_meta"]}),
+        (b"[" + G + b', 1"]", ' + G + b"]", {"container": ""}),
+        (
+            b'{"rows": [' + G + b'], "_meta": {"a": 1,}}',
+            {"container": "/rows", "ignored_top_level_keys": ["_meta"]},
+        ),
+        (
+            b"[" + json.dumps(row("مرحبا"), ensure_ascii=False).encode() + b"]",
+            {"container": ""},
+        ),
+        (b"[" + G + b', "a\\"b", -1.5e+3, true, null, [], {}]', {"container": ""}),
+    ]
+    for data, kwargs in sources:
+        base = run(data, **kwargs)
+        mapping = build_mapping(**kwargs)
+        digest = hashlib.sha256(data).hexdigest()
+        same = True
+        for cut in range(1, len(data)):
+            reader = ic.ChunkReader(
+                [data[:cut], data[cut:]], expected_size=len(data), expected_sha256=digest
+            )
+            got = ji.run_json_import(
+                reader,
+                mapping,
+                verified_content_type="application/json",
+                dataset_purpose="training",
+                expected_sha256=digest,
+            )
+            if essence(got.report) != essence(base.report):
+                same = False
+                check(CID, f"split at {cut} of {len(data)} bytes differs from the whole", False)
+                break
+        if same:
+            check(CID, f"every split point of a {len(data)}-byte document agrees", True)
+
+
+def random_text(rng: random.Random) -> str:
+    return "".join(
+        rng.choices(string.ascii_letters + ' {}[]",:\\\n0123456789مرحبا', k=rng.randint(1, 30))
+    )
+
+
+def test_differential_valid_documents_match_json_loads() -> None:
+    rng = random.Random(503)
+    for trial in range(250):
+        n = rng.randint(0, 7)
+        elements: list[object] = []
+        expected_texts: list[str] = []
+        expected_bad: list[int] = []
+        for i in range(n):
+            kind = rng.randrange(6)
+            if kind == 0:
+                elements.append(rng.choice([1, 2.5, "s", None, True, [1, {"a": []}]]))
+                expected_bad.append(i)
+            else:
+                text = random_text(rng)
+                elements.append(row(text))
+                expected_texts.append(text)
+        indent = rng.choice([None, 0, 1, 3])
+        sep = rng.choice([None, (",", ":")])
+        text = json.dumps(elements, indent=indent, separators=sep, ensure_ascii=rng.random() < 0.5)
+        data = text.encode()
+        assert json.loads(text) == elements
+        if rng.random() < 0.5:
+            wrapper = {"rows": elements, "_meta": {"k": [1, 2, {"z": "}"}]}}
+            text = json.dumps(wrapper, indent=indent, ensure_ascii=False)
+            data = text.encode()
+            kwargs: dict[str, Any] = {"container": "/rows", "ignored_top_level_keys": ["_meta"]}
+        else:
+            kwargs = {"container": ""}
+        for chunk in (None, 1, 13):
+            got: list[dict[str, object]] = []
+            mapping = build_mapping(**kwargs)
+            reader = make_reader(data, chunk)
+            out = ji.run_json_import(
+                reader,
+                mapping,
+                verified_content_type="application/json",
+                dataset_purpose="training",
+                expected_sha256=hashlib.sha256(data).hexdigest(),
+                on_accepted=lambda c, got=got: got.append(dict(c)),  # type: ignore[misc]
+            )
+            texts_ = [
+                part["text"] for c in got for m in c["content"]["messages"] for part in m["content"]
+            ]  # type: ignore[index]
+            ok = (
+                out.report.state == "completed"
+                and texts_ == expected_texts
+                and [int(r.locator.split(":")[1]) for r in out.report.rejections] == expected_bad
+                and out.report.records_seen == n
+            )
+            if not ok:
+                check(
+                    CID,
+                    f"trial {trial} chunk {chunk}: differs from json.loads ({text[:80]!r})",
+                    False,
+                )
+                break
+    check(CID, "250 generated valid documents agree with json.loads", True)
+
+
+def test_differential_invalid_mutants_never_lose_elements() -> None:
+    rng = random.Random(5030)
+    tried = invalid_seen = 0
+    for _trial in range(120):
+        n = rng.randint(1, 5)
+        texts_ = [random_text(rng) for _ in range(n)]
+        elements = [row(t) for t in texts_]
+        if rng.random() < 0.5:
+            doc = json.dumps(elements, indent=rng.choice([None, 1]))
+            kwargs: dict[str, Any] = {"container": ""}
+        else:
+            doc = json.dumps({"_meta": {"a": [1]}, "rows": elements})
+            kwargs = {"container": "/rows", "ignored_top_level_keys": ["_meta"]}
+        for _ in range(25):
+            pos = rng.randrange(len(doc))
+            op = rng.randrange(3)
+            ch = rng.choice('[]{}",:\\ x1')
+            mutant = doc[:pos] + ("" if op == 0 else ch) + doc[pos + (1 if op != 1 else 0) :]
+            tried += 1
+            try:
+                json.loads(mutant)
+                valid = True
+            except ValueError:
+                valid = False
+                invalid_seen += 1
+            out = run(mutant.encode(), **kwargs)
+            if valid:
+                # a mutant json.loads accepts must not be refused for its structure
+                bad = out.report.failure_code == "json_malformed"
+                if bad:
+                    check(CID, f"valid mutant refused as malformed: {mutant[:80]!r}", False)
+                continue
+            if out.report.state == "failed":
+                continue
+            # completed: nothing may be lost or invented, and what was accepted is the original
+            accepted_ok = out.report.records_seen == n
+            if not accepted_ok:
+                check(
+                    CID,
+                    f"invalid mutant completed with {out.report.records_seen}/{n}: {mutant[:60]!r}",
+                    False,
+                )
+    check(
+        CID,
+        f"{invalid_seen} of {tried} mutants were invalid JSON and none lost an element",
+        invalid_seen > 500,
+    )
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
