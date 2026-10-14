@@ -9276,6 +9276,7 @@ real live route) is a Control-plane judgment call, not a relay one.
 ## Owner actions — current
 - 2026-10-08: FTF-0616 (LLM judge) needs a real judge call through the org LiteLLM gateway for its acceptance clause: a CI secret holding a gateway virtual key, plus the approved judge model id. Until then that clause stays BLOCKED_EXTERNAL; the rest of FTF-0616 continues.
 - 2026-10-07: FTF-04A31 needs a private-repo test credential (or approval to use this repo with `github.token`). See Parked.
+- 2026-10-14: `[GOVERNANCE]` PR #705 (fix `scripts/ci_policy.py`'s `ITEM_ID` regex so a `-P<n>`/`-UI` suffix resolves to its own item instead of collapsing into its parent) has been open since 2026-10-09 and is now actively blocking real relay work, not just a style nit: PR #745 (`FTF-H010-P3a-r2`) and PR #742 (`FTF-H010-P2-r2`) both reduce to the same base id `FTF-H010` under the current regex, so `relay-policy` fails PR #745 with a false "already owned" collision. See Parked below. Merging #705 (already written, tested, reviewed by no one but itself) clears it; no other action needed.
 
 ## Active (decided by Control plane — relay executes, top first)
 **Claim rule (2026-10-06T17:40Z, Control plane):** a `relay/<ID>` branch whose head is already merged into main
@@ -10704,6 +10705,35 @@ docs/spec-matrix.yaml. It never invents criteria.)
     - The 25 uncontracted route-verbs are listed as a contract gap.
 
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
+- **FTF-H010-P3a round 2: PARKED (relay-policy item-ID regex collapse, false collision), 2026-10-14T07:00Z.**
+  - What failed: PR #745 (`relay/FTF-H010-P3a-r2`)'s `ci-verdict` fails on `relay-policy` alone: "item(s)
+    FTF-H010 already owned by open PR #742". `scripts/ci_policy.py`'s `ITEM_ID` regex
+    (`FTF-[0-9A-Z]+(?:-F\d+)?`) only special-cases an `-F<n>` suffix; `[0-9A-Z]+` matches `H010` and
+    stops at the hyphen before `-P3a`/`-P2`, so both PR #745's title (`FTF-H010-P3a: ...`) and PR
+    #742's (`FTF-H010-P2: ...`) reduce to the same base id `FTF-H010` and collide, even though they are
+    two disjoint, already-disclosed sub-tasks touching disjoint files. This is the exact collapsing bug
+    class `[GOVERNANCE]` PR #705 (open since 2026-10-09, unmerged) already fixes for other suffixes
+    (extends the allow-list to `-P\d+`/`-UI`) — confirmed by hand that the fixed regex would resolve
+    PR #745's title to the distinct id `FTF-H010-P3` (not `FTF-H010-P3a` exactly, since the fix's
+    `P\d+` group doesn't consume the trailing letter, but still distinct from PR #742's `FTF-H010-P2`,
+    which is enough to clear this specific collision).
+  - Why this can't be fixed from the relay side: `scripts/ci_policy.py` is `RELAY_FORBIDDEN_EXACT` — a
+    `[relay]`-titled PR may not edit it (CLAUDE.md "Relay is execution-only", "Governance PRs"). Closing
+    or interfering with PR #742 (another lane's own active, draft work) to clear the collision
+    unilaterally would be worse than waiting. This session also cannot merge `[GOVERNANCE]` PR #705
+    itself — CLAUDE.md reserves that for the owner ("Control plane opens it; the OWNER reviews and
+    merges it").
+  - Route options: (1) **owner merges PR #705** — already written, tested (`tests/unit/test_ci_policy.py`
+    72/72 pass including the new collision test), clears this collision and any future `-P<n>`/`-UI`
+    one; recommended, no further relay/Control-plane action needed once merged. (2) Wait for PR #742 to
+    merge or close on its own schedule, which would also clear the collision without touching the
+    regex (slower, and recurs for the next `-P<n>`/`-UI` pair). (3) A relay session reduces PR #745's
+    title to a form the *current* regex already treats as distinct (not generally possible — any title
+    starting `FTF-H010` collapses to the same base id regardless of suffix spelling) — not viable.
+    Recommended: (1).
+  - State left: PR #745 untouched by this entry (no code change attempted; the production code is
+    unrelated to this collision). Flagged in "Owner actions — current" above since PR #705 has now sat
+    open for 5 days while actively blocking a real submission, not merely a latent regex gap.
 - **FTF-1602 round 5: PARKED (3 falsified hypotheses on one CI failure), 2026-10-09T10:10Z, lane B.**
   - What failed: PR #672 (`relay/FTF-1602-r5`): the CI job `object-storage-backup-integration` dies about 45 s into its
     test step on every run of the full round-5 file (runs 37899436881 a2, 37911808469, and the probes below), with no
