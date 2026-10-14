@@ -37,12 +37,34 @@ is given the denial is written through the certified FTF-0104
 denial is itself the event to audit (no domain mutation exists to be
 rolled back with), and an enclosing `tenant_scoped_session` rolls back on
 the propagated exception, which would otherwise discard the denial's own
-audit row. The `AuditContext` is validated up front (typed
+audit row. The commit ends the transaction that held the session's
+transaction-local tenant context, so the tenant read from the session up
+front is bound again right after the commit: a second denial in the same
+session still raises `ExternalProviderDeniedError` and still audits, and
+later reads in the caller's session still see the tenant's rows. Because a
+commit is the whole session's, a session carrying uncommitted work (a
+pending, modified or deleted ORM object, or any write already flushed in the
+open transaction) is refused with `external_provider_invalid_request` before
+any decision, on the allow path as well, so the denial can never commit the
+caller's unfinished work. The `AuditContext` is validated up front (typed
 `external_provider_invalid_request`), so a malformed context can never
 surface as a raw `AttributeError` or `AuditEventValidationError`. Callers
-pass a session on which they have no uncommitted work, because the commit
-is the session's. Without an `AuditContext` the raised error still carries
-the same `AuditReason`.
+should pass a session with no uncommitted work. Without an `AuditContext`
+the raised error still carries the same `AuditReason`.
+
+The re-bind goes through FTF-0102 `set_tenant_context` (`set_config(.., true)`),
+so it is transaction-local: it ends with the caller's own transaction and never
+outlives the tenant-scoped session on a pooled connection. A tenant context the
+session holds that is not an organization id is refused as
+`external_provider_invalid_request` before any decision.
+
+Disclosures (Control-plane ruling, round 4): (1) a denial raised inside
+`with Session(app) as s, s.begin():` surfaces SQLAlchemy's raw
+`InvalidRequestError` from the commit. That fails closed: the denial's audit row
+is already durable and no production caller uses `session.begin()` (they use
+`tenant_scoped_session`). (2) The denial's commit is the whole transaction's, so
+it releases advisory transaction locks and drops any other `SET LOCAL` setting
+the caller held; only the tenant context is re-bound.
 
 Disclosure: this module is a pure decision library with no live caller yet
 (the training and inference submit paths that will call it are separate,
@@ -58,11 +80,14 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from sqlalchemy import text
+
 from app.auth.audit_event_writer import (
     _SAFE_IDENTIFIER,
     ALLOWED_ACTOR_TYPES,
     write_audit_event,
 )
+from app.auth.organization_workspace_schema import set_tenant_context
 from packages.security.security_profile_enforcement import (
     Destination,
     EffectRequest,
@@ -280,8 +305,11 @@ def _validate_audit(audit: object) -> AuditContext:
     """Typed refusal of a malformed AuditContext before any decision is made."""
     if not isinstance(audit, AuditContext):
         raise InvalidProviderRequestError("audit must be an AuditContext")
-    for method in ("add", "commit"):
+    for method in ("add", "commit", "execute"):
         if not callable(getattr(audit.session, method, None)):
+            raise InvalidProviderRequestError("audit session must be a database session")
+    for tracked in ("new", "dirty", "deleted"):
+        if getattr(audit.session, tracked, None) is None:
             raise InvalidProviderRequestError("audit session must be a database session")
     if type(audit.organization_id) is not uuid.UUID:
         raise InvalidProviderRequestError("audit organization_id must be a uuid.UUID")
@@ -296,8 +324,45 @@ def _validate_audit(audit: object) -> AuditContext:
     return audit
 
 
+def _bound_tenant(audit: AuditContext) -> uuid.UUID | None:
+    """Refuse a session carrying uncommitted work; return its bound tenant.
+
+    The denial's audit row is committed (see `_deny`), and a commit is the whole
+    session's: a caller's pending row would be persisted by the denial. Pending
+    work is looked for in the unit of work (new/dirty/deleted: not yet flushed)
+    and in the transaction (`txid_current_if_assigned()`: flushed, uncommitted).
+    The tenant context is read in the same statement so `_deny` can re-bind it:
+    a commit ends the transaction that held its `set_config(.., is_local=true)`.
+    """
+    session = audit.session
+    if session.new or session.dirty or session.deleted:
+        raise InvalidProviderRequestError(
+            "audit session has uncommitted changes; pass a session with no pending work"
+        )
+    tenant, has_writes = session.execute(
+        text(
+            "SELECT current_setting('app.current_organization_id', true), "
+            "txid_current_if_assigned() IS NOT NULL"
+        )
+    ).one()
+    if has_writes:
+        raise InvalidProviderRequestError(
+            "audit session has uncommitted changes; pass a session with no pending work"
+        )
+    if type(tenant) is not str or not tenant:
+        return None
+    try:
+        return uuid.UUID(tenant)
+    except ValueError:
+        # Only `set_tenant_context` binds this GUC, always with a UUID; anything
+        # else is not a tenant this module can safely re-bind after its commit.
+        raise InvalidProviderRequestError(
+            "audit session tenant context is not an organization id"
+        ) from None
+
+
 def _deny(
-    code: str, reason: AuditReason, audit: AuditContext | None
+    code: str, reason: AuditReason, audit: AuditContext | None, tenant: uuid.UUID | None = None
 ) -> ExternalProviderDeniedError:
     if audit is not None:
         write_audit_event(
@@ -319,6 +384,13 @@ def _deny(
         # The denial is the audited event itself: commit it now, before the
         # caller's tenant-scoped session rolls back on the propagated error.
         audit.session.commit()
+        if tenant is not None:
+            # The commit discarded the transaction-local tenant context; bind it
+            # again so a second denial, or any later read, still sees the tenant.
+            # Through FTF-0102's `set_tenant_context` (`set_config(.., true)`), so
+            # the re-bind stays transaction-local and cannot outlive the
+            # caller's tenant-scoped session on a pooled connection.
+            set_tenant_context(audit.session, tenant)
     return ExternalProviderDeniedError(code, reason)
 
 
@@ -331,8 +403,10 @@ def authorize_external_provider(
     request = _validate(request)
     if approval is not None and not isinstance(approval, ProviderApproval):
         raise InvalidProviderRequestError("approval must be a ProviderApproval")
+    tenant: uuid.UUID | None = None
     if audit is not None:
         audit = _validate_audit(audit)
+        tenant = _bound_tenant(audit)
     surface = PURPOSE_SURFACE[request.purpose]
     profile = effective_profile(
         request.organization_profile, request.project_profile, request.job_profile
@@ -364,4 +438,4 @@ def authorize_external_provider(
         code = gap or "external_provider_not_approved"
     else:
         return ExternalProviderDecision(True, profile, request.purpose, surface)
-    raise _deny(code, AuditReason(profile, surface, request.purpose, code), audit)
+    raise _deny(code, AuditReason(profile, surface, request.purpose, code), audit, tenant)

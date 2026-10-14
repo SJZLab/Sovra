@@ -1,8 +1,10 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-09T16:19Z. Source: `python3 scripts/status.py` on main.
-- **Status: 136/302 certified · 45 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
+Updated: 2026-10-14T14:23Z. Source: `python3 scripts/status.py` on main.
+- **Status: 147/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
+  status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
+  (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
 - **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902,
   FTF-0500D, FTF-1002, FTF-0103A, FTF-0510, FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613, FTF-1305, FTF-0308, FTF-0602, FTF-0901 and FTF-1706 (2026-10-07/08), plus follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1, FTF-0608-F1 and FTF-04A21-F1.
@@ -10,6 +12,110 @@ Updated: 2026-10-09T16:19Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-14T14:23Z:**
+  - CERTIFIED (child slice): FTF-0904-W1, live log redaction wiring (owner-requested), after 3 rounds verified by a separate session. FTF-0904 is now WIRED: product-true 46. Follow-up FTF-0904-W1-F1 (traceback printer kwargs) sliced.
+  - Returned: FTF-0518 r2 (scan correct; 3 clause faults GREEN - saturation counting, route-before-semantic, duplicate id - and a gate gap accepting a self-sealed "clear" report with semantic methods not run). FTF-0512-F1 sliced (look-alike normalization gaps).
+  - Returned: FTF-0504 r4, small (all round-3 fixes hold; 3 test pins GREEN, preview hash TypeError, truncated BOM). Stopping rule set.
+- **2026-10-14T14:09Z:**
+  - Owner decision (live, 2026-10-14): bring ScaleDown's ideas into Sovra, not its hosted API (keyed external service, breaks ZERO_EGRESS). (1) Route an agent's routine sub-steps to small fine-tuned models, judged by cost per successful agent task; (2) constrained/structured output; (3) encoder / sequence-classification-head models. Item 3 changes how Axolotl and vLLM are integrated, and the owner approved that explicitly ("Add item 3 too").
+  - Ideas 1-2 are existing scope: child slices FTF-1304-S1 (compound per-step cost attribution) and FTF-0213-S1 (constrained-choice enforcement and output-token probe) added to the Backlog, ready now.
+  - Idea 3: ADR 0004 (docs/adr/0004-small-task-specific-models.md) adds addenda FTF-0708A (seq_cls_lora training: Transformers Trainer + PEFT SEQ_CLS inside the pinned Axolotl tuple, under the FTF-R003 supervisor) and FTF-1004A (vLLM pooling/classify runner as an explicit adapter, behind LiteLLM). Contracts in spec/addenda/; REFERENCE_REPOSITORIES.md integration-form updated. Denominator 302 → 304. Both are BLOCKED (FTF-R003/0701/0712/0713/0519 and FTF-1003/1005 absent; GPU BLOCKED_EXTERNAL).
+- **2026-10-14T13:02Z:**
+  - Returned: FTF-0505 r2 (raw zlib.error escapes; header rows unbounded - 499 KiB upload to 1.57 GB RSS; 4 clauses GREEN). Rulings: field cap in bytes; XLSX limits move into ImportLimits as its one serialized edit.
+- **2026-10-14T11:30Z:**
+  - FTF-0904-W1 r2 returned by its separate verifier (startup exception in a --workers/--reload child printed raw by multiprocessing); round 3 redacts traceback.print_exception/print_exc and tests both modes. PR #790 (a routine "[certifier]" PR certifying W1 r1) is superseded by the independent RETURN.
+- **2026-10-14T09:46Z:**
+  - FTF-0904-W1 returned by its separate-session verifier (startup exceptions printed raw by sys.excepthook); round 2 adds redacting exception/warning hooks and a boot-failure test. FTF-0904-F1 sliced for the redaction rule gaps it found (key, sig, auth, session, jwt, OAuth code/state).
+  - Returned: FTF-0503 r3 (whole document buffered 62x; sha mismatch completes; invalid documents complete with silent element loss; UTF-8 BOM refused; oversize element ends import; no integration suite).
+- **2026-10-14T08:18Z:**
+  - CERTIFIED (child slice): FTF-0616-F1, judge deployment fingerprint + cache bypass; FTF-0616 requalified (uncapped mutation 339/339). FTF-0617 is unblocked.
+  - Returned: FTF-0502 r3 (expected-sha mismatch completes; fatal locator outside ImportReport; outage check vacuous; tables). Serialization ruling: FTF-0502 r3 adds the one shared ImportReport.fatal_locator field; FTF-0504 reuses it.
+- **2026-10-14T06:52Z:**
+  - Returned: FTF-0504 r3 (utf-8-sig locator off by the BOM; expected-sha mismatch completes; outage check vacuous; evidence gaps). Ruling: fatal locator as one additive optional ImportReport field.
+  - Returned: FTF-1602 r6, tests only (production correct): create-side `now` fault F7, unit Q7 swap, a real ABA attack test, spec-matrix notes. Stopping rule set.
+  - FTF-0904-W1 merged PROVISIONAL (#779, merge 25ecc136); L2 runs in a separate session (session_0161278Aosjx54vgoMAk3jN6), not this one (Law 4). [GOVERNANCE] #777 (action digest pins) merged.
+- **2026-10-14T05:16Z:**
+  - Backlog refill: FTF-0518, FTF-1704, FTF-0906, FTF-1505 sliced (Control-plane design; no ask-first item).
+  - FTF-0904-W1 (owner-requested): FTF-0904 redaction installed in create_app(); uvicorn access log no longer prints query-string secrets. PROVISIONAL, needs an independent L2.
+  - Owner decisions (live): OpenSearch for FTF-R006's Argilla search backend; all workflow actions pinned by commit digest (§52, [GOVERNANCE] #777, merged).
+- **2026-10-14T02:42Z:**
+  - CERTIFIED: FTF-0904 (log redaction), after 7 rounds, under the round-7 stopping rule. UNWIRED.
+- **2026-10-14T01:22Z:**
+  - CERTIFIED: FTF-0517 (group-aware split engine), after 4 rounds. UNWIRED.
+- **2026-10-13T23:59Z:**
+  - CERTIFIED slice FTF-0502-P1 (shared import framework), after 2 rounds. Count unchanged (child slice). The importers FTF-0502..0505 may now proceed on it.
+  - Returned: FTF-0504 r2 (CSV importer; merged a minute before the importer-order ruling): chunk-dependent error line, process-global field limit races across imports, unbounded single wide record, no content-type gate, no integration test.
+- **2026-10-13T22:52Z:**
+  - Returned: FTF-0517 r4. Production keeps every family together; the new property test is vacuous (everything collapses into one group), exact-type keys are checked only at position 0, and verify_manifest still raises raw TypeErrors.
+- **2026-10-13T21:22Z:**
+  - CERTIFIED: FTF-1206 (organization policy control), after 6 rounds. UNWIRED.
+  - Returned: FTF-0503 r2 (JSON importer built ahead of its prerequisite; whole-document parse, mid-stream crash, silent acceptance, content leaks, no integration). Ruling: no importer is claimed or merged until FTF-0502-P1 is certified; open #766 (CSV) must wait.
+- **2026-10-13T20:07Z:**
+  - Returned: FTF-0502-P1 r2 (shared import framework): its error-code names differ from the ones the importer entries require, raw HTTP errors can escape with object bytes, memory/time bounds are unpinned, and the integration test bypasses the real upload routes. The importers wait on it.
+- **2026-10-13T18:55Z:**
+  - Returned: FTF-0904 r7, tests + spec-matrix only. Production is sound and the glued-JWT leak is fixed; one fault named in the round-6 return was filed under a different mutation and still passes, and the new JWT scanner's skip loop has no time shape. Stopping rule set: round 7 certifies once these land.
+- **2026-10-13T17:43Z:**
+  - CERTIFIED: FTF-0516 (dataset issue resolution UI), after 5 UI rounds; real-API CI test on PG16 in place. UNWIRED until FTF-H029.
+  - Returned: FTF-1206 r6, tests only (#650, verified late): production is correct, but no test checks that approver authority comes from the CURRENT org policy rather than the grant.
+  - Returned: FTF-0517 r3 (#600, verified late): production keeps families together in every probe, but no test uses records with 3+ linkage keys (two faults GREEN); exact-type keys required.
+- **2026-10-13T16:44Z:**
+  - Returned: FTF-0502 r2 (built before its prerequisite FTF-0502-P1; crashes on huge numbers/deep nesting, silently accepts duplicate keys/NaN, leaks content in errors, no outage handling or integration test). Rebuild after P1 certifies.
+  - Verifying: FTF-0516 UI (#754), FTF-0904 r6 (#757), and FTF-0517 r2 (#600) and FTF-1206 r5 (#650), which merged 2026-10-08 but were missed by earlier check-ins.
+- **2026-10-13T14:51Z:**
+  - Queued (newly ready after FTF-0501 certified): FTF-1504 (IDOR suite over every live /api/v1 route-verb, generated matrix, registry gate), FTF-0502-P1 (shared stdlib import framework + dataset object reader), then the JSONL/CSV/JSON/XLSX importers FTF-0502..0505. No migration, route, contract edit, new dependency or secret; results persistence is a later child (FTF-0502-P2). Noted for follow-up: FTF-0501 finalize accepts an .xlsx containing vbaProject.bin/externalLinks (the importer refuses these; FTF-0501-F1 would align the upload check).
+- **2026-10-13T13:26Z:**
+  - Returned: FTF-0904 r6. Production is linear and unbounded, but the round-5 ruling's suggested JWT form was wrong and re-exposes JWTs glued after `_`/`-` (corrected, required); the long-secret sweep could not detect truncated tails, and three time shapes were missing.
+  - Returned: FTF-0516 UI r4, tests + CI only (one ruled strict-parse fault still GREEN; pin the producer's own new checks; a committed real-API CI test per UI CHECKLIST (f)). No production violation found.
+- **2026-10-13T12:55Z:**
+  - RE-CERTIFIED: FTF-0305 with fix item FTF-0305-F1 (row-locked license/readiness transitions, DB CHECK ready ⇒ license accepted, license-gated trainability). FTF-0301, FTF-0307 and FTF-0309-P1 requalified (Law 15). The original race now fails closed.
+  - CERTIFIED: FTF-0310 (capability contract tests), after 2 rounds.
+- **2026-10-12T03:39Z:**
+  - No relay merges since 2026-10-10T04:02Z; relay and verifier sessions were stopped by an API usage limit (2026-10-10 ~04:00Z and again after ~16:40Z).
+  - Returned: FTF-0904 r5. The quadratics are fixed, but by capping match length, which leaks real JWTs over 1024 chars and escaped values over 8192 chars. Ruling: a bounded match is a leak; every rule must be linear and unbounded, with a long-secret sweep.
+- **2026-10-10T16:34Z:**
+  - CERTIFIED: FTF-0501 (direct object-storage upload), after the API (round 3) and resumable UI (round 3) both passed. The upload API is live; the UI is UNWIRED until FTF-H029, so product-true stays 44.
+- **2026-10-10T16:15Z:**
+  - DECERTIFIED to PROVISIONAL: FTF-0305 (license acceptance workflow). The FTF-0310 verifier reproduced, through real request transactions only, a ready artifact with a revoked license reported as trainable, violating FTF-0305's "revoked license blocks training". Fix item FTF-0305-F1 is top priority in QUEUE item 0; FTF-0305 re-certifies with it. Count 141 → 140.
+  - Returned: FTF-0310 r2 (license exemption removed once F1 lands; RFC 3339 date-time checking; checker strictness).
+- **2026-10-10T15:50Z:**
+  - Returned: FTF-0616-F1 r2, tests only (golden body self-referential; header name/value normalisers unpinned). FTF-0616 stays CERTIFIED: its suite and full Unicode sweep pass at the F1 merge; the uncapped mutation re-run was cut short and moves to F1 round 2 (Law 15).
+  - Returned: FTF-H010-P3a r2 (unbounded safetensors shape product - 139 s at 4.2 MB; three validator clauses unpinned).
+- **2026-10-10T03:57Z:**
+  - FTF-H010-P2: the relay parked it on a real DoD contradiction (an alias is not an https URL). Ruled: a gateway-alias import stores `endpoint_reference` NULL with the alias in `external_provider_model_ref` (no fabricated URL, no exposure of the org-admin-only `base_url`); FTF-1001 is requalified with P2. P2 is back in the Backlog.
+- **2026-10-10T02:41Z:**
+  - Returned: FTF-0904 r4 (two more quadratic regexes - JWT prefix and escaped-quote value - and the every-rule size sweep the ruling required is missing).
+  - CERTIFIED: FTF-0908 (external provider denial), after 5 rounds. It is UNWIRED.
+- **2026-10-10T02:27Z:**
+  - Returned: FTF-0501-UI r3 (UF3 simulated progress still unpinned; terminal `unsafe_archive` shown as retryable; stale-create guard unpinned). The UI CHECKLIST fixes are in place and the API half passed again.
+- **2026-10-10T00:10Z:**
+  - Returned: FTF-0908 r5, tests only (production fix is correct; the new real-Postgres test must exercise a caught denial with a normal scope exit so a session-level re-bind goes RED).
+- **2026-10-09T23:46Z:**
+  - Queued: FTF-H010-P3a (pure import-artifact validators, split from P3 so it is ready now). Ready and unclaimed: FTF-H010-P2, FTF-0310, FTF-H010-P3a.
+  - Verifying: FTF-0908 r4 (#719).
+- **2026-10-09T22:27Z:**
+  - FTF-0501: the API half (#692) passed L2; the resumable upload UI (#697) is returned for round 2 (strict parsing, field binding, org-keyed drafts, simulated progress, untyped errors). FTF-0501 certifies when the UI does.
+  - Ruling: one UI CHECKLIST now applies to every apps/web UI slice (QUEUE item 0).
+- **2026-10-09T22:11Z:**
+  - Returned: FTF-0516 UI r3 (generated strict-parse table; two false errors on real Postgres: uppercase successor, replay version).
+  - Returned: FTF-0904 r3 (percent tokenisation quadratic again under the handler lock; pair-form secret key unpinned and leaking; encoded-separator regression).
+- **2026-10-09T21:56Z:**
+  - CERTIFIED: FTF-1703 (training dataset) for the in-sandbox scope, after 7 rounds. The ">=1000 reviewed" clause stays BLOCKED_EXTERNAL (human review); UNWIRED.
+- **2026-10-09T21:45Z:**
+  - Queued: FTF-0310 (capability contract tests), the only newly dependency-ready task. Ready and unclaimed: FTF-H010-P2 and FTF-0310; FTF-0617 waits on FTF-0616-F1 (#720) and FTF-R004-P4 on P3 (#709). The relay also has returned work in item 0.
+- **2026-10-09T21:05Z:**
+  - CERTIFIED: FTF-R005 (MLflow projection with durable outbox), after 7 rounds. It is UNWIRED.
+- **2026-10-09T20:35Z:**
+  - Returned: FTF-0908 r4 (post-commit tenant re-bind must be transaction-local; a session-level re-bind leaks on a pool without the reset guard).
+- **2026-10-09T20:10Z:**
+  - CERTIFIED: FTF-0309 (capability compatibility UI), after 4 rounds. UNWIRED; not product-true until FTF-H029 mounts the screen.
+  - CERTIFIED slice FTF-R004-P1 (Inspect AI target-runtime capture). Count unchanged (child slice); FTF-R004-P3 is now ready.
+  - Returned: FTF-0516 UI r2 (response must match every field sent; nested resolutions bound to their issue; stuck Loading).
+  - Queued: FTF-0616-F1, FTF-0617 (zero-egress judge policy), FTF-H010-P2..P4.
+- **2026-10-09T18:33Z:**
+  - CERTIFIED: FTF-0616 (LLM judge adapter through LiteLLM) for the adapter scope, after 8 rounds. The real-judge clause stays BLOCKED_EXTERNAL (gateway key owner action); UNWIRED.
+- **2026-10-09T18:18Z:**
+  - CERTIFIED slices FTF-H010-P1 (model import fields + validation jobs) and FTF-R004-P2 (provider-tool/MCP/remote-media denial). Count unchanged (child slices).
+  - Returned: FTF-0309 r4 (strict-parse table), FTF-0904 r2 (decoded-layer leak, header forms, non-root extras, quadratic regex), FTF-1703 r7 (ruling-required fault pinned; reserved snapshot).
 - **2026-10-09T16:19Z:**
   - CERTIFIED slice FTF-0516-P1 (dataset quality report/issue/resolution API). Count unchanged (child slice); the FTF-0516 UI is un-parked into the Backlog.
   - Returned: FTF-0309 r3 (UI must accept only the frozen `unknown` state), FTF-R005 r7 (status-gated strictness regression, read-back, row lock), FTF-R004-P1 r4 (digest sensitivity tests).
@@ -29978,3 +30084,84 @@ Control-plane L2 certification and the L4 gate (101/301 certified, unchanged). S
 per this list's own rule; **FTF-0510, FTF-04A18 and FTF-1807 remain the next-priority items** per the Active
 list's own stated order. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged: "None currently").
 `BLOCKER.md` unchanged — no live entries.
+
+## 2026-10-14T08:50:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-bofkj6` — fixed FTF-0503 r2's
+## mutation-gate survivors (PR #781, merged); parked FTF-H010-P3a r2 on a relay-policy regex collision (PR #705
+## owner nudge); no new backlog item picked
+
+**Note on this file's own staleness:** this entry's own dated-section history jumps from 2026-10-06T06:30Z
+straight to here — eight real days of certifications, merges and shifts (147/302 certified, up from 101/301,
+per `scripts/status.py` at shift start) happened without a matching `PROGRESS.md` narrative entry, even though
+commits touching this file landed in between (apparently trivial top-of-file "Status" edits, not new dated
+sections). `QUEUE.md` and `docs/certifications/queue.md` stayed current throughout — this file's own per-shift
+narrative is the only stale piece. Flagged rather than silently left wrong, per this repo's own "reported, not
+silently worked around" norm; not fixed retroactively this shift (reconstructing eight days of history from git
+log alone risks getting it wrong, and is out of this shift's own scope).
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch. STEP 0.1: read
+`BLOCKER.md` (every entry RESOLVED, no live blocker), `QUEUE.md`'s "Owner actions — current" (two live entries,
+FTF-0616 judge-gateway secret and FTF-04A31 private-repo credential, neither blocking this shift) and
+"Active"/"Backlog"/"Parked" sections, and `docs/certifications/queue.md`'s tail, all fresh this shift. STEP 0.2:
+no `cognee-cli` binary in this sandbox — text-search fallback declared, same as every prior shift.
+
+Returned work first: listed every open `[relay]` PR and checked `ci-verdict` on each per CLAUDE.md's own
+ordering (0a merge conflicts, then the named items 0i/0e/0g/IMPORTER ORDER in `QUEUE.md`'s own priority list).
+0i (FTF-1602-r5) and 0g (FTF-0616-F1-r2) were already merged to `main` by shift start. Found two items with real
+red CI:
+
+- **PR #745 (FTF-H010-P3a round 2, item `0e`)** — `ci-verdict` red on `relay-policy` alone: "item(s) FTF-H010
+  already owned by open PR #742". Root cause: `scripts/ci_policy.py`'s `ITEM_ID` regex
+  (`FTF-[0-9A-Z]+(?:-F\d+)?`) only special-cases an `-F<n>` suffix, so `FTF-H010-P3a` and `FTF-H010-P2` both
+  collapse to the same base id and collide — the exact bug class `[GOVERNANCE]` PR #705 (open since 2026-10-09,
+  unmerged) already fixes. `scripts/ci_policy.py` is `RELAY_FORBIDDEN_EXACT` (not relay's to edit), and
+  governance PRs are owner-merged (not this session's to merge). Parked item-level in `QUEUE.md` (PR #784,
+  merged `f3f771d`) rather than improvised around or left silently stuck; added a dated "Owner actions —
+  current" line nudging the owner to merge #705, since it is now actively blocking a real submission.
+- **PR #781 (FTF-0503 round 2, item `0b`)** — `ci-verdict` red on two jobs: `relay-policy` (stale collision with
+  PR #780, which had closed 56 seconds before the run started — not a real, live conflict, self-resolves on the
+  next push) and `mutation-gate` (2 real survivors in `workers/data/json_importer.py:257`, `_options`'s
+  `slot.kind != "key"` check, which the PR's own body had proposed as an equivalent mutant pending
+  Control-plane classification). Continued on PR #781 rather than opening a duplicate, per the claim rule.
+
+**P** — read the two survivors directly and the one existing test exercising that line
+(`test_non_key_slot_is_mapping_invalid`). `import_common.Slot.kind` is a plain `str` field (checked
+`workers/data/import_common.py`), not a validated enum — only the strict parser `_slot()` constrains it to
+exactly `"key"`/`"header"`/`"index"`/`"letters"` when mappings come from real JSON. The existing test mixes a
+`"header"` slot with a `"key"` slot, so under the `!=`→`==` mutant the loop still raises `bad_slot` — just via
+the `"key"` slot instead of the `"header"` one — and the test only asserts `reason == "bad_slot"`, never which
+slot triggered it. Concluded both survivors are real, fixable test-coverage gaps, not equivalent mutants.
+
+**E** — added `test_all_key_slots_pass_options_without_raising` (a mapping where every slot is `"key"`; must
+not raise) and `test_slot_kind_match_is_exact_no_normalization` (`dataclasses.replace` injecting
+`Slot(" Key ", "q")`, bypassing `_slot()`'s own strict construction on purpose; must still raise `bad_slot`, not
+normalize) to `tests/tasks/test_ftf_0503.py`. No production code changed — the real check was already correct;
+the gap was purely in test coverage. **Law 1, shown able to fail first:** manually edited
+`workers/data/json_importer.py` to each mutant's exact replacement in turn, re-ran the test file unmodified
+after each edit, confirmed the matching new test (and only that one) failed, then restored the file from a
+backup and diffed byte-identical before the next mutant.
+
+**V** — merged `origin/main` into the branch first (clean auto-merge, no conflicts); `ruff`/`mypy` clean on both
+touched files; full test file re-run clean. A local full mutation-gate run (diff mode, `--max-mutants 200`)
+came back badly (157/200 killed, 43 survived in an unrelated function, `import_common.mapping_from_object`) —
+investigated and concluded this was a local sandbox artifact (the real CI run on the same commit, same target
+set, same test command came back 200/200 killed, 0 survived, 100.0%), not a real regression; disclosed rather
+than silently trusted either number. Pushed; real CI confirmed: `mutation-gate` 200/200 killed, 0 survived
+(run `38526627731`); `relay-policy` green (the stale PR #780 collision cleared on its own); full `gate` (188
+steps, one anomalously slow ~60-minute step on `FTF-0904`'s own negative-test proof, otherwise unremarkable)
+and `ci-verdict` green. Merged PR #781 (`63c2d7b`) per CLAUDE.md "Do without asking: merge on green + L1 doc
+(PROVISIONAL)", matching the established precedent for every other sibling-importer round. Recorded the
+closure in `docs/certifications/queue.md` and `docs/spec-matrix.yaml` via a separate, non-`[relay]`-titled PR
+(#788) — not editable from inside the `[relay]`-titled PR itself per the no-shared-file-edits rule.
+
+**V (certification)** — per Law 4, not self-certified: FTF-0503's `certification_state` stays `PROVISIONAL`,
+`proof_state` stays `L1-PROVEN`. Independent Control-plane L2 re-review is still required before certification;
+nothing here changes the 147/302 certified count.
+
+STEP 3: this file, `QUEUE.md` (via PR #784) and `docs/certifications/queue.md`/`docs/spec-matrix.yaml` (via PR
+#788) all updated this shift, before compaction. STEP 4 stop condition (a): PR #781 is merged PROVISIONAL,
+awaiting Control-plane L2 re-review; FTF-H010-P3a-r2 is parked item-level, not a full-shift `BLOCKER.md` (one
+governance PR's own merge away from clearing). Status unchanged by this shift: 147/302 certified, 47
+product-true (`scripts/status.py`). New owner-actions line added (PR #705 merge); the two pre-existing entries
+(FTF-0616, FTF-04A31) are unchanged. `BLOCKER.md` unchanged — no live entries. Next priority per `QUEUE.md`'s
+own Active-list order: the IMPORTER ORDER lane (FTF-0505, in flight as draft PR #782 from another lane) and
+items `0b`'s own still-disclosed PG16+SeaweedFS integration gap, not yet attempted by any shift.

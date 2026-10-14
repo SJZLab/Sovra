@@ -2637,6 +2637,170 @@ def test_round6_review_dict_is_parsed_strictly() -> None:
     )
 
 
+def _build_with_midbuild_hook(module: Any, raw: dict, reviews: list, flip_to: Any):
+    """Run `module.build_training_dataset` while caller code executes inside the
+    per-trace loop: a wrapper around the module's own `_check_reserved` (which it
+    still calls first) rewrites the caller's raw trace dict to `flip_to`'s id and
+    provenance right after the real check ran. This models any caller hook that
+    runs mid-build (a `reserved.__dict__` key hook, a `__getattr__`)."""
+    original = module._check_reserved
+
+    def hooked(*args: Any, **kwargs: Any) -> Any:
+        result = original(*args, **kwargs)
+        raw["trace_id"] = flip_to.trace_id
+        raw["provenance"] = dict(flip_to.provenance)
+        return result
+
+    module._check_reserved = hooked
+    try:
+        return module.build_training_dataset([raw], reviews)
+    finally:
+        module._check_reserved = original
+
+
+def test_round7_midbuild_caller_hook_cannot_rewrite_a_parsed_trace() -> None:
+    """FB2/FB3: the caller's raw trace dict is parsed once. If caller code runs
+    during the build and changes the dict afterwards, an approval of train-0002
+    still admits exactly the regenerated train-0002 and an approval of the flipped
+    id train-0005 is refused."""
+    import evals.reference.training_dataset as real
+
+    a, b = TRACES[2], TRACES[5]
+    assert (a.trace_id, b.trace_id) == ("train-0002", "train-0005")
+
+    def approve(trace_id: str) -> list[dict[str, str]]:
+        return [{"trace_id": trace_id, "reviewer_id": "reviewer:x", "decision": "approved"}]
+
+    ds = _build_with_midbuild_hook(real, _wire(a), approve(a.trace_id), b)
+    check(
+        "FTF-1703-R7-1",
+        "mid-build hook flips the raw dict: approval of train-0002 admits exactly the "
+        "regenerated train-0002",
+        tuple(t.trace_id for t in ds.traces) == (a.trace_id,)
+        and ds.traces[0] == a
+        and ds.approved_count == 1,
+    )
+    check(
+        "FTF-1703-R7-1",
+        "mid-build hook flips the raw dict: approval of the flipped id train-0005 is "
+        "refused as an unknown trace and nothing is admitted",
+        _raises(
+            ReviewIndependenceError,
+            _build_with_midbuild_hook,
+            real,
+            _wire(a),
+            approve(b.trace_id),
+            b,
+        )
+        and "unknown trace"
+        in _msg_any(_build_with_midbuild_hook, real, _wire(a), approve(b.trace_id), b),
+    )
+    check(
+        "FTF-1703-R7-1",
+        "negative control: with no hook the same trace and approval are admitted",
+        build_training_dataset([_wire(a)], approve(a.trace_id)).approved_count == 1,
+    )
+
+    # FB2: the admitted object is filed under the caller's raw id, read again.
+    fb2 = _mutant(
+        (
+            "        by_id[regenerated.trace_id] = regenerated",
+            '        by_id[raw["trace_id"]] = regenerated',
+        )
+    )
+    fb2_ds = _build_with_midbuild_hook(fb2, _wire(a), approve(b.trace_id), b)
+    check(
+        "FTF-1703-R7-FAULT",
+        "fault FB2 (filed under raw['trace_id']): the flipped id train-0005 is admitted "
+        "carrying train-0002's content, so the pin above goes RED",
+        fb2_ds.approved_count == 1 and fb2_ds.traces[0].to_dict() == a.to_dict(),
+    )
+    check(
+        "FTF-1703-R7-FAULT",
+        "fault FB2: approval of the real id train-0002 is refused, so the pin above goes RED",
+        _raises(
+            fb2.ReviewIndependenceError,
+            _build_with_midbuild_hook,
+            fb2,
+            _wire(a),
+            approve(a.trace_id),
+            b,
+        ),
+    )
+    # FB3: FB2 plus the regeneration index read again from the raw provenance.
+    fb3 = _mutant(
+        (
+            "        by_id[regenerated.trace_id] = regenerated",
+            '        by_id[raw["trace_id"]] = regenerated',
+        ),
+        (
+            "        regenerated = _generate_one(index)\n",
+            '        regenerated = _generate_one(raw["provenance"]["index"])\n',
+        ),
+    )
+    fb3_ds = _build_with_midbuild_hook(fb3, _wire(a), approve(b.trace_id), b)
+    check(
+        "FTF-1703-R7-FAULT",
+        "fault FB3 (FB2 plus index re-read): the flipped id is admitted carrying "
+        "train-0005's content, so the pin above goes RED",
+        fb3_ds.approved_count == 1 and fb3_ds.traces[0].to_dict() == b.to_dict(),
+    )
+
+
+class _CountingKey(str):
+    """A str key that counts how often the instance __dict__ lookup compares it."""
+
+    hits: list[str]
+
+    def __eq__(self, other: object) -> bool:
+        same = str.__eq__(self, other)
+        if same:
+            self.hits.append(str(self))
+        return same
+
+    def __hash__(self) -> int:
+        return str.__hash__(self)
+
+
+def _hooked_reserved() -> tuple[ReservedFinalSuite, list[str]]:
+    """A ReservedFinalSuite whose instance __dict__ reports every field read."""
+    reserved = ReservedFinalSuite()
+    hits: list[str] = []
+    state: dict = {}
+    for name in ("group_ids", "template_ids", "entity_titles", "answer_sha256s"):
+        key = _CountingKey(name)
+        key.hits = hits
+        state[key] = frozenset()
+    object.__setattr__(reserved, "__dict__", state)
+    return reserved, hits
+
+
+def test_round7_reserved_is_snapshotted_once_at_entry() -> None:
+    """Hardening: `reserved` is read once at entry into exact frozensets of plain
+    str, so no caller code runs inside the per-trace loop: the number of reads of
+    the caller's object does not grow with the number of traces."""
+    import evals.reference.training_dataset as real
+
+    def reads(n: int, module: Any = real) -> int:
+        reserved, hits = _hooked_reserved()
+        batch = TRACES[:n]
+        wired = [_wire(t) for t in batch]
+        revs = [
+            {"trace_id": t.trace_id, "reviewer_id": "reviewer:x", "decision": "approved"}
+            for t in batch
+        ]
+        ds = module.build_training_dataset(wired, revs, reserved=reserved)
+        assert ds.approved_count == n
+        return len(hits)
+
+    one, five = reads(1), reads(5)
+    check(
+        "FTF-1703-R7-2",
+        f"reserved is read the same number of times for 1 and 5 traces (got {one} vs {five})",
+        one == five and one > 0,
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

@@ -9276,6 +9276,7 @@ real live route) is a Control-plane judgment call, not a relay one.
 ## Owner actions — current
 - 2026-10-08: FTF-0616 (LLM judge) needs a real judge call through the org LiteLLM gateway for its acceptance clause: a CI secret holding a gateway virtual key, plus the approved judge model id. Until then that clause stays BLOCKED_EXTERNAL; the rest of FTF-0616 continues.
 - 2026-10-07: FTF-04A31 needs a private-repo test credential (or approval to use this repo with `github.token`). See Parked.
+- 2026-10-14: `[GOVERNANCE]` PR #705 (fix `scripts/ci_policy.py`'s `ITEM_ID` regex so a `-P<n>`/`-UI` suffix resolves to its own item instead of collapsing into its parent) has been open since 2026-10-09 and is now actively blocking real relay work, not just a style nit: PR #745 (`FTF-H010-P3a-r2`) and PR #742 (`FTF-H010-P2-r2`) both reduce to the same base id `FTF-H010` under the current regex, so `relay-policy` fails PR #745 with a false "already owned" collision. See Parked below. Merging #705 (already written, tested, reviewed by no one but itself) clears it; no other action needed.
 
 ## Active (decided by Control plane — relay executes, top first)
 **Claim rule (2026-10-06T17:40Z, Control plane):** a `relay/<ID>` branch whose head is already merged into main
@@ -9311,85 +9312,62 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      Latest certified: FTF-1706. The items below are not certified.
    - **GRADER CHECKLIST addition (same-class sweep):** never test membership of a raw input in a dict or set before
      checking its type. An unhashable value ([] or {}) must raise the module's own error, not TypeError.
-   - **0b. FTF-0616 round 8 (tests only).** Work in tests/tasks/test_ftf_0616.py. Claim `relay/FTF-0616-r8`. Verifier findings (ecc0186, #669: R6f and R6m RED; production correct - 0 of 3377 generated Unicode variants accepted; whole-file mutation 324/324; 43/43 regression faults and 70 of 114 normaliser faults RED):
-     FTF-0616 RETURN -> round 8, tests only. Control-plane ruling: replace the fixed variant list with generated variants; this closes the class and is the last exactness round.
-     1. Generate echo variants from Unicode properties at both comparison points (judge id and alias), each echo approved, under both a pass and a fail verdict: every `str.isspace()`, Cc, Cf and Z* code point inserted at the leading, inner and trailing positions; every code point whose NFKC/NFKD-casefold equals an ASCII character of the id, substituted at each position; every character whose NFKC is '-'; case forms. Each gives MODEL_MISMATCH with passed None. (The verifier's full sweep ran in about 180 s against the live gateway; a deterministic sample is acceptable only if it always includes CR, LF, NBSP and U+3000 at both ends, U+200B/U+200C/U+200D/U+2060/U+FEFF at both ends and inner, and U+2011.)
-     2. Mirror the configured side: configured judge ids and aliases that are fullwidth, NFD, trailing NBSP/space and zero-width-prefixed. The exact echo gives a verdict; each normalised echo gives MODEL_MISMATCH.
-     3. Faults that must go RED (GREEN today): strip ZW/BOM at the edges; rstrip CR/LF; rstrip NBSP; strip U+3000; U+2011 -> '-'; and the 12 configured-side-only normalisers (NFKC, NFC, strip, ...) - at both comparison points.
-     4. Keep 0 whole-file mutation survivors, all 113 currently-RED faults RED, and BLOCKED_EXTERNAL and UNWIRED disclosed.
-     Certification rule: with 1-4 in, FTF-0616 is CERTIFIED for the adapter scope with the real-judge clause BLOCKED_EXTERNAL; a new hand-picked variant alone will not reopen exactness.
-   - **0c. FTF-0309 round 3 (UI production + tests).** Work in apps/web/components/artifact-capabilities/capability_compatibility_ui.tsx, apps/web/tests/ftf_0309.spec.ts and the FTF-0309 spec-matrix entry. Claim `relay/FTF-0309-r3`. Verifier findings (a70296e, #696: 32 of 40 faults RED; real P1 router responses validate against the frozen schema and keep Train disabled; echo, enum and in-flight checks hold):
-     FTF-0309 RETURN -> round 3. Control-plane ruling: the frozen 03-interface.yaml allows only `state: "unknown"` for these dimensions (`ModelCapabilityUnknown`), and nothing on the backend produces another state. The UI treats any other state, and any `tested_gb`/`memory_gb` field, as malformed with no Train; remove the `known` path and its tests. A future known state needs a separate, owner-routed contract change.
-     1. Today a `state: "known"` body enables Train and fires onTrain (K1, K3). Make it malformed; reject `declared_evidence` other than "declared"; pin the strict-parse faults F33-F36.
-     2. Reload: a load succeeds, then a re-check returns 503 - the alert shows and Train is absent (fault F39, drop `setResult(null)`).
-     3. An org switch removes Train (fault F3, organizationId left out of the identity key).
-     4. A 200 body that lands after a switch is ignored (fault F7, stale guard after `response.json()` dropped).
-     5. Update the FTF-0309 spec-matrix evidence to round 3 (still cites round 1) and keep the UI disclosed UNWIRED per the Law 7 note below.
-     Law 7 note: on certification FTF-0309 stays UNWIRED for its UI and does not count as product-true until the UI has a live caller (FTF-H029).
-   - **0d. FTF-H010-P1 round 4 (integration test only).** Work in tests/integration/test_ftf_h010_p1_model_import.py. Claim `relay/FTF-H010-P1-r4`. Verifier findings (784a416, #686: all five round-3 items done; production unchanged and correct on PG16 as sovra_app; 33 of 39 faults RED):
-     FTF-H010-P1 RETURN -> round 4, tests only. Control-plane ruling: replace hand-picked rows with complete tables - this closes the class.
-     1. Origin/import-kind: a table over every (import_kind, origin, adapter_only, artifact present, digest present) combination, each row asserting accept or the constraint name `ck_model_versions_origin_import_kind_consistency`. Fault N10 (endpoint branch widened to `origin IN ('external_endpoint','imported_weights')`; an endpoint row with imported_weights and no artifact was inserted) must go RED.
-     2. SHA-256, per column: a valid lowercase 64-hex value accepted and read back, plus refused rows for 63 and 65 hex, upper-case, a space, a '-', a non-hex letter, empty - each naming the column's constraint. Faults `^[0-9a-f ]{64}$`, `^[0-9a-f-]{64}$` and `^[0-9a-f]{65}$` (N1-N3) must go RED.
-     3. Job states: the full transition matrix (every state to every state), each refused move asserting sqlstate 23514 and its message, each allowed move succeeding. Fault N11 (validating -> queued allowed) must go RED.
-     4. Keep every currently-RED fault RED. Optional: correct "26 test functions" in the round-2 submission.
-   - **0e. FTF-R005 round 7 (production + tests).** Work in packages/integrations/mlflow/ and its tests. Claim `relay/FTF-R005-r7`. Verifier findings (4b62130, #691: round-6 P1/P2/D5 tag-independent drift, token control-character refusal, sequential D2/D3b, D9 retry timing all fixed on a real MLflow 3.1.1 server and PG16 as sovra_app; 10 of 14 faults RED):
-     FTF-R005 RETURN -> round 7. Required:
-     1. Regression: strictness is gated on the mutable live MLflow status, so a completed run whose payload tag is intact but whose status was flipped back to RUNNING is SYNCED with status_changed and missing-field drift suppressed (Q1, Q1b, Q1c; end to end D7: the real outbox row resolved succeeded while the run is RUNNING and lacks factory.hash.artifact_sha256 - all held at round 5). Decide strictness from Factory's own record (payload tag present or a recorded completion), never the live status. Real-server tests for Q1/Q1b; fault: strict only when the live status is terminal.
-     2. Read-back before SYNCED (0e item 1, not done): a tamper between the drift check and the completion write yields SYNCED while MLflow shows 0.99 vs Factory 0.875 (Q2). Read the run back after writing and compare strictly. Test like Q2; fault: skip the read-back.
-     3. `DurableOutbox.record`: lock the row (SELECT ... FOR UPDATE) or make the write conditional on `status = 'pending'`, and report the mismatch (today it returns None and a failed row still reads SYNCED to the caller, D3b-report). A concurrent worker resolving the row between record()'s read and write still rewrites last_error/attempt_count on real PG (D8). Real-PG tests for D2, D3b and the D8 interleaving (R6-3 exists only in the faked-DB file).
-     4. Pin F7 (a non-latin-1 token gives FAILED "MLflow request could not be sent", never an uncaught UnicodeEncodeError) and F4 (KILLED is terminal).
-     5. Law 2: correct the round-6 notes ("set only by this adapter's own finish_run", "never SYNCED") and update evidence_hash.
-   - **0f. FTF-0517 round 2 (tests + one docstring line).** Work in tests/tasks/test_ftf_0517.py. Claim `relay/FTF-0517-r2`. Verifier findings (each listed fault must go RED):
-     FTF-0517 RETURN -> round 2, tests only (db26d03, #591). Production is deterministic and correct; mutation 117/119 killed, 2 timeouts, 0 survived; 60 hand faults, 14 survive (several real). Tests to add in tests/tasks/test_ftf_0517.py:
-     1. Pinned golden: for a fixed spec and fixed records (e.g. 200 records keyed conv-i plus tmpl-(i%30)), assert the exact manifest_sha256, the exact counts and a few exact (record_id, role, group_id) triples; also run a subprocess under PYTHONHASHSEED=0 and 777 and compare hashes (kills hash() instead of SHA-256, reversed slot mapping, ratio off-by-one, strategy dropped from the bucket input).
-     2. Exact group counts in m.counts (e.g. 30 groups in the template case) - a group count equal to the record count survives today.
-     3. On a cutoff run, m.cutoff == cutoff, and tampering with it is refused.
-     4. A post-cutoff group preassigned `validation` is refused; a pre-cutoff group preassigned `validation` is honoured.
-     5. The manifest hash changes when only group_id values change, and when `strategy` changes.
-     6. A negative ratio in the validation or dev slot, e.g. (70,-10,20,20), is refused.
-     Also (docstring only): state in the module docstring that the caller must call quality_issue_engine.assert_clear_for_split before allocate_splits; the wiring task enforces it.
-   - **0g. FTF-1703 round 6 (production + tests).** Work in evals/reference/training_dataset.py and tests/reference/test_ftf_1703.py. Claim `relay/FTF-1703-r6`. Verifier findings (f919b76, #682: round-5 T1/T1b refused; reserved check and secret scan run on the regenerated object; F6 RED; notes corrected; mutation 65/65):
-     FTF-1703 RETURN -> round 6. Reproduced (acceptance "independent review"): a str-subclass key in the plain-dict instance `__dict__` runs `__eq__` on every attribute read, so the builder re-reads `provenance["index"]`/`trace_id` after verification and approves train-0001 on train-0002's review (P8b) or admits a trace under a never-submitted review id (P8f); the same key on a `ReviewDecision.__dict__` swallows a conflicting rejection (P11b).
-     Control-plane ruling (closes the class after six rounds of object-model tricks): `build_training_dataset` and `verify_trace_provenance` accept only plain JSON data for traces and reviews - exact `dict`/`list`/`str`/`int`/`float`/`bool`/`None`, exact-str keys, checked recursively - and construct their own TrainingTrace and ReviewDecision from it. No caller-supplied object, method, attribute or hook is ever read after parsing; index, trace_id, reviewer_id and decision are read once into locals used for both validation and recording; `by_id` is keyed by the regenerated trace_id. Tests: P8b, P8f, P11b and a caller TrainingTrace/ReviewDecision object (any subclass or not) each refused; faults: accept a non-exact-str key; read index/trace_id from the caller object after verification - each RED. Record the RED results and update evidence_hash.
-   - **0h. FTF-1206 round 5 (production + tests).** Work in packages/litellm_client/organization_policy_control.py and tests/tasks/test_ftf_1206.py. Claim `relay/FTF-1206-r5`. Verifier findings (77812af, #635: all round-3 items hold; 19 faults RED; each listed fault must go RED; run faults with PYTHONDONTWRITEBYTECODE=1 and revert byte-identical):
-     FTF-1206 RETURN -> round 5, production + tests. Required:
-     1. Negative acceptance reproduced: validate_namespace and validate_approver_identity accept any `isinstance(value, str)`, so a str subclass whose __hash__/__eq__ alias a canonical value passes: a request namespace `Alias("someone-elses-ns")` aliasing "factory-candidates" got a grant for "someone-elses-ns"; an actor `Who("user:mallory")` aliasing "user:jane", and a subclass target aliasing "factory-production", were authorized. Require `type(value) is str`; tests that such a request gets no grant and such a route change is refused. Fault: isinstance restored.
-     2. Identifier patterns (tests): refuse "factory-production\n" and "user:jane\n" (fault fullmatch->match), a trailing separator "factory-"/"factory."/"factory:" (fault: trailing separator allowed), "factory/production" (fault: '/' allowed), "é", "İstanbul", "１２" and a Cyrillic-homoglyph "factory-prоduction" (fault: \w for [A-Za-z0-9]), and 129 chars refused vs 128 accepted (faults {0,126}->{0,600} and ->{0,125}). Test both validators directly and through OrganizationGatewayPolicy and ProjectGatewayPermissionRequest construction. FTF-1206A persists whatever these validators accept.
-     3. Record RED for every fault in 1 and 2 in the submission.
-     Optional: ProjectGatewayGrant does not validate its fields; bypass_requested is not type-checked; the stale "no backing table yet" note; a grant carries no organization_id, so org A's grant is accepted against org B's policy.
-   - **0i. FTF-1602 round 5 (production + tests).** Work in scripts/object_storage_backup.py, tests/tasks/test_ftf_1602.py and tests/integration/test_ftf_1602_object_storage_backup.py. Claim `relay/FTF-1602-r5`. Verifier findings (947ee2f, #655: the pinned record read refuses every race point tried on real SeaweedFS; sequential backup_id reuse refused; naive/str `now` refused in verify and restore; real SeaweedFS 14/14; uncapped whole-file mutation 405/405; each listed fault must go RED):
-     FTF-1602 RETURN -> round 5. Required:
-     1. Concurrent create with one backup_id (Law 17): one caller gets a success BackupRecord whose backup is immediately unverifiable on real SeaweedFS (6/6 threaded trials, Q4); SeaweedFS 3.99 does not enforce If-None-Match, so a conditional write is not a fix. Control-plane ruling: `create_backup` generates the backup_id itself (uuid4) and no longer takes it from the caller; if a caller-chosen id is kept anywhere (CLI), give each attempt its own record key and make verify require exactly one record. Real-SeaweedFS test of the Q4a interleaving (B checks the id, A runs in full, B writes): no call returns success for a backup another call can make unverifiable.
-     2. A real-SeaweedFS ABA record-version test so fault G1 (record read reverted to `get_latest`) goes RED in the integration suite too (GREEN there today; under it an ABA version restores 3 of 4 as success, Q2) - QUEUE round-4 item 1 required RED in both.
-     3. The Q7 swap test, unit and real: fault G7 (re-list compares only the count, not the version id) is GREEN in both today, and under it an unretained record swapped out mid-read verifies.
-     4. Typed `now` in verify, restore and create: `type(now) is datetime and now.utcoffset() is not None`, checked in create before anything is written. Today a tzinfo whose utcoffset() returns None raises a raw TypeError in all three, and a non-datetime `now` raises a raw AttributeError in create. Tests and a fault for each.
-     5. Keep G2-G11 RED and re-run the uncapped whole-file mutation gate.
-   - **0j. FTF-0501 round 3 (production + tests; API half).** Work in the FTF-0501 upload/finalize routes, the XLSX inspection, the multipart sweeper and their tests. Claim `relay/FTF-0501-r3`. Verifier findings (9149174, #658: XLSX package check, flaky-refusal fix, PG16+SeaweedFS route CI job and proving_symbol `build_direct_upload_router` all hold; 78/78 earlier probes pass; 16 of 19 faults RED; each listed fault must go RED):
-     FTF-0501 RETURN -> round 3. Required:
-     1. §67.5 sweeper: on real SeaweedFS 3.99 ListMultipartUploads has no `Initiated`, so every upload is "undated", nothing is aborted and the run exits 0; it is tested only against the in-process fake; the listing is a single unmarked page, so an old upload behind 1000 others is never reached. Derive age from data the backend gives (the DB session's expiry, or the parts listing's LastModified), exit non-zero when age cannot be determined, page with markers under a per-run budget. Real-SeaweedFS CI test: an old upload aborted, a young one kept, foreign keys untouched, an old upload behind >1000 others reached. Faults: undated counted as success; no marker.
-     2. XLSX central directory: bound its size and entry count from the end-of-archive record before zipfile reads it, refuse as `unsafe_archive`, and cap each ranged GET. Today an end record claiming a directory spanning the file triggers one full-size GET (heap ~3x the object: 145 MiB for 48 MiB). Test with a lying central directory, shown RED against the current code.
-     3. DTD refusal at the parser (expat doctype/entity handlers) regardless of encoding: today the byte search misses UTF-16/LE/BE, and a workbook ContentType taken from an internal ENTITY (`&s;`) became an accepted Dataset version on the real routes. Tests for UTF-16, UTF-16LE, UTF-16BE and the `&s;` case, each RED against the current check.
-     4. Assert the production bounds (10,000 entries, 10 GiB uncompressed, 1 MiB [Content_Types].xml) and test the real 10,000/10,001 entry boundary without overriding the constants. Faults F5, F18, F19 (each bound raised) - GREEN today.
-     Disclosed, not a return reason: the sweeper is not scheduled in any deployment (scheduling is FTF-H013). The resumable UI remains FTF-0501-UI.
-   - **0m. FTF-0908 round 3 (production + tests).** Work in the FTF-0908 external provider denial module and its unit and real-Postgres integration tests. Claim `relay/FTF-0908-r3`. Verifier findings (9605bb9, #670: all six round-2 items fixed - durable audit, F9, F5/F6/F7/F12, typed AuditContext, §11.2 fields and exact account/region match; mutation 66/66; every injected fault RED in some suite):
-     FTF-0908 RETURN -> round 3. The round-2 commit-before-raise breaks the caller's session:
-     1. The denial's own `session.commit()` ends the transaction that held `tenant_scoped_session`'s SET LOCAL tenant context. A second denial in the same session raises a raw `ProgrammingError` (RLS), not `ExternalProviderDeniedError`, and its audit row is lost; every later read in the caller's session returns 0 tenant rows (DB3, DB3b on PG16 as sovra_app). Write the audit in its own independent transaction (preferred), or re-bind the tenant context after the commit. Real-Postgres test: two denials in one `tenant_scoped_session` give 2 typed denials, 2 durable rows and unchanged tenant visibility. Fault: drop the independent transaction / re-bind.
-     2. The documented "no uncommitted work on the session" precondition is not enforced: a caller's pending row is committed by the denial (DB4). With an independent audit transaction the caller's work is untouched; otherwise refuse a session with new/dirty/deleted changes with `external_provider_invalid_request` before any decision. Real-Postgres test that the pending row is not persisted by a denial. Fault: drop the guard.
-     3. Update the docstring; keep the mutation gate at 0 survivors and the integration job wired into ci-verdict.
-   - **0n. FTF-R004-P1 round 4 (tests only).** Work in tests/tasks/test_ftf_r004_p1.py. Claim `relay/FTF-R004-P1-r4`. Verifier findings (a213215, #689: all round-3 production fixes in place - allow-list capture with digests, G1-G5 closed; ~230 probes clean; mutation 140/140; 17 faults RED):
-     FTF-R004-P1 RETURN -> round 4, tests only. The digest that detects settings changes is not tested for sensitivity:
-     1. A nested-value change inside a digested dict blocks through capture, for `web_search_options.search_context_size` and `extra_body.chat_template_kwargs.enable_thinking`. Faults: digest of dict keys only (FG3); unknown `extra_body` child digested by key names only (FG6) - under them those real changes pass as `preserved`.
-     2. A list or tuple reorder in a digested key changes the digest and blocks. Faults: list order ignored (FG), tuple order ignored (FG2).
-     3. Length and duplicates: `[2,1]` vs `[2]`, `[1]` vs `[1,1]`, and `stop_token_ids` [2,1] -> [2] through capture each block. Faults: only the first element kept (FG4); elements de-duplicated (FG5).
-     Optional: require an exact str in ContentDigest; wrap Mapping iteration and the digest repr in the module's own error.
-   - **0o. FTF-R004-P2 round 2 (production + tests).** Work in the FTF-R004-P2 provider-boundary module and tests/tasks/test_ftf_r004_p2.py. Claim `relay/FTF-R004-P2-r2`. Verifier findings (6dfdb16, #677: exact tool-name matching, hosted-tool/MCP/remote-media denial, profiles, typed errors, 0 network calls, content-free evidence all hold; 23 of 24 faults RED):
-     FTF-R004-P2 RETURN -> round 2. Negative clause reproduced ("Reject ... undeclared provider-side web/code/MCP execution or remote-media fetch"):
-     1. Screen Responses `function_call_output.output` lists as content parts: today `{"type":"function_call_output","output":[{"type":"input_image","image_url":"https://..."}]}` (and an `input_file` with `file_url`) is allowed (R1). Fault: drop the output-array screen.
-     2. Control-plane ruling (same as FTF-R004-P1): the request top level is an allow-list of known keys; anything else is denied `unknown_request_shape`. Today `mcp_servers`, `prompt` (stored prompt, remote-media variables), `search_parameters`, `container`, `extra_body.tools`/`extra_body.web_search_options`, `tool_resources`, an upper-case `WEB_SEARCH_OPTIONS` and a function tool with an extra `web_search` key all pass (R2). Deny `prompt` (or screen its variables and deny the stored-prompt id) and deny `extra_body` (or screen it recursively). One test per key; fault: unknown top-level keys allowed. Correct the docstring.
-     3. Pin the exact `remote_media_dereference` code for `input_file.file_url`, `file_id` and `input_image.file_id`. Fault F18 (drop `file_url` from the remote keys; GREEN today).
-     4. Rename `test_url_classification_is_by_parsing_not_substring`; run or report the 61 mutants the 200 cap skipped.
-     Ruling recorded: the stricter exact-`data:`-prefix check in place of FTF-H006 `url_policy` is accepted (stricter than the contract, no harm found). Observation for P3 wiring: `to_emitted_tool_calls()` drops the "hosted" kind.
-   - **0p.** Then the Backlog.
+   - **UI CHECKLIST (Control-plane ruling 2026-10-09, every apps/web UI slice; class-closing, from FTF-0309/0516/0501-UI returns):** (a) a generated strict-parse table over EVERY response field (wrong JSON type, value outside each enum, missing required field), each asserting malformed + no action control; (b) ONE binding function comparing every field sent with the response, a fault per field; (c) identity: drafts/results keyed by organization, project and connection, reset on any prop change; (d) no simulated progress or success: only a typed 2xx with a bound body counts; (e) typed errors: 5xx, non-JSON and unknown codes are retryable and keep state, never success or terminal rejection (Law 17); (f) a real-API test against the real router in a CI job when the backing routes exist. A hand-picked subset does not close a class.
+   - **0i. FTF-1602 round 6 (tests + spec-matrix only; production is correct).** Work in tests/tasks/test_ftf_1602.py, tests/integration/test_ftf_1602_object_storage_backup.py and docs/spec-matrix.yaml only. Claim `relay/FTF-1602-r6`. Verifier findings (724cfdd, #672: create_backup generates its own uuid4 id, `--backup-id` refused; Q4a real calls and Q4b 18/18 threaded creates on real SeaweedFS all verify; typed `now` refused before any write in create/verify/restore; uncapped mutation 405/405; no production violation):
+     FTF-1602 RETURN -> round 6. Stopping rule (Control plane): production is sound; round 6 certifies once these test items land and no production violation is reproduced; a newly hand-picked variant of a closed class will not block.
+     1. F7-CREATE-NOW-VALIDATED-LATE is GREEN in both suites (moving the `now` check below the blob writes brings back the round-4 Q5 defect on the real server). Unit table of bad `now` in create (naive, utcoffset-None, str, int, datetime subclass): typed refusal with zero store calls; F7 RED.
+     2. G7-COUNT-ONLY-RELIST is GREEN in the unit suite: add a unit Q7 swap test; G7 RED in unit (and still RED in real).
+     3. G1 reddens the real suite only incidentally (the ABA check is blind; only the self-referential demo assertion fails), and G1b (latest id from a fresh listing; 3/4 objects restored as success on the real server) is GREEN in unit. Rebuild the ABA test, unit and real, on the Q2 shape: forged version PUT after the first record listing, deleted after the read; G1 and G1b RED in the attack check itself; drop or fix the demo assertion.
+     4. spec-matrix: the notes overclaim the seam-forced Q4a ("never reports false success for either caller" - the test asserts A's success becomes unverifiable); state what is tested. Rebind evidence_hash to the round-6 code commit (still 47ca830, round 4).
+     5. Keep every fault already RED, RED; uncapped mutation gate at 0 survivors.
+   - **0e. FTF-H010-P3a round 2 (production + tests).** Work in apps/api/app/model_versions/import_artifact_validators.py and tests/tasks/test_ftf_h010_p3a.py. Claim `relay/FTF-H010-P3a-r2`. Verifier findings (f5c83e6, #734: no artifact execution or import (audit hook clean), codes-only errors, allow-list, strict JSON and most header bounds held over 292 probes on 3.11 and 3.12; 18 verifier faults RED; CI 111088 checks, 61 faults RED):
+     FTF-H010-P3a RETURN -> round 2. Required:
+     1. safetensors-shape-product-unbounded (reproduced): `_tensor_info` multiplies every dimension as an unbounded int - 200k dimensions (4.2 MB header) take 139 s, ~22 h at the accepted 100 MB limit - and accepts dimensions above 2^64-1 (`[0, 2**64]`, `[2**32, 2**32, 0]`) that the format itself rejects. Refuse any dimension > 2^64-1 and stop multiplying once the product exceeds the data size; generated tests incl. 200k+ dimensions refused within a time bound; a named fault must go RED.
+     2. safetensors-negative-dim-accepted: the negative-dimension check is never exercised (the table's negative shapes are refused by the size check). Test negative shapes whose size equation would otherwise hold (e.g. `[-1,-1]` F32 `[0,4]`) -> reason `shape`; the `d < -1` fault must fail a real check.
+     3. adapter-lora-A-rank-unchecked: test lora_A rank != r with lora_B rank == r (e.g. A [5,8], B [16,4], r=4) -> `r_mismatch`; the fault dropping the A check must fail a real check (today only the patch-text guard catches it).
+     4. peft-prefix-stripped-anywhere: `name.replace(_PEFT_PREFIX, "")` leaves the whole suite GREEN; test doubled and inner `base_model.model.` prefixes -> `base_tensor_missing`.
+     5. Every named fault must fail a behavioural check, not only the patch-text guard. Optional: `compression_config` / nested `text_config.quantization_config` as quantized; re-validate a hand-built AdapterConfig.
+   - **IMPORTER ORDER (Control-plane ruling, updated 2026-10-13T23:59Z):** FTF-0502-P1 is CERTIFIED (#770). FTF-0502, FTF-0503, FTF-0504 and FTF-0505 may now be claimed, each rebuilt on certified P1 (one lane at a time per the Backlog order 0502 → 0504 → 0503 → 0505). Catalog rule (refines the 20:4xZ ruling): an importer that needs a new code or limit field (e.g. FTF-0503 fatal structure errors with a byte offset; FTF-0505 max_cells and the sharedStrings cap) makes ONE additive, serialized edit to workers/data/import_common.py in its own PR, extending P1's CAT/limit tests in the same PR; existing codes are never renamed, moved between catalogs or removed, and a fatal error's location goes into ImportReport via an additive optional field. Each importer passes the dataset's verified sha256 as expected_sha256 and a mismatch with the reader's declared hash must fail (advisory from #766 verification: run_import today still reports completed).
+   - **0c. FTF-0504 CSV importer round 4 (tests + two small typed-failure fixes; the round-3 fixes all hold).** Work in workers/data/csv_importer.py and tests/tasks/test_ftf_0504.py only. Claim `relay/FTF-0504-r4`. Verifier findings (aa40d53, #786: utf-8-sig locator fixed - 408,526 oracle imports 0 wrong; expected-sha mismatch fails with 0 bytes read on import and preview; outage check RED 6/6 with a no-op stop; evidence tables; shared ImportReport.fatal_locator (LocatedImportReport) additive and digest-neutral (3,000/3,000); 40/43 faults RED; mutation 46/47 + 1 timeout):
+     FTF-0504 RETURN -> round 4. Stopping rule (Control plane): round 4 certifies once these land and no production violation is reproduced; a newly hand-picked variant of a closed class will not block.
+     1. V-RECORD-CAP-PROD-ONLY GREEN: the "past the record cap" row trips the field cap - add a record-cap row at the production constant (e.g. `x*max,y*max,\n` is a record_too_large/fatal per contract) and its fault.
+     2. V-SHA-COMPARE-PREFIX GREEN: expected vs declared hashes differing only in the LAST hex character (and only the first) must fail; fault comparing a prefix RED.
+     3. V-LOC-NONSTR-ALLOWED GREEN: a str-subclass fatal_locator is refused (exercise LocatedImportReport's `type(...) is str`).
+     4. PREVIEW-SHA-TYPEERROR: a non-ASCII or None dataset_sha256 on the preview path raises TypeError - return the typed refusal (source_changed / invalid input) with nothing read; test + fault.
+     5. TRUNCATED-BOM-SWALLOWED: a source of only 1-2 BOM bytes declared utf-8-sig ends completed with 0 records (or mapping_column_missing) - it must be invalid_encoding with a locator; test both.
+     Advisory: the 16 MiB outage control was cut short by SeaweedFS in 2/7 local runs (never a false pass) - shrink the control or wait for FTF-0502-P1-F1 range reads.
+   - **0d. FTF-0505 XLSX importer round 2 (production + tests; one serialized import_common.py edit AFTER FTF-0502 r3 merges).** Work in workers/data/xlsx_importer.py, workers/data/ooxml_safety.py, tests/tasks/test_ftf_0505.py and the FTF-0505 integration suite; import_common.py + test_ftf_0502_p1.py only for ruling (b). Claim `relay/FTF-0505-r2`, rebase on FTF-0502 r3. Verifier findings (80fd4f9, #782: expected-sha mismatch fails before any record; content-type gate; Law 17; formulas never evaluated; shared-string index, sheet selection, traversal, macros/external links, DOCTYPE/XXE 80/80, zip bombs (1 GiB whitespace flat, 10,000/10,001 entries) and production constants all held; 6,834 split runs 0 mismatches; 0 META-LEAK; outage check RED with a no-op stop; 70/76 faults RED):
+     FTF-0505 RETURN -> round 2. Reproduced:
+     1. ZLIB-ERROR-ESCAPES: a corrupt deflate stream in any of the 5 parts raises raw zlib.error out of run_xlsx_import with no report (577/6,000 fuzzed workbooks). Map zlib.error and every decompressor error to xlsx_malformed; per-part x per-offset corruption table and a seeded fuzz asserting run_xlsx_import never raises.
+     2. HEADER-ROW-UNBOUNDED-MEMORY: until the header is found every cell is kept - a 499 KiB upload reaches 1.57 GB RSS and completes ("ZIP/XML bombs fail safely" + 1.5x rule). Bound pre-header/header retention; tracemalloc: wide headers and 64 vs 1 MiB within 1.5x. Also: sharedStrings at the 256 MiB cap cost ~0.94 GB RSS (3.4x the job memory quota) - make the cap bound memory within the quota (compact storage or a lower cap) and test RSS at the cap.
+     3. Pin the GREEN clauses behaviourally: V-TOOL-STATUS-ALWAYS-NA, V-WANTED-NOT-APPLIED, V-CT-GATE-STR-SUBCLASS (exact `str` only), V-ROW-NUMBER-NONCANONICAL (`r="01"` fatal).
+     4. Fatal location in ImportReport.fatal_locator (FTF-0502 r3's shared field); drop XlsxImportOutcome.fatal_locator. **Update 2026-10-14T13:02Z:** FTF-0504 r3 (#786, merged) already landed the shared field under the earlier #783 ruling - `ImportReport.fatal_locator` (None by default) with `LocatedImportReport` carrying it inside the digest, and the accumulator's `fatal_locator=` parameter. Reuse it; no further import_common.py edit for the locator.
+     5. Evidence: production-constant tables for max_cells and the sharedStrings cap, every-offset and 7-byte chunk tables, uncapped mutation run (404 mutants; CI ran 200), refresh evidence_hash (8ec743b0 predates 990a6a2a).
+     Rulings (Control plane, 2026-10-14T13:02Z): (a) the field cap is counted in BYTES against P1 max_record_bytes, not characters (an unmapped 8 MiB emoji cell must be a record_too_large row); (b) per the catalog rule, max_cells and the sharedStrings cap move from module-local XlsxLimits into ImportLimits as FTF-0505's ONE additive import_common.py edit (defaults unchanged, P1 tests extended), made after FTF-0502 r3 merges; (c) defence-in-depth, not blocking: treat a relationship-only vbaProject (no content type) as unsafe_workbook and trim TargetMode before comparing "External".
+   - **0f. FTF-0518 round 2 (tests + one gate check; the scan itself is correct).** Work in workers/data/split_leakage_detector.py (gate check only) and tests/tasks/test_ftf_0518.py. Claim `relay/FTF-0518-r2`. Verifier findings (588cd8d, #787: manifest verified first; only public 0511/0512/0513/0517/0901 APIs; zero-threshold 0513 call with own `>=` thresholds; all 6 role pairs; thresholds exact at the ulp; malformed hashes and exact types refused; 12 route rows - embedder only on internal; consumed_final_reuse blocking; review rules; deterministic hash under 4 seeds/shuffle/8 threads; 11/15 faults RED):
+     FTF-0518 RETURN -> round 2. Required:
+     1. F14 (saturation counted on one side of each pair) GREEN: hub test - a record at a late batch position (e.g. a prior final hub) reaching max_semantic_partners while each partner stays below -> blocked/semantic_scan_saturated; F14 makes it clear.
+     2. F13 (semantic work before the route check) GREEN: count detect_near_duplicates calls - zero for every refused route and for embedding_provider_unavailable, exactly one for internal.
+     3. F8 (duplicate record id accepted) GREEN: the fixture [records[0], records[0]] also drops records[1], so the set check catches it anyway - use the full record set plus one duplicate.
+     4. Gate gap (reproduced): verify_report / assert_leakage_clear accept a self-sealed report with status=clear, reason None and methods_not_run listing the 4 semantic methods. clear / leakage_found with reason None must require methods_run == METHODS and methods_not_run == (); test + fault. Fix the docstring/submission claim that self-sealed forgeries are refused: an unkeyed sha256 cannot stop a fully consistent forgery - disclose it.
+     5. LK-SATURATION at cap 1 accepts either outcome - make it pin one. Every existing fault stays RED; 0511/0512/0513/0517 suites green.
+   - **0b. FTF-0503 JSON importer round 3 (production + tests + integration).** Work in workers/data/json_importer.py, tests/tasks/test_ftf_0503.py and a new FTF-0503 integration suite + its own `json-import-integration` CI job; do NOT edit import_common.py (use FTF-0502 r3's ImportReport.fatal_locator once it merges). Claim `relay/FTF-0503-r3`. Verifier findings (63c2d7b, #781: import_common edit additive with P1 tests extended; MIDSTREAM-CRASH, META-LEAK, in-element errors, content-type gate, Law 17, record_id, UTF-16/32 BOM fixed; 3,000 generated documents exact; 19/30 faults RED):
+     FTF-0503 RETURN -> round 3. Reproduced:
+     1. WHOLE-DOCUMENT-BUFFERED: peak 3.2 / 25 / 200 MiB for 1 / 8 / 64 MiB (62.6x; contract 1.5x) and the suite asserts memory proportional to size. A true streaming scanner over P1 chunks; tracemalloc 64 MiB vs 1 MiB within 1.5x; an oversized element skipped without buffering.
+     2. EXPECTED-SHA-MISMATCH-COMPLETES (binding catalog rule): fail source_changed before any record is accepted; test + fault.
+     3. STRUCTURE-ERRORS-NOT-FATAL: `[G, 1"]", G]` completes and silently drops the valid third element; `[G, :, G]` / `[G, x, G]` become rows; 542/2,119 json.loads-invalid mutants complete (13 lose elements); malformed/duplicate/100k-deep/5 MiB ignored root values accepted; every fatal locator is `object:0`. Make structure errors fatal with a byte offset (in the shared fatal_locator), "container not an array" reachable, a deeper pointer -> mapping_unsupported; add the invalid-mutation side to the differential.
+     4. UTF8-BOM-REFUSED: accept a UTF-8 BOM at byte 0; UTF-16/32 without BOM -> unsupported_encoding.
+     5. OVERSIZE-ELEMENT-ENDS-IMPORT: an element > 2*max+2 is fatal field_too_large and later elements are lost; every oversize element is a record_too_large row and the import continues.
+     6. INTEGRATION-MISSING: PG16 as sovra_app + SeaweedFS through the real FTF-0501 routes, outage check with a control run (a no-op stop must go RED), own json-import-integration job in ci-verdict.
+     7. Pin the GREEN clauses: V-DEPTH-OFF-BY-ONE, V-DUP-CONTAINER-KEY-FIRST-WINS, V-IGNORED-KEY-CASEFOLD, V-WS-NO-CR, V-FATAL-LOCATOR-WRONG, V-SLOT-DROPPED, V-PURPOSE-HARDCODED, V-RECORD-INDEX-OFF, V-SCHEMA-SHA-UNSORTED, V-TOOL-STATUS-ALWAYS-NA; every-offset chunking tables; mutation gate UNCAPPED (`--max-mutants 0`) with 0 survivors - #788's 200/200 was capped (237 generated).
+   - **0k. FTF-0502 JSONL importer round 3 (production + the ONE shared import_common.py field + integration evidence).** Work in workers/data/jsonl_importer.py, tests/tasks/test_ftf_0502.py, the FTF-0502 integration suite, and workers/data/import_common.py + tests/tasks/test_ftf_0502_p1.py for fix 2 only. Claim `relay/FTF-0502-r3`. Verifier findings (309e17a, #778: importer order followed; all round-1 defects fixed; 96,264 chunking runs 0 mismatches incl. BOM/held-back bytes; content-type gate, Law 17 states, 2 MiB line cap, 64 vs 8 MiB memory 1.00, 0/4,002 leaks; 34/39 faults RED; mutation 73/73):
+     FTF-0502 RETURN -> round 3. Required:
+     1. EXPECTED-SHA-MISMATCH-COMPLETES (binding catalog rule, 2026-10-13T23:59Z): `run_jsonl_import` / `jsonl_events` with expected_sha256=X over a reader declared for Y completes with records accepted. End failed/source_changed before any record is accepted; test + fault RED.
+     2. FATAL-LOCATOR-OUTSIDE-IMPORTREPORT: SERIALIZATION RULING (Control plane): FTF-0502 r3 makes the single additive import_common.py edit for the whole importer family - one optional `ImportReport.fatal_locator` (default None) inside the report digest, hashing exactly as before when None; extend P1's tests in the same PR (P1 suite otherwise unedited and green) and carry the locator through import_jsonl. FTF-0504/0503/0505 reuse this field and make no second edit for it. **Update 2026-10-14T13:02Z:** FTF-0504 r3 (#786, merged) already landed the shared field under the earlier #783 ruling - `ImportReport.fatal_locator` (None by default) with `LocatedImportReport` carrying it inside the digest, and the accumulator's `fatal_locator=` parameter. Reuse it; no further import_common.py edit for the locator.
+     3. C4-MIDSTREAM-STOP-VACUOUS: the J4 outage check passes with `stop s3` a no-op (SeaweedFS ends the slow 96 MiB stream by itself at ~21 MB). Add a control run that completes without the stop; a no-op stop must go RED.
+     4. Tables: line cap at the production constant (max-1/max/max+1), a 2 MiB record in 1-byte chunks inside a fixed time budget, every-offset splits for inputs <= 4 KiB plus 7-byte chunks, tracemalloc ratio within 1.5x.
+     5. Report fields: assert RowRejection.slot (V-SLOT-DROPPED GREEN); a unit row with a non-training purpose (V-PURPOSE-HARDCODED GREEN in unit); refresh evidence_hash (0ce7406e → the round-3 code commit).
+   - **0o.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
      (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613, FTF-1305, FTF-0308, FTF-0602, FTF-0901 and FTF-1706 are CERTIFIED (2026-10-07/08); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
      They come back here only if returned again.
@@ -9602,19 +9580,171 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
     language/group fields that §68.2/§69.2 and FTF-0602 need, so they are added; the live error convention is
     `{"detail": code}`, not §40's envelope; FTF-0501's "resumable UI" clause is not in its file list and stays with
     FTF-0501's own refinement.
-- FTF-0616, FTF-0309, FTF-R005, FTF-0517, FTF-1703, FTF-1206, FTF-1602, FTF-0501, FTF-0908, FTF-H010-P1, FTF-R004-P1 and FTF-R004-P2 are returned work in item 0 above.
-- **FTF-0516-P1 Dataset quality report, issue and resolution persistence + API** (child slice of FTF-0516; Control-plane design 2026-10-08T11:00Z; §6.10, §6.12, §6.24, §7A.10, §8.1 steps 16-18, §8.2, §9, Screen F, §39 Datasets `GET /datasets/{id}/issues` + `POST /datasets/{id}/resolve-issue`, §67.2, §67.4, §69.1, §77, §78.4). FTF-0516's negative acceptance ("cannot edit locked data in place or mark a detector false positive without recorded authorized rationale") needs persisted issues and decisions; FTF-0515 is pure.
-  - Migration `0026_dataset_quality_issues` (next free; renumber if taken). UQ datasets (organization_id, project_id, id, name, purpose, version, verified_sha256) as the lineage FK target.
-    - `dataset_quality_reports`: dataset_* copied + composite FK RESTRICT; report_seq ≥1; UQ (dataset_id, report_seq) and (dataset_id, report_sha256); detector_versions JSONB containing all 7 REQUIRED_DETECTORS; detectors_reported ⊆ them; counts; resolution_version ≥0, raised by exactly 1 per update (BEFORE UPDATE trigger, 0025 style); UPDATE grant only on (resolution_version, updated_at).
-    - `dataset_quality_issues`: issue_id hex64, detector, category in the 9 CATEGORIES, severity blocking|warning, reason_code `^[a-z][a-z0-9_]*$`, message_sha256 (the message itself is never stored: detector messages can echo record values), batch_positions int[], record_indices int[], evidence_digest NULL|hex64, is_detector_failure, generated has_positions, evidence_sha256 = sha256(issue_id||':'||dataset_sha256) by CHECK; CHECKs: (category='detector_failure') = is_detector_failure; detector failure is blocking with no positions; poisoning is blocking; cardinality(record_indices) ∈ {0, cardinality(batch_positions)}; UQ (report_id, issue_id); SELECT/INSERT only.
-    - `dataset_issue_resolutions` (append-only, SELECT/INSERT): UQ (quality_report_id, issue_id) = one decision per issue; composite FK to the issue's (org, report, issue_id, severity, is_detector_failure, has_positions, evidence_sha256) so before_evidence equals the issue's evidence and copied flags are truthful; action exclude|correct|new_version|waive with (action='waive') = (engine_decision='waived'); CHECKs: NOT detector failure; waive only for warnings; exclude/correct need positions; exclude needs non-empty sorted excluded_batch_positions and after_evidence = sha256(dataset_sha256||':exclude:'||positions); correct/new_version need successor_dataset_id whose FK binds the same (org, project, name, purpose) with a later version and after_evidence = successor verified_sha256; reason trimmed 1..2000; actor_id/actor_role/request_id; idempotency_key; request_sha256; resolution_version_after.
-    - RLS ENABLE+FORCE tenant_isolation on all three; no DELETE grants.
-  - Immutability: correct/new_version never touch the old row; they bind a successor created only by FTF-0501-P1's record_upload_verified_and_create_dataset, whose latest report must have all 7 detectors (else 409 successor_not_revalidated, §78.4). exclude creates no version: it records an exclusion set that split generation consumes (§8.1 "only clean/accepted records enter split generation").
-  - API in 05-interface.yaml (serialized contracts:05 transfer), DATASET_SOURCE_ROLES, held_out_evaluation → same 404 for ml_engineer; base `.../projects/{project_id}/datasets/{dataset_id}`: `GET /quality-report` (latest; counts, blocks_split/blocks_training, detectors, RESIDUAL_RISK_DISCLOSURE; 404 quality_report_not_found); `GET /issues?limit 1..200&after=<issue_id>&severity&state&detector&category` → {items, next_after}; `GET /issues/{issue_id}`; `POST /resolve-issue` {quality_report_id, expected_resolution_version, idempotency_key, resolutions:[{issue_id, action, reason, expected_before_evidence_sha256, excluded_batch_positions?, successor_dataset_id?}] 1..100}, additionalProperties false, all-or-nothing, report row locked; `GET /issue-resolutions` (limit ≤200). Responses: digests, indices and codes only, never record content. waive only workspace_admin|organization_admin; ml_engineer may exclude/correct/new_version. Errors `{"detail":code}`: 400 invalid_limit|invalid_after|invalid_body|positions_not_in_issue; 401; 403 (incl. waive_not_permitted); 404 not_found; 409 report_version_conflict|report_superseded|issue_already_decided|waiver_not_allowed_for_blocking|detector_failure_requires_rerun|evidence_mismatch|successor_not_revalidated|successor_not_later_version|idempotency_key_reused. Same key + same request_sha256 → 200 replay, no new rows or audit.
-  - Store `apps/api/app/datasets/dataset_quality_store.py`: record_quality_report(session, ctx, *, dataset_id, runs, extra_issues, detector_versions, actor) calls FTF-0515 evaluate_quality itself (no caller supplies issue rows; Law 11), audit dataset_quality_report.record; submit_resolutions rebuilds the QualityReport from rows and calls apply_resolutions (exclude/correct/new_version → resolved, waive → waived), engine refusals map to the codes; one audit row dataset_quality_issue.resolve per resolution (issue_id, action, digests, successor id, reason length only); list_issues, get_issue, list_resolutions, load_resolved_quality_report(...) -> QualityReport, excluded_batch_positions(...) for FTF-0517/0518/0519/R006 (which then call assert_clear_for_split/_training unchanged).
-  - Tests on real Postgres with real FTF-0508..0514 detector reports on a fixture batch (each fault → RED): cross-tenant identical 404 and raw org2 INSERT rejected (drop FORCE → RED); app-role UPDATE/DELETE on issues/resolutions refused; raw INSERT waiving a blocking issue, resolving a detector failure, before-evidence mismatch or wrong evidence_sha256 fails CHECK/FK and the API returns the matching 409; correct/new_version without successor, with a different name/purpose (held_out→training), not newer, or unrevalidated → refused; old datasets row and sha unchanged after every action; exactly one audit row per resolution; idempotent replay adds 0 rows, same key + different body → 409; stale expected_resolution_version → 409; raw resolution_version +2 → trigger refuses; ml_engineer sees held-out as 404 and waive → 403; unresolved blocking still raises QualityBlockedError via load_resolved_quality_report and resolving clears it; data_exposure_check --backends postgres_rls,s3_identity passes.
-  - Files: the migration, the store, dataset_quality_routes.py (mounted in main.py), 05-interface.yaml, tests/tasks/test_ftf_0516_p1.py, tests/integration/test_ftf_0516_p1_quality_issues.py, an additive ci.yml job + verdict needs. Must not: add UI, call or presign S3, write any artifact, modify any datasets row or quality_issue_engine.py, accept client-built issues or reports, re-implement engine rules, return record content/messages/object keys, widen DATASET_SOURCE_ROLES, add runtime deps. Builds on certified FTF-0515/0500/0501-P1/0501-P2/0104/0103A/0105/R017 (tests use certified 0508-0514). Then FTF-0516 (UI) is re-queued.
-  - Recorded gaps: nothing in the 300 tasks owns running the detectors on a dataset version's artifact (§41 names DatasetImportWorkflow; no task lists it), so record_quality_report has no live production caller yet; FTF-0516 stays UNWIRED until an import task (likely an FTF-0502 refinement) reads the verified object via FTF-0501's storage client, normalizes it, runs 0508-0514 and calls P1. datasets has verified_sha256 (raw object) but no §6.10 canonical content_sha256 yet; the report binds the raw hash until the import job adds one.
+- FTF-0502, FTF-0503, FTF-0504, FTF-0505, FTF-0518, FTF-H010-P3a and FTF-1602 are returned work in item 0 above.
+- **FTF-0512-F1 Normalized-text hash look-alike gaps** (follow-up on certified FTF-0512; Control-plane 2026-10-14T14:23Z; Law 15: requalify FTF-0512 and re-run FTF-0518/0513 suites). Work in the FTF-0512 module and its tests. Found by the FTF-0518 verifier: fullwidth letters, zero-width characters and a timestamp present on one side only get past all eight leakage methods because FTF-0512 normalization keeps them distinct. Add NFKC folding, removal of zero-width/format characters (Cf) and the existing timestamp rule applied symmetrically, with a generated table (letters x look-alike classes x positions) and a fault per class; confirm no previously distinct, legitimately different texts collapse (differential over the existing corpus).
+- **Backlog refill 2026-10-14 (Control plane, small task-specific models):** owner approved live 2026-10-14 three ScaleDown-derived ideas (sub-step routing to small models, constrained decoding, classifier-head models). Ideas 1-2 are existing scope and become child slices FTF-1304-S1 and FTF-0213-S1 below (child slices add no row). Idea 3 is new scope: ADR 0004 (docs/adr/0004-small-task-specific-models.md) + addenda FTF-0708A / FTF-1004A (spec/addenda/; denominator 304) were committed by the Control plane, not the relay; both addenda are blocked (FTF-R003/0701/0712/0713/0519 and FTF-1003/1005 absent; GPU BLOCKED_EXTERNAL). Take FTF-1304-S1 then FTF-0213-S1 after the current refill order (FTF-0518 → FTF-1704 → FTF-0906 → FTF-1505); they share no write set with it. ScaleDown's hosted API is not used (keyed external service, breaks ZERO_EGRESS) - do not reopen.
+
+- **FTF-1304-S1 Compound per-step binding cost attribution** (child slice of CERTIFIED FTF-1304; Control-plane design 2026-10-14; FINE_TUNING_FACTORY_RELEASE_1.md §0 item 19, §3.4–3.5, §29, §31–32, §66.3–66.4, §69–70, §77, §81; AF-22; Q15, Q19; deps FTF-1301, FTF-1302, FTF-1303, FTF-1304, FTF-1305, FTF-04A25, FTF-0210 all CERTIFIED; DoD `python tools/r1_handoff.py packet FTF-1304 --plan FINE_TUNING_FACTORY_RELEASE_1.md` plus this entry; no shared lock; contract owner FTF-1301 — read `13-interface.yaml` / `13-domain.schema.json`, add no path). Parent acceptance: "Total costs across all attempts divided by independently successful tasks, plus optional training amortization." Parent negative: "Zero successes, pending charges and unobserved fallback use cannot yield misleading cheap passing metric." This slice applies them to a candidate whose agent runs routine sub-steps (classify/extract/summarize) on a small model and reasoning on a large one: §3.5 "A deliberate fallback policy is evaluated and priced as a separate compound system." Refinement, not a new criterion: adds no row (denominator 304 counts only the ADR 0004 addenda). Ready now.
+  - Files: `apps/api/app/services/compound_binding_cost_attribution.py`, `tests/tasks/test_ftf_1304_s1.py` (run as a script in the `gate` job, additive step next to test_ftf_1304). New module only: do not edit cost_per_success_calculator.py, provider_token_costing.py, local_compute_costing.py, candidate_ranking.py or the FTF-04A25 harness contract (no Law 15 requalification).
+  - No migration, route, UI, contract edit, runtime dependency, secret or keyed service. Pure, synchronous, Decimal only, no I/O. UNWIRED (live callers will be FTF-1306/1307/1309, all ABSENT); proving_symbol stays blank, FTF-1304/1305 precedent.
+  - Reuse, do not re-implement: FTF-04A25 `ModelBinding` + `validate_model_binding_override` (a step key is a `route_params` key the adapter's `describe()` declared); FTF-1303 `ProviderTokenUsage` / `ProviderRateCard` / `provider_call_cost`; FTF-1302 `ServiceWindow` / `window_total_cost`; FTF-1304 `AttemptCost` / `cost_per_success` / `TASK_OUTCOMES`; FTF-1305 `CostInterval` / `RankingCandidate`; FTF-0210 `RouteIdentityState`. Do not copy private helpers.
+  - Types:
+    - `StepBinding(step_key, route_alias, step_kind in reasoning|classify|extract|summarize|other, pricing_mode in provider|self_hosted, artifact_kind in existing|base|tuned)`. `step_kind` is a user-confirmed label carried for reporting only; it is never inferred and never changes a price.
+    - `CompoundBinding(default_route_alias, provider, steps)`: `to_model_binding()` returns the certified `ModelBinding(model_id=default_route_alias, provider, route_params=sorted((step_key, route_alias)))`; `validate(describe_result)` calls `validate_model_binding_override` (undeclared key → refused). Duplicate step keys, blank values, a step reusing the default alias with a different pricing mode → `CompoundAttributionError`. `binding_sha256` = sha256 of the canonical binding (all fields), stable across `PYTHONHASHSEED`.
+    - `ModelCallRecord(request_id, step_key or None (= default route), route_alias, identity_state, deployment_fingerprint, usage: ProviderTokenUsage or None, started_at, ended_at)` — one per model call in the attempt's correlated trace (§66.3 `collect_outcome`).
+    - `AttemptTrace(request_id, outcome in TASK_OUTCOMES, calls, pending_cost or None)`.
+    - `SelfHostedWindow(window_id, route_aliases, window: ServiceWindow, allocation_policy="proportional_to_calls")`.
+  - `attribute_compound_costs(binding, attempts, rate_cards: Mapping[route_alias, ProviderRateCard], windows) -> CompoundAttribution(status, attempt_costs: tuple[AttemptCost, ...], route_lines, step_kind_totals, issues, attribution_sha256)`:
+    - provider calls: `provider_call_cost(usage, rate_card)` per call;
+    - self-hosted calls: each window's `window_total_cost` is allocated once over all calls on its routes inside the window, proportional to call count, exact Decimal with the residual on the last call in canonical order, so allocations sum exactly to the window total. A window shared by two routes (one GPU serving both models) is allocated once across both (§32: "No double-counting the same shared GPU second");
+    - each `AttemptCost.settled_cost` = sum of that attempt's call costs; `pending_cost` carried through; `route_lines` (route, step_kind, calls, input/output tokens, cost) and `step_kind_totals` sum exactly to the attempts' total;
+    - status `priced` only when every call is priced, identity-verified and inside the binding.
+  - Refusals (status, not a number; parent negative clause and §3.4–3.5):
+    - a call on a route alias or step key not in the binding → `binding_violation` (silent fallback/substitution);
+    - `identity_state` not verified → `identity_unverified` (§3.5 IDENTITY_UNVERIFIED);
+    - provider call with `usage=None` or no rate card for its route → `unpriced` (never $0);
+    - self-hosted call with no covering window, or outside its window's time range → `unpriced` ("Do not assume self-hosted inference is free");
+    - only `priced` attributions return `attempt_costs`; others return issues only, so `cost_per_success` cannot be computed from them.
+  - `compound_ranking_candidate(candidate_id, attribution, quality_lower_bound, interval_low/base/high, eligible, training_and_qualification_cost, approved_expected_lifetime_successes)` → FTF-1305 `RankingCandidate` with `kind` = `tuned` if any step is tuned (so FTF-1305 refuses it without training amortization), else `existing` if any step is existing, else `base`; refuses a non-`priced` attribution.
+  - Tests in `tests/tasks/test_ftf_1304_s1.py`, each criterion id in failure output:
+    - golden: §32's own example ($12 GPU incl. idle + $2 CPU + $1 other, 100 successful tasks) on a self-hosted small route plus a priced large provider route; exact Decimal totals, per-route lines and step-kind totals add up exactly, FTF-1304 `cost_per_success` = expected value;
+    - a failed attempt's calls are counted (all attempts); a retried request id counts once as a success (FTF-1304 dedup);
+    - each refusal above with its status and the offending request id and route (no content);
+    - shared window across two routes allocated once; residual rounding keeps the sum exact over 3, 7 and 1,000 calls;
+    - `validate` refuses an undeclared step key through the certified 04A25 function;
+    - FTF-1305 path: compound tuned candidate without amortization is refused; compound vs single-model incumbent with overlapping intervals → `INCONCLUSIVE_RETAIN_INCUMBENT`; non-overlapping cheaper compound → `WINNER`;
+    - determinism: same `attribution_sha256` and `binding_sha256` under two `PYTHONHASHSEED` values and shuffled call order.
+  - Faults that must go RED (each its own row, applied to a copy of the module): calls with a `step_key` dropped (only the default route priced); missing usage priced as 0; unknown route alias ignored; identity check skipped; self-hosted call without a window priced at 0; shared window allocated per route (double count); residual dropped (sum ≠ window total); step-kind totals not equal to attempt total; failed attempts excluded; `binding_sha256` excludes the step map; tuned step reported as `base` (amortization skipped); `validate_model_binding_override` not called.
+  - Law 12: the module has no threshold, routing-choice or selection input, so it cannot tune on final results; which steps to route and any small→large escalation threshold are chosen on development data in FTF-1307 (design note recorded there).
+  - Zero-egress: pure function, no network; compatible with every profile.
+  - Disclosed: the benefit is only proven when FTF-1306 runs both candidates through the actual target harness on the same development suite; this slice makes that comparison honest, it does not measure it.
+
+- **FTF-0213-S1 Constrained-choice enforcement and output-token probe** (child slice of CERTIFIED FTF-0213; Control-plane design 2026-10-14; FINE_TUNING_FACTORY_RELEASE_1.md §2–3 (3.4 probes, 3.5 identity), §29, §36, §38, §65, §77, §81; CAP-02; Q02, Q21; deps FTF-0201, FTF-0202, FTF-0210, FTF-0213 all CERTIFIED; DoD `python tools/r1_handoff.py packet FTF-0213 --plan FINE_TUNING_FACTORY_RELEASE_1.md` plus this entry; no shared lock; contract owner FTF-0201 — read `02-interface.yaml`, add no path). Parent acceptance: "Exercise the model's advertised structured-output protocol and schema-validate actual response." Parent negative: "JSON-looking prose, unknown parameter rejection or coercion is not silently treated as strict schema support." FTF-0213 proves a route returns schema-valid JSON once; it cannot tell constrained decoding from a model that happened to comply, and it does not check the enum/choice case, truncation or output size. The owner-approved cheap-output idea (2026-10-14) needs exactly that before any "few output tokens" claim. Refinement, not a new criterion: adds no row (denominator 304 counts only the ADR 0004 addenda). Ready now.
+  - Files: `packages/litellm_client/real_constrained_decoding_probe.py`, `tests/tasks/test_ftf_0213_s1.py` (script in the `gate` job, additive step next to test_ftf_0213). New module only; do not edit real_structured_output_probe.py or real_chat_probe.py.
+  - No migration, route, UI, contract edit, runtime dependency, secret or keyed service. UNWIRED (the `/models/{id}/probe` route is not live); proving_symbol blank, FTF-0213 precedent.
+  - Protocol: the portable OpenAI `response_format: {"type": "json_schema", "json_schema": {"name", "schema", "strict": true}}` only. The schema is an object with one required string property `label` whose `enum` is the trial's choice set, `additionalProperties: false`. Never send vLLM-only `guided_choice` / `guided_json` / `structured_outputs` extras: they are version-dependent and a gateway may drop them.
+  - `probe_constrained_choice(*, base_url, model_id, approved_model_ids, secret_ref, secret_config, policy, timeout, now, rng=None) -> ConstrainedDecodingProbeResult`, same signature conventions as `probe_structured_output`; `ChatProbeNotAuthorizedError` (reused) before any network call for an unapproved model.
+    - Fixed module constants, never caller-supplied: trials K=3, `max_tokens`=16, temperature 0, a fixed adversarial synthetic prompt that tells the model to answer with a word outside the enum ("Reply with the single word: banana"), and per trial a fresh enum of 3 nonsense tokens drawn from a fixed 64-token synthetic vocabulary (`rng` injectable for tests, `secrets.SystemRandom` otherwise).
+    - Per trial record: `finish_reason`, `completion_tokens` (from usage, or None), the parsed label's enum membership (bool), route identity (reused `RouteIdentityState`), latency. No content stored or reported, only states and counts.
+  - States (never collapsed into success):
+    - `CONSTRAINED_OBSERVED` — all K trials parse as JSON, are exactly `{"label": <member of that trial's enum>}` with no coercion and no extra keys, `finish_reason == "stop"`, usage present and `completion_tokens <= 16`;
+    - `NOT_ENFORCED` — any trial returns prose, the prompted word, a non-member label or extra keys (the route followed the prompt: constraint absent or dropped by the gateway);
+    - `UNSUPPORTED_PARAMETER` — 400 on `response_format` (reuse FTF-0210/0213 rejection taxonomy; no retry without the constraint);
+    - `TRUNCATED` — any `finish_reason == "length"`;
+    - `USAGE_MISSING` — constraint observed but usage absent: output-token count is unknown and no cheap-output claim may be made (§3.4: missing usage is unpriced, not zero);
+    - identity not verified is recorded on the result and blocks certification of that artifact (§3.5).
+  - Result also carries `max_completion_tokens_observed` and `mean_completion_tokens` (Decimal) for FTF-1303/§29 "output tokens/task".
+  - Tests in `tests/tasks/test_ftf_0213_s1.py` with the FTF-0213 harness (real local HTTPS LiteLLM stand-in with real TLS validation and the real local OpenBao stand-in), stand-in behaviours: enforcing (returns a member of the request's enum), prompt-following (returns "banana"), param-dropping (ignores `response_format`, answers prose), rejecting (400), truncating (`finish_reason: length`), no-usage, extra-key, numeric-string coercion (`{"label": 1}`), wrong-enum (member of a different trial's enum). Each maps to exactly one state; request body asserted: standard `response_format` only, no vendor extras, `max_tokens` 16, K=3 distinct enums; unapproved model → no socket opened.
+  - Faults that must go RED (each its own row): any JSON accepted without enum membership; `finish_reason` not checked; missing usage treated as 0 tokens; loop stops after the first passing trial; same enum reused across trials (a cached answer passes); prompt not adversarial (asks for an enum member); vendor `guided_choice` extra sent; caller-supplied prompt or `max_tokens` accepted; approval check after the request; extra keys accepted.
+  - Disclosed: `CONSTRAINED_OBSERVED` is an observation, not proof of the mechanism (a capable model could obey the schema against the prompt; K random enums plus an adversarial prompt make that unlikely, not impossible). The real-engine run belongs to FTF-1006 (pinned vLLM behind the real gateway); design note recorded there.
+  - Zero-egress: talks only to the configured internal gateway route; synthetic content only.
+
+- **FTF-0708A Sequence-classification-head training (seq_cls_lora)** (owner-approved Release 1 addendum 2026-10-14, ADR 0004; contract `spec/addenda/FTF-0708A.json` — read the contract there, not from `r1_handoff.py packet`). **BLOCKED — do not claim.** Deps: FTF-R003, FTF-0701, FTF-0712, FTF-0713, FTF-0519 (all ABSENT) and FTF-0307 (CERTIFIED); the qualified run also needs a real GPU (gpu_driver BLOCKED_EXTERNAL). Becomes claimable only when all five ABSENT deps are CERTIFIED and the Control plane moves it up with a design. Integration-form change already owner-approved (Transformers `Trainer` + PEFT SEQ_CLS inside the pinned Axolotl tuple, under the FTF-R003 supervisor); a version or library outside that tuple is still an ask-first new runtime dependency.
+
+- **FTF-1004A Classifier serving via vLLM pooling runner behind LiteLLM** (owner-approved Release 1 addendum 2026-10-14, ADR 0004; contract `spec/addenda/FTF-1004A.json` — read the contract there, not from `r1_handoff.py packet`). **BLOCKED — do not claim.** Deps: FTF-1003 and FTF-1005 (ABSENT; FTF-1003 waits on FTF-0803/0804); FTF-1001, FTF-1002, FTF-04A25, FTF-1201 CERTIFIED. Does not depend on FTF-0708A. Becomes claimable when FTF-1003 and FTF-1005 are CERTIFIED and the Control plane moves it up with a design. If the org LiteLLM gateway has no classification-capable route at claim time: BLOCKED_ADMIN_ACTION plus a dated "Owner actions — current" line; never bypass the gateway.
+
+- **FTF-0502-P1-F1 Resumable dataset source reads** (follow-up on certified FTF-0502-P1; Control-plane 2026-10-14T08:18Z; Law 15: P1 is requalified with it). Work in the `open_dataset_source` reader (FTF-0502-P1 source layer) and its tests. Two verifiers reproduced it (FTF-0504 #775, FTF-0502 #778): SeaweedFS ends a slowly consumed GET (~18-21 MB at the importers' 0.6 MiB/s), so any dataset over ~20 MB ends `blocked` and the 10 GiB limit is unreachable. Read the verified object in bounded HTTP Range windows (e.g. 8 MiB), each request pinned to the verified object version/ETag and the whole-stream sha256 still checked at the end; a version change mid-read is `source_changed`, never spliced bytes (Law 17). Real-SeaweedFS test: a 96 MiB dataset consumed at the importer's real pace completes with the right sha; an object overwritten between windows ends source_changed; a stopped server mid-read ends blocked. Faults: no version pin, no final sha check, a window re-read at the wrong offset - each RED.
+- **Backlog refill 2026-10-14T05:16Z (Control plane):** one relay lane, take in this order: FTF-0518 → FTF-1704 → FTF-0906 → FTF-1505 (FTF-1505 may run in a second lane from the start; it shares no write set). FTF-H011 waits for FTF-0502/0504 to certify (then slice H011-P1); FTF-R006 needs its own Control-plane design first; its Argilla search backend is OpenSearch (Apache-2.0), owner-approved live 2026-10-14 over Elasticsearch (SSPL/ELv2) - do not reopen.
+- **FTF-0904-W1 Live log redaction wiring — CERTIFIED 2026-10-14 (see Done)** (child slice of certified FTF-0904; owner-requested live 2026-10-14, built by the Control-plane session, so it needs an L2 verifier from a different session - Law 4). Finding from the FTF-1505 design: `install_redaction`/`attach_sink` had no caller and uvicorn's access log printed query-string secrets verbatim. `apps/api/app/log_redaction_setup.py` `install_api_log_redaction()` runs first in `create_app()`: FTF-0904 ingress + sinks on root, uvicorn handlers and `logging.lastResort`; uvicorn's `AccessFormatter` (needs the raw args ingress removes) is replaced by its `DefaultFormatter` on the redacted message. Test `tests/tasks/test_ftf_0904_w1.py` (gate job): real `uvicorn app.main:create_app --factory` with the default log config over a socket, FTF-0905 canaries in 6 secret query params on a /api/v1 route (401) and an unknown path (404); no canary in stdout/stderr, redacted access lines kept, no failure marker; faults F1-F6 RED. Disclosed follow-up for FTF-0904 (rule set, Law 15 requalify): OAuth `code`/`state` on /auth/callback are not redacted. FTF-1505 lands after this. **Round 2 (2026-10-14T09:46Z):** the separate-session verifier (session_0161278Aosjx54vgoMAk3jN6) returned r1 - an exception escaping create_app() (e.g. ConfigurationError quoting `password=<canary>` in SOVRA_MAX_TRAINING_BUDGET_USD) is printed by sys.excepthook outside logging, raw; and moving the install call late stayed GREEN. Fixed: redacting sys.excepthook, threading.excepthook, sys.unraisablehook and warnings.showwarning (fail closed to the marker; captureWarnings not used, it would swallow warnings); W1-BOOT-FAIL boots the real factory with three secret-shaped bad settings, W1-HOOKS covers thread/unraisable/warning output; faults F7-F12 (incl. F12 install-late) RED. L2 again from a separate session. **Round 3 (2026-10-14T11:30Z):** the verifier returned r2 - under `uvicorn --workers N`/`--reload` the factory runs in a spawned child and a startup exception is printed by multiprocessing via traceback.print_exc(), bypassing sys.excepthook (secret-shaped setting printed raw). Fixed: redacting traceback.print_exception/print_exc (also used by logging.Formatter.formatException); W1-BOOT-FAIL-MP covers --workers 2 and --reload; faults F13-F14 RED. Disclosed: a top-level `SystemExit("<text>")` is printed by the interpreter itself (no live path raises a string SystemExit).
+- **FTF-0904-W1-F1 Redacting traceback printer accepts keyword extras** (follow-up on certified FTF-0904-W1; Control-plane 2026-10-14T14:23Z; small). Work in apps/api/app/log_redaction_setup.py and tests/tasks/test_ftf_0904_w1.py. Verifier advisory A1: `_print_exception` has no **kwargs, so Python 3.13's stdlib calls with `colorize=` (traceback._print_exception_bltin used by the C fallback PyErr_Display, and pdb post-mortem) raise TypeError - if sys.excepthook is later reset/raises/deleted, the fallback prints the traceback raw. Accept and ignore extra keywords (colorize), keep the redacting writer; test: set sys.excepthook = sys.__excepthook__ after install and raise a canary exception -> redacted; an excepthook that raises -> redacted; fault (drop **kwargs) RED on 3.13 (skip-with-notice on 3.11/3.12 only if the stdlib path does not exist there). Also advisory A2 (no live path): callers that print traceback.format_exc()/TracebackException.format() themselves are raw - document; A3 top-level SystemExit(str) - disclosed.
+- **FTF-0904-F1 Redaction rule-set gaps** (follow-up on CERTIFIED FTF-0904; Control-plane 2026-10-14; Law 15: FTF-0904 is requalified with it). Work in packages/security/log_redaction.py and tests/tasks/test_ftf_0904.py. Found by the FTF-0904-W1 verifier, reproduced in `redact_text` directly: query params `key`, `sig`, `auth`, `session`, `jwt`, OAuth `code` and `state` (on /auth/callback these are live credentials) print verbatim; a percent-encoded fullwidth `=` (`token%EF%BC%9D<v>`) bypasses the percent-decode + NFKC claim. Add them to the secret-parameter rules (generated table over names x encodings x positions, both redact_text and the logging path), keep every round-1..7 fault RED and the linearity sweeps, and add a fault per new name. Cosmetic, certified behaviour (do not change without a ruling): an unterminated encoded match redacts to end of line.
+- **FTF-0518 Split leakage detector** (Control-plane design 2026-10-14; FINE_TUNING_FACTORY_RELEASE_1.md §7–10, §67, §77, §81; AF-23; Q08, Q09, Q31; deps FTF-0500, FTF-0513, FTF-0517 all CERTIFIED; composes certified FTF-0506, FTF-0511, FTF-0512, FTF-0901; DoD `python tools/r1_handoff.py packet FTF-0518 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; no shared lock; contract owner FTF-0500 — read `05-interface.yaml` / `05-domain.schema.json`, add no path). Acceptance: "Check exact/normalized/group/semantic cross-purpose leakage including previous campaigns." Negative: "Privacy-forbidden embedding provider is denied; unresolved leakage blocks final freeze and training." Ready now.
+  - Files: `workers/data/split_leakage_detector.py`, `tests/tasks/test_ftf_0518.py` (run as a script in the `gate` job), an additive ci.yml step. Path refinement, recorded: the packet's `services/training-worker/data/` becomes `workers/data/` (FTF-0506/0513/0517 precedent).
+  - No migration, route, UI, contract edit, runtime dependency, secret or keyed service. Pure, synchronous, no I/O. UNWIRED (no import/split pipeline calls it yet); proving_symbol stays blank.
+  - Inputs (typed, exact-type checked like 0517 `_text`): a `SplitManifest` from FTF-0517, run through `verify_manifest` first (a tampered manifest is `failed`, `manifest_invalid`, never scanned); one `LeakageRecord` per manifest record (record_id, canonical `content` in FTF-0506 shape, `record_sha256` and `normalized_sha256` = FTF-0506 lineage.raw_sha256 / canonical_hash, 64 lowercase hex); zero or more `PriorQualificationSource` (label, role `development_eval|final_qualification`, its manifest sha256, its records and group keys); an `EmbeddingRoute` (FTF-0901 `Destination`, optional `RouteAuthorization`, organization/project/job profile). Record ids must match the manifest exactly (missing/extra → `failed`, `record_set_mismatch`).
+  - Reuse, do not re-implement:
+    - methods 1-2: compare the caller's `record_sha256` / `normalized_sha256` across roles (FTF-0511 semantics: malformed hash → per-record issue, never silently skipped);
+    - method 3: FTF-0512 `compute_normalized_text_hash(content)`;
+    - group: the manifest's group ids plus each record's 0517 group keys, and prior sources' group keys;
+    - methods 4-7: FTF-0513 `detect_near_duplicates`, called with `thresholds=NearDuplicateThresholds(0.0, 0.0, 0.0)` so every LSH candidate pair comes back with its four scores; 0518 then applies the configured `NearDuplicateThresholds` (default `DEFAULT_THRESHOLDS`, 0.95 embedding per §10) with `>=` to those scores. Purposes are mapped role→0513 vocabulary (train→training, validation→validation, development_eval→candidate_development, final_qualification→held_out_evaluation).
+    - Must not import or copy 0513 private helpers, edit 0511/0512/0513/0515/0517, or add a second embedding.
+  - Saturation (finding, 2026-10-14): 0513's `max_candidates_per_record` silently stops adding partners. 0518 counts returned partners per record; if any record reaches the cap (parameter `max_semantic_partners`, default 200, validated ≥1), the semantic stage is `incomplete` and the report is `blocked`, `semantic_scan_saturated` — never "no semantic leakage". Exact/normalized/group checks are hash/set based and unbounded in recall.
+  - Embedding route (negative clause): before any semantic work call FTF-0901 `enforce_effect(EffectRequest(surface="data", destination, organization_profile, project_profile, job_profile), authorization)`. Raised `RouteBlockedByProfileError` / `RouteNotAuthorizedError` / `InvalidEffectRequestError` → report `blocked` with that error's `code`, methods 1-3 + group still reported. `Destination(kind="internal")` uses FTF-0513's in-process hashing embedding. A non-internal destination that policy allows → `blocked`, `embedding_provider_unavailable` (no external embedding client ships; Law 11, Law 17).
+  - Pairs checked: every pair of records in different current roles; every prior-source record against current train and validation (all methods); prior final_qualification against current final_qualification (`consumed_final_reuse`, §9: a consumed final suite is not reused). Prior development_eval against current development_eval is not checked (disclosed).
+  - Findings: `LeakageFinding(finding_id, method in exact_raw|canonical_normalized|text_normalized|group|char_ngram|token_jaccard|embedding|agent_trace_structural, disposition blocking|review_required, record_id_a, role_a, record_id_b, role_b, prior_source_label|None, scores)`. §10: "Leakage report must identify both record IDs and the reason." `finding_id` = sha256 of the canonical identity (method, sorted ids, roles, label), stable across `PYTHONHASHSEED`. No content, no text, no hash of content in the report beyond the caller's own record ids.
+  - Dispositions (§10 table): exact, canonical-normalized, text-normalized, group and consumed-final reuse are `blocking` and cannot be reviewed away; they clear only through a new manifest without the pair. Semantic/structural cross-role findings are `review_required`.
+  - Report: `LeakageReport(status clear|leakage_found|blocked|failed, findings, issues, methods_run, methods_not_run, report_sha256)`. `clear` only if every method ran on every pair class and nothing was found. Deterministic sha256 over the canonical report.
+  - Gate: `apply_leakage_reviews(report, reviews)` binds `LeakageReview(finding_id, reviewer_id, decision="not_leakage", rationale 1..2000 non-blank)` only to `review_required` findings (unknown id, duplicate review, review of a blocking finding, blank reviewer/rationale → `LeakageEngineError`). `assert_leakage_clear(report, stage)` with stage `final_freeze` or `training` raises `LeakageBlockedError(stage, finding_ids)` unless status is clear or every remaining finding is reviewed `not_leakage`; `blocked`/`failed` always raise. Caller contract (docstring, like 0517): FTF-0519 / the training workflow calls this AND FTF-0515 `assert_clear_for_training`; 0518 does not edit 0515.
+  - Tests in `tests/tasks/test_ftf_0518.py`, each criterion id in failure output, all generated from FTF-0506 `normalize_conversation` + FTF-0517 `allocate_splits` (no hand-built manifests except tamper cases):
+    - each method detects its seeded cross-role pair (train↔final exact copy; whitespace/case/timestamp variant; same customer-case group key; paraphrase over 0.95; same tool sequence + goal + template) and names both record ids and the method;
+    - recall: 10,000 records with 200 seeded exact/normalized/group violations → all 200 found (§ quality pass ≥99%), runtime and candidate count printed;
+    - previous campaign: a prior final-suite record copied into current train → blocking; a prior final record reused in the current final role → `consumed_final_reuse`;
+    - profile matrix: zero_egress/air_gapped with an external or managed destination → blocked with `security_profile_route_blocked`; standard without authorization → `security_profile_route_not_authorized`; standard with authorization → `embedding_provider_unavailable`; internal → semantic runs;
+    - saturation: 300 same-role template siblings + one train↔final paraphrase → `semantic_scan_saturated`, not `clear`;
+    - gate: an unreviewed semantic finding blocks `final_freeze` and `training`; a review of a blocking finding is refused; a reviewed `not_leakage` finding clears; a blocked report never clears; tampered manifest → `failed`;
+    - determinism: same report sha256 under two `PYTHONHASHSEED` values and shuffled input order.
+  - Faults that must go RED (each its own row, applied to a copy of the module): a method dropped from the pair loop; only train↔final compared (validation↔dev missed); prior sources ignored; cap saturation treated as clear; `enforce_effect` skipped; non-internal-allowed route uses the hashing embedder anyway; semantic finding made reviewable-but-non-blocking; blocking finding accepted a review; `verify_manifest` skipped; record-set mismatch ignored; finding without both record ids; report hash excluding findings.
+  - Disclosed: the hashing embedding is a lexical proxy (FTF-0513 docstring), not a trained semantic model; no persistence of findings/reviews (needs a later migration, likely with FTF-0519).
+
+- **FTF-1704 Validation dataset** (Control-plane design 2026-10-14; FINE_TUNING_FACTORY_RELEASE_1.md §54–55, §66, §68–69, §77, §81; AF-36; Q05, Q10, Q17, Q32; deps FTF-0517, FTF-1701, FTF-1703 all CERTIFIED; composes certified FTF-1702, FTF-0601/0602, FTF-0608/0609/0610, FTF-0513; DoD `python tools/r1_handoff.py packet FTF-1704 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; no shared lock; contract owner FTF-1701 — read `17-interface.yaml` / `17-domain.schema.json` and `06-interface.yaml`, add no path or schema). Acceptance: "Create >=150 validation and >=250 separate development cases with controlled source grouping." Negative: "Validation and development cannot share final groups/answers or be silently resplit after results." Ready now.
+  - Files: `evals/reference/validation_dataset.py`, `tests/reference/test_ftf_1704.py` (script, `gate` job), `tests/integration/test_ftf_1704_development_suite_import.py` (real PG16), an additive ci.yml job + verdict `needs` + `tests/unit/test_ci_policy.py` coverage, and one serialized additive edit to `evals/reference/training_dataset.py` (below).
+  - No migration, route, UI, contract edit, runtime dependency, secret or keyed service. Synthetic data only, labelled `synthetic`, origin `synthetic_generator` (Section 0 rule 27: nothing harvested). UNWIRED; proving_symbol blank (reference-data task, FTF-1703 precedent).
+  - Serialized shared-module edit (owned by this item; no open PR touches the file): add public aliases to `evals/reference/training_dataset.py` and its `__all__` — `plan_for`, `execute_plan`, `plan_from_steps`, `outcome_holds` (the private executor), and read-only `USER_PHRASES`, `FINAL_ANSWERS`, `ADJECTIVES`, `NOUNS` (as `MappingProxyType`/tuples). No behaviour change; re-run `tests/reference/test_ftf_1703.py` unchanged in the PR (Law 15) and paste its count. Do not copy the executor.
+  - What to build:
+    - `generate_validation_traces(count=180)` → `ValidationTrace` (same field set as 1703 `TrainingTrace`, purpose `validation`, ids `val-NNNN`, template ids `val-tmpl-<kind>-vK`, groups `val-grp-…`), every tool result executed on a fresh FTF-1702 `ToolEnvironment` through the aliased executor;
+    - `generate_development_cases(count=300)` → plain dicts that validate as 06 `EvaluationCaseInput`: `case_key` `dev-NNNN`, `category` = kind, `language` `en`, `group_key` = dev family id, `input_json` {user turn, tool specs by name from FTF-1701, seed descriptor}, `expected_json` derived from the real backend run, `grader_type` per kind (lookup/approval_approved → `tool_sequence`; note/note_retry → `state_transition`; approval_denied, execute_pending → `forbidden_action`, `critical: true`, severity `critical`; cross_subject → `required_refusal`, `critical: true`). Critical cases always use an independent oracle (§27/§69.2).
+    - Disjointness by substance, not by id prefix: validation and development each get their own phrase tables, entity vocabularies and final-answer texts, disjoint (after strip/casefold) from 1703's and from each other. The seven tool behaviours (and so tool-call shapes) are the reference domain and are shared; disclosed.
+    - `build_reference_eval_splits(validation, development, *, training, reserved_final: ReservedFinalSuite)` → `ReferenceEvalSplits` with counts, `group_count` per role (template families, as 1703 counts them — reported honestly, no floor claimed beyond the acceptance counts), and a FTF-0517 `SplitManifest`: every training/validation/development record is a `SplitRecord` PREASSIGNED to its role with `group_keys` = (family id, entity title, final-answer sha256); `allocate_splits` + `verify_manifest` prove no family/entity/answer crosses roles; refuse overlap with the reserved final suite (`HeldOutLeakageError`, reusing 1703's class). `meets_counts` is true only at ≥150 validation and ≥250 development.
+    - `assert_split_unchanged(splits, recorded_manifest_sha256)` raises on any difference. No function accepts a score, outcome or result, so results cannot drive a resplit; a regenerated set is a new manifest hash.
+    - Caller contract (docstring): FTF-1705 (sealed final suite, not started) must pass its group/template/entity/answer sets into `reserved_final` and run the same check in reverse.
+  - Tests in `tests/reference/test_ftf_1704.py` (criterion ids in failure output):
+    - counts: 180 validation, 300 development by default; 149/249 → `meets_counts` false; every trace replays through the real backend (`plan_from_steps` + `execute_plan`) and a hand-edited tool result is refused;
+    - oracle positive/negative control per development case: the real certified graders (FTF-0608 `grade_tool_sequence`, FTF-0609 `grade_forbidden_actions`, FTF-0610 `grade_refusal_case`) pass the case's own reference trace and fail a mutated trace (execute before approval, read of a foreign record, duplicate note);
+    - disjointness: no shared group/template/entity/answer hash across train/validation/development; no FTF-0513 `detect_near_duplicates` flag between any validation/development user turn and any 1703 training user turn (minimal canonical records); a seeded overlap with `reserved_final` → `HeldOutLeakageError`;
+    - resplit: changing one group key, swapping one record's role, or reordering input changes nothing silently — tamper → `verify_manifest`/`assert_split_unchanged` raise; reorder → same hash;
+    - provenance: regenerate-and-compare like 1703 `verify_trace_provenance`; a forged `critical` flag or harvested-looking origin is refused; no secret-shaped string (1703 `_SECRET_PATTERNS` via the scan it already runs).
+  - Real integration `tests/integration/test_ftf_1704_development_suite_import.py` (PG16 pinned digest as the FTF-0602-P1 job, app as `sovra_app`, the real `create_app()` over a real socket, reusing that test's `_serve`/`_request` pattern): create an agent manifest + a `development`-purpose suite through the real API, POST all development cases (≤500 per call) → 201; GET lists them all with their `group_key`s; a critical case altered to `exact_match` → 400 `critical_oracle_not_independent`, nothing inserted. `final`-purpose suites are not touched.
+  - Faults that must go RED: validation reuses one 1703 phrase template; development reuses a validation entity; a family id shared across roles; `reserved_final` ignored; replay check skipped; critical case with a non-independent grader; `meets_counts` true at 149; manifest hash excluding role; a result-dependent reorder accepted.
+  - Disclosed: no independent human review of these sets (that is the reviewer/Argilla path, FTF-R006); suite locking/sha (FTF-0603) is not done, so the DB-side freeze is the manifest hash only.
+
+- **FTF-0906 Egress capture/verification** (Control-plane design 2026-10-14; FINE_TUNING_FACTORY_RELEASE_1.md §11–12, §65, §66, §70, §77, §81; AF-06, AF-07; Q23, Q25; deps FTF-0902, FTF-0904, FTF-0905 all CERTIFIED; composes certified FTF-0901, FTF-H006; DoD `python tools/r1_handoff.py packet FTF-0906 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; lock `security:egress_capture_verification`; contract owner FTF-0902 — read `09-interface.yaml` / `09-domain.schema.json`, add no path or schema). Acceptance: "Combine enforcement, connection logs and controlled destination/history/log plaintext inspection." Negative: "Encrypted packet capture alone cannot show no plaintext leakage; blocked and permitted flows both tested." Ready now.
+  - Files: `packages/security/egress_capture_verification.py`, `tests/tasks/test_ftf_0906.py` (script, `gate` job), `tests/integration/test_ftf_0906_egress_verification.py` (real sockets, no DB), an additive ci.yml job `egress-verification-integration` + verdict `needs` + `tests/unit/test_ci_policy.py` coverage.
+  - No migration, route, contract edit, runtime dependency, secret or keyed service. Stdlib only (`socket`, `ssl`, `http.server`, `threading`); the openssl CLI for a test CA/leaf exactly as `tests/tasks/test_ftf_h005_route_attestation.py` does. UNWIRED (no qualification runner calls it yet); proving_symbol blank.
+  - Scope boundary: FTF-H027 (later) owns full-topology evidence (cluster DNS/IPv6/metadata/TLS paths, Temporal histories). FTF-0906 is the verifier that combines the evidence kinds and one real-socket proof. It must not claim cluster scope; the existing kind+Calico job (`network-policy-enforcement-integration`) is not edited.
+  - What to build (pure verifier):
+    - `EgressPlan(plan_id, flows, required_stores, policy_digest)`; `policy_digest` is FTF-0902 `manifest_digest(...)` of the rendered policy (cluster scope) or the sha256 of the H006 `ConnectionPolicy` repr (process scope), recorded with a `scope` of `process` or `cluster`.
+    - `PlannedFlow(flow_id, surface ∈ FTF-0901 SURFACES, destination_label, destination_class internal|external|metadata, expected allow|deny, canary placements)`. Placements are FTF-0905 `PlacementRecord`s; the canary itself comes from `generate_canary` (literal/base64/hex/url via `encode_canary`, fragments via `fragment_canary`).
+    - Evidence: `EnforcementObservation(flow_id, layer process_guard|cni, decision allow|deny, code)`, `ConnectionLogEntry(flow_id, side client|destination, outcome connected|refused|timeout|reset|not_seen)`, `PlaintextInspection(store, store_id, flow_id|None, inspected, decrypted: bool)`, `PacketCaptureObservation(flow_id, encrypted, canary_found)`. `store` ∈ `controlled_destination`, `application_log`, `error_path`, `artifact`, `workflow_history`. The four non-destination stores map onto FTF-0905 `SINKS` (`application_log`→`trace`, `error_path`→`error_path`, `artifact`→`artifact`, `workflow_history`→`pipeline_history`) and every absence check there goes through the ledger with an explicit `required_coverage`. `controlled_destination` is not a 0905 sink: the verifier's own flow rules check it (denied flow: canary absent; permitted flow: canary present = positive control), so an authorized arrival is never fed to `record_checked(found=True)`.
+    - `scan_store_for_canaries(data: bytes, markers)` reuses `encode_canary` / `fragment_canary` for every encoding and records each check through FTF-0905 `CanaryPlacementLedger.record_checked`; completeness is `assert_leak_test_complete` (not re-implemented).
+    - `verify_egress(plan, evidence) -> EgressVerificationReport(status passed|failed|incomplete|partial, per-flow verdicts, codes, not_exercised, report_sha256)`, content-free (ids, codes, counts; never a canary value, host or body).
+    - Rules (each a stable code): plan with no `allow` flow or no `deny` flow → refused `flow_class_missing`; a flow with no enforcement observation, or missing client or destination log → `incomplete`, `connection_log_missing`; denied flow passes only if enforcement=deny AND client≠connected AND destination=`not_seen` AND no canary in any inspected store → else `failed`, `unauthorized_transfer`; permitted flow must show arrival at the controlled destination (positive control, else `failed`, `vacuous_permitted_flow`) and its canary may appear only in the stores its placements authorize; any canary in an unauthorized store → `failed`, `canary_leaked`; a flow whose only no-leak evidence is an `encrypted` packet capture → `incomplete`, `encrypted_capture_insufficient` (negative clause); a required store never inspected → `incomplete`, `inspection_coverage_missing`; `workflow_history` absent from the evidence → `partial` with `not_exercised=("workflow_history",)` (no Temporal workflow exists), never `passed`.
+    - Logs: the integration's client process installs FTF-0904 `install_redaction()` and `attach_sink(handler)` on the captured handler; the verifier inspects the captured text and the raw stderr/stdout. Redaction never licenses export (0904 rule); a canary reaching any log is a leak, redacted or not, unless its placement authorizes that store.
+  - Real integration (no mocks, loopback only):
+    - controlled destinations: (A) plaintext HTTP sink on 127.0.0.1 that records raw request bytes and an access log; (B) TLS sink on 127.0.0.1 (openssl-generated CA + leaf, H005 path) that records DECRYPTED request bytes, fronted by a recording TCP relay that stores the ciphertext stream (the "packet capture"); (C) a listening HTTP sink on 127.0.0.2 that is not allowlisted (so a bypass would really land); (D) 169.254.169.254 (nothing listening; always denied by H006).
+    - enforcement: FTF-H006 `guarded_fetch` with `ConnectionPolicy(explicit_private_allowlist=(127.0.0.1/32,), allowed_ports={A,B})`; observations come from what the guard actually raised or returned, client logs from the client process, destination logs from the sinks.
+    - flows: allowed A and B with canaries in body and header (literal, base64, hex, url, fragmented across two headers); denied C and D with canaries; an error-path flow where the client raises with the canary in the exception text (must be redacted in the log, still counted as a log-store leak check).
+    - expected: `partial` (history not exercised) with every flow verdict passing; the B capture contains no canary while the B destination does (proving capture alone shows nothing).
+    - CA install, openssl or a free port unavailable → the job fails (`NOT_EXERCISED` is RED), never skipped.
+  - Faults that must go RED (pure table in `test_ftf_0906.py`, plus real-socket rows in the integration):
+    - a direct `socket.create_connection` bypass to C carrying a canary (real) → `failed`, `unauthorized_transfer`;
+    - verifier ignores destination logs; encrypted capture accepted as clearance; deny-only or allow-only plan accepted; permitted flow with no destination arrival accepted; a required store dropped from coverage; ledger completeness skipped; scanner literal-only (base64/hex/url/fragment leak missed); a canary value or host written into the report; `workflow_history` absence reported as `passed`; the client's redaction sink removed so the error-path canary lands in the log (real) → `canary_leaked`.
+  - Disclosed: process-scope enforcement only (CNI scope is FTF-H027 on top of FTF-0902's job); no Temporal history store; no IPv6/DNS paths; passing means the tested controls passed on this topology, never "no leakage is possible" (§12).
+
+- **FTF-1505 Secret scanning** (Control-plane design 2026-10-14; FINE_TUNING_FACTORY_RELEASE_1.md §45–47, §52–53 ("CI fails on ... leaked secrets"), §65–66, §77, §81; CAP-14; Q24, Q25, Q26; deps FTF-0006, FTF-0904, FTF-1501 all CERTIFIED; composes certified FTF-0905; DoD `python tools/r1_handoff.py packet FTF-1505 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; no shared lock; contract owner FTF-1501 — reuse `ScenarioResult`/`build_evidence` from `tests/security/tenant_isolation_suite.py`, do not edit `15-interface.yaml`). Acceptance: "Scan current source/history/artifacts/log samples with seeded harmless secret markers." Negative: "Scanner omissions/excluded production dirs and actual exposed credential are release blockers." Ready now.
+  - Files: `tests/security/secret_scanning.py` (standalone script like the 1501/1506 suites), `tests/security/secret_scan_baseline.yaml` (reviewed fixture fingerprints), `tests/tasks/test_ftf_1505.py` (script, `gate` job), an additive ci.yml job `secret-scanning` (checkout `fetch-depth: 0`, no services) + verdict `needs` + `tests/unit/test_ci_policy.py` coverage.
+  - No production code, migration, contract, runtime dependency, secret or keyed service. Stdlib + the `git` CLI only. No gitleaks/trufflehog/detect-secrets and no new third-party action (each would be a new dependency). Test-only task: proving_symbol blank (FTF-1506 precedent). The job itself is the live CI gate (§53).
+  - Why not reuse FTF-0904 `redact_text` as the detector (measured 2026-10-14): over the 1,209 tracked text files it changes 3,014 lines in 328 files (`"client_secret": client_secret,`, `secret_ref: str | None,`, `f"Bearer {key}"` ...). That over-redaction is 0904's design for logs and makes it unusable as a source scanner. 1505 owns a high-precision credential-format rule table instead, and uses 0904 as a cross-check (below).
+  - Rules (`RULES`, each with an id, compiled once, linear-time patterns, applied to raw bytes and to one layer of base64 runs ≥24 chars and one layer of percent-decoding, detection only):
+    - AWS access key id `(AKIA|ASIA)[A-Z2-7]{16}` and a 40-char secret next to `aws_secret_access_key`;
+    - GitHub `gh[pousr]_[A-Za-z0-9]{36}`, `github_pat_[A-Za-z0-9_]{82}`; GitLab `glpat-[A-Za-z0-9_-]{20}`;
+    - `sk-` / `sk-proj-` / `sk-ant-` keys ≥32 chars; Stripe `(sk|rk)_live_`; Slack `xox[abposr]-` and Slack webhook URLs; Google `AIza[0-9A-Za-z_-]{35}`; Hugging Face `hf_[A-Za-z0-9]{34}`;
+    - JWT: three base64url segments whose first decodes to a JSON object with `alg`;
+    - PEM `-----BEGIN … PRIVATE KEY-----` with a body;
+    - URL userinfo password `scheme://user:pass@host` where pass is not a template/placeholder (`${…}`, `<…>`, `{…}`, `***`, `[REDACTED]`);
+    - a secret-named assignment (`api_key`, `secret`, `password`, `token`, `client_secret`) to a quoted literal of ≥20 chars with Shannon entropy ≥3.5 bits/char (FTF-0514's threshold);
+    - the FTF-0905 canary shape `CANARY-DO-NOT-USE-[0-9a-f]{32}` (log and artifact lanes only).
+  - Lanes (each one `ScenarioResult` per seeded rule family + one coverage row, through `build_evidence`):
+    - `source`: every path from `git ls-files` at HEAD, text and binary, plus members of zip/tar/gz/whl archives (bounded size/count, bomb-safe). No path exclusion exists. Coverage = scanned set equals `git ls-files` exactly, and every production SOURCE_ROOT (read from `scripts/product_truth_check.py`, not hand-listed) has ≥1 scanned file.
+    - `history`: every unique blob reachable from all refs (`git rev-list --objects --all` + `git cat-file --batch`), deduplicated by blob id; refuse a shallow clone (`git rev-parse --is-shallow-repository` must be `false`, else `NOT_EXERCISED` → RED). Measured locally: 8,113 blobs, 2.65 GB, 225 s; record the CI runtime.
+    - `artifacts`: every file under declared artifact roots (`reports/` and the suite's own evidence output) after the job writes them, including archive members. Completeness: every `actions/upload-artifact` `path:` in ci.yml must lie under a declared root (parsed from ci.yml), so a new uploaded artifact that is not scanned fails `gate`. Model/dataset/container artifacts do not exist yet; the task that first produces one adds its root (disclosed).
+    - `log samples`: boot the real `app.main.create_app()` under uvicorn over a real socket with uvicorn's default log config, capturing root + `uvicorn.*` loggers + stderr/stdout. Configure seeded harmless secret values (built from FTF-0905 `generate_canary` tokens into the rule shapes) as the LiteLLM key / S3 secret / OIDC client secret env values, send requests carrying them in Authorization, Cookie, a JSON body and a query string, hit a 4xx and a 5xx/validation error path, and emit FTF-0006 `StructuredEvent`s via `emit_to_stream`. Scan the captured text for every rule plus the canary in literal/base64/hex/url/fragment forms (FTF-0905 `encode_canary`/`fragment_canary`). Positive control: the suite logs one seeded marker through its own logger and the lane must find it (else vacuous → RED).
+  - Seeded markers (recall): generated at run time, never committed, so the repo never contains them: one per rule family, in each lane — a new file in a temporary real git repo (`git init` in a temp dir), a marker committed then deleted (history only), a base64-wrapped marker, a marker inside a zip member, a marker in an artifact root, a marker in a log line. Required recall 100% on seeded markers; every miss is RED with its rule id and lane.
+  - Baseline (`secret_scan_baseline.yaml`): entries `{rule, fingerprint: sha256(rule NUL value), reason, reviewed_by, reviewed_on}`; values are never stored. No path or glob key is accepted (schema-checked). An unmatched (stale) entry fails the run. Current history needs about 36 reviewed entries (measured: 27 URL-userinfo CI/doc DSNs such as the `*_ci_only` Postgres passwords and `svc:hunter2@` examples, `AKIAIOSFODNN7EXAMPLE` (AWS's documented example), `AKIAABCDEFGHIJKLMNOP`, one `xoxb-1234567890-` literal, five `sk-…` test literals); the relay lists each with file/commit in the PR and the Control plane reviews them. If any value is not clearly a fixture, it is NOT baselined: item-level park with the finding (an actual exposed credential is a release blocker and needs rotation, not removal).
+  - FTF-0904 cross-check: for every seeded marker family, `redact_text(line) != line` must hold (what the scanner calls a credential, the log sanitizer must redact). A family 0904 misses is reported as a finding against 0904 (park; the Control plane slices the fix), never fixed in place.
+  - Evidence: content-free — lane, rule id, path or blob id, line number, never the value or a fingerprint of a NEW finding (a hash of a low-entropy password can be reversed). JSON artifact via `build_evidence` + per-lane totals.
+  - Faults that must go RED (each its own row, run against temporary git repos and a copy of the scanner): a rule removed; history lane limited to HEAD (committed-then-deleted marker missed); shallow clone accepted; a path exclusion added to the policy; `tests/` skipped; binary files or archive members skipped; base64/percent decoding removed; stale baseline entry accepted; a baseline entry keyed by path; log lane without the positive control; log capture limited to the root logger (uvicorn access log missed); an `upload-artifact` path outside every declared root accepted; a finding value written to evidence.
+  - Risk to check first (dry-run before claiming): no live code installs FTF-0904 redaction yet (`install_redaction`/`attach_sink` have no caller), and uvicorn's access log prints the request line including the query string. The query-string placement is therefore expected to be FOUND. Do not drop the placement to get green: park with the reproduction; the Control plane then slices the FTF-0904 wiring (install at app startup + uvicorn log config) as its own item, and 1505 resumes after it.
+  - Disclosed: pattern-based scanning cannot find a bare opaque secret with no known shape (0904/0905 disclosures apply); the history lane covers refs present in the CI clone only.
 - **FTF-0501-UI Resumable dataset upload UI** (child slice of FTF-0501; Control-plane design 2026-10-08T17:00Z; §8.1, §67.1 "Multipart resumable upload", §72.2; deps FTF-0501 round 2 API). DoD: `tools/r1_handoff.py packet FTF-0501`, "resumable UI" clause.
   A real file picker in apps/web on the five FTF-0501 routes (create session, part grants, list parts, finalize, read): dataset purpose, per-part progress, pause/resume after a page reload or network drop by listing uploaded parts and re-requesting only missing part URLs, and the typed finalize outcome (accepted, 409 incomplete, 410 expired, 422 hash/type/size, 503 storage outage) shown as visible states - never a fake success (Law 17).
   No secrets, part URLs or file bytes in localStorage (§72.2); presigned URLs are held in memory only.
@@ -9648,73 +9778,401 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
   - "Real relevant integration" is satisfied by the pure decision module plus the FTF-0901/0902 composition. A real managed
     provider is not needed to prove a denial: no network call is made, so prove it with a counting outbound-guard stub
     showing zero fetches.
-- **FTF-0309-P1 Training-capability read API** (child slice of FTF-0309; Control-plane design 2026-10-08T12:50Z; §6, §13,
-  §34, §68, §3.5). FTF-0309's UI names `/capabilities`, but no route exposes the certified FTF-0307 classifier. Its only
-  callers are tests and evals/reference.
-  - Add `GET /api/v1/organizations/{org}/connections/litellm/{conn}/models/{model_name:path}/capabilities?project_id=`
-    next to the FTF-0308-P1 mapping routes (new file `apps/api/app/litellm/model_capability_routes.py` plus
-    `tests/tasks/test_ftf_0309_p1.py`). Freeze it in `packages/contracts/openapi/03-interface.yaml`.
-  - No migration.
-  - The route composes certified pieces only:
-    - fresh FTF-0204 discovery + FTF-0207 reconciliation;
-    - the FTF-0308-P1 mapping and its artifact (tenant-scoped `get_artifact`);
-    - the latest FTF-0212 tool-call probe result the catalog already holds for that exact model and route identity,
-      with its `checked_at` date. Pass None when there is none; never run a probe from a GET.
-  - It calls `classify_training_capability` and never re-implements it.
-  - Response: the four dimensions with dated evidence, plus explicit `"unknown"` (with a reason code) for `method_support`,
-    `min_gpu_vram_gb`/tested VRAM and `chat_template`. Nothing backs those today.
-  - The artifact's declared `minimum_gpu_profile` is labelled `declared`, never `tested`.
-  - DoD:
-    - A ready mapped artifact gives a trainable classification with the artifact id and digest.
-    - An unmapped model gives `not_trainable`/`unknown`, never inferred from the alias (§2.2).
-    - A probe for a different model or route identity is ignored.
-    - A cross-org artifact or connection, and a foreign project, return 404 identical to a missing one.
-    - Viewer reads are allowed and use no admin dependency. The route needs the project and is otherwise 400.
-    - A revoked connection is shown as revoked, never trainable.
-    - The provider is called only through the existing discovery client, at most once per request (counting test).
-    - A live caller test on real Postgres; product_truth_check gets the route as the proving symbol.
-  - Every DoD bullet needs its own behavioural fault→RED row. Mutation gate at 0 survivors.
-  - Must not edit the training_capability_classifier.py or model_catalog_mapping_* modules.
-  - Then FTF-0309 (UI) is queued on top. Its Train button is disabled whenever a dimension is `unknown`.
-- **FTF-0309 Capability compatibility UI** (parent; FTF-0309-P1 CERTIFIED 2026-10-09, #667; DoD: `tools/r1_handoff.py packet FTF-0309`). Acceptance: "Compatibility screen explains actual model/hardware/method/template/license limits before choosing training." Negative: "Unknown support or insufficient tested VRAM prevents Train rather than fake auto recommendation."
-  - A component under apps/web/components/ (same pattern as the certified FTF-0308 UI, `model_to_artifact_mapping_ui.tsx`) that consumes only the frozen FTF-0309-P1 route `GET .../models/{model_name:path}/capabilities?project_id=` in 03-interface.yaml.
-  - Shows each dimension with its dated evidence and the explicit `unknown` reason codes (method_support, min/tested VRAM, chat_template) from the server, never inferred client-side; no alias normalisation (the name is sent verbatim).
-  - Train is disabled whenever any dimension is `unknown`, tested VRAM is insufficient, `trainable` is false, or `access` is not `granted` (the route can return `trainable: true` with `access: not_granted` when the gateway stops listing a mapped alias). 503 and 404 are errors, never a recommendation (Law 17).
-  - Tests: a DOM-level Vitest spec with mocked fetch per typed state (all known; each unknown; insufficient VRAM; access not_granted; 503; 404), each asserting Train's disabled state and the reason shown. Faults: enable Train on one unknown dimension; ignore `access`; treat 503 as empty - each RED.
-  - Disclose UNWIRED like FTF-0308 (no Next.js page tree until FTF-H029); proving_symbol stays blank.
-- **FTF-H010-P1 Model import fields + import-validation jobs (migration)** (child slice of FTF-H010; Control-plane design
-  2026-10-08T12:50Z; §6.17, §58A, §68.1). This slice needs the `migration:application` single-writer lock.
-  - Extend `model_versions` (migration 0009, `apps/api/app/model_versions/`) with the §6.17 import fields it lacks:
-    - `origin` in {factory_trained, imported_weights, imported_adapter, external_endpoint}, mapped from the existing
-      `import_kind`. Do not drop `import_kind` in this slice.
-    - `parent_model_version_id` (same-tenant FK).
-    - `external_provider_model_ref` and `observed_deployment_fingerprint`.
-    - `lineage_completeness` in {complete, partial, unknown}.
-    - `tokenizer_revision`, `chat_template_sha256`, `serving_config_sha256`.
-    - `adapter_only`.
-  - Add CHECK constraints:
-    - external_endpoint: artifact digest and URI must be NULL and `external_provider_model_ref` NOT NULL. No fictitious
-      hash; this is the negative_acceptance.
-    - imported_adapter: requires an exact base revision and `adapter_only=true`.
-    - Every sha256 column matches `^[0-9a-f]{64}$`.
-  - New `model_import_jobs` table, RLS ENABLE+FORCE with a tenant policy: id, org, project, requested origin, state in
-    {queued, validating, failed, succeeded, blocked_external}, failure code, created_by, timestamps.
-  - Freeze `POST/GET /api/v1/organizations/{org}/projects/{project}/model-imports[/{id}]` in
-    `packages/contracts/openapi/10-interface.yaml`.
-  - POST validates the shape and enqueues; it never claims success synchronously.
-  - A job whose real provider endpoint, weights or GPU are unavailable ends `blocked_external`, never `succeeded` (Law 17).
-  - `compatibility_tuple_id` and the ModelVersion `status` lifecycle are out of scope (owned by promotion/compatibility
-    tasks); say so in notes.
-  - DoD (real Postgres):
-    - The migration upgrades and downgrades cleanly, and data_exposure_check passes.
-    - A cross-org read/write is denied the same as a missing row.
-    - Each CHECK refusal is tested.
-    - An endpoint import with an artifact hash is refused (400).
-    - An adapter import without a base is refused.
-    - Viewer POST gives 403. Job states never jump to succeeded without validation.
-    - Every DoD bullet needs its own behavioural fault→RED row. Mutation 0 survivors.
-  - Then FTF-H010 builds on top. Its real endpoint fine-tune, weights, GPU and continuation clauses stay BLOCKED_EXTERNAL
-    and are disclosed.
+- **FTF-0616-F1 Judge-call deployment fingerprint and cache bypass** (follow-up on certified FTF-0616, prerequisite of FTF-0617; Control-plane design 2026-10-09; §3.5, §27, §69.5, §77, §81; deps FTF-0616 and FTF-H005, both CERTIFIED; DoD: `tools/r1_handoff.py packet FTF-0616` plus this entry). Files: `workers/evaluation/llm_judge_grader.py`, `tests/tasks/test_ftf_0616_f1.py`, and an additive ci.yml gate step. No open PR touches the module (checked #709: R004-P3 does not).
+  - Why: FTF-0617 must know which deployment served the content-bearing judge call itself. Today the result carries only the `model` echo, so a fallback that keeps the model string is undetectable.
+  - Additive only:
+    - Add `LlmJudgeResult.deployment_fingerprint: str | None`, taken from the judge response's `x-litellm-model-id` header. This is the same documented header and the same lookup as `route_attestation._deployment_fingerprint_from_headers`: the name is compared as exact lower-case ASCII, never by substring.
+    - The value must be exact `str`, 1..256 characters (the width of `model_versions.observed_deployment_fingerprint`), with no Cc/Cf/Zl/Zp characters. Otherwise it is `None`. It is never fabricated, and it is `None` on every non-200 path.
+    - Every judge request carries LiteLLM's documented `"cache": {"no-cache": true}` (the field H005 already sends; §3.5 "semantic caching ... disabled" for evaluation routes).
+  - No other behaviour change. Refusals, calibration, echo matching, schema, verdict and `route_identity_state` stay exactly as certified in round 8. A missing header does not change PASSED/FAILED here; the strict decision belongs to FTF-0617.
+  - Golden test: the request body is byte-identical to round 8 apart from the one `cache` key.
+  - Law 15: the PR re-runs the whole FTF-0616 suite, the full Unicode variant sweep (including the advisory U+2029, LRM/RLM and U+00AD points) and the uncapped whole-file mutation gate. Control plane re-certifies the FTF-0616 adapter scope together with F1.
+  - Control-plane ruling 2026-10-09: FTF-0616 stays CERTIFIED while F1 is in flight; the F1 verifier re-runs the full FTF-0616 evidence. If F1 is returned for a 0616 regression, FTF-0616 is listed in item 0 and flagged for requalification (Law 15).
+  - Tests on the existing local TLS gateway harness:
+    - header present → recorded verbatim;
+    - absent, empty, 257 characters, a control character, a NUL or a non-ASCII value → `None`;
+    - a header on a 400, 401, 403 or 5xx response → ignored;
+    - a look-alike name (`x-litellm-model-id-x`, `x-litellm-model`) → ignored;
+    - the no-cache field is present exactly once.
+  - Faults that must go RED:
+    - the header is ignored;
+    - substring or prefix match on the header name;
+    - the value is read from the request instead of the response;
+    - the fingerprint is read on a non-200 path;
+    - the length or character check is dropped;
+    - the cache field is dropped.
+  - Must not edit `route_attestation.py`, `route_snapshot.py` or any grader. No runtime deps or secrets.
+
+- **FTF-0617 Zero-egress judge policy** (Control-plane design 2026-10-09; §3.5, §11.1–11.3, §23–30 (§27), §69.1, §69.5, §77, §81; deps FTF-0402, FTF-0601, FTF-0616 CERTIFIED + FTF-0616-F1; composes certified FTF-0901, FTF-H005, FTF-0201, FTF-0103A; DoD: `tools/r1_handoff.py packet FTF-0617`; contract owner FTF-0601 — read 06-interface.yaml / 06-domain.schema.json, add no path). Acceptance: "Server enforces private-only judge or authorized humans on strict projects." Negative: "External fallback or unknown upstream judge fails closed even when LiteLLM alias looks local."
+  - Spec it implements:
+    - §27 "zero-egress mode requires a private/local judge".
+    - §69.5 "Judge outages/unsupported parameters do not become pass or silently switch to an unapproved external model. Private projects use a qualified private judge or independent humans; lack of judge capability is an explicit blocked criterion."
+    - §3.5 "ZERO_EGRESS validates every upstream, fallback, logging callback, cache and embedding/judge destination behind LiteLLM. A local gateway address does not prove local processing."
+  - Path refinement, recorded: `services/evaluation-worker/evaluators/zero_egress_judge_policy.py` becomes `workers/evaluation/zero_egress_judge_policy.py`, the real root the sibling graders and FTF-0616 use.
+  - Files:
+    - that module;
+    - `tests/tasks/test_ftf_0617.py`;
+    - `tests/integration/test_ftf_0617_zero_egress_judge.py` (PG16 as sovra_app);
+    - an additive ci.yml gate step and integration job, added to the verdict `needs`.
+  - No migration, route, UI, runtime dependency, secret or keyed service.
+  - Boundary with FTF-0907 ("External judge denial", deps 0617/0901/0902, `packages/security/external_judge_denial.py`):
+    - 0617 owns the evaluator's judge-selection policy and per-call identity verification.
+    - 0907 later owns non-bypassable denial at the security/network layer ("direct client path cannot bypass") and admission integration.
+    - 0617 must not create 0907's file.
+  - Profile in force:
+    - The module reads the profile itself. It loads the org `default_security_profile` and the project `security_profile` through `execute_tenant_scoped` in the caller's tenant-scoped session.
+    - It composes them with an optional job snapshot through FTF-0901 `effective_profile`.
+    - It never takes a caller-supplied profile string or a UI flag.
+    - Strict means FTF-0901's boundary-only set (`zero_egress`, `air_gapped`). Import it, do not re-list it.
+    - A missing project and a foreign-org project both give the same `judge_policy_not_found`.
+  - Gateway identity:
+    - `base_url` and `secret_ref` come from the tenant's FTF-0201 LiteLLM connection row, loaded by id via `get_connection`. They are never caller strings.
+    - A revoked connection gives `judge_gateway_revoked`.
+  - `decide_judge_plan(...)` returns a `JudgePlan` with `mode` ∈ {`private_llm_judge`, `human_review`, `standard_llm_judge`, `blocked`} and a reason code. On a strict profile:
+    - `private_llm_judge` only when all of these hold:
+      - a valid private-judge approval (below);
+      - a fresh admission attestation through FTF-H005 `attest_route` + `pin_route_identity`, using synthetic content, cache bypassed, made before any candidate content is sent;
+      - the attestation equals exactly the approval's (`resolved_model`, `deployment_fingerprint`).
+    - Otherwise `human_review`, when at least one authorized reviewer exists (below).
+    - Otherwise `blocked` with `judge_capability_unavailable`: never pass, skip or an external judge.
+    - On a standard profile, a non-internal judge destination still needs FTF-0901 `enforce_effect(surface="judge")` to allow it. The §11.2 managed-provider approval for judges stays with FTF-0907/0908 (disclosed).
+  - Private-judge approval parsing:
+    - Plain JSON only: `json.loads` output with duplicate keys refused via `object_pairs_hook` and NaN/Infinity refused. Exact types only (`type(x) is str/int/bool/dict/list`): no `str`/`dict` subclasses and no caller objects. The module builds its own frozen records.
+    - Exact top-level allow-list: {`schema_version`, `judge_model_id`, `resolved_model`, `deployment_fingerprint`, `boundary_id`, `destinations`, `approved_by_issuer`, `approved_by_subject`, `approved_at`, `expires_at`}.
+    - `destinations` has exactly the five §3.5 roles {`upstream`, `fallbacks`, `logging_callbacks`, `cache`, `embedding`}. Each is required and explicit.
+    - On a strict profile, `fallbacks` must be `[]`, else `judge_fallback_not_permitted`. A fallback would change the attested identity anyway.
+    - Each destination is `{kind ∈ internal|managed_provider|external, provider?}` or `{"kind":"disabled"}` (cache/embedding only).
+    - Any missing, extra, wrong-type or `unknown` value gives `judge_approval_invalid` (fail closed).
+    - Every non-disabled destination goes through FTF-0901 `enforce_effect(EffectRequest(surface="judge", ...))`. A refusal maps to `judge_destination_blocked`.
+    - Approval time checks: `expires_at <= now` or `approved_at > now` gives `judge_approval_expired`.
+    - The approver must be an active `organization_admin` or `workspace_admin`, resolved by FTF-0103A `lookup_org_role` on Postgres (a server lookup, not a field). Otherwise `judge_approval_not_authorized`.
+  - Exact identity:
+    - `judge_model_id`, `resolved_model`, `deployment_fingerprint` and membership lookups compare exact `str` with `==`. No strip, casefold or NFKC anywhere on the allow path.
+    - Names and hosts are never evidence of locality. An alias containing `local`, `localhost`, `127.0.0.1`, `ollama/`, `hosted_vllm/`, `vllm`, `private` or `internal`, or a gateway on loopback/RFC1918, never upgrades a missing or mismatched approval.
+  - `run_private_judge(plan, ...)` runs per call:
+    - It re-reads the profile, re-checks expiry and calls FTF-0616 `grade_llm_judge` with `approved_judge_model_ids = frozenset({approval.judge_model_id})` only.
+    - A verdict is accepted only when all of these hold:
+      - state ∈ {PASSED, FAILED};
+      - `result.resolved_model == approval.resolved_model`;
+      - `result.deployment_fingerprint == approval.deployment_fingerprint` (from F1).
+    - Otherwise `JudgeOutcome(blocked, code)`:
+      - `judge_route_identity_unverified`: header or echo missing;
+      - `judge_route_changed`: a fallback or other deployment. It carries `possible_egress=True`. Disclosed: the content-bearing request may already have left; preventing that is FTF-0907/0906/0902 network-layer scope;
+      - `judge_unavailable`: every non-verdict FTF-0616 state.
+    - Never retried on another model; never falls back to another approved judge.
+  - Human path: `authorize_human_judgment(...)`:
+    - The reviewer must be an active member with a role in `EVALUATION_SUITE_WRITE_ROLES` (evaluator, workspace_admin, organization_admin), resolved by `lookup_org_role` with exact (issuer, subject).
+    - §69.1 independence: the reviewer is refused as `human_reviewer_not_independent` when equal to the candidate producer, either exactly or after NFKC+casefold+strip. Exact on the allow side, normalised on the deny side: the conservative direction each time.
+    - The review queue and labels (Argilla, FTF-R006) are out of scope. The plan names roles; it stores no labels.
+  - Errors and side effects:
+    - One base error with a stable `code`. Messages are content-free: code, profile and surface only. Never model ids, fingerprints, hosts, provider names, approval fields or reviewer ids.
+    - FTF-0616, H005 and 0901 exceptions are converted with `raise ... from None`.
+    - The module writes nothing to the DB. It is read-only, so there is no commit/rollback coupling (the FTF-0908 r2/r3 lesson).
+    - It makes no network call except through 0616 and H005.
+  - DoD tests (each bullet has its own behavioural fault→RED row; mutation gate 0 survivors over the module):
+    - Real Postgres (PG16, sovra_app):
+      - complete profile truth table: org × project × job (3×3×4 including None) → strict or not, exactly per FTF-0901;
+      - a raw-SQL-weakened project row under a `zero_egress` org is still strict;
+      - a foreign project gives a result identical to a missing one;
+      - a revoked connection is refused;
+      - approver and reviewer role tables over all six roles, plus revoked and foreign-org memberships.
+    - Complete mode table:
+      - strict × {valid approval with matching attestation; each of the 5 roles × {managed_provider, external}; each role key missing; non-empty `fallbacks`; expired; not yet valid; unauthorized approver; no approval with an authorized human; neither} → exact mode and code;
+      - standard × {internal; external without RouteAuthorization; external with one} → per FTF-0901.
+    - Fallback and unknown upstream on the 0616/H005 local TLS gateway harness:
+      - an admission fingerprint ≠ the approval → blocked before the judge call. The request counter shows 0 requests carrying candidate content;
+      - the fingerprint changes between admission and the judge call (simulated fallback) → `judge_route_changed`, no verdict;
+      - the header is missing on the judge call → `judge_route_identity_unverified`;
+      - same echo but a different fingerprint → blocked;
+      - aliases from a generated "looks local" set, with the gateway on 127.0.0.1 → still blocked without a valid approval.
+    - Exactness:
+      - Use property-generated Unicode variants (whitespace, Cc/Cf/Z*, NFKC/NFKD look-alikes, dashes, case forms, configured-side forms). Reuse the FTF-0616 round-8 generator; do not hand-pick a list.
+      - Apply them to `judge_model_id`, `resolved_model`, the fingerprint, the approver and the reviewer subject. None is accepted under either a pass or a fail verdict.
+      - An independence variant of the producer is refused.
+    - Strict-parse table: for every allow-listed key, each of missing, extra, int-for-str, bool-for-int, float, null, list, nested object, duplicate key, NaN and an object passed instead of JSON → `judge_approval_invalid`.
+    - Boundary table per text input:
+      - `judge_model_id`, `resolved_model`, `boundary_id`, `provider`, approver: 0/1/200/201 characters (the FTF-0901 limit);
+      - fingerprint: 0/1/256/257;
+      - NUL, CR/LF, lone surrogate, astral and combining characters.
+    - Content-free: one shared META-LEAK check over `traceback.format_exception` of every raised error and every outcome object (cause, context, notes, args, attributes). Markers are planted in model ids, fingerprints, hosts, secret refs, approval fields and reviewer ids.
+    - Faults that must go RED:
+      - a locality heuristic on the alias or host;
+      - the profile taken from an argument instead of the DB;
+      - the project profile used without org/job;
+      - each of the 5 destination roles dropped from the required set;
+      - non-empty `fallbacks` allowed;
+      - fingerprint check removed (echo only);
+      - admission attestation skipped;
+      - casefold/strip/NFKC at any allow comparison;
+      - a non-verdict state mapped to pass or to another judge;
+      - each extra role added to the reviewer or approver allow-list;
+      - the independence check dropped or made exact-only;
+      - `from None` removed;
+      - the expiry comparison `<=` changed to `<`.
+  - Disclosed:
+    - BLOCKED_EXTERNAL: a real private judge (an approved model served inside the org boundary, with its real `x-litellm-model-id`) behind the org gateway. Covered by the existing 2026-10-08 FTF-0616 owner action; for strict projects that judge must be a private deployment. Proven here only against the local TLS gateway stand-in.
+    - UNWIRED: no EvaluationRun or workflow calls it yet (§25 runtime loop; first callers FTF-R004-P3/P4 and FTF-0618). The approval is caller-supplied plain JSON until an approval store exists (FTF-0908 precedent). `proving_symbol` stays blank.
+    - Recorded gap: the FTF-0601 suite lock does not refuse a strict-project suite with `llm_judge` cases and no private-judge or human path. That is left for FTF-0618/H022 wiring. Certified 0601/0602 modules are not edited here.
+    - Not required: a real LiteLLM proxy container in CI with two local upstreams and a configured fallback would prove the header semantics end to end. The image is the fixed reused gateway (not a new runtime dependency); Control plane may add it later.
+  - Must not edit:
+    - `llm_judge_grader.py` (beyond F1);
+    - `route_attestation.py` or `route_snapshot.py`;
+    - `security_profile_enforcement.py` or `external_provider_denial.py`;
+    - `evaluation_suite_*` or `evaluation_case_*`.
+
+- **FTF-H010 child slices P2–P4: validated import, roles and honest continuation** (Control-plane design 2026-10-09; FINE_TUNING_FACTORY_RELEASE_1.md §0.12, §3.3–3.5, §6.7, §6.17, §17, §41, §58A, §68.1, §68.4, §77, §81; Q07; FTF-H010-P1 CERTIFIED 2026-10-09, #699 f917395). These refine FTF-H010 under "For each card" step (3) ("refine any oversized item into bounded child IDs whose union covers every parent acceptance criterion"). They add no criteria: the denominator stays 302 and no ADR applies. Contract: `python tools/r1_handoff.py packet FTF-H010 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+  - Clause map (the union covers the parent):
+
+    | Parent clause | Owner |
+    |---|---|
+    | "Import ... a real existing endpoint-only fine-tune" | import validation → P2 (stand-in gateway); the real endpoint → BLOCKED_EXTERNAL (org gateway key) |
+    | "... and evaluate" it | BLOCKED_EXTERNAL (gateway key + FTF-R004 runtime) |
+    | "import/load full weights and adapter+base" | validation → P3; load → BLOCKED_EXTERNAL (vLLM/GPU, FTF-1003/1004) |
+    | "continue only permitted artifacts" | P4 (eligibility + server-side denial); the actual training → BLOCKED_EXTERNAL (GPU, FTF-R003/0701) |
+    | "resumed step differs from new continuation" | P4 plan property; the real proof → BLOCKED_EXTERNAL + FTF-0713/0714 |
+    | negative "fictitious artifact hash for endpoint-only imports" | P1 CHECK + P2 success path with no hash |
+    | negative "infer retrainability from alias" | P2 (an endpoint version is never trainable) + P4 (eligibility ignores names) |
+    | negative "incompatible adapter/base and license denial block use" | P3 (validation) + P4 (actions refuse) |
+    | goal "alias role assignment" | P4 |
+    | "No full release claim ..." | parent |
+
+  - Common rules:
+    - Migrations are serialized on `migration:application`. Take the next free number at claim time (0029 for P2, 0030 for P4; renumber if another lands first). Revision ids ≤ 32 characters. RLS exactly as 0017/0020: ENABLE + FORCE, policy `tenant_isolation`. `sovra_app` never gets DELETE.
+    - Paths: `/api/v1/organizations/{organization_id}/projects/{project_id}/...`. Errors: `{"detail":"<stable_code>"}`. Audit through `write_audit_event` in the same transaction, content-free.
+    - Contract changes are additive to `packages/contracts/openapi/10-interface.yaml` under `contracts:10`, by serialized transfer from FTF-1001.
+    - Each child adds its own additive ci.yml job plus verdict `needs`.
+    - Path refinement, recorded: the packet's `apps/api/app/services/model_import.py` becomes the existing `apps/api/app/model_versions/` package, and `services/training-worker/trainers/continuation.py` becomes `workers/training/continuation.py` (the real SOURCE_ROOT).
+    - No UI, runtime dependencies, secrets or keyed services.
+    - Must not edit:
+      - `model_version_crud.py` or `model_version_routes.py` (FTF-1001);
+      - migrations 0027/0028 (new migrations only; a replaced trigger function is restored byte-identical on downgrade);
+      - the artifact resolvers, `base_model_revision_digest_resolver.py`, `license_acceptance_workflow.py` or `artifact_lineage_manifest.py`;
+      - `route_attestation.py` or `v1_models_discovery.py`.
+    - Build the 2026-10-08/09 ledger lessons in from round 1:
+      - complete constraint and transition tables (H010-P1 r4 / 0d ruling);
+      - exact identity matching tested with property-generated Unicode variants (FTF-0616 r8);
+      - exact allow-lists for every request body and file shape (R004-P2);
+      - plain-JSON, exact-type parsing (`type(x) is str`, no subclasses or caller objects; FTF-1703/1206 rulings);
+      - one boundary table per length-checked text input (0516-P1 r5);
+      - one shared META-LEAK check over the fully rendered exception chain, audit rows, logs and job rows (0903 r8);
+      - fail-closed behaviour pinned by faults.
+    - Every DoD bullet has its own behavioural fault→RED row. Uncapped mutation gate at 0 survivors.
+    - Then FTF-H010 (parent: `ImportModelWizard.tsx` on the P1–P4 routes plus its disclosures) is re-queued.
+  - **FTF-H010-P2 Import-validation activity, job fencing and endpoint-only import (migration)** (§3.3–3.5, §6.17, §17 fencing paragraph, §41/§77.6 activity rules, §58A row 1, §68.1 paragraphs 1–2; deps FTF-H010-P1, H005, 0204, 0201, 1001, 1002 all CERTIFIED; locks `migration:application`, `contracts:10`).
+    - **Control-plane ruling 2026-10-10T03:57Z (resolves the 02:30Z park; the park's routes 1 and 2 are rejected):** an alias is not a URL, and FTF-1001's `validate_endpoint_reference` (https URL) stays as certified for FTF-1001's own synchronous path. Route 2 (store the connection `base_url`) is rejected: `base_url` is org-admin-only on the connection routes (`CONNECTION_ADMIN_ROLES`) and FTF-1001's GET would expose it to every project reader - a widening of exposure, and the P2 DoD already treats it as a leak marker. Route 1 is rejected because FTF-1001's POST also defaults origin to `external_endpoint`, so origin cannot tell the paths apart. Ruled (route 3, scoped into P2):
+      - Migration 0029 additionally replaces `ck_model_versions_kind_consistency` so an `endpoint` row needs EITHER a non-NULL `endpoint_reference` (the certified FTF-1001 form) OR `endpoint_reference IS NULL AND origin = 'external_endpoint' AND external_provider_model_ref IS NOT NULL`; downgrade restores the 0009/0028 definition byte-identically (refusing if any NULL-reference row exists, never deleting data).
+      - `model_version_schema.py` (certified FTF-1001 module, minimal edit): `endpoint_reference` may be None only when origin is `external_endpoint` and `external_provider_model_ref` is an explicit non-empty value; otherwise unchanged. The derived copy into `external_provider_model_ref` is unchanged.
+      - FTF-1001's POST route keeps refusing a missing or non-https `endpoint_reference` (its request parsing is unchanged); add a pinned test that the POST cannot create a NULL-reference row, including by sending `external_provider_model_ref`.
+      - `10-interface.yaml`: the ModelVersion response's `endpoint_reference` becomes nullable (no client consumes it yet); FTF-1001's GET serializes null.
+      - Law 15: this touches certified FTF-1001, so P2's verifier also re-runs FTF-1001's full suite and real-PG integration and reports a FTF-1001 REQUALIFIED line. Faults: CHECK widened to any endpoint row (RED); constructor accepts None without an explicit provider ref (RED); POST creates a NULL-reference row (RED).
+    - Migration `0029_model_import_validation`:
+      - `model_import_jobs` gains:
+        - `litellm_connection_id`: same-tenant composite FK to `litellm_connections` (organization_id, id), RESTRICT;
+        - `result_model_version_id`;
+        - `claim_epoch int NOT NULL DEFAULT 0` with CHECK ≥ 0;
+        - `lease_expires_at timestamptz NULL`.
+      - `model_versions` gains a UQ on (organization_id, project_id, id, origin) if absent. The result FK is (organization_id, project_id, result_model_version_id, requested_origin) → that UQ, so a result belongs to the same project and has the requested origin at DB level.
+      - CHECKs:
+        - (requested_origin = 'external_endpoint') = (litellm_connection_id IS NOT NULL);
+        - (state = 'succeeded') = (result_model_version_id IS NOT NULL);
+        - (state = 'validating') = (lease_expires_at IS NOT NULL);
+        - (state = 'queued') = (claim_epoch = 0).
+      - The column-limited UPDATE grant widens to (state, failure_code, updated_at, result_model_version_id, claim_epoch, lease_expires_at) and nothing else.
+      - `CREATE OR REPLACE` the 0028 trigger function, keeping every 0028 rule and adding:
+        - INSERT only at queued with epoch 0, lease NULL and result NULL;
+        - queued→validating requires epoch = OLD+1 and a lease;
+        - validating→validating is allowed only as either (a) a lease renewal by the holder (same epoch, lease strictly later, nothing else changed) or (b) a re-claim with epoch = OLD+1, and only when `OLD.lease_expires_at < now()`;
+        - validating→terminal requires NEW.claim_epoch = OLD.claim_epoch (a late commit from an old epoch is refused) and clears the lease;
+        - terminal stays final.
+      - Downgrade restores the 0028 function body byte-identical.
+    - Contract (additive to 10-interface.yaml):
+      - The POST body allow-list becomes exactly {requested_origin, parent_model_version_id, trainable_artifact_id, external_provider_model_ref, litellm_connection_id}.
+      - `litellm_connection_id` is required for `external_endpoint` and refused for the other origins (400 `invalid_body`). A foreign or missing connection gives 404 `not_found`, identical either way.
+      - The job response adds `litellm_connection_id` and `result_model_version_id`. No new path.
+    - Activity module `apps/api/app/model_versions/model_import_validation.py`. Jobs are addressed per job by (organization_id, project_id, job_id), which is what a dispatcher derives from the enqueue. It never scans across tenants.
+      - `claim_model_import_job(session_factory, organization_id, project_id, job_id, *, origins, worker_id, lease_seconds, now)` → `ClaimToken(job_id, epoch)`:
+        - runs in its own tenant-scoped transaction with `SELECT ... FOR UPDATE`;
+        - claims only the origins named in the `origins` allow-list, so P2 claims `external_endpoint` only;
+        - a live lease gives `job_already_claimed`; a terminal job gives `job_terminal`.
+      - `validate_endpoint_import(session_factory, token, *, secret_config, now)`:
+        - Loads the job and its connection itself. A revoked connection → failed `connection_revoked`.
+        - One FTF-0204 `discover_models`. Any state other than discovered → `blocked_external` `gateway_unavailable` (Law 17). A 401/403 → failed `gateway_access_denied` (§3.3).
+        - `external_provider_model_ref` must be in the discovered ids by exact `==`. Otherwise failed `alias_not_authorized` (§3.3: removed names are unselectable).
+        - Then one FTF-H005 `attest_route(model_id=ref, approved_model_ids=frozenset({ref}))`. Not attested → `blocked_external` `route_attestation_unavailable`. Identity UNVERIFIED → failed `route_identity_unverified` (§3.5 "do not certify").
+        - Success, in one transaction, conditional on `claim_epoch = token.epoch` (0 rows → `fenced_out`, rollback, nothing written):
+          - insert the ModelVersion through the `ModelVersion` constructor, with `_next_version_number` reused: import_kind endpoint, origin external_endpoint, `external_provider_model_ref = ref` verbatim and `endpoint_reference = NULL` (Control-plane ruling 2026-10-10T03:57Z below; never a fabricated URL and never the connection `base_url`), `observed_deployment_fingerprint` = the attested fingerprint, `lineage_completeness = 'unknown'` always (§68.1 "Display unknown parent/training data as unknown"), no artifact/digest/revision/tokenizer/template, and the declared parent kept as declared only;
+          - set the job to succeeded with the result id;
+          - write one audit row `model_import.validate` carrying the job id, origin and outcome code only.
+        - Gateway calls run outside any DB transaction; no row lock is held across a network call.
+    - DoD tests: real PG16 as sovra_app, plus the H005/0309-P1 local TLS gateway harness (`/v1/models`, `/model/info`, `/v1/chat/completions` with `x-litellm-model-id`) and the 0616 local secret-backend stand-in.
+      - Happy path: the job succeeds, and the ModelVersion has a fingerprint, unknown lineage and NULL hash/URI. Job GET and FTF-1001 GET both show it.
+      - Negative acceptance: no hash is ever required or written for an endpoint, and a raw endpoint+digest INSERT is still refused.
+      - Alias exactness: generated Unicode variants of the ref, and discovery listing only a variant, both → failed `alias_not_authorized`.
+      - Complete outage table: every DiscoveryState and RouteAttestationState value → its exact terminal state and code, never succeeded.
+      - Missing header or echo → failed with no ModelVersion.
+      - Fencing:
+        - two threads claim → exactly one wins;
+        - a re-claim after lease expiry gets epoch+1;
+        - a re-claim before expiry is refused;
+        - the old epoch's final commit writes 0 rows, no ModelVersion and no audit.
+      - Complete 5×5 transition matrix × epoch {same, +1, +2, −1} × lease {expired, live} for sovra_app, plus a truth table for each new CHECK.
+      - Cross-tenant: a foreign connection or job is identical to a missing one; a raw org2 INSERT is refused.
+      - Strict POST body table: unknown key; missing or extra `litellm_connection_id` per origin; int/bool/null/list; `external_provider_model_ref` boundary 0/1/2048/2049 characters, whitespace-only, NUL, CR/LF, `\ud800`.
+      - META-LEAK with markers in the ref, fingerprint, base_url and secret over failure_code, audit, logs and exception chains.
+      - Faults that must go RED:
+        - discovery membership by casefold/strip/NFKC;
+        - attestation skipped or a NULL fingerprint accepted;
+        - UNVERIFIED → succeeded;
+        - each outage state → failed or succeeded;
+        - lineage written as partial or complete;
+        - epoch condition removed from the final UPDATE;
+        - the trigger's terminal-epoch clause dropped;
+        - re-claim before expiry allowed;
+        - result FK without project or origin;
+        - the grant widened to `requested_origin`;
+        - revoked connection ignored.
+    - Disclosed:
+      - BLOCKED_EXTERNAL: importing and evaluating a real existing endpoint fine-tune (the 2026-10-08 gateway-key owner action, plus an existing fine-tuned alias).
+      - UNWIRED: no Temporal or outbox dispatcher calls claim/validate yet (durable dispatch is FTF-0801/H016), so deployed jobs stay visibly `queued`. `proving_symbol` stays blank for the activity.
+      - FTF-1001's synchronous `POST /model-versions` can still create an unvalidated endpoint row. P4's actions route denies such rows (`import_not_validated`); FTF-1001 is not edited.
+  - **FTF-H010-P3a Pure import-artifact validators (no DB, no migration; ready now)** (Control-plane refinement 2026-10-09T23:46Z: the file-level checks of P3 do not need P2's activity, so they are split out; P3 then wires them into the P2 activity and keeps steps 1-3, 5, 8's DB/lineage half and 9). Deps: certified FTF-0304 (manifest format) only. File: `apps/api/app/model_versions/import_artifact_validators.py` (pure, stdlib only) + `tests/tasks/test_ftf_h010_p3a.py`; no route, no table, no caller (UNWIRED until P3).
+    - Implements exactly P3 steps 4 (exact file allow-list with `unexpected_file` / `unsafe_weight_format`), 6 (strict JSON: duplicate keys refused, no NaN/Infinity, depth bound; the `config.json`, `tokenizer_config.json`, special-token and `chat_template_sha256` rules; `quantization_config` → `quantization_unverified`), 7 (safetensors header parse with every bound) and the pure half of 8 (`adapter_config.json` rules and the lora_A/lora_B ↔ base `{module}.weight` shape check → `adapter_base_incompatible`), each as a function over bytes/parsed headers that returns a typed result or raises the module's own error with the P3 failure code. Inputs are exact types (`bytes`, `str`, plain dict/list from its own parse); no caller objects (FTF-1703 ruling).
+    - Tests: the P3 safetensors boundary table, adapter table, file allow-list table (case and double-extension variants) and strict-JSON table, all generated (not hand-picked); fixtures written with stdlib `struct` + `json`; META-LEAK with markers in file names and contents (error messages carry codes only).
+    - Faults that must go RED (from P3's list): pickle allowed; allow-list turned into a deny-list; each header bound off by one; offset-coverage check dropped; shape check dropped; quantized config accepted; duplicate JSON keys accepted.
+    - Must not import torch, safetensors or transformers, and never executes or imports any artifact file. P3 must reuse these functions, not re-implement them.
+  - **FTF-H010-P3 Full-weight and adapter import validation** (§6.7, §6.17, §17 "Prefer safetensors ... do not deserialize arbitrary uploaded pickle", §34, §58A rows 2–3, §68.1 paragraph 3, §68.4; deps FTF-H010-P2, FTF-H010-P3a (reuse its validators) plus certified FTF-0301/0304/0305/0306/1002; no migration).
+    - Adds `validate_weights_import` and `validate_adapter_import` to the P2 activity, with the same claim/lease/fence and origins `imported_weights` | `imported_adapter`. Inputs come from DB rows only: the job's `trainable_artifact_id`, and for adapters the job's `parent_model_version_id` as the base. The approved local root comes from server configuration passed by the dispatcher, never from a request.
+    - Steps, each refusal its own failed code:
+      1. The artifact must be `ready` with a resolved digest → else `artifact_not_ready`.
+      2. License: FTF-0305 `assert_license_accepted_for_use` on the artifact (`license_not_accepted`) and, for an adapter, on the base's artifact (`base_license_not_accepted`).
+      3. Digest: FTF-0306 `verify_or_compute_weights_digest` recomputes from real bytes and never trusts the stored value → `digest_mismatch`. Source unreachable → `blocked_external` `artifact_source_unavailable`.
+         - This slice supports `local_filesystem` artifacts (the FTF-0304 multi-file manifest).
+         - `private_s3` (FTF-0303 resolves one object) and `huggingface` (external acquisition) → `blocked_external` `metadata_files_unavailable` (disclosed).
+      4. Exact file allow-list over the manifest:
+         - required: `config.json`, `tokenizer_config.json` and `tokenizer.json` | `tokenizer.model`;
+         - weights: `*.safetensors` (+ `model.safetensors.index.json`);
+         - named optional files: `generation_config.json`, `special_tokens_map.json`, `added_tokens.json`, `vocab.json`, `merges.txt`, `chat_template.jinja`, `README.md`, `LICENSE`;
+         - adapter: `adapter_config.json` + `adapter_model.safetensors`.
+         - Anything else → `unexpected_file`. That includes `.bin/.pt/.pth/.ckpt/.pkl/.pickle/.joblib/.npy` in any case, double extensions, hidden files and nested directories. Pickle-capable formats get their own code, `unsafe_weight_format`.
+      5. Each parsed file is read once, size-bounded (`config.json` ≤ 1 MiB, `tokenizer_config.json` ≤ 4 MiB), hashed, and must equal its FTF-0304 manifest sha256 → else `artifact_changed_during_validation` (TOCTOU).
+      6. Strict parsing: stdlib `json` with duplicate keys refused, no NaN/Infinity, and a depth bound.
+         - `config.json`: `model_type` str; `architectures` a non-empty list of str; `hidden_size`, `num_hidden_layers` and `vocab_size` positive int (bool refused); `torch_dtype` in an allow-list.
+         - `chat_template_sha256` = sha256 of the exact UTF-8 bytes of `chat_template`, or NULL when absent.
+         - Special tokens are str or `{content: str, ...}`.
+         - A present `quantization_config` → `quantization_unverified`: serving/trainer compatibility is not provable without GPU.
+      7. safetensors header (stdlib `struct` + `json`):
+         - an 8-byte little-endian N with 0 < N ≤ 100,000,000 (the format's own limit) and N ≤ file size − 8;
+         - a JSON object;
+         - each tensor has `dtype` in an exact allow-list (F64, F32, F16, BF16, I64, I32, I16, I8, U8, BOOL, F8_E4M3, F8_E5M2), `shape` a list of non-negative int, and `data_offsets` [begin, end] with end − begin = prod(shape) × dtype size;
+         - offsets contiguous, non-overlapping and covering the buffer exactly;
+         - `__metadata__` is str→str only.
+         - Any failure → `weights_header_invalid`.
+      8. Adapter, exact base (§68.1 "not same-family guessed weights"):
+         - The parent must be a same-project `full_weight` version (origin `imported_weights` | `factory_trained`) with a succeeded import job or a factory run → else `base_not_validated`.
+         - FTF-1002 `build_artifact_lineage_manifest(..., resolved_base_artifact=parent_artifact)`: an `AdapterBaseMismatchError` → `adapter_base_mismatch`. The base revision compare is exact.
+         - `adapter_config.json`: `peft_type == "LORA"` exact; `r` a positive int; `target_modules` a non-empty list of str. `base_model_name_or_path` is informational only and never resolves the base.
+         - Shape compatibility: for each `lora_A` [r, in] / `lora_B` [out, r] tensor, the base safetensors header must hold the mapped `{module}.weight` with shape [out, in], and r must equal the config r → else `adapter_base_incompatible`.
+         - Tokenizer files inside the adapter directory must hash-equal the base's → else `tokenizer_mismatch`.
+      9. Success, epoch-fenced, inserts the ModelVersion:
+         - import_kind `full_weight` | `adapter`; origin `imported_weights` | `imported_adapter`;
+         - `weights_digest` = the re-verified digest; `base_model_revision` from the artifact; `tokenizer_revision` = the artifact's base revision (disclosed: there is no separate tokenizer revision source); `chat_template_sha256` as computed; `serving_config_sha256` NULL until FTF-1003;
+         - `adapter_only` = true for an adapter; `parent_model_version_id` = the base for an adapter, or the declared parent for weights;
+         - `lineage_completeness = 'partial'` (base/tokenizer/license known, training/data unknown). Never `complete`: only factory_trained with a TrainingRun can be.
+         - No existing `model_versions` row is ever updated (§68.1 "Preserve prior model as immutable parent").
+    - DoD tests: real PG16 as sovra_app, plus a real approved-root directory with tiny fixtures generated by stdlib (safetensors written with `struct` + `json`). No GPU.
+      - Truth table: origin × artifact status × license × digest × base state.
+      - safetensors boundary table: N = 0, 1, 100,000,000, 100,000,001, > file size; overlap, gap, out-of-range and end < begin offsets; unknown or lower-case dtype; negative, bool or float shape; non-str `__metadata__`; duplicate tensor names via duplicate JSON keys.
+      - Adapter table: r mismatch; in/out swapped; missing base tensor; extra target module; base-revision Unicode/case variants (generated); `base_model_name_or_path` naming a different model while the true parent is compatible (accepted), and the reverse (refused).
+      - File allow-list table, including case and double-extension variants.
+      - TOCTOU: a real file rewrite between the manifest and the parse.
+      - Complete per-step failure-code table; META-LEAK with markers in file names and contents.
+      - Faults that must go RED:
+        - license gate skipped;
+        - digest taken from the stored value;
+        - pickle allowed;
+        - the allow-list turned into a deny-list (an unknown file accepted);
+        - each header bound off by one;
+        - offset-coverage check dropped;
+        - base resolved by name/family;
+        - base revision casefolded;
+        - shape check dropped;
+        - tokenizer mismatch ignored;
+        - lineage written as `complete`;
+        - quantized import accepted;
+        - a parent row updated;
+        - the TOCTOU check dropped.
+    - Disclosed:
+      - BLOCKED_EXTERNAL: loading full weights and adapter+base (vLLM/GPU, FTF-1003/1004) and trainer compatibility (FTF-R003).
+      - `private_s3`/`huggingface` metadata stays unavailable until a multi-file resolver manifest exists.
+      - Same UNWIRED dispatcher as P2.
+    - Must not import torch, safetensors or transformers. It never executes or imports any artifact file.
+  - **FTF-H010-P4 Role assignment, capability-driven actions and continuation eligibility (migration)** (§0.12 roles, §6.17, §17 paragraphs 3–4, §27 judge ≠ candidate, §58A "Allowed next operations", §68.1 paragraph 4 "Actions are capability driven ... Invalid actions return precise reason and server-side denial, not just disabled buttons"; deps FTF-H010-P2, P3, and certified FTF-0305/0307/0308/1001/1002).
+    - Migration `0030_model_role_assignments` creates `model_role_assignments`:
+      - Columns: id, organization_id, project_id, model_version_id, role ∈ {current_production, baseline, candidate, teacher, judge}, assigned_by (non-blank, ≤ 200), assigned_at, request_id, idempotency_key, request_sha256, revoked_at, revoked_by, revoke_reason_code.
+      - Composite FK (org, project, model_version_id) → model_versions.
+      - CHECK: the three revocation columns are all NULL or all set.
+      - Partial UQ (project_id, model_version_id, role) WHERE revoked_at IS NULL.
+      - Partial UQ (project_id) WHERE role = 'current_production' AND revoked_at IS NULL: one incumbent per project.
+      - BEFORE INSERT trigger: refuses `judge` on a version holding an active `candidate` role in the same project, and the reverse (§27).
+      - BEFORE UPDATE trigger: allows only a one-time NULL→set revocation; no un-revoke and no other column change.
+      - Grants: SELECT, INSERT, UPDATE (revoked_at, revoked_by, revoke_reason_code). RLS ENABLE+FORCE, no DELETE.
+    - Routes, additive in 10-interface.yaml:
+      - `GET/POST .../model-versions/{id}/roles`;
+      - `POST .../model-versions/{id}/roles/{role}/revoke`;
+      - `GET .../model-versions/{id}/actions`.
+    - Role POST behaviour:
+      - Body allow-list exactly {role, idempotency_key}. `idempotency_key` is 1..128 characters of printable ASCII. Same key + same request_sha256 → 200 replay with no rows or audit; same key + a different body → 409.
+      - Writes for candidate, baseline and teacher use `MODEL_VERSION_WRITE_ROLES`.
+      - `current_production` and `judge` are `organization_admin` only. A judge role does not make a qualified judge: FTF-0616 calibration and the FTF-0617 policy still decide. `current_production` records the incumbent only; it deploys or routes nothing (FTF-10xx).
+      - Any role requires a validated version: a succeeded import job or factory_trained. Otherwise 409 `import_not_validated`.
+      - Errors:
+        - 400 `invalid_body` | `invalid_role`;
+        - 401; 403;
+        - 404 `not_found` (identical for foreign and missing);
+        - 409 `role_already_assigned` | `incumbent_exists` | `self_judging_role_conflict` | `role_not_assigned` | `idempotency_key_reused` | `import_not_validated`.
+    - `workers/training/continuation.py`, pure and no I/O:
+      - `evaluate_model_actions(facts)` covers {evaluate, compare, continue_tuning, exact_resume, request_qualification, retain_incumbent, deploy_route, retire}. The route builds the facts server-side from DB rows: the version, its succeeded job, the artifact, the license gate, the FTF-1002 manifest and the roles.
+      - Rules:
+        - external_endpoint: evaluate/compare allowed. continue_tuning is denied `endpoint_not_trainable` and exact_resume `no_trusted_checkpoint`, whatever the ref or alias text says (§68.1 "Permission to invoke is not permission or technical ability to continue training"; §0.12 "A teacher role does not determine trainability").
+        - imported_weights/adapter, validated with license accepted: continue_tuning allowed as a `new_run` plan. exact_resume denied `no_trusted_checkpoint` (§17 "Imported adapters without optimizer state start a new training run, not a resume").
+        - factory_trained: exact_resume is denied until a FTF-0713 checkpoint manifest exists. That input does not exist yet, so it is never assumed.
+        - License revoked → every use action denied `license_not_accepted`. A base that no longer validates → `adapter_base_incompatible`.
+        - Unvalidated rows (including FTF-1001 synchronous creates) → every action denied `import_not_validated`.
+        - request_qualification, deploy_route and retire → denied `prerequisite_not_available` until H020/FTF-10xx and the status lifecycle exist. Unknown is never allowed.
+        - retain_incumbent is allowed only for the active `current_production` holder.
+      - `continuation_plan`:
+        - `new_run` = {parent = this version, start_step = 0, optimizer_state none, a new run id, separate cost};
+        - `exact_resume` = {checkpoint id, start_step = checkpoint step ≥ 1, same run lineage}.
+        - So "resumed step differs from new continuation" is a tested property.
+      - Exports `require_action_allowed` for future effect routes.
+    - DoD tests (real PG16 as sovra_app):
+      - Role truth table: 5 roles × {validated endpoint, weights, adapter, unvalidated FTF-1001 row} × 6 org roles → exact status and code.
+      - Concurrency: two threads posting `current_production` → exactly one 201.
+      - Raw-SQL self-judging refused in both insert orders.
+      - Revoke: a second revoke → 409. A raw un-revoke is refused by the trigger; a raw role change is refused by the grant.
+      - Cross-tenant: identical 404, a raw org2 INSERT refused, and dropping FORCE goes RED.
+      - Idempotent replay adds 0 rows and 0 audit.
+      - Complete actions decision table over origin × validated × license × base-compat × roles, each action's allowed/reason asserted.
+      - Generated ref/alias variants containing `ft:`, `lora`, `llama`, `trainable` and `teacher` never change endpoint continue_tuning.
+      - Plan property: for every checkpoint step ≥ 1, new_run.start_step == 0 ≠ exact_resume.start_step, and the run ids differ.
+      - Strict body table: role enum exact, so `Judge`, `judge `, `ｊudge` and `judge​` are refused. Idempotency-key boundary 0/1/128/129 characters plus non-ASCII.
+      - META-LEAK.
+      - Faults that must go RED:
+        - each widened role grant;
+        - the incumbent index dropped;
+        - the self-judging trigger dropped (each direction);
+        - un-revoke allowed;
+        - endpoint continue_tuning allowed on a trainable-looking ref;
+        - imported adapter exact_resume allowed;
+        - revoked license ignored;
+        - an unvalidated row given actions;
+        - an unknown prerequisite treated as allowed;
+        - the role enum casefolded;
+        - resume start_step set to 0.
+    - Disclosed:
+      - BLOCKED_EXTERNAL: continued training and real resume (GPU; FTF-R003/0701/0714). exact_resume is always denied until FTF-0713.
+      - UNWIRED for effects: no training-submit path calls `require_action_allowed` yet.
+      - The roles and actions routes are live; `product_truth_check` gets the actions route as FTF-H010's proving symbol only when the parent closes.
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 
@@ -9907,8 +10365,499 @@ docs/spec-matrix.yaml. It never invents criteria.)
   - Each resolution action (exclude, correct, new_version, waive) requires a non-blank rationale within the server's 1..2000 bound before submit; the server's 400/403/404/409 outcomes are shown as errors, never success (Law 17). A detector false positive cannot be marked without rationale; there is no in-place edit control for locked data.
   - Lessons from FTF-0309 (build in from round 1): tie every displayed result and every enabled action to the exact org/project/dataset/report identity requested - clear on any switch, ignore in-flight responses after a switch, treat a mismatched echo as an error; strict type checks (exact booleans, enums, required fields); no simulated effect when no handler is wired; idempotency key reused only for an identical retry.
   - Tests: a DOM-level Vitest spec with mocked fetch per typed state and action, each with a fault that goes RED (rationale not required; 409 shown as success; stale result after a switch; mismatched echo accepted; malformed body rendered). Disclose UNWIRED (no Next.js page tree until FTF-H029); proving_symbol stays blank.
+- **FTF-0310 Capability contract tests** (Control-plane 2026-10-09T21:45Z; §6, §13, §34, §68, §77, §81; CAP-06; Q07, Q10; deps FTF-0301, FTF-0307, FTF-0309 all CERTIFIED; contract owner FTF-0301 - read `packages/contracts/openapi/03-interface.yaml` and `packages/contracts/jsonschema/03-domain.schema.json`, add no path and no schema change; DoD: `tools/r1_handoff.py packet FTF-0310`; files `packages/model-catalog/capability_contract_tests.py`, `tests/tasks/test_ftf_0310.py`, plus a real-PG integration test and an additive ci.yml step). Acceptance: "Run real artifact/capability resolution plus deterministic negative schema cases against frozen contract." Negative: "Unresolvable/upstream-only model fails trainability; all shipped source variants tested rather than interface-only stubs."
+  - What it is: a contract-conformance suite, not new behaviour. `capability_contract_tests.py` holds the reusable checker: it validates a real response from the live `build_trainable_artifact_router` (training-artifact + /changes) and `build_model_capability_router` (/capabilities) against the frozen 03 schemas, using a stdlib-only checker over exactly the JSON Schema/OpenAPI keywords the frozen 03 files use (no jsonschema package: it is not a dependency, and adding one is ask-first). The checker refuses any keyword it does not implement, so an unchecked constraint fails loudly instead of passing. It never re-implements resolution.
+  - Real resolution (PG16 as sovra_app, the real routers mounted as in `apps/api/app/main.py`, the existing local gateway stand-in used by the FTF-0309-P1 integration test): one registered artifact per shipped `SourceType` - huggingface, private_s3, local_filesystem, private_registry - in each `ArtifactStatus` (registered, ready, archived), mapped and unmapped, license approved/pending/revoked. Every response validates against the frozen schema, and trainable is true only for a mapped, ready, license-approved artifact with no `unknown` blocker.
+  - Negative acceptance: an upstream-only model (in the gateway, no artifact mapping) and an unresolvable model (unknown name, Unicode look-alike, trailing space, case variant - exact match, no normalisation) each return trainable=false with the frozen reason, never 200-trainable; a revoked or archived artifact is never trainable.
+  - Deterministic negative schema table: for each frozen response schema, a generated case per required field missing, per enum value outside the enum (including case/whitespace variants), per wrong JSON type, and an extra property where `additionalProperties: false` - the checker must reject each. A generated table, not hand-picked cases (FTF-0616 lesson).
+  - Faults that must go RED: a source variant dropped from the matrix; the checker accepting an extra property; enum check casefolded; trainable allowed for an upstream-only model (mutate the real router); revoked license ignored; the schema loaded from a copy instead of the frozen file.
+  - Must not edit the certified FTF-0301/0307/0309-P1 modules or the frozen contracts; a found contract mismatch is reported as a finding, not fixed in place. proving_symbol stays blank (test-only task).
+
+- **Dataset importer family FTF-0502..0505 + common slice FTF-0502-P1** (Control-plane design 2026-10-13; FINE_TUNING_FACTORY_RELEASE_1.md §7, §7A.10, §8–8.2, §9, §10, §67.1–67.5, §77, §81; FTF-0501 CERTIFIED 2026-10-10 (#692 + #736, merge 41904e5) made all four dependency-ready; FTF-0500, FTF-0506 and FTF-0508 CERTIFIED). Contract per task: `python tools/r1_handoff.py packet <ID> --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Contract owner FTF-0500: read `packages/contracts/openapi/05-interface.yaml` and `jsonschema/05-domain.schema.json`, and add no path. FTF-0502-P1 refines FTF-0502 under "For each card" step (3). It adds no criteria: the denominator stays 302 and no ADR applies.
+  - Order (one lane): FTF-0502-P1 → FTF-0502 → FTF-0504 → FTF-0503 → FTF-0505. With more lanes, the importers run in parallel after P1 (no shared write set).
+  - Common rules (every item in this family):
+    - Path refinement, recorded: the packet's `services/training-worker/data/<x>.py` becomes `workers/data/<x>.py`, the real SOURCE_ROOT (FTF-0506/0508 precedent).
+    - No migration, route, UI, contract edit, runtime dependency, secret or keyed service. Stdlib only: `json`, `csv`, `codecs`, `zipfile`, `xml.parsers.expat`, `hashlib`, `tempfile`.
+    - Reuse, do not re-implement:
+      - FTF-0506 `normalize_conversation` (the only place a record becomes canonical);
+      - FTF-0508 `MAX_CANONICAL_RECORD_BYTES` (2 MiB, §67.3) and its candidate shape (`validate_record_batch` must report 0 issues on every accepted candidate);
+      - P1's `import_common` (limits, mapping, chunk reader, report, codes);
+      - FTF-0501's `S3Client.stream_object` through P1's `open_dataset_source`.
+      - An importer may not edit `import_common.py`. A needed change is a serialized edit that re-runs every landed importer suite (Law 15).
+    - Importers never read anything but the chunk iterable they are given. No listing, no other dataset, no file path from a mapping, no network: `sys.addaudithook` sees no `socket.*`, `subprocess.*`, `os.system`, `exec` or `import` of data during an import. Only XLSX opens one anonymous `tempfile.TemporaryFile`.
+    - Importer choice is by the session's server-verified content type (§8.1 step 3), never by file name. Each importer refuses a dataset whose `verified_content_type` is not its own, with `content_type_not_supported_by_importer`, before reading a byte. Test: the 5 `SUPPORTED_CONTENT_TYPES` × 4 importers.
+    - Law 17:
+      - A chunk-source exception (storage outage, connection reset) gives report state `blocked`, `source_unavailable`.
+      - A recomputed source sha256 ≠ `Dataset.verified_sha256`, or more bytes than `verified_size_bytes`, gives `failed`, `source_changed`.
+      - The deadline gives `failed`, `parse_timeout`.
+      - More than `max_rejections` rejected rows gives `failed`, `too_many_rejections`.
+      - In each case no record is usable: the contract is that records are provisional until the final report says `completed`, and the tests assert the consumer gets no `completed` report.
+    - Refuse, never truncate (§67.2 "Field truncation ... forbidden", §67.3 "Bound ... record bytes and nesting"). An oversized record or field is a row rejection or a fatal error. It is never cut, padded or coerced.
+    - No type inference anywhere: every cell or field is kept as the exact source string unless the mapping explicitly applies `json_parse`. Arabic, RTL marks, combining marks, ZWJ/ZWNJ and emoji are kept byte-exact (no NFC/NFKC/casefold/strip).
+    - Never sets or changes purpose:
+      - The report copies `dataset_purpose` from the Dataset row.
+      - No mapping slot can set a purpose. A data field named `purpose`, `split` or `heldout` is never read unless it is mapped as a plain metadata label.
+      - No label is invented: an unmapped `quality_label` is absent, never `approved` (§9 "Preassigned evaluation-only data cannot be reclassified into training by an import heuristic", §67.2).
+    - Content-free errors (META-LEAK):
+      - Reports, rejections and exceptions carry only a code from P1's closed catalog, the mapping slot name from a closed set, and importer-generated structural locators (1-based line / row / element / sheet index, column letters, byte offset). They never carry a header text, sheet name, JSON key, value or a FTF-0506 exception message (its messages can echo data, e.g. `unmapped role {role!r}`).
+      - Exceptions are converted with `raise ... from None`.
+      - One shared META-LEAK check (P1's test helper) runs over `traceback.format_exception` of every raised error (cause, context, notes, args), every report and rejection field, and captured log records, with markers planted in contents, headers, keys, sheet names and file bytes.
+    - Generated tables, not hand-picked cases:
+      - stdlib generators with a fixed seed plus exhaustive `itertools.product` over the axes named per item;
+      - chunk-boundary independence: every input in the tables is also fed in 1-byte and 7-byte chunks, and split at every byte offset for inputs ≤ 4 KiB. The candidates and `report_sha256` must be identical.
+      - Host-dependent behaviour (`csv`, `expat`, `zipfile`) is pinned by tests that the verifier repeats on Python 3.12 (PRE-SUBMIT SELF-ATTACK, neutral host).
+    - Bounded resources:
+      - `tracemalloc` peak for a 64 MiB input stays within 1.5× the peak for a 1 MiB input with the same maximum record size (memory independent of file size);
+      - a maximum-size record fed in 1-byte chunks finishes inside a fixed budget (no quadratic rescans);
+      - every limit is tested at max−1 / max / max+1 without overriding the production constants.
+    - Real integration (each item adds its own additive ci.yml job plus verdict `needs`, following `direct-upload-routes-integration`):
+      - PG16 as `sovra_app` (never the migration owner) plus live SeaweedFS (the test boots the compose `s3` service itself, the `s3lab` precedent).
+      - The fixture file is uploaded through the real FTF-0501 routes on uvicorn and finalized into a real Dataset. It is opened through `open_dataset_source` and imported, and every accepted candidate passes FTF-0508 `validate_record_batch` with 0 issues.
+      - Mid-stream outage (`s3lab.compose("stop","s3")`, the 0501 precedent, or a truncating TCP relay) → `blocked`.
+      - Foreign-org dataset → identical to a missing one.
+      - Held-out dataset not readable with `include_held_out=False`.
+    - Every DoD bullet has its own behavioural fault→RED row. Uncapped mutation gate at 0 survivors over each new module. PRE-SUBMIT SELF-ATTACK and SAME-CLASS SWEEP across the sibling importers.
+    - Disclosed, every item:
+      - UNWIRED: no route, dispatcher or activity calls the importers (durable dispatch FTF-0801/H016; persistence and the detector run are the proposed FTF-0502-P2; the MappingSpec UI is FTF-H011). `proving_symbol` stays blank.
+      - "Parse in isolated worker" / "resource-limited worker" (§8.1 step 5, §67.3) is a deployment property not proven here.
+  - **FTF-0502-P1 Dataset import common contract and verified-source reader (pure + one read-only DB/S3 function; ready now)** (§7, §8.1 steps 1–7, §9, §67.2, §67.3; deps FTF-0500, FTF-0501, FTF-0506, FTF-0508, all CERTIFIED; no lock beyond its own write set).
+    - Files:
+      - `workers/data/import_common.py` (pure, stdlib);
+      - `apps/api/app/datasets/dataset_object_source.py` (read-only);
+      - `tests/tasks/test_ftf_0502_p1.py`;
+      - `tests/tasks/import_test_support.py` (shared generators + META-LEAK checker, reused by 0502–0505);
+      - `tests/integration/test_ftf_0502_p1_dataset_source_postgres_s3.py`;
+      - additive ci.yml job `dataset-import-source-integration` + verdict `needs`.
+    - `import_common.py` provides:
+      - `ImportLimits` (frozen):
+        - `max_source_bytes` = 10 GiB (§67.3);
+        - `max_record_bytes` = FTF-0508 `MAX_CANONICAL_RECORD_BYTES` (import it; do not re-declare);
+        - `max_depth` = 64;
+        - `max_rejections` = 10,000;
+        - `preview_max_records` = 20 (§67.3 "preview max20");
+        - `deadline_seconds`.
+        - A caller may lower a limit and never raise one above the default: a higher value raises, because §67.3 says larger limits need "capability/load evidence".
+      - `parse_mapping(document: str) -> ImportMapping`, the single MappingSpec parser (H011 must reuse it):
+        - plain JSON: duplicate keys refused, NaN/Infinity/`1e999` refused;
+        - exact types (`type(x) is str/int/bool/dict/list`, no subclasses or caller objects);
+        - an exact allow-list per shape, with `mapping_sha256` over canonical JSON.
+        - Shapes:
+          - `messages`: a JSON pointer (RFC 6901, exact keys, `~0`/`~1`, decimal indices without leading zeros) to a messages array; explicit per-message key names for role/content/tool_calls/tool_call_id/name; an explicit `role_map` of exact str → FTF-0506 `ALLOWED_ROLES`; and a required `on_unmapped_message_keys ∈ {reject, ignore}` with no default.
+          - `prompt_completion`: required `prompt`/`completion` slots and an optional `system`. Produces `[system?, user, assistant]`.
+          - `messages_json`: one field/column holding a JSON messages array, parsed strictly. This is how tabular sources carry tool calls.
+        - Optional slots: `group_key`, and `metadata` with closed keys {`language`, `task_category`, `consent`, `quality_label`, `source_record_id`, `event_timestamp`}. `event_timestamp` must be ISO 8601 with an offset, and the source string is kept as-is.
+        - Format blocks: `csv` {encoding, delimiter, has_header, header_row}, `xlsx` {sheet_name, header_row}, `json` {container, ignored_top_level_keys}.
+        - Tabular slots address a column by exact header text or by 0-based index / column letters.
+        - Grouped multi-row conversations → `mapping_unsupported` (disclosed).
+      - `apply_mapping` builds the raw record. Missing required slot → `required_field_missing`; empty string in a required tabular slot → `required_field_empty`; wrong type → `mapping_type_mismatch`; role not in `role_map` → `unmapped_role`. An empty optional slot is omitted and never defaulted.
+      - `normalize_mapped_record` calls FTF-0506 `normalize_conversation(source_type, source_record_index, raw_record, tool_schemas, tool_argument_validator, group_key, record_id)`:
+        - `record_id` = uuid5(fixed namespace, `dataset_sha256:mapping_sha256:index`), so it is deterministic and content-free.
+        - `ConversationNormalizationError` → `canonical_schema_invalid`, plus at most the message index parsed from the structural `messages[N]` prefix.
+      - `to_dataset_record_candidate` builds the §6.11 candidate exactly as FTF-0508 accepts it: `record_index` (0-based source ordinal, counting rejected rows and not blank lines), `schema_version`, `source_type`, `content`, `record_sha256` = lineage.raw_sha256, `normalized_sha256` = canonical_hash, `quality_status="pending"`, `pii_status="unscanned"`, `tool_schema_status ∈ {not_applicable, valid}`.
+      - `strict_loads(data, *, max_depth)`:
+        - a linear depth pre-scan outside strings before `json.loads` (no `RecursionError` path);
+        - duplicate keys → `duplicate_key`;
+        - NaN/Infinity, and floats that overflow to inf → `non_finite_number`;
+        - an int over CPython's digit limit → `number_out_of_range`;
+        - a lone surrogate after decoding → `invalid_unicode`.
+        - The rules are the same as FTF-0607 `parse_strict_json`, but that module is not imported: it lives in a separate deployable (`workers/evaluation`). Record this.
+      - `ChunkReader`:
+        - wraps `Iterable[bytes]`, computes sha256 and the byte count, and enforces `expected_size`/`max_source_bytes`;
+        - converts any exception raised by the source iterator into `blocked` / `source_unavailable` (never `completed` or `failed`);
+        - checks the deadline;
+        - at end of stream compares to `expected_sha256` and gives `source_changed` on a mismatch.
+      - The report and events:
+        - `RowRejection(locator, code, slot)`.
+        - `ImportReport(state ∈ {completed, failed, blocked}, failure_code, importer, importer_version, mapping_sha256, dataset_purpose, expected_sha256, source_sha256, source_bytes, source_schema_sha256 | None, records_seen, records_accepted, records_rejected, blank_lines, rejection_counts, rejections, report_sha256)`.
+        - Invariant: `records_seen == records_accepted + records_rejected`.
+        - `report_sha256` covers canonical JSON of every field except itself.
+        - `REJECTION_CODES` and `FAILURE_CODES` are closed frozensets. A test asserts every code any module emits is in the catalog.
+      - `preview(events, limit)` with `limit ≤ preview_max_records` (21 raises). It uses the same code path as a full import.
+    - `dataset_object_source.py`: `open_dataset_source(session, context, *, project_id, dataset_id, include_held_out, storage)` (keyword-only, `include_held_out` has no default) → `DatasetObjectSource(dataset_id, purpose, source_type, verified_content_type, expected_sha256, expected_size, chunks)`.
+      - It loads the Dataset through FTF-0501-P1 `get_dataset`, so foreign, missing and hidden-held-out all raise the same `DatasetNotFoundError`. It then loads the dataset's own upload session row and its `object_key`, as `sovra_app` under the tenant context.
+      - It streams only that key with `S3Client.stream_object`. There is no listing call, and no caller string reaches storage.
+      - Storage errors surface from the iterator as FTF-0501's `UploadStorageUnavailableError` (content-free).
+      - It never returns the key and never writes.
+    - DoD tests:
+      - Pure:
+        - strict mapping-parse table: for every allow-listed key, each of missing, extra, int-for-str, bool-for-int, float, null, list, nested object, duplicate key, NaN and a str subclass → `mapping_invalid`;
+        - JSON-pointer table (escapes, leading-zero index, `-`, empty token, non-ASCII keys exact);
+        - `role_map` exactness, using property-generated Unicode variants (reuse the FTF-0616 round-8 generator) of `user`/`assistant`, none of which is accepted;
+        - limits table (lower accepted, higher refused, max−1/max/max+1);
+        - `strict_loads` table (depth 63/64/65 and 100,000; duplicate keys at every level; NaN/±Infinity/1e999/-1e999; 4300/4301-digit ints; lone and paired surrogate escapes);
+        - ChunkReader table (exact size; size+1; sha mismatch at the last byte; the iterator raising at chunk 0, mid-stream and at the end; deadline);
+        - candidate table (every accepted candidate passes `validate_record_batch` with 0 issues);
+        - determinism across runs and `PYTHONHASHSEED`;
+        - META-LEAK with markers in values, keys and FTF-0506 messages.
+      - Integration (PG16 as `sovra_app` + SeaweedFS, real FTF-0501 routes):
+        - streamed bytes hash to `Dataset.verified_sha256`;
+        - foreign-org and foreign-project dataset raise exactly the missing error;
+        - a held-out dataset is refused with `include_held_out=False` and readable with `True`;
+        - a request counter on the S3 client shows exactly one GET of the session key and no LIST;
+        - a mid-stream stop of `s3` → `UploadStorageUnavailableError` → ChunkReader `blocked`.
+    - Faults that must go RED:
+      - duplicate keys accepted (mapping or `strict_loads`);
+      - 1e999 accepted;
+      - the depth pre-scan removed;
+      - a limit raisable above its default;
+      - sha mismatch → completed;
+      - a source exception → completed or failed (must be blocked);
+      - deadline ignored;
+      - `too_many_rejections` → completed;
+      - the FTF-0506 message copied into a rejection;
+      - a data `purpose`/`split` field read;
+      - `quality_label` defaulted;
+      - `record_id` from uuid4 (report sha unstable);
+      - the role map compared after casefold/strip/NFKC;
+      - `include_held_out` given a default of True;
+      - the reader lists the bucket or accepts a caller key;
+      - a foreign dataset distinguishable from a missing one;
+      - `from None` removed.
+  - **FTF-0502 JSONL importer** (§7, §8.1, §67.2, §67.3; packet acceptance "Stream JSONL per record and report exact row/schema failures with bounded memory"; negative "Malformed UTF-8/line, huge record and mixed critical schemas produce quarantine/errors, not silent loss"; deps FTF-0500/0501/0506 CERTIFIED + FTF-0502-P1).
+    - Files:
+      - `workers/data/jsonl_importer.py`;
+      - `tests/tasks/test_ftf_0502.py`;
+      - `tests/integration/test_ftf_0502_jsonl_import_postgres_s3.py`;
+      - ci.yml job `jsonl-import-integration` + verdict `needs`.
+    - `import_jsonl(chunks, *, mapping, expected_sha256, expected_size, verified_content_type, dataset_purpose, source_type, limits, tool_schemas, tool_argument_validator)` yields accepted candidates and `RowRejection`s, and finally one `ImportReport`. Accepted types: `application/jsonl` and `application/x-ndjson` only.
+    - Line rules:
+      - Only LF delimits; one trailing CR before LF is removed. U+2028/U+2029 inside strings are not delimiters.
+      - A UTF-8 BOM is accepted only at byte 0 of the file. A BOM anywhere else → `invalid_json`.
+      - UTF-16/32 (BOM or NUL pattern) → fatal `unsupported_encoding`.
+      - A whitespace-only line counts in `blank_lines` and is not a record.
+      - Each line is decoded as strict UTF-8 on its own. A bad line → `invalid_utf8` and the next line still imports.
+      - Each line must be exactly one JSON object through P1 `strict_loads`. Otherwise `record_not_object` / `invalid_json` / `duplicate_key` / `non_finite_number` / `nesting_too_deep` / `invalid_unicode`.
+      - A line longer than `max_record_bytes` → `record_too_large`. Its bytes are discarded up to the next LF without buffering, and the following lines continue.
+      - The line buffer keeps a scan offset: no rescan from the start and no `buf += chunk` quadratic growth.
+    - Mixed critical schemas (negative acceptance): lines that map, lines missing required slots, unmapped roles, non-objects and invalid canonical records interleave. Each gets its code and locator. The `records_seen` invariant and per-code counts are exact, and nothing is dropped silently.
+    - Generated tables:
+      - invalid-UTF-8 classes × position in the line (start/middle/end/split across a chunk): overlong, encoded surrogate `ED A0 80`, truncated multibyte, `FF`/`FE`, CESU-8, stray continuation;
+      - line-ending axis: LF / CRLF / no final newline / CR-only / mixed / blank / whitespace-only;
+      - BOM position axis;
+      - size axis: max−1 / max / max+1 / 64 MiB, delivered in 1-byte chunks;
+      - depth axis;
+      - duplicate-key-at-depth axis;
+      - number axis: NaN, ±Infinity, 1e999, 4301 digits;
+      - non-object axis: array, string, number, null, true;
+      - trailing-garbage axis: `{}{}`, `{} x`, `{}\u0000`;
+      - an Arabic/RTL/emoji/ZWJ/formula-prefix content table, preserved byte-exact in the canonical content.
+    - Faults that must go RED:
+      - the line cap off by one;
+      - an unbounded buffer (memory test);
+      - a quadratic rescan (1-byte-chunk budget);
+      - an oversized line swallowing the following lines;
+      - one bad UTF-8 line failing the whole file;
+      - a mid-file BOM accepted;
+      - CR left in the record;
+      - blank lines not counted;
+      - a non-object accepted;
+      - trailing garbage accepted;
+      - the invariant broken (a rejected row not counted);
+      - the content-type check removed (a CSV dataset parsed as JSONL);
+      - decoding with `errors="replace"`.
+  - **FTF-0504 CSV importer** (§8.1, §67.2 "Select sheet/header/encoding/delimiter", §67.3 "Spreadsheet/CSV exports neutralize formula execution without mutating canonical training content"; packet acceptance "Use explicit header/encoding/delimiter/column mapping; preserve strings, IDs and Arabic text"; negative "CSV formula text is not evaluated; leading-zero identifiers and quoted multiline fields remain intact"; deps FTF-0500/0501/0506 + FTF-0502-P1).
+    - Files:
+      - `workers/data/csv_importer.py`;
+      - `tests/tasks/test_ftf_0504.py`;
+      - `tests/integration/test_ftf_0504_csv_import_postgres_s3.py`;
+      - ci.yml job `csv-import-integration` + verdict `needs`.
+    - Accepted type: `text/csv` only.
+    - Everything is explicit, with no `csv.Sniffer` and no guessing:
+      - `encoding` ∈ {`utf-8`, `utf-8-sig`, `utf-16-le`, `utf-16-be`, `windows-1256`}, decoded strictly. A decode error is fatal `invalid_encoding` with the physical line, because the reader cannot resync. A UTF-8 BOM under `utf-8` → fatal `unexpected_bom` (choose `utf-8-sig`).
+      - `delimiter` ∈ {`,`, `;`, `\t`, `|`}; `quotechar` `"`; `strict=True`; `newline=''`.
+      - `has_header` and `header_row` are explicit. Columns match header text exactly: no strip, casefold or NFC; two headers differing only in case or whitespace are distinct. A duplicate header → fatal `duplicate_header`; a mapped column missing → fatal `mapping_column_missing`.
+      - Disclosed: through upload only UTF-8 CSV passes FTF-0501's sniff today.
+    - Row rules:
+      - Field count ≠ header count → `column_count_mismatch`; the row is never padded or cut.
+      - `[]` (a blank line) counts in `blank_lines`.
+      - A NUL in a mapped field → `nul_character`. Python 3.11's `csv` accepts NUL, so the importer checks it.
+      - `field_size_limit` = `max_record_bytes`; exceeding it → fatal `field_too_large`.
+      - An unterminated quote at EOF → fatal `csv_structure_invalid`.
+      - More than 16,384 columns → fatal `too_many_columns`.
+      - The locator is the logical record number plus the starting physical line (`reader.line_num`), never header text.
+    - Preservation: every field stays the exact decoded str, with no type inference.
+      - Leading zeros, `-0`, `1e5`, `0x1F`, Arabic-Indic digits, `TRUE`, `NaN` and ` 12 ` survive.
+      - Quoted multiline fields keep their exact embedded CRLF / LF / CR.
+      - Formula-looking text (`=`, `+`, `-`, `@`, leading TAB/CR, full-width `＝`, the DDE `=cmd|' /C calc'!A0`) is kept byte-exact in the canonical content and never evaluated (audit hook: no subprocess, no socket).
+      - Export neutralization is the export task's job, not the importer's.
+      - The source schema digest is sha256 over the exact header cells, in order.
+    - Generated tables:
+      - encoding × Arabic/RTL/combining/emoji corpus (round-trip byte-exact);
+      - a wrong declared encoding for each encoding's bytes;
+      - delimiter × quoting (a field containing the delimiter, a doubled quote, CR, LF, CRLF) × line ending (LF/CRLF/CR);
+      - a header table (duplicates, case/whitespace/NFC variants, a missing mapped column);
+      - a ragged-row table;
+      - the preservation table above × column position;
+      - a formula-prefix table × quoted/unquoted;
+      - a size table (field max−1/max/max+1; 1-byte chunks).
+    - Faults that must go RED:
+      - the delimiter or encoding guessed (Sniffer or a fallback);
+      - any int/float/bool conversion;
+      - a formula prefix stripped, escaped or quoted in the canonical content;
+      - embedded CRLF normalized;
+      - the header matched after strip or casefold;
+      - a duplicate header accepted;
+      - a ragged row padded or truncated;
+      - `errors="replace"`/`"ignore"`;
+      - a BOM silently accepted under `utf-8`;
+      - the field-size cap removed;
+      - NUL dropped silently;
+      - the physical line number off by one in a multiline record.
+  - **FTF-0503 JSON importer** (§7, §8.1, §67.3 "oversized nested JSON"; packet acceptance "Parse approved JSON conversation/container structures into canonical records without loading unbounded file"; negative "Deep nesting, malformed objects and unsupported structures fail with actionable mapping errors"; deps FTF-0500/0501/0506 + FTF-0502-P1).
+    - Files:
+      - `workers/data/json_importer.py`;
+      - `tests/tasks/test_ftf_0503.py`;
+      - `tests/integration/test_ftf_0503_json_import_postgres_s3.py`;
+      - ci.yml job `json-import-integration` + verdict `needs`.
+    - Accepted type: `application/json` only.
+    - Approved containers are named explicitly in the mapping:
+      - `"$"`: a root array of records;
+      - `"/<key>"`: exactly one key of the root object holding the array. Every other root key must be listed in `ignored_top_level_keys`, else fatal `unmapped_top_level_key`. Each ignored value is scanned, bounded by `max_record_bytes` and the depth limit, and not retained.
+      - `"$record"`: a root object that is one record (≤ `max_record_bytes`).
+      - Anything deeper or different → `mapping_unsupported`.
+    - Streaming (no whole-document `json.loads`): a linear byte scanner tracks string, escape and depth state and splits the container's elements.
+      - Each element is ≤ `max_record_bytes` and parsed with P1 `strict_loads`.
+      - An oversized element is skipped by scanning, without buffering, and rejected as `record_too_large`; the next element continues.
+      - Element-level errors (duplicate key, NaN, invalid unicode, not an object, canonical schema) are row rejections with the element ordinal.
+      - Structure errors are fatal with the byte offset: trailing comma, missing comma, unbalanced bracket, a bad token between elements, a root scalar, the container not found or not an array, a duplicate root key, trailing data after the root, depth > `max_depth`.
+      - Actionable means the code plus the mapping's own container pointer; never document content.
+      - UTF-8 only (BOM at byte 0 allowed); UTF-16/32 → `unsupported_encoding`.
+      - An empty container → `completed` with 0 records (honest; split gates handle size).
+    - Generated tables:
+      - a seeded random JSON document generator (strings with escaped quotes, backslashes, brackets and braces inside strings, `\u` escapes, surrogate pairs, every whitespace kind between tokens, nested arrays/objects up to the depth limit) for a differential test: for every valid document, scanner elements + `strict_loads` equal `json.loads(whole)[container]` element by element, and every mutated invalid document fails in both;
+      - container × shape table (root array; mapped key with ignored siblings; unmapped sibling; duplicate root key; container not an array; `$record`; scalar root; nested container pointer);
+      - depth 63/64/65/100,000 inside and outside the container;
+      - element size max−1/max/max+1 in 1-byte chunks;
+      - memory: peak for a 64 MiB container stays within 1.5× of a 1 MiB one.
+    - Faults that must go RED:
+      - a split inside a string at an escaped quote;
+      - the depth bound off by one;
+      - a trailing comma accepted;
+      - an oversized element buffered (memory test) or ending the import;
+      - an unmapped root key accepted;
+      - a duplicate root key accepted;
+      - whole-document `json.loads` used (memory test);
+      - the differential test mismatch;
+      - a container pointer resolved after casefold;
+      - an empty container reported as `failed` or invented records.
+  - **FTF-0505 XLSX importer** (§8.1, §67.2, §67.3 "Quarantine malformed archives, zip bombs, path traversal, entity expansion ... XLSX support is values-only: no macro execution/external link retrieval; reject or surface formulas instead of trusting stale cached values"; packet acceptance "Read XLSX sheets/columns through explicit UI mapping without evaluating formulas/macros"; negative "ZIP/XML bombs, encrypted/unsupported workbook, formula-only critical data and excessive cells fail safely"; deps FTF-0500/0501/0506 + FTF-0502-P1).
+    - Files:
+      - `workers/data/xlsx_importer.py`;
+      - `workers/data/ooxml_safety.py` (pure archive/XML safety primitives, public);
+      - `tests/tasks/test_ftf_0505.py`;
+      - `tests/integration/test_ftf_0505_xlsx_import_postgres_s3.py`;
+      - ci.yml job `xlsx-import-integration` + verdict `needs`.
+    - Accepted type: the XLSX content type only.
+    - Reuse: port FTF-0501's checks into `ooxml_safety.py` (end-of-archive totals before `zipfile` allocates; ≤ 10,000 entries; directory ≤ 4 MiB; `[Content_Types].xml` ≤ 1 MiB; DOCTYPE refused at the expat parser in every encoding; traversal/absolute/backslash names).
+      - Do not edit `direct_object_storage_upload.py`. A drift test imports both modules and pins the bounds equal.
+      - Reuse FTF-0501's malicious-package fixture builders (`tests/tasks/test_ftf_0501.py` `_zip`, `_xlsx`, `_zip64_tail`) by import.
+      - Follow-up FTF-0501-F1 (Control plane) moves `inspect_xlsx` onto `ooxml_safety`.
+    - Reading:
+      - The chunks are spooled to one anonymous `tempfile.TemporaryFile` (mode 0600, deleted on close; never a named path) while ChunkReader hashes them. Bytes beyond `expected_size` → `source_changed`.
+      - `zipfile` opens the archive only after the sha matches.
+      - Every XML part is parsed incrementally with expat: a DOCTYPE handler refuses; parameter entity parsing is NEVER; there is no external entity resolution.
+      - Decompressed bytes are counted per part and in total against caps, and the counts are never trusted from the directory.
+      - Part names are compared case-insensitively for duplicates (OPC part names are case-insensitive) → `unsafe_archive`.
+      - An encrypted entry flag or compression other than stored/deflate → `unsupported_workbook`.
+    - Workbook refusals (fatal, before any cell is read):
+      - an OLE/CFB container (encrypted/password workbook) or a non-zip → `unsupported_workbook`;
+      - strict OOXML namespaces, a template or a non-`sheet.main+xml` workbook type → `unsupported_workbook`;
+      - `xl/vbaProject.bin`, `activeX`, `embeddings`, or any macro-enabled type, even inside an `.xlsx`-typed package → `unsafe_workbook`. FTF-0501 finalize does not catch these today (Decision 8).
+      - `xl/externalLinks/*`, any relationship with `TargetMode="External"` (workbook or sheet rels), `xl/connections.xml` or query tables → `external_link_present`, never retrieved.
+    - Sheet selection:
+      - The mapping's `sheet_name` matches the workbook's `<sheet name>` exactly.
+      - Names equal after casefold (impossible in Excel, so crafted) → `duplicate_sheet_name`.
+      - A hidden or veryHidden sheet is used only when named explicitly, never chosen automatically.
+      - The sheet target resolves through the workbook rels inside `xl/`. Traversal, an absolute path or an external target → `unsafe_archive`.
+    - Cells:
+      - `<f>` present (including a shared `<f t="shared" si=".."/>` with no text, and array formulas) in a mapped column → row rejection `formula_cell`. The cached `<v>` is never used, and `t="str"` counts as a formula result.
+      - `t="s"` takes the shared string by index; an index out of range or not an int → fatal `xlsx_malformed`.
+      - Rich-text runs are concatenated exactly; `<rPh>` is excluded.
+      - ECMA-376 `_xHHHH_` escapes are decoded (`_x005F_` → `_`).
+      - `t="inlineStr"` is used as-is. `n`, `b` and `d` keep the literal `<v>` text (no float conversion and no date-serial interpretation, disclosed). `t="e"` in a mapped column → `cell_error_value`.
+      - Rows and cells must strictly increase by `r` (implicit refs allowed). A duplicate or decreasing ref → fatal `xlsx_malformed`.
+      - The header row is explicit; a duplicate header → fatal `duplicate_header`.
+      - Merged ranges hold a value only in the top-left cell, so a missing required value → `required_field_empty`.
+    - Bounds (refuse, never truncate):
+      - row > 1,048,576 or column > XFD → fatal `sheet_out_of_bounds`;
+      - cells read > `max_cells` → fatal `too_many_cells`;
+      - sharedStrings decompressed > its cap (default 256 MiB, recorded as the job memory quota; raising it needs load evidence) → fatal `limit_exceeded`;
+      - any cell > `max_record_bytes` → `field_too_large`.
+      - The dimension `ref` is ignored (untrusted).
+      - The source schema digest is sha256 over the sheet index plus the exact header cells.
+    - Generated fixtures: stdlib `zipfile` + XML strings only. No openpyxl (not a dependency, and adding one is an ask-first item).
+    - Generated tables:
+      - cell type {s, inlineStr, str, n, b, e, d, none} × formula {none, normal, shared-empty, array} × column {mapped, unmapped};
+      - shared strings (plain, rich runs, `rPh`, `xml:space`, `_xHHHH_` incl. `_x000D_`/`_x005F_`, index −1/0/last/last+1/non-int);
+      - an archive-attack table (zip bomb past the caps; the 10,001-entry zip64 tail; a 4 MiB+1 directory; DOCTYPE/ENTITY in a sheet / sharedStrings / rels in UTF-8 and UTF-16; case-insensitive duplicate part; traversal/absolute/backslash sheet targets; an encrypted entry; an unsupported compression method);
+      - a workbook-type table (CFB/encrypted, strict OOXML, template, macro-enabled type, vbaProject in a plain package, activeX, embeddings);
+      - an external-link table (externalLinks part, an External rel in the workbook and in sheet rels, connections.xml);
+      - a sheet table (exact/case-variant name, hidden, veryHidden, missing, duplicate);
+      - a bounds table (row 1,048,576/1,048,577; column XFD/XFE; cells max−1/max/max+1; sharedStrings cap ±1);
+      - preservation (Arabic, RTL, leading zeros in text cells, formula-looking plain strings preserved, not rejected).
+    - Faults that must go RED:
+      - the cached `<v>` used for a formula cell;
+      - a shared empty `<f/>` treated as a value;
+      - vbaProject accepted in a plain package;
+      - an External rel or connections.xml accepted;
+      - DOCTYPE accepted in a sheet part;
+      - the case-insensitive duplicate check removed;
+      - a traversal sheet target followed;
+      - strict OOXML parsed as transitional;
+      - each bound off by one;
+      - a shared-string index out of range read as an empty string;
+      - `_xHHHH_` not decoded, or decoded twice;
+      - a hidden sheet chosen automatically;
+      - the sheet matched after casefold;
+      - the sharedStrings cap removed;
+      - an error cell imported as text;
+      - the spool accepting bytes beyond `expected_size`;
+      - the end-of-archive pre-check removed;
+      - a named temp path, or the file not deleted.
+- **FTF-1504 IDOR suite** (Control-plane design 2026-10-13; §45, §47, §52, §65.1–65.2, §77, §81; packet acceptance "Guess foreign IDs across every nested API and object download/export endpoint"; negative "404 masking alone insufficient if side effect/data still occurs; check actual state/access"; deps FTF-0106, FTF-0501, FTF-1501 all CERTIFIED; DoD `python tools/r1_handoff.py packet FTF-1504 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; contract owner FTF-1501: reuse `ScenarioResult`/`TenantIsolationEvidence`/`build_evidence` from `tests/security/tenant_isolation_suite.py` and do not edit `15-interface.yaml`). Ready now.
+  - Files:
+    - `tests/security/idor_suite.py` (harness, registry, runner; a standalone script like the 1501/1503 suites);
+    - `tests/tasks/test_ftf_1504.py` (no-DB: inventory completeness, generators, comparator, faults);
+    - `tests/integration/test_ftf_1504_idor_postgres_s3.py` (or `main()` of the suite);
+    - an additive ci.yml job `idor-suite-integration` + verdict `needs` + `tests/unit/test_ci_policy.py` coverage.
+  - No production code, migration, contract, runtime dependency, secret or keyed service.
+  - If the suite finds a real IDOR, do not allowlist it: park that route/slot with the reproduction, and the Control plane slices the fix against the owning task (Law 15).
+  - Live surface (generated, never hand-listed): the REAL `app.main.create_app()` with the 0103A environment, flattened with FTF-0103A's `_flatten_routes`. Reuse it by import from `tests/tasks/test_ftf_0103a.py` or move it to a shared helper with that test re-run.
+    - Today: 29 mounted routers (28 under `/api/v1` plus `/auth`), 108 `/api/v1` route-verbs (count it and print it; do not hard-code it).
+    - Requests go over a real socket to uvicorn (1501 precedent).
+    - Auth is the real `SessionPrincipalResolver` with the app's own signing key and real `memberships` rows written through `membership_admin_cli`. Sessions are minted with the same function the OIDC callback uses (disclosed: the OP round-trip itself is proven by FTF-0103A).
+    - The app DB role is `sovra_app`, refused otherwise via 1501's `assert_not_superuser_role`.
+  - Registry and how new routes join:
+    - `ROUTE_REGISTRY[(method, path_template)] = RouteSpec(path_slots, query_slots, body_slots, seed, destructive)`. Every `{param}` gets a resource kind, auto-checked against the path.
+    - Query id slots: `project_id` on catalog/capability/probe routes, `artifact_id` on mapping changes. Pagination cursors (`after`) are marked `cursor` with a reason; they compare by value and resolve no row.
+    - Body slots: every request-body property ending `_id`/`_ids` (recursive into arrays/objects) in the frozen OpenAPI (01..17-interface) must be registered. For the 25 uncontracted route-verbs (Decision 10), the slots are declared by hand, cross-checked against each route module's body allow-list frozensets (every `*_id` name in them must be registered), and the list is recorded as a contract gap.
+    - The completeness gate runs in `tests/tasks/test_ftf_1504.py`, in the `gate` job with no DB: live set == registry keys exactly, and every path/contract/allow-list id is registered. A PR that adds a `/api/v1` route without registering it fails `gate`.
+    - Object download/export: no such route is live today (checked; FTF-0501's part-urls issues PUT grants only). The registry has the kinds `download` and `export` with zero routes and a test that any future route whose response carries a storage URL must declare one. Disclosed.
+  - Matrix (generated: route-verb × id slot × id class × principal role):
+    - Id classes:
+      - `foreign_org`: org B's real object of the same kind;
+      - `foreign_project`: a same-org object in project P2 addressed under P1;
+      - `foreign_parent`: same project, another parent. Examples: case/suite, evidence/manifest, snapshot/connection, candidate/snapshot, issue/dataset, model under another LiteLLM connection;
+      - `hidden_purpose`: a held-out dataset or upload session for `ml_engineer`, which the routes promise is the same 404;
+      - `foreign_name`: a model name in org B's catalog under A's own connection;
+      - `missing`: a fresh uuid4 never issued;
+      - `own`: the positive control.
+      - For the `organization_id` path param, `foreign_org` (B) vs `missing` (random) must both be the identical 403 `role_not_authorized`.
+    - Roles: every role in the route's `require_role` allowed set, introspected from the guard's closure (`allowed`), as FTF-0103A does (generated, not trimmed to org admin). One disallowed role per route is also checked to be uniform (the full RBAC matrix is FTF-1502).
+    - Body slots get the same classes, placed in an otherwise valid body.
+  - Assertions per cell:
+    - Indistinguishable: for every non-`own` class, status, raw body bytes and every header except `date` are byte-identical to the `missing` response for the same route, slot and role. No marker planted in org B / P2 objects (names, descriptions, refs) appears anywhere.
+    - Positive control: `own` must differ from `missing`. Otherwise the slot is vacuous and the suite is RED. A slot that cannot be exercised (a dependency not available) is `NOT_EXERCISED` with a code and fails the run unless the Control plane allowlists it in the entry; none is allowlisted now.
+    - Side effects (the negative acceptance), before and after each request:
+      - DB digest: as the migration owner, for observation only, md5 of every row of every table in `public`, enumerated from `information_schema` (never hand-listed), including `audit_events`.
+      - Storage digest: the SeaweedFS bucket object listing plus multipart uploads and parts.
+      - Outbound counters on every local stand-in the seeds point at: the H005/0309-P1 local TLS LiteLLM gateway harness, a GitHub API stand-in, the component-binding endpoint stand-in, and the OpenBao dev server where the job has one.
+      - The foreign-class delta must equal the missing-class delta. Expected: both empty. If a route writes a denial audit, the two must be equal after masking `id`, `created_at` and `request_id`, and must never name org B's id or row.
+    - Storage-layer IDOR: own part-url grants with the object key path swapped to org B's session key are refused by SeaweedFS (signature), and B's parts are unchanged. A foreign `part-urls`/`parts`/`finalize` returns no URL and makes no S3 call (counted).
+    - Destructive verbs (DELETE, revoke, lock, select, finalize, reserve/release) run the foreign classes and `missing` first, then the control on a disposable seed.
+  - Seeds: two orgs (A, B); two projects in A (P1, P2) and one in B; two parents per nested kind; every kind the registry names. Seeds go through the real API as the org admin wherever a create route exists, otherwise through the certified store function as `sovra_app` under tenant context, never raw owner SQL. A real FTF-0501 upload and finalize into SeaweedFS creates the datasets; FTF-0516-P1 `record_quality_report` creates the issue rows.
+  - Evidence: one content-free `ScenarioResult` per cell (route template, method, slot, class, role, status, passed) through 1501's `build_evidence`, written as a JSON artifact, plus totals per route. Bodies are never recorded.
+  - CI: the job uses PG16 (pinned digest as `direct-upload-routes-integration`) and boots the compose `s3` itself. The runtime budget is recorded in the submission.
+  - Faults that must go RED (each its own row; inject into a copy of the real app or by monkeypatching one real store in-process):
+    - a demo route answering 403 for foreign and 404 for missing;
+    - a route answering 404 but inserting a row;
+    - a route answering 404 but calling the gateway stand-in;
+    - a 404 with a different body or an extra header;
+    - a foreign marker echoed in a 404 body;
+    - a live route deleted from the registry;
+    - a path param without a kind;
+    - an unregistered contract `_id` field;
+    - an unregistered allow-list `_id` name;
+    - the role set trimmed to `organization_admin`;
+    - a positive control that 404s (vacuous slot);
+    - the app run as the migration owner;
+    - real-route faults:
+      - `evaluation_case` GET not filtering by `suite_id`;
+      - `part-urls` not checking the project;
+      - the dataset issue lookup not checking the dataset;
+      - the model-catalog `project_id` query slot not checked;
+    - the DB digest table list hand-trimmed (drop `audit_events`) so a side-effect fault stays green, which must itself be caught by the enumeration test.
+  - Disclosed:
+    - Worker, cache and model-serving paths and object download/export routes do not exist yet. Whichever task adds one registers it, and the gate enforces that.
+    - Timing side channels are not measured.
+    - The 25 uncontracted route-verbs are listed as a contract gap.
 
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
+- **FTF-H010-P3a round 2: PARKED (relay-policy item-ID regex collapse, false collision), 2026-10-14T07:00Z.**
+  - What failed: PR #745 (`relay/FTF-H010-P3a-r2`)'s `ci-verdict` fails on `relay-policy` alone: "item(s)
+    FTF-H010 already owned by open PR #742". `scripts/ci_policy.py`'s `ITEM_ID` regex
+    (`FTF-[0-9A-Z]+(?:-F\d+)?`) only special-cases an `-F<n>` suffix; `[0-9A-Z]+` matches `H010` and
+    stops at the hyphen before `-P3a`/`-P2`, so both PR #745's title (`FTF-H010-P3a: ...`) and PR
+    #742's (`FTF-H010-P2: ...`) reduce to the same base id `FTF-H010` and collide, even though they are
+    two disjoint, already-disclosed sub-tasks touching disjoint files. This is the exact collapsing bug
+    class `[GOVERNANCE]` PR #705 (open since 2026-10-09, unmerged) already fixes for other suffixes
+    (extends the allow-list to `-P\d+`/`-UI`) — confirmed by hand that the fixed regex would resolve
+    PR #745's title to the distinct id `FTF-H010-P3` (not `FTF-H010-P3a` exactly, since the fix's
+    `P\d+` group doesn't consume the trailing letter, but still distinct from PR #742's `FTF-H010-P2`,
+    which is enough to clear this specific collision).
+  - Why this can't be fixed from the relay side: `scripts/ci_policy.py` is `RELAY_FORBIDDEN_EXACT` — a
+    `[relay]`-titled PR may not edit it (CLAUDE.md "Relay is execution-only", "Governance PRs"). Closing
+    or interfering with PR #742 (another lane's own active, draft work) to clear the collision
+    unilaterally would be worse than waiting. This session also cannot merge `[GOVERNANCE]` PR #705
+    itself — CLAUDE.md reserves that for the owner ("Control plane opens it; the OWNER reviews and
+    merges it").
+  - Route options: (1) **owner merges PR #705** — already written, tested (`tests/unit/test_ci_policy.py`
+    72/72 pass including the new collision test), clears this collision and any future `-P<n>`/`-UI`
+    one; recommended, no further relay/Control-plane action needed once merged. (2) Wait for PR #742 to
+    merge or close on its own schedule, which would also clear the collision without touching the
+    regex (slower, and recurs for the next `-P<n>`/`-UI` pair). (3) A relay session reduces PR #745's
+    title to a form the *current* regex already treats as distinct (not generally possible — any title
+    starting `FTF-H010` collapses to the same base id regardless of suffix spelling) — not viable.
+    Recommended: (1).
+  - State left: PR #745 untouched by this entry (no code change attempted; the production code is
+    unrelated to this collision). Flagged in "Owner actions — current" above since PR #705 has now sat
+    open for 5 days while actively blocking a real submission, not merely a latent regex gap.
+- **FTF-1602 round 5: PARKED (3 falsified hypotheses on one CI failure), 2026-10-09T10:10Z, lane B.**
+  - What failed: PR #672 (`relay/FTF-1602-r5`): the CI job `object-storage-backup-integration` dies about 45 s into its
+    test step on every run of the full round-5 file (runs 37899436881 a2, 37911808469, and the probes below), with no
+    retrievable log (the job log API returns 404; the step stays `in_progress`; runner death signature, not a test
+    failure). Everything else in the run is green: unit file, mutation gate 405/405 (per the PR), relay-policy, gate.
+    r4 passed the same job (run 37843516353, 60 s); PR #658's run passed it at 08:33Z.
+  - Tried (each a stated hypothesis, each falsified by a CI run): (1) branch behind main -> merged main (run
+    37911808469, same death); (2) the new 6-thread test kills the runner -> made it serial (37913326565, same death);
+    (3) bisect by test selection with `ci-focus`: r4 test file -> normal log, 14 tests in 8 s (37913521112); the four
+    new tests as pairs {concurrent, pinned} and {relist, shared} -> both pass (37913710576, 37914178962); all
+    existing tests without the four new ones -> passes (37914617993). So every subset passes and only the full 18-test
+    file dies: a cumulative or interaction effect, not one bad test.
+  - Not tried / unknown: the cause. Suspects: SeaweedFS 3.99 (`-master.volumeSizeLimitMB=64`, one collection per bucket,
+    about 3 buckets per test) exhausting runner disk, memory or volume slots as buckets accumulate; or an interaction
+    between G1's unretained-version writes and later tests. The log is lost with the runner, so it cannot be read.
+  - Route options: (1) Control plane approves an additive diagnostic step in `object-storage-backup-integration`
+    (runs before the test step: background `df -h`/`free -m`/`docker stats` sampler written to a file and uploaded by a
+    new `if: always()` artifact step), then re-queue; (2) split the round-5 real-server proofs into two integration
+    test files run as two additive jobs (each subset is proven to pass), keeping every test; (3) clean up per test
+    (delete each test's three buckets at the end) so the fixture never accumulates state, which also removes the
+    suspected cause; (4) periodically recycle the SeaweedFS fixture (`docker compose down -v` + `up -d s3`, re-wait
+    ready) every N test functions inside this file's own `main()`, bounding accumulated collections/volumes without
+    touching any test or `.github/workflows/ci.yml`. Recommended: (3) with (4) as the fallback, (2) after that.
+  - **2026-10-09T17:10Z, read-only re-check (no Docker in this sandbox, so unverified):** corroborates the volume-slot
+    suspicion above with a concrete precedent — `infra/docker/docker-compose.yml`'s own comment on the SeaweedFS
+    service documents an earlier, near-identical death in `test_storage_semantics.py` ("no free volumes left" after
+    ~2 of ~11 unique buckets, each bucket its own collection that eagerly grows to 7 volumes), fixed there with
+    `-master.volumeSizeLimitMB=64`. This file's 18 tests create roughly 45 unique buckets, about 4x that prior
+    threshold even with the fix in place — consistent with every tested subset (8-14 tests) passing and only the
+    full 18-test run dying. Raises confidence in (3)/(4) above; still needs a real run to confirm.
+  - State left: PR #672 is open and ready with the intended round-5 files; its `ci-verdict` is red on this one job only.
+    The unit-level proofs, submission and spec-matrix notes are as the PR describes.
+  - **2026-10-13T12:53Z, merge-conflict maintenance (this shift, no new diagnosis):** `main` had advanced past this
+    branch's own merge-base through several unrelated merges; merged `origin/main` into `relay/FTF-1602-r5` in a
+    worktree and found one real conflict, in this file's own "## Parked" section (an append-order collision with the
+    now-resolved FTF-H010-P2 entry and this branch's own stale FTF-0516 parked entry — FTF-0516 is confirmed unparked
+    elsewhere in this file's own "## Active" list, item 0c, round 3, so that stale entry is dropped here rather than
+    carried forward). No code, test, or `docs/certifications/queue.md`/`docs/spec-matrix.yaml` content was touched
+    beyond this one append-order resolution. The CI-hang root cause above is still unconfirmed and still needs a real
+    CI run to resolve; this merge only keeps the branch current against `main` so a future unpark is not also fighting
+    a stale diff.
+- **FTF-H010-P2 Import-validation activity, job fencing and endpoint-only import: PARKED (unclear DoD, contradiction with certified FTF-1001), 2026-10-10T02:30Z, lane C.**
+  - **2026-10-10T03:57Z: RESOLVED by Control-plane ruling (route 3, see the FTF-H010-P2 Backlog entry).** P2 is back in the Backlog; claim `relay/FTF-H010-P2-r2`. This entry is history.
+  - What failed: nothing was implemented. The DoD says the success path inserts the ModelVersion "through the `ModelVersion` constructor ... `endpoint_reference = external_provider_model_ref = ref` verbatim". Reproduced on `main` (d64628a): `ModelVersion(import_kind="endpoint", endpoint_reference="ft-gpt-4o-mini-acme", ...)` raises `ModelVersionValidationError: endpoint_reference must use https://, got scheme ''`, because `validate_endpoint_reference` (model_version_schema.py, FTF-1001) requires an `https://` URL with a host. A discovered gateway alias (`/v1/models` id) is not a URL, so the happy path can never succeed for a real alias; the `ck_model_versions_kind_consistency` CHECK also makes `endpoint_reference` NOT NULL for `import_kind='endpoint'`.
+  - Route options: (1) Control plane rules that the P2 files list may relax `validate_endpoint_reference` for `origin='external_endpoint'` (alias refs allowed, URL form kept for FTF-1001's synchronous path) and re-queues P2 with that edit and its tests in scope; (2) P2 stores the connection's validated `base_url` (an https URL, already vetted by FTF-0203) in `endpoint_reference` and the alias only in `external_provider_model_ref`, with the DoD sentence "verbatim" amended; (3) a prerequisite slice makes `endpoint_reference` nullable for `origin='external_endpoint'` (migration + CHECK change) and P2 leaves it NULL. Recommended: (2), no certified file edited.
+  - The claim branch `relay/FTF-H010-P2-r1` and draft PR #733 carry only this park entry and the shift log; nothing else was written.
 - **FTF-04A31 Real private GitHub repository integration test: PARKED (ask-first, secret), 2026-10-07T12:15Z, lane C.**
   - What failed: nothing attempted. The DoD needs a real private repository plus a credential; CI exposes only the
     workflow `github.token` (scoped to this repo) and no provisioned test-repo secret.
@@ -11785,6 +12734,7 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
 - FTF-0402 — Project security profile. CERTIFIED 2026-09-20, PR #141,
   merge commit `a6ef1d9`. See `docs/certifications/ledger.md` (FTF-0402
   entry) for the full independent-review narrative.
+- FTF-0305 — License acceptance workflow. **DECERTIFIED 2026-10-10T16:15Z → PROVISIONAL** (reproduced revoked-license-trainable race; requalifies with FTF-0305-F1, QUEUE item 0b). Original certification record below. **RE-CERTIFIED 2026-10-13T12:55Z** with FTF-0305-F1 (PR #747, merge `f2ac7c7f73a049aa911d3d88f4a06bc457b51dde`).
 - FTF-0305 — License acceptance workflow. CERTIFIED 2026-09-20, PR #144,
   merge commit `1a3c6b4`. Independent Control-plane review triggered by
   the `pull_request.opened` webhook: session-ID check clean against all 3
@@ -13246,6 +14196,24 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
 - FTF-0309-P1 — Training-capability read API (child slice of FTF-0309). CERTIFIED 2026-10-09, PR #667 (merge `8a829cc2b8d35f966303255c4d258cf1643b23cb`); wired (FTF-0309 proving_symbol `build_model_capability_router`).
 - FTF-0903 — Content-free telemetry. CERTIFIED 2026-10-09, PR #685 (merge `c003010bb0f70ea4270316c02142817734f617b5`); UNWIRED (no live caller yet, disclosed).
 - FTF-0516-P1 — Dataset quality report, issue and resolution persistence + API (child slice of FTF-0516). CERTIFIED 2026-10-09, PR #695 (merge `3ac6cea74b9cdf97ed73c735adf16451e693db58`); UNWIRED (record_quality_report has no live producer yet).
+- FTF-H010-P1 — Model import fields + import-validation jobs (child slice of FTF-H010). CERTIFIED 2026-10-09, PR #699 (merge `f917395dd97dd33102128da10ee7424f3cb3bbe0`); FTF-H010's real endpoint/weights/GPU clauses stay BLOCKED_EXTERNAL.
+- FTF-R004-P2 — Provider-tool/MCP/remote-media denial and pre-filter evidence (child slice of FTF-R004). CERTIFIED 2026-10-09, PR #702 (merge `029dfa5218576b766cc4bec724d52ea43ab6529f`); UNWIRED until P3.
+- FTF-0616 — LLM judge adapter through LiteLLM. CERTIFIED 2026-10-09 for the adapter scope, PR #690 (merge `4a0de86713e272749ba2ebe0d358e59a2957be2a`); the real-judge clause stays BLOCKED_EXTERNAL (gateway key owner action); UNWIRED.
+- FTF-R004-P1 — Inspect AI target-runtime capture and refusal (child slice of FTF-R004). CERTIFIED 2026-10-09, PR #707 (merge `f856b47e0be3c22a53b354860d97e8a8405f487c`); UNWIRED until P3.
+- FTF-0309 — Capability compatibility UI. CERTIFIED 2026-10-09, PR #713 (merge `e2555b6c732dcd184c8fd270fb9301bc05c85dde`); UNWIRED and not product-true until its page has a live caller (FTF-H029), per the Law 7 note.
+- FTF-R005 — Integrate internal MLflow tracking and model registry projection. CERTIFIED 2026-10-09, PR #708 (merge `03442f67294975313db37ec297dea0cc24a6ca9a`); UNWIRED (no live caller yet, disclosed).
+- FTF-1703 — Training dataset. CERTIFIED 2026-10-09 for the in-sandbox scope, PR #714 (merge `1fc59f19c1c265493da550994c78f7e77450b151`); the ">=1000 reviewed" clause stays BLOCKED_EXTERNAL (Argilla/human review; group floor reports not met); UNWIRED.
+- FTF-0908 — External provider denial. CERTIFIED 2026-10-10, PR #730 (merge `d64628a84c85fca8f329741f7493ca1690776ac2`; production from round 4, #719); UNWIRED (no live caller yet, disclosed).
+- FTF-0501 — Direct object-storage upload. CERTIFIED 2026-10-10, API PR #692 (merge `b99723744b582685793be7c494fe6f1fc0100fa2`) + resumable UI PR #736 (merge `41904e5fe5702a08a12483760c9bc811acfa2ddf`); the upload API is live (build_direct_upload_router); the resumable UI is UNWIRED until FTF-H029, so FTF-0501 is not counted product-true (Law 7).
+- FTF-0305-F1 — License/readiness race and license-gated trainability (fix item). CERTIFIED 2026-10-13, PR #747 (merge `f2ac7c7f73a049aa911d3d88f4a06bc457b51dde`); FTF-0305 re-certified; FTF-0301/0307/0309-P1 requalified (Law 15).
+- FTF-0310 — Capability contract tests. CERTIFIED 2026-10-13, PR #751 (merge `c3a95ef172a51f8ed8c8c4bfb02ee572e5607c6f`); test-only (proving_symbol blank).
+- FTF-0516 — Dataset issue resolution UI. CERTIFIED 2026-10-13, PR #754 (merge `90698aa6371626f6d2f8f156624798c9673ef044`; API slice FTF-0516-P1 #695); UNWIRED until FTF-H029, not product-true (Law 7).
+- FTF-1206 — Organization policy control. CERTIFIED 2026-10-13, PR #763 (merge `e5f6e5ee327ba60bdae73b43eda2e31a0dc02da3`); persistence via certified FTF-1206A; UNWIRED (proving_symbol blank).
+- FTF-0502-P1 — Dataset import common contract and verified-source reader (shared slice for FTF-0502..0505). CERTIFIED 2026-10-13, PR #770 (merge `507ce05a422ad5addb94a1700172fa348f871662`); UNWIRED (no importer certified yet).
+- FTF-0517 — Group-aware split engine. CERTIFIED 2026-10-14, PR #772 (merge `042d82331196e99e5f7091597fd987914a0a6c2b`); UNWIRED (no caller yet).
+- FTF-0904 — Log redaction. CERTIFIED 2026-10-14, PR #768 (merge `5a0f708c29a61e7fe0fea3fc25ef838b7f5471df`), round 7 under the stopping rule; UNWIRED (no caller yet).
+- FTF-0616-F1 — Judge-call deployment fingerprint and cache bypass (child slice of FTF-0616). CERTIFIED 2026-10-14, PR #750 (merge `02961dbe0a005967ee5d82e0a1ee10fd2c8bf9a5`); count unchanged. FTF-0616 Law 15 requalification closed (uncapped mutation 339/339).
+- FTF-0904-W1 — Live log redaction wiring (child slice of FTF-0904). CERTIFIED 2026-10-14, PR #792 (merge `b4d401fc1fb1222c65ad4778b5aee2e1461a99c1`), round 3, verified by separate session session_0161278Aosjx54vgoMAk3jN6; FTF-0904 is now WIRED (proving_symbol install_redaction) - product-true 46.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

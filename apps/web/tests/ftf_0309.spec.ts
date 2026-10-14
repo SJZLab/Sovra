@@ -28,7 +28,6 @@ const PROJECT_ID = "33333333-3333-3333-3333-333333333333";
 const ALIAS = "Org/Llama-3-8B Instruct";
 const URL = `${API_BASE}/api/v1/organizations/${ORG_ID}/connections/litellm/${CONN_ID}/models/Org/Llama-3-8B%20Instruct/capabilities?project_id=${PROJECT_ID}`;
 
-const KNOWN = { state: "known" };
 const unknown = (reason: string) => ({ state: "unknown", reason });
 
 function capabilities(extra: Record<string, unknown> = {}) {
@@ -50,14 +49,14 @@ function capabilities(extra: Record<string, unknown> = {}) {
       weights_digest: `sha256:${"a".repeat(64)}`,
     },
     catalog_version: 3,
-    method_support: KNOWN,
+    // The frozen contract allows only `unknown` here (ModelCapabilityUnknown).
+    method_support: unknown("no_backing_evidence"),
     min_gpu_vram_gb: {
-      ...KNOWN,
-      tested_gb: 80,
+      ...unknown("not_tested"),
       declared_minimum_gpu_profile: { gpu: "A100", memory_gb: 40 },
       declared_evidence: "declared",
     },
-    chat_template: KNOWN,
+    chat_template: unknown("no_backing_evidence"),
     evidence: {
       discovery_checked_at: "2026-10-09T08:00:00+00:00",
       tool_call_probe_checked_at: null,
@@ -111,7 +110,7 @@ async function load(body: Reply | "network") {
 const ok = (body: unknown): Reply => ({ ok: true, status: 200, body });
 const train = () => screen.getByRole("button", { name: "Train" }) as HTMLButtonElement;
 
-test("FTF-0309-A1 all dimensions known: exact GET, evidence shown, Train enabled and explicit", async () => {
+test("FTF-0309-A1 the real frozen shape: exact GET, evidence shown, Train present but disabled and never auto-fired", async () => {
   const onTrain = await load(ok(capabilities()));
   const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
   expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -121,10 +120,9 @@ test("FTF-0309-A1 all dimensions known: exact GET, evidence shown, Train enabled
   expect(capabilitiesUrl(API_BASE, ORG_ID, CONN_ID, ALIAS, PROJECT_ID)).toBe(URL);
   expect(screen.getByText(/2026-10-09T08:00:00/, { selector: "dd" })).toBeTruthy();
   expect(screen.getByTestId("declared-vram").textContent).toContain("declared, not tested");
-  expect(train().disabled).toBe(false);
-  expect(onTrain).not.toHaveBeenCalled(); // never auto-started
+  expect(train().disabled).toBe(true);
   fireEvent.click(train());
-  expect(onTrain).toHaveBeenCalledWith(ALIAS);
+  expect(onTrain).not.toHaveBeenCalled();
 });
 
 for (const [name, patch, reason] of [
@@ -163,22 +161,6 @@ test("FTF-0309-N1 an unrecognised dimension state is a typed error with no Train
   await load(ok(capabilities({ chat_template: { state: "maybe" } })));
   expect(screen.getByRole("alert").textContent).toContain("malformed");
   expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
-});
-
-test("FTF-0309-N2 insufficient tested VRAM disables Train and names the numbers", async () => {
-  await load(
-    ok(
-      capabilities({
-        min_gpu_vram_gb: {
-          state: "known",
-          tested_gb: 16,
-          declared_minimum_gpu_profile: { gpu: "A100", memory_gb: 40 },
-        },
-      }),
-    ),
-  );
-  expect(train().disabled).toBe(true);
-  expect(screen.getByText(/Tested VRAM 16 GB is below the declared minimum 40 GB/)).toBeTruthy();
 });
 
 test("FTF-0309-N3 access not_granted disables Train even when trainable is true", async () => {
@@ -260,6 +242,7 @@ async function check() {
 }
 
 for (const [what, patch] of [
+  ["organizationId", { organizationId: "66666666-6666-6666-6666-666666666666" }],
   ["modelName", { modelName: "Org/Other" }],
   ["projectId", { projectId: OTHER_PROJECT }],
   ["connectionId", { connectionId: OTHER_CONN }],
@@ -269,7 +252,7 @@ for (const [what, patch] of [
     const first = props();
     const view = render(createElement(CapabilityCompatibilityUI, first));
     await check();
-    expect(train().disabled).toBe(false);
+    expect(screen.getByRole("button", { name: "Train" })).toBeTruthy(); // a result is on screen
     view.rerender(createElement(CapabilityCompatibilityUI, { ...first, ...patch }));
     expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
     await new Promise((r) => setTimeout(r, 0));
@@ -334,50 +317,6 @@ test("FTF-0309-F16 a missing dimension, an unknown top-level key and an unknown-
   expect(screen.getByRole("alert").textContent).toContain("malformed");
 });
 
-test("FTF-0309-PR8 known tested VRAM with no numeric declared minimum blocks Train", async () => {
-  for (const profile of [undefined, null, {}, { memory_gb: "40" }, { gpu: "A100" }]) {
-    cleanup();
-    await load(
-      ok(
-        capabilities({
-          min_gpu_vram_gb: { state: "known", tested_gb: 80, declared_minimum_gpu_profile: profile },
-        }),
-      ),
-    );
-    expect(train().disabled).toBe(true);
-    expect(screen.getByText(/no numeric declared minimum/)).toBeTruthy();
-  }
-});
-
-test("FTF-0309-PR9 known VRAM with a missing or non-numeric tested_gb blocks Train", async () => {
-  for (const tested of [undefined, null, "80", Number.NaN]) {
-    cleanup();
-    await load(
-      ok(
-        capabilities({
-          min_gpu_vram_gb: {
-            state: "known",
-            tested_gb: tested,
-            declared_minimum_gpu_profile: { memory_gb: 40 },
-          },
-        }),
-      ),
-    );
-    expect(train().disabled).toBe(true);
-    expect(screen.getByText("Tested VRAM was not reported as a number")).toBeTruthy();
-  }
-});
-
-test("FTF-0309-PR14 rows show the tested VRAM value and never borrow the discovery date", async () => {
-  await load(ok(capabilities()));
-  const vram = screen.getByTestId("dimension-Tested VRAM");
-  expect(vram.textContent).toContain("tested 80 GB"); // F13: row detail present
-  expect(vram.textContent).toContain("no evidence date returned by the server"); // F14: row date cell present
-  for (const label of ["Method support", "Tested VRAM", "Chat template"]) {
-    expect(screen.getByTestId(`dimension-${label}`).textContent).not.toContain("2026-10-09");
-  }
-});
-
 test("FTF-0309-F13 an unknown row shows the server's own reason in the row", async () => {
   await load(ok(capabilities({ method_support: unknown("no_backing_evidence") })));
   expect(screen.getByTestId("dimension-Method support").textContent).toContain(
@@ -391,23 +330,6 @@ test("FTF-0309-F22 the blockers list is rendered and accessible when Train is bl
   expect(list.textContent).toContain("Gateway access is not_granted");
 });
 
-test("FTF-0309-PR13 with no onTrain wired Train is disabled and never reports 'Training requested'", async () => {
-  reply = ok(capabilities());
-  renderUI(undefined);
-  await check();
-  expect(train().disabled).toBe(true);
-  fireEvent.click(train());
-  expect(screen.queryByText(/Training requested/)).toBeNull();
-  expect(screen.queryByRole("status")).toBeNull();
-});
-
-test("FTF-0309-A2 an explicit click on an enabled Train reports the request only after onTrain ran", async () => {
-  const onTrain = await load(ok(capabilities()));
-  fireEvent.click(train());
-  expect(onTrain).toHaveBeenCalledTimes(1);
-  expect(screen.getByRole("status").textContent).toContain(ALIAS);
-});
-
 function reactOnClick(button: HTMLElement): () => void {
   const key = Object.keys(button).find((k) => k.startsWith("__reactProps$"));
   const handler = key
@@ -417,34 +339,27 @@ function reactOnClick(button: HTMLElement): () => void {
   return handler;
 }
 
-test("FTF-0309-PR13b the click handler itself reports nothing when onTrain is absent (not only the disabled attribute)", async () => {
+test("FTF-0309-PR13b the click handler itself never calls onTrain (not only the disabled attribute)", async () => {
   reply = ok(capabilities());
-  renderUI(undefined);
+  const onTrain = vi.fn();
+  renderUI(onTrain);
   await check();
   const click = reactOnClick(train());
   act(() => click());
+  expect(onTrain).not.toHaveBeenCalled();
   expect(screen.queryByText(/Training requested/)).toBeNull();
+  expect(screen.queryByRole("status")).toBeNull();
 });
 
-test("FTF-0309-PR13c a throwing onTrain never leaves a 'Training requested' status behind", async () => {
-  reply = ok(capabilities());
-  const boom = vi.fn(() => {
-    throw new Error("start failed");
-  });
-  renderUI(boom);
-  await check();
-  const click = reactOnClick(train());
-  let thrown: unknown = null;
-  act(() => {
-    try {
-      click();
-    } catch (caught) {
-      thrown = caught; // keep the update queue flushing, so a status set before the throw would show
-    }
-  });
-  expect(String(thrown)).toContain("start failed");
-  expect(boom).toHaveBeenCalledTimes(1);
-  expect(screen.queryByText(/Training requested/)).toBeNull();
+test("FTF-0309-R1 a row shows the server's reason and never a tested value or borrowed date", async () => {
+  await load(ok(capabilities()));
+  const vram = screen.getByTestId("dimension-Tested VRAM");
+  expect(vram.textContent).toContain("reason: not_tested");
+  expect(vram.textContent).toContain("no evidence date returned by the server");
+  expect(vram.textContent).not.toContain("GB");
+  for (const label of ["Method support", "Tested VRAM", "Chat template"]) {
+    expect(screen.getByTestId(`dimension-${label}`).textContent).not.toContain("2026-10-09");
+  }
 });
 
 test("FTF-0309-PR2b a stale response cannot alter the state of the newer request", async () => {
@@ -478,7 +393,8 @@ test("FTF-0309-PR2b a stale response cannot alter the state of the newer request
     });
     await new Promise((r) => setTimeout(r, 10));
   });
-  expect(train().disabled).toBe(false);
+  expect(train().disabled).toBe(true);
+  expect(screen.getByRole("button", { name: "Train" })).toBeTruthy();
 });
 
 test("FTF-0309-PR1b switching away and back does not resurrect the old result", async () => {
@@ -516,4 +432,172 @@ test("FTF-0309-PR2d a stale error body read after a switch never surfaces as an 
     await new Promise((r) => setTimeout(r, 10));
   });
   expect(screen.queryByRole("alert")).toBeNull();
+});
+
+// ---- Round 3 (control-plane ruling): `unknown` is the only state the frozen contract allows ----
+
+test("FTF-0309-K1 a `known` dimension is malformed: no Train, onTrain never fires (K1, K3)", async () => {
+  for (const dim of ["method_support", "min_gpu_vram_gb", "chat_template"]) {
+    cleanup();
+    const onTrain = await load(ok(capabilities({ [dim]: { state: "known" } })));
+    expect(screen.getByRole("alert").textContent).toContain("malformed");
+    expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+    expect(onTrain).not.toHaveBeenCalled();
+  }
+  for (const dim of ["method_support", "min_gpu_vram_gb", "chat_template"]) {
+    cleanup(); // a `known` that even carries a reason is still outside the frozen contract
+    await load(ok(capabilities({ [dim]: { state: "known", reason: "tested" } })));
+    expect(screen.getByRole("alert").textContent).toContain("malformed");
+    expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+  }
+  cleanup();
+  await load(
+    ok(
+      capabilities({
+        min_gpu_vram_gb: {
+          state: "known",
+          tested_gb: 80,
+          declared_minimum_gpu_profile: { memory_gb: 40 },
+          declared_evidence: "declared",
+        },
+      }),
+    ),
+  );
+  expect(screen.getByRole("alert").textContent).toContain("malformed");
+  expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+});
+
+test("FTF-0309-F33 declared_evidence other than 'declared' is malformed", async () => {
+  for (const evidence of ["tested", "", null, true]) {
+    cleanup();
+    await load(
+      ok(
+        capabilities({
+          min_gpu_vram_gb: { ...unknown("not_tested"), declared_evidence: evidence },
+        }),
+      ),
+    );
+    expect(screen.getByRole("alert").textContent).toContain("malformed");
+    expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+  }
+});
+
+test("FTF-0309-F34 a tested_gb or memory_gb field on a dimension is malformed, even on an unknown one", async () => {
+  for (const extra of [{ tested_gb: 80 }, { tested_gb: null }, { memory_gb: 40 }]) {
+    for (const dim of ["method_support", "min_gpu_vram_gb", "chat_template"]) {
+      cleanup();
+      await load(ok(capabilities({ [dim]: { ...unknown("not_tested"), ...extra } })));
+      expect(screen.getByRole("alert").textContent).toContain("malformed");
+      expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+    }
+  }
+});
+
+test("FTF-0309-F35 any other dimension key, or a non-string / empty reason, is malformed", async () => {
+  for (const dim of [
+    { ...unknown("r"), recommended: true },
+    { state: "unknown", reason: 7 },
+    { state: "unknown", reason: "" },
+    { state: "UNKNOWN", reason: "r" },
+    { state: "unknown", reason: "r", declared_evidence: "declared", note: "x" },
+  ]) {
+    cleanup();
+    await load(ok(capabilities({ chat_template: dim })));
+    expect(screen.getByRole("alert").textContent).toContain("malformed");
+    expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+  }
+});
+
+test("FTF-0309-F36 the declared minimum profile is shown as declared and may carry memory_gb", async () => {
+  await load(ok(capabilities()));
+  expect(screen.getByTestId("declared-vram").textContent).toContain('"memory_gb":40');
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("FTF-0309-F39 a re-check that fails clears the earlier result: alert shown, Train absent", async () => {
+  reply = ok(capabilities());
+  renderUI(vi.fn());
+  await check();
+  expect(screen.getByRole("button", { name: "Train" })).toBeTruthy();
+  reply = { ok: false, status: 503, body: { detail: "gateway_unavailable" } };
+  await check();
+  expect(screen.getByRole("alert").textContent).toContain("could not be reached");
+  expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+  expect(screen.queryByTestId("declared-vram")).toBeNull();
+});
+
+// ---- Round 4 (relay/FTF-0309-r4): strict-parse table + the availability blocker text ----
+
+const STRICT_PARSE_CASES: Array<[string, Record<string, unknown>]> = [
+  ["catalog_version negative", { catalog_version: -1 }],
+  ["catalog_version non-integer", { catalog_version: 1.5 }],
+  ["catalog_version a numeric string", { catalog_version: "3" }],
+  ["catalog_version missing", {}],
+  ["evidence missing", {}],
+  ["evidence null", { evidence: null }],
+  [
+    "tool_call_probe_present a string",
+    { evidence: { ...capabilities().evidence, tool_call_probe_present: "false" } },
+  ],
+  ["access an unapproved role name", { access: "admin" }],
+  ["access wrong case", { access: "Granted" }],
+  ["capability an unknown enum value", { capability: "fake_capability" }],
+  ["availability wrong case", { artifact: { ...capabilities().artifact, availability: "READY" } }],
+  ["trainable a string", { trainable: "true" }],
+];
+
+for (const [name, patch] of STRICT_PARSE_CASES) {
+  test(`FTF-0309-O33 strict parse: ${name} is malformed, no Train, onTrain never fires`, async () => {
+    const body = capabilities() as Record<string, unknown>;
+    if (name === "catalog_version missing") delete body.catalog_version;
+    else if (name === "evidence missing") delete body.evidence;
+    else Object.assign(body, patch);
+    const onTrain = await load(ok(body));
+    expect(screen.getByRole("alert").textContent).toContain("malformed");
+    expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+    expect(onTrain).not.toHaveBeenCalled();
+  });
+}
+
+test("FTF-0309-G4 an unmapped artifact (availability none) is blocked with the exact 'not ready' reason", async () => {
+  await load(ok(capabilities({ artifact: { ...capabilities().artifact, availability: "none" } })));
+  expect(train().disabled).toBe(true);
+  expect(screen.getByText("Trainable artifact is none, not ready")).toBeTruthy();
+});
+
+test("FTF-0309-G4b a revoked artifact (availability archived) is blocked with the exact 'not ready' reason", async () => {
+  await load(
+    ok(capabilities({ artifact: { ...capabilities().artifact, availability: "archived" } })),
+  );
+  expect(train().disabled).toBe(true);
+  expect(screen.getByText("Trainable artifact is archived, not ready")).toBeTruthy();
+});
+
+test("FTF-0309-F7 a 200 whose body is still being read when the model switches is ignored", async () => {
+  let release: (value: unknown) => void = () => {};
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    })),
+  );
+  const first = props();
+  const view = render(createElement(CapabilityCompatibilityUI, first));
+  fireEvent.click(screen.getByRole("button", { name: "Check compatibility" }));
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  view.rerender(createElement(CapabilityCompatibilityUI, { ...first, modelName: "Org/Other" }));
+  await act(async () => {
+    release(capabilities({ public_model_name: "Org/Other" }));
+    await new Promise((r) => setTimeout(r, 10));
+  });
+  expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByTestId("declared-vram")).toBeNull();
 });
