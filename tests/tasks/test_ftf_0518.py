@@ -767,6 +767,68 @@ def test_route_profile_matrix() -> None:
         check(cid, f"route {bad!r} is refused", raised)
 
 
+def test_semantic_detector_is_never_called_before_the_route_clears() -> None:
+    """The route check decides whether `detect_near_duplicates` is called at all, not only
+    whether its results are kept: a report listing the semantic methods as not run is not, by
+    itself, proof the (comparatively expensive, and for an external route, policy-sensitive)
+    detector call never happened."""
+    cid = "LK-ROUTE-F13"
+    exact_a = record("t", LONG_A, "z")
+    exact_b = record("f", LONG_A, "z")
+    placed = [
+        *solo("tr", "train", 3),
+        (exact_a, "train", ("g1",)),
+        (exact_b, "final_qualification", ("g2",)),
+    ]
+    ext = Destination(kind="external", provider="acme-embed")
+    auth = RouteAuthorization(
+        provider="acme-embed", surfaces=frozenset({"data"}), approved_by="owner-1"
+    )
+    cases = [
+        ("internal", ROUTE, 1),
+        (
+            "zero_egress external (route_blocked)",
+            sl.EmbeddingRoute(ext, "zero_egress", "standard"),
+            0,
+        ),
+        (
+            "standard, no authorization (route_not_authorized)",
+            sl.EmbeddingRoute(ext, "standard", "standard"),
+            0,
+        ),
+        (
+            "standard, authorized external (embedding_provider_unavailable)",
+            sl.EmbeddingRoute(ext, "standard", "standard", None, auth),
+            0,
+        ),
+        ("invalid profile (invalid_request)", sl.EmbeddingRoute(ext, "bogus", "standard"), 0),
+    ]
+    original = sl.detect_near_duplicates
+    calls = {"n": 0}
+
+    def counting(*args: Any, **kwargs: Any) -> Any:
+        calls["n"] += 1
+        return original(*args, **kwargs)
+
+    sl.detect_near_duplicates = counting  # type: ignore[assignment]
+    try:
+        for label, route, expected in cases:
+            calls["n"] = 0
+            scan(placed, route=route)
+            check(
+                cid,
+                f"{label}: detect_near_duplicates called {expected} time(s), got {calls['n']}",
+                calls["n"] == expected,
+            )
+    finally:
+        sl.detect_near_duplicates = original
+    check(
+        cid,
+        "fixture: the patch is removed (the real detector is back)",
+        sl.detect_near_duplicates is original,
+    )
+
+
 def test_internal_route_scores_use_the_configured_thresholds() -> None:
     cid = "LK-THRESH"
     p1 = record("a", LONG_A, "reply")
@@ -882,8 +944,9 @@ def test_semantic_saturation_is_not_clear() -> None:
     one = scan(placed[:3] + placed[-2:], max_semantic_partners=1)
     check(
         cid,
-        "a cap of 1 is valid and any record reaching it saturates",
-        one.reason_code in (None, "semantic_scan_saturated"),
+        f"a cap of 1 is valid, and t/f's own near-duplicate match alone saturates it "
+        f"({one.status}/{one.reason_code})",
+        one.reason_code == "semantic_scan_saturated",
     )
     exact_hit = [
         *solo("a", "train", 2),
@@ -895,6 +958,110 @@ def test_semantic_saturation_is_not_clear() -> None:
         cid,
         "exact findings survive a saturated semantic stage",
         {"exact_raw", "canonical_normalized"} <= methods_of(report),
+    )
+
+
+def _random_phrase(seed: int, n_chars: int = 200) -> str:
+    """`n_chars` characters of random lowercase words, seeded so the near-duplicate shingle
+    overlap between two different seeds stays at zero (confirmed empirically, not assumed)."""
+    rng = random.Random(seed)
+    alphabet = "abcdefghijklmnopqrstuvwxyz"
+    words = ("".join(rng.choice(alphabet) for _ in range(6)) for _ in range(n_chars // 7))
+    return " ".join(words)
+
+
+def test_saturation_counts_both_sides_of_a_pair() -> None:
+    """A record counted only on one side of each near-duplicate pair it appears in (e.g. only
+    `batch_position_a`) can hide real saturation: a "hub" that near-duplicate-matches several
+    otherwise-unrelated partners accumulates its count only across pairs where IT is the other
+    side. Four disjoint-content partners, each sharing nothing with the others but each sharing
+    a block with one prior "hub" record (so the hub, placed last, is always the larger position
+    in its own pairs) isolates this: each partner's own count stays at 1 (well under the cap),
+    while the hub alone reaches it."""
+    cid = "LK-SATURATION-F14"
+    n_partners = 4
+    phrases = [_random_phrase(seed) for seed in range(n_partners)]
+    hub_text = " ".join(phrases)
+    partners = [
+        (record(f"partner-{i}", phrase, "ok", keys=(f"pg-{i}",)), "train", (f"pg-{i}",))
+        for i, phrase in enumerate(phrases)
+    ]
+    hub_record = record("hub", hub_text, "ok", keys=("hub-g",))
+    hub = prior_source("prior-hub", "final_qualification", [hub_record])
+    report = scan(partners, prior=(hub,), max_semantic_partners=n_partners)
+    check(
+        cid,
+        f"the hub alone reaches the cap: blocked/semantic_scan_saturated "
+        f"({report.status}/{report.reason_code})",
+        report.status == "blocked" and report.reason_code == "semantic_scan_saturated",
+    )
+    # fixture check, run directly against the detector this module calls, confirming the
+    # scenario is really "hub matches every partner once, no partner matches another partner" --
+    # if this fixture check ever fails, the test above would no longer isolate F14 and must be
+    # rebuilt, not loosened.
+    batch = [
+        {
+            "record_index": i,
+            "record_sha256": "a" * 64,
+            "normalized_sha256": "b" * 64,
+            "content": {
+                "messages": [{"role": "user", "content": [{"type": "text", "text": phrase}]}],
+                "metadata": {},
+            },
+            "purpose": "training",
+        }
+        for i, phrase in enumerate(phrases)
+    ]
+    hub_position = len(batch)
+    batch.append(
+        {
+            "record_index": hub_position,
+            "record_sha256": "a" * 64,
+            "normalized_sha256": "b" * 64,
+            "content": {
+                "messages": [{"role": "user", "content": [{"type": "text", "text": hub_text}]}],
+                "metadata": {},
+            },
+            "purpose": "held_out_evaluation",
+        }
+    )
+    near = sl.detect_near_duplicates(
+        batch,
+        thresholds=NearDuplicateThresholds(0.0, 0.0, 0.0),
+        max_candidates_per_record=n_partners,
+    )
+    hub_pairs = [
+        c for c in near.candidates if hub_position in (c.batch_position_a, c.batch_position_b)
+    ]
+    partner_pairs = [
+        c for c in near.candidates if hub_position not in (c.batch_position_a, c.batch_position_b)
+    ]
+    check(
+        cid,
+        f"fixture: the hub pairs with every one of the {n_partners} partners "
+        f"({len(hub_pairs)} hub pairs)",
+        len(hub_pairs) == n_partners,
+    )
+    check(cid, "fixture: no partner pairs with another partner", len(partner_pairs) == 0)
+    check(
+        cid,
+        "fixture: the hub is always the larger (later) batch position in its own pairs",
+        all(c.batch_position_b == hub_position for c in hub_pairs),
+    )
+    # a lower cap, below the sibling-free partner count: the hub still alone saturates it
+    under = scan(partners, prior=(hub,), max_semantic_partners=n_partners - 1)
+    check(
+        cid,
+        f"a cap one below the hub's true count still saturates "
+        f"({under.status}/{under.reason_code})",
+        under.status == "blocked" and under.reason_code == "semantic_scan_saturated",
+    )
+    # a cap above the hub's true count: nothing saturates, a clean scan completes
+    over = scan(partners, prior=(hub,), max_semantic_partners=n_partners + 1)
+    check(
+        cid,
+        f"a cap above the hub's true count does not saturate ({over.status}/{over.reason_code})",
+        over.reason_code != "semantic_scan_saturated",
     )
 
 
@@ -1207,6 +1374,16 @@ def test_tampered_inputs_fail_closed() -> None:
     check(
         cid,
         "a duplicated record id is failed/record_set_mismatch",
+        report.status == "failed" and report.reason_code == "record_set_mismatch",
+    )
+    # the case above also drops records[1], so the set-vs-assigned mismatch alone would catch
+    # it; isolate the duplicate-id check itself with the FULL record set plus one duplicate --
+    # the id set still equals assigned's exactly, so only len(set(ids)) != len(ids) can trigger.
+    report = sl.detect_split_leakage(manifest, [*records, records[0]], route=ROUTE)
+    check(
+        cid,
+        "the full record set plus one duplicate is failed/record_set_mismatch "
+        f"({report.status}/{report.reason_code})",
         report.status == "failed" and report.reason_code == "record_set_mismatch",
     )
     for hash_field in ("record_sha256", "normalized_sha256"):
@@ -1565,8 +1742,19 @@ def test_self_sealed_forgeries_are_refused() -> None:
         forged(report).report_sha256 == report.report_sha256,
     )
     review = sl.LeakageReview(soft.finding_id, "r", "not_leakage", "why")
+    clean = scan([*solo("a", "train", 4), *solo("b", "final_qualification", 2)])
+    check(cid, "fixture: the clean scan verifies and has run every method", not refused(clean))
     cases = {
         "clear with findings": forged(report, status="clear"),
+        "leakage_found claiming the semantic methods were skipped": forged(
+            report, methods_run=sl.HASH_METHODS, methods_not_run=sl.SEMANTIC_METHODS
+        ),
+        "clear claiming the semantic methods were skipped": forged(
+            clean, methods_run=sl.HASH_METHODS, methods_not_run=sl.SEMANTIC_METHODS
+        ),
+        "clear claiming nothing ran at all": forged(
+            clean, methods_run=(), methods_not_run=sl.METHODS
+        ),
         "leakage_found with a blocked reason": forged(
             report, reason_code="semantic_scan_saturated"
         ),
