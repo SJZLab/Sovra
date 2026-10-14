@@ -164,6 +164,20 @@ def _setup(client: S3Client) -> tuple[str, str, S3ObjectStore, S3ObjectStore]:
     return src, dst, S3ObjectStore(client, src), S3ObjectStore(client, dst)
 
 
+_SHARED_SETUP: list[tuple[str, str, S3ObjectStore, S3ObjectStore]] = []
+
+
+def _setup_shared(client: S3Client) -> tuple[str, str, S3ObjectStore, S3ObjectStore]:
+    """One versioned source + object-lock target pair for the round-5 tests whose keys and
+    backup ids are all unique per call. Every unique bucket is its own SeaweedFS collection that
+    eagerly grows volumes (see the s3 service comment in docker-compose.yml); four more pairs on
+    top of round 4 exhausted the hosted runner's disk (runner worker died, job log never
+    uploaded), so these tests share one pair instead of creating their own."""
+    if not _SHARED_SETUP:
+        _SHARED_SETUP.append(_setup(client))
+    return _SHARED_SETUP[0]
+
+
 def _seed(client: S3Client, bucket: str) -> list[BlobRef]:
     refs: list[BlobRef] = []
     for kind, key, body, artifact, index, count in (
@@ -721,7 +735,7 @@ def test_concurrent_creates_never_collide_on_backup_id(client: S3Client) -> None
     none passing (or able to pass) a backup_id, can never be forced onto the same record key.
     Each must succeed, each gets its own distinct id, and each independently, permanently
     verifies -- none can make another's backup unverifiable."""
-    source_bucket, target_bucket, src, dst = _setup(client)
+    source_bucket, target_bucket, src, dst = _setup_shared(client)
 
     def one(n: int):
         ref = _seed_one(client, source_bucket, f"tenants/o/datasets/concurrent-{n}.jsonl", f"c{n}")
@@ -750,7 +764,7 @@ def test_shared_backup_id_collision_is_never_silently_successful(client: S3Clien
     id, A runs in full, B writes") by using the module's own private, test-only id seam
     (`osb._new_backup_id`) to force what a shared caller-chosen id used to risk, and confirms
     neither call reports a false, later-corrupted success."""
-    source_bucket, target_bucket, src, dst = _setup(client)
+    source_bucket, target_bucket, src, dst = _setup_shared(client)
     ref_a = _seed_one(client, source_bucket, "tenants/o/datasets/q4a-a.jsonl", "qa")
     ref_b = _seed_one(client, source_bucket, "tenants/o/datasets/q4a-b.jsonl", "qb")
     shared_id = uuid.uuid4().hex
@@ -800,7 +814,7 @@ def test_pinned_record_read_ignores_a_transient_unretained_swap(client: S3Client
     the narrowest real attack left is a forged, *unretained* version that briefly becomes "the
     latest" at the same key between the pinned listing and the pinned read, then is removed again
     (a plain delete, allowed since nothing retains it) before the re-list runs."""
-    source_bucket, target_bucket, src, dst = _setup(client)
+    source_bucket, target_bucket, src, dst = _setup_shared(client)
     record = _backup(src, dst, _seed(client, source_bucket))
     record_key = f"backups/o/{record.backup_id}/backup-record.json"
     real_versions = [
@@ -886,7 +900,7 @@ def test_record_relist_identity_swap_is_refused_on_real_server(client: S3Client)
     backend -- or a future bug in this client -- could still produce: a second listing reporting
     a different single "latest" version id than the one just read. The first listing and the
     pinned read are both real server calls; only the second listing's return value is forged."""
-    source_bucket, target_bucket, src, dst = _setup(client)
+    source_bucket, target_bucket, src, dst = _setup_shared(client)
     record = _backup(src, dst, _seed(client, source_bucket))
     record_key = f"backups/o/{record.backup_id}/backup-record.json"
     real_versions = [
