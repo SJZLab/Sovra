@@ -1384,12 +1384,12 @@ def test_parser_matches_the_csv_module_on_generated_inputs() -> None:
     """Differential: the state machine agrees with CPython's strict reader on
     thousands of generated texts at every chunking, rows and errors alike."""
     rng = random.Random(504)
-    alphabet = ["a", "b", ",", ";", '"', '"', "\n", "\r", "\r\n", " ", "\x00", "\u0645"]
+    alphabet = ["a", "b", ",", ";", '"', '"', "\n", "\r", "\r\n", " ", "\x00", "\u0645", "\t", "|"]
     mismatches = 0
     total = 0
     for _ in range(3000):
         text = "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 24)))
-        delimiter = rng.choice([",", ";"])
+        delimiter = rng.choice([",", ";", "\t", "|"])
         expected, expected_error = _reference(text, delimiter)
         for size in (1, 2, 3, 7, 1000):
             total += 1
@@ -1465,6 +1465,20 @@ def test_invalid_encoding_locator_is_chunk_independent() -> None:
         _events, outcome = collect(truncated, chunk=size)
         seen.add((outcome.report.failure_code, outcome.fatal_locator))
     check(CID, f"truncated tail: {seen}", seen == {("invalid_encoding", "line:3")})
+
+
+def test_bom_is_refused_even_when_bad_bytes_follow_in_the_same_chunk() -> None:
+    utf8 = b"\xef\xbb\xbfq,a\nbad,\xff\n"
+    utf16 = "\ufeffq,a\n".encode("utf-16-le") + b"\x00\xd8" + "x\n".encode("utf-16-le")
+    for encoding, data in (("utf-8", utf8), ("utf-16-le", utf16)):
+        for size in (1, 3, 10**6):
+            _events, outcome = collect(data, chunk=size, encoding=encoding)
+            check(
+                CID,
+                f"{encoding} chunk={size}: the BOM wins over later bad bytes",
+                outcome.report.failure_code == "unexpected_bom"
+                and outcome.fatal_locator == "line:1",
+            )
 
 
 def test_an_earlier_structure_error_beats_a_later_bad_byte_for_every_chunking() -> None:

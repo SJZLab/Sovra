@@ -294,16 +294,15 @@ class _Parser:
 
     def feed(self, text: str) -> Iterator[tuple[int, list[str]]]:
         position, length = 0, len(text)
-        quote, delimiter = '"', self._delimiter
+        delimiter = self._delimiter
         while position < length:
             state = self._state
             if state == _IN_FIELD:
                 end = self._unquoted.match(text, position).end()  # type: ignore[union-attr]
-                if end > position:
-                    self._content(text, position, end, quoted=False)
-                    position = end
-                    if position == length:
-                        break
+                self._content(text, position, end, quoted=False)
+                position = end
+                if position == length:
+                    break
                 self._save_field()
                 if text[position] == delimiter:
                     self._bump(1)
@@ -313,45 +312,42 @@ class _Parser:
                     position = self._terminate(text, position)
                     yield self._record()
             elif state == _START_FIELD:
-                char = text[position]
-                if char == quote:
+                if text[position] == '"':
                     self._bump(1)
                     position += 1
                     self._quoted_cr = False
                     self._state = _QUOTED
-                elif char == delimiter:
+                elif text[position] == delimiter:
                     self._save_field()
                     self._bump(1)
                     position += 1
-                elif char in "\r\n":
+                elif text[position] in "\r\n":
                     self._save_field()
                     position = self._terminate(text, position)
                     yield self._record()
                 else:
                     self._state = _IN_FIELD
             elif state == _QUOTED:
-                end = text.find(quote, position)
+                end = text.find('"', position)
                 end = length if end < 0 else end
-                if end > position:
-                    self._content(text, position, end, quoted=True)
-                    position = end
+                self._content(text, position, end, quoted=True)
+                position = end
                 if position < length:
                     self._bump(1)
                     position += 1
                     self._quoted_cr = False
                     self._state = _QUOTE_IN_QUOTED
             elif state == _QUOTE_IN_QUOTED:
-                char = text[position]
-                if char == quote:
-                    self._content(quote, 0, 1, quoted=False)
+                if text[position] == '"':
+                    self._content('"', 0, 1, quoted=False)
                     position += 1
                     self._state = _QUOTED
-                elif char == delimiter:
+                elif text[position] == delimiter:
                     self._save_field()
                     self._bump(1)
                     position += 1
                     self._state = _START_FIELD
-                elif char in "\r\n":
+                elif text[position] in "\r\n":
                     self._save_field()
                     position = self._terminate(text, position)
                     yield self._record()
@@ -435,12 +431,11 @@ class CsvEventStream(Iterator[ImportEvent]):
                 first = False
                 yield text
         try:
-            tail = decoder.decode(b"", final=True)
+            # Every codec in CSV_ENCODINGS returns "" here or raises (fuzzed over all five), so
+            # this only detects a sequence cut off at the end of the source.
+            decoder.decode(b"", final=True)
         except UnicodeDecodeError:
             raise _BadBytes from None
-        if tail:
-            self._check_bom(tail, first)
-            yield tail
 
     def _check_bom(self, text: str, first: bool) -> None:
         if first and self._options.bom_forbidden and text[0] == "\ufeff":
