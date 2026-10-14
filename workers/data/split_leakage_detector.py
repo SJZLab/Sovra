@@ -544,6 +544,18 @@ def verify_report(report: LeakageReport) -> None:
     for candidate in (report, _canonical_report(report)):
         if not hmac.compare_digest(stored, compute_report_sha256(candidate).encode()):
             raise LeakageEngineError("report hash does not match its content")
+    # `reason_code is None` is the only case `_derived_status` can resolve to `clear` or
+    # `leakage_found` (every FAILED_CODES/BLOCKED_CODES member maps to `failed`/`blocked`), and
+    # `detect_split_leakage` only reaches that case by running every method. A self-sealed report
+    # is internally consistent by construction (its own hash covers whatever it claims), so an
+    # unkeyed hash alone cannot tell a real scan from one that fabricates `clear` while disclosing
+    # it skipped the semantic methods -- this cross-check is the only thing that can.
+    if report.reason_code is None and (
+        report.methods_run != METHODS or report.methods_not_run != ()
+    ):
+        raise LeakageEngineError(
+            "a clear or leakage_found report must have every method run and none skipped"
+        )
     for finding in report.findings:
         if finding != _canonical_finding(finding):
             raise LeakageEngineError("a finding id or disposition does not follow from its fields")

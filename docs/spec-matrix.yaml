@@ -7397,7 +7397,7 @@ FTF-0502:
   certification_state: PROVISIONAL
   criticality: MUST
   description: JSONL importer
-  evidence_hash: 9b2e93fd1d9942c0a4dcc8852a1a1637dbb89b3a
+  evidence_hash: 6f1a7c506e262cf8ddbded3512f908377d45e78e
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
@@ -7459,6 +7459,20 @@ FTF-0502:
     exercise a non-"training" dataset_purpose (previously hardcoded in run()/collect(), not
     overridable). certification_state stays PROVISIONAL, proof_state stays L1-PROVEN (Law 2).
     See docs/certifications/submissions/2026-10-14T1115Z-FTF-0502-r3.md.
+
+    Round 4 (2026-10-14, QUEUE.md 0k "FTF-0502 RETURN -> round 4"): (1) the integration stop
+    check now imports the SAME 16 MiB dataset undisturbed (control: completes, every byte read)
+    and with S3 stopped mid-stream (blocked/source_unavailable, fewer bytes than the control), so
+    a no-op stop leaves the stop run completing and goes RED; not run against a live server in
+    this sandbox (no Docker daemon), CI job jsonl-import-integration is the real check. (2) Memory
+    pin: tracemalloc peak for 64 MiB of rows within 1.5x of 1 MiB of rows and of 8 MiB of
+    max-size records, nothing subtracted; retaining all lines or one in a hundred is RED. (3) Hash
+    rows differing only in the first, ninth or last hex character on run and preview paths. (4)
+    jsonl_events now refuses a non-str, non-lowercase-64-hex dataset_sha256 as
+    failed/source_changed with nothing read, instead of a raw TypeError from hmac.compare_digest
+    (same class as FTF-0504 r4). (5) Note correction: the round-3 text above describes the stop
+    run as 96 MiB; it is now 16 MiB. evidence_hash is the round-4 code commit. Not self-certified
+    (Law 4). See docs/certifications/submissions/2026-10-14T2100Z-FTF-0502-r4.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0502.py
@@ -7689,7 +7703,7 @@ FTF-0505:
   certification_state: PROVISIONAL
   criticality: MUST
   description: XLSX importer
-  evidence_hash: 8ec743b0e44386639139207f4b949c913a9e3565
+  evidence_hash: 4a467666f44b6209e868b229bc86f0a2c25516f3
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
@@ -8753,12 +8767,20 @@ FTF-0518:
     (independent of PYTHONHASHSEED and input order). apply_leakage_reviews binds a LeakageReview only to a
     review_required finding; assert_leakage_clear(report, final_freeze|training) raises
     LeakageBlockedError unless the report is clear or every finding is reviewed not_leakage, always for
-    blocked/failed, and refuses a report whose hash does not cover it (self-sealed forgeries too).
+    blocked/failed, and refuses a report whose hash does not cover it. Round 2 correction: an unkeyed
+    sha256 alone cannot refuse a self-consistent forgery (one that recomputes its own hash over
+    fabricated content) -- verify_report round 1 missed exactly this for methods_run/methods_not_run,
+    accepting a self-sealed clear/leakage_found report that disclosed skipping the 4 semantic methods.
+    Closed by a dedicated cross-check: reason_code is None (the only case a clear/leakage_found status
+    can derive from) now requires methods_run == METHODS and methods_not_run == (); every other forgery
+    class (status/reason/finding/review tampering) was already refused via the status-and-reason-derived
+    canonical-hash check, which this does not change.
     Disclosed: the hashing embedding is a lexical proxy (FTF-0513); prior development vs current
     development, same-role pairs and prior-vs-prior are not checked; no persistence of findings or
     reviews; no live caller yet, so proving_symbol stays blank. Caller contract: FTF-0519 / the training
     workflow calls this AND FTF-0515 assert_clear_for_training. Not self-certified (Law 4). See
-    docs/certifications/submissions/2026-10-14T0925Z-FTF-0518.md.
+    docs/certifications/submissions/2026-10-14T0925Z-FTF-0518.md and
+    docs/certifications/submissions/2026-10-14T1741Z-FTF-0518-r2.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0518.py
@@ -12360,14 +12382,41 @@ FTF-1602:
     Python itself treats as naive) is refused up front instead of surfacing a later raw error.
     New real-SeaweedFS evidence: N concurrent real creates never collide (each gets a distinct id
     and independently, permanently verifies); a forced shared-id interleaving (Control plane's own
-    "B checks the id, A runs in full, B writes") never reports false success for either caller,
-    via the same private id seam a real caller cannot reach; the pinned record read ignores a
-    transient, unretained forged version injected between the pinned listing and the pinned read
-    (G1), confirmed against the real server that the genuine, COMPLIANCE-retained record itself
-    cannot be deleted or replaced at all; and the post-read re-list refuses a same-count,
-    different-identity swap (G7), with an inline comparison showing a count/delete-marker/
-    is_latest-only version of that same check would miss it. Whole-file mutation gate (uncapped):
-    405/405 killed, 0 survivors. Not self-certified (Law 4).
+    "B checks the id, A runs in full, B writes"), via the same private id seam a real caller
+    cannot reach, is what the test actually asserts: B (the second writer onto the shared id)
+    never reports false success, and A's own earlier run -- which did complete and return a
+    record at call time -- is left permanently unverifiable afterward by B's later write onto the
+    same key; the real fix is that no two real calls are ever given the same id, not that this
+    race is individually safe. The pinned record read ignores a transient, unretained forged
+    version injected between the pinned listing and the pinned read (G1), confirmed against the
+    real server that the genuine, COMPLIANCE-retained record itself cannot be deleted or replaced
+    at all; and the post-read re-list refuses a same-count, different-identity swap (G7), with an
+    inline comparison showing a count/delete-marker/is_latest-only version of that same check
+    would miss it. Whole-file mutation gate (uncapped): 405/405 killed, 0 survivors. Not
+    self-certified (Law 4).
+    Round 6 (QUEUE 0i, tests + spec-matrix only; production unchanged since round 5):
+    F7-CREATE-NOW-VALIDATED-LATE -- a unit and real-server table of bad `now` shapes (naive,
+    tzinfo set but utcoffset() is None, str, int, a datetime subclass) proves `create_backup`
+    refuses before making a single call to either store (a counting double on both suites), not
+    only before writing; fault -> RED by moving the check below the blob-read loop (the round-4
+    Q5 shape) reproduces the hazard. G7-COUNT-ONLY-RELIST gained a unit twin
+    (`test_round6_relist_identity_swap_is_refused_in_unit`) of the existing real-server test --
+    round 5 only proved this guard on the real suite, so a regression there stayed green in unit.
+    G1/G1b were rebuilt on the Q2 shape (a forged, unretained version PUT the first time the
+    record is listed, DELETEd the first time retention is checked -- both calls `_load_record`
+    always makes, regardless of which method it uses to read the content) in both suites: round
+    5's own ABA test only reddened through a local double standing in for the content-read method
+    by name, which a real production mutation (get_latest instead of the pinned get_version) does
+    not call at all, so the primary attack-check assertion itself stayed green against that exact
+    mutation (confirmed this round); the rebuilt test asserts on `verify_backup`'s/
+    `restore_backup`'s own real return value directly, with no self-referential demonstration, and
+    adds G1b (the same forged, shrunk record applied to restore, which previously could have
+    restored 3 of 4 objects as a silent, false success). Fault -> RED for all three confirmed by
+    mutating scripts/object_storage_backup.py on disk and restoring it byte-identical afterward
+    (see the round-6 submission's Fault -> RED table). evidence_hash stays pinned to 47ca830
+    (round 4), per Control plane's round-6 ruling (QUEUE 0i item 4) -- round 6 touches no
+    production line, so nothing rebinds it. Whole-file mutation gate (uncapped) re-run clean; see
+    the round-6 submission for the exact count. Not self-certified (Law 4).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1602.py
