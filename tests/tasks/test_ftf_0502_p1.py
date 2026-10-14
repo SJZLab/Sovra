@@ -3102,19 +3102,19 @@ BUCKET = "sovra-datasets"
 
 
 class FakeS3:
-    """Records every call; any method other than stream_object is a failure."""
+    """Records every call; any method other than stream_object_windows is a failure."""
 
     def __init__(self, data: bytes = SRC_BYTES) -> None:
         self.data = data
-        self.gets: list[tuple[str, str, int]] = []
+        self.gets: list[tuple[str, str, int, int]] = []
         self.fail_at: int | None = None
         self.fail_after_last: bool = False
         self.error: BaseException = S3Error(503, "SlowDown", "slow", "")
 
-    def stream_object(
-        self, bucket: str, key: str, *, chunk_size: int = 1024 * 1024
+    def stream_object_windows(
+        self, bucket: str, key: str, *, window_bytes: int = 0, chunk_size: int = 1024 * 1024
     ) -> Iterator[bytes]:
-        self.gets.append((bucket, key, chunk_size))
+        self.gets.append((bucket, key, window_bytes, chunk_size))
         pieces = support.split_chunks(self.data, 64)
         for i, piece in enumerate(pieces):
             if self.fail_at is not None and i == self.fail_at:
@@ -3268,7 +3268,7 @@ def test_src_happy_path_is_lazy_one_get_and_exact() -> None:
         check(
             "SRC-1",
             "exactly one GET, of the session's own key, in the configured bucket",
-            fake.gets == [(BUCKET, seed.key, 1024 * 1024)],
+            fake.gets == [(BUCKET, seed.key, 8 * 1024 * 1024, 1024 * 1024)],
         )
         check(
             "SRC-1",
@@ -3438,7 +3438,7 @@ def test_src_no_list_no_write_and_inconsistent_rows() -> None:
         b"".join(_open(session, train, fake).chunks)
         check(
             "SRC-3",
-            "reading a dataset used no client method but stream_object",
+            "reading a dataset used no client method but stream_object_windows",
             len(fake.gets) == 1,
         )
         row = session.get(store.DatasetUploadSession, train.session_id)
@@ -4599,6 +4599,348 @@ def test_wiring_ci_runs_this_suite_and_the_integration_job() -> None:
         (
             ROOT / "tests" / "integration" / "test_ftf_0502_p1_dataset_source_postgres_s3.py"
         ).is_file(),
+    )
+
+
+# --- WIN: bounded, ETag-pinned Range windows (FTF-0502-P1-F1) --------------------------
+
+
+class WindowServer:
+    """A scripted S3-style endpoint: one object per path, answering `Range` with a
+    206 + `Content-Range` + `ETag`, and `If-Match` with a 412 on a different ETag.
+    `on_request(server, n)` runs before request n (0-based) is answered, to swap the
+    object or break the server between windows. Every request is recorded."""
+
+    def __init__(self, objects: dict[str, tuple[bytes, str]], on_request: Any = None) -> None:
+        import http.server
+        import threading
+
+        self.objects = objects
+        self.requests: list[SimpleNamespace] = []
+        self.on_request = on_request
+        self.ignore_if_match = False
+        self.status_override: int | None = None
+        self.drop_etag = False
+        self.shift_start = 0
+        self.truncate_body = 0
+        outer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args: Any) -> None:
+                pass
+
+            def do_GET(self) -> None:  # noqa: N802
+                headers = {k.lower(): v for k, v in self.headers.items()}
+                outer.requests.append(SimpleNamespace(path=self.path, headers=headers))
+                if outer.on_request is not None:
+                    outer.on_request(outer, len(outer.requests) - 1)
+                data, etag = outer.objects[self.path.split("?")[0]]
+                if outer.status_override is not None:
+                    return self._send(outer.status_override, {}, b"")
+                if not data:
+                    return self._send(416, {"Content-Range": "bytes */0"}, b"")
+                first, _, last = headers["range"][len("bytes=") :].partition("-")
+                a, b = int(first), min(int(last), len(data) - 1)
+                if not outer.ignore_if_match and headers.get("if-match") not in (None, f'"{etag}"'):
+                    return self._send(412, {}, b"")
+                a_out = a + outer.shift_start
+                reply = {"Content-Range": f"bytes {a_out}-{b}/{len(data)}"}
+                if not outer.drop_etag:
+                    reply["ETag"] = f'"{etag}"'
+                body = data[a : b + 1]
+                self._send(206, reply, body[: len(body) - outer.truncate_body], len(body))
+
+            def _send(
+                self, status: int, headers: dict[str, str], body: bytes, length: int | None = None
+            ) -> None:
+                self.send_response(status)
+                for name, value in headers.items():
+                    self.send_header(name, value)
+                self.send_header("Content-Length", str(len(body) if length is None else length))
+                self.end_headers()
+                self.wfile.write(body)
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.thread = threading.Thread(
+            target=lambda: self.server.serve_forever(poll_interval=0.01), daemon=True
+        )
+
+    def __enter__(self) -> WindowServer:
+        self.thread.start()
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+    def client(self) -> Any:
+        from app.services import storage_semantics_client as s3
+
+        return s3.S3Client(
+            s3.S3Endpoint("http", "127.0.0.1", self.server.server_address[1]),
+            s3.S3Credentials("AK", "SK"),
+            timeout_seconds=5.0,
+        )
+
+
+def _windows(client: Any, key: str, **kwargs: Any) -> list[bytes]:
+    return list(client.stream_object_windows(BUCKET, key, **kwargs))
+
+
+def _count_requests(srv: WindowServer, call: Any) -> int:
+    before = len(srv.requests)
+    call()
+    return len(srv.requests) - before
+
+
+def _outcome(call: Any) -> Any:
+    try:
+        return call()
+    except Exception as exc:  # noqa: BLE001 - the exception is the observation
+        return exc
+
+
+def test_win_client_reads_pinned_windows_in_order() -> None:
+    from app.services.storage_semantics_client import S3ObjectChanged
+
+    data = bytes(range(100))
+    with WindowServer({f"/{BUCKET}/k": (data, "e1")}) as srv:
+        pieces = _windows(srv.client(), "k", window_bytes=16, chunk_size=5)
+        check("WIN-1", "the windows reassemble the exact object", b"".join(pieces) == data)
+        check("WIN-1", "no chunk is larger than chunk_size", max(map(len, pieces)) <= 5)
+        ranges = [r.headers["range"] for r in srv.requests]
+        check(
+            "WIN-1",
+            "consecutive 16-byte windows from offset 0, the last one asked past the end",
+            ranges == [f"bytes={i}-{i + 15}" for i in range(0, 100, 16)],
+        )
+        check(
+            "WIN-2",
+            "the first window carries no If-Match",
+            "if-match" not in srv.requests[0].headers,
+        )
+        check(
+            "WIN-2",
+            "every later window pins the first window's ETag",
+            all(r.headers.get("if-match") == '"e1"' for r in srv.requests[1:]),
+        )
+        check(
+            "WIN-1",
+            "an object that is an exact multiple of the window needs no extra request",
+            _count_requests(srv, lambda: _windows(srv.client(), "k", window_bytes=50)) == 2,
+        )
+        check(
+            "WIN-1",
+            "S3ObjectChanged is a source_changed marker",
+            S3ObjectChanged.source_changed is True,
+        )
+
+
+def test_win_empty_and_single_window_objects() -> None:
+    with WindowServer({f"/{BUCKET}/e": (b"", "e0"), f"/{BUCKET}/s": (b"abc", "e1")}) as srv:
+        check("WIN-3", "an empty object yields nothing", _windows(srv.client(), "e") == [])
+        check(
+            "WIN-3",
+            "an object smaller than the window is one request",
+            b"".join(_windows(srv.client(), "s")) == b"abc" and len(srv.requests) == 2,
+        )
+
+
+def test_win_version_change_between_windows_is_object_changed() -> None:
+    from app.services.storage_semantics_client import S3ObjectChanged
+
+    old, new = b"A" * 64, b"B" * 64
+
+    def swap(srv: WindowServer, n: int) -> None:
+        if n == 2:
+            srv.objects[f"/{BUCKET}/k"] = (new, "e2")
+
+    with WindowServer({f"/{BUCKET}/k": (old, "e1")}, swap) as srv:
+        got = _outcome(lambda: _windows(srv.client(), "k", window_bytes=16))
+        check(
+            "WIN-4",
+            "an overwrite between windows is S3ObjectChanged (If-Match refused)",
+            isinstance(got, S3ObjectChanged),
+        )
+
+    # A server that ignores If-Match still cannot splice: the ETag is compared too.
+    with WindowServer({f"/{BUCKET}/k": (old, "e1")}, swap) as srv:
+        srv.ignore_if_match = True
+        got = _outcome(lambda: _windows(srv.client(), "k", window_bytes=16))
+        check(
+            "WIN-4",
+            "a different ETag on a later window is S3ObjectChanged without relying on If-Match",
+            isinstance(got, S3ObjectChanged),
+        )
+
+    # Same ETag, other size.
+    def resize(srv: WindowServer, n: int) -> None:
+        if n == 2:
+            srv.objects[f"/{BUCKET}/k"] = (old + b"C" * 16, "e1")
+
+    with WindowServer({f"/{BUCKET}/k": (old, "e1")}, resize) as srv:
+        got = _outcome(lambda: _windows(srv.client(), "k", window_bytes=16))
+        check(
+            "WIN-4",
+            "a different total size on a later window is S3ObjectChanged",
+            isinstance(got, S3ObjectChanged),
+        )
+
+
+def test_win_protocol_violations_raise_never_complete() -> None:
+    from app.services.storage_semantics_client import S3Error, S3ObjectChanged
+
+    data = b"x" * 40
+    cases: dict[str, Any] = {
+        "a 200 instead of a 206": lambda s: setattr(s, "status_override", 200),
+        "a 500": lambda s: setattr(s, "status_override", 500),
+        "no ETag": lambda s: setattr(s, "drop_etag", True),
+        "a window that starts at the wrong offset": lambda s: setattr(s, "shift_start", 1),
+        "a body shorter than its Content-Range": lambda s: setattr(s, "truncate_body", 1),
+    }
+    for label, arm in cases.items():
+        with WindowServer({f"/{BUCKET}/k": (data, "e1")}) as srv:
+            arm(srv)
+            got = _outcome(lambda: _windows(srv.client(), "k", window_bytes=16))
+            check(
+                "WIN-5",
+                f"{label} raises and yields no complete object",
+                isinstance(got, Exception) and not isinstance(got, S3ObjectChanged),
+            )
+            check(
+                "WIN-5",
+                f"{label} is not reported as a changed object",
+                not getattr(got, "source_changed", False),
+            )
+    with WindowServer({f"/{BUCKET}/k": (data, "e1")}) as srv:
+        srv.status_override = 500
+        got = _outcome(lambda: _windows(srv.client(), "k"))
+        check(
+            "WIN-5", "a 500 carries its status", isinstance(got, S3Error) and got.status_code == 500
+        )
+    with WindowServer({f"/{BUCKET}/k": (data, "e1")}) as srv:
+        for kwargs in ({"window_bytes": 0}, {"window_bytes": -1}, {"chunk_size": 0}):
+            got = _outcome(lambda kw=kwargs: _windows(srv.client(), "k", **kw))
+            check("WIN-5", f"{kwargs} is refused", isinstance(got, ValueError))
+        check("WIN-5", "refusals sent no request", srv.requests == [])
+
+
+def _read_through_reader(srv: WindowServer, seed: Any, session: Session, data: bytes) -> Any:
+    saved = source_module._WINDOW_BYTES
+    source_module._WINDOW_BYTES = 64
+    try:
+        src = source_module.open_dataset_source(
+            session,
+            SimpleNamespace(organization_id=seed.org),
+            project_id=seed.project,
+            dataset_id=seed.dataset_id,
+            include_held_out=False,
+            storage=source_module.DatasetObjectStorage(srv.client(), BUCKET),
+        )
+        reader = ic.ChunkReader(
+            src.chunks, expected_size=src.expected_size, expected_sha256=src.expected_sha256
+        )
+        return _outcome(lambda: b"".join(reader))
+    finally:
+        source_module._WINDOW_BYTES = saved
+
+
+def test_win_reader_end_to_end_over_the_real_client() -> None:
+    with _src_env() as (session, seeds):
+        seed = seeds["train"]
+        path = f"/{BUCKET}/{seed.key}"
+        with WindowServer({path: (SRC_BYTES, "e1")}) as srv:
+            got = _read_through_reader(srv, seed, session, SRC_BYTES)
+            check(
+                "WIN-6", "a multi-window dataset completes with the right bytes", got == SRC_BYTES
+            )
+            check(
+                "WIN-6",
+                "it took one request per 64-byte window",
+                len(srv.requests) == -(-len(SRC_BYTES) // 64),
+            )
+
+        def swap(srv: WindowServer, n: int) -> None:
+            if n == 3:
+                srv.objects[path] = (SRC_BYTES[::-1], "e2")
+
+        with WindowServer({path: (SRC_BYTES, "e1")}, swap) as srv:
+            got = _read_through_reader(srv, seed, session, SRC_BYTES)
+            check(
+                "WIN-7",
+                "an overwrite mid-read ends failed / source_changed, never spliced bytes",
+                isinstance(got, ic.ImportAborted)
+                and (got.state, got.failure_code) == ("failed", "source_changed"),
+            )
+
+        def stop(srv: WindowServer, n: int) -> None:
+            if n == 3:
+                srv.status_override = 503
+
+        with WindowServer({path: (SRC_BYTES, "e1")}, stop) as srv:
+            got = _read_through_reader(srv, seed, session, SRC_BYTES)
+            check(
+                "WIN-8",
+                "a storage outage mid-read ends blocked / source_unavailable",
+                isinstance(got, ic.ImportAborted)
+                and (got.state, got.failure_code) == ("blocked", "source_unavailable"),
+            )
+
+        corrupt = SRC_BYTES[:-1] + b"!"
+        with WindowServer({path: (corrupt, "e1")}) as srv:
+            got = _read_through_reader(srv, seed, session, corrupt)
+            check(
+                "WIN-9",
+                "same ETag and size but other bytes still fails the whole-stream sha256",
+                isinstance(got, ic.ImportAborted)
+                and (got.state, got.failure_code) == ("failed", "source_changed"),
+            )
+
+        with WindowServer({path: (SRC_BYTES[:-70], "e1")}) as srv:
+            got = _read_through_reader(srv, seed, session, SRC_BYTES)
+            check(
+                "WIN-9",
+                "an object shorter than the verified size is an outage, not a change",
+                isinstance(got, ic.ImportAborted)
+                and (got.state, got.failure_code) == ("blocked", "source_unavailable"),
+            )
+
+
+def test_win_chunk_reader_only_trusts_a_true_source_changed_marker() -> None:
+    def failing(exc: BaseException) -> Any:
+        def gen() -> Iterator[bytes]:
+            yield b"ab"
+            raise exc
+
+        reader = ic.ChunkReader(gen(), expected_size=10, expected_sha256="0" * 64)
+        return _outcome(lambda: b"".join(reader))
+
+    class Marked(Exception):
+        source_changed = True
+
+    class Falsy(Exception):
+        source_changed = False
+
+    class Truthy(Exception):
+        source_changed = "yes"
+
+    for label, exc, want in (
+        ("a source_changed=True exception", Marked(), ("failed", "source_changed")),
+        ("a source_changed=False exception", Falsy(), ("blocked", "source_unavailable")),
+        ("a truthy non-bool source_changed", Truthy(), ("blocked", "source_unavailable")),
+        ("a plain exception", RuntimeError("x"), ("blocked", "source_unavailable")),
+    ):
+        got = failing(exc)
+        check(
+            "WIN-10",
+            f"{label} -> {want}",
+            isinstance(got, ic.ImportAborted) and (got.state, got.failure_code) == want,
+        )
+    err = source_module.DatasetSourceChangedError("object changed")
+    check(
+        "WIN-10",
+        "DatasetSourceChangedError carries the marker and no content",
+        err.source_changed is True and str(err) == "object changed",
     )
 
 

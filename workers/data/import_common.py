@@ -1131,7 +1131,11 @@ class ChunkReader(Iterator[bytes]):
                 chunk = next(self._iterator)
             except StopIteration:
                 break
-            except Exception:  # noqa: BLE001 - any source failure is an outage, never a verdict
+            except Exception as exc:  # noqa: BLE001 - any source failure is an outage, never a verdict
+                if getattr(exc, "source_changed", False) is True:
+                    # The source itself says the verified object changed under
+                    # the read (a version difference between two windows).
+                    raise self._abort("failed", "source_changed") from None
                 raise self._abort("blocked", "source_unavailable") from None
             if type(chunk) is not bytes:
                 raise self._abort("blocked", "source_unavailable")

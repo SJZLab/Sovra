@@ -49,6 +49,16 @@ class S3Error(Exception):
         super().__init__(f"S3Error({status_code}, {code!r}, {message!r})")
 
 
+class S3ObjectChanged(Exception):
+    """An object read in windows changed between two windows (its ETag or size
+    differs from the first window's, or the server refused the `If-Match`
+    precondition). Content-free. `source_changed` is the marker the dataset
+    importers' `ChunkReader` turns into `failed` / `source_changed` rather than
+    an outage (FTF-0502-P1-F1)."""
+
+    source_changed = True
+
+
 @dataclass(frozen=True)
 class S3Credentials:
     access_key: str
@@ -288,6 +298,20 @@ def _xml_to_dict(element: ET.Element) -> Any:
         else:
             result[name] = value
     return result
+
+
+def _parse_content_range(value: str | None) -> tuple[int, int, int] | None:
+    """`bytes first-last/total` -> (first, last, total); anything else None."""
+    if not value or not value.startswith("bytes "):
+        return None
+    span, _, total = value[6:].partition("/")
+    first, _, last = span.partition("-")
+    if not (first.isascii() and last.isascii() and total.isascii()):
+        return None
+    if not (first.isdigit() and last.isdigit() and total.isdigit()):
+        return None
+    a, b, t = int(first), int(last), int(total)
+    return (a, b, t) if a <= b < t else None
 
 
 class S3Client:
@@ -575,6 +599,75 @@ class S3Client:
                     yield chunk
         except urllib.error.HTTPError as exc:
             raise S3Error(exc.code, "Unknown", exc.reason or "", "") from exc
+
+    def stream_object_windows(
+        self,
+        bucket: str,
+        key: str,
+        *,
+        window_bytes: int = 8 * 1024 * 1024,
+        chunk_size: int = 1024 * 1024,
+    ):
+        """Yields the object's bytes in `chunk_size` pieces, fetched as
+        consecutive HTTP Range windows of at most `window_bytes` (FTF-0502-P1-F1).
+
+        A single long GET read at an importer's pace is ended by the server
+        (SeaweedFS drops it at ~20 MB), so each window is its own short request.
+        The first window fixes the object's ETag and size; every later window
+        sends `If-Match: <etag>` and its answer must carry the same ETag and
+        total size, so a window of another object version is never spliced onto
+        the first: that raises `S3ObjectChanged`. A missing ETag, an answer that
+        is not a 206 for exactly the requested start, or a window that ends
+        short raises instead of being guessed at."""
+        if chunk_size <= 0 or window_bytes <= 0:
+            raise ValueError("window_bytes and chunk_size must be positive")
+        offset = 0
+        total: int | None = None
+        etag = ""
+        while total is None or offset < total:
+            headers = {"range": f"bytes={offset}-{offset + window_bytes - 1}"}
+            if total is not None:
+                headers["if-match"] = etag
+            signed = sign_request(
+                method="GET",
+                endpoint=self._endpoint,
+                credentials=self._credentials,
+                canonical_uri=f"/{bucket}/{key}",
+                headers=headers,
+            )
+            request = urllib.request.Request(  # noqa: S310
+                signed.url, headers=signed.headers, method="GET"
+            )
+            try:
+                resp = urllib.request.urlopen(request, timeout=self._timeout)  # noqa: S310
+            except urllib.error.HTTPError as exc:
+                if exc.code == 412:
+                    raise S3ObjectChanged from None
+                if (
+                    exc.code == 416
+                    and total is None
+                    and exc.headers.get("Content-Range") == "bytes */0"
+                ):
+                    return
+                raise S3Error(exc.code, "Unknown", exc.reason or "", "") from exc
+            with resp:
+                span = _parse_content_range(resp.headers.get("Content-Range"))
+                window_etag = (resp.headers.get("ETag") or "").strip()
+                if resp.status != 206 or span is None or span[0] != offset or not window_etag:
+                    raise S3Error(resp.status, "UnexpectedWindow", "window answer", "")
+                first, last, size = span
+                if total is None:
+                    total, etag = size, window_etag
+                elif size != total or window_etag != etag:
+                    raise S3ObjectChanged
+                remaining = last - first + 1
+                while remaining:
+                    chunk = resp.read(min(chunk_size, remaining))
+                    if not chunk:
+                        raise S3Error(resp.status, "ShortWindow", "window ended early", "")
+                    remaining -= len(chunk)
+                    yield chunk
+            offset = last + 1
 
     def list_multipart_uploads(self, bucket: str, *, prefix: str) -> list[dict[str, str]]:
         """In-progress multipart uploads whose key starts with `prefix`."""
