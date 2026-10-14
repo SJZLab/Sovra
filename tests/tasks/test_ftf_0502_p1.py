@@ -4621,6 +4621,7 @@ class WindowServer:
         self.ignore_if_match = False
         self.status_override: int | None = None
         self.drop_etag = False
+        self.ok_status = 206
         self.shift_start = 0
         self.truncate_body = 0
         outer = self
@@ -4648,7 +4649,9 @@ class WindowServer:
                 if not outer.drop_etag:
                     reply["ETag"] = f'"{etag}"'
                 body = data[a : b + 1]
-                self._send(206, reply, body[: len(body) - outer.truncate_body], len(body))
+                self._send(
+                    outer.ok_status, reply, body[: len(body) - outer.truncate_body], len(body)
+                )
 
             def _send(
                 self, status: int, headers: dict[str, str], body: bytes, length: int | None = None
@@ -4794,6 +4797,8 @@ def test_win_protocol_violations_raise_never_complete() -> None:
     cases: dict[str, Any] = {
         "a 200 instead of a 206": lambda s: setattr(s, "status_override", 200),
         "a 500": lambda s: setattr(s, "status_override", 500),
+        "a 416 that does not say the object is empty": lambda s: setattr(s, "status_override", 416),
+        "a 200 with otherwise valid range headers": lambda s: setattr(s, "ok_status", 200),
         "no ETag": lambda s: setattr(s, "drop_etag", True),
         "a window that starts at the wrong offset": lambda s: setattr(s, "shift_start", 1),
         "a body shorter than its Content-Range": lambda s: setattr(s, "truncate_body", 1),
