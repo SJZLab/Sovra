@@ -227,7 +227,7 @@ def test_unmapped_top_level_key_is_fatal() -> None:
 
 def test_container_pointer_missing_is_fatal() -> None:
     doc: dict[str, object] = {"nope": []}
-    outcome = run(jdump(doc), container="/rows")
+    outcome = run(jdump(doc), container="/rows", ignored_top_level_keys=["nope"])
     check(
         CID,
         "a container pointer absent from the document is fatal mapping_column_missing",
@@ -245,12 +245,13 @@ def test_container_depth_over_one_is_mapping_invalid() -> None:
             verified_content_type="application/json",
             dataset_sha256="0" * 64,
         )
-    except ic.MappingInvalidError as exc:
+    except ic.MappingUnsupportedError as exc:
         raised = exc
     check(
         CID,
-        "a container pointer deeper than one level is MappingInvalidError (disclosed scope limit)",
-        raised is not None and raised.reason == "bad_pointer",
+        "a container pointer deeper than one level is MappingUnsupportedError "
+        "(mapping_unsupported), before a byte is read",
+        raised is not None and raised.code == "mapping_unsupported",
     )
 
 
@@ -315,61 +316,9 @@ def test_nested_container_trailing_garbage_after_root_is_json_malformed() -> Non
     )
 
 
-def test_scan_array_truncation_table() -> None:
-    for label, text in (
-        ("nothing after [", "["),
-        ("nothing after a value", "[1"),
-        # A second value where only a comma or ']' is valid: looping back to
-        # the top of _scan_array's own loop would otherwise re-enter
-        # _skip_value at the same position and raise there instead, masking
-        # whether this exact check still runs -- "[1 2]" instead finds a
-        # second, syntactically fine literal ("2"), so only this check's own
-        # raise distinguishes the real code from a "pass" in its place.
-        ("neither comma nor ] after a value", "[1 2]"),
-    ):
-        raised = False
-        try:
-            ji._scan_array(text, 0)
-        except ji._Unterminated:
-            raised = True
-        check(CID, f"_scan_array({label!r}): _Unterminated", raised)
-
-
-def test_scan_object_truncation_table() -> None:
-    for label, text in (
-        ("nothing after {", "{"),
-        ("nothing after a key", '{"a"'),
-        # Same reasoning as _scan_array above: a next character that is
-        # itself a quote (not merely absent) would let a "pass" in place of
-        # this exact raise fall through into parsing a second, well-formed
-        # member instead of hitting any other check.
-        ("next char exists but is not ':'", '{"a" "b":1}'),
-        ("nothing after the colon", '{"a":'),
-        ("nothing after a value", '{"a":1'),
-        ("neither comma nor } after a value", '{"a":1 "b":2}'),
-        ("a key with an invalid escape", '{"\\q":1}'),
-    ):
-        raised = False
-        try:
-            ji._scan_object(text, 0)
-        except ji._Unterminated:
-            raised = True
-        check(CID, f"_scan_object({label!r}): _Unterminated", raised)
-
-
-def test_scan_object_empty_root_is_not_malformed() -> None:
-    # The "if pos < length and text[pos] == '}': return" early return for a
-    # genuinely empty object matters observably: without it, the next check
-    # ("if pos >= length or text[pos] != '\"': raise") would wrongly refuse
-    # a syntactically valid empty object as _Unterminated.
-    members, end = ji._scan_object("{}", 0)
-    check(CID, "an empty object scans as zero members, not _Unterminated", members == [])
-    check(CID, "...consumed through the closing brace", end == 2)
-
-
 def test_container_key_match_is_exact_not_normalized() -> None:
     doc = {"Rows": [VALID_A], "_meta": {}}
-    outcome = run(jdump(doc), container="/rows", ignored_top_level_keys=["_meta"])
+    outcome = run(jdump(doc), container="/rows", ignored_top_level_keys=["_meta", "Rows"])
     check(
         CID,
         "a differently-cased top-level key ('Rows') never matches the mapping's own "
@@ -443,11 +392,15 @@ def test_oversize_element_exact_boundaries() -> None:
     )
 
     over_generous = element_of_length(generous + 1)
-    outcome = run(jdump([over_generous]), container="", limits=limits)
+    outcome = run(jdump([over_generous, VALID_A]), container="", limits=limits)
     check(
         CID,
-        "generous bound + 1: fatal field_too_large",
-        (outcome.report.state, outcome.report.failure_code) == ("failed", "field_too_large"),
+        "far over the limit (the old 2x+2 tier): still one record_too_large row, never fatal, "
+        "and the next element imports",
+        outcome.report.state == "completed"
+        and [(r.locator, r.code) for r in outcome.report.rejections]
+        == [("record:0", "record_too_large")]
+        and outcome.report.records_accepted == 1,
     )
 
 
@@ -608,7 +561,7 @@ def test_container_key_case_mismatch_against_the_document_is_refused() -> None:
     # the *document's* key was differently cased. Here the *mapping's own*
     # declared container key is differently cased than a document key that
     # would otherwise match -- also refused, exact match on both sides.
-    mapping = build_mapping(container="/Rows")
+    mapping = build_mapping(container="/Rows", ignored_top_level_keys=["rows"])
     doc = {"rows": [VALID_A]}
     outcome = ji.run_json_import(
         make_reader(jdump(doc)),
@@ -826,12 +779,13 @@ def test_oversize_element_tiers() -> None:
         bool(outcome.report.rejections) and outcome.report.rejections[0].code == "record_too_large",
     )
     tiny_limits = ic.ImportLimits(max_record_bytes=10)
-    outcome2 = run(jdump([small_row]), container="", limits=tiny_limits)
+    outcome2 = run(jdump([small_row, small_row]), container="", limits=tiny_limits)
     check(
         CID,
-        "over the generous 2*max_record_bytes+2 bound: fatal field_too_large, found by span "
-        "length alone",
-        (outcome2.report.state, outcome2.report.failure_code) == ("failed", "field_too_large"),
+        "far over the limit: every oversize element is its own record_too_large row and the "
+        "import continues (it is never fatal field_too_large)",
+        outcome2.report.state == "completed"
+        and [r.code for r in outcome2.report.rejections] == ["record_too_large"] * 2,
     )
 
 
@@ -862,13 +816,26 @@ def test_over_cap_document_loses_only_the_document_not_elements() -> None:
 # --- BOM / encoding (round-1: "BOM refused, UTF-16/32 not unsupported_encoding") -
 
 
-def test_bom_is_refused() -> None:
-    data = b"\xef\xbb\xbf" + jdump([VALID_A])
-    outcome = run(data, container="")
+def test_utf8_bom_is_accepted_at_byte_zero_only() -> None:
+    data = b"\xef\xbb\xbf" + jdump([VALID_A, VALID_B])
+    for chunk in (None, 1, 2, 3, 4, 5):
+        outcome = run(data, container="", chunk=chunk)
+        check(
+            CID,
+            f"a UTF-8 BOM at byte 0 is skipped, chunk={chunk}",
+            outcome.report.state == "completed" and outcome.report.records_accepted == 2,
+        )
+    outcome = run(jdump([VALID_A]) + b"\xef\xbb\xbf", container="")
     check(
         CID,
-        "a UTF-8 BOM is fatal unexpected_bom (RFC 8259 forbids it)",
-        (outcome.report.state, outcome.report.failure_code) == ("failed", "unexpected_bom"),
+        "a BOM after the document is fatal json_malformed, never skipped",
+        outcome.report.failure_code == "json_malformed",
+    )
+    outcome = run(b"[" + b"\xef\xbb\xbf" + jdump(VALID_A) + b"]", container="")
+    check(
+        CID,
+        "a BOM between tokens is fatal json_malformed",
+        outcome.report.failure_code == "json_malformed",
     )
 
 
@@ -1099,26 +1066,6 @@ def _random_row(i: int, rng: random.Random) -> dict[str, object]:
     }
 
 
-def test_scanner_matches_json_loads_on_generated_documents() -> None:
-    rng = random.Random(12345)
-    for trial in range(300):
-        n = rng.randint(0, 6)
-        doc = [_random_row(i, rng) for i in range(n)]
-        text = json.dumps(doc)
-        expected = json.loads(text)
-        spans, end = ji._scan_array(text, 0)
-        check(CID, f"trial {trial}: scanner consumes the whole array", end == len(text))
-        check(CID, f"trial {trial}: scanner finds exactly {n} elements", len(spans) == n)
-        for idx, (s, e) in enumerate(spans):
-            got = ic.strict_loads(text[s:e])
-            check(
-                CID,
-                f"trial {trial} element {idx}: the scanner's own span, parsed alone, equals "
-                "the same index of a whole-document json.loads",
-                got == expected[idx],
-            )
-
-
 def test_memory_is_linear_not_quadratic() -> None:
     mapping = build_mapping(container="")
     ratios: list[float] = []
@@ -1148,67 +1095,6 @@ def test_memory_is_linear_not_quadratic() -> None:
 
 
 # --- scanner mutation-sensitivity (same style as round 1's depth-scanner tests) --
-
-
-def test_skip_value_string_escape_handling() -> None:
-    text = '"a \\"quoted\\" [thing]" tail'
-    end = ji._skip_value(text, 0)
-    check(
-        CID,
-        "an escaped quote inside a string never ends it early",
-        text[:end] == '"a \\"quoted\\" [thing]"',
-    )
-
-
-def test_skip_value_unterminated_string_raises() -> None:
-    raised = False
-    try:
-        ji._skip_value('"never closes', 0)
-    except ji._Unterminated:
-        raised = True
-    check(CID, "an unterminated string raises _Unterminated", raised)
-
-
-def test_skip_value_unterminated_container_raises() -> None:
-    raised = False
-    try:
-        ji._skip_value("[1,2,{", 0)
-    except ji._Unterminated:
-        raised = True
-    check(CID, "an unclosed bracket raises _Unterminated", raised)
-
-
-def test_scan_array_trailing_comma_raises() -> None:
-    raised = False
-    try:
-        ji._scan_array("[1,2,]", 0)
-    except ji._Unterminated:
-        raised = True
-    check(CID, "a trailing comma is _Unterminated, not a silently-accepted empty element", raised)
-
-
-def test_scan_array_empty() -> None:
-    spans, end = ji._scan_array("[ ]", 0)
-    check(CID, "an empty (whitespace-only) array yields zero spans", spans == [])
-    check(CID, "...and consumes through the closing bracket", end == 3)
-
-
-def test_scan_object_duplicate_member_key_is_ambiguous() -> None:
-    # Root-level container discovery is a structural scan, not a strict_loads
-    # parse (module docstring, disclosed): a duplicate root key is caught as
-    # an ambiguous match, not as STRICT_JSON_CODES duplicate_key.
-    members, _end = ji._scan_object('{"a": 1, "a": 2}', 0)
-    keys = [k for k, _s, _e in members]
-    check(
-        CID, "both members of a duplicate root key are returned (not collapsed)", keys == ["a", "a"]
-    )
-
-
-def test_bracket_inside_string_never_affects_scanning() -> None:
-    text = '["{[all fake brackets]}", "real", 1]'
-    spans, end = ji._scan_array(text, 0)
-    check(CID, "brackets inside a string literal never change element boundaries", len(spans) == 3)
-    check(CID, "...and the array is still fully consumed", end == len(text))
 
 
 # --- catalog ----------------------------------------------------------------------
