@@ -2132,7 +2132,13 @@ def _f1_cases() -> list[tuple[str, str]]:
                     ("after-slash", "GET /x/{p}"),
                     ("after-comma", "args=(1,{p})"),
                     ("after-pipe", "a|{p}|b"),
-                    ("form-body", "POST /token\n\ngrant_type=authorization_code&{p}&x=1"),
+                    # `{p}` must be the very first thing after the blank line, with nothing
+                    # else (no `&`) between the newline and the key -- a prior version put it
+                    # after "grant_type=authorization_code&", which is independently caught by
+                    # the "&" there regardless of whether "after newline" is supported at all,
+                    # so dropping that support never changed this case's outcome (confirmed by
+                    # a real CI run: the fault that simulates its absence stayed GREEN).
+                    ("form-body", "POST /token\n\n{p}&x=1"),
                 ):
                     cases.append(
                         (f"{name}/{cased}/{sep_label}/{pos_label}", template.format(p=pair))
@@ -2197,6 +2203,26 @@ _F1_FAMILIES = {
     "otp": ("otp", "login_otp"),
     "pass": ("pass",),
 }
+
+
+def test_f1_round2_name_class_membership_is_isolated() -> None:
+    """`"jsessionid"` (and every name whose literal spelling also happens to contain
+    `_SECRET_KEY_WORDS`'s own `session[_-]?id` substring) is independently redacted by the
+    pre-existing, unrelated `_KEY_VALUE` rule even with no help from `_QUERY_PARAM_NAMES` at
+    all -- a real CI run confirmed dropping "jsessionid" from the set stayed GREEN end-to-end
+    (`redact_text`), because that overlap masks it. Asserting `_is_query_param_name` directly
+    isolates this rule's own membership test from that overlap."""
+    for name in ("jsessionid", "key", "sig", "auth", "session", "jwt", "code", "state"):
+        check(
+            "FTF-0904-F1",
+            f"_is_query_param_name({name!r}) is not True",
+            lr._is_query_param_name(name) is True,
+        )
+    check(
+        "FTF-0904-F1",
+        "_is_query_param_name('notaname') is not False",
+        lr._is_query_param_name("notaname") is False,
+    )
 
 
 def test_f1_round2_name_class_is_redacted() -> None:
