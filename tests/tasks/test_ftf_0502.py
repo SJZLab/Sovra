@@ -1666,7 +1666,7 @@ def test_fatal_locator_is_inside_the_report() -> None:
         "a completed import has no locator",
         done.report.fatal_locator is None and done.fatal_locator is None,
     )
-    changed = data + b"x"
+    changed = line("q", "a") + b"\n" + b"x"
     out = ji.run_jsonl_import(
         make_reader(changed[:-1], expected_sha=hashlib.sha256(changed).hexdigest()),
         build_mapping(),
@@ -1755,9 +1755,8 @@ def test_chunking_every_offset_of_small_inputs() -> None:
 
 def test_memory_ratio_between_sizes_is_within_one_and_a_half() -> None:
     def peak_for(mib: int) -> int:
-        record = line("q", "a") + b"\n"
-        count = (mib * 1024 * 1024) // len(record)
-        pieces = [record * 1024] * (count // 1024)
+        record = padded("q", "a", 64 * 1024 - 1) + b"\n"  # few, large lines: tracemalloc stays fast
+        pieces = [record] * (mib * 16)
         size = sum(len(piece) for piece in pieces)
         digest = hashlib.sha256()
         for piece in pieces:

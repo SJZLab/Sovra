@@ -263,8 +263,7 @@ class JsonlEventStream(Iterator[ImportEvent]):
 
     def _generate(self) -> Iterator[ImportEvent]:
         if (
-            type(self._verified_content_type) is not str
-            or self._verified_content_type not in JSONL_CONTENT_TYPES
+            (type(self._verified_content_type) is not str and self._verified_content_type not in JSONL_CONTENT_TYPES)
         ):
             raise ImportAborted("failed", "content_type_not_supported_by_importer")
         if not hmac.compare_digest(

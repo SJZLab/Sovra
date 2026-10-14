@@ -595,8 +595,19 @@ def main() -> None:
     )
 
     big_row = json.dumps({"q": "q" * 40, "a": "a"}).encode() + b"\n"
-    big = (big_row * (MIB // len(big_row) + 1))[:MIB] * 96
+    big = (big_row * (MIB // len(big_row) + 1))[:MIB] * 16
     large, _ = make_dataset("org1", p1_id, conn1, big, "large")
+    # Control: the same dataset imported with S3 left running reaches the end of its stream and
+    # completes, so a stream that SeaweedFS cuts short by itself cannot pass for the stop below.
+    control, _control_candidates, control_reader = import_dataset(
+        open_source(ctx1, p1_id, large.id)
+    )
+    check(
+        f"J4 control: with S3 running the 16 MiB dataset completes "
+        f"({control.report.state} {control.report.failure_code}) having read "
+        f"{control_reader.bytes_read}/{len(big)} bytes",
+        control.report.state == "completed" and control_reader.bytes_read == len(big),
+    )
     large_source = open_source(ctx1, p1_id, large.id)
     stopped: list[bool] = []
 
@@ -627,6 +638,11 @@ def main() -> None:
         stopped == [True]
         and (outcome.report.state, outcome.report.failure_code)
         == ("blocked", "source_unavailable"),
+    )
+    check(
+        f"J4 the stop cut the read short ({reader.bytes_read}/{len(big)} bytes) where the control "
+        "read everything",
+        reader.bytes_read < len(big),
     )
 
     # ---- J5: nothing planted leaks anywhere -----------------------------------------------------
