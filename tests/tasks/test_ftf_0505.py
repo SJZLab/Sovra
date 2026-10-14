@@ -2902,33 +2902,49 @@ def test_sheet_names_with_markup_characters_match_exactly() -> None:
 def test_memory_is_bounded_by_the_row_not_the_sheet() -> None:
     import tracemalloc
 
-    rows = 40_000
-    body = "".join(
-        f'<row r="{r}"><c r="A{r}" t="inlineStr"><is><t>prompt {r} {"x" * 60}</t></is></c>'
-        f'<c r="B{r}" t="inlineStr"><is><t>answer {r}</t></is></c></row>'
-        for r in range(2, rows + 2)
-    )
-    head = '<row r="1"><c r="A1" t="inlineStr"><is><t>q</t></is></c><c r="B1" t="inlineStr"><is><t>a</t></is></c></row>'
-    raw = f'{XML_HEAD}<worksheet xmlns="{MAIN}"><sheetData>{head}{body}</sheetData></worksheet>'
-    data = book(raw_sheet=raw)
-    size = len(raw)
-    count = [0]
-    tracemalloc.start()
-    try:
-        tracemalloc.reset_peak()
-        outcome = xi.run_xlsx_import(
-            make_reader(data, 64 * 1024),
-            build_mapping(),
-            verified_content_type=XLSX_TYPE,
-            dataset_purpose="training",
-            expected_sha256=hashlib.sha256(data).hexdigest(),
-            on_accepted=lambda _c: count.__setitem__(0, count[0] + 1),
+    def peak_for(rows: int) -> tuple[int, int, int]:
+        body = "".join(
+            f'<row r="{r}"><c r="A{r}" t="inlineStr"><is><t>prompt {r} {"x" * 60}</t></is></c>'
+            f'<c r="B{r}" t="inlineStr"><is><t>answer {r}</t></is></c></row>'
+            for r in range(2, rows + 2)
         )
-        _current, peak = tracemalloc.get_traced_memory()
-    finally:
-        tracemalloc.stop()
-    check(CID, "the large sheet imported", outcome.report.state == "completed" and count[0] == rows)
-    check(CID, f"peak memory {peak} is far below the {size} byte sheet", peak < size // 3)
+        head = (
+            '<row r="1"><c r="A1" t="inlineStr"><is><t>q</t></is></c>'
+            '<c r="B1" t="inlineStr"><is><t>a</t></is></c></row>'
+        )
+        raw = f'{XML_HEAD}<worksheet xmlns="{MAIN}"><sheetData>{head}{body}</sheetData></worksheet>'
+        data = book(raw_sheet=raw)
+        count = [0]
+        tracemalloc.start()
+        try:
+            outcome = xi.run_xlsx_import(
+                make_reader(data, 64 * 1024),
+                build_mapping(),
+                verified_content_type=XLSX_TYPE,
+                dataset_purpose="training",
+                expected_sha256=hashlib.sha256(data).hexdigest(),
+                on_accepted=lambda _c: count.__setitem__(0, count[0] + 1),
+            )
+            _current, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        ok = outcome.report.state == "completed" and count[0] == rows
+        check(CID, f"the {rows}-row sheet imported", ok)
+        return peak, len(raw), count[0]
+
+    small_peak, small_size, _ = peak_for(2_000)
+    large_peak, large_size, _ = peak_for(8_000)
+    check(CID, "the large sheet really is 4x the small one", large_size > 3.5 * small_size)
+    check(
+        CID,
+        f"4x the rows needs under 1.5x the peak memory ({small_peak} -> {large_peak})",
+        large_peak < 1.5 * small_peak,
+    )
+    check(
+        CID,
+        f"and the peak {large_peak} is far below the {large_size} byte sheet",
+        large_peak < large_size // 2,
+    )
 
 
 def test_concurrent_imports_with_different_limits_do_not_interfere() -> None:
@@ -3599,6 +3615,61 @@ def test_end_record_reader_matches_ftf_0501_on_generated_tails() -> None:
         CID,
         "a record whose comment length is non-zero is searched for",
         ox.end_record_totals(nonzero) == dos._end_record_totals(nonzero),
+    )
+
+
+def test_any_doctype_is_refused_not_only_those_with_entities() -> None:
+    sheet_ok = f'<worksheet xmlns="{MAIN}"><sheetData/></worksheet>'
+    sst_ok = f'<sst xmlns="{MAIN}"/>'
+    wb_ok = workbook_xml().split("?>\n", 1)[1]
+    rels_ok = workbook_rels().split("?>\n", 1)[1]
+    ct_ok = content_types().split("?>\n", 1)[1]
+    declarations = [
+        "<!DOCTYPE {r}>",
+        '<!DOCTYPE {r} SYSTEM "http://127.0.0.1:9/evil.dtd">',
+        '<!DOCTYPE {r} PUBLIC "-//X//EN" "http://127.0.0.1:9/evil.dtd">',
+        "<!DOCTYPE {r} [<!ELEMENT {r} ANY>]>",
+        "<!DOCTYPE {r} [<!NOTATION n SYSTEM 'x'>]>",
+        "<!DOCTYPE {r} [<!ATTLIST {r} a CDATA 'd'>]>",
+    ]
+    targets = [
+        ("xl/worksheets/sheet1.xml", sheet_ok, "worksheet"),
+        ("xl/sharedStrings.xml", sst_ok, "sst"),
+        ("xl/workbook.xml", wb_ok, "workbook"),
+        ("xl/_rels/workbook.xml.rels", rels_ok, "Relationships"),
+        ("[Content_Types].xml", ct_ok, "Types"),
+    ]
+    for part, body, root in targets:
+        for declaration in declarations:
+            doc = XML_HEAD + declaration.format(r=root) + body
+            for label, payload in (("utf-8", doc.encode()), ("utf-16", utf16(doc))):
+                _e, outcome = run(with_member(GOOD, part, payload))
+                check(
+                    CID,
+                    f"{part}: {declaration[:40]!r} ({label}) is unsafe_archive",
+                    failed_with(outcome, "unsafe_archive"),
+                )
+
+
+def test_entry_count_is_checked_again_after_the_directory_is_read() -> None:
+    members = [
+        *members_of(GOOD),
+        *[(f"docProps/f{i}.txt", b"x") for i in range(10_001 - len(members_of(GOOD)))],
+    ]
+    real = bytearray(t501._zip(members))
+    end = real.rfind(b"PK\x05\x06")
+    check(
+        CID,
+        "the lie target is the end-of-central-directory record",
+        end >= 0 and struct.unpack_from("<H", real, end + 10)[0] == 10_001,
+    )
+    struct.pack_into("<HH", real, end + 8, 5, 5)  # this-disk and total entries now claim 5
+    check(CID, "the record now claims 5 entries", ox.end_record_totals(bytes(real))[0] == 5)  # type: ignore[index]
+    _e, outcome = run(bytes(real))
+    check(
+        CID,
+        "a directory holding 10,001 entries is refused though its end record claims 5",
+        failed_with(outcome, "unsafe_archive"),
     )
 
 

@@ -273,6 +273,5 @@ def new_xml_parser(*, namespaces: bool = True) -> expat.XMLParserType:
 
     parser = expat.ParserCreate(namespace_separator=" ") if namespaces else expat.ParserCreate()
     parser.StartDoctypeDeclHandler = refuse
-    parser.EntityDeclHandler = refuse
     parser.SetParamEntityParsing(expat.XML_PARAM_ENTITY_PARSING_NEVER)
     return parser
