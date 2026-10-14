@@ -24686,3 +24686,38 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-12T03:39Z — Control plane: FTF-0904 returned
 - **Returned:** FTF-0904 r5 (0d): length caps leak long JWTs/escaped values; ruling: linear and unbounded, long-secret sweep per rule; deflake.
+
+## 2026-10-13T12:55Z — Control plane: FTF-0305 re-certified; FTF-0310 CERTIFIED (143/302)
+- **Certified:** FTF-0305-F1 (#747) → FTF-0305 re-certified; FTF-0301/0307/0309-P1 requalified. FTF-0310 (#751).
+
+## 2026-10-13T13:26Z — Control plane: FTF-0516 UI and FTF-0904 returned
+- **Returned:** FTF-0516 UI r4 (0c): F30 value/element-type generation; pin R4-S3/R4-D6/R4-R2; real-API CI test (UI CHECKLIST f).
+- **Returned:** FTF-0904 r6 (0d): JWT after `_`/`-` (ruling corrected); fragment-level long-secret checks; logging-path long-secret sweep; every-rule time shapes.
+
+## 2026-10-13T14:51Z — Control plane: Backlog refill
+- **Queued:** FTF-1504, FTF-0502-P1, FTF-0502, FTF-0504, FTF-0503, FTF-0505 (newly ready after FTF-0501). Advisory: FTF-0501 finalize accepts macro/external-link parts in a plain .xlsx.
+
+## 2026-10-13T16:44Z — Control plane: FTF-0502 returned
+- **Returned:** FTF-0502 r2 (0k): rebuild on FTF-0502-P1 after P1 certifies. **Process:** #600 (FTF-0517) and #650 (FTF-1206) found unverified; verifiers running.
+
+## 2026-10-13T17:43Z — Control plane: FTF-0516 CERTIFIED (144/302); FTF-0517, FTF-1206 returned
+- **Returned:** FTF-0517 r3 (0f): 3+-key bridges and a key-level property test; exact-type keys.
+- **Returned:** FTF-1206 r6 (0h), tests only: pin approver authority to the current org policy (F19).
+- **Certified:** FTF-0516 (#754, merge 90698aa6371626f6d2f8f156624798c9673ef044); UNWIRED (144/302).
+
+## 2026-10-13T18:55Z — Control plane: FTF-0904 returned
+- **Returned:** FTF-0904 r7 (0d), tests + spec-matrix only: the named pair-whitespace fault, JWT skip-loop shapes, evidence_hash. Stopping rule set.
+
+## 2026-10-13T20:07Z — Control plane: FTF-0502-P1 returned
+- **Returned:** FTF-0502-P1 r2 (0j): catalog names; wrap raw HTTP errors; bounded-resource tests; integration via the real upload routes.
+
+## 2026-10-13T21:22Z — Control plane: FTF-1206 CERTIFIED (145/302); FTF-0503 returned; importer-order ruling
+- **Returned:** FTF-0503 r2 (0b). **Ruling:** no importer claimed or merged before FTF-0502-P1 certifies; #766 waits.
+- **Certified:** FTF-1206 (#763, merge e5f6e5ee327ba60bdae73b43eda2e31a0dc02da3); UNWIRED.
+
+## 2026-10-13T22:52Z — Control plane: FTF-0517 returned
+- **Returned:** FTF-0517 r4 (0f): non-vacuous sparse-pool property test; exact-type keys at every position; verify_manifest input structure.
+
+## 2026-10-13T23:59Z — Control plane: FTF-0502-P1 certified (slice); FTF-0504 returned
+- **Returned:** FTF-0504 r2 (0c): rebuild on certified P1; locator, global field limit, wide-record cap, content-type gate, integration.
+- **Certified slice:** FTF-0502-P1 (#770, merge 507ce05a422ad5addb94a1700172fa348f871662); importers may proceed (catalog rule updated).
