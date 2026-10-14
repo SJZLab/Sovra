@@ -7519,7 +7519,7 @@ FTF-0504:
   certification_state: PROVISIONAL
   criticality: MUST
   description: CSV importer
-  evidence_hash: ''
+  evidence_hash: d0e9862ed35e0154f0ddce191d38a3e3b2d6e562
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
@@ -7531,11 +7531,16 @@ FTF-0504:
     (invalid_encoding, unexpected_bom, duplicate_header, mapping_column_missing, field_too_large,
     csv_structure_invalid, too_many_columns) and row rejections (column_count_mismatch,
     nul_character). Additive catalog edit in import_common.py: those 7 + 2 codes added to
-    FAILURE_CODES / REJECTION_CODES (test_ftf_0502_p1 still passes). Disclosed: locator is
-    line:<start physical line>; the real-PG16/SeaweedFS integration job
-    (csv-import-integration) is NOT built - no import route/table exists to call the importer
-    (BLOCKED_DEPENDENCY, not skipped); no live caller, so proving_symbol stays blank.
-    Mutation gate: 98 run | 97 KILLED | 1 TIMEOUT | 0 SURVIVED.
+    FAILURE_CODES / REJECTION_CODES (test_ftf_0502_p1 still passes). Round 2: own resumable CSV
+    parser (no csv module, so no process-global field limit), invalid_encoding located at the same
+    physical line for every chunking, one logical record capped across physical lines, and the
+    verified_content_type gate (only text/csv; else failed content_type_not_supported_by_importer
+    before a byte is read). Real PG16 + SeaweedFS evidence through the FTF-0501 routes in job
+    csv-import-integration (tests/integration/test_ftf_0504_csv_import_postgres_s3.py). Disclosed:
+    locator is line:<start physical line>; a valid-but-wrong declared encoding imports as garbled
+    text and cannot be detected by strict decoding (the preview/mapping UI, FTF-H011, must show
+    decoded samples before approval); no live route caller, so proving_symbol stays blank.
+    Mutation gate: 122 run | 118 KILLED | 4 TIMEOUT | 0 SURVIVED (see docs/certifications/submissions/2026-10-14T0230Z-FTF-0504.md).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0504.py
