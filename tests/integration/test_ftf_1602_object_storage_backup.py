@@ -904,8 +904,15 @@ def test_round6_aba_record_read_and_restore_resist_a_transient_forged_version_on
     right after the read, before the re-list) instead of the content-read method, so it reddens
     through whichever method `_load_record` actually uses to read the content -- the assertion is
     on `verify_backup`'s/`restore_backup`'s own real return value, never a self-referential
-    demonstration standing in for production (see "Fault -> RED" in the submission)."""
-    source_bucket, target_bucket, src, dst = _setup(client)
+    demonstration standing in for production (see "Fault -> RED" in the submission).
+
+    Uses `_setup_shared`, not a dedicated `_setup` pair: a dedicated pair here was tried first
+    and reproduced the exact disk-exhaustion failure `_setup_shared`'s own docstring already
+    documents ("runner worker died, job log never uploaded") -- confirmed on two consecutive
+    real CI runs of this job (the `object-storage-backup-integration` check failed both times
+    with the "Prove the real..." step stuck `in_progress` and no retrievable log, while every
+    other job in the same run succeeded normally)."""
+    source_bucket, target_bucket, src, dst = _setup_shared(client)
     record = _backup(src, dst, _seed(client, source_bucket))
     record_key = f"backups/o/{record.backup_id}/backup-record.json"
     real_versions = [
