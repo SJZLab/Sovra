@@ -2118,6 +2118,20 @@ def test_ignored_keys_that_differ_only_in_case_are_distinct_keys() -> None:
     )
 
 
+def test_duplicate_ignored_key_is_detected_without_normalizing_the_key() -> None:
+    # Mutation-gate survivor (json_importer.py `_accept_key`): the duplicate lookup must use the key
+    # exactly as declared; a strip()/lower() lookup misses a duplicate of a mixed-case key.
+    for declared in ("_Meta", " _meta "):
+        key = json.dumps(declared).encode()
+        data = b"{" + key + b": 1, " + key + b": 2, " + b'"rows": [' + G + b"]}"
+        out = run(data, container="/rows", ignored_top_level_keys=[declared])
+        check(
+            CID,
+            f"duplicate ignored key {declared!r} is json_malformed ({verdict(out)})",
+            out.report.state != "completed" and out.report.failure_code == "json_malformed",
+        )
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
