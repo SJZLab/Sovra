@@ -440,7 +440,7 @@ def main() -> None:
             open_source(ctx1, p1_id, train.id), chunk_size=chunk_size
         )
         report = outcome.report
-        leak_values.append((report, outcome.fatal_locator))
+        leak_values.append((report, outcome.report.fatal_locator))
         check(
             f"X1 {label}: completed ({report.state} {report.failure_code})",
             report.state == "completed" and report.failure_code is None,
@@ -495,7 +495,7 @@ def main() -> None:
     counting = CountingClient(client)
     plain_source = open_source(ctx1, p1_id, plain_set.id, storage_client=counting)
     outcome, candidates, reader = import_dataset(plain_source)
-    leak_values.append((outcome.report, outcome.fatal_locator))
+    leak_values.append((outcome.report, outcome.report.fatal_locator))
     check(
         f"X2 a CSV dataset is refused ({outcome.report.state} {outcome.report.failure_code})",
         outcome.report.state == "failed"
@@ -608,7 +608,7 @@ def main() -> None:
         outcome, candidates, _reader = import_dataset(
             open_source(ctx1, p1_id, attack_set.id), xlsx_limits=limits
         )
-        leak_values.append((outcome.report, outcome.fatal_locator))
+        leak_values.append((outcome.report, outcome.report.fatal_locator))
         check(
             f"X4 {label}: fatal {code} from the live bytes, no record "
             f"({outcome.report.state} {outcome.report.failure_code})",
@@ -626,7 +626,7 @@ def main() -> None:
         "org1", p1_id, conn1, xlsx_data, "truncated", store_bytes=xlsx_data[:-1000]
     )
     outcome, _candidates, _reader = import_dataset(open_source(ctx1, p1_id, truncated.id))
-    leak_values.append((outcome.report, outcome.fatal_locator))
+    leak_values.append((outcome.report, outcome.report.fatal_locator))
     check(
         f"X5 an object shorter than its verified size is blocked/source_unavailable "
         f"({outcome.report.state} {outcome.report.failure_code})",
@@ -696,7 +696,7 @@ def main() -> None:
         expected_sha256=large_source.expected_sha256,
         on_accepted=lambda _candidate: None,
     )
-    leak_values.append((outcome.report, outcome.fatal_locator))
+    leak_values.append((outcome.report, outcome.report.fatal_locator))
     check(
         f"X5 stopping S3 mid-stream is blocked/source_unavailable "
         f"({outcome.report.state} {outcome.report.failure_code})",
