@@ -446,7 +446,10 @@ class _SheetScanner(_Scanner):
         self._max_cell_chars = max_cell_chars
         self._header_row = header_row
         self._non_blank_seen = 0
-        self._keep_full_row = header_row <= 0
+        # Set for real by `_start_row` before any cell is read (a `<c>` is only
+        # ever reached inside a `<row>`); no meaningful initial value exists here,
+        # since nothing reads it before the first row starts.
+        self._keep_full_row: bool
         self._cells = 0
         self._last_row = 0
         self._last_col = -1
