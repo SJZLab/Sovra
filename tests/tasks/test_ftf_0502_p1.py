@@ -1692,10 +1692,27 @@ def test_rep_fatal_locator_is_additive() -> None:
         rebuilt = kind_acc.report(source_sha256=SHA_X, source_bytes=5, fatal_locator=f"{kind}:3")
         check("REP-1F", f"locator kind {kind!r} accepted", rebuilt.fatal_locator == f"{kind}:3")
     for bad_locator in ("line:0x1", "page:3", "line:-1", "line:", "line", "", "LINE:3", "line:3 "):
+        # Sealed through the accumulator (a correct digest for this exact bad value), so the
+        # only thing that can raise is the grammar check itself -- unlike reusing `fields`
+        # (sealed for "line:9"), which would raise on the unrelated report_sha256 mismatch
+        # even if the grammar check were disabled, and so could never actually kill it.
+        bad_acc = ic.ImportAccumulator(
+            importer="jsonl",
+            importer_version="1",
+            mapping_sha256=SHA_X,
+            dataset_purpose="training",
+            expected_sha256=SHA_X,
+        )
         check(
             "REP-1F",
             f"fatal_locator {bad_locator!r} is refused",
-            raises(ValueError, ic.ImportReport, **{**fields, "fatal_locator": bad_locator})
+            raises(
+                ValueError,
+                bad_acc.report,
+                source_sha256=SHA_X,
+                source_bytes=5,
+                fatal_locator=bad_locator,
+            )
             is not None,
         )
     # a mismatched report_sha256 is still refused when fatal_locator is set (the digest
