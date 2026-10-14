@@ -512,6 +512,18 @@ def test_map_format_blocks() -> None:
     doc = messages_doc()
     doc["json"]["container"] = "rows"
     check("MAP-11", "json.container must be a JSON pointer", is_invalid(doc))
+    for spelling in ("$", "$record"):
+        doc = messages_doc()
+        doc["json"]["container"] = spelling
+        check(
+            "MAP-11",
+            f"json.container {spelling!r} (FTF-0503 root container) is accepted",
+            not is_invalid(doc),
+        )
+    for spelling in ("$ ", "$Record", "$records", "$$", " $", "$/rows", None, 5, ["$"], {"$": 1}):
+        doc = messages_doc()
+        doc["json"]["container"] = spelling
+        check("MAP-11", f"json.container {spelling!r} is refused", is_invalid(doc))
 
 
 # --- PTR ----------------------------------------------------------------------------
@@ -3742,13 +3754,17 @@ _EXPECTED_ROW_ONLY = {
     "unmapped_role",
 }
 _EXPECTED_FAILURE = {
+    "container_not_array",
+    "container_not_found",
     "content_type_not_supported_by_importer",
     "csv_structure_invalid",
     "duplicate_header",
+    "duplicate_root_key",
     "duplicate_sheet_name",
     "external_link_present",
     "field_too_large",
     "invalid_encoding",
+    "json_structure_invalid",
     "limit_exceeded",
     "mapping_column_missing",
     "parse_timeout",
@@ -3804,6 +3820,10 @@ _NAMED_BY_IMPORTERS = {
     "sheet_out_of_bounds": "failure",
     "too_many_cells": "failure",
     "limit_exceeded": "failure",
+    "json_structure_invalid": "failure",
+    "container_not_found": "failure",
+    "container_not_array": "failure",
+    "duplicate_root_key": "failure",
     "source_changed": "failure",
     "source_unavailable": "failure",
     "too_many_rejections": "failure",

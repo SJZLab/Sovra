@@ -49,9 +49,7 @@ is imported; any other value is a `failed` report,
 Scope: pure and synchronous, no database and no network (the packet's
 `database_changes`: "No independent schema change. Consume frozen contract").
 No import route exists yet to call it; `proving_symbol` stays blank, as for the
-sibling importers. `ImportedRecord` / `QuarantinedRow` below are the round-1
-row types that `workers/data/json_importer.py` still imports; they go when
-FTF-0503 is rebuilt on FTF-0502-P1.
+sibling importers.
 """
 
 from __future__ import annotations
@@ -62,7 +60,6 @@ from dataclasses import dataclass
 from typing import Final
 
 from workers.data.canonical_conversation_normalizer import (
-    CanonicalConversationRecord,
     ToolArgumentValidator,
 )
 from workers.data.import_common import (
@@ -92,11 +89,9 @@ from workers.data.record_schema_validator import (
 
 __all__ = [
     "JSONL_CONTENT_TYPES",
-    "ImportedRecord",
     "JsonlAborted",
     "JsonlEventStream",
     "JsonlImportOutcome",
-    "QuarantinedRow",
     "import_jsonl",
     "jsonl_events",
     "run_jsonl_import",
@@ -450,33 +445,3 @@ def import_jsonl(
         on_accepted=None,
     ):
         yield item.report if isinstance(item, JsonlImportOutcome) else item
-
-
-# ---------------------------------------------------------------------------
-# Round-1 row types, still imported by workers/data/json_importer.py
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ImportedRecord:
-    """One line that normalized cleanly. `row_index` is this line's
-    0-based position in the `lines` iterable this call was given --
-    `CanonicalConversationRecord.lineage.source_record_index` carries the
-    identical value, so the two are never out of step."""
-
-    row_index: int
-    record: CanonicalConversationRecord
-
-
-@dataclass(frozen=True)
-class QuarantinedRow:
-    """One line that did not normalize -- malformed UTF-8, an oversize
-    line, invalid JSON, a non-object top level, or a real
-    `ConversationNormalizationError` from FTF-0506 (which is also this
-    module's own "mixed critical schemas" case; see the module docstring).
-    `message` always carries the real underlying error text, never a
-    generic placeholder."""
-
-    row_index: int
-    code: str
-    message: str

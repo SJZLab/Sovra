@@ -97,6 +97,9 @@ __all__ = [
 IMPORTER_RECORD_ID_NAMESPACE: Final = uuid.UUID("5f0d6b1e-7a64-5b0a-9f6e-0c4f0f6a2b11")
 
 MAX_JSON_INT_DIGITS: Final = 4300
+# `json.container` spellings that are not a JSON pointer (FTF-0503): `$` is a root array of
+# records, `$record` a root object that is one record.
+JSON_ROOT_CONTAINERS: Final = ("$", "$record")
 MAX_MAPPING_BYTES: Final = 64 * 1024
 MAX_MAPPING_DEPTH: Final = 8
 MAX_ROLE_MAP_ENTRIES: Final = 64
@@ -141,13 +144,17 @@ REJECTION_CODES: Final = frozenset(
 
 FAILURE_CODES: Final = frozenset(
     {
+        "container_not_array",
+        "container_not_found",
         "content_type_not_supported_by_importer",
         "csv_structure_invalid",
         "duplicate_header",
+        "duplicate_root_key",
         "duplicate_sheet_name",
         "external_link_present",
         "field_too_large",
         "invalid_encoding",
+        "json_structure_invalid",
         "limit_exceeded",
         "mapping_column_missing",
         "parse_timeout",
@@ -636,7 +643,9 @@ def _validate_formats(obj: dict[str, object]) -> None:
         _count(xlsx_block["header_row"], 1_000_000)
     if "json" in obj:
         json_block = _obj(obj["json"], ("container", "ignored_top_level_keys"), ())
-        _parse_pointer(json_block["container"])
+        container = json_block["container"]
+        if type(container) is not str or container not in JSON_ROOT_CONTAINERS:
+            _parse_pointer(container)
         ignored = json_block["ignored_top_level_keys"]
         if type(ignored) is not list or len(ignored) > MAX_ROLE_MAP_ENTRIES:
             raise _bad("wrong_type")
