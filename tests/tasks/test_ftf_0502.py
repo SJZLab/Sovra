@@ -1615,7 +1615,7 @@ def test_expected_sha_mismatch_fails_before_any_record() -> None:
     ok = run(data)
     check(CID, "the matching hash still imports", ok.report.state == "completed")
     # negative: a one-character difference in the expected hash is enough
-    near = data and hashlib.sha256(data).hexdigest()
+    near = hashlib.sha256(data).hexdigest()
     near = near[:-1] + ("0" if near[-1] != "0" else "1")
     out = ji.run_jsonl_import(
         make_reader(data),
@@ -1796,7 +1796,7 @@ def test_report_fields_slot_and_non_training_purpose() -> None:
     check(
         CID,
         f"a rejected mapped value names its slot ({slots})",
-        outcome.report.records_rejected == 1 and slots and all(slots),
+        outcome.report.records_rejected == 1 and bool(slots) and all(slots),
     )
     for purpose in ("evaluation", "held_out"):
         out = ji.run_jsonl_import(
