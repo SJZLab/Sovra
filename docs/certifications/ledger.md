@@ -11337,3 +11337,14 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   tests extended, P1/0502/0504 suites green. Return: whole document buffered (64 MiB → 200 MiB peak, 62.6x); expected
   sha mismatch completes; structure errors not fatal (silent element loss, 542/2,119 invalid mutants complete); UTF-8
   BOM refused; oversize element fatal; no integration suite/job; 10 observable faults GREEN.
+
+## 2026-10-14T11:30Z — RETURNED: FTF-0904-W1 (r3)
+- **FTF-0904-W1 (child slice): RETURNED** (round 2 → 3; PR #791, merge 609a12fcdb336533f84fb3dc8eb87d10e151114c, head
+  f0a44af9). Verifier session_0161278Aosjx54vgoMAk3jN6 ≠ producer session_01QVznorVMjnmcttUhyDnoGR. CI: gate
+  115788821624 "all checks passed" (F1-F12 RED); ci-verdict 115816786845. r1 findings fixed for single-process uvicorn
+  (3 settings, -X dev) and the late-install fault is RED. New-path probes held (__str__ raising/recursing, __notes__,
+  chains, ExceptionGroup, KeyboardInterrupt, secret thread names, unraisable repr, warnings in message/category/source/
+  filename). Return: under --workers 2 and --reload the startup exception is printed in the spawned child by
+  multiprocessing's _bootstrap via traceback.print_exc() - raw. Disclosed: top-level SystemExit(str) printed by the
+  interpreter (no live path). PR #790 ("[certifier]" FTF-0904-W1 r1 CERTIFIED, routine session_01WJXX7GmTgoDTRqnFdoEKow)
+  is superseded by the independent RETURN and must not be merged.

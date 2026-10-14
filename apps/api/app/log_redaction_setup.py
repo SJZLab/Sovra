@@ -24,6 +24,11 @@ raised in `__del__` by `sys.unraisablehook`, and a warning by
 redacted text to stderr (or the warning's own file), or the constant failure
 marker if redaction itself fails. (`logging.captureWarnings` is not used: with
 no root handler it attaches a NullHandler and warnings would vanish.)
+
+`traceback.print_exception` / `print_exc` are replaced the same way: under
+`uvicorn --workers N` or `--reload` the factory runs in a spawned child, and an
+exception escaping it there is printed by multiprocessing's `_bootstrap` via
+`traceback.print_exc()`, never reaching `sys.excepthook`.
 """
 
 from __future__ import annotations
@@ -31,6 +36,7 @@ from __future__ import annotations
 import logging
 import sys
 import threading
+import traceback
 import warnings
 from types import TracebackType
 from typing import Any
@@ -61,6 +67,35 @@ def _write_redacted(header: str, exc: BaseException | None, file: Any = None) ->
         stream.flush()
     except Exception:
         pass
+
+
+_UNSET = object()
+_format_exception = traceback.format_exception
+
+
+def _print_exception(
+    exc: Any,
+    value: Any = _UNSET,
+    tb: Any = _UNSET,
+    limit: int | None = None,
+    file: Any = None,
+    chain: bool = True,
+) -> None:
+    args = [exc] + [a for a in (value, tb) if a is not _UNSET]
+    try:
+        text = redact_text("".join(_format_exception(*args, limit=limit, chain=chain)))
+    except Exception:
+        text = REDACTION_FAILED_MARKER + "\n"
+    try:
+        stream = file if file is not None else sys.stderr
+        stream.write(text)
+    except Exception:
+        pass
+
+
+def _print_exc(limit: int | None = None, file: Any = None, chain: bool = True) -> None:
+    exc_type, exc, tb = sys.exc_info()
+    _print_exception(exc_type, exc, tb, limit=limit, file=file, chain=chain)
 
 
 def _excepthook(
@@ -113,6 +148,10 @@ def _install_exception_hooks() -> None:
         sys.unraisablehook = _mark(_unraisablehook)
     if not getattr(warnings.showwarning, _MARK, False):
         warnings.showwarning = _mark(_showwarning)
+    if not getattr(traceback.print_exception, _MARK, False):
+        traceback.print_exception = _mark(_print_exception)
+    if not getattr(traceback.print_exc, _MARK, False):
+        traceback.print_exc = _mark(_print_exc)
 
 
 def install_api_log_redaction() -> None:
