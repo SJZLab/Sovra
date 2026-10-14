@@ -721,7 +721,7 @@ def open_package(
     for folded in parts:
         if folded.startswith(_EXTERNAL_PREFIXES) or folded in _EXTERNAL_PARTS:
             raise OoxmlRefused("external_link_present")
-    if _CONTENT_TYPES_KEY not in parts or _WORKBOOK_PART not in parts:
+    if not {_CONTENT_TYPES_KEY, _WORKBOOK_PART}.issubset(parts):
         raise OoxmlRefused("unsupported_workbook")
     budget = PartBudget(limits.max_total_uncompressed_bytes)
 
@@ -739,7 +739,7 @@ def open_package(
     for folded, info in parts.items():
         if folded.endswith(".rels"):
             rels[folded] = _relationships(_read_small(archive, info, budget, tick))
-            if any(r.get("TargetMode", "").casefold() == "external" for r in rels[folded]):
+            if any(r.get("TargetMode", "").lower() == "external" for r in rels[folded]):
                 raise OoxmlRefused("external_link_present")
 
     sheets = _workbook_sheets(_read_small(archive, parts[_WORKBOOK_PART], budget, tick))

@@ -3786,6 +3786,107 @@ def test_dot_segments_are_removed_only_when_exactly_a_dot() -> None:
     check(CID, "and exact './' segments are removed", run(plain)[1].report.state == "completed")
 
 
+def test_part_names_with_surrounding_whitespace_are_other_parts() -> None:
+    for name in (
+        " xl/vbaProject.bin",
+        " xl/connections.xml",
+        "xl/connections.xml\t",
+        " xl/externalLinks/e.xml",
+        " xl/macrosheets/m.xml",
+    ):
+        events, outcome = run(book(extra=[(name, b"<x/>")]))
+        check(
+            CID,
+            f"a member named {name!r} is not the part it resembles",
+            outcome.report.state == "completed" and len(accepted(events)) == 1,
+        )
+    padded = t501._zip(
+        [
+            (" [Content_Types].xml" if n == "[Content_Types].xml" else n, d)
+            for n, d in members_of(book())
+        ]
+    )
+    check(
+        CID,
+        "a content-types part with a space in its name is not the content-types part",
+        failed_with(run(padded)[1], "unsupported_workbook"),
+    )
+    padded = t501._zip(
+        [(" xl/workbook.xml" if n == "xl/workbook.xml" else n, d) for n, d in members_of(book())]
+    )
+    check(
+        CID,
+        "nor is a workbook part with a space in its name",
+        failed_with(run(padded)[1], "unsupported_workbook"),
+    )
+
+
+def test_targets_are_folded_the_unicode_way_on_the_target_side_too() -> None:
+    long_s = "ſ"
+    sheet = sheet_xml([[IS("q"), IS("a")], [IS("p"), IS("c")]], Shared()).encode()
+    base = [(n, d) for n, d in members_of(book()) if n != "xl/worksheets/sheet1.xml"]
+    data = t501._zip([*base, ("xl/worksheets/shees.xml", sheet)])
+    data = with_member(
+        data,
+        "xl/_rels/workbook.xml.rels",
+        workbook_rels([("rId1", f"worksheets/shee{long_s}.xml")]).encode(),
+    )
+    check(
+        CID,
+        "a sheet target spelled with a long s finds the member spelled with an s",
+        run(data)[1].report.state == "completed",
+    )
+    rows = [[IS("q"), IS("a")], [RAWC('<c r="{ref}" t="s"><v>0</v></c>'), IS("x")]]
+    shared = shared_xml(["seen"]).encode()
+    ok = book(rows, drop=("xl/sharedStrings.xml",))
+    data = t501._zip([*members_of(ok), ("xl/sharedstrings.xml", shared)])
+    data = with_member(
+        data,
+        "xl/_rels/workbook.xml.rels",
+        workbook_rels().replace("sharedStrings.xml", f"{long_s}haredStrings.xml").encode(),
+    )
+    check(
+        CID,
+        "a sharedStrings target spelled with a long s finds the member spelled with an s",
+        len(accepted(run(data)[0])) == 1,
+    )
+    for first, second in (("Straße", "STRASSE"), ("Ǆ", "ǆ"), ("ΣΑΣ", "σας")):
+        rels = workbook_rels(
+            [("rId1", "worksheets/sheet1.xml"), ("rId2", "worksheets/sheet1.xml")]
+        ).encode()
+        data = book(
+            [[IS("q"), IS("a")], [IS("p"), IS("c")]],
+            sheet=first,
+            extra_sheets=[(second, "rId2", None)],
+            replace={"xl/_rels/workbook.xml.rels": rels},
+        )
+        check(
+            CID,
+            f"sheets {first!r} and {second!r} are equal after Unicode folding: duplicate_sheet_name",
+            failed_with(run(data, sheet=first)[1], "duplicate_sheet_name"),
+        )
+    rels = workbook_rels(
+        [("rId1", "worksheets/sheet1.xml"), ("rId2", "worksheets/sheet1.xml")]
+    ).encode()
+    data = book(
+        [[IS("q"), IS("a")], [IS("p"), IS("c")]],
+        sheet="Straße",
+        extra_sheets=[("Strasse2", "rId2", None)],
+        replace={"xl/_rels/workbook.xml.rels": rels},
+    )
+    check(
+        CID,
+        "distinct names stay distinct",
+        run(data, sheet="Straße")[1].report.state == "completed",
+    )
+    ext = f'<Relationship Id="rIdX" Type="{REL}/externalLink" Target="http://127.0.0.1:9/x" TargetMode="EXTERNAL"/>'
+    check(
+        CID,
+        "TargetMode is matched case-insensitively",
+        failed_with(run(book(rel_extra=ext))[1], "external_link_present"),
+    )
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
