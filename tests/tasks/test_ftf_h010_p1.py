@@ -581,6 +581,25 @@ def test_s1_each_origin_creates_a_queued_job_with_one_audit_event() -> None:
             and job3.trainable_artifact_id is None
             and job3.external_provider_model_ref == "provider://model/x",
         )
+        check(
+            CID,
+            "FTF-H010-P2: job3 carries the real litellm_connection_id, not None",
+            job3.litellm_connection_id == _CONN,
+        )
+        event3 = audit.events[-1]
+        check(
+            CID,
+            "FTF-H010-P2: the audit details record the real litellm_connection_id for a "
+            "connection-bearing job (never None when a connection was actually given)",
+            event3["details"]["litellm_connection_id"] == str(_CONN),
+        )
+        check(
+            CID,
+            "FTF-H010-P2: the earlier imported_weights/imported_adapter jobs (no connection) "
+            "record None for litellm_connection_id in their own audit details",
+            audit.events[0]["details"]["litellm_connection_id"] is None
+            and audit.events[1]["details"]["litellm_connection_id"] is None,
+        )
 
         check(
             CID,
@@ -649,6 +668,76 @@ def test_s2_external_endpoint_with_artifact_is_refused() -> None:
         check(
             CID,
             "nothing was written by the imported_weights refusal either",
+            not _jobs(session) and not audit.events,
+        )
+
+
+def test_s2b_litellm_connection_id_required_exactly_for_external_endpoint() -> None:
+    """FTF-H010-P2: `create_model_import_job`'s own XOR guard --
+    `litellm_connection_id` is required for `external_endpoint` and refused for every other
+    origin, defense in depth with the route and the `ck_model_import_jobs_connection_matches_
+    origin` CHECK. Both halves of the XOR, each with nothing written by the refusal."""
+    artifact = uuid.uuid4()
+    with _store_env(artifacts={artifact}) as (session, audit):
+        check(
+            CID,
+            "external_endpoint with no litellm_connection_id is a ModelImportValidationError",
+            _raises(
+                lambda: crud.create_model_import_job(
+                    session,
+                    _CTX,
+                    project_id=_PROJECT,
+                    requested_origin="external_endpoint",
+                    parent_model_version_id=None,
+                    trainable_artifact_id=None,
+                    external_provider_model_ref="provider://y",
+                    actor=_ACTOR,
+                    litellm_connection_id=None,
+                ),
+                schema.ModelImportValidationError,
+            ),
+        )
+        check(CID, "nothing was written by the missing-connection refusal", not _jobs(session))
+        check(
+            CID,
+            "imported_weights WITH a litellm_connection_id is a ModelImportValidationError "
+            "(the connection is refused for every origin but external_endpoint)",
+            _raises(
+                lambda: crud.create_model_import_job(
+                    session,
+                    _CTX,
+                    project_id=_PROJECT,
+                    requested_origin="imported_weights",
+                    parent_model_version_id=None,
+                    trainable_artifact_id=artifact,
+                    external_provider_model_ref=None,
+                    actor=_ACTOR,
+                    litellm_connection_id=_CONN,
+                ),
+                schema.ModelImportValidationError,
+            ),
+        )
+        check(
+            CID,
+            "imported_adapter WITH a litellm_connection_id is also a ModelImportValidationError",
+            _raises(
+                lambda: crud.create_model_import_job(
+                    session,
+                    _CTX,
+                    project_id=_PROJECT,
+                    requested_origin="imported_adapter",
+                    parent_model_version_id=None,
+                    trainable_artifact_id=artifact,
+                    external_provider_model_ref=None,
+                    actor=_ACTOR,
+                    litellm_connection_id=_CONN,
+                ),
+                schema.ModelImportValidationError,
+            ),
+        )
+        check(
+            CID,
+            "none of the three mismatched-connection refusals wrote a job or an audit event",
             not _jobs(session) and not audit.events,
         )
 

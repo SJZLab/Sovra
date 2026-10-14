@@ -562,6 +562,24 @@ def group_b(m: Any) -> None:
             expect(m, lambda: env.validate(token)) == "job_not_found",
         )
 
+    # `_require_origins` directly: membership is exact, never case/whitespace-normalized.
+    for label, bad in (
+        ("upper-cased", "External_Endpoint"),
+        ("padded", " external_endpoint "),
+        ("trailing newline", "external_endpoint\n"),
+    ):
+        check(
+            "B5",
+            f"_require_origins refuses a {label} variant of a real origin "
+            "(membership is exact, never .strip().lower()-normalized)",
+            expect(m, lambda bad=bad: m._require_origins({bad})) == "invalid_argument",
+        )
+    check(
+        "B5",
+        "_require_origins accepts the exact real origin",
+        expect(m, lambda: m._require_origins({"external_endpoint"})) is None,
+    )
+
 
 # -- C: claim ----------------------------------------------------------------------------------
 
@@ -764,6 +782,46 @@ def group_c2(m: Any) -> None:
                 and row.state in ("validating", "failed")
                 and (row.state == "failed" or row.lease_expires_at is not None),
             )
+
+
+def group_c3(m: Any) -> None:
+    # The claim's own terminal UPDATE can itself be refused by the database trigger (a real
+    # Postgres re-claim raced against the database clock) -- surfaced as a DBAPIError, not a
+    # 0-rowcount result. That must still come back as job_already_claimed, never an uncaught
+    # crash (the `result` name is never bound when the UPDATE itself raised).
+    from sqlalchemy.exc import DBAPIError
+
+    with Env(m).patched() as env:
+        job = env.add_job()
+        original = m.execute_tenant_scoped
+
+        def failing(
+            session: Any,
+            organization_id: Any,
+            statement: Any,
+            params: Any = None,
+            original: Any = original,
+        ) -> Any:
+            if getattr(statement, "is_update", False):
+                raise DBAPIError("UPDATE model_import_jobs ...", {}, Exception("trigger refused"))
+            return original(session, organization_id, statement, params)
+
+        m.execute_tenant_scoped = failing
+        try:
+            code = expect(m, lambda: env.claim(job))
+        finally:
+            m.execute_tenant_scoped = original
+        check(
+            "C11",
+            "a DBAPIError from the claim's own terminal UPDATE (a trigger refusal) is "
+            "job_already_claimed, not an uncaught crash",
+            code == "job_already_claimed",
+        )
+        check(
+            "C11",
+            "the refused claim left the row untouched (still queued at epoch 0)",
+            env.job(job).state == "queued" and env.job(job).claim_epoch == 0,
+        )
 
 
 # -- D: validate -------------------------------------------------------------------------------
@@ -1550,6 +1608,54 @@ def group_h(m: Any, vs: Any = None) -> None:
         ),
     )
 
+    # -- H5: the full_weight/adapter (artifact-only) branch, untouched by P2's own change but
+    # inside the same __init__ this task's own diff modifies -- every one of its own refusal
+    # clauses still needs a real test here, the only task test the mutation gate runs against
+    # this file for.
+    full = dict(
+        import_kind="full_weight",
+        trainable_artifact_id=uuid.uuid4(),
+        weights_digest="sha256:" + "a" * 64,
+        base_model_revision="main",
+    )
+    check(
+        "H5",
+        "a full_weight import with everything required is accepted",
+        not refused(**full),
+    )
+    check(
+        "H5",
+        "a full_weight import must not carry endpoint_reference (no local weight bytes back "
+        "an endpoint import, and no URL backs trained weights either)",
+        refused(**{**full, "endpoint_reference": "https://models.example.com/v1"}),
+    )
+    check(
+        "H5",
+        "a full_weight import with no trainable_artifact_id is refused",
+        refused(**{k: v for k, v in full.items() if k != "trainable_artifact_id"}),
+    )
+    check(
+        "H5",
+        "a full_weight import with an artifact but no weights_digest is refused",
+        refused(**{k: v for k, v in full.items() if k != "weights_digest"}),
+    )
+    check(
+        "H5",
+        "a full_weight import with an artifact and digest but no base_model_revision is refused",
+        refused(**{k: v for k, v in full.items() if k != "base_model_revision"}),
+    )
+    check(
+        "H5",
+        "a malformed weights_digest is refused before the kind dispatch even runs",
+        refused(**{**full, "weights_digest": "not-a-real-digest"}),
+    )
+    check(
+        "H5",
+        "an adapter import follows the identical artifact-only rules",
+        refused(**{**{**full, "import_kind": "adapter"}, "endpoint_reference": "https://x/v1"})
+        and not refused(**{**full, "import_kind": "adapter"}),
+    )
+
     constraint = next(
         c for c in MV.__table__.constraints if c.name == "ck_model_versions_kind_consistency"
     )
@@ -1570,6 +1676,97 @@ def group_h(m: Any, vs: Any = None) -> None:
         "the CHECK allows a NULL reference only for external_endpoint with a provider ref",
         "endpoint_reference IS NULL AND origin = 'external_endpoint' AND external_provider_model_ref IS NOT NULL"
         in schema_text,
+    )
+
+
+# -- H6: migration 0030's own upgrade()/downgrade() -- the real Postgres round trip is
+# tests/integration/test_ftf_h010_p1_model_import.py; this exercises the migration's own Python
+# against a recording fake `op`/bind, the only place this task test can prove `upgrade()` and
+# `downgrade()` actually run their own statements (never a silent no-op) and that `downgrade()`'s
+# own data-loss guard actually refuses and writes nothing when it must.
+
+
+class _FakeBind:
+    def __init__(self, null_reference_rows: int) -> None:
+        self._count = null_reference_rows
+
+    def execute(self, _clause: object) -> Any:
+        return SimpleNamespace(scalar_one=lambda: self._count)
+
+
+class _FakeOp:
+    def __init__(self, null_reference_rows: int = 0) -> None:
+        self.calls: list[str] = []
+        self._bind = _FakeBind(null_reference_rows)
+
+    def get_bind(self) -> _FakeBind:
+        return self._bind
+
+    def __getattr__(self, name: str) -> Any:
+        def record(*_a: object, **_k: object) -> None:
+            self.calls.append(name)
+
+        return record
+
+
+def _load_migration_0030(fake_op: _FakeOp) -> Any:
+    spec = importlib.util.spec_from_file_location("mig0030", MIGRATION_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.__dict__["op"] = fake_op
+    return module
+
+
+def group_h6_migration() -> None:
+    clean = _FakeOp()
+    _load_migration_0030(clean).upgrade()
+    from collections import Counter
+
+    up = Counter(clean.calls)
+    check(
+        "H6",
+        "upgrade() actually issues its own real statements (never a silent no-op): 4 new "
+        "columns, the new UQ, both new FKs, all 5 new/replaced CHECKs, and the 4 execute() "
+        "calls (the NOT VALID CHECK, the grant swap, the replaced trigger function)",
+        up["add_column"] == 4
+        and up["create_unique_constraint"] == 1
+        and up["create_foreign_key"] == 2
+        and up["create_check_constraint"] == 5
+        and up["execute"] == 4
+        and up["drop_constraint"] == 1
+        and up["drop_column"] == 0,
+    )
+
+    dirty = _FakeOp(null_reference_rows=1)
+    dirty_mod = _load_migration_0030(dirty)
+    try:
+        dirty_mod.downgrade()
+        check("H6", "downgrade() over a NULL-reference endpoint row is refused", False)
+    except RuntimeError as exc:
+        check(
+            "H6",
+            "the refusal names the reason and deletes no data",
+            "cannot downgrade 0030" in str(exc) and "no data is deleted" in str(exc),
+        )
+    check(
+        "H6",
+        "a refused downgrade() performs none of its own structural changes first",
+        dirty.calls == [],
+    )
+
+    clean_down = _FakeOp(null_reference_rows=0)
+    _load_migration_0030(clean_down).downgrade()
+    down = Counter(clean_down.calls)
+    check(
+        "H6",
+        "a clean downgrade() actually runs: drops the new CHECKs/FKs/UQ/columns, restores the "
+        "0009 CHECK and the 0028 trigger function and grant",
+        down["drop_constraint"] == 9
+        and down["drop_column"] == 4
+        and down["create_check_constraint"] == 1
+        and down["execute"] == 3
+        and down["add_column"] == 0,
     )
 
 
@@ -1723,6 +1920,37 @@ def group_r(mir: Any = None) -> None:
                 status == 400 and body == {"detail": "invalid_body"},
             )
             check("R1", f"{label}: nothing reached the store", not env.create_calls)
+        for label, value in (("an int", 7), ("a list", []), ("a dict", {}), ("a bool", True)):
+            env.create_calls.clear()
+            status, body = call(
+                "POST",
+                collection,
+                {
+                    "requested_origin": "external_endpoint",
+                    "litellm_connection_id": str(R_CONN),
+                    "external_provider_model_ref": value,
+                },
+            )
+            check(
+                "R1b",
+                f"external_provider_model_ref as {label} -> 400 (never reaches the store)",
+                status == 400 and not env.create_calls,
+            )
+        env.create_calls.clear()
+        status, body = call(
+            "POST",
+            collection,
+            {
+                "requested_origin": "imported_weights",
+                "external_provider_model_ref": None,
+            },
+        )
+        check(
+            "R1b",
+            "a null external_provider_model_ref is allowed (the field is optional) -- never "
+            "the 400 a present-but-non-string value gets",
+            status != 400,
+        )
         for label, payload in (
             ("missing", endpoint),
             ("null", {**endpoint, "litellm_connection_id": None}),
@@ -2338,12 +2566,14 @@ def suite(m: Any, with_routes: bool = False) -> list[str]:
     group_b(m)
     group_c(m)
     group_c2(m)
+    group_c3(m)
     group_d(m)
     group_d2(m)
     group_e(m)
     group_f(m)
     group_g(m)
     group_h(m)
+    group_h6_migration()
     if with_routes:
         group_r()
     return list(_failures)
