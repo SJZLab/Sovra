@@ -8584,7 +8584,7 @@ FTF-0518:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Split leakage detector
-  evidence_hash: CODE_COMMIT_PLACEHOLDER
+  evidence_hash: 32c392cb99e5914d59234005bf373749ec1ef7da
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-23; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0513,
@@ -8615,7 +8615,7 @@ FTF-0518:
     development, same-role pairs and prior-vs-prior are not checked; no persistence of findings or
     reviews; no live caller yet, so proving_symbol stays blank. Caller contract: FTF-0519 / the training
     workflow calls this AND FTF-0515 assert_clear_for_training. Not self-certified (Law 4). See
-    docs/certifications/submissions/SUBMISSION_PLACEHOLDER.md.
+    docs/certifications/submissions/2026-10-14T0925Z-FTF-0518.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0518.py
