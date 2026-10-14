@@ -3972,6 +3972,24 @@ def test_token_guard_boundary_is_exact() -> None:
     )
 
 
+def test_the_shared_strings_root_must_be_an_sst_in_the_main_namespace() -> None:
+    inline = [[IS("q"), IS("a")], [IS("p"), IS("c")]]  # no cell reads the table
+    cases = [
+        ("a wrong root element", f'{XML_HEAD}<foo xmlns="{MAIN}"/>', "xlsx_malformed"),
+        ("a root in no namespace", f"{XML_HEAD}<sst/>", "xlsx_malformed"),
+        ("a strict-namespace sst", f'{XML_HEAD}<sst xmlns="{STRICT}"/>', "unsupported_workbook"),
+    ]
+    for label, payload, code in cases:
+        _e, outcome = run(book(inline, shared_override=payload.encode()))
+        check(
+            CID,
+            f"{label}: fatal {code} even when no cell uses the table",
+            failed_with(outcome, code),
+        )
+    _e, outcome = run(book(inline, shared_override=f'{XML_HEAD}<sst xmlns="{MAIN}"/>'.encode()))
+    check(CID, "an empty sst is fine", outcome.report.state == "completed")
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
