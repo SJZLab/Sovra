@@ -24787,3 +24787,18 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-14T16:30Z — Control plane: FTF-0904-F1 returned
 - **Returned:** FTF-0904-F1 r2 (0g): idempotence guard first, serialized/form positions, generated name class, sweeps, FAULTS.
+
+## 2026-10-14T19:00Z — PR #802 merged (FTF-0504 round 4; green ci-verdict)
+- **Merged, PROVISIONAL (Law 4, not self-certified):** PR #802 (FTF-0504 round 4, 0c) merged on a
+  fully green `ci-verdict` (run `38608276530`), no merge conflict. Round 4 closes all five
+  round-3 return items: V-RECORD-CAP-PROD-ONLY (a record-cap row isolated from the field cap),
+  V-SHA-COMPARE-PREFIX (a hash differing only in the first/last hex char), V-LOC-NONSTR-ALLOWED
+  (a `str`-subclass `fatal_locator` still refused), PREVIEW-SHA-TYPEERROR (production fix:
+  `hmac.compare_digest` raised a raw `TypeError` on a malformed `expected_sha256` reaching the
+  preview path, now a typed `failed`/`source_changed` refusal), and TRUNCATED-BOM-SWALLOWED
+  (production fix: Python's own `utf-8-sig` incremental decoder silently swallows a 1-2 byte
+  truncated BOM, now `invalid_encoding`). Full detail and the fault→RED table in
+  `docs/certifications/submissions/2026-10-14T1711Z-FTF-0504-r4.md`. Recorded here and in
+  `docs/spec-matrix.yaml` via this non-`[relay]`-titled doc PR (shared-file edits are forbidden
+  inside `[relay]` PRs). `certification_state` stays PROVISIONAL / `proof_state` stays
+  L1-PROVEN — independent Control-plane L2 review of round 4 is still the next step.
