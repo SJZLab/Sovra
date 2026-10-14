@@ -33,6 +33,7 @@ Run directly: python3 tests/tasks/test_ftf_0503.py
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import random
@@ -664,6 +665,76 @@ def test_non_key_slot_is_mapping_invalid() -> None:
     check(
         CID,
         "a CSV-only 'header' slot kind is refused for the JSON importer (bad_slot)",
+        raised is not None and raised.reason == "bad_slot",
+    )
+
+
+def test_all_key_slots_pass_options_without_raising() -> None:
+    # The mirror of test_non_key_slot_is_mapping_invalid in the other
+    # direction: every mapped slot kind == "key" (the only kind this
+    # importer accepts) must NOT raise bad_slot. A `slot.kind != "key"` ->
+    # `slot.kind == "key"` mutant still raises bad_slot here (on the first
+    # "key" slot it sees), so a mixed-kind mapping alone cannot distinguish
+    # the two branches -- this case can only pass when every slot is "key".
+    mapping = ic.parse_mapping(
+        json.dumps(
+            {
+                "shape": "prompt_completion",
+                "prompt": {"key": "q"},
+                "completion": {"key": "a"},
+                "json": {"container": "", "ignored_top_level_keys": []},
+            }
+        )
+    )
+    raised = None
+    try:
+        ji.json_events(
+            make_reader(jdump({"q": "x", "a": "y"})),
+            mapping,
+            verified_content_type="application/json",
+            dataset_sha256="0" * 64,
+        )
+    except ic.MappingInvalidError as exc:
+        raised = exc
+    check(
+        CID,
+        "every mapped slot kind == 'key' is accepted by _options, never bad_slot",
+        raised is None,
+    )
+
+
+def test_slot_kind_match_is_exact_no_normalization() -> None:
+    # import_common.Slot.kind is a plain str, not a validated enum; the
+    # strict mapping parser (_slot()) only ever constructs it as exactly
+    # "key", "header", "index" or "letters". _options()'s own check must
+    # compare it exactly too, never normalize case/whitespace -- otherwise a
+    # Slot built some other way (not through _slot()) with a look-alike kind
+    # could silently pass as "key". Built directly via dataclasses.replace to
+    # bypass the strict parser on purpose, proving the check itself is exact.
+    mapping = ic.parse_mapping(
+        json.dumps(
+            {
+                "shape": "prompt_completion",
+                "prompt": {"key": "q"},
+                "completion": {"key": "a"},
+                "json": {"container": "", "ignored_top_level_keys": []},
+            }
+        )
+    )
+    variant = dataclasses.replace(mapping, prompt=ic.Slot(" Key ", "q"))
+    raised = None
+    try:
+        ji.json_events(
+            make_reader(jdump({"q": "x", "a": "y"})),
+            variant,
+            verified_content_type="application/json",
+            dataset_sha256="0" * 64,
+        )
+    except ic.MappingInvalidError as exc:
+        raised = exc
+    check(
+        CID,
+        "a case/whitespace variant of 'key' is refused, not normalized to match",
         raised is not None and raised.reason == "bad_slot",
     )
 
