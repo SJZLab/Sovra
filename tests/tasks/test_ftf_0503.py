@@ -1713,6 +1713,233 @@ def test_differential_invalid_mutants_never_lose_elements() -> None:
     )
 
 
+def collect_accepted(
+    data: bytes, **kwargs: Any
+) -> tuple[list[dict[str, object]], ji.JsonImportOutcome]:
+    got: list[dict[str, object]] = []
+    mapping_kwargs = {k: v for k, v in kwargs.items() if k not in ("limits", "purpose")}
+    mapping = build_mapping(**mapping_kwargs)
+    limits = kwargs.get("limits", ic.DEFAULT_LIMITS)
+    out = ji.run_json_import(
+        make_reader(data, limits=limits),
+        mapping,
+        verified_content_type="application/json",
+        dataset_purpose=kwargs.get("purpose", "training"),
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+        limits=limits,
+        on_accepted=lambda c: got.append(dict(c)),
+    )
+    return got, out
+
+
+def test_depth_limit_boundary_is_exact() -> None:
+    depth = 3  # {"messages": [ {"role": ...} ]}
+    for limit, accepted_ in ((depth, True), (depth - 1, False)):
+        limits = ic.ImportLimits(max_depth=limit)
+        out = run(jdump([VALID_A]), container="", limits=limits)
+        codes_ = [r.code for r in out.report.rejections]
+        check(
+            CID,
+            f"max_depth={limit} on a depth-{depth} element: "
+            f"{'accepted' if accepted_ else 'nesting_too_deep'}",
+            (out.report.records_accepted == 1) == accepted_
+            and (codes_ == [] if accepted_ else codes_ == ["nesting_too_deep"]),
+        )
+    limits = ic.ImportLimits(max_depth=4)
+    ignored_ok = b'{"rows": [' + G + b'], "_meta": [[[[1]]]]}'
+    ignored_deep = b'{"rows": [' + G + b'], "_meta": [[[[[1]]]]]}'
+    kwargs = {"container": "/rows", "ignored_top_level_keys": ["_meta"], "limits": limits}
+    check(
+        CID,
+        "an ignored value at the depth limit is fine",
+        run(ignored_ok, **kwargs).report.state == "completed",
+    )
+    check(
+        CID,
+        "an ignored value one level deeper is fatal json_malformed",
+        run(ignored_deep, **kwargs).report.failure_code == "json_malformed",
+    )
+
+
+def test_container_key_and_ignored_keys_are_matched_exactly() -> None:
+    kwargs: dict[str, Any] = {"container": "/rows", "ignored_top_level_keys": ["_meta"]}
+    for key in ("_META", "_Meta", "_meta ", "\\u005fmeta2"):
+        data = b'{"rows": [' + G + b'], "' + key.encode() + b'": 1}'
+        out = run(data, **kwargs)
+        check(
+            CID,
+            f"top-level key {key!r} is not the declared '_meta'",
+            out.report.failure_code == "unmapped_top_level_key",
+        )
+    escaped = b'{"rows": [' + G + b'], "\\u005fmeta": 1}'
+    check(
+        CID,
+        "a key spelled with a JSON escape is the same key as the declared one",
+        run(escaped, **kwargs).report.state == "completed",
+    )
+    twice = b'{"rows": [' + G + b'], "rows": [' + H + b"]}"
+    out = run(twice, **kwargs)
+    check(
+        CID,
+        "a duplicate container key is fatal, never first-wins or last-wins",
+        out.report.failure_code == "mapping_column_missing",
+    )
+
+
+def test_whitespace_is_exactly_the_json_set() -> None:
+    spaced = (
+        b"\r\n\t [ \r\n"
+        + G.replace(b",", b" ,\r\n\t").replace(b":", b"\t:\r")
+        + b" \n,\t"
+        + H
+        + b"\r\n ]\r\n"
+    )
+    out = run(spaced, container="")
+    check(CID, "space, tab, CR and LF are whitespace everywhere", out.report.records_accepted == 2)
+    for label, ws in (
+        ("form feed", b"\x0c"),
+        ("vertical tab", b"\x0b"),
+        ("no-break space", "\u00a0".encode()),
+        ("zero-width no-break space", "\ufeff".encode()),
+        ("NEL", "\u0085".encode()),
+    ):
+        out = run(b"[" + ws + G + b"]", container="")
+        check(
+            CID,
+            f"{label} is not JSON whitespace: fatal json_malformed at its byte",
+            verdict(out) == ("failed", "json_malformed", "object:1"),
+        )
+        out = run(b"[" + G + ws + b"]", container="")
+        check(
+            CID, f"{label} after a value is fatal too", out.report.failure_code == "json_malformed"
+        )
+
+
+def test_row_indexes_slots_and_purpose() -> None:
+    data = jdump([1, row("a"), {"messages": [{"role": "user"}]}, row("b")])
+    got, out = collect_accepted(data, container="", purpose="evaluation")
+    check(
+        CID,
+        "rejected elements keep their position: accepted records carry indexes 1 and 3",
+        [c["record_index"] for c in got] == [1, 3],
+    )
+    check(
+        CID,
+        "rejections are located at their element index",
+        [(r.locator, r.code) for r in out.report.rejections]
+        == [("record:0", "record_not_object"), ("record:2", out.report.rejections[1].code)],
+    )
+    check(CID, "the slot of a mapping rejection is kept", out.report.rejections[1].slot is not None)
+    check(
+        CID,
+        "dataset_purpose is carried into the report, not fixed",
+        out.report.dataset_purpose == "evaluation",
+    )
+    got2, out2 = collect_accepted(data, container="", purpose="held_out")
+    check(CID, "...for any purpose", out2.report.dataset_purpose == "held_out" and len(got2) == 2)
+
+
+def test_schema_sha_is_over_the_sorted_top_level_keys() -> None:
+    first = b'{"zeta": 1, "rows": [], "alpha": [2]}'
+    second = b'{"alpha": [2], "zeta": 1, "rows": []}'
+    kwargs: dict[str, Any] = {"container": "/rows", "ignored_top_level_keys": ["zeta", "alpha"]}
+    sha = hashlib.sha256(
+        json.dumps(["alpha", "rows", "zeta"], separators=(",", ":")).encode()
+    ).hexdigest()
+    for data in (first, second):
+        out = run(data, **kwargs)
+        check(
+            CID,
+            "source_schema_sha256 is sha256 of the sorted key list, whatever the document's order",
+            out.report.source_schema_sha256 == sha,
+        )
+    check(
+        CID,
+        "a root container has no schema hash",
+        run(jdump([VALID_A]), container="").report.source_schema_sha256 is None,
+    )
+
+
+def test_tool_schema_status_follows_the_record() -> None:
+    call = {
+        "messages": [
+            {"role": "user", "content": "q"},
+            {
+                "role": "assistant",
+                "content": [],
+                "tool_calls": [{"id": "c1", "name": "t", "arguments": {}}],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "c1",
+                "name": "t",
+                "content": [{"type": "json", "value": {}}],
+            },
+        ]
+    }
+    mapping_text_ = json.dumps(
+        {
+            "shape": "messages",
+            "messages_pointer": "/messages",
+            "role_key": "role",
+            "content_key": "content",
+            "tool_calls_key": "tool_calls",
+            "tool_call_id_key": "tool_call_id",
+            "name_key": "name",
+            "role_map": {"user": "user", "assistant": "assistant", "tool": "tool"},
+            "on_unmapped_message_keys": "ignore",
+            "json": {"container": "", "ignored_top_level_keys": []},
+        }
+    )
+    from app.services.json_schema_tool_validation import validate_instance
+
+    data = jdump([call, VALID_A])
+    got: list[dict[str, object]] = []
+    out = ji.run_json_import(
+        make_reader(data),
+        ic.parse_mapping(mapping_text_),
+        verified_content_type="application/json",
+        dataset_purpose="training",
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+        tool_schemas={"t": {"type": "object", "properties": {}, "additionalProperties": False}},
+        tool_argument_validator=validate_instance,
+        on_accepted=lambda c: got.append(dict(c)),
+    )
+    statuses = [c.get("tool_schema_status") for c in got]
+    check(
+        CID,
+        f"a record with tool calls is 'valid', one without is 'not_applicable' ({statuses})",
+        out.report.records_accepted == 2 and statuses == ["valid", "not_applicable"],
+    )
+
+
+def test_prompt_completion_slot_is_reported() -> None:
+    mapping = ic.parse_mapping(
+        json.dumps(
+            {
+                "shape": "prompt_completion",
+                "prompt": {"key": "q"},
+                "completion": {"key": "a"},
+                "json": {"container": "", "ignored_top_level_keys": []},
+            }
+        )
+    )
+    data = jdump([{"q": "x"}, {"q": "x", "a": "y"}])
+    out = ji.run_json_import(
+        make_reader(data),
+        mapping,
+        verified_content_type="application/json",
+        dataset_purpose="training",
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+    )
+    check(
+        CID,
+        "a missing mapped field names its slot",
+        [(r.locator, r.code, r.slot) for r in out.report.rejections]
+        == [("record:0", "required_field_missing", "completion")],
+    )
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
