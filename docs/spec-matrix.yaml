@@ -7397,7 +7397,7 @@ FTF-0502:
   certification_state: PROVISIONAL
   criticality: MUST
   description: JSONL importer
-  evidence_hash: 0ce7406e2423d10dbf9bb02140b5089fe83ff495
+  evidence_hash: 10af1a16571c697c3e455e82d8da75873b4f424d
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
@@ -7423,7 +7423,10 @@ FTF-0502:
     line:<physical line>; source_schema_sha256 stays None (no header); the round-1 row types
     ImportedRecord / QuarantinedRow remain in the module only because
     workers/data/json_importer.py (FTF-0503, rebuilt in its own item) still imports them;
-    no live route calls the importer yet, so proving_symbol stays blank. Not self-certified
+    no live route calls the importer yet, so proving_symbol stays blank. Round 3: run_jsonl_import / jsonl_events fail source_changed before any record when the
+    reader was declared for another hash than the caller expects; the fatal locator is the
+    report's own sealed field (ImportReport.fatal_locator, LocatedImportReport), and
+    JsonlImportOutcome carries only the report. Not self-certified
     (Law 4). See docs/certifications/submissions/2026-10-14T0500Z-FTF-0502.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
