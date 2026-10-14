@@ -7397,7 +7397,7 @@ FTF-0502:
   certification_state: PROVISIONAL
   criticality: MUST
   description: JSONL importer
-  evidence_hash: 9b2e93fd1d9942c0a4dcc8852a1a1637dbb89b3a
+  evidence_hash: 6f1a7c506e262cf8ddbded3512f908377d45e78e
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
@@ -7459,6 +7459,20 @@ FTF-0502:
     exercise a non-"training" dataset_purpose (previously hardcoded in run()/collect(), not
     overridable). certification_state stays PROVISIONAL, proof_state stays L1-PROVEN (Law 2).
     See docs/certifications/submissions/2026-10-14T1115Z-FTF-0502-r3.md.
+
+    Round 4 (2026-10-14, QUEUE.md 0k "FTF-0502 RETURN -> round 4"): (1) the integration stop
+    check now imports the SAME 16 MiB dataset undisturbed (control: completes, every byte read)
+    and with S3 stopped mid-stream (blocked/source_unavailable, fewer bytes than the control), so
+    a no-op stop leaves the stop run completing and goes RED; not run against a live server in
+    this sandbox (no Docker daemon), CI job jsonl-import-integration is the real check. (2) Memory
+    pin: tracemalloc peak for 64 MiB of rows within 1.5x of 1 MiB of rows and of 8 MiB of
+    max-size records, nothing subtracted; retaining all lines or one in a hundred is RED. (3) Hash
+    rows differing only in the first, ninth or last hex character on run and preview paths. (4)
+    jsonl_events now refuses a non-str, non-lowercase-64-hex dataset_sha256 as
+    failed/source_changed with nothing read, instead of a raw TypeError from hmac.compare_digest
+    (same class as FTF-0504 r4). (5) Note correction: the round-3 text above describes the stop
+    run as 96 MiB; it is now 16 MiB. evidence_hash is the round-4 code commit. Not self-certified
+    (Law 4). See docs/certifications/submissions/2026-10-14T2100Z-FTF-0502-r4.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0502.py
