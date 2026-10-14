@@ -1606,9 +1606,10 @@ def test_rep_invariants_and_seal() -> None:
     body = report.body()
     check(
         "REP-1",
-        "report_sha256 covers every other field",
-        set(body) == set(fields) - {"report_sha256"},
+        "report_sha256 covers every other field (fatal_locator is additive, omitted when None)",
+        set(body) == set(fields) - {"report_sha256", "fatal_locator"},
     )
+    check("REP-1", "a sample report has no fatal_locator", report.fatal_locator is None)
     check(
         "REP-1",
         "report_sha256 is the sha256 of the canonical body",
@@ -1640,6 +1641,71 @@ def test_rep_invariants_and_seal() -> None:
             f"state={state}, failure_code={code} is refused",
             raises(ValueError, ic.ImportReport, **bad) is not None,
         )
+
+
+def test_rep_fatal_locator_is_additive() -> None:
+    """FTF-0502 r3: the one shared `fatal_locator` field. `None` (every scenario that
+    predates it) must hash exactly as before; a real value must land in the digest, be
+    validated against the locator grammar, and round-trip."""
+    base_acc = ic.ImportAccumulator(
+        importer="jsonl",
+        importer_version="1",
+        mapping_sha256=SHA_X,
+        dataset_purpose="training",
+        expected_sha256=SHA_X,
+    )
+    base_acc.add(ic.RowRejection("line:1", "unmapped_role"))
+    without = base_acc.report(source_sha256=SHA_X, source_bytes=5)
+    check("REP-1F", "no fatal_locator by default", without.fatal_locator is None)
+    check("REP-1F", "omitted from body()", "fatal_locator" not in without.body())
+
+    located_acc = ic.ImportAccumulator(
+        importer="jsonl",
+        importer_version="1",
+        mapping_sha256=SHA_X,
+        dataset_purpose="training",
+        expected_sha256=SHA_X,
+    )
+    located_acc.add(ic.RowRejection("line:1", "unmapped_role"))
+    located = located_acc.report(source_sha256=SHA_X, source_bytes=5, fatal_locator="line:9")
+    check("REP-1F", "fatal_locator is carried", located.fatal_locator == "line:9")
+    check("REP-1F", "present in body() when set", located.body().get("fatal_locator") == "line:9")
+    check(
+        "REP-1F",
+        "an otherwise-identical report with a fatal_locator hashes differently",
+        located.report_sha256 != without.report_sha256,
+    )
+    fields = _report_fields(located)
+    check(
+        "REP-1F",
+        "the located report rebuilds from its own fields",
+        ic.ImportReport(**fields) == located,
+    )
+    for kind in ("line", "row", "record", "object"):
+        kind_acc = ic.ImportAccumulator(
+            importer="jsonl",
+            importer_version="1",
+            mapping_sha256=SHA_X,
+            dataset_purpose="training",
+            expected_sha256=SHA_X,
+        )
+        rebuilt = kind_acc.report(source_sha256=SHA_X, source_bytes=5, fatal_locator=f"{kind}:3")
+        check("REP-1F", f"locator kind {kind!r} accepted", rebuilt.fatal_locator == f"{kind}:3")
+    for bad_locator in ("line:0x1", "page:3", "line:-1", "line:", "line", "", "LINE:3", "line:3 "):
+        check(
+            "REP-1F",
+            f"fatal_locator {bad_locator!r} is refused",
+            raises(ValueError, ic.ImportReport, **{**fields, "fatal_locator": bad_locator})
+            is not None,
+        )
+    # a mismatched report_sha256 is still refused when fatal_locator is set (the digest
+    # genuinely covers it, not just a field that happens to be present)
+    tampered = {**fields, "fatal_locator": "line:1"}
+    check(
+        "REP-1F",
+        "changing fatal_locator without re-sealing is refused",
+        raises(ValueError, ic.ImportReport, **tampered) is not None,
+    )
 
 
 def test_rep_catalogs_are_closed_and_complete() -> None:

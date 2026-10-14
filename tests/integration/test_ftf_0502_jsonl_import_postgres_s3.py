@@ -629,6 +629,42 @@ def main() -> None:
         == ("blocked", "source_unavailable"),
     )
 
+    # ---- J4 control: the same 96 MiB stream completes when nothing actually stops it -------------
+    # Without this, the "blocked/source_unavailable" check above is vacuous if SeaweedFS ever
+    # ends a slow, large stream on its own (observed around 21 MB in this suite's own prior
+    # runs): a no-op `stop` call would then look identical to a real one. Restoring S3 and
+    # replaying the identical dataset through a chunk generator that never calls `compose stop`
+    # proves the full 96 MiB genuinely completes on its own, so the stopping check above is
+    # actually exercising the stop, not an unrelated stream limit.
+    s3lab.compose("up", "-d", "s3")
+    s3lab._wait_for_tcp(endpoint.host, endpoint.port, timeout_seconds=90.0)
+    s3lab._wait_for_s3_http_ready(endpoint, timeout_seconds=90.0)
+    control_source = open_source(ctx1, p1_id, large.id)
+    control_reader = ic.ChunkReader(
+        control_source.chunks,
+        expected_size=control_source.expected_size,
+        expected_sha256=control_source.expected_sha256,
+    )
+    control_outcome = ji.run_jsonl_import(
+        control_reader,
+        mapping,
+        verified_content_type=control_source.verified_content_type,
+        dataset_purpose=control_source.purpose,
+        expected_sha256=control_source.expected_sha256,
+        on_accepted=lambda _candidate: None,
+    )
+    leak_values.append((control_outcome.report, control_outcome.fatal_locator))
+    check(
+        f"J4 control: the identical 96 MiB stream completes without a stop "
+        f"({control_outcome.report.state} {control_outcome.report.failure_code})",
+        control_outcome.report.state == "completed",
+    )
+    check(
+        f"J4 control: reads the same source bytes as the stopped run "
+        f"({control_outcome.report.source_bytes} vs {len(big)})",
+        control_outcome.report.source_bytes == len(big) == control_reader.bytes_read,
+    )
+
     # ---- J5: nothing planted leaks anywhere -----------------------------------------------------
     logging.getLogger().removeHandler(log_handler)
     leak_values.append(log_stream.getvalue())

@@ -1014,12 +1014,23 @@ class ImportReport:
     rejection_counts: tuple[tuple[str, int], ...]
     rejections: tuple[RowRejection, ...]
     report_sha256: str
+    # Additive (FTF-0502 r3): the physical location of a fatal problem (`line:<n>`, `row:<n>`,
+    # ...), from this module's own locator grammar. `None` for every importer/scenario that
+    # predates this field, and then omitted from `body()`/the digest entirely, so an existing
+    # report's `report_sha256` is unaffected. The whole importer family shares this one field;
+    # each format importer's own fatal-error path supplies it, never a second, independently
+    # reimplemented one.
+    fatal_locator: str | None = None
 
     def body(self) -> dict[str, object]:
-        """Every field except `report_sha256`, as canonical-JSON-ready data."""
+        """Every field except `report_sha256`, as canonical-JSON-ready data.
+        `fatal_locator` is omitted when `None`, so a report sealed before this field existed
+        hashes identically to one built today with no fatal locator."""
         values = asdict(self)
         del values["report_sha256"]
         values["rejection_counts"] = dict(self.rejection_counts)
+        if values["fatal_locator"] is None:
+            del values["fatal_locator"]
         return values
 
     def __post_init__(self) -> None:
@@ -1030,6 +1041,8 @@ class ImportReport:
             raise ValueError("unknown failure code")
         if self.records_seen != self.records_accepted + self.records_rejected:
             raise ValueError("records_seen must equal records_accepted + records_rejected")
+        if self.fatal_locator is not None and not _LOCATOR_PATTERN.fullmatch(self.fatal_locator):
+            raise ValueError("fatal_locator is not from the locator grammar")
         if self.report_sha256 != _canonical_sha256(self.body()):
             raise ValueError("report_sha256 does not cover this report")
 
@@ -1198,6 +1211,7 @@ class ImportAccumulator:
         source_sha256: str,
         source_bytes: int,
         aborted: ImportAborted | None = None,
+        fatal_locator: str | None = None,
     ) -> ImportReport:
         importer, version, mapping_sha256, purpose, expected = self._meta
         fields: dict[str, object] = {
@@ -1218,6 +1232,8 @@ class ImportAccumulator:
             "rejection_counts": tuple(sorted(self._counts.items())),
             "rejections": tuple(self._rejections),
         }
+        if fatal_locator is not None:
+            fields["fatal_locator"] = fatal_locator
         unsealed = {
             **fields,
             "rejection_counts": dict(self._counts),

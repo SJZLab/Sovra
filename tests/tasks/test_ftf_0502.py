@@ -93,13 +93,14 @@ def run(
     limits: ic.ImportLimits = ic.DEFAULT_LIMITS,
     mapping: str = PC_MAPPING,
     content_type: str = JSONL,
+    dataset_purpose: str = "training",
     **kwargs: Any,
 ) -> ji.JsonlImportOutcome:
     return ji.run_jsonl_import(
         make_reader(data, chunk, limits),
         build_mapping(mapping),
         verified_content_type=content_type,
-        dataset_purpose="training",
+        dataset_purpose=dataset_purpose,
         expected_sha256=hashlib.sha256(data).hexdigest(),
         limits=limits,
         **kwargs,
@@ -112,6 +113,7 @@ def collect(
     chunk: int | None = None,
     limits: ic.ImportLimits = ic.DEFAULT_LIMITS,
     mapping: str = PC_MAPPING,
+    dataset_purpose: str = "training",
     **kwargs: Any,
 ) -> tuple[list[dict[str, object]], ji.JsonlImportOutcome]:
     """The accepted candidates, in order, and the outcome."""
@@ -121,6 +123,7 @@ def collect(
         chunk=chunk,
         limits=limits,
         mapping=mapping,
+        dataset_purpose=dataset_purpose,
         on_accepted=lambda candidate: got.append(dict(candidate)),
         **kwargs,
     )
@@ -496,6 +499,14 @@ def test_utf16_utf32_are_fatal() -> None:
                 and not got
                 and report.records_seen == 0,
             )
+            check(
+                CID,
+                f"{label} / chunk {chunk}: the locator lives in the report, covered by its digest, "
+                "not a separate untracked field",
+                report.fatal_locator == "line:1"
+                and report.body().get("fatal_locator") == "line:1"
+                and report.report_sha256 == ic._canonical_sha256(report.body()),  # noqa: SLF001 -- same formula, re-derived
+            )
     got, outcome = collect(b'{"q":"a","a":"b"}\n{"q":"\x00","a":"b"}\n')
     check(
         CID,
@@ -689,6 +700,132 @@ def test_time_one_byte_chunks_are_linear() -> None:
         CID,
         f"a discarded line is linear too ({small:.2f}s, {large:.2f}s)",
         large < 9 * max(small, 0.05),
+    )
+
+
+def test_size_boundary_at_the_production_limit() -> None:
+    # test_size_boundary_table proves the max-1/max/max+1 shape at a small, fast limit;
+    # this proves the same shape at the real, unreduced production constant (2 MiB), where a
+    # scan or copy bug that only shows up at scale (an accidental O(n^2) buffer rebuild, an
+    # off-by-one against the real int) would otherwise go unseen.
+    limit = ic.DEFAULT_LIMITS.max_record_bytes
+    follower = line("after", "ok")
+    for delta, accepted_ in ((-1, True), (0, True), (1, False)):
+        body = padded("q", "a", limit + delta)
+        data = body + b"\n" + follower + b"\n"
+        got, outcome = collect(data, chunk=65536)
+        report = outcome.report
+        want = [] if accepted_ else [("line:1", "record_too_large")]
+        check(
+            CID,
+            f"production limit{delta:+d}: "
+            f"{'accepted' if accepted_ else 'rejected'} and the next line imports",
+            report.state == "completed"
+            and codes(outcome) == want
+            and [texts(c)[0] for c in got] == (["q", "after"] if accepted_ else ["after"])
+            and report.records_seen == 2,
+        )
+
+
+def test_time_a_production_sized_record_in_one_byte_chunks_meets_a_budget() -> None:
+    # A 2 MiB record, one byte at a time: a rescan or a per-chunk buffer copy would make this
+    # take minutes; a linear scan takes a few seconds on any machine.
+    limit = ic.DEFAULT_LIMITS.max_record_bytes
+    data = padded("q", "a", limit) + b"\n" + line("after", "ok") + b"\n"
+    started = time.monotonic()
+    got, outcome = collect(data, chunk=1)
+    elapsed = time.monotonic() - started
+    check(
+        CID,
+        f"a {limit}-byte record in 1-byte chunks imports",
+        len(got) == 2 and outcome.report.state == "completed",
+    )
+    check(
+        CID,
+        f"within a fixed time budget ({elapsed:.1f}s)",
+        elapsed < 30,
+    )
+
+
+def test_chunking_every_offset_on_small_inputs() -> None:
+    # test_chunking_is_irrelevant samples random cuts over a larger source; this is
+    # exhaustive over every single split point for a source small enough to make that
+    # affordable (<= 4 KiB), plus a fixed 7-byte chunking -- a chunk boundary bug that only
+    # shows at one particular offset cannot hide between two random samples.
+    rng = random.Random(50203)
+    lines_: list[bytes] = []
+    for i in range(12):
+        kind = rng.randrange(6)
+        if kind == 0:
+            lines_.append(b"")
+        elif kind == 1:
+            lines_.append(b"{bad json")
+        elif kind == 2:
+            lines_.append(b"\xff\xfe" + b"x" * rng.randrange(1, 10))
+        elif kind == 3:
+            lines_.append(line(f"q{i}", "ab" * rng.randrange(1, 10)) + b"\r")
+        else:
+            lines_.append(line(f"q{i}", "مرحبا" * rng.randrange(1, 5)))
+    data = b"\n".join(lines_) + b"\n"
+    assert len(data) <= 4096, f"fixture is {len(data)} bytes, must stay <= 4 KiB"
+    base_got, base = collect(data)
+    check(CID, "baseline imports something", base.report.records_accepted > 0)
+    for cut in range(1, len(data)):
+        pieces = [data[:cut], data[cut:]]
+        reader = ic.ChunkReader(
+            pieces, expected_size=len(data), expected_sha256=hashlib.sha256(data).hexdigest()
+        )
+        out = ji.run_jsonl_import(
+            reader,
+            build_mapping(),
+            verified_content_type=JSONL,
+            dataset_purpose="training",
+            expected_sha256=hashlib.sha256(data).hexdigest(),
+        )
+        if out.report != base.report:
+            check(CID, f"split at offset {cut}: same report as unchunked", False)
+            break
+    else:
+        check(CID, f"every one of {len(data) - 1} split offsets: same report as unchunked", True)
+    got7, outcome7 = collect(data, chunk=7)
+    check(CID, "7-byte chunking: same candidates, same report", got7 == base_got)
+    check(CID, "7-byte chunking: same report hash", outcome7.report == base.report)
+
+
+def test_memory_ratio_is_tightly_bounded() -> None:
+    # A tighter bound than test_memory_does_not_grow_with_the_record_count's 3x: comparing two
+    # record counts an order of magnitude apart, the per-record overhead (not a bulk buffer
+    # that happens to amortize under 3x while still growing per record) must stay under 1.5x
+    # once the fixed baseline cost is subtracted out.
+    def peak_for(count: int) -> int:
+        data = b"".join(line(f"q{i}", "a" * 40) + b"\n" for i in range(count))
+        digest = hashlib.sha256(data).hexdigest()
+        reader = ic.ChunkReader(
+            support.split_chunks(data, 4096), expected_size=len(data), expected_sha256=digest
+        )
+        counter = [0]
+        tracemalloc.start()
+        ji.run_jsonl_import(
+            reader,
+            build_mapping(),
+            verified_content_type=JSONL,
+            dataset_purpose="training",
+            expected_sha256=digest,
+            on_accepted=lambda _c: counter.__setitem__(0, counter[0] + 1),
+        )
+        _current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        assert counter[0] == count
+        return peak
+
+    baseline = peak_for(200)
+    small = peak_for(1_000) - baseline
+    large = peak_for(10_000) - baseline
+    check(
+        CID,
+        f"10x the records ({large}) stays within 1.5x of 10x the per-record cost "
+        f"({small}, scaled {small * 10})",
+        large < 1.5 * max(small * 10, 200_000),
     )
 
 
@@ -983,6 +1120,72 @@ def test_data_cannot_choose_its_own_purpose() -> None:
     )
 
 
+def test_rejection_slot_is_not_dropped() -> None:
+    # `codes()` (used by most tests above) only keeps (locator, code); it drops `.slot`, so a
+    # regression that stopped setting it, or dropped it on the wrong rejections, would pass
+    # every existing check here unnoticed. This reads `.slot` directly off the real
+    # RowRejection objects in the report.
+    data = (
+        b'{"messages":[{"role":"robot","content":"hi"}]}\n'
+        b'{"messages":[{"role":"user"}]}\n'
+        b'{"messages":[{"role":"tool","content":"x"}]}\n'
+    )
+    _got, outcome = collect(data, mapping=MESSAGES_MAPPING)
+    rejections = outcome.report.rejections
+    check(
+        CID,
+        f"three rejections, each with its own messages[N] slot ({rejections})",
+        [(r.locator, r.code, r.slot) for r in rejections]
+        == [
+            ("line:1", "unmapped_role", "messages[0]"),
+            ("line:2", "required_field_missing", "messages[0]"),
+            ("line:3", "canonical_schema_invalid", "messages[0]"),
+        ],
+    )
+    # a rejection with no slot in this module's own grammar (never from the data) stays None,
+    # not an empty string or the locator repeated
+    oversize = collect(b"x" * 10_000_000 + b"\n", limits=ic.ImportLimits(max_record_bytes=100))
+    oversize_rejections = oversize[1].report.rejections
+    check(
+        CID,
+        "a record_too_large rejection has no slot",
+        len(oversize_rejections) == 1 and oversize_rejections[0].slot is None,
+    )
+
+
+def test_dataset_purpose_is_not_hardcoded_in_the_report() -> None:
+    # Every other test above imports with the default "training" purpose, hardcoded directly
+    # in this file's own run()/collect() helpers until this round -- so nothing here could
+    # previously prove the value is genuinely threaded through rather than always "training".
+    data = line("q", "a") + b"\n"
+    seen_reports = []
+    for purpose in ("training", "validation", "development_eval", "held_out_evaluation"):
+        got, outcome = collect(data, dataset_purpose=purpose)
+        seen_reports.append(outcome.report)
+        check(
+            CID,
+            f"dataset_purpose={purpose!r} is carried into the report, unchanged",
+            len(got) == 1 and outcome.report.dataset_purpose == purpose,
+        )
+        check(
+            CID,
+            f"dataset_purpose={purpose!r}: the candidate record itself does not carry a "
+            "purpose (that belongs to the Dataset row, never the data)",
+            "purpose" not in json.dumps(got[0]),
+        )
+    check(
+        CID,
+        "each distinct purpose gives its own report_sha256 (the report genuinely differs)",
+        len({r.report_sha256 for r in seen_reports}) == len(seen_reports),
+    )
+    try:
+        run(data, dataset_purpose="Training")
+    except ValueError:
+        pass
+    else:
+        check(CID, "an invalid dataset_purpose is refused, not silently coerced", False)
+
+
 # --- mapping validation -----------------------------------------------------------------
 
 
@@ -1167,6 +1370,80 @@ def test_content_type_gate() -> None:
     )
     result = ic.preview(stream, 5)
     check(CID, "preview takes the same gate", result.accepted == () and not result.complete)
+
+
+# --- declared hash cross-check (round 3, EXPECTED-SHA-MISMATCH-COMPLETES) ---------------
+
+
+def test_expected_sha256_must_match_the_readers_own_declared_hash() -> None:
+    """A caller can build the `ChunkReader` with one declared hash and then call
+    `run_jsonl_import` / `jsonl_events` with a different `expected_sha256`. Only the
+    reader's own end-of-stream check previously noticed a real content mismatch; this
+    separate, caller-supplied value (which tags every accepted record and the report
+    itself) was never cross-checked against it, so an import could complete and tag
+    records with a hash the bytes never actually had."""
+    data = line("q", "a") + b"\n"
+    real_sha = hashlib.sha256(data).hexdigest()
+    other_sha = hashlib.sha256(data + b"not the same content").hexdigest()
+    assert real_sha != other_sha
+
+    reader = make_reader(data, expected_sha=real_sha)
+    outcome = ji.run_jsonl_import(
+        reader,
+        build_mapping(),
+        verified_content_type=JSONL,
+        dataset_purpose="training",
+        expected_sha256=other_sha,
+    )
+    check(
+        CID,
+        "run_jsonl_import: a declared hash that disagrees with the reader's own is "
+        "failed/source_changed before any byte is read, never completed",
+        outcome.report.state == "failed"
+        and outcome.report.failure_code == "source_changed"
+        and reader.bytes_read == 0
+        and outcome.report.records_seen == 0
+        and outcome.report.records_accepted == 0,
+    )
+
+    reader2 = make_reader(data, expected_sha=real_sha)
+    stream = ji.jsonl_events(
+        reader2, build_mapping(), verified_content_type=JSONL, dataset_sha256=other_sha
+    )
+    try:
+        next(stream)
+    except ic.ImportAborted as exc:
+        check(
+            CID,
+            "jsonl_events: the same mismatch aborts failed/source_changed before a byte is read",
+            (exc.state, exc.failure_code) == ("failed", "source_changed")
+            and reader2.bytes_read == 0,
+        )
+    else:
+        check(CID, "jsonl_events must abort on a reader/caller hash mismatch", False)
+
+    # the matching case is unaffected: it still imports normally
+    got, outcome3 = collect(data)
+    check(
+        CID,
+        "a caller expected_sha256 that agrees with the reader's own still imports normally",
+        outcome3.report.state == "completed" and len(got) == 1,
+    )
+    # content-type is still checked first (both gates fire "before a byte is read", so this
+    # only pins which failure_code callers see when both would apply)
+    reader4 = make_reader(data, expected_sha=real_sha)
+    outcome4 = ji.run_jsonl_import(
+        reader4,
+        build_mapping(),
+        verified_content_type="text/csv",
+        dataset_purpose="training",
+        expected_sha256=other_sha,
+    )
+    check(
+        CID,
+        "content type is still checked before the hash cross-check",
+        outcome4.report.failure_code == "content_type_not_supported_by_importer",
+    )
 
 
 # --- source failures --------------------------------------------------------------------

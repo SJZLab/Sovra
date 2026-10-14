@@ -46,6 +46,15 @@ Only a verified content type of `application/jsonl` or `application/x-ndjson`
 is imported; any other value is a `failed` report,
 `content_type_not_supported_by_importer`, before a byte is read.
 
+A caller's `expected_sha256` (the hash the record/report content is tagged
+with) is checked against the `ChunkReader`'s own declared `expected_sha256`
+(the hash its bytes are verified against) before a byte is read: whoever
+built the reader and whoever calls `run_jsonl_import`/`jsonl_events` can name
+different hashes, and only the reader's own end-of-stream check would
+otherwise notice -- after already tagging every accepted record with the
+caller's possibly-different value. A mismatch is `failed`/`source_changed`,
+same as a reader whose bytes do not match its own declared hash.
+
 Scope: pure and synchronous, no database and no network (the packet's
 `database_changes`: "No independent schema change. Consume frozen contract").
 No import route exists yet to call it; `proving_symbol` stays blank, as for the
@@ -56,6 +65,7 @@ FTF-0503 is rebuilt on FTF-0502-P1.
 
 from __future__ import annotations
 
+import hmac
 import json
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
@@ -131,8 +141,15 @@ class JsonlAborted(ImportAborted):
 
 @dataclass(frozen=True)
 class JsonlImportOutcome:
+    """`fatal_locator` lives in `report.fatal_locator` (the one shared field every
+    format importer feeds, FTF-0502 r3): this is a read-only convenience, never a
+    second, independently tracked copy of it."""
+
     report: ImportReport
-    fatal_locator: str | None
+
+    @property
+    def fatal_locator(self) -> str | None:
+        return self.report.fatal_locator
 
 
 def _check_mapping(mapping: ImportMapping) -> None:
@@ -261,6 +278,12 @@ class JsonlEventStream(Iterator[ImportEvent]):
             or self._verified_content_type not in JSONL_CONTENT_TYPES
         ):
             raise ImportAborted("failed", "content_type_not_supported_by_importer")
+        if not hmac.compare_digest(
+            # the hash the source was declared with, known before a byte is read
+            self._reader._expected_sha256,
+            self._dataset_sha256,
+        ):
+            raise ImportAborted("failed", "source_changed")
         record_index = 0
         for number, line in self._lines():
             if line is not None and (not line or line.isspace()):
@@ -377,9 +400,12 @@ def _drive(
     except ImportAborted as exc:
         aborted = exc
     report = accumulator.report(
-        source_sha256=reader.sha256, source_bytes=reader.bytes_read, aborted=aborted
+        source_sha256=reader.sha256,
+        source_bytes=reader.bytes_read,
+        aborted=aborted,
+        fatal_locator=aborted.locator if isinstance(aborted, JsonlAborted) else None,
     )
-    yield JsonlImportOutcome(report, aborted.locator if isinstance(aborted, JsonlAborted) else None)
+    yield JsonlImportOutcome(report)
 
 
 def run_jsonl_import(
