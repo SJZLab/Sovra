@@ -11361,3 +11361,50 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   edit after FTF-0502 r3). Advisories: sharedStrings at the cap ~0.94 GB RSS (folded into fix 2); FTF-0501 inspect_xlsx
   likely does not catch zlib.error either (code reading) - add to the FTF-0501-F1 follow-up; relationship-only vbaProject
   and " External" TargetMode accepted (never executed or fetched).
+## 2026-10-14T14:09Z — OWNER DECISION (not a certification): ADR 0004, addenda FTF-0708A and FTF-1004A (147/304)
+- **Recorded by the Control plane** (session_01QVznorVMjnmcttUhyDnoGR). Live owner decision, 2026-10-14: bring
+  ScaleDown's ideas into Sovra (not its hosted API): (1) per-step routing of routine agent sub-steps to small fine-tuned
+  models, priced by cost per successful agent task; (2) constrained/structured output; (3) encoder /
+  sequence-classification-head models. The owner approved item 3 explicitly ("Add item 3 too") after being told it
+  changes how two reused components are integrated.
+- Ideas 1-2: existing scope, child slices FTF-1304-S1 and FTF-0213-S1 (QUEUE.md Backlog); no denominator change.
+- Idea 3: ADR 0004 (docs/adr/0004-small-task-specific-models.md); contracts spec/addenda/FTF-0708A.json and
+  spec/addenda/FTF-1004A.json; spec-matrix rows NONE / ABSENT / UNPROVEN. Integration-form change recorded in
+  docs/architecture/REFERENCE_REPOSITORIES.md §2/§3: Axolotl stays the engine for chat LoRA/QLoRA, and
+  `seq_cls_lora` uses Transformers `Trainer` + PEFT SEQ_CLS inside the same pinned tuple and FTF-R003 supervisor; vLLM
+  gains the pooling/classify runner as an explicit supported adapter (§36); LiteLLM is unchanged. Denominator 302 → 304.
+  No status flip and no evidence: both addenda are blocked (FTF-R003/0701/0712/0713/0519, FTF-1003/1005 absent; GPU
+  BLOCKED_EXTERNAL).
+
+## 2026-10-14T14:23Z — CERTIFIED (child slice): FTF-0904-W1; FTF-0904 WIRED
+- **FTF-0904-W1: CERTIFIED** (child slice, round 3; PR #792, merge b4d401fc1fb1222c65ad4778b5aee2e1461a99c1, head 5b608ea4). Producer: the Control-plane
+  session session_01QVznorVMjnmcttUhyDnoGR (owner-requested live 2026-10-14). Verifier: separate session
+  session_0161278Aosjx54vgoMAk3jN6 (Law 4), which returned r1 (excepthook bypass) and r2 (multiprocess children) and
+  certified r3. CI: gate 115828639758 "FTF-0904-W1 live log redaction tests: all checks passed" (F1-F14 RED); ci-verdict
+  115866670772. Verified: plain, --workers 2 (60 s respawn loop), --reload, -X dev, PYTHONFAULTHANDLER startup failures
+  all redacted; logging in every uvicorn mode redacted at ingress and every sink; exception/thread/unraisable/warning/
+  traceback hooks incl. __str__ raising, __notes__, chains, ExceptionGroup, secret thread names, positional print_exception
+  args; G1 late install RED. packages/security unchanged. Advisories: A1 replacement rejects colorize= (3.13 C fallback /
+  pdb) → FTF-0904-W1-F1; A2 callers printing format_exc() themselves are raw (only live caller goes through logging);
+  A3 SystemExit(str) disclosed. PR #790 (routine "[certifier]" W1 r1) superseded.
+- **FTF-0904: WIRED** - proving_symbol `install_redaction` (live caller apps/api/app/log_redaction_setup.py, reached
+  from create_app()); product-true 45 → 46. FTF-0904-F1 (rule-set gaps) is in flight and requalifies FTF-0904 (Law 15).
+
+## 2026-10-14T14:23Z — RETURNED: FTF-0518 (r2)
+- **FTF-0518: RETURNED** (round 1 → 2; PR #787, merge 588cd8daa337d93bd48b0905def63cfdfea5ce20, head ba747478). Producer
+  session_01VedBiyLge6wojTPCKRCuVF ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict on head success; gate
+  115796865997 "all checks passed" (LK-RECALL 10,000 records, 334 findings). Held: contract clauses, 144 probes, scale
+  (10k/30k fail closed as saturated). Return: F14, F13, F8 GREEN; verify_report/assert_leakage_clear accept a self-sealed
+  clear report whose methods_not_run lists the semantic methods. Advisories: semantic stage often saturated in practice
+  (homogeneous 10k corpus saturated even at cap 5000) - revisit at wiring; prior final reused in development_eval not
+  checked (outside the design's pair list); look-alike normalization gaps → FTF-0512-F1.
+
+## 2026-10-14T14:23Z — RETURNED: FTF-0504 (r4)
+- **FTF-0504: RETURNED** (round 3 → 4, small; PR #786, merge aa40d5314a78976a4a1e68089b382c927a02bee0, head 2fb9f93f).
+  Producer session_01Jo27En7iDrKgCGWP3zAQgU ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 115821958282;
+  gate 115787989362 and csv-import-integration 115788103077 "all checks passed"; mutation 46/47 + 1 timeout. All five
+  round-3 items fixed; fatal_locator edit judged compliant with the #783 ruling (additive, digest-neutral 3,000/3,000,
+  inside the digest, fail-closed). The verifier proposed CERTIFY under the class-closing carve-out; the Control plane
+  returns instead because item 1 (record cap at the production constant) was an explicit round-3 DoD line that the
+  suite mislabels, and two typed-failure defects were found (preview hash TypeError; 1-2 BOM bytes swallowed). Stopping
+  rule: round 4 certifies once these land with no production violation.
