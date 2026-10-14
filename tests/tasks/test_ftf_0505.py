@@ -3721,6 +3721,71 @@ def test_foreign_slot_kinds_are_refused_even_if_hand_built() -> None:
     check(CID, "the three tabular slot kinds are accepted", True)
 
 
+def test_many_small_comments_and_instructions_are_progress_not_an_attack() -> None:
+    head = f'{XML_HEAD}<worksheet xmlns="{MAIN}"><sheetData>'
+    ok_row = '<row r="1"><c r="A1" t="inlineStr"><is><t>q</t></is></c><c r="B1" t="inlineStr"><is><t>a</t></is></c></row>'
+    for label, filler in (
+        ("comments", "<!--x-->" * 200_000),
+        ("processing instructions", "<?p?>" * 300_000),
+    ):
+        _e, outcome = run(book(raw_sheet=head + ok_row + filler + "</sheetData></worksheet>"))
+        check(
+            CID,
+            f"1.6 MB of {label} between events is not a token attack",
+            outcome.report.state == "completed",
+        )
+        _e, outcome = run(book(raw_sheet=head + filler + ok_row + "</sheetData></worksheet>"))
+        check(
+            CID,
+            f"{label} before the first row are progress too",
+            outcome.report.state == "completed",
+        )
+    rows = [[RAWC('<c r="{ref}" t="s"><v>0</v></c>'), IS("x")]]
+    sst = f'{XML_HEAD}<sst xmlns="{MAIN}">' + "<!--x-->" * 200_000 + "<si><t>seen</t></si></sst>"
+    events, outcome = run(book([[IS("q"), IS("a")], *rows], shared_override=sst.encode()))
+    check(CID, "comments in sharedStrings are progress too", len(accepted(events)) == 1)
+
+
+def test_whitespace_is_content_not_blank() -> None:
+    rows = [[IS("q"), IS("a")], [IS(" "), IS("\t")], [IS(""), IS("")]]
+    events, outcome = run(book(rows))
+    check(
+        CID,
+        "a row of whitespace-only cells is a record, not a blank line",
+        outcome.report.blank_lines == 1 and outcome.report.records_seen == 1,
+    )
+    rows = [[IS(" "), IS(" ")], [IS("q"), IS("a")], [IS("p"), IS("c")]]
+    _e, outcome = run(book(rows), header_row=1)
+    check(
+        CID,
+        "and a whitespace row counts toward header_row",
+        outcome.report.state == "completed" and outcome.report.records_accepted == 1,
+    )
+
+
+def test_dot_segments_are_removed_only_when_exactly_a_dot() -> None:
+    sheet = sheet_xml([[IS("q"), IS("a")], [IS("p"), IS("c")]], Shared()).encode()
+    base = [(n, d) for n, d in members_of(book()) if n != "xl/worksheets/sheet1.xml"]
+    odd = t501._zip([*base, ("xl/worksheets/ . /s.xml", sheet)])
+    odd = with_member(
+        odd,
+        "xl/_rels/workbook.xml.rels",
+        workbook_rels([("rId1", "worksheets/ . /s.xml")]).encode(),
+    )
+    check(
+        CID,
+        "a segment that merely contains a dot and spaces is a real name",
+        run(odd)[1].report.state == "completed",
+    )
+    plain = t501._zip([*base, ("xl/worksheets/s.xml", sheet)])
+    plain = with_member(
+        plain,
+        "xl/_rels/workbook.xml.rels",
+        workbook_rels([("rId1", "./worksheets/./s.xml")]).encode(),
+    )
+    check(CID, "and exact './' segments are removed", run(plain)[1].report.state == "completed")
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
