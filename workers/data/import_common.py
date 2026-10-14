@@ -1006,6 +1006,10 @@ class ImportReport:
     rejection_counts: tuple[tuple[str, int], ...]
     rejections: tuple[RowRejection, ...]
     report_sha256: str
+    # Where a fatal problem happened (`line:<n>` / `row:<n>` ...). Additive and optional: None
+    # here, and a `LocatedImportReport` (below) when there is one, so a report without a
+    # locator keeps exactly the fields, the body and the digest it had before.
+    fatal_locator = None  # deliberately unannotated: not a dataclass field
 
     def body(self) -> dict[str, object]:
         """Every field except `report_sha256`, as canonical-JSON-ready data."""
@@ -1024,6 +1028,23 @@ class ImportReport:
             raise ValueError("records_seen must equal records_accepted + records_rejected")
         if self.report_sha256 != _canonical_sha256(self.body()):
             raise ValueError("report_sha256 does not cover this report")
+
+
+@dataclass(frozen=True)
+class LocatedImportReport(ImportReport):
+    """An `ImportReport` that ends at a fatal problem whose location is known; the
+    locator is inside the report digest."""
+
+    fatal_locator: str = ""  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if (
+            self.state == "completed"
+            or type(self.fatal_locator) is not str
+            or not _LOCATOR_PATTERN.fullmatch(self.fatal_locator)
+        ):
+            raise ValueError("fatal_locator must be a structural locator on a non-completed report")
+        super().__post_init__()
 
 
 @dataclass(frozen=True)
@@ -1077,6 +1098,11 @@ class ChunkReader(Iterator[bytes]):
     @property
     def sha256(self) -> str:
         return self._hash.hexdigest()
+
+    @property
+    def expected_sha256(self) -> str:
+        """The sha256 this source was declared to have (known before a byte is read)."""
+        return self._expected_sha256
 
     def _abort(self, state: str, code: str) -> ImportAborted:
         self._aborted = ImportAborted(state, code)
@@ -1190,6 +1216,7 @@ class ImportAccumulator:
         source_sha256: str,
         source_bytes: int,
         aborted: ImportAborted | None = None,
+        fatal_locator: str | None = None,
     ) -> ImportReport:
         importer, version, mapping_sha256, purpose, expected = self._meta
         fields: dict[str, object] = {
@@ -1215,6 +1242,13 @@ class ImportAccumulator:
             "rejection_counts": dict(self._counts),
             "rejections": [asdict(rejection) for rejection in self._rejections],
         }
+        if fatal_locator is not None:
+            unsealed["fatal_locator"] = fatal_locator
+            return LocatedImportReport(
+                **fields,  # type: ignore[arg-type]
+                fatal_locator=fatal_locator,
+                report_sha256=_canonical_sha256(unsealed),
+            )
         return ImportReport(**fields, report_sha256=_canonical_sha256(unsealed))  # type: ignore[arg-type]
 
 
