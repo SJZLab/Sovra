@@ -7397,7 +7397,7 @@ FTF-0502:
   certification_state: PROVISIONAL
   criticality: MUST
   description: JSONL importer
-  evidence_hash: 0ce7406e2423d10dbf9bb02140b5089fe83ff495
+  evidence_hash: 9b2e93fd1d9942c0a4dcc8852a1a1637dbb89b3a
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
@@ -7424,7 +7424,41 @@ FTF-0502:
     ImportedRecord / QuarantinedRow remain in the module only because
     workers/data/json_importer.py (FTF-0503, rebuilt in its own item) still imports them;
     no live route calls the importer yet, so proving_symbol stays blank. Not self-certified
-    (Law 4). See docs/certifications/submissions/2026-10-14T0500Z-FTF-0502.md.
+    (Law 4).
+
+
+    Round 3 (2026-10-14, return docs/certifications/queue.md 2026-10-14T08:18Z "FTF-0502 RETURN
+    -> round 3"): fixed all five return items. (1) EXPECTED-SHA-MISMATCH-COMPLETES: a caller's
+    own expected_sha256 (tags every record/the report) is now cross-checked against the
+    ChunkReader's own declared hash before a byte is read -- previously only the reader's own
+    end-of-stream check covered its own value, so the two could silently diverge and still
+    complete. (2) FATAL-LOCATOR-OUTSIDE-IMPORTREPORT: this round's own import_common.py edit for
+    it was superseded by a merge conflict -- FTF-0504 r3 (PR #786, merged first) independently
+    added the one shared mechanism (ImportAccumulator.report(fatal_locator=...) returning a
+    LocatedImportReport subclass when a locator is given, ImportReport.fatal_locator staying None
+    on the base class otherwise), ahead of the Control-plane serialization ruling's own intended
+    order. Resolved by dropping this round's own now-redundant import_common.py/P1-test edits
+    entirely (reverted byte-identical to pre-round-3) and reusing FTF-0504 r3's already-merged
+    mechanism unchanged: jsonl_importer.py's own fix needed no change at all -- it already called
+    accumulator.report(fatal_locator=...) and exposed JsonlImportOutcome.fatal_locator as a
+    property over report.fatal_locator, both already compatible with the merged design. Note for
+    Control plane: FTF-0502-P1's own test suite was not extended to cover LocatedImportReport
+    directly (only FTF-0504's own test_ftf_0504.py has isinstance/construction tests for it) --
+    worth closing against whichever of FTF-0504 r3 or this item that re-review lands on. (3)
+    C4-MIDSTREAM-STOP-VACUOUS: the integration suite's "stopping S3 mid-stream" check gets a
+    control run on a dataset past the stopping run's own early cutoff but under this runner's
+    natural stream limit, through a chunk generator that never calls compose stop. CI's own first
+    run of this control (initially sized at the identical 96 MiB, before this fix) reproduced the
+    finding directly on real infrastructure: the stream ended on its own at source_bytes=25.3MB
+    with no stop call at all. Fixed by sizing the control at 8 MiB; CI confirmed it completes
+    while the stopping run still shows the real outage. (4)
+    Tables at the real production constant (2 MiB) for the size boundary and one-byte-chunk time
+    budget, an exhaustive every-split-point check on a <=4 KiB fixture, and a tighter 1.5x
+    memory-ratio bound. (5) V-SLOT-DROPPED / V-PURPOSE-HARDCODED: new unit tests read
+    RowRejection.slot directly (this file's own codes() helper had always dropped it) and
+    exercise a non-"training" dataset_purpose (previously hardcoded in run()/collect(), not
+    overridable). certification_state stays PROVISIONAL, proof_state stays L1-PROVEN (Law 2).
+    See docs/certifications/submissions/2026-10-14T1115Z-FTF-0502-r3.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0502.py
