@@ -1063,6 +1063,27 @@ def test_record_relist_identity_swap_is_refused_on_real_server(client: S3Client)
     )
 
 
+# Every `_setup()` call is a new SeaweedFS collection that eagerly grows up to 7 volumes on
+# first write (see the s3 service's own comment in docker-compose.yml). Round 5 already cut
+# the round-5-added tests over to `_setup_shared` once four more dedicated pairs exhausted the
+# hosted runner's disk, but the file's own pre-existing 14 dedicated-bucket tests (~29 buckets
+# total with the shared pair) were never reduced, and round 6 reproduced the identical
+# "runner worker died, job log never uploaded" signature on the current head even after that
+# mitigation -- confirming the exhaustion is cumulative across the whole file, not any one
+# test. Recycling the fixture every few tests bounds live collections regardless of how many
+# tests this file ever grows to, instead of hand-tuning which tests share a bucket.
+_RECYCLE_EVERY_N_TESTS = 4
+
+
+def _recycle_s3_fixture(endpoint: S3Endpoint) -> None:
+    print("-- recycling the S3 fixture to bound live SeaweedFS volumes", flush=True)
+    compose("down", "-v", check_exit=False)
+    _SHARED_SETUP.clear()
+    compose("up", "-d", "s3")
+    _wait_for_tcp(endpoint.host, endpoint.port, timeout_seconds=90.0)
+    _wait_for_s3_http_ready(endpoint, timeout_seconds=90.0)
+
+
 def main() -> None:
     endpoint, credentials = _load_endpoint_and_credentials()
     booted_here = False
@@ -1076,14 +1097,19 @@ def main() -> None:
     _wait_for_s3_http_ready(endpoint, timeout_seconds=90.0)
 
     client = S3Client(endpoint, credentials)
-    for name, fn in sorted(globals().items()):
-        if not (name.startswith("test_") and callable(fn)):
-            continue
+    test_names = [
+        name for name, fn in sorted(globals().items()) if name.startswith("test_") and callable(fn)
+    ]
+    for index, name in enumerate(test_names):
+        fn = globals()[name]
         print(f"-- running {name}", flush=True)
         try:
             fn(client)
         except Exception as exc:  # noqa: BLE001
             FAILURES.append(f"FAIL [{name}] unexpected exception: {exc!r}")
+        is_last = index + 1 == len(test_names)
+        if booted_here and not is_last and (index + 1) % _RECYCLE_EVERY_N_TESTS == 0:
+            _recycle_s3_fixture(endpoint)
 
     if FAILURES:
         print(f"FTF-1602 object storage backup integration: {len(FAILURES)} failed")
