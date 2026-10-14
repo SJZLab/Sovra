@@ -7515,22 +7515,34 @@ FTF-0503:
     stdlib json.loads on one element (5), container-pointer depth-1 limit removed (1).
 
 
-    Mutation gate: run uncapped against workers/data/json_importer.py (scripts/mutation_gate.py,
-    test_ftf_0503.py); result recorded in the submission file once available (a full uncapped sweep
-    of this module did not finish inside this shift's own window) -- carried forward to the next
-    round if still outstanding, per Law 1/2 (never fabricated, never used to inflate this entry).
+    Mutation gate (scripts/mutation_gate.py --files workers/data/json_importer.py, uncapped, no
+    --max-mutants), run four times, a real fix between each (full per-pass detail and survivor lists
+    in the submission file and this round's own commits): 168 mutants/107 killed/61 survived (63.7%,
+    first rebuild) -> 154/142/12 (92.2%, inline text[...] comparisons instead of caching a structural
+    character into a plain variable -- the same reasoning round 1's own _max_nesting_depth already
+    documented for this mutation class, plus 10 new tests) -> 154/149/5 (96.8%, discriminating inputs
+    for 5 survivors that had been masked by a different, unmutated raise a loop iteration later) ->
+    154/152/2 (98.7%, final; restored one truncation case dropped between passes). The 2 remaining
+    survivors are one line, _options' slot.kind != "key": a disclosed, proposed equivalent mutant
+    (slot.kind is produced only by import_common._slot(), always one of four already-normalised
+    literals; no public MappingSpec input reaches a different value) -- docs/certifications/
+    mutation-allowlist.yaml is RELAY_FORBIDDEN_EXACT, so this round discloses rather than allowlists
+    it, for Control-plane L2 classification.
 
 
-    ruff/mypy clean repo-wide. validate_spec.py --strict clean. product_truth_check.py
+    ruff/mypy clean repo-wide (521 source files). validate_spec.py --strict clean. product_truth_check.py
     --fail-on-unwired: unchanged -- proving_symbol stays blank, same disclosed precedent every
     sibling importer already established (no live import route exists yet in this repository).
+    Regression swept after every pass: test_ftf_0502_p1.py, test_ftf_0502.py, test_ftf_0504.py,
+    test_ftf_0506.py, test_ftf_0507.py, test_ftf_0508.py, test_ftf_0517.py -- all clean.
 
 
     Disclosed, not hidden: the PG16 + SeaweedFS integration test through the real FTF-0501 routes,
     in its own CI job, named by the return note as required, is not done this round -- every other
     return-note item (the architectural memory/correctness fix, container-mapping semantics,
     BOM/encoding, the content-type gate, Law 17 states, the deterministic record_id, the META-LEAK
-    fix) is fixed and independently fault-proven this round. Not self-certified (Law 4).
+    fix) is fixed and independently fault-proven this round, now at a 98.7% uncapped mutation score
+    with the one remaining survivor disclosed above. Not self-certified (Law 4).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0503.py
