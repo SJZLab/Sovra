@@ -142,6 +142,38 @@ _ISO_TIMESTAMP_PATTERN = re.compile(
 _PUNCTUATION_PATTERN = re.compile(r"[^\w\s]")
 _WHITESPACE_PATTERN = re.compile(r"\s+")
 
+# FTF-0512-F1 round 2: NFKC's compatibility decomposition is not limited to
+# look-alike letters -- it also rewrites a superscript/subscript digit, a
+# vulgar fraction or a circled/Roman numeral (Unicode categories No/Nl) into
+# plain ASCII digits, which can then fuse with a neighbouring real digit run
+# ("10⁵ requests" -> "105 requests", "x²" -> "x2", "1¼" ->
+# "11/4" after punctuation-stripping the fraction slash). That is exactly the
+# "cannot collapse distinct customer outcomes" negative_acceptance clause --
+# a mathematical/typographic notation is not a formatting variant of a plain
+# number. No/Nl characters are therefore never NFKC-folded: they are kept
+# byte-for-byte as their own distinct symbol (never equal to any ASCII digit
+# sequence, and never equal to a different No/Nl look-alike either).
+_DIGIT_LIKE_CATEGORIES = frozenset({"No", "Nl"})
+
+# FTF-0512-F1 round 2: Unicode canonical reordering sorts a maximal run of
+# non-starter (combining, ccc != 0) code points before composition/
+# decomposition can proceed; an unbounded run is an algorithmic-complexity
+# risk (a verifier reproduced a 2.04 MB record, mostly alternating
+# combining marks, taking 99.7s to normalize -- Law 17's "provider
+# failure/unknown state stays visible", applied here to a resource-exhaustion
+# shape rather than an outright crash). UAX #15's own "Stream-Safe Text
+# Format" bounds any meaningful combining sequence to 30 non-starters;
+# anything longer is refused outright (a typed per-row issue, not a crash or
+# a silent truncation) rather than processed at unbounded cost.
+_MAX_COMBINING_RUN = 30
+
+# FTF-0512-F1 round 2: the normalization semantics above change what two
+# records hash as equal/distinct. Mixed into the hashed document so any
+# already-persisted digest (FTF-0515's evidence_digest, FTF-0516-P1's
+# issue_id) is never silently reinterpreted under a different rule --
+# bump this whenever `_normalize_text`'s behaviour changes again.
+_DETECTOR_VERSION = 2
+
 
 class NormalizedDuplicateDetectionError(ValueError):
     """The candidate record batch itself is not a real sequence of
@@ -197,13 +229,53 @@ def _strip_format_characters(text: str) -> str:
     return "".join(char for char in text if unicodedata.category(char) != "Cf")
 
 
+def _assert_safe_combining_run(text: str) -> None:
+    run_length = 0
+    for char in text:
+        if unicodedata.combining(char):
+            run_length += 1
+            if run_length > _MAX_COMBINING_RUN:
+                raise NormalizedDuplicateDetectionError(
+                    "text content part has a combining-character run longer than "
+                    f"{_MAX_COMBINING_RUN} (UAX #15 Stream-Safe Text Format bound) -- "
+                    "refused rather than normalized at unbounded cost"
+                )
+        else:
+            run_length = 0
+
+
+def _fold_look_alikes(text: str) -> str:
+    # FTF-0512-F1 round 2: NFKC-fold everything EXCEPT No/Nl characters,
+    # which are segmented out of the string being folded so they can never
+    # compose or merge with a neighbouring character -- see
+    # `_DIGIT_LIKE_CATEGORIES`'s own comment above. A character of its own
+    # (not a combining mark) already breaks any composition/decomposition
+    # sequence that would otherwise cross it, so isolating it like this
+    # changes nothing about how the segments on either side fold.
+    segments: list[str] = []
+    pending: list[str] = []
+    for char in text:
+        if unicodedata.category(char) in _DIGIT_LIKE_CATEGORIES:
+            if pending:
+                segments.append(unicodedata.normalize("NFKC", "".join(pending)))
+                pending = []
+            segments.append(char)
+        else:
+            pending.append(char)
+    if pending:
+        segments.append(unicodedata.normalize("NFKC", "".join(pending)))
+    return "".join(segments)
+
+
 def _normalize_text(text: str) -> str:
     # FTF-0512-F1: fold look-alikes first, so every later rule sees one
     # canonical spelling. Cf is stripped BEFORE NFKC so an invisible character
     # cannot split a compatibility/composition sequence; NFKC never produces
     # or alters a Cf character (checked over all of Unicode), so one pass is
     # enough.
-    folded = unicodedata.normalize("NFKC", _strip_format_characters(text))
+    stripped = _strip_format_characters(text)
+    _assert_safe_combining_run(stripped)
+    folded = _fold_look_alikes(stripped)
     lowered = folded.lower()
     # Generated IDs/timestamps are REMOVED, not replaced by a placeholder:
     # Section 10 method 3 says "remove", and a placeholder word would keep a
@@ -349,7 +421,7 @@ def compute_normalized_text_hash(content: object) -> str:
         for index, message in enumerate(messages)
     ]
 
-    document = {"messages": normalized_messages}
+    document = {"detector_version": _DETECTOR_VERSION, "messages": normalized_messages}
     canonical = json.dumps(document, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 

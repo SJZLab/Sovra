@@ -8406,6 +8406,60 @@ FTF-0512:
     of the pre-F1 normalization (only the three intended pairs change), and
     11 in-memory faults, each RED. Mutation gate 5/5 killed.
 
+    FTF-0512-F1 round 2 (Law 15 requalification; DECERTIFIED by Control
+    plane for a production regression merged in round 1, relay
+    `relay/FTF-0512-F1-r2`): round 1's blanket `unicodedata.normalize("NFKC",
+    ...)` silently rewrote a superscript/subscript digit, a vulgar fraction
+    or a circled/Roman numeral (Unicode categories No/Nl) into a plain ASCII
+    digit, letting it fuse with a neighbouring real digit run ("10⁵
+    requests" == "105 requests", "1¼" == "11/4", "2³" == "23",
+    "x²" == "x2", "10⁻³" == "10-3") -- a false BLOCKING
+    text_normalized finding in FTF-0518, reproduced by the verifier.
+    Reproduced first (Law 1): `git stash` this round's fix alone and
+    `tests/tasks/test_ftf_0512_f1.py` turns red on every
+    F1-NFKC-DIGIT-MERGE check and `tests/tasks/test_ftf_0518.py`'s new
+    `test_ftf_0512_f1_digit_like_pairs_are_not_false_leakage` fails all 5
+    named pairs with a real `text_normalized` finding; `git stash pop`
+    restores clean. Fixed by segmenting No/Nl characters out of the string
+    NFKC folds (a character of its own already breaks any
+    composition/decomposition sequence it would otherwise be part of, so
+    this changes nothing about how the surrounding text folds) -- they are
+    never equal to an ASCII digit sequence, or to each other across
+    different No/Nl symbols, while fullwidth-letter folding (round 1's
+    original purpose) is untouched. Second production fix: the verifier's
+    own reproduction (a 2.04 MB record, mostly alternating Arabic
+    kasra+shadda, normalizing in 99.7s vs. 0.047s pre-F1 -- Unicode
+    canonical reordering's own worst case over an unbounded combining-
+    character run) is closed by refusing any run of combining (non-starter)
+    code points longer than UAX #15's own Stream-Safe Text Format bound (30)
+    as a typed per-row `unknown_content` issue, bounding worst-case
+    normalization cost to a small constant per run rather than relying on
+    this specific CPython build's own timing (confirmed in this sandbox
+    `unicodedata` does not reproduce the quadratic blowup at all -- the
+    refusal is a behavioural guarantee, not a timing-dependent one). Third:
+    a `detector_version` constant is now mixed into the hashed document, so
+    this and any future normalization-semantics change never silently
+    reinterprets an already-persisted digest (FTF-0515's evidence_digest,
+    FTF-0516-P1's issue_id). Requalification gaps closed (tests only,
+    production here was already correct): FTF-0512-TOOL-ID -- new faults
+    FG2/FI/FJ/FK each lowercase one of tool_calls[].id, tool_calls[].name,
+    a message's own `name` field and a tool message's own `tool_call_id`
+    field in-memory, and each is independently confirmed RED by a check
+    isolating exactly that one field (the tool_calls[].id check uses a
+    conversation with no separate `tool_call_id` field, since that field
+    would otherwise mask a mutation scoped only to the tool_calls entry).
+    F1-CF-HANDPICKED -- a new sweep iterates all 163 real Cf code points
+    from `unicodedata` directly (the existing `INSERTED_FORMAT_CHARS` table
+    is a deliberate 8-character sample for position coverage, not
+    exhaustiveness). Scale check (F1-NFKC-QUADRATIC) over 8K/64K/256K/2.04MB
+    of safe (bounded-run) content confirms cost stays near-linear. All new
+    and existing checks green; `test_ftf_0512.py` and `test_ftf_0518.py`
+    (including its own full real-corpus/route/saturation/forgery suite)
+    reconfirmed clean, zero regressions. `ruff check`/`ruff format --check`/
+    `mypy` clean on every touched file. Not self-certified (Law 4) --
+    awaiting Control-plane L2 re-review; FTF-0512 requalifies with this
+    round.
+
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0512.py

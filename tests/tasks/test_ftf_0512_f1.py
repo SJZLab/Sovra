@@ -95,6 +95,22 @@ INSERTED_FORMAT_CHARS = {
 }
 
 
+def _no_nl_code_points() -> list[int]:
+    """Every Unicode code point whose category is No (superscript/subscript
+    digits, vulgar fractions, circled numbers, ...) or Nl (Roman numerals,
+    ...) -- the classes F1-NFKC-DIGIT-MERGE must keep distinct from any
+    ASCII digit sequence. Computed from `unicodedata` directly, never a
+    hand-picked subset (the same FB2 gap item 3 closes for Cf)."""
+    return [cp for cp in range(0x110000) if unicodedata.category(chr(cp)) in ("No", "Nl")]
+
+
+def _cf_code_points() -> list[int]:
+    """Every Unicode code point whose category is Cf, computed from
+    `unicodedata` directly rather than the 8-character
+    `INSERTED_FORMAT_CHARS` sample those cases use for position coverage."""
+    return [cp for cp in range(0x110000) if unicodedata.category(chr(cp)) == "Cf"]
+
+
 def _positions(word: str) -> list[tuple[str, int]]:
     return [("start", 0), ("middle", len(word) // 2), ("end", len(word) - 1)]
 
@@ -266,19 +282,64 @@ def run_checks(mod: types.ModuleType, sink: list[str]) -> None:
     )
 
     # tool semantics stay byte-for-byte
-    def with_call(call_id: str, arg: str, value: object = "x") -> dict[str, object]:
+    def with_call(
+        call_id: str, arg: str, value: object = "x", *, name: str = "lookup"
+    ) -> dict[str, object]:
         return {
             "messages": [
                 {"role": "user", "content": [{"type": "text", "text": "go"}]},
                 {
                     "role": "assistant",
                     "content": [],
-                    "tool_calls": [{"id": call_id, "name": "lookup", "arguments": {"k": arg}}],
+                    "tool_calls": [{"id": call_id, "name": name, "arguments": {"k": arg}}],
                 },
                 {
                     "role": "tool",
                     "content": [{"type": "json", "value": value}],
                     "tool_call_id": call_id,
+                },
+            ],
+            "metadata": {},
+        }
+
+    def with_tool_message_name(name: str) -> dict[str, object]:
+        return {
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": "go"}]},
+                {
+                    "role": "tool",
+                    "content": [{"type": "json", "value": "ok"}],
+                    "tool_call_id": "call_1",
+                    "name": name,
+                },
+            ],
+            "metadata": {},
+        }
+
+    def with_tool_call_entry_id(call_id: str) -> dict[str, object]:
+        # isolates tool_calls[].id alone -- with_call's own tool-role message
+        # also carries a `tool_call_id` field copied from the same call_id,
+        # which would mask a mutation limited to just the tool_calls entry.
+        return {
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": [],
+                    "tool_calls": [{"id": call_id, "name": "lookup", "arguments": {"k": "v"}}],
+                },
+            ],
+            "metadata": {},
+        }
+
+    def with_tool_call_id_field(tool_call_id: str) -> dict[str, object]:
+        return {
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": "go"}]},
+                {
+                    "role": "tool",
+                    "content": [{"type": "json", "value": "ok"}],
+                    "tool_call_id": tool_call_id,
+                    "name": "lookup_order",
                 },
             ],
             "metadata": {},
@@ -320,6 +381,123 @@ def run_checks(mod: types.ModuleType, sink: list[str]) -> None:
         h(with_call("c1", "abc")) == h(with_call("c1", "abc")),
         sink,
     )
+
+    # FTF-0512-TOOL-ID (Law 15 requalification gap): the tool call id, the tool
+    # call name, the message-level `name` and the message-level `tool_call_id`
+    # are "meaningful tool/ID semantics" the acceptance clause requires
+    # preserved -- a case-only difference in any of them is a different real
+    # identifier, never a formatting variant, and must never collapse.
+    check(
+        "FTF-0512-F1",
+        "FG2 tool-call id case difference stays distinct",
+        h(with_tool_call_entry_id("call_1")) != h(with_tool_call_entry_id("CALL_1")),
+        sink,
+    )
+    check(
+        "FTF-0512-F1",
+        "FI tool-call name case difference stays distinct",
+        h(with_call("c1", "abc", name="lookup_order"))
+        != h(with_call("c1", "abc", name="LOOKUP_ORDER")),
+        sink,
+    )
+    check(
+        "FTF-0512-F1",
+        "FJ message name field case difference stays distinct",
+        h(with_tool_message_name("lookup_order")) != h(with_tool_message_name("LOOKUP_ORDER")),
+        sink,
+    )
+    check(
+        "FTF-0512-F1",
+        "FK tool_call_id field case difference stays distinct",
+        h(with_tool_call_id_field("call_1")) != h(with_tool_call_id_field("CALL_1")),
+        sink,
+    )
+
+    # F1-NFKC-DIGIT-MERGE: a superscript/subscript digit, a vulgar fraction or
+    # a circled/Roman numeral (category No/Nl) must never be rewritten into a
+    # plain ASCII digit that can then fuse with a neighbouring real digit run.
+    # Named regressions from the round-2 verifier finding, reproduced first
+    # (each pair must NOT collapse):
+    for label, with_symbol, plain in [
+        ("superscript-power", "10⁵ requests", "105 requests"),
+        ("vulgar-fraction", "1¼", "11/4"),
+        ("superscript-cubed", "2³", "23"),
+        ("superscript-squared-suffix", "x²", "x2"),
+        ("superscript-negative-exponent", "10⁻³", "10-3"),
+    ]:
+        check(
+            "FTF-0512-F1",
+            f"F1-NFKC-DIGIT-MERGE {label}: {with_symbol!r} does not collapse onto {plain!r}",
+            h(_conv(with_symbol)) != h(_conv(plain)),
+            sink,
+        )
+    # generated table: every No/Nl code point in Unicode, adjacent to a digit
+    # run on both sides, must survive `_normalize_text` byte-for-byte -- the
+    # only way it can be guaranteed to never fuse with any neighbour's digits
+    # regardless of that neighbour's own shape.
+    for cp in _no_nl_code_points():
+        char = chr(cp)
+        for text in (f"7{char}", f"{char}7", f"a{char}9b"):
+            # Roman numerals (Nl) are case-paired (U+2160 Ⅰ <-> U+2170 ⅰ) and
+            # the existing `.lower()` step (unrelated to F1, applied to every
+            # character uniformly) legitimately recases them -- so the
+            # byte-for-byte invariant is "still its own distinct No/Nl symbol,
+            # never folded away into a plain ASCII digit that could fuse with
+            # its neighbours".
+            normalized = mod._normalize_text(text)
+            check(
+                "FTF-0512-F1",
+                f"F1-NFKC-DIGIT-MERGE U+{cp:04X} stays a No/Nl symbol, never an ASCII digit",
+                any(unicodedata.category(c) in ("No", "Nl") for c in normalized),
+                sink,
+            )
+
+    # F1-NFKC-QUADRATIC: a maximal run of combining (non-starter) code points
+    # longer than the UAX #15 Stream-Safe bound is refused, not normalized at
+    # unbounded cost.
+    arabic_base = "ر"
+    safe_run = arabic_base + ("ِّ" * 15)  # 30 combining marks
+    unsafe_run = arabic_base + ("ِّ" * 16)  # 32 combining marks
+    try:
+        mod._normalize_text(safe_run)
+        safe_ok = True
+    except mod.NormalizedDuplicateDetectionError:
+        safe_ok = False
+    check("FTF-0512-F1", "F1-NFKC-QUADRATIC: a 30-long combining run is accepted", safe_ok, sink)
+    try:
+        mod._normalize_text(unsafe_run)
+        unsafe_refused = False
+    except mod.NormalizedDuplicateDetectionError:
+        unsafe_refused = True
+    check(
+        "FTF-0512-F1",
+        "F1-NFKC-QUADRATIC: a 32-long combining run is refused, not processed",
+        unsafe_refused,
+        sink,
+    )
+    # the refusal surfaces as a per-row issue, never an uncaught crash or a
+    # silently dropped record.
+    report = mod.detect_normalized_duplicates(
+        [{"record_index": 0, "purpose": "training", "content": _conv(unsafe_run)}]
+    )
+    check(
+        "FTF-0512-F1",
+        "F1-NFKC-QUADRATIC: an over-long combining run is a reported row issue",
+        any(issue.code == "unknown_content" for issue in report.issues),
+        sink,
+    )
+
+    # F1-CF-HANDPICKED: every Cf code point in Unicode (not only the 8 in
+    # INSERTED_FORMAT_CHARS) is removed -- idempotent, never survives.
+    for cp in _cf_code_points():
+        char = chr(cp)
+        once = mod._normalize_text(f"a{char}b")
+        check(
+            "FTF-0512-F1",
+            f"F1-CF-HANDPICKED U+{cp:04X} is stripped",
+            char not in once,
+            sink,
+        )
 
     # full detector path: look-alike pair is reported as a blocking group
     report = mod.detect_normalized_duplicates(
@@ -411,17 +589,12 @@ def _load_variant(name: str, replacements: list[tuple[str, str]]) -> types.Modul
 
 
 FAULTS: dict[str, list[tuple[str, str]]] = {
-    "F1-NFKC-REMOVED": [
-        (
-            'unicodedata.normalize("NFKC", _strip_format_characters(text))',
-            "_strip_format_characters(text)",
-        )
-    ],
+    "F1-NFKC-REMOVED": [("folded = _fold_look_alikes(stripped)", "folded = stripped")],
     "F1-CF-REMOVED": [('if unicodedata.category(char) != "Cf"', "if True")],
     "F1-CF-STRIPPED-AFTER-NFKC": [
         (
-            'folded = unicodedata.normalize("NFKC", _strip_format_characters(text))',
-            'folded = _strip_format_characters(unicodedata.normalize("NFKC", text))',
+            "stripped = _strip_format_characters(text)\n    _assert_safe_combining_run(stripped)\n    folded = _fold_look_alikes(stripped)",
+            "folded = _fold_look_alikes(text)\n    _assert_safe_combining_run(folded)\n    folded = _strip_format_characters(folded)",
         )
     ],
     "F1-TS-PLACEHOLDER": [
@@ -458,6 +631,34 @@ FAULTS: dict[str, list[tuple[str, str]]] = {
             'return {"type": "json", "value": json.loads(unicodedata.normalize("NFKC", json.dumps(part["value"], ensure_ascii=False)))}',
         ),
     ],
+    "F1-DIGIT-LIKE-UNPROTECTED": [
+        (
+            "if unicodedata.category(char) in _DIGIT_LIKE_CATEGORIES:",
+            "if False:",
+        )
+    ],
+    "F1-COMBINING-RUN-UNCHECKED": [("_assert_safe_combining_run(stripped)", "None")],
+    "FG2-TOOL-CALL-ID-LOWERCASED": [
+        (
+            'return {"id": call_id, "name": name, "arguments": dict(arguments)}',
+            'return {"id": call_id.lower(), "name": name, "arguments": dict(arguments)}',
+        )
+    ],
+    "FI-TOOL-CALL-NAME-LOWERCASED": [
+        (
+            'return {"id": call_id, "name": name, "arguments": dict(arguments)}',
+            'return {"id": call_id, "name": name.lower(), "arguments": dict(arguments)}',
+        )
+    ],
+    "FJ-MESSAGE-NAME-LOWERCASED": [
+        ('normalized["name"] = name', 'normalized["name"] = name.lower()')
+    ],
+    "FK-TOOL-CALL-ID-FIELD-LOWERCASED": [
+        (
+            'normalized["tool_call_id"] = tool_call_id',
+            'normalized["tool_call_id"] = tool_call_id.lower()',
+        )
+    ],
 }
 
 
@@ -492,6 +693,49 @@ def _differential_variant_check(variant: types.ModuleType, sink: list[str]) -> N
         changed == {frozenset(p) for p in INTENDED_COLLAPSES},
         sink,
     )
+
+
+def test_normalization_cost_stays_roughly_linear_up_to_the_record_cap() -> None:
+    """F1-NFKC-QUADRATIC scale check. A single wall-clock number on a shared
+    CI runner is not reliable evidence on its own (this module's own round-2
+    finding was itself only reproduced at 99.7s on a specific run), so the
+    primary proof that the quadratic class is closed is the behavioural
+    refusal in `run_checks` above (an over-long combining run is refused
+    outright, bounding worst-case cost to a small constant per run,
+    independent of timing). This check is a sanity backstop over safe
+    (bounded-run) content at 8K/64K/256K/2MiB: elapsed time must grow close
+    to linearly, never anywhere near the quadratic blowup the finding
+    reproduced (0.047s pre-F1 vs. 99.7s with the regression, for the same
+    2.04 MB size)."""
+    import time
+
+    sizes = [8_000, 64_000, 256_000, 2_040_000]
+    # realistic mixed content with short, legal (<=30) combining runs, not one
+    # giant pathological run -- this is what the bound above must let through.
+    unit = "the quick brówn fox رِّ jumps over the lazy dog 123 "
+    elapsed: list[float] = []
+    for size in sizes:
+        text = (unit * (size // len(unit) + 1))[:size]
+        production._normalize_text(text)  # warm up (regex/module caches)
+        start = time.perf_counter()
+        production._normalize_text(text)
+        elapsed.append(time.perf_counter() - start)
+    check(
+        "FTF-0512-F1",
+        f"F1-NFKC-QUADRATIC: 2.04 MB of safe content normalizes in well under 10s (took {elapsed[-1]:.3f}s)",
+        elapsed[-1] < 10.0,
+    )
+    # quadratic growth would make the last/first ratio explode far past the
+    # ~255x a linear algorithm predicts (2,040,000 / 8,000); a generous 1000x
+    # ceiling catches real quadratic blowup (which would be ~255x squared,
+    # tens of thousands) without being timing-flaky on a shared CI runner.
+    if elapsed[0] > 0:
+        ratio = elapsed[-1] / elapsed[0]
+        check(
+            "FTF-0512-F1",
+            f"F1-NFKC-QUADRATIC: time scales near-linearly with size (ratio {ratio:.1f}, sizes 8K->2.04MB)",
+            ratio < 1000,
+        )
 
 
 def main() -> None:
