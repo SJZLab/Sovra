@@ -340,6 +340,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0212.py
       - name: FTF-0213 negative-test proof (Real structured-output probe, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0213.py
+      - name: FTF-0213-S1 negative-test proof (Real constrained-choice probe, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0213_s1.py
       - name: FTF-0214 negative-test proof (Model catalog UI serializers, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0214.py
       - name: FTF-04A07 negative-test proof (TargetSourceSnapshot schema + immutable provenance, no DB required)

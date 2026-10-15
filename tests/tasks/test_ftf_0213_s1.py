@@ -24,12 +24,14 @@ import atexit
 import ipaddress
 import json
 import shutil
+import socket
 import ssl
 import subprocess
 import sys
 import tempfile
 import threading
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -49,6 +51,7 @@ from packages.litellm_client.real_constrained_decoding_probe import (  # noqa: E
     probe_constrained_choice,
 )
 from packages.litellm_client.secret_manager_integration import OpenBaoConfig  # noqa: E402
+from packages.security.outbound_guard import OutboundGuardError  # noqa: E402
 from packages.security.url_policy import ConnectionPolicy  # noqa: E402
 
 FAILURES: list[str] = []
@@ -340,6 +343,10 @@ def test_enforcing_route_records_trials_identity_and_tokens() -> None:
     check("every trial finished with stop", all(t.finish_reason == "stop" for t in result.trials))
     check("route identity verified", result.route_identity_state == RouteIdentityState.VERIFIED)
     check("resolved model recorded", result.resolved_model == "gpt-4o-mini-2024-07-18")
+    check(
+        "every trial records a verified identity",
+        all(t.route_identity_state == RouteIdentityState.VERIFIED for t in result.trials),
+    )
     check("max completion tokens observed", result.max_completion_tokens_observed == 5)
     check("mean completion tokens is a Decimal", result.mean_completion_tokens == Decimal(5))
     check("latency recorded per trial", all(t.latency_ms >= 0 for t in result.trials))
@@ -540,6 +547,253 @@ def test_label_membership_is_exact() -> None:
     check("non-member fails", not member('{"label": "z"}', enum))
     check("unhashable label fails without TypeError", not member('{"label": ["a"]}', enum))
     check("null label fails", not member('{"label": null}', enum))
+    check("a case/space-folded key is not the label key", not member('{" Label ": "a"}', enum))
+    check("a case-folded label is not a member", not member('{"label": "A"}', enum))
+    check("a space-padded label is not a member", not member('{"label": " a "}', enum))
+
+
+def _trial(finish: str = "stop", tokens: int | None = 5, member: bool = True, ident=None):
+    return probe_module.ConstrainedTrial(
+        finish_reason=finish,
+        completion_tokens=tokens,
+        label_in_enum=member,
+        route_identity_state=ident or RouteIdentityState.VERIFIED,
+        latency_ms=1.0,
+    )
+
+
+def _aggregate(trials, models=None):
+    models = models if models is not None else ["m"] * len(trials)
+    return probe_module._aggregate_trials(tuple(trials), models, datetime.now(UTC))
+
+
+def test_aggregate_states_are_exact_and_case_sensitive() -> None:
+    three = lambda **kw: [_trial(**kw) for _ in range(3)]  # noqa: E731
+    check(
+        "all-good aggregates to CONSTRAINED_OBSERVED",
+        _aggregate(three()).state == S.CONSTRAINED_OBSERVED,
+    )
+    check(
+        "exactly 16 tokens is within the ceiling",
+        _aggregate(three(tokens=16)).state == S.CONSTRAINED_OBSERVED,
+    )
+    check(
+        "17 tokens exceeds the ceiling", _aggregate(three(tokens=17)).state == S.MALFORMED_RESPONSE
+    )
+    check("length is TRUNCATED", _aggregate(three(finish="length")).state == S.TRUNCATED)
+    check(
+        "one truncated trial is TRUNCATED",
+        _aggregate([_trial(), _trial(), _trial("length")]).state == S.TRUNCATED,
+    )
+    check(
+        "'Length' is not the exact value, so not TRUNCATED",
+        _aggregate(three(finish="Length")).state == S.NOT_ENFORCED,
+    )
+    check(
+        "' length ' is not the exact value",
+        _aggregate(three(finish=" length ")).state == S.NOT_ENFORCED,
+    )
+    check("'STOP' is not exact stop", _aggregate(three(finish="STOP")).state == S.NOT_ENFORCED)
+    check("' stop' is not exact stop", _aggregate(three(finish=" stop")).state == S.NOT_ENFORCED)
+    check(
+        "content_filter is CONTENT_FILTERED",
+        _aggregate(three(finish="content_filter")).state == S.CONTENT_FILTERED,
+    )
+    check(
+        "'Content_Filter' is not exact",
+        _aggregate(three(finish="Content_Filter")).state == S.NOT_ENFORCED,
+    )
+    check(
+        "a non-member trial is NOT_ENFORCED",
+        _aggregate([_trial(), _trial(member=False), _trial()]).state == S.NOT_ENFORCED,
+    )
+    check(
+        "non-member outranks missing usage",
+        _aggregate(three(member=False, tokens=None)).state == S.NOT_ENFORCED,
+    )
+    check(
+        "one missing usage is USAGE_MISSING",
+        _aggregate([_trial(), _trial(tokens=None), _trial()]).state == S.USAGE_MISSING,
+    )
+    check(
+        "zero tokens is a real count, not missing",
+        _aggregate(three(tokens=0)).state == S.CONSTRAINED_OBSERVED,
+    )
+
+
+def test_aggregate_identity_needs_one_common_resolved_model() -> None:
+    ok = _aggregate([_trial()] * 3, ["m", "m", "m"])
+    check(
+        "one common model is VERIFIED",
+        ok.route_identity_state == RouteIdentityState.VERIFIED and ok.resolved_model == "m",
+    )
+    none = _aggregate([_trial()] * 3, [None, None, None])
+    check(
+        "no resolved model is UNVERIFIED",
+        none.route_identity_state == RouteIdentityState.UNVERIFIED and none.resolved_model is None,
+    )
+    mixed = _aggregate([_trial()] * 3, ["a", "a", "b"])
+    check(
+        "two different models are UNVERIFIED",
+        mixed.route_identity_state == RouteIdentityState.UNVERIFIED
+        and mixed.resolved_model is None,
+    )
+    part = _aggregate([_trial()] * 3, ["a", None, "a"])
+    check(
+        "a trial without a model is UNVERIFIED",
+        part.route_identity_state == RouteIdentityState.UNVERIFIED,
+    )
+
+
+def test_trial_body_parser_is_strict() -> None:
+    def body(**over: object) -> bytes:
+        choice = {"message": {"content": "{}"}, "finish_reason": "stop"}
+        payload = {
+            "choices": [choice],
+            "model": "m",
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+        for key, value in over.items():
+            if key == "content":
+                choice["message"] = {"content": value}  # type: ignore[assignment]
+            elif key == "finish":
+                choice["finish_reason"] = value
+            else:
+                payload[key] = value
+        return json.dumps(payload).encode()
+
+    parse = probe_module._parse_trial_body
+    check("a valid body parses", parse(body()) is not None)
+    check("numeric content is malformed", parse(body(content=5)) is None)
+    check("missing finish_reason is malformed", parse(body(finish=None)) is None)
+    check("empty finish_reason is malformed", parse(body(finish="")) is None)
+    check("numeric finish_reason is malformed", parse(body(finish=3)) is None)
+    check("non-JSON is malformed", parse(b"nope") is None)
+    check("non-object is malformed", parse(b"[]") is None)
+    check("empty choices is malformed", parse(b'{"choices": []}') is None)
+    parsed = parse(body(model=123))
+    check("a non-string model is no resolved model", parsed is not None and parsed[2] is None)
+    parsed = parse(body(model=""))
+    check("an empty model is no resolved model", parsed is not None and parsed[2] is None)
+    parsed = parse(body(model="gpt-x"))
+    check("a string model is the resolved model", parsed is not None and parsed[2] == "gpt-x")
+    parsed = parse(body(usage="x"))
+    check("unparseable usage is None, not zero", parsed is not None and parsed[3] is None)
+
+
+def test_guard_failures_and_rejections_classify_exactly() -> None:
+    def failure(cause: BaseException | None) -> S:
+        exc = OutboundGuardError("x")
+        exc.__cause__ = cause
+        return probe_module._classify_guard_failure(exc)
+
+    check("dns", failure(socket.gaierror()) == S.DNS_FAILED)
+    check("tls", failure(ssl.SSLError()) == S.CERTIFICATE_ERROR)
+    check("timeout", failure(TimeoutError()) == S.TIMEOUT)
+    check("refused", failure(ConnectionRefusedError()) == S.CONNECTION_REFUSED)
+    check("other", failure(OSError()) == S.UNREACHABLE)
+    check("no cause", failure(None) == S.UNREACHABLE)
+
+    def reject(error: object) -> S:
+        return probe_module._classify_rejection(json.dumps({"error": error}).encode())[0]
+
+    check("filter by code", reject({"code": "content_filter"}) == S.CONTENT_FILTERED)
+    check(
+        "filter by policy code", reject({"code": "content_policy_violation"}) == S.CONTENT_FILTERED
+    )
+    check("filter by type alone", reject({"type": "content_filter"}) == S.CONTENT_FILTERED)
+    check("param is unsupported", reject({"param": "response_format"}) == S.UNSUPPORTED_PARAMETER)
+    check(
+        "unsupported code alone",
+        reject({"code": "unsupported_parameter"}) == S.UNSUPPORTED_PARAMETER,
+    )
+    check("unknown code alone", reject({"code": "unknown_parameter"}) == S.UNSUPPORTED_PARAMETER)
+    check(
+        "unrecognised error is malformed", reject({"code": "rate_limited"}) == S.MALFORMED_RESPONSE
+    )
+    check("empty error is malformed", reject({}) == S.MALFORMED_RESPONSE)
+    check(
+        "case-folded filter code is not matched",
+        reject({"code": " Content_Filter "}) == S.MALFORMED_RESPONSE,
+    )
+    check(
+        "case-folded filter type is not matched",
+        reject({"type": " Content_Filter "}) == S.MALFORMED_RESPONSE,
+    )
+    check(
+        "case-folded unsupported code is not matched",
+        reject({"code": "Unsupported_Parameter"}) == S.MALFORMED_RESPONSE,
+    )
+    check("non-object error is malformed", reject("boom") == S.MALFORMED_RESPONSE)
+    check(
+        "non-JSON rejection is malformed",
+        probe_module._classify_rejection(b"<html>")[0] == S.MALFORMED_RESPONSE,
+    )
+    check(
+        "a filter code outranks a param",
+        reject({"code": "content_filter", "param": "x"}) == S.CONTENT_FILTERED,
+    )
+
+
+def test_secret_resolution_edges_and_authorization_are_exact() -> None:
+    resolve = probe_module._resolve_inference_key
+    when = datetime.now(UTC)
+    key, state, detail = resolve("vault://x", secret_config=None, now=when)
+    check(
+        "a foreign scheme is UNSUPPORTED even with no config",
+        key is None and state == S.SECRET_BACKEND_UNSUPPORTED and "scheme" in detail,
+    )
+    key, state, _ = resolve(
+        "openbao://secret/litellm/org1/api_key", secret_config=_SECRET_CONFIG, now=when
+    )
+    check("a real reference resolves", key == _SECRET_VALUE and state is None)
+    for model_id, approved in (
+        ("ORG", {"org"}),
+        (" org", {"org"}),
+        ("org", {"ORG"}),
+        ("org ", {"org"}),
+    ):
+        raised = False
+        try:
+            probe_constrained_choice(
+                base_url="https://127.0.0.1:9",
+                model_id=model_id,
+                approved_model_ids=frozenset(approved),
+                secret_ref=_SECRET_REF,
+                secret_config=_SECRET_CONFIG,
+                policy=_policy_for(9),
+            )
+        except ChatProbeNotAuthorizedError:
+            raised = True
+        check(f"approval is exact: {model_id!r} vs {sorted(approved)}", raised)
+    fixed = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+    result = probe_constrained_choice(
+        base_url="https://127.0.0.1:9",
+        model_id="m",
+        approved_model_ids=frozenset({"m"}),
+        secret_ref="vault://x",
+        secret_config=None,
+        policy=_policy_for(9),
+        now=fixed,
+    )
+    check("an injected now is the recorded probed_at", result.probed_at == fixed)
+    check(
+        "the failure detail reaches the result",
+        result.detail == "no secret backend is configured for this reference's scheme",
+    )
+    result = probe_constrained_choice(
+        base_url="https://127.0.0.1:9",
+        model_id="m",
+        approved_model_ids=frozenset({"m"}),
+        secret_ref="vault://x",
+        secret_config=None,
+        policy=_policy_for(9),
+    )
+    check(
+        "the default probed_at is timezone-aware and current",
+        result.probed_at.tzinfo is not None
+        and abs((datetime.now(UTC) - result.probed_at).total_seconds()) < 60,
+    )
 
 
 def main() -> None:
