@@ -3592,6 +3592,29 @@ jobs:
       - name: Prove the JSON importer against PostgreSQL 16 and SeaweedFS
         run: uv run python3 tests/integration/test_ftf_0503_json_import_postgres_s3.py
 
+  egress-verification-integration:
+    # FTF-0906: the pure egress verifier (packages/security/egress_capture_verification.py)
+    # combined with real loopback sockets, no database -- an allowed plaintext HTTP sink and an
+    # allowed TLS sink (behind a real byte-for-byte recording relay, so its own capture is
+    # genuine ciphertext -- proving a packet capture alone cannot show absence of leakage), a
+    # denied non-allowlisted sink and a denied cloud-metadata address, a real direct-socket
+    # enforcement bypass, and a real FTF-0904-independent canary leak caught in a log.
+    # tests/integration/test_ftf_0906_egress_verification.py generates and installs its own
+    # ephemeral CA (ubuntu-latest ships openssl/update-ca-certificates/sudo already, same
+    # convention as connection-validation-integration/FTF-H005 above).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' egress-verification-integration ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove egress capture/verification over real loopback sockets
+        run: uv run python3 tests/integration/test_ftf_0906_egress_verification.py
+
   ci-verdict:
     # THE result to read for "CI is green" (merge-on-green, certification, Control plane).
     # Fails on any failed or cancelled job, on any skipped job without a documented exemption
@@ -3677,6 +3700,7 @@ jobs:
       - jsonl-import-integration
       - json-import-integration
       - xlsx-import-integration
+      - egress-verification-integration
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
