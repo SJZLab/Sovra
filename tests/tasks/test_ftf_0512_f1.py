@@ -265,7 +265,6 @@ GLYPH_VARIANT_TAGS = frozenset(
         "<isolated>",
         "<vertical>",
         "<small>",
-        "<noBreak>",
     }
 )
 

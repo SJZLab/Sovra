@@ -245,10 +245,6 @@ def _nfkd_non_starter_flags(char: str) -> tuple[bool, ...]:
 def _assert_safe_combining_run(text: str) -> None:
     run_length = 0
     for char in text:
-        if char < "\u00a0":
-            # ASCII and C1 controls: starters with no decomposition
-            run_length = 0
-            continue
         for is_non_starter in _nfkd_non_starter_flags(char):
             if is_non_starter:
                 run_length += 1
@@ -284,7 +280,6 @@ _SAME_CHARACTER_TAGS = frozenset(
         "<isolated>",
         "<vertical>",
         "<small>",
-        "<noBreak>",
     }
 )
 
@@ -293,18 +288,21 @@ _FOLD_ISOLATE_VERBATIM = 1  # No/Nl: kept byte-for-byte, never folded
 _FOLD_SEPARATE = 2  # compatibility mapping that would fuse: folded as its own token
 
 
+_DECOMPOSITION_TAG = re.compile(r"<[^>]+>")
+
+
+def _decomposition_tag(char: str) -> str:
+    match = _DECOMPOSITION_TAG.match(unicodedata.decomposition(char))
+    return match.group() if match else ""
+
+
 @lru_cache(maxsize=65536)
 def _fold_action(char: str) -> int:
     if unicodedata.category(char) in _DIGIT_LIKE_CATEGORIES:
         return _FOLD_ISOLATE_VERBATIM
-    mapped = unicodedata.normalize("NFKC", char)
-    if mapped == char or not any(part.isalnum() for part in mapped):
+    if not _decomposition_tag(char) or _decomposition_tag(char) in _SAME_CHARACTER_TAGS:
         return _FOLD_KEEP
-    decomposition = unicodedata.decomposition(char)
-    tag = decomposition.split(" ", 1)[0] if decomposition.startswith("<") else None
-    if tag is None or tag in _SAME_CHARACTER_TAGS:
-        return _FOLD_KEEP
-    if tag == "<compat>" and unicodedata.category(char).startswith("L"):
+    if _decomposition_tag(char) == "<compat>" and unicodedata.category(char).startswith("L"):
         # ligatures and digraphs (ﬁ, ǆ, ĳ, µ): the same letters, spelled differently
         return _FOLD_KEEP
     return _FOLD_SEPARATE
@@ -321,7 +319,7 @@ def _fold_look_alikes(text: str) -> str:
     segments: list[str] = []
     pending: list[str] = []
     for char in text:
-        action = _FOLD_KEEP if char < "\u00a0" else _fold_action(char)
+        action = _fold_action(char)
         if action == _FOLD_KEEP:
             pending.append(char)
             continue
