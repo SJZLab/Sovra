@@ -169,7 +169,7 @@ _VAL_NOUNS = (
     "memo",
     "survey",
     "assessment",
-    "handover",
+    "Fußnote",
     "inquiry",
     "statement",
     "proposal",
@@ -469,31 +469,20 @@ class ReferenceEvalSplits:
 # ---------------------------------------------------------------------------
 
 
-def _plain_copy(value: Any, what: str, depth: int = 0) -> Any:
-    """Rebuild `value` from exact plain JSON types only, so no caller-supplied
-    subclass, hook or shadowed attribute is ever read after parsing."""
-    if depth > 64:
-        raise DatasetVerificationError(f"{what}: nesting is too deep")
-    kind = type(value)
-    if value is None or kind in (str, int, float, bool):
-        return value
-    if kind is list:
-        return [_plain_copy(item, what, depth + 1) for item in value]
-    if kind is dict:
-        out: dict[str, Any] = {}
-        for key, item in value.items():
-            if type(key) is not str:
-                raise DatasetVerificationError(f"{what}: not plain JSON data (non-str key)")
-            out[key] = _plain_copy(item, what, depth + 1)
-        return out
-    raise DatasetVerificationError(f"{what}: not plain JSON data (unsupported type)")
+def _plain_copy(value: Any, what: str) -> Any:
+    """Rebuild `value` as exact plain JSON data (dict/list/str/int/float/bool/None,
+    str keys) by a JSON round trip, so only this copy is ever read afterwards: no
+    caller-supplied subclass, hook or shadowed attribute can run against a
+    decision. Anything that is not JSON (an object, a set, NaN, a cycle, absurd
+    nesting) is refused."""
+    try:
+        return json.loads(json.dumps(value, allow_nan=False))
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise DatasetVerificationError(f"{what}: not plain JSON data") from exc
 
 
 def _canonical(value: Any) -> str:
-    try:
-        return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
-    except (TypeError, ValueError, RecursionError) as exc:
-        raise DatasetVerificationError("content is not plain JSON data") from exc
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
 def _strings(value: Any) -> list[str]:

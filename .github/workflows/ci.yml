@@ -273,6 +273,8 @@ jobs:
         run: uv run python3 tests/reference/test_ftf_1706.py
       - name: FTF-1703 negative-test proof (Training dataset catches real defects, no DB required)
         run: uv run python3 tests/reference/test_ftf_1703.py
+      - name: FTF-1704 negative-test proof (Validation/development datasets catch real defects, no DB required)
+        run: uv run python3 tests/reference/test_ftf_1704.py
       - name: FTF-1302 negative-test proof (Local compute costing catches real defects, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1302.py
       - name: FTF-1303 negative-test proof (Provider token costing catches real defects, no DB required)
@@ -3592,6 +3594,45 @@ jobs:
       - name: Prove the JSON importer against PostgreSQL 16 and SeaweedFS
         run: uv run python3 tests/integration/test_ftf_0503_json_import_postgres_s3.py
 
+  development-suite-import-integration:
+    # FTF-1704: real Postgres evidence that the 300 generated development
+    # cases import through the real evaluation-case routes under the restricted
+    # app role (201), list back with their 21 family group keys, critical flags
+    # and grader types, keep the certified graders' reference-passes /
+    # violation-fails result after the database round trip, refuse a critical
+    # case altered to exact_match (400 critical_oracle_not_independent, nothing
+    # inserted), leave the final-purpose suite empty and return the same 404 to
+    # another tenant as to a random id --
+    # tests/integration/test_ftf_1704_development_suite_import.py.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' development-suite-import-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf1704
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf1704"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf1704
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the development suite import against the live database
+        run: uv run python3 tests/integration/test_ftf_1704_development_suite_import.py
+
   ci-verdict:
     # THE result to read for "CI is green" (merge-on-green, certification, Control plane).
     # Fails on any failed or cancelled job, on any skipped job without a documented exemption
@@ -3677,6 +3718,7 @@ jobs:
       - jsonl-import-integration
       - json-import-integration
       - xlsx-import-integration
+      - development-suite-import-integration
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

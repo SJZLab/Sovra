@@ -67,9 +67,17 @@ from app.evaluation.evaluation_case_store import validate_case_input  # noqa: E4
 FAILURES: list[str] = []
 
 
+# The mutation gate only needs a non-zero exit, so it sets this to stop at the first red check
+# (the checks themselves are identical with or without it).
+FAIL_FAST = os.environ.get("FTF_1704_FAIL_FAST") == "1"
+
+
 def check(criterion_id: str, description: str, condition: bool) -> None:
     if not condition:
         FAILURES.append(f"FAIL [{criterion_id}] {description}")
+        if FAIL_FAST:
+            print(FAILURES[-1])
+            sys.exit(1)
 
 
 def _raises(exc_type: type[BaseException] | tuple[type[BaseException], ...], fn, *a, **k) -> bool:
@@ -193,6 +201,12 @@ def test_count_boundaries() -> None:
             f"meets_counts at validation={v}, development={d} is {expect}",
             got is expect,
         )
+    check(
+        "FTF-1704-A1",
+        "count=1 is a valid count",
+        len(generate_validation_traces(count=1)) == 1
+        and len(generate_development_cases(count=1)) == 1,
+    )
     for bad in (0, -1, True, 1.5, "3", None):
         check(
             "FTF-1704-A1",
@@ -473,6 +487,27 @@ def test_reserved_final_overlap_refused() -> None:
             f"seeded {label} overlap with reserved_final refused",
             _raises(HeldOutLeakageError, _build, reserved=reserved),
         )
+    for label, variant in (
+        ("leading whitespace only", f"   {title}"),
+        ("trailing whitespace only", f"{title}   "),
+        ("a casefold-only match (ß vs ss)", "SEASONAL FUSSNOTE VAL-0005"),
+    ):
+        target = (
+            title
+            if "ß" not in label
+            else next(t.entity_title for t in VALIDATION if "Fußnote" in t.entity_title)
+        )
+        if "ß" in label:
+            variant = target.replace("ß", "SS").upper()
+        check(
+            "FTF-1704-N1",
+            f"reserved entity with {label} is refused",
+            _raises(
+                HeldOutLeakageError,
+                _build,
+                reserved=ReservedFinalSuite(entity_titles=frozenset({variant})),
+            ),
+        )
     check(
         "FTF-1704-N1",
         "a non-overlapping reserved suite is accepted",
@@ -715,10 +750,63 @@ def test_provenance_forgeries_refused() -> None:
 
     sub = copy.deepcopy(VAL[0])
     sub["trace_id"] = SubStr(sub["trace_id"])
+    out = verify_validation_trace(sub)
     check(
         "FTF-1704-P1",
-        "a str subclass is refused (plain JSON only)",
-        _raises(DatasetVerificationError, verify_validation_trace, sub),
+        "a str subclass is copied to plain JSON first, so nothing the caller supplied is read",
+        type(out.trace_id) is str and out.trace_id == "val-0000",
+    )
+
+    def message(fn, *args) -> str:
+        try:
+            fn(*args)
+        except DatasetVerificationError as exc:
+            return str(exc)
+        return ""
+
+    deep: list = []
+    for _ in range(200000):
+        deep = [deep]
+    cyclic: list = []
+    cyclic.append(cyclic)
+    for label, junk in (
+        ("a set", {1, 2}),
+        ("NaN", float("nan")),
+        ("an object", object()),
+        ("absurd nesting", deep),
+        ("a cycle", cyclic),
+    ):
+        bad = copy.deepcopy(VAL[0])
+        bad["provenance"]["x"] = junk
+        check(
+            "FTF-1704-P1",
+            f"{label} is refused as not plain JSON data (validation)",
+            "not plain JSON data" in message(verify_validation_trace, bad),
+        )
+        bad_case = copy.deepcopy(DEVELOPMENT[0])
+        bad_case["input_json"]["x"] = junk
+        check(
+            "FTF-1704-P1",
+            f"{label} is refused as not plain JSON data (development)",
+            "not plain JSON data" in message(verify_development_case, bad_case),
+        )
+    reordered = {k: VAL[0][k] for k in reversed(list(VAL[0]))}
+    reordered["steps"] = [dict(reversed(list(step.items()))) for step in VAL[0]["steps"]]
+    check(
+        "FTF-1704-P1",
+        "key order does not matter (canonical comparison)",
+        verify_validation_trace(reordered).trace_id == "val-0000",
+    )
+    reordered_case = {k: DEVELOPMENT[0][k] for k in reversed(list(DEVELOPMENT[0]))}
+    check(
+        "FTF-1704-P1",
+        "key order does not matter for a development case either",
+        verify_development_case(reordered_case)["case_key"] == "dev-0000",
+    )
+    check(
+        "FTF-1704-P1",
+        "a non-string key is not silently accepted",
+        _raises(DatasetVerificationError, verify_validation_trace, {**VAL[0], 5: "x"}),
     )
 
     case = DEVELOPMENT[4]
