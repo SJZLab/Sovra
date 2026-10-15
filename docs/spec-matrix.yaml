@@ -7481,10 +7481,10 @@ FTF-0502:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0502.py
 FTF-0503:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: JSON importer
-  evidence_hash: ce4e7ed2
+  evidence_hash: f653debd4e6e0a6624dbdb6a81549b372a36d640
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
@@ -7674,7 +7674,7 @@ FTF-0503:
     character and str-subclass content-type pins. Uncapped mutation run 20/20 killed (the earlier
     note that CI ran the uncapped set was wrong: it was capped). See
     docs/certifications/submissions/2026-10-14T2330Z-FTF-0503-r4.md. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0503.py
 FTF-0504:
