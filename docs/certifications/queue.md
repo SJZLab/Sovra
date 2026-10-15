@@ -24862,6 +24862,53 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
   `47ca830` (round 4; no production line changed in round 5 or round 6). Needs L2 verification by a different
   session.
 
+## 2026-10-15T00:21Z — PR #816 merged (FTF-1505 round 1; green ci-verdict)
+- **Merged, PROVISIONAL (Law 4, not self-certified):** PR #816 (FTF-1505, Backlog) merged on a
+  fully green `ci-verdict` (run `38652854056`), no merge conflict. Picked from Backlog after
+  confirming every item in QUEUE.md Active's "0" block was already covered (an open `[relay]` PR,
+  a claim branch pushed within the last 3 hours, or a merge already awaiting Control-plane L2) —
+  checked directly against the live GitHub PR/branch state, not assumed from QUEUE.md's own text.
+  Dependencies (FTF-0006, FTF-0904, FTF-1501) confirmed `certification_state: CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- Builds `tests/security/secret_scanning.py`: a shape-only secret-detection rule set (AWS/GitHub/
+  Slack/Google/Hugging Face/OpenAI/Stripe token shapes, PEM blocks, JWTs, bearer/basic headers, a
+  quoted non-placeholder secret-named assignment). FTF-0904's own `redact_text` was tried first as
+  the detector per Section 84.3's reuse-first instruction and rejected only after reproducing the
+  failure directly: it fires on any `<identifier containing a secret keyword>: <anything>` pair,
+  flooding a static scan with ordinary type annotations (`tokenizer: LineageFact`, `credentials:
+  S3Credentials`) in this repo's own `apps/api` — correct for redacting free-form log prose, wrong
+  precision for a release-blocking static scan. `ScenarioResult`/`build_evidence` ARE reused
+  directly from `tests/security/tenant_isolation_suite.py`, exactly as this task's own
+  `contract_owner: FTF-1501` names.
+- Covers all four acceptance targets: `source`/`artifact` (every git-tracked file under the real
+  `SOURCE_ROOTS` and `docs/certifications`/`docs/progress`), `history` (every added line in every
+  commit that ever touched those directories across the full history, proven with a disposable
+  real git repo — a key committed then removed is found by `scan_history` and provably absent
+  from `scan_source`), and `log_samples` (a real sample from the already-certified FTF-0904
+  `install_redaction` pipeline, reused unmodified, with seeded CANARY-style markers per rule
+  family). `assert_dirs_covered` makes the "scanner omissions/excluded production dirs" negative
+  clause executable, proven RED against a real git-ignored production directory in a disposable
+  temp repo, then GREEN once actually tracked.
+- One allowlist entry (`tests/security/secret_scan_allowlist.yaml`, same shape as FTF-1506's own
+  `dependency_scan_policy.yaml`) covers the sole real hit found against this repository: a
+  Playwright test-fixture literal (`SECRET-EXPECTED-ANSWER-4711` in
+  `apps/web/tests/ftf_0602.spec.ts`), confirmed by reading the file directly before allowlisting
+  it, also found 14 times across its own edit history (same value every time).
+- Real, current-state proof: `python3 tests/security/secret_scanning.py` against this repository's
+  own real production tree, full 2,610-commit history and real checked-in evidence artifacts:
+  2,175 units scanned, 20 findings, 0 blocking. `tests/tasks/test_ftf_1505.py`'s own
+  `test_real_module_run_against_this_repository_is_clean` runs that exact command as a subprocess
+  and is wired into the `gate` CI job, so a real future leak fails CI, not merely a mocked test.
+  `ruff`/`ruff format`/`mypy` clean repo-wide; `validate_spec --strict` clean; `product_truth_check`
+  48/48 unchanged (confirmed against the pre-change baseline via `git stash`; blank
+  `proving_symbol`, no live-wiring claim); `data_exposure_check` N/A (no datastore surface
+  touched, Law 18).
+- Full acceptance/negative_acceptance clause-to-test mapping and fault → RED table:
+  `docs/certifications/submissions/2026-10-14T2313Z-FTF-1505.md`. Shift log:
+  `docs/progress/2026-10-14T2313Z-relay.md`. Not self-certified (Law 4) — `certification_state`
+  stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN`, `evidence_hash` pinned to the code commit
+  `32e92342af9afe75baa9a6c7dd7ffdc086dfb4bb`. Needs L2 verification by a different session.
+
 ## 2026-10-14T21:57Z — Control plane: FTF-1602 CERTIFIED
 - **Certified:** FTF-1602 (#789, merge 963a0af45915a50014d870b5db2bdbe798e6780c) under the stopping rule; evidence_hash rebound by the Control plane; UNWIRED.
 

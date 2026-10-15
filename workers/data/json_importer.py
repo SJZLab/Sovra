@@ -131,6 +131,7 @@ SOURCE_TYPE: Final = "upload"
 _UTF_UNSUPPORTED_BOMS: Final = (b"\xff\xfe\x00\x00", b"\x00\x00\xfe\xff", b"\xff\xfe", b"\xfe\xff")
 _UTF8_BOM: Final = b"\xef\xbb\xbf"
 _HEAD_BYTES: Final = 4
+_SHA256_PATTERN: Final = re.compile(r"[0-9a-f]{64}")
 
 # A top-level key longer than this cannot be a name the mapping declared.
 _KEY_CAP: Final = 4096
@@ -272,10 +273,15 @@ class JsonEventStream(Iterator[ImportEvent]):
             or self._verified_content_type not in JSON_CONTENT_TYPES
         ):
             raise ImportAborted("failed", "content_type_not_supported_by_importer")
-        if not hmac.compare_digest(
-            # the hash the source was declared with, known before a byte is read
-            self._reader._expected_sha256,
-            self._dataset_sha256,
+        expected = self._dataset_sha256
+        if (
+            type(expected) is not str
+            or not _SHA256_PATTERN.fullmatch(expected)
+            or not hmac.compare_digest(
+                # the hash the source was declared with, known before a byte is read
+                self._reader._expected_sha256,
+                expected,
+            )
         ):
             raise ImportAborted("failed", "source_changed")
         head = bytearray()
@@ -311,6 +317,9 @@ class JsonEventStream(Iterator[ImportEvent]):
             try:
                 self._decoder.decode(data)
             except UnicodeDecodeError as exc:
+                # the bytes before the bad one are valid: feed them first, so the records
+                # accepted before this fatal error do not depend on the chunking
+                yield from self._feed(data[: max(0, exc.start - pending)])
                 raise JsonAborted("invalid_encoding", self._pos - pending + exc.start) from None
         yield from self._feed(data)
         self._pos += len(data)

@@ -61,8 +61,9 @@ Disclosed choices (each pinned by a test):
   `sheet_out_of_bounds`; more than `max_cells` cells (every `<c>`, mapped or not) is
   `too_many_cells`; shared strings that decompress past `max_shared_strings_bytes`
   (default 256 MiB, the job memory quota) are `limit_exceeded`; any one cell or string
-  longer than `limits.max_record_bytes` characters is `field_too_large`. A caller may
-  lower any bound, never raise one.
+  whose encoded UTF-8 byte length exceeds `limits.max_record_bytes` is `field_too_large`
+  (counting characters would undercount a cell of wide, non-Latin-1 text, which costs up
+  to 4 bytes per character). A caller may lower any bound, never raise one.
 - A formula or error cell in the header row is fatal `xlsx_malformed`: a header is
   never taken from a cached result. Only the sheet's first `header_row` rows are
   skipped; cells to the right of the header are ignored (they are unmapped data).
@@ -89,8 +90,10 @@ import hashlib
 import hmac
 import json
 import re
+import struct
 import tempfile
 import zipfile
+import zlib
 from collections import deque
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
@@ -140,6 +143,7 @@ from workers.data.ooxml_safety import (
 
 __all__ = [
     "DEFAULT_XLSX_LIMITS",
+    "MAX_HEADER_ROW_BYTES",
     "XLSX_CONTENT_TYPES",
     "XLSX_FATAL_CODES",
     "XLSX_MAX_COLUMN",
@@ -156,6 +160,13 @@ __all__ = [
 XLSX_CONTENT_TYPES: Final = frozenset({XLSX_CONTENT_TYPE})
 XLSX_MAX_ROW: Final = 1_048_576
 XLSX_MAX_COLUMN: Final = 16_384  # XFD is the 16,384th column
+# A row the scanner must retain in full because no mapping yet exists to
+# restrict it to a few columns (the header row itself, or a row ahead of it
+# while `wanted` is still None): the number of such cells is attacker-chosen,
+# not caller-chosen, unlike a mapped data row's small, caller-configured
+# `wanted` set, so their total stored bytes get their own bound -- the same
+# order of magnitude as any other "part read whole" bound in this importer.
+MAX_HEADER_ROW_BYTES: Final = MAX_SMALL_PART_BYTES
 XLSX_FATAL_CODES: Final = frozenset(
     {
         "duplicate_header",
@@ -187,6 +198,11 @@ _CT_NS: Final = "http://schemas.openxmlformats.org/package/2006/content-types"
 _REL_WORKSHEET: Final = _DOC_REL_NS + "/worksheet"
 _REL_SHARED_STRINGS: Final = _DOC_REL_NS + "/sharedStrings"
 _REL_VBA_PROJECT: Final = _DOC_REL_NS + "/vbaProject"
+# Excel's own, non-transitional vbaProject relationship type (distinct from
+# the OOXML transitional one above): defence in depth, advisory, same reason
+# as the transitional one -- a relationship-only reference, no part name or
+# content type needed to catch it.
+_REL_VBA_PROJECT_MS: Final = "http://schemas.microsoft.com/office/2006/relationships/vbaProject"
 _WORKBOOK_PART: Final = "xl/workbook.xml"
 _CONTENT_TYPES_KEY: Final = "[content_types].xml"  # CONTENT_TYPES_PART, casefolded
 _WORKBOOK_RELS_KEY: Final = "xl/_rels/workbook.xml.rels"
@@ -197,21 +213,23 @@ _ROW_NUMBER: Final = re.compile(r"[1-9][0-9]*")
 _SHARED_INDEX: Final = re.compile(r"[0-9]{1,9}")
 _XML_ESCAPE: Final = re.compile(r"_x([0-9A-Fa-f]{4})_")
 _SURROGATE: Final = re.compile("[\ud800-\udfff]")
+_SHA256_PATTERN: Final = re.compile(r"[0-9a-f]{64}")
 
 
 _XLSX_LIMIT_DEFAULTS: Final = {
-    "max_cells": 50_000_000,
-    "max_shared_strings_bytes": 256 * 1024**2,
     "max_total_uncompressed_bytes": MAX_UNCOMPRESSED_BYTES,
 }
 
 
 @dataclass(frozen=True)
 class XlsxLimits:
-    """The XLSX-specific bounds. A caller may lower any of them, never raise one."""
+    """The one XLSX-specific bound not shared with the sibling importers. A
+    caller may lower it, never raise it. `max_cells` and the shared-strings
+    byte cap live on `ImportLimits` (`max_xlsx_cells`,
+    `max_xlsx_shared_strings_bytes`) under the catalog rule: a limit field an
+    importer needs becomes one additive field there, not a module-local one
+    here."""
 
-    max_cells: int = _XLSX_LIMIT_DEFAULTS["max_cells"]
-    max_shared_strings_bytes: int = _XLSX_LIMIT_DEFAULTS["max_shared_strings_bytes"]
     max_total_uncompressed_bytes: int = _XLSX_LIMIT_DEFAULTS["max_total_uncompressed_bytes"]
 
     def __post_init__(self) -> None:
@@ -368,7 +386,9 @@ class _SharedStringsScanner(_Scanner):
         self.events += 1
         if not self._in_text:
             return
-        self._size += len(data)
+        # Encoded UTF-8 bytes, not `str` length -- same reasoning as the
+        # per-cell cap in `_SheetScanner.chars`.
+        self._size += len(data.encode("utf-8"))
         if self._size > self._max_string:
             raise XlsxAborted("field_too_large")
         self._piece.append(data)
@@ -379,7 +399,15 @@ class _SharedStringsScanner(_Scanner):
             self._runs.append("".join(self._piece))
             self._in_text = False
         elif _ends(self.path, "sst", "si"):
-            self.strings.append(decode_xml_escapes("".join(self._runs)).encode("utf-8"))
+            # `surrogatepass`: a lone surrogate from a malformed `_xD800_`-style
+            # escape (see `decode_xml_escapes`) is kept, never raised here --
+            # even an unreferenced shared string must not crash the import.
+            # `_finish_cell` decodes the same way, so a referencing cell still
+            # sees the lone surrogate and rejects its own row as
+            # `invalid_unicode`, same as any other field with one.
+            self.strings.append(
+                decode_xml_escapes("".join(self._runs)).encode("utf-8", "surrogatepass")
+            )
         self.path.pop()
 
 
@@ -428,11 +456,18 @@ class _SheetScanner(_Scanner):
     `header_row` is the caller's own skip count (the number of non-blank rows
     before the header). Until that many non-blank rows have actually completed,
     a row's cells are validated and counted but never retained — only whether the
-    row is blank matters for a row the caller is going to discard unread, and
-    retaining every cell's text regardless (`wanted` is still None at that point,
-    since the header has not been read yet) once let an attacker who never
-    intends to supply a real header turn one wide, deeply padded row into a
-    multi-hundred-megabyte-to-gigabyte transient peak from a small upload."""
+    row is blank matters for a row the caller is going to discard unread.
+
+    The header row itself (the first non-blank row once `_non_blank_seen >=
+    header_row`) is kept in full too, every column, because the mapping that
+    would narrow `wanted` to a few columns is built from this very row's own
+    text -- there is no set of wanted columns yet to restrict it to. Unlike a
+    mapped data row, the number of cells here is attacker-chosen, not
+    caller-chosen, so a wide, deeply padded header row could otherwise turn a
+    small upload into a multi-hundred-megabyte-to-gigabyte transient peak;
+    `MAX_HEADER_ROW_BYTES` bounds the real bytes retained for it (`_row_bytes`,
+    accumulated for every kept cell; see `_bound_row_bytes` for why it can
+    never fire for an ordinary mapped data row)."""
 
     def __init__(
         self, shared: list[bytes], max_cells: int, max_cell_chars: int, header_row: int
@@ -454,6 +489,7 @@ class _SheetScanner(_Scanner):
         self._last_row = 0
         self._last_col = -1
         self._row_cells: dict[int, tuple[_Kind, str]] = {}
+        self._row_bytes = 0
         self._nonblank = False
         self._col = 0
         self._type = _Type.LITERAL
@@ -513,6 +549,7 @@ class _SheetScanner(_Scanner):
             raise self._fatal("xlsx_malformed")
         self._last_row, self._last_col = number, -1
         self._row_cells, self._nonblank = {}, False
+        self._row_bytes = 0
         self._keep_full_row = self._non_blank_seen >= self._header_row
 
     def _start_cell(self, attrs: Mapping[str, str]) -> None:
@@ -552,7 +589,12 @@ class _SheetScanner(_Scanner):
         self.events += 1
         if not (self._in_v or self._in_t):
             return
-        self._cell_chars += len(data)
+        # Measured in encoded UTF-8 bytes, not Python `str` length: a cell of
+        # wide characters (emoji, most non-Latin-1 scripts) is up to 4 bytes
+        # per character, so counting characters let a cell many times the
+        # declared byte bound through -- the same "a bounded match is a leak"
+        # class as every other size check in this importer.
+        self._cell_chars += len(data.encode("utf-8"))
         if self._cell_chars > self._max_cell_chars:
             raise self._fatal("field_too_large")
         self._piece.append(data)
@@ -576,26 +618,64 @@ class _SheetScanner(_Scanner):
         path.pop()
 
     def _finish_cell(self) -> None:
+        keep = self._keep_full_row and (self.wanted is None or self._col in self.wanted)
         kind, text = _Kind.VALUE, ""
         if self._has_f or self._type is _Type.FORMULA_RESULT:
             kind = _Kind.FORMULA
+            self._nonblank = True
         elif self._type is _Type.ERROR:
             kind = _Kind.ERROR
+            self._nonblank = True
         elif self._type is _Type.SHARED:
             if not self._has_v or not _SHARED_INDEX.fullmatch(self._v_text):
                 raise self._fatal("xlsx_malformed")
             index = int(self._v_text)
             if index >= len(self._shared):
                 raise self._fatal("xlsx_malformed")
-            text = self._shared[index].decode("utf-8")
+            raw = self._shared[index]
+            if raw:
+                self._nonblank = True
+            # Decoded only for a cell actually kept: a shared string referenced
+            # by many unmapped cells (an attacker's cheapest amplification --
+            # one large string, thousands of references) is looked up but
+            # never decoded for a discarded reference, and `raw`'s own byte
+            # length -- no decode needed -- is what counts against
+            # `MAX_HEADER_ROW_BYTES` below.
+            if keep:
+                self._bound_row_bytes(len(raw))
+                text = raw.decode("utf-8", "surrogatepass")
         elif self._type is _Type.INLINE:
-            text = decode_xml_escapes("".join(self._inline))
+            joined = "".join(self._inline)
+            if joined:
+                self._nonblank = True
+            if keep:
+                text = decode_xml_escapes(joined)
+                self._bound_row_bytes(len(text.encode("utf-8", "surrogatepass")))
         else:  # n, b, d: the literal <v> text
-            text = self._v_text
-        if kind is not _Kind.VALUE or text != "":
-            self._nonblank = True
-        if self._keep_full_row and (self.wanted is None or self._col in self.wanted):
+            if self._v_text:
+                self._nonblank = True
+            if keep:
+                text = self._v_text
+                self._bound_row_bytes(len(text.encode("utf-8", "surrogatepass")))
+        if keep:
             self._row_cells[self._col] = (kind, text)
+
+    def _bound_row_bytes(self, size: int) -> None:
+        """Called for every cell this row keeps. When `wanted` is already set
+        (an ordinary mapped data row), the number of kept cells is the
+        caller's own small, fixed set, and each is already bounded per cell
+        by `max_cell_chars` with the whole row bounded again by the shared
+        `max_record_bytes` ceiling (`record_too_large` in `_map_row`) -- a
+        ceiling that can only be lowered, never raised past its own default,
+        which is itself below `MAX_HEADER_ROW_BYTES`, so this bound can never
+        fire for a mapped row. It matters only while `wanted` is still None
+        (the header row, or a row ahead of it kept in full for want of a
+        mapping to narrow it yet): there, the number of cells is
+        attacker-chosen, not caller-chosen, and this is the only bound on
+        their total retained bytes."""
+        self._row_bytes += size
+        if self._row_bytes > MAX_HEADER_ROW_BYTES:
+            raise self._fatal("field_too_large")
 
 
 def _row_number(digits: str) -> int:
@@ -746,6 +826,7 @@ def open_package(
     sheet_name: str,
     *,
     limits: XlsxLimits,
+    max_shared_strings_bytes: int,
     max_cell_chars: int,
     tick: Callable[[], None],
 ) -> _Package:
@@ -766,6 +847,13 @@ def open_package(
         archive = zipfile.ZipFile(spool)
     except (zipfile.BadZipFile, zipfile.LargeZipFile, EOFError, OverflowError, ValueError):
         raise OoxmlRefused("unsupported_workbook") from None
+    except (NotImplementedError, RuntimeError, struct.error, zlib.error):
+        # zipfile reading the central directory: an out-of-range "version needed
+        # to extract" field, a strong-encryption or patch-data flag, or a
+        # malformed fixed-size record -- a damaged or hostile archive, same as
+        # the BadZipFile class above, not "unreadable in a structural way that
+        # zipfile itself calls unsupported".
+        raise OoxmlRefused("xlsx_malformed") from None
     infos = archive.infolist()
     check_part_names(infos, max_total_bytes=limits.max_total_uncompressed_bytes)
     parts = {info.filename.casefold(): info for info in infos}
@@ -795,7 +883,7 @@ def open_package(
             rels[folded] = _relationships(_read_small(archive, info, budget, tick))
             if any(r.get("TargetMode", "").strip().lower() == "external" for r in rels[folded]):
                 raise OoxmlRefused("external_link_present")
-            if any(r.get("Type") == _REL_VBA_PROJECT for r in rels[folded]):
+            if any(r.get("Type") in (_REL_VBA_PROJECT, _REL_VBA_PROJECT_MS) for r in rels[folded]):
                 # Defence in depth: a vbaProject target reached only through a
                 # relationship Type, not through its own part name or a declared
                 # content type (both already refused above and below).
@@ -829,7 +917,7 @@ def open_package(
             if part not in parts:
                 raise OoxmlRefused("xlsx_malformed")
             shared = _load_shared_strings(
-                archive, parts[part], budget, tick, limits.max_shared_strings_bytes, max_cell_chars
+                archive, parts[part], budget, tick, max_shared_strings_bytes, max_cell_chars
             )
             break
     return _Package(archive, parts[sheet_part], sheet_index, shared, budget)
@@ -915,18 +1003,17 @@ class XlsxEventStream(Iterator[ImportEvent]):
     # -- bytes -> rows ------------------------------------------------------------
 
     def _spool(self, spool: IO[bytes]) -> None:
-        """Copies the whole source into `spool`. `ChunkReader` has verified its byte
-        count and its own declared sha256 by the time it stops; the sha256 the caller
-        expects (the dataset's verified hash, which also names every record) must be the
-        same bytes, or nothing is imported."""
+        """Copies the whole source into `spool`. The caller's own `dataset_sha256`
+        is checked against the reader's pinned, known-before-a-byte-is-read
+        `_expected_sha256` in `_generate`, before this ever runs; `ChunkReader`
+        itself then refuses (`source_changed`) if what it actually read does not
+        hash to that same pinned value, so nothing further is checked here."""
         try:
             for chunk in self._reader:
                 spool.write(chunk)
             spool.flush()
         except OSError:
             raise ImportAborted("blocked", "source_unavailable") from None
-        if not hmac.compare_digest(self._reader.sha256, self._dataset_sha256):
-            raise ImportAborted("failed", "source_changed")
 
     def _rows(self, package: _Package, scanner: _SheetScanner) -> Iterator[_RawRow]:
         parser = new_xml_parser()
@@ -973,6 +1060,17 @@ class XlsxEventStream(Iterator[ImportEvent]):
             or self._verified_content_type not in XLSX_CONTENT_TYPES
         ):
             raise ImportAborted("failed", "content_type_not_supported_by_importer")
+        expected = self._dataset_sha256
+        if (
+            type(expected) is not str
+            or not _SHA256_PATTERN.fullmatch(expected)
+            or not hmac.compare_digest(
+                # the hash the source was declared with, known before a byte is read
+                self._reader._expected_sha256,
+                expected,
+            )
+        ):
+            raise ImportAborted("failed", "source_changed")
         options = self._options
         try:
             with tempfile.TemporaryFile() as spool:
@@ -981,6 +1079,7 @@ class XlsxEventStream(Iterator[ImportEvent]):
                     spool,
                     options.sheet_name,
                     limits=self._xlsx_limits,
+                    max_shared_strings_bytes=self._limits.max_xlsx_shared_strings_bytes,
                     max_cell_chars=self._limits.max_record_bytes,
                     tick=self._reader.deadline.check,
                 )
@@ -995,7 +1094,7 @@ class XlsxEventStream(Iterator[ImportEvent]):
         options = self._options
         scanner = _SheetScanner(
             package.shared,
-            self._xlsx_limits.max_cells,
+            self._limits.max_xlsx_cells,
             self._limits.max_record_bytes,
             options.header_row,
         )
