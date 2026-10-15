@@ -14,6 +14,7 @@ Criterion ids in every failure line: FTF-1304-S1-<clause>.
 Run directly: python3 tests/tasks/test_ftf_1304_s1.py
 """
 
+# ruff: noqa: E501  (the fault table quotes production source lines verbatim)
 from __future__ import annotations
 
 import dataclasses
@@ -27,11 +28,14 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 API_ROOT = ROOT / "apps" / "api"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(API_ROOT))
+
+from packages.litellm_client.real_chat_probe import RouteIdentityState  # noqa: E402
 
 import app.services.compound_binding_cost_attribution as real_module  # noqa: E402
 from app.services.candidate_ranking import (  # noqa: E402
@@ -52,7 +56,6 @@ from app.target_connectors.production_faithful_target_agent_harness_contract imp
     AdapterDescribeResult,
     HarnessContractError,
 )
-from packages.litellm_client.real_chat_probe import RouteIdentityState  # noqa: E402
 
 MODULE_PATH = API_ROOT / "app" / "services" / "compound_binding_cost_attribution.py"
 D = Decimal
@@ -69,7 +72,7 @@ class Recorder:
             self.failed.append(f"FAIL [{criterion_id}] {description}")
 
 
-def raises(exc: type[BaseException], fn: Callable[[], object]) -> bool:
+def raises(exc: type[BaseException], fn: Callable[..., object]) -> bool:
     try:
         fn()
     except exc:
@@ -134,7 +137,7 @@ def call(
     state: RouteIdentityState = RouteIdentityState.VERIFIED,
     fingerprint: str | None = "fp-1",
     seconds: int = 30,
-) -> object:
+) -> Any:
     started = T0 + timedelta(minutes=minute)
     return m.ModelCallRecord(
         request_id=rid,
@@ -154,7 +157,7 @@ def attempt(
     outcome: str,
     calls: list[object],
     pending: str | None = None,
-) -> object:
+) -> Any:
     return m.AttemptTrace(
         request_id=rid,
         outcome=outcome,
@@ -163,7 +166,7 @@ def attempt(
     )
 
 
-def small_binding(m: types.ModuleType, artifact: str = "base") -> object:
+def small_binding(m: types.ModuleType, artifact: str = "base") -> Any:
     return m.CompoundBinding(
         default_route_alias="large-api",
         provider="gateway",
@@ -176,7 +179,7 @@ def small_binding(m: types.ModuleType, artifact: str = "base") -> object:
     )
 
 
-def pair(m: types.ModuleType, rid: str, outcome: str = "pass", minute: int = 1) -> object:
+def pair(m: types.ModuleType, rid: str, outcome: str = "pass", minute: int = 1) -> Any:
     """One attempt: a small self-hosted classify step plus a large provider call."""
     return attempt(
         m,
@@ -189,7 +192,7 @@ def pair(m: types.ModuleType, rid: str, outcome: str = "pass", minute: int = 1) 
     )
 
 
-def self_window(m: types.ModuleType, window_: ServiceWindow, wid: str = "w1") -> object:
+def self_window(m: types.ModuleType, window_: ServiceWindow, wid: str = "w1") -> Any:
     return m.SelfHostedWindow(wid, ("small-local",), window_)
 
 
@@ -197,7 +200,7 @@ def refused(
     rec: Recorder,
     cid: str,
     m: types.ModuleType,
-    result: object,
+    result: Any,
     status: str,
     code: str,
     rid: str | None,
@@ -790,7 +793,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         ("pricing_mode", dict(pricing_mode="free")),
         ("artifact_kind", dict(artifact_kind="magic")),
     ):
-        base_args = dict(
+        base_args: dict[str, Any] = dict(
             step_key="s",
             route_alias="r",
             step_kind="other",
@@ -1138,7 +1141,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
 
     # ---- E: record/trace shape.
     nv = RouteIdentityState.VERIFIED
-    ok_args = dict(
+    ok_args: dict[str, Any] = dict(
         request_id="r",
         step_key=None,
         route_alias="a",
@@ -1163,7 +1166,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         ("ended_at", T0 - timedelta(seconds=1)),
         ("ended_at", "later"),
     ):
-        args = dict(ok_args)
+        args: dict[str, Any] = dict(ok_args)
         args[field] = bad
         rec.check(
             "FTF-1304-S1-E1",
@@ -1349,6 +1352,23 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         "step keys and aliases differing only in case are distinct",
         len(case_steps.steps) == 2 and len(case_steps.route_table()) == 3,
     )
+    rec.check(
+        "FTF-1304-S1-N2",
+        "a lower-case step key followed by its upper-case twin is not a duplicate",
+        len(
+            m.CompoundBinding(
+                "a",
+                "p",
+                "provider",
+                "base",
+                (
+                    m.StepBinding("classify", "r1", "other", "provider", "base"),
+                    m.StepBinding("Classify", "r2", "other", "provider", "base"),
+                ),
+            ).steps
+        )
+        == 2,
+    )
     cases = [
         ("FTF-1304-S1-N3", "step key in another case", "CLASSIFY", "small-local"),
         ("FTF-1304-S1-N3", "alias in another case", "classify", "SMALL-LOCAL"),
@@ -1437,11 +1457,12 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
     )
     zero_pending = m.AttemptTrace("r", "pass", (), pending_cost=D("0"))
     rec.check("FTF-1304-S1-N5", "a zero pending cost is allowed", zero_pending.pending_cost == D(0))
-    for what, value in (
+    n6_cases: tuple[tuple[str, Any], ...] = (
         ("set", {pair(m, "u1")}),
         ("generator", (x for x in [pair(m, "u2")])),
         ("dict", {"a": 1}),
-    ):
+    )
+    for what, value in n6_cases:
         rec.check(
             "FTF-1304-S1-N6",
             f"attempts as a {what} refused",
@@ -1468,7 +1489,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
     rec.check(
         "FTF-1304-S1-N6",
         "windows as a generator refused",
-        raises(m.CompoundAttributionError, lambda: attribute(plain, [], RATES, (w for w in []))),
+        raises(m.CompoundAttributionError, lambda: attribute(plain, [], RATES, iter(()))),
     )
     rec.check(
         "FTF-1304-S1-N6",
@@ -1564,7 +1585,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         pending: str | None = None,
         fp: str = "fp-1",
         u: ProviderTokenUsage | None = None,
-    ) -> object:
+    ) -> Any:
         return attempt(
             m,
             rid,
