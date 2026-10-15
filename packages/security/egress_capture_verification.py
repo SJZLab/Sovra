@@ -46,6 +46,7 @@ from dataclasses import dataclass, field
 from packages.security.canary_secret_generator import (
     CanaryMarker,
     CanaryPlacementLedger,
+    InvalidCanaryRequestError,
     PlacementRecord,
     encode_canary,
 )
@@ -363,11 +364,19 @@ def scan_store_for_canaries(
             raise InvalidEgressEvidenceError(
                 f"placement names unknown canary id {placement.canary_id!r}"
             )
-        needle = (
-            marker.value
-            if placement.encoding in ("literal", "fragmented")
-            else encode_canary(marker, placement.encoding)
-        )
+        if placement.encoding in ("literal", "fragmented"):
+            needle = marker.value
+        else:
+            try:
+                needle = encode_canary(marker, placement.encoding)
+            except InvalidCanaryRequestError as exc:
+                # Re-raise as this module's own public exception: a caller
+                # catching `InvalidEgressEvidenceError` (this function's own
+                # documented error type) must not miss a bad-encoding
+                # rejection just because it happened to be routed through
+                # FTF-0905's own `encode_canary` instead of one of this
+                # function's own checks above.
+                raise InvalidEgressEvidenceError(str(exc)) from exc
         is_found = needle in text
         ledger.record_checked(
             placement.canary_id, placement.sink, placement.encoding, found=is_found

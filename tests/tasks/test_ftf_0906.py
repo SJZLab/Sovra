@@ -44,7 +44,6 @@ sys.path.insert(0, str(ROOT / "apps" / "api"))
 from packages.security.canary_secret_generator import (  # noqa: E402
     CanaryLeakedError,
     CanaryPlacementLedger,
-    InvalidCanaryRequestError,
     PlacementRecord,
     generate_canary,
 )
@@ -644,10 +643,10 @@ def test_downstream_comparisons_are_exact_not_normalized() -> None:
     object.__setattr__(placement, "encoding", "Literal")
     check(
         "FTF-0906-EXACT",
-        "a case-tampered placement encoding is refused by encode_canary, "
-        "never silently folded to literal",
+        "a case-tampered placement encoding is refused (wrapped as this "
+        "module's own exception type), never silently folded to literal",
         _raises(
-            InvalidCanaryRequestError,
+            InvalidEgressEvidenceError,
             scan_store_for_canaries,
             b"nothing secret here",
             {marker.canary_id: marker},
