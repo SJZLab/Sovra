@@ -378,6 +378,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0512.py
       - name: FTF-0512-F1 look-alike gaps (NFKC + Cf folding, symmetric generated-value removal, generated table + per-class faults, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0512_f1.py
+      - name: FTF-0512-F1 look-alike gaps on the declared CPython 3.11 floor (NFKD stream-safe bound is version-sensitive, no DB required)
+        run: uv run --no-project --python 3.11 python3 tests/tasks/test_ftf_0512_f1.py
       - name: FTF-0513 negative-test proof (Near-duplicate detector, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0513.py
       - name: FTF-0514 negative-test proof (PII/secrets detector, no DB required)
