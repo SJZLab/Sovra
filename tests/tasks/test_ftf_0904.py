@@ -35,6 +35,7 @@ import io
 import json
 import logging
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -2282,6 +2283,148 @@ def test_f1_round2_non_name_key_does_not_swallow_a_later_name() -> None:
     check("FTF-0904-F1", f"a non-name key swallowed a name: {out!r}", "Zq7Lm2" not in out)
 
 
+_F3_NAMES = (
+    "key", "sig", "auth", "session", "jwt", "code", "state", "verifier", "ticket", "otp",
+    "totp", "hotp", "pass", "sid", "sessid", "phpsessid", "jsessionid",
+)  # fmt: skip
+_F3_ENV = (
+    "GET /x?{p} HTTP/1.1",  # query position
+    "{p}&x=1",  # serialized / urlencoded form position
+)
+
+
+def _f3_random_case(name: str) -> list[str]:
+    """Alternating, inverted-alternating, upper and seeded random-case spellings of `name`."""
+    rng = random.Random(f"ftf-0904-f1-r3:{name}")
+    spellings = {
+        "".join(c.upper() if i % 2 else c.lower() for i, c in enumerate(name)),
+        "".join(c.lower() if i % 2 else c.upper() for i, c in enumerate(name)),
+        name.upper(),
+        name.title(),
+    }
+    for _ in range(24):
+        spellings.add("".join(c.upper() if rng.random() < 0.5 else c.lower() for c in name))
+    return sorted(spellings)
+
+
+def test_f1_round3_random_case_names_are_redacted() -> None:
+    """QP-CASE-SPLIT: the camelCase split must not hide a name spelled in random case."""
+    for name in _F3_NAMES:
+        for spelling in _f3_random_case(name):
+            for template in _F3_ENV:
+                out = lr.redact_text(template.format(p=f"{spelling}={_F1_VALUE}"))
+                check("FTF-0904-F1", f"QP-CASE-SPLIT {spelling}: leaked {out!r}", _F1_VALUE not in out)
+
+
+_F3_PREFIXES = (
+    "session", "auth", "access", "pass", "otp", "api", "oauth", "oauth2", "login", "sso",
+    "csrf", "xsrf", "refresh", "reset", "confirm", "verification", "magic", "signed", "client",
+    "user", "app", "private", "secret", "authorization", "key", "code",
+)  # fmt: skip
+
+
+def _f3_glue(prefix: str, name: str) -> dict[str, str]:
+    return {
+        "lower": prefix + name,
+        "UPPER": (prefix + name).upper(),
+        "Title": prefix.title() + name.title(),
+        "Capitalized": (prefix + name).capitalize(),
+        "random": _f3_random_case(prefix + name)[-1],
+    }
+
+
+def test_f1_round3_glued_compounds_are_redacted() -> None:
+    """QP-GLUED-COMPOUND: prefix x name with no separator, in every glue style."""
+    for prefix in _F3_PREFIXES:
+        for name in _F3_NAMES:
+            for joiner, glued in _f3_glue(prefix, name).items():
+                out = lr.redact_text(f"GET /x?{glued}={_F1_VALUE} HTTP/1.1")
+                check(
+                    "FTF-0904-F1",
+                    f"QP-GLUED-COMPOUND[{joiner}] {glued}: leaked {out!r}",
+                    _F1_VALUE not in out,
+                )
+    for glued in ("sessionkey", "authcode", "accesscode", "passcode", "totp", "otpcode"):
+        out = lr.redact_text(f"{glued}={_F1_VALUE}&x=1")
+        check("FTF-0904-F1", f"QP-GLUED-COMPOUND contract {glued}: {out!r}", _F1_VALUE not in out)
+    # a chain of credential words, up to the run bound
+    chain = "accesssessionauthloginapi" * 2 + "key"
+    check("FTF-0904-F1", "chain within bound is long enough", 40 < len(chain) <= 64)
+    out = lr.redact_text(f"{chain}={_F1_VALUE}")
+    check("FTF-0904-F1", f"QP-GLUED-COMPOUND chain leaked {out!r}", _F1_VALUE not in out)
+
+
+def test_f1_round3_glued_rule_does_not_over_redact_ordinary_names() -> None:
+    """The glued rule binds credential-word chains only: names merely ENDING in a name word stay."""
+    for name in ("monkey", "decode", "barcode", "zipcode", "statuscode", "keyboard", "codec",
+                 "turkey", "hockey", "donkey", "estate", "realestate", "compass", "bypass",
+                 "mypass", "decoded", "ticketing", "design", "assist"):  # fmt: skip
+        out = lr.redact_text(f"GET /x?{name}=plainvalue1 HTTP/1.1")
+        check("FTF-0904-F1", f"QP-GLUED over-redacted {name}: {out!r}", "plainvalue1" in out)
+    check("FTF-0904-F1", "glued rule is bounded", lr._is_glued_compound("a" * 5000) is False)
+    check("FTF-0904-F1", "glued rule: empty name", lr._is_glued_compound("") is False)
+
+
+_F3_HEADS = (
+    "sk-abcdefgh12",
+    "ghp_" + "a1B2c3D4" * 5,
+    "AKIA" + "ABCDEFGH23456789",
+)
+_F3_TAILS = ("." + _F1_VALUE, "x" + _F1_VALUE, "." + "Tail9" * 40, "-" + "t" * 70 + _F1_VALUE)
+
+
+def test_f1_round3_redacted_head_swallows_the_whole_value_tail() -> None:
+    """QP-GUARD-NO-TAIL / QP-GUARD-TAIL-BOUNDED-64: an earlier rule redacts the head of a value
+    and more value follows (including a tail longer than 64 characters)."""
+    for name in ("code", "state", "key"):
+        for head in _F3_HEADS:
+            for tail in _F3_TAILS:
+                out = lr.redact_text(f"{name}={head}{tail}&x=1")
+                residue = tail.lstrip(".-x")
+                check(
+                    "FTF-0904-F1",
+                    f"QP-GUARD-TAIL {name}={head[:6]}..{tail[:8]}: leaked {out!r}",
+                    residue not in out and out.endswith("&x=1"),
+                )
+                check(
+                    "FTF-0904-F1",
+                    f"QP-GUARD-TAIL not idempotent {out!r}",
+                    lr.redact_text(out) == out,
+                )
+
+
+def test_f1_round3_empty_value_does_not_end_the_scan() -> None:
+    """QP-BREAK-ON-EMPTY-VALUE: an empty value followed by a secret one."""
+    for name_a in ("code", "error", "x", "state"):
+        for name_b in ("state", "code", "key", "sessionKey"):
+            for sep in ("&", "&&", "&amp;", "; ", ", "):
+                text = f"GET /cb?{name_a}={sep}{name_b}={_F1_VALUE} HTTP/1.1"
+                out = lr.redact_text(text)
+                check("FTF-0904-F1", f"QP-BREAK-ON-EMPTY {text!r}: leaked {out!r}", _F1_VALUE not in out)
+    for text in (f"?code=&state={_F1_VALUE}", f"?error=&code={_F1_VALUE}", f"code= state={_F1_VALUE}"):
+        out = lr.redact_text(text)
+        check("FTF-0904-F1", f"QP-BREAK-ON-EMPTY {text!r}: leaked {out!r}", _F1_VALUE not in out)
+
+
+_F3_TERMINATORS = set(" \t\r\n&,;\"'}])")
+
+
+def test_f1_round3_value_class_covers_every_admitted_character() -> None:
+    """QP-VALUE-STOPS-AT-*: for EVERY printable character the value class admits, a value that
+    carries it mid-way is redacted whole (Google OAuth codes contain `/`, `+` and `%`)."""
+    admitted = [c for c in map(chr, range(33, 127)) if c not in _F3_TERMINATORS]
+    check("FTF-0904-F1", "value-class table is non-trivial", {"/", "+", "%", "~", "@"} <= set(admitted))
+    for char in admitted:
+        for name in ("code", "state", "sessionKey"):
+            text = f"GET /cb?{name}=4{char}0Ab{_F1_VALUE} HTTP/1.1"
+            out = lr.redact_text(text)
+            check(
+                "FTF-0904-F1",
+                f"QP-VALUE-STOPS-AT {char!r} in {name}: leaked {out!r}",
+                _F1_VALUE not in out and out.endswith(" HTTP/1.1"),
+            )
+
+
 FAULTS: list[tuple[str, str, str, int]] = [
     # --- rules removed one at a time -------------------------------------------------
     ("F01 header rule removed", '    ("header", _HEADER),\n', "", 1),
@@ -2740,9 +2883,79 @@ FAULTS += [
     (f"F1-name {name!r} dropped from _QUERY_PARAM_NAMES", f'        "{name}",\n', "", 1)
     for name in (
         "key", "sig", "auth", "session", "jwt", "code", "state", "verifier", "ticket", "otp",
-        "pass", "sid", "sessid", "phpsessid", "jsessionid",
+        "totp", "hotp", "pass", "sid", "sessid", "phpsessid", "jsessionid",
     )
 ]  # fmt: skip
+
+# round 3 (FTF-0904-F1-r3): each fault removes one protection added or pinned this round
+FAULTS += [
+    (
+        "F1r3-whole-name lookup dropped (QP-CASE-SPLIT)",
+        "    if lowered in _QUERY_PARAM_NAMES:\n        return True\n",
+        "",
+        1,
+    ),
+    (
+        "F1r3-glued rule off (QP-GLUED-COMPOUND)",
+        '    return _is_glued_compound(_NAME_WORD_SPLIT.sub("", lowered))',
+        "    return False",
+        1,
+    ),
+    (
+        "F1r3-glued rule case-sensitive (UPPER/Title compounds leak)",
+        '_is_glued_compound(_NAME_WORD_SPLIT.sub("", lowered))',
+        '_is_glued_compound(_NAME_WORD_SPLIT.sub("", name))',
+        1,
+    ),
+    (
+        "F1r3-glued rule matches any suffix (over-redacts monkey/decode)",
+        "    return any(lowered.endswith(name) and reach[size - len(name)] for name in _QUERY_PARAM_NAMES)",
+        "    return any(lowered.endswith(name) for name in _QUERY_PARAM_NAMES)",
+        1,
+    ),
+    (
+        "F1r3-glued run bound too small",
+        "_MAX_GLUED_NAME = 64",
+        "_MAX_GLUED_NAME = 12",
+        1,
+    ),
+    (
+        "F1r3-glued chain limited to a single prefix word",
+        "            if start >= 0 and reach[start] and lowered.startswith(word, start):",
+        "            if start == 0 and lowered.startswith(word, start):",
+        1,
+    ),
+    (
+        "QP-GUARD-NO-TAIL (marker consumed without the glued tail)",
+        '\[REDACTED\\][^\\s&,;"\'}\\])]*+|',
+        "\\[REDACTED\\]|",
+        1,
+    ),
+    (
+        "QP-GUARD-TAIL-BOUNDED-64 (glued tail capped at 64)",
+        '\\[REDACTED\\][^\\s&,;"\'}\\])]*+|',
+        '\\[REDACTED\\][^\\s&,;"\'}\\])]{0,64}|',
+        1,
+    ),
+    (
+        "QP-BREAK-ON-EMPTY-VALUE (empty value ends the scan)",
+        "            if value is None:\n                continue",
+        "            if value is None:\n                break",
+        1,
+    ),
+    (
+        "QP-VALUE-STOPS-AT-SLASH",
+        '|[^\\s&,;"\'}\\])]++"""',
+        '|[^\\s&,;"\'}\\])/]++"""',
+        1,
+    ),
+    (
+        "QP-VALUE-STOPS-AT-PLUS-PCT",
+        '|[^\\s&,;"\'}\\])]++"""',
+        '|[^\\s&,;"\'}\\])+%]++"""',
+        1,
+    ),
+]
 
 
 def _run_mutant(fault_id: str, old: str, new: str, count: int) -> tuple[bool, str]:
