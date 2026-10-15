@@ -7719,10 +7719,10 @@ FTF-0504:
   proving_test: tests/tasks/test_ftf_0504.py
 
 FTF-0505:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: XLSX importer
-  evidence_hash: 62ef4927dbf4a3ac2493e8e236a4450c8d474631
+  evidence_hash: 870ec2ef1abd97d6b7b0fc6cda776272cb944ba1
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
@@ -7815,7 +7815,7 @@ FTF-0505:
     LookupError/ValueError from an unreadable XML encoding declaration. Full detail and the fault ->
     RED table: docs/certifications/submissions/2026-10-15T1100Z-FTF-0505-r4.md. Not run here: the
     xlsx-import-integration job (needs Postgres + SeaweedFS); it runs in CI.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0505.py
 FTF-0506:

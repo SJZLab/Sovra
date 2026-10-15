@@ -11705,3 +11705,16 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   all checks passed" (live TLS). V16/V18 met; production refuses impossible counts over the wire (68 probes). Return:
   wire-level faults W1/W2 (and W3) GREEN - the impossible-count clause is pinned only at the aggregate helper. Stopping
   rule set.
+
+## 2026-10-15T22:45Z — CERTIFIED: FTF-0505
+- **FTF-0505: CERTIFIED** (round 5, under the stopping rule; PR #841, merge 870ec2ef1abd97d6b7b0fc6cda776272cb944ba1, head 26103880, content d0f7827f).
+  Producer session_01AjM5eMb48sLdAMW7afMoh6 (earlier rounds session_015Xyndpbs1EYDT52c8rdAfw, session_012PAwsP4rRhEgkzajPGfmm3
+  and others) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI: 75/75 success, ci-verdict 116639788507; gate
+  116581026656 step 89 (FTF-0505) and steps 85-88 (0502-P1/0502/0503/0504) success; xlsx-import-integration 116581139802
+  "FTF-0505 XLSX import (PG16 + SeaweedFS): all checks passed"; mutation-gate 116581026495 13/13. Round-5 points: schema
+  digest on mapping_column_missing identical to round 3 (3,000-workbook differential: 2,998 identical, 2 = round-3
+  crashes fixed in r4); blank_lines position-independent (324 runs), R4-HEADER-ERROR-RAISED-EARLY RED; production-constant
+  sharedStrings tables end to end and the 50,000,000-cell cap via a seeded counter, evidence_hash refreshed. No
+  regression: 5,891 B file 92 MB; 1,200 x 2 MiB rows 92/93 MB; cap shapes 80-205 MiB; fuzz 0 raised. 155/165 faults RED
+  (all 138 round-4 REDs still RED; GREEN = equivalents, exempted header-bound variants and 4 hand-picked variants with
+  production correct - advisories A1/A2). Outage check discriminating. UNWIRED.

@@ -24977,3 +24977,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-15T20:22Z — Control plane: FTF-0213-S1 returned (r3)
 - **Returned:** FTF-0213-S1 r3 (0f, tests only): real-wire negative/zero usage modes, W1/W2/W3 RED; stopping rule.
+
+## 2026-10-15T22:45Z — Control plane: FTF-0505 CERTIFIED
+- **Certified:** FTF-0505 (#841, merge 870ec2ef) under the stopping rule; UNWIRED. All four R1 importers certified.
