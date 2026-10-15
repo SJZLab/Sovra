@@ -24953,3 +24953,33 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-15T09:14Z — Control plane: FTF-H010-P3a returned (r4)
 - **Returned:** FTF-H010-P3a r4 (0e): behaviour-only kill signal, 4 casefold/depth rows, survivor ruling, stopping rule.
+
+## 2026-10-15T15:40Z — PROVISIONAL: FTF-0904-W1-F1 (redacting traceback printer accepts keyword extras)
+Relay lane C, PR #831 (`relay/FTF-0904-W1-F1-r1`, merged `f7646ecf`). Child slice of certified FTF-0904-W1
+(QUEUE.md Backlog, Control-plane 2026-10-14T14:23Z, advisory A1). Not self-certified (Law 4). No spec-matrix
+entry exists for child slices (precedent: FTF-0213-S1, FTF-0502-P1-F1), so none is edited.
+
+- **Defect and fix:** `apps/api/app/log_redaction_setup.py`'s `_print_exception` (replacing
+  `traceback.print_exception`) had no `**kwargs`. Python 3.13's own fallback printer
+  (`traceback._print_exception_bltin`, reached when `sys.excepthook` is reset, raises, or is deleted, and by
+  pdb post-mortem) calls it with `colorize=`, raising `TypeError` and falling back to the raw,
+  non-redacting printer. Fixed by accepting and ignoring extra keywords (`**_ignored`). A2 (callers printing
+  `traceback.format_exc()` themselves) and A3 (top-level `SystemExit(str)`) stay disclosed, unchanged.
+- **Tests** (`tests/tasks/test_ftf_0904_w1.py`, already a `gate` step): three real-subprocess probes (reset /
+  raising / deleted `sys.excepthook`) proving the canary is never printed and no `TypeError` occurs; a
+  presence check for `sys.excepthook`/`threading.excepthook`/`sys.unraisablehook`/`warnings.showwarning`
+  (on 3.13 the keyword fix makes the explicit hook replacements behaviourally redundant for two existing
+  faults, F7/F8 — the presence check keeps them pinned, since 3.11/3.12 still rely on them). New fault F15
+  (drop `**_ignored`) RED; all 14 pre-existing faults re-run RED.
+- **Mutation gate (uncapped):** 3 run / 3 KILLED / 0 SURVIVED / 100.0% (837.2s).
+- **Verification:** `ruff`/`ruff format`/`mypy` clean; `product_truth_check`/`validate_spec --strict`/
+  `status.py`/`data_exposure_check` unaffected (no table, bucket, identity, route or contract touched).
+- **CI note:** this PR's own `gate` was red for several hours on the unrelated FTF-1505 stale-baseline false
+  positive (same root cause as PR #827, see `docs/progress/2026-10-15T1300Z-relay.md`), plus a genuine,
+  separately-fixed `mutation-gate` timeout (the 14-fault test ran faults serially at ~4.3 min; parallelized
+  4-way across its own app copies/ports, bringing it under CI's 300s window). Fixed by merging `main`
+  (FTF-1505 round 2's real baseline) into the branch; `ci-verdict` green on the merged head `8646ed59`.
+- Full fault table and mutation-gate evidence:
+  `docs/certifications/submissions/2026-10-15T1030Z-FTF-0904-W1-F1.md`.
+
+Not self-certified (Law 4). Needs L2 verification by a different session.
