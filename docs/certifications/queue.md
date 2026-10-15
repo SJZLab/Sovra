@@ -24971,3 +24971,9 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-15T19:59Z — Control plane: FTF-1304-S1 returned (r3)
 - **Returned:** FTF-1304-S1 r3 (0b, tests only): cross-attempt currency, alias step-kind, currency case/whitespace pins; stopping rule.
+
+## 2026-10-15T20:22Z — Control plane: FTF-0906 returned (r2)
+- **Returned:** FTF-0906 r2 (0j): evidence-complete verifier, mandatory stores, scan/ledger-bound inspections, positive control, unobserved outcome, skip RED, report binding, gate step, faults. Allowlist: none.
+
+## 2026-10-15T20:22Z — Control plane: FTF-0213-S1 returned (r3)
+- **Returned:** FTF-0213-S1 r3 (0f, tests only): real-wire negative/zero usage modes, W1/W2/W3 RED; stopping rule.

@@ -11687,3 +11687,21 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   binding cost attribution tests: all checks passed"; mutation-gate 85/85. Production fixes for both round-1 findings
   verified (128 probes, 0 violations). Return: V2-CUR-PER-ATTEMPT (re-opens the round-1 harm), V2-DSK-ALIAS-STEP-KIND,
   V2-CUR-CASEFOLD/STRIP GREEN (Law 1). Stopping rule set.
+
+## 2026-10-15T20:22Z — RETURNED: FTF-0906 (r1)
+- **FTF-0906: RETURNED** (round 1 → 2; PR #832, merge 23056b0f8e4b95f1c22f15c7a3722e92bab46150, head 44fa8461).
+  Producer sessions session_012YYPmoT6SxFqSkgjmhjmu3, session_01CP1PPBTsTDUFx8sXeGuj7E ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI: 76/76 success, ci-verdict 116627746042; egress-verification-integration
+  116553524506 "all checks passed" (real run); mutation-gate 116553361962 172/172. Enforcement (FTF-H006 guard) sound
+  over real sockets. Return: verify_egress passes with unattributed/unplanned leaks, caller-narrowed coverage,
+  fabricated (unscanned) inspections, vacuous positive control, allow-flow/enforcement mismatch, encrypted-capture
+  loophole, hard-coded "not_seen"; integration skip exits 0; report not bound to policy/scope; no gate step; F3/F4/F5/F7
+  GREEN. Mutation allowlist ruling: nothing allowlisted (uncapped 172/172; the one equivalent mutant was refactored away).
+
+## 2026-10-15T20:22Z — RETURNED: FTF-0213-S1 (r2)
+- **FTF-0213-S1: RETURNED** (round 2 → 3, tests only; PR #842, merge a1ede6f83d51bbc72f6f026a4cf6145de7fd1cb1, head c406a7f5).
+  Producer session_01C9XVgQr6CtYks3VQ9QhNah ≠ certifier session_01QVznorVMjnmcttUhyDnoGR (merge-of-main commit c406a7f5
+  has no trailer). CI: 75/75 success, ci-verdict 116626142220; gate 116582417443 "FTF-0213-S1 constrained-choice probe:
+  all checks passed" (live TLS). V16/V18 met; production refuses impossible counts over the wire (68 probes). Return:
+  wire-level faults W1/W2 (and W3) GREEN - the impossible-count clause is pinned only at the aggregate helper. Stopping
+  rule set.
