@@ -24954,6 +24954,9 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-15T09:14Z — Control plane: FTF-H010-P3a returned (r4)
 - **Returned:** FTF-H010-P3a r4 (0e): behaviour-only kill signal, 4 casefold/depth rows, survivor ruling, stopping rule.
 
+## 2026-10-15T14:14Z — Control plane: FTF-1505 returned (r3)
+- **Returned:** FTF-1505 r3 (0h): fault matrix, run-time seeds, log lane, decode completeness, fail-closed omissions, redaction, artifacts, PR-scoped history lane; stopping rule.
+
 ## 2026-10-15T15:40Z — PROVISIONAL: FTF-0904-W1-F1 (redacting traceback printer accepts keyword extras)
 Relay lane C, PR #831 (`relay/FTF-0904-W1-F1-r1`, merged `f7646ecf`). Child slice of certified FTF-0904-W1
 (QUEUE.md Backlog, Control-plane 2026-10-14T14:23Z, advisory A1). Not self-certified (Law 4). No spec-matrix

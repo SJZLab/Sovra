@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-15T09:14Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-15T14:14Z. Source: `python3 scripts/status.py` on main.
 - **Status: 151/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,9 @@ Updated: 2026-10-15T09:14Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-15T14:14Z:**
+  - Returned: FTF-1505 r3 (secret scanning: no real exposed credential anywhere and every allowlist entry reviewed; but 16 deliberate scanner breakages go unnoticed by its tests, some files and archive members are skipped silently, and the hash of a newly found secret is printed to the CI log, where a weak one can be reversed). Stopping rule set for round 3.
+  - Backlog refill: FTF-H011 (dataset preview, field mapping and purpose approval - six slices; P1 preview runner ready) and FTF-R006 (Argilla review with per-reviewer identity and immutable approved export - four slices; P1 Argilla deployment, client and reviewer identity ready; Redis 7.2.x for its permissive licence, owner ask only if it cannot run Argilla).
 - **2026-10-15T09:14Z:**
   - Returned: FTF-H010-P3a r4 (tests only - production still correct; 11 mutants were "killed" only by a text check, 4 of them hiding real gaps in tests for duplicate keys, list depth, duplicate shards and target matching). Stopping rule set for round 4.
   - Backlog refill: FTF-0519 (immutable split manifest - freezes the training/validation/dev/held-out split with its hashes and grants; held-out data cannot be read through the training path) designed as two slices; P1 is ready.
@@ -30269,3 +30272,45 @@ evidence tables were not redone this round either.
 STEP 3: this file, the submission, and the shift log (`docs/progress/2026-10-14T1500Z-relay.md`) all updated
 this shift. STEP 4 stop condition (a): PR #801 merged PROVISIONAL, awaiting Control-plane L2 re-review — one
 item per shift, per this list's own precedent. No new owner ask. `BLOCKER.md` unchanged — no live entries.
+
+## 2026-10-15T1300Z — Scheduled relay shift, branch `claude/wizardly-fermat-kwyc0r` — fixed stale-base
+## false-positive red CI on PRs #825/#827/#831 (FTF-1505 baseline); investigated and declined FTF-0906's
+## equivalent-mutant survivors
+
+STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`. STEP 0.1: `BLOCKER.md` had no live entry.
+STEP 0.2: no `cognee-cli` binary — text-search fallback declared.
+
+Returned work first: three open `[relay]` PRs had red `gate` CI on an identical signature --
+`tests/tasks/test_ftf_1505.py`'s history-lane scan flagging `AKIAIOSFODNN7EXAMPLE` (AWS's own public
+documentation example key, already a reviewed baseline entry on `main`) as unbaselined. Root cause:
+all three branches (`relay/FTF-0904-F1-r3` #825, `relay/FTF-1704-r1` #827,
+`relay/FTF-0904-W1-F1-r1` #831) last merged `main` before PR #829 (FTF-1505 round 2) landed, so
+`tests/security/secret_scan_baseline.yaml` did not exist on any of their branches at all --
+confirmed directly (`git cat-file -e <head>:tests/security/secret_scan_baseline.yaml` failed on all
+three) and the fingerprint recomputed by hand
+(`sha256("aws_access_key_id\0AKIAIOSFODNN7EXAMPLE")`) matched the existing baseline entry
+bit-for-bit. Fixed by merging current `main` into each branch (clean, no conflicts) and pushing.
+Confirmed by direct evidence: the dedicated `secret-scanning` job and `mutation-gate` both completed
+GREEN on all three afterward. The combined `gate` job itself stalled on an unrelated, already
+precedented slow step (`FTF-0904 negative-test proof` -- the 2026-10-14T08:50:00Z shift's own entry
+above already logged "one anomalously slow ~60-minute step" on this same step) past this shift's own
+observation window; subscribed this session to PR activity on all three rather than block further.
+Full root-cause trace and evidence in `docs/progress/2026-10-15T1300Z-relay.md`.
+
+Investigated PR #832 (FTF-0906-r1, a newly-claimed item from a prior shift, not previously in the
+Active list this shift read) for its own `mutation-gate` red (11 survivors): traced every one to a
+field validated to one exact canonical member at construction time by a frozen dataclass's own
+`__post_init__` (in this module or in FTF-0905's own already-certified `PlacementRecord`), making
+`.strip().lower()` a true no-op -- genuine equivalent mutants. The PR's own test file already
+discloses this explicitly (`test_member_rejects_case_and_whitespace_variants` docstring) as the
+producer's own considered judgment, using the same bypass-construction technique elsewhere in the
+same file where it *was* a real gap. Left untouched -- resolving it needs a Control-plane
+`docs/certifications/mutation-allowlist.yaml` decision (`RELAY_FORBIDDEN_EXACT`), not a relay
+override of the producer's own reasoning.
+
+STEP 3: this file and `docs/progress/2026-10-15T1300Z-relay.md` updated this shift (plain docs-only
+PR, not `[relay]`-titled, so direct edits to the shared files are allowed). STEP 4 stop condition
+(a): three previously-red relay PRs' root cause fixed and confirmed by direct evidence
+(`secret-scanning`/`mutation-gate` green); `ci-verdict` itself not yet concluded when this shift
+ended, stalled on an already-precedented slow step unrelated to this fix. No `BLOCKER.md` entry (no
+systemic failure). No new owner ask.
