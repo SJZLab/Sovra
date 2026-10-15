@@ -11592,3 +11592,21 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   byte cap, ruling (b) ImportLimits, vbaProject type. Return: kept-cell shared-string amplification (5,891 B -> 4,993 MB,
   completed); position-dependent row outcome; 764 MiB at the shared-strings cap; 12 observable faults GREEN; no
   never-raises fuzz test; evidence item 10 missing while the submission claimed nothing deferred.
+
+## 2026-10-15T08:34Z — RETURNED: FTF-1304-S1 (r1)
+- **FTF-1304-S1: RETURNED** (round 1 → 2; PR #820, merge 938e777e853abd9a8a1dad44e696afb172ec5657, head 52b2a635).
+  Producer session_01M8hpLyAAKtJwVbTMzYRcp6 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 74/74 checks success,
+  ci-verdict 116248811227; gate 116213943686 "FTF-1304-S1 Compound binding cost attribution tests: all checks passed".
+  Certified modules untouched (no Law 15 requalification); ci.yml additive only. Return: mixed-currency calls summed into
+  a priced total (USD+JPY, USD+EUR; §32); default-route step_kind hard-coded as `reasoning` (never-inferred rule; design
+  refinement adds CompoundBinding.default_step_kind). Child slice: no count change.
+
+## 2026-10-15T08:34Z — RETURNED: FTF-0512-F1 (r2); FTF-0512 stays DECERTIFIED
+- **FTF-0512-F1: RETURNED** (round 2 → 3; PR #819, merge 04c47880b3ca7ac75bc5ffaffe0ed6e184dce503, head f72733c8).
+  Producer session_01GhpysYTBd23W39D9WmNm6X ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 116240683038
+  success; gate 116200149662 ran test_ftf_0512_f1 / 0512 / 0518 / 0513 / 0515 / 0516-P1 ("all checks passed");
+  mutation-gate 22/22 killed. Closed: NFKC digit merge (1,131 No/Nl x 7 contexts), kasra+shadda run, Cf inertness,
+  idempotence, tool-id FG2/FI/FJ/FK, detector version in digest. Return: combining-run bound bypassed via NFKD
+  non-starters (U+0F73 run, 2 MiB in 1,724 s on CPython 3.11, the declared floor); FB2, detector-version and three
+  tool/role/json requalification faults GREEN; NFKC So/modifier-letter folds still fuse with neighbours; text-anchor
+  faults are not behavioural evidence. FTF-0512 does not requalify (stays DECERTIFIED, Law 15).

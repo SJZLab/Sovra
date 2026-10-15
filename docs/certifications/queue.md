@@ -24941,3 +24941,9 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-15T06:09Z — Control plane: FTF-0505 returned (r4)
 - **Returned:** FTF-0505 r4 (0d): queued shared-string amplification, position-independent rows, cap RSS, 12 pins, fuzz test, evidence.
+
+## 2026-10-15T08:34Z — Control plane: FTF-1304-S1 returned (r2)
+- **Returned:** FTF-1304-S1 r2 (0b): currency on windows + mixed-currency refusal; declared default_step_kind.
+
+## 2026-10-15T08:34Z — Control plane: FTF-0512-F1 returned (r3)
+- **Returned:** FTF-0512-F1 r3 (0c): NFKD non-starter bound after Cf strip (3.11), FB2 pin, detector-version pin, role/json/id negatives, So/modifier folds, behavioural faults. FTF-0512 stays DECERTIFIED.
