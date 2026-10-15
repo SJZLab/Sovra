@@ -102,6 +102,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
@@ -189,10 +190,28 @@ class NormalizedDuplicateReport:
         return not self.issues and not self.blocking_groups
 
 
+def _strip_format_characters(text: str) -> str:
+    # Unicode category Cf (zero-width space/joiner/non-joiner, word joiner,
+    # BOM, soft hyphen, bidi controls, ...): invisible, so two texts that
+    # differ only in them are the same text to a reader (FTF-0512-F1).
+    return "".join(char for char in text if unicodedata.category(char) != "Cf")
+
+
 def _normalize_text(text: str) -> str:
-    lowered = text.lower()
-    redacted = _ISO_TIMESTAMP_PATTERN.sub("<generated_timestamp>", lowered)
-    redacted = _UUID_PATTERN.sub("<generated_id>", redacted)
+    # FTF-0512-F1: fold look-alikes first, so every later rule sees one
+    # canonical spelling. Cf is stripped BEFORE NFKC so an invisible character
+    # cannot split a compatibility/composition sequence; NFKC never produces
+    # or alters a Cf character (checked over all of Unicode), so one pass is
+    # enough.
+    folded = unicodedata.normalize("NFKC", _strip_format_characters(text))
+    lowered = folded.lower()
+    # Generated IDs/timestamps are REMOVED, not replaced by a placeholder:
+    # Section 10 method 3 says "remove", and a placeholder word would keep a
+    # record that carries a timestamp distinct from the same text without
+    # one (the one-sided case) while colliding with a text that literally
+    # says "generated timestamp".
+    redacted = _ISO_TIMESTAMP_PATTERN.sub(" ", lowered)
+    redacted = _UUID_PATTERN.sub(" ", redacted)
     no_punctuation = _PUNCTUATION_PATTERN.sub(" ", redacted)
     return _WHITESPACE_PATTERN.sub(" ", no_punctuation).strip()
 
