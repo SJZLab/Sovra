@@ -12155,7 +12155,7 @@ FTF-1505:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Secret scanning
-  evidence_hash: 32e92342af9afe75baa9a6c7dd7ffdc086dfb4bb
+  evidence_hash: f829749e19f248e7d8fc60962165dd24515c50f2
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26;
