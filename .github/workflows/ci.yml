@@ -279,6 +279,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_1303.py
       - name: FTF-1304 negative-test proof (Cost-per-success calculator catches real defects, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1304.py
+      - name: FTF-1304-S1 negative-test proof (Compound binding cost attribution catches real defects, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_1304_s1.py
       - name: FTF-0500 negative-test proof (DatasetSourceConnection schema/API/RBAC, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0500.py
       - name: FTF-H006 negative-test proof (Shared outbound URL and credential guard, no DB required)
