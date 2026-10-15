@@ -8764,7 +8764,7 @@ FTF-0518:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Split leakage detector
-  evidence_hash: 32c392cb99e5914d59234005bf373749ec1ef7da
+  evidence_hash: 433a9260422765a30250f45340786cc500ebe3cf
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-23; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0513,
@@ -8795,15 +8795,18 @@ FTF-0518:
     fabricated content) -- verify_report round 1 missed exactly this for methods_run/methods_not_run,
     accepting a self-sealed clear/leakage_found report that disclosed skipping the 4 semantic methods.
     Closed by a dedicated cross-check: reason_code is None (the only case a clear/leakage_found status
-    can derive from) now requires methods_run == METHODS and methods_not_run == (); every other forgery
-    class (status/reason/finding/review tampering) was already refused via the status-and-reason-derived
-    canonical-hash check, which this does not change.
+    can derive from) now requires methods_run == METHODS and methods_not_run == (); tampering that leaves
+    the hash stale or the status/reason/finding/review fields inconsistent with each other is refused via
+    the status-and-reason-derived canonical-hash check, which this does not change. A fully self-consistent
+    forgery (findings dropped, status re-derived, hash recomputed) is still accepted (G7/G7b/G7c): an
+    unkeyed sha256 cannot refuse it, and report authenticity belongs to FTF-0519 persistence.
     Disclosed: the hashing embedding is a lexical proxy (FTF-0513); prior development vs current
     development, same-role pairs and prior-vs-prior are not checked; no persistence of findings or
     reviews; no live caller yet, so proving_symbol stays blank. Caller contract: FTF-0519 / the training
     workflow calls this AND FTF-0515 assert_clear_for_training. Not self-certified (Law 4). See
     docs/certifications/submissions/2026-10-14T0925Z-FTF-0518.md and
-    docs/certifications/submissions/2026-10-14T1741Z-FTF-0518-r2.md.
+    docs/certifications/submissions/2026-10-14T1741Z-FTF-0518-r2.md and
+    docs/certifications/submissions/2026-10-14T2340Z-FTF-0518-r3.md.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0518.py
