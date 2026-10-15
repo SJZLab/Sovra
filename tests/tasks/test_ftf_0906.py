@@ -1243,8 +1243,7 @@ MUTATIONS = [
     ),
     (
         "required-store coverage no longer forces overall incomplete",
-        r"elif missing_required or any\(v\.status == \"incomplete\" "
-        r"for v in flow_verdicts\):",
+        r"elif missing_required or any\(v\.status == \"incomplete\" " r"for v in flow_verdicts\):",
         'elif any(v.status == "incomplete" for v in flow_verdicts):',
         5,
     ),
