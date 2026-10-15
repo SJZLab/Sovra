@@ -11635,3 +11635,32 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   committed seeds; live log lane without positive control; incomplete quick gate + silent 2000-candidate cap; silent
   omissions (non-ASCII name, >50 MB, corrupt archive, history-only archive); unsalted hash of new findings printed and
   reversed; real CI uploads unscanned; 08:43Z PR-scoped history ruling not yet met. Stopping rule set.
+
+## 2026-10-15T17:21Z — RETURNED: FTF-1704 (r1)
+- **FTF-1704: RETURNED** (round 1 → 2; PR #827, merge bd4066f4e153b96c9b181222626bb52a910487ad, head 0a48faf6).
+  Producer session_01DZpiSUyr8YTzvyBRiji5oc ≠ certifier session_01QVznorVMjnmcttUhyDnoGR (head merge-of-main commit has
+  no trailer - flagged). CI: 75/75 success, ci-verdict 116509504910; gate 116436463183 "FTF-1704 Validation dataset
+  tests: all checks passed"; development-suite-import-integration 116436611994 "all checks passed". ci.yml additive.
+  FTF-0518 scan clear (partners=5000). Return: development cases unlabelled (synthetic provenance missing); freeze
+  does not bind record content (faults A, K GREEN).
+
+## 2026-10-15T17:21Z — RETURNED: FTF-0505 (r4)
+- **FTF-0505: RETURNED** (round 4 → 5; PR #826, merge bfbc750763f5956a86fcd263341b0c9a9652db87, head b81c1da9).
+  Producer session_015Xyndpbs1EYDT52c8rdAfw ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 74/74 success,
+  ci-verdict 116484896266; xlsx-import-integration 116410845729 "all checks passed" (real stop s3); gate 116410709371
+  step 88 success; mutation-gate 116410709155 154/154 killed (diff mode). All six round-4 points closed in production.
+  Return (small): source_schema_sha256 dropped from mapping_column_missing reports (regression, undisclosed);
+  R4-HEADER-ERROR-RAISED-EARLY GREEN (blank_lines position-dependent in failed reports); production-constant tables
+  and evidence_hash refresh. Stopping rule set.
+
+## 2026-10-15T17:21Z — CERTIFIED (child slice): FTF-0904-W1-F1
+- **FTF-0904-W1-F1: CERTIFIED (L2)** (round 1; PR #831, merge f7646ecfc8d56cef80774c0c1d6191f038614683, head 8646ed59).
+  Producer session_01DZpiSUyr8YTzvyBRiji5oc ≠ certifier session_01QVznorVMjnmcttUhyDnoGR (the certifier produced the
+  parent W1 slice, which a separate session certified; this one-line follow-up is relay-produced). CI: 74/74 success,
+  ci-verdict 116514435690; gate 116436470784 step 185 "fault F15-print-exception-no-extra-keywords: RED", F1–F14 RED,
+  "FTF-0904-W1 live log redaction tests: all checks passed"; mutation-gate 3/3 killed. Local: test_ftf_0904_w1 all checks
+  passed with 15/15 faults RED on CPython 3.11/3.12/3.13 (Law 15 requalification of W1: live uvicorn socket, boot
+  failures incl. --workers 2/--reload children, hooks); test_ftf_0905 passed. Probes: every print_exception/print_exc
+  keyword and positional mix redacted and never raised; 3.13 fallback paths redacted. Advisories: CI has no 3.13 lane;
+  a hook reset by application code after create_app() prints raw (no such code exists); the write guard is unpinned.
+  Child slice: no count change.
