@@ -487,6 +487,64 @@ def test_supported_purposes_matches_ftf_0500_vocabulary() -> None:
     )
 
 
+def test_requalification_role_json_value_and_tool_ids_stay_distinct() -> None:
+    """FTF-0512-F1 round 3 item 4 (Law 15): role structure, JSON tool-result
+    values (case, width) and tool-call identifiers are meaningful and survive
+    byte-for-byte; none is a formatting variant."""
+
+    def roles(first: str, second: str) -> dict[str, object]:
+        return {
+            "messages": [
+                _text_content(role=first, text="hi"),
+                _text_content(role=second, text="ok"),
+            ],
+            "metadata": {},
+        }
+
+    check(
+        "FTF-0512",
+        "swapping roles with identical text is a different conversation",
+        compute_normalized_text_hash(roles("user", "assistant"))
+        != compute_normalized_text_hash(roles("assistant", "user")),
+    )
+    check(
+        "FTF-0512",
+        "a user/assistant pair is not a user/user pair",
+        compute_normalized_text_hash(roles("user", "assistant"))
+        != compute_normalized_text_hash(roles("user", "user")),
+    )
+
+    def json_value(value: object) -> dict[str, object]:
+        return {
+            "messages": [
+                _text_content(role="user", text="go"),
+                {"role": "tool", "content": [{"type": "json", "value": value}]},
+            ],
+            "metadata": {},
+        }
+
+    for left, right in [("Approved", "approved"), ("ok", "ｏｋ"), ({"A": "B"}, {"a": "b"})]:
+        check(
+            "FTF-0512",
+            f"json tool-result value {left!r} vs {right!r} are distinct outcomes",
+            compute_normalized_text_hash(json_value(left))
+            != compute_normalized_text_hash(json_value(right)),
+        )
+
+    def call_id(identifier: str) -> dict[str, object]:
+        return _conversation_with_tool_call(
+            "go", {"id": identifier, "name": "lookup", "arguments": {"k": "v"}}
+        )
+
+    for variant in ["CALL_1", "ｃａｌｌ_1", "call\u200b_1"]:
+        check(
+            "FTF-0512",
+            f"tool call id {variant!r} is a different identifier from 'call_1'",
+            compute_normalized_text_hash(call_id("call_1"))
+            != compute_normalized_text_hash(call_id(variant)),
+        )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
