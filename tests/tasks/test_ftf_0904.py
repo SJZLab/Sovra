@@ -332,7 +332,7 @@ def test_variants_url_encoded_base64_and_split() -> None:
 def test_benign_text_survives() -> None:
     for text in (
         "job 42 finished in 130 ms",
-        "request_id=req-1 state=running",
+        "request_id=req-1 state_of=running",
         "GET https://api.example.com/v1/models?limit=10 -> 200",
         "",
     ):
@@ -1380,6 +1380,26 @@ def _adversarial_shape(label: str, size: int) -> str:
         return "a" * size
     if label == "userinfo-scheme-run-sep":
         return "a" * (size - 3) + "://"
+    if label == "qp-delim-run":
+        return "&" * size
+    if label == "qp-name-run":
+        return "code" * (size // 4)
+    if label == "qp-assign-run":
+        return "a=" * (size // 2)
+    if label == "qp-code-assign-run":
+        return "code=" * (size // 5)
+    if label == "qp-redacted-run":
+        return "code=[REDACTED]" * (size // 15)
+    if label == "qp-camel-run":
+        # `"aB" * (size // 2)` is already `size` chars when `size` is even (every sweep size
+        # is); the trailing "=" pushed the top 262144-char tier to 262145, one over
+        # MAX_TEXT_LENGTH, so redact_text raised LogRedactionError instead of exercising
+        # the camelCase scan at the real top size (the timing check still "passed" --
+        # `_timed_redact`'s child catches the error and still reports an elapsed time -- so
+        # this silently measured the oversize fail-closed path, not the shape itself).
+        return ("aB" * (size // 2))[: size - 1] + "="
+    if label == "qp-name-then-delim-run":
+        return "code=" + "&" * (size - 5)
     raise ValueError(label)  # pragma: no cover - every label above is listed in _ALL_LABELS
 
 
@@ -1421,6 +1441,13 @@ _ALL_LABELS = (
     "pair-bracket-tab-run",
     "jwt-glued-alnum-run",
     "jwt-glued-x-run",
+    "qp-delim-run",
+    "qp-name-run",
+    "qp-assign-run",
+    "qp-code-assign-run",
+    "qp-redacted-run",
+    "qp-camel-run",
+    "qp-name-then-delim-run",
 )
 _ADVERSARIAL = {label: _adversarial_shape(label, _SIZE) for label in _ALL_LABELS}
 
@@ -1748,6 +1775,8 @@ def _long_secret_cases(marker: str) -> list[tuple[str, str]]:
         ("key_value-bare", f"token={marker}"),
         ("key_value-quoted", f'token="{marker}"'),
         ("key_value-escaped-quote", 'token=\\"' + marker + '\\"'),
+        ("query_param", f"GET /cb?x=1&code={marker}"),
+        ("query_param-no-delimiter", f"session_key={marker}"),
         ("base64", b64_inner),
         ("percent", "GET /x?q=" + quote("password=" + marker, safe="")),
     ]
@@ -2078,6 +2107,8 @@ _F1_SEPARATORS = {
     "double-percent": "%253D",
     "fullwidth": "＝",
     "percent-fullwidth": "%EF%BC%9D",
+    "double-percent-fullwidth": "%25EF%25BC%259D",
+    "triple-percent-fullwidth": "%2525EF%2525BC%25259D",
 }
 
 
@@ -2094,6 +2125,20 @@ def _f1_cases() -> list[tuple[str, str]]:
                     ("semicolon", "GET /x?a=1;{p}"),
                     ("fragment", "redirect https://h/cb#{p}"),
                     ("callback", "GET /auth/callback?{p}&other=1 HTTP/1.1"),
+                    # round 2 (QP-POS-SERIALIZED): serialized without `?`, and form bodies
+                    ("line-start", "{p}&other=1"),
+                    ("after-space", "params {p} other=1"),
+                    ("after-quote", 'params="{p}"'),
+                    ("after-slash", "GET /x/{p}"),
+                    ("after-comma", "args=(1,{p})"),
+                    ("after-pipe", "a|{p}|b"),
+                    # `{p}` must be the very first thing after the blank line, with nothing
+                    # else (no `&`) between the newline and the key -- a prior version put it
+                    # after "grant_type=authorization_code&", which is independently caught by
+                    # the "&" there regardless of whether "after newline" is supported at all,
+                    # so dropping that support never changed this case's outcome (confirmed by
+                    # a real CI run: the fault that simulates its absence stayed GREEN).
+                    ("form-body", "POST /token\n\n{p}&x=1"),
                 ):
                     cases.append(
                         (f"{name}/{cased}/{sep_label}/{pos_label}", template.format(p=pair))
@@ -2124,8 +2169,8 @@ def test_f1_benign_look_alikes_survive() -> None:
     for text in (
         "GET /x?keyboard=us&codec=h264&statement=ok&sigma=1 HTTP/1.1",
         "state_of=running code_path=/srv keys=3",
-        "the code=5 and state=ok words outside any query string",
         "GET /x?a=1&mykey=zzz",
+        "monkey=1 passage=2 ticketing=3 sidebar=4 authority=5 other=6 session_count=7",
     ):
         check(
             "FTF-0904-F1",
@@ -2138,6 +2183,103 @@ def test_f1_benign_look_alikes_survive() -> None:
         "the rule never removes text outside the parameter value",
         "GET /x?state=" in out,
     )
+
+
+# --- FTF-0904-F1 round 2 ---------------------------------------------------------------------
+
+_F1_COMPOUND_NAMES = (
+    "session_key", "sessionKey", "SESSION-KEY", "auth_code", "authCode", "access_code",
+    "code_verifier", "codeVerifier", "oauth_verifier", "api.key", "PHPSESSID", "JSESSIONID",
+    "SESSID", "sid", "connect.sid", "ticket", "service_ticket", "otp", "pass", "login_otp",
+)  # fmt: skip
+# one family per row; a fault dropping the family from `_QUERY_PARAM_NAMES` must go RED
+_F1_FAMILIES = {
+    "key": ("session_key", "sessionKey", "SESSION-KEY", "api.key"),
+    "code": ("auth_code", "authCode", "access_code"),
+    "verifier": ("code_verifier", "codeVerifier", "oauth_verifier"),
+    "sessid": ("PHPSESSID", "JSESSIONID", "SESSID"),
+    "sid": ("sid", "connect.sid"),
+    "ticket": ("ticket", "service_ticket"),
+    "otp": ("otp", "login_otp"),
+    "pass": ("pass",),
+}
+
+
+def test_f1_round2_name_class_membership_is_isolated() -> None:
+    """`"jsessionid"` (and every name whose literal spelling also happens to contain
+    `_SECRET_KEY_WORDS`'s own `session[_-]?id` substring) is independently redacted by the
+    pre-existing, unrelated `_KEY_VALUE` rule even with no help from `_QUERY_PARAM_NAMES` at
+    all -- a real CI run confirmed dropping "jsessionid" from the set stayed GREEN end-to-end
+    (`redact_text`), because that overlap masks it. Asserting `_is_query_param_name` directly
+    isolates this rule's own membership test from that overlap."""
+    for name in ("jsessionid", "key", "sig", "auth", "session", "jwt", "code", "state"):
+        check(
+            "FTF-0904-F1",
+            f"_is_query_param_name({name!r}) is not True",
+            lr._is_query_param_name(name) is True,
+        )
+    check(
+        "FTF-0904-F1",
+        "_is_query_param_name('notaname') is not False",
+        lr._is_query_param_name("notaname") is False,
+    )
+
+
+def test_f1_round2_name_class_is_redacted() -> None:
+    check(
+        "FTF-0904-F1",
+        "every compound in a family row is also in _F1_COMPOUND_NAMES",
+        {n for names in _F1_FAMILIES.values() for n in names} <= set(_F1_COMPOUND_NAMES),
+    )
+    for name in _F1_COMPOUND_NAMES:
+        for template in ("GET /x?{p} HTTP/1.1", "{p}&x=1", "Set {p} now"):
+            text = template.format(p=f"{name}={_F1_VALUE}")
+            out = lr.redact_text(text)
+            check("FTF-0904-F1", f"QP-NAME-CLASS {name}: leaked {out!r}", _F1_VALUE not in out)
+
+
+def _f1_idempotence_inputs() -> list[str]:
+    texts = [text for _, text in _f1_cases()]
+    texts += [
+        f"GET /auth/callback?code={_F1_VALUE}&state={_F1_VALUE}2#jwt={_F1_VALUE}3 HTTP/1.1",
+        "code=[REDACTED] state=[REDACTED] #jwt=[REDACTED]",
+        "code=[REDACTED]x",
+    ]
+    return texts
+
+
+def test_f1_round2_redaction_is_idempotent() -> None:
+    """QP-IDEM-GUARD: one pass already yields `#jwt=[REDACTED]]` when the rule has no
+    `[REDACTED]` guard; the sink then re-redacts the formatted line. Pass 2 must equal pass 1,
+    and no output may contain `]]` or a doubled marker."""
+    for text in _f1_idempotence_inputs():
+        once = lr.redact_text(text)
+        twice = lr.redact_text(once)
+        check("FTF-0904-F1", f"QP-IDEM-GUARD {text!r}: {once!r} -> {twice!r}", once == twice)
+        check("FTF-0904-F1", f"QP-IDEM-GUARD stray bracket in {once!r}", "]]" not in once)
+
+
+def test_f1_round2_live_logging_output_is_clean() -> None:
+    line = f"GET /auth/callback?code={_F1_VALUE}&state={_F1_VALUE}2#jwt={_F1_VALUE}3 HTTP/1.1"
+    with _Harness() as h:
+        logging.getLogger("t").error("%s", line)
+        logging.getLogger("t").error(line)
+        outputs = h.outputs()
+    seen = "\n".join(outputs)
+    check("FTF-0904-F1", f"QP-IDEM-GUARD live output: {seen!r}", "]]" not in seen)
+    check("FTF-0904-F1", "live output keeps the callback path", "/auth/callback" in seen)
+    check("FTF-0904-F1", f"live output leaked: {seen!r}", _F1_VALUE not in seen)
+    for output in outputs:
+        check(
+            "FTF-0904-F1",
+            f"live output not idempotent {output!r}",
+            lr.redact_text(output) == output,
+        )
+
+
+def test_f1_round2_non_name_key_does_not_swallow_a_later_name() -> None:
+    out = lr.redact_text(f"foo=code={_F1_VALUE} bar=state={_F1_VALUE}2")
+    check("FTF-0904-F1", f"a non-name key swallowed a name: {out!r}", "Zq7Lm2" not in out)
 
 
 FAULTS: list[tuple[str, str, str, int]] = [
@@ -2512,55 +2654,95 @@ FAULTS: list[tuple[str, str, str, int]] = [
         r"(?P<scheme>[A-Za-z]",
         1,
     ),
+    ("F1-rule removed", '    ("query_param", _QUERY_SECRET_PARAM),\n', "", 1),
     (
-        "F1-key query parameter name dropped from the rule",
-        "(?:key|sig|auth|session|jwt|code|state)",
-        "(?:sig|auth|session|jwt|code|state)",
+        "F1-rule requires a delimiter before the name (round 1 shape)",
+        'if match.start() < pos or not _is_query_param_name(match.group("key")):',
+        'if match.start() < pos or not _is_query_param_name(match.group("key")) '
+        'or match.start() == 0 or text[match.start() - 1] not in "?&;#":',
         1,
     ),
     (
-        "F1-sig query parameter name dropped from the rule",
-        "(?:key|sig|auth|session|jwt|code|state)",
-        "(?:key|auth|session|jwt|code|state)",
+        "F1-position line-start dropped",
+        'if match.start() < pos or not _is_query_param_name(match.group("key")):',
+        "if match.start() < pos or match.start() == 0 "
+        'or not _is_query_param_name(match.group("key")):',
         1,
     ),
     (
-        "F1-auth query parameter name dropped from the rule",
-        "(?:key|sig|auth|session|jwt|code|state)",
-        "(?:key|sig|session|jwt|code|state)",
+        "F1-position after-space dropped",
+        'if match.start() < pos or not _is_query_param_name(match.group("key")):',
+        'if match.start() < pos or (match.start() and text[match.start() - 1] == " ") '
+        'or not _is_query_param_name(match.group("key")):',
         1,
     ),
     (
-        "F1-session query parameter name dropped from the rule",
-        "(?:key|sig|auth|session|jwt|code|state)",
-        "(?:key|sig|auth|jwt|code|state)",
+        "F1-position after-quote dropped",
+        'if match.start() < pos or not _is_query_param_name(match.group("key")):',
+        'if match.start() < pos or (match.start() and text[match.start() - 1] in "\\"\'") '
+        'or not _is_query_param_name(match.group("key")):',
         1,
     ),
     (
-        "F1-jwt query parameter name dropped from the rule",
-        "(?:key|sig|auth|session|jwt|code|state)",
-        "(?:key|sig|auth|session|code|state)",
+        "F1-position after-slash/comma/pipe dropped",
+        'if match.start() < pos or not _is_query_param_name(match.group("key")):',
+        'if match.start() < pos or (match.start() and text[match.start() - 1] in "/,|(") '
+        'or not _is_query_param_name(match.group("key")):',
         1,
     ),
     (
-        "F1-code query parameter name dropped from the rule",
-        "(?:key|sig|auth|session|jwt|code|state)",
-        "(?:key|sig|auth|session|jwt|state)",
+        "F1-position form-body (after newline) dropped",
+        'if match.start() < pos or not _is_query_param_name(match.group("key")):',
+        'if match.start() < pos or (match.start() and text[match.start() - 1] == "\\n") '
+        'or not _is_query_param_name(match.group("key")):',
         1,
     ),
     (
-        "F1-state query parameter name dropped from the rule",
-        "(?:key|sig|auth|session|jwt|code|state)",
-        "(?:key|sig|auth|session|jwt|code)",
+        "F1-idempotence guard dropped (no [REDACTED] alternative)",
+        'r"""\\[REDACTED\\][^\\s&,;"\'}\\])]*+|[^\\s&,;"\'}\\])]++"""',
+        'r"""[^\\s&,;"\'}\\])]++"""',
         1,
     ),
     (
-        "F1-rule key not exact (matches inside longer names)",
-        "(?P<key>(?<=[?&;#])(?:",
-        "(?P<key>(?<=[?&;#])(?:\\w*",
+        "F1-name class: only the whole name, not the last word",
+        "return bool(words) and words[-1].lower() in _QUERY_PARAM_NAMES",
+        "return name.lower() in _QUERY_PARAM_NAMES",
+        1,
+    ),
+    (
+        "F1-name class: camelCase boundary not split",
+        'words = [w for w in _NAME_WORD_SPLIT.split(_CAMEL_BOUNDARY.sub("_", name)) if w]',
+        "words = [w for w in _NAME_WORD_SPLIT.split(name) if w]",
+        1,
+    ),
+    (
+        "F1-name class: name matched anywhere in the key (substring)",
+        "return bool(words) and words[-1].lower() in _QUERY_PARAM_NAMES",
+        "return any(n in name.lower() for n in _QUERY_PARAM_NAMES)",
+        1,
+    ),
+    (
+        "F1-decoded layers not NFKC'd after the first",
+        "layer = _normalise(unquote(layer))  # a decoded fullwidth",
+        "layer = (_normalise if layer is segment else str)(unquote(layer))  # a decoded fullwidth",
+        1,
+    ),
+    (
+        "F1-NFKC dropped from every decoded layer",
+        "layer = _normalise(unquote(layer))  # a decoded fullwidth",
+        "layer = unquote(layer)  # a decoded fullwidth",
         1,
     ),
 ]
+
+# every name in `_QUERY_PARAM_NAMES` is its own fault: dropping any one must turn a check RED
+FAULTS += [
+    (f"F1-name {name!r} dropped from _QUERY_PARAM_NAMES", f'        "{name}",\n', "", 1)
+    for name in (
+        "key", "sig", "auth", "session", "jwt", "code", "state", "verifier", "ticket", "otp",
+        "pass", "sid", "sessid", "phpsessid", "jsessionid",
+    )
+]  # fmt: skip
 
 
 def _run_mutant(fault_id: str, old: str, new: str, count: int) -> tuple[bool, str]:
