@@ -4743,6 +4743,253 @@ def test_size_boundaries_at_the_production_constants() -> None:
     )
 
 
+# --- round 4: queued rows hold references, rows do not depend on byte position, compact
+# --- shared strings, seeded never-raises fuzz ----------------------------------------------
+
+
+def ref_cell(index: int) -> Cell:
+    """A shared-string cell pointing at `index` of an overridden sst."""
+    return RAWC('<c r="{ref}" t="s"><v>' + str(index) + "</v></c>")
+
+
+def run_traced(data: bytes, **kwargs: Any) -> tuple[xi.XlsxImportOutcome, int]:
+    import tracemalloc
+
+    tracemalloc.start()
+    try:
+        # accepted candidates are dropped as they arrive (the helper `run` keeps them all)
+        outcome = xi.run_xlsx_import(
+            make_reader(data),
+            build_mapping(**kwargs),
+            verified_content_type=XLSX_TYPE,
+            dataset_purpose="training",
+            expected_sha256=hashlib.sha256(data).hexdigest(),
+            on_accepted=lambda _c: None,
+        )
+        _current, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    return outcome, peak
+
+
+def test_r4_queued_rows_hold_references_not_decoded_copies() -> None:
+    """SST-DECODE-PER-ROW-BLOCK (round 4, item 1): a kept shared-string cell used to decode
+    a fresh copy per reference, and a whole 64 KiB XML block of rows is queued before the
+    event loop sees any of them -- ~2,500 rows x two 128 KiB references held ~600 MB of
+    copies of two 128 KiB strings. The queued rows must hold the reference, so the peak
+    stays near the strings' own size whatever the row count."""
+    big = 128 * 1024
+    sst = shared_xml(["q", "a", "x" * big, "y" * big]).encode("utf-8")
+    rows = [[ref_cell(0), ref_cell(1)]] + [[ref_cell(2), ref_cell(3)] for _ in range(2500)]
+    data = book(rows, shared_override=sst)
+    outcome, peak = run_traced(data)
+    check(
+        CID,
+        "2,500 rows each referencing two 128 KiB strings import",
+        outcome.report.state == "completed" and outcome.report.records_accepted == 2500,
+    )
+    check(
+        CID,
+        f"peak memory ({peak}) stays under 24 MiB, not the ~600 MB of per-reference copies",
+        peak < 24 * 1024 * 1024,
+    )
+    # the same shape with both rows still ahead of `wanted` (the header's own block) and
+    # past it: two sizes of file, one bound
+    few = book(
+        [[ref_cell(0), ref_cell(1)]] + [[ref_cell(2), ref_cell(3)] for _ in range(300)],
+        shared_override=sst,
+    )
+    outcome_few, peak_few = run_traced(few)
+    check(
+        CID,
+        f"300 rows (inside the header's block) peak ({peak_few}) is also under 24 MiB",
+        outcome_few.report.state == "completed" and peak_few < 24 * 1024 * 1024,
+    )
+
+
+def test_r4_a_rows_outcome_does_not_depend_on_its_byte_position() -> None:
+    """HEADER-BLOCK-POSITION (round 4, item 2): the same row of 40 unmapped references to
+    one 2 MiB string (80 MiB of cells) was fatal `field_too_large` inside the header's 64 KiB
+    block (kept in full for want of `wanted`) and completed past it. Apply `wanted` the moment
+    the header row ends, so a row's outcome is the same wherever it sits."""
+    cap = ic.DEFAULT_LIMITS.max_record_bytes
+    sst = shared_xml(["q", "a", "z" * cap, "p", "c"]).encode("utf-8")
+    wide = [ref_cell(3), ref_cell(4)] + [ref_cell(2) for _ in range(40)]
+    filler = [ref_cell(3), ref_cell(4)]
+    results = []
+    for before in (0, 1, 200, 900, 1800):
+        rows = [[ref_cell(0), ref_cell(1)], *[filler] * before, wide, filler]
+        outcome, _peak = run_traced(book(rows, shared_override=sst))
+        results.append((before, outcome.report.state, outcome.report.failure_code))
+    check(
+        CID,
+        f"the wide unmapped row gives one outcome at every byte position ({results})",
+        len({(state, code) for _b, state, code in results}) == 1 and results[0][1] == "completed",
+    )
+
+
+def test_r4_short_shared_strings_at_the_cap_fit_the_quota() -> None:
+    """SST-CAP-RSS (round 4, item 3): 764 MiB peak at the 256 MiB cap of SHORT strings (a
+    `bytes` object plus a list slot per string: ~2.6x the part). The store must be compact:
+    measured in a fresh subprocess at 32 MiB (the ratio is the same at 256 MiB), for the two
+    shortest shapes (a two-byte text, the shortest that is not CPython's cached one-byte `bytes` and an empty `<si/>`), the import's peak RSS growth stays
+    within the cap itself."""
+    import subprocess
+
+    script = f"""
+import ctypes, hashlib, sys
+sys.path.insert(0, {str(ROOT)!r})
+sys.path.insert(0, {str(ROOT / "tests" / "tasks")!r})
+from workers.data import import_common as ic
+from workers.data import xlsx_importer as xi
+import test_ftf_0505 as t
+
+shape = sys.argv[1]
+cap = 32 * 1024 ** 2
+head = t.XML_HEAD + '<sst xmlns="' + t.MAIN + '"><si><t>q</t></si><si><t>a</t></si>'
+item = '<si><t>ab</t></si>' if shape == "text" else '<si/>'
+count = (cap - len(head) - 64) // len(item)
+sst = (head + item * count + '</sst>').encode()
+assert len(sst) <= cap
+data = t.book([[t.ref_cell(0), t.ref_cell(1)], [t.ref_cell(0), t.ref_cell(1)]], shared_override=sst)
+del sst
+
+import gc
+gc.collect()
+ctypes.CDLL("libc.so.6").malloc_trim(0)
+def status_kb(field):
+    with open("/proc/self/status") as f:
+        for line in f:
+            if line.startswith(field):
+                return int(line.split()[1])
+with open("/proc/self/clear_refs", "w") as f:
+    f.write("5")  # reset the peak (VmHWM) to the current RSS: building the payload is not the import
+before = status_kb("VmRSS")
+reader = t.make_reader(data, 64 * 1024)
+outcome = xi.run_xlsx_import(
+    reader,
+    t.build_mapping(),
+    verified_content_type=t.XLSX_TYPE,
+    dataset_purpose="training",
+    expected_sha256=hashlib.sha256(data).hexdigest(),
+    limits=ic.ImportLimits(max_xlsx_shared_strings_bytes=cap),
+    on_accepted=lambda c: None,
+)
+print(outcome.report.state, outcome.report.failure_code, count, status_kb("VmHWM") - before)
+"""
+    cap = 32 * 1024**2
+    for shape in ("text", "empty"):
+        result = subprocess.run(
+            [sys.executable, "-c", script, shape], capture_output=True, text=True, timeout=300
+        )
+        check(CID, f"{shape}: the subprocess ran: {result.stderr[-1500:]}", result.returncode == 0)
+        if result.returncode != 0:
+            continue
+        state, code, count, growth_kb = result.stdout.strip().split()
+        growth = int(growth_kb) * 1024
+        check(CID, f"{shape}: {count} strings import ({state} {code})", state == "completed")
+        check(
+            CID,
+            f"{shape}: the import's peak RSS growth {growth} ({growth / cap:.2f}x the "
+            f"{cap}-byte cap, {count} strings) stays within the cap",
+            growth < cap,
+        )
+
+
+def _mutate_text(rng: Any, text: str) -> str:
+    pieces = [
+        "_xD83D_",
+        "_xDE00_",
+        "<c/>",
+        "</row>",
+        "<row>",
+        "<v>",
+        "</v>",
+        "<f>1</f>",
+        ' t="s"',
+        ' t="zz"',
+        ' r="A0"',
+        ' r="ZZZZ9"',
+        "99999999999",
+        "-1",
+        "\x00",
+        "&amp;",
+        "<![CDATA[",
+        "<!DOCTYPE x>",
+        "<is><t>",
+        "</t></is>",
+        "<si>",
+        "</si>",
+    ]
+    out = text
+    for _ in range(rng.randint(1, 4)):
+        if not out:
+            break
+        i = rng.randrange(len(out))
+        op = rng.randint(0, 3)
+        if op == 0:
+            out = out[:i] + out[i + rng.randint(1, 20) :]
+        elif op == 1:
+            out = out[:i] + rng.choice(pieces) + out[i:]
+        elif op == 2:
+            j = rng.randrange(len(out))
+            out = out[:i] + out[j : j + rng.randint(1, 60)] + out[i:]
+        else:
+            out = out[:i] + chr(rng.randint(1, 0x2FF)) + out[i + 1 :]
+    return out
+
+
+def test_r4_seeded_never_raises_fuzz() -> None:
+    """Round 4, item 5: a seeded byte + XML fuzz. `run_xlsx_import` never raises -- every
+    outcome is a typed report -- whatever bytes the archive or its XML parts carry."""
+    import random
+
+    rng = random.Random(0x0505F)
+    rows = [
+        [S("q"), S("a"), S("n")],
+        [S("hi"), IS("there"), N("3")],
+        [S("مرحبا"), IS("x"), F()],
+        [EMPTY(), E(), STR("s")],
+    ]
+    base_sheet = sheet_xml(rows, Shared())
+    sst = Shared()
+    sheet_with_sst = sheet_xml(rows, sst)
+    base_sst = shared_xml(sst.strings)
+    base = book(rows)
+    raised: list[str] = []
+    states: dict[str, int] = {}
+    for iteration in range(1500):
+        kind = iteration % 3
+        if kind == 0:  # raw byte flips on the whole archive
+            blob = bytearray(base)
+            for _ in range(rng.randint(1, 6)):
+                blob[rng.randrange(len(blob))] = rng.randrange(256)
+            data = bytes(blob)
+        elif kind == 1:  # XML-level mutation of the sheet, archive re-zipped valid
+            data = book(
+                raw_sheet=_mutate_text(rng, sheet_with_sst).encode("utf-8", "replace"),
+                shared_override=base_sst.encode(),
+            )
+        else:  # XML-level mutation of the shared strings
+            data = book(
+                raw_sheet=sheet_with_sst,
+                shared_override=_mutate_text(rng, base_sst).encode("utf-8", "replace"),
+            )
+        try:
+            _events, outcome = run(data, chunk=rng.choice([None, 1, 7, 4096]))
+        except Exception as exc:  # noqa: BLE001 -- the property under test
+            raised.append(f"iteration {iteration}: {type(exc).__name__}: {exc}")
+            continue
+        states[outcome.report.state] = states.get(outcome.report.state, 0) + 1
+    del base_sheet
+    check(CID, f"no fuzzed workbook raised: {raised[:3]}", not raised)
+    check(
+        CID,
+        f"the fuzz reaches both completed and failed outcomes ({states})",
+        states.get("completed", 0) > 0 and states.get("failed", 0) > 0,
+    )
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
