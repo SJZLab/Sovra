@@ -770,9 +770,11 @@
       "blockers": []
     },
     "FTF-0503": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "f653debd4e6e0a6624dbdb6a81549b372a36d640"
+      ],
       "independent_review": null,
       "blockers": []
     },
