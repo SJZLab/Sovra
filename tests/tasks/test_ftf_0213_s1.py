@@ -219,6 +219,14 @@ def _respond_for(body: dict[str, object]) -> tuple[int, bytes]:
     if mode == "rejecting":
         err = {"error": {"type": "invalid_request_error", "param": "response_format"}}
         return 400, json.dumps(err).encode()
+    if mode == "mid_run_reject":
+        # V16: trial 1 (the first POST _respond_for ever sees for this run) succeeds; every
+        # later trial is rejected -- a later-trial 400 must stop the loop immediately, never
+        # let it continue to a further trial.
+        if len(_GW.bodies) == 1:
+            return 200, _completion(member)
+        err = {"error": {"type": "invalid_request_error", "param": "response_format"}}
+        return 400, json.dumps(err).encode()
     if mode == "truncating":
         return 200, _completion(member, finish="length")
     if mode == "no_usage":
@@ -357,6 +365,18 @@ def test_enforcing_route_records_trials_identity_and_tokens() -> None:
         "detail is content-free",
         "banana" not in result.detail and _SECRET_VALUE not in result.detail,
     )
+
+
+def test_mid_run_400_stops_after_exactly_two_requests() -> None:
+    """V16: a 400 on a later trial (not the first) must stop the probe immediately -- never
+    let the loop continue to the next trial on the strength of an earlier success."""
+    if not _UPDATE_CA_AVAILABLE:
+        return
+    result = _run("mid_run_reject")
+    check("mid-run 400 is unsupported_parameter", result.state == S.UNSUPPORTED_PARAMETER)
+    check("exactly two requests were made", len(_GW.bodies) == 2)
+    check("the third trial was never attempted", len(_GW.bodies) != 3)
+    check("only the first (successful) trial's result was kept", len(result.trials) == 1)
 
 
 def test_usage_missing_is_unknown_not_zero() -> None:
@@ -634,9 +654,61 @@ def test_aggregate_states_are_exact_and_case_sensitive() -> None:
         "one missing usage is USAGE_MISSING",
         _aggregate([_trial(), _trial(tokens=None), _trial()]).state == S.USAGE_MISSING,
     )
+    partial = _aggregate([_trial(), _trial(tokens=None), _trial()])
     check(
-        "zero tokens is a real count, not missing",
-        _aggregate(three(tokens=0)).state == S.CONSTRAINED_OBSERVED,
+        "V18: usage missing on one trial reports no max claim from the others",
+        partial.max_completion_tokens_observed is None,
+    )
+    check(
+        "V18: usage missing on one trial reports no mean claim from the others",
+        partial.mean_completion_tokens is None,
+    )
+    # USAGE-IMPOSSIBLE-COUNT: every trial already proved it answered in-enum with finish_reason
+    # "stop" by the time these checks run, so a reported token count that is negative, or zero
+    # for that non-empty answer, is a gateway lie -- never a real cheap-output metric.
+    check(
+        "a negative completion-token count is MALFORMED_RESPONSE, not a real count",
+        _aggregate(three(tokens=-5)).state == S.MALFORMED_RESPONSE,
+    )
+    check(
+        "one negative-count trial outranks the others' valid usage",
+        _aggregate([_trial(), _trial(tokens=-1), _trial()]).state == S.MALFORMED_RESPONSE,
+    )
+    zero_all = _aggregate(three(tokens=0))
+    check(
+        "zero completion tokens for a non-empty answer is USAGE_MISSING, not a real count",
+        zero_all.state == S.USAGE_MISSING,
+    )
+    check(
+        "zero-token USAGE_MISSING reports no max claim (never a fake 0)",
+        zero_all.max_completion_tokens_observed is None,
+    )
+    check(
+        "zero-token USAGE_MISSING reports no mean claim (never a fake 0)",
+        zero_all.mean_completion_tokens is None,
+    )
+    check(
+        "one zero-count trial among otherwise-valid usage is still USAGE_MISSING",
+        _aggregate([_trial(), _trial(tokens=0), _trial()]).state == S.USAGE_MISSING,
+    )
+
+
+def test_aggregate_requires_exactly_trials_count() -> None:
+    """MUTATION-KILL-BY-TEXT-GUARD: _aggregate_trials refuses to be called with any count
+    other than _TRIALS, so a future change that lets the loop call it early (or extra) is
+    caught here, not by a model that happens to behave the same every time."""
+    for count in (0, 1, 2, probe_module._TRIALS + 1):
+        raised = False
+        try:
+            probe_module._aggregate_trials(
+                tuple(_trial() for _ in range(count)), ["m"] * count, datetime.now(UTC)
+            )
+        except ValueError:
+            raised = True
+        check(f"_aggregate_trials refuses {count} trials (expected {probe_module._TRIALS})", raised)
+    check(
+        "_aggregate_trials accepts exactly _TRIALS trials",
+        _aggregate([_trial()] * probe_module._TRIALS).state == S.CONSTRAINED_OBSERVED,
     )
 
 
