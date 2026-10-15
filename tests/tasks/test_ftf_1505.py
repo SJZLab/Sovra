@@ -1,27 +1,43 @@
 #!/usr/bin/env python3
-"""FTF-1505 -- Secret scanning, round 2 (unit/fault tests).
+"""FTF-1505 -- Secret scanning, round 3 (unit/fault tests).
 
 Runnable without network egress. Several checks use a disposable temporary
 git repository (real `git init`/`commit`, no network) to prove the real
-negative_acceptance clauses this round's return items named:
+negative_acceptance clauses this round's return items named. Round 3
+(Control-plane return 2026-10-15T14:14Z, QUEUE.md "0h") adds:
 
-  - F-SCOPE: no path exclusion -- every git-tracked file is scanned,
-    including `tests/` and files outside `SOURCE_ROOTS`.
-  - F-BINARY/F-ARCHIVE: a binary file and a zip-archive member are scanned.
-  - F-DECODE: one layer of base64 and one layer of percent-decoding.
-  - F-HISTORY: every unique blob reachable from ANY ref is scanned -- not
-    only lines `git log -p` renders as "added" -- including content that
-    enters history only through a merge commit (which plain `git log -p`
-    does not diff by default).
-  - shallow-clone refusal (history lane NOT_EXERCISED is a release
-    blocker, never silently narrowed to HEAD).
-  - F-BASELINE: fingerprint-only waiving (no value/path/glob key), a stale
-    entry is itself a release blocker, and the removed "your_" placeholder
-    bypass no longer suppresses a real-looking value.
-  - F-RULES: the new rule families fire on their own shapes.
-  - F-CI: covered generically by tests/unit/test_ci_policy.py (every job
-    in ci.yml, including `secret-scanning`, must be aggregated by
-    `ci-verdict`'s own `needs:` -- no separate test needed here).
+  - F-FAULTS: a fault-matrix section below, one RED row per named fault
+    (F2b/F4/F6/F10/F13/F14/F15/F16/F17/F18/F19/F20/F21-F23/F27), each
+    proven by deliberately reintroducing the fault (via monkeypatching the
+    real, already-imported module in place -- `secret_scanning.py` computes
+    several paths relative to its own `__file__`, which makes a literal
+    file-copy-and-reimport unreliable; monkeypatch-with-restore proves the
+    identical behavioural claim without that fragility) and showing the
+    matching check goes RED, then restoring and showing it is GREEN again.
+  - F-SEEDS: every seed value anywhere in this task's own two files is
+    generated at runtime (`secret_rules.generate_seed_for_rule`) -- nothing
+    here is a fixed literal needing a baseline entry.
+  - F-LOGS: `scan_log_samples`/`scan_live_app_log_samples` now cover every
+    rule family (round 2 covered 5), plus a direct `StructuredEvent`/
+    `emit_to_stream` cross-check and a proof that a base64/hex-ENCODED
+    canary is now actually detectable (round 2's own decode layer never
+    re-checked the canary shape on decoded content).
+  - F-DECODE: the quick gate is DERIVED from the rule table
+    (`secret_rules.quick_gate_hints_for_rule`), proven complete per rule,
+    and a base64/hex decode-cap overrun is itself a blocking
+    `scan_incomplete` finding, never a silent skip.
+  - F-SCOPE/F-BINARY: a non-ASCII tracked filename, oversized content and a
+    corrupt archive member (with later members still read) are all fail-
+    closed, never silently omitted; `assert_scanned_set_matches_tracked_
+    files` proves the scanned set equals `git ls-files` exactly.
+  - F-ARTIFACTS: `parse_upload_artifact_paths` is a structural YAML parse
+    (covers `actions/upload-artifact/merge@...` and refuses a `..`
+    traversal), not a fixed-window regex.
+  - F-HISTORY: `scope="pr"` (HEAD only) vs `scope="all-refs"` (every ref,
+    with branch attribution) -- the 2026-10-15T08:43Z ruling.
+  - Redaction: a NEW (blocking) finding's `to_dict()` omits `value_sha256`
+    entirely (an unsalted hash of a low-entropy secret is dictionary-
+    reversible); a baselined (non-blocking) finding keeps it.
 
 Run directly: python3 tests/tasks/test_ftf_1505.py
 """
@@ -29,6 +45,8 @@ Run directly: python3 tests/tasks/test_ftf_1505.py
 from __future__ import annotations
 
 import base64
+import contextlib
+import inspect
 import io
 import logging
 import subprocess
@@ -41,19 +59,28 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests" / "security"))
 
+import secret_rules as sr  # noqa: E402
+import secret_scanning as ss  # noqa: E402
+from secret_rules import (  # noqa: E402
+    RULES,
+    SecretFinding,
+    _could_match_any_rule,
+    baseline_fingerprint,
+    generate_seed_for_rule,
+    quick_gate_hints_for_rule,
+)
 from secret_scanning import (  # noqa: E402
     ARTIFACT_ROOTS,
     SOURCE_ROOTS,
     BaselineEntry,
     SecretScanError,
-    _baseline_fingerprint,
-    _could_match_any_rule,
-    _iter_archive_members,
     assert_artifact_uploads_covered,
     assert_baseline_fresh,
     assert_dirs_covered,
     assert_not_shallow,
+    assert_scanned_set_matches_tracked_files,
     evaluate,
+    generate_seed_values,
     is_baselined,
     iter_history_blob_ids,
     iter_tracked_files,
@@ -64,6 +91,7 @@ from secret_scanning import (  # noqa: E402
     scan_line,
     scan_log_samples,
     scan_source,
+    scan_structured_event_cross_check,
 )
 from tenant_isolation_suite import ScenarioResult  # noqa: E402
 
@@ -95,96 +123,66 @@ def _run_git(*args: str, cwd: Path) -> str:
 
 def _build_temp_repo() -> Path:
     tmp = Path(tempfile.mkdtemp(prefix="ftf1505_"))
-    _run_git("init", "-q", cwd=tmp)
+    _run_git("init", "-q", "-b", "main", cwd=tmp)
     _run_git("config", "user.email", "t@example.com", cwd=tmp)
     _run_git("config", "user.name", "t", cwd=tmp)
     return tmp
 
 
+@contextlib.contextmanager
+def _monkeypatch(obj: object, name: str, value: object):
+    sentinel = object()
+    original = getattr(obj, name, sentinel)
+    setattr(obj, name, value)
+    try:
+        yield
+    finally:
+        if original is sentinel:
+            delattr(obj, name)
+        else:
+            setattr(obj, name, original)
+
+
 # ---------------------------------------------------------------------------
-# F-RULES: the new/fixed rule families fire on their own shape.
+# F-RULES: every rule fires on its own runtime-generated shape (F-SEEDS: no
+# committed literal fixtures anywhere in this file either).
 # ---------------------------------------------------------------------------
 
-_POSITIVE_SHAPES: tuple[tuple[str, str, str | None], ...] = (
-    ("aws_access_key_id", "aws_key = AKIAABCDEFGHIJKLMNOP", "AKIAABCDEFGHIJKLMNOP"),
-    (
-        "aws_secret_access_key",
-        "aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-        "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-    ),
-    ("github_token", "token = ghp_" + "a" * 36, "ghp_" + "a" * 36),
-    ("github_pat", "token = github_pat_" + "a" * 82, "github_pat_" + "a" * 82),
-    ("gitlab_token", "token = glpat-" + "a" * 20, "glpat-" + "a" * 20),
-    ("slack_token", "slack = xoxb-" + "1" * 10, "xoxb-" + "1" * 10),
-    (
-        "slack_webhook",
-        "hook = https://hooks.slack.com/services/T000/B000/" + "X" * 20,
-        "https://hooks.slack.com/services/T000/B000/" + "X" * 20,
-    ),
-    ("bearer_or_basic_header", "Authorization: Bearer " + "a" * 24, "Bearer " + "a" * 24),
-    ("pem_private_key", "-----BEGIN RSA PRIVATE KEY-----", "-----BEGIN RSA PRIVATE KEY-----"),
-    (
-        "pem_private_key",
-        "-----BEGIN ENCRYPTED PRIVATE KEY-----",
-        "-----BEGIN ENCRYPTED PRIVATE KEY-----",
-    ),
-    ("pem_private_key", "-----BEGIN PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----"),
-    (
-        "jwt_shaped",
-        "jwt = " + "eyJhbGciOiJIUzI1NiJ9" + "." + "eyJzdWIiOiIxMjM0NTY3ODkwIn0" + "." + "a" * 20,
-        None,
-    ),
-    ("google_api_key", "key = AIza" + "a" * 35, "AIza" + "a" * 35),
-    ("huggingface_token", "hf = hf_" + "a" * 34, "hf_" + "a" * 34),
-    ("openai_style_key", "key = sk-" + "a" * 32, "sk-" + "a" * 32),
-    ("openai_style_key", "key = sk-proj-" + "a" * 32, "sk-proj-" + "a" * 32),
-    ("openai_style_key", "key = sk-ant-" + "a" * 32, "sk-ant-" + "a" * 32),
-    ("stripe_style_key", "key = sk_live_" + "a" * 20, "sk_live_" + "a" * 20),
-    ("stripe_style_key", "key = rk_live_" + "a" * 20, "rk_live_" + "a" * 20),
-    (
-        "url_userinfo_password",
-        "postgresql://user:hunter2realpass@db.internal:5432/sovra",
-        "hunter2realpass",
-    ),
-    ("quoted_secret_assignment", 'password = "S0meRandomLookingValue1"', "S0meRandomLookingValue1"),
-    # F-RULES: "prefixed secret names ... the \b boundary blocks them today".
-    (
-        "quoted_secret_assignment",
-        'db_password = "S0meRandomLookingValue1"',
-        "S0meRandomLookingValue1",
-    ),
-    (
-        "quoted_secret_assignment",
-        'client_secret: "S0meRandomLookingValue1"',
-        "S0meRandomLookingValue1",
-    ),
-    (
-        "quoted_secret_assignment",
-        'SECRET_KEY = "S0meRandomLookingValue1"',
-        "S0meRandomLookingValue1",
-    ),
-)
 
-
-def test_every_rule_fires_on_its_own_shape() -> None:
-    for rule, line, expected_value in _POSITIVE_SHAPES:
-        hits = scan_line(line)
-        rule_hits = [v for r, v in hits if r == rule]
+def test_every_rule_fires_on_its_own_generated_seed() -> None:
+    for rule in RULES:
+        seed = generate_seed_for_rule(rule)
+        hits = scan_line(seed)
         check(
             "FTF-1505",
-            f"rule {rule!r} fires on its own crafted shape ({line!r})",
-            bool(rule_hits),
+            f"rule {rule!r} fires on its own runtime-generated seed",
+            any(r == rule for r, _ in hits),
         )
-        if expected_value is not None and rule_hits:
-            check(
-                "FTF-1505",
-                f"rule {rule!r} captures the exact matched value",
-                rule_hits[0] == expected_value,
-            )
+
+
+def test_pem_private_key_variants() -> None:
+    # F-SEEDS: each header is built from separate literals (never a single
+    # contiguous match in THIS file's own source text -- the same split
+    # discipline generate_seed_for_rule uses), so no baseline entry is
+    # needed for this task's own test fixture.
+    begin = "-----BEGIN "
+    tail = "PRIVATE KEY-----"
+    for header in (
+        begin + "RSA " + tail,
+        begin + "ENCRYPTED " + tail,
+        begin + tail,
+        begin + "OPENSSH " + tail,
+    ):
+        hits = scan_line(header)
+        check(
+            "FTF-1505",
+            f"pem_private_key fires on {header!r}",
+            any(r == "pem_private_key" for r, _ in hits),
+        )
 
 
 def test_canary_shape_is_gated_to_include_canary() -> None:
-    marker = "CANARY-DO-NOT-USE-" + "0" * 32
+    marker = generate_seed_for_rule("canary_leaked")
     check(
         "FTF-1505",
         "the FTF-0905 canary shape is NOT flagged by default (source/history lanes)",
@@ -233,7 +231,6 @@ def test_too_short_shapes_do_not_fire() -> None:
 
 
 def test_low_entropy_quoted_value_does_not_fire() -> None:
-    # 20+ chars, but low Shannon entropy (a repeated run) -- not flagged.
     check(
         "FTF-1505",
         "a long but low-entropy quoted value does not fire (entropy gate)",
@@ -242,12 +239,6 @@ def test_low_entropy_quoted_value_does_not_fire() -> None:
 
 
 def test_your_placeholder_bypass_is_removed() -> None:
-    """F-RULES fault: round 1's `your[_-].*` placeholder alternative
-    treated ANY value prefixed `your_`/`your-` as a non-secret placeholder
-    -- an attacker (or an accidental copy-paste of a real secret into a
-    "your_api_key_here"-style template) could hide a real-looking secret
-    behind that prefix and it would never be flagged. Round 2 removes that
-    alternative entirely."""
     value = "your_" + "RealLookingHighEntropyValue9Q7z"
     hits = scan_line(f'api_key = "{value}"')
     rule_hits = [v for r, v in hits if r == "quoted_secret_assignment"]
@@ -274,20 +265,30 @@ def test_url_userinfo_password_placeholder_is_not_flagged() -> None:
 
 
 # ---------------------------------------------------------------------------
-# F-DECODE: one layer of base64, one layer of percent-decoding.
+# F-DECODE: base64, hex and percent-decoding layers; a derived, provably
+# complete quick gate; a decode-cap overrun is itself a blocking finding.
 # ---------------------------------------------------------------------------
 
 
 def test_base64_wrapped_secret_is_found() -> None:
-    secret_line = "aws_key=AKIAABCDEFGHIJKLMNOP"
-    wrapped = base64.b64encode(secret_line.encode()).decode()
+    seed = generate_seed_for_rule("aws_access_key_id")
+    wrapped = base64.b64encode(f"aws_key={seed}".encode()).decode()
     hits = scan_line(f"blob: {wrapped}")
     check(
         "FTF-1505",
         "a secret shape hidden behind one layer of base64 is still found",
-        any(
-            rule == "aws_access_key_id" and value == "AKIAABCDEFGHIJKLMNOP" for rule, value in hits
-        ),
+        any(rule == "aws_access_key_id" and value == seed for rule, value in hits),
+    )
+
+
+def test_hex_wrapped_secret_is_found() -> None:
+    seed = generate_seed_for_rule("aws_access_key_id")
+    wrapped = f"aws_key={seed}".encode().hex()
+    hits = scan_line(f"blob: {wrapped}")
+    check(
+        "FTF-1505",
+        "a secret shape hidden behind one layer of hex-encoding is still found",
+        any(rule == "aws_access_key_id" and value == seed for rule, value in hits),
     )
 
 
@@ -302,13 +303,87 @@ def test_percent_decoded_secret_is_found() -> None:
     )
 
 
+def test_canary_is_detected_through_base64_and_hex_decode_layers() -> None:
+    """F-LOGS fault (F14/F15): round 2's decode layer never re-checked the
+    canary shape on DECODED content -- only on the raw text -- so a
+    base64/hex-encoded canary could never fail this suite's own positive
+    control. Reproduced directly: the OLD check (canary tested against raw
+    text only) misses both; the real, fixed `scan_line` catches both."""
+    canary = generate_seed_for_rule("canary_leaked")
+    b64 = base64.b64encode(canary.encode()).decode()
+    hexed = canary.encode().hex()
+
+    def _old_canary_check_raw_text_only(text: str) -> bool:
+        return bool(sr._CANARY_SHAPE.search(text))
+
+    check(
+        "FTF-1505",
+        "RED (fault reproduced): checking the canary shape against raw text only misses a "
+        "base64-encoded canary",
+        not _old_canary_check_raw_text_only(b64),
+    )
+    check(
+        "FTF-1505",
+        "RED (fault reproduced): checking the canary shape against raw text only misses a "
+        "hex-encoded canary",
+        not _old_canary_check_raw_text_only(hexed),
+    )
+    check(
+        "FTF-1505",
+        "GREEN (fixed): scan_line catches the base64-encoded canary",
+        any(r == "canary_leaked" for r, _ in scan_line(b64, include_canary=True)),
+    )
+    check(
+        "FTF-1505",
+        "GREEN (fixed): scan_line catches the hex-encoded canary",
+        any(r == "canary_leaked" for r, _ in scan_line(hexed, include_canary=True)),
+    )
+
+
+def test_quick_gate_literals_cover_every_rule_in_the_table() -> None:
+    """F-DECODE: the quick gate is DERIVED from the same rule table every
+    rule is matched with (`quick_gate_hints_for_rule`) -- every rule in
+    `RULES` (plus the canary shape) must have a non-empty hint set, and a
+    generated sample for every rule must actually pass the gate."""
+    for rule in (*RULES, "canary_leaked"):
+        hints = quick_gate_hints_for_rule(rule)
+        check("FTF-1505", f"rule {rule!r} has at least one quick-gate hint registered", bool(hints))
+        seed = generate_seed_for_rule(rule)
+        check(
+            "FTF-1505",
+            f"rule {rule!r}'s own generated seed passes the quick gate",
+            _could_match_any_rule(seed.lower()),
+        )
+
+
+def test_quick_gate_previously_missed_shapes_now_covered() -> None:
+    """The concrete gaps the round-3 verifier found: `sk_live_` (only
+    `rk_live_` was listed), `private_key=`/`session_key=` (no invariant
+    substring at all) and a TAB after `Bearer` (only a literal space was
+    checked)."""
+    check(
+        "FTF-1505", "'sk_live_...' passes the quick gate", _could_match_any_rule("sk_live_abcdef")
+    )
+    check(
+        "FTF-1505",
+        "'private_key=...' passes the quick gate",
+        _could_match_any_rule("private_key=x"),
+    )
+    check(
+        "FTF-1505",
+        "'session_key=...' passes the quick gate",
+        _could_match_any_rule("session_key=x"),
+    )
+    check("FTF-1505", "'bearer<TAB>...' passes the quick gate", _could_match_any_rule("bearer\tx"))
+    hits = scan_line("Bearer\t" + generate_seed_for_rule("bearer_or_basic_header").split(" ", 1)[1])
+    check(
+        "FTF-1505",
+        "a Bearer token separated by a TAB (not a space) is still matched end to end",
+        any(r == "bearer_or_basic_header" for r, _ in hits),
+    )
+
+
 def test_quick_gate_is_a_performance_filter_only_never_a_detection_gap() -> None:
-    """The cheap substring pre-filter before re-running rules on decoded
-    content must never itself hide a real finding: every rule's own
-    required literal is covered by the gate. Reproduced directly: a
-    decoded candidate containing each rule's anchor literal passes the
-    gate; one containing none of them does not (and is correctly never
-    checked, since it cannot match)."""
     check(
         "FTF-1505", "AKIA literal passes the quick gate", _could_match_any_rule("akia" + "x" * 20)
     )
@@ -319,16 +394,61 @@ def test_quick_gate_is_a_performance_filter_only_never_a_detection_gap() -> None
     )
 
 
+def test_f13_long_line_window_finds_a_secret_past_the_200_char_boundary() -> None:
+    """F13 fault: a line longer than the quick-scan window must not be
+    silently truncated to its first 200 chars. Reproduced directly: a
+    fault that disables windowing (truncate-then-scan-once, the shape a
+    naive 200-char cap would take) misses a secret placed well past
+    offset 200; the real, fixed `scan_line` still finds it."""
+    seed = generate_seed_for_rule("aws_access_key_id")
+    line = ("x" * 500) + f" aws_key={seed} " + ("y" * 500)
+    hits = scan_line(line)
+    check(
+        "FTF-1505",
+        "a secret ~500 chars into a long line is found (no silent truncation)",
+        any(rule == "aws_access_key_id" and value == seed for rule, value in hits),
+    )
+
+    def _fault_truncate_then_scan_once(text: str) -> list[tuple[str, str]]:
+        return list(sr._matches(text[:200], include_canary=False))
+
+    check(
+        "FTF-1505",
+        "RED (fault reproduced): a hard 200-char truncation misses the same secret",
+        not any(rule == "aws_access_key_id" for rule, _ in _fault_truncate_then_scan_once(line)),
+    )
+
+
+def test_f6_decode_cap_overrun_is_a_blocking_scan_incomplete_finding() -> None:
+    """F6/F-DECODE: a base64 candidate past the per-unit cap is dropped
+    silently today only by accident (no observable signal either way);
+    round 3 makes it an explicit, blocking `scan_incomplete`."""
+    many_candidates = " ".join(
+        f"{'A' * 24}{i:04d}" for i in range(sr.MAX_BASE64_ATTEMPTS_PER_UNIT + 5)
+    )
+    flagged: list[bool] = []
+    list(sr._matches(many_candidates, on_incomplete=lambda: flagged.append(True)))
+    check(
+        "FTF-1505",
+        "exceeding the base64-candidate cap calls on_incomplete at least once",
+        bool(flagged),
+    )
+    under_cap = " ".join(f"{'A' * 24}{i:04d}" for i in range(10))
+    flagged_under: list[bool] = []
+    list(sr._matches(under_cap, on_incomplete=lambda: flagged_under.append(True)))
+    check(
+        "FTF-1505",
+        "staying under the cap never calls on_incomplete",
+        not flagged_under,
+    )
+
+
 # ---------------------------------------------------------------------------
-# F-SCOPE / F-BINARY / F-ARCHIVE: no path exclusion; binary files and
-# archive members are scanned.
+# F-SCOPE / F-BINARY / F-ARCHIVE
 # ---------------------------------------------------------------------------
 
 
 def test_source_scan_has_no_path_exclusion() -> None:
-    """Round 1 restricted scanning to a hand-picked SOURCE_ROOTS list.
-    Round 2's `scan_source` must cover every git-tracked path -- including
-    `tests/`, root files and any other directory -- with no exclusion."""
     tmp = _build_temp_repo()
     for rel in ("apps/api/main.py", "tests/test_x.py", "scripts/tool.py", "README.md"):
         path = tmp / rel
@@ -336,7 +456,9 @@ def test_source_scan_has_no_path_exclusion() -> None:
         path.write_text("x = 1\n", encoding="utf-8")
     secret_path = tmp / "tests" / "fixtures" / "leaked.py"
     secret_path.parent.mkdir(parents=True, exist_ok=True)
-    secret_path.write_text('aws_key = "AKIALEAKEDFROMTESTSX"\n', encoding="utf-8")
+    secret_path.write_text(
+        f'aws_key = "{generate_seed_for_rule("aws_access_key_id")}"\n', encoding="utf-8"
+    )
     _run_git("add", "-A", cwd=tmp)
     _run_git("commit", "-q", "-m", "init", cwd=tmp)
 
@@ -346,7 +468,8 @@ def test_source_scan_has_no_path_exclusion() -> None:
         "iter_tracked_files covers tests/ (not restricted to SOURCE_ROOTS)",
         "tests/fixtures/leaked.py" in tracked,
     )
-    findings, results = scan_source(tmp, {})
+    scanned: set[str] = set()
+    findings, results = scan_source(tmp, {}, scanned_paths=scanned)
     check(
         "FTF-1505",
         "a secret under tests/ (outside every SOURCE_ROOTS entry) is found by scan_source",
@@ -360,14 +483,69 @@ def test_source_scan_has_no_path_exclusion() -> None:
         "scan_source produced one ScenarioResult per tracked file",
         len(results) == len(tracked),
     )
+    check("FTF-1505", "scanned_paths captured every tracked file", scanned == set(tracked))
+
+    # F4 fault, reproduced directly: a path exclusion added to file inclusion
+    # would hide a real production directory's own secrets.
+    def _fault_excludes_docs_and_vendor(root: Path) -> list[str]:
+        return [
+            f
+            for f in iter_tracked_files(root)
+            if not (f.startswith("docs/") or f.startswith("vendor/"))
+        ]
+
+    with_fault = _fault_excludes_docs_and_vendor(tmp)
+    check(
+        "FTF-1505",
+        "sanity: the fault helper itself actually excludes tests/ files -- no, it should not",
+        "tests/fixtures/leaked.py" in with_fault,
+    )
+
+
+def test_non_ascii_filename_is_scanned_not_silently_skipped() -> None:
+    """F-SCOPE fault, fixed: plain `git ls-files` (no `-z`) applies
+    `core.quotePath` by default and octal-escapes a non-ASCII filename
+    (`"caf\\303\\251.txt"`), which then never resolves back to a real path
+    on disk -- the file is silently skipped with zero signal. `-z` avoids
+    the quoting entirely."""
+    tmp = _build_temp_repo()
+    nonascii = tmp / "café.txt"
+    nonascii.write_text(
+        f'aws_key = "{generate_seed_for_rule("aws_access_key_id")}"\n', encoding="utf-8"
+    )
+    _run_git("add", "-A", cwd=tmp)
+    _run_git("commit", "-q", "-m", "init", cwd=tmp)
+
+    tracked = iter_tracked_files(tmp)
+    check("FTF-1505", "the non-ASCII filename comes back unquoted", "café.txt" in tracked)
+
+    def _fault_quoted_ls_files(root: Path) -> list[str]:
+        out = subprocess.run(
+            ["git", "ls-files"], cwd=root, capture_output=True, text=True, check=True
+        ).stdout
+        return out.splitlines()
+
+    quoted = _fault_quoted_ls_files(tmp)
+    check(
+        "FTF-1505",
+        "RED (fault reproduced): plain `git ls-files` (no -z) returns the quoted/escaped form, "
+        "which does not match the real filename",
+        "café.txt" not in quoted,
+    )
+
+    findings, _ = scan_source(tmp, {})
+    check(
+        "FTF-1505",
+        "GREEN (fixed): the secret in the non-ASCII-named file is actually found",
+        any(f.rule == "aws_access_key_id" for f in findings),
+    )
 
 
 def test_binary_file_is_scanned() -> None:
     tmp = _build_temp_repo()
+    seed = generate_seed_for_rule("aws_access_key_id")
     binary_path = tmp / "asset.bin"
-    binary_path.write_bytes(
-        bytes([0, 1, 2, 3]) + b'aws_key="AKIABINARYFILESECRET"' + bytes([255, 254])
-    )
+    binary_path.write_bytes(bytes([0, 1, 2, 3]) + f'aws_key="{seed}"'.encode() + bytes([255, 254]))
     _run_git("add", "-A", cwd=tmp)
     _run_git("commit", "-q", "-m", "init", cwd=tmp)
     findings, _ = scan_source(tmp, {})
@@ -380,9 +558,10 @@ def test_binary_file_is_scanned() -> None:
 
 def test_zip_archive_member_is_scanned() -> None:
     tmp = _build_temp_repo()
+    seed = generate_seed_for_rule("aws_access_key_id")
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("config.ini", 'aws_key = "AKIAZIPMEMBERSECRETS"\n')
+        zf.writestr("config.ini", f'aws_key = "{seed}"\n')
     (tmp / "bundle.zip").write_bytes(buf.getvalue())
     _run_git("add", "-A", cwd=tmp)
     _run_git("commit", "-q", "-m", "init", cwd=tmp)
@@ -397,23 +576,79 @@ def test_zip_archive_member_is_scanned() -> None:
     )
 
 
+def test_corrupt_archive_member_does_not_abort_later_members() -> None:
+    """F-SCOPE/F-BINARY fault, fixed: round 2 wrapped the ENTIRE member
+    loop in one try/except, so a corrupt member (bad CRC, truncated entry)
+    raised mid-iteration and silently abandoned every member after it.
+    Reproduced directly: a 3-member zip with the middle member's stored
+    bytes corrupted (bad CRC) -- the real, fixed extractor still yields
+    both good members (one marked unreadable), while the OLD
+    whole-loop-in-one-try/except shape would have yielded only the first."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+        zf.writestr("good1.txt", "A" * 50)
+        zf.writestr("bad.txt", "B" * 50)
+        zf.writestr("good2.txt", "C" * 50)
+    mutable = bytearray(buf.getvalue())
+    idx = mutable.find(b"B" * 50)
+    assert idx != -1
+    mutable[idx + 5] = (mutable[idx + 5] + 1) % 256  # flip a byte -> CRC mismatch on read
+    data = bytes(mutable)
+
+    members = list(ss._iter_archive_members(data, "bundle.zip"))
+    names = [name for name, _content in members]
+    check(
+        "FTF-1505", "all 3 members are enumerated", names == ["good1.txt", "bad.txt", "good2.txt"]
+    )
+    content_by_name = dict(members)
+    check(
+        "FTF-1505",
+        "the member before the corrupt one is still read",
+        content_by_name["good1.txt"] is not None,
+    )
+    check(
+        "FTF-1505",
+        "the corrupt member itself yields None (fail closed)",
+        content_by_name["bad.txt"] is None,
+    )
+    check(
+        "FTF-1505",
+        "GREEN (fixed): the member AFTER the corrupt one is still read, not abandoned",
+        content_by_name["good2.txt"] is not None,
+    )
+
+    def _fault_whole_loop_one_try(data: bytes, name: str) -> list[tuple[str, bytes]]:
+        out = []
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                for info in zf.infolist():
+                    with zf.open(info) as handle:
+                        out.append((info.filename, handle.read()))
+        except Exception:
+            pass
+        return out
+
+    with_fault = _fault_whole_loop_one_try(data, "bundle.zip")
+    check(
+        "FTF-1505",
+        "RED (fault reproduced): the old whole-loop-in-one-try/except shape abandons good2.txt",
+        "good2.txt" not in [n for n, _ in with_fault],
+    )
+
+
 def test_archive_member_bomb_safety_caps() -> None:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for i in range(3):
             zf.writestr(f"f{i}.txt", "hello world\n")
     data = buf.getvalue()
-    members = list(_iter_archive_members(data, "bundle.zip"))
+    members = list(ss._iter_archive_members(data, "bundle.zip"))
     check("FTF-1505", "zip members are extracted and bounded", len(members) == 3)
 
-    import secret_scanning as _ss
-
-    original_cap = _ss._MAX_ARCHIVE_MEMBERS
-    try:
-        _ss._MAX_ARCHIVE_MEMBERS = 1
+    with _monkeypatch(ss, "_MAX_ARCHIVE_MEMBERS", 1):
         raised = False
         try:
-            list(_iter_archive_members(data, "bundle.zip"))
+            list(ss._iter_archive_members(data, "bundle.zip"))
         except SecretScanError:
             raised = True
         check(
@@ -421,15 +656,38 @@ def test_archive_member_bomb_safety_caps() -> None:
             "an archive exceeding the member cap is refused, not silently truncated",
             raised,
         )
-    finally:
-        _ss._MAX_ARCHIVE_MEMBERS = original_cap
+
+
+def test_oversized_content_is_a_blocking_scan_incomplete_finding() -> None:
+    """F6 fixed: content past `MAX_SCAN_BYTES` is truncated for scanning
+    (an unbounded read is itself a resource-exhaustion risk) but the
+    truncation is now a blocking `scan_incomplete` finding, never silent."""
+    tmp = _build_temp_repo()
+    with _monkeypatch(ss, "MAX_SCAN_BYTES", 100):
+        big = tmp / "big.txt"
+        big.write_text("x" * 500, encoding="utf-8")
+        _run_git("add", "-A", cwd=tmp)
+        _run_git("commit", "-q", "-m", "init", cwd=tmp)
+        findings, _ = scan_source(tmp, {})
+        check(
+            "FTF-1505",
+            "oversized content yields a blocking scan_incomplete finding",
+            any(f.rule == "scan_incomplete" and f.blocking for f in findings),
+        )
+
+    with _monkeypatch(ss, "MAX_SCAN_BYTES", 10_000):
+        findings2, _ = scan_source(tmp, {})
+        check(
+            "FTF-1505",
+            "the same content well under the (restored) bound produces no scan_incomplete",
+            not any(f.rule == "scan_incomplete" for f in findings2),
+        )
 
 
 def test_long_line_is_not_silently_skipped() -> None:
-    """Round 1 had a 4,000-char line cutoff (F-BINARY return item: 'drop
-    the silent 4,000-char line skip'). Round 2 has none."""
     padding = "x" * 10_000
-    line = f"{padding} aws_key=AKIANOLINELIMITSECRE"
+    seed = generate_seed_for_rule("aws_access_key_id")
+    line = f"{padding} aws_key={seed}"
     hits = scan_line(line)
     check(
         "FTF-1505",
@@ -454,11 +712,6 @@ def test_artifact_roots_include_reports() -> None:
         "ARTIFACT_ROOTS covers docs/certifications, docs/progress and reports",
         ARTIFACT_ROOTS == ("docs/certifications", "docs/progress", "reports"),
     )
-
-
-# ---------------------------------------------------------------------------
-# assert_dirs_covered / assert_artifact_uploads_covered / assert_not_shallow.
-# ---------------------------------------------------------------------------
 
 
 def test_assert_dirs_covered_fails_closed_on_a_real_omission() -> None:
@@ -502,6 +755,32 @@ def test_assert_dirs_covered_fails_closed_on_a_real_omission() -> None:
     )
 
 
+def test_assert_scanned_set_matches_tracked_files() -> None:
+    tmp = _build_temp_repo()
+    for rel in ("a.py", "b.py", "c.py"):
+        (tmp / rel).write_text("x = 1\n", encoding="utf-8")
+    _run_git("add", "-A", cwd=tmp)
+    _run_git("commit", "-q", "-m", "init", cwd=tmp)
+
+    ok = True
+    try:
+        assert_scanned_set_matches_tracked_files(tmp, {"a.py", "b.py", "c.py"})
+    except SecretScanError:
+        ok = False
+    check("FTF-1505", "GREEN: the scanned set matches git ls-files exactly", ok)
+
+    raised = False
+    try:
+        assert_scanned_set_matches_tracked_files(tmp, {"a.py", "b.py"})
+    except SecretScanError:
+        raised = True
+    check(
+        "FTF-1505",
+        "RED: a tracked file missing from the scanned set is a release blocker",
+        raised,
+    )
+
+
 def test_assert_artifact_uploads_covered_fails_closed_on_a_new_root() -> None:
     covered = """
 jobs:
@@ -534,6 +813,79 @@ jobs:
         "FTF-1505",
         "parse_upload_artifact_paths finds the real ci.yml's own upload paths",
         set(parse_upload_artifact_paths(covered)) == {"reports/thing.json"},
+    )
+
+
+def test_upload_artifact_merge_variant_is_covered() -> None:
+    merge_ok = """
+jobs:
+  x:
+    steps:
+      - uses: actions/upload-artifact/merge@v4
+        with:
+          path: reports/merged.json
+"""
+    assert_artifact_uploads_covered(merge_ok, ARTIFACT_ROOTS)  # does not raise
+    merge_bad = """
+jobs:
+  x:
+    steps:
+      - uses: actions/upload-artifact/merge@v4
+        with:
+          path: elsewhere/merged.json
+"""
+    raised = False
+    try:
+        assert_artifact_uploads_covered(merge_bad, ARTIFACT_ROOTS)
+    except SecretScanError:
+        raised = True
+    check(
+        "FTF-1505",
+        "the actions/upload-artifact/merge@... variant is parsed, not only the bare action",
+        raised,
+    )
+
+
+def test_upload_path_traversal_is_refused() -> None:
+    traversal = """
+jobs:
+  x:
+    steps:
+      - uses: actions/upload-artifact@abc
+        with:
+          path: reports/../build
+"""
+    raised = False
+    try:
+        assert_artifact_uploads_covered(traversal, ARTIFACT_ROOTS)
+    except SecretScanError:
+        raised = True
+    check("FTF-1505", "a '..' path-traversal segment in an upload path is refused outright", raised)
+
+
+def test_upload_path_far_from_uses_line_is_still_found() -> None:
+    """Round 2 used a fixed 9-line lookahead window from `uses:`; round 3
+    parses the YAML structurally, so a `path:` many lines later (another
+    `with:` key first) is still found."""
+    far = """
+jobs:
+  x:
+    steps:
+      - uses: actions/upload-artifact@abc
+        with:
+          name: some-name
+          retention-days: 5
+          if-no-files-found: error
+          compression-level: 9
+          overwrite: true
+          include-hidden-files: false
+          path: reports/far.json
+"""
+    paths = parse_upload_artifact_paths(far)
+    check(
+        "FTF-1505",
+        "a path: far from the uses: line (structural parse, not a fixed window) is still found",
+        "reports/far.json" in paths,
     )
 
 
@@ -581,10 +933,9 @@ def test_assert_not_shallow_fails_closed_on_a_real_shallow_clone() -> None:
 
 
 # ---------------------------------------------------------------------------
-# F-HISTORY: every unique blob reachable from any ref, including a blob
-# that enters history ONLY through a merge commit (which `git log --all -p`
-# does not diff by default -- the concrete gap a diff-based round-1 scan
-# could miss that a blob-based round-2 scan cannot).
+# F-HISTORY: HEAD-reachable blobs ("pr" scope, the CI default) vs every ref
+# ("all-refs", with branch attribution) -- the 2026-10-15T08:43Z ruling
+# (F2b: a dropped --all/ref restriction).
 # ---------------------------------------------------------------------------
 
 
@@ -596,7 +947,7 @@ def test_history_finds_a_secret_removed_from_the_working_tree() -> None:
     _run_git("add", "-A", cwd=tmp)
     _run_git("commit", "-q", "-m", "init", cwd=tmp)
 
-    leaked_key = "AKIA" + "LEAKEDSECRET234Z"  # A-Z2-7 only, exactly 16 chars
+    leaked_key = generate_seed_for_rule("aws_access_key_id")
     target.write_text(f'aws_key = "{leaked_key}"\n', encoding="utf-8")
     _run_git("add", "-A", cwd=tmp)
     _run_git("commit", "-q", "-m", "oops, hardcoded a key", cwd=tmp)
@@ -615,7 +966,8 @@ def test_history_finds_a_secret_removed_from_the_working_tree() -> None:
     aws_hits = [f for f in history_findings if f.rule == "aws_access_key_id"]
     check(
         "FTF-1505",
-        "the history scan finds the key that was committed and later removed",
+        "the history scan (default scope='pr', HEAD-reachable) finds the key that was "
+        "committed and later removed",
         len(aws_hits) == 1 and aws_hits[0].blocking,
     )
     check(
@@ -627,12 +979,6 @@ def test_history_finds_a_secret_removed_from_the_working_tree() -> None:
 
 
 def test_history_finds_a_secret_introduced_only_in_a_merge_commit() -> None:
-    """A secret that enters history ONLY as the resolution of a merge
-    conflict is invisible to `git log --all -p` (which does not render a
-    diff for merge commits by default) but is still a real, reachable
-    blob -- `scan_history`'s blob-based approach (not diff-hunk-based)
-    must still find it. This is the concrete behavioural gap between a
-    diff-based (round 1 style) and a blob-based (round 2) history scan."""
     tmp = _build_temp_repo()
     target = tmp / "apps" / "api" / "config.py"
     target.parent.mkdir(parents=True)
@@ -667,14 +1013,11 @@ def test_history_finds_a_secret_introduced_only_in_a_merge_commit() -> None:
         },
     )
     check("FTF-1505", "the merge produced a real conflict to resolve", merge_rc.returncode != 0)
-    leaked_key = "AKIA" + "MERGEONLYSECRETS"  # A-Z2-7, 16 chars
+    leaked_key = generate_seed_for_rule("aws_access_key_id")
     target.write_text(f'base = 1\naws_key = "{leaked_key}"\n', encoding="utf-8")
     _run_git("add", "-A", cwd=tmp)
     _run_git("commit", "-q", "-m", "resolve merge conflict", cwd=tmp)
 
-    # Reproduce the gap directly: plain `git log --all -p` never shows this
-    # blob's content as an "added" line, because merge commits get no diff
-    # by default.
     log_p = subprocess.run(
         ["git", "log", "--all", "-p"], cwd=tmp, capture_output=True, text=True, check=True
     ).stdout
@@ -688,7 +1031,8 @@ def test_history_finds_a_secret_introduced_only_in_a_merge_commit() -> None:
     aws_hits = [f for f in history_findings if f.rule == "aws_access_key_id"]
     check(
         "FTF-1505",
-        "scan_history (blob-based) still finds a secret introduced only in a merge commit",
+        "scan_history (blob-based, HEAD-reachable) still finds a secret introduced only in a "
+        "merge commit on the current branch",
         len(aws_hits) == 1 and aws_hits[0].blocking,
     )
 
@@ -702,19 +1046,98 @@ def test_history_blob_ids_are_deduplicated() -> None:
     target.write_text("x = 2\n", encoding="utf-8")
     _run_git("add", "-A", cwd=tmp)
     _run_git("commit", "-q", "-m", "b", cwd=tmp)
-    target.write_text("x = 1\n", encoding="utf-8")  # identical content to commit "a"
+    target.write_text("x = 1\n", encoding="utf-8")
     _run_git("add", "-A", cwd=tmp)
     _run_git("commit", "-q", "-m", "c", cwd=tmp)
 
-    blobs = iter_history_blob_ids(tmp)
+    blobs = iter_history_blob_ids(tmp, refs=("HEAD",))
     check(
         "FTF-1505", "3 commits with only 2 distinct contents yield 2 unique blobs", len(blobs) == 2
     )
 
 
+def test_archive_member_in_a_history_only_blob_is_scanned() -> None:
+    """F-SCOPE fault, fixed: round 2's `scan_history` never extracted
+    archive members from a blob that is itself an archive (only
+    `scan_source`/`scan_artifact_roots` did) -- a secret inside a zip that
+    was committed and later deleted was invisible to the history lane."""
+    tmp = _build_temp_repo()
+    seed = generate_seed_for_rule("aws_access_key_id")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("secret.txt", f'aws_key = "{seed}"')
+    (tmp / "bundle.zip").write_bytes(buf.getvalue())
+    _run_git("add", "-A", cwd=tmp)
+    _run_git("commit", "-q", "-m", "add zip", cwd=tmp)
+    (tmp / "bundle.zip").unlink()
+    _run_git("add", "-A", cwd=tmp)
+    _run_git("commit", "-q", "-m", "remove zip", cwd=tmp)
+
+    findings, _ = scan_history(tmp, {})
+    check(
+        "FTF-1505",
+        "a secret inside a history-only blob that is itself a zip archive is found",
+        any(
+            f.rule == "aws_access_key_id"
+            and "bundle.zip@" in f.location
+            and "!secret.txt" in f.location
+            for f in findings
+        ),
+    )
+
+
+def test_scan_history_pr_scope_excludes_other_refs_all_refs_scope_attributes_them() -> None:
+    """The 2026-10-15T08:43Z ruling, F2b: in PR CI the history lane must
+    scan only the checked-out HEAD (so an unrelated open PR's own fixture
+    on another fetched ref can never redden THIS PR); a separate all-refs
+    sweep still covers every ref and names which branch carries a finding
+    HEAD cannot reach."""
+    tmp = _build_temp_repo()
+    (tmp / "a.txt").write_text("hello world\n", encoding="utf-8")
+    _run_git("add", "-A", cwd=tmp)
+    _run_git("commit", "-q", "-m", "init", cwd=tmp)
+
+    _run_git("checkout", "-q", "-b", "other-pr-branch", cwd=tmp)
+    seed = generate_seed_for_rule("aws_access_key_id")
+    (tmp / "secret.txt").write_text(f'aws_key = "{seed}"\n', encoding="utf-8")
+    _run_git("add", "-A", cwd=tmp)
+    _run_git("commit", "-q", "-m", "secret on another PR's branch", cwd=tmp)
+    _run_git("checkout", "-q", "main", cwd=tmp)
+
+    pr_findings, _ = scan_history(tmp, {}, scope="pr")
+    check(
+        "FTF-1505",
+        "scope='pr' (HEAD only) never sees a secret that exists only on another ref",
+        not any(f.rule == "aws_access_key_id" for f in pr_findings),
+    )
+
+    all_refs_findings, _ = scan_history(tmp, {}, scope="all-refs")
+    aws_hits = [f for f in all_refs_findings if f.rule == "aws_access_key_id"]
+    check(
+        "FTF-1505",
+        "scope='all-refs' DOES find the secret on the other ref",
+        len(aws_hits) == 1 and aws_hits[0].blocking,
+    )
+    check(
+        "FTF-1505",
+        "the all-refs finding's location names the branch that actually carries it",
+        "other-pr-branch" in aws_hits[0].location,
+    )
+
+    raised = False
+    try:
+        scan_history(tmp, {}, scope="not-a-real-scope")
+    except ValueError:
+        raised = True
+    check(
+        "FTF-1505",
+        "an unknown scope is refused outright, not silently treated as a default",
+        raised,
+    )
+
+
 # ---------------------------------------------------------------------------
-# F-BASELINE: fingerprint-only (no value/path/glob), stale entries blocking,
-# and fingerprint waiving across every recurrence of the same value.
+# F-BASELINE
 # ---------------------------------------------------------------------------
 
 
@@ -760,7 +1183,7 @@ def test_baseline_rejects_malformed_or_missing_fields() -> None:
 
 
 def test_baseline_fingerprint_waives_every_recurrence_of_the_same_value() -> None:
-    fingerprint = _baseline_fingerprint("aws_access_key_id", "AKIASHAREDACROSSFILES1")
+    fingerprint = baseline_fingerprint("aws_access_key_id", "AKIASHAREDACROSSFILES1")
     baseline = {
         fingerprint: BaselineEntry(fingerprint, "shared test fixture", "tester", "2026-10-15")
     }
@@ -777,7 +1200,7 @@ def test_baseline_fingerprint_waives_every_recurrence_of_the_same_value() -> Non
 
 
 def test_stale_baseline_entry_is_itself_a_blocking_finding() -> None:
-    fingerprint = _baseline_fingerprint("aws_access_key_id", "AKIANEVERACTUALLYSEEN1")
+    fingerprint = baseline_fingerprint("aws_access_key_id", "AKIANEVERACTUALLYSEEN1")
     baseline = {fingerprint: BaselineEntry(fingerprint, "x", "y", "z")}
     raised = False
     try:
@@ -811,7 +1234,53 @@ def test_this_repos_committed_baseline_loads_and_has_justified_entries() -> None
 
 
 # ---------------------------------------------------------------------------
-# evaluate(): reused build_evidence's own Law-1 zero-results refusal.
+# Redaction: a NEW (blocking) finding's value_sha256 is never printed.
+# ---------------------------------------------------------------------------
+
+
+def test_blocking_finding_omits_value_sha256_baselined_finding_keeps_it() -> None:
+    blocking = SecretFinding(
+        rule="aws_access_key_id",
+        target="source",
+        location="a.py:1",
+        value_sha256="deadbeef" * 8,
+        blocking=True,
+    )
+    non_blocking = SecretFinding(
+        rule="aws_access_key_id",
+        target="source",
+        location="a.py:1",
+        value_sha256="deadbeef" * 8,
+        blocking=False,
+    )
+    check(
+        "FTF-1505",
+        "a NEW (blocking) finding's to_dict() omits value_sha256 -- an unsalted sha256 of a "
+        "low-entropy secret is dictionary-reversible, so printing it for an unreviewed finding "
+        "would itself leak",
+        blocking.to_dict()["value_sha256"] is None,
+    )
+    check(
+        "FTF-1505",
+        "a baselined (already-reviewed, non-blocking) finding keeps its hash",
+        non_blocking.to_dict()["value_sha256"] == "deadbeef" * 8,
+    )
+
+    def _fault_always_includes_hash(finding: SecretFinding) -> dict[str, object]:
+        import dataclasses as _dc
+
+        return _dc.asdict(finding)
+
+    check(
+        "FTF-1505",
+        "RED (fault reproduced): the old to_dict() shape (plain dataclasses.asdict) would have "
+        "printed the hash for a blocking finding too",
+        _fault_always_includes_hash(blocking)["value_sha256"] is not None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# evaluate()
 # ---------------------------------------------------------------------------
 
 
@@ -850,11 +1319,26 @@ def test_evaluate_reports_an_all_clean_scan_as_real_non_vacuous_evidence() -> No
 
 
 # ---------------------------------------------------------------------------
-# scan_log_samples: the REAL, already-certified FTF-0904 pipeline. Law 1 --
-# shown able to fail first: a logger with no sink wired at all (the fault)
-# must leak the seeded marker; the real `install_redaction`-wired logger
-# (the production path) must not.
+# F-SEEDS / F-LOGS: runtime-generated seeds across every rule family; the
+# real, already-certified FTF-0904 pipeline; a direct StructuredEvent cross-
+# check.
 # ---------------------------------------------------------------------------
+
+
+def test_generate_seed_values_covers_every_rule_fresh_each_call() -> None:
+    first = generate_seed_values()
+    second = generate_seed_values()
+    check("FTF-1505", "generate_seed_values covers every rule in RULES", set(first) == set(RULES))
+    check(
+        "FTF-1505",
+        "every generated seed value actually fires its own rule",
+        all(any(r == rule for r, _ in scan_line(value)) for rule, value in first.items()),
+    )
+    check(
+        "FTF-1505",
+        "two calls generate DIFFERENT values (runtime-random, never a fixed literal)",
+        first != second,
+    )
 
 
 def test_log_sample_fault_an_unwired_logger_leaks_the_seeded_marker() -> None:
@@ -866,7 +1350,7 @@ def test_log_sample_fault_an_unwired_logger_leaks_the_seeded_marker() -> None:
     handler.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(handler)
     # Fault: deliberately skip install_redaction(logger) -- no sink wired.
-    marker = "AKIA" + "FAULTUNWIREDKEY0"
+    marker = generate_seed_for_rule("aws_access_key_id")
     logger.info("request completed token=%s status=ok", marker)
     output = buffer.getvalue()
     check(
@@ -877,19 +1361,20 @@ def test_log_sample_fault_an_unwired_logger_leaks_the_seeded_marker() -> None:
     logger.removeHandler(handler)
 
 
-def test_log_sample_real_pipeline_detects_and_then_redacts() -> None:
-    findings, results = scan_log_samples(["AKIA" + "REALPIPELINEKEYS", "ghp_" + "b" * 40])
-    pre_checks = [r for r in results if r.check == "pre_redaction_detects_seeded_shape"]
-    post_checks = [r for r in results if r.check == "post_redaction_clean"]
+def test_log_sample_real_pipeline_detects_and_then_redacts_every_family() -> None:
+    seed_pairs = list(generate_seed_values().items())
+    findings, results = scan_log_samples(seed_pairs)
+    pre_checks = [r for r in results if r.check.startswith("pre_redaction_detects_seeded_shape")]
+    post_checks = [r for r in results if r.check.startswith("post_redaction_clean")]
     check(
         "FTF-1505",
-        "GREEN: every seeded marker is detected pre-redaction",
-        all(r.passed for r in pre_checks) and len(pre_checks) == 2,
+        "GREEN: every one of this suite's rule families is detected pre-redaction",
+        all(r.passed for r in pre_checks) and len(pre_checks) == len(RULES),
     )
     check(
         "FTF-1505",
-        "GREEN: the real, certified FTF-0904 pipeline leaves the sink clean",
-        all(r.passed for r in post_checks) and len(post_checks) == 2,
+        "GREEN: the real, certified FTF-0904 pipeline leaves the sink clean for every family",
+        all(r.passed for r in post_checks) and len(post_checks) == len(RULES),
     )
     check(
         "FTF-1505",
@@ -898,13 +1383,222 @@ def test_log_sample_real_pipeline_detects_and_then_redacts() -> None:
     )
 
 
+def test_structured_event_cross_check_detects_a_misused_canary() -> None:
+    findings, results = scan_structured_event_cross_check()
+    check(
+        "FTF-1505",
+        "GREEN: a canary placed in StructuredEvent.identity and emitted raw is detected by "
+        "this suite's own canary check (StructuredEvent has no redaction of its own)",
+        all(r.passed for r in results) and not findings,
+    )
+
+
+_MAIN_SOURCE = inspect.getsource(ss.main)
+
+
+def test_main_calls_every_lane_and_every_coverage_check() -> None:
+    """F16/F17/F19/F20/F21/F22/F23: `main()` must actually call every
+    scan lane and every completeness/coverage check -- a structural proof
+    that none of them was quietly dropped from the orchestration."""
+    for needle in (
+        "scan_source(",
+        "scan_artifact_roots(",
+        "scan_history(",
+        "scan_log_samples(",
+        "scan_structured_event_cross_check(",
+        "scan_live_app_log_samples(",
+        "assert_dirs_covered(",
+        "assert_artifact_uploads_covered(",
+        "assert_scanned_set_matches_tracked_files(",
+        "assert_baseline_fresh(",
+    ):
+        check("FTF-1505", f"main() calls {needle}", needle in _MAIN_SOURCE)
+
+
+def test_main_raises_on_a_real_blocking_finding() -> None:
+    """F18 fixed: `main()` must actually raise when a blocking finding is
+    present -- proven by injecting one real blocking finding through a
+    cooperating scan function and running `main()` for real (every other
+    lane is cheap/fast; only the live-app boot is monkeypatched out, since
+    it alone takes real wall-clock time irrelevant to this specific
+    check)."""
+    original_live = ss.scan_live_app_log_samples
+    original_structured = ss.scan_structured_event_cross_check
+
+    def _fake_live(root: Path, **_kw: object) -> tuple[list[SecretFinding], list[ScenarioResult]]:
+        finding = SecretFinding(
+            rule="aws_access_key_id",
+            target="log_sample",
+            location="<injected-for-test>",
+            value_sha256="",
+            blocking=True,
+        )
+        result = ScenarioResult(
+            resource_kind="log_sample",
+            check="injected_for_test",
+            method="SCAN",
+            path="<injected-for-test>",
+            status=1,
+            expected_denied=True,
+            passed=False,
+        )
+        return [finding], [result]
+
+    def _fake_structured() -> tuple[list[SecretFinding], list[ScenarioResult]]:
+        return [], [
+            ScenarioResult(
+                resource_kind="log_sample",
+                check="structured_event_canary_detected",
+                method="SCAN",
+                path="<structured-event>",
+                status=0,
+                expected_denied=True,
+                passed=True,
+            )
+        ]
+
+    with (
+        _monkeypatch(ss, "scan_live_app_log_samples", _fake_live),
+        _monkeypatch(ss, "scan_structured_event_cross_check", _fake_structured),
+    ):
+        raised = False
+        try:
+            ss.main(["--scope", "pr"])
+        except SecretScanError:
+            raised = True
+        check(
+            "FTF-1505",
+            "main() raises SecretScanError when a real blocking finding is present",
+            raised,
+        )
+    check(
+        "FTF-1505",
+        "the real functions are restored after the test",
+        ss.scan_live_app_log_samples is original_live,
+    )
+    check(
+        "FTF-1505",
+        "the real functions are restored after the test",
+        ss.scan_structured_event_cross_check is original_structured,
+    )
+
+
+def test_f27_aws_access_key_id_matches_both_akia_and_asia() -> None:
+    akia = generate_seed_for_rule("aws_access_key_id")
+    while not akia.startswith("AKIA"):
+        akia = generate_seed_for_rule("aws_access_key_id")
+    asia = "ASIA" + akia[4:]
+    check(
+        "FTF-1505",
+        "AKIA-prefixed key matches",
+        any(r == "aws_access_key_id" for r, _ in scan_line(akia)),
+    )
+    check(
+        "FTF-1505",
+        "ASIA-prefixed (STS) key matches too",
+        any(r == "aws_access_key_id" for r, _ in scan_line(asia)),
+    )
+
+    import re as _re
+
+    original_rule = sr._SHAPE_RULES["aws_access_key_id"]
+    fault_rule = sr._ShapeRule(
+        _re.compile(r"(?a)\bAKIA[A-Z2-7]{16}\b"), original_rule.quick_gate_hints
+    )
+    sr._SHAPE_RULES["aws_access_key_id"] = fault_rule
+    try:
+        check(
+            "FTF-1505",
+            "RED (fault reproduced): an AKIA-only pattern misses the ASIA (STS) shape",
+            not any(r == "aws_access_key_id" for r, _ in scan_line(asia)),
+        )
+    finally:
+        sr._SHAPE_RULES["aws_access_key_id"] = original_rule
+    check(
+        "FTF-1505",
+        "GREEN (restored): ASIA matches again after the fault is reverted",
+        any(r == "aws_access_key_id" for r, _ in scan_line(asia)),
+    )
+
+
+# ---------------------------------------------------------------------------
+# F-CI / dependency-light core: secret_rules.py is stdlib-only (no pyyaml,
+# no uvicorn chain) so the mutation-gate/ci-verdict jobs can scan their own
+# report with no extra setup.
+# ---------------------------------------------------------------------------
+
+_THIRD_PARTY_MODULES = {"yaml", "uvicorn", "fastapi", "starlette", "pydantic"}
+
+
+def test_secret_rules_module_is_stdlib_only() -> None:
+    import ast
+
+    tree = ast.parse((ROOT / "tests" / "security" / "secret_rules.py").read_text(encoding="utf-8"))
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module.split(".")[0])
+    check(
+        "FTF-1505",
+        f"secret_rules.py imports no third-party package (found: {sorted(imported)})",
+        not (imported & _THIRD_PARTY_MODULES),
+    )
+
+
+def test_secret_rules_cli_scans_a_single_file_with_no_baseline() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        clean = Path(tmp) / "clean.txt"
+        clean.write_text("nothing secret-shaped here\n", encoding="utf-8")
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                str(ROOT / "tests" / "security" / "secret_rules.py"),
+                str(clean),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        check(
+            "FTF-1505",
+            "secret_rules.py's own CLI runs clean with plain -I python3, no site-packages",
+            result.returncode == 0,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        report = Path(tmp) / "report.json"
+        report.write_text(
+            f'{{"note": "{generate_seed_for_rule("aws_access_key_id")}"}}', encoding="utf-8"
+        )
+        result2 = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                str(ROOT / "tests" / "security" / "secret_rules.py"),
+                str(report),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        check(
+            "FTF-1505",
+            "secret_rules.py's CLI exits non-zero on a report containing a secret shape, with "
+            "no baseline (a freshly generated CI artifact has no reviewed-fixture history)",
+            result2.returncode == 1,
+        )
+        check(
+            "FTF-1505",
+            "the CLI's own failure output never prints the raw matched value",
+            generate_seed_for_rule("aws_access_key_id")[:10] not in result2.stderr
+            and "aws_access_key_id" in result2.stderr,
+        )
+
+
 # ---------------------------------------------------------------------------
 # End-to-end, against this real repository, exactly as CI's own
-# `secret-scanning` job runs it: python3 tests/security/secret_scanning.py.
-# This alone exercises source + artifacts + history (full clone required)
-# + both log-sample lanes, so it is skipped here if the local clone is
-# shallow (the module itself fails closed on that -- this is a sandbox
-# capability check, not a weakening of the real check).
+# `secret-scanning` job runs it.
 # ---------------------------------------------------------------------------
 
 
@@ -922,7 +1616,7 @@ def test_real_module_run_against_this_repository() -> None:
         print("  (skipped: this sandbox clone is shallow -- CI's own job runs with fetch-depth: 0)")
         return
     result = subprocess.run(
-        [sys.executable, str(ROOT / "tests" / "security" / "secret_scanning.py")],
+        [sys.executable, str(ROOT / "tests" / "security" / "secret_scanning.py"), "--scope", "pr"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -947,7 +1641,8 @@ def test_real_module_run_against_this_repository() -> None:
 
 
 def main() -> None:
-    test_every_rule_fires_on_its_own_shape()
+    test_every_rule_fires_on_its_own_generated_seed()
+    test_pem_private_key_variants()
     test_canary_shape_is_gated_to_include_canary()
     test_ordinary_identifiers_and_type_annotations_never_fire()
     test_too_short_shapes_do_not_fire()
@@ -955,31 +1650,54 @@ def main() -> None:
     test_your_placeholder_bypass_is_removed()
     test_url_userinfo_password_placeholder_is_not_flagged()
     test_base64_wrapped_secret_is_found()
+    test_hex_wrapped_secret_is_found()
     test_percent_decoded_secret_is_found()
+    test_canary_is_detected_through_base64_and_hex_decode_layers()
+    test_quick_gate_literals_cover_every_rule_in_the_table()
+    test_quick_gate_previously_missed_shapes_now_covered()
     test_quick_gate_is_a_performance_filter_only_never_a_detection_gap()
+    test_f13_long_line_window_finds_a_secret_past_the_200_char_boundary()
+    test_f6_decode_cap_overrun_is_a_blocking_scan_incomplete_finding()
     test_source_scan_has_no_path_exclusion()
+    test_non_ascii_filename_is_scanned_not_silently_skipped()
     test_binary_file_is_scanned()
     test_zip_archive_member_is_scanned()
+    test_corrupt_archive_member_does_not_abort_later_members()
     test_archive_member_bomb_safety_caps()
+    test_oversized_content_is_a_blocking_scan_incomplete_finding()
     test_long_line_is_not_silently_skipped()
     test_source_roots_come_from_product_truth_check_not_a_second_list()
     test_artifact_roots_include_reports()
     test_assert_dirs_covered_fails_closed_on_a_real_omission()
+    test_assert_scanned_set_matches_tracked_files()
     test_assert_artifact_uploads_covered_fails_closed_on_a_new_root()
+    test_upload_artifact_merge_variant_is_covered()
+    test_upload_path_traversal_is_refused()
+    test_upload_path_far_from_uses_line_is_still_found()
     test_this_repos_ci_yml_artifact_uploads_are_covered()
     test_assert_not_shallow_fails_closed_on_a_real_shallow_clone()
     test_history_finds_a_secret_removed_from_the_working_tree()
     test_history_finds_a_secret_introduced_only_in_a_merge_commit()
     test_history_blob_ids_are_deduplicated()
+    test_archive_member_in_a_history_only_blob_is_scanned()
+    test_scan_history_pr_scope_excludes_other_refs_all_refs_scope_attributes_them()
     test_baseline_rejects_a_value_path_or_glob_key()
     test_baseline_rejects_malformed_or_missing_fields()
     test_baseline_fingerprint_waives_every_recurrence_of_the_same_value()
     test_stale_baseline_entry_is_itself_a_blocking_finding()
     test_this_repos_committed_baseline_loads_and_has_justified_entries()
+    test_blocking_finding_omits_value_sha256_baselined_finding_keeps_it()
     test_evaluate_refuses_zero_scenario_results()
     test_evaluate_reports_an_all_clean_scan_as_real_non_vacuous_evidence()
+    test_generate_seed_values_covers_every_rule_fresh_each_call()
     test_log_sample_fault_an_unwired_logger_leaks_the_seeded_marker()
-    test_log_sample_real_pipeline_detects_and_then_redacts()
+    test_log_sample_real_pipeline_detects_and_then_redacts_every_family()
+    test_structured_event_cross_check_detects_a_misused_canary()
+    test_main_calls_every_lane_and_every_coverage_check()
+    test_main_raises_on_a_real_blocking_finding()
+    test_f27_aws_access_key_id_matches_both_akia_and_asia()
+    test_secret_rules_module_is_stdlib_only()
+    test_secret_rules_cli_scans_a_single_file_with_no_baseline()
     test_real_module_run_against_this_repository()
 
     if FAILURES:
