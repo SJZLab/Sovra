@@ -206,6 +206,16 @@ def _completion(content: str, *, finish: str = "stop", usage: object = "default"
     return json.dumps(payload).encode()
 
 
+# Per-trial completion_tokens a gateway can report over the wire, by mode.
+_TOKEN_COUNT_MODES: dict[str, tuple[int, int, int]] = {
+    "tokens_negative_all": (-5, -5, -5),
+    "tokens_zero_all": (0, 0, 0),
+    "tokens_zero_one": (5, 0, 5),
+    "tokens_negative_one": (5, -1, 5),
+    "tokens_zero_and_negative": (0, -1, 5),
+}
+
+
 def _respond_for(body: dict[str, object]) -> tuple[int, bytes]:
     enum = _enum_of(body)
     mode = _GW.mode
@@ -227,6 +237,13 @@ def _respond_for(body: dict[str, object]) -> tuple[int, bytes]:
             return 200, _completion(member)
         err = {"error": {"type": "invalid_request_error", "param": "response_format"}}
         return 400, json.dumps(err).encode()
+    if mode in _TOKEN_COUNT_MODES:
+        # USAGE-IMPOSSIBLE-COUNT-WIRE: the gateway reports an impossible completion_tokens on the
+        # trial(s) the mode names; the answer itself is a perfectly valid in-enum "stop".
+        trial = len(_GW.bodies)  # 1-based: _GatewayHandler appends before responding
+        counts = _TOKEN_COUNT_MODES[mode]
+        usage = {"prompt_tokens": 20, "completion_tokens": counts[trial - 1], "total_tokens": 25}
+        return 200, _completion(member, usage=usage)
     if mode == "truncating":
         return 200, _completion(member, finish="length")
     if mode == "no_usage":
@@ -318,6 +335,11 @@ _STATE_FOR_MODE = {
     "wrong_enum": S.NOT_ENFORCED,
     "duplicate_key": S.NOT_ENFORCED,
     "over_budget": S.MALFORMED_RESPONSE,
+    "tokens_negative_all": S.MALFORMED_RESPONSE,
+    "tokens_zero_all": S.USAGE_MISSING,
+    "tokens_zero_one": S.USAGE_MISSING,
+    "tokens_negative_one": S.MALFORMED_RESPONSE,
+    "tokens_zero_and_negative": S.MALFORMED_RESPONSE,
     "content_filter": S.CONTENT_FILTERED,
     "tool_calls_finish": S.NOT_ENFORCED,
     "malformed": S.MALFORMED_RESPONSE,
@@ -377,6 +399,32 @@ def test_mid_run_400_stops_after_exactly_two_requests() -> None:
     check("exactly two requests were made", len(_GW.bodies) == 2)
     check("the third trial was never attempted", len(_GW.bodies) != 3)
     check("only the first (successful) trial's result was kept", len(result.trials) == 1)
+
+
+def test_impossible_token_counts_over_the_real_wire_are_never_a_metric() -> None:
+    """USAGE-IMPOSSIBLE-COUNT-WIRE: negative and zero completion_tokens arrive through the
+    real parse path (gateway -> TLS -> _parse_trial_body -> trial loop -> _aggregate_trials),
+    so a clamp (max(..., 1)), abs(), or a per-trial drop of the bad value in the trial loop
+    cannot hide behind the direct _aggregate_trials pins."""
+    if not _UPDATE_CA_AVAILABLE:
+        return
+    for mode, counts in _TOKEN_COUNT_MODES.items():
+        result = _run(mode)
+        expected = S.MALFORMED_RESPONSE if any(c < 0 for c in counts) else S.USAGE_MISSING
+        check(f"{mode}: state {expected.value}, got {result.state.value}", result.state == expected)
+        check(f"{mode}: all three trials were requested", len(_GW.bodies) == 3)
+        check(f"{mode}: never CONSTRAINED_OBSERVED", result.state != S.CONSTRAINED_OBSERVED)
+        check(f"{mode}: no max claim", result.max_completion_tokens_observed is None)
+        check(f"{mode}: no mean claim", result.mean_completion_tokens is None)
+        check(
+            f"{mode}: the raw per-trial counts are kept verbatim, got "
+            f"{[t.completion_tokens for t in result.trials]}",
+            tuple(t.completion_tokens for t in result.trials) == counts,
+        )
+        check(
+            f"{mode}: the answers themselves were valid in-enum stops",
+            all(t.label_in_enum and t.finish_reason == "stop" for t in result.trials),
+        )
 
 
 def test_usage_missing_is_unknown_not_zero() -> None:
