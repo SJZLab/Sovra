@@ -294,9 +294,7 @@ _COMPOUND_PREFIXES = frozenset(
         "user", "verification", "xsrf",
     }
 )  # fmt: skip
-_COMPOUND_WORDS = tuple(
-    sorted(_COMPOUND_PREFIXES | _QUERY_PARAM_NAMES, key=len, reverse=True)
-)
+_COMPOUND_WORDS = tuple(sorted(_COMPOUND_PREFIXES | _QUERY_PARAM_NAMES, key=len, reverse=True))
 _MAX_GLUED_NAME = 64
 
 
@@ -316,20 +314,16 @@ def _is_glued_compound(lowered: str) -> bool:
             if start >= 0 and reach[start] and lowered.startswith(word, start):
                 reach[end] = True
                 break
-    if not reach[size]:
-        return False
     return any(lowered.endswith(name) and reach[size - len(name)] for name in _QUERY_PARAM_NAMES)
 
 
 def _is_query_param_name(name: str) -> bool:
-    # The whole lowercased name first (QP-CASE-SPLIT): the camelCase split below turns the
-    # random-case spelling `cOdE` into `c O d E`, whose last word is not a name.
-    lowered = name.lower()
-    if lowered in _QUERY_PARAM_NAMES:
-        return True
     words = [w for w in _NAME_WORD_SPLIT.split(_CAMEL_BOUNDARY.sub("_", name)) if w]
     if words and words[-1].lower() in _QUERY_PARAM_NAMES:
         return True
+    # QP-CASE-SPLIT: a random-case name (`cOdE`) splits into single letters above; the glued
+    # check reads the whole lowercased name, so it is bound here as a one-word chain.
+    lowered = name.lower()
     return _is_glued_compound(_NAME_WORD_SPLIT.sub("", lowered))
 
 
