@@ -89,9 +89,11 @@ from workers.data.immutable_split_manifest import (
     excluded_positions_sha256,
     is_legacy_three_split,
     migrate_legacy_three_split,
+    pg_safe,
     pinned_role_for_purpose,
     report_from_body,
     role_sha256,
+    same,
     verify_frozen_content,
 )
 from workers.data.quality_issue_engine import (
@@ -186,6 +188,7 @@ CODES = (
 )
 _RESOURCE = "dataset_split_manifest"
 _MAX_PAGE_SIZE = 200
+_MAX_KEY = 400
 _CHUNK = 5000
 
 _INT_ARRAY = ARRAY(Integer).with_variant(JSON(), "sqlite")
@@ -353,26 +356,28 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def _require_actor(actor: object) -> SplitActor:
+def _clean(value: object, limit: int) -> str:
     if (
-        not isinstance(actor, SplitActor)
-        or any(
-            type(value) is not str or not value or value != value.strip()
-            for value in (actor.actor_type, actor.actor_id, actor.role, actor.request_id)
-        )
-        or len(actor.actor_id) > 200
-        or len(actor.request_id) > 100
+        type(value) is not str
+        or not value
+        or not same(value, value.strip())
+        or len(value) > limit
+        or not pg_safe(value)
     ):
         raise SplitManifestError("invalid_request")
+    return value
+
+
+def _require_actor(actor: object) -> SplitActor:
+    if not isinstance(actor, SplitActor):
+        raise SplitManifestError("invalid_request")
+    _clean(actor.actor_type, 64)
+    _clean(actor.actor_id, 200)
+    _clean(actor.role, 64)
+    _clean(actor.request_id, 100)
     if actor.role not in ADMIN_ROLES:
         raise SplitManifestError("actor_not_permitted")
     return actor
-
-
-def _clean(value: object, limit: int) -> str:
-    if type(value) is not str or not value or value != value.strip() or len(value) > limit:
-        raise SplitManifestError("invalid_request")
-    return value
 
 
 def _fetch_manifest(
@@ -614,6 +619,11 @@ def _prepare_source(
             or record.batch_position in positions
         ):
             raise SplitManifestError("invalid_request")
+        if type(record.group_keys) is not tuple or not all(
+            type(key) is str and 0 < len(key) <= _MAX_KEY and pg_safe(key)
+            for key in record.group_keys
+        ):
+            raise SplitManifestError("invalid_request")
         positions.add(record.batch_position)
         if record.batch_position not in excluded:
             kept.append(record)
@@ -648,8 +658,6 @@ def _authorize_roles(
         except (DatasetSourceAuthorizationError, DatasetSourceConnectionNotFoundError):
             raise SplitManifestError("purpose_not_authorized") from None
         snapshot = tuple(sorted(set(connection.allowed_purposes_json)))
-    if not snapshot:
-        raise SplitManifestError("purpose_not_authorized")
     return snapshot
 
 
@@ -677,19 +685,21 @@ def _check_prior_sources(
     )
     expected: dict[tuple[str, str], tuple[str, dict[str, tuple[str, str]]]] = {}
     for manifest in locked:
+        suites: dict[str, dict[str, tuple[str, str]]] = {role: {} for role in PRIOR_ROLES}
+        rows = execute_tenant_scoped(
+            session,
+            context.organization_id,
+            select(DatasetSplitAssignment).where(
+                DatasetSplitAssignment.manifest_id == manifest.id,
+                DatasetSplitAssignment.role.in_(PRIOR_ROLES),
+            ),
+        ).scalars()
+        for r in rows:
+            suites[r.role][r.record_id] = (r.record_sha256, r.normalized_sha256)
         for role in PRIOR_ROLES:
-            rows = execute_tenant_scoped(
-                session,
-                context.organization_id,
-                select(DatasetSplitAssignment).where(
-                    DatasetSplitAssignment.manifest_id == manifest.id,
-                    DatasetSplitAssignment.role == role,
-                ),
-            ).scalars()
-            stored = {r.record_id: (r.record_sha256, r.normalized_sha256) for r in rows}
             expected[(manifest.split_manifest_sha256, role)] = (
                 f"{manifest.name}@v{manifest.version}:{role}",
-                stored,
+                suites[role],
             )
     provided = {(p.manifest_sha256, p.role): p for p in prior_sources}
     if len(provided) != len(prior_sources) or set(provided) != set(expected):
@@ -697,7 +707,7 @@ def _check_prior_sources(
     for key, (label, stored) in expected.items():
         source = provided[key]
         supplied = {r.record_id: (r.record_sha256, r.normalized_sha256) for r in source.records}
-        if source.label != label or supplied != stored:
+        if not same(source.label, label) or supplied != stored:
             raise SplitManifestError("prior_sources_incomplete")
 
 
@@ -706,7 +716,6 @@ class _Proposal:
     manifest: SplitManifest
     prepared: tuple[_PreparedSource, ...]
     origins: dict[str, tuple[str, int, str, str]]
-    leak_records: tuple[LeakageRecord, ...]
 
 
 def _record_id(dataset_id: uuid.UUID, position: int) -> str:
@@ -730,8 +739,6 @@ def _freeze_proposal(
     now: datetime,
 ) -> DatasetSplitManifest:
     manifest = proposal.manifest
-    if len(manifest.assignments) > MAX_MANIFEST_RECORDS:
-        raise SplitManifestError("manifest_too_large")
     role_of = {record_id: role for record_id, role, _ in manifest.assignments}
     snapshots: dict[uuid.UUID, tuple[str, ...]] = {}
     for prepared in proposal.prepared:
@@ -747,7 +754,17 @@ def _freeze_proposal(
     try:
         report = detect_split_leakage(
             manifest,
-            proposal.leak_records,
+            [
+                LeakageRecord(
+                    record_id=_record_id(p.dataset.id, r.batch_position),
+                    content=r.content,
+                    record_sha256=r.record_sha256,
+                    normalized_sha256=r.normalized_sha256,
+                    group_keys=r.group_keys,
+                )
+                for p in proposal.prepared
+                for r in p.records
+            ],
             prior_sources=tuple(prior_sources),
             route=route,
         )
@@ -816,8 +833,8 @@ def _freeze_proposal(
         )
 
     try:
-        if latest is not None and latest.proposal_sha256 == compute_proposal_sha256(
-            content_for(latest.version)
+        if latest is not None and same(
+            latest.proposal_sha256, compute_proposal_sha256(content_for(latest.version))
         ):
             return latest
         content = content_for(version)
@@ -929,17 +946,29 @@ def _freeze_proposal(
     return row
 
 
-def _leak_record(prepared: _PreparedSource, record: SourceRecord) -> LeakageRecord:
-    try:
-        return LeakageRecord(
-            record_id=_record_id(prepared.dataset.id, record.batch_position),
-            content=record.content,
-            record_sha256=record.record_sha256,
-            normalized_sha256=record.normalized_sha256,
-            group_keys=record.group_keys,
-        )
-    except LeakageEngineError:
-        raise SplitManifestError("invalid_request") from None
+def _validate_request(
+    actor: object,
+    project_id: object,
+    name: object,
+    normalization_version: object,
+    tokenizer_identity: object,
+    sources: object,
+) -> None:
+    """Every check that needs no database, in one place and before any query."""
+    _require_actor(actor)
+    if not isinstance(project_id, uuid.UUID):
+        raise SplitManifestError("invalid_request")
+    _clean(name, 200)
+    _clean(normalization_version, 64)
+    if tokenizer_identity is not None:
+        _clean(tokenizer_identity, 200)
+    if not isinstance(sources, tuple | list) or not sources:
+        raise SplitManifestError("invalid_request")
+    ids = [s.dataset_id for s in sources if isinstance(s, SplitSourceInput)]
+    if len(ids) != len(sources) or len(set(ids)) != len(ids):
+        raise SplitManifestError("invalid_request")
+    if sum(len(s.records) for s in sources if type(s.records) is tuple) > MAX_MANIFEST_RECORDS:
+        raise SplitManifestError("manifest_too_large")
 
 
 def propose_split_manifest(
@@ -962,26 +991,16 @@ def propose_split_manifest(
     _require_actor(actor)
     if is_legacy_three_split(spec):
         raise SplitManifestError("legacy_manifest_requires_migration")
-    if not isinstance(spec, SplitSpec) or not isinstance(project_id, uuid.UUID):
+    if not isinstance(spec, SplitSpec):
         raise SplitManifestError("invalid_request")
-    _clean(name, 200)
-    _clean(normalization_version, 64)
-    if tokenizer_identity is not None:
-        _clean(tokenizer_identity, 200)
-    if not isinstance(sources, tuple | list) or not sources:
-        raise SplitManifestError("invalid_request")
-    ids = [s.dataset_id for s in sources if isinstance(s, SplitSourceInput)]
-    if len(ids) != len(sources) or len(set(ids)) != len(ids):
-        raise SplitManifestError("invalid_request")
-    if sum(len(s.records) for s in sources) > MAX_MANIFEST_RECORDS:
-        raise SplitManifestError("manifest_too_large")
+    _clean(spec.seed, 128)
+    _validate_request(actor, project_id, name, normalization_version, tokenizer_identity, sources)
     prepared = tuple(
         _prepare_source(session, context, project_id, s)
         for s in sorted(sources, key=lambda s: str(s.dataset_id))
     )
     split_records: list[SplitRecord] = []
     origins: dict[str, tuple[str, int, str, str]] = {}
-    leak_records: list[LeakageRecord] = []
     for source in prepared:
         for record in source.records:
             record_id = _record_id(source.dataset.id, record.batch_position)
@@ -999,11 +1018,6 @@ def propose_split_manifest(
                 record.record_sha256,
                 record.normalized_sha256,
             )
-            leak_records.append(_leak_record(source, record))
-    if not split_records:
-        raise SplitManifestError("no_records")
-    if len(split_records) > MAX_MANIFEST_RECORDS:
-        raise SplitManifestError("manifest_too_large")
     try:
         manifest = allocate_splits(spec, split_records)
     except SplitEngineError:
@@ -1013,7 +1027,7 @@ def propose_split_manifest(
         context,
         project_id=project_id,
         name=name,
-        proposal=_Proposal(manifest, prepared, origins, tuple(leak_records)),
+        proposal=_Proposal(manifest, prepared, origins),
         prior_sources=prior_sources,
         route=route,
         normalization_version=normalization_version,
@@ -1046,29 +1060,22 @@ def migrate_legacy_split_manifest(
     (an explicit `candidate_development` dataset among `sources`); without one the stored manifest
     is `insufficient` and the database refuses to lock it."""
     _require_actor(actor)
-    if not isinstance(legacy, LegacyThreeSplitManifest) or not isinstance(project_id, uuid.UUID):
+    if not isinstance(legacy, LegacyThreeSplitManifest):
         raise SplitManifestError("invalid_request")
-    _clean(name, 200)
-    _clean(normalization_version, 64)
-    if tokenizer_identity is not None:
-        _clean(tokenizer_identity, 200)
-    if not isinstance(sources, tuple | list) or not sources:
-        raise SplitManifestError("invalid_request")
-    ids = [s.dataset_id for s in sources if isinstance(s, SplitSourceInput)]
-    if len(ids) != len(sources) or len(set(ids)) != len(ids):
-        raise SplitManifestError("invalid_request")
-    if development_dataset_id is not None and development_dataset_id not in ids:
+    _validate_request(actor, project_id, name, normalization_version, tokenizer_identity, sources)
+    if development_dataset_id is not None and development_dataset_id not in [
+        s.dataset_id for s in sources
+    ]:
         raise SplitManifestError("invalid_request")
     prepared = tuple(
         _prepare_source(session, context, project_id, s)
         for s in sorted(sources, key=lambda s: str(s.dataset_id))
     )
     origins: dict[str, tuple[str, int, str, str]] = {}
-    leak_by_id: dict[str, LeakageRecord] = {}
     development: list[tuple[str, str]] = []
     for source in prepared:
         is_development = source.dataset.id == development_dataset_id
-        if is_development and source.pinned_role != "development_eval":
+        if is_development and not same(source.pinned_role, "development_eval"):
             raise SplitManifestError("invalid_request")
         for record in source.records:
             record_id = _record_id(source.dataset.id, record.batch_position)
@@ -1078,27 +1085,8 @@ def migrate_legacy_split_manifest(
                 record.record_sha256,
                 record.normalized_sha256,
             )
-            leak_by_id[record_id] = _leak_record(source, record)
             if is_development:
                 development.append((record_id, min(record.group_keys or (record_id,))))
-    legacy_ids = {record_id for record_id, _, _ in legacy.assignments}
-    if not legacy_ids <= set(origins):
-        raise SplitManifestError("invalid_request")
-    # A record of a pinned source may only keep the role its dataset purpose allows.
-    pinned = {
-        _record_id(p.dataset.id, r.batch_position): p.pinned_role
-        for p in prepared
-        for r in p.records
-        if p.pinned_role is not None
-    }
-    for record_id, role, _ in legacy.assignments:
-        target = {
-            "train": "train",
-            "validation": "validation",
-            "heldout_test": "final_qualification",
-        }[role]
-        if record_id in pinned and pinned[record_id] != target:
-            raise SplitManifestError("source_role_pinned")
     try:
         manifest = migrate_legacy_three_split(legacy, development)
     except ManifestDomainError:
@@ -1106,7 +1094,6 @@ def migrate_legacy_split_manifest(
     placed = {record_id for record_id, _, _ in manifest.assignments}
     for record_id in set(origins) - placed:
         origins.pop(record_id)
-        leak_by_id.pop(record_id)
     # A source none of whose records the legacy manifest places contributes no grant.
     used = tuple(
         replace(
@@ -1123,7 +1110,7 @@ def migrate_legacy_split_manifest(
         context,
         project_id=project_id,
         name=name,
-        proposal=_Proposal(manifest, used, origins, tuple(leak_by_id.values())),
+        proposal=_Proposal(manifest, used, origins),
         prior_sources=prior_sources,
         route=route,
         normalization_version=normalization_version,
@@ -1192,21 +1179,18 @@ def approve_split_manifest(
     `manifest_insufficient` when a role is empty. On any raise nothing was written."""
     _require_actor(actor)
     manifest = _fetch_manifest(session, context, project_id, manifest_id, for_update=True)
-    if manifest.status != "proposed":
+    if not same(manifest.status, "proposed"):
         raise SplitManifestError("manifest_not_proposed")
-    if (
-        type(expected_proposal_sha256) is not str
-        or expected_proposal_sha256 != manifest.proposal_sha256
-    ):
+    if not same(expected_proposal_sha256, manifest.proposal_sha256):
         raise SplitManifestError("manifest_changed")
     roles = _fetch_roles(session, context, manifest.id)
     sources = _fetch_sources(session, context, manifest.id)
     content = _content_from_rows(manifest, roles, sources)
     try:
-        if compute_proposal_sha256(content) != manifest.proposal_sha256:
+        if not same(compute_proposal_sha256(content), manifest.proposal_sha256):
             raise SplitManifestError("manifest_tampered")
         base = report_from_body(content.leakage_report)
-        if compute_report_sha256(base) != manifest.leakage_report_sha256:
+        if not same(compute_report_sha256(base), manifest.leakage_report_sha256):
             raise SplitManifestError("manifest_tampered")
     except ManifestDomainError:
         raise SplitManifestError("manifest_tampered") from None
@@ -1214,7 +1198,11 @@ def approve_split_manifest(
         raise SplitManifestError("invalid_review")
     built: list[LeakageReview] = []
     for review in reviews:
-        if not isinstance(review, ReviewInput):
+        if (
+            not isinstance(review, ReviewInput)
+            or type(review.rationale) is not str
+            or not pg_safe(review.rationale)
+        ):
             raise SplitManifestError("invalid_review")
         built.append(
             LeakageReview(
@@ -1290,7 +1278,7 @@ def reject_split_manifest(
     """proposed -> rejected. Nothing else changes; the next proposal is a new version."""
     _require_actor(actor)
     manifest = _fetch_manifest(session, context, project_id, manifest_id, for_update=True)
-    if manifest.status != "proposed":
+    if not same(manifest.status, "proposed"):
         raise SplitManifestError("manifest_not_proposed")
     manifest.status = "rejected"
     manifest.updated_at = now or _now()
@@ -1312,7 +1300,7 @@ def _verified_locked(
     stage: str,
 ) -> tuple[DatasetSplitManifest, ManifestContent, tuple[DatasetSplitManifestSource, ...]]:
     manifest = _fetch_manifest(session, context, project_id, manifest_id)
-    if manifest.status != "locked" or manifest.frozen_manifest_sha256 is None:
+    if not same(manifest.status, "locked") or manifest.frozen_manifest_sha256 is None:
         raise SplitManifestError("manifest_not_locked")
     roles = _fetch_roles(session, context, manifest.id)
     sources = _fetch_sources(session, context, manifest.id)
@@ -1332,14 +1320,12 @@ def _verified_locked(
         reviewed = apply_leakage_reviews(base, reviews)
     except (ManifestDomainError, LeakageEngineError):
         raise SplitManifestError("manifest_tampered") from None
-    if reviewed.report_sha256 != content.reviewed_leakage_report_sha256:
+    if not same(reviewed.report_sha256, content.reviewed_leakage_report_sha256):
         raise SplitManifestError("manifest_tampered")
     try:
         assert_leakage_clear(reviewed, stage)
     except LeakageBlockedError:
         raise SplitManifestError("leakage_not_clear") from None
-    except LeakageEngineError:
-        raise SplitManifestError("manifest_tampered") from None
     # The stored assignments must still be exactly what was frozen, role by role.
     counts = dict(
         execute_tenant_scoped(
@@ -1412,8 +1398,8 @@ def _recheck_sources(
                 raise SplitManifestError("quality_not_clear") from None
         if (
             latest.id != source.quality_report_id
-            or latest.report_sha256 != source.quality_report_sha256
-            or excluded_positions_sha256(excluded) != source.excluded_positions_sha256
+            or not same(latest.report_sha256, source.quality_report_sha256)
+            or not same(excluded_positions_sha256(excluded), source.excluded_positions_sha256)
         ):
             raise SplitManifestError("quality_report_changed")
         for role in sorted(roles_by_source.get(source.dataset_id, ())):
@@ -1465,10 +1451,14 @@ def _read_rows(
 def _check_served_hashes(
     content: ManifestContent, rows: Sequence[AssignmentRow], roles: tuple[str, ...]
 ) -> None:
-    for role in roles:
-        frozen = next(r for r in content.roles if r.role == role)
-        served = [r for r in rows if r.role == role]
-        if len(served) != frozen.record_count or role_sha256(served) != frozen.role_sha256:
+    by_role: dict[str, list[AssignmentRow]] = {role: [] for role in roles}
+    for served_row in rows:
+        by_role[served_row.role].append(served_row)
+    for frozen in content.roles:
+        if frozen.role not in by_role:
+            continue
+        served = by_role[frozen.role]
+        if len(served) != frozen.record_count or not same(role_sha256(served), frozen.role_sha256):
             raise SplitManifestError("manifest_tampered")
 
 
@@ -1494,14 +1484,9 @@ def load_training_split(
     return TrainingSplitView(
         manifest_id=manifest.id,
         version=manifest.version,
-        frozen_manifest_sha256=_frozen_hash(manifest),
+        frozen_manifest_sha256=str(manifest.frozen_manifest_sha256),
         rows=rows,
     )
-
-
-def _frozen_hash(manifest: DatasetSplitManifest) -> str:
-    assert manifest.frozen_manifest_sha256 is not None
-    return manifest.frozen_manifest_sha256
 
 
 def load_development_split(
@@ -1526,6 +1511,6 @@ def load_development_split(
     return TrainingSplitView(
         manifest_id=manifest.id,
         version=manifest.version,
-        frozen_manifest_sha256=_frozen_hash(manifest),
+        frozen_manifest_sha256=str(manifest.frozen_manifest_sha256),
         rows=rows,
     )

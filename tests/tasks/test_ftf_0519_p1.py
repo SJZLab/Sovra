@@ -1419,6 +1419,7 @@ def part_m_sql() -> None:
         and nullable_stamp.nullable is True
         and nullable_stamp.server_default is None
         and pk.primary_key is True
+        and pk.server_default is not None
         and org.nullable is False
         and org.name == "organization_id",
     )
@@ -1461,9 +1462,13 @@ class Audit:
         return [e["action"] for e in self.events]
 
 
+QUERIES = [0]
+
+
 def passthrough(
     session: Session, organization_id: uuid.UUID, statement: Any, params: Any = None
 ) -> Any:
+    QUERIES[0] += 1
     return session.execute(statement) if params is None else session.execute(statement, params)
 
 
@@ -1794,12 +1799,22 @@ def code_of(fn: Any) -> str | None:
 
 
 def refuses(
-    world: World, label: str, code: str, fn: Any, criterion: str = "ACC-FREEZE-REFUSE"
+    world: World,
+    label: str,
+    code: str,
+    fn: Any,
+    criterion: str = "ACC-FREEZE-REFUSE",
+    *,
+    early: bool = False,
 ) -> None:
+    """`early=True`: the refusal needs no database, so it must come before the first query."""
     before = world.counts()
+    queries = QUERIES[0]
     got = code_of(fn)
     check(criterion, f"{label}: code {code!r}, got {got!r}", got == code)
     check(criterion, f"{label}: nothing was written", world.counts() == before)
+    if early:
+        check(criterion, f"{label}: refused before any query", QUERIES[0] == queries)
 
 
 def part_s() -> None:
@@ -1817,13 +1832,24 @@ def part_s() -> None:
         s_legacy(world)
     with sqlite_world() as world:
         s_reads(world)
+    with sqlite_world() as world:
+        s_hardening(world)
+    with sqlite_world() as world:
+        s_tiny(world)
+    with sqlite_world() as world:
+        s_prior_groups(world)
+    with sqlite_world() as world:
+        s_tamper(world)
 
 
 def standard_world(world: World) -> dict[str, Any]:
     conn = world.connection("all", ALL_PURPOSES)
+    conn_a = world.connection("a", ALL_PURPOSES)
+    train_a = world.dataset("train-a", "training", 40, conn_a)
     return {
         "conn": conn,
-        "a": world.dataset("train-a", "training", 40, conn),
+        "conn_a": conn_a,
+        "a": train_a,
         "b": world.dataset("val-b", "validation", 10, conn),
         "d": world.dataset("dev-set", "candidate_development", 4, conn),
         "h": world.dataset("held-out", "held_out_evaluation", 4, conn),
@@ -1922,7 +1948,7 @@ def s_golden(world: World) -> None:
             and s.dataset_purpose == ds_.purpose
             and s.dataset_version == 1
             and s.dataset_sha256 == ds_.verified_sha256
-            and s.dataset_source_connection_id == ds["conn"]
+            and s.dataset_source_connection_id == (ds["conn_a"] if ds_ is a else ds["conn"])
             and sorted(s.allowed_purposes_snapshot) == sorted(ALL_PURPOSES)
             and s.quality_report_id == det_uuid(f"report-{ds_.id}-1")
             and s.quality_report_sha256 == sha(f"report-{ds_.id}-1")
@@ -2143,7 +2169,7 @@ def s_golden(world: World) -> None:
                 manifest_id=v_grant.id
             )
         }
-        == {tuple(sorted([*ALL_PURPOSES, "baseline_only"]))},
+        == {tuple(sorted([*ALL_PURPOSES, "baseline_only"])), tuple(sorted(ALL_PURPOSES))},
     )
     world.connections[ds["conn"]].allowed_purposes_json = list(ALL_PURPOSES)
 
@@ -2845,6 +2871,24 @@ def s_review(world: World) -> None:
         lambda: world.approve(semantic),
         "ACC-FREEZE-REVIEW",
     )
+    body = json.loads(json.dumps(semantic.leakage_report))
+    body["findings"][0]["scores"] = [
+        [name_, value + 0.001] for name_, value in body["findings"][0]["scores"]
+    ]
+    original_body = semantic.leakage_report
+    semantic.leakage_report = body
+    world.session.flush()
+    refuses(
+        world,
+        "a self-consistent edit of a finding's scores (only the report hash sees it)",
+        "manifest_tampered",
+        lambda: world.approve(
+            semantic, reviews=tuple(store.ReviewInput(i, "reviewed") for i in ids)
+        ),
+        "ACC-FREEZE-REVIEW",
+    )
+    semantic.leakage_report = original_body
+    world.session.flush()
     if len(ids) > 1:
         refuses(
             world,
@@ -3394,6 +3438,61 @@ def s_legacy(world: World) -> None:
         "with an explicit candidate_development dataset the development role is exactly that dataset",
         ids(full, "development_eval") == {f"{d.id}:{i}" for i in range(6)},
     )
+    named = migrate(
+        "Legacy-Ñ",
+        legacy,
+        [a, h, d],
+        development=d,
+        normalization_version="Norm-X",
+        tokenizer_identity="Tok-Y",
+    )
+    check(
+        "NEG-LEGACY-MAP",
+        "name, normalization version, tokenizer identity and clock come from the call",
+        (named.name, named.normalization_version, named.tokenizer_identity, named.created_by)
+        == ("Legacy-Ñ", "Norm-X", "Tok-Y", ADMIN.actor_id)
+        and named.created_at.replace(tzinfo=None) == _NOW.replace(tzinfo=None)
+        and named.version == 1,
+    )
+    spare = world.dataset("l-spare", "training", 5, conn)
+    refuses(
+        world,
+        "a development dataset that is a plain training dataset with its own records",
+        "invalid_request",
+        lambda: migrate("l-spare", legacy, [a, h, spare], development=spare),
+        "NEG-LEGACY-INPUT",
+    )
+    clash = world.dataset("l-clash", "candidate_development", 2, conn)
+    world.records[clash.id] = (
+        replace(world.records[clash.id][0], group_keys=("g0",)),
+        *world.records[clash.id][1:],
+    )
+    refuses(
+        world,
+        "a development record whose group is a legacy group would cross a boundary",
+        "invalid_request",
+        lambda: migrate("l-clash", legacy, [a, h, clash], development=clash),
+        "NEG-LEGACY-INPUT",
+    )
+    exact_legacy_assignments = tuple(
+        sorted((rid(h, i), "heldout_test", f"e{i}") for i in range(6))
+        + sorted((rid(a, i), "train", f"t{i}") for i in range(30))
+    )
+    exact_legacy = ism.LegacyThreeSplitManifest(
+        "exact",
+        exact_legacy_assignments,
+        ism.compute_legacy_sha256("exact", exact_legacy_assignments),
+    )
+    exact = migrate("l-exact", exact_legacy, [a, h, d], development=d)
+    check(
+        "NEG-LEGACY-MAP",
+        "a legacy manifest that places every supplied record is accepted",
+        exact.version == 1
+        and world.session.query(store.DatasetSplitAssignment)
+        .filter_by(manifest_id=exact.id)
+        .count()
+        == 30 + 6 + 6,
+    )
     locked = world.approve(full)
     check("NEG-LEGACY-MAP", "and the migrated manifest locks", locked.status == "locked")
     view = store.load_training_split(world.session, _CTX, project_id=_PROJECT, manifest_id=full.id)
@@ -3495,8 +3594,819 @@ def s_reads(world: World) -> None:
     )
 
 
+# -- hardening: pure helpers ----------------------------------------------------
+
+UP = "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
+LOW = UP.lower()
+
+
+def p_hardening() -> None:
+    check(
+        "ACC-FREEZE-ROWS",
+        "same() is exact-type, case- and whitespace-sensitive string equality",
+        ism.same("a", "a") is True
+        and ism.same("A", "a") is False
+        and ism.same("a", "A") is False
+        and ism.same(" a", "a") is False
+        and ism.same("a", " a") is False
+        and ism.same("a ", "a") is False
+        and ism.same(StrSub("a"), "a") is False
+        and ism.same("a", StrSub("a")) is False
+        and ism.same(1, 1) is False
+        and ism.same(None, None) is False,
+    )
+    check(
+        "ACC-FREEZE-ROWS",
+        "pg_safe refuses NUL and lone surrogates and accepts any other text",
+        ism.pg_safe("a") is True
+        and ism.pg_safe("") is True
+        and ism.pg_safe("é مرحبا 日本") is True
+        and ism.pg_safe("a\x00") is False
+        and ism.pg_safe("\x00") is False
+        and ism.pg_safe("\ud800") is False,
+    )
+    for label, make in (
+        (
+            "an uppercase dataset id",
+            lambda: ism.AssignmentRow(f"{UP}:0", UP, 0, "train", "g", "a" * 64, "b" * 64),
+        ),
+        (
+            "an uppercase record id over a lowercase dataset id",
+            lambda: ism.AssignmentRow(f"{UP}:0", LOW, 0, "train", "g", "a" * 64, "b" * 64),
+        ),
+        (
+            "a group id with NUL",
+            lambda: ism.AssignmentRow(f"{LOW}:0", LOW, 0, "train", "g\x00", "a" * 64, "b" * 64),
+        ),
+        (
+            "a group id with a lone surrogate",
+            lambda: ism.AssignmentRow(f"{LOW}:0", LOW, 0, "train", "\ud800", "a" * 64, "b" * 64),
+        ),
+        (
+            "a padded group id",
+            lambda: ism.AssignmentRow(f"{LOW}:0", LOW, 0, "train", "g ", "a" * 64, "b" * 64),
+        ),
+        (
+            "a role with different case",
+            lambda: ism.AssignmentRow(f"{LOW}:0", LOW, 0, "Train", "g", "a" * 64, "b" * 64),
+        ),
+        ("a purpose with different case", lambda: ism.RoleRow("train", "Training", 1, 1, "a" * 64)),
+        ("a padded purpose", lambda: ism.RoleRow("train", " training", 1, 1, "a" * 64)),
+        (
+            "an uppercase source dataset id",
+            lambda: ism.SourceGrant(
+                UP, 1, "training", "a" * 64, CONN, ("training",), REPORT, "b" * 64, "c" * 64
+            ),
+        ),
+        (
+            "an uppercase report id",
+            lambda: ism.SourceGrant(
+                DS_A, 1, "training", "a" * 64, CONN, ("training",), UP, "b" * 64, "c" * 64
+            ),
+        ),
+        ("an uppercase purpose", lambda: ism.pinned_role_for_purpose("Training")),
+        ("a padded purpose name", lambda: ism.pinned_role_for_purpose(" training")),
+        (
+            "a purpose with an uppercase pinned name",
+            lambda: ism.pinned_role_for_purpose("Held_Out_Evaluation"),
+        ),
+    ):
+        check("ACC-FREEZE-ROWS", f"{label} is refused", raises(make))
+    check(
+        "ACC-FREEZE-ROWS",
+        "a 200-character group id is not accepted over the 400 cap but 400 is, and so are non-ASCII ids",
+        ism.AssignmentRow(f"{LOW}:0", LOW, 0, "train", "é" * 400, "a" * 64, "b" * 64).group_id
+        == "é" * 400,
+    )
+    roles = ism.build_role_rows(
+        [
+            row(DS_A, 0, "train", "g0"),
+            row(DS_A, 1, "validation", "g1"),
+            row(DS_B, 0, "development_eval", "g2"),
+            row(DS_B, 1, "final_qualification", "g3"),
+        ]
+    )
+
+    def grant(**over: Any) -> ism.SourceGrant:
+        values: dict[str, Any] = {
+            "dataset_id": DS_A,
+            "dataset_version": 1,
+            "dataset_purpose": "training",
+            "dataset_sha256": "a" * 64,
+            "dataset_source_connection_id": CONN,
+            "allowed_purposes_snapshot": ("held_out_evaluation", "training"),
+            "quality_report_id": REPORT,
+            "quality_report_sha256": "b" * 64,
+            "excluded_positions_sha256": "c" * 64,
+            **over,
+        }
+        return ism.SourceGrant(**values)
+
+    base = make_content(roles, grant)
+    for label, bad in (
+        ("an upper-case leakage status", {"leakage_status": "CLEAR"}),
+        ("a padded leakage status", {"leakage_status": " clear"}),
+        ("a review that is not a mapping", {"leakage_reviews": ("x",)}),
+        ("a name with NUL", {"name": "a\x00b"}),
+        ("a seed with a lone surrogate", {"seed": "\ud800"}),
+        ("an upper-case project id", {"project_id": UP}),
+    ):
+        check(
+            "ACC-FREEZE-ROWS",
+            f"ManifestContent refuses {label}",
+            raises(lambda bad=bad: make_content(roles, grant, **bad)),
+        )
+    check(
+        "NEG-LEGACY-LINEAGE",
+        "only the exact legacy strategy name asks for a lineage hash",
+        make_content(roles, grant, strategy="Legacy_Three_Split_V1").migrated_from_legacy_sha256
+        is None
+        and raises(
+            lambda: make_content(
+                roles, grant, strategy="Legacy_Three_Split_V1", migrated_from_legacy_sha256=sha("l")
+            )
+        ),
+    )
+    check(
+        "ACC-FREEZE-ROWS",
+        "a name of 200 mixed-case, non-ASCII characters is accepted",
+        make_content(roles, grant, name="Ñ" * 200).name == "Ñ" * 200,
+    )
+    changed_counts = (replace(roles[0], record_count=2, group_count=2), *roles[1:])
+    changed_groups = (replace(roles[0], record_count=2, group_count=1), *roles[1:])
+    hashes = {
+        ism.compute_proposal_sha256(replace(base, roles=r))
+        for r in (roles, changed_counts, changed_groups)
+    }
+    check(
+        "ACC-FREEZE-HASH",
+        "the proposal hash covers each role's record and group counts",
+        len(hashes) == 3,
+    )
+    check(
+        "ACC-FREEZE-HASH",
+        "the proposal hash covers the source dataset id",
+        ism.compute_proposal_sha256(replace(base, sources=(grant(dataset_id=DS_B),)))
+        != ism.compute_proposal_sha256(base),
+    )
+    roles_swapped = (roles[1], roles[0], *roles[2:])
+    check(
+        "ACC-FREEZE-ROWS",
+        "role rows out of ROLES order are refused",
+        raises(lambda: replace(base, roles=roles_swapped)),
+    )
+    check(
+        "ACC-FREEZE-HASH",
+        "the role rows are positional in the proposal body",
+        json.dumps(ism._role_list(roles[0]))
+        == json.dumps([roles[0].record_count, roles[0].group_count, roles[0].role_sha256]),
+    )
+    check(
+        "ACC-FREEZE-ROWS",
+        "build_role_rows refuses a duplicate record id among otherwise valid rows",
+        raises(
+            lambda: ism.build_role_rows(
+                [row(DS_A, 0, "train", "g0"), row(DS_A, 0, "validation", "g1")]
+            )
+        ),
+    )
+    check(
+        "ACC-FREEZE-ROWS",
+        "build_role_rows accepts distinct rows of one dataset",
+        len(
+            ism.build_role_rows([row(DS_A, 0, "train", "g0"), row(DS_A, 1, "train", "g0")])[
+                0
+            ].role_sha256
+        )
+        == 64,
+    )
+    check(
+        "NEG-LEGACY-REFUSE",
+        "an upper-case heldout_test is not the legacy role name",
+        ism.is_legacy_three_split(["HELDOUT_TEST"]) is False
+        and ism.is_legacy_three_split("Heldout_Test") is False,
+    )
+
+
+# -- hardening: the store ---------------------------------------------------------
+
+
+def bad_texts(limit: int) -> list[Any]:
+    return [5, "", " x", "x ", "x\x00y", "\ud800", "n" * (limit + 1), None]
+
+
+def s_hardening(world: World) -> None:
+    ds = standard_world(world)
+    a, b, d, h, conn = ds["a"], ds["b"], ds["d"], ds["h"], ds["conn"]
+    base_args = [b, d, h]
+
+    for bad_code in ("INVALID_REQUEST", " invalid_request", "invalid_request ", "Invalid_Request"):
+        check(
+            "ACC-FREEZE-REFUSE",
+            f"an unknown code {bad_code!r} is a programming error",
+            raises(lambda c=bad_code: store.SplitManifestError(c), AssertionError),
+        )
+    stamp = store._now()
+    check(
+        "ACC-FREEZE-AUDIT",
+        "the clock is timezone-aware UTC and current",
+        stamp.tzinfo is not None and abs((datetime.now(UTC) - stamp).total_seconds()) < 60,
+    )
+
+    # Early refusals: nothing queried, nothing written.
+    for field, limit in (("actor_type", 64), ("actor_id", 200), ("role", 64), ("request_id", 100)):
+        for bad in bad_texts(limit):
+            values = {
+                "actor_type": "user",
+                "actor_id": "a",
+                "role": "workspace_admin",
+                "request_id": "r",
+            }
+            values[field] = bad
+            refuses(
+                world,
+                f"actor {field}={str(bad)[:12]!r}",
+                "invalid_request",
+                lambda values=values: world.propose(
+                    "h1", base_args, actor=store.SplitActor(**values)
+                ),
+                early=True,
+            )
+    for role in ("Workspace_Admin", "ORGANIZATION_ADMIN", "viewer", "admin"):
+        refuses(
+            world,
+            f"role {role!r} may not see held-out data",
+            "actor_not_permitted",
+            lambda role=role: world.propose(
+                "h2", base_args, actor=store.SplitActor("user", "a", role, "r")
+            ),
+            early=True,
+        )
+    for label, over, limit in (
+        ("name", "force_name", 200),
+        ("normalization_version", "normalization_version", 64),
+        ("tokenizer_identity", "tokenizer_identity", 200),
+    ):
+        for bad in bad_texts(limit):
+            if over == "tokenizer_identity" and bad is None:
+                continue
+            refuses(
+                world,
+                f"{label}={str(bad)[:12]!r}",
+                "invalid_request",
+                lambda over=over, bad=bad: world.propose("h3", base_args, **{over: bad}),
+                early=True,
+            )
+    refuses(
+        world,
+        "a project id that is not a UUID",
+        "invalid_request",
+        lambda: world.propose("h4", base_args, project_id="x"),
+        early=True,
+    )
+    refuses(
+        world,
+        "sources that are not a list",
+        "invalid_request",
+        lambda: world.propose("h5", [], sources="abc"),
+        early=True,
+    )
+    refuses(
+        world,
+        "a source that is not a SplitSourceInput",
+        "invalid_request",
+        lambda: world.propose("h5", [], sources=["x"]),
+        early=True,
+    )
+    refuses(
+        world,
+        "a repeated dataset",
+        "invalid_request",
+        lambda: world.propose("h5", [], sources=[world.source(b), world.source(b)]),
+        early=True,
+    )
+    refuses(
+        world,
+        "no sources",
+        "invalid_request",
+        lambda: world.propose("h5", [], sources=()),
+        early=True,
+    )
+    original = store.MAX_MANIFEST_RECORDS
+    store.MAX_MANIFEST_RECORDS = 15
+    try:
+        refuses(
+            world,
+            "18 supplied records over a limit of 15",
+            "manifest_too_large",
+            lambda: world.propose("h6", base_args),
+            early=True,
+        )
+    finally:
+        store.MAX_MANIFEST_RECORDS = original
+    # The boundaries themselves are accepted, with mixed-case, non-ASCII labels.
+    wide = world.propose(
+        "Ñ" * 200, base_args, normalization_version="V" * 64, tokenizer_identity="Ö" * 200
+    )
+    check(
+        "ACC-FREEZE-REFUSE",
+        "a 200-character name, a 64-character normalization version and a 200-character tokenizer are accepted",
+        wide.name == "Ñ" * 200
+        and wide.normalization_version == "V" * 64
+        and wide.tokenizer_identity == "Ö" * 200,
+    )
+
+    # Group keys: Postgres-safe text of at most 400 characters.
+    rec = world.records[b.id][0]
+    for label, keys in (
+        ("a NUL", ("a\x00",)),
+        ("a lone surrogate", ("\ud800",)),
+        ("401 characters", ("k" * 401,)),
+        ("an empty key", ("",)),
+        ("a non-string key", (5,)),
+        ("a list instead of a tuple", ["a"]),
+    ):
+        refuses(
+            world,
+            f"a group key with {label}",
+            "invalid_request",
+            lambda keys=keys: world.propose(
+                "h7",
+                [],
+                sources=[
+                    store.SplitSourceInput(
+                        b.id, (replace(rec, group_keys=keys), *world.records[b.id][1:])
+                    )
+                ],
+            ),
+        )
+    keyed = world.propose(
+        "Keyed",
+        [],
+        sources=[
+            store.SplitSourceInput(
+                b.id, (replace(rec, group_keys=("z" * 400, "Ünï")), *world.records[b.id][1:])
+            )
+        ],
+    )
+    stored = (
+        world.session.query(store.DatasetSplitAssignment)
+        .filter_by(manifest_id=keyed.id, record_id=f"{b.id}:0")
+        .one()
+    )
+    check(
+        "ACC-FREEZE-ROWS",
+        "a 400-character key is accepted and the group id is the smallest key",
+        stored.group_id == "Ünï" or stored.group_id == min("z" * 400, "Ünï"),
+    )
+
+    # A dataset whose upload session is gone, a spec seed Postgres cannot store, a bad route.
+    orphan = world.dataset("orphan", "training", 10, conn)
+    world.session.delete(world.session.get(ustore.DatasetUploadSession, orphan.upload_session_id))
+    world.session.flush()
+    refuses(
+        world,
+        "a dataset whose upload session is missing",
+        "dataset_not_found",
+        lambda: world.propose("h8", [orphan, d, h]),
+    )
+    for label, seed in (
+        ("a padded seed", "s "),
+        ("a seed with NUL", "s\x00"),
+        ("a seed with a lone surrogate", "\ud800"),
+    ):
+        refuses(
+            world,
+            label,
+            "invalid_request",
+            lambda seed=seed: world.propose(
+                "h9", base_args, spec=SplitSpec("sha256_group_hash_v1", seed, (70, 10, 10, 10))
+            ),
+        )
+    refuses(
+        world,
+        "a route that is not an EmbeddingRoute",
+        "invalid_request",
+        lambda: world.propose("h10", base_args, route="internal"),
+    )
+
+    # Mixed-case names version and replay correctly.
+    name = "Campaign Ünï-A"
+    first = world.propose(name, [a, b, d, h])
+    again = world.propose(name, [a, b, d, h])
+    check(
+        "ACC-VERSION-IDEMPOTENT", "a mixed-case name replays to the same row", again.id == first.id
+    )
+    second = world.propose(
+        name, [a, b, d, h], spec=SplitSpec("sha256_group_hash_v1", "seed-b", (70, 10, 10, 10))
+    )
+    check(
+        "ACC-VERSION-CHANGE",
+        "and versions from it",
+        (second.version, second.parent_version) == (2, 1),
+    )
+    locked = world.approve(first)
+    check("ACC-FREEZE-APPROVE", "and locks", locked.status == "locked")
+    prior = prior_for(world, locked)
+    check(
+        "ACC-FREEZE-PRIOR",
+        "the derived prior label keeps the name's case",
+        prior[0].label == f"{name}@v1:development_eval",
+    )
+    shouted = PriorSource(prior[0], label=prior[0].label.lower())
+    refuses(
+        world,
+        "a prior label in another case",
+        "prior_sources_incomplete",
+        lambda: world.propose("Next", [a, b, d, h], prior_sources=(shouted, prior[1])),
+    )
+    accepted = world.propose("Next", [a, b, d, h], prior_sources=prior)
+    check("ACC-FREEZE-PRIOR", "the exact labels are accepted", accepted.version == 1)
+    refuses(
+        world,
+        "prior sources as a tuple of non-suites",
+        "invalid_request",
+        lambda: world.propose("Next2", [a, b, d, h], prior_sources=(1, 2)),
+    )
+    refuses(
+        world,
+        "a prior suite repeating one role and omitting the other",
+        "prior_sources_incomplete",
+        lambda: world.propose("Next2", [a, b, d, h], prior_sources=(prior[0], prior[0])),
+    )
+
+    # Tampering with stored proposals.
+    proposal = world.propose("Tamper-1", [a, b, d, h], prior_sources=prior)
+    original_norm = proposal.normalization_version
+    proposal.normalization_version = "norm-edited"
+    world.session.flush()
+    refuses(
+        world,
+        "an edited normalization version (only the proposal hash covers it)",
+        "manifest_tampered",
+        lambda: world.approve(proposal),
+    )
+    proposal.normalization_version = original_norm
+    original_hash = proposal.proposal_sha256
+    proposal.proposal_sha256 = original_hash.upper()
+    world.session.flush()
+    refuses(
+        world,
+        "a stored proposal hash in another case",
+        "manifest_tampered",
+        lambda: world.approve(proposal, expected_proposal_sha256=original_hash.upper()),
+    )
+    refuses(
+        world,
+        "an expected hash in another case",
+        "manifest_changed",
+        lambda: world.approve(proposal, expected_proposal_sha256=original_hash.upper() + " "),
+    )
+    proposal.proposal_sha256 = original_hash
+    proposal.status = "Proposed"
+    world.session.flush()
+    refuses(
+        world,
+        "a status in another case is not proposed",
+        "manifest_not_proposed",
+        lambda: world.approve(proposal),
+    )
+    refuses(
+        world,
+        "and cannot be rejected",
+        "manifest_not_proposed",
+        lambda: store.reject_split_manifest(
+            world.session, _CTX, project_id=_PROJECT, manifest_id=proposal.id, actor=ADMIN
+        ),
+    )
+    proposal.status = "proposed"
+    world.session.flush()
+
+    # Reviews that are not lists, NUL in a rationale.
+    for label, reviews in (("an int", 5), ("None", None), ("a dict", {})):
+        refuses(
+            world,
+            f"reviews as {label}",
+            "invalid_review",
+            lambda reviews=reviews: world.approve(proposal, reviews=reviews),
+        )
+    refuses(
+        world,
+        "a rationale with NUL",
+        "invalid_review",
+        lambda: world.approve(proposal, reviews=(store.ReviewInput("f" * 64, "no\x00pe"),)),
+    )
+    refuses(
+        world,
+        "a rationale with a lone surrogate",
+        "invalid_review",
+        lambda: world.approve(proposal, reviews=(store.ReviewInput("f" * 64, "\ud800"),)),
+    )
+    refuses(
+        world,
+        "a rationale that is not text",
+        "invalid_review",
+        lambda: world.approve(proposal, reviews=(store.ReviewInput("f" * 64, 5),)),
+    )
+
+
+def s_tiny(world: World) -> None:
+    """The smallest lockable shape: exactly one record in each evaluation role."""
+    conn = world.connection("all", ALL_PURPOSES)
+    a = world.dataset("tiny-train", "training", 40, conn)
+    d = world.dataset("tiny-dev", "candidate_development", 1, conn)
+    h = world.dataset("tiny-held", "held_out_evaluation", 1, conn)
+    world.records[a.id] = tuple(
+        replace(r, event_time=10 + r.batch_position) for r in world.records[a.id]
+    )
+    world.records[d.id] = tuple(replace(r, event_time=5000) for r in world.records[d.id])
+    world.records[h.id] = tuple(replace(r, event_time=5000) for r in world.records[h.id])
+    spec = SplitSpec("sha256_group_hash_v1", "tiny", (80, 10, 5, 5), cutoff=1000)
+    tiny = world.propose("Tiny", [a, d, h], spec=spec)
+    counts_by_role = {
+        r.role: r.record_count
+        for r in world.session.query(store.DatasetSplitManifestRole).filter_by(manifest_id=tiny.id)
+    }
+    check(
+        "ACC-FREEZE-ROLES",
+        f"development and final hold exactly one record each: {counts_by_role}",
+        counts_by_role["development_eval"] == 1
+        and counts_by_role["final_qualification"] == 1
+        and counts_by_role["train"] >= 1
+        and counts_by_role["validation"] >= 1,
+    )
+    original_flush = world.session.flush
+
+    def exploding_flush(*args: Any, **kwargs: Any) -> None:
+        if tiny.status == "locked":
+            raise IntegrityError("update", {}, Exception("trigger refused the lock"))
+        original_flush(*args, **kwargs)
+
+    world.session.flush = exploding_flush  # type: ignore[method-assign]
+    try:
+        got = code_of(lambda: world.approve(tiny))
+    finally:
+        world.session.flush = original_flush  # type: ignore[method-assign]
+    world.session.expire(tiny)
+    check(
+        "ACC-FREEZE-APPROVE",
+        f"a lock the database refuses is manifest_insufficient: {got!r}",
+        got == "manifest_insufficient",
+    )
+    check("ACC-FREEZE-APPROVE", "and the row is still proposed", tiny.status == "proposed")
+    locked = world.approve(tiny)
+    check("ACC-FREEZE-ROLES", "and a role with exactly one record locks", locked.status == "locked")
+    cutoff_roles = {
+        r.role
+        for r in world.session.query(store.DatasetSplitAssignment).filter_by(manifest_id=tiny.id)
+        if r.source_dataset_id == a.id
+    }
+    check(
+        "ACC-FREEZE-ROLES",
+        "pre-cutoff records of the free source stay out of evaluation roles",
+        cutoff_roles <= {"train", "validation"},
+    )
+
+
+def s_prior_groups(world: World) -> None:
+    conn = world.connection("all", ALL_PURPOSES)
+    t0 = world.dataset("g-train-0", "training", 30, conn)
+    d0 = world.dataset("g-dev-0", "candidate_development", 4, conn)
+    h0 = world.dataset("g-held-0", "held_out_evaluation", 4, conn)
+    world.records[h0.id] = (
+        replace(world.records[h0.id][0], group_keys=("z",)),
+        *world.records[h0.id][1:],
+    )
+    first = world.propose("g0", [t0, d0, h0])
+    locked = world.approve(first)
+    prior = prior_for(world, locked)
+    final_label = prior[1].label
+    found = False
+    for attempt in range(6):
+        t1 = world.dataset(f"g-train-1-{attempt}", "training", 30, conn)
+        d1 = world.dataset(f"g-dev-1-{attempt}", "candidate_development", 4, conn)
+        h1 = world.dataset(f"g-held-1-{attempt}", "held_out_evaluation", 4, conn)
+        world.records[t1.id] = (
+            replace(world.records[t1.id][0], group_keys=("a", "z")),
+            *world.records[t1.id][1:],
+        )
+        second = world.propose(f"g1-{attempt}", [t1, d1, h1], prior_sources=prior)
+        role = (
+            world.session.query(store.DatasetSplitAssignment)
+            .filter_by(manifest_id=second.id, record_id=f"{t1.id}:0")
+            .one()
+            .role
+        )
+        if role == "development_eval":
+            continue
+        hits = [
+            f
+            for f in second.leakage_report["findings"]
+            if f["method"] == "group"
+            and f["prior_source_label"] == final_label
+            and f"{t1.id}:0" in (f["record_id_a"], f["record_id_b"])
+        ]
+        check(
+            "ACC-FREEZE-PRIOR",
+            f"a linkage key shared with a prior final record is a group finding (record in {role})",
+            len(hits) >= 1,
+        )
+        found = True
+        break
+    check("ACC-FREEZE-PRIOR", "the group scenario ran", found)
+
+
+def s_tamper(world: World) -> None:
+    ds = standard_world(world)
+    a, b, d, h, conn_a = ds["a"], ds["b"], ds["d"], ds["h"], ds["conn_a"]
+    m1 = world.propose("campaign", [a, b, d, h])
+    pending = world.propose("pending", [b, d, h])
+    world.approve(m1)
+
+    def training() -> Any:
+        return store.load_training_split(
+            world.session, _CTX, project_id=_PROJECT, manifest_id=m1.id
+        )
+
+    def development() -> Any:
+        return store.load_development_split(
+            world.session, _CTX, project_id=_PROJECT, manifest_id=m1.id
+        )
+
+    # A grant that only the first source's connection holds.
+    world.connections[conn_a].allowed_purposes_json = [
+        "validation",
+        "candidate_development",
+        "held_out_evaluation",
+    ]
+    refuses(
+        world,
+        "the training grant of source a alone removed",
+        "grant_changed",
+        training,
+        "NEG-FINAL-GRANT",
+    )
+    world.connections[conn_a].allowed_purposes_json = list(ALL_PURPOSES)
+    check("NEG-FINAL-GRANT", "restored, it serves again", len(training().rows) > 0)
+
+    # Status / frozen columns.
+    m1.frozen_manifest_sha256 = None
+    world.session.flush()
+    refuses(
+        world,
+        "a locked manifest without its frozen hash",
+        "manifest_not_locked",
+        training,
+        "NEG-FINAL-TAMPER",
+    )
+    good_frozen = store._content_from_rows(
+        m1,
+        store._fetch_roles(world.session, _CTX, m1.id),
+        store._fetch_sources(world.session, _CTX, m1.id),
+    )
+    m1.frozen_manifest_sha256 = ism.compute_frozen_manifest_sha256(good_frozen)
+    m1.status = "Locked"
+    world.session.flush()
+    refuses(
+        world,
+        "a status in another case is not locked",
+        "manifest_not_locked",
+        training,
+        "NEG-FINAL-TAMPER",
+    )
+    m1.status = "locked"
+    world.session.flush()
+
+    # A forged reviewed hash with a recomputed frozen hash: only the reviewed-report check sees it.
+    real_reviewed = m1.reviewed_leakage_report_sha256
+    m1.reviewed_leakage_report_sha256 = "7" * 64
+    world.session.flush()
+    forged = store._content_from_rows(
+        m1,
+        store._fetch_roles(world.session, _CTX, m1.id),
+        store._fetch_sources(world.session, _CTX, m1.id),
+    )
+    real_frozen = m1.frozen_manifest_sha256
+    m1.frozen_manifest_sha256 = ism.compute_frozen_manifest_sha256(forged)
+    world.session.flush()
+    refuses(
+        world,
+        "a reviewed-report hash forged with a recomputed frozen hash",
+        "manifest_tampered",
+        training,
+        "NEG-FINAL-TAMPER",
+    )
+    m1.reviewed_leakage_report_sha256 = real_reviewed
+    m1.frozen_manifest_sha256 = real_frozen
+    world.session.flush()
+    check("NEG-FINAL-TAMPER", "restored, it serves again", len(training().rows) > 0)
+
+    # A development record edited: the development view refuses, the training view does not.
+    dev_row = (
+        world.session.query(store.DatasetSplitAssignment)
+        .filter_by(manifest_id=m1.id, role="development_eval")
+        .first()
+    )
+    good_hash = dev_row.record_sha256
+    dev_row.record_sha256 = "8" * 64
+    world.session.flush()
+    refuses(
+        world, "an edited development record", "manifest_tampered", development, "NEG-FINAL-TAMPER"
+    )
+    check("NEG-FINAL-TAMPER", "the training view is unaffected by it", len(training().rows) > 0)
+    dev_row.record_sha256 = good_hash
+    world.session.flush()
+    check(
+        "NEG-FINAL-TAMPER",
+        "restored, the development view serves again",
+        len(development().rows) > 0,
+    )
+
+    # The second, independent role assertion: if the SQL filter ever served a wrong role.
+    original_read = store._read_rows
+    wrong_final = ism.AssignmentRow(
+        f"{h.id}:0", str(h.id), 0, "final_qualification", "g", "a" * 64, "b" * 64
+    )
+    wrong_train = ism.AssignmentRow(f"{a.id}:0", str(a.id), 0, "train", "g", "a" * 64, "b" * 64)
+    store._read_rows = lambda *args, **kwargs: (wrong_final,)  # type: ignore[assignment]
+    try:
+        refuses(
+            world,
+            "a final record reaching the training view",
+            "manifest_tampered",
+            training,
+            "NEG-FINAL-VIEW",
+        )
+    finally:
+        store._read_rows = original_read  # type: ignore[assignment]
+    store._read_rows = lambda *args, **kwargs: (wrong_train,)  # type: ignore[assignment]
+    try:
+        refuses(
+            world,
+            "a train record reaching the development view",
+            "manifest_tampered",
+            development,
+            "NEG-FINAL-VIEW",
+        )
+    finally:
+        store._read_rows = original_read  # type: ignore[assignment]
+
+    # An open leakage finding on a forged lock.
+    ds2 = standard_world_2(world)
+    semantic = world.propose(
+        "forged", [ds2["a"], ds2["d"], ds2["h"]], prior_sources=prior_for(world, m1)
+    )
+    check(
+        "NEG-FINAL-TAMPER",
+        "the forged-lock scenario has an open finding",
+        len(semantic.leakage_report["findings"]) >= 1,
+    )
+    semantic.status = "locked"
+    semantic.approved_by = "attacker"
+    semantic.locked_at = _NOW
+    semantic.reviewed_leakage_report_sha256 = semantic.leakage_report_sha256
+    world.session.flush()
+    forged_content = store._content_from_rows(
+        semantic,
+        store._fetch_roles(world.session, _CTX, semantic.id),
+        store._fetch_sources(world.session, _CTX, semantic.id),
+    )
+    semantic.frozen_manifest_sha256 = ism.compute_frozen_manifest_sha256(forged_content)
+    world.session.flush()
+    refuses(
+        world,
+        "a lock forged over an open review_required finding (training)",
+        "leakage_not_clear",
+        lambda: store.load_training_split(
+            world.session, _CTX, project_id=_PROJECT, manifest_id=semantic.id
+        ),
+        "NEG-FINAL-VIEW",
+    )
+    refuses(
+        world,
+        "and for the development view",
+        "leakage_not_clear",
+        lambda: store.load_development_split(
+            world.session, _CTX, project_id=_PROJECT, manifest_id=semantic.id
+        ),
+        "NEG-FINAL-VIEW",
+    )
+    _ = pending
+
+
+def standard_world_2(world: World) -> dict[str, Any]:
+    conn = world.connection("sem", ALL_PURPOSES)
+    a = world.dataset("sem-train", "training", 40, conn)
+    d = world.dataset("sem-dev", "candidate_development", 4, conn)
+    h = world.dataset("sem-held", "held_out_evaluation", 4, conn)
+    world.records[d.id] = (long_record(str(d.id), 0), *world.records[d.id][1:])
+    world.records[h.id] = (variant(world.records[d.id][0], "zzzzzz"), *world.records[h.id][1:])
+    return {"a": a, "d": d, "h": h}
+
+
 def main() -> None:
     part_p()
+    p_hardening()
     part_m()
     part_s()
     if FAILURES:

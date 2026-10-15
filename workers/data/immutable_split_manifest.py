@@ -38,7 +38,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Final
@@ -102,7 +101,11 @@ PINNED_PURPOSE_ROLE: Final[Mapping[str, str]] = {
     "candidate_development": "development_eval",
     "held_out_evaluation": "final_qualification",
 }
-_FREE_PURPOSES: Final = ("training", "validation")
+_SPLIT_PURPOSES: Final[Mapping[str, str | None]] = {
+    "training": None,
+    "validation": None,
+    **PINNED_PURPOSE_ROLE,
+}
 TRAINING_ROLES: Final = ("train", "validation")
 DEVELOPMENT_ROLES: Final = ("development_eval",)
 LEGACY_STRATEGY: Final = "legacy_three_split_v1"
@@ -117,6 +120,7 @@ MAX_MANIFEST_RECORDS: Final = 1_000_000
 _MAX_TEXT = 200
 _MAX_SEED = 128
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _LEAKAGE_STATUSES: Final = STATUSES
 
 
@@ -124,9 +128,31 @@ class ManifestDomainError(ValueError):
     """Malformed input or an untrustworthy stored manifest. Never raised for a normal freeze."""
 
 
+def same(first: object, second: object) -> bool:
+    """Exact-type string equality. Every comparison of a stored or supplied label, status, role
+    or hash with an expected one goes through here, so a case or whitespace variant is a
+    mismatch, never a match."""
+    return type(first) is str and type(second) is str and first == second
+
+
+def pg_safe(value: str) -> bool:
+    """True if Postgres `text` / `jsonb` can store `value`: no NUL and no lone surrogate."""
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return "\x00" not in value
+
+
 def _text(value: object, name: str, limit: int = _MAX_TEXT) -> str:
     # Exact type, not isinstance: a str subclass with a foreign hash / eq must never become an id.
-    if type(value) is not str or not value or value != value.strip() or len(value) > limit:
+    if (
+        type(value) is not str
+        or not value
+        or not same(value, value.strip())
+        or len(value) > limit
+        or not pg_safe(value)
+    ):
         raise ManifestDomainError(f"{name} must be a clean non-empty string of at most {limit}")
     return value
 
@@ -148,21 +174,18 @@ def _int(value: object, name: str, low: int, high: int) -> int:
 
 
 def _uuid_text(value: object, name: str) -> str:
-    if type(value) is not str:
-        raise ManifestDomainError(f"{name} must be a canonical UUID string")
-    try:
-        canonical = str(uuid.UUID(value))
-    except ValueError:
-        raise ManifestDomainError(f"{name} must be a canonical UUID string") from None
-    if canonical != value:
+    if type(value) is not str or _UUID.fullmatch(value) is None:
         raise ManifestDomainError(f"{name} must be a canonical UUID string")
     return value
 
 
 def _role(value: object, name: str = "role") -> str:
-    # Type before membership, so an unhashable value raises this module's error.
-    if type(value) is not str or value not in ROLE_PURPOSE:
+    if type(value) is not str:
         raise ManifestDomainError(f"{name} must be one of {ROLES}")
+    try:
+        ROLE_PURPOSE[value]
+    except KeyError:
+        raise ManifestDomainError(f"{name} must be one of {ROLES}") from None
     return value
 
 
@@ -180,11 +203,10 @@ def pinned_role_for_purpose(purpose: object) -> str | None:
     purpose."""
     if type(purpose) is not str:
         raise ManifestDomainError("purpose must be a string")
-    if purpose in PINNED_PURPOSE_ROLE:
-        return PINNED_PURPOSE_ROLE[purpose]
-    if purpose in _FREE_PURPOSES:
-        return None
-    raise ManifestDomainError(f"purpose {purpose!r} is not a split purpose")
+    try:
+        return _SPLIT_PURPOSES[purpose]
+    except KeyError:
+        raise ManifestDomainError(f"purpose {purpose!r} is not a split purpose") from None
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +234,7 @@ class AssignmentRow:
         _text(self.group_id, "group_id", 400)
         _sha(self.record_sha256, "record_sha256")
         _sha(self.normalized_sha256, "normalized_sha256")
-        if self.record_id != f"{self.source_dataset_id}:{self.batch_position}":
+        if not same(self.record_id, f"{self.source_dataset_id}:{self.batch_position}"):
             raise ManifestDomainError("record_id must be '<source_dataset_id>:<batch_position>'")
 
 
@@ -232,7 +254,7 @@ class RoleRow:
 
     def __post_init__(self) -> None:
         _role(self.role)
-        if self.purpose != ROLE_PURPOSE[self.role]:
+        if not same(self.purpose, ROLE_PURPOSE[self.role]):
             raise ManifestDomainError("purpose does not match the fixed role <-> purpose map")
         _int(self.record_count, "record_count", 0, MAX_MANIFEST_RECORDS)
         _int(self.group_count, "group_count", 0, MAX_MANIFEST_RECORDS)
@@ -247,15 +269,13 @@ def build_role_rows(assignments: Sequence[AssignmentRow]) -> tuple[RoleRow, ...]
     """Always four rows, in `ROLES` order, counted from the assignments alone."""
     if type(assignments) not in (tuple, list):
         raise ManifestDomainError("assignments must be a list or tuple")
-    seen: set[str] = set()
     by_role: dict[str, list[AssignmentRow]] = {role: [] for role in ROLES}
     for row in assignments:
         if not isinstance(row, AssignmentRow):
             raise ManifestDomainError("assignments must contain AssignmentRow values")
-        if row.record_id in seen:
-            raise ManifestDomainError("duplicate record_id")
-        seen.add(row.record_id)
         by_role[row.role].append(row)
+    if len({row.record_id for row in assignments}) != len(assignments):
+        raise ManifestDomainError("duplicate record_id")
     return tuple(
         RoleRow(
             role=role,
@@ -335,14 +355,10 @@ class SourceGrant:
         _sha(self.excluded_positions_sha256, "excluded_positions_sha256")
 
 
-def _role_dict(row: RoleRow) -> dict[str, object]:
-    return {
-        "role": row.role,
-        "purpose": row.purpose,
-        "record_count": row.record_count,
-        "group_count": row.group_count,
-        "role_sha256": row.role_sha256,
-    }
+def _role_list(row: RoleRow) -> list[object]:
+    # Positional: the four rows are always in ROLES order and `purpose` follows from the role, so
+    # a key per field would add nothing a reachable change could move.
+    return [row.record_count, row.group_count, row.role_sha256]
 
 
 def _source_dict(grant: SourceGrant) -> dict[str, object]:
@@ -410,13 +426,14 @@ class ManifestContent:
         if not isinstance(self.leakage_report, Mapping):
             raise ManifestDomainError("leakage_report must be a mapping")
         _sha(self.leakage_report_sha256, "leakage_report_sha256")
-        if type(self.leakage_status) is not str or self.leakage_status not in _LEAKAGE_STATUSES:
+        if not any(same(self.leakage_status, status) for status in _LEAKAGE_STATUSES):
             raise ManifestDomainError(f"leakage_status must be one of {_LEAKAGE_STATUSES}")
         if type(self.roles) is not tuple or len(self.roles) != len(ROLES):
             raise ManifestDomainError("exactly four role rows are required")
-        for row, role in zip(self.roles, ROLES, strict=True):
-            if not isinstance(row, RoleRow) or row.role != role:
-                raise ManifestDomainError("role rows must be RoleRow values in ROLES order")
+        if not all(isinstance(row, RoleRow) for row in self.roles) or tuple(
+            row.role for row in self.roles
+        ) != tuple(ROLES):
+            raise ManifestDomainError("role rows must be RoleRow values in ROLES order")
         if type(self.sources) is not tuple or not self.sources:
             raise ManifestDomainError("sources must be a non-empty tuple")
         ids = [s.dataset_id for s in self.sources if isinstance(s, SourceGrant)]
@@ -431,7 +448,7 @@ class ManifestContent:
                 raise ManifestDomainError("each review must be a mapping")
         _opt_sha(self.reviewed_leakage_report_sha256, "reviewed_leakage_report_sha256")
         _opt_sha(self.migrated_from_legacy_sha256, "migrated_from_legacy_sha256")
-        if (self.strategy == LEGACY_STRATEGY) != (self.migrated_from_legacy_sha256 is not None):
+        if same(self.strategy, LEGACY_STRATEGY) != (self.migrated_from_legacy_sha256 is not None):
             raise ManifestDomainError("the legacy strategy and its lineage hash go together")
         if self.approved_by is not None:
             _text(self.approved_by, "approved_by")
@@ -453,7 +470,7 @@ def _proposal_body(content: ManifestContent) -> dict[str, object]:
         "leakage_report_sha256": content.leakage_report_sha256,
         "leakage_status": content.leakage_status,
         "migrated_from_legacy_sha256": content.migrated_from_legacy_sha256,
-        "roles": [_role_dict(r) for r in content.roles],
+        "roles": [_role_list(r) for r in content.roles],
         "sources": [_source_dict(s) for s in content.sources],
     }
 
@@ -485,9 +502,9 @@ def verify_frozen_content(content: ManifestContent, frozen_manifest_sha256: str)
     the stored leakage report still hashes to what the manifest recorded."""
     _sha(frozen_manifest_sha256, "frozen_manifest_sha256")
     report = report_from_body(content.leakage_report)
-    if compute_report_sha256(report) != content.leakage_report_sha256:
+    if not same(compute_report_sha256(report), content.leakage_report_sha256):
         raise ManifestDomainError("the stored leakage report does not hash to its recorded hash")
-    if compute_frozen_manifest_sha256(content) != frozen_manifest_sha256:
+    if not same(compute_frozen_manifest_sha256(content), frozen_manifest_sha256):
         raise ManifestDomainError("the frozen manifest hash does not cover its content")
 
 
@@ -635,7 +652,7 @@ class LegacyThreeSplitManifest:
                 raise ManifestDomainError(f"a legacy role must be one of {LEGACY_ROLES}")
             _text(entry[2], "group_id", 400)
         _sha(self.legacy_sha256, "legacy_sha256")
-        if self.legacy_sha256 != compute_legacy_sha256(self.seed, self.assignments):
+        if not same(self.legacy_sha256, compute_legacy_sha256(self.seed, self.assignments)):
             raise ManifestDomainError("the legacy manifest hash does not cover its content")
 
 
@@ -655,7 +672,7 @@ def is_legacy_three_split(value: object) -> bool:
     if isinstance(value, tuple | list):
         if len(value) == 3 and all(type(v) is int for v in value):
             return True
-        return any(type(v) is str and v == "heldout_test" for v in value)
+        return any(same(v, "heldout_test") for v in value)
     return False
 
 

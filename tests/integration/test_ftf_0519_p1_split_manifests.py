@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # ruff: noqa: E501
+# mypy: disable-error-code="misc"
 """FTF-0519-P1 -- real Postgres proof for immutable split manifests (migration 0030).
 
 Proves against a live PostgreSQL server (never SQLite -- it has no row-level security) every clause
@@ -934,6 +935,35 @@ def refusals(env: Env, w: World, a: Any, a2: Any, d: Any, h: Any, m1: Any) -> No
         ),
     ):
         expect_refusal(env, f"invalid request: {label}", "invalid_request", call)
+
+    first_record = env.records[a2.id][0]
+    for label, call in (
+        (
+            "a group key Postgres cannot store (NUL)",
+            lambda: env.propose(
+                w,
+                "c-nul",
+                [],
+                sources=[
+                    store.SplitSourceInput(
+                        a2.id,
+                        (replace(first_record, group_keys=("a\x00b",)), *env.records[a2.id][1:]),
+                    )
+                ],
+            ),
+        ),
+        ("a name Postgres cannot store (NUL)", lambda: env.propose(w, "c\x00x", [a2, d, h])),
+        (
+            "a seed Postgres cannot store (lone surrogate)",
+            lambda: env.propose(
+                w,
+                "c-seed",
+                [a2, d, h],
+                spec=SplitSpec("sha256_group_hash_v1", "\ud800", (70, 10, 10, 10)),
+            ),
+        ),
+    ):
+        expect_refusal(env, label, "invalid_request", call)
 
     expect_refusal(
         env,
