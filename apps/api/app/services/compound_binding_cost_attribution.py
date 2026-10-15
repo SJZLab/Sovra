@@ -86,6 +86,7 @@ __all__ = [
     "ALLOCATION_POLICY",
     "PRICING_MODES",
     "STATUS_BINDING_VIOLATION",
+    "STATUS_CURRENCY_MISMATCH",
     "STATUS_IDENTITY_UNVERIFIED",
     "STATUS_PRICED",
     "STATUS_UNPRICED",
@@ -114,24 +115,26 @@ class AttributionStatus(StrEnum):
     PRICED = "priced"
     BINDING_VIOLATION = "binding_violation"
     IDENTITY_UNVERIFIED = "identity_unverified"
+    CURRENCY_MISMATCH = "currency_mismatch"
     UNPRICED = "unpriced"
 
 
 STATUS_PRICED = AttributionStatus.PRICED
 STATUS_BINDING_VIOLATION = AttributionStatus.BINDING_VIOLATION
 STATUS_IDENTITY_UNVERIFIED = AttributionStatus.IDENTITY_UNVERIFIED
+STATUS_CURRENCY_MISMATCH = AttributionStatus.CURRENCY_MISMATCH
 STATUS_UNPRICED = AttributionStatus.UNPRICED
 # Precedence when several refusals apply: the most serious one names the result.
 _STATUS_PRECEDENCE: tuple[AttributionStatus, ...] = (
     STATUS_BINDING_VIOLATION,
     STATUS_IDENTITY_UNVERIFIED,
+    STATUS_CURRENCY_MISMATCH,
     STATUS_UNPRICED,
 )
 if TASK_OUTCOMES[0] != "pass":  # the success outcome is located by position below
     raise ImportError("TASK_OUTCOMES no longer starts with 'pass'")
 _PASS_OUTCOME_INDEX = 0
 
-_DEFAULT_ROUTE_STEP_KIND = "reasoning"
 _SHARE_QUANTUM = Decimal("1E-12")
 _ALLOCATION_PRECISION = 80
 
@@ -205,6 +208,7 @@ class CompoundBinding:
     provider: str
     default_pricing_mode: str
     default_artifact_kind: str
+    default_step_kind: str
     steps: tuple[StepBinding, ...]
 
     def __post_init__(self) -> None:
@@ -212,6 +216,7 @@ class CompoundBinding:
         _identifier(self.provider, "provider")
         _choice(self.default_pricing_mode, PRICING_MODES, "default_pricing_mode")
         _choice(self.default_artifact_kind, ARTIFACT_KINDS, "default_artifact_kind")
+        _choice(self.default_step_kind, STEP_KINDS, "default_step_kind")
         steps = _tuple_of(self.steps, StepBinding, "steps")
         object.__setattr__(self, "steps", steps)
         seen_keys: set[str] = set()
@@ -332,6 +337,7 @@ class SelfHostedWindow:
     window_id: str
     route_aliases: tuple[str, ...]
     window: ServiceWindow
+    currency: str
     allocation_policy: str = ALLOCATION_POLICY
 
     def __post_init__(self) -> None:
@@ -346,6 +352,7 @@ class SelfHostedWindow:
             raise CompoundAttributionError(
                 f"window must be a ServiceWindow, not {type(self.window).__name__}"
             )
+        _identifier(self.currency, "currency")
         _aware(self.window.window_start, "window_start")
         _aware(self.window.window_end, "window_end")
         if self.allocation_policy != "proportional_to_calls":
@@ -383,6 +390,7 @@ class CompoundAttribution:
     step_kind_totals: tuple[tuple[str, Decimal], ...]
     issues: tuple[CompoundIssue, ...]
     candidate_kind: str
+    currency: str | None
     binding_sha256: str
     attribution_sha256: str
 
@@ -415,6 +423,7 @@ class _Call:
     record: ModelCallRecord
     step_kind: str
     cost: Decimal | None = None
+    currency: str | None = None
 
 
 def attribute_compound_costs(
@@ -456,7 +465,7 @@ def attribute_compound_costs(
         for record in sorted(attempt.calls, key=repr):
             if record.step_key is None:
                 bound_alias = binding.default_route_alias
-                step_kind = _DEFAULT_ROUTE_STEP_KIND
+                step_kind = binding.default_step_kind
             elif record.step_key in steps:
                 bound_alias = steps[record.step_key].route_alias
                 step_kind = steps[record.step_key].step_kind
@@ -501,6 +510,7 @@ def attribute_compound_costs(
                 self_hosted.append(call)
 
     _allocate_windows(self_hosted, window_list, issues)
+    currency = _single_currency(calls, issues)
 
     status = STATUS_PRICED
     for candidate_status in _STATUS_PRECEDENCE:
@@ -524,9 +534,16 @@ def attribute_compound_costs(
         step_kind_totals=step_kind_totals,
         issues=result_issues,
         candidate_kind=binding.candidate_kind(),
+        currency=currency if status is STATUS_PRICED else None,
         binding_sha256=binding.binding_sha256,
         attribution_sha256=_attribution_sha256(
-            binding, status, attempt_costs, route_lines, step_kind_totals, result_issues
+            binding,
+            status,
+            currency if status is STATUS_PRICED else None,
+            attempt_costs,
+            route_lines,
+            step_kind_totals,
+            result_issues,
         ),
     )
 
@@ -541,7 +558,9 @@ def _price_provider_call(
         issues.append(CompoundIssue(STATUS_UNPRICED, code, record.request_id, record.route_alias))
         return None
     try:
-        return provider_call_cost(record.usage, card)
+        cost = provider_call_cost(record.usage, card)
+        call.currency = card.currency
+        return cost
     except ProviderTokenCostingError:
         issues.append(
             CompoundIssue(
@@ -582,6 +601,24 @@ def _allocate_windows(
         shares = _allocate(window_total_cost(window.window), len(members))
         for member, share in zip(members, shares, strict=True):
             member.cost = share
+            member.currency = window.currency
+
+
+def _single_currency(calls: list[_Call], issues: list[CompoundIssue]) -> str | None:
+    """The one currency every priced call was priced in. Two currencies are
+    never summed (Section 32, "decimal arithmetic with currency"): each route
+    involved is named in a `currency_mismatch` issue and the attribution is
+    refused. Only costs that were actually applied count -- a rate card or
+    window no call used cannot taint the total."""
+    aliases_by_currency: dict[str, set[str]] = {}
+    for call in calls:
+        if call.currency is not None:
+            aliases_by_currency.setdefault(call.currency, set()).add(call.record.route_alias)
+    if len(aliases_by_currency) > 1:
+        for alias in sorted(set().union(*aliases_by_currency.values())):
+            issues.append(CompoundIssue(STATUS_CURRENCY_MISMATCH, "currency_mismatch", None, alias))
+        return None
+    return next(iter(aliases_by_currency), None)
 
 
 def _build_attempt_costs(
@@ -632,6 +669,7 @@ def _build_step_kind_totals(lines: tuple[RouteLine, ...]) -> tuple[tuple[str, De
 def _attribution_sha256(
     binding: CompoundBinding,
     status: AttributionStatus,
+    currency: str | None,
     attempt_costs: tuple[AttemptCost, ...],
     route_lines: tuple[RouteLine, ...],
     step_kind_totals: tuple[tuple[str, Decimal], ...],
@@ -641,6 +679,7 @@ def _attribution_sha256(
         {
             "binding_sha256": binding.binding_sha256,
             "status": status,
+            "currency": currency,
             "attempt_costs": sorted(
                 (
                     [
