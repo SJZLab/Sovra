@@ -15,6 +15,7 @@ Updated: 2026-10-15T08:34Z. Source: `python3 scripts/status.py` on main.
 - **2026-10-15T08:34Z:**
   - Returned: FTF-1304-S1 r2 (compound per-step cost attribution: provider calls in different currencies are summed into one figure; the default route's step kind is hard-coded as "reasoning" instead of declared).
   - Returned: FTF-0512-F1 r3 (digit merge closed; but a 2 MB record can still take ~29 minutes to hash on Python 3.11 via a different kind of combining character; three required test pins are still missing). FTF-0512 stays decertified.
+  - CI is red on every PR: the merged round-1 secret scanner flags AWS's published example key on an unmerged relay branch (not a real credential). The FTF-1505 round-2 fix is now urgent, with a ruling that PR checks scan only the PR's own history.
 - **2026-10-15T06:09Z:**
   - CERTIFIED: FTF-0503 (JSON importer), after 4 rounds, under the stopping rule - the third certified importer. UNWIRED.
   - Returned: FTF-0505 r4 (header row fixed, archive errors closed; but kept shared-string cells still amplify - 5.9 KB to 5 GB; row outcome depends on position; 12 reversals of this round's own fixes go unnoticed by tests).
