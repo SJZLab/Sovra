@@ -458,13 +458,20 @@ def _check_stdlib_fallback(app_dir: Path, fails: list[str]) -> None:
             fails.append(f"{tag}: the redacting printer raised a TypeError on a stdlib keyword")
 
 
-def run_checks(app_dir: Path) -> list[str]:
+def run_checks(app_dir: Path, *, stop_at_first_failure: bool = False) -> list[str]:
+    """All check groups against `app_dir`. A fault run only needs to know that SOME group
+    turns red, so it stops at the first failing group; the real run reports every group."""
     fails: list[str] = []
-    _check_install(app_dir, fails)
-    _check_stdlib_fallback(app_dir, fails)
-    _check_boot_failures(app_dir, fails)
-    _check_multiprocess_boot_failures(app_dir, fails)
-    _serve_and_probe(app_dir, fails)
+    for group in (
+        _check_install,
+        _check_stdlib_fallback,
+        _check_boot_failures,
+        _check_multiprocess_boot_failures,
+        _serve_and_probe,
+    ):
+        group(app_dir, fails)
+        if fails and stop_at_first_failure:
+            break
     return fails
 
 
@@ -552,7 +559,7 @@ def _run_one_fault(label: str, rel: str, edits: list[tuple[str, str]]) -> None:
         for old, new in edits:
             text = text.replace(old, new)
         target.write_text(text, encoding="utf-8")
-        fails = run_checks(copy)
+        fails = run_checks(copy, stop_at_first_failure=True)
         if fails:
             print(f"  fault {label}: RED ({fails[0]})")
         else:
