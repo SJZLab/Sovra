@@ -1,8 +1,8 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-14T23:44Z. Source: `python3 scripts/status.py` on main.
-- **Status: 148/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
+Updated: 2026-10-15T01:17Z. Source: `python3 scripts/status.py` on main.
+- **Status: 149/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
@@ -12,6 +12,8 @@ Updated: 2026-10-14T23:44Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-15T01:17Z:**
+  - CERTIFIED: FTF-0502 (JSONL importer), after 4 rounds, under the stopping rule - the second certified importer. UNWIRED.
 - **2026-10-14T23:44Z:**
   - DECERTIFIED: FTF-0512 (Law 15) - its follow-up FTF-0512-F1 (#812) merged a production regression into the module (superscripts/fractions merge with digits -> false blocking leakage findings; quadratic normalization at the record cap). Returned F1 for round 2; FTF-0512 requalifies with it.
 - **2026-10-14T21:57Z:**

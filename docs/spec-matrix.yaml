@@ -7394,12 +7394,16 @@ FTF-0501:
   proving_symbol: build_direct_upload_router
   proving_test: tests/tasks/test_ftf_0501.py
 FTF-0502:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: JSONL importer
-  evidence_hash: 6f1a7c506e262cf8ddbded3512f908377d45e78e
+  evidence_hash: 77af5699cf97776a519305acb1e9c0bfd7269ed4
   implementation_state: IMPLEMENTED
   notes: >-
+    Correction (Control plane, 2026-10-15, L2 certification of round 4): two round-3 sentences below are
+    superseded - the module has no fatal_locator property (it uses the shared ImportReport.fatal_locator /
+    LocatedImportReport), and the round-3 stop run did NOT show a real outage (it was vacuous; round 4 fixed it
+    with a same-dataset control).
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
     FTF-0506 (CERTIFIED) and FTF-0502-P1 (CERTIFIED, #770). Path refined to
     workers/data/jsonl_importer.py. Round 2 rebuild on FTF-0502-P1 (ChunkReader, strict_loads,
@@ -7473,7 +7477,7 @@ FTF-0502:
     (same class as FTF-0504 r4). (5) Note correction: the round-3 text above describes the stop
     run as 96 MiB; it is now 16 MiB. evidence_hash is the round-4 code commit. Not self-certified
     (Law 4). See docs/certifications/submissions/2026-10-14T2100Z-FTF-0502-r4.md.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0502.py
 FTF-0503:

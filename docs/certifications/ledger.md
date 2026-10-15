@@ -11524,3 +11524,16 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   and the linear-time rule, and its requalification run left four clause faults GREEN. CERTIFIED → PROVISIONAL; it
   requalifies with FTF-0512-F1 round 2. Consumers FTF-0513/0515/0518 unaffected in certification state (0518 is
   PROVISIONAL in flight). Count -1.
+
+## 2026-10-15T01:17Z — CERTIFIED: FTF-0502
+- **FTF-0502: CERTIFIED** (round 4, under the stopping rule; PR #810, merge 77af5699cf97776a519305acb1e9c0bfd7269ed4, head 3341fae0, code commit 6f1a7c50).
+  Producer session_01H5t3Zpy1ZKkJ1KcvG9fgRd (earlier rounds session_015f8kwfjs7Suf1My6UGmah5, session_014U894sNcHjmQULfhwWLrjb,
+  session_014eb1RZDqBdz3dG7AVtYJcs) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI: ci-verdict 116122700352; gate
+  116093257387 (0502 + P1/0503/0504/0505 "all checks passed"); jsonl-import-integration 116093412805 (real stop); mutation
+  18/18. Round-4 items: same-dataset outage control (no-op stop RED 3/3; control 16,777,216/16,777,216, stop blocked at
+  8,388,608); memory pin (retain-all and 1-in-100 RED 3/3; production within 1.0x); hash precision (1,920 single-char
+  substitutions refused on run and preview); typed preview refusal (86/86 malformed shapes, 0 reads); evidence_hash and
+  trailers. Round-3 probe classes re-run with 0 violations. 57/65 faults RED; GREEN only equivalent mutants and hand-picked
+  variants of closed classes. The Control plane annotated two stale round-3 sentences in the spec-matrix note. Advisories:
+  json_importer.py:275 / xlsx_importer.py:928 unguarded compare_digest (carried into FTF-0503 r4 / FTF-0505 r3); the
+  "vs 8 MiB of max-size records" memory check is weak. UNWIRED.
