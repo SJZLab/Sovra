@@ -12165,7 +12165,7 @@ FTF-1505:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Secret scanning
-  evidence_hash: 32e92342af9afe75baa9a6c7dd7ffdc086dfb4bb
+  evidence_hash: f829749e19f248e7d8fc60962165dd24515c50f2
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26;
@@ -12177,83 +12177,105 @@ FTF-1505:
     `packages/contracts/openapi/15-interface.yaml` nor
     `packages/contracts/jsonschema/15-domain.schema.json`.
 
-    Built for real: `tests/security/secret_scanning.py`. Reuse was checked,
-    not assumed, before being built around: FTF-0904's own `redact_text`
-    was tried first as the detector (it already classifies most of the same
-    secret shapes) and rejected after reproducing the failure directly
-    against this repo's own `apps/api` -- it fires on any `<identifier
-    containing a secret keyword>: <anything>` pair (`tokenizer: LineageFact`,
-    `credentials: S3Credentials`), correct for redacting free-form log
-    prose, wrong precision for a release-blocking static scan. Built a
-    dedicated, shape-only rule set instead (AWS/GitHub/Slack/Google/Hugging
-    Face/OpenAI/Stripe token shapes, PEM blocks, three-part JWTs,
-    bearer/basic headers, and a quoted non-placeholder value assigned to a
-    secret-named key) -- requires an actual credential-shaped VALUE, never
-    merely a key NAME, the same shape-over-keyword discipline
-    gitleaks/trufflehog/detect-secrets use. Verified empirically against this
-    repository's real, current production tree, full history (2,610
-    commits) and real checked-in evidence artifacts: zero false positives
-    from ordinary code (one single real hit, a `SECRET-EXPECTED-ANSWER-...`
-    Playwright test fixture in `apps/web/tests/ftf_0602.spec.ts`, allowlisted
-    by exact value + file glob + justification in the committed
-    `tests/security/secret_scan_allowlist.yaml`, the same shape FTF-1506's
-    own `dependency_scan_policy.yaml` already established).
+    ROUND 2 (this evidence_hash): round 1 (PR #799/#816) was returned --
+    every lane was restricted to a hand-picked directory list and the
+    working tree, with no decode layer, no entropy check and a diff-based
+    (not blob-based) history scan. Full rebuild, verified empirically
+    against this repository's own real tree: `source`/`artifact` now scan
+    every `git ls-files` path with NO exclusion (binary files and zip/tar/gz
+    archive members included; `SOURCE_ROOTS` reused directly from
+    `scripts/product_truth_check.py`, never a second hand-maintained list);
+    `history` scans every UNIQUE BLOB reachable from any ref (`git rev-list
+    --objects --all` + `git cat-file --batch`, deduplicated by blob id --
+    not `git log --all -p`'s added lines, which never diffs a merge commit
+    by default) and refuses a shallow clone outright; `log_samples` adds a
+    real `uvicorn app.main:create_app --factory` boot (FTF-0904-W1 is
+    installed and confirmed wired) probed with FTF-0905 canaries
+    (literal/base64/hex/url/fragmented) in the query string, an
+    Authorization header and a Cookie header, alongside the existing
+    local-logger positive control. One layer of base64 and one layer of
+    percent-decoding are applied throughout (a cheap literal-substring
+    pre-filter bounds the cost of re-running the rule set on a decoded
+    candidate -- proven to be a performance gate only, never a detection
+    gap). New rule families: `ASIA` AWS session keys, `aws_secret_access_key`
+    pairing, GitHub PAT (82-char)/GitLab tokens, Slack webhook URLs,
+    `sk-proj-`/`sk-ant-`/`rk_live_`, an `ENCRYPTED`/generic PEM header, a
+    placeholder-aware URL-userinfo password, a decode-based JWT validator
+    (three base64url segments whose first decodes to a JSON object with
+    `alg`), and the FTF-0905 canary shape (log/artifact lanes only). The
+    `quoted_secret_assignment` rule's keyword match no longer requires a
+    `\b` boundary immediately before the keyword (which silently never
+    matched inside a continuous token like `db_password`/`client_secret`/
+    `SECRET_KEY`), the unconditional `your_`-prefix placeholder bypass is
+    removed, and a real value now needs >= 20 chars AND Shannon entropy
+    >= 3.5 bits/char (FTF-0514's own threshold, `workers/data/
+    pii_secrets_detector._shannon_entropy_bits_per_char`, reused directly --
+    round 1 had no entropy check at all).
 
-    Acceptance clause 1 ("Scan current source/history/artifacts/log samples
-    with seeded harmless secret markers") MET for all four named targets:
-    `source`/`artifact` scan every git-tracked file under the real
-    `SOURCE_ROOTS` production directories and `docs/certifications`/
-    `docs/progress` respectively; `history` scans every ADDED line in every
-    commit that ever touched those same directories across the entire
-    history (`git log --all -p`), proven for real with a disposable
-    temporary git repository (a key committed then removed from the working
-    tree is still found by `scan_history` and provably absent from
-    `scan_source`); `log_samples` captures a real sample from the actual,
-    already-certified FTF-0904 `install_redaction` pipeline (reused
-    unmodified, never re-implemented) with seeded, obviously-fake
-    `CANARY`-style markers covering each rule family, confirming detection
-    on the raw pre-redaction line and a clean real sink output.
-    `ScenarioResult`/`build_evidence` reused directly from
-    `tests/security/tenant_isolation_suite.py`: one result per scanned UNIT
-    (file/commit/seeded-check), so an all-clean scan is still real,
-    non-vacuous evidence (Law 1) rather than a "zero results" error.
+    `secret_scan_allowlist.yaml` (keyed by raw value + file glob) is
+    replaced by `tests/security/secret_scan_baseline.yaml`, keyed ONLY by
+    `fingerprint: sha256(rule NUL value)` with mandatory
+    reason/reviewer/date -- `load_baseline` refuses an entry carrying a
+    value/path/glob key outright, and `assert_baseline_fresh` makes a
+    baseline entry that matched nothing in a run itself a blocking finding,
+    so the file can only drift "too strict," never "too permissive." 64
+    entries, one per (rule, value) pair this round's own source+artifact+
+    history scan matched against this repository's real tracked files, each
+    reviewed value-by-value (AWS's own documented example keys, the
+    well-known `hunter2`/`s3cr3t`/`pass` placeholder passwords, the CI-only
+    migration-role password `ci.yml`'s own service containers use, held-out
+    test literals, fixture bearer/basic/JWT/PEM headers with no key body)
+    -- `reviewed_by` records `"relay (proposed; Control-plane L2 review
+    pending)"` per CLAUDE.md "Relay is execution-only."
 
-    negative_acceptance ("Scanner omissions/excluded production dirs and
-    actual exposed credential are release blockers") met by construction:
-    `assert_dirs_covered` fails closed the moment a configured directory
-    exists on disk but this suite's own file-inclusion logic covers zero
-    tracked files in it -- proven RED with a real git-ignored production
-    directory in a disposable temp repo, then GREEN once actually tracked;
-    `evaluate`/`main` raise `SecretScanError` the instant one real,
-    non-allowlisted secret shape is found anywhere, never silently
-    downgraded to a warning. Fault-injection (Law 1, shown able to fail
-    first): a logger with no sink wired at all is shown to leak a seeded
-    AWS-shaped marker verbatim before the real `install_redaction`-wired
-    path is shown to redact it.
+    An additive `secret-scanning` CI job (`fetch-depth: 0`, no services)
+    runs the real module directly as the live release gate (Section 53),
+    added to `ci-verdict`'s own `needs:`; `assert_artifact_uploads_covered`
+    parses every `actions/upload-artifact` `path:` out of `ci.yml` itself
+    and fails closed if one lies outside a declared `ARTIFACT_ROOTS` entry
+    (`docs/certifications`, `docs/progress`, the new `reports/`). No change
+    was needed to `scripts/ci_policy.py`/`tests/unit/test_ci_policy.py`:
+    both are already fully generic over `ci.yml`'s own job list, so the
+    existing 72 `test_ci_policy.py` checks enforce the new job's wiring.
+
+    Fault-injection (Law 1) for every F-* class above is a real,
+    independent test in `tests/tasks/test_ftf_1505.py` (33 checks): a
+    binary file and a real zip archive member are scanned; a secret hidden
+    behind one layer of base64/percent-decoding is found; a secret under
+    `tests/` (outside every `SOURCE_ROOTS` entry) is found; a real `git
+    clone --depth 1` is refused by `assert_not_shallow`, the same full
+    clone accepted; a secret introduced ONLY by a real `git merge --no-ff`
+    conflict resolution is found by `scan_history` even though plain `git
+    log --all -p` on that same real repo never shows it as an added line
+    (the concrete behavioural gap between round 1's diff-based scan and
+    round 2's blob-based one); a baseline entry carrying a value/path/glob
+    key, or one that matched nothing this run, is refused/blocking; a
+    high-entropy value prefixed `your_` is no longer waved through.
 
     Real, current-state proof: a direct run of
     `python3 tests/security/secret_scanning.py` against this repository's
-    own real production tree, full history and checked-in evidence
-    artifacts (2,175 scanned units) comes back 0 blocking findings;
-    `tests/tasks/test_ftf_1505.py`'s own
-    `test_real_module_run_against_this_repository_is_clean` exercises that
-    exact real run as a subprocess and is wired into the `gate` CI job
-    (`.github/workflows/ci.yml`), so a real future leak fails CI, not merely
-    a mocked unit test.
+    own real production tree, full history (8,541 unique blobs, 2.89 GB)
+    and checked-in evidence artifacts, plus a real `uvicorn` boot --
+    measured at ~13 minutes end to end, within the new job's
+    `timeout-minutes: 30` -- comes back 0 blocking findings against the
+    committed baseline. `tests/tasks/test_ftf_1505.py`'s own
+    `test_real_module_run_against_this_repository` exercises that exact
+    real run as a subprocess (skipped only when the local clone is itself
+    shallow -- a sandbox capability check, not a weakening of the real
+    gate) and is wired into the new `secret-scanning` CI job, so a real
+    future leak fails CI, not merely a mocked unit test.
 
     DISCLOSED, NOT MET -- ephemeral CI-run JSON artifacts
     (`reports/mutation-gate.json`, `reports/ci-verdict.json`) are never
     committed to git, so a from-clean-checkout run of this suite's
-    `artifact` target covers zero of them; it scans them too whenever one
-    happens to be present on disk at scan time, but that is incidental, not
-    guaranteed coverage -- the same disclosed-gap class FTF-1501 already
-    carries for worker/storage/cache paths that do not exist yet in this
-    repository. DISCLOSED -- the `quoted_secret_assignment` rule's
-    placeholder-exclusion list and 16-character/charset heuristic is a
-    documented approximation (no formal entropy measure), the same
-    disclosed-precision tradeoff FTF-1506's own severity/CVSS mapping
-    documents for its own domain. Not self-certified (Law 4) --
-    `certification_state` stays PROVISIONAL, `proof_state` stays
+    `artifact` target covers zero of them unless this same job already
+    wrote one before this step ran; the same disclosed-gap class FTF-1501
+    already carries for worker/storage/cache paths that do not exist yet in
+    this repository. DISCLOSED -- the `scan_live_app_log_samples` lane
+    exercises a 401 and a 404 route only; a live 5xx validation-error
+    request path is not separately exercised (FTF-0904-W1's own suite
+    already covers a startup-failure 5xx-shaped case). Not self-certified
+    (Law 4) -- `certification_state` stays PROVISIONAL, `proof_state` stays
     L1-PROVEN, pending independent Control-plane L2 review.
   proof_state: L1-PROVEN
   proving_symbol: ''
