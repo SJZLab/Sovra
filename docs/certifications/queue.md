@@ -24696,3 +24696,215 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-13T14:51Z — Control plane: Backlog refill
 - **Queued:** FTF-1504, FTF-0502-P1, FTF-0502, FTF-0504, FTF-0503, FTF-0505 (newly ready after FTF-0501). Advisory: FTF-0501 finalize accepts macro/external-link parts in a plain .xlsx.
+
+## 2026-10-13T16:44Z — Control plane: FTF-0502 returned
+- **Returned:** FTF-0502 r2 (0k): rebuild on FTF-0502-P1 after P1 certifies. **Process:** #600 (FTF-0517) and #650 (FTF-1206) found unverified; verifiers running.
+
+## 2026-10-13T17:43Z — Control plane: FTF-0516 CERTIFIED (144/302); FTF-0517, FTF-1206 returned
+- **Returned:** FTF-0517 r3 (0f): 3+-key bridges and a key-level property test; exact-type keys.
+- **Returned:** FTF-1206 r6 (0h), tests only: pin approver authority to the current org policy (F19).
+- **Certified:** FTF-0516 (#754, merge 90698aa6371626f6d2f8f156624798c9673ef044); UNWIRED (144/302).
+
+## 2026-10-13T18:55Z — Control plane: FTF-0904 returned
+- **Returned:** FTF-0904 r7 (0d), tests + spec-matrix only: the named pair-whitespace fault, JWT skip-loop shapes, evidence_hash. Stopping rule set.
+
+## 2026-10-13T20:07Z — Control plane: FTF-0502-P1 returned
+- **Returned:** FTF-0502-P1 r2 (0j): catalog names; wrap raw HTTP errors; bounded-resource tests; integration via the real upload routes.
+
+## 2026-10-13T21:22Z — Control plane: FTF-1206 CERTIFIED (145/302); FTF-0503 returned; importer-order ruling
+- **Returned:** FTF-0503 r2 (0b). **Ruling:** no importer claimed or merged before FTF-0502-P1 certifies; #766 waits.
+- **Certified:** FTF-1206 (#763, merge e5f6e5ee327ba60bdae73b43eda2e31a0dc02da3); UNWIRED.
+
+## 2026-10-13T22:52Z — Control plane: FTF-0517 returned
+- **Returned:** FTF-0517 r4 (0f): non-vacuous sparse-pool property test; exact-type keys at every position; verify_manifest input structure.
+
+## 2026-10-13T23:59Z — Control plane: FTF-0502-P1 certified (slice); FTF-0504 returned
+- **Returned:** FTF-0504 r2 (0c): rebuild on certified P1; locator, global field limit, wide-record cap, content-type gate, integration.
+- **Certified slice:** FTF-0502-P1 (#770, merge 507ce05a422ad5addb94a1700172fa348f871662); importers may proceed (catalog rule updated).
+
+## 2026-10-14T01:22Z — Control plane: FTF-0517 CERTIFIED
+- **Certified:** FTF-0517 (#772, merge 042d82331196e99e5f7091597fd987914a0a6c2b); UNWIRED.
+
+## 2026-10-14T02:42Z — Control plane: FTF-0904 CERTIFIED
+- **Certified:** FTF-0904 (#768, merge 5a0f708c29a61e7fe0fea3fc25ef838b7f5471df); UNWIRED.
+
+## 2026-10-14T05:16Z — PROVISIONAL: FTF-0904-W1 (live log redaction wiring)
+- **Submitted:** child slice of FTF-0904, built by the Control-plane session at the owner's live request (2026-10-14).
+  Needs L2 verification by a different session (Law 4). Test: tests/tasks/test_ftf_0904_w1.py (gate job), faults F1-F6.
+
+## 2026-10-14T06:52Z — Control plane: FTF-0504 returned
+- **Returned:** FTF-0504 r3 (0c): utf-8-sig locator, sha mismatch, discriminating outage check, evidence; fatal-locator ruling.
+
+## 2026-10-14T06:52Z — Control plane: FTF-1602 returned
+- **Returned:** FTF-1602 r6 (0i), tests only: F7, unit G7, real ABA test for G1/G1b, spec-matrix notes; stopping rule.
+
+## 2026-10-14T08:18Z — Control plane: FTF-0616-F1 CERTIFIED (child slice)
+- **Certified:** FTF-0616-F1 (#750, merge 02961dbe0a005967ee5d82e0a1ee10fd2c8bf9a5); FTF-0616 requalified (uncapped mutation 339/339); count unchanged.
+
+## 2026-10-14T08:18Z — Control plane: FTF-0502 returned
+- **Returned:** FTF-0502 r3 (0k): sha mismatch, the shared fatal_locator field (serialized ruling), outage control run, tables.
+
+## 2026-10-14T08:30Z — PROVISIONAL: FTF-0503 r2 merged (#781); mutation gate closed at 100%
+- **Submitted:** closes out the 2026-10-13T21:22Z return note's own disclosed gap. #781's own mutation-gate run
+  (`scripts/mutation_gate.py`, diff mode, `--max-mutants 200`, same CI job) had reported 2 survivors in
+  `workers/data/json_importer.py:257` (`_options`, `slot.kind != "key"`) and the PR's own body proposed them as
+  equivalent mutants, deferring to Control-plane classification since `docs/certifications/mutation-allowlist.yaml`
+  is relay-forbidden. On review that classification didn't hold: `import_common.Slot.kind` is a plain `str`, not a
+  validated enum, and the one existing test for that line mixes a `"header"` slot with a `"key"` slot, so under
+  the `!=`→`==` mutant the loop still raises `bad_slot` via the `"key"` slot alone — the test can't distinguish an
+  all-`"key"` mapping (must pass) from a mixed one. Added `test_all_key_slots_pass_options_without_raising` and
+  `test_slot_kind_match_is_exact_no_normalization` (`tests/tasks/test_ftf_0503.py`); both mutants independently
+  confirmed killed by hand (mutant applied, matching test failed, reverted byte-identical) before relying on the
+  automated gate. Real CI re-run on the pushed commit: `mutation-gate` **200/200 KILLED, 0 SURVIVED, score 100.0%**
+  (run `38526627731`, job `115728721461`); full `gate` (188 steps) and `ci-verdict` green; merged as `63c2d7b`.
+  Full detail: `docs/certifications/submissions/2026-10-14T0700Z-FTF-0503-r2-mutation-fix.md`.
+  Needs L2 verification by a different session (Law 4) — `certification_state` stays `PROVISIONAL`,
+  `proof_state` stays `L1-PROVEN`. The PG16 + SeaweedFS integration test through the real FTF-0501 routes, named
+  by the original return note, is still disclosed as not done this round.
+
+## 2026-10-14T09:46Z — FTF-0904-W1 returned (r2 submitted)
+- **Returned:** FTF-0904-W1 r1 (excepthook bypass; late install unpinned). **Round 2 submitted** in the same PR: redacting
+  exception/warning hooks, W1-BOOT-FAIL and W1-HOOKS checks, faults F7-F12. Needs L2 from a separate session.
+
+## 2026-10-14T09:46Z — Control plane: FTF-0503 returned
+- **Returned:** FTF-0503 r3 (0b): streaming scanner, sha mismatch, fatal structure errors, BOM, oversize rows, integration.
+
+## 2026-10-14T11:30Z — FTF-0904-W1 returned (r3 submitted)
+- **Returned:** FTF-0904-W1 r2 (multiprocess startup traceback). **Round 3 submitted**: redacting traceback printers,
+  W1-BOOT-FAIL-MP (--workers 2, --reload), faults F13-F14. L2 from the separate verifier session.
+
+## 2026-10-14T13:02Z — Control plane: FTF-0505 returned
+- **Returned:** FTF-0505 r2 (0d): zlib.error mapping, bounded header retention, 4 pinned clauses, shared fatal_locator; rulings on byte cap and ImportLimits.
+
+## 2026-10-14T14:23Z — Control plane: FTF-0904-W1 CERTIFIED (child slice)
+- **Certified:** FTF-0904-W1 (#792, merge b4d401fc1fb1222c65ad4778b5aee2e1461a99c1) by separate verifier session; FTF-0904 WIRED (product-true 46).
+
+## 2026-10-14T14:23Z — Control plane: FTF-0518 returned
+- **Returned:** FTF-0518 r2 (0f): F14/F13/F8 tests, gate requires all methods for clear. Sliced FTF-0512-F1.
+
+## 2026-10-14T14:23Z — Control plane: FTF-0504 returned (r4, small)
+- **Returned:** FTF-0504 r4 (0c): record-cap row, full-hash compare, str-subclass locator, preview TypeError, truncated BOM; stopping rule.
+
+## 2026-10-14T16:30Z — Control plane: FTF-0904-F1 returned
+- **Returned:** FTF-0904-F1 r2 (0g): idempotence guard first, serialized/form positions, generated name class, sweeps, FAULTS.
+
+## 2026-10-14T18:11Z — Control plane: FTF-0502 returned (r4)
+- **Returned:** FTF-0502 r4 (0k): same-dataset outage control, real memory bound, sha precision, preview TypeError, trailers; stopping rule.
+
+## 2026-10-14T18:54Z — PR #799 merged (FTF-0503 round 3; green ci-verdict)
+- **Merged, PROVISIONAL (Law 4, not self-certified):** PR #799 (FTF-0503 round 3, 0b) merged on a
+  fully green `ci-verdict` (run `38607515325`), no merge conflict, new `json-import-integration`
+  job included. Round 3 replaces the round-2 whole-document scanner with a byte-level JSON
+  grammar state machine (every open container's own expectation tracked, fatal `json_malformed`
+  at a real byte offset instead of a fixed `object:0`), closes WHOLE-DOCUMENT-BUFFERED,
+  EXPECTED-SHA-MISMATCH-COMPLETES, STRUCTURE-ERRORS-NOT-FATAL, OVERSIZE-ELEMENT-ENDS-IMPORT and
+  UTF8-BOM-REFUSED (docs/certifications/queue.md 2026-10-13T23:59Z return), and adds a real
+  PG16+SeaweedFS integration test with a proven mid-stream-stop control. Two capped mutation-gate
+  samples (50/320 then 100/322, both disclosed survivors in `_accept_key`) and CI's own full
+  uncapped run both logged in `docs/certifications/submissions/2026-10-14T1420Z-FTF-0503-r3.md`.
+  Recorded here and in `docs/spec-matrix.yaml` via this non-`[relay]`-titled doc PR, matching the
+  precedent PR #788 set for FTF-0503 round 2 (shared-file edits are forbidden inside `[relay]`
+  PRs). `certification_state` stays PROVISIONAL / `proof_state` stays L1-PROVEN — independent
+  Control-plane L2 review of round 3 is still the next step.
+
+## 2026-10-14T19:00Z — PR #802 merged (FTF-0504 round 4; green ci-verdict)
+- **Merged, PROVISIONAL (Law 4, not self-certified):** PR #802 (FTF-0504 round 4, 0c) merged on a
+  fully green `ci-verdict` (run `38608276530`), no merge conflict. Round 4 closes all five
+  round-3 return items: V-RECORD-CAP-PROD-ONLY (a record-cap row isolated from the field cap),
+  V-SHA-COMPARE-PREFIX (a hash differing only in the first/last hex char), V-LOC-NONSTR-ALLOWED
+  (a `str`-subclass `fatal_locator` still refused), PREVIEW-SHA-TYPEERROR (production fix:
+  `hmac.compare_digest` raised a raw `TypeError` on a malformed `expected_sha256` reaching the
+  preview path, now a typed `failed`/`source_changed` refusal), and TRUNCATED-BOM-SWALLOWED
+  (production fix: Python's own `utf-8-sig` incremental decoder silently swallows a 1-2 byte
+  truncated BOM, now `invalid_encoding`). Full detail and the fault→RED table in
+  `docs/certifications/submissions/2026-10-14T1711Z-FTF-0504-r4.md`. Recorded here and in
+  `docs/spec-matrix.yaml` via this non-`[relay]`-titled doc PR (shared-file edits are forbidden
+  inside `[relay]` PRs). `certification_state` stays PROVISIONAL / `proof_state` stays
+  L1-PROVEN — independent Control-plane L2 review of round 4 is still the next step.
+
+## 2026-10-14T20:19Z — Control plane: FTF-0502-P1-F1 CERTIFIED (child slice)
+- **Certified:** FTF-0502-P1-F1 (#798, merge e57b4f98bdaa2e8e13298d5e743e3940cb1cfd56); FTF-0502-P1 requalified; count unchanged.
+
+## 2026-10-14T20:19Z — Control plane: FTF-0505 returned (r3)
+- **Returned:** FTF-0505 r3 (0d): header row bound, decode-after-gate, surrogate, archive-error class, pins, rulings (a)/(b).
+
+## 2026-10-14T20:19Z — Control plane: FTF-0503 returned (r4, small)
+- **Returned:** FTF-0503 r4 (0b): preview TypeError, chunk-independent records before encoding errors, sha pins; stopping rule.
+
+## 2026-10-14T20:38Z — PROVISIONAL: FTF-1602 r6 merged (#789)
+- **Submitted:** answers the 2026-10-14T06:52Z return (QUEUE.md "0i"): F7-CREATE-NOW-VALIDATED-LATE proven in both
+  suites with a call-counting double (zero store calls on a bad `now`, both before and not merely instead of a
+  write); G7-COUNT-ONLY-RELIST gained a unit-level twin of the existing real-server test (round 5 only proved the
+  re-list identity guard on the real suite); G1/G1b rebuilt on the "Q2 shape" (a forged, unretained record version
+  PUT the first time the record is listed, deleted the first time retention is next checked — both calls
+  `_load_record` always makes, regardless of which method it uses to read the content). Round 5's own ABA test only
+  reddened through a local double standing in for the content-read method by name; applying the real one-line
+  production mutation (`get_latest` instead of the pinned `get_version`) directly to round 5's own test left its
+  primary assertion green, confirmed this round. The rebuilt test asserts on `verify_backup`'s/`restore_backup`'s
+  own real return value, with no self-referential demonstration, and adds G1b (the same forged record applied to
+  restore, which could previously have silently restored 3 of 4 objects as success). Production
+  (`scripts/object_storage_backup.py`) is unchanged — tests + spec-matrix only, matching the return's own "production
+  is correct" ruling. Fault → RED for all three confirmed by mutating the production file on disk and restoring it
+  byte-identical afterward (table in the submission). Whole-file uncapped mutation gate: 405/405 killed, 0 survivors
+  (one earlier same-session run reported a single survivor at `put_restored`'s header filter that did not
+  reproduce on a manual re-application of the identical mutation or on two independent re-runs — recorded as a
+  one-off flake, not a real gap). `object-storage-backup-integration` failed twice first (CI session logs were
+  unavailable via every access path tried, including the signed blob URL the tooling returned); a disk-exhaustion
+  diagnosis and partial fix (switch the 2 new real tests to the file's shared bucket pair) did not clear it; a
+  follow-up session correctly diagnosed the real cause (the file's 14 pre-existing dedicated-bucket real tests, not
+  this round's own additions, exhausting the runner's SeaweedFS volume slots across the whole suite — the same
+  class QUEUE.md's FTF-1602 round-5 entry already named) and fixed it by recycling the SeaweedFS fixture every 4
+  tests; `object-storage-backup-integration` and all 71 other checks (`gate`, `mutation-gate`, `relay-policy`,
+  `ci-verdict`) came back green on the next push (run `38619451951`) and the PR was merged (`963a0af`). Full
+  findings-to-fix mapping, the fault → RED table and the real-server CI history are in
+  `docs/certifications/submissions/2026-10-14T0922Z-FTF-1602-r6.md`. Not self-certified (Law 4) —
+  `certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN`, `evidence_hash` stays pinned to
+  `47ca830` (round 4; no production line changed in round 5 or round 6). Needs L2 verification by a different
+  session.
+
+## 2026-10-15T00:21Z — PR #816 merged (FTF-1505 round 1; green ci-verdict)
+- **Merged, PROVISIONAL (Law 4, not self-certified):** PR #816 (FTF-1505, Backlog) merged on a
+  fully green `ci-verdict` (run `38652854056`), no merge conflict. Picked from Backlog after
+  confirming every item in QUEUE.md Active's "0" block was already covered (an open `[relay]` PR,
+  a claim branch pushed within the last 3 hours, or a merge already awaiting Control-plane L2) —
+  checked directly against the live GitHub PR/branch state, not assumed from QUEUE.md's own text.
+  Dependencies (FTF-0006, FTF-0904, FTF-1501) confirmed `certification_state: CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- Builds `tests/security/secret_scanning.py`: a shape-only secret-detection rule set (AWS/GitHub/
+  Slack/Google/Hugging Face/OpenAI/Stripe token shapes, PEM blocks, JWTs, bearer/basic headers, a
+  quoted non-placeholder secret-named assignment). FTF-0904's own `redact_text` was tried first as
+  the detector per Section 84.3's reuse-first instruction and rejected only after reproducing the
+  failure directly: it fires on any `<identifier containing a secret keyword>: <anything>` pair,
+  flooding a static scan with ordinary type annotations (`tokenizer: LineageFact`, `credentials:
+  S3Credentials`) in this repo's own `apps/api` — correct for redacting free-form log prose, wrong
+  precision for a release-blocking static scan. `ScenarioResult`/`build_evidence` ARE reused
+  directly from `tests/security/tenant_isolation_suite.py`, exactly as this task's own
+  `contract_owner: FTF-1501` names.
+- Covers all four acceptance targets: `source`/`artifact` (every git-tracked file under the real
+  `SOURCE_ROOTS` and `docs/certifications`/`docs/progress`), `history` (every added line in every
+  commit that ever touched those directories across the full history, proven with a disposable
+  real git repo — a key committed then removed is found by `scan_history` and provably absent
+  from `scan_source`), and `log_samples` (a real sample from the already-certified FTF-0904
+  `install_redaction` pipeline, reused unmodified, with seeded CANARY-style markers per rule
+  family). `assert_dirs_covered` makes the "scanner omissions/excluded production dirs" negative
+  clause executable, proven RED against a real git-ignored production directory in a disposable
+  temp repo, then GREEN once actually tracked.
+- One allowlist entry (`tests/security/secret_scan_allowlist.yaml`, same shape as FTF-1506's own
+  `dependency_scan_policy.yaml`) covers the sole real hit found against this repository: a
+  Playwright test-fixture literal (`SECRET-EXPECTED-ANSWER-4711` in
+  `apps/web/tests/ftf_0602.spec.ts`), confirmed by reading the file directly before allowlisting
+  it, also found 14 times across its own edit history (same value every time).
+- Real, current-state proof: `python3 tests/security/secret_scanning.py` against this repository's
+  own real production tree, full 2,610-commit history and real checked-in evidence artifacts:
+  2,175 units scanned, 20 findings, 0 blocking. `tests/tasks/test_ftf_1505.py`'s own
+  `test_real_module_run_against_this_repository_is_clean` runs that exact command as a subprocess
+  and is wired into the `gate` CI job, so a real future leak fails CI, not merely a mocked test.
+  `ruff`/`ruff format`/`mypy` clean repo-wide; `validate_spec --strict` clean; `product_truth_check`
+  48/48 unchanged (confirmed against the pre-change baseline via `git stash`; blank
+  `proving_symbol`, no live-wiring claim); `data_exposure_check` N/A (no datastore surface
+  touched, Law 18).
+- Full acceptance/negative_acceptance clause-to-test mapping and fault → RED table:
+  `docs/certifications/submissions/2026-10-14T2313Z-FTF-1505.md`. Shift log:
+  `docs/progress/2026-10-14T2313Z-relay.md`. Not self-certified (Law 4) — `certification_state`
+  stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN`, `evidence_hash` pinned to the code commit
+  `32e92342af9afe75baa9a6c7dd7ffdc086dfb4bb`. Needs L2 verification by a different session.

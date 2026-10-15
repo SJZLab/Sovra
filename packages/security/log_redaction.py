@@ -58,18 +58,13 @@ unbounded in the length of secret it redacts (Section 65.4/round-5 ruling: a
 bounded match is a leak, not a performance safeguard) -- the key rule and the
 bare-quoted-value shapes are possessive (the closing quote is excluded from the
 class that scans for it, so there is only ever one possible split point --
-backtracking could never find a different one, only waste time). The JWT
-shape's two required dots are not excluded from the segment before each one,
-so a repeat of the "eyJ" prefix alone (not itself excluded either) could
-re-scan the rest of the text at every repeat with nothing to stop it; round 4
-capped the segment length to stop that, which is itself a leak above the cap
-(round 5), so instead the "eyJ" start is also excluded from being preceded by
-`_`/`-` (on top of the existing not-preceded-by-alnum check): the only "eyJ"
-that can ever start a real attempt is the first one in its own maximal run of
-`[A-Za-z0-9_\\-]` characters, so the segments stay fully unbounded (`{5,}+`)
-without the repeat-start cost coming back. The escaped-quoted-value shape
-allows backslashes in its own middle, so it cannot simply be made possessive
-the way the bare-quote shapes are; round 4 bounded its content to 8192 chars,
+backtracking could never find a different one, only waste time). JWT
+shape is found per maximal `[A-Za-z0-9_\\-.]` run (split on dots once, first "eyJ" per segment
+searched once), not by a regex that re-scans at every "eyJ" repeat: that keeps it linear with no
+bound on the segment length AND still redacts a JWT glued after `_`/`-` (`token_<jwt>`,
+`sess-<jwt>`), which the round-5 `(?<![_\\-])` lookbehind let through (round 6).
+The escaped-quoted-value shape allows backslashes in its own middle, so it cannot simply be
+made possessive the way the bare-quote shapes are; round 4 bounded its content to 8192 chars,
 which is the same leak-above-the-cap problem. Round 5 replaces the bound with
 an unrolled loop (alternating a possessive run of plain chars with a
 possessive backslash run that is not immediately followed by the closing
@@ -201,29 +196,116 @@ _PREFIXES = re.compile(
     r"|(?:AKIA|ASIA|AGPA|AIDA|AROA)[A-Z0-9]{16}"
     r"|hf_[A-Za-z0-9]{20,}"
     r"|AIza[0-9A-Za-z_\-]{35,}"
-    # This alternative needs TWO literals ('.') that a run of the segment's own alphabet never
-    # has to contain -- "eyJ" is not itself excluded from `[A-Za-z0-9_\-]`, so a text built from
-    # many `eyJ`-prefixed, dot-free runs (each satisfying the outer `(?<![A-Za-z0-9])` lookbehind
-    # on the one before it, since `_`/`-` are not alnum) makes an *unbounded* greedy or possessive
-    # class re-consume the rest of the text at every one of O(n) such positions: possessive only
-    # removes the backtrack, not that repeated O(remaining) consume (confirmed: `"_eyJ" * 40_000`
-    # still took 23s with `{5,}+`). Round 4 capped the segment at 1024 chars to bound that cost --
-    # a leak above the cap, not a real fix (round 5). Round 5 instead excludes `_`/`-` from
-    # immediately preceding "eyJ" too (`(?<![_\-])`, on top of the pre-existing outer
-    # `(?<![A-Za-z0-9])`): the only "eyJ" that can ever start a real attempt is the first one in
-    # its own maximal run of `[A-Za-z0-9_\-]` characters, so every later `_eyJ`/`-eyJ` repeat is
-    # rejected in O(1) before it can re-consume anything, and the segments can stay fully
-    # unbounded (`{5,}+`) without the repeat-start cost coming back.
-    r"|(?<![_\-])eyJ[A-Za-z0-9_\-]{5,}+\.[A-Za-z0-9_\-]{5,}+\.[A-Za-z0-9_\-]*+"
     r")",
     re.I,
 )
+# JWT-shaped spans are found per run, not by a regex that must re-scan from every "eyJ": a
+# regex whose segments are unbounded re-consumes the rest of a dot-free run at every "eyJ" repeat
+# (quadratic), and one that refuses a start after `_`/`-` (the round-5 form) lets `token_<jwt>`,
+# `sess-<jwt>` and the like through. Instead each maximal run of `[A-Za-z0-9_\-.]` is split on
+# its dots once and each segment is searched once for its first "eyJ" (not glued after an
+# alphanumeric): linear in the run, no bound on how much is redacted.
+_JWT_RUN = re.compile(r"[A-Za-z0-9_\-.]++")
+_JWT_MIN_SEGMENT = 5
+
+
+def _jwt_start(segment: str) -> int:
+    """Offset of the first "eyJ" in `segment` that is not preceded by an alphanumeric and has at
+    least `_JWT_MIN_SEGMENT` characters after it, or -1. Only the first candidate is tried: any
+    later one has fewer characters left."""
+    lowered = segment.lower()  # the rule has always been case-insensitive
+    pos = lowered.find("eyj")
+    while pos > 0 and segment[pos - 1].isalnum():
+        pos = lowered.find("eyj", pos + 1)
+    return pos if pos >= 0 and len(segment) - pos - 3 >= _JWT_MIN_SEGMENT else -1
+
+
+def _redact_jwts_in_run(match: re.Match[str]) -> str:
+    run = match.group(0)
+    segments = run.split(".")
+    out: list[str] = []
+    i = 0
+    while i < len(segments):
+        start = _jwt_start(segments[i]) if i + 2 < len(segments) else -1
+        if start >= 0 and len(segments[i + 1]) >= _JWT_MIN_SEGMENT:
+            out.append(segments[i][:start] + REDACTED)
+            i += 3
+        else:
+            out.append(segments[i])
+            i += 1
+    return ".".join(out)
+
+
 _USERINFO = re.compile(r"(?P<scheme>(?<![A-Za-z0-9+.\-])[A-Za-z][A-Za-z0-9+.\-]*://)[^/\s?#]*@")
 _KEY_VALUE = re.compile(
     rf"(?P<key>(?<![\w.\-]){_SECRET_KEY})(?P<sep>{_SEP})"
     rf"""(?P<val>\[REDACTED\]|{_QUOTED_VALUE}|[^\s&,;"'}}\])]+)""",
     re.I,
 )
+# FTF-0904-F1: generic credential-carrying parameter names (`?key=`, `?sig=`, OAuth `?code=` and
+# `?state=` on a callback, session ids, one-time codes). They cannot join `_SECRET_KEY_WORDS`: that
+# list matches a word *inside* a key run and also binds structured keys, so `state`/`code`/`key`
+# would redact `{"state": "running"}` and `monkey=1`. Round 2 (QP-NAME-CLASS, QP-POS-SERIALIZED):
+# the rule binds a parameter *name class* -- the LAST word of the name (split on `_ - .` and
+# camelCase) is one of `_QUERY_PARAM_NAMES` -- so `session_key`, `sessionKey`, `auth_code`,
+# `oauth_verifier`, `PHPSESSID` and `connect.sid` are covered, while `keyboard=`, `codec=`,
+# `monkey=`, `state_of=` and `code_path=` (last word not a name) survive. The name needs no `?` in
+# front of it: a query serialized without one (`str(request.query_params)`), a urlencoded form body
+# and a name after a space/quote/`/` are the same leak. Over-redaction (`state=CA`, prose `code=5`)
+# is FTF-0904's design.
+_QUERY_PARAM_NAMES = frozenset(
+    {
+        "key",
+        "sig",
+        "auth",
+        "session",
+        "jwt",
+        "code",
+        "state",
+        "verifier",
+        "ticket",
+        "otp",
+        "pass",
+        "sid",
+        "sessid",
+        "phpsessid",
+        "jsessionid",
+    }
+)
+# One start per maximal key run (lookbehind) and a possessive run: linear, no restart inside a run.
+_QUERY_ASSIGN = re.compile(r"(?<![\w.\-])(?P<key>[\w.\-]++)(?P<sep>=)")
+# `[REDACTED]` is consumed whole (with anything glued to it) so the rule is idempotent: running it
+# over its own output (the logging sink re-redacts the formatted line) never grows the marker.
+_QUERY_VALUE = re.compile(r"""\[REDACTED\][^\s&,;"'}\])]*+|[^\s&,;"'}\])]++""")
+_NAME_WORD_SPLIT = re.compile(r"[_.\-]+")
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+def _is_query_param_name(name: str) -> bool:
+    words = [w for w in _NAME_WORD_SPLIT.split(_CAMEL_BOUNDARY.sub("_", name)) if w]
+    return bool(words) and words[-1].lower() in _QUERY_PARAM_NAMES
+
+
+class _QueryParamRule:
+    """Duck-types `re.Pattern.sub(repl, text)` for `_RULES` (the replacement is built in)."""
+
+    def sub(self, _repl: object, text: str) -> str:
+        out: list[str] = []
+        pos = 0
+        for match in _QUERY_ASSIGN.finditer(text):
+            if match.start() < pos or not _is_query_param_name(match.group("key")):
+                continue
+            value = _QUERY_VALUE.match(text, match.end())
+            if value is None:
+                continue
+            out.append(text[pos : match.end()])
+            out.append(REDACTED)
+            pos = value.end()
+        out.append(text[pos:])
+        return "".join(out)
+
+
+_QUERY_SECRET_PARAM = _QueryParamRule()
 _BASE64_RUN = re.compile(
     r"(?<![A-Za-z0-9+/_\-])(?P<body>[A-Za-z0-9+/_\-]{16,})={0,2}(?![A-Za-z0-9+/_=\-])"
 )
@@ -237,10 +319,13 @@ _RULES: tuple[tuple[str, Any], ...] = (
     ("pair", _PAIR),
     ("bearer", _BEARER),
     ("prefix", _PREFIXES),
+    ("jwt", _JWT_RUN),
     ("userinfo", _USERINFO),
     ("key_value", _KEY_VALUE),
+    ("query_param", _QUERY_SECRET_PARAM),
 )
-_REPLACEMENTS: Mapping[str, str] = {
+_REPLACEMENTS: Mapping[str, str | Callable[[re.Match[str]], str]] = {
+    "jwt": _redact_jwts_in_run,
     "header": rf"\g<key>\g<sep>{REDACTED}",
     "pair": rf"\g<pre>{REDACTED}",
     "bearer": rf"\g<scheme> {REDACTED}",
@@ -300,7 +385,7 @@ def _reveals_secret(segment: str) -> bool:
     """True if any percent-decoded layer (up to three) of `segment` contains a secret shape."""
     layer = segment
     for _ in range(_MAX_DECODE_LAYERS):
-        layer = unquote(layer)
+        layer = _normalise(unquote(layer))  # a decoded fullwidth `=` is `=` once NFKC'd (F1)
         if _scan(layer, _BASE64_LAYERS) != layer:
             return True
     return False

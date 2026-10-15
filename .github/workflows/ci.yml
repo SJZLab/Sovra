@@ -26,7 +26,7 @@ jobs:
       files_sha256: ${{ steps.classify.outputs.files_sha256 }}
       focus: ${{ steps.classify.outputs.focus }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - name: Use the base branch's policy script
@@ -57,7 +57,7 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - name: Use the base branch's policy script
@@ -81,7 +81,7 @@ jobs:
   gate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # FTF-H001's validate_spec.py resolves every certified task's
           # evidence commit via `git cat-file -e` — actions/checkout's
@@ -113,17 +113,17 @@ jobs:
             exit 1
           fi
           echo "CLAUDE.md.sha256 verified: $actual"
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
       - name: Install gate deps
         run: pip install pyyaml --quiet
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
-      - uses: pnpm/action-setup@v4
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 9.0.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: 'pnpm'
@@ -263,6 +263,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_1501.py
       - name: FTF-1504 negative-test proof (IDOR suite route registry covers the live API; comparators catch real defects, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1504.py
+      - name: FTF-1505 negative-test proof (Secret scanning -- shape-only rule set, real git-history/allowlist fixtures, real FTF-0904 log-sample pipeline, no network required)
+        run: uv run python3 tests/tasks/test_ftf_1505.py
       - name: FTF-1001 negative-test proof (ModelVersion schema/API catches real defects, real local sockets, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1001.py
       - name: FTF-1401 negative-test proof (API load-test measurement/aggregation catches real defects, no DB required)
@@ -309,8 +311,16 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0507.py
       - name: FTF-0508 negative-test proof (Record schema validator, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0508.py
+      - name: FTF-0502-P1 negative-test proof (Dataset import common contract, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0502_p1.py
       - name: FTF-0502 negative-test proof (JSONL importer, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0502.py
+      - name: FTF-0503 negative-test proof (JSON importer, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0503.py
+      - name: FTF-0504 negative-test proof (CSV importer, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0504.py
+      - name: FTF-0505 negative-test proof (XLSX importer, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0505.py
       - name: FTF-0206 negative-test proof (`/model_group/info` enrichment, no DB required)
         # Same watchdog finding as FTF-0205 above -- this is the FTF-0206
         # half of that gap, now closeable since this task's test file
@@ -362,6 +372,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0511.py
       - name: FTF-0512 negative-test proof (Normalized duplicate detector, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0512.py
+      - name: FTF-0512-F1 look-alike gaps (NFKC + Cf folding, symmetric generated-value removal, generated table + per-class faults, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0512_f1.py
       - name: FTF-0513 negative-test proof (Near-duplicate detector, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0513.py
       - name: FTF-0514 negative-test proof (PII/secrets detector, no DB required)
@@ -426,6 +438,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0613.py
       - name: FTF-0517 negative-test proof (Group-aware split engine, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0517.py
+      - name: FTF-0518 negative-test proof (Split leakage detector, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0518.py
       - name: FTF-1305 negative-test proof (Candidate ranking, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1305.py
       - name: FTF-0616 negative-test proof (LLM judge adapter, no DB required; real local gateway over HTTPS)
@@ -500,6 +514,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0903.py
       - name: FTF-0904 negative-test proof (log redaction -- secret headers/URLs/tokens/exception chains redacted at ingress and sink, redactor failure logs a constant marker only, fault-injected copies of the module, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0904.py
+      - name: FTF-0904-W1 live log redaction (real uvicorn factory + default log config over a socket -- secret query params never printed, access lines kept redacted, sinks installed, fault-injected copies of apps/api/app, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0904_w1.py
       - name: FTF-0905 negative-test proof (canary-secret generator -- unique prefixed markers, no real-secret collision, full-coverage leak ledger, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0905.py
       - name: FTF-H010-P1 negative-test proof (model import fields + import-validation jobs -- migration SQL + RLS/GRANT shape + fault injection, store on SQLite, route seams, mounted app, no DB required)
@@ -542,11 +558,11 @@ jobs:
     continue-on-error: false
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies
         run: uv sync --all-packages
       - name: Relay PRs may not edit the mutation allowlist (Control-plane file)
@@ -632,7 +648,7 @@ jobs:
             --timeout 300 --max-mutants 200 --json reports/mutation-gate.json
       - name: Upload mutation report
         if: always() && steps.select.outputs.skip == 'false'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: mutation-gate-report
           path: reports/mutation-gate.json
@@ -649,7 +665,7 @@ jobs:
     if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' docker-local-stack-integration ')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Boot the real local stack and prove restart/persistence
         run: python3 scripts/verify_docker_local_stack.py
 
@@ -685,9 +701,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0102
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real migration + RLS tenant-isolation evidence against the live database
@@ -723,9 +739,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0104
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real append-only/tenant-isolation/atomicity evidence against the live database
@@ -762,9 +778,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0105
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real connection-pool-reuse/raw-SQL/background-job tenant-isolation evidence against the live database
@@ -803,9 +819,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfh003
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real cross-layer read/write/download/job/route tenant-isolation evidence against the live database
@@ -844,9 +860,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0106
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real full six-role, two-tenant RBAC/IDOR evidence against the live database
@@ -890,9 +906,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0201
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real LiteLLM connection CRUD evidence against the live database
@@ -937,9 +953,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfh004
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real authorized-access-guard evidence against the live database
@@ -975,9 +991,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0214
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real composed catalog/probe evidence against the live database
@@ -1024,9 +1040,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0301
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real TrainableArtifact schema/API evidence against the live database
@@ -1076,9 +1092,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0401
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real Project schema/API evidence against the live database
@@ -1124,9 +1140,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0402
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real Project security profile inheritance evidence against the live database
@@ -1168,9 +1184,9 @@ jobs:
       SOVRA_BACKUP_ENCRYPTION_KEY: sovra_backup_encryption_key_ci_only
       PGPASSWORD: sovra_migrate_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Install Postgres client (pg_dump/pg_restore/psql matching the service's major version)
@@ -1189,8 +1205,8 @@ jobs:
     if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' storage-semantics-integration ')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
       - name: Install gate deps
@@ -1209,8 +1225,8 @@ jobs:
     if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' s3-minio-versioned-source-integration ')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
       - name: Install gate deps
@@ -1230,8 +1246,8 @@ jobs:
     if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' direct-upload-s3-integration ')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
       - name: Install gate deps
@@ -1254,8 +1270,8 @@ jobs:
     if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' object-storage-backup-integration ')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
       - name: Install gate deps
@@ -1274,8 +1290,8 @@ jobs:
     if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' mlflow-projection-integration ')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
       - name: Install the pinned MLflow server
@@ -1313,9 +1329,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfr005r2
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Install the pinned MLflow server into the uv environment
@@ -1335,9 +1351,9 @@ jobs:
     if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' oidc-provider-integration ')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member + idpyoidc dev dependency)
         run: uv sync --all-packages
       - name: Prove the real OIDC-provider login evidence
@@ -1382,9 +1398,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0305
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real License acceptance workflow (revoke-license) evidence against the live database
@@ -1415,9 +1431,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0305f1
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove artifact transitions serialize and ready needs a license (FTF-0305-F1) against the live database
@@ -1461,9 +1477,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0404
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real Tool schema CRUD evidence against the live database
@@ -1513,9 +1529,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0407
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real critical-behavior-requirement evidence against the live database
@@ -1564,9 +1580,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0403
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real Budget policy evidence against the live database
@@ -1618,9 +1634,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf1301
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real CostProfile evidence against the live database
@@ -1642,12 +1658,12 @@ jobs:
     if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' secret-manager-integration ')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: '1.23'
       - name: Build the real OpenBao binary (pinned commit, the owner-selected secret backend)
@@ -1698,9 +1714,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf1501
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real two-tenant API/DB isolation evidence against the live database
@@ -1749,9 +1765,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf1001
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real ModelVersion schema/API evidence against the live database
@@ -1798,9 +1814,9 @@ jobs:
       SOVRA_LOAD_TEST_DURATION_SECONDS: "15"
       SOVRA_LOAD_TEST_WORKERS: "10"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Run the real API load test against the live database and report p50/p95/p99/errors/backpressure
@@ -1848,12 +1864,12 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0500
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: '1.23'
       - name: Build the real OpenBao binary (pinned commit, the owner-selected secret backend)
@@ -1907,12 +1923,12 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf04a01
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: '1.23'
       - name: Build the real OpenBao binary (pinned commit, the owner-selected secret backend)
@@ -1967,9 +1983,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf04a07
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real TargetSourceSnapshot evidence against the live database
@@ -2019,9 +2035,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf04a03
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real GitHub accessible-repository listing evidence against the live database
@@ -2070,9 +2086,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf04a04
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real GitHub branch listing/ref-resolution evidence against the live database
@@ -2119,9 +2135,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf04a05
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real GitHub source snapshot capture evidence against the live database
@@ -2166,9 +2182,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfr002
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real ComponentBinding/ComponentSyncOutbox evidence against the live database
@@ -2223,9 +2239,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0203
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real connection-validation evidence against the live database and live gateway
@@ -2267,9 +2283,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0204
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real model-discovery evidence against the live database and live gateway
@@ -2310,9 +2326,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf1201
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real registration-capability evidence against the live database and live gateway
@@ -2335,9 +2351,9 @@ jobs:
     if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' dependency-scanning-integration ')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dev dependencies
         run: uv sync --all-packages
       - name: Real OSV.dev dependency scan (uv.lock + pnpm-lock.yaml)
@@ -2387,9 +2403,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf04a17
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real DiscoveredAgentCandidate evidence against the live database
@@ -2441,9 +2457,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf04a19
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real AgentManifest evidence against the live database
@@ -2493,9 +2509,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf04a20
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real ManifestEvidence evidence against the live database
@@ -2545,9 +2561,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0306
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real Base model revision/digest resolver evidence against the live database
@@ -2598,9 +2614,9 @@ jobs:
     env:
       SOVRA_FTF0500C_ADMIN_DSN: postgresql://sovra_migrate:sovra_migrate_ci_only@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real Postgres source-connector evidence against the live database
@@ -2652,9 +2668,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0601
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real EvaluationSuite evidence against the live database
@@ -2699,9 +2715,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf1206a
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real organization-gateway-policy persistence evidence against the live database
@@ -2737,9 +2753,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0908
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the durable external-provider denial audit against the live database
@@ -2779,9 +2795,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0308p1
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real model catalog mapping evidence against the live database
@@ -2816,9 +2832,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0309p1
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real training-capability read API evidence against the live database
@@ -2854,9 +2870,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0310
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real capability contract evidence against the live database
@@ -2895,9 +2911,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0602p1
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real evaluation case evidence against the live database
@@ -2938,9 +2954,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0501p1
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real dataset upload evidence against the live database
@@ -2976,9 +2992,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0501r
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real upload routes against PostgreSQL 16 and SeaweedFS
@@ -3019,13 +3035,13 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0501ui
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
-      - uses: pnpm/action-setup@v4
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 9.0.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: 'pnpm'
@@ -3067,13 +3083,13 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0516ui
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
-      - uses: pnpm/action-setup@v4
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 9.0.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: 'pnpm'
@@ -3114,9 +3130,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0501p2
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real upload hardening evidence against the live database
@@ -3158,9 +3174,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0516p1
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real dataset quality evidence against the live database
@@ -3203,9 +3219,9 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0103a
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member + idpyoidc dev dependency)
         run: uv sync --all-packages
       - name: Prove the real OIDC-login -> API live-auth-path evidence against the live database
@@ -3258,9 +3274,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies
         run: uv sync --all-packages
       - name: Install kind
@@ -3320,13 +3336,52 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf04a18
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
       - name: Prove the real candidate-selection + persisted-audit evidence against the live database
         run: uv run python3 tests/integration/test_ftf_04a18_candidate_selection.py
+
+  dataset-import-source-integration:
+    # FTF-0502-P1: the dataset source reader (apps/api/app/datasets/dataset_object_source.py)
+    # over PostgreSQL 16 as the restricted sovra_app role and the live SeaweedFS S3 API:
+    # datasets made by the real FTF-0501-P1 store functions, streamed bytes hashing to
+    # Dataset.verified_sha256, foreign-org / foreign-project / missing / hidden held-out
+    # datasets all the same DatasetNotFoundError, raw sovra_app SQL under another tenant
+    # seeing and planting nothing, exactly one GET of the session key and no LIST, and a
+    # truncated object or a mid-stream stop of S3 ending in blocked/source_unavailable --
+    # tests/integration/test_ftf_0502_p1_dataset_source_postgres_s3.py. The test boots the
+    # compose `s3` service itself when nothing answers.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' dataset-import-source-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0502p1
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0502p1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0502p1
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the dataset source reader against PostgreSQL 16 and SeaweedFS
+        run: uv run python3 tests/integration/test_ftf_0502_p1_dataset_source_postgres_s3.py
 
   model-import-integration:
     # FTF-H010-P1: real Postgres evidence for the model import fields +
@@ -3365,13 +3420,175 @@ jobs:
       SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfh010p1
       SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real model import fields + import-validation jobs evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_h010_p1_model_import.py
+
+  csv-import-integration:
+    # FTF-0504: the CSV importer (workers/data/csv_importer.py) over PostgreSQL 16 as the
+    # restricted sovra_app role and the live SeaweedFS S3 API, through the real FTF-0501 upload
+    # routes and the FTF-0502-P1 dataset source reader: a text/csv dataset streamed from the
+    # bucket imports every record exactly (Arabic, leading zeros, formula text, multiline CRLF),
+    # a non-CSV dataset is refused before one storage call, foreign / missing / hidden held-out
+    # datasets read alike, a truncated object and a mid-stream S3 stop end blocked, and nothing
+    # planted in the content or headers leaks into a report, locator or log record --
+    # tests/integration/test_ftf_0504_csv_import_postgres_s3.py. The test boots the compose
+    # `s3` service itself when nothing answers.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' csv-import-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0504
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0504"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0504
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
       - uses: actions/checkout@v4
       - name: Install uv
         uses: astral-sh/setup-uv@v3
       - name: Install Python dependencies (apps/api workspace member)
         run: uv sync --all-packages
-      - name: Prove the real model import fields + import-validation jobs evidence against the live database
-        run: uv run python3 tests/integration/test_ftf_h010_p1_model_import.py
+      - name: Prove the CSV importer against PostgreSQL 16 and SeaweedFS
+        run: uv run python3 tests/integration/test_ftf_0504_csv_import_postgres_s3.py
+
+  xlsx-import-integration:
+    # FTF-0505: the XLSX importer (workers/data/xlsx_importer.py, workers/data/ooxml_safety.py) over
+    # PostgreSQL 16 as the restricted sovra_app role and the live SeaweedFS S3 API, through the real
+    # FTF-0501 upload routes and the FTF-0502-P1 dataset source reader: a workbook streamed from the
+    # bucket imports every record exactly (Arabic, leading-zero text cells, formula-looking text, CR /
+    # LF inside cells, shared and inline strings) and rejects formula / error rows at their own sheet
+    # rows, a non-XLSX dataset is refused before one storage call, foreign / missing / hidden held-out
+    # datasets read alike, workbooks the upload routes accept but that carry a macro part, an external
+    # link, strict OOXML, an Excel 4 macro sheet, a decompression bomb or an oversize shared-strings
+    # table are refused from the live bytes, a truncated object and a mid-stream S3 stop end blocked,
+    # and nothing planted in the cells, headers, sheet name or part names leaks into a report,
+    # locator or log record -- tests/integration/test_ftf_0505_xlsx_import_postgres_s3.py. The test
+    # boots the compose `s3` service itself when nothing answers.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' xlsx-import-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0505
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0505"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0505
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the XLSX importer against PostgreSQL 16 and SeaweedFS
+        run: uv run python3 tests/integration/test_ftf_0505_xlsx_import_postgres_s3.py
+
+  jsonl-import-integration:
+    # FTF-0502: the JSONL importer (workers/data/jsonl_importer.py) over PostgreSQL 16 as the
+    # restricted sovra_app role and the live SeaweedFS S3 API, through the real FTF-0501 upload
+    # routes and the FTF-0502-P1 dataset source reader: an application/jsonl dataset streamed
+    # from the bucket imports every good line exactly (Arabic, leading zeros, formula text, CRLF,
+    # a leading BOM) and gives every bad line its own code and line locator, a non-JSONL dataset
+    # is refused before one storage call, foreign / missing / hidden held-out datasets read
+    # alike, a truncated object and a mid-stream S3 stop end blocked, damaged storage ends
+    # failed/source_changed, and nothing planted in the content or keys leaks into a report,
+    # locator or log record -- tests/integration/test_ftf_0502_jsonl_import_postgres_s3.py. The
+    # test boots the compose `s3` service itself when nothing answers.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' jsonl-import-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0502
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0502"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0502
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the JSONL importer against PostgreSQL 16 and SeaweedFS
+        run: uv run python3 tests/integration/test_ftf_0502_jsonl_import_postgres_s3.py
+
+  json-import-integration:
+    # FTF-0503: the JSON importer (workers/data/json_importer.py) over PostgreSQL 16 as the
+    # restricted sovra_app role and the live SeaweedFS S3 API, through the real FTF-0501 upload
+    # routes and the FTF-0502-P1 dataset source reader: an application/json dataset streamed
+    # from the bucket imports every record exactly (Arabic, leading zeros, formula text, escaped
+    # CR/LF, brackets and colons inside strings, an ignored top-level value), a non-JSON dataset
+    # is refused before one storage call, foreign / missing / hidden held-out datasets read
+    # alike, damaged storage ends fatal invalid_encoding / json_malformed at a byte offset or
+    # failed/source_changed, a truncated object and a mid-stream S3 stop end blocked (with a
+    # control import that completes), and nothing planted in a record or an ignored value leaks
+    # into a report, locator or log record -- tests/integration/test_ftf_0503_json_import_postgres_s3.py.
+    # The test boots the compose `s3` service itself when nothing answers.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' json-import-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0503
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0503"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0503
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the JSON importer against PostgreSQL 16 and SeaweedFS
+        run: uv run python3 tests/integration/test_ftf_0503_json_import_postgres_s3.py
 
   ci-verdict:
     # THE result to read for "CI is green" (merge-on-green, certification, Control plane).
@@ -3453,10 +3670,15 @@ jobs:
       - mlflow-durable-outbox-integration
       - model-import-integration
       - candidate-selection-integration
+      - dataset-import-source-integration
+      - csv-import-integration
+      - jsonl-import-integration
+      - json-import-integration
+      - xlsx-import-integration
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - name: Use the base branch's policy script
@@ -3485,7 +3707,7 @@ jobs:
             --head-sha "$HEAD_SHA" --base-sha "$BASE_SHA" --evidence reports/ci-verdict.json
       - name: Upload verdict evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ci-verdict-${{ github.event.pull_request.head.sha }}-attempt-${{ github.run_attempt }}
           path: reports/ci-verdict.json

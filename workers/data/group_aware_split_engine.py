@@ -86,7 +86,12 @@ class SplitEngineError(ValueError):
 
 
 def _text(value: object, name: str) -> str:
-    if not isinstance(value, str) or not value or value.isspace():
+    # Exact type, not isinstance: a str subclass with the same text but foreign hash/eq
+    # (or just a stray subclass) must never pass as a group key or record id -- the
+    # union-find below keys a dict by this value, so a foreign hash/eq would silently
+    # fail to merge with an identical-looking plain str and split one family across
+    # two groups (and therefore two roles) instead of raising.
+    if type(value) is not str or not value or value.isspace():
         raise SplitEngineError(f"{name} must be a non-empty string")
     return value
 
@@ -211,7 +216,11 @@ def allocate_splits(spec: SplitSpec, records: Sequence[SplitRecord]) -> SplitMan
         for key in rec.group_keys:
             _text(key, "group key")
             parent.setdefault(key, key)
-        if rec.preassigned_role is not None and rec.preassigned_role not in _IS_EVAL:
+        if rec.preassigned_role is not None and (
+            # Type-checked before the membership test: an unhashable preassigned_role
+            # ([] or {}) must raise this module's own error, never a raw TypeError.
+            type(rec.preassigned_role) is not str or rec.preassigned_role not in _IS_EVAL
+        ):
             raise SplitEngineError(f"preassigned_role must be None or one of {ROLES}")
         if rec.event_time is not None:
             _int(rec.event_time, "event_time", 0, _MAX_TIME)
@@ -271,16 +280,42 @@ def allocate_splits(spec: SplitSpec, records: Sequence[SplitRecord]) -> SplitMan
     )
 
 
+def _check_manifest_shape(manifest: SplitManifest) -> None:
+    # Every field that compute_manifest_sha256 serialises is type-checked first, so a
+    # malformed manifest raises this module's own error and never a raw TypeError out of
+    # json.dumps (a set/bytes field) or iteration (None/int assignments).
+    if type(manifest.strategy) is not str or type(manifest.seed) is not str:
+        raise SplitEngineError("manifest strategy and seed must be strings")
+    ratios = manifest.ratios
+    if type(ratios) is not tuple or len(ratios) != len(ROLES):
+        raise SplitEngineError("manifest ratios must be a tuple of four ints")
+    for ratio in ratios:
+        if type(ratio) is not int:
+            raise SplitEngineError("manifest ratios must be a tuple of four ints")
+    if manifest.cutoff is not None and type(manifest.cutoff) is not int:
+        raise SplitEngineError("manifest cutoff must be None or an int")
+    if type(manifest.assignments) is not tuple:
+        raise SplitEngineError("manifest assignments must be a tuple")
+    for entry in manifest.assignments:
+        if type(entry) is not tuple or len(entry) != 3:
+            raise SplitEngineError("manifest has a malformed assignment")
+        if any(type(field) is not str for field in entry):
+            raise SplitEngineError("manifest has a malformed assignment")
+
+
 def verify_manifest(manifest: SplitManifest) -> None:
     """Raise SplitEngineError unless the manifest is untampered and group-isolated."""
     if not isinstance(manifest, SplitManifest):
         raise SplitEngineError("manifest must be a SplitManifest")
+    _check_manifest_shape(manifest)
     if manifest.manifest_sha256 != compute_manifest_sha256(manifest):
         raise SplitEngineError("manifest hash does not match its content")
     roles_in_group: dict[str, set[str]] = {}
     role_by_record: dict[str, str] = {}
     group_by_record: dict[str, str] = {}
-    for record_id, role, group_id in manifest.assignments:
+    for entry in manifest.assignments:
+        # Entry structure and field types were validated by _check_manifest_shape.
+        record_id, role, group_id = entry
         if role not in _IS_EVAL:
             raise SplitEngineError("manifest has an unknown role")
         roles_in_group.setdefault(group_id, set()).add(role)

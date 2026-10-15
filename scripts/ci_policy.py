@@ -169,7 +169,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
 
 # --- relay-policy ---------------------------------------------------------------------------
 
-ITEM_ID = re.compile(r"FTF-[0-9A-Z]+(?:-F\d+)?", re.I)
+ITEM_ID = re.compile(r"FTF-[0-9A-Z]+(?:-(?:F\d+|P\d+|UI))?", re.I)
 
 # Control-plane / governance files a [relay] PR must never change (CLAUDE.md "Relay is
 # execution-only", "Governance PRs", Law 4). QUEUE.md stays allowed: a relay parks an item there.
