@@ -55,9 +55,10 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from decimal import ROUND_DOWN, Decimal, localcontext
+from enum import StrEnum
 
 from packages.litellm_client.real_chat_probe import RouteIdentityState
 
@@ -89,6 +90,7 @@ __all__ = [
     "STATUS_PRICED",
     "STATUS_UNPRICED",
     "STEP_KINDS",
+    "AttributionStatus",
     "AttemptTrace",
     "CompoundAttribution",
     "CompoundAttributionError",
@@ -107,16 +109,27 @@ PRICING_MODES: tuple[str, ...] = ("provider", "self_hosted")
 ARTIFACT_KINDS: tuple[str, ...] = ("existing", "base", "tuned")
 ALLOCATION_POLICY = "proportional_to_calls"
 
-STATUS_PRICED = "priced"
-STATUS_BINDING_VIOLATION = "binding_violation"
-STATUS_IDENTITY_UNVERIFIED = "identity_unverified"
-STATUS_UNPRICED = "unpriced"
+
+class AttributionStatus(StrEnum):
+    PRICED = "priced"
+    BINDING_VIOLATION = "binding_violation"
+    IDENTITY_UNVERIFIED = "identity_unverified"
+    UNPRICED = "unpriced"
+
+
+STATUS_PRICED = AttributionStatus.PRICED
+STATUS_BINDING_VIOLATION = AttributionStatus.BINDING_VIOLATION
+STATUS_IDENTITY_UNVERIFIED = AttributionStatus.IDENTITY_UNVERIFIED
+STATUS_UNPRICED = AttributionStatus.UNPRICED
 # Precedence when several refusals apply: the most serious one names the result.
-_STATUS_PRECEDENCE: tuple[str, ...] = (
+_STATUS_PRECEDENCE: tuple[AttributionStatus, ...] = (
     STATUS_BINDING_VIOLATION,
     STATUS_IDENTITY_UNVERIFIED,
     STATUS_UNPRICED,
 )
+if TASK_OUTCOMES[0] != "pass":  # the success outcome is located by position below
+    raise ImportError("TASK_OUTCOMES no longer starts with 'pass'")
+_PASS_OUTCOME_INDEX = 0
 
 _DEFAULT_ROUTE_STEP_KIND = "reasoning"
 _SHARE_QUANTUM = Decimal("1E-12")
@@ -129,8 +142,10 @@ class CompoundAttributionError(ValueError):
 
 
 def _identifier(value: object, field_name: str) -> str:
-    if type(value) is not str or not value.strip():
-        raise CompoundAttributionError(f"{field_name} must be a non-empty string: {value!r}")
+    if type(value) is not str or not value or value != value.strip():
+        raise CompoundAttributionError(
+            f"{field_name} must be a non-empty string without surrounding whitespace: {value!r}"
+        )
     return value
 
 
@@ -180,15 +195,6 @@ class StepBinding:
         _choice(self.step_kind, STEP_KINDS, "step_kind")
         _choice(self.pricing_mode, PRICING_MODES, "pricing_mode")
         _choice(self.artifact_kind, ARTIFACT_KINDS, "artifact_kind")
-
-    def canonical(self) -> dict[str, str]:
-        return {
-            "step_key": self.step_key,
-            "route_alias": self.route_alias,
-            "step_kind": self.step_kind,
-            "pricing_mode": self.pricing_mode,
-            "artifact_kind": self.artifact_kind,
-        }
 
 
 @dataclass(frozen=True)
@@ -252,15 +258,9 @@ class CompoundBinding:
 
     @property
     def binding_sha256(self) -> str:
-        return _sha256(
-            {
-                "default_route_alias": self.default_route_alias,
-                "provider": self.provider,
-                "default_pricing_mode": self.default_pricing_mode,
-                "default_artifact_kind": self.default_artifact_kind,
-                "steps": [s.canonical() for s in sorted(self.steps, key=lambda s: s.step_key)],
-            }
-        )
+        document = asdict(self)
+        document["steps"] = sorted(document["steps"], key=lambda step: step["step_key"])
+        return _sha256(document)
 
 
 @dataclass(frozen=True)
@@ -297,27 +297,6 @@ class ModelCallRecord:
         if self.ended_at <= self.started_at:
             raise CompoundAttributionError("ended_at must be strictly after started_at")
 
-    def canonical(self) -> dict[str, object]:
-        usage = None
-        if self.usage is not None:
-            usage = [
-                self.usage.input_tokens,
-                self.usage.output_tokens,
-                self.usage.cache_tokens,
-                self.usage.reasoning_tokens,
-                self.usage.billable_requests,
-            ]
-        return {
-            "request_id": self.request_id,
-            "step_key": self.step_key,
-            "route_alias": self.route_alias,
-            "identity_state": self.identity_state.value,
-            "deployment_fingerprint": self.deployment_fingerprint,
-            "usage": usage,
-            "started_at": self.started_at.isoformat(),
-            "ended_at": self.ended_at.isoformat(),
-        }
-
 
 @dataclass(frozen=True)
 class AttemptTrace:
@@ -345,17 +324,6 @@ class AttemptTrace:
                 f"pending_cost must be a finite non-negative Decimal or None: {self.pending_cost!r}"
             )
 
-    def canonical(self) -> dict[str, object]:
-        return {
-            "request_id": self.request_id,
-            "outcome": self.outcome,
-            "pending_cost": None if self.pending_cost is None else str(self.pending_cost),
-            "calls": sorted(
-                (c.canonical() for c in self.calls),
-                key=lambda d: json.dumps(d, sort_keys=True),
-            ),
-        }
-
 
 @dataclass(frozen=True)
 class SelfHostedWindow:
@@ -380,7 +348,7 @@ class SelfHostedWindow:
             )
         _aware(self.window.window_start, "window_start")
         _aware(self.window.window_end, "window_end")
-        if self.allocation_policy != ALLOCATION_POLICY:
+        if self.allocation_policy != "proportional_to_calls":
             raise CompoundAttributionError(
                 f"allocation_policy must be {ALLOCATION_POLICY!r}: {self.allocation_policy!r}"
             )
@@ -391,7 +359,7 @@ class CompoundIssue:
     """A refusal reason. Carries the request id, route and a code only --
     never request or response content."""
 
-    status: str
+    status: AttributionStatus
     code: str
     request_id: str | None
     route_alias: str | None
@@ -409,7 +377,7 @@ class RouteLine:
 
 @dataclass(frozen=True)
 class CompoundAttribution:
-    status: str
+    status: AttributionStatus
     attempt_costs: tuple[AttemptCost, ...]
     route_lines: tuple[RouteLine, ...]
     step_kind_totals: tuple[tuple[str, Decimal], ...]
@@ -417,6 +385,17 @@ class CompoundAttribution:
     candidate_kind: str
     binding_sha256: str
     attribution_sha256: str
+
+
+def _attempt_order_key(attempt: AttemptTrace) -> tuple[str, str, str, tuple[str, ...]]:
+    """A total order over attempts that ignores input order, so the residual
+    cent of a shared window always lands on the same attempt."""
+    return (
+        attempt.request_id,
+        attempt.outcome,
+        str(attempt.pending_cost),
+        tuple(sorted(repr(c) for c in attempt.calls)),
+    )
 
 
 def _allocate(total: Decimal, count: int) -> list[Decimal]:
@@ -449,7 +428,7 @@ def attribute_compound_costs(
         raise CompoundAttributionError("binding must be a CompoundBinding")
     ordered = sorted(
         _tuple_of(attempts, AttemptTrace, "attempts"),
-        key=lambda a: json.dumps(a.canonical(), sort_keys=True),
+        key=_attempt_order_key,
     )
     if not isinstance(rate_cards, Mapping):
         raise CompoundAttributionError("rate_cards must be a mapping of route alias to rate card")
@@ -468,15 +447,13 @@ def attribute_compound_costs(
     self_hosted: list[_Call] = []
 
     for index, attempt in enumerate(ordered):
-        if attempt.outcome == "pass" and not attempt.calls:
+        if TASK_OUTCOMES.index(attempt.outcome) == _PASS_OUTCOME_INDEX and not attempt.calls:
             issues.append(
                 CompoundIssue(
                     STATUS_UNPRICED, "success_without_model_call", attempt.request_id, None
                 )
             )
-        for record in sorted(
-            attempt.calls, key=lambda c: json.dumps(c.canonical(), sort_keys=True)
-        ):
+        for record in sorted(attempt.calls, key=repr):
             if record.step_key is None:
                 bound_alias = binding.default_route_alias
                 step_kind = _DEFAULT_ROUTE_STEP_KIND
@@ -527,21 +504,19 @@ def attribute_compound_costs(
 
     status = STATUS_PRICED
     for candidate_status in _STATUS_PRECEDENCE:
-        if any(issue.status == candidate_status for issue in issues):
+        if any(issue.status is candidate_status for issue in issues):
             status = candidate_status
             break
 
     attempt_costs: tuple[AttemptCost, ...] = ()
     route_lines: tuple[RouteLine, ...] = ()
     step_kind_totals: tuple[tuple[str, Decimal], ...] = ()
-    if status == STATUS_PRICED:
+    if status is STATUS_PRICED:
         attempt_costs = _build_attempt_costs(ordered, calls)
         route_lines = _build_route_lines(calls)
         step_kind_totals = _build_step_kind_totals(route_lines)
 
-    result_issues = tuple(
-        sorted(issues, key=lambda i: (i.status, i.code, i.request_id or "", i.route_alias or ""))
-    )
+    result_issues = tuple(sorted(issues, key=repr))
     return CompoundAttribution(
         status=status,
         attempt_costs=attempt_costs,
@@ -591,7 +566,7 @@ def _allocate_windows(
         if len(covering) == 1:
             assigned[covering[0].window_id].append(call)
             continue
-        if len(covering) > 1:
+        if covering:
             code = "window_ambiguous"
         elif by_alias:
             code = "outside_window_range"
@@ -603,12 +578,7 @@ def _allocate_windows(
         if not members:
             issues.append(CompoundIssue(STATUS_UNPRICED, "window_without_calls", None, None))
             continue
-        members.sort(
-            key=lambda c: (
-                c.attempt_index,
-                json.dumps(c.record.canonical(), sort_keys=True),
-            )
-        )
+        members.sort(key=lambda c: (c.attempt_index, repr(c.record)))
         shares = _allocate(window_total_cost(window.window), len(members))
         for member, share in zip(members, shares, strict=True):
             member.cost = share
@@ -661,7 +631,7 @@ def _build_step_kind_totals(lines: tuple[RouteLine, ...]) -> tuple[tuple[str, De
 
 def _attribution_sha256(
     binding: CompoundBinding,
-    status: str,
+    status: AttributionStatus,
     attempt_costs: tuple[AttemptCost, ...],
     route_lines: tuple[RouteLine, ...],
     step_kind_totals: tuple[tuple[str, Decimal], ...],
@@ -714,7 +684,7 @@ def compound_ranking_candidate(
     FTF-1305 refuses it without training amortization."""
     if not isinstance(attribution, CompoundAttribution):
         raise CompoundAttributionError("attribution must be a CompoundAttribution")
-    if attribution.status != STATUS_PRICED:
+    if attribution.status is not STATUS_PRICED:
         raise CompoundAttributionError(
             f"attribution is {attribution.status!r}, not priced -- a refused attribution "
             "cannot become a ranking candidate"

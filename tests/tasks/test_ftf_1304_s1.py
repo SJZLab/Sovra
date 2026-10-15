@@ -16,6 +16,7 @@ Run directly: python3 tests/tasks/test_ftf_1304_s1.py
 
 from __future__ import annotations
 
+import dataclasses
 import itertools
 import os
 import random
@@ -1297,6 +1298,369 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         raises(m.CompoundAttributionError, lambda: m.SelfHostedWindow("w", ("a",), naive_window)),
     )
 
+    # ---- N: strict, case-sensitive identity of every id, alias and key.
+    for bad in (" x", "x ", "\tx", " "):
+        rec.check(
+            "FTF-1304-S1-N1",
+            f"identifier {bad!r} refused",
+            raises(
+                m.CompoundAttributionError,
+                lambda b=bad: m.StepBinding(b, "r", "other", "provider", "base"),
+            ),
+        )
+    for bad in (" classify", "classify ", "CLASSIFY", "Classify"):
+        rec.check(
+            "FTF-1304-S1-N1",
+            f"step_kind {bad!r} refused (exact vocabulary)",
+            raises(
+                m.CompoundAttributionError,
+                lambda b=bad: m.StepBinding("s", "r", b, "provider", "base"),
+            ),
+        )
+    rec.check(
+        "FTF-1304-S1-N1",
+        "pricing_mode and artifact_kind are exact vocabulary",
+        raises(
+            m.CompoundAttributionError, lambda: m.StepBinding("s", "r", "other", "Provider", "base")
+        )
+        and raises(
+            m.CompoundAttributionError,
+            lambda: m.StepBinding("s", "r", "other", "provider", " base"),
+        ),
+    )
+    rec.check(
+        "FTF-1304-S1-N1",
+        "outcome is exact vocabulary",
+        raises(m.CompoundAttributionError, lambda: m.AttemptTrace("r", "PASS", ()))
+        and raises(m.CompoundAttributionError, lambda: m.AttemptTrace("r", " pass", ())),
+    )
+    case_steps = m.CompoundBinding(
+        "Large-API",
+        "gateway",
+        "provider",
+        "existing",
+        (
+            m.StepBinding("Classify", "Small-Local", "classify", "self_hosted", "base"),
+            m.StepBinding("classify", "small-local", "classify", "self_hosted", "base"),
+        ),
+    )
+    rec.check(
+        "FTF-1304-S1-N2",
+        "step keys and aliases differing only in case are distinct",
+        len(case_steps.steps) == 2 and len(case_steps.route_table()) == 3,
+    )
+    cases = [
+        ("FTF-1304-S1-N3", "step key in another case", "CLASSIFY", "small-local"),
+        ("FTF-1304-S1-N3", "alias in another case", "classify", "SMALL-LOCAL"),
+    ]
+    plain = small_binding(m)
+    for cid, what, step_key, alias in cases:
+        r = attribute(
+            plain,
+            [attempt(m, "n1", "pass", [call(m, "n1", step_key, alias)])],
+            RATES,
+            [self_window(m, window())],
+        )
+        rec.check(
+            cid, f"{what} is a binding violation, got {r.status}", r.status == "binding_violation"
+        )
+    r = attribute(
+        plain,
+        [attempt(m, "n2", "pass", [call(m, "n2", None, "LARGE-API", usage_=usage())])],
+        RATES,
+        [],
+    )
+    rec.check(
+        "FTF-1304-S1-N3",
+        "default alias in another case is a binding violation",
+        r.status == "binding_violation",
+    )
+    upper = m.CompoundBinding("Large-API", "gateway", "provider", "existing", ())
+    r = attribute(
+        upper,
+        [attempt(m, "n3", "pass", [call(m, "n3", None, "large-api", usage_=usage())])],
+        {"Large-API": LARGE_CARD},
+        [],
+    )
+    rec.check(
+        "FTF-1304-S1-N3",
+        "a mixed-case default alias is matched exactly",
+        r.status == "binding_violation",
+    )
+    r = attribute(
+        upper,
+        [attempt(m, "n4", "pass", [call(m, "n4", None, "Large-API", usage_=usage())])],
+        {"Large-API": LARGE_CARD},
+        [],
+    )
+    rec.check("FTF-1304-S1-N3", "...and matches when spelled exactly", r.status == "priced")
+    mixed_self = m.CompoundBinding(
+        "large-api",
+        "gateway",
+        "provider",
+        "existing",
+        (m.StepBinding("classify", "Small-Local", "classify", "self_hosted", "base"),),
+    )
+    lowered = m.SelfHostedWindow("wl", ("small-local",), window())
+    r = attribute(
+        mixed_self,
+        [attempt(m, "n5", "pass", [call(m, "n5", "classify", "Small-Local")])],
+        RATES,
+        [lowered],
+    )
+    refused(rec, "FTF-1304-S1-N4", m, r, "unpriced", "no_window", "n5", "Small-Local")
+    r = attribute(
+        plain,
+        [attempt(m, "n6", "pass", [call(m, "n6", "classify", "small-local")])],
+        RATES,
+        [m.SelfHostedWindow("wu", ("SMALL-LOCAL",), window())],
+    )
+    refused(rec, "FTF-1304-S1-N4", m, r, "unpriced", "no_window", "n6", "small-local")
+    foreign_case = (call(m, "R1", None, "large-api", usage_=usage()), "r1")
+    rec.check(
+        "FTF-1304-S1-N5",
+        "a call for 'R1' inside the trace of 'r1' refused",
+        raises(
+            m.CompoundAttributionError,
+            lambda: m.AttemptTrace(foreign_case[1], "pass", (foreign_case[0],)),
+        ),
+    )
+    rec.check(
+        "FTF-1304-S1-N5",
+        "a call for 'r1' inside the trace of 'R1' refused",
+        raises(
+            m.CompoundAttributionError,
+            lambda: m.AttemptTrace(
+                "R1", "pass", (call(m, "r1", None, "large-api", usage_=usage()),)
+            ),
+        ),
+    )
+    zero_pending = m.AttemptTrace("r", "pass", (), pending_cost=D("0"))
+    rec.check("FTF-1304-S1-N5", "a zero pending cost is allowed", zero_pending.pending_cost == D(0))
+    for what, value in (
+        ("set", {pair(m, "u1")}),
+        ("generator", (x for x in [pair(m, "u2")])),
+        ("dict", {"a": 1}),
+    ):
+        rec.check(
+            "FTF-1304-S1-N6",
+            f"attempts as a {what} refused",
+            raises(m.CompoundAttributionError, lambda v=value: attribute(plain, v, RATES, [])),
+        )
+    rec.check(
+        "FTF-1304-S1-N6",
+        "steps as a set refused",
+        raises(
+            m.CompoundAttributionError,
+            lambda: m.CompoundBinding(
+                "a", "p", "provider", "base", {m.StepBinding("s", "r", "other", "provider", "base")}
+            ),
+        ),
+    )
+    rec.check(
+        "FTF-1304-S1-N6",
+        "calls as a set refused",
+        raises(
+            m.CompoundAttributionError,
+            lambda: m.AttemptTrace("r", "pass", {call(m, "r", None, "large-api", usage_=usage())}),
+        ),
+    )
+    rec.check(
+        "FTF-1304-S1-N6",
+        "windows as a generator refused",
+        raises(m.CompoundAttributionError, lambda: attribute(plain, [], RATES, (w for w in []))),
+    )
+    rec.check(
+        "FTF-1304-S1-N6",
+        "a list of steps is accepted and frozen into a tuple",
+        m.CompoundBinding(
+            "a", "p", "provider", "base", [m.StepBinding("s", "r", "other", "provider", "base")]
+        )
+        .steps[0]
+        .step_key
+        == "s",
+    )
+    rec.check(
+        "FTF-1304-S1-N6",
+        "a string is not a sequence of aliases",
+        raises(
+            m.CompoundAttributionError, lambda: m.SelfHostedWindow("w", "small-local", window())
+        ),
+    )
+    for bad_policy in ("PROPORTIONAL_TO_CALLS", " proportional_to_calls", "proportional_to_calls "):
+        rec.check(
+            "FTF-1304-S1-N7",
+            f"allocation policy {bad_policy!r} refused",
+            raises(
+                m.CompoundAttributionError,
+                lambda p=bad_policy: m.SelfHostedWindow("w", ("a",), window(), allocation_policy=p),
+            ),
+        )
+    exact_start = [attempt(m, "n8", "pass", [call(m, "n8", "classify", "small-local", minute=0)])]
+    r = attribute(plain, exact_start, RATES, [self_window(m, window())])
+    rec.check(
+        "FTF-1304-S1-N8", "a call starting exactly at window_start is inside", r.status == "priced"
+    )
+    just_before = [attempt(m, "n9", "pass", [call(m, "n9", "classify", "small-local", minute=0)])]
+    r = attribute(
+        plain, just_before, RATES, [self_window(m, window(start=T0 + timedelta(seconds=1)))]
+    )
+    refused(rec, "FTF-1304-S1-N8", m, r, "unpriced", "outside_window_range", "n9", "small-local")
+    # a refused attribution that still carries costs (a hand-built or tampered one) cannot rank
+    tampered = dataclasses.replace(cheap_attr, status=m.AttributionStatus.UNPRICED)
+    rec.check(
+        "FTF-1304-S1-N9",
+        "only a priced attribution ranks, whatever it carries",
+        raises(
+            m.CompoundAttributionError,
+            lambda: m.compound_ranking_candidate(
+                "t",
+                tampered,
+                quality_lower_bound=D("0.9"),
+                interval_low=D("0.05"),
+                interval_high=D("0.5"),
+            ),
+        ),
+    )
+    plain_text = dataclasses.replace(cheap_attr, status="PRICED")
+    rec.check(
+        "FTF-1304-S1-N9",
+        "a status spelled 'PRICED' is not priced",
+        raises(
+            m.CompoundAttributionError,
+            lambda: m.compound_ranking_candidate(
+                "t",
+                plain_text,
+                quality_lower_bound=D("0.9"),
+                interval_low=D("0.05"),
+                interval_high=D("0.5"),
+            ),
+        ),
+    )
+    rec.check(
+        "FTF-1304-S1-N9",
+        "status values are the documented strings",
+        [s.value for s in m.AttributionStatus]
+        == ["priced", "binding_violation", "identity_unverified", "unpriced"],
+    )
+
+    # ---- O: tie-break and ordering are independent of input order.
+    twin_binding = m.CompoundBinding(
+        "large-api",
+        "gateway",
+        "provider",
+        "existing",
+        (
+            m.StepBinding("classify", "small-local", "classify", "self_hosted", "base"),
+            m.StepBinding("extract", "small-local", "extract", "self_hosted", "base"),
+        ),
+    )
+
+    def twin(
+        rid: str,
+        outcome: str,
+        step: str,
+        *,
+        pending: str | None = None,
+        fp: str = "fp-1",
+        u: ProviderTokenUsage | None = None,
+    ) -> object:
+        return attempt(
+            m,
+            rid,
+            outcome,
+            [call(m, rid, step, "small-local", fingerprint=fp, usage_=u)],
+            pending=pending,
+        )
+
+    twin_sets = {
+        "request_id": [twin("pa", "pass", "classify"), twin("pb", "pass", "classify")],
+        "outcome": [twin("p", "pass", "classify"), twin("p", "model_fail", "classify")],
+        "pending_cost": [
+            twin("p", "pass", "classify", pending="1"),
+            twin("p", "pass", "classify", pending="2"),
+        ],
+        "pending_none": [twin("p", "pass", "classify"), twin("p", "pass", "classify", pending="2")],
+        "step_key": [twin("p", "pass", "classify"), twin("p", "pass", "extract")],
+        "fingerprint": [
+            twin("p", "pass", "classify", fp="fp-a"),
+            twin("p", "pass", "classify", fp="fp-b"),
+        ],
+        "usage": [
+            twin("p", "pass", "classify", u=usage(1, 1)),
+            twin("p", "pass", "classify", u=usage(2, 2)),
+        ],
+    }
+    twin_window = [self_window(m, window("0.01", "0", "0"))]
+    for field, pair_ in twin_sets.items():
+        forward = attribute(twin_binding, pair_, {}, twin_window)
+        backward = attribute(twin_binding, list(reversed(pair_)), {}, twin_window)
+        rec.check(
+            "FTF-1304-S1-O1",
+            f"attempts differing only in {field}: same attempt_costs in either input order",
+            forward.status == "priced" and forward.attempt_costs == backward.attempt_costs,
+        )
+        rec.check(
+            "FTF-1304-S1-O1",
+            f"attempts differing only in {field}: same hash in either input order",
+            forward.attribution_sha256 == backward.attribution_sha256,
+        )
+    two_calls = [
+        call(m, "p", "classify", "small-local", minute=1),
+        call(m, "p", "classify", "small-local", minute=2),
+    ]
+    ordered_a = attribute(twin_binding, [attempt(m, "p", "pass", two_calls)], {}, twin_window)
+    ordered_b = attribute(
+        twin_binding, [attempt(m, "p", "pass", list(reversed(two_calls)))], {}, twin_window
+    )
+    rec.check(
+        "FTF-1304-S1-O1",
+        "a trace's call order does not matter",
+        ordered_a.attempt_costs == ordered_b.attempt_costs,
+    )
+    split = attribute(
+        plain,
+        [
+            attempt(
+                m,
+                "p",
+                "pass",
+                [
+                    call(m, "p", "classify", "small-local", minute=1),
+                    call(m, "p", "classify", "small-local", minute=1, seconds=31),
+                ],
+            )
+        ],
+        {},
+        twin_window,
+    )
+    rec.check(
+        "FTF-1304-S1-O1",
+        "two calls differing only in end time both priced",
+        split.status == "priced"
+        and sum((a.settled_cost for a in split.attempt_costs), D(0)) == D("0.01"),
+    )
+    issue_order = attribute(
+        plain,
+        [
+            attempt(m, "b", "pass", [call(m, "b", None, "large-api")]),
+            attempt(m, "a", "pass", [call(m, "a", None, "large-api")]),
+        ],
+        RATES,
+        [],
+    )
+    rec.check(
+        "FTF-1304-S1-O2",
+        "issues are sorted regardless of input order",
+        [i.request_id for i in issue_order.issues] == ["a", "b"],
+    )
+    rec.check(
+        "FTF-1304-S1-O2",
+        "issues are tuples of typed records",
+        all(isinstance(i, m.CompoundIssue) for i in issue_order.issues)
+        and isinstance(issue_order.issues, tuple),
+    )
+
     # ---- D: determinism -- shuffled order, same hashes.
     reference = attribute(
         binding,
@@ -1467,8 +1831,8 @@ FAULTS: list[tuple[str, str, str, str]] = [
     (
         "F-BINDING-HASH-NO-STEPS",
         "binding_sha256 excludes the step map",
-        '"steps": [s.canonical() for s in sorted(self.steps, key=lambda s: s.step_key)],',
-        '"steps": [],',
+        'document["steps"] = sorted(document["steps"], key=lambda step: step["step_key"])',
+        'document["steps"] = []',
     ),
     (
         "F-TUNED-AS-BASE",
@@ -1512,10 +1876,11 @@ def main() -> None:
     table: list[str] = []
     for fault_id, description, old, new in FAULTS:
         mutant_rec = Recorder()
+        variant = load_variant(old, new)  # an anchor that no longer matches is a test bug
         try:
-            suite(load_variant(old, new), mutant_rec, slow=False)
-        except Exception as error:  # a crash is a failure too, but name it
-            mutant_rec.failed.append(f"FAIL [crash] {type(error).__name__}")
+            suite(variant, mutant_rec, slow=False)
+        except Exception as error:  # an uncaught exception is a behavioural difference too
+            mutant_rec.failed.append(f"FAIL [crash:{type(error).__name__}] {fault_id}")
         if not mutant_rec.failed:
             FAILURES.append(f"FAIL [FTF-1304-S1-FAULT] {fault_id} ({description}) stayed GREEN")
         else:
