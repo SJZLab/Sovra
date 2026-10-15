@@ -11664,3 +11664,26 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   keyword and positional mix redacted and never raised; 3.13 fallback paths redacted. Advisories: CI has no 3.13 lane;
   a hook reset by application code after create_app() prints raw (no such code exists); the write guard is unpinned.
   Child slice: no count change.
+
+## 2026-10-15T19:59Z — CERTIFIED: FTF-0512 (recertified) + FTF-0512-F1 (child slice, r3)
+- **FTF-0512-F1: CERTIFIED (L2)** (round 3; PR #836, merge 2351f53e299dac7cc7c89058b14d885a9030d65c, head 1db450a1). Producer
+  session_01T6jqtC8W5mEtEAgiCGs5ey ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 75/75 success, ci-verdict
+  116575165189; gate 116530343997 "FTF-0512 normalized duplicate detector: all checks passed", "FTF-0512-F1 look-alike
+  gaps: all checks passed" on 3.12 and on the new additive CPython 3.11 step; 0513/0515/0518/0516-P1 passed;
+  mutation-gate 45/45. Local: F1 suite on 3.11/3.12/3.13 (580,919 checks); 0516-P1 integration on PG16. All six
+  round-3 points met: U+0F73 2 MiB refused in 0.12 s on 3.11 (was 1,724 s); 2,066-code-point non-starter table exact
+  at 30/31; FB2, detector_version (3), role/json/id requalification faults RED; 989 compatibility folds separated, 0
+  fusions; all 34 in-suite faults behavioural. Round-1/2 probe classes hold; corpus diff 0 new merges.
+- **FTF-0512: RECERTIFIED (L2)** with evidence 2351f53e299dac7cc7c89058b14d885a9030d65c (Law 15 requalification complete; decertified 2026-10-14). FTF-0518
+  re-run: test diff +27/-0, 31/34 certification faults RED (same 3 GREEN as at certification). Ruling: name-field
+  fold faults (D18, D31–D33) GREEN with production correct = a new field in a class closed for ids -> does not block;
+  pinned in follow-up FTF-0512-F2 together with the pre-existing math/currency-symbol merge ("x ≤ 5" == "x ≥ 5",
+  "$100" == "€100") found by the same verifier.
+
+## 2026-10-15T19:59Z — RETURNED: FTF-1304-S1 (r2)
+- **FTF-1304-S1: RETURNED** (round 2 → 3, tests only; PR #833, merge e3ffdb017b868f687422b15754ca0df45874dab1, head cf3f7742).
+  Producer session_019g1LK9r7ZccWKtEgteQpgw ≠ certifier session_01QVznorVMjnmcttUhyDnoGR (code commit e560d117 has no
+  trailer - advisory). CI: 74/74 success, ci-verdict 116523950845; gate 116442545766 step 73 "FTF-1304-S1 Compound
+  binding cost attribution tests: all checks passed"; mutation-gate 85/85. Production fixes for both round-1 findings
+  verified (128 probes, 0 violations). Return: V2-CUR-PER-ATTEMPT (re-opens the round-1 harm), V2-DSK-ALIAS-STEP-KIND,
+  V2-CUR-CASEFOLD/STRIP GREEN (Law 1). Stopping rule set.

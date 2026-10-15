@@ -8356,10 +8356,10 @@ FTF-0511:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0511.py
 FTF-0512:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Normalized duplicate detector
-  evidence_hash: bdd9c0e0a07da1ca5b18306277c50f841acc8ee7
+  evidence_hash: 2351f53e299dac7cc7c89058b14d885a9030d65c
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31;
@@ -8523,7 +8523,7 @@ FTF-0512:
     awaiting Control-plane L2 re-review; FTF-0512 requalifies with this
     round.
 
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0512.py
 FTF-0513:

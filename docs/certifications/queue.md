@@ -24965,3 +24965,9 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-15T17:21Z — Control plane: FTF-0904-W1-F1 certified (child slice)
 - **Certified:** FTF-0904-W1-F1 (#831, merge f7646ecf). W1 requalified.
+
+## 2026-10-15T19:59Z — Control plane: FTF-0512 recertified; FTF-0512-F1 certified
+- **Certified:** FTF-0512-F1 r3 (#836, merge 2351f53e); FTF-0512 recertified (count +1). Follow-up FTF-0512-F2 queued.
+
+## 2026-10-15T19:59Z — Control plane: FTF-1304-S1 returned (r3)
+- **Returned:** FTF-1304-S1 r3 (0b, tests only): cross-attempt currency, alias step-kind, currency case/whitespace pins; stopping rule.
