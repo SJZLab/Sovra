@@ -11610,3 +11610,10 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   non-starters (U+0F73 run, 2 MiB in 1,724 s on CPython 3.11, the declared floor); FB2, detector-version and three
   tool/role/json requalification faults GREEN; NFKC So/modifier-letter folds still fuse with neighbours; text-anchor
   faults are not behavioural evidence. FTF-0512 does not requalify (stays DECERTIFIED, Law 15).
+
+## 2026-10-15T08:53Z — RETURNED: FTF-0213-S1 (r1)
+- **FTF-0213-S1: RETURNED** (round 1 → 2; PR #821, merge 214753607f5651eae1fc39d2d20b313747d0d479, head 9175ec9e).
+  Producer session_01AaQvY4q44PkMAquDXeNARP ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 73/73 success, ci-verdict
+  116286089574; gate 116245033716 "FTF-0213-S1 constrained-choice probe: all checks passed" (live TLS checks ran).
+  New files only; ci.yml additive. Return: negative/zero completion_tokens -> CONSTRAINED_OBSERVED (Law 17/11);
+  V16 (later-trial 400 skipped) and V18 (max from partial usage) GREEN. Child slice: no count change.
