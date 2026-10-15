@@ -5329,6 +5329,14 @@ def test_r4_shared_string_store_round_trips_across_chunk_boundaries() -> None:
     check(CID, f"every string round-trips ({len(bad)} differ, first {bad[:3]})", not bad)
     bad = [i for i, want in enumerate(originals) if store.size(i) != len(want)]
     check(CID, f"every size is exact ({len(bad)} differ)", not bad)
+    # the chunk boundary is exact: a chunk filled to exactly the chunk size is not closed early
+    edge = xi._SharedStrings()
+    edge.append(b"x" * (chunk - 1))
+    edge.append(b"y")
+    check(CID, "a chunk filled exactly to the chunk size is still open", len(edge._chunks) == 0)
+    edge.append(b"z")
+    check(CID, "one byte more closes it", len(edge._chunks) == 1 and edge.get(2) == b"z")
+    check(CID, "and the closed chunk reads back whole", edge.get(1) == b"y")
     # reading while the last chunk is still being built, and again after more appends
     store.append(b"tail")
     check(CID, "a string in the open chunk reads back", store.get(len(originals)) == b"tail")
@@ -5394,6 +5402,33 @@ def test_r4_an_unreadable_xml_declaration_is_a_typed_failure_in_every_part() -> 
                 outcome.report.state == "failed"
                 and outcome.report.failure_code in ("xlsx_malformed", "unsafe_archive"),
             )
+
+
+def test_r4_a_shared_string_index_past_the_table_is_xlsx_malformed() -> None:
+    """A `t="s"` cell whose index is exactly the table length (one past the last string), or
+    far beyond it, is fatal `xlsx_malformed`; the last valid index imports."""
+    sst = shared_xml(["q", "a", "hi", "there"]).encode()
+    last = book([[ref_cell(0), ref_cell(1)], [ref_cell(2), ref_cell(3)]], shared_override=sst)
+    check(CID, "the last valid index imports", run(last)[1].report.state == "completed")
+    for index in (4, 5, 999_999_999):
+        data = book(
+            [[ref_cell(0), ref_cell(1)], [ref_cell(2), ref_cell(index)]], shared_override=sst
+        )
+        _e, outcome = run(data)
+        check(
+            CID,
+            f"index {index} of a 4-string table is fatal xlsx_malformed",
+            failed_with(outcome, "xlsx_malformed"),
+        )
+    # also when the cell is unmapped (never kept): still validated
+    data = book(
+        [[ref_cell(0), ref_cell(1)], [ref_cell(2), ref_cell(3), ref_cell(4)]], shared_override=sst
+    )
+    check(
+        CID,
+        "an unmapped out-of-range index is fatal too",
+        failed_with(run(data)[1], "xlsx_malformed"),
+    )
 
 
 def main() -> int:

@@ -416,8 +416,6 @@ class _SharedStrings:
         """A copy of string `index`'s UTF-8 bytes."""
         start = self._ends[index - 1] if index else 0
         end = self._ends[index]
-        if start == end:
-            return b""
         if start >= self._flushed:
             offset = start - self._flushed
             return bytes(self._building[offset : offset + end - start])
