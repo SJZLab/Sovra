@@ -110,11 +110,8 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests" / "security"))
+sys.path.insert(0, str(ROOT / "apps" / "api"))
 
-from apps.api.app.config.observability_foundation import (  # noqa: E402
-    StructuredEvent,
-    emit_to_stream,
-)
 from packages.security.canary_secret_generator import (  # noqa: E402
     encode_canary,
     fragment_canary,
@@ -140,6 +137,11 @@ from tenant_isolation_suite import (  # noqa: E402
     TenantIsolationEvidence,
     TenantIsolationSuiteError,
     build_evidence,
+)
+
+from app.config.observability_foundation import (  # noqa: E402
+    StructuredEvent,
+    emit_to_stream,
 )
 
 __all__ = [
