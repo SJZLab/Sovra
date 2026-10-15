@@ -2349,6 +2349,20 @@ FAULTS: list[tuple[str, str, str, int, bool]] = [
         1,
         False,
     ),
+    (
+        "shape-element-count-off-by-one",
+        "        if elements > _MAX_SHAPE_DIM:",
+        "        if elements >= _MAX_SHAPE_DIM:",
+        1,
+        False,
+    ),
+    (
+        "adapter-target-last-component-only",
+        'return module == target or module.endswith("." + target)',
+        'return module.rsplit(".", 1)[-1] == target',
+        1,
+        False,
+    ),
 ]
 
 
@@ -2457,6 +2471,56 @@ def group_round2(m: Any) -> None:
     )
 
 
+def group_round3(m: Any) -> None:
+    """Round-3 return: exact element-count boundary and multi-component target suffixes."""
+    u64 = 2**64 - 1
+
+    def tensor_raw(dtype: str, shape: list[int], end: int) -> tuple[bytes, int]:
+        return st_tensor_header(
+            {"t": {"dtype": dtype, "shape": shape, "data_offsets": [0, end]}}, 0
+        )
+
+    # S1: the element count may equal 2**64-1 exactly and may not exceed it (off-by-one pinned)
+    for label, shape in (
+        ("[2**64-1, 0]", [u64, 0]),
+        ("[3, 6148914691236517205, 0]", [3, 6148914691236517205, 0]),
+    ):
+        check(
+            "S1",
+            f"{label} accepted (running product reaches the u64 limit exactly)",
+            outcome(m, parse, m, tensor_raw("U8", shape, 0)) == "ok",
+        )
+    check(
+        "S1",
+        "[3, 6148914691236517206] refused as shape (2**64+2 elements)",
+        reason_of(m, parse, m, tensor_raw("U8", [3, 6148914691236517206], 0)) == "shape",
+    )
+    check(
+        "S1",
+        "[2**64-1] U8 with an empty range refused as size_mismatch (in range, wrong size)",
+        reason_of(m, parse, m, tensor_raw("U8", [u64], 0)) == "size_mismatch",
+    )
+
+    # S2: PEFT's rule is the full module path or a dot-delimited suffix of it, any length
+    cc = m.check_adapter_base_compatibility
+    base = {f"{MOD_Q}.weight": (16, 8)}
+    adapter = parse(m, st_file(lora(m, MOD_Q, 4, 8, 16)))
+    for target in ("self_attn.q_proj", "layers.0.self_attn.q_proj", MOD_Q, "q_proj"):
+        cfg = m.validate_adapter_config_json(jb({**GOOD_ADAPTER_CFG, "target_modules": [target]}))
+        check(
+            "S2",
+            f"target {target!r} matches {MOD_Q!r}",
+            outcome(m, cc, adapter, cfg, base) == "ok",
+        )
+    for target in ("elf_attn.q_proj", "layers.self_attn.q_proj", "layers.1.self_attn.q_proj"):
+        cfg = m.validate_adapter_config_json(jb({**GOOD_ADAPTER_CFG, "target_modules": [target]}))
+        check(
+            "S2",
+            f"target {target!r} does not match {MOD_Q!r}",
+            reason_of(m, cc, adapter, cfg, base) == "module_not_targeted",
+        )
+
+
 def suite(m: Any, source: str, big: bool) -> list[str]:
     _failures.clear()
     group_a(m)
@@ -2464,6 +2528,7 @@ def suite(m: Any, source: str, big: bool) -> list[str]:
     group_d(m, big)
     group_e(m)
     group_round2(m)
+    group_round3(m)
     group_f(m)
     group_g(m, source)
     return list(_failures)
