@@ -24957,6 +24957,15 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-15T14:14Z — Control plane: FTF-1505 returned (r3)
 - **Returned:** FTF-1505 r3 (0h): fault matrix, run-time seeds, log lane, decode completeness, fail-closed omissions, redaction, artifacts, PR-scoped history lane; stopping rule.
 
+## 2026-10-15T17:21Z — Control plane: FTF-1704 returned (r2)
+- **Returned:** FTF-1704 r2 (0i): synthetic provenance on development cases; content hash in the recorded freeze.
+
+## 2026-10-15T17:21Z — Control plane: FTF-0505 returned (r5)
+- **Returned:** FTF-0505 r5 (0d, small): schema digest on mapping_column_missing, blank_lines pin, production-constant tables; stopping rule.
+
+## 2026-10-15T17:21Z — Control plane: FTF-0904-W1-F1 certified (child slice)
+- **Certified:** FTF-0904-W1-F1 (#831, merge f7646ecf). W1 requalified.
+
 ## 2026-10-15T19:32Z — PR #832 merged (FTF-0906 round 1; green ci-verdict)
 - **Merged, PROVISIONAL (Law 4, not self-certified):** PR #832 (FTF-0906, Backlog refill item)
   merged on a fully green `ci-verdict` (run `38772832106`), no merge conflict, new

@@ -265,6 +265,8 @@ _QUERY_PARAM_NAMES = frozenset(
         "verifier",
         "ticket",
         "otp",
+        "totp",
+        "hotp",
         "pass",
         "sid",
         "sessid",
@@ -281,9 +283,53 @@ _NAME_WORD_SPLIT = re.compile(r"[_.\-]+")
 _CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
 
+# Round 3 (QP-GLUED-COMPOUND): a compound written without a separator (`sessionkey`, `authcode`,
+# `passcode`, `otpcode`, in any case) is a chain of credential words ending in a name. The chain
+# vocabulary is closed (these words plus the names themselves), so `monkey`, `decode`, `barcode`,
+# `statuscode` and `keyboard` -- whose head is not a credential word -- stay readable.
+_COMPOUND_PREFIXES = frozenset(
+    {
+        "access", "api", "app", "auth", "authorization", "client", "confirm", "csrf", "login",
+        "magic", "oauth", "oauth2", "private", "refresh", "reset", "secret", "signed", "sso",
+        "user", "verification", "xsrf",
+    }
+)  # fmt: skip
+_COMPOUND_WORDS = tuple(sorted(_COMPOUND_PREFIXES | _QUERY_PARAM_NAMES, key=len, reverse=True))
+_MAX_GLUED_NAME = 64
+_MIN_GLUED_NAME = min(len(name) for name in _QUERY_PARAM_NAMES)
+
+
+def _is_glued_compound(lowered: str) -> bool:
+    """`lowered` is a chain of credential words ending in a `_QUERY_PARAM_NAMES` name.
+
+    Dynamic programming over end offsets (O(len x words), no backtracking); a run longer than
+    `_MAX_GLUED_NAME` is never a glued compound, which keeps the cost per key bounded. A run
+    shorter than the shortest name can never match either (no chain, however short, ends in
+    fewer characters than its own final name) -- bailing out before building `reach` keeps a
+    query string's flood of short, non-matching candidates (e.g. `a=a=a=...`) linear instead of
+    paying the DP loop's per-candidate constant on every one of them."""
+    size = len(lowered)
+    if size < _MIN_GLUED_NAME or size > _MAX_GLUED_NAME:
+        return False
+    reach = [False] * (size + 1)
+    reach[0] = True
+    for end in range(1, size + 1):
+        for word in _COMPOUND_WORDS:
+            start = end - len(word)
+            if start >= 0 and reach[start] and lowered.startswith(word, start):
+                reach[end] = True
+                break
+    return any(lowered.endswith(name) and reach[size - len(name)] for name in _QUERY_PARAM_NAMES)
+
+
 def _is_query_param_name(name: str) -> bool:
     words = [w for w in _NAME_WORD_SPLIT.split(_CAMEL_BOUNDARY.sub("_", name)) if w]
-    return bool(words) and words[-1].lower() in _QUERY_PARAM_NAMES
+    if words and words[-1].lower() in _QUERY_PARAM_NAMES:
+        return True
+    # QP-CASE-SPLIT: a random-case name (`cOdE`) splits into single letters above; the glued
+    # check reads the whole lowercased name, so it is bound here as a one-word chain.
+    lowered = name.lower()
+    return _is_glued_compound(_NAME_WORD_SPLIT.sub("", lowered))
 
 
 class _QueryParamRule:
