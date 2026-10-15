@@ -35,6 +35,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
@@ -79,7 +80,9 @@ class _SecretBackendHandler(BaseHTTPRequestHandler):
         _SECRET_HITS[0] += 1
         ok = self.headers.get("X-Vault-Token") == _SECRET_TOKEN and self.path == _SECRET_PATH
         status = 200 if ok else 403
-        payload = {"data": {"data": {"api_key": _SECRET_VALUE}, "metadata": {"version": 1}}}
+        payload: dict[str, object] = {
+            "data": {"data": {"api_key": _SECRET_VALUE}, "metadata": {"version": 1}}
+        }
         body = json.dumps(payload if ok else {"errors": ["denied"]}).encode()
         self.send_response(status)
         self.send_header("Content-Length", str(len(body)))
@@ -413,7 +416,7 @@ def test_request_body_is_portable_bounded_and_distinct_per_trial() -> None:
         check("label is the one required property", schema.get("required") == ["label"])
         check(
             "prompt is adversarial: asks for a word outside the enum",
-            body["messages"] == [{"role": "user", "content": "Reply with the single word: banana"}]  # type: ignore[comparison-overlap]
+            body["messages"] == [{"role": "user", "content": "Reply with the single word: banana"}]
             and "banana" not in _enum_of(body),
         )
         vendor = {
@@ -447,10 +450,11 @@ def test_unapproved_model_opens_no_socket_and_reads_no_secret() -> None:
 
 
 def test_prompt_budget_and_trials_are_not_caller_supplied() -> None:
+    unchecked: Any = probe_constrained_choice
     for name in ("prompt", "max_tokens", "trials", "temperature", "response_format"):
         raised = False
         try:
-            probe_constrained_choice(  # type: ignore[call-arg]
+            unchecked(
                 base_url="https://127.0.0.1:9",
                 model_id="m",
                 approved_model_ids=frozenset({"m"}),
@@ -549,6 +553,21 @@ def test_label_membership_is_exact() -> None:
     check("null label fails", not member('{"label": null}', enum))
     check("a case/space-folded key is not the label key", not member('{" Label ": "a"}', enum))
     check("a case-folded label is not a member", not member('{"label": "A"}', enum))
+    keys = probe_module._no_duplicate_keys
+    check(
+        "distinct keys that differ only by case are both kept",
+        keys([("a", 1), ("A", 2)]) == {"a": 1, "A": 2},
+    )
+    check(
+        "distinct keys that differ only by padding are both kept",
+        keys([("a", 1), (" a", 2)]) == {"a": 1, " a": 2},
+    )
+    raised = False
+    try:
+        keys([("a", 1), ("a", 2)])
+    except ValueError:
+        raised = True
+    check("an exactly repeated key is refused", raised)
     check("a space-padded label is not a member", not member('{"label": " a "}', enum))
 
 
@@ -647,15 +666,15 @@ def test_aggregate_identity_needs_one_common_resolved_model() -> None:
 
 def test_trial_body_parser_is_strict() -> None:
     def body(**over: object) -> bytes:
-        choice = {"message": {"content": "{}"}, "finish_reason": "stop"}
-        payload = {
+        choice: dict[str, Any] = {"message": {"content": "{}"}, "finish_reason": "stop"}
+        payload: dict[str, Any] = {
             "choices": [choice],
             "model": "m",
             "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
         }
         for key, value in over.items():
             if key == "content":
-                choice["message"] = {"content": value}  # type: ignore[assignment]
+                choice["message"] = {"content": value}
             elif key == "finish":
                 choice["finish_reason"] = value
             else:
