@@ -266,6 +266,359 @@ def test_evidence_fail_closed_inputs() -> None:
             ),
         ),
     )
+    check(
+        "FTF-0906-INPUT",
+        "duplicate client-side connection log for one flow refused",
+        _raises(
+            InvalidEgressEvidenceError,
+            lambda: verify_egress(
+                _plan((_flow("a1", "allow"), _flow("d1", "deny"))),
+                EgressEvidence(
+                    connection_logs=(
+                        ConnectionLogEntry("a1", "client", "connected"),
+                        ConnectionLogEntry("a1", "client", "refused"),
+                    )
+                ),
+            ),
+        ),
+    )
+    check(
+        "FTF-0906-INPUT",
+        "duplicate packet capture for one flow refused",
+        _raises(
+            InvalidEgressEvidenceError,
+            lambda: verify_egress(
+                _plan((_flow("a1", "allow"), _flow("d1", "deny"))),
+                EgressEvidence(
+                    packet_captures=(
+                        PacketCaptureObservation("a1", encrypted=True, canary_found=False),
+                        PacketCaptureObservation("a1", encrypted=False, canary_found=False),
+                    )
+                ),
+            ),
+        ),
+    )
+    check(
+        "FTF-0906-INPUT",
+        "a non-EgressPlan first argument to verify_egress is refused",
+        _raises(InvalidEgressPlanError, verify_egress, "not-a-plan", EgressEvidence()),
+    )
+    check(
+        "FTF-0906-INPUT",
+        "a non-EgressEvidence second argument to verify_egress is refused",
+        _raises(
+            InvalidEgressEvidenceError,
+            verify_egress,
+            _plan((_flow("a1", "allow"), _flow("d1", "deny"))),
+            "not-evidence",
+        ),
+    )
+    check(
+        "FTF-0906-INPUT",
+        "an evidence field passed as a list instead of a tuple is refused",
+        _raises(
+            InvalidEgressEvidenceError,
+            lambda: EgressEvidence(
+                enforcement=[  # type: ignore[arg-type]
+                    EnforcementObservation("a1", "process_guard", "allow", "ok")
+                ]
+            ),
+        ),
+    )
+    check(
+        "FTF-0906-INPUT",
+        "a wrongly-typed item inside an evidence tuple is refused",
+        _raises(
+            InvalidEgressEvidenceError,
+            lambda: EgressEvidence(enforcement=("not-an-observation",)),  # type: ignore[arg-type]
+        ),
+    )
+
+
+def test_none_and_length_boundary_inputs() -> None:
+    check(
+        "FTF-0906-INPUT",
+        "a None flow_id is refused (never treated as present)",
+        _raises(InvalidEgressPlanError, _flow, None, "allow"),
+    )
+    check(
+        "FTF-0906-INPUT",
+        "a None destination_label is refused",
+        _raises(
+            InvalidEgressPlanError,
+            lambda: PlannedFlow(
+                flow_id="a1",
+                surface="data",
+                destination_label=None,  # type: ignore[arg-type]
+                destination_class="internal",
+                expected="allow",
+            ),
+        ),
+    )
+    check(
+        "FTF-0906-INPUT",
+        "a None plan_id is refused",
+        _raises(
+            InvalidEgressPlanError,
+            lambda: EgressPlan(
+                plan_id=None,  # type: ignore[arg-type]
+                scope="process",
+                policy_digest=_DIGEST,
+                flows=(_flow("a1", "allow"), _flow("d1", "deny")),
+            ),
+        ),
+    )
+    check(
+        "FTF-0906-INPUT",
+        "a None store_id is refused",
+        _raises(
+            InvalidEgressPlanError,
+            lambda: PlaintextInspection(
+                store="artifact",
+                store_id=None,  # type: ignore[arg-type]
+                flow_id="a1",
+                inspected=True,
+                decrypted=False,
+            ),
+        ),
+    )
+
+    def _bounded_flow(flow_id: str) -> PlannedFlow:
+        return PlannedFlow(
+            flow_id=flow_id,
+            surface="data",
+            destination_label="d",
+            destination_class="internal",
+            expected="allow",
+        )
+
+    check(
+        "FTF-0906-INPUT",
+        "a flow_id at exactly the 200-character bound is accepted",
+        bool(_bounded_flow("x" * 200)),
+    )
+    check(
+        "FTF-0906-INPUT",
+        "a flow_id one character past the bound is refused",
+        _raises(InvalidEgressPlanError, _bounded_flow, "x" * 201),
+    )
+
+
+def test_member_rejects_case_and_whitespace_variants() -> None:
+    # One case/whitespace-variant test per `_member`-validated field is enough
+    # to kill a mutant inside `_member` itself (shared by every caller) --
+    # unlike the many *downstream* `==` comparisons in `verify_egress` on
+    # fields `_member` already forced to an exact lowercase member at
+    # construction, where `.strip().lower()` is a true no-op for any value
+    # that could ever reach them (disclosed in the submission as reviewed
+    # equivalent mutants, not chased here).
+    check(
+        "FTF-0906-INPUT",
+        "an uppercase scope is refused, not silently normalised",
+        _raises(
+            InvalidEgressPlanError,
+            lambda: EgressPlan(
+                plan_id="p",
+                scope="PROCESS",
+                policy_digest=_DIGEST,
+                flows=(_flow("a1", "allow"), _flow("d1", "deny")),
+            ),
+        ),
+    )
+    check(
+        "FTF-0906-INPUT",
+        "a whitespace-padded expected decision is refused",
+        _raises(
+            InvalidEgressPlanError,
+            lambda: PlannedFlow(
+                flow_id="a1",
+                surface="data",
+                destination_label="d",
+                destination_class="internal",
+                expected=" allow",
+            ),
+        ),
+    )
+    check(
+        "FTF-0906-INPUT",
+        "an uppercase-hex policy_digest is still accepted (case-insensitive by design)",
+        bool(
+            EgressPlan(
+                plan_id="p",
+                scope="process",
+                policy_digest="A" * 64,
+                flows=(_flow("a1", "allow"), _flow("d1", "deny")),
+            )
+        ),
+    )
+
+
+def test_tuple_and_type_guards() -> None:
+    check(
+        "FTF-0906-INPUT",
+        "canary_placements as a list instead of a tuple is refused",
+        _raises(
+            InvalidEgressPlanError,
+            lambda: PlannedFlow(
+                flow_id="a1",
+                surface="data",
+                destination_label="d",
+                destination_class="internal",
+                expected="allow",
+                canary_placements=[],  # type: ignore[arg-type]
+            ),
+        ),
+    )
+    check(
+        "FTF-0906-INPUT",
+        "a non-PlacementRecord canary placement is refused",
+        _raises(
+            InvalidEgressPlanError,
+            lambda: PlannedFlow(
+                flow_id="a1",
+                surface="data",
+                destination_label="d",
+                destination_class="internal",
+                expected="allow",
+                canary_placements=("not-a-placement",),  # type: ignore[arg-type]
+            ),
+        ),
+    )
+    good_flows = (_flow("a1", "allow"), _flow("d1", "deny"))
+    check(
+        "FTF-0906-INPUT",
+        "flows passed as a list instead of a tuple is refused",
+        _raises(
+            InvalidEgressPlanError,
+            lambda: EgressPlan(
+                plan_id="p",
+                scope="process",
+                policy_digest=_DIGEST,
+                flows=list(good_flows),  # type: ignore[arg-type]
+            ),
+        ),
+    )
+    check(
+        "FTF-0906-INPUT",
+        "a non-PlannedFlow item in flows is refused",
+        _raises(
+            InvalidEgressPlanError,
+            lambda: EgressPlan(
+                plan_id="p",
+                scope="process",
+                policy_digest=_DIGEST,
+                flows=(*good_flows, "bogus"),  # type: ignore[arg-type]
+            ),
+        ),
+    )
+    check(
+        "FTF-0906-INPUT",
+        "required_stores as a plain set instead of a frozenset is refused",
+        _raises(InvalidEgressPlanError, _plan, good_flows, {"controlled_destination"}),
+    )
+    check(
+        "FTF-0906-INPUT",
+        "a non-CanaryPlacementLedger ledger argument is refused",
+        _raises(
+            InvalidEgressEvidenceError,
+            scan_store_for_canaries,
+            b"data",
+            {},
+            (),
+            "not-a-ledger",
+        ),
+    )
+    marker = generate_canary()
+    ledger = CanaryPlacementLedger({("trace", "literal")})
+    placement = PlacementRecord(marker.canary_id, "trace", "literal", "r1")
+    ledger.record_placement(placement)
+    check(
+        "FTF-0906-INPUT",
+        "a non-PlacementRecord item in placements is refused",
+        _raises(
+            InvalidEgressEvidenceError,
+            scan_store_for_canaries,
+            b"data",
+            {marker.canary_id: marker},
+            ("not-a-placement",),
+            ledger,
+        ),
+    )
+    check(
+        "FTF-0906-INPUT",
+        "a marker of the wrong type for a known canary id is refused",
+        _raises(
+            InvalidEgressEvidenceError,
+            scan_store_for_canaries,
+            b"data",
+            {marker.canary_id: "not-a-marker"},
+            (placement,),
+            ledger,
+        ),
+    )
+
+
+def test_max_flows_boundary() -> None:
+    at_bound = tuple(_flow(f"f{i}", "allow" if i % 2 else "deny") for i in range(200))
+    check("FTF-0906-INPUT", "exactly 200 flows is accepted", bool(_plan(at_bound)))
+    over_bound = tuple(_flow(f"f{i}", "allow" if i % 2 else "deny") for i in range(201))
+    check(
+        "FTF-0906-INPUT", "201 flows is refused", _raises(InvalidEgressPlanError, _plan, over_bound)
+    )
+
+
+def test_distinct_case_flow_ids_are_never_merged_and_match_exactly() -> None:
+    # `flow_id` is free-form text (only `_text`-bounded, never `_member`-
+    # normalised), so two ids differing only by case are legitimately
+    # distinct, and a real flow's own evidence must match it by exact id --
+    # neither side of that match may silently fold case or whitespace.
+    mixed_plan = EgressPlan(
+        plan_id="p",
+        scope="process",
+        policy_digest=_DIGEST,
+        flows=(
+            PlannedFlow("flow-a", "data", "d", "external", "deny"),
+            PlannedFlow("Flow-A", "data", "d", "internal", "allow"),
+        ),
+        required_stores=frozenset({"controlled_destination", "workflow_history"}),
+    )
+    check(
+        "FTF-0906-INPUT",
+        "two flow_ids differing only by case are distinct, not a duplicate",
+        bool(mixed_plan),
+    )
+    # The already-lowercase id is listed FIRST in every evidence tuple and
+    # the mixed-case id SECOND: a mutant that folds only the *duplicate-check
+    # side* of an `in` test (never the stored key itself) is observable only
+    # in this order -- the lowered form of the second, mixed-case id then
+    # collides with the first, already-lowercase stored key, raising a
+    # bogus duplicate error that the real module never raises.
+    evidence = EgressEvidence(
+        enforcement=(
+            EnforcementObservation("flow-a", "process_guard", "deny", "blocked"),
+            EnforcementObservation("Flow-A", "process_guard", "allow", "ok"),
+        ),
+        connection_logs=(
+            ConnectionLogEntry("flow-a", "client", "refused"),
+            ConnectionLogEntry("flow-a", "destination", "not_seen"),
+            ConnectionLogEntry("Flow-A", "client", "connected"),
+            ConnectionLogEntry("Flow-A", "destination", "connected"),
+        ),
+        plaintext_inspections=(
+            PlaintextInspection("controlled_destination", "sink", "Flow-A", True, False),
+            PlaintextInspection("workflow_history", "wf", None, True, False),
+        ),
+        packet_captures=(
+            PacketCaptureObservation("flow-a", encrypted=False, canary_found=False),
+            PacketCaptureObservation("Flow-A", encrypted=False, canary_found=False),
+        ),
+    )
+    report = verify_egress(mixed_plan, evidence)
+    check(
+        "FTF-0906-RULE",
+        "evidence matches its own flow by exact id, case-sensitively, end to end",
+        all(v.status == "passed" for v in report.flow_verdicts) and report.status == "passed",
+    )
 
 
 # --- verify_egress: the full rule set ---------------------------------------
@@ -452,7 +805,13 @@ def test_allow_flow_vacuous_without_destination_arrival() -> None:
             d_d_log,
         ),
         # No PlaintextInspection at controlled_destination for a1: never actually
-        # proves arrival, even though the connection log alone looks fine.
+        # proves arrival, even though the connection log alone looks fine. An
+        # inspection at an unrelated store (inspected=True) is deliberately
+        # present too, so a weakened "store == X OR inspected" positive-control
+        # check (instead of AND) would wrongly treat this one as the proof.
+        plaintext_inspections=(
+            PlaintextInspection("application_log", "client-log", "a1", True, False),
+        ),
     )
     report = verify_egress(plan, evidence)
     verdict = next(v for v in report.flow_verdicts if v.flow_id == "a1")
