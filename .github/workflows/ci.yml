@@ -546,6 +546,29 @@ jobs:
       #     pip install cognee --quiet
       #     cognee-cli remember .
 
+  secret-scanning:
+    # FTF-1505 round 2: the live release-blocking scan itself (Section 53 "CI
+    # fails on ... leaked secrets"), kept as its own job rather than folded into
+    # `gate` so the history lane's full-clone requirement is explicit and
+    # isolated. fetch-depth 0 is required: the history lane refuses a shallow
+    # clone outright (NOT_EXERCISED is a release blocker, never silently
+    # narrowed to HEAD -- see secret_scanning.py's own assert_not_shallow).
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies
+        run: uv sync --all-packages
+      - name: Secret scan (source/history/artifacts/log samples)
+        run: uv run python3 tests/security/secret_scanning.py
+
   mutation-gate:
     # Law 1 made mechanical for relay submissions: every production function a
     # `[relay]` PR changes (under product_truth_check.SOURCE_ROOTS) is broken one
@@ -3631,6 +3654,7 @@ jobs:
       - classify
       - relay-policy
       - gate
+      - secret-scanning
       - mutation-gate
       - docker-local-stack-integration
       - organization-workspace-schema-integration

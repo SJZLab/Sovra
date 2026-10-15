@@ -4743,6 +4743,694 @@ def test_size_boundaries_at_the_production_constants() -> None:
     )
 
 
+# --- round 4: queued rows hold references, rows do not depend on byte position, compact
+# --- shared strings, seeded never-raises fuzz ----------------------------------------------
+
+
+def raw_shared_xml(raw_items: list[str]) -> str:
+    """A shared-strings part whose items are written exactly as given (escapes included)."""
+    items = "".join(f"<si><t>{raw}</t></si>" for raw in raw_items)
+    return f'{XML_HEAD}<sst xmlns="{MAIN}">{items}</sst>'
+
+
+def ref_cell(index: int) -> Cell:
+    """A shared-string cell pointing at `index` of an overridden sst."""
+    return RAWC('<c r="{ref}" t="s"><v>' + str(index) + "</v></c>")
+
+
+def run_traced(data: bytes, **kwargs: Any) -> tuple[xi.XlsxImportOutcome, int]:
+    import tracemalloc
+
+    tracemalloc.start()
+    try:
+        # accepted candidates are dropped as they arrive (the helper `run` keeps them all)
+        outcome = xi.run_xlsx_import(
+            make_reader(data),
+            build_mapping(**kwargs),
+            verified_content_type=XLSX_TYPE,
+            dataset_purpose="training",
+            expected_sha256=hashlib.sha256(data).hexdigest(),
+            on_accepted=lambda _c: None,
+        )
+        _current, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    return outcome, peak
+
+
+def test_r4_queued_rows_hold_references_not_decoded_copies() -> None:
+    """SST-DECODE-PER-ROW-BLOCK (round 4, item 1): a kept shared-string cell used to decode
+    a fresh copy per reference, and a whole 64 KiB XML block of rows is queued before the
+    event loop sees any of them -- ~2,500 rows x two 128 KiB references held ~600 MB of
+    copies of two 128 KiB strings. The queued rows must hold the reference, so the peak
+    stays near the strings' own size whatever the row count."""
+    big = 128 * 1024
+    sst = shared_xml(["q", "a", "x" * big, "y" * big]).encode("utf-8")
+    rows = [[ref_cell(0), ref_cell(1)]] + [[ref_cell(2), ref_cell(3)] for _ in range(2500)]
+    data = book(rows, shared_override=sst)
+    outcome, peak = run_traced(data)
+    check(
+        CID,
+        "2,500 rows each referencing two 128 KiB strings import",
+        outcome.report.state == "completed" and outcome.report.records_accepted == 2500,
+    )
+    check(
+        CID,
+        f"peak memory ({peak}) stays under 24 MiB, not the ~600 MB of per-reference copies",
+        peak < 24 * 1024 * 1024,
+    )
+    # the same shape with both rows still ahead of `wanted` (the header's own block) and
+    # past it: two sizes of file, one bound
+    few = book(
+        [[ref_cell(0), ref_cell(1)]] + [[ref_cell(2), ref_cell(3)] for _ in range(300)],
+        shared_override=sst,
+    )
+    outcome_few, peak_few = run_traced(few)
+    check(
+        CID,
+        f"300 rows (inside the header's block) peak ({peak_few}) is also under 24 MiB",
+        outcome_few.report.state == "completed" and peak_few < 24 * 1024 * 1024,
+    )
+
+
+def test_r4_a_rows_outcome_does_not_depend_on_its_byte_position() -> None:
+    """HEADER-BLOCK-POSITION (round 4, item 2): the same row of 40 unmapped references to
+    one 2 MiB string (80 MiB of cells) was fatal `field_too_large` inside the header's 64 KiB
+    block (kept in full for want of `wanted`) and completed past it. Apply `wanted` the moment
+    the header row ends, so a row's outcome is the same wherever it sits."""
+    cap = ic.DEFAULT_LIMITS.max_record_bytes
+    sst = shared_xml(["q", "a", "z" * cap, "p", "c"]).encode("utf-8")
+    wide = [ref_cell(3), ref_cell(4)] + [ref_cell(2) for _ in range(40)]
+    filler = [ref_cell(3), ref_cell(4)]
+    results = []
+    for before in (0, 1, 200, 900, 1800):
+        rows = [[ref_cell(0), ref_cell(1)], *[filler] * before, wide, filler]
+        outcome, _peak = run_traced(book(rows, shared_override=sst))
+        results.append((before, outcome.report.state, outcome.report.failure_code))
+    check(
+        CID,
+        f"the wide unmapped row gives one outcome at every byte position ({results})",
+        len({(state, code) for _b, state, code in results}) == 1 and results[0][1] == "completed",
+    )
+
+
+def test_r4_short_shared_strings_at_the_cap_fit_the_quota() -> None:
+    """SST-CAP-RSS (round 4, item 3): 764 MiB peak at the 256 MiB cap of SHORT strings (a
+    `bytes` object plus a list slot per string: ~2.6x the part). The store must be compact:
+    measured in a fresh subprocess at 32 MiB (the ratio is the same at 256 MiB), for the two
+    shortest shapes (a two-byte text, the shortest that is not CPython's cached one-byte `bytes` and an empty `<si/>`), the import's peak RSS growth stays
+    within the cap itself."""
+    import subprocess
+
+    script = f"""
+import ctypes, hashlib, sys
+sys.path.insert(0, {str(ROOT)!r})
+sys.path.insert(0, {str(ROOT / "tests" / "tasks")!r})
+from workers.data import import_common as ic
+from workers.data import xlsx_importer as xi
+import test_ftf_0505 as t
+
+shape = sys.argv[1]
+cap = 32 * 1024 ** 2
+head = t.XML_HEAD + '<sst xmlns="' + t.MAIN + '"><si><t>q</t></si><si><t>a</t></si>'
+item = '<si><t>ab</t></si>' if shape == "text" else '<si/>'
+count = (cap - len(head) - 64) // len(item)
+sst = (head + item * count + '</sst>').encode()
+assert len(sst) <= cap
+data = t.book([[t.ref_cell(0), t.ref_cell(1)], [t.ref_cell(0), t.ref_cell(1)]], shared_override=sst)
+del sst
+
+import gc
+gc.collect()
+ctypes.CDLL("libc.so.6").malloc_trim(0)
+def status_kb(field):
+    with open("/proc/self/status") as f:
+        for line in f:
+            if line.startswith(field):
+                return int(line.split()[1])
+with open("/proc/self/clear_refs", "w") as f:
+    f.write("5")  # reset the peak (VmHWM) to the current RSS: building the payload is not the import
+before = status_kb("VmRSS")
+reader = t.make_reader(data, 64 * 1024)
+outcome = xi.run_xlsx_import(
+    reader,
+    t.build_mapping(),
+    verified_content_type=t.XLSX_TYPE,
+    dataset_purpose="training",
+    expected_sha256=hashlib.sha256(data).hexdigest(),
+    limits=ic.ImportLimits(max_xlsx_shared_strings_bytes=cap),
+    on_accepted=lambda c: None,
+)
+print(outcome.report.state, outcome.report.failure_code, count, status_kb("VmHWM") - before)
+"""
+    cap = 32 * 1024**2
+    for shape in ("text", "empty"):
+        result = subprocess.run(
+            [sys.executable, "-c", script, shape], capture_output=True, text=True, timeout=300
+        )
+        check(CID, f"{shape}: the subprocess ran: {result.stderr[-1500:]}", result.returncode == 0)
+        if result.returncode != 0:
+            continue
+        state, code, count, growth_kb = result.stdout.strip().split()
+        growth = int(growth_kb) * 1024
+        check(CID, f"{shape}: {count} strings import ({state} {code})", state == "completed")
+        check(
+            CID,
+            f"{shape}: the import's peak RSS growth {growth} ({growth / cap:.2f}x the "
+            f"{cap}-byte cap, {count} strings) stays within the cap",
+            growth < cap,
+        )
+
+
+def _mutate_text(rng: Any, text: str) -> str:
+    pieces = [
+        "_xD83D_",
+        "_xDE00_",
+        "<c/>",
+        "</row>",
+        "<row>",
+        "<v>",
+        "</v>",
+        "<f>1</f>",
+        ' t="s"',
+        ' t="zz"',
+        ' r="A0"',
+        ' r="ZZZZ9"',
+        "99999999999",
+        "-1",
+        "\x00",
+        "&amp;",
+        "<![CDATA[",
+        "<!DOCTYPE x>",
+        "<is><t>",
+        "</t></is>",
+        "<si>",
+        "</si>",
+    ]
+    out = text
+    for _ in range(rng.randint(1, 4)):
+        if not out:
+            break
+        i = rng.randrange(len(out))
+        op = rng.randint(0, 3)
+        if op == 0:
+            out = out[:i] + out[i + rng.randint(1, 20) :]
+        elif op == 1:
+            out = out[:i] + rng.choice(pieces) + out[i:]
+        elif op == 2:
+            j = rng.randrange(len(out))
+            out = out[:i] + out[j : j + rng.randint(1, 60)] + out[i:]
+        else:
+            out = out[:i] + chr(rng.randint(1, 0x2FF)) + out[i + 1 :]
+    return out
+
+
+def test_r4_seeded_never_raises_fuzz() -> None:
+    """Round 4, item 5: a seeded byte + XML fuzz. `run_xlsx_import` never raises -- every
+    outcome is a typed report -- whatever bytes the archive or its XML parts carry."""
+    import random
+
+    rng = random.Random(0x0505F)
+    rows = [
+        [S("q"), S("a"), S("n")],
+        [S("hi"), IS("there"), N("3")],
+        [S("مرحبا"), IS("x"), F()],
+        [EMPTY(), E(), STR("s")],
+    ]
+    base_sheet = sheet_xml(rows, Shared())
+    sst = Shared()
+    sheet_with_sst = sheet_xml(rows, sst)
+    base_sst = shared_xml(sst.strings)
+    base = book(rows)
+    raised: list[str] = []
+    states: dict[str, int] = {}
+    for iteration in range(1500):
+        kind = iteration % 3
+        if kind == 0:  # raw byte flips on the whole archive
+            blob = bytearray(base)
+            for _ in range(rng.randint(1, 6)):
+                blob[rng.randrange(len(blob))] = rng.randrange(256)
+            data = bytes(blob)
+        elif kind == 1:  # XML-level mutation of the sheet, archive re-zipped valid
+            data = book(
+                raw_sheet=_mutate_text(rng, sheet_with_sst).encode("utf-8", "replace"),
+                shared_override=base_sst.encode(),
+            )
+        else:  # XML-level mutation of the shared strings
+            data = book(
+                raw_sheet=sheet_with_sst,
+                shared_override=_mutate_text(rng, base_sst).encode("utf-8", "replace"),
+            )
+        try:
+            _events, outcome = run(data, chunk=rng.choice([None, 1, 7, 4096]))
+        except Exception as exc:  # noqa: BLE001 -- the property under test
+            raised.append(f"iteration {iteration}: {type(exc).__name__}: {exc}")
+            continue
+        states[outcome.report.state] = states.get(outcome.report.state, 0) + 1
+    del base_sheet
+    check(CID, f"no fuzzed workbook raised: {raised[:3]}", not raised)
+    check(
+        CID,
+        f"the fuzz reaches both completed and failed outcomes ({states})",
+        states.get("completed", 0) > 0 and states.get("failed", 0) > 0,
+    )
+
+
+# --- round 4, item 4: the GREEN clauses of round 3, each pinned by an observable effect -------
+
+
+def test_r4_lone_surrogate_escapes_never_raise_and_are_never_replaced() -> None:
+    """V3-SST-SURROGATEPASS-DROPPED / V3-DECODE-SURROGATEPASS-DROPPED / V3-DECODE-REPLACE: a
+    `_xD83D_` style escape decodes to the lone surrogate itself (never raising, never U+FFFD),
+    a valid pair joins, and a workbook carrying one -- referenced or not -- is a typed result."""
+    table = {
+        "_xD83D__xDE00_": "\U0001f600",
+        "_xD83D_": "\ud83d",
+        "_xDE00_": "\ude00",
+        "_xDE00__xD83D_": "\ude00\ud83d",
+        "a_xD83D_b": "a\ud83db",
+        "_xD83D_x_xDE00_": "\ud83dx\ude00",
+        "_x005F_xD83D_": "_xD83D_",
+    }
+    for raw, want in table.items():
+        try:
+            got = xi.decode_xml_escapes(raw)
+        except Exception as exc:  # noqa: BLE001
+            check(CID, f"decode_xml_escapes({raw!r}) raised {type(exc).__name__}", False)
+            continue
+        check(CID, f"decode_xml_escapes({raw!r}) == {want!a} (got {got!a})", got == want)
+    # an UNREFERENCED shared string with a lone surrogate must not crash the import; a
+    # REFERENCED one rejects only its own row
+    sst = raw_shared_xml(["q", "a", "x_xD83D_y", "ok", "fine"]).encode("utf-8")
+    rows = [
+        [ref_cell(0), ref_cell(1)],
+        [ref_cell(3), ref_cell(4)],
+        [ref_cell(2), ref_cell(4)],
+        [ref_cell(3), ref_cell(4)],
+    ]
+    try:
+        events, outcome = run(book(rows, shared_override=sst))
+    except Exception as exc:  # noqa: BLE001
+        check(CID, f"a lone-surrogate shared string raised {type(exc).__name__}: {exc}", False)
+        return
+    check(
+        CID,
+        "the referencing row alone is rejected invalid_unicode; the rest import",
+        outcome.report.state == "completed"
+        and codes(outcome) == ["invalid_unicode"]
+        and len(accepted(events)) == 2,
+    )
+    unreferenced = book(
+        [[ref_cell(0), ref_cell(1)], [ref_cell(3), ref_cell(4)]], shared_override=sst
+    )
+    check(
+        CID,
+        "an unreferenced lone-surrogate shared string imports clean",
+        run(unreferenced)[1].report.state == "completed" and not codes(run(unreferenced)[1]),
+    )
+    inline = book([[IS("q"), IS("a")], [RIS("x_xD83D_y"), IS("z")], [IS("ok"), IS("fine")]])
+    _e, inline_outcome = run(inline)
+    check(
+        CID,
+        "an inline lone surrogate rejects only its own row",
+        inline_outcome.report.state == "completed" and codes(inline_outcome) == ["invalid_unicode"],
+    )
+
+
+def test_r4_caller_hash_table_is_a_typed_refusal_before_any_read() -> None:
+    """V3-SHA-PATTERN-DROPPED / V3-SHA-TYPE-DROPPED: only an exact-type, lowercase 64-hex
+    `dataset_sha256` that equals the reader's pinned hash proceeds; every other value -- a
+    non-ASCII str, None, an int, bytes, a str subclass, upper case, a trailing newline -- is
+    `source_changed` with zero bytes read, on the run path and on the preview stream."""
+    data = book()
+    good = hashlib.sha256(data).hexdigest()
+
+    class Sub(str):
+        pass
+
+    bad: list[tuple[str, object]] = [
+        ("non-ascii", "é" * 64),
+        ("non-ascii prefix", "é" + good[1:]),
+        ("none", None),
+        ("int", 12345),
+        ("bytes", good.encode()),
+        ("bytearray", bytearray(good.encode())),
+        ("str subclass", Sub(good)),
+        ("upper case", good.upper()),
+        ("trailing newline", good + "\n"),
+        ("short", good[:63]),
+        ("long", good + "0"),
+        ("empty", ""),
+        ("first char differs", ("0" if good[0] != "0" else "1") + good[1:]),
+        ("last char differs", good[:-1] + ("0" if good[-1] != "0" else "1")),
+    ]
+    well_formed = {"first char differs", "last char differs"}
+    for name, value in bad:
+        reader = make_reader(data)
+        try:
+            outcome = xi.run_xlsx_import(
+                reader,
+                build_mapping(),
+                verified_content_type=XLSX_TYPE,
+                dataset_purpose="training",
+                expected_sha256=value,  # type: ignore[arg-type]
+                on_accepted=lambda _c: None,
+            )
+        except ValueError as exc:
+            # the shared accumulator (FTF-0502-P1) refuses a malformed hash at construction,
+            # before the stream reads anything
+            check(
+                CID,
+                f"run: {name} is refused by the accumulator, not accepted ({exc})",
+                name not in well_formed and "expected_sha256" in str(exc),
+            )
+        except Exception as exc:  # noqa: BLE001
+            check(CID, f"run: {name} raised {type(exc).__name__}: {exc}", False)
+        else:
+            check(
+                CID,
+                f"run: {name} is failed/source_changed ({outcome.report.state} "
+                f"{outcome.report.failure_code})",
+                name in well_formed and failed_with(outcome, "source_changed"),
+            )
+        check(CID, f"run: {name} read no byte", reader.bytes_read == 0)
+        reader = make_reader(data)
+        try:
+            stream = xi.xlsx_events(
+                reader,
+                build_mapping(),
+                verified_content_type=XLSX_TYPE,
+                dataset_sha256=value,  # type: ignore[arg-type]
+            )
+            next(stream)
+        except ic.ImportAborted as exc:
+            check(
+                CID,
+                f"preview: {name} aborts source_changed ({exc})",
+                exc.state == "failed" and exc.failure_code == "source_changed",
+            )
+        except Exception as exc:  # noqa: BLE001
+            check(CID, f"preview: {name} raised {type(exc).__name__}: {exc}", False)
+        else:
+            check(CID, f"preview: {name} produced an event", False)
+        check(CID, f"preview: {name} read no byte", reader.bytes_read == 0)
+    check(CID, "the exact pinned hash proceeds", run(data)[1].report.state == "completed")
+
+
+def test_r4_field_caps_count_encoded_bytes_in_every_cell_kind() -> None:
+    """V3-CELL-CAP-CHARS / V3-SST-CAP-CHARS: a cell or shared string is capped in UTF-8
+    BYTES, exactly (max-1 / max / max+1) for 1-4 byte characters, in a literal `<v>`, an
+    inline string and a shared string."""
+    cap = 1000
+    limits = ic.ImportLimits(max_record_bytes=cap)
+    for char, width in (("a", 1), ("ب", 2), ("€", 3), ("\U0001f600", 4)):
+        fits = cap // width
+        for kind in ("literal", "inline", "shared"):
+            for count in (fits - 1, fits, fits + 1):
+                text = char * count
+                size = len(text.encode())
+                expect_fatal = size > cap
+                if kind == "literal":
+                    cell: Cell = N(text)
+                    data = book([[IS("q"), IS("a"), IS("n")], [IS("p"), IS("c"), cell]])
+                elif kind == "inline":
+                    data = book([[IS("q"), IS("a"), IS("n")], [IS("p"), IS("c"), IS(text)]])
+                else:
+                    sst = shared_xml(["q", "a", "n", "p", "c", text]).encode()
+                    data = book(
+                        [
+                            [ref_cell(0), ref_cell(1), ref_cell(2)],
+                            [ref_cell(3), ref_cell(4), ref_cell(5)],
+                        ],
+                        shared_override=sst,
+                    )
+                _e, outcome = run(data, limits=limits)
+                check(
+                    CID,
+                    f"{kind} cell of {count} x {width}-byte chars ({size} bytes, cap {cap}): "
+                    f"{'fatal field_too_large' if expect_fatal else 'accepted'} "
+                    f"(got {outcome.report.state} {outcome.report.failure_code})",
+                    failed_with(outcome, "field_too_large")
+                    if expect_fatal
+                    else outcome.report.failure_code != "field_too_large",
+                )
+    # the shared-strings scanner's own cap fires even when nothing references the string
+    sst = shared_xml(["q", "a", "\U0001f600" * 251]).encode()  # 1004 bytes, 251 chars
+    unreferenced = book(
+        [[ref_cell(0), ref_cell(1)], [ref_cell(0), ref_cell(1)]], shared_override=sst
+    )
+    _e, outcome = run(unreferenced, limits=limits)
+    check(
+        CID,
+        "an unreferenced 1004-byte shared string of 251 emoji is fatal field_too_large",
+        failed_with(outcome, "field_too_large"),
+    )
+
+
+def test_r4_header_row_shared_references_count_toward_the_header_bound() -> None:
+    """V3-SHARED-BOUND-ZERO: the header row keeps a reference per cell, but each reference
+    still counts the string's bytes against `MAX_HEADER_ROW_BYTES`: 40 references to one 2 MiB
+    string are fatal `field_too_large` (not the duplicate-header failure a free bound would give)."""
+    cap = ic.DEFAULT_LIMITS.max_record_bytes
+    sst = shared_xml(["q", "a", "h" * cap]).encode()
+    refs = xi.MAX_HEADER_ROW_BYTES // cap + 2
+    rows = [
+        [ref_cell(0), ref_cell(1), *[ref_cell(2) for _ in range(refs)]],
+        [ref_cell(0), ref_cell(1)],
+    ]
+    _e, outcome = run(book(rows, shared_override=sst))
+    check(
+        CID,
+        "header references past the bound are field_too_large",
+        failed_with(outcome, "field_too_large"),
+    )
+    ok_rows = [[ref_cell(0), ref_cell(1), ref_cell(2)], [ref_cell(0), ref_cell(1)]]
+    _e, outcome = run(book(ok_rows, shared_override=sst))
+    check(CID, "one such reference is within the bound", outcome.report.state == "completed")
+
+
+def test_r4_row_byte_accounting_restarts_with_every_row() -> None:
+    """V3-ROW-BYTES-NOT-RESET: the retained-bytes bound is per row. Many mapped rows that each
+    carry a large shared string, together far past the bound, all import."""
+    size = 1_500_000
+    sst = shared_xml(["q", "a", "m" * size, "n"]).encode()
+    rows = 2 * (xi.MAX_HEADER_ROW_BYTES // size) + 4
+    data = book(
+        [[ref_cell(0), ref_cell(1)], *[[ref_cell(2), ref_cell(3)] for _ in range(rows)]],
+        shared_override=sst,
+    )
+    outcome, _peak = run_traced(data)
+    check(
+        CID,
+        f"{rows} mapped rows of {size} bytes ({rows * size} total, past the "
+        f"{xi.MAX_HEADER_ROW_BYTES} bound) import ({outcome.report.state} {outcome.report.failure_code})",
+        outcome.report.state == "completed" and outcome.report.records_accepted == rows,
+    )
+
+
+def test_r4_unmapped_references_are_never_materialised() -> None:
+    """V3-DECODE-BEFORE-GATE: a shared string is copied out of the store only for the header
+    row and for a MAPPED cell of a data row -- 5,000 references to a 2 MiB string in unmapped
+    columns cost no copy at all."""
+    cap = ic.DEFAULT_LIMITS.max_record_bytes
+    sst = shared_xml(["q", "a", "u" * cap, "p", "c"]).encode()
+    rows = [[ref_cell(0), ref_cell(1), ref_cell(2)]] + [
+        [ref_cell(3), ref_cell(4), ref_cell(2)] for _ in range(5000)
+    ]
+    calls: list[int] = []
+    original = xi._SharedStrings.get
+
+    def counting(self: Any, index: int) -> bytes:
+        calls.append(index)
+        return original(self, index)
+
+    xi._SharedStrings.get = counting  # type: ignore[method-assign]
+    try:
+        _e, outcome = run(book(rows, shared_override=sst))
+    finally:
+        xi._SharedStrings.get = original  # type: ignore[method-assign]
+    check(
+        CID,
+        "the sheet imports",
+        outcome.report.state == "completed" and outcome.report.records_accepted == 5000,
+    )
+    check(
+        CID,
+        f"the 2 MiB string (index 2) is copied only for the header ({calls.count(2)} copies of it, "
+        f"{len(calls)} copies in all, expected 3 header + 10,000 mapped)",
+        calls.count(2) == 1 and len(calls) == 3 + 2 * 5000,
+    )
+
+
+def test_r4_blank_and_header_counting_use_non_blank_rows_only() -> None:
+    """V3-EMPTY-SHARED-NONBLANK / V-NONBLANK-SEEN-ALL-ROWS: an empty shared string is not a
+    non-blank cell, and only NON-BLANK rows count toward `header_row`."""
+    sst = shared_xml(["q", "a", "", "skipme", "hi", "there"]).encode()
+    # a row of only empty shared strings is blank: the header is the next row
+    rows = [
+        [ref_cell(2), ref_cell(2)],
+        [ref_cell(0), ref_cell(1)],
+        [ref_cell(2), ref_cell(2)],
+        [ref_cell(4), ref_cell(5)],
+    ]
+    events, outcome = run(book(rows, shared_override=sst))
+    check(
+        CID,
+        "empty shared strings are blank rows (header found, one record, no rejection)",
+        outcome.report.state == "completed"
+        and outcome.report.records_seen == 1
+        and outcome.report.records_rejected == 0
+        and len(accepted(events)) == 1,
+    )
+    # header_row=1: one NON-BLANK row is skipped, a blank row before it does not count
+    rows = [
+        [EMPTY()],
+        [ref_cell(3)],
+        [ref_cell(0), ref_cell(1)],
+        [ref_cell(4), ref_cell(5)],
+    ]
+    events, outcome = run(book(rows, shared_override=sst), header_row=1)
+    check(
+        CID,
+        f"a blank row does not count toward header_row ({outcome.report.state} "
+        f"{outcome.report.failure_code})",
+        outcome.report.state == "completed" and texts(accepted(events)[0]) == ["hi", "there"],
+    )
+    rows = [[ref_cell(3)], [EMPTY()], [ref_cell(0), ref_cell(1)], [ref_cell(4), ref_cell(5)]]
+    events, outcome = run(book(rows, shared_override=sst), header_row=1)
+    check(
+        CID,
+        "and a blank row after the skipped one does not count either",
+        outcome.report.state == "completed" and texts(accepted(events)[0]) == ["hi", "there"],
+    )
+
+
+def test_r4_shared_string_store_round_trips_across_chunk_boundaries() -> None:
+    """The compact store: every string comes back exactly, whatever its size and wherever it
+    falls against the 1 MiB chunk boundary (empty, one byte, chunk -1 / +0 / +1, several
+    chunks, many tiny ones after a big one), and a store that would pass the 32-bit offset
+    limit refuses (`limit_exceeded`) instead of wrapping."""
+    import random
+
+    chunk = xi._SST_CHUNK_BYTES
+    rng = random.Random(7)
+    sizes = [0, 1, 2, chunk - 1, chunk, chunk + 1, 0, 3, chunk // 2, chunk // 2, chunk // 2 + 1, 5]
+    sizes += [2 * chunk + 17, 0, 1, chunk - 2, 2, 2, 7] + [rng.randrange(0, 40) for _ in range(300)]
+    sizes += [rng.randrange(chunk // 3, chunk) for _ in range(12)]
+    store = xi._SharedStrings()
+    originals: list[bytes] = []
+    for size in sizes:
+        payload = bytes(rng.randrange(256) for _ in range(min(size, 64))) * (size // 64 + 1)
+        payload = payload[:size]
+        originals.append(payload)
+        store.append(payload)
+    check(CID, "the store counts every string", len(store) == len(originals))
+    bad = [i for i, want in enumerate(originals) if store.get(i) != want]
+    check(CID, f"every string round-trips ({len(bad)} differ, first {bad[:3]})", not bad)
+    bad = [i for i, want in enumerate(originals) if store.size(i) != len(want)]
+    check(CID, f"every size is exact ({len(bad)} differ)", not bad)
+    # the chunk boundary is exact: a chunk filled to exactly the chunk size is not closed early
+    edge = xi._SharedStrings()
+    edge.append(b"x" * (chunk - 1))
+    edge.append(b"y")
+    check(CID, "a chunk filled exactly to the chunk size is still open", len(edge._chunks) == 0)
+    edge.append(b"z")
+    check(CID, "one byte more closes it", len(edge._chunks) == 1 and edge.get(2) == b"z")
+    check(CID, "and the closed chunk reads back whole", edge.get(1) == b"y")
+    # reading while the last chunk is still being built, and again after more appends
+    store.append(b"tail")
+    check(CID, "a string in the open chunk reads back", store.get(len(originals)) == b"tail")
+    check(CID, "an earlier string is unchanged", store.get(3) == originals[3])
+    # end to end: strings spanning several chunks, each mapped into a record
+    texts_ = [(f"{i:03d}" + "ab" * 150_000) for i in range(12)]  # ~300 KB each, ~3.5 MB
+    sst = shared_xml(["q", "a", *texts_]).encode()
+    rows = [[ref_cell(0), ref_cell(1)]] + [
+        [ref_cell(2 + i), ref_cell(2 + (i + 1) % 12)] for i in range(12)
+    ]
+    events, outcome = run(book(rows, shared_override=sst))
+    got = [texts(c) for c in accepted(events)]
+    check(
+        CID,
+        "multi-chunk shared strings map to exactly their own text",
+        outcome.report.state == "completed"
+        and got == [[texts_[i], texts_[(i + 1) % 12]] for i in range(12)],
+    )
+    original_limit = xi._SST_OFFSET_LIMIT
+    xi._SST_OFFSET_LIMIT = 100  # type: ignore[misc]
+    try:
+        small = xi._SharedStrings()
+        small.append(b"x" * 100)
+        refused = False
+        try:
+            small.append(b"y")
+        except xi.XlsxAborted as exc:
+            refused = exc.failure_code == "limit_exceeded"
+        check(CID, "an append past the offset limit is limit_exceeded", refused)
+        check(CID, "and the refused string was not stored", len(small) == 1)
+    finally:
+        xi._SST_OFFSET_LIMIT = original_limit  # type: ignore[misc]
+
+
+def test_r4_an_unreadable_xml_declaration_is_a_typed_failure_in_every_part() -> None:
+    """Found by the round-4 fuzz: an XML declaration naming an encoding expat cannot map raised
+    `LookupError` out of `run_xlsx_import`. Every XML part -- the sheet, the shared strings,
+    the workbook, its relationships and the content types -- must give a typed failure."""
+    # (label, document, the exception family expat raises for it when nothing catches it)
+    declarations = (
+        ("unknown encoding (LookupError)", b'<?xml version="1.0" encoding="NOPE-9"?>\n<x/>'),
+        ("multi-byte codec (ValueError)", b'<?xml version="1.0" encoding="shift_jis"?>\n<x/>'),
+        ("undefined codec (UnicodeError)", b'<?xml version="1.0" encoding="undefined"?>\n<x/>'),
+        ("bytes its codec rejects", b'<?xml version="1.0" encoding="us-ascii"?>\n<x a="\xff"/>'),
+    )
+    for part in (
+        "xl/worksheets/sheet1.xml",
+        "xl/sharedStrings.xml",
+        "xl/workbook.xml",
+        "xl/_rels/workbook.xml.rels",
+        "[Content_Types].xml",
+    ):
+        for label, body in declarations:
+            try:
+                _e, outcome = run(book(replace={part: body}))
+            except Exception as exc:  # noqa: BLE001
+                check(CID, f"{part} / {label}: raised {type(exc).__name__}: {exc}", False)
+                continue
+            check(
+                CID,
+                f"{part} / {label}: failed with a typed code ({outcome.report.state} "
+                f"{outcome.report.failure_code})",
+                outcome.report.state == "failed"
+                and outcome.report.failure_code in ("xlsx_malformed", "unsafe_archive"),
+            )
+
+
+def test_r4_a_shared_string_index_past_the_table_is_xlsx_malformed() -> None:
+    """A `t="s"` cell whose index is exactly the table length (one past the last string), or
+    far beyond it, is fatal `xlsx_malformed`; the last valid index imports."""
+    sst = shared_xml(["q", "a", "hi", "there"]).encode()
+    last = book([[ref_cell(0), ref_cell(1)], [ref_cell(2), ref_cell(3)]], shared_override=sst)
+    check(CID, "the last valid index imports", run(last)[1].report.state == "completed")
+    for index in (4, 5, 999_999_999):
+        data = book(
+            [[ref_cell(0), ref_cell(1)], [ref_cell(2), ref_cell(index)]], shared_override=sst
+        )
+        _e, outcome = run(data)
+        check(
+            CID,
+            f"index {index} of a 4-string table is fatal xlsx_malformed",
+            failed_with(outcome, "xlsx_malformed"),
+        )
+    # also when the cell is unmapped (never kept): still validated
+    data = book(
+        [[ref_cell(0), ref_cell(1)], [ref_cell(2), ref_cell(3), ref_cell(4)]], shared_override=sst
+    )
+    check(
+        CID,
+        "an unmapped out-of-range index is fatal too",
+        failed_with(run(data)[1], "xlsx_malformed"),
+    )
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:

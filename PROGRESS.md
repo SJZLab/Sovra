@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-15T06:09Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-15T09:14Z. Source: `python3 scripts/status.py` on main.
 - **Status: 151/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,15 @@ Updated: 2026-10-15T06:09Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-15T09:14Z:**
+  - Returned: FTF-H010-P3a r4 (tests only - production still correct; 11 mutants were "killed" only by a text check, 4 of them hiding real gaps in tests for duplicate keys, list depth, duplicate shards and target matching). Stopping rule set for round 4.
+  - Backlog refill: FTF-0519 (immutable split manifest - freezes the training/validation/dev/held-out split with its hashes and grants; held-out data cannot be read through the training path) designed as two slices; P1 is ready.
+- **2026-10-15T08:53Z:**
+  - Returned: FTF-0213-S1 r2 (constrained-choice probe: an impossible negative or zero token count from the gateway is reported as a success with a fake cheap-output figure; two clause-level faults go unnoticed).
+- **2026-10-15T08:34Z:**
+  - Returned: FTF-1304-S1 r2 (compound per-step cost attribution: provider calls in different currencies are summed into one figure; the default route's step kind is hard-coded as "reasoning" instead of declared).
+  - Returned: FTF-0512-F1 r3 (digit merge closed; but a 2 MB record can still take ~29 minutes to hash on Python 3.11 via a different kind of combining character; three required test pins are still missing). FTF-0512 stays decertified.
+  - CI is red on every PR: the merged round-1 secret scanner flags AWS's published example key on an unmerged relay branch (not a real credential). The FTF-1505 round-2 fix is now urgent, with a ruling that PR checks scan only the PR's own history.
 - **2026-10-15T06:09Z:**
   - CERTIFIED: FTF-0503 (JSON importer), after 4 rounds, under the stopping rule - the third certified importer. UNWIRED.
   - Returned: FTF-0505 r4 (header row fixed, archive errors closed; but kept shared-string cells still amplify - 5.9 KB to 5 GB; row outcome depends on position; 12 reversals of this round's own fixes go unnoticed by tests).
