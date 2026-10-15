@@ -2357,7 +2357,7 @@ def test_f1_round3_glued_compounds_are_redacted() -> None:
         out = lr.redact_text(f"{glued}={_F1_VALUE}&x=1")
         check("FTF-0904-F1", f"QP-GLUED-COMPOUND contract {glued}: {out!r}", _F1_VALUE not in out)
     # a chain of credential words, up to the run bound
-    chain = "accesssessionauthloginapi" * 2 + "key"
+    chain = "csrfssomagicresetconfirmsigned" + "userapp" + "xsrfcode"
     check("FTF-0904-F1", "chain within bound is long enough", 40 < len(chain) <= 64)
     out = lr.redact_text(f"{chain}={_F1_VALUE}")
     check("FTF-0904-F1", f"QP-GLUED-COMPOUND chain leaked {out!r}", _F1_VALUE not in out)
@@ -2372,6 +2372,21 @@ def test_f1_round3_glued_rule_does_not_over_redact_ordinary_names() -> None:
         check("FTF-0904-F1", f"QP-GLUED over-redacted {name}: {out!r}", "plainvalue1" in out)
     check("FTF-0904-F1", "glued rule is bounded", lr._is_glued_compound("a" * 5000) is False)
     check("FTF-0904-F1", "glued rule: empty name", lr._is_glued_compound("") is False)
+    at_bound = "csrf" * 15 + "code"
+    past_bound = "csrf" * 10 + "sso" * 7 + "code"
+    check(
+        "FTF-0904-F1",
+        "bound fixtures are 64 / 65 long",
+        (len(at_bound), len(past_bound)) == (64, 65),
+    )
+    check(
+        "FTF-0904-F1", "glued chain of exactly 64 is bound", lr._is_glued_compound(at_bound) is True
+    )
+    check(
+        "FTF-0904-F1",
+        "glued chain of 65 is past the bound",
+        lr._is_glued_compound(past_bound) is False,
+    )
 
 
 _F3_HEADS = (
@@ -2942,14 +2957,14 @@ FAULTS += [
     ),
     (
         "QP-GUARD-NO-TAIL (marker consumed without the glued tail)",
-        r'''\[REDACTED\][^\s&,;"'}\])]*+|''',
+        r"""\[REDACTED\][^\s&,;"'}\])]*+|""",
         r"\[REDACTED\]|",
         1,
     ),
     (
         "QP-GUARD-TAIL-BOUNDED-64 (glued tail capped at 64)",
-        r'''\[REDACTED\][^\s&,;"'}\])]*+|''',
-        r'''\[REDACTED\][^\s&,;"'}\])]{0,64}|''',
+        r"""\[REDACTED\][^\s&,;"'}\])]*+|""",
+        r"""\[REDACTED\][^\s&,;"'}\])]{0,64}|""",
         1,
     ),
     (
