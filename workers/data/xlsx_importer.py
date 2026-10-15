@@ -721,9 +721,11 @@ class _SheetScanner(_Scanner):
             if not self._has_v or not _SHARED_INDEX.fullmatch(self._v_text):
                 raise self._fatal("xlsx_malformed")
             index = int(self._v_text)
-            if index >= len(self._shared):
-                raise self._fatal("xlsx_malformed")
-            size = self._shared.size(index)
+            try:
+                size = self._shared.size(index)
+            except IndexError:
+                # explicit, not left to the parser-error catch (IndexError is a LookupError)
+                raise self._fatal("xlsx_malformed") from None
             if size:
                 self._nonblank = True
             # A kept cell holds the INDEX, never a decoded copy: a shared string
