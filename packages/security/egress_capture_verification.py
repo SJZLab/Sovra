@@ -369,22 +369,21 @@ def _needles_for_encoding(marker: CanaryMarker, encoding: str) -> tuple[str, ...
     upper-case it); `%`-encoding is case-insensitive in its own two hex
     digits per RFC 3986. Missing either variant is a real scanner gap
     (found verifying this task's own real integration fixture), not a
-    theoretical one."""
+    theoretical one. Every non-literal encoding gets the same small,
+    unconditional set of case variants (never dispatched on `encoding`
+    itself, which is always already an exact, `_member`-validated member
+    by the time it reaches here -- a per-encoding `==` dispatch would
+    only ever compare already-canonical values, an unobservable, dead
+    guard, not a real one)."""
     if encoding in ("literal", "fragmented"):
         return (marker.value,)
     base = encode_canary(marker, encoding)
-    if encoding == "hex":
-        return (base, base.upper())
-    if encoding == "url":
-        # `urllib.parse.quote` always emits upper-case percent-escapes, but
-        # a real intermediary (reverse proxy, log shipper) may re-emit
-        # them lower-case -- the variant actually missing, not an
-        # already-covered uppercase no-op. Always include both: when there
-        # is no percent-escape to re-case, `lower_percent` just repeats
-        # `base`, a harmless duplicate substring check.
-        lower_percent = _PERCENT_HEX_RE.sub(lambda m: m.group(0).lower(), base)
-        return (base, lower_percent)
-    return (base,)
+    percent_lower = _PERCENT_HEX_RE.sub(lambda m: m.group(0).lower(), base)
+    percent_upper = _PERCENT_HEX_RE.sub(lambda m: m.group(0).upper(), base)
+    # dict.fromkeys: dedupe while keeping a stable order (base64's own
+    # alphabet is mixed-case already, so its own variants are mostly
+    # harmless duplicates of `base` -- still correct, never wrong).
+    return tuple(dict.fromkeys((base, base.upper(), percent_lower, percent_upper)))
 
 
 def scan_store_for_canaries(
