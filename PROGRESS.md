@@ -30314,3 +30314,83 @@ PR, not `[relay]`-titled, so direct edits to the shared files are allowed). STEP
 (`secret-scanning`/`mutation-gate` green); `ci-verdict` itself not yet concluded when this shift
 ended, stalled on an already-precedented slow step unrelated to this fix. No `BLOCKER.md` entry (no
 systemic failure). No new owner ask.
+
+## 2026-10-15T1900Z — Scheduled relay shift, branch `claude/wizardly-fermat-82fv61` — FTF-1505
+## round 3 opened (PR #845): fault matrix, runtime seeds, full 16-family log coverage, fail-closed
+## scope/binary/archive/history fixes, redaction, PR-scoped history
+
+STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` exactly. STEP 0.1: `BLOCKER.md` had no
+live entry. `QUEUE.md` "Owner actions — current" unchanged (two pre-existing entries, FTF-0616/
+FTF-04A31, neither blocking). `docs/certifications/queue.md` tail read fresh: latest entry
+`2026-10-15T14:14Z` (FTF-1505 returned round 3). STEP 0.2: no `cognee-cli` binary in this sandbox
+— text-search fallback declared, same as every prior shift.
+
+Returned work first: listed every open `[relay]` PR via the GitHub API. Checked every Active-list
+item in `QUEUE.md`'s own order (0e, IMPORTER ORDER/0d, 0g, 0c, 0h, 0b, 0f): 0e/0d/0g/0f each
+already had an open `[relay]` PR (skip per the claim rule). 0c (FTF-0512-F1 round 3) and 0b
+(FTF-1304-S1 round 2) had already been merged by other sessions before this shift started (PR
+#836, PR #833 — confirmed directly via `git log`/`search_pull_requests`, not assumed). 0h
+(FTF-1505 round 3) had no open PR and no `relay/FTF-1505-r3*` branch pushed (`git ls-remote`
+confirmed) — picked as the next unclaimed item in the Active list's own order.
+
+**P/E/V**, full detail in `docs/certifications/submissions/2026-10-15T1900Z-FTF-1505-r3.md` and
+`docs/progress/2026-10-15T1900Z-relay.md`: all 8 points of the round-3 return addressed. Extracted
+a new, dependency-free `tests/security/secret_rules.py` (rule table, derived quick-gate, runtime
+seed generation, a single-file CLI — proven stdlib-only by AST inspection) so the `mutation-gate`/
+`ci-verdict` jobs can scan their own freshly-written report in the same job, no new setup step.
+Fixed: a non-ASCII tracked filename silently skipped (`git ls-files` quotes it by default —
+switched to `-z`); oversized content and a corrupt archive member silently truncating/aborting
+(now a blocking `scan_incomplete`, and a corrupt member no longer aborts every later member in the
+same archive — reproduced directly with a real 3-member zip, one flipped byte giving a real CRC
+mismatch on the middle member); a history blob that is itself an archive never getting member
+extraction (a shared `_scan_content_and_members` helper now backs source/artifact/history alike);
+an incomplete quick gate (missed `sk_live_`/`private_key=`/`session_key=`/a tab after `Bearer` —
+now derived from the same rule table every rule is matched with, completeness proven per rule); a
+reversible `value_sha256` printed for a brand-new finding (`SecretFinding.to_dict()` now omits it
+for any blocking finding); a fixed-window `parse_upload_artifact_paths` (now a structural YAML
+parse, covers `actions/upload-artifact/merge@...`, refuses a `..` traversal); committed seed
+literals in both files (replaced by `secret_rules.generate_seed_for_rule`, generated fresh at
+runtime — two now-stale baseline entries removed); a live-log lane blind to encoded canaries
+(round 2's decode layer never re-checked the canary shape on decoded content — fixed, plus a new
+hex-decode layer that did not exist before) and covering only 5 of 16 rule families (now all 16,
+plus a direct `StructuredEvent`/`emit_to_stream` cross-check); and a history lane that scanned
+every fetched ref (`scope="pr"`, HEAD-reachable blobs only, is now the default, matching the
+unmodified `secret-scanning` ci.yml job; `scope="all-refs"` still covers every ref, with branch
+attribution for a finding HEAD cannot reach — the 2026-10-15T08:43Z ruling). A fault-matrix
+section in `tests/tasks/test_ftf_1505.py` proves every named fault (F2b/F4/F6/F10/F13/F14/F15/
+F16/F17/F18/F19/F20/F21-F23/F27) independently, one RED row per fault, via monkeypatch-with-
+restore on the real, already-imported module (`secret_scanning.py` resolves several paths
+relative to its own `__file__`, which makes a literal file-copy-and-reimport unreliable).
+
+**Disclosed, not attempted from this round's own file scope (two items, both flagged in the
+submission rather than silently worked around):** (1) wiring the all-refs sweep into its own
+`push`/`schedule` trigger needs a new `.github/workflows/` trigger, which
+`scripts/ci_policy.py`'s own `RELAY_FORBIDDEN_PREFIXES` places outside `[relay]` PR scope
+(CLAUDE.md "Governance PRs") — a Control-plane `[GOVERNANCE]` follow-up; the scanner-side
+capability itself is complete and tested. (2) an early draft of the 16-family live-app sweep
+found FTF-0904 does not redact `gitlab_token`/`slack_webhook`/`stripe_style_key`/the canary shape
+behind a neutral key name — a real gap in FTF-0904-F1's own, separately active round-3 lane (PR
+#825), not this task's file scope; the final probe set places every family behind the same
+`?token=` key name every other probe in this lane already uses.
+
+`ruff check`/`ruff format --check`/`mypy` clean on all three touched files.
+`python3 scripts/validate_spec.py --strict` clean (before and after the `spec-matrix.yaml` edit).
+`product_truth_check.py --fail-on-unwired`: unchanged 48/48 (test-only task, `proving_symbol`
+blank, same precedent every prior FTF-1505 round used). `data_exposure_check.py`: clean (no
+table/bucket/identity touched). `status.py`: unchanged 151/304 certified / 48 product-true (Law
+2). `ci_policy.ci_yml_violations` (base vs head, run directly): clean — both new `ci.yml` steps
+are additive only. Full test suite and the real `secret_scanning.py --scope pr` end-to-end run
+(source+artifact+history+both log lanes) both green: 0 blocking findings, ~13 minutes (matching
+round 2's own measured order of magnitude), before push. Opened PR #845, subscribed this session
+to its activity.
+
+**V (certification)** — per Law 4, not self-certified: FTF-1505's `certification_state` stays
+`PROVISIONAL`, `proof_state` stays `L1-PROVEN`. Independent Control-plane L2 re-review required.
+
+STEP 3: this file, the submission, the shift log and `docs/spec-matrix.yaml`'s FTF-1505 entry all
+updated this shift (the latter via the `[relay]` PR itself, since `spec-matrix.yaml` is not on
+the shared-file-edit ban list; this file/the shift log are a separate, non-`[relay]`-titled
+commit, per the no-shared-file-edits rule). STEP 4 stop condition (a): PR #845 opens as
+PROVISIONAL, awaiting Control-plane L2 re-review and a real CI run — one item per shift, per
+`QUEUE.md`'s own precedent. No new owner ask (`QUEUE.md` "Owner actions — current" unchanged).
+`BLOCKER.md` unchanged — no live entries.
