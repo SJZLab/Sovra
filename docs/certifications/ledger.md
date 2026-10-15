@@ -11625,3 +11625,13 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   mode generated 0 mutants. No production violation (production byte-identical to r2). Return: [H1] patch-text guard
   still the kill signal - behaviour-only uncapped run 11 survivors (duplicate-key casefold, list depth, shard duplicate
   casefold, target casefold, plus pins). Ruling: S05/S07/S08 reviewed equivalents; S03/S04/S06 pinned. Stopping rule set.
+
+## 2026-10-15T14:14Z — RETURNED: FTF-1505 (r2)
+- **FTF-1505: RETURNED** (round 2 → 3; PR #829, merge 2c877affaae6848253f329ca90ff41510243cc8b, head 9f2feb0f).
+  Producer session_01KXrQetEoGDNNb7Z2f4H9ow ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: secret-scanning job
+  116332940357 "SECRET SCAN: 10340 unit(s) scanned, 13297 finding(s), 0 blocking -- clean"; gate 116332940741 step 64
+  (test_ftf_1505, 14 min, full run); ci-verdict 116395868281 success. Real run: 0 exposed credentials; 64/64 baseline
+  entries reviewed value by value (fixtures/documented examples, exact pairs). Return: 16 clause-level faults GREEN;
+  committed seeds; live log lane without positive control; incomplete quick gate + silent 2000-candidate cap; silent
+  omissions (non-ASCII name, >50 MB, corrupt archive, history-only archive); unsalted hash of new findings printed and
+  reversed; real CI uploads unscanned; 08:43Z PR-scoped history ruling not yet met. Stopping rule set.
