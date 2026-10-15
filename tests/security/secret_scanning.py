@@ -1241,11 +1241,11 @@ def _default_seed_values() -> list[str]:
     established for leak testing, applied here to secret-SHAPE testing
     instead of leak-TRACKING."""
     return [
-        "AKIA" + "CANARY2345670000",  # exactly 16 chars after AKIA, A-Z2-7 only
+        "AKIA" + "CANARY234567ABCD",  # exactly 16 chars after AKIA, A-Z2-7 only
         "ghp_" + "CANARYDONOTUSE" + "0" * 22,  # >= 36 chars after ghp_
         "Bearer CANARY-DO-NOT-USE-0000000000000000000000",
         "sk-" + "CANARYDONOTUSE0" * 3,  # >= 32 chars after sk-
-        "hf_" + "CANARYDONOTUSE000000000000000000",  # == 34 chars after hf_
+        "hf_" + "CANARYDONOTUSE" + "0" * 20,  # exactly 34 chars after hf_
     ]
 
 
