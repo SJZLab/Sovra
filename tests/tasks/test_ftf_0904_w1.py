@@ -61,6 +61,7 @@ import sys
 import tempfile
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -530,26 +531,33 @@ FAULTS: list[tuple[str, str, list[tuple[str, str]]]] = [
 ]
 
 
+def _run_one_fault(label: str, rel: str, edits: list[tuple[str, str]]) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        copy = Path(tmp) / "api"
+        shutil.copytree(
+            API_ROOT / "app", copy / "app", ignore=shutil.ignore_patterns("__pycache__")
+        )
+        target = copy / "app" / rel
+        text = target.read_text(encoding="utf-8")
+        if any(text.count(old) != 1 for old, _ in edits):
+            FAILURES.append(f"[{CRITERION}-W1-FAULT] {label}: mutation site not found once")
+            return
+        for old, new in edits:
+            text = text.replace(old, new)
+        target.write_text(text, encoding="utf-8")
+        fails = run_checks(copy)
+        if fails:
+            print(f"  fault {label}: RED ({fails[0]})")
+        else:
+            FAILURES.append(f"[{CRITERION}-W1-FAULT] {label} stayed GREEN")
+
+
 def run_faults() -> None:
-    for label, rel, edits in FAULTS:
-        with tempfile.TemporaryDirectory() as tmp:
-            copy = Path(tmp) / "api"
-            shutil.copytree(
-                API_ROOT / "app", copy / "app", ignore=shutil.ignore_patterns("__pycache__")
-            )
-            target = copy / "app" / rel
-            text = target.read_text(encoding="utf-8")
-            if any(text.count(old) != 1 for old, _ in edits):
-                FAILURES.append(f"[{CRITERION}-W1-FAULT] {label}: mutation site not found once")
-                continue
-            for old, new in edits:
-                text = text.replace(old, new)
-            target.write_text(text, encoding="utf-8")
-            fails = run_checks(copy)
-            if fails:
-                print(f"  fault {label}: RED ({fails[0]})")
-            else:
-                FAILURES.append(f"[{CRITERION}-W1-FAULT] {label} stayed GREEN")
+    # Each fault runs against its own copy of the app with its own ports, so they run
+    # side by side (the mutation gate's per-run timeout is 300 s).
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        for future in [pool.submit(_run_one_fault, *fault) for fault in FAULTS]:
+            future.result()
 
 
 def main() -> None:
