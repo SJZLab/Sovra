@@ -1,8 +1,8 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-15T03:46Z. Source: `python3 scripts/status.py` on main.
-- **Status: 150/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
+Updated: 2026-10-15T06:09Z. Source: `python3 scripts/status.py` on main.
+- **Status: 151/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
@@ -12,6 +12,9 @@ Updated: 2026-10-15T03:46Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-15T06:09Z:**
+  - CERTIFIED: FTF-0503 (JSON importer), after 4 rounds, under the stopping rule - the third certified importer. UNWIRED.
+  - Returned: FTF-0505 r4 (header row fixed, archive errors closed; but kept shared-string cells still amplify - 5.9 KB to 5 GB; row outcome depends on position; 12 reversals of this round's own fixes go unnoticed by tests).
 - **2026-10-15T03:46Z:**
   - Returned: FTF-0904-F1 r3 (mixed-case names like `cOdE=` leak on the live log - a round-1 regression of the F1 names; glued compounds like `authcode` leak; three fault families GREEN). FTF-0904 stays CERTIFIED (no certified behaviour regressed; 97/97 faults RED).
   - Returned: FTF-1505 r2 (secret scanner did not follow the design: half the repo, binaries, archives and most of history unscanned; 11 faults GREEN). No real exposed credential was found - every hit in all 8,506 history blobs is a fixture.

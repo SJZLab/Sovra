@@ -11570,3 +11570,25 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   glued compounds leak 191/210; guard-tail, break-on-empty and value-class faults GREEN with demonstrated leaks.
 - **FTF-0904: stays CERTIFIED** - no certified behaviour regressed (the leaking names were added by F1); requalification
   completes with F1 round 3. Live caller confirmed: install_redaction ← apps/api/app/log_redaction_setup.py ← create_app().
+
+## 2026-10-15T06:09Z — CERTIFIED: FTF-0503
+- **FTF-0503: CERTIFIED** (round 4, under the stopping rule; PR #814, merge f653debd4e6e0a6624dbdb6a81549b372a36d640, head c948cc7a, code ce4e7ed2). Producer
+  session_017VCP3z71zqEcneedqhE9mY (earlier rounds session_01TQCApsTmqruB1E7ZN6Fy3d, session_012VzyDahFi7g72tvagNtYUa,
+  session_01EmbFbQRQPkxmSHRBAmU8FC, session_01RMzi9P3PkjFrJohRUdi9MC, session_01XVwUcrzcU4AG5dFB7ecRmx) ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR, absent. CI: gate 116184141225 (step 85 FTF-0503 success); json-import-integration
+  116184231807 "all checks passed"; mutation 20/20 (uncapped - 20 generated). Round-4 items: 34 malformed dataset_sha256
+  shapes typed with 0 reads on drain/preview/run; 960 single-digit hash variants refused; records before a fatal
+  invalid_encoding identical at every chunking (6,050 + 2,699 runs); evidence corrected (evidence_hash ce4e7ed2). Outage
+  check discriminating (no-op stop RED). Round-3 probe classes hold (memory flat 3.01 MiB at 64 MiB; 0/9,112 silent
+  completions). 50/55 faults RED; GREEN only equivalents and untested variants of classes closed this round.
+  Advisory A1: a chunk cut right after a UTF-8 lead byte between tokens reports json_malformed instead of invalid_encoding
+  (same offset/records; 77/6,050 runs). UNWIRED.
+
+## 2026-10-15T06:09Z — RETURNED: FTF-0505 (r4)
+- **FTF-0505: RETURNED** (round 3 → 4; PR #818, merge 044a48bce20d8d4d06dd4291510cbc10b49c3df1, head 770d09db). Producer
+  session_012PAwsP4rRhEgkzajPGfmm3 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: all 73 checks success;
+  xlsx-import-integration 116182566941 "all checks passed"; gate 116182488102 step 87 success; mutation 171/171 (diff
+  mode). Fixed: header row (78 MB, fatal), unmapped refs, archive-error class (30,000 fuzzed, 0 escapes), preview sha,
+  byte cap, ruling (b) ImportLimits, vbaProject type. Return: kept-cell shared-string amplification (5,891 B -> 4,993 MB,
+  completed); position-dependent row outcome; 764 MiB at the shared-strings cap; 12 observable faults GREEN; no
+  never-raises fuzz test; evidence item 10 missing while the submission claimed nothing deferred.
