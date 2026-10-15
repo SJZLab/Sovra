@@ -105,6 +105,7 @@ import re
 import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 
 __all__ = [
     "SUPPORTED_PURPOSES",
@@ -172,7 +173,9 @@ _MAX_COMBINING_RUN = 30
 # already-persisted digest (FTF-0515's evidence_digest, FTF-0516-P1's
 # issue_id) is never silently reinterpreted under a different rule --
 # bump this whenever `_normalize_text`'s behaviour changes again.
-_DETECTOR_VERSION = 2
+# FTF-0512-F1 round 3: 3 -- NFKC compatibility mappings that would fuse
+# alphanumerics into their neighbours are now separated (`_fold_action`).
+_DETECTOR_VERSION = 3
 
 
 class NormalizedDuplicateDetectionError(ValueError):
@@ -229,54 +232,117 @@ def _strip_format_characters(text: str) -> str:
     return "".join(char for char in text if unicodedata.category(char) != "Cf")
 
 
+@lru_cache(maxsize=65536)
+def _nfkd_non_starter_flags(char: str) -> tuple[bool, ...]:
+    # UAX #15 Stream-Safe Text Format counts non-starters (ccc != 0) in the NFKD
+    # decomposition, not in the input: U+0F73 has ccc 0 but decomposes to two
+    # non-starters (U+0F71 U+0F72), and the quadratic reordering cost is paid on
+    # the decomposed form. NFKD of one code point is context-free (no
+    # composition), so per-character flags concatenate exactly.
+    return tuple(unicodedata.combining(part) != 0 for part in unicodedata.normalize("NFKD", char))
+
+
 def _assert_safe_combining_run(text: str) -> None:
     run_length = 0
     for char in text:
-        if unicodedata.combining(char):
-            run_length += 1
-            if run_length > _MAX_COMBINING_RUN:
-                raise NormalizedDuplicateDetectionError(
-                    "text content part has a combining-character run longer than "
-                    f"{_MAX_COMBINING_RUN} (UAX #15 Stream-Safe Text Format bound) -- "
-                    "refused rather than normalized at unbounded cost"
-                )
-        else:
+        if char < "\u00a0":
+            # ASCII and C1 controls: starters with no decomposition
             run_length = 0
+            continue
+        for is_non_starter in _nfkd_non_starter_flags(char):
+            if is_non_starter:
+                run_length += 1
+                if run_length > _MAX_COMBINING_RUN:
+                    raise NormalizedDuplicateDetectionError(
+                        "text content part has a run of more than "
+                        f"{_MAX_COMBINING_RUN} NFKD non-starters (UAX #15 Stream-Safe Text "
+                        "Format bound) -- refused rather than normalized at unbounded cost"
+                    )
+            else:
+                run_length = 0
+
+
+# FTF-0512-F1 round 3: an NFKC compatibility mapping that only changes the
+# glyph form of the SAME character (fullwidth, math/font styles, circled
+# letters, Arabic positional forms, halfwidth, vertical) is a look-alike and is
+# folded. Every other compatibility mapping that yields alphanumerics (a
+# superscript/subscript, a fraction, a squared CJK/telegraph/unit symbol, a
+# non-letter `<compat>` symbol such as a unit or currency abbreviation) writes
+# DIFFERENT characters than the one it replaces, and folding it in place would
+# fuse them into the neighbouring digits/letters ("2㏠" -> "21日", "2ⁿ" -> "2n",
+# a false blocking finding between two different records). Those are folded
+# AS A SEPARATED TOKEN instead, so the neighbours can never fuse with the result.
+_SAME_CHARACTER_TAGS = frozenset(
+    {
+        "<wide>",
+        "<narrow>",
+        "<font>",
+        "<circle>",
+        "<initial>",
+        "<medial>",
+        "<final>",
+        "<isolated>",
+        "<vertical>",
+        "<small>",
+        "<noBreak>",
+    }
+)
+
+_FOLD_KEEP = 0  # folded in place with its neighbours
+_FOLD_ISOLATE_VERBATIM = 1  # No/Nl: kept byte-for-byte, never folded
+_FOLD_SEPARATE = 2  # compatibility mapping that would fuse: folded as its own token
+
+
+@lru_cache(maxsize=65536)
+def _fold_action(char: str) -> int:
+    if unicodedata.category(char) in _DIGIT_LIKE_CATEGORIES:
+        return _FOLD_ISOLATE_VERBATIM
+    mapped = unicodedata.normalize("NFKC", char)
+    if mapped == char or not any(part.isalnum() for part in mapped):
+        return _FOLD_KEEP
+    decomposition = unicodedata.decomposition(char)
+    tag = decomposition.split(" ", 1)[0] if decomposition.startswith("<") else None
+    if tag is None or tag in _SAME_CHARACTER_TAGS:
+        return _FOLD_KEEP
+    if tag == "<compat>" and unicodedata.category(char).startswith("L"):
+        # ligatures and digraphs (ﬁ, ǆ, ĳ, µ): the same letters, spelled differently
+        return _FOLD_KEEP
+    return _FOLD_SEPARATE
 
 
 def _fold_look_alikes(text: str) -> str:
-    # FTF-0512-F1 round 2: NFKC-fold everything EXCEPT No/Nl characters,
-    # which are segmented out of the string being folded so they can never
-    # compose or merge with a neighbouring character -- see
-    # `_DIGIT_LIKE_CATEGORIES`'s own comment above. A character of its own
-    # (not a combining mark) already breaks any composition/decomposition
-    # sequence that would otherwise cross it, so isolating it like this
-    # changes nothing about how the segments on either side fold.
+    # FTF-0512-F1 round 2/3: NFKC-fold everything EXCEPT the characters
+    # `_fold_action` isolates, which are segmented out of the string being
+    # folded so they can never compose or merge with a neighbouring character.
+    # A character of its own (not a combining mark) already breaks any
+    # composition/decomposition sequence that would otherwise cross it, so
+    # isolating it like this changes nothing about how the segments on either
+    # side fold.
     segments: list[str] = []
     pending: list[str] = []
     for char in text:
-        if unicodedata.category(char) in _DIGIT_LIKE_CATEGORIES:
-            if pending:
-                segments.append(unicodedata.normalize("NFKC", "".join(pending)))
-                pending = []
+        action = _FOLD_KEEP if char < "\u00a0" else _fold_action(char)
+        if action == _FOLD_KEEP:
+            pending.append(char)
+            continue
+        if pending:
+            segments.append(unicodedata.normalize("NFKC", "".join(pending)))
+            pending = []
+        if action == _FOLD_ISOLATE_VERBATIM:
             segments.append(char)
         else:
-            pending.append(char)
+            segments.append(" " + unicodedata.normalize("NFKC", char) + " ")
     if pending:
         segments.append(unicodedata.normalize("NFKC", "".join(pending)))
     return "".join(segments)
 
 
-def _normalize_text(text: str) -> str:
-    # FTF-0512-F1: fold look-alikes first, so every later rule sees one
-    # canonical spelling. Cf is stripped BEFORE NFKC so an invisible character
-    # cannot split a compatibility/composition sequence; NFKC never produces
-    # or alters a Cf character (checked over all of Unicode), so one pass is
-    # enough.
-    stripped = _strip_format_characters(text)
-    _assert_safe_combining_run(stripped)
-    folded = _fold_look_alikes(stripped)
-    lowered = folded.lower()
+def _lower_case(text: str) -> str:
+    return text.lower()
+
+
+def _finish_text(folded: str) -> str:
+    lowered = _lower_case(folded)
     # Generated IDs/timestamps are REMOVED, not replaced by a placeholder:
     # Section 10 method 3 says "remove", and a placeholder word would keep a
     # record that carries a timestamp distinct from the same text without
@@ -286,6 +352,17 @@ def _normalize_text(text: str) -> str:
     redacted = _UUID_PATTERN.sub(" ", redacted)
     no_punctuation = _PUNCTUATION_PATTERN.sub(" ", redacted)
     return _WHITESPACE_PATTERN.sub(" ", no_punctuation).strip()
+
+
+def _normalize_text(text: str) -> str:
+    # FTF-0512-F1: fold look-alikes first, so every later rule sees one
+    # canonical spelling. Cf is stripped BEFORE the combining-run bound and
+    # NFKC so an invisible character can neither split a compatibility/
+    # composition sequence nor reset the run count; NFKC never produces or
+    # alters a Cf character (checked over all of Unicode), so one pass is enough.
+    stripped = _strip_format_characters(text)
+    _assert_safe_combining_run(stripped)
+    return _finish_text(_fold_look_alikes(stripped))
 
 
 def _normalize_content_part(part: object, *, field: str) -> dict[str, object]:
@@ -394,6 +471,10 @@ def _normalize_message(message: object, *, field: str) -> dict[str, object]:
     return normalized
 
 
+def _digest_document(normalized_messages: list[dict[str, object]]) -> dict[str, object]:
+    return {"detector_version": _DETECTOR_VERSION, "messages": normalized_messages}
+
+
 def compute_normalized_text_hash(content: object) -> str:
     """Computes Section 10 method 3's own "text normalization match" hash
     over one already-canonical `content` document (`{"messages": [...],
@@ -421,8 +502,9 @@ def compute_normalized_text_hash(content: object) -> str:
         for index, message in enumerate(messages)
     ]
 
-    document = {"detector_version": _DETECTOR_VERSION, "messages": normalized_messages}
-    canonical = json.dumps(document, sort_keys=True, separators=(",", ":"))
+    canonical = json.dumps(
+        _digest_document(normalized_messages), sort_keys=True, separators=(",", ":")
+    )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
