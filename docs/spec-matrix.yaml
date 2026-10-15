@@ -7722,7 +7722,7 @@ FTF-0505:
   certification_state: PROVISIONAL
   criticality: MUST
   description: XLSX importer
-  evidence_hash: 62ef4927dbf4a3ac2493e8e236a4450c8d474631
+  evidence_hash: d0f7827f9cc4854aa973669a6213cfed4de71170
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
