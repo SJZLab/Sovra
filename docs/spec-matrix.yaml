@@ -12208,9 +12208,9 @@ FTF-1505:
     reason/reviewer/date -- `load_baseline` refuses an entry carrying a
     value/path/glob key outright, and `assert_baseline_fresh` makes a
     baseline entry that matched nothing in a run itself a blocking finding,
-    so the file can only drift "too strict," never "too permissive." 56
-    entries, one per (rule, value) pair this round's own source+artifact
-    scan matched against this repository's real tracked files, each
+    so the file can only drift "too strict," never "too permissive." 64
+    entries, one per (rule, value) pair this round's own source+artifact+
+    history scan matched against this repository's real tracked files, each
     reviewed value-by-value (AWS's own documented example keys, the
     well-known `hunter2`/`s3cr3t`/`pass` placeholder passwords, the CI-only
     migration-role password `ci.yml`'s own service containers use, held-out
