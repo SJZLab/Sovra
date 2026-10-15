@@ -296,15 +296,20 @@ _COMPOUND_PREFIXES = frozenset(
 )  # fmt: skip
 _COMPOUND_WORDS = tuple(sorted(_COMPOUND_PREFIXES | _QUERY_PARAM_NAMES, key=len, reverse=True))
 _MAX_GLUED_NAME = 64
+_MIN_GLUED_NAME = min(len(name) for name in _QUERY_PARAM_NAMES)
 
 
 def _is_glued_compound(lowered: str) -> bool:
     """`lowered` is a chain of credential words ending in a `_QUERY_PARAM_NAMES` name.
 
     Dynamic programming over end offsets (O(len x words), no backtracking); a run longer than
-    `_MAX_GLUED_NAME` is never a glued compound, which keeps the cost per key bounded."""
+    `_MAX_GLUED_NAME` is never a glued compound, which keeps the cost per key bounded. A run
+    shorter than the shortest name can never match either (no chain, however short, ends in
+    fewer characters than its own final name) -- bailing out before building `reach` keeps a
+    query string's flood of short, non-matching candidates (e.g. `a=a=a=...`) linear instead of
+    paying the DP loop's per-candidate constant on every one of them."""
     size = len(lowered)
-    if size > _MAX_GLUED_NAME:
+    if size < _MIN_GLUED_NAME or size > _MAX_GLUED_NAME:
         return False
     reach = [False] * (size + 1)
     reach[0] = True
