@@ -31,6 +31,12 @@ default logging config, over a real socket -- with no database:
    in `__del__` (unraisable), a `warnings.warn` and direct
    `traceback.print_exception` / `print_exc` calls carrying canaries print
    their usual headers with the canary redacted.
+   W1-FALLBACK (FTF-0904-W1-F1): on Python 3.13 the interpreter's own fallback
+   printer calls `traceback.print_exception(..., colorize=...)` whenever
+   `sys.excepthook` was reset to `sys.__excepthook__`, raises, or is deleted; the
+   replacement must accept (and ignore) the extra keyword and still print only
+   redacted text. Where that stdlib path does not exist (3.11/3.12) the check
+   prints a notice instead of passing silently.
 5. Fault injection (Law 1): each mutation is applied to a *copy* of
    apps/api/app, served from that copy, and must turn the checks RED.
 
@@ -297,7 +303,7 @@ def _check_multiprocess_boot_failures(app_dir: Path, fails: list[str]) -> None:
 
 
 _INSTALL_PROBE = """
-import json, logging, logging.config
+import json, logging, logging.config, sys, threading, warnings
 from uvicorn.config import LOGGING_CONFIG
 logging.config.dictConfig(LOGGING_CONFIG)
 import app.main as m
@@ -316,6 +322,10 @@ print(json.dumps({
     "handlers": [[n] + sunk(h) for n in ("uvicorn", "uvicorn.error", "uvicorn.access")
                  for h in logging.getLogger(n).handlers],
     "last_resort": sunk(logging.lastResort),
+    "hooks": {name: bool(getattr(hook, "_ftf0904_w1_redacting", False)) for name, hook in (
+        ("sys.excepthook", sys.excepthook), ("threading.excepthook", threading.excepthook),
+        ("sys.unraisablehook", sys.unraisablehook),
+        ("warnings.showwarning", warnings.showwarning))},
 }))
 import sys, threading, warnings, gc
 canary = sys.argv[1]
@@ -374,6 +384,12 @@ def _check_install(app_dir: Path, fails: list[str]) -> None:
     if not (got["last_resort"][0] and got["last_resort"][1]):
         fails.append(f"[{CRITERION}-W1-INSTALL] logging.lastResort has no redacting sink")
     tag = f"[{CRITERION}-W1-HOOKS]"
+    # On Python 3.13 the stdlib's default hooks print through the (replaced)
+    # traceback.print_exception, so the explicit hooks are redundant there; on 3.11/3.12
+    # they are the only protection. Their presence is pinned on every interpreter.
+    for hook_name, installed in got["hooks"].items():
+        if not installed:
+            fails.append(f"{tag} {hook_name} is not the redacting hook after create_app()")
     if canary in proc.stdout + proc.stderr:
         fails.append(f"{tag} a thread/unraisable/warning canary reached the process output")
     for header in (
@@ -388,9 +404,56 @@ def _check_install(app_dir: Path, fails: list[str]) -> None:
         fails.append(f"{tag} the thread/unraisable/warning output is not redacted")
 
 
+_FALLBACK_PROBE = """
+import sys, traceback
+if not hasattr(traceback, "_print_exception_bltin"):
+    print("NO-STDLIB-FALLBACK-PATH")
+    sys.exit(0)
+import app.main as m
+m.create_app()
+canary, mode = sys.argv[1], sys.argv[2]
+if mode == "reset":
+    sys.excepthook = sys.__excepthook__
+elif mode == "raising":
+    def bad_hook(*args):
+        raise ValueError("api_key=" + canary)
+    sys.excepthook = bad_hook
+elif mode == "deleted":
+    del sys.excepthook
+raise RuntimeError("password=" + canary)
+"""
+FALLBACK_MODES = ("reset", "raising", "deleted")
+
+
+def _check_stdlib_fallback(app_dir: Path, fails: list[str]) -> None:
+    for mode in FALLBACK_MODES:
+        canary = generate_canary().value
+        proc = subprocess.run(
+            [sys.executable, "-c", _FALLBACK_PROBE, canary, mode],
+            cwd=str(ROOT),
+            env=_env(f"{app_dir}{os.pathsep}{ROOT}"),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        tag = f"[{CRITERION}-W1-FALLBACK] excepthook {mode}"
+        if "NO-STDLIB-FALLBACK-PATH" in proc.stdout:
+            print(f"  notice: {tag}: this Python has no traceback._print_exception_bltin; skipped")
+            continue
+        if canary in proc.stdout + proc.stderr:
+            fails.append(
+                f"{tag}: the canary reached the process output through the stdlib fallback"
+            )
+        if "RuntimeError" not in proc.stderr or REDACTED not in proc.stderr:
+            fails.append(f"{tag}: no redacted traceback printed ({proc.stderr[-300:]!r})")
+        if "TypeError" in proc.stderr:
+            fails.append(f"{tag}: the redacting printer raised a TypeError on a stdlib keyword")
+
+
 def run_checks(app_dir: Path) -> list[str]:
     fails: list[str] = []
     _check_install(app_dir, fails)
+    _check_stdlib_fallback(app_dir, fails)
     _check_boot_failures(app_dir, fails)
     _check_multiprocess_boot_failures(app_dir, fails)
     _serve_and_probe(app_dir, fails)
@@ -451,6 +514,16 @@ FAULTS: list[tuple[str, str, list[tuple[str, str]]]] = [
         [
             ("        traceback.print_exception = _mark(_print_exception)\n", "        pass\n"),
             ("        traceback.print_exc = _mark(_print_exc)\n", "        pass\n"),
+        ],
+    ),
+    (
+        "F15-print-exception-no-extra-keywords",
+        SETUP,
+        [
+            (
+                "    chain: bool = True,\n    **_ignored: Any,\n) -> None:",
+                "    chain: bool = True,\n) -> None:",
+            )
         ],
     ),
     ("F12-install-late", "main.py", [(CALL, ""), ("    return app\n", CALL + "    return app\n")]),
