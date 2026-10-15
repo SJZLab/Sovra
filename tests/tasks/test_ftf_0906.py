@@ -522,8 +522,15 @@ def test_tuple_and_type_guards() -> None:
     )
     check(
         "FTF-0906-INPUT",
-        "required_stores as a plain set instead of a frozenset is refused",
-        _raises(InvalidEgressPlanError, _plan, good_flows, {"controlled_destination"}),
+        "required_stores as a plain set instead of a frozenset is refused "
+        "(a set that otherwise satisfies every mandatory-store requirement, so this "
+        "isolates the frozenset-type check from the mandatory-log-store check)",
+        _raises(
+            InvalidEgressPlanError,
+            _plan,
+            good_flows,
+            {"controlled_destination", "workflow_history", *_MANDATORY_REQUIRED_STORES},
+        ),
     )
     check(
         "FTF-0906-INPUT",
@@ -1277,6 +1284,60 @@ def test_unattributed_leak_and_unplanned_evidence_fail_the_whole_report() -> Non
         and "unplanned_egress_evidence" in report_unplanned.codes
         and all(v.status != "failed" for v in report_unplanned.flow_verdicts),
     )
+
+
+def test_unplanned_evidence_flow_id_match_is_exact_not_case_folded() -> None:
+    # flow_id is free-form text (never `_member`-normalised -- see
+    # test_distinct_case_flow_ids_are_never_merged_and_match_exactly), so
+    # the UNPLANNED-EGRESS check's own `not in plan_flow_ids` match must
+    # stay exact too: a mutant that case/whitespace-folds the evidence
+    # side before that check would silently match "A1" (not a declared
+    # flow) to the real "a1", hiding genuinely unplanned evidence. One
+    # case per evidence kind, since each has its own `any(...)` clause.
+    plan = _plan((_flow("a1", "allow"), _flow("d1", "deny")))
+    a_enf, a_logs, a_insp = _passing_allow()
+    d_enf, d_c_log, d_d_log = _passing_deny()
+    base_inspections = (a_insp, *_clean_mandatory_store_inspections())
+
+    def _build(**override: tuple) -> EgressEvidence:
+        kwargs = {
+            "enforcement": (a_enf, d_enf),
+            "connection_logs": (*a_logs, d_c_log, d_d_log),
+            "plaintext_inspections": base_inspections,
+        }
+        kwargs.update(override)
+        return EgressEvidence(**kwargs)
+
+    cases = {
+        "enforcement": _build(
+            enforcement=(a_enf, d_enf, EnforcementObservation("A1", "process_guard", "allow", "ok"))
+        ),
+        "connection_logs": _build(
+            connection_logs=(
+                *a_logs,
+                d_c_log,
+                d_d_log,
+                ConnectionLogEntry("A1", "client", "connected"),
+            )
+        ),
+        "packet_captures": _build(
+            packet_captures=(PacketCaptureObservation("A1", encrypted=False, canary_found=False),)
+        ),
+        "plaintext_inspections": _build(
+            plaintext_inspections=(
+                *base_inspections,
+                PlaintextInspection("artifact", "s", "A1", True, decrypted=False),
+            )
+        ),
+    }
+    for kind, evidence in cases.items():
+        report = verify_egress(plan, evidence)
+        check(
+            "FTF-0906-UNPLANNED",
+            f"a case-varied flow_id ('A1' vs the real 'a1') in {kind} is never folded into "
+            "a known flow -- still flagged as unplanned egress",
+            report.status == "failed" and "unplanned_egress_evidence" in report.codes,
+        )
 
 
 def test_report_binds_policy_digest_scope_and_inspected_stores() -> None:

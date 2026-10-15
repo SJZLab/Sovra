@@ -379,9 +379,11 @@ def _needles_for_encoding(marker: CanaryMarker, encoding: str) -> tuple[str, ...
         # `urllib.parse.quote` always emits upper-case percent-escapes, but
         # a real intermediary (reverse proxy, log shipper) may re-emit
         # them lower-case -- the variant actually missing, not an
-        # already-covered uppercase no-op.
+        # already-covered uppercase no-op. Always include both: when there
+        # is no percent-escape to re-case, `lower_percent` just repeats
+        # `base`, a harmless duplicate substring check.
         lower_percent = _PERCENT_HEX_RE.sub(lambda m: m.group(0).lower(), base)
-        return (base, lower_percent) if lower_percent != base else (base,)
+        return (base, lower_percent)
     return (base,)
 
 
