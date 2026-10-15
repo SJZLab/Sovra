@@ -7805,6 +7805,16 @@ FTF-0505:
     fire; the new except clause never tested), each closed; run 2 (171 mutants) 170 KILLED | 1
     SURVIVED | score 99.4% -- the exact >/>= boundary, closed; run 3: 171 run | 171 KILLED | 0 TIMEOUT
     | 0 SURVIVED | 0 SURVIVED-allowlisted | score 100.0%.
+    Round 4 (2026-10-15, Control-plane return on PR #818, six findings): a kept shared-string cell now
+    holds its index, not a decoded copy (SST-DECODE-PER-ROW-BLOCK: 2,500 rows x two 128 KiB references
+    peaked 661 MB before, under 24 MiB after); the scanner resolves the header the moment the header
+    row ends and applies the mapped columns to every later row, so a row's outcome no longer depends
+    on its byte position (HEADER-BLOCK-POSITION); shared strings live in a compact chunked store with
+    4-byte offsets (SST-CAP-RSS: 3.14x the cap on two-byte strings before, within the cap after);
+    every GREEN round-3 clause is pinned behaviourally; a seeded never-raises fuzz found and closed a
+    LookupError/ValueError from an unreadable XML encoding declaration. Full detail and the fault ->
+    RED table: docs/certifications/submissions/2026-10-15T1100Z-FTF-0505-r4.md. Not run here: the
+    xlsx-import-integration job (needs Postgres + SeaweedFS); it runs in CI.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0505.py
