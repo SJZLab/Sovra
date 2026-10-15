@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-14T18:11Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-14T20:19Z. Source: `python3 scripts/status.py` on main.
 - **Status: 147/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,10 @@ Updated: 2026-10-14T18:11Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-14T20:19Z:**
+  - Returned: FTF-0503 r4, small (all round-3 classes fixed; preview TypeError, chunk-dependent records before an encoding error, two pins, mutation claim corrected). Stopping rule set.
+  - Returned: FTF-0505 r3 (header row still unbounded - 499 KiB to 1.57 GB; two regressions from the compact shared-string store: 6 KB to 2 GB, surrogate crash; archive errors escape; rulings (a) and (b) unmet).
+  - CERTIFIED (child slice): FTF-0502-P1-F1, resumable dataset reads in 8 MiB If-Match-pinned windows; 96 MiB now imports at the real importer pace on SeaweedFS (was cut at ~20 MB). FTF-0502-P1 requalified. The importers' outage checks are no longer vacuous.
 - **2026-10-14T18:11Z:**
   - Owner decision (live, ~16:35Z): the Control plane merges [GOVERNANCE] PRs on a green ci-verdict without waiting for the owner, now and for all future ones (stale branches are updated with main first). #705 is being merged under it.
   - Returned: FTF-0502 r4 (outage check still passes with the stop removed; memory check allows linear growth; hash-compare precision unpinned; preview TypeError). Stopping rule set.

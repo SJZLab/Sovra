@@ -11435,3 +11435,38 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   Return: outage check passes 3/3 with a no-op stop; memory check allows linear growth (retain-all GREEN); sha-compare
   precision faults GREEN; preview TypeError; stale evidence_hash; missing trailers. Stopping rule: round 4 certifies once
   these land with no production violation.
+
+## 2026-10-14T20:19Z — CERTIFIED (child slice): FTF-0502-P1-F1; FTF-0502-P1 requalified
+- **FTF-0502-P1-F1: CERTIFIED** (round 1; PR #798, merge e57b4f98bdaa2e8e13298d5e743e3940cb1cfd56, head fe8cdd2a). Producer session_019whbjzk6tDSxBK91PawNXW ≠
+  certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI: ci-verdict 116015555890; gate 115967615134 (P1 + 0502/0503/0504/
+  0505 suites "all checks passed"); dataset-import-source-integration 115967729968 (real stop); mutation 87/91 + 4
+  timeouts, 0 survivors. Real SeaweedFS 3.99: If-Match on ranged GETs honoured (412); 63 overwrite-between-windows cases
+  (ETag-only, flipped byte, longer, shorter, emptied) all source_changed, never spliced bytes; delete mid-read
+  source_changed; window boundaries exact (1..7W+3, multipart 8 MiB±1/16 MiB/16 MiB+5); hostile server (200 for Range,
+  short 206, Content-Range mismatch, no ETag, 304/404/RST) blocked; 96 MiB completes at 0.6/0.15/0.05 MiB/s (old single
+  GET cut at 15.9/12.2 MB). Faults: no version pin, no final sha, wrong window offset, 412 handling, short window, 200
+  accepted, window size - all RED; GREEN only FA7 (equivalent) and FB2 (final-sha 8-char prefix, closed class).
+- **FTF-0502-P1: requalified (Law 15)** - P1 unit + integration, 0502/0503/0504/0505 unit + integration suites and 0501/
+  0501-P1 green; #770 probe classes re-run with 0 violations, ratios unchanged; report digests unchanged. Count unchanged.
+  Advisories: single PutObject > 4 MiB gets 412 on its own ETag on SeaweedFS (unreachable: datasets are multipart; fails
+  closed); FB2 near-miss final-sha test; hang-only faults (gate job has no timeout); 0-byte object Content-Range quirk
+  (unreachable). The JSONL J4 and P1 I5 stop checks are now non-vacuous (a no-op stop completes 96 MiB).
+
+## 2026-10-14T20:19Z — RETURNED: FTF-0505 (r3)
+- **FTF-0505: RETURNED** (round 2 → 3; PR #801, merge 4a467666f44b6209e868b229bc86f0a2c25516f3, head a6426bd1). Producer
+  session_01RdnwJqPswX14ptBomSxYX1 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 116036157906; gate
+  115986954306 and xlsx-import-integration 115987127298 "all checks passed"; mutation 139/140 + 1 timeout (capped, diff).
+  Held: zlib.error mapping, pre-header rows, shared fatal_locator, discriminating outage check, data-row memory, chunking.
+  Return: header row unbounded (1,573 MB, completed); per-reference shared-string decode (6 KB → 2,075 MB, completed);
+  surrogate shared string raises UnicodeEncodeError; zipfile NotImplementedError escapes (26/6,000); 6 observable faults
+  GREEN; preview TypeError after a full read; rulings (a) byte cap and (b) ImportLimits edit unmet; sharedStrings 757 MB at
+  the cap. The PR body claimed all items fixed while its submission deferred several.
+
+## 2026-10-14T20:19Z — RETURNED: FTF-0503 (r4)
+- **FTF-0503: RETURNED** (round 3 → 4, small; PR #799, merge b9083b069cef1485e9802b2c42b2b7e802f60353, head b3bc93ff).
+  Producers session_01TQCApsTmqruB1E7ZN6Fy3d, session_012VzyDahFi7g72tvagNtYUa, session_01EmbFbQRQPkxmSHRBAmU8FC ≠
+  certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 116041441377; gate 116002091759 (step 84 FTF-0503 success);
+  json-import-integration 116002230353 "all checks passed"; mutation 193/200 + 7 timeouts (capped; 322 generated -
+  verifier's uncapped run 322/322, 12 timeouts, 0 survivors). All seven round-3 classes fixed. Return: preview TypeError;
+  records before a fatal invalid_encoding depend on chunk size; V-SHA-FIRST-CHAR-COMPARE and V-ENC-OFFSET-PENDING-IGNORED
+  GREEN; misstated mutation claim; stale evidence_hash. Stopping rule set.
