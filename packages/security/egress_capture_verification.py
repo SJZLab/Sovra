@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 
@@ -103,7 +104,7 @@ REPORT_STATUSES: tuple[str, ...] = ("passed", "failed", "incomplete", "partial")
 
 _STRING_MAX_LENGTH = 200
 _MAX_FLOWS = 200
-_HEX64 = frozenset("0123456789abcdef")
+_HEX64_RE = re.compile(r"[0-9a-fA-F]{64}")
 
 
 class EgressCaptureVerificationError(Exception):
@@ -152,7 +153,7 @@ def _bool(value: object, what: str) -> bool:
 
 
 def _hex64(value: object, what: str) -> str:
-    if type(value) is not str or len(value) != 64 or any(c not in _HEX64 for c in value.lower()):
+    if type(value) is not str or _HEX64_RE.fullmatch(value) is None:
         raise InvalidEgressPlanError(f"{what} must be a 64-character hex digest")
     return value
 
@@ -402,6 +403,25 @@ def _report_sha256(
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _aggregate_overall_status(
+    flow_verdicts: tuple[FlowVerdict, ...],
+    missing_required: Collection[str],
+    not_exercised: tuple[str, ...],
+) -> str:
+    """Exact-match aggregation, split out of `verify_egress` so it is
+    directly testable: `FlowVerdict.status` carries no dataclass-level
+    validation (it is always one of this module's own lowercase literals
+    in real use), so a malformed value must never be silently folded into
+    `failed`/`incomplete` by case or whitespace normalization."""
+    if any(v.status == "failed" for v in flow_verdicts):
+        return "failed"
+    if missing_required or any(v.status == "incomplete" for v in flow_verdicts):
+        return "incomplete"
+    if not_exercised:
+        return "partial"
+    return "passed"
+
+
 def verify_egress(plan: EgressPlan, evidence: EgressEvidence) -> EgressVerificationReport:
     """Combine enforcement, connection logs and plaintext/packet-capture
     inspection into one report. Never claims `passed` when `workflow_history`
@@ -514,14 +534,7 @@ def verify_egress(plan: EgressPlan, evidence: EgressEvidence) -> EgressVerificat
     if "workflow_history" in plan.required_stores and "workflow_history" not in inspected_stores:
         not_exercised = ("workflow_history",)
 
-    if any(v.status == "failed" for v in flow_verdicts):
-        overall = "failed"
-    elif missing_required or any(v.status == "incomplete" for v in flow_verdicts):
-        overall = "incomplete"
-    elif not_exercised:
-        overall = "partial"
-    else:
-        overall = "passed"
+    overall = _aggregate_overall_status(tuple(flow_verdicts), missing_required, not_exercised)
 
     report_sha256 = _report_sha256(
         plan.plan_id, overall, tuple(flow_verdicts), tuple(report_codes), not_exercised

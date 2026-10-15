@@ -44,6 +44,7 @@ sys.path.insert(0, str(ROOT / "apps" / "api"))
 from packages.security.canary_secret_generator import (  # noqa: E402
     CanaryLeakedError,
     CanaryPlacementLedger,
+    InvalidCanaryRequestError,
     PlacementRecord,
     generate_canary,
 )
@@ -53,11 +54,13 @@ from packages.security.egress_capture_verification import (  # noqa: E402
     EgressPlan,
     EnforcementObservation,
     FlowClassMissingError,
+    FlowVerdict,
     InvalidEgressEvidenceError,
     InvalidEgressPlanError,
     PacketCaptureObservation,
     PlaintextInspection,
     PlannedFlow,
+    _aggregate_overall_status,
     scan_store_for_canaries,
     verify_egress,
 )
@@ -618,6 +621,199 @@ def test_distinct_case_flow_ids_are_never_merged_and_match_exactly() -> None:
         "FTF-0906-RULE",
         "evidence matches its own flow by exact id, case-sensitively, end to end",
         all(v.status == "passed" for v in report.flow_verdicts) and report.status == "passed",
+    )
+
+
+def test_downstream_comparisons_are_exact_not_normalized() -> None:
+    """Every field tampered below is `_member`-validated to an exact
+    lowercase member at construction (see
+    test_member_rejects_case_and_whitespace_variants) -- normal callers can
+    never hand `verify_egress`/`scan_store_for_canaries` a non-canonical
+    value. These checks go one step further: a frozen dataclass's own
+    invariant is still only as strong as every one of its own callers, so
+    this proves the downstream `==`/`!=`/`in` comparisons themselves stay
+    exact, defense-in-depth, rather than silently re-normalizing a value a
+    future bug might let through uncanonicalized. `object.__setattr__` is
+    the only way to get a non-canonical value past a frozen dataclass's own
+    `__post_init__` -- each case constructs a real, valid instance first,
+    then tampers exactly one already-validated field."""
+    # scan_store_for_canaries: `placement.encoding in ("literal", "fragmented")`.
+    marker = generate_canary()
+    ledger = CanaryPlacementLedger({("trace", "literal")})
+    placement = PlacementRecord(marker.canary_id, "trace", "literal", "r1")
+    object.__setattr__(placement, "encoding", "Literal")
+    check(
+        "FTF-0906-EXACT",
+        "a case-tampered placement encoding is refused by encode_canary, "
+        "never silently folded to literal",
+        _raises(
+            InvalidCanaryRequestError,
+            scan_store_for_canaries,
+            b"nothing secret here",
+            {marker.canary_id: marker},
+            (placement,),
+            ledger,
+        ),
+    )
+
+    # verify_egress: `entry.side in side_map` (duplicate-side detection).
+    log_a = ConnectionLogEntry("f1", "client", "connected")
+    log_b = ConnectionLogEntry("f1", "client", "refused")
+    object.__setattr__(log_b, "side", "Client")
+    plan0 = _plan((_flow("a1", "allow"), _flow("d1", "deny")))
+    try:
+        verify_egress(plan0, EgressEvidence(connection_logs=(log_a, log_b)))
+        duplicate_raised = False
+    except InvalidEgressEvidenceError:
+        duplicate_raised = True
+    check(
+        "FTF-0906-EXACT",
+        "two connection logs whose side differs only by case are distinct, not a duplicate",
+        not duplicate_raised,
+    )
+
+    # verify_egress deny branch: `flow.expected == "deny"` (branch selector).
+    allow1, deny1 = _flow("a1", "allow"), _flow("d1", "deny")
+    plan1 = _plan((allow1, deny1))
+    object.__setattr__(deny1, "expected", " deny")
+    d_enf1, d_cl1, d_dl1 = _passing_deny("d1")
+    r1 = verify_egress(plan1, EgressEvidence(enforcement=(d_enf1,), connection_logs=(d_cl1, d_dl1)))
+    check(
+        "FTF-0906-EXACT",
+        "a case/whitespace-tampered flow.expected is never folded back into the deny branch",
+        r1.flow_verdicts[1].status == "failed"
+        and "vacuous_permitted_flow" in r1.flow_verdicts[1].codes,
+    )
+
+    # verify_egress deny branch: `enf.decision == "deny"`.
+    allow2, deny2 = _flow("a1", "allow"), _flow("d1", "deny")
+    plan2 = _plan((allow2, deny2))
+    d_enf2, d_cl2, d_dl2 = _passing_deny("d1")
+    object.__setattr__(d_enf2, "decision", "Deny")
+    r2 = verify_egress(plan2, EgressEvidence(enforcement=(d_enf2,), connection_logs=(d_cl2, d_dl2)))
+    check(
+        "FTF-0906-EXACT",
+        "a case-tampered enforcement decision is never folded back into a passing deny",
+        r2.flow_verdicts[1].status == "failed"
+        and "unauthorized_transfer" in r2.flow_verdicts[1].codes,
+    )
+
+    # verify_egress deny branch: `client_log.outcome != "connected"`.
+    allow3, deny3 = _flow("a1", "allow"), _flow("d1", "deny")
+    plan3 = _plan((allow3, deny3))
+    d_enf3, d_cl3, d_dl3 = _passing_deny("d1")
+    object.__setattr__(d_cl3, "outcome", " connected")
+    r3 = verify_egress(plan3, EgressEvidence(enforcement=(d_enf3,), connection_logs=(d_cl3, d_dl3)))
+    check(
+        "FTF-0906-EXACT",
+        "a whitespace-corrupted client outcome is compared exactly, not normalized to 'connected'",
+        r3.flow_verdicts[1].status == "passed",
+    )
+
+    # verify_egress deny branch: `dest_log.outcome == "not_seen"`.
+    allow4, deny4 = _flow("a1", "allow"), _flow("d1", "deny")
+    plan4 = _plan((allow4, deny4))
+    d_enf4, d_cl4, d_dl4 = _passing_deny("d1")
+    object.__setattr__(d_dl4, "outcome", "Not_Seen")
+    r4 = verify_egress(plan4, EgressEvidence(enforcement=(d_enf4,), connection_logs=(d_cl4, d_dl4)))
+    check(
+        "FTF-0906-EXACT",
+        "a case-tampered destination outcome is never folded back into a passing deny",
+        r4.flow_verdicts[1].status == "failed"
+        and "unauthorized_transfer" in r4.flow_verdicts[1].codes,
+    )
+
+    # verify_egress allow branch: `insp.store == "controlled_destination"` (arrival lookup).
+    allow5, deny5 = _flow("a1", "allow"), _flow("d1", "deny")
+    plan5 = _plan((allow5, deny5))
+    a_enf5, a_logs5, a_insp5 = _passing_allow("a1")
+    object.__setattr__(a_insp5, "store", "Controlled_Destination")
+    r5 = verify_egress(
+        plan5,
+        EgressEvidence(
+            enforcement=(a_enf5,), connection_logs=a_logs5, plaintext_inspections=(a_insp5,)
+        ),
+    )
+    check(
+        "FTF-0906-EXACT",
+        "a case-tampered inspection store is never matched as the controlled destination",
+        r5.flow_verdicts[0].status == "failed"
+        and "vacuous_permitted_flow" in r5.flow_verdicts[0].codes,
+    )
+
+    # verify_egress allow branch: `dest_log.outcome == "connected"` (arrival check).
+    allow6, deny6 = _flow("a1", "allow"), _flow("d1", "deny")
+    plan6 = _plan((allow6, deny6))
+    a_enf6, a_logs6, a_insp6 = _passing_allow("a1")
+    object.__setattr__(a_logs6[1], "outcome", "Connected")
+    r6 = verify_egress(
+        plan6,
+        EgressEvidence(
+            enforcement=(a_enf6,), connection_logs=a_logs6, plaintext_inspections=(a_insp6,)
+        ),
+    )
+    check(
+        "FTF-0906-EXACT",
+        "a case-tampered destination connection outcome is never treated as a real arrival",
+        r6.flow_verdicts[0].status == "failed"
+        and "vacuous_permitted_flow" in r6.flow_verdicts[0].codes,
+    )
+
+    # verify_egress allow branch: `insp.store != "controlled_destination"`
+    # (leak-elsewhere exclusion).
+    allow7, deny7 = _flow("a1", "allow"), _flow("d1", "deny")
+    plan7 = _plan((allow7, deny7))
+    a_enf7, a_logs7, a_insp7 = _passing_allow("a1")
+    leak_insp7 = PlaintextInspection(
+        store="application_log",
+        store_id="leak",
+        flow_id="a1",
+        inspected=True,
+        decrypted=False,
+        canary_found=True,
+    )
+    object.__setattr__(leak_insp7, "store", "Controlled_Destination")
+    r7 = verify_egress(
+        plan7,
+        EgressEvidence(
+            enforcement=(a_enf7,),
+            connection_logs=a_logs7,
+            plaintext_inspections=(a_insp7, leak_insp7),
+        ),
+    )
+    check(
+        "FTF-0906-EXACT",
+        "a leak at a store spelled as a case-variant of controlled_destination "
+        "is never excluded from the leak scan",
+        r7.flow_verdicts[0].status == "failed" and "canary_leaked" in r7.flow_verdicts[0].codes,
+    )
+
+
+def test_aggregate_overall_status_is_exact_not_normalized() -> None:
+    # `FlowVerdict.status` carries no dataclass-level validation of its own
+    # (it is always one of this module's own lowercase literals in real
+    # use, assigned internally by `verify_egress`) -- the aggregator must
+    # not silently fold a malformed value into `failed`/`incomplete`.
+    failed_variant = (FlowVerdict(flow_id="x", status="Failed", codes=()),)
+    check(
+        "FTF-0906-EXACT",
+        "a non-canonical 'Failed' verdict status is not folded into the overall failed status",
+        _aggregate_overall_status(failed_variant, frozenset(), ()) == "passed",
+    )
+    incomplete_variant = (FlowVerdict(flow_id="x", status="Incomplete", codes=()),)
+    check(
+        "FTF-0906-EXACT",
+        "a non-canonical 'Incomplete' verdict status is not folded into "
+        "the overall incomplete status",
+        _aggregate_overall_status(incomplete_variant, frozenset(), ()) == "passed",
+    )
+    check(
+        "FTF-0906-EXACT",
+        "a real failed verdict still forces the overall status to failed",
+        _aggregate_overall_status(
+            (FlowVerdict(flow_id="x", status="failed", codes=()),), frozenset(), ()
+        )
+        == "failed",
     )
 
 
@@ -1243,8 +1439,8 @@ MUTATIONS = [
     ),
     (
         "required-store coverage no longer forces overall incomplete",
-        r"elif missing_required or any\(v\.status == \"incomplete\" " r"for v in flow_verdicts\):",
-        'elif any(v.status == "incomplete" for v in flow_verdicts):',
+        r"if missing_required or any\(v\.status == \"incomplete\" " r"for v in flow_verdicts\):",
+        'if any(v.status == "incomplete" for v in flow_verdicts):',
         5,
     ),
     (
