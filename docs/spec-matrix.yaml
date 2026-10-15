@@ -7695,6 +7695,14 @@ FTF-0504:
     text and cannot be detected by strict decoding (the preview/mapping UI, FTF-H011, must show
     decoded samples before approval); no live route caller, so proving_symbol stays blank.
     Mutation gate (round 2): 122 run | 118 KILLED | 4 TIMEOUT | 0 SURVIVED (see docs/certifications/submissions/2026-10-14T0230Z-FTF-0504.md). Round 3: see docs/certifications/submissions/2026-10-14T0900Z-FTF-0504-r3.md.
+
+
+    PR #802 (round 4, docs/certifications/queue.md 2026-10-14T14:23Z "FTF-0504 returned") merged
+    2026-10-14T19:00Z on a fully green ci-verdict (run 38608276530, no merge conflict) -- a typed
+    SHA256-compare TypeError guard and a truncated-BOM-swallowed fix (both production), plus
+    record-cap/sha-prefix/str-subclass-locator test gaps closed. Recording the real CI result per
+    the CI contract; this is not a certification (Law 4). certification_state stays PROVISIONAL /
+    proof_state stays L1-PROVEN pending independent Control-plane L2 review of round 4's content.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0504.py
