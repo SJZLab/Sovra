@@ -930,13 +930,16 @@ def _freeze_proposal(
 
 
 def _leak_record(prepared: _PreparedSource, record: SourceRecord) -> LeakageRecord:
-    return LeakageRecord(
-        record_id=_record_id(prepared.dataset.id, record.batch_position),
-        content=record.content,
-        record_sha256=record.record_sha256,
-        normalized_sha256=record.normalized_sha256,
-        group_keys=record.group_keys,
-    )
+    try:
+        return LeakageRecord(
+            record_id=_record_id(prepared.dataset.id, record.batch_position),
+            content=record.content,
+            record_sha256=record.record_sha256,
+            normalized_sha256=record.normalized_sha256,
+            group_keys=record.group_keys,
+        )
+    except LeakageEngineError:
+        raise SplitManifestError("invalid_request") from None
 
 
 def propose_split_manifest(
