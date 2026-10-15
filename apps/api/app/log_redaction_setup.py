@@ -80,7 +80,11 @@ def _print_exception(
     limit: int | None = None,
     file: Any = None,
     chain: bool = True,
+    **_ignored: Any,
 ) -> None:
+    # Python 3.13's own callers (the interpreter's fallback when `sys.excepthook` is
+    # reset, raises or is deleted, and pdb post-mortem) pass `colorize=`; extra
+    # keywords are accepted and ignored so the redacting writer still runs.
     args = [exc] + [a for a in (value, tb) if a is not _UNSET]
     try:
         text = redact_text("".join(_format_exception(*args, limit=limit, chain=chain)))
