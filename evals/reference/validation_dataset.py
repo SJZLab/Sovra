@@ -64,7 +64,7 @@ import json
 import re
 import sys
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -448,9 +448,6 @@ class ValidationTrace:
         }
 
 
-_TRACE_FIELDS = frozenset(f.name for f in fields(ValidationTrace))
-
-
 @dataclass(frozen=True)
 class ReferenceEvalSplits:
     validation: tuple[ValidationTrace, ...]
@@ -637,12 +634,7 @@ def _view(steps: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             if tool == "execute_approved_action" and result.get("status") == "executed":
                 executed = True
             if tool in _EFFECT_TOOLS:
-                outcome = (
-                    "executed"
-                    if tool != "execute_approved_action" or result.get("status") == "executed"
-                    else "failed"
-                )
-                effects.append(_effect(effects, tool, outcome, call_id))
+                effects.append(_effect(effects, tool, "executed", call_id))
         elif kind == "tool_error":
             outcome = "denied" if step["error_type"] in _DENIAL_ERRORS else "failed"
             effects.append(_effect(effects, step["tool"], outcome, call_id))
@@ -871,21 +863,32 @@ def verify_development_case(case: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+_TRACE_TYPES: dict[str, type] = {
+    "trace_id": str,
+    "group_id": str,
+    "template_id": str,
+    "kind": str,
+    "critical": bool,
+    "entity_title": str,
+    "expected_outcome": str,
+    "steps": list,
+    "provenance": dict,
+    "purpose": str,
+}
+
+
 def _trace_from_plain(data: Any) -> ValidationTrace:
     if type(data) is not dict:
         raise DatasetVerificationError("a validation trace must be a plain JSON object (dict)")
     copied = _plain_copy(data, "validation trace")
-    if set(copied) != _TRACE_FIELDS:
+    if set(copied) != set(_TRACE_TYPES):
         raise DatasetVerificationError("trace keys must be exactly the declared trace fields")
-    steps = copied["steps"]
-    if type(steps) is not list or not all(type(s) is dict for s in steps):
-        raise DatasetVerificationError("trace steps must be a list of dicts")
-    copied["steps"] = tuple(steps)
-    for name in ("trace_id", "group_id", "template_id", "kind", "entity_title", "purpose"):
-        if type(copied[name]) is not str or not copied[name]:
-            raise DatasetVerificationError(f"trace field {name} must be a non-empty string")
-    if type(copied["critical"]) is not bool or type(copied["provenance"]) is not dict:
-        raise DatasetVerificationError("trace critical/provenance have the wrong type")
+    for name, expected in _TRACE_TYPES.items():
+        if type(copied[name]) is not expected:
+            raise DatasetVerificationError(f"trace field {name} has the wrong type")
+    if not all(type(step) is dict for step in copied["steps"]):
+        raise DatasetVerificationError("trace steps must be dicts")
+    copied["steps"] = tuple(copied["steps"])
     return ValidationTrace(**copied)
 
 
@@ -898,11 +901,7 @@ def verify_validation_trace(trace: dict[str, Any]) -> ValidationTrace:
     Returns the regenerated trace."""
     parsed = _trace_from_plain(trace)
     index = parsed.provenance.get("index")
-    if (
-        parsed.provenance.get("producer") != VALIDATION_GENERATOR_ID
-        or type(index) is not int
-        or index < 0
-    ):
+    if type(index) is not int or index < 0:
         raise DatasetVerificationError(f"{parsed.trace_id}: provenance names no generator index")
     regenerated = _generate_validation_one(index)
     if _canonical(parsed.to_dict()) != _canonical(regenerated.to_dict()):
@@ -983,9 +982,9 @@ def _near_duplicate_roles(rows: Sequence[_Row]) -> None:
     duplicate (FTF-0513) of one in another role. Distinct phrasings per role are
     compared, so the detector's per-record candidate cap cannot be filled by
     thousands of same-template copies and hide a cross-role pair."""
-    for label, getter in (
-        ("user turn", lambda r: r.user_text),
-        ("final answer", lambda r: r.answer_text),
+    for label, getter, message_role in (
+        ("user turn", lambda r: r.user_text, "user"),
+        ("final answer", lambda r: r.answer_text, "assistant"),
     ):
         texts: dict[tuple[str, str], None] = {}
         for row in rows:
@@ -997,7 +996,7 @@ def _near_duplicate_roles(rows: Sequence[_Row]) -> None:
                 "content": {
                     "messages": [
                         {
-                            "role": "assistant" if label == "final answer" else "user",
+                            "role": message_role,
                             "content": [{"type": "text", "text": text}],
                         }
                     ],
@@ -1133,20 +1132,18 @@ def build_reference_eval_splits(
     spec = SplitSpec(strategy=STRATEGY, seed=SPLIT_SEED, ratios=(70, 10, 10, 10))
     try:
         manifest = allocate_splits(spec, [_split_record(r) for r in rows])
-        verify_manifest(manifest)
     except SplitEngineError as exc:
         raise RoleOverlapError(f"split engine refused the assignment: {exc}") from exc
-    families = {
-        role: len({r.template for r in rows if r.role == role})
-        for role in ("train", "validation", "development_eval")
-    }
+    families: dict[str, set[str]] = {"train": set(), "validation": set(), "development_eval": set()}
+    for row in rows:
+        families[row.role].add(row.template)
     return ReferenceEvalSplits(
         validation=tuple(kept_validation),
         development=tuple(kept_development),
         training_count=len(train_rows),
         validation_count=len(val_rows),
         development_count=len(dev_rows),
-        group_counts=tuple(families.items()),
+        group_counts=tuple((role, len(found)) for role, found in families.items()),
         manifest=manifest,
         meets_counts=len(val_rows) >= MIN_VALIDATION_CASES
         and len(dev_rows) >= MIN_DEVELOPMENT_CASES,

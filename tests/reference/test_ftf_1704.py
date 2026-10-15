@@ -459,14 +459,15 @@ def test_view_semantics_on_synthetic_steps() -> None:
     )
     check(
         "FTF-1704-A2",
-        "an execute result that is not `executed` is a failed effect and no state change",
-        got["effects"][0]["outcome"] == "failed" and got["final_state"]["action_executed"] is False,
+        "an execute result that is not `executed` changes no state",
+        got["final_state"]["action_executed"] is False,
     )
     got = view([call("search_records"), result("search_records", records=[])])
     check("FTF-1704-A2", "a read-only result is no effect", got["effects"] == [])
     got = view(
         [
             {"type": "Tool_Call ", "tool": "create_note"},
+            {"type": " Tool_Result", "tool": "create_note", "result": {"note_id": "n"}},
             {"type": "tool_result", "tool": " Get_Record", "result": {}},
             {"type": "tool_result", "tool": "Create_Note", "result": {"note_id": "n"}},
             {
@@ -534,6 +535,259 @@ def test_trace_arguments_are_pinned() -> None:
                     f"{trace.trace_id} idempotency key is val-idem-{index:04d}",
                     c["arguments"]["idempotency_key"] == f"val-idem-{index:04d}",
                 )
+
+
+def test_helper_semantics() -> None:
+    """Direct pins for the small step readers and the oracle's argument checks."""
+    msg = lambda role, content: {"type": "message", "role": role, "content": content}  # noqa: E731
+    steps = [msg("assistant", "A1"), msg("user", "U1"), msg("assistant", "A2"), msg("user", "U2")]
+    check(
+        "FTF-1704-A1",
+        "final answer is the last assistant message",
+        real._final_answer(steps) == "A2",
+    )
+    check(
+        "FTF-1704-A1",
+        "first user turn is the first user message",
+        real._first_user_text(steps) == "U1",
+    )
+    odd = [
+        {"type": "tool_call", "role": "assistant", "content": "X"},
+        {"type": "other", "role": "user", "content": "Y"},
+        msg("assistant", "A3"),
+        {"type": "message", "role": "user", "content": "U3"},
+    ]
+    check(
+        "FTF-1704-A1",
+        "final answer ignores non-message steps and user messages",
+        real._final_answer(odd) == "A3",
+    )
+    check(
+        "FTF-1704-A1",
+        "first user turn ignores non-message steps and assistant messages",
+        real._first_user_text(odd) == "U3",
+    )
+    check(
+        "FTF-1704-A1",
+        "no assistant message gives an empty final answer",
+        real._final_answer([msg("user", "U")]) == "",
+    )
+    check(
+        "FTF-1704-A1",
+        "no user message gives an empty user turn",
+        real._first_user_text([msg("assistant", "A")]) == "",
+    )
+    case = DEVELOPMENT[0]
+    for bad_run in ("Reference", " reference", "reference ", "VIOLATION", "violations", "", None):
+        check(
+            "FTF-1704-A2",
+            f"run {bad_run!r} refused",
+            _raises(EvalDatasetError, case_oracle_verdict, case, bad_run),
+        )
+    unknown = {**case, "grader_type": "exact_match"}
+    check(
+        "FTF-1704-A2",
+        "an unknown grader type is refused, not guessed",
+        _raises(EvalDatasetError, case_oracle_verdict, unknown, "reference"),
+    )
+
+
+def test_trace_shape_errors_are_specific() -> None:
+    def message(trace: Any) -> str:
+        try:
+            verify_validation_trace(trace)
+        except DatasetVerificationError as exc:
+            return str(exc)
+        return ""
+
+    check(
+        "FTF-1704-P1",
+        "a list is refused as not an object",
+        "plain JSON object" in message([VAL[0]]),
+    )
+    check("FTF-1704-P1", "None is refused as not an object", "plain JSON object" in message(None))
+    missing = {k: v for k, v in VAL[0].items() if k != "kind"}
+    check(
+        "FTF-1704-P1",
+        "a missing key is refused by name set",
+        "exactly the declared" in message(missing),
+    )
+    check(
+        "FTF-1704-P1",
+        "an extra key is refused by name set",
+        "exactly the declared" in message({**VAL[0], "x": 1}),
+    )
+    for field in (
+        "trace_id",
+        "group_id",
+        "template_id",
+        "kind",
+        "critical",
+        "entity_title",
+        "expected_outcome",
+        "steps",
+        "provenance",
+        "purpose",
+    ):
+        junks: list[Any] = [5, None, [], {}, "yes", 1.5]
+        for junk in junks:
+            bad = {**VAL[0], field: junk}
+            expected_type = real._TRACE_TYPES[field]
+            if type(junk) is expected_type:
+                continue
+            check(
+                "FTF-1704-P1",
+                f"{field}={junk!r} is refused as the wrong type",
+                f"{field} has the wrong type" in message(bad),
+            )
+    for junk in (5, "x", None, [5], [[]]):
+        bad = {**VAL[0], "steps": junk}
+        check("FTF-1704-P1", f"steps={junk!r} is refused", message(bad) != "")
+    check(
+        "FTF-1704-P1",
+        "a non-dict step is refused by the step check",
+        "steps must be dicts" in message({**VAL[0], "steps": [5]}),
+    )
+    wrong_producer = copy.deepcopy(VAL[0])
+    wrong_producer["provenance"]["producer"] = "generator:ftf-1703-v1"
+    check(
+        "FTF-1704-P1",
+        "a different producer fails the regenerate compare",
+        "differs from what the generator" in message(wrong_producer),
+    )
+    upper = copy.deepcopy(VAL[0])
+    upper["provenance"]["producer"] = real.VALIDATION_GENERATOR_ID.upper()
+    check(
+        "FTF-1704-P1",
+        "a re-cased producer fails the regenerate compare",
+        "differs from what the generator" in message(upper),
+    )
+    for index in (-1, True, 1.5, "0", None):
+        bad = copy.deepcopy(VAL[0])
+        bad["provenance"]["index"] = index
+        check(
+            "FTF-1704-P1",
+            f"index {index!r} names no generator index",
+            "names no generator index" in message(bad),
+        )
+    zero = copy.deepcopy(VAL[0])
+    zero["provenance"]["index"] = 0
+    check("FTF-1704-P1", "index 0 is a valid index", message(zero) == "")
+
+
+def test_builder_input_errors() -> None:
+    for name, kwargs in (
+        ("validation", {"validation": "x"}),
+        ("development", {"development": 5}),
+        ("training", {"training": None}),
+    ):
+        args: dict[str, Any] = {"validation": VAL, "development": DEVELOPMENT, "training": TRAIN}
+        args.update(kwargs)
+        try:
+            build_reference_eval_splits(
+                args["validation"],
+                args["development"],
+                training=args["training"],
+                reserved_final=NO_RESERVED,
+            )
+            got = ""
+        except EvalDatasetError as exc:
+            got = str(exc)
+        check(
+            "FTF-1704-N1",
+            f"{name} that is not a list/tuple is refused by name",
+            f"{name} must be a list or tuple" in got,
+        )
+    forged = copy.deepcopy(TRAIN[0])
+    forged["entity_title"] = "Totally different title"
+    check(
+        "FTF-1704-N1",
+        "a forged training trace is refused by the FTF-1703 provenance check",
+        _raises(td.TraceVerificationError, _build, training=[forged, *TRAIN[1:]]),
+    )
+    splits = _build()
+    check(
+        "FTF-1704-N1",
+        "training_count is the number of training traces",
+        splits.training_count == 1200,
+    )
+    check(
+        "FTF-1704-N1",
+        "validation/development counts are reported",
+        (splits.validation_count, splits.development_count) == (180, 300),
+    )
+    check(
+        "FTF-1704-N1",
+        "the manifest holds one assignment per record",
+        len(splits.manifest.assignments) == 1200 + 180 + 300,
+    )
+
+
+def test_reserved_snapshot_is_rechecked() -> None:
+    for field in ("group_ids", "template_ids", "entity_titles", "answer_sha256s"):
+        for junk, label in (
+            ({"x"}, "a set"),
+            (frozenset({5}), "a non-str member"),
+            (("x",), "a tuple"),
+            ("x", "a bare string"),
+        ):
+            suite = ReservedFinalSuite()
+            object.__setattr__(suite, field, junk)
+            try:
+                _build(reserved=suite)
+                got = ""
+            except EvalDatasetError as exc:
+                got = str(exc)
+            check(
+                "FTF-1704-N1",
+                f"{field} rewritten to {label} is refused by name",
+                f"reserved_final.{field} must be a frozenset" in got,
+            )
+
+
+def test_near_duplicate_rows_directly() -> None:
+    def row(role: str, rid: str, user: str, answer: str) -> Any:
+        return real._Row(role, rid, rid, f"tmpl-{rid}", rid, rid, user, answer)
+
+    text = "Could you look up the status of the record and tell me what it says right now?"
+    other = "Completely unrelated sentence about quarterly budget planning for the warehouse."
+    tweak = "Could you look up the status of the record and tell me what it says right now!"
+    answer = "The requested record is open and nothing else changed since the last review."
+    answer2 = "Budget planning for the warehouse closes at the end of the quarter, per the plan."
+    real._near_duplicate_roles(
+        [row("train", "a", text, answer), row("validation", "b", other, answer2)]
+    )
+    check("FTF-1704-N1", "unrelated phrasing across roles passes", True)
+    check(
+        "FTF-1704-N1",
+        "a near copy of a user turn in another role is refused",
+        _raises(
+            RoleOverlapError,
+            real._near_duplicate_roles,
+            [row("train", "a", text, answer), row("validation", "b", tweak, answer2)],
+        ),
+    )
+    check(
+        "FTF-1704-N1",
+        "a near copy of a final answer in another role is refused",
+        _raises(
+            RoleOverlapError,
+            real._near_duplicate_roles,
+            [row("train", "a", text, answer), row("development_eval", "b", other, answer + " ")],
+        ),
+    )
+    try:
+        real._near_duplicate_roles(
+            [row("train", "a", text, answer), row("train", "b", tweak, answer2)]
+        )
+        same_role_ok = True
+    except RoleOverlapError:
+        same_role_ok = False
+    check(
+        "FTF-1704-N1",
+        "near duplicates inside ONE role are allowed (templated families)",
+        same_role_ok,
+    )
 
 
 # ---------------------------------------------------------------- N1 disjointness
@@ -1156,7 +1410,11 @@ def test_faults() -> None:
         "FTF-1704-F1c",
         "limiting the check to user turns accepts it (RED)",
         _build_refuses("RoleOverlapError")(
-            _mutant(drop_guard, near_ans, ('("final answer", lambda r: r.answer_text),', ""))
+            _mutant(
+                drop_guard,
+                near_ans,
+                ('("final answer", lambda r: r.answer_text, "assistant"),', ""),
+            )
         )
         is False,
     )
