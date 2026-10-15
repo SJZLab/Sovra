@@ -24956,3 +24956,37 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-15T14:14Z — Control plane: FTF-1505 returned (r3)
 - **Returned:** FTF-1505 r3 (0h): fault matrix, run-time seeds, log lane, decode completeness, fail-closed omissions, redaction, artifacts, PR-scoped history lane; stopping rule.
+
+## 2026-10-15T19:32Z — PR #832 merged (FTF-0906 round 1; green ci-verdict)
+- **Merged, PROVISIONAL (Law 4, not self-certified):** PR #832 (FTF-0906, Backlog refill item)
+  merged on a fully green `ci-verdict` (run `38772832106`), no merge conflict, new
+  `egress-verification-integration` job included. Pure verifier (`verify_egress`) combining
+  enforcement, connection-log and plaintext/packet-capture inspection into one
+  `EgressVerificationReport` (Section 12), reusing FTF-0905's `CanaryMarker`/`PlacementRecord`/
+  `CanaryPlacementLedger`/`encode_canary`/`fragment_canary` unmodified; a flow whose only no-leak
+  evidence is an encrypted packet capture is `incomplete`, never `passed` (Section 12's negative
+  clause). Real loopback-socket integration proof: an allowed plaintext sink, an allowed TLS sink
+  behind a real byte-for-byte recording relay, a denied non-allowlisted sink, a denied
+  cloud-metadata address, a real direct-socket enforcement bypass, and a real log leak that
+  FTF-0904's own redaction does not catch but this module's own scanner does.
+  Same-PR CI fix (round 2, not a Control-plane return): round 1 shipped with `mutation-gate` red
+  at 93.5% (11 survivors, all operator M9 normalizing an already-`_member`-validated,
+  already-canonical frozen-dataclass field before an `==`/`!=`/`in` comparison — unobservable via
+  normal construction). One survivor (`_hex64`'s per-character loop) was mathematically
+  unkillable by any test; replaced with a single `re.fullmatch`, no behaviour change. The other ten
+  were killed via `object.__setattr__` bypassing each frozen dataclass's own `__post_init__` (same
+  technique as the FTF-0503 precedent's `dataclasses.replace`-on-`Slot` test); one of those ten
+  needed a real production fix — `scan_store_for_canaries` was letting FTF-0905's own
+  `InvalidCanaryRequestError` leak through its own public API instead of this module's documented
+  `InvalidEgressEvidenceError`. Extracted `_aggregate_overall_status` so the report-status
+  aggregation is directly testable. Final local mutation gate: 172 run / 172 KILLED / 0 SURVIVED /
+  100.0%, matched by CI's own run. Full detail in
+  `docs/certifications/submissions/2026-10-15T1112Z-FTF-0906.md` (round 1) and
+  `docs/certifications/submissions/2026-10-15T1500Z-FTF-0906-ci-fix.md` (round 2). Recorded here
+  and in `docs/spec-matrix.yaml` via this non-`[relay]`-titled doc PR, matching the PR #788/#799
+  precedent (shared-file edits are forbidden inside `[relay]` PRs). `certification_state` stays
+  PROVISIONAL / `proof_state` stays L1-PROVEN — independent Control-plane L2 review is the next
+  step. UNWIRED (`proving_symbol` blank, no live caller yet, same precedent as
+  FTF-0901/FTF-0902/FTF-0905); `workflow_history` never exercised (no Temporal workflow exists),
+  so every report is `partial`, never `passed`, by design. Count unchanged: 151/304 certified, 48
+  product-true.
