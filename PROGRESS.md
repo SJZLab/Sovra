@@ -30244,3 +30244,37 @@ evidence tables were not redone this round either.
 STEP 3: this file, the submission, and the shift log (`docs/progress/2026-10-14T1500Z-relay.md`) all updated
 this shift. STEP 4 stop condition (a): PR #801 merged PROVISIONAL, awaiting Control-plane L2 re-review — one
 item per shift, per this list's own precedent. No new owner ask. `BLOCKER.md` unchanged — no live entries.
+
+## 2026-10-15T05:00Z — Shift (relay)
+
+**STEP 0.1:** CLAUDE.md hash matches `CLAUDE.md.sha256` — no BLOCKER. Fetched `origin/main`
+fresh (`044a48bc`). Listed all 9 open PRs and their `mergeable_state`/check-run status
+before picking an item, per "Returned work first."
+
+**STEP 1 (item selection):** QUEUE.md Active item "0a" (merge conflicts on open relay PRs)
+outranks every other item. Of 9 open PRs, only `#759` (`relay/FTF-1504-r1`, FTF-1504 IDOR
+suite) had a real conflict (`mergeable_state: "dirty"`, last pushed 2026-10-13, ~60 merges
+behind `main`). `#742`/`#821` were `"unstable"` (failing checks, no conflict — out of 0a's
+scope). **Working: 0a — merge conflict on PR #759.**
+
+**STEP 2 (P/E/V):** P — merged `origin/main` into `relay/FTF-1504-r1`; one conflict, in
+`.github/workflows/ci.yml`, both branches independently adding a different, unrelated CI
+step at the same point (FTF-1504's own negative-test-proof step vs. FTF-1505's). E — kept
+both steps (neither supersedes the other); confirmed no remaining conflict markers and
+that the YAML still parses. V — `uv sync --all-packages`; `test_ftf_1504.py` still
+"all checks passed" (108/108 route-verbs) post-merge; `ruff check`/`ruff format --check`
+clean repo-wide; `test_ci_policy.py` (the file this conflict touched) 72/72 passed.
+Committed (`cc345dd1`), pushed to `origin/relay/FTF-1504-r1`. `ci-verdict`'s fresh run was
+still queued at push time — not polled synchronously (no bare-sleep polling); a later
+shift or PR event will show the result. PR `#759` stays `draft: true` — it is explicitly
+Phase 1 of a multi-phase task ("Live Postgres + SeaweedFS matrix follows" per its own
+body); resolving the conflict does not make it ready to merge.
+
+**STEP 3:** this file and the shift log (`docs/progress/2026-10-15T0500Z-relay.md`) both
+updated this shift. **STEP 4 stop condition (a)-adjacent:** one item per shift, per this
+list's own established precedent (see the 2026-10-14T1500Z entry above). No new owner ask.
+`BLOCKER.md` unchanged — no live entries. Next in QUEUE.md's fixed Active order after 0a is
+**0i, FTF-1602 round 6** — confirmed genuinely unclaimed (no open PR, no fresh
+`relay/FTF-1602-r6*` branch) but left for the next shift: a full production+test round
+with the required self-attack table and real-SeaweedFS evidence is its own shift's worth
+of work, not something to start and leave half-verified in this one.
