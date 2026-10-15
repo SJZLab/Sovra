@@ -675,6 +675,13 @@ jobs:
           mkdir -p reports
           uv run python3 scripts/mutation_gate.py --base "origin/${BASE_REF}" "${args[@]}" \
             --timeout 300 --max-mutants 200 --json reports/mutation-gate.json
+      - name: Scan mutation report for secrets
+        if: always() && steps.select.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          if [ -f reports/mutation-gate.json ]; then
+            uv run python3 tests/security/secret_rules.py reports/mutation-gate.json
+          fi
       - name: Upload mutation report
         if: always() && steps.select.outputs.skip == 'false'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -3775,6 +3782,13 @@ jobs:
             --workflow .github/workflows/ci.yml --scope "$SCOPE" --scope-reason "$SCOPE_REASON" \
             --files-sha256 "$FILES_SHA256" --title "$PR_TITLE" --number "$PR_NUMBER" \
             --head-sha "$HEAD_SHA" --base-sha "$BASE_SHA" --evidence reports/ci-verdict.json
+      - name: Scan verdict evidence for secrets
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f reports/ci-verdict.json ]; then
+            python3 tests/security/secret_rules.py reports/ci-verdict.json
+          fi
       - name: Upload verdict evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

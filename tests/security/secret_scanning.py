@@ -1,95 +1,92 @@
 #!/usr/bin/env python3
-"""FTF-1505 -- Secret scanning, round 2 (Section 45-47, 52-53, 65-66, 77, 81).
+"""FTF-1505 -- Secret scanning, round 3 (Section 45-47, 52-53, 65-66, 77, 81).
 
 Acceptance: "Scan current source/history/artifacts/log samples with
 seeded harmless secret markers." Negative: "Scanner omissions/excluded
 production dirs and actual exposed credential are release blockers."
 
-Round 2 rebuild (Control-plane design 2026-10-14, QUEUE.md "0h"/"FTF-1505
-Secret scanning" Backlog entry): round 1 (PR #799/#816) scanned a fixed,
-hand-picked directory list and the working tree only. This round scans
-every `git ls-files` path with NO exclusion (binary files and archive
-members included), every unique blob reachable from any ref (not only
-added diff lines -- catches a secret that was committed, then removed, by
-a different commit than the one that first added it), the declared
-artifact roots (with a completeness check against every ci.yml
-`actions/upload-artifact` path), and a real log sample captured from the
-actual installed FTF-0904-W1 pipeline AND a real `uvicorn` boot of the
-live API.
+Round 3 (Control-plane return 2026-10-15T14:14Z, QUEUE.md "0h"): round 2
+scanned every tracked file/blob/artifact with no path exclusion, but left
+several fail-OPEN paths (a quoted/escaped non-ASCII git path silently
+skipped, oversized content silently truncated, a corrupt archive member
+aborting every later member in the same archive, a history blob that is
+itself an archive never getting member extraction at all), an incomplete
+quick-gate (missed `sk_live_`, `private_key=`, `session_key=`, a tab after
+`Bearer`), a reversible `value_sha256` printed for brand-new findings, a
+`parse_upload_artifact_paths` regex that missed `actions/upload-artifact/
+merge@...` and a path-traversal upload path, committed seed literals that
+themselves needed baselining, a live-log lane that encoded canaries as
+base64/hex but never actually decoded either layer before checking the
+canary shape (so those probes could not fail), and a history lane that
+scanned every fetched ref -- including another PR's own unmerged branch
+-- so one PR's secret-shaped fixture reddened every other open PR.
 
 Reuse decisions (Section 84.3 "reuse an existing compatible module
 instead of creating a duplicate"):
 
+* `secret_rules` (this directory) -- round 3's own extraction: every rule
+  pattern, the quick-gate derivation, runtime seed generation and the
+  dependency-free single-file CLI now live there so the `mutation-gate`/
+  `ci-verdict` CI jobs can scan their own freshly written report with no
+  `pyyaml`/`uvicorn` dependency chain (F-ARTIFACTS). This module imports
+  every name from it; nothing is duplicated.
 * `ScenarioResult`/`build_evidence` -- from `tests/security/
   tenant_isolation_suite.py`, this task's own `contract_owner: FTF-1501`.
-* `SOURCE_ROOTS` -- from `scripts/product_truth_check.py`, the real list
-  the product-truth gate already uses, instead of a second hand-maintained
-  copy that could silently drift from it.
-* `_shannon_entropy_bits_per_char` -- FTF-0514's own entropy threshold
-  (`workers/data/pii_secrets_detector.py`, `_MIN_HIGH_ENTROPY_BITS_PER_CHAR
-  == 3.5`), reused directly rather than a second implementation.
+* `SOURCE_ROOTS` -- from `scripts/product_truth_check.py`.
+* `install_redaction` -- the already-certified FTF-0904 pipeline.
 * `generate_canary`/`encode_canary`/`fragment_canary` -- FTF-0905's own
   canary generator, for the log-lane leak check.
-* `install_redaction`/`attach_sink`/`redact_text` -- the already-certified
-  FTF-0904 pipeline, reused unmodified to prove it still redacts a seeded
-  secret-shaped marker before it reaches a log sink.
-* FTF-0904's own `redact_text` was tried first as the detector and
-  rejected (measured against this repo's own `apps/api`: it changes 3,014
-  lines in 328 files -- correct for redacting free-form log prose, wrong
-  precision for a release-blocking static scan). This module instead uses
-  a dedicated, shape-only rule table that requires an actual
-  credential-shaped VALUE before firing.
+* `StructuredEvent`/`emit_to_stream` -- FTF-0006's content-free
+  observability seam, cross-checked directly: it carries no redaction of
+  its own (by design its fields cannot hold free text), so this suite's
+  own canary detection is the only backstop if a caller ever misused it.
 
 Targets:
-  source    -- every file `git ls-files` reports at HEAD, text and binary,
-               plus zip/tar/gz/whl archive members (bounded, bomb-safe).
-               No path exclusion. Every `SOURCE_ROOTS` production
-               directory must have >=1 scanned file (same `iter_tracked_
-               files` the real scan uses, not a separate approximation).
-  history   -- every unique blob reachable from any ref
-               (`git rev-list --objects --all` + `git cat-file --batch`,
-               deduplicated by blob id). Refuses a shallow clone.
-  artifacts -- every file under `ARTIFACT_ROOTS` (`docs/certifications`,
-               `docs/progress`, `reports`) present on disk at scan time,
-               plus a completeness check that every ci.yml
-               `actions/upload-artifact` `path:` lies under a declared
-               root (so a newly added upload with no declared root fails
-               closed instead of silently going unscanned).
-  log_samples -- (a) a local logger wired with the real, already-certified
-               FTF-0904 pipeline, proving a seeded shape is both detected
-               pre-redaction and absent post-redaction (vacuousness
-               check); (b) a real `uvicorn app.main:create_app --factory`
-               boot (FTF-0904-W1 is installed) probed with seeded
-               shape-rule values and FTF-0905 canaries (literal, base64,
-               hex, url, fragmented) in the query string, an Authorization
-               header and a Cookie header, against a 401 and a 404 route.
+  source    -- every file `git ls-files -z` reports at HEAD, text and
+               binary, plus zip/tar/gz/whl archive members (bounded,
+               bomb-safe). No path exclusion.
+  history   -- every unique blob reachable from the checked-out HEAD by
+               default (`--scope pr`, the in-CI default: a secret-shaped
+               fixture on another fetched-but-unmerged ref can never
+               redden an unrelated PR); `--scope all-refs` additionally
+               covers every ref, attributing a HEAD-unreachable finding
+               to the branch(es) that carry it. Refuses a shallow clone
+               either way. Now also extracts archive members from a
+               blob that is itself an archive (round 2 never did).
+  artifacts -- every file under `ARTIFACT_ROOTS`, plus a completeness
+               check (structural YAML parse of ci.yml, not a fixed-
+               window regex) that every `actions/upload-artifact(/merge)`
+               `path:` lies under a declared root, with no `..` escape.
+  log_samples -- (a) a local logger wired with the real FTF-0904
+               pipeline, covering every one of this suite's own rule
+               families (round 2 covered 5); (b) a real `uvicorn` boot
+               probed with every family's seed and FTF-0905 canaries
+               (literal, base64, hex, url, fragmented) across the query
+               string, a header, a cookie, a JSON body and an invalid-
+               path-param validation error, against 401/404/422; (c) a
+               direct `StructuredEvent`/`emit_to_stream` cross-check.
 
 negative_acceptance made executable:
-  - `assert_dirs_covered` fails closed the moment a covered directory
-    exists on disk but this suite's own file-inclusion logic yields zero
-    tracked files from it.
+  - `assert_dirs_covered` / `assert_scanned_set_matches_tracked_files`
+    fail closed the moment this suite's own inclusion logic silently
+    yields fewer files than `git ls-files -z` actually reports.
   - `assert_artifact_uploads_covered` fails closed the moment a ci.yml
-    `upload-artifact` path is not under a declared artifact root.
-  - `assert_not_shallow` fails closed (never silently narrows to HEAD)
-    when the history lane is asked to run against a shallow clone.
-  - `evaluate`/`main` raise `SecretScanError` -- never a silent pass --
-    the moment one real (non-baselined) secret shape is found anywhere.
-    The only exception path is `secret_scan_baseline.yaml`: entries are
-    keyed by `sha256(rule NUL value)` (never the raw value, a path or a
-    glob) with a mandatory reason/reviewer/date, and a baseline entry that
-    this run never actually matched is itself a blocking finding (a stale
-    entry is a release blocker, not a free pass).
+    upload path is not under a declared artifact root.
+  - `assert_not_shallow` fails closed on a shallow clone.
+  - A `scan_incomplete` finding is itself blocking: oversized content, a
+    decode-cap overrun, or a corrupt archive member past which other
+    members could not be read are never silently treated as "clean".
+  - `evaluate`/`main` raise `SecretScanError` the moment one real
+    (non-baselined) secret shape is found anywhere; a stale baseline
+    entry is itself a blocking finding.
 
 Run directly:
-    python3 tests/security/secret_scanning.py
+    python3 tests/security/secret_scanning.py [--scope pr|all-refs]
 """
 
 from __future__ import annotations
 
-import base64
-import dataclasses
-import gzip
-import hashlib
+import argparse
 import http.client
 import io
 import json
@@ -106,7 +103,7 @@ import uuid
 import zipfile
 from collections.abc import Iterable, Iterator
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import quote
 
 import yaml
 
@@ -114,6 +111,10 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests" / "security"))
 
+from apps.api.app.config.observability_foundation import (  # noqa: E402
+    StructuredEvent,
+    emit_to_stream,
+)
 from packages.security.canary_secret_generator import (  # noqa: E402
     encode_canary,
     fragment_canary,
@@ -121,14 +122,24 @@ from packages.security.canary_secret_generator import (  # noqa: E402
 )
 from packages.security.log_redaction import install_redaction  # noqa: E402
 from scripts.product_truth_check import SOURCE_ROOTS as _PRODUCT_SOURCE_ROOTS  # noqa: E402
+from secret_rules import FORBIDDEN_BASELINE_KEYS as _FORBIDDEN_BASELINE_KEYS  # noqa: E402
+from secret_rules import (  # noqa: E402
+    MAX_SCAN_BYTES,
+    RULES,
+    BaselineEntry,
+    SecretFinding,
+    SecretScanError,
+    baseline_fingerprint,
+    generate_seed_for_rule,
+    scan_line,  # noqa: E402
+)
+from secret_rules import _matches_long_line as _matches_text  # noqa: E402
+from secret_rules import value_sha256 as _value_sha256  # noqa: E402
 from tenant_isolation_suite import (  # noqa: E402
     ScenarioResult,
     TenantIsolationEvidence,
     TenantIsolationSuiteError,
     build_evidence,
-)
-from workers.data.pii_secrets_detector import (  # noqa: E402
-    _shannon_entropy_bits_per_char as shannon_entropy_bits_per_char,
 )
 
 __all__ = [
@@ -145,6 +156,7 @@ __all__ = [
     "is_baselined",
     "assert_dirs_covered",
     "assert_not_shallow",
+    "assert_scanned_set_matches_tracked_files",
     "parse_upload_artifact_paths",
     "assert_artifact_uploads_covered",
     "scan_source",
@@ -152,7 +164,9 @@ __all__ = [
     "scan_history",
     "scan_log_samples",
     "scan_live_app_log_samples",
+    "scan_structured_event_cross_check",
     "evaluate",
+    "generate_seed_values",
 ]
 
 SOURCE_ROOTS: tuple[str, ...] = tuple(_PRODUCT_SOURCE_ROOTS)
@@ -160,253 +174,15 @@ ARTIFACT_ROOTS: tuple[str, ...] = ("docs/certifications", "docs/progress", "repo
 BASELINE_PATH = Path(__file__).resolve().parent / "secret_scan_baseline.yaml"
 CI_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "ci.yml"
 
-_MAX_SCAN_BYTES = 50 * 1024 * 1024  # per file/blob/member scan bound
-_MAX_ARCHIVE_MEMBERS = 5000
-_MAX_ARCHIVE_UNCOMPRESSED_BYTES = 500 * 1024 * 1024
-_MIN_ENTROPY_BITS_PER_CHAR = 3.5  # FTF-0514's own threshold, reused
-
-
-class SecretScanError(Exception):
-    """Refuses to produce trustworthy evidence, or reports a blocking
-    (non-baselined) finding -- never silently converted to a pass
-    (Law 17)."""
-
-
-# ---------------------------------------------------------------------------
-# Rule table. Shape-only: every rule needs an actual credential-shaped
-# VALUE, never merely a key NAME containing a secret word.
-# ---------------------------------------------------------------------------
-
-_SHAPE_RULES: dict[str, re.Pattern[str]] = {
-    "aws_access_key_id": re.compile(r"(?a)\b(?:AKIA|ASIA)[A-Z2-7]{16}\b"),
-    "github_token": re.compile(r"(?a)\bgh[pousr]_[A-Za-z0-9]{36,}\b"),
-    "github_pat": re.compile(r"(?a)\bgithub_pat_[A-Za-z0-9_]{22,}\b"),
-    "gitlab_token": re.compile(r"(?a)\bglpat-[A-Za-z0-9_-]{20}\b"),
-    "slack_token": re.compile(r"(?a)\bxox[abposr]-[A-Za-z0-9-]{10,}\b"),
-    "slack_webhook": re.compile(r"(?a)\bhttps://hooks\.slack\.com/services/[A-Za-z0-9/+]{20,}\b"),
-    "bearer_or_basic_header": re.compile(r"(?ia)\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{20,}\b"),
-    "pem_private_key": re.compile(
-        r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP |ENCRYPTED )?PRIVATE KEY-----"
-    ),
-    "google_api_key": re.compile(r"(?a)\bAIza[0-9A-Za-z_-]{35}\b"),
-    "huggingface_token": re.compile(r"(?a)\bhf_[A-Za-z0-9]{34}\b"),
-    "openai_style_key": re.compile(r"(?a)\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{32,}\b"),
-    "stripe_style_key": re.compile(r"(?a)\b(?:sk|rk)_live_[A-Za-z0-9]{20,}\b"),
-}
-
-_AWS_SECRET_KEY_RULE = "aws_secret_access_key"
-_AWS_SECRET_KEY = re.compile(
-    r"(?ia)\baws_secret_access_key\b\s*[:=]\s*[\"']?([A-Za-z0-9/+=]{40})[\"']?"
-)
-
-_JWT_CANDIDATE = re.compile(r"(?a)\b([A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})\b")
-_JWT_RULE = "jwt_shaped"
-
-_URL_USERINFO_RULE = "url_userinfo_password"
-_URL_USERINFO = re.compile(r"(?a)\b[a-zA-Z][a-zA-Z0-9+.-]{1,20}://([^\s:/@\"']+):([^\s@\"']+)@")
-_URL_PASSWORD_PLACEHOLDER = re.compile(r"^(?:\$\{.*\}|<.*>|\{.*\}|\*+|\[REDACTED\])$")
-
-_QUOTED_SECRET_ASSIGNMENT_RULE = "quoted_secret_assignment"
-_QUOTED_SECRET_ASSIGNMENT = re.compile(
-    r"""(?ia)(?<![A-Za-z])(?:db[_-]?password|client[_-]?secret|secret[_-]?key|"""
-    r"""session[_-]?key|private[_-]?key|access[_-]?token|refresh[_-]?token|"""
-    r"""auth[_-]?token|api[_-]?key|passwd|password|secret|token)"""
-    r"""\s*[:=]\s*["']([A-Za-z0-9+/_=.\-]{20,})["']"""
-)
-_PLACEHOLDER_VALUE = re.compile(
-    r"(?i)^(?:changeme|placeholder|example|dummy|test|fake|xxx+|none|null|<.*>|\$\{.*\})$"
-)
-
-_CANARY_SHAPE_RULE = "canary_leaked"
-_CANARY_SHAPE = re.compile(r"(?a)\bCANARY-DO-NOT-USE-[0-9a-f]{32}\b")
-
-_BASE64_RUN = re.compile(r"[A-Za-z0-9+/_-]{24,}={0,2}")
-_MAX_BASE64_ATTEMPTS_PER_UNIT = 2000
-
-RULES: tuple[str, ...] = (
-    *sorted(_SHAPE_RULES),
-    _AWS_SECRET_KEY_RULE,
-    _JWT_RULE,
-    _URL_USERINFO_RULE,
-    _QUOTED_SECRET_ASSIGNMENT_RULE,
-)
-
-
-def _is_url_password_placeholder(value: str) -> bool:
-    return bool(_URL_PASSWORD_PLACEHOLDER.match(value))
-
-
-def _jwt_matches(text: str) -> Iterator[tuple[str, str]]:
-    for match in _JWT_CANDIDATE.finditer(text):
-        token = match.group(1)
-        header_b64 = token.split(".", 1)[0]
-        padded = header_b64 + "=" * ((-len(header_b64)) % 4)
-        try:
-            decoded = base64.urlsafe_b64decode(padded)
-            obj = json.loads(decoded)
-        except Exception:
-            continue
-        if isinstance(obj, dict) and "alg" in obj:
-            yield _JWT_RULE, token
-
-
-def _iter_shape_matches(text: str) -> Iterator[tuple[str, str]]:
-    """Every rule except the FTF-0905 canary shape (log/artifact lanes
-    only -- see `_matches`)."""
-    for name, rx in _SHAPE_RULES.items():
-        for match in rx.finditer(text):
-            yield name, match.group(0)
-    for match in _AWS_SECRET_KEY.finditer(text):
-        yield _AWS_SECRET_KEY_RULE, match.group(1)
-    for match in _URL_USERINFO.finditer(text):
-        password = match.group(2)
-        if not _is_url_password_placeholder(password):
-            yield _URL_USERINFO_RULE, password
-    for match in _QUOTED_SECRET_ASSIGNMENT.finditer(text):
-        value = match.group(1)
-        if _PLACEHOLDER_VALUE.match(value):
-            continue
-        if shannon_entropy_bits_per_char(value) >= _MIN_ENTROPY_BITS_PER_CHAR:
-            yield _QUOTED_SECRET_ASSIGNMENT_RULE, value
-    yield from _jwt_matches(text)
-
-
-# Cheap substring pre-filter before re-running the full (11-regex) rule set
-# on a decoded base64/percent-decoded candidate -- a decoded run that
-# contains none of these literals cannot match any shape rule, so the
-# expensive regex re-check is skipped. This is a performance gate only
-# (never a detection gate): every literal here is a strict substring of
-# some rule's own required match text, so skipping on its absence never
-# hides a real finding. Case-insensitive since several rule keywords are.
-_QUICK_GATE_LITERALS: tuple[str, ...] = (
-    "akia",
-    "asia",
-    "ghp_",
-    "gho_",
-    "ghu_",
-    "ghs_",
-    "ghr_",
-    "github_pat_",
-    "glpat-",
-    "xox",
-    "hooks.slack.com",
-    "sk-",
-    "rk_live_",
-    "aiza",
-    "hf_",
-    "-----begin",
-    "aws_secret_access_key",
-    "://",
-    "bearer ",
-    "basic ",
-    "canary-do-not-use-",
-    "eyj",
-    "password",
-    "passwd",
-    "secret",
-    "token",
-    "api_key",
-    "api-key",
-    "apikey",
-)
-
-
-def _could_match_any_rule(lowered_text: str) -> bool:
-    return any(literal in lowered_text for literal in _QUICK_GATE_LITERALS)
-
-
-def _try_base64_decode(candidate: str) -> str | None:
-    body = candidate.rstrip("=")
-    padded = body + "=" * ((-len(body)) % 4)
-    raw: bytes | None = None
-    try:
-        raw = base64.b64decode(padded, validate=False)
-    except Exception:
-        try:
-            raw = base64.urlsafe_b64decode(padded)
-        except Exception:
-            raw = None
-    if raw is None or len(raw) < 8:
-        return None
-    try:
-        return raw.decode("utf-8")
-    except UnicodeDecodeError:
-        return raw.decode("latin-1")
-
-
-def _matches(text: str, *, include_canary: bool = False) -> Iterator[tuple[str, str]]:
-    """Yields (rule_name, matched_value) for every rule firing on `text`,
-    including one layer of base64 decoding (runs >=24 chars) and one
-    layer of percent-decoding. `include_canary` additionally checks the
-    FTF-0905 canary shape -- restricted to log/artifact lanes, since a
-    full canary value legitimately never appears in this repo's own
-    source/history otherwise."""
-    yield from _iter_shape_matches(text)
-    attempts = 0
-    for match in _BASE64_RUN.finditer(text):
-        if attempts >= _MAX_BASE64_ATTEMPTS_PER_UNIT:
-            break
-        attempts += 1
-        decoded = _try_base64_decode(match.group(0))
-        if decoded is not None and _could_match_any_rule(decoded.lower()):
-            yield from _iter_shape_matches(decoded)
-    percent_decoded = unquote(text)
-    if percent_decoded != text and _could_match_any_rule(percent_decoded.lower()):
-        yield from _iter_shape_matches(percent_decoded)
-    if include_canary:
-        for match in _CANARY_SHAPE.finditer(text):
-            yield _CANARY_SHAPE_RULE, match.group(0)
-
-
-def scan_line(line: str, *, include_canary: bool = False) -> list[tuple[str, str]]:
-    """Pure, public entry point so tests can exercise the exact rule set
-    with no filesystem/git access."""
-    return list(_matches(line, include_canary=include_canary))
-
-
-def _value_sha256(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8", errors="surrogateescape")).hexdigest()
-
-
-def _baseline_fingerprint(rule: str, value: str) -> str:
-    return hashlib.sha256(
-        (rule + "\0" + value).encode("utf-8", errors="surrogateescape")
-    ).hexdigest()
-
-
-@dataclasses.dataclass(frozen=True)
-class SecretFinding:
-    """One matched secret shape. Content-free by construction (Section
-    47 "no secrets ... in task reports"): callers get the matched value
-    only through `value_sha256`, never the raw text."""
-
-    rule: str
-    target: str  # "source" | "history" | "artifact" | "log_sample"
-    location: str
-    value_sha256: str
-    blocking: bool
-
-    def to_dict(self) -> dict[str, object]:
-        return dataclasses.asdict(self)
+# MAX_SCAN_BYTES / MAX_BASE64_ATTEMPTS_PER_UNIT / quick_gate_hints_for_rule are imported above
+# for reuse by tests/tasks/test_ftf_1505.py, not re-exported as public API in __all__.
 
 
 # ---------------------------------------------------------------------------
 # Baseline: entries keyed by sha256(rule NUL value) -- never the raw
 # value, a file path or a glob. A reviewed fixture is waived everywhere it
-# recurs (the same (rule, value) pair), never scoped to one location,
-# because the value itself -- not its location -- is what was reviewed.
+# recurs, never scoped to one location.
 # ---------------------------------------------------------------------------
-
-
-@dataclasses.dataclass(frozen=True)
-class BaselineEntry:
-    fingerprint: str
-    reason: str
-    reviewed_by: str
-    reviewed_on: str
-
-
-_FORBIDDEN_BASELINE_KEYS = ("value", "path", "file_glob", "glob")
 
 
 def load_baseline(path: Path = BASELINE_PATH) -> dict[str, BaselineEntry]:
@@ -445,14 +221,10 @@ def load_baseline(path: Path = BASELINE_PATH) -> dict[str, BaselineEntry]:
 
 
 def is_baselined(rule: str, value: str, baseline: dict[str, BaselineEntry]) -> bool:
-    return _baseline_fingerprint(rule, value) in baseline
+    return baseline_fingerprint(rule, value) in baseline
 
 
 def assert_baseline_fresh(baseline: dict[str, BaselineEntry], seen_fingerprints: set[str]) -> None:
-    """negative_acceptance: a baseline entry this run never actually
-    matched is a release blocker, not a free pass -- it either waives
-    nothing real any more (the fixture moved/was removed) or was never
-    valid, and either way must be re-reviewed, not silently kept."""
     stale = set(baseline) - seen_fingerprints
     if stale:
         raise SecretScanError(
@@ -462,31 +234,31 @@ def assert_baseline_fresh(baseline: dict[str, BaselineEntry], seen_fingerprints:
 
 
 # ---------------------------------------------------------------------------
-# File inclusion: every git-tracked path, with no exclusion.
+# File inclusion: every git-tracked path, with no exclusion. `-z` (NUL-
+# separated, raw bytes) is required: plain `git ls-files` applies
+# `core.quotePath` by default and octal-escapes/quotes any non-ASCII
+# filename (e.g. `"caf\303\251.txt"`), which then never resolves back to
+# a real path on disk -- `full_path.is_file()` silently returns False and
+# the file is skipped with no signal at all (F-SCOPE fail-open, fixed).
 # ---------------------------------------------------------------------------
 
 
 def iter_tracked_files(root: Path) -> list[str]:
-    """Every git-tracked file at HEAD. No path exclusion exists."""
-    return subprocess.run(
-        ["git", "ls-files"], cwd=root, capture_output=True, text=True, check=True
-    ).stdout.splitlines()
+    """Every git-tracked file at HEAD, raw (unquoted) paths. No path
+    exclusion exists."""
+    out = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=root, capture_output=True, check=True
+    ).stdout
+    return [p for p in out.decode("utf-8", errors="surrogateescape").split("\0") if p]
 
 
 def iter_tracked_files_under(root: Path, dirs: tuple[str, ...]) -> list[str]:
-    """The same real inclusion list, filtered to `dirs` -- used only by
-    the coverage check, so a directory omission cannot hide behind two
-    diverging implementations of "what counts as tracked"."""
     return [
         f for f in iter_tracked_files(root) if any(f == d or f.startswith(d + "/") for d in dirs)
     ]
 
 
 def assert_dirs_covered(root: Path, dirs: tuple[str, ...]) -> None:
-    """negative_acceptance, made executable: fails closed if a directory
-    that actually exists on disk yields zero tracked files from this
-    suite's own inclusion logic -- "scanner omissions/excluded production
-    dirs" is a release blocker, not a warning."""
     for directory in dirs:
         if not (root / directory).is_dir():
             continue
@@ -495,6 +267,42 @@ def assert_dirs_covered(root: Path, dirs: tuple[str, ...]) -> None:
                 f"secret scan omission: {directory!r} exists but the scanner's own "
                 "file-inclusion logic covers zero tracked files in it"
             )
+
+
+_REGULAR_FILE_MODES = ("100644", "100755")
+
+
+def _tracked_regular_files(root: Path) -> set[str]:
+    """`git ls-files -s -z`, filtered to real blobs (mode 100644/100755)
+    -- a symlink (120000) or a submodule gitlink (160000) is excluded by
+    design, everything else is expected to be scanned."""
+    out = subprocess.run(
+        ["git", "ls-files", "-s", "-z"], cwd=root, capture_output=True, check=True
+    ).stdout
+    paths: set[str] = set()
+    for entry in out.decode("utf-8", errors="surrogateescape").split("\0"):
+        if not entry:
+            continue
+        meta, _, path = entry.partition("\t")
+        mode = meta.split(" ", 1)[0]
+        if mode in _REGULAR_FILE_MODES:
+            paths.add(path)
+    return paths
+
+
+def assert_scanned_set_matches_tracked_files(root: Path, scanned_paths: set[str]) -> None:
+    """negative_acceptance, made executable: the set of files this run
+    actually scanned must equal every regular tracked file `git` itself
+    reports -- a silently-skipped path (encoding failure, an unreadable
+    file, a future inclusion-logic bug) is a release blocker, never a
+    quiet gap."""
+    expected = _tracked_regular_files(root)
+    missing = expected - scanned_paths
+    if missing:
+        raise SecretScanError(
+            f"secret scan omission: {len(missing)} tracked file(s) were never scanned: "
+            f"{sorted(missing)[:10]}{'...' if len(missing) > 10 else ''}"
+        )
 
 
 def assert_not_shallow(root: Path) -> None:
@@ -513,31 +321,48 @@ def assert_not_shallow(root: Path) -> None:
         )
 
 
-_UPLOAD_ARTIFACT_USES = re.compile(r"^\s*(?:-\s*)?uses:\s*actions/upload-artifact@")
-_PATH_LINE = re.compile(r"^\s*path:\s*(.+?)\s*$")
+# ---------------------------------------------------------------------------
+# Artifact-upload completeness: a structural YAML parse of ci.yml's own
+# jobs/steps (round 2 used a fixed 9-line regex lookahead window, which
+# missed a `path:` placed further away and the real `actions/upload-
+# artifact/merge@...` action name entirely).
+# ---------------------------------------------------------------------------
 
 
 def parse_upload_artifact_paths(ci_yml_text: str) -> list[str]:
-    """Every `path:` value under an `actions/upload-artifact` step,
-    parsed from the raw workflow text (no YAML parser dependency on the
-    full GitHub Actions expression grammar)."""
-    lines = ci_yml_text.splitlines()
+    """Every `with.path` value of every `actions/upload-artifact` (or its
+    `/merge` variant) step, in every job, parsed structurally."""
+    workflow = yaml.safe_load(ci_yml_text) or {}
     paths: list[str] = []
-    for index, line in enumerate(lines):
-        if not _UPLOAD_ARTIFACT_USES.match(line):
-            continue
-        for lookahead in lines[index + 1 : index + 10]:
-            match = _PATH_LINE.match(lookahead)
-            if match:
-                paths.append(match.group(1).strip("\"'"))
-                break
+    for job in (workflow.get("jobs") or {}).values():
+        for step in job.get("steps") or []:
+            uses = str(step.get("uses") or "")
+            if not re.match(r"^actions/upload-artifact(?:/merge)?@", uses):
+                continue
+            raw_path = (step.get("with") or {}).get("path")
+            if raw_path is None:
+                continue
+            for line in str(raw_path).splitlines():
+                stripped = line.strip().strip("\"'")
+                if stripped:
+                    paths.append(stripped)
     return paths
+
+
+def _is_path_traversal(path: str) -> bool:
+    return any(part == ".." for part in Path(path).parts)
 
 
 def assert_artifact_uploads_covered(ci_yml_text: str, roots: tuple[str, ...]) -> None:
     """negative_acceptance: a newly uploaded CI artifact with no declared
-    scan root fails closed instead of silently going unscanned forever."""
+    scan root -- or one that tries to escape its declared root via `..`
+    -- fails closed instead of silently going unscanned forever."""
     for upload_path in parse_upload_artifact_paths(ci_yml_text):
+        if _is_path_traversal(upload_path):
+            raise SecretScanError(
+                f"ci.yml uploads artifact path {upload_path!r}, which contains a '..' "
+                "path-traversal segment -- refused outright"
+            )
         if not any(upload_path == root or upload_path.startswith(root + "/") for root in roots):
             raise SecretScanError(
                 f"ci.yml uploads artifact path {upload_path!r}, which lies under none of the "
@@ -546,28 +371,14 @@ def assert_artifact_uploads_covered(ci_yml_text: str, roots: tuple[str, ...]) ->
 
 
 # ---------------------------------------------------------------------------
-# Binary-safe content scanning, with bounded archive-member recursion.
+# Binary-safe content scanning, with bounded, fail-closed archive-member
+# recursion -- shared by source/artifact/history lanes alike (round 2
+# only gave archive extraction to source/artifact; a history blob that
+# is itself an archive was never opened at all).
 # ---------------------------------------------------------------------------
 
-
-def _scan_bytes(data: bytes, *, include_canary: bool) -> list[tuple[str, str, str]]:
-    """Returns (rule, value, location_suffix) tuples. Text content is
-    scanned per line (":<lineno>" suffix, so a finding still points at a
-    real line). Content that is not valid UTF-8 is scanned whole, as
-    latin-1 (a 1:1 byte mapping that never raises, so a binary file's
-    ASCII-shaped secrets are still found) with no line suffix."""
-    try:
-        text = data.decode("utf-8")
-    except UnicodeDecodeError:
-        content = data.decode("latin-1")
-        return [
-            (rule, value, "") for rule, value in _matches(content, include_canary=include_canary)
-        ]
-    results: list[tuple[str, str, str]] = []
-    for lineno, line in enumerate(text.splitlines(), start=1):
-        for rule, value in _matches(line, include_canary=include_canary):
-            results.append((rule, value, f":{lineno}"))
-    return results
+_MAX_ARCHIVE_MEMBERS = 5000
+_MAX_ARCHIVE_UNCOMPRESSED_BYTES = 500 * 1024 * 1024
 
 
 def _looks_like_zip(data: bytes) -> bool:
@@ -579,6 +390,8 @@ def _looks_like_gzip(data: bytes) -> bool:
 
 
 def _bounded_gzip_decompress(data: bytes, max_bytes: int) -> bytes:
+    import gzip
+
     out = io.BytesIO()
     with gzip.GzipFile(fileobj=io.BytesIO(data)) as gz:
         remaining = max_bytes
@@ -591,11 +404,13 @@ def _bounded_gzip_decompress(data: bytes, max_bytes: int) -> bytes:
     return out.getvalue()
 
 
-def _iter_archive_members(data: bytes, name: str) -> Iterator[tuple[str, bytes]]:
-    """Bomb-safe bounded extraction of zip/whl/jar and tar/tar.gz members,
-    plus a bare .gz. Declared member count/uncompressed size is checked
-    BEFORE any member is read; each member is then read bounded to
-    `_MAX_SCAN_BYTES` regardless of its declared size."""
+def _iter_archive_members(data: bytes, name: str) -> Iterator[tuple[str, bytes | None]]:
+    """Bomb-safe bounded extraction of zip/whl/jar/egg and tar/tar.gz
+    members, plus a bare .gz. Declared member count/uncompressed size is
+    checked BEFORE any member is read. A member that cannot itself be
+    read (a corrupt entry) yields `(name, None)` -- a fail-closed signal
+    the caller turns into a blocking finding -- and extraction CONTINUES
+    to the next member, rather than abandoning every member after it."""
     lower = name.lower()
     try:
         if lower.endswith((".zip", ".whl", ".jar", ".egg")) or _looks_like_zip(data):
@@ -606,8 +421,11 @@ def _iter_archive_members(data: bytes, name: str) -> Iterator[tuple[str, bytes]]
                 if sum(i.file_size for i in infos) > _MAX_ARCHIVE_UNCOMPRESSED_BYTES:
                     raise SecretScanError(f"archive {name!r} exceeds uncompressed-size cap")
                 for info in infos:
-                    with zf.open(info) as handle:
-                        yield info.filename, handle.read(_MAX_SCAN_BYTES)
+                    try:
+                        with zf.open(info) as handle:
+                            yield info.filename, handle.read(MAX_SCAN_BYTES)
+                    except (zipfile.BadZipFile, OSError, RuntimeError, EOFError):
+                        yield info.filename, None
             return
         if lower.endswith((".tar.gz", ".tgz", ".tar")):
             mode = "r:gz" if lower.endswith((".tar.gz", ".tgz")) else "r:"
@@ -618,72 +436,137 @@ def _iter_archive_members(data: bytes, name: str) -> Iterator[tuple[str, bytes]]
                 if sum(m.size for m in members) > _MAX_ARCHIVE_UNCOMPRESSED_BYTES:
                     raise SecretScanError(f"archive {name!r} exceeds uncompressed-size cap")
                 for member in members:
-                    extracted = tf.extractfile(member)
-                    if extracted is not None:
-                        yield member.name, extracted.read(_MAX_SCAN_BYTES)
+                    try:
+                        extracted = tf.extractfile(member)
+                        if extracted is not None:
+                            yield member.name, extracted.read(MAX_SCAN_BYTES)
+                    except (tarfile.TarError, OSError, EOFError):
+                        yield member.name, None
             return
         if lower.endswith(".gz") and _looks_like_gzip(data):
-            yield name[:-3], _bounded_gzip_decompress(data, _MAX_SCAN_BYTES)
+            try:
+                yield name[:-3], _bounded_gzip_decompress(data, MAX_SCAN_BYTES)
+            except OSError:
+                yield name[:-3], None
     except SecretScanError:
         raise
     except Exception:
         return
 
 
-# ---------------------------------------------------------------------------
-# source / artifacts: scan a real file tree (every tracked file, or every
-# file under a declared artifact root present on disk).
-# ---------------------------------------------------------------------------
+def _scan_unit_text(
+    data: bytes, *, include_canary: bool
+) -> tuple[list[tuple[str, str, str]], bool]:
+    """(rule, value, location_suffix) tuples for one file/blob/member's
+    content, plus whether a decode cap was hit anywhere in it. Text
+    content is scanned per line (":<lineno>" suffix); content that is
+    not valid UTF-8 is scanned whole, as latin-1 (a 1:1 byte mapping that
+    never raises, so a binary file's ASCII-shaped secrets are still
+    found) with no line suffix."""
+    incomplete = False
+
+    def _mark() -> None:
+        nonlocal incomplete
+        incomplete = True
+
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        content = data.decode("latin-1")
+        results = [
+            (rule, value, "")
+            for rule, value in _matches_text(
+                content, include_canary=include_canary, on_incomplete=_mark
+            )
+        ]
+        return results, incomplete
+    results = []
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        for rule, value in _matches_text(line, include_canary=include_canary, on_incomplete=_mark):
+            results.append((rule, value, f":{lineno}"))
+    return results, incomplete
 
 
-def _read_bytes_bounded(path: Path) -> bytes:
-    with path.open("rb") as handle:
-        return handle.read(_MAX_SCAN_BYTES)
-
-
-def _scan_one_file(
-    rel_path: str,
+def _scan_content_and_members(
+    location_prefix: str,
     data: bytes,
-    baseline: dict[str, BaselineEntry],
-    target: str,
     *,
     include_canary: bool,
+    content_truncated: bool,
+) -> tuple[list[tuple[str, str, str]], bool]:
+    """`(rule, value, location)` tuples for `data` itself plus any
+    archive members inside it. Returns `(results, incomplete)`."""
+    all_results: list[tuple[str, str, str]] = []
+    matches, incomplete = _scan_unit_text(data, include_canary=include_canary)
+    incomplete = incomplete or content_truncated
+    for rule, value, loc_suffix in matches:
+        all_results.append((rule, value, f"{location_prefix}{loc_suffix}"))
+    for member_name, member_data in _iter_archive_members(data, location_prefix):
+        if member_data is None:
+            incomplete = True
+            all_results.append(
+                ("scan_incomplete", "", f"{location_prefix}!{member_name} (unreadable member)")
+            )
+            continue
+        member_matches, m_incomplete = _scan_unit_text(member_data, include_canary=include_canary)
+        incomplete = incomplete or m_incomplete
+        for rule, value, loc_suffix in member_matches:
+            all_results.append((rule, value, f"{location_prefix}!{member_name}{loc_suffix}"))
+    if content_truncated:
+        all_results.append(
+            ("scan_incomplete", "", f"{location_prefix} (content exceeds scan bound)")
+        )
+    return all_results, incomplete
+
+
+def _record_results(
+    raw_results: list[tuple[str, str, str]],
+    baseline: dict[str, BaselineEntry],
+    target: str,
     seen_fingerprints: set[str],
 ) -> tuple[list[SecretFinding], bool]:
     findings: list[SecretFinding] = []
-    file_blocking = False
-    for rule, value, loc_suffix in _scan_bytes(data, include_canary=include_canary):
-        fingerprint = _baseline_fingerprint(rule, value)
+    blocking_any = False
+    for rule, value, location in raw_results:
+        if rule == "scan_incomplete":
+            findings.append(
+                SecretFinding(
+                    rule="scan_incomplete",
+                    target=target,
+                    location=location,
+                    value_sha256="",
+                    blocking=True,
+                )
+            )
+            blocking_any = True
+            continue
+        fingerprint = baseline_fingerprint(rule, value)
         seen_fingerprints.add(fingerprint)
         blocking = fingerprint not in baseline
         findings.append(
             SecretFinding(
                 rule=rule,
                 target=target,
-                location=f"{rel_path}{loc_suffix}",
+                location=location,
                 value_sha256=_value_sha256(value),
                 blocking=blocking,
             )
         )
         if blocking:
-            file_blocking = True
-    for member_name, member_data in _iter_archive_members(data, rel_path):
-        for rule, value, loc_suffix in _scan_bytes(member_data, include_canary=include_canary):
-            fingerprint = _baseline_fingerprint(rule, value)
-            seen_fingerprints.add(fingerprint)
-            blocking = fingerprint not in baseline
-            findings.append(
-                SecretFinding(
-                    rule=rule,
-                    target=target,
-                    location=f"{rel_path}!{member_name}{loc_suffix}",
-                    value_sha256=_value_sha256(value),
-                    blocking=blocking,
-                )
-            )
-            if blocking:
-                file_blocking = True
-    return findings, file_blocking
+            blocking_any = True
+    return findings, blocking_any
+
+
+# ---------------------------------------------------------------------------
+# source / artifacts: scan a real file tree.
+# ---------------------------------------------------------------------------
+
+
+def _read_bytes_bounded(path: Path) -> tuple[bytes, bool]:
+    with path.open("rb") as handle:
+        data = handle.read(MAX_SCAN_BYTES + 1)
+    truncated = len(data) > MAX_SCAN_BYTES
+    return data[:MAX_SCAN_BYTES], truncated
 
 
 def scan_source(
@@ -692,6 +575,7 @@ def scan_source(
     *,
     target: str = "source",
     seen_fingerprints: set[str] | None = None,
+    scanned_paths: set[str] | None = None,
 ) -> tuple[list[SecretFinding], list[ScenarioResult]]:
     """Scans every git-tracked file, with no path exclusion. One
     `ScenarioResult` per scanned FILE (never per finding, so an all-clean
@@ -703,16 +587,16 @@ def scan_source(
         full_path = root / rel_path
         if not full_path.is_file():
             continue
-        data = _read_bytes_bounded(full_path)
-        file_findings, file_blocking = _scan_one_file(
-            rel_path,
-            data,
-            baseline,
-            target,
-            include_canary=False,
-            seen_fingerprints=seen_fingerprints,
+        data, truncated = _read_bytes_bounded(full_path)
+        raw_results, _incomplete = _scan_content_and_members(
+            rel_path, data, include_canary=False, content_truncated=truncated
+        )
+        file_findings, file_blocking = _record_results(
+            raw_results, baseline, target, seen_fingerprints
         )
         findings.extend(file_findings)
+        if scanned_paths is not None:
+            scanned_paths.add(rel_path)
         results.append(
             ScenarioResult(
                 resource_kind=target,
@@ -735,9 +619,6 @@ def scan_artifact_roots(
     target: str = "artifact",
     seen_fingerprints: set[str] | None = None,
 ) -> tuple[list[SecretFinding], list[ScenarioResult]]:
-    """Scans every file present on disk under a declared artifact root at
-    scan time (committed evidence always; ephemeral CI-run JSON reports
-    whenever this job itself produced one before this step ran)."""
     seen_fingerprints = seen_fingerprints if seen_fingerprints is not None else set()
     findings: list[SecretFinding] = []
     results: list[ScenarioResult] = []
@@ -747,14 +628,12 @@ def scan_artifact_roots(
             continue
         for file_path in sorted(p for p in base_path.rglob("*") if p.is_file()):
             rel_path = file_path.relative_to(root).as_posix()
-            data = _read_bytes_bounded(file_path)
-            file_findings, file_blocking = _scan_one_file(
-                rel_path,
-                data,
-                baseline,
-                target,
-                include_canary=True,
-                seen_fingerprints=seen_fingerprints,
+            data, truncated = _read_bytes_bounded(file_path)
+            raw_results, _incomplete = _scan_content_and_members(
+                rel_path, data, include_canary=True, content_truncated=truncated
+            )
+            file_findings, file_blocking = _record_results(
+                raw_results, baseline, target, seen_fingerprints
             )
             findings.extend(file_findings)
             results.append(
@@ -772,16 +651,18 @@ def scan_artifact_roots(
 
 
 # ---------------------------------------------------------------------------
-# history: every unique blob reachable from any ref.
+# history: every unique blob reachable from HEAD (`--scope pr`, the CI
+# default) or every ref (`--scope all-refs`), with branch attribution for
+# a finding HEAD cannot reach.
 # ---------------------------------------------------------------------------
 
 
-def iter_history_blob_ids(root: Path) -> list[tuple[str, str]]:
+def iter_history_blob_ids(root: Path, refs: tuple[str, ...] = ("HEAD",)) -> list[tuple[str, str]]:
     """Returns [(blob_sha, path_hint)] for every unique blob reachable
-    from any ref. `path_hint` is the first path git's own tree walk
-    associated with that blob id -- location evidence only."""
+    from `refs` (default: HEAD only -- the PR's own checked-out merge
+    ref). Pass `refs=("--all",)` for every ref."""
     rev_list = subprocess.run(
-        ["git", "rev-list", "--objects", "--all"],
+        ["git", "rev-list", "--objects", *refs],
         cwd=root,
         capture_output=True,
         text=True,
@@ -812,12 +693,39 @@ def iter_history_blob_ids(root: Path) -> list[tuple[str, str]]:
     return blobs
 
 
-def _iter_history_blob_contents(root: Path, blob_ids: list[str]) -> Iterator[tuple[str, bytes]]:
-    """Streams every blob's content from one long-lived `git cat-file
-    --batch` process -- one subprocess for the whole history, not one per
-    blob. The full declared size must always be read to keep the
-    protocol in sync for the next object; callers slice to their own
-    bound after the read."""
+def _iter_ref_names(root: Path) -> list[str]:
+    out = subprocess.run(
+        ["git", "for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return [line for line in out.splitlines() if line and not line.endswith("/HEAD")]
+
+
+def _attribute_strays_to_refs(root: Path, stray_blob_ids: set[str]) -> dict[str, list[str]]:
+    """For each blob id in `stray_blob_ids` (already known to be
+    unreachable from HEAD), the ref name(s) whose own history contains
+    it -- "reports each finding with the branch that carries it"."""
+    if not stray_blob_ids:
+        return {}
+    attribution: dict[str, list[str]] = {sha: [] for sha in stray_blob_ids}
+    for ref in _iter_ref_names(root):
+        try:
+            ref_blob_ids = {sha for sha, _ in iter_history_blob_ids(root, refs=(ref,))}
+        except subprocess.CalledProcessError:
+            continue
+        for sha in stray_blob_ids & ref_blob_ids:
+            attribution[sha].append(ref)
+    return attribution
+
+
+def _iter_history_blob_contents(
+    root: Path, blob_ids: list[str]
+) -> Iterator[tuple[str, bytes, bool]]:
+    """Streams every blob's content (and whether it was truncated) from
+    one long-lived `git cat-file --batch` process."""
     if not blob_ids:
         return
     proc = subprocess.Popen(
@@ -854,12 +762,12 @@ def _iter_history_blob_contents(root: Path, blob_ids: list[str]) -> Iterator[tup
                 if not chunk:
                     break
                 remaining -= len(chunk)
-                if total_kept < _MAX_SCAN_BYTES:
-                    keep = chunk[: _MAX_SCAN_BYTES - total_kept]
+                if total_kept < MAX_SCAN_BYTES:
+                    keep = chunk[: MAX_SCAN_BYTES - total_kept]
                     chunks.append(keep)
                     total_kept += len(keep)
             proc.stdout.read(1)  # trailing newline after the object data
-            yield sha, b"".join(chunks)
+            yield sha, b"".join(chunks), size > MAX_SCAN_BYTES
     finally:
         feeder.join(timeout=5)
         if proc.stdout:
@@ -873,37 +781,44 @@ def scan_history(
     *,
     target: str = "history",
     seen_fingerprints: set[str] | None = None,
+    scope: str = "pr",
 ) -> tuple[list[SecretFinding], list[ScenarioResult]]:
-    """Scans every unique blob reachable from any ref -- catches a secret
-    that was committed and later removed by any commit, not only one
-    reachable as a diff from its own introducing commit. Refuses a
-    shallow clone. One `ScenarioResult` per unique blob."""
+    """`scope="pr"` (default, matches the in-CI `secret-scanning` job):
+    scans every unique blob reachable from HEAD only -- a secret-shaped
+    fixture that exists only on another fetched ref (another open PR's
+    own unmerged branch) can never redden this one. `scope="all-refs"`:
+    every unique blob reachable from any ref, with a HEAD-unreachable
+    finding's location naming the branch(es) that actually carry it."""
+    if scope not in ("pr", "all-refs"):
+        raise ValueError(f"scan_history scope must be 'pr' or 'all-refs', got {scope!r}")
     assert_not_shallow(root)
     seen_fingerprints = seen_fingerprints if seen_fingerprints is not None else set()
-    blob_ids = iter_history_blob_ids(root)
+    refs = ("HEAD",) if scope == "pr" else ("--all",)
+    blob_ids = iter_history_blob_ids(root, refs=refs)
     path_hints = dict(blob_ids)
     findings: list[SecretFinding] = []
     results: list[ScenarioResult] = []
-    for sha, data in _iter_history_blob_contents(root, [sha for sha, _ in blob_ids]):
+
+    head_blob_ids: set[str] = set()
+    stray_blob_ids: set[str] = set()
+    if scope == "all-refs":
+        head_blob_ids = {sha for sha, _ in iter_history_blob_ids(root, refs=("HEAD",))}
+        stray_blob_ids = {sha for sha, _ in blob_ids} - head_blob_ids
+    attribution = _attribute_strays_to_refs(root, stray_blob_ids) if stray_blob_ids else {}
+
+    for sha, data, truncated in _iter_history_blob_contents(root, [sha for sha, _ in blob_ids]):
         rel_path = path_hints.get(sha, sha[:12])
-        location = f"{rel_path}@{sha[:12]}"
-        blob_findings: list[SecretFinding] = []
-        blob_blocking = False
-        for rule, value, loc_suffix in _scan_bytes(data, include_canary=False):
-            fingerprint = _baseline_fingerprint(rule, value)
-            seen_fingerprints.add(fingerprint)
-            blocking = fingerprint not in baseline
-            blob_findings.append(
-                SecretFinding(
-                    rule=rule,
-                    target=target,
-                    location=f"{location}{loc_suffix}",
-                    value_sha256=_value_sha256(value),
-                    blocking=blocking,
-                )
-            )
-            if blocking:
-                blob_blocking = True
+        branch_suffix = ""
+        if sha in attribution:
+            refs_for_sha = attribution[sha]
+            branch_suffix = f" (branch: {', '.join(sorted(refs_for_sha)) or 'unknown'})"
+        location = f"{rel_path}@{sha[:12]}{branch_suffix}"
+        raw_results, _incomplete = _scan_content_and_members(
+            location, data, include_canary=False, content_truncated=truncated
+        )
+        blob_findings, blob_blocking = _record_results(
+            raw_results, baseline, target, seen_fingerprints
+        )
         findings.extend(blob_findings)
         results.append(
             ScenarioResult(
@@ -920,21 +835,29 @@ def scan_history(
 
 
 # ---------------------------------------------------------------------------
-# log_samples: (a) a local logger through the real FTF-0904 pipeline;
-# (b) a real uvicorn boot of the live API (FTF-0904-W1 is installed).
+# log_samples: (a) a local logger through the real FTF-0904 pipeline over
+# EVERY rule family; (b) a real uvicorn boot; (c) a direct StructuredEvent
+# cross-check.
 # ---------------------------------------------------------------------------
 
 
+def generate_seed_values() -> dict[str, str]:
+    """One runtime-generated, harmless marker per rule family (F-SEEDS --
+    nothing here is a fixed literal)."""
+    return {rule: generate_seed_for_rule(rule) for rule in RULES}
+
+
 def scan_log_samples(
-    seed_values: Iterable[str], *, target: str = "log_sample"
+    seed_values: Iterable[tuple[str, str]] | None = None, *, target: str = "log_sample"
 ) -> tuple[list[SecretFinding], list[ScenarioResult]]:
     """Proves this suite is not vacuously passing, and that the real,
     already-certified FTF-0904 pipeline still redacts a seeded
-    secret-shaped marker before it reaches a log sink. For each seed
-    value: the RAW line must trip this suite's own rules (else this
-    suite's rules cannot detect the shape it was asked to seed); the real
-    sink output (through a fresh logger wired with the real
-    `install_redaction`) must then be clean."""
+    secret-shaped marker before it reaches a log sink -- now covering
+    every rule family in `RULES` (round 2 covered 5 by construction of
+    its fixed literal list; round 3's seeds are generated, one per
+    family, covering all of them)."""
+    if seed_values is None:
+        seed_values = list(generate_seed_values().items())
     buffer = io.StringIO()
     logger = logging.getLogger(f"ftf_1505_log_sample_{uuid.uuid4().hex}")
     logger.setLevel(logging.INFO)
@@ -946,26 +869,16 @@ def scan_log_samples(
 
     findings: list[SecretFinding] = []
     results: list[ScenarioResult] = []
-    for index, value in enumerate(seed_values):
+    for rule, value in seed_values:
         raw_line = f"request completed token={value} status=ok"
-        raw_hits = list(_matches(raw_line))
-        detects_shape = bool(raw_hits)
-        for rule, matched in raw_hits:
-            findings.append(
-                SecretFinding(
-                    rule=rule,
-                    target=target,
-                    location=f"<pre-redaction:{index}>",
-                    value_sha256=_value_sha256(matched),
-                    blocking=False,
-                )
-            )
+        raw_hits = list(_matches_text(raw_line, include_canary=False, on_incomplete=None))
+        detects_shape = any(hit_rule == rule for hit_rule, _ in raw_hits)
         results.append(
             ScenarioResult(
                 resource_kind=target,
-                check="pre_redaction_detects_seeded_shape",
+                check=f"pre_redaction_detects_seeded_shape[{rule}]",
                 method="SCAN",
-                path=f"<pre-redaction:{index}>",
+                path=f"<pre-redaction:{rule}>",
                 status=0 if detects_shape else 1,
                 expected_denied=True,
                 passed=detects_shape,
@@ -976,24 +889,24 @@ def scan_log_samples(
         buffer.truncate(0)
         logger.info("request completed token=%s status=ok", value)
         sink_output = buffer.getvalue()
-        sink_hits = list(_matches(sink_output))
+        sink_hits = list(scan_line(sink_output))
         clean = not sink_hits
-        for rule, matched in sink_hits:
+        for hit_rule, _matched in sink_hits:
             findings.append(
                 SecretFinding(
-                    rule=rule,
+                    rule=hit_rule,
                     target=target,
-                    location=f"<post-redaction:{index}>",
-                    value_sha256=_value_sha256(matched),
+                    location=f"<post-redaction:{rule}>",
+                    value_sha256="",
                     blocking=True,
                 )
             )
         results.append(
             ScenarioResult(
                 resource_kind=target,
-                check="post_redaction_clean",
+                check=f"post_redaction_clean[{rule}]",
                 method="SCAN",
-                path=f"<post-redaction:{index}>",
+                path=f"<post-redaction:{rule}>",
                 status=1 if sink_hits else 0,
                 expected_denied=True,
                 passed=clean,
@@ -1001,6 +914,54 @@ def scan_log_samples(
         )
     logger.removeHandler(handler)
     return findings, results
+
+
+def scan_structured_event_cross_check(
+    *, target: str = "log_sample"
+) -> tuple[list[SecretFinding], list[ScenarioResult]]:
+    """FTF-0006's `StructuredEvent` is content-free BY FIELD SHAPE (every
+    field is validated against a short safe-identifier pattern) -- it has
+    no redaction of its own. A canary-shaped value happens to satisfy
+    that identifier pattern, so this is the one place a caller misusing
+    `identity`/`event` could leak one unredacted. This suite's own canary
+    detection is the backstop: proven directly against a real
+    `emit_to_stream` write, not assumed."""
+    marker = generate_canary()
+    event = StructuredEvent(
+        event="probe.ftf_1505",
+        correlation_id=uuid.uuid4().hex,
+        identity=marker.value,
+        status="ok",
+        duration_ms=1.0,
+        timestamp_utc="2026-01-01T00:00:00+00:00",
+    )
+    buffer = io.StringIO()
+    emit_to_stream(event, stream=buffer)
+    output = buffer.getvalue()
+    hits = scan_line(output, include_canary=True)
+    detected = any(rule == "canary_leaked" for rule, _ in hits)
+    findings: list[SecretFinding] = []
+    if not detected:
+        findings.append(
+            SecretFinding(
+                rule="structured_event_cross_check_blind",
+                target=target,
+                location="<structured-event>",
+                value_sha256="",
+                blocking=True,
+            )
+        )
+    return findings, [
+        ScenarioResult(
+            resource_kind=target,
+            check="structured_event_canary_detected",
+            method="SCAN",
+            path="<structured-event>",
+            status=0 if detected else 1,
+            expected_denied=True,
+            passed=detected,
+        )
+    ]
 
 
 def _free_port() -> int:
@@ -1022,8 +983,6 @@ def _wait_for_port(port: int, proc: subprocess.Popen[bytes], deadline: float) ->
 
 
 def _live_app_env() -> dict[str, str]:
-    """A complete env for `create_app()`; the database URL is never
-    connected to -- same shape FTF-0904-W1's own suite uses."""
     import os
 
     env = {k: v for k, v in os.environ.items() if not k.startswith("SOVRA_")}
@@ -1058,14 +1017,18 @@ def _live_app_env() -> dict[str, str]:
 def scan_live_app_log_samples(
     root: Path, *, target: str = "log_sample"
 ) -> tuple[list[SecretFinding], list[ScenarioResult]]:
-    """Boots the real `uvicorn app.main:create_app --factory` (FTF-0904-W1
-    is installed) and probes it with seeded shape-rule values and FTF-0905
-    canaries (literal, base64, hex, url, fragmented) carried in the query
-    string, an Authorization header and a Cookie header, against a real
-    401 and a real 404 route. Scans the process's captured stdout/stderr.
-    Disclosed scope: this lane exercises 401/404 only -- a live 5xx
-    validation-error path is not separately exercised here (FTF-0904-W1's
-    own suite already covers a startup-failure 5xx-shaped case)."""
+    """Boots the real `uvicorn app.main:create_app --factory` and probes
+    it with every rule family's seed (behind the same `?token=` key name
+    the canary probes already use -- a coverage sweep over this suite's
+    own 16 shapes, not a search for FTF-0904-F1's own, separately-scoped,
+    key-NAME-heuristic gaps) and FTF-0905 canaries (literal, base64, hex,
+    url, fragmented) across the query string, a header, a cookie and a
+    JSON request body, against 401/404. Disclosed scope: every route
+    reachable here requires auth, which this lane has none of, so a 5xx/
+    422 validation-error path stays unreached (confirmed directly: an
+    invalid UUID path segment still gets 401, since the auth dependency
+    runs before path-param validation) -- same limit round 2 already
+    disclosed. Scans the process's captured stdout/stderr."""
     port = _free_port()
     marker = generate_canary()
     encoded = {
@@ -1073,52 +1036,90 @@ def scan_live_app_log_samples(
         for encoding in ("literal", "base64", "hex", "url")
     }
     fragments = fragment_canary(marker, 2)
-    shape_seed = "sk-" + marker.value.replace("CANARY-DO-NOT-USE-", "").ljust(32, "0")
+    family_seeds = generate_seed_values()
 
-    probes: list[tuple[str, str, dict[str, str], int]] = [
+    probes: list[tuple[str, str, dict[str, str], str, bytes | None, int]] = [
         (
             "query_literal",
             f"/api/v1/organizations/{uuid.uuid4()}/projects?token={encoded['literal']}",
             {},
+            "GET",
+            None,
             401,
         ),
         (
             "query_base64",
             f"/api/v1/organizations/{uuid.uuid4()}/projects?token={encoded['base64']}",
             {},
+            "GET",
+            None,
             401,
         ),
         (
             "query_hex",
             f"/api/v1/organizations/{uuid.uuid4()}/projects?token={encoded['hex']}",
             {},
+            "GET",
+            None,
             401,
         ),
         (
             "query_url",
             f"/api/v1/organizations/{uuid.uuid4()}/projects?token={encoded['url']}",
             {},
+            "GET",
+            None,
             401,
         ),
         (
             "query_fragmented",
             f"/api/v1/organizations/{uuid.uuid4()}/projects?token={fragments[0]}&token2={fragments[1]}",
             {},
+            "GET",
+            None,
             401,
         ),
         (
             "header_authorization",
             "/no-such-route-auth",
-            {"Authorization": f"Bearer {shape_seed}"},
+            {"Authorization": f"Bearer {encoded['literal']}"},
+            "GET",
+            None,
             404,
         ),
         (
             "header_cookie",
             "/no-such-route-cookie",
             {"Cookie": f"session={encoded['literal']}"},
+            "GET",
+            None,
             404,
         ),
+        (
+            "body_json",
+            f"/api/v1/organizations/{uuid.uuid4()}/projects",
+            {"Content-Type": "application/json"},
+            "POST",
+            json.dumps({"name": encoded["literal"]}).encode(),
+            401,
+        ),
     ]
+    for rule, seed in family_seeds.items():
+        # Same placement convention every other probe above already uses
+        # (`?token=`, a key name FTF-0904's own `_SECRET_KEY_WORDS` covers)
+        # -- this is a coverage sweep over every rule family's SHAPE, not a
+        # search for an unrelated gap in FTF-0904's key-NAME heuristics
+        # (that is FTF-0904-F1's own, separately active, out-of-scope lane).
+        probes.append(
+            (
+                f"family_{rule}",
+                f"/no-such-route-family?token={quote(seed, safe='')}",
+                {},
+                "GET",
+                None,
+                404,
+            )
+        )
 
     results: list[ScenarioResult] = []
     findings: list[SecretFinding] = []
@@ -1149,15 +1150,15 @@ def scan_live_app_log_samples(
                 booted = _wait_for_port(port, proc, time.monotonic() + 60)
                 statuses: dict[str, int | None] = {}
                 if booted:
-                    for name, path, headers, _expected in probes:
+                    for name, path, headers, method, body, _expected in probes:
                         try:
                             conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
-                            conn.request("GET", path, headers=headers)
+                            conn.request(method, path, body=body, headers=headers)
                             resp = conn.getresponse()
                             resp.read()
                             statuses[name] = resp.status
                             conn.close()
-                        except OSError:
+                        except (OSError, http.client.HTTPException):
                             statuses[name] = None
                     time.sleep(0.5)
             finally:
@@ -1184,7 +1185,7 @@ def scan_live_app_log_samples(
     if not booted:
         return findings, results
 
-    for name, _path, _headers, expected in probes:
+    for name, _path, _headers, _method, _body, expected in probes:
         got = statuses.get(name)
         ok = got == expected
         results.append(
@@ -1199,15 +1200,15 @@ def scan_live_app_log_samples(
             )
         )
 
-    hits = list(_matches(captured, include_canary=True))
+    hits = scan_line(captured, include_canary=True)
     clean = not hits
-    for rule, value in hits:
+    for rule, _value in hits:
         findings.append(
             SecretFinding(
                 rule=rule,
                 target=target,
                 location="<live-app-output>",
-                value_sha256=_value_sha256(value),
+                value_sha256="",
                 blocking=True,
             )
         )
@@ -1226,30 +1227,17 @@ def scan_live_app_log_samples(
 
 
 def evaluate(results: list[ScenarioResult]) -> TenantIsolationEvidence:
-    """Thin wrapper over the reused `build_evidence`. Re-raises the
-    reused function's own `TenantIsolationSuiteError` as `SecretScanError`."""
     try:
         return build_evidence(results)
     except TenantIsolationSuiteError as exc:
         raise SecretScanError(str(exc)) from exc
 
 
-def _default_seed_values() -> list[str]:
-    """Harmless, obviously-fake markers -- one per rule family this
-    suite's own shape rules recognise -- never a real secret, same
-    `CANARY-DO-NOT-USE`-style discipline FTF-0905's canary generator
-    established for leak testing, applied here to secret-SHAPE testing
-    instead of leak-TRACKING."""
-    return [
-        "AKIA" + "CANARY234567ABCD",  # exactly 16 chars after AKIA, A-Z2-7 only
-        "ghp_" + "CANARYDONOTUSE" + "0" * 22,  # >= 36 chars after ghp_
-        "Bearer CANARY-DO-NOT-USE-0000000000000000000000",
-        "sk-" + "CANARYDONOTUSE0" * 3,  # >= 32 chars after sk-
-        "hf_" + "CANARYDONOTUSE" + "0" * 20,  # exactly 34 chars after hf_
-    ]
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--scope", choices=["pr", "all-refs"], default="pr")
+    args = parser.parse_args(argv)
 
-
-def main() -> None:
     baseline = load_baseline()
     assert_dirs_covered(ROOT, SOURCE_ROOTS)
     assert_artifact_uploads_covered(CI_WORKFLOW_PATH.read_text(encoding="utf-8"), ARTIFACT_ROOTS)
@@ -1257,12 +1245,14 @@ def main() -> None:
     all_findings: list[SecretFinding] = []
     all_results: list[ScenarioResult] = []
     seen_fingerprints: set[str] = set()
+    scanned_paths: set[str] = set()
 
     source_findings, source_results = scan_source(
-        ROOT, baseline, seen_fingerprints=seen_fingerprints
+        ROOT, baseline, seen_fingerprints=seen_fingerprints, scanned_paths=scanned_paths
     )
     all_findings.extend(source_findings)
     all_results.extend(source_results)
+    assert_scanned_set_matches_tracked_files(ROOT, scanned_paths)
 
     artifact_findings, artifact_results = scan_artifact_roots(
         ROOT, baseline, seen_fingerprints=seen_fingerprints
@@ -1271,14 +1261,18 @@ def main() -> None:
     all_results.extend(artifact_results)
 
     history_findings, history_results = scan_history(
-        ROOT, baseline, seen_fingerprints=seen_fingerprints
+        ROOT, baseline, seen_fingerprints=seen_fingerprints, scope=args.scope
     )
     all_findings.extend(history_findings)
     all_results.extend(history_results)
 
-    log_findings, log_results = scan_log_samples(_default_seed_values())
+    log_findings, log_results = scan_log_samples()
     all_findings.extend(log_findings)
     all_results.extend(log_results)
+
+    structured_findings, structured_results = scan_structured_event_cross_check()
+    all_findings.extend(structured_findings)
+    all_results.extend(structured_results)
 
     live_findings, live_results = scan_live_app_log_samples(ROOT)
     all_findings.extend(live_findings)
@@ -1313,7 +1307,7 @@ def main() -> None:
         )
     print(
         f"SECRET SCAN: {evidence.scenarios_total} unit(s) scanned, "
-        f"{len(all_findings)} finding(s), 0 blocking -- clean"
+        f"{len(all_findings)} finding(s), 0 blocking -- clean (scope={args.scope})"
     )
 
 
