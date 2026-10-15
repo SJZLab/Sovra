@@ -5356,7 +5356,7 @@ def test_r4_shared_string_store_round_trips_across_chunk_boundaries() -> None:
         and got == [[texts_[i], texts_[(i + 1) % 12]] for i in range(12)],
     )
     original_limit = xi._SST_OFFSET_LIMIT
-    xi._SST_OFFSET_LIMIT = 100
+    xi._SST_OFFSET_LIMIT = 100  # type: ignore[misc]
     try:
         small = xi._SharedStrings()
         small.append(b"x" * 100)
@@ -5368,7 +5368,7 @@ def test_r4_shared_string_store_round_trips_across_chunk_boundaries() -> None:
         check(CID, "an append past the offset limit is limit_exceeded", refused)
         check(CID, "and the refused string was not stored", len(small) == 1)
     finally:
-        xi._SST_OFFSET_LIMIT = original_limit
+        xi._SST_OFFSET_LIMIT = original_limit  # type: ignore[misc]
 
 
 def test_r4_an_unreadable_xml_declaration_is_a_typed_failure_in_every_part() -> None:
