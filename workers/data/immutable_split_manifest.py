@@ -458,8 +458,8 @@ def _proposal_body(content: ManifestContent) -> dict[str, object]:
     return {
         "project_id": content.project_id,
         "name": content.name,
+        # `parent_version` is not hashed: it is always `version - 1` (None for version 1).
         "version": content.version,
-        "parent_version": content.parent_version,
         "strategy": content.strategy,
         "seed": content.seed,
         "ratios": list(content.ratios),
@@ -547,10 +547,12 @@ def _list(value: object, name: str) -> list[object]:
 def _score(entry: object) -> tuple[str, float]:
     if type(entry) is not list or len(entry) != 2 or type(entry[0]) is not str:
         raise ManifestDomainError("scores must be [name, number] pairs")
-    value = entry[1]
-    if type(value) not in (int, float):
-        raise ManifestDomainError("scores must be [name, number] pairs")
-    return entry[0], float(value)
+    try:
+        # A bool or a numeric string converts here and is then refused by the round-trip check in
+        # `report_from_body` (its body would no longer equal the stored one).
+        return entry[0], float(entry[1])
+    except (TypeError, ValueError):
+        raise ManifestDomainError("scores must be [name, number] pairs") from None
 
 
 def report_from_body(body: Mapping[str, object]) -> LeakageReport:
@@ -702,8 +704,6 @@ def migrate_legacy_three_split(
             )
         )
     assignments = tuple(sorted(placed))
-    if len({a[0] for a in assignments}) != len(assignments):
-        raise ManifestDomainError("duplicate record_id")
     tally: dict[str, tuple[int, set[str]]] = {role: (0, set()) for role in ROLES}
     for _, role, group_id in assignments:
         count, groups = tally[role]
@@ -736,13 +736,15 @@ def assert_training_rows(rows: Sequence[AssignmentRow]) -> tuple[AssignmentRow, 
     """The rows if every one is train / validation; any other role raises. The store filters in
     SQL first, so this is the second, independent check (a final record is never served)."""
     for row in rows:
-        if not isinstance(row, AssignmentRow) or row.role not in TRAINING_ROLES:
+        if not isinstance(row, AssignmentRow) or not any(same(row.role, r) for r in TRAINING_ROLES):
             raise ManifestDomainError("a non-training record reached a training view")
     return tuple(rows)
 
 
 def assert_development_rows(rows: Sequence[AssignmentRow]) -> tuple[AssignmentRow, ...]:
     for row in rows:
-        if not isinstance(row, AssignmentRow) or row.role not in DEVELOPMENT_ROLES:
+        if not isinstance(row, AssignmentRow) or not any(
+            same(row.role, r) for r in DEVELOPMENT_ROLES
+        ):
             raise ManifestDomainError("a non-development record reached a development view")
     return tuple(rows)

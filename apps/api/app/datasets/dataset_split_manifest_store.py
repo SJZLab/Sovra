@@ -620,8 +620,7 @@ def _prepare_source(
         ):
             raise SplitManifestError("invalid_request")
         if type(record.group_keys) is not tuple or not all(
-            type(key) is str and 0 < len(key) <= _MAX_KEY and pg_safe(key)
-            for key in record.group_keys
+            type(key) is str and len(key) <= _MAX_KEY and pg_safe(key) for key in record.group_keys
         ):
             raise SplitManifestError("invalid_request")
         positions.add(record.batch_position)
@@ -832,14 +831,11 @@ def _freeze_proposal(
             migrated_from_legacy_sha256=migrated_from_legacy_sha256,
         )
 
-    try:
-        if latest is not None and same(
-            latest.proposal_sha256, compute_proposal_sha256(content_for(latest.version))
-        ):
-            return latest
-        content = content_for(version)
-    except ManifestDomainError:
-        raise SplitManifestError("invalid_request") from None
+    if latest is not None and same(
+        latest.proposal_sha256, compute_proposal_sha256(content_for(latest.version))
+    ):
+        return latest
+    content = content_for(version)
 
     row = DatasetSplitManifest(
         id=uuid.uuid4(),
@@ -988,7 +984,6 @@ def propose_split_manifest(
 ) -> DatasetSplitManifest:
     """Builds and stores a `proposed` manifest. Raises `SplitManifestError`; on any raise nothing
     was written. Re-proposing an unchanged manifest returns the latest version untouched."""
-    _require_actor(actor)
     if is_legacy_three_split(spec):
         raise SplitManifestError("legacy_manifest_requires_migration")
     if not isinstance(spec, SplitSpec):
@@ -1059,9 +1054,6 @@ def migrate_legacy_split_manifest(
     `final_qualification` only. A development role exists only from `development_dataset_id`
     (an explicit `candidate_development` dataset among `sources`); without one the stored manifest
     is `insufficient` and the database refuses to lock it."""
-    _require_actor(actor)
-    if not isinstance(legacy, LegacyThreeSplitManifest):
-        raise SplitManifestError("invalid_request")
     _validate_request(actor, project_id, name, normalization_version, tokenizer_identity, sources)
     if development_dataset_id is not None and development_dataset_id not in [
         s.dataset_id for s in sources
@@ -1451,13 +1443,13 @@ def _read_rows(
 def _check_served_hashes(
     content: ManifestContent, rows: Sequence[AssignmentRow], roles: tuple[str, ...]
 ) -> None:
+    frozen_by_role = {r.role: r for r in content.roles}
     by_role: dict[str, list[AssignmentRow]] = {role: [] for role in roles}
     for served_row in rows:
         by_role[served_row.role].append(served_row)
-    for frozen in content.roles:
-        if frozen.role not in by_role:
-            continue
-        served = by_role[frozen.role]
+    for role in roles:
+        frozen = frozen_by_role[role]
+        served = by_role[role]
         if len(served) != frozen.record_count or not same(role_sha256(served), frozen.role_sha256):
             raise SplitManifestError("manifest_tampered")
 

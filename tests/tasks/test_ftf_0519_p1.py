@@ -3892,6 +3892,14 @@ def s_hardening(world: World) -> None:
         lambda: world.propose("h5", [], sources=()),
         early=True,
     )
+    for label, bad_sources in (("an int", 5), ("None", None), ("a dict", {})):
+        refuses(
+            world,
+            f"sources as {label}",
+            "invalid_request",
+            lambda bad_sources=bad_sources: world.propose("h5", [], sources=bad_sources),
+            early=True,
+        )
     original = store.MAX_MANIFEST_RECORDS
     store.MAX_MANIFEST_RECORDS = 15
     try:
@@ -4404,9 +4412,91 @@ def standard_world_2(world: World) -> dict[str, Any]:
     return {"a": a, "d": d, "h": h}
 
 
+def p_hardening_2() -> None:
+    legacy_assignments = (("r1", "train", "g1"), ("r2", "heldout_test", "g2"))
+    legacy = ism.LegacyThreeSplitManifest(
+        "seed", legacy_assignments, ism.compute_legacy_sha256("seed", legacy_assignments)
+    )
+    for bad in (5, None, "d1", {}):
+        check(
+            "NEG-LEGACY-INPUT",
+            f"migrate_legacy_three_split refuses development={bad!r}",
+            raises(lambda bad=bad: ism.migrate_legacy_three_split(legacy, bad)),
+        )
+    check(
+        "NEG-LEGACY-INPUT",
+        "a development id equal to a legacy id is refused",
+        raises(lambda: ism.migrate_legacy_three_split(legacy, [("r1", "gx")])),
+    )
+    roles = ism.build_role_rows(
+        [
+            row(DS_A, 0, "train", "g0"),
+            row(DS_A, 1, "validation", "g1"),
+            row(DS_B, 0, "development_eval", "g2"),
+            row(DS_B, 1, "final_qualification", "g3"),
+        ]
+    )
+
+    def grant() -> ism.SourceGrant:
+        return ism.SourceGrant(
+            DS_A, 1, "training", "a" * 64, CONN, ("training",), REPORT, "b" * 64, "c" * 64
+        )
+
+    one = make_content(
+        roles, grant, strategy="legacy_three_split_v1", migrated_from_legacy_sha256=sha("one")
+    )
+    two = make_content(
+        roles, grant, strategy="legacy_three_split_v1", migrated_from_legacy_sha256=sha("two")
+    )
+    check(
+        "NEG-LEGACY-LINEAGE",
+        "two legacy manifests that differ only in their lineage hash have different proposal hashes",
+        ism.compute_proposal_sha256(one) != ism.compute_proposal_sha256(two),
+    )
+    v1 = make_content(roles, grant)
+    v2 = make_content(roles, grant, version=2, parent_version=1)
+    v3 = make_content(roles, grant, version=3, parent_version=2)
+    check(
+        "ACC-VERSION-CHANGE",
+        "versions 1, 2 and 3 have different proposal hashes",
+        len({ism.compute_proposal_sha256(c) for c in (v1, v2, v3)}) == 3,
+    )
+    body = json.loads(json.dumps(report_body(real_report()[0])))
+    for label, scores in (
+        ("a string that is not a number", [["exact", "abc"]]),
+        ("None", [["exact", None]]),
+        ("a list", [["exact", [1]]]),
+        ("a numeric string", [["exact", "1"]]),
+        ("a bool", [["exact", True]]),
+    ):
+        finding = {
+            "finding_id": "a" * 64,
+            "method": "exact_raw",
+            "reason": "cross_role",
+            "disposition": "blocking",
+            "record_id_a": "a",
+            "role_a": "train",
+            "record_id_b": "b",
+            "role_b": "final_qualification",
+            "prior_source_label": None,
+            "scores": scores,
+        }
+        check(
+            "ACC-FREEZE-REPORT",
+            f"a score that is {label} is refused with the module's own error",
+            raises(lambda finding=finding: ism.report_from_body({**body, "findings": [finding]})),
+        )
+    check(
+        "ACC-FREEZE-REPORT",
+        "an integer-valued score and a float score both round-trip",
+        ism._score(["x", 1]) == ("x", 1.0) and ism._score(["x", 0.5]) == ("x", 0.5),
+    )
+
+
 def main() -> None:
     part_p()
     p_hardening()
+    p_hardening_2()
     part_m()
     part_s()
     if FAILURES:
