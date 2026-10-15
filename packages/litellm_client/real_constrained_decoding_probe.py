@@ -422,13 +422,27 @@ def _aggregate_trials(
     resolved_models: list[str | None],
     probed_at: datetime,
 ) -> ConstrainedDecodingProbeResult:
+    # MUTATION-KILL-BY-TEXT-GUARD precedent (FTF-H010-P3a): this function is reached only
+    # from the one call site below, always with exactly _TRIALS entries by loop construction.
+    # A defensive check anyway (never trust an internal invariant to hold by construction alone).
+    if len(trials) != _TRIALS:
+        raise ValueError(f"_aggregate_trials requires exactly {_TRIALS} trials, got {len(trials)}")
     distinct_models = set(resolved_models)
     common_model = resolved_models[0] if len(distinct_models) == 1 else None
     identity = (
         RouteIdentityState.VERIFIED if common_model is not None else RouteIdentityState.UNVERIFIED
     )
     counts = [t.completion_tokens for t in trials]
-    all_usage = all(count is not None for count in counts)
+    has_negative_count = any(c is not None and c < 0 for c in counts)
+    # A real answer that matched its trial's enum is never zero tokens: treat a reported zero
+    # the same as missing usage (Section 3.4 "missing usage is unpriced, not zero" extends to an
+    # implausible zero, which is just as untrustworthy a metric as no usage at all -- Law 17).
+    has_implausible_zero = any(c == 0 for c in counts)
+    all_usage = (
+        all(count is not None for count in counts)
+        and not has_negative_count
+        and not has_implausible_zero
+    )
     max_observed = max(c for c in counts if c is not None) if all_usage else None
     mean_tokens = (
         Decimal(sum(c for c in counts if c is not None)) / Decimal(len(counts))
@@ -457,11 +471,18 @@ def _aggregate_trials(
             _State.NOT_ENFORCED,
             "route did not hold the answer to the trial enum (constraint absent or dropped)",
         )
-    if not all_usage:
+    if has_negative_count:
         return build(
-            _State.USAGE_MISSING,
-            "constraint observed but usage is absent: output tokens are unknown, not zero",
+            _State.MALFORMED_RESPONSE,
+            "a trial reported a negative completion token count",
         )
+    if not all_usage:
+        detail = (
+            "a trial reported zero completion tokens for a non-empty, enum-matching answer"
+            if has_implausible_zero
+            else "constraint observed but usage is absent: output tokens are unknown, not zero"
+        )
+        return build(_State.USAGE_MISSING, detail)
     if max_observed is not None and max_observed > _MAX_TOKENS:
         return build(
             _State.MALFORMED_RESPONSE,

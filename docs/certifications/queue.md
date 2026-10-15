@@ -25013,3 +25013,12 @@ Control-plane design 2026-10-14 (QUEUE.md Backlog "FTF-1704 Validation dataset")
 Not self-certified (Law 4) — `certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN`,
 `evidence_hash` pinned to the merge commit `bd4066f4e153b96c9b181222626bb52a910487ad`. Needs L2 review by a
 different session.
+
+## 2026-10-15T17:21Z — Control plane: FTF-1704 returned (r2)
+- **Returned:** FTF-1704 r2 (0i): synthetic provenance on development cases; content hash in the recorded freeze.
+
+## 2026-10-15T17:21Z — Control plane: FTF-0505 returned (r5)
+- **Returned:** FTF-0505 r5 (0d, small): schema digest on mapping_column_missing, blank_lines pin, production-constant tables; stopping rule.
+
+## 2026-10-15T17:21Z — Control plane: FTF-0904-W1-F1 certified (child slice)
+- **Certified:** FTF-0904-W1-F1 (#831, merge f7646ecf). W1 requalified.

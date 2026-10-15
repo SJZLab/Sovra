@@ -1200,11 +1200,18 @@ class XlsxEventStream(Iterator[ImportEvent]):
         def resolve(raw: _RawRow) -> frozenset[int]:
             try:
                 headers_ = self._header_cells(raw, package.shared)
+            except XlsxAborted as exc:
+                resolved["error"] = exc
+                return frozenset()
+            # Kept before the mapping is resolved, so a held `mapping_column_missing` still
+            # reports the digest of the headers that were read (as the CSV importer does).
+            resolved["headers"] = headers_
+            try:
                 positions_ = self._positions(headers_, raw.number)
             except XlsxAborted as exc:
                 resolved["error"] = exc
                 return frozenset()
-            resolved["headers"], resolved["positions"] = headers_, positions_
+            resolved["positions"] = positions_
             return frozenset(position for _name, position in positions_)
 
         scanner = _SheetScanner(
@@ -1228,6 +1235,10 @@ class XlsxEventStream(Iterator[ImportEvent]):
                 if not raw.is_header:
                     continue
                 if "error" in resolved:
+                    if "headers" in resolved:
+                        self.source_schema_sha256 = _schema_sha256(
+                            package.sheet_index, resolved["headers"]
+                        )
                     raise resolved["error"]
                 headers, positions = resolved["headers"], resolved["positions"]
                 self.source_schema_sha256 = _schema_sha256(package.sheet_index, headers)
