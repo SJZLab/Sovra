@@ -35,7 +35,15 @@ What is real:
   (`HeldOutLeakageError`) and cross-role near duplicates of user turns or
   final answers (FTF-0513), and takes no score, outcome or result of any kind,
   so results cannot drive a resplit: a regenerated set is a new manifest hash
-  and `assert_split_unchanged` raises on any difference.
+  and `assert_split_unchanged` raises on any difference. The freeze it checks
+  is two hashes, not one: `manifest.manifest_sha256` (FTF-0517's own hash, over
+  record ids, roles and group keys only) AND `content_sha256` (this module's
+  own hash, over every validation/development record's full content, keyed by
+  record id -- training is excluded, it already has FTF-1703's own
+  `dataset_sha256`). An edited, truncated, or same-id-but-regenerated-with-
+  different-content validation/development record changes `content_sha256`
+  (or the record-id set `assert_split_unchanged` checks against the manifest)
+  even when the manifest hash alone would not move.
 
 What is NOT claimed (disclosed, not hidden):
 
@@ -460,6 +468,11 @@ class ReferenceEvalSplits:
     manifest: SplitManifest
     meets_counts: bool
     review_status: str
+    # sha256 over every validation/development record's own content (never training,
+    # which already has its own FTF-1703 dataset_sha256) -- the manifest hash alone
+    # covers record ids/roles/group keys only, so this is the part of the freeze that
+    # notices an edited, truncated or same-id-regenerated-with-different-content record.
+    content_sha256: str
 
 
 # ---------------------------------------------------------------------------
@@ -758,6 +771,12 @@ def _generate_case(i: int) -> dict[str, Any]:
                 "token": tok,
                 "own_record_title": title,
                 "foreign_record_title": f"Other {title}",
+            },
+            "provenance": {
+                "origin": _ORIGIN,
+                "producer": DEVELOPMENT_GENERATOR_ID,
+                "label": "synthetic",
+                "index": i,
             },
         },
         "expected_json": {
@@ -1099,6 +1118,25 @@ def _require_sequence(name: str, value: Any) -> None:
         raise EvalDatasetError(f"{name} must be a list or tuple of plain JSON objects")
 
 
+def _content_sha256(
+    validation: Sequence[ValidationTrace], development: Sequence[Mapping[str, Any]]
+) -> str:
+    """sha256 over every validation/development record's own content, each entry
+    keyed by its own record id (same cumulative-digest pattern as FTF-1703's
+    `dataset_sha256`), sorted so record order never changes the hash."""
+    entries = sorted(
+        [(t.trace_id, t.to_dict()) for t in validation] + [(c["case_key"], c) for c in development],
+        key=lambda entry: entry[0],
+    )
+    digest = hashlib.sha256()
+    for record_id, record in entries:
+        digest.update(record_id.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(_canonical(record).encode("utf-8"))
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
 def build_reference_eval_splits(
     validation: Sequence[dict[str, Any]],
     development: Sequence[dict[str, Any]],
@@ -1148,15 +1186,31 @@ def build_reference_eval_splits(
         meets_counts=len(val_rows) >= MIN_VALIDATION_CASES
         and len(dev_rows) >= MIN_DEVELOPMENT_CASES,
         review_status=REVIEW_STATUS,
+        content_sha256=_content_sha256(kept_validation, kept_development),
     )
 
 
-def assert_split_unchanged(splits: ReferenceEvalSplits, recorded_manifest_sha256: str) -> None:
+_EVAL_ROLES = ("validation", "development_eval")
+
+
+def assert_split_unchanged(
+    splits: ReferenceEvalSplits,
+    recorded_manifest_sha256: str,
+    recorded_content_sha256: str,
+) -> None:
     """Raise unless the split's manifest is untampered and still has the hash that
-    was recorded when it was frozen. A hand-edited manifest or a different
-    assignment (a resplit) is refused; a regenerated set is a new hash."""
-    if type(recorded_manifest_sha256) is not str or not _HEX64.fullmatch(recorded_manifest_sha256):
-        raise SplitChangedError("recorded manifest hash must be 64 lowercase hex characters")
+    was recorded when it was frozen, AND the validation/development records
+    themselves -- which the manifest hash never covers, only their ids/roles/group
+    keys -- still match the content hash recorded at the same time. A hand-edited
+    manifest, a different assignment (a resplit), an edited or truncated record, or
+    a same-id regeneration with different content is refused; a regenerated set is
+    a new hash either way."""
+    for name, value in (
+        ("recorded manifest hash", recorded_manifest_sha256),
+        ("recorded content hash", recorded_content_sha256),
+    ):
+        if type(value) is not str or not _HEX64.fullmatch(value):
+            raise SplitChangedError(f"{name} must be 64 lowercase hex characters")
     try:
         verify_manifest(splits.manifest)
     except SplitEngineError as exc:
@@ -1165,3 +1219,20 @@ def assert_split_unchanged(splits: ReferenceEvalSplits, recorded_manifest_sha256
         splits.manifest.manifest_sha256.encode("ascii"), recorded_manifest_sha256.encode("ascii")
     ):
         raise SplitChangedError("split differs from the recorded manifest hash")
+    manifest_eval_ids = {
+        record_id for record_id, role, _group in splits.manifest.assignments if role in _EVAL_ROLES
+    }
+    content_ids = {t.trace_id for t in splits.validation} | {
+        c["case_key"] for c in splits.development
+    }
+    if content_ids != manifest_eval_ids:
+        raise SplitChangedError(
+            "validation/development records do not match the recorded manifest's record ids"
+        )
+    recomputed_content_sha256 = _content_sha256(splits.validation, splits.development)
+    if not hmac.compare_digest(
+        recomputed_content_sha256.encode("ascii"), recorded_content_sha256.encode("ascii")
+    ):
+        raise SplitChangedError(
+            "validation/development record content differs from the recorded content hash"
+        )
