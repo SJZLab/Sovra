@@ -48,6 +48,7 @@ from packages.security.canary_secret_generator import (  # noqa: E402
     generate_canary,
 )
 from packages.security.egress_capture_verification import (  # noqa: E402
+    _MANDATORY_REQUIRED_STORES,
     ConnectionLogEntry,
     EgressEvidence,
     EgressPlan,
@@ -60,6 +61,7 @@ from packages.security.egress_capture_verification import (  # noqa: E402
     PlaintextInspection,
     PlannedFlow,
     _aggregate_overall_status,
+    _needles_for_encoding,
     scan_store_for_canaries,
     verify_egress,
 )
@@ -83,6 +85,11 @@ def _raises(exc_type: type[BaseException], fn, *args: object, **kwargs: object) 
 
 
 _DIGEST = "a" * 64
+_PERCENT_HEX_PATTERN = re.compile(r"%[0-9a-fA-F]{2}")
+
+
+def _PERCENT_LOWER(value: str) -> str:  # noqa: N802
+    return _PERCENT_HEX_PATTERN.sub(lambda m: m.group(0).lower(), value)
 
 
 def _flow(flow_id: str, expected: str, placements: tuple[PlacementRecord, ...] = ()) -> PlannedFlow:
@@ -582,7 +589,7 @@ def test_distinct_case_flow_ids_are_never_merged_and_match_exactly() -> None:
             PlannedFlow("flow-a", "data", "d", "external", "deny"),
             PlannedFlow("Flow-A", "data", "d", "internal", "allow"),
         ),
-        required_stores=frozenset({"controlled_destination", "workflow_history"}),
+        required_stores=_DEST_AND_HISTORY,
     )
     check(
         "FTF-0906-INPUT",
@@ -607,8 +614,9 @@ def test_distinct_case_flow_ids_are_never_merged_and_match_exactly() -> None:
             ConnectionLogEntry("Flow-A", "destination", "connected"),
         ),
         plaintext_inspections=(
-            PlaintextInspection("controlled_destination", "sink", "Flow-A", True, False),
+            PlaintextInspection("controlled_destination", "sink", "Flow-A", True, False, True),
             PlaintextInspection("workflow_history", "wf", None, True, False),
+            *_clean_mandatory_store_inspections(),
         ),
         packet_captures=(
             PacketCaptureObservation("flow-a", encrypted=False, canary_found=False),
@@ -814,6 +822,44 @@ def test_aggregate_overall_status_is_exact_not_normalized() -> None:
         )
         == "failed",
     )
+    all_passed = (FlowVerdict(flow_id="x", status="passed", codes=()),)
+    check(
+        "FTF-0906-UNATTR",
+        "unattributed_leak forces failed even when every flow verdict passed",
+        _aggregate_overall_status(all_passed, frozenset(), (), unattributed_leak=True) == "failed",
+    )
+    check(
+        "FTF-0906-UNPLANNED",
+        "unplanned_evidence forces failed even when every flow verdict passed",
+        _aggregate_overall_status(all_passed, frozenset(), (), unplanned_evidence=True) == "failed",
+    )
+
+
+# --- CALLER-NARROWED-COVERAGE: required_stores cannot omit log stores ------
+
+
+def test_required_stores_cannot_omit_mandatory_log_stores() -> None:
+    good_flows = (_flow("a1", "allow"), _flow("d1", "deny"))
+    check(
+        "FTF-0906-COVERAGE",
+        "a required_stores set omitting every log store is refused at construction",
+        _raises(InvalidEgressPlanError, _plan, good_flows, frozenset({"controlled_destination"})),
+    )
+    check(
+        "FTF-0906-COVERAGE",
+        "a required_stores set omitting just one mandatory log store is refused",
+        _raises(
+            InvalidEgressPlanError,
+            _plan,
+            good_flows,
+            frozenset({"controlled_destination", "application_log", "artifact"}),
+        ),
+    )
+    check(
+        "FTF-0906-COVERAGE",
+        "a required_stores set carrying every mandatory log store constructs fine",
+        bool(_plan(good_flows, frozenset({"controlled_destination", *_MANDATORY_REQUIRED_STORES}))),
+    )
 
 
 # --- verify_egress: the full rule set ---------------------------------------
@@ -833,17 +879,34 @@ def _passing_allow(flow_id: str = "a1") -> tuple:
         ConnectionLogEntry(flow_id, "client", "connected"),
         ConnectionLogEntry(flow_id, "destination", "connected"),
     )
+    # canary_found=True: the positive control Section 12 requires -- the
+    # canary really arrived at the controlled destination, not merely "an
+    # inspection record happened to exist" (VACUOUS-POSITIVE-CONTROL).
     inspection = PlaintextInspection(
         store="controlled_destination",
         store_id="sink-A",
         flow_id=flow_id,
         inspected=True,
         decrypted=False,
+        canary_found=True,
     )
     return enforcement, logs, inspection
 
 
-_DEST_AND_HISTORY = frozenset({"controlled_destination", "workflow_history"})
+def _clean_mandatory_store_inspections(flow_id: str | None = None) -> tuple:
+    """A clean (canary_found=False), inspected=True record for each of the
+    three mandatory log stores (CALLER-NARROWED-COVERAGE) -- the fixture
+    every test that asserts `report.status` now needs, since those three
+    stores can no longer be silently left out of coverage."""
+    return tuple(
+        PlaintextInspection(store, f"{store}-clean", flow_id, True, decrypted=False)
+        for store in ("application_log", "error_path", "artifact")
+    )
+
+
+_DEST_AND_HISTORY = frozenset(
+    {"controlled_destination", "workflow_history", *_MANDATORY_REQUIRED_STORES}
+)
 
 
 def test_fully_exercised_plan_reports_passed() -> None:
@@ -858,7 +921,7 @@ def test_fully_exercised_plan_reports_passed() -> None:
     evidence = EgressEvidence(
         enforcement=(a_enf, d_enf),
         connection_logs=(*a_logs, d_c_log, d_d_log),
-        plaintext_inspections=(a_insp, history_insp),
+        plaintext_inspections=(a_insp, history_insp, *_clean_mandatory_store_inspections()),
     )
     report = verify_egress(plan, evidence)
     check("FTF-0906-ACC1", "allow flow passes", report.flow_verdicts[0].status == "passed")
@@ -878,7 +941,7 @@ def test_missing_workflow_history_forces_partial_never_passed() -> None:
     evidence = EgressEvidence(
         enforcement=(a_enf, d_enf),
         connection_logs=(*a_logs, d_c_log, d_d_log),
-        plaintext_inspections=(a_insp,),
+        plaintext_inspections=(a_insp, *_clean_mandatory_store_inspections()),
     )
     report = verify_egress(plan, evidence)
     check(
@@ -1030,6 +1093,7 @@ def test_allow_flow_canary_leaked_outside_authorized_sinks() -> None:
         flow_id="a1",
         inspected=True,
         decrypted=False,
+        canary_found=True,
     )
     leaking_insp = PlaintextInspection(
         store="error_path",
@@ -1074,6 +1138,7 @@ def test_allow_flow_canary_in_authorized_sink_is_not_a_leak() -> None:
         flow_id="a1",
         inspected=True,
         decrypted=False,
+        canary_found=True,
     )
     authorized_insp = PlaintextInspection(
         store="error_path",
@@ -1102,17 +1167,178 @@ def test_allow_flow_canary_in_authorized_sink_is_not_a_leak() -> None:
     )
 
 
-def test_inspection_coverage_missing_when_a_required_store_is_never_inspected() -> None:
+def test_allow_flow_enforcement_client_destination_must_agree() -> None:
+    # ALLOW-FLOW-IGNORES-ENFORCEMENT, the finding's own literal scenario:
+    # enforcement says deny and the client log agrees (refused), but the
+    # destination log claims connected anyway -- inconsistent evidence
+    # must never be read as a real arrival just because the destination
+    # side alone looks fine.
+    plan = _plan((_flow("a1", "allow"), _flow("d1", "deny")))
+    d_enf, d_c_log, d_d_log = _passing_deny()
+    evidence = EgressEvidence(
+        enforcement=(EnforcementObservation("a1", "process_guard", "deny", "blocked"), d_enf),
+        connection_logs=(
+            ConnectionLogEntry("a1", "client", "refused"),
+            ConnectionLogEntry("a1", "destination", "connected"),
+            d_c_log,
+            d_d_log,
+        ),
+        plaintext_inspections=(
+            PlaintextInspection(
+                "controlled_destination", "sink-A", "a1", True, decrypted=False, canary_found=True
+            ),
+        ),
+    )
+    report = verify_egress(plan, evidence)
+    verdict = next(v for v in report.flow_verdicts if v.flow_id == "a1")
+    check(
+        "FTF-0906-ENFORCE",
+        "enforcement=deny + client=refused with a contradicting destination=connected "
+        "is never read as a real arrival",
+        verdict.status == "failed" and verdict.codes == ("vacuous_permitted_flow",),
+    )
+
+
+def test_encrypted_capture_is_not_satisfied_by_an_uninspected_dummy_record() -> None:
+    # ENCRYPTED-CAPTURE-EVADABLE: a PlaintextInspection that was never
+    # actually inspected must not count as "something to corroborate" an
+    # encrypted capture -- only a real, inspected record does.
+    for flow_id, builder in (("a1", _passing_allow), ("d1", _passing_deny)):
+        plan = _plan((_flow("a1", "allow"), _flow("d1", "deny")))
+        built = builder(flow_id)
+        enforcement = (built[0],)
+        logs = built[1] if flow_id == "a1" else built[1:]
+        capture = PacketCaptureObservation(flow_id=flow_id, encrypted=True, canary_found=False)
+        dummy_uninspected = PlaintextInspection(
+            store="application_log",
+            store_id="dummy",
+            flow_id=flow_id,
+            inspected=False,
+            decrypted=False,
+        )
+        evidence = EgressEvidence(
+            enforcement=enforcement,
+            connection_logs=logs,
+            plaintext_inspections=(dummy_uninspected,),
+            packet_captures=(capture,),
+        )
+        report = verify_egress(plan, evidence)
+        verdict = next(v for v in report.flow_verdicts if v.flow_id == flow_id)
+        check(
+            "FTF-0906-ENCRYPTED",
+            f"an uninspected dummy inspection record cannot stand in for a real one ({flow_id})",
+            verdict.status == "incomplete" and verdict.codes == ("encrypted_capture_insufficient",),
+        )
+
+
+def test_unattributed_leak_and_unplanned_evidence_fail_the_whole_report() -> None:
+    # UNATTRIBUTED-LEAK-IGNORED / UNPLANNED-EGRESS-IGNORED, proven through
+    # verify_egress itself, not only through the aggregator helper.
+    plan = _plan((_flow("a1", "allow"), _flow("d1", "deny")))
+    a_enf, a_logs, a_insp = _passing_allow()
+    d_enf, d_c_log, d_d_log = _passing_deny()
+    base_inspections = (a_insp, *_clean_mandatory_store_inspections())
+
+    unattributed_insp = PlaintextInspection(
+        "application_log", "shared-log", None, True, decrypted=False, canary_found=True
+    )
+    report_unattributed = verify_egress(
+        plan,
+        EgressEvidence(
+            enforcement=(a_enf, d_enf),
+            connection_logs=(*a_logs, d_c_log, d_d_log),
+            plaintext_inspections=(*base_inspections, unattributed_insp),
+        ),
+    )
+    check(
+        "FTF-0906-UNATTR",
+        "a canary found at a store never tied to any flow fails the whole report",
+        report_unattributed.status == "failed"
+        and "unattributed_canary_found" in report_unattributed.codes
+        and all(v.status != "failed" for v in report_unattributed.flow_verdicts),
+    )
+
+    report_unplanned = verify_egress(
+        plan,
+        EgressEvidence(
+            enforcement=(
+                a_enf,
+                d_enf,
+                EnforcementObservation("ghost", "process_guard", "allow", "ok"),
+            ),
+            connection_logs=(*a_logs, d_c_log, d_d_log),
+            plaintext_inspections=base_inspections,
+        ),
+    )
+    check(
+        "FTF-0906-UNPLANNED",
+        "an enforcement observation for a flow_id this plan never declared fails the whole report",
+        report_unplanned.status == "failed"
+        and "unplanned_egress_evidence" in report_unplanned.codes
+        and all(v.status != "failed" for v in report_unplanned.flow_verdicts),
+    )
+
+
+def test_report_binds_policy_digest_scope_and_inspected_stores() -> None:
+    # REPORT-UNBOUND: the report carries (and binds into its own hash) the
+    # exact plan it verified, plus which stores it actually inspected.
     plan = _plan(
         (_flow("a1", "allow"), _flow("d1", "deny")),
-        required_stores=frozenset({"controlled_destination", "artifact", "workflow_history"}),
+        required_stores=_DEST_AND_HISTORY,
     )
     a_enf, a_logs, a_insp = _passing_allow()
     d_enf, d_c_log, d_d_log = _passing_deny()
+    history_insp = PlaintextInspection(
+        store="workflow_history", store_id="wf-1", flow_id=None, inspected=True, decrypted=False
+    )
     evidence = EgressEvidence(
         enforcement=(a_enf, d_enf),
         connection_logs=(*a_logs, d_c_log, d_d_log),
-        plaintext_inspections=(a_insp,),  # "artifact" never inspected
+        plaintext_inspections=(a_insp, history_insp, *_clean_mandatory_store_inspections()),
+    )
+    report = verify_egress(plan, evidence)
+    check(
+        "FTF-0906-REPORT",
+        "report.policy_digest matches the plan",
+        report.policy_digest == _DIGEST,
+    )
+    check("FTF-0906-REPORT", "report.scope matches the plan", report.scope == "process")
+    check(
+        "FTF-0906-REPORT",
+        "report.inspected_stores lists every store that was actually inspected",
+        set(report.inspected_stores)
+        == {"controlled_destination", "workflow_history", *_MANDATORY_REQUIRED_STORES},
+    )
+    other_plan = _plan(
+        (_flow("a1", "allow"), _flow("d1", "deny")), required_stores=_DEST_AND_HISTORY
+    )
+    object.__setattr__(other_plan, "policy_digest", "b" * 64)
+    other_report = verify_egress(other_plan, evidence)
+    check(
+        "FTF-0906-REPORT",
+        "changing only the plan's policy_digest changes report_sha256",
+        other_report.report_sha256 != report.report_sha256,
+    )
+
+
+def test_inspection_coverage_missing_when_a_required_store_is_never_inspected() -> None:
+    plan = _plan(
+        (_flow("a1", "allow"), _flow("d1", "deny")),
+        required_stores=frozenset(
+            {"controlled_destination", "workflow_history", *_MANDATORY_REQUIRED_STORES}
+        ),
+    )
+    a_enf, a_logs, a_insp = _passing_allow()
+    d_enf, d_c_log, d_d_log = _passing_deny()
+    other_mandatory = tuple(
+        PlaintextInspection(store, f"{store}-clean", None, True, decrypted=False)
+        for store in _MANDATORY_REQUIRED_STORES
+        if store != "artifact"
+    )
+    evidence = EgressEvidence(
+        enforcement=(a_enf, d_enf),
+        connection_logs=(*a_logs, d_c_log, d_d_log),
+        plaintext_inspections=(a_insp, *other_mandatory),  # "artifact" never inspected
     )
     report = verify_egress(plan, evidence)
     check(
@@ -1181,6 +1407,72 @@ def test_scan_finds_every_declared_encoding() -> None:
     except CanaryLeakedError:
         raised = True
     check("FTF-0906-SCAN", "a reassembled fragmented canary raises CanaryLeakedError", raised)
+
+
+def test_scan_finds_case_variant_hex_and_url_encodings() -> None:
+    # A real log/header dump or intermediary proxy does not always
+    # preserve the exact casing `bytes.hex()`/`quote()` produce -- upper-
+    # cased hex and lower-cased percent-escapes are real, found variants
+    # (the finding's own "upper-case hex / percent-encoded forms" gap),
+    # not a theoretical one. `_needles_for_encoding` itself is checked
+    # directly first, then the full scan.
+    from urllib.parse import quote
+
+    from packages.security.canary_secret_generator import CanaryMarker
+
+    hex_marker = generate_canary()
+    canonical_hex = hex_marker.value.encode().hex()
+    hex_needles = _needles_for_encoding(hex_marker, "hex")
+    check(
+        "FTF-0906-SCAN",
+        "_needles_for_encoding returns the upper-case hex variant too",
+        canonical_hex in hex_needles and canonical_hex.upper() in hex_needles,
+    )
+    ledger_hex = CanaryPlacementLedger({("trace", "hex")})
+    placement_hex = PlacementRecord(hex_marker.canary_id, "trace", "hex", "r1")
+    ledger_hex.record_placement(placement_hex)
+    check(
+        "FTF-0906-SCAN",
+        "an upper-cased hex-encoded canary in real data still raises CanaryLeakedError",
+        _raises(
+            CanaryLeakedError,
+            scan_store_for_canaries,
+            f"leaked: {canonical_hex.upper()}".encode(),
+            {hex_marker.canary_id: hex_marker},
+            (placement_hex,),
+            ledger_hex,
+        ),
+    )
+
+    # A synthetic marker whose value needs real percent-escaping (unlike a
+    # real generate_canary() token, which never contains a byte quote()
+    # escapes) -- only to exercise the url-encoding case-variant path.
+    url_marker = CanaryMarker("canary-url-case-test", "CANARY-DO-NOT-USE-ab;cd")
+    canonical_url = quote(url_marker.value)
+    url_needles = _needles_for_encoding(url_marker, "url")
+    check(
+        "FTF-0906-SCAN",
+        "_needles_for_encoding returns a lower-cased percent-escape variant when one exists",
+        canonical_url in url_needles
+        and canonical_url != canonical_url.lower()
+        and any(n == _PERCENT_LOWER(canonical_url) for n in url_needles),
+    )
+    ledger_url = CanaryPlacementLedger({("trace", "url")})
+    placement_url = PlacementRecord(url_marker.canary_id, "trace", "url", "r1")
+    ledger_url.record_placement(placement_url)
+    lower_percent_url = _PERCENT_LOWER(canonical_url)
+    check(
+        "FTF-0906-SCAN",
+        "a lower-cased percent-escaped canary in real data still raises CanaryLeakedError",
+        _raises(
+            CanaryLeakedError,
+            scan_store_for_canaries,
+            f"leaked: {lower_percent_url}".encode(),
+            {url_marker.canary_id: url_marker},
+            (placement_url,),
+            ledger_url,
+        ),
+    )
 
 
 def test_scan_clean_data_does_not_raise_and_marks_checked() -> None:
@@ -1318,7 +1610,8 @@ def allow_vacuous():
     return next(v.status for v in report.flow_verdicts if v.flow_id == "a1")
 
 def coverage_missing():
-    stores = frozenset({{"controlled_destination", "artifact", "workflow_history"}})
+    stores = frozenset({{"controlled_destination", "artifact", "workflow_history",
+                          "application_log", "error_path"}})
     plan = EgressPlan(plan_id="p", scope="process", policy_digest=DIGEST,
                        flows=(flow("a1", "allow"), flow("d1", "deny")),
                        required_stores=stores)
@@ -1332,16 +1625,21 @@ def coverage_missing():
             ConnectionLogEntry("d1", "destination", "not_seen"),
         ),
         plaintext_inspections=(
-            PlaintextInspection("controlled_destination", "sink-A", "a1", True, False),
+            PlaintextInspection("controlled_destination", "sink-A", "a1", True, False, True),
+            PlaintextInspection("application_log", "log", None, True, False),
+            PlaintextInspection("error_path", "log", None, True, False),
+            # "artifact" never inspected.
         ),
     )
     report = verify_egress(plan, evidence)
     return report.status
 
 def history_never_passes():
+    stores = frozenset({{"controlled_destination", "workflow_history",
+                          "application_log", "error_path", "artifact"}})
     plan = EgressPlan(plan_id="p", scope="process", policy_digest=DIGEST,
                        flows=(flow("a1", "allow"), flow("d1", "deny")),
-                       required_stores=frozenset({{"controlled_destination", "workflow_history"}}))
+                       required_stores=stores)
     evidence = EgressEvidence(
         enforcement=(EnforcementObservation("a1", "process_guard", "allow", "ok"),
                       EnforcementObservation("d1", "process_guard", "deny", "blocked")),
@@ -1352,11 +1650,111 @@ def history_never_passes():
             ConnectionLogEntry("d1", "destination", "not_seen"),
         ),
         plaintext_inspections=(
-            PlaintextInspection("controlled_destination", "sink-A", "a1", True, False),
+            PlaintextInspection("controlled_destination", "sink-A", "a1", True, False, True),
+            PlaintextInspection("application_log", "log", None, True, False),
+            PlaintextInspection("error_path", "log", None, True, False),
+            PlaintextInspection("artifact", "log", None, True, False),
         ),
     )
     report = verify_egress(plan, evidence)
     return report.status
+
+def unobserved_destination():
+    plan = EgressPlan(plan_id="p", scope="process", policy_digest=DIGEST,
+                       flows=(flow("a1", "allow"), flow("d1", "deny")))
+    evidence = EgressEvidence(
+        enforcement=(EnforcementObservation("d1", "process_guard", "deny", "blocked"),),
+        connection_logs=(ConnectionLogEntry("d1", "client", "refused"),
+                          ConnectionLogEntry("d1", "destination", "unobserved")),
+    )
+    report = verify_egress(plan, evidence)
+    return next(v.status for v in report.flow_verdicts if v.flow_id == "d1")
+
+def narrowed_coverage_rejected():
+    try:
+        EgressPlan(plan_id="p", scope="process", policy_digest=DIGEST,
+                   flows=(flow("a1", "allow"), flow("d1", "deny")),
+                   required_stores=frozenset({{"controlled_destination"}}))
+        return "constructed"
+    except Exception as exc:
+        return getattr(exc, "code", "ERROR:" + type(exc).__name__)
+
+def allow_enforcement_mismatch():
+    plan = EgressPlan(plan_id="p", scope="process", policy_digest=DIGEST,
+                       flows=(flow("a1", "allow"), flow("d1", "deny")))
+    evidence = EgressEvidence(
+        enforcement=(EnforcementObservation("a1", "process_guard", "deny", "blocked"),
+                      EnforcementObservation("d1", "process_guard", "deny", "blocked")),
+        connection_logs=(
+            ConnectionLogEntry("a1", "client", "connected"),
+            ConnectionLogEntry("a1", "destination", "connected"),
+            ConnectionLogEntry("d1", "client", "refused"),
+            ConnectionLogEntry("d1", "destination", "not_seen"),
+        ),
+        plaintext_inspections=(
+            PlaintextInspection("controlled_destination", "sink-A", "a1", True, False, True),
+        ),
+    )
+    report = verify_egress(plan, evidence)
+    return next(v.status for v in report.flow_verdicts if v.flow_id == "a1")
+
+def deny_capture_canary_only():
+    plan = EgressPlan(plan_id="p", scope="process", policy_digest=DIGEST,
+                       flows=(flow("a1", "allow"), flow("d1", "deny")))
+    evidence = EgressEvidence(
+        enforcement=(EnforcementObservation("d1", "process_guard", "deny", "blocked"),),
+        connection_logs=(ConnectionLogEntry("d1", "client", "refused"),
+                          ConnectionLogEntry("d1", "destination", "not_seen")),
+        packet_captures=(PacketCaptureObservation("d1", encrypted=False, canary_found=True),),
+    )
+    report = verify_egress(plan, evidence)
+    return next(v.status for v in report.flow_verdicts if v.flow_id == "d1")
+
+def uninspected_counts_as_covered():
+    stores = frozenset({{"controlled_destination", "application_log", "error_path", "artifact"}})
+    plan = EgressPlan(plan_id="p", scope="process", policy_digest=DIGEST,
+                       flows=(flow("a1", "allow"), flow("d1", "deny")),
+                       required_stores=stores)
+    evidence = EgressEvidence(
+        enforcement=(EnforcementObservation("a1", "process_guard", "allow", "ok"),
+                      EnforcementObservation("d1", "process_guard", "deny", "blocked")),
+        connection_logs=(
+            ConnectionLogEntry("a1", "client", "connected"),
+            ConnectionLogEntry("a1", "destination", "connected"),
+            ConnectionLogEntry("d1", "client", "refused"),
+            ConnectionLogEntry("d1", "destination", "not_seen"),
+        ),
+        plaintext_inspections=(
+            PlaintextInspection("controlled_destination", "sink-A", "a1", True, False, True),
+            PlaintextInspection("application_log", "log", None, False, False),
+            PlaintextInspection("error_path", "log", None, False, False),
+            PlaintextInspection("artifact", "log", None, False, False),
+        ),
+    )
+    report = verify_egress(plan, evidence)
+    return report.status
+
+def hash_changes_with_verdict():
+    # Two plans whose reports are identical in every OTHER field (status,
+    # codes, not_exercised, inspected_stores all come out the same, since
+    # neither gets any evidence) -- only each flow_verdicts' own flow_id
+    # differs ("a1" vs "x1"). Isolates flow_verdicts as the one input that
+    # must still be bound into report_sha256 (F7).
+    plan_a = EgressPlan(plan_id="p", scope="process", policy_digest=DIGEST,
+                         flows=(flow("a1", "allow"), flow("d1", "deny")))
+    plan_b = EgressPlan(plan_id="p", scope="process", policy_digest=DIGEST,
+                         flows=(flow("x1", "allow"), flow("d1", "deny")))
+    report_a = verify_egress(plan_a, EgressEvidence())
+    report_b = verify_egress(plan_b, EgressEvidence())
+    same_except_verdicts = (
+        report_a.status == report_b.status
+        and report_a.codes == report_b.codes
+        and report_a.not_exercised == report_b.not_exercised
+        and report_a.inspected_stores == report_b.inspected_stores
+    )
+    if not same_except_verdicts:
+        return "ERROR:fixture-not-isolated"
+    return "different" if report_a.report_sha256 != report_b.report_sha256 else "same"
 
 print(outcome(no_allow_or_deny))
 print(outcome(connection_log_missing))
@@ -1365,6 +1763,12 @@ print(outcome(deny_leaked_canary))
 print(outcome(allow_vacuous))
 print(outcome(coverage_missing))
 print(outcome(history_never_passes))
+print(outcome(unobserved_destination))
+print(outcome(narrowed_coverage_rejected))
+print(outcome(allow_enforcement_mismatch))
+print(outcome(deny_capture_canary_only))
+print(outcome(uninspected_counts_as_covered))
+print(outcome(hash_changes_with_verdict))
 """
 
 
@@ -1399,6 +1803,12 @@ BASELINE = [
     "failed",
     "incomplete",
     "partial",
+    "incomplete",
+    "egress_invalid_plan",
+    "failed",
+    "failed",
+    "incomplete",
+    "different",
 ]
 
 # (description, regex, replacement, output line index that must change)
@@ -1417,7 +1827,7 @@ MUTATIONS = [
     ),
     (
         "encrypted-capture-insufficient branch removed",
-        r"elif capture is not None and capture\.encrypted and not flow_inspections:",
+        r"elif capture is not None and capture\.encrypted and not has_real_inspection:",
         "elif False:",
         2,
     ),
@@ -1448,6 +1858,49 @@ MUTATIONS = [
         r'"workflow_history" not in inspected_stores:',
         "if False:",
         6,
+    ),
+    (
+        "UNOBSERVABLE-AS-NOT-SEEN: the unobserved-destination branch removed",
+        r'elif dest_log\.outcome == "unobserved":',
+        "elif False:",
+        7,
+    ),
+    (
+        "CALLER-NARROWED-COVERAGE: the mandatory-log-store guard removed",
+        r"if not self\.required_stores >= _MANDATORY_REQUIRED_STORES:",
+        "if False:",
+        8,
+    ),
+    (
+        "ALLOW-FLOW-IGNORES-ENFORCEMENT: the enf.decision=='allow' conjunct dropped",
+        r'enf\.decision == "allow"\n                and client_log\.outcome == "connected"',
+        'True\n                and client_log.outcome == "connected"',
+        9,
+    ),
+    (
+        "F3: deny-flow capture canary_found dropped from canary_seen",
+        r"canary_seen = any\(insp\.canary_found for insp in flow_inspections\) or \(\n"
+        r"                capture is not None and capture\.canary_found\n"
+        r"            \)",
+        "canary_seen = any(insp.canary_found for insp in flow_inspections)",
+        10,
+    ),
+    (
+        "F4: the insp.inspected filter dropped from inspected_stores",
+        r"inspected_stores = \{insp\.store for insp in evidence\.plaintext_inspections "
+        r"if insp\.inspected\}",
+        "inspected_stores = {insp.store for insp in evidence.plaintext_inspections}",
+        11,
+    ),
+    (
+        "F7: flow_verdicts dropped from the report_sha256 canonical payload",
+        r'            "flow_verdicts": \[\n'
+        r"                \{\"flow_id\": v\.flow_id, \"status\": v\.status, "
+        r'"codes": list\(v\.codes\)\}\n'
+        r"                for v in flow_verdicts\n"
+        r"            \],\n",
+        "",
+        12,
     ),
 ]
 

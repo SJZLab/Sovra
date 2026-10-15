@@ -524,6 +524,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0904_w1.py
       - name: FTF-0905 negative-test proof (canary-secret generator -- unique prefixed markers, no real-secret collision, full-coverage leak ledger, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0905.py
+      - name: FTF-0906 negative-test proof (egress capture/verification -- unattributed/unplanned-egress fail-closed, mandatory log-store coverage, enforcement/client/destination-consistent positive control, unobserved-destination handling, report binding, fault-injected module copies, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0906.py
       - name: FTF-H010-P1 negative-test proof (model import fields + import-validation jobs -- migration SQL + RLS/GRANT shape + fault injection, store on SQLite, route seams, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_h010_p1.py
       - name: FTF-R004-P1 negative-test proof (Inspect bridge generation-config parity comparator, no DB required)

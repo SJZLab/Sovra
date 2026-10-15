@@ -10580,16 +10580,46 @@ FTF-0905:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0905.py
 FTF-0906:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Egress capture/verification
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0904,
-    FTF-0905
-  proof_state: UNPROVEN
+  evidence_hash: PLACEHOLDER_EVIDENCE_HASH
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0904,
+    FTF-0905. Path: `packages/security/egress_capture_verification.py`. Pure verifier combining
+    enforcement observations, connection logs and plaintext/packet-capture inspection into one
+    report (never claims `passed` from an encrypted capture alone; `workflow_history` always
+    forces `partial`, never silently covered). Round 1 (PR #832, merge
+    `23056b0f8e4b95f1c22f15c7a3722e92bab46150`) returned: verifier passed with unattributed/
+    unplanned leaks, caller-narrowed coverage, fabricated (unscanned) inspections, a vacuous
+    positive control, allow-flow/enforcement mismatch, an encrypted-capture loophole, a hard-coded
+    "not_seen", no gate step, report not bound to policy/scope. Round 2 (this evidence) closes all
+    12 return points: `verify_egress` now forces `failed` on any evidence naming an undeclared
+    `flow_id` (`unplanned_egress_evidence`) or a `canary_found` inspection with no flow
+    attribution (`unattributed_canary_found`); `EgressPlan.required_stores` can no longer omit the
+    mandatory log stores (`application_log`/`error_path`/`artifact`); the allow branch's `arrived`
+    check now requires enforcement/client/destination agreement AND a real `canary_found` at the
+    destination; the encrypted-capture-insufficient check now requires a genuinely inspected
+    record; a new `"unobserved"` destination outcome fails closed instead of a fabricated
+    `not_seen` (Law 17); `EgressVerificationReport` gained `policy_digest`/`scope`/
+    `inspected_stores`, all bound into `report_sha256`; `scan_store_for_canaries` now matches a
+    case-insensitive hex variant and a lower-cased-percent-escape url variant. The real-socket
+    integration test (`tests/integration/test_ftf_0906_egress_verification.py`) now derives
+    canary_found/enforcement-code from what the real guard/sinks actually did (never hard-coded),
+    feeds the real caught error-path leak into `verify_egress` itself, really scans a snapshot of
+    the real access-log text, and fails closed (`sys.exit(1)`) rather than skipping when the TLS
+    fixture is unavailable. `tests/tasks/test_ftf_0906.py`'s own fault-injection table grew from 7
+    to 13 regex-mutation probes, one per production fix; F5 (uninspected destination as positive
+    control) is disclosed as a reviewed equivalent under this round's own fix (the
+    `PlaintextInspection.__post_init__` invariant `canary_found implies inspected` makes that one
+    filter unkillable now that `arrived` also checks `canary_found`), not a live gap. Full detail
+    and the fault -> RED table: `docs/certifications/submissions/2026-10-15T2300Z-FTF-0906-r2.md`.
+    No live caller yet (disclosed, same blank-`proving_symbol` precedent FTF-0901/0902/0903/0905
+    already carry).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0906.py
 FTF-0907:
   certification_state: NONE
   criticality: MUST
