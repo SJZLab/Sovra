@@ -7718,7 +7718,7 @@ FTF-0505:
   certification_state: PROVISIONAL
   criticality: MUST
   description: XLSX importer
-  evidence_hash: 4a467666f44b6209e868b229bc86f0a2c25516f3
+  evidence_hash: 62ef4927dbf4a3ac2493e8e236a4450c8d474631
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
@@ -7767,6 +7767,40 @@ FTF-0505:
     Mutation gate (round 2): 140 run | 139 KILLED | 1 TIMEOUT | 0 SURVIVED | 0 SURVIVED-allowlisted | score 100.0%
     (one real equivalent mutant found and removed by deleting the dead code it lived in, not allowlisted --
     see the submission).
+    Round 3 (2026-10-15T0033Z, Control-plane return of 2026-10-14T20:19Z on PR #801, ten findings):
+    MAX_HEADER_ROW_BYTES (4 MiB) bounds total bytes retained for a row, closing the real
+    HEADER-ROW-UNBOUNDED-MEMORY gap round 2's own fix missed (the header row itself, not only a
+    skipped pre-header row -- a 121 KB upload reached 343 MB before this fix). Shared-string decode
+    moved after the keep/wanted gate (SST-DECODE-PER-CELL: 16,000 unmapped references to one 1 MiB
+    string reached ~1 GB and ~8s before this fix); the SHARED branch sizes its row-bytes contribution
+    from the raw bytes, no decode needed. .encode("utf-8", "surrogatepass") on the shared-strings
+    build and decode paths (SST-SURROGATE-ENCODE-ESCAPES: an unreferenced lone-surrogate string
+    crashed the whole import with a raw UnicodeEncodeError). zipfile.ZipFile() construction now also
+    catches NotImplementedError/RuntimeError/struct.error/zlib.error, mapped to xlsx_malformed
+    (ARCHIVE-ERROR-ESCAPES: a crafted "version needed to extract" field past 63 escaped as a raw
+    exception). dataset_sha256 now validated (type + 64-hex pattern) and compared against the
+    reader's own pinned hash before any byte is read, same class already landed in
+    csv_importer.py/json_importer.py (PREVIEW-SHA-TYPEERROR). The per-cell/per-shared-string
+    scan-time size cap now counts encoded UTF-8 bytes, not Python str length (ruling a). Ruling (b):
+    max_cells and the shared-strings byte cap moved from the module-local XlsxLimits into the shared
+    ImportLimits (max_xlsx_cells, max_xlsx_shared_strings_bytes; defaults unchanged), the one
+    additive import_common.py edit, extending FTF-0502-P1's own LIM-1/LIM-2 tests. A subprocess-
+    measured RSS test at a real scale (32 MiB, not a 1 MiB toy cap) closes the "test RSS at the real
+    cap" gap; measured real delta ~1.08-1.10x the cap (at both 32 MiB and, separately, 256 MiB) --
+    Python-level memory (tracemalloc) was already ~1.03x, correctly bounded; the verifier's own
+    larger same-process-style number reflects process/allocator overhead this round could not
+    reproduce as a Python logic defect in isolation. Advisory (c): Excel's own (non-transitional)
+    vbaProject relationship type is now unsafe_workbook too. Six named clauses pinned behaviourally
+    with a fresh fault -> RED test each (V-TOOL-STATUS-ALWAYS-NA, V-WANTED-NOT-APPLIED,
+    V-CT-GATE-STR-SUBCLASS, V-ROW-NUMBER-NONCANONICAL, V-SHA-FIRST-LAST, V-NONBLANK-SEEN-ALL-ROWS).
+    Full detail: docs/certifications/submissions/2026-10-15T0033Z-FTF-0505-r3.md.
+    Mutation gate (round 3, iterative as survivors turned up): run 1 (174 mutants) 166 KILLED | 8
+    SURVIVED | score 95.4% -- 3 genuine equivalent mutants (a mapped row's kept bytes can never reach
+    the 4 MiB bound given max_record_bytes's own 2 MiB ceiling; dead conditional removed, not
+    allowlisted, same precedent as round 2) and 5 real test gaps (the bound never shown to actually
+    fire; the new except clause never tested), each closed; run 2 (171 mutants) 170 KILLED | 1
+    SURVIVED | score 99.4% -- the exact >/>= boundary, closed; run 3: 171 run | 171 KILLED | 0 TIMEOUT
+    | 0 SURVIVED | 0 SURVIVED-allowlisted | score 100.0%.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0505.py

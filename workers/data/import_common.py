@@ -293,6 +293,13 @@ class ImportLimits:
     max_rejections: int = 10_000
     preview_max_records: int = 20
     deadline_seconds: float = _MAX_DEADLINE_SECONDS
+    # FTF-0505's own bounds (the xlsx importer's cell count and shared-strings
+    # byte cap): additive fields under the catalog rule -- a limit a single
+    # importer needs becomes one field here, never a module-local dataclass,
+    # so a future importer's own limit is added the same way instead of
+    # re-inventing a second limits object.
+    max_xlsx_cells: int = 50_000_000
+    max_xlsx_shared_strings_bytes: int = 256 * 1024**2
 
     def __post_init__(self) -> None:
         defaults = ImportLimits.__dataclass_fields__
@@ -302,6 +309,8 @@ class ImportLimits:
             "max_depth",
             "max_rejections",
             "preview_max_records",
+            "max_xlsx_cells",
+            "max_xlsx_shared_strings_bytes",
         ):
             value = getattr(self, name)
             if not _is_int(value) or value < 1:

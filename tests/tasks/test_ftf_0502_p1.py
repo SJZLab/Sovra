@@ -742,6 +742,12 @@ def test_lim_defaults_are_the_section_67_3_values() -> None:
     check("LIM-1", "max_rejections is 10,000", d.max_rejections == 10_000)
     check("LIM-1", "preview_max_records is 20", d.preview_max_records == 20)
     check("LIM-1", "deadline_seconds default is positive", d.deadline_seconds > 0)
+    check("LIM-1", "max_xlsx_cells is 50,000,000", d.max_xlsx_cells == 50_000_000)
+    check(
+        "LIM-1",
+        "max_xlsx_shared_strings_bytes is 256 MiB",
+        d.max_xlsx_shared_strings_bytes == 256 * 1024**2,
+    )
     text = Path(ic.__file__).read_text(encoding="utf-8")
     check(
         "LIM-1",
@@ -760,6 +766,8 @@ def test_lim_lower_only_table() -> None:
         "max_depth",
         "max_rejections",
         "preview_max_records",
+        "max_xlsx_cells",
+        "max_xlsx_shared_strings_bytes",
     ):
         default = getattr(d, name)
         check(
