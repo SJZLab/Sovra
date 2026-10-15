@@ -24908,3 +24908,30 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
   `docs/progress/2026-10-14T2313Z-relay.md`. Not self-certified (Law 4) — `certification_state`
   stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN`, `evidence_hash` pinned to the code commit
   `32e92342af9afe75baa9a6c7dd7ffdc086dfb4bb`. Needs L2 verification by a different session.
+
+## 2026-10-14T21:57Z — Control plane: FTF-1602 CERTIFIED
+- **Certified:** FTF-1602 (#789, merge 963a0af45915a50014d870b5db2bdbe798e6780c) under the stopping rule; evidence_hash rebound by the Control plane; UNWIRED.
+
+## 2026-10-14T21:57Z — Control plane: FTF-0504 CERTIFIED
+- **Certified:** FTF-0504 (#802, merge 6d31a4608e93c6d5bae407ad4d158ac205d5ad92) under the stopping rule; UNWIRED.
+
+## 2026-10-14T21:57Z — Control plane: FTF-0518 returned (r3)
+- **Returned:** FTF-0518 r3 (0f): mirror saturation hub (F22), forgery disclosure wording; stopping rule.
+
+## 2026-10-14T21:57Z — Control plane: FTF-H010-P3a returned (r3)
+- **Returned:** FTF-H010-P3a r3 (0e): boundary rows, dotted target suffixes, behavioural kills only; stopping rule.
+
+## 2026-10-14T23:44Z — Control plane: FTF-0512 DECERTIFIED; FTF-0512-F1 returned
+- **Decertified:** FTF-0512 (Law 15, regression merged by #812). **Returned:** FTF-0512-F1 r2 (0c).
+
+## 2026-10-15T01:17Z — Control plane: FTF-0502 CERTIFIED
+- **Certified:** FTF-0502 (#810, merge 77af5699cf97776a519305acb1e9c0bfd7269ed4) under the stopping rule; UNWIRED.
+
+## 2026-10-15T03:46Z — Control plane: FTF-0518 CERTIFIED
+- **Certified:** FTF-0518 (#815, merge 31bbf72b35d5bd60563805d648f9801b21f76eb9) under the stopping rule; UNWIRED.
+
+## 2026-10-15T03:46Z — Control plane: FTF-1505 returned
+- **Returned:** FTF-1505 r2 (0h): rebuild to the design (scope, binaries/archives, decoding, rules, all-blob history, artifacts, uvicorn log lane, fingerprint baseline, run-time seeds, faults, CI job). No real credential exposed.
+
+## 2026-10-15T03:46Z — Control plane: FTF-0904-F1 returned (r3)
+- **Returned:** FTF-0904-F1 r3 (0g): whole-name case match, glued compounds, guard tail, empty-value, value-class tables.

@@ -7394,12 +7394,16 @@ FTF-0501:
   proving_symbol: build_direct_upload_router
   proving_test: tests/tasks/test_ftf_0501.py
 FTF-0502:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: JSONL importer
-  evidence_hash: 6f1a7c506e262cf8ddbded3512f908377d45e78e
+  evidence_hash: 77af5699cf97776a519305acb1e9c0bfd7269ed4
   implementation_state: IMPLEMENTED
   notes: >-
+    Correction (Control plane, 2026-10-15, L2 certification of round 4): two round-3 sentences below are
+    superseded - the module has no fatal_locator property (it uses the shared ImportReport.fatal_locator /
+    LocatedImportReport), and the round-3 stop run did NOT show a real outage (it was vacuous; round 4 fixed it
+    with a same-dataset control).
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
     FTF-0506 (CERTIFIED) and FTF-0502-P1 (CERTIFIED, #770). Path refined to
     workers/data/jsonl_importer.py. Round 2 rebuild on FTF-0502-P1 (ChunkReader, strict_loads,
@@ -7473,7 +7477,7 @@ FTF-0502:
     (same class as FTF-0504 r4). (5) Note correction: the round-3 text above describes the stop
     run as 96 MiB; it is now 16 MiB. evidence_hash is the round-4 code commit. Not self-certified
     (Law 4). See docs/certifications/submissions/2026-10-14T2100Z-FTF-0502-r4.md.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0502.py
 FTF-0503:
@@ -7674,10 +7678,10 @@ FTF-0503:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0503.py
 FTF-0504:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: CSV importer
-  evidence_hash: fe13caf7dbec8a10ab358f1e3bade73fe378190e
+  evidence_hash: 6d31a4608e93c6d5bae407ad4d158ac205d5ad92
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
@@ -7710,7 +7714,7 @@ FTF-0504:
     record-cap/sha-prefix/str-subclass-locator test gaps closed. Recording the real CI result per
     the CI contract; this is not a certification (Law 4). certification_state stays PROVISIONAL /
     proof_state stays L1-PROVEN pending independent Control-plane L2 review of round 4's content.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0504.py
 
@@ -8802,10 +8806,10 @@ FTF-0517:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0517.py
 FTF-0518:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Split leakage detector
-  evidence_hash: 433a9260422765a30250f45340786cc500ebe3cf
+  evidence_hash: 31bbf72b35d5bd60563805d648f9801b21f76eb9
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-23; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0513,
@@ -8848,7 +8852,7 @@ FTF-0518:
     docs/certifications/submissions/2026-10-14T0925Z-FTF-0518.md and
     docs/certifications/submissions/2026-10-14T1741Z-FTF-0518-r2.md and
     docs/certifications/submissions/2026-10-14T2340Z-FTF-0518-r3.md.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0518.py
 FTF-0519:
@@ -12465,10 +12469,10 @@ FTF-1601:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1601.py
 FTF-1602:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Object storage backup
-  evidence_hash: 47ca830e452409b12a3a30d7a9ae8728dd1db791
+  evidence_hash: 963a0af45915a50014d870b5db2bdbe798e6780c
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-32; scenarios=Q29, Q30; deps=FTF-0004, FTF-1002, FTF-1601
@@ -12566,11 +12570,12 @@ FTF-1602:
     adds G1b (the same forged, shrunk record applied to restore, which previously could have
     restored 3 of 4 objects as a silent, false success). Fault -> RED for all three confirmed by
     mutating scripts/object_storage_backup.py on disk and restoring it byte-identical afterward
-    (see the round-6 submission's Fault -> RED table). evidence_hash stays pinned to 47ca830
-    (round 4), per Control plane's round-6 ruling (QUEUE 0i item 4) -- round 6 touches no
-    production line, so nothing rebinds it. Whole-file mutation gate (uncapped) re-run clean; see
+    (see the round-6 submission's Fault -> RED table). Correction (Control plane, 2026-10-14): the earlier claim that evidence_hash stays pinned
+    to 47ca830 per the round-6 ruling was wrong - the ruling required a rebind, and round 5 changed
+    scripts/object_storage_backup.py (6d436104); evidence_hash is rebound to the round-6 merge 963a0af4 at
+    L2 certification. Whole-file mutation gate (uncapped) re-run clean; see
     the round-6 submission for the exact count. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1602.py
 FTF-1603:
