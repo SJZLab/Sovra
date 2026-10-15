@@ -10583,7 +10583,7 @@ FTF-0906:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Egress capture/verification
-  evidence_hash: PLACEHOLDER_EVIDENCE_HASH
+  evidence_hash: ca59351477b1117bf3ec32a719b850840e835e15
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0904,
