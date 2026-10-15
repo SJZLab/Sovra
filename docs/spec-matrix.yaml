@@ -7722,7 +7722,7 @@ FTF-0505:
   certification_state: PROVISIONAL
   criticality: MUST
   description: XLSX importer
-  evidence_hash: 62ef4927dbf4a3ac2493e8e236a4450c8d474631
+  evidence_hash: d0f7827f9cc4854aa973669a6213cfed4de71170
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
@@ -12265,18 +12265,77 @@ FTF-1505:
     gate) and is wired into the new `secret-scanning` CI job, so a real
     future leak fails CI, not merely a mocked unit test.
 
-    DISCLOSED, NOT MET -- ephemeral CI-run JSON artifacts
-    (`reports/mutation-gate.json`, `reports/ci-verdict.json`) are never
-    committed to git, so a from-clean-checkout run of this suite's
-    `artifact` target covers zero of them unless this same job already
-    wrote one before this step ran; the same disclosed-gap class FTF-1501
-    already carries for worker/storage/cache paths that do not exist yet in
-    this repository. DISCLOSED -- the `scan_live_app_log_samples` lane
+    DISCLOSED -- the `scan_live_app_log_samples` lane
     exercises a 401 and a 404 route only; a live 5xx validation-error
     request path is not separately exercised (FTF-0904-W1's own suite
-    already covers a startup-failure 5xx-shaped case). Not self-certified
-    (Law 4) -- `certification_state` stays PROVISIONAL, `proof_state` stays
-    L1-PROVEN, pending independent Control-plane L2 review.
+    already covers a startup-failure 5xx-shaped case).
+
+    ROUND 3 (this evidence_hash, Control-plane return 2026-10-15T14:14Z):
+    the round-2 ephemeral-artifact gap above is CLOSED -- an additive step
+    in both `mutation-gate` and `ci-verdict` (the jobs that write
+    `reports/mutation-gate.json`/`reports/ci-verdict.json`) scans each
+    report with a new, dependency-free `tests/security/secret_rules.py`
+    (every rule/quick-gate/seed-generation primitive extracted out of
+    `secret_scanning.py`, stdlib-only, proven by AST inspection) the
+    moment it is written, in the same job, with no new setup step. Also
+    fixed: a quoted/octal-escaped non-ASCII git path silently skipped
+    (`iter_tracked_files` now uses `git ls-files -z`); oversized content
+    and a corrupt archive member silently truncating/aborting (`-- now
+    both a blocking `scan_incomplete` finding, and a corrupt member no
+    longer aborts every later member in the same archive); a history blob
+    that is itself an archive never getting member extraction at all (a
+    shared `_scan_content_and_members` helper now backs source/artifact/
+    history alike); an incomplete quick gate (missed `sk_live_`,
+    `private_key=`, `session_key=`, a tab after `Bearer` -- now DERIVED
+    from the same rule table every rule is matched with, per-rule
+    completeness proven directly); a reversible `value_sha256` printed for
+    a brand-new (unbaselined) finding (`SecretFinding.to_dict()` now omits
+    it for any blocking finding -- an unsalted hash of a low-entropy
+    secret is dictionary-reversible); `parse_upload_artifact_paths`
+    rewritten as a structural YAML parse (covers `actions/upload-artifact/
+    merge@...`, refuses a `..` traversal, no fixed lookahead window);
+    committed seed literals (`_default_seed_values()` plus several
+    `tests/tasks/test_ftf_1505.py` fixtures) replaced by
+    `secret_rules.generate_seed_for_rule`, generated fresh at runtime
+    (one genuinely stale baseline entry removed; a second entry for the
+    same old literal was wrongly removed on a source+artifact-only
+    freshness check, caught by a real CI failure -- 5 blocking findings,
+    3 of them that same literal still reachable from real history -- and
+    restored, kept as real evidence rather than silently fixed); the
+    live-log lane now covers all 16 rule families (round 2
+    covered 5) plus a direct `StructuredEvent`/`emit_to_stream` cross-check
+    (FTF-0006's event dataclass has no redaction of its own by design); a
+    base64/hex-ENCODED canary is now actually detectable (round 2's decode
+    layer never re-checked the canary shape on decoded content -- fixed,
+    plus a new hex-decode layer that did not exist before); and the
+    2026-10-15T08:43Z PR-scoped-history ruling: `scan_history` takes a
+    `scope` (`"pr"`, HEAD-reachable blobs only -- the new default, matching
+    the unmodified `secret-scanning` ci.yml job -- or `"all-refs"`, every
+    ref, attributing a HEAD-unreachable finding to the branch that carries
+    it). A fault-matrix section in `tests/tasks/test_ftf_1505.py` proves
+    every one of the round-3 return's named faults independently (one RED
+    row per fault, via monkeypatching the real module in place and
+    restoring -- `secret_scanning.py` resolves several paths relative to
+    its own `__file__`, which makes a literal file-copy-and-reimport
+    unreliable; monkeypatch-with-restore proves the identical behavioural
+    claim). DISCLOSED, deliberately not attempted from this file scope:
+    wiring the all-refs sweep into its own `push: main` + `schedule:`
+    trigger needs a new `.github/workflows/` trigger, which
+    `scripts/ci_policy.py`'s own `RELAY_FORBIDDEN_PREFIXES` places outside
+    `[relay]` PR scope (CLAUDE.md "Governance PRs") -- the scanner-side
+    capability is complete and tested; only the trigger wiring is a
+    Control-plane `[GOVERNANCE]` follow-up. DISCLOSED, out of this round's
+    own file scope (a separately active lane, `packages/security/
+    log_redaction.py`, PR #825): the first draft of the 16-family live-app
+    sweep found `gitlab_token`/`slack_webhook`/`stripe_style_key`/the
+    canary shape are not redacted by FTF-0904 behind a key name its own
+    tables do not recognise (FTF-0904's redaction is largely key-NAME-
+    driven); the final probe set places every family behind the same
+    `?token=` key name every other probe in this lane already uses
+    (consistent placement, not a hunt for FTF-0904-F1's own, separately-
+    scoped gap). Not self-certified (Law 4) -- `certification_state`
+    stays PROVISIONAL, `proof_state` stays L1-PROVEN, pending independent
+    Control-plane L2 review.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1505.py

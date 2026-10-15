@@ -5431,6 +5431,176 @@ def test_r4_a_shared_string_index_past_the_table_is_xlsx_malformed() -> None:
     )
 
 
+def test_r5_mapping_column_missing_keeps_the_resolved_headers_digest() -> None:
+    """R5-1 SCHEMA-SHA-DROPPED: a failed `mapping_column_missing` report still carries the
+    digest of the headers that were read (round 3 and the CSV importer set it), equal to the
+    digest a completed run over the same header row reports. A duplicate header fails before any
+    header is resolved and reports none."""
+    rows = [[IS("q"), IS("a"), IS("x")], [IS("p"), IS("c"), IS("1")]]
+    done = run(book(rows))[1].report
+    check(
+        CID,
+        "r5-1: the completed run over the same headers has a digest",
+        bool(done.source_schema_sha256),
+    )
+    absent: tuple[tuple[str, dict[str, Any]], ...] = (
+        ("prompt header absent", {"prompt": {"header": "zzz"}}),
+        ("completion header absent", {"completion": {"header": "zzz"}}),
+    )
+    for label, kwargs in absent:
+        _e, outcome = run(book(rows), **kwargs)
+        check(
+            CID,
+            f"r5-1: {label} is fatal mapping_column_missing",
+            failed_with(outcome, "mapping_column_missing"),
+        )
+        check(
+            CID,
+            f"r5-1: {label}: the failed report carries the resolved headers' digest",
+            outcome.report.source_schema_sha256 == done.source_schema_sha256,
+        )
+    # past the header's 64 KiB block as well (the digest must not depend on byte position)
+    blanks = [[IS("")] for _ in range(5000)]
+    _e, outcome = run(book([*blanks, *rows]), prompt={"header": "zzz"})
+    check(
+        CID,
+        "r5-1: the digest is the same when the header sits past the first 64 KiB block",
+        failed_with(outcome, "mapping_column_missing")
+        and outcome.report.source_schema_sha256 == done.source_schema_sha256,
+    )
+    dup = [[IS("q"), IS("a"), IS("a")], [IS("p"), IS("c"), IS("1")]]
+    _e, outcome = run(book(dup))
+    check(
+        CID,
+        "r5-1: a duplicate header is fatal and reports no digest (nothing resolved)",
+        failed_with(outcome, "duplicate_header") and outcome.report.source_schema_sha256 is None,
+    )
+
+
+def test_r5_blank_lines_do_not_depend_on_the_header_failure_position() -> None:
+    """R5-2 R4-HEADER-ERROR-RAISED-EARLY: a held header failure is raised when the event loop
+    reaches the header row, so every blank row before it is counted whatever 64 KiB block the
+    header sits in (5,000 blank rows used to report 4,359 under an early raise)."""
+    kinds: tuple[tuple[str, list[list[Cell]], dict[str, Any], str], ...] = (
+        (
+            "duplicate header",
+            [[IS("q"), IS("a"), IS("a")], [IS("p"), IS("c"), IS("1")]],
+            {},
+            "duplicate_header",
+        ),
+        (
+            "missing column",
+            [[IS("q"), IS("a")], [IS("p"), IS("c")]],
+            {"prompt": {"header": "zzz"}},
+            "mapping_column_missing",
+        ),
+        ("formula header", [[F('"q"', "q"), IS("a")], [IS("p"), IS("c")]], {}, "xlsx_malformed"),
+    )
+    for label, rows, kwargs, code in kinds:
+        for blank_rows in (2, 3000, 5000, 12000):
+            data = book([*([[IS("")]] * blank_rows), *rows])
+            _e, outcome = run(data, **kwargs)
+            check(
+                CID,
+                f"r5-2: {blank_rows} blank rows before a {label} header: fatal {code}",
+                failed_with(outcome, code),
+            )
+            check(
+                CID,
+                f"r5-2: {blank_rows} blank rows before a {label} header: blank_lines == {blank_rows}",
+                outcome.report.blank_lines == blank_rows,
+            )
+
+
+def _scan_cells_from(seed: int, count: int) -> str | None:
+    """Feeds `count` cells to the real sheet scanner built with the PRODUCTION cell cap, whose
+    cell counter starts at `seed` (a sparse fixture: 50,000,000 real cells would take minutes
+    per run). Returns the fatal code, or None when every cell is accepted."""
+    scanner = xi._SheetScanner(
+        xi._SharedStrings(),
+        ic.DEFAULT_LIMITS.max_xlsx_cells,
+        ic.DEFAULT_LIMITS.max_record_bytes,
+        0,
+        lambda _raw: frozenset(),
+    )
+    scanner._cells = seed
+    cells = "".join(
+        f'<c r="{col_letters(i)}1" t="inlineStr"><is><t>x</t></is></c>' for i in range(count)
+    )
+    parser = ox.new_xml_parser()
+    parser.StartElementHandler = scanner.start
+    parser.EndElementHandler = scanner.end
+    parser.CharacterDataHandler = scanner.chars
+    try:
+        parser.Parse(
+            f'<worksheet xmlns="{MAIN}"><sheetData><row r="1">{cells}</row></sheetData></worksheet>'.encode(),
+            True,
+        )
+    except xi.XlsxAborted as exc:
+        return exc.failure_code
+    return None
+
+
+def test_r5_production_cell_cap_is_exact_at_max_minus_1_max_max_plus_1() -> None:
+    cap = ic.DEFAULT_LIMITS.max_xlsx_cells
+    check(CID, "r5-3: the production cell cap is 50,000,000", cap == 50_000_000)
+    check(
+        CID,
+        "r5-3: cap-1 cells seen, one more cell: accepted (cap-1 -> cap)",
+        _scan_cells_from(cap - 2, 1) is None,
+    )
+    check(CID, "r5-3: exactly cap cells accepted", _scan_cells_from(cap - 1, 1) is None)
+    check(
+        CID,
+        "r5-3: cap+1 cells is fatal too_many_cells",
+        _scan_cells_from(cap, 1) == "too_many_cells",
+    )
+    check(
+        CID,
+        "r5-3: crossing the cap inside one row is fatal too_many_cells",
+        _scan_cells_from(cap - 1, 2) == "too_many_cells",
+    )
+    check(
+        CID,
+        "r5-3: landing exactly on the cap inside one row is accepted",
+        _scan_cells_from(cap - 3, 3) is None,
+    )
+
+
+def _sst_part_of(size: int) -> bytes:
+    """A well-formed sharedStrings part of exactly `size` bytes: q/a/hi/there, then ~1 KB
+    strings, then one string padding the part to `size`."""
+    head = (
+        f'{XML_HEAD}<sst xmlns="{MAIN}">'.encode()
+        + "".join(f"<si><t>{w}</t></si>" for w in ("q", "a", "hi", "there")).encode()
+    )
+    unit = b"<si><t>" + b"a" * 1000 + b"</t></si>"
+    tail = b"</sst>"
+    pad_overhead = len(b"<si><t></t></si>")
+    body_budget = size - len(head) - len(tail)
+    full = (body_budget - pad_overhead - 1) // len(unit)
+    pad = body_budget - full * len(unit) - pad_overhead
+    part = head + unit * full + b"<si><t>" + b"b" * pad + b"</t></si>" + tail
+    assert len(part) == size and pad > 0
+    return part
+
+
+def test_r5_production_shared_strings_cap_is_exact_at_max_minus_1_max_max_plus_1() -> None:
+    cap = ic.DEFAULT_LIMITS.max_xlsx_shared_strings_bytes
+    check(CID, "r5-3: the production shared-strings cap is 256 MiB", cap == 268_435_456)
+    for size, expect in ((cap - 1, "completed"), (cap, "completed"), (cap + 1, "limit_exceeded")):
+        part = _sst_part_of(size)
+        data = book([[S("q"), S("a")], [S("hi"), S("there")]], shared_override=part)
+        del part
+        _e, outcome = run(data)
+        del data
+        if expect == "completed":
+            ok = outcome.report.state == "completed"
+        else:
+            ok = failed_with(outcome, expect) and outcome.report.fatal_locator is None
+        check(CID, f"r5-3: a {size:,}-byte sharedStrings part (cap {cap:,}) is {expect}", ok)
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
