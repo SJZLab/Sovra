@@ -2132,6 +2132,192 @@ def test_duplicate_ignored_key_is_detected_without_normalizing_the_key() -> None
         )
 
 
+# --- round 4 --------------------------------------------------------------------------------
+
+
+class _StrSubclass(str):
+    pass
+
+
+def _flip_hex(hexdigest: str, position: int) -> str:
+    chars = list(hexdigest)
+    chars[position] = "0" if chars[position] != "0" else "1"
+    return "".join(chars)
+
+
+def test_sha_mismatch_at_first_and_last_hex_char_on_run_and_preview() -> None:
+    # V-SHA-FIRST-CHAR-COMPARE: a comparison that skips the first (`[1:]`) or last character
+    # of the 64 hex digits must still refuse a hash that differs only there.
+    data = jdump([VALID_A, VALID_B])
+    correct = hashlib.sha256(data).hexdigest()
+    for position, label in ((0, "first"), (-1, "last"), (31, "middle")):
+        wrong = _flip_hex(correct, position)
+        reader = make_reader(data)
+        out = ji.run_json_import(
+            reader,
+            build_mapping(container=""),
+            verified_content_type="application/json",
+            dataset_purpose="training",
+            expected_sha256=wrong,
+        )
+        check(
+            CID,
+            f"run: a hash differing only at its {label} hex character is source_changed",
+            (out.report.state, out.report.failure_code) == ("failed", "source_changed")
+            and reader.bytes_read == 0,
+        )
+        reader = make_reader(data)
+        stream = ji.json_events(
+            reader,
+            build_mapping(container=""),
+            verified_content_type="application/json",
+            dataset_sha256=wrong,
+        )
+        result = ic.preview(stream, 3)
+        check(
+            CID,
+            f"preview: a hash differing only at its {label} hex character reads nothing",
+            not result.accepted and not result.complete and reader.bytes_read == 0,
+        )
+
+
+def test_malformed_dataset_sha256_is_a_typed_refusal_before_any_read() -> None:
+    # PREVIEW-SHA-TYPEERROR: hmac.compare_digest raises a raw TypeError on a non-str or a
+    # non-ASCII str; json_events must refuse with the typed source_changed, reading nothing.
+    data = jdump([VALID_A, VALID_B])
+    correct = hashlib.sha256(data).hexdigest()
+    bad_values: list[object] = [
+        None,
+        b"0" * 64,
+        12345,
+        "\u00e9" * 64,
+        "\u0661" * 64,
+        "",
+        correct.upper(),
+        correct[:-1],
+        correct + "0",
+        correct + "\n",
+        " " + correct,
+        "g" * 64,
+        _StrSubclass(correct),
+    ]
+    for bad in bad_values:
+        reader = make_reader(data)
+        stream = ji.json_events(
+            reader,
+            build_mapping(container=""),
+            verified_content_type="application/json",
+            dataset_sha256=bad,  # type: ignore[arg-type]
+        )
+        result = ic.preview(stream, 3)
+        check(
+            CID,
+            f"preview with dataset_sha256={bad!r} is a typed refusal, nothing read",
+            not result.accepted and not result.complete and reader.bytes_read == 0,
+        )
+        reader = make_reader(data)
+        stream = ji.json_events(
+            reader,
+            build_mapping(container=""),
+            verified_content_type="application/json",
+            dataset_sha256=bad,  # type: ignore[arg-type]
+        )
+        try:
+            list(stream)
+            raised: tuple[str, str] | None = None
+        except ic.ImportAborted as exc:
+            raised = (exc.state, exc.failure_code)
+        except Exception as exc:  # noqa: BLE001 -- the class under test is a raw TypeError
+            raised = ("raw", type(exc).__name__)
+        check(
+            CID,
+            f"draining with dataset_sha256={bad!r} raises the typed source_changed ({raised})",
+            raised == ("failed", "source_changed") and reader.bytes_read == 0,
+        )
+
+
+def test_content_type_that_is_a_str_subclass_is_refused() -> None:
+    # V-CT-GATE-ISINSTANCE: the content-type gate is an exact-type check.
+    data = jdump([VALID_A])
+    out = run(data, container="", content_type=_StrSubclass("application/json"))
+    check(
+        CID,
+        "a str-subclass content type is not accepted",
+        (out.report.state, out.report.failure_code)
+        == ("failed", "content_type_not_supported_by_importer"),
+    )
+
+
+def _encoding_document(count: int, bad_index: int) -> tuple[bytes, int]:
+    """`count` records, an invalid UTF-8 byte inside record `bad_index` (0-based)."""
+    parts = []
+    for i in range(count):
+        text = f"record {i} \u0645\u0631\u062d\u0628\u0627"
+        obj = {"messages": [{"role": "user", "content": text}]}
+        raw = json.dumps(obj, ensure_ascii=False).encode()
+        if i == bad_index:
+            raw = raw.replace(b"record", b"rec\xffrd", 1)
+        parts.append(raw)
+    data = b"[" + b",".join(parts) + b"]"
+    return data, data.index(b"\xff")
+
+
+def test_invalid_encoding_accepts_the_same_prefix_at_every_chunking() -> None:
+    # INVALID-ENCODING-CHUNK-DEPENDENT: the records accepted before a fatal invalid_encoding
+    # are exactly those wholly before the bad byte, whatever the chunking.
+    data, bad_at = _encoding_document(506, 300)
+    seen: dict[str, tuple[object, ...]] = {}
+    for chunk in (None, 1 << 20, 65536, 4096, 1000, 7, 1):
+        out = run(data, container="", chunk=chunk)
+        report = out.report
+        seen[str(chunk)] = (
+            report.state,
+            report.failure_code,
+            report.fatal_locator,
+            report.records_accepted,
+        )
+    check(
+        CID,
+        f"every chunking ends failed/invalid_encoding at the byte with 300 records ({seen})",
+        set(seen.values()) == {("failed", "invalid_encoding", f"object:{bad_at}", 300)},
+    )
+
+
+def test_invalid_encoding_every_offset_with_a_lead_byte_split_across_chunks() -> None:
+    # V-ENC-OFFSET-PENDING-IGNORED: a multibyte lead byte pending at the end of one chunk,
+    # followed by a byte that is not a continuation, is invalid at the LEAD byte's offset.
+    lead = "\u0645".encode()  # d9 85
+    doc = b"[" + G + b',{"messages":[{"role":"user","content":"a' + lead[:1] + b'x"}]},' + H + b"]"
+    bad_at = doc.index(lead[:1])
+    disagreements: list[str] = []
+    for cut in range(1, len(doc)):
+        out = ji.run_json_import(
+            ic.ChunkReader(
+                [doc[:cut], doc[cut:]],
+                expected_size=len(doc),
+                expected_sha256=hashlib.sha256(doc).hexdigest(),
+            ),
+            build_mapping(container=""),
+            verified_content_type="application/json",
+            dataset_purpose="training",
+            expected_sha256=hashlib.sha256(doc).hexdigest(),
+        )
+        got = (
+            out.report.state,
+            out.report.failure_code,
+            out.report.fatal_locator,
+            out.report.records_accepted,
+        )
+        if got != ("failed", "invalid_encoding", f"object:{bad_at}", 1):
+            disagreements.append(f"cut {cut}: {got}")
+    check(
+        CID,
+        f"every two-chunk split agrees: invalid_encoding at {bad_at}, 1 record "
+        f"({len(disagreements)} disagree, first: {disagreements[:1]})",
+        not disagreements,
+    )
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
