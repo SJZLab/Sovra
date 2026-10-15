@@ -423,6 +423,52 @@ def test_compute_normalized_text_hash_rejects_non_canonical_shape() -> None:
         )
 
 
+def test_compute_normalized_text_hash_rejects_extra_key() -> None:
+    try:
+        compute_normalized_text_hash(
+            {"messages": [{"role": "user", "content": []}], "metadata": {}, "extra": 1}
+        )
+    except NormalizedDuplicateDetectionError:
+        pass
+    else:
+        check(
+            "FTF-0512",
+            "compute_normalized_text_hash rejects a document with an extra "
+            "top-level key, not only one with a missing key",
+            False,
+        )
+
+
+def test_compute_normalized_text_hash_rejects_non_mapping_content_even_if_keys_match() -> None:
+    try:
+        # not a Mapping, but set(content) happens to equal the required key
+        # set -- the two guard sub-conditions must be OR'd, not AND'd.
+        compute_normalized_text_hash(["messages", "metadata"])
+    except NormalizedDuplicateDetectionError:
+        pass
+    else:
+        check(
+            "FTF-0512",
+            "compute_normalized_text_hash rejects a non-Mapping content even "
+            "when its elements happen to match the required key names",
+            False,
+        )
+
+
+def test_compute_normalized_text_hash_rejects_empty_messages_list() -> None:
+    try:
+        compute_normalized_text_hash({"messages": [], "metadata": {}})
+    except NormalizedDuplicateDetectionError:
+        pass
+    else:
+        check(
+            "FTF-0512",
+            "compute_normalized_text_hash rejects an empty messages list "
+            "rather than hashing a vacuous document",
+            False,
+        )
+
+
 def test_supported_purposes_matches_ftf_0500_vocabulary() -> None:
     check(
         "FTF-0512",
