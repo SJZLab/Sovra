@@ -8806,10 +8806,10 @@ FTF-0517:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0517.py
 FTF-0518:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Split leakage detector
-  evidence_hash: 433a9260422765a30250f45340786cc500ebe3cf
+  evidence_hash: 31bbf72b35d5bd60563805d648f9801b21f76eb9
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-23; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0513,
@@ -8852,7 +8852,7 @@ FTF-0518:
     docs/certifications/submissions/2026-10-14T0925Z-FTF-0518.md and
     docs/certifications/submissions/2026-10-14T1741Z-FTF-0518-r2.md and
     docs/certifications/submissions/2026-10-14T2340Z-FTF-0518-r3.md.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0518.py
 FTF-0519:

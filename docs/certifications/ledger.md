@@ -11537,3 +11537,36 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   variants of closed classes. The Control plane annotated two stale round-3 sentences in the spec-matrix note. Advisories:
   json_importer.py:275 / xlsx_importer.py:928 unguarded compare_digest (carried into FTF-0503 r4 / FTF-0505 r3); the
   "vs 8 MiB of max-size records" memory check is weak. UNWIRED.
+
+## 2026-10-15T03:46Z — CERTIFIED: FTF-0518
+- **FTF-0518: CERTIFIED** (round 3, under the stopping rule; PR #815, merge 31bbf72b35d5bd60563805d648f9801b21f76eb9, head ea1b1d01). Producer
+  session_01EnqSPZUhpKPANcN4itAdCV (earlier rounds session_01VedBiyLge6wojTPCKRCuVF, session_01X2nNH1ddiFbkeJTtuG9pPp) ≠
+  certifier session_01QVznorVMjnmcttUhyDnoGR, absent. Production change since round 2: docstring only (equal parse trees).
+  CI: ci-verdict 116178961190; gate 116156042166 "all checks passed" (LK-RECALL 10,000 records, 334 findings). Mirror hub
+  (LK-SATURATION-F22) and F14 both RED; disclosure now states an unkeyed sha256 cannot refuse a fully self-consistent
+  forgery (authenticity is FTF-0519's). Probes: low/high/development_eval hubs saturate at caps 3-4 and clear at 5;
+  150-scan differential vs a both-sided count 150/150; round-2 probe set identical, determinism hash unchanged. 31/34
+  faults RED; GREEN only F9 (equivalent), optional F26, F31 (reason label only, still blocked). FTF-0512 interaction:
+  with FTF-0512's current digit merge, "10⁵" vs "105", "1¼" vs "11/4", "H₂O" vs "H2O" give BLOCKING findings
+  (fail-closed); FTF-0512's own return (#819) - re-run 0518 when it merges (Law 15). UNWIRED.
+
+## 2026-10-15T03:46Z — RETURNED: FTF-1505 (r2)
+- **FTF-1505: RETURNED** (round 1 → 2; PR #816, merge cb31e1f944ca023346088cc4f67bc9e1165a3856, head 5182fe99). Producer
+  session_01JsEV8tuLc512spHsASTGbq ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 116176926954; gate
+  116155564331 "FTF-1505 secret scanning tests: all checks passed". The shipped scanner ignores the 2026-10-14 design:
+  ~640/1,276 tracked files unscanned (tests/, packages/*, .github/, infra/, scripts/, root), history = added lines under
+  9 dirs, shallow clone accepted, no binary/archive/decoded scan, value+glob allowlist tolerating stale entries, 5
+  committed seeds, no uvicorn log lane, missing rule families; an AKIA marker was missed in 11 placements. Faults 9 RED,
+  11 GREEN. Real-repo scan (tracked files, 2,682 commits, 8,506 blobs / 2.87 GB): NO actually exposed credential - every
+  hit is a fixture (AWS documentation keys, *_ci_only CI password, hunter2/postgres/user:pass examples, test fixtures,
+  the scanner's own seeds).
+
+## 2026-10-15T03:46Z — RETURNED: FTF-0904-F1 (r3); FTF-0904 requalification pending
+- **FTF-0904-F1: RETURNED** (round 2 → 3; PR #807, merge 0017ed719cd5170717e54d7f7cdc384d9cc1aa5d, head d15be627). Producers
+  session_01TyAmtH3AeXV3t6zhJ6thec, session_01LfpVEG21xjpeidAgbXBp7L ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI:
+  ci-verdict 116179297362; gate 116127871705 full FTF-0904 suite "all checks passed" (2h05m, 97 faults). Fixed: idempotence
+  guard (live log clean), serialized/form positions, separator/camelCase compounds, long-secret, linearity, fullwidth
+  layers, FAULTS evidence. Return: random-case names split before lookup (cOdE= leaks live; round 1 redacted it);
+  glued compounds leak 191/210; guard-tail, break-on-empty and value-class faults GREEN with demonstrated leaks.
+- **FTF-0904: stays CERTIFIED** - no certified behaviour regressed (the leaking names were added by F1); requalification
+  completes with F1 round 3. Live caller confirmed: install_redaction ← apps/api/app/log_redaction_setup.py ← create_app().

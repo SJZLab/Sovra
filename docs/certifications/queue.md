@@ -24926,3 +24926,12 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-15T01:17Z — Control plane: FTF-0502 CERTIFIED
 - **Certified:** FTF-0502 (#810, merge 77af5699cf97776a519305acb1e9c0bfd7269ed4) under the stopping rule; UNWIRED.
+
+## 2026-10-15T03:46Z — Control plane: FTF-0518 CERTIFIED
+- **Certified:** FTF-0518 (#815, merge 31bbf72b35d5bd60563805d648f9801b21f76eb9) under the stopping rule; UNWIRED.
+
+## 2026-10-15T03:46Z — Control plane: FTF-1505 returned
+- **Returned:** FTF-1505 r2 (0h): rebuild to the design (scope, binaries/archives, decoding, rules, all-blob history, artifacts, uvicorn log lane, fingerprint baseline, run-time seeds, faults, CI job). No real credential exposed.
+
+## 2026-10-15T03:46Z — Control plane: FTF-0904-F1 returned (r3)
+- **Returned:** FTF-0904-F1 r3 (0g): whole-name case match, glued compounds, guard tail, empty-value, value-class tables.
