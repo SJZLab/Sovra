@@ -24953,3 +24953,6 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-15T09:14Z — Control plane: FTF-H010-P3a returned (r4)
 - **Returned:** FTF-H010-P3a r4 (0e): behaviour-only kill signal, 4 casefold/depth rows, survivor ruling, stopping rule.
+
+## 2026-10-15T14:14Z — Control plane: FTF-1505 returned (r3)
+- **Returned:** FTF-1505 r3 (0h): fault matrix, run-time seeds, log lane, decode completeness, fail-closed omissions, redaction, artifacts, PR-scoped history lane; stopping rule.
