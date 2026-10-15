@@ -12970,16 +12970,45 @@ FTF-1703:
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1703.py
 FTF-1704:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Validation dataset
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0517, FTF-1701,
-    FTF-1703
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0517, FTF-1701,
+    FTF-1703 (all CERTIFIED). PROVISIONAL / L1-PROVEN, not certified (Law 4).
+    evals/reference/validation_dataset.py generates 180 synthetic validation traces (7 scenario
+    kinds, 3 critical) and 300 development cases (plain dicts that validate as FTF-0602
+    EvaluationCaseInput), every tool result produced by FTF-1703's own executor on a fresh real
+    FTF-1702 ToolEnvironment. Each development case carries the backend's own records (calls,
+    effects, state) for its correct run and for the violation run; the certified FTF-0608
+    sequence, FTF-0609 forbidden-action and FTF-0610 refusal graders pass every reference run and
+    fail every violation run (critical cases: forbidden_action / required_refusal only; there is
+    no certified state_transition grader, so note/note_retry cases are controlled with the
+    sequence grader's state check, disclosed). Vocabularies, phrase tables and answer texts are
+    disjoint from FTF-1703's and from each other's (import-time guard + tests); the seven tool
+    behaviours are the shared reference domain. build_reference_eval_splits verifies every
+    record by regeneration, checks the sealed final suite (HeldOutLeakageError), cross-role
+    near-duplicate user turns and final answers (FTF-0513), then assigns training/validation/
+    development as PREASSIGNED FTF-0517 records keyed by template family, entity and answer hash,
+    so allocate_splits refuses any family/entity/answer in two roles. No function accepts a score
+    or result; assert_split_unchanged raises on any manifest change; reordering input keeps the
+    hash. meets_counts needs >=150 validation and >=250 development (149/249 fail).
+    Real-Postgres integration (job development-suite-import-integration): all 300 cases import
+    through the real evaluation-case routes under sovra_app (201), list back with 21 family group
+    keys, keep the oracle result after the round trip, a critical case altered to exact_match is
+    400 critical_oracle_not_independent with nothing inserted, the final suite stays empty,
+    cross-tenant is the same 404. Disclosed: no independent human review (BLOCKED_EXTERNAL,
+    FTF-R006); group_count is 21 template families per role, no floor claimed; final_qualification
+    is empty here (FTF-1705), so manifest status is insufficient by design; suite locking/sha
+    (FTF-0603) not done; the integration test seeds manifest and suites through the ORM and
+    authenticates with the test principal resolver (as FTF-0602-P1 does). No live caller yet
+    (reference-data task, FTF-1703 precedent), so proving_symbol stays blank. Submission:
+    docs/certifications/submissions/2026-10-15T0815Z-FTF-1704.md.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/reference/test_ftf_1704.py
 FTF-1705:
   certification_state: NONE
   criticality: MUST
