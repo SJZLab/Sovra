@@ -11617,3 +11617,11 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   116286089574; gate 116245033716 "FTF-0213-S1 constrained-choice probe: all checks passed" (live TLS checks ran).
   New files only; ci.yml additive. Return: negative/zero completion_tokens -> CONSTRAINED_OBSERVED (Law 17/11);
   V16 (later-trial 400 skipped) and V18 (max from partial usage) GREEN. Child slice: no count change.
+
+## 2026-10-15T09:14Z — RETURNED: FTF-H010-P3a (r3)
+- **FTF-H010-P3a: RETURNED** (round 3 → 4; PR #823, merge 382d3d9d6c265dc8210a3032e4a3a378c348d2a2, head 27da4387).
+  Producer session_014JKtwes4LjSGTob9p4MMSS ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 73/73 success,
+  ci-verdict 116293560326; gate 116266288887 "OK -- 128096 checks in 70 suite runs, 69 faults RED"; mutation-gate diff
+  mode generated 0 mutants. No production violation (production byte-identical to r2). Return: [H1] patch-text guard
+  still the kill signal - behaviour-only uncapped run 11 survivors (duplicate-key casefold, list depth, shard duplicate
+  casefold, target casefold, plus pins). Ruling: S05/S07/S08 reviewed equivalents; S03/S04/S06 pinned. Stopping rule set.
