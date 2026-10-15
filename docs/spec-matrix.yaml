@@ -12296,9 +12296,13 @@ FTF-1505:
     merge@...`, refuses a `..` traversal, no fixed lookahead window);
     committed seed literals (`_default_seed_values()` plus several
     `tests/tasks/test_ftf_1505.py` fixtures) replaced by
-    `secret_rules.generate_seed_for_rule`, generated fresh at runtime, so
-    nothing needs baselining any more (two now-stale baseline entries
-    removed); the live-log lane now covers all 16 rule families (round 2
+    `secret_rules.generate_seed_for_rule`, generated fresh at runtime
+    (one genuinely stale baseline entry removed; a second entry for the
+    same old literal was wrongly removed on a source+artifact-only
+    freshness check, caught by a real CI failure -- 5 blocking findings,
+    3 of them that same literal still reachable from real history -- and
+    restored, kept as real evidence rather than silently fixed); the
+    live-log lane now covers all 16 rule families (round 2
     covered 5) plus a direct `StructuredEvent`/`emit_to_stream` cross-check
     (FTF-0006's event dataclass has no redaction of its own by design); a
     base64/hex-ENCODED canary is now actually detectable (round 2's decode

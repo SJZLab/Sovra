@@ -161,11 +161,17 @@ def test_every_rule_fires_on_its_own_generated_seed() -> None:
 
 
 def test_pem_private_key_variants() -> None:
+    # F-SEEDS: each header is built from separate literals (never a single
+    # contiguous match in THIS file's own source text -- the same split
+    # discipline generate_seed_for_rule uses), so no baseline entry is
+    # needed for this task's own test fixture.
+    begin = "-----BEGIN "
+    tail = "PRIVATE KEY-----"
     for header in (
-        "-----BEGIN RSA PRIVATE KEY-----",
-        "-----BEGIN ENCRYPTED PRIVATE KEY-----",
-        "-----BEGIN PRIVATE KEY-----",
-        "-----BEGIN OPENSSH PRIVATE KEY-----",
+        begin + "RSA " + tail,
+        begin + "ENCRYPTED " + tail,
+        begin + tail,
+        begin + "OPENSSH " + tail,
     ):
         hits = scan_line(header)
         check(
