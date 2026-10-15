@@ -407,12 +407,19 @@ def _check_install(app_dir: Path, fails: list[str]) -> None:
 
 _FALLBACK_PROBE = """
 import sys, traceback
-if not hasattr(traceback, "_print_exception_bltin"):
+canary, mode = sys.argv[1], sys.argv[2]
+if mode != "direct" and not hasattr(traceback, "_print_exception_bltin"):
     print("NO-STDLIB-FALLBACK-PATH")
     sys.exit(0)
 import app.main as m
 m.create_app()
-canary, mode = sys.argv[1], sys.argv[2]
+if mode == "direct":
+    # Any interpreter: the call shape 3.13's own fallback uses.
+    try:
+        raise RuntimeError("password=" + canary)
+    except RuntimeError as exc:
+        traceback.print_exception(exc, colorize=False)
+    sys.exit(0)
 if mode == "reset":
     sys.excepthook = sys.__excepthook__
 elif mode == "raising":
@@ -423,7 +430,7 @@ elif mode == "deleted":
     del sys.excepthook
 raise RuntimeError("password=" + canary)
 """
-FALLBACK_MODES = ("reset", "raising", "deleted")
+FALLBACK_MODES = ("direct", "reset", "raising", "deleted")
 
 
 def _check_stdlib_fallback(app_dir: Path, fails: list[str]) -> None:
