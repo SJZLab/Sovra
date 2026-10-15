@@ -4412,6 +4412,28 @@ def standard_world_2(world: World) -> dict[str, Any]:
     return {"a": a, "d": d, "h": h}
 
 
+def valid_finding_body(scores: Any) -> dict[str, Any]:
+    """A report body whose only inconsistency is `scores`: the finding id and disposition are real."""
+    from workers.data import split_leakage_detector as sl  # noqa: PLC0415
+
+    body = json.loads(json.dumps(report_body(real_report()[0])))
+    finding = {
+        "finding_id": sl._finding_id(
+            "exact_raw", "cross_role", ("a", "train"), ("b", "final_qualification"), None
+        ),
+        "method": "exact_raw",
+        "reason": "cross_role",
+        "disposition": "blocking",
+        "record_id_a": "a",
+        "role_a": "train",
+        "record_id_b": "b",
+        "role_b": "final_qualification",
+        "prior_source_label": None,
+        "scores": scores,
+    }
+    return {**body, "status": "leakage_found", "findings": [finding]}
+
+
 def p_hardening_2() -> None:
     legacy_assignments = (("r1", "train", "g1"), ("r2", "heldout_test", "g2"))
     legacy = ism.LegacyThreeSplitManifest(
@@ -4461,31 +4483,26 @@ def p_hardening_2() -> None:
         "versions 1, 2 and 3 have different proposal hashes",
         len({ism.compute_proposal_sha256(c) for c in (v1, v2, v3)}) == 3,
     )
-    body = json.loads(json.dumps(report_body(real_report()[0])))
     for label, scores in (
         ("a string that is not a number", [["exact", "abc"]]),
         ("None", [["exact", None]]),
         ("a list", [["exact", [1]]]),
         ("a numeric string", [["exact", "1"]]),
         ("a bool", [["exact", True]]),
+        ("a string in a float's place", [["exact", "0.5"]]),
+        ("an int (scores are floats)", [["exact", 1]]),
     ):
-        finding = {
-            "finding_id": "a" * 64,
-            "method": "exact_raw",
-            "reason": "cross_role",
-            "disposition": "blocking",
-            "record_id_a": "a",
-            "role_a": "train",
-            "record_id_b": "b",
-            "role_b": "final_qualification",
-            "prior_source_label": None,
-            "scores": scores,
-        }
         check(
             "ACC-FREEZE-REPORT",
             f"a score that is {label} is refused with the module's own error",
-            raises(lambda finding=finding: ism.report_from_body({**body, "findings": [finding]})),
+            raises(lambda scores=scores: ism.report_from_body(valid_finding_body(scores))),
         )
+    good = ism.report_from_body(valid_finding_body([["exact", 1.0], ["other", 0.5]]))
+    check(
+        "ACC-FREEZE-REPORT",
+        "control: the same body with real numbers is accepted and keeps its scores",
+        good.findings[0].scores == (("exact", 1.0), ("other", 0.5)),
+    )
     check(
         "ACC-FREEZE-REPORT",
         "an integer-valued score and a float score both round-trip",

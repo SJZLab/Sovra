@@ -547,12 +547,10 @@ def _list(value: object, name: str) -> list[object]:
 def _score(entry: object) -> tuple[str, float]:
     if type(entry) is not list or len(entry) != 2 or type(entry[0]) is not str:
         raise ManifestDomainError("scores must be [name, number] pairs")
-    try:
-        # A bool or a numeric string converts here and is then refused by the round-trip check in
-        # `report_from_body` (its body would no longer equal the stored one).
-        return entry[0], float(entry[1])
-    except (TypeError, ValueError):
-        raise ManifestDomainError("scores must be [name, number] pairs") from None
+    # A bool, an int or a numeric string converts here and is then refused by the round-trip check
+    # in `report_from_body` (scores are floats; its canonical JSON would differ from the stored
+    # one); anything float() cannot convert is refused by the handler there.
+    return entry[0], float(entry[1])
 
 
 def report_from_body(body: Mapping[str, object]) -> LeakageReport:
@@ -610,22 +608,16 @@ def report_from_body(body: Mapping[str, object]) -> LeakageReport:
             methods_not_run=tuple(_list(data["methods_not_run"], "methods_not_run")),  # type: ignore[arg-type]
             reviews=reviews,
         )
-    except LeakageEngineError as exc:
+    except (LeakageEngineError, TypeError, ValueError) as exc:
         raise ManifestDomainError(f"leakage report body is malformed: {exc}") from None
     sealed = replace(report, report_sha256=compute_report_sha256(report))
-    if report_body(sealed) != _normalised_body(data):
+    if _canonical(report_body(sealed)) != _canonical(data):
         raise ManifestDomainError("leakage report body does not round-trip")
     try:
         verify_report(sealed)
     except LeakageEngineError as exc:
         raise ManifestDomainError(f"leakage report is inconsistent: {exc}") from None
     return sealed
-
-
-def _normalised_body(data: Mapping[str, object]) -> dict[str, object]:
-    # Scores are floats in a rebuilt report; an integer-valued JSON number must compare equal.
-    loaded: dict[str, object] = json.loads(_canonical(data))
-    return loaded
 
 
 # ---------------------------------------------------------------------------
