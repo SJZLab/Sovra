@@ -384,22 +384,23 @@ def _raw_message_roles(
     helper never raises -- a row whose array cannot be resolved at all already has its own
     rejection code to explain that, and this is a display aid, not a second enforcement path.
     Empty for `prompt_completion` mappings (`message_keys` is `None`: there is no message array
-    to look inside)."""
+    to look inside) -- and for anything else that does not resolve to a real list of message
+    objects: the final `type(array) is not list` check is this function's own one safety net,
+    reached the same way (`array` stays unresolved) whether the row's own shape has no message
+    array to begin with, is not a Mapping a pointer could walk, or resolves to nothing; a
+    resolution failure that raises instead (a non-pair tuple `dict()` cannot build, for one) is
+    caught the same way. There is deliberately no second, separate early-exit for each of those
+    cases -- one that can only ever reach the same `return ()` this one already would."""
     keys = mapping.message_keys
     if keys is None:
         return ()
-    array: object
+    array: object = None
     try:
         if mapping.messages_slot is None:
-            if not isinstance(row, Mapping):
-                return ()
-            found, array = resolve_pointer(dict(row), mapping.messages_pointer or ())
-            if not found:
-                return ()
+            if isinstance(row, Mapping):
+                _found, array = resolve_pointer(dict(row), mapping.messages_pointer or ())
         else:
             cell = _read_top_level(mapping.messages_slot, row, headers)
-            if cell is _MISSING or cell is None:
-                return ()
             array = json.loads(cell) if type(cell) is str else cell
     except (ValueError, TypeError):
         return ()
