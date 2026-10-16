@@ -372,7 +372,7 @@ def _reject_constant(_name: str) -> object:
 
 def _parse_float(text: str) -> float:
     value = float(text)
-    if value != value or value in (float("inf"), float("-inf")):
+    if (value == value) or value in (float("inf"), float("-inf")):
         raise StrictJsonError("non_finite_number")
     return value
 

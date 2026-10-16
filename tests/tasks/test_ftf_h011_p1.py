@@ -834,6 +834,58 @@ def test_mapped_names_index_boundaries() -> None:
         "an out-of-range index slot names nothing for it",
         rev._mapped_names(out_of_range, headers) == frozenset({"b"}),
     )
+    at_length = ic.mapping_from_object(
+        {
+            "shape": "prompt_completion",
+            "csv": {"encoding": "utf-8", "delimiter": ",", "has_header": True, "header_row": 0},
+            "prompt": {"index": 2},
+            "completion": {"index": 1},
+        }
+    )
+    check(
+        "NMAPIDX-4",
+        "an index exactly at the header count (one past the last valid position) is out of range",
+        rev._mapped_names(at_length, headers) == frozenset({"b"}),
+    )
+
+
+def test_mapped_names_messages_pointer_edge_cases() -> None:
+    single_token = ic.mapping_from_object(
+        {
+            "shape": "messages",
+            "messages_pointer": "/conversation",
+            "role_key": "role",
+            "content_key": "content",
+            "role_map": {"u": "user"},
+            "on_unmapped_message_keys": "ignore",
+        }
+    )
+    check(
+        "NMAPPTR-1",
+        "a single-token pointer with no headers names that one top-level key",
+        rev._mapped_names(single_token, None) == frozenset({"conversation"}),
+    )
+    check(
+        "NMAPPTR-2",
+        "the same pointer against a tabular row (headers present) names nothing -- a pointer "
+        "only ever addresses a JSON object's own top-level key, never a CSV column",
+        rev._mapped_names(single_token, ("a", "b")) == frozenset(),
+    )
+    root_pointer = ic.mapping_from_object(
+        {
+            "shape": "messages",
+            "messages_pointer": "",
+            "role_key": "role",
+            "content_key": "content",
+            "role_map": {"u": "user"},
+            "on_unmapped_message_keys": "ignore",
+        }
+    )
+    check(
+        "NMAPPTR-3",
+        "a zero-token (root) pointer names nothing -- there is no single top-level key to name",
+        rev._mapped_names(root_pointer, None) == frozenset(),
+    )
 
 
 def test_read_top_level_header_edge_cases() -> None:
@@ -869,6 +921,16 @@ def test_read_top_level_header_edge_cases() -> None:
         "header matching is exact, never case- or whitespace-folded (a real CSV header is "
         "verbatim)",
         rev._read_top_level(ic.Slot("header", "Q"), ("x",), (" q ",)) is rev._MISSING,
+    )
+    check(
+        "READTOP-7",
+        "a clean slot name against a real header carrying whitespace/case does not match",
+        rev._read_top_level(ic.Slot("header", "q"), ("x",), (" Q ",)) is rev._MISSING,
+    )
+    check(
+        "READTOP-8",
+        "a slot name carrying whitespace/case against a clean real header does not match",
+        rev._read_top_level(ic.Slot("header", " Q "), ("x",), ("q",)) is rev._MISSING,
     )
 
 
@@ -984,6 +1046,58 @@ def test_comparison_cells_messages_list_type_and_dict_type_both_required() -> No
     except AssertionError:
         raised = "metadata"
     check("CMPGUARD-2", "a non-dict metadata value trips the guard", raised == "metadata")
+
+
+def test_comparison_cells_message_content_requires_exactly_one_text_part() -> None:
+    mapping = ic.mapping_from_object(
+        {
+            "shape": "prompt_completion",
+            "prompt": {"key": "prompt"},
+            "completion": {"key": "completion"},
+        }
+    )
+    multi_part_candidate = {
+        "content": {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "a"},
+                        {"type": "text", "text": "b"},
+                    ],
+                },
+                {"role": "assistant", "content": [{"type": "text", "text": "c"}]},
+            ],
+            "metadata": {},
+        }
+    }
+    cells = rev._comparison_cells(
+        mapping, {"prompt": "p", "completion": "c"}, None, multi_part_candidate
+    )
+    prompt_cell = next(c for c in cells if c.slot == "prompt")
+    check(
+        "CMPMULTI-1",
+        "a message with more than one content part is never collapsed into a single string",
+        prompt_cell.canonical_type != "str",
+    )
+    empty_part_candidate = {
+        "content": {
+            "messages": [
+                {"role": "user", "content": []},
+                {"role": "assistant", "content": [{"type": "text", "text": "c"}]},
+            ],
+            "metadata": {},
+        }
+    }
+    cells2 = rev._comparison_cells(
+        mapping, {"prompt": "p", "completion": "c"}, None, empty_part_candidate
+    )
+    prompt_cell2 = next(c for c in cells2 if c.slot == "prompt")
+    check(
+        "CMPMULTI-2",
+        "an empty content-part list never crashes and is never treated as a single string",
+        prompt_cell2.canonical_type != "str",
+    )
 
 
 def test_comparison_cells_messages_slot_shape() -> None:
