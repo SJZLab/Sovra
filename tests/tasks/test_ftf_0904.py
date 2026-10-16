@@ -2571,6 +2571,96 @@ def test_f1_round4_long_names_are_bounded_and_decided_by_the_ending() -> None:
     check("FTF-0904-F1", "empty key never matches", lr.redact_text("=abc") == "=abc")
 
 
+# ---------------------------------------------------------------------------------------------
+# FTF-0904-F1 round 5. A separator-delimited segment that is itself a random-case spelling of a
+# listed word (`mon_KeY`, `status_CoDe`), chosen with a prefix that COLLIDES with a
+# `_BENIGN_NAMES` entry once stripped and lowered (`mon`+`key` -> "monkey", `status`+`code` ->
+# "statuscode") -- only the segment-level lookup (not the deny-by-default fallback, which must
+# excuse these exact stripped forms) can close this.
+# ---------------------------------------------------------------------------------------------
+_F5_BENIGN_COLLIDING_SPLITS = (
+    ("mon", "key"), ("tur", "key"), ("hoc", "key"), ("don", "key"), ("whis", "key"),
+    ("lac", "key"), ("de", "code"), ("en", "code"), ("bar", "code"), ("zip", "code"),
+    ("post", "code"), ("geo", "code"), ("uni", "code"), ("op", "code"), ("status", "code"),
+    ("error", "code"), ("exit", "code"), ("return", "code"), ("by", "pass"), ("over", "pass"),
+    ("under", "pass"), ("tres", "pass"), ("sur", "pass"), ("ob", "session"), ("pos", "session"),
+)  # fmt: skip
+
+
+def test_f1_round5_random_case_segment_before_camel_split_is_redacted() -> None:
+    """QP-CASE-SPLIT-SEGMENT: the camel split's own lowercase-to-uppercase boundary can land
+    INSIDE a random-case spelling of a separator-delimited segment (`KeY` -> `Ke`+`Y`, `CoDe` ->
+    `Co`+`De`), so the last-word rule never sees "key"/"code" and only the deny-by-default
+    fallback is left to decide -- but the fallback's own benign list then wrongly excuses exactly
+    these stripped forms (`monkey`, `statuscode`, `bypass`, `obsession`). Each separator-delimited
+    segment must be looked up lowered, whole, BEFORE any camel split."""
+    for prefix, name in _F5_BENIGN_COLLIDING_SPLITS:
+        for sep in _F4_SEPS:
+            for spelling in _f3_random_case(name):
+                for template in _F3_ENV:
+                    text = template.format(p=f"{prefix}{sep}{spelling}={_F1_VALUE}")
+                    check(
+                        "FTF-0904-F1",
+                        f"QP-CASE-SPLIT-SEGMENT {prefix}{sep}{spelling} leaked",
+                        not _f4_leaks(text),
+                    )
+    for name in _F3_NAMES:
+        for sep in _F4_SEPS:
+            for spelling in _f3_random_case(name):
+                text = f"foo{sep}{spelling}={_F1_VALUE}&x=1"
+                check(
+                    "FTF-0904-F1",
+                    f"QP-CASE-SPLIT-SEGMENT foo{sep}{spelling} leaked",
+                    not _f4_leaks(text),
+                )
+    for literal in ("mon_KeY", "de_CoDe", "zip_cOdE", "status_CoDe", "by_PaSs"):
+        check(
+            "FTF-0904-F1",
+            f"reported spelling {literal} leaked",
+            not _f4_leaks(f"GET /x?{literal}={_F1_VALUE} HTTP/1.1"),
+        )
+
+
+def test_f1_round5_segment_rows_through_the_logging_path() -> None:
+    """The same QP-CASE-SPLIT-SEGMENT rows on the real logging path (record scrub + sink)."""
+    rows = [f"{p}{sep}{name}" for p, name in _F5_BENIGN_COLLIDING_SPLITS for sep in _F4_SEPS]
+    rows += ["mon_KeY", "de_CoDe", "zip_cOdE", "status_CoDe", "by_PaSs"]
+    for row in rows:
+        with _Harness() as h:
+            logging.getLogger("t").error("GET /x?%s=%s", row, _F1_VALUE)
+            logging.getLogger("t").error(f"{row}={_F1_VALUE}")
+            found = leaked([_F1_VALUE], h.outputs())
+        check("FTF-0904-F1", f"{row}: logging-path leak {found}", not found)
+
+
+# A non-ASCII prefix must not excuse a credential-ending name: the deny-by-default fallback
+# binds on the ENDING of the stripped, lowered name, never on whether the rest is ASCII.
+_F5_NONASCII_PREFIXES = (
+    "müller", "état", "中", "björk", "françois", "日本語", "ñoño", "žluťoučký",
+)  # fmt: skip
+
+
+def test_f1_round5_non_ascii_prefix_does_not_excuse_a_credential_name() -> None:
+    """QP-NONASCII-PREFIX: `müllerkey`, `étatcode`, `中code` are redacted exactly like
+    `foobarkey`, `widgetcode` -- the ending decides, whatever script the rest of the name is in."""
+    for prefix in _F5_NONASCII_PREFIXES:
+        for name in ("key", "code", "pass", "session", "sig", "state"):
+            glued = f"{prefix}{name}"
+            for spelling in (glued, glued.upper()):
+                text = f"GET /x?{spelling}={_F1_VALUE} HTTP/1.1"
+                check(
+                    "FTF-0904-F1",
+                    f"QP-NONASCII-PREFIX {spelling}: leaked {lr.redact_text(text)!r}",
+                    not _f4_leaks(text),
+                )
+    for literal in ("müllerkey", "étatcode", "中code"):
+        check(
+            "FTF-0904-F1",
+            f"reported spelling {literal} leaked",
+            not _f4_leaks(f"GET /x?{literal}={_F1_VALUE} HTTP/1.1"),
+        )
+
+
 _F3_HEADS = (
     "sk-abcdefgh12",
     "ghp_" + "a1B2c3D4" * 5,
@@ -3092,6 +3182,34 @@ FAULTS: list[tuple[str, str, str, int]] = [
         "F1-NFKC dropped from every decoded layer",
         "layer = _normalise(unquote(layer))  # a decoded fullwidth",
         "layer = unquote(layer)  # a decoded fullwidth",
+        1,
+    ),
+    # round 5 (FTF-0904-F1-r5)
+    (
+        "F1r5-segment lookup before camel split removed (QP-CASE-SPLIT-SEGMENT)",
+        "    raw_segments = [w for w in _NAME_WORD_SPLIT.split(name) if w]\n"
+        "    if raw_segments and raw_segments[-1].lower() in _QUERY_PARAM_NAMES:\n"
+        "        return True\n",
+        "",
+        1,
+    ),
+    (
+        "F1r5-segment lookup not lowered before comparison",
+        "if raw_segments and raw_segments[-1].lower() in _QUERY_PARAM_NAMES:",
+        "if raw_segments and raw_segments[-1] in _QUERY_PARAM_NAMES:",
+        1,
+    ),
+    (
+        "F1r5-segment lookup uses the whole name, not the last separator segment",
+        "if raw_segments and raw_segments[-1].lower() in _QUERY_PARAM_NAMES:",
+        "if raw_segments and name.lower() in _QUERY_PARAM_NAMES:",
+        1,
+    ),
+    (
+        "F1r5-ASCII-only fallback (non-ASCII-prefixed names leak: müllerkey, étatcode, 中code)",
+        "    return stripped.endswith(_NAME_SUFFIXES) and stripped not in _BENIGN_NAMES",
+        "    return stripped.isascii() and stripped.endswith(_NAME_SUFFIXES) "
+        "and stripped not in _BENIGN_NAMES",
         1,
     ),
 ]
