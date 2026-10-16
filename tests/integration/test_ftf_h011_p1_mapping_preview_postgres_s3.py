@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# mypy: disable-error-code="arg-type,attr-defined,assignment,call-arg,index,var-annotated,misc"
+# mypy: disable-error-code="arg-type,attr-defined,assignment,call-arg,index,misc,union-attr"
 """FTF-H011-P1 -- the dataset mapping probe/preview service
 (`apps/api/app/datasets/dataset_mapping_service.py`) over PostgreSQL 16 as the restricted
 `sovra_app` role and the live SeaweedFS S3 API, through the real FTF-0501 upload routes and the
@@ -394,7 +394,7 @@ def main() -> None:
     probed = probe(ctx1, p1_id, train.id, probe_mapping, reveal=True)
     check(
         "I1 a probe over the same real dataset returns real raw rows",
-        len(probed.raw_rows) == 10 and probed.raw_rows[0]["prompt"] == "question 0",
+        len(probed.raw_rows) == 10 and probed.raw_rows[0]["prompt"] == "question 0",  # type: ignore[call-overload]
     )
 
     # ---- I2: scoping, identical to FTF-0502-P1's own I2 --------------------------------
@@ -470,7 +470,7 @@ def main() -> None:
         "I5 a real CSV dataset's headers and rows round-trip",
         csv_preview.source_schema_sha256 is not None
         and csv_preview.rows[0].raw_row == {"q": "hello", "a": "world", "secret": "123-45-6789"}
-        and csv_preview.rows[1].raw_row["q"] == "مرحبا",
+        and csv_preview.rows[1].raw_row["q"] == "مرحبا",  # type: ignore[call-overload]
     )
     csv_probe_mapping = ic.mapping_from_object(
         {
