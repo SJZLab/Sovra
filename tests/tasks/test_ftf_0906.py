@@ -1671,6 +1671,39 @@ def test_unobserved_on_any_side_is_incomplete() -> None:
             )
 
 
+def test_unobserved_codes_match_exactly_not_normalized() -> None:
+    # The side outcomes are validated at construction, so a non-canonical
+    # value can only appear if forged past the dataclass; it must never be
+    # read as `unobserved` (no strip/lower folding) -- the other side's real
+    # `unobserved` still makes the flow incomplete, with only ITS own code.
+    plan = _plan((_flow("a1", "allow"), _flow("d1", "deny")))
+    base = _clean_all_but_history()
+    a_logs = tuple(e for e in base.connection_logs if e.flow_id == "a1")
+    a_enf = tuple(o for o in base.enforcement if o.flow_id == "a1")
+    for forged_side, real_side, forged_value, expected_codes in (
+        ("destination", "client", " Unobserved ", ("client_unobserved",)),
+        ("client", "destination", "UNOBSERVED", ("destination_unobserved",)),
+    ):
+        entries = {
+            "client": ConnectionLogEntry("d1", "client", "refused"),
+            "destination": ConnectionLogEntry("d1", "destination", "not_seen"),
+        }
+        entries[real_side] = ConnectionLogEntry("d1", real_side, "unobserved")
+        object.__setattr__(entries[forged_side], "outcome", forged_value)
+        evidence = EgressEvidence(
+            enforcement=(*a_enf, EnforcementObservation("d1", "process_guard", "deny", "blocked")),
+            connection_logs=(*a_logs, entries["client"], entries["destination"]),
+            plaintext_inspections=base.plaintext_inspections,
+        )
+        verdict = next(v for v in verify_egress(plan, evidence).flow_verdicts if v.flow_id == "d1")
+        check(
+            "FTF-0906-R3-2",
+            f"forged {forged_side}={forged_value!r} is not folded into unobserved; "
+            f"real {real_side} unobserved gives only {expected_codes}",
+            verdict.status == "incomplete" and verdict.codes == expected_codes,
+        )
+
+
 def test_allow_flow_destination_inspection_must_have_found_the_canary() -> None:
     # F5b: an allow flow whose controlled destination WAS inspected but the
     # canary was not found there is vacuous even though enforcement, client
