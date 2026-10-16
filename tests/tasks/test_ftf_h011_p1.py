@@ -757,6 +757,44 @@ def test_observed_role_values_from_message_shaped_rows() -> None:
     )
 
 
+def test_raw_message_roles_pointer_branch_guards() -> None:
+    pointer_mapping = ic.mapping_from_object(
+        {
+            "shape": "messages",
+            "messages_pointer": "/conversation",
+            "role_key": "role",
+            "content_key": "content",
+            "role_map": {"u": "user"},
+            "on_unmapped_message_keys": "ignore",
+        }
+    )
+    check(
+        "ROLE-9",
+        "a pointer-based shape over a non-Mapping row is refused, not dict()-crashed",
+        rev._raw_message_roles(pointer_mapping, ("a", "b"), None) == (),
+    )
+    check(
+        "ROLE-10",
+        "a pointer target missing entirely from the row is empty, not a crash",
+        rev._raw_message_roles(pointer_mapping, {"other_key": []}, None) == (),
+    )
+
+
+def test_raw_message_roles_rejects_a_non_list_resolved_array() -> None:
+    # A tuple (never produced by real JSON/JSONL parsing, but not impossible to construct in
+    # memory) must be refused exactly like any other non-list value -- the function's own
+    # `type(array) is not list` guard is the only thing standing between an iterable of dicts
+    # and a silently-accepted role list.
+    check(
+        "ROLE-11",
+        "a non-list iterable of message-shaped dicts is still refused, not iterated",
+        rev._raw_message_roles(
+            MESSAGES_JSON, {"messages": ({"role": "human", "content": "hi"},)}, None
+        )
+        == (),
+    )
+
+
 def test_observed_role_values_end_to_end_includes_rejected_rows() -> None:
     # One row with a role already in role_map (accepted), one with a raw role that is not
     # (rejected, unmapped_role) -- both raw role strings must still show up, since the whole
