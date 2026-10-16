@@ -1,8 +1,8 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-15T17:21Z. Source: `python3 scripts/status.py` on main.
-- **Status: 151/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
+Updated: 2026-10-16T01:58Z. Source: `python3 scripts/status.py` on main.
+- **Status: 153/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
@@ -12,6 +12,17 @@ Updated: 2026-10-15T17:21Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-16T01:58Z:**
+  - Returned: FTF-1505 r4 (secret scanning: PR checks now scan only the PR's own history, so an unmerged branch can no longer break every PR; still no real exposed credential; but 12 scanner breakages go unnoticed by its tests, broken archives are skipped silently, and a long secret split across the scanner's 200-character windows is missed).
+  - Returned: FTF-0904-F1 r4 (log redaction: random-case names like cOdE= are now caught, but compound names outside a hand-written word list - mfa_CodE=, smscode=, signingkey= - still print their secret on the live log; the fix is to redact any name ending in a credential word). FTF-0904 stays certified.
+- **2026-10-15T22:45Z:**
+  - CERTIFIED: FTF-0505 (XLSX importer), after 5 rounds, under the stopping rule - all four dataset importers are now certified. UNWIRED.
+- **2026-10-15T20:22Z:**
+  - Returned: FTF-0213-S1 r3 (tests only - the probe now refuses impossible token counts, but the tests check this only inside a helper, so a one-line change elsewhere could bring the fake cheap-output figure back unnoticed). Stopping rule set.
+  - Returned: FTF-0906 r2 (egress verification: the network blocking itself held against every bypass tried, but the checker that turns evidence into a pass/fail can report "passed" while a canary secret sits in an unchecked log or an unplanned connection - 12 fixes).
+- **2026-10-15T19:59Z:**
+  - Returned: FTF-1304-S1 r3 (tests only - both cost-attribution fixes are correct in production, but three test pins are missing, one of which would let the mixed-currency bug come back unnoticed). Stopping rule set.
+  - CERTIFIED: FTF-0512 (normalized duplicate detector) again, with FTF-0512-F1 round 3 - look-alike text (fullwidth letters, invisible characters, one-sided timestamps) is now matched, the slow-hash bypass on Python 3.11 is closed (29 min -> 0.1 s refusal), and no meaningful difference collapses. UNWIRED. Follow-up FTF-0512-F2 queued (math/currency symbols such as ≤/≥ and $/€ are still stripped and merge).
 - **2026-10-15T17:21Z:**
   - Returned: FTF-0505 r5 (XLSX importer: every round-4 memory problem fixed - 5 GB down to under 100 MB; a small regression in one error report's schema hash and two missing test pins remain). Stopping rule set for round 5.
   - CERTIFIED (child slice): FTF-0904-W1-F1 - the live log-redaction traceback printer now accepts newer Python keyword arguments (e.g. colorize on 3.13) and still redacts; W1 re-checked with no regression.
@@ -30318,3 +30329,59 @@ PR, not `[relay]`-titled, so direct edits to the shared files are allowed). STEP
 (`secret-scanning`/`mutation-gate` green); `ci-verdict` itself not yet concluded when this shift
 ended, stalled on an already-precedented slow step unrelated to this fix. No `BLOCKER.md` entry (no
 systemic failure). No new owner ask.
+
+## 2026-10-16T01:50Z — Shift close-out: all four CI items from this shift resolved and merged
+
+Continuing the same shift (CI took far longer than usual today -- individual `gate` runs ranged
+from ~20 minutes to over 2.5 hours across the several items below, driven by sustained heavy
+concurrent PR volume from other sessions). Final outcomes, in order:
+
+1. **PR #827 (FTF-1704-r1) merged** (`bd4066f4`) once the stale-baseline fix (this file's own entry
+   above) went green. Evidence appended to `docs/certifications/queue.md`/`docs/spec-matrix.yaml`
+   via a separate docs-only PR (#837, see below for its own detour).
+2. **PR #831 (FTF-0904-W1-F1-r1) merged** (`f7646ecf`) once green, same stale-baseline fix. Its own
+   queue.md evidence PR (#838) turned out redundant -- Control plane independently reviewed PR #831
+   directly and certified it while #838 was still waiting on CI -- so #838 was closed, not merged,
+   with a comment explaining why (re-adding a `PROVISIONAL` entry for an already-certified item
+   would have contradicted the authoritative state on `main`).
+3. **PR #825 (FTF-0904-F1-r3)** re-ran twice after the stale-baseline merge and failed both times on
+   `FTF-0904-R11` (`qp-assign-run` at 262144 chars, 4.113s then 4.039s against a 4.0s limit) -- a
+   genuine marginal performance regression, not a flake (two independent runs landing within 2% of
+   each other, both just over the limit, after the one sanctioned re-run was already spent). Root
+   cause: round 3's new `_is_glued_compound` glued-compound-chain check ran its full `O(size x
+   words)` DP loop unconditionally on every query-param candidate, including the ~131,000 trivial
+   one-character `"a"` candidates this adversarial input produces -- none of which could ever match,
+   since no name in `_QUERY_PARAM_NAMES` is shorter than 3 characters. Fixed
+   (`packages/security/log_redaction.py`, commit `1295d1fb`) with a cheap length-guard bail-out
+   before building the DP table; verified behavior-preserving (every name is >=3 chars, so the
+   guard can never reject a string that could have matched) and microbenchmarked directly (131,072
+   calls to `_is_glued_compound("a")`: negligible 0.031s). `ruff`/`mypy` clean. Merged (`eea46ca3`)
+   once CI confirmed green.
+4. **PR #837's own evidence-recording PR hit two more, unrelated issues** while it sat waiting on
+   CI behind the other three: (a) its own `gate`/`secret-scanning` failed on a *different*,
+   pre-existing gap -- a missing baseline entry for one of four PEM-header test fixtures in
+   `tests/security/secret_scan_baseline.yaml` (three of
+   `test_pem_private_key_variants`'s four header literals -- RSA, ENCRYPTED, plain -- were already
+   baselined; the OPENSSH variant's fingerprint had simply never been added, from whichever earlier
+   round added the other three). Verified directly (fetched the flagged historical blob with `git
+   cat-file -p`, confirmed it's the bare header string with no key body, recomputed the fingerprint
+   by hand) and fixed via a dedicated PR (#851, commit `27a226a8`, merged `264c1ff7`). (b) After
+   merging that fix's own `main` into #837, a *second* CI run failed with `duplicate secret-scan
+   baseline fingerprint` -- an unrelated, independently-landed FTF-1505 round-3 rebuild (merged to
+   `main` by a different session in the interim) had added its own entry for the exact same OPENSSH
+   fingerprint, and git's text merge kept both copies without flagging a conflict (they landed in
+   different parts of the file). Deduped (kept the round-3 rebuild's own entry, removed the
+   redundant one) and pushed (`413dfb45`). #837 then went green and merged (`84b76d45`).
+
+**Running total of real, independent issues found and fixed in this one shift: four** -- the
+original stale-baseline false positive (3 PRs), a real performance regression (1 PR), a pre-existing
+baseline gap (1 PR), and a duplicate-fingerprint collision from two sessions independently finding
+the same gap (1 PR). None were flakes chased with re-runs beyond the one sanctioned attempt on
+item 3; every fix was verified against the real failure before pushing (reproduced the blob/value,
+recomputed the fingerprint, or microbenchmarked the hot path) per CLAUDE.md's evidence-first rules.
+
+STEP 3: this file updated (plain docs-only PR, not `[relay]`-titled). STEP 4 stop condition (a): all
+four items merged PROVISIONAL (FTF-1704, FTF-0904-W1-F1 already Control-plane CERTIFIED,
+FTF-0904-F1-r3), each awaiting or already past L2 review; the two baseline-hygiene fixes (#851,
+dedupe in #837) are infrastructure fixes, not task submissions, so nothing to certify there. No
+`BLOCKER.md` entry. No new owner ask. Stopping here -- this shift is done.
