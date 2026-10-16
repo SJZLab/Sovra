@@ -368,6 +368,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_r005_r3.py
       - name: FTF-R005 round-7 negative-test proof (strictness from Factory's record, read-back before SYNCED, locked outbox row, no network or DB required)
         run: uv run python3 tests/tasks/test_ftf_r005_r4.py
+      - name: FTF-R006-P1 negative-test proof (Argilla REST adapter, no network required)
+        run: uv run python3 tests/tasks/test_ftf_r006_p1_client.py
       - name: FTF-1506 negative-test proof (Dependency scanning, no network required)
         run: uv run python3 tests/tasks/test_ftf_1506.py
       - name: FTF-04A17 negative-test proof (DiscoveredAgentCandidate schema/API, no DB required)
