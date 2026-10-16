@@ -2543,6 +2543,27 @@ def test_f1_round4_over_redaction_on_the_fixed_corpus_is_pinned() -> None:
     )
 
 
+def test_f1_round4_name_matching_is_exact_about_stray_whitespace() -> None:
+    """The decision is on the exact run: whitespace is neither a name ending nor a benign word.
+
+    (`_QUERY_ASSIGN` can never hand a name with whitespace in; this pins the function's own
+    contract so the closed benign list cannot be widened by trimming.)"""
+    check(
+        "FTF-0904-F1", "trailing space: not a name ending", lr._is_query_param_name("key ") is False
+    )
+    check(
+        "FTF-0904-F1", "leading space: ending still a name", lr._is_query_param_name(" key") is True
+    )
+    check(
+        "FTF-0904-F1",
+        "benign word with a stray space is not excused",
+        lr._is_query_param_name(" monkey") is True,
+    )
+    check(
+        "FTF-0904-F1", "benign word itself is excused", lr._is_query_param_name("monkey") is False
+    )
+
+
 def test_f1_round4_long_names_are_bounded_and_decided_by_the_ending() -> None:
     check("FTF-0904-F1", "5000-char non-name stays", "v1" in lr.redact_text("a" * 5000 + "=v1"))
     out = lr.redact_text("a" * 5000 + f"key={_F1_VALUE}")
