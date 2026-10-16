@@ -40,6 +40,7 @@ Rules this module enforces:
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import hmac
 import json
@@ -864,11 +865,15 @@ def apply_mapping(
     """Builds the FTF-0506 raw record from one source row. A mapping never
     defaults a value: an empty optional slot is omitted."""
     if mapping.row_observer is not None:
+        # OBSERVER-COPY: a *deep* copy -- a shallow `dict()`/`list()` still
+        # shares every nested mutable value with `row` itself, so an
+        # observer that mutates a nested list/dict in place would silently
+        # corrupt the very row this function is about to build the real
+        # candidate and hash from.
         copied_row = (
-            dict(row)
+            copy.deepcopy(row)
             if isinstance(row, Mapping)
-            else list(row)
-            if isinstance(row, Sequence) and not isinstance(row, str | bytes)
+            or (isinstance(row, Sequence) and not isinstance(row, str | bytes))
             else row
         )
         copied_headers = None if headers is None else tuple(headers)

@@ -225,20 +225,42 @@ def test_probe_dataset_source_returns_the_real_result_and_the_real_reveal_flag()
     )
 
 
+def _fake_tool_definition(name: str, schema: dict) -> SimpleNamespace:
+    return SimpleNamespace(name=name, input_schema_json=schema)
+
+
 def test_preview_dataset_mapping_returns_the_real_result_and_the_real_reveal_flag() -> None:
+    # TOOL-VALIDATOR: `tool_schemas` is never a caller argument any more --
+    # `preview_dataset_mapping` builds it itself, live, from
+    # `list_tool_definitions` (here a test double, since this file never
+    # touches a real database), and always passes the real
+    # `validate_instance` through as `tool_argument_validator`.
     sentinel = object()
     captured: dict[str, object] = {}
 
     def fake_run_mapping_preview(
-        reader, mapping, *, verified_content_type, dataset_sha256, tool_schemas, reveal, limits
+        reader,
+        mapping,
+        *,
+        verified_content_type,
+        dataset_sha256,
+        tool_schemas,
+        tool_argument_validator,
+        reveal,
+        limits,
     ):
         captured["reveal"] = reveal
         captured["tool_schemas"] = tool_schemas
+        captured["tool_argument_validator"] = tool_argument_validator
         return sentinel
+
+    def fake_list_tool_definitions(session, context, project_id):
+        return [_fake_tool_definition("t", {"type": "object"})]
 
     with (
         patch.object(svc, "_authorize_and_open", _patched_authorize_and_open()),
         patch.object(svc, "run_mapping_preview", fake_run_mapping_preview),
+        patch.object(svc, "list_tool_definitions", fake_list_tool_definitions),
     ):
         result = svc.preview_dataset_mapping(
             object(),
@@ -248,7 +270,6 @@ def test_preview_dataset_mapping_returns_the_real_result_and_the_real_reveal_fla
             include_held_out=False,
             storage=DatasetObjectStorage(object(), "bucket"),
             mapping=object(),
-            tool_schemas={"t": {"type": "object"}},
             reveal=True,
         )
     check(
@@ -261,14 +282,27 @@ def test_preview_dataset_mapping_returns_the_real_result_and_the_real_reveal_fla
     )
     check(
         "ARGS-2",
-        "tool_schemas passes through unmodified",
+        "tool_schemas is built live from list_tool_definitions, never a caller argument",
         captured["tool_schemas"] == {"t": {"type": "object"}},
+    )
+    check(
+        "ARGS-3",
+        "the real FTF-0405 validate_instance is passed through as tool_argument_validator",
+        captured["tool_argument_validator"] is svc.validate_instance,
     )
 
     captured2: dict[str, object] = {}
 
     def fake_run_mapping_preview2(
-        reader, mapping, *, verified_content_type, dataset_sha256, tool_schemas, reveal, limits
+        reader,
+        mapping,
+        *,
+        verified_content_type,
+        dataset_sha256,
+        tool_schemas,
+        tool_argument_validator,
+        reveal,
+        limits,
     ):
         captured2["reveal"] = reveal
         return sentinel
@@ -276,6 +310,7 @@ def test_preview_dataset_mapping_returns_the_real_result_and_the_real_reveal_fla
     with (
         patch.object(svc, "_authorize_and_open", _patched_authorize_and_open()),
         patch.object(svc, "run_mapping_preview", fake_run_mapping_preview2),
+        patch.object(svc, "list_tool_definitions", fake_list_tool_definitions),
     ):
         svc.preview_dataset_mapping(
             object(),
@@ -285,7 +320,6 @@ def test_preview_dataset_mapping_returns_the_real_result_and_the_real_reveal_fla
             include_held_out=False,
             storage=DatasetObjectStorage(object(), "bucket"),
             mapping=object(),
-            tool_schemas=None,
             reveal=False,
         )
     check(

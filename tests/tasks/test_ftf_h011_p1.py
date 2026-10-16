@@ -32,13 +32,18 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import sys
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
+API_ROOT = ROOT / "apps" / "api"
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(API_ROOT))
 
 import workers.data.dataset_mapping_review as rev  # noqa: E402
 from workers.data import import_common as ic  # noqa: E402
+
+from app.services.json_schema_tool_validation import validate_instance  # noqa: E402
 
 FAILURES: list[str] = []
 
@@ -155,6 +160,176 @@ def test_tap_runs_for_tabular_rows_with_headers() -> None:
     )
 
 
+def test_observer_copy_is_deep_not_shallow() -> None:
+    # OBSERVER-COPY: a shallow dict()/list() copy still shares every nested
+    # mutable value with the real row -- a nested-mutating observer must
+    # never be able to reach the original through it.
+    seen: list[object] = []
+    tapped = dataclasses.replace(JSON_PROMPT_COMPLETION, row_observer=lambda r, h: seen.append(r))
+    row = {"prompt": "p", "completion": "c", "extra_nested": {"a": "b"}, "extra_list": [1, 2]}
+    ic.apply_mapping(tapped, row)
+    captured = seen[0]
+    assert isinstance(captured, dict)
+    captured["extra_nested"]["a"] = "MUTATED"
+    captured["extra_list"].append("MUTATED")
+    check(
+        "OBSCOPY-1",
+        "mutating a nested dict in the observer's copy never reaches the original row",
+        row["extra_nested"]["a"] == "b",
+    )
+    check(
+        "OBSCOPY-2",
+        "mutating a nested list in the observer's copy never reaches the original row",
+        row["extra_list"] == [1, 2],
+    )
+
+
+def test_observer_nested_mutation_never_changes_the_real_candidate() -> None:
+    # Differential (OBSERVER-COPY), direct against `apply_mapping` (never
+    # through `run_mapping_preview`/`run_mapping_probe`: both always
+    # install their *own* row-pairing tap via `_with_row_tap`'s own
+    # `dataclasses.replace`, which -- `row_observer` being a single field,
+    # not a chain -- silently discards any observer already on the mapping
+    # passed in, so a second, externally-attached observer could never be
+    # exercised through them at all). The exact same row, mapped once with
+    # no observer and once with a deliberately nested-mutating one, must
+    # produce a byte-identical candidate -- across a messages-shaped
+    # (nested array) row, a prompt/completion JSON-shaped (nested dict)
+    # row, and a flat CSV-shaped (tabular) row, which carries no nested
+    # structure of its own, so the mutator is a disclosed no-op there,
+    # still proving the format is unaffected by attaching one at all.
+    def nested_mutator(row: object, _headers: object) -> None:
+        if isinstance(row, dict):
+            messages = row.get("messages")
+            if isinstance(messages, list) and messages and isinstance(messages[0], dict):
+                messages[0]["content"] = "TAMPERED-BY-OBSERVER"
+            nested = row.get("nested")
+            if isinstance(nested, dict):
+                nested["x"] = "TAMPERED-BY-OBSERVER"
+        elif isinstance(row, list):
+            for value in row:
+                if isinstance(value, dict):
+                    value["tampered"] = "yes"
+
+    cases = (
+        (
+            MESSAGES_JSON,
+            {"messages": [{"role": "human", "content": "hi"}, {"role": "ai", "content": "there"}]},
+            None,
+        ),
+        (
+            JSON_PROMPT_COMPLETION,
+            {"prompt": "p1", "completion": "c1", "nested": {"x": "y"}},
+            None,
+        ),
+        (CSV_PROMPT_COMPLETION, ["hello", "world"], ("q", "a")),
+    )
+    for mapping, row, headers in cases:
+        plain_candidate = ic.apply_mapping(mapping, row, headers=headers).raw_record
+        tapped_mapping = dataclasses.replace(mapping, row_observer=nested_mutator)
+        tapped_candidate = ic.apply_mapping(tapped_mapping, row, headers=headers).raw_record
+        check(
+            f"OBSCOPY-3-{mapping.shape}",
+            f"{mapping.shape}: the real candidate is identical with vs without a "
+            "nested-mutating observer",
+            plain_candidate == tapped_candidate,
+        )
+
+
+# --- TOOL-VALIDATOR ---------------------------------------------------------------------------
+
+
+def test_tool_argument_validator_threaded_through_to_the_importer() -> None:
+    # TOOL-VALIDATOR: without `tool_argument_validator`, every tool-call
+    # row is rejected `canonical_schema_invalid` regardless of whether its
+    # own arguments are genuinely valid (the importer's own documented
+    # fail-closed default for "no validator supplied") -- making a
+    # tool-call-bearing source impossible to preview meaningfully. Passing
+    # FTF-0405's real `validate_instance` plus the real schema accepts a
+    # genuinely valid call and still rejects a genuinely invalid one.
+    tool_mapping = ic.mapping_from_object(
+        {
+            "shape": "messages_json",
+            "messages": {"key": "messages"},
+            "role_key": "role",
+            "content_key": "content",
+            "tool_calls_key": "tool_calls",
+            "tool_call_id_key": "tool_call_id",
+            "name_key": "name",
+            "role_map": {"user": "user", "assistant": "assistant", "tool": "tool"},
+            "on_unmapped_message_keys": "ignore",
+        }
+    )
+    schema = {
+        "type": "object",
+        "properties": {"order_id": {"type": "string"}},
+        "required": ["order_id"],
+        "additionalProperties": False,
+    }
+    data = (
+        b'{"messages": [{"role": "user", "content": "hi"}, '
+        b'{"role": "assistant", "content": "ok", '
+        b'"tool_calls": [{"id": "call_1", "name": "lookup_order", '
+        b'"arguments": {"order_id": "abc"}}]}, '
+        b'{"role": "tool", "content": "found", "tool_call_id": "call_1", '
+        b'"name": "lookup_order"}]}\n'
+    )
+    without_validator = rev.run_mapping_preview(
+        reader_for(data),
+        tool_mapping,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        tool_schemas={"lookup_order": schema},
+        reveal=True,
+    )
+    check(
+        "TOOLVAL-1",
+        "without a tool_argument_validator, a genuinely valid tool call is still rejected "
+        "canonical_schema_invalid",
+        without_validator.rows[0].outcome == "rejected"
+        and without_validator.rows[0].code == "canonical_schema_invalid",
+    )
+    with_validator = rev.run_mapping_preview(
+        reader_for(data),
+        tool_mapping,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        tool_schemas={"lookup_order": schema},
+        tool_argument_validator=validate_instance,
+        reveal=True,
+    )
+    check(
+        "TOOLVAL-2",
+        "with the real validate_instance and the real schema, a genuinely valid tool call "
+        "is accepted",
+        with_validator.rows[0].outcome == "accepted",
+    )
+    bad_data = (
+        b'{"messages": [{"role": "user", "content": "hi"}, '
+        b'{"role": "assistant", "content": "ok", '
+        b'"tool_calls": [{"id": "call_1", "name": "lookup_order", '
+        b'"arguments": {"order_id": 123}}]}, '
+        b'{"role": "tool", "content": "found", "tool_call_id": "call_1", '
+        b'"name": "lookup_order"}]}\n'
+    )
+    bad_result = rev.run_mapping_preview(
+        reader_for(bad_data),
+        tool_mapping,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(bad_data),
+        tool_schemas={"lookup_order": schema},
+        tool_argument_validator=validate_instance,
+        reveal=True,
+    )
+    check(
+        "TOOLVAL-3",
+        "a genuinely invalid tool call (wrong argument type) is still rejected even with a "
+        "real validator and schema",
+        bad_result.rows[0].outcome == "rejected"
+        and bad_result.rows[0].code == "canonical_schema_invalid",
+    )
+
+
 # --- DISP ----------------------------------------------------------------------------------
 
 
@@ -218,7 +393,20 @@ def test_dispatch_covers_every_declared_content_type() -> None:
 # --- MASK ------------------------------------------------------------------------------------
 
 
-def test_mask_every_value_headers_in_clear() -> None:
+def _is_masked_marker(value: object) -> bool:
+    return (
+        isinstance(value, Mapping)
+        and value.get("masked") is True
+        and isinstance(value.get("chars"), int)
+    )
+
+
+def test_mask_every_value_and_every_key_name() -> None:
+    # MASK-LEAK: Section 67.2 masks every string leaf *and* every header/
+    # key name -- a masked JSON row can no longer be a plain dict keyed by
+    # the real name (a dict key must be hashable; the masked marker is a
+    # dict, so it can never be one), so it comes back as an ordered tuple
+    # of {"key": masked_name, "value": masked_value} pairs instead.
     data = b'{"prompt": "secret-question", "completion": "secret-answer", "pii": "123-45-6789"}\n'
     result = rev.run_mapping_preview(
         reader_for(data),
@@ -230,14 +418,28 @@ def test_mask_every_value_headers_in_clear() -> None:
     )
     row = result.rows[0]
     raw = row.raw_row
-    assert isinstance(raw, dict)
-    check("MASK-1", "the key names stay in clear", set(raw) == {"prompt", "completion", "pii"})
-    for key, value in raw.items():
-        check(f"MASK-2-{key}", f"{key}'s value is masked", rev._MASK_PREFIX in str(value))
+    assert isinstance(raw, tuple)
+    check("MASK-1", "the raw row is a tuple of key/value pairs, never a plain dict", True)
+    check("MASK-1b", "every real key name is masked", all(_is_masked_marker(e["key"]) for e in raw))
+    check(
+        "MASK-2",
+        "every real value is masked",
+        all(_is_masked_marker(e["value"]) for e in raw),
+    )
+    check(
+        "MASK-2b",
+        "the masked chars count matches each real key/value's own real length",
+        {e["key"]["chars"] for e in raw} == {len("prompt"), len("completion"), len("pii")}
+        and {e["value"]["chars"] for e in raw}
+        == {len("secret-question"), len("secret-answer"), len("123-45-6789")},
+    )
     check(
         "MASK-3",
-        "none of the real text leaks through a masked value",
-        "secret-question" not in str(raw) and "123-45-6789" not in str(raw),
+        "none of the real text leaks through a masked value or key",
+        "secret-question" not in str(raw)
+        and "123-45-6789" not in str(raw)
+        and "prompt" not in str(raw)
+        and "completion" not in str(raw),
     )
 
 
@@ -259,16 +461,69 @@ def test_mask_reveal_true_shows_the_real_values() -> None:
 
 
 def test_mask_nested_structures_and_scalars() -> None:
-    masked_list = rev._mask_value([1, "x", None, True, {"k": "v"}])
+    masked_list = rev._mask_leaf([1, "x", None, True, {"k": "v"}])
     check("MASK-5", "a list's own values are each masked", isinstance(masked_list, list))
-    check("MASK-6", "None is never masked (not sensitive)", masked_list[2] is None)
-    check("MASK-7", "a bool is never masked (not sensitive)", masked_list[3] is True)
-    check("MASK-8", "a string is masked", rev._MASK_PREFIX in str(masked_list[1]))
-    check("MASK-9", "a nested dict's own key stays in clear", "k" in masked_list[4])
+    check("MASK-6", "None is never masked (not a string leaf)", masked_list[2] is None)
+    check("MASK-7", "a bool is never masked (not a string leaf)", masked_list[3] is True)
+    check("MASK-7b", "an int is never masked (not a string leaf)", masked_list[0] == 1)
+    check("MASK-8", "a string is masked", _is_masked_marker(masked_list[1]))
+    check(
+        "MASK-8b",
+        "the masked chars count is the real string's own length",
+        masked_list[1]["chars"] == 1,
+    )
+    check(
+        "MASK-9",
+        "a nested dict's own key stays in clear (schema, not raw data, for this helper)",
+        "k" in masked_list[4],
+    )
     check(
         "MASK-10",
         "a nested dict's own value is masked",
-        rev._MASK_PREFIX in str(masked_list[4]["k"]),
+        _is_masked_marker(masked_list[4]["k"]),
+    )
+
+
+def test_mask_candidate_type_tag_and_identical_flag_stay_visible() -> None:
+    # MASK-LEAK's own disclosed exception: a ContentPart's `"type"` tag
+    # ("text"/"json") is schema, never raw content, and stays in clear even
+    # under full masking; `ComparisonCell.identical`/`raw_type`/
+    # `canonical_type` are a separate field entirely, never masked at all.
+    data = b'{"prompt": "secret-prompt-text", "completion": "secret-completion-text"}\n'
+    result = rev.run_mapping_preview(
+        reader_for(data),
+        PROMPT_COMPLETION,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        tool_schemas=None,
+        reveal=False,
+    )
+    row = result.rows[0]
+    assert row.candidate is not None
+    messages = row.candidate["content"]["messages"]  # type: ignore[index]
+    for message in messages:
+        for part in message["content"]:
+            check(
+                "MASK-TYPE-1",
+                "the content part's own type tag stays in clear",
+                part["type"] in ("text", "json"),
+            )
+            if part["type"] == "text":
+                check(
+                    "MASK-TYPE-2",
+                    "the content part's own text is masked",
+                    _is_masked_marker(part["text"]),
+                )
+    check(
+        "MASK-TYPE-3",
+        "none of the real prompt/completion text leaks through the masked candidate",
+        "secret-prompt-text" not in str(row.candidate)
+        and "secret-completion-text" not in str(row.candidate),
+    )
+    check(
+        "MASK-TYPE-4",
+        "comparison cells (raw_type/canonical_type/identical) are never masked",
+        all(isinstance(cell.identical, bool) for cell in row.comparison),
     )
 
 
@@ -283,15 +538,22 @@ def test_mask_tabular_row_pairs_with_headers() -> None:
         reveal=False,
     )
     row = result.rows[0]
+    raw = row.raw_row
+    assert isinstance(raw, tuple)
     check(
         "MASK-11",
-        "a tabular raw row is keyed by its real header names",
-        set(row.raw_row) == {"q", "a"},
+        "a tabular raw row's own real header names are masked, never kept in clear",
+        all(_is_masked_marker(e["header"]) for e in raw),
     )
     check(
         "MASK-12",
         "its values are masked",
-        all(rev._MASK_PREFIX in str(v) for v in row.raw_row.values()),  # type: ignore[union-attr]
+        all(_is_masked_marker(e["value"]) for e in raw),
+    )
+    check(
+        "MASK-13",
+        "none of the real header names or values leak through",
+        "hello" not in str(raw) and "world" not in str(raw),
     )
 
 
@@ -490,6 +752,198 @@ def test_probe_limits_rows_the_same_way() -> None:
         limits=limits,
     )
     check("LIM-5", "the probe stops at its own limit too", len(probe.raw_rows) == 1)
+
+
+def test_exactly_the_limit_many_rows_is_complete_not_truncated() -> None:
+    # `complete` means the whole source was really seen: a source with
+    # *exactly* `preview_max_records` rows, all captured, is complete --
+    # never confused with a source that had more and got cut off at the
+    # same count (the prior bug: `len(rows) < limits.preview_max_records`
+    # could never be True once the limit was actually reached, so an
+    # exactly-sized source was always wrongly marked incomplete).
+    limits = dataclasses.replace(rev.PREVIEW_LIMITS, preview_max_records=2)
+    data = b"".join(f'{{"prompt": "p{i}", "completion": "c{i}"}}\n'.encode() for i in range(2))
+    preview = rev.run_mapping_preview(
+        reader_for(data, limits=limits),
+        PROMPT_COMPLETION,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        tool_schemas=None,
+        reveal=True,
+        limits=limits,
+    )
+    check(
+        "LIM-6",
+        "a preview source with exactly the limit's own row count is complete",
+        len(preview.rows) == 2 and preview.complete is True,
+    )
+    probe = rev.run_mapping_probe(
+        reader_for(data, limits=limits),
+        PROMPT_COMPLETION,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        reveal=True,
+        limits=limits,
+    )
+    check(
+        "LIM-7",
+        "a probe source with exactly the limit's own row count is complete",
+        len(probe.raw_rows) == 2 and probe.complete is True,
+    )
+
+
+def test_one_more_than_the_limit_is_truncated_not_complete() -> None:
+    # The flip side, at the exact same limit: one row *past* it must still
+    # be incomplete, proving LIM-6/7 are not simply always True.
+    limits = dataclasses.replace(rev.PREVIEW_LIMITS, preview_max_records=2)
+    data = b"".join(f'{{"prompt": "p{i}", "completion": "c{i}"}}\n'.encode() for i in range(3))
+    preview = rev.run_mapping_preview(
+        reader_for(data, limits=limits),
+        PROMPT_COMPLETION,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        tool_schemas=None,
+        reveal=True,
+        limits=limits,
+    )
+    check(
+        "LIM-8",
+        "a preview source with one row past the limit is not complete",
+        len(preview.rows) == 2 and preview.complete is False,
+    )
+    probe = rev.run_mapping_probe(
+        reader_for(data, limits=limits),
+        PROMPT_COMPLETION,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        reveal=True,
+        limits=limits,
+    )
+    check(
+        "LIM-9",
+        "a probe source with one row past the limit is not complete",
+        len(probe.raw_rows) == 2 and probe.complete is False,
+    )
+
+
+def test_probe_state_is_source_unavailable_on_an_outage() -> None:
+    # PROBE-LAW17: a storage outage is a visible state/failure_code on the
+    # probe too, never only an opaque complete=False.
+    class _ExplodingSource:
+        def __iter__(self) -> Iterator[bytes]:
+            return self
+
+        def __next__(self) -> bytes:
+            raise OSError("storage endpoint unreachable")
+
+    reader = ic.ChunkReader(
+        _ExplodingSource(), expected_size=100, expected_sha256="0" * 64, limits=rev.PREVIEW_LIMITS
+    )
+    probe = rev.run_mapping_probe(
+        reader,
+        PROMPT_COMPLETION,
+        verified_content_type="application/jsonl",
+        dataset_sha256="0" * 64,
+        reveal=True,
+    )
+    check(
+        "PROBELAW17-1",
+        "a real storage outage is blocked/source_unavailable on the probe, never a raised "
+        "exception or a bare complete=False",
+        probe.state == "blocked" and probe.failure_code == "source_unavailable",
+    )
+    check("PROBELAW17-2", "complete is False alongside the visible state", probe.complete is False)
+
+
+def test_probe_state_completed_on_a_normal_run() -> None:
+    data = b'{"prompt": "p0", "completion": "c0"}\n'
+    probe = rev.run_mapping_probe(
+        reader_for(data),
+        PROMPT_COMPLETION,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        reveal=True,
+    )
+    check(
+        "PROBELAW17-3",
+        "a normal run is state=completed, failure_code=None",
+        probe.state == "completed" and probe.failure_code is None,
+    )
+
+
+def test_source_changed_detected_even_when_truncation_would_have_hidden_it() -> None:
+    # SOURCE-CHANGED (Law 17): a preview reads only up to the row limit --
+    # fewer bytes than the whole object, by design. The `for event in
+    # stream` loop's own iteration protocol already has to pull *one*
+    # event past the limit to discover it should stop (which is also how
+    # `complete` tells "exactly N rows" from "N+1, truncated" apart) -- so
+    # a tampered tail sitting within that single extra pull would already
+    # be caught naturally, without this task's own fix. This reproduces
+    # the gap that fix actually closes: tampering that sits *further* into
+    # the stream than that one-event lookahead ever reaches (chunk3 below,
+    # genuinely never touched by the import machinery once this preview's
+    # own 1-row limit is satisfied from chunk1 alone) must still be caught
+    # -- `ChunkReader`'s own size/sha256 check otherwise fires only at a
+    # real end-of-stream, which a preview that stops early never reaches.
+    chunk1 = b'{"prompt": "p0", "completion": "c0"}\n'
+    chunk2 = b'{"prompt": "p1", "completion": "c1"}\n'
+    chunk3 = b'{"prompt": "p2", "completion": "c2"}\n'  # never declared; never pulled without drain
+    declared_size = len(chunk1) + len(chunk2)
+    limits = dataclasses.replace(rev.PREVIEW_LIMITS, preview_max_records=1)
+    reader = ic.ChunkReader(
+        [chunk1, chunk2, chunk3],
+        expected_size=declared_size,
+        expected_sha256=sha(chunk1 + chunk2),
+        limits=limits,
+    )
+    result = rev.run_mapping_preview(
+        reader,
+        PROMPT_COMPLETION,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(chunk1 + chunk2),
+        tool_schemas=None,
+        reveal=True,
+        limits=limits,
+    )
+    check(
+        "SRCCHANGED-1",
+        "the one row the limit allows is still shown",
+        len(result.rows) == 1,
+    )
+    check(
+        "SRCCHANGED-2",
+        "a tampered chunk sitting past both the row limit's own natural one-event "
+        "lookahead and the declared size is still detected, never silently reported as a "
+        "clean completed preview",
+        result.state == "failed" and result.failure_code == "source_changed",
+    )
+
+
+def test_source_changed_detected_by_probe_too() -> None:
+    chunk1 = b'{"prompt": "p0", "completion": "c0"}\n'
+    chunk2 = b'{"prompt": "p1", "completion": "c1"}\n'
+    chunk3 = b'{"prompt": "p2", "completion": "c2"}\n'
+    declared_size = len(chunk1) + len(chunk2)
+    limits = dataclasses.replace(rev.PREVIEW_LIMITS, preview_max_records=1)
+    reader = ic.ChunkReader(
+        [chunk1, chunk2, chunk3],
+        expected_size=declared_size,
+        expected_sha256=sha(chunk1 + chunk2),
+        limits=limits,
+    )
+    probe = rev.run_mapping_probe(
+        reader,
+        PROMPT_COMPLETION,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(chunk1 + chunk2),
+        reveal=True,
+        limits=limits,
+    )
+    check(
+        "SRCCHANGED-3",
+        "the probe also detects tampering past its own one-event lookahead",
+        probe.state == "failed" and probe.failure_code == "source_changed",
+    )
 
 
 # --- OUT -------------------------------------------------------------------------------------
@@ -938,38 +1392,48 @@ def test_preview_row_post_init_rejects_bad_combinations() -> None:
     check("ROW-5", "a valid rejected row builds", rejected.code == "required_field_missing")
 
 
-def test_size_bucket_boundaries() -> None:
-    check("SIZE-1", "0 is its own bucket", rev._size_bucket(0) == ">=0")
-    check("SIZE-2", "1..8 share a bucket", rev._size_bucket(1) == rev._size_bucket(8) == ">=1")
-    check("SIZE-3", "9 starts the next bucket", rev._size_bucket(9) == ">=9")
-    check("SIZE-4", "8 and 9 are different buckets", rev._size_bucket(8) != rev._size_bucket(9))
+def test_mask_marker_carries_the_real_char_count() -> None:
+    check(
+        "SIZE-1", "an empty string's own marker carries 0 chars", rev._mask_marker("")["chars"] == 0
+    )
+    check(
+        "SIZE-2",
+        "a short string's own marker carries its real length",
+        rev._mask_marker("hi")["chars"] == 2,
+    )
+    check(
+        "SIZE-3",
+        "a long string's own marker carries its real length, not a bucket",
+        rev._mask_marker("x" * 500)["chars"] == 500,
+    )
+    check(
+        "SIZE-4",
+        "the marker never carries the real text itself",
+        "hi" not in str(rev._mask_marker("hi")),
+    )
 
 
 def test_mask_value_distinguishes_str_from_numeric() -> None:
-    masked_str = rev._mask_value("hi")
-    masked_int = rev._mask_value(7)
-    masked_float = rev._mask_value(1.5)
-    check("MASKV-1", "a str mask carries a size bucket", ":str:" in str(masked_str))
-    check("MASKV-2", "an int mask names its type, no size bucket", str(masked_int).endswith(":int"))
+    masked_str = rev._mask_leaf("hi")
+    masked_int = rev._mask_leaf(7)
+    masked_float = rev._mask_leaf(1.5)
     check(
-        "MASKV-3",
-        "a float mask names its own type, not int's",
-        str(masked_float).endswith(":float"),
+        "MASKV-1", "a str is masked with the {masked, chars} marker", _is_masked_marker(masked_str)
     )
-    check(
-        "MASKV-4",
-        "str/int/float masks are all distinct",
-        len({masked_str, masked_int, masked_float}) == 3,
-    )
+    check("MASKV-2", "an int is never masked (not a string leaf)", masked_int == 7)
+    check("MASKV-3", "a float is never masked (not a string leaf)", masked_float == 1.5)
 
 
 def test_mask_row_none_passthrough() -> None:
-    check("MASKROW-1", "_mask_row(None, ...) is None", rev._mask_row(None, None) is None)
+    check(
+        "MASKROW-1", "_mask_named_row(None, ...) is None", rev._mask_named_row(None, None) is None
+    )
+    mismatched = rev._mask_named_row(("a", "b", "c"), ("only-one-header",))
     check(
         "MASKROW-2",
-        "a tabular row whose length does not match headers falls back to a plain masked tuple",
-        rev._mask_row(("a", "b", "c"), ("only-one-header",))
-        == tuple(rev._mask_row(("a", "b", "c"), ("only-one-header",))),
+        "a tabular row whose length does not match headers falls back to a plain masked "
+        "tuple of masked values, positional, no header pairing attempted",
+        isinstance(mismatched, tuple) and all(_is_masked_marker(v) for v in mismatched),
     )
 
 
@@ -1588,7 +2052,7 @@ def test_present_row_headers_length_mismatch_falls_back_to_tuple() -> None:
     check(
         "PRESENT-2",
         "the masked fallback is also a plain tuple of masked values",
-        isinstance(masked_result, tuple) and all(rev._MASK_PREFIX in str(v) for v in masked_result),
+        isinstance(masked_result, tuple) and all(_is_masked_marker(v) for v in masked_result),
     )
     check(
         "PRESENT-3",
