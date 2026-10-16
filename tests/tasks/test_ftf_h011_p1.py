@@ -1259,6 +1259,199 @@ def test_run_mapping_preview_row_headers_none_branch() -> None:
     )
 
 
+# --- APPLYMAP: full-coverage pins for apply_mapping's own pre-existing body --------------------
+# (this task's own change sits at the very top of `apply_mapping`, which pulls the whole function
+# into mutation scope -- its sibling importer suites already prove this body for real; these pins
+# make this task's own test file independently prove it too, rather than relying on a mutation
+# run that only ever includes files this task's own diff touches.)
+
+
+def test_applymap_row_observer_copy_leaves_a_string_row_unwrapped() -> None:
+    seen: list[object] = []
+    tapped = dataclasses.replace(PROMPT_COMPLETION, row_observer=lambda r, h: seen.append(r))
+    try:
+        ic.apply_mapping(tapped, "plain-string-row")
+    except ic.RowMappingError:
+        pass
+    check(
+        "APPLYMAP-1",
+        "a str row is never list()-copied by the observer tap (it is excluded from the "
+        "Sequence-but-not-str/bytes copy branch)",
+        seen == ["plain-string-row"],
+    )
+
+
+def test_applymap_messages_pointer_shape_non_mapping_row_is_type_mismatch() -> None:
+    mapping = ic.mapping_from_object(
+        {
+            "shape": "messages",
+            "messages_pointer": "",
+            "role_key": "role",
+            "content_key": "content",
+            "role_map": {"u": "user"},
+            "on_unmapped_message_keys": "ignore",
+        }
+    )
+    raised = None
+    try:
+        ic.apply_mapping(mapping, ("not", "a", "mapping"))
+    except ic.RowMappingError as exc:
+        raised = exc
+    check(
+        "APPLYMAP-2",
+        "a pointer-based 'messages' shape over a non-Mapping row is mapping_type_mismatch",
+        raised is not None and raised.code == "mapping_type_mismatch",
+    )
+
+
+def test_applymap_messages_pointer_or_fallback_uses_the_real_pointer() -> None:
+    mapping = ic.mapping_from_object(
+        {
+            "shape": "messages",
+            "messages_pointer": "/conversation",
+            "role_key": "role",
+            "content_key": "content",
+            "role_map": {"u": "user"},
+            "on_unmapped_message_keys": "ignore",
+        }
+    )
+    row = {
+        "conversation": [{"role": "u", "content": "hi"}],
+        "role": "wrong-top-level-key-must-not-be-used",
+    }
+    mapped = ic.apply_mapping(mapping, row)
+    check(
+        "APPLYMAP-3",
+        "a real, non-root pointer is actually followed (not silently replaced by the root)",
+        mapped.raw_record["messages"] == [{"role": "user", "content": "hi"}],
+    )
+    raised = None
+    try:
+        ic.apply_mapping(mapping, {"role": "u", "content": "hi"})  # no "conversation" key
+    except ic.RowMappingError as exc:
+        raised = exc
+    check(
+        "APPLYMAP-4",
+        "the pointer target missing entirely is required_field_missing",
+        raised is not None
+        and raised.code == "required_field_missing"
+        and raised.slot == "messages",
+    )
+
+
+def test_applymap_messages_json_slot_missing_or_none_is_required_field_missing() -> None:
+    raised = None
+    try:
+        ic.apply_mapping(MESSAGES_JSON, {"not_msgs": []})
+    except ic.RowMappingError as exc:
+        raised = exc
+    check(
+        "APPLYMAP-5",
+        "a messages_json slot entirely absent from the row is required_field_missing",
+        raised is not None
+        and raised.code == "required_field_missing"
+        and raised.slot == "messages",
+    )
+    raised = None
+    try:
+        ic.apply_mapping(MESSAGES_JSON, {"messages": None})
+    except ic.RowMappingError as exc:
+        raised = exc
+    check(
+        "APPLYMAP-6",
+        "a messages_json slot explicitly None is also required_field_missing",
+        raised is not None and raised.code == "required_field_missing",
+    )
+
+
+def test_applymap_messages_json_string_cell_is_parsed_as_json() -> None:
+    mapped = ic.apply_mapping(MESSAGES_JSON, {"messages": '[{"role": "human", "content": "hi"}]'})
+    check(
+        "APPLYMAP-7",
+        "a messages_json slot holding a JSON-text string is parsed, not rejected",
+        mapped.raw_record["messages"] == [{"role": "user", "content": "hi"}],
+    )
+    raised = None
+    try:
+        ic.apply_mapping(MESSAGES_JSON, {"messages": "not valid json"})
+    except ic.RowMappingError as exc:
+        raised = exc
+    check(
+        "APPLYMAP-8",
+        "malformed JSON text in a messages_json slot surfaces strict_loads's own real code",
+        raised is not None and raised.code == "invalid_json" and raised.slot == "messages",
+    )
+
+
+def test_applymap_messages_array_must_be_a_non_empty_list() -> None:
+    for bad_array, label in (({}, "an object"), ([], "an empty list")):
+        raised = None
+        try:
+            ic.apply_mapping(MESSAGES_JSON, {"messages": bad_array})
+        except ic.RowMappingError as exc:
+            raised = exc
+        check(
+            f"APPLYMAP-9-{label}",
+            f"{label} as the resolved messages value is mapping_type_mismatch",
+            raised is not None and raised.code == "mapping_type_mismatch",
+        )
+
+
+def test_applymap_metadata_event_timestamp_check_actually_runs() -> None:
+    mapping = ic.mapping_from_object(
+        {
+            "shape": "prompt_completion",
+            "prompt": {"key": "prompt"},
+            "completion": {"key": "completion"},
+            "metadata": {"event_timestamp": {"key": "ts"}},
+        }
+    )
+    mapped = ic.apply_mapping(
+        mapping, {"prompt": "p", "completion": "c", "ts": "2026-01-01T00:00:00+00:00"}
+    )
+    check(
+        "APPLYMAP-10",
+        "a valid event_timestamp passes the check and is kept verbatim",
+        mapped.raw_record["metadata"]["event_timestamp"] == "2026-01-01T00:00:00+00:00",
+    )
+    raised = None
+    try:
+        ic.apply_mapping(mapping, {"prompt": "p", "completion": "c", "ts": "not-a-timestamp"})
+    except ic.RowMappingError as exc:
+        raised = exc
+    check(
+        "APPLYMAP-11",
+        "the event_timestamp check genuinely runs and refuses a bad value, proving it is "
+        "not a no-op",
+        raised is not None and raised.code == "invalid_event_timestamp",
+    )
+
+
+def test_applymap_group_key_present_and_absent() -> None:
+    with_key = ic.mapping_from_object(
+        {
+            "shape": "prompt_completion",
+            "prompt": {"key": "prompt"},
+            "completion": {"key": "completion"},
+            "group_key": {"key": "gid"},
+        }
+    )
+    mapped = ic.apply_mapping(with_key, {"prompt": "p", "completion": "c", "gid": "g-1"})
+    check("APPLYMAP-12", "a present group_key slot is extracted", mapped.group_key == "g-1")
+
+    without_key = ic.mapping_from_object(
+        {
+            "shape": "prompt_completion",
+            "prompt": {"key": "prompt"},
+            "completion": {"key": "completion"},
+        }
+    )
+    mapped2 = ic.apply_mapping(without_key, {"prompt": "p", "completion": "c"})
+    check(
+        "APPLYMAP-13", "no group_key slot at all leaves group_key None", mapped2.group_key is None
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
