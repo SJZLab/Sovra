@@ -49,6 +49,7 @@ from packages.security.canary_secret_generator import (
     InvalidCanaryRequestError,
     PlacementRecord,
     encode_canary,
+    fragment_canary,
 )
 from packages.security.security_profile_enforcement import SURFACES
 
@@ -128,6 +129,9 @@ _MANDATORY_REQUIRED_STORES: frozenset[str] = frozenset(
     {"application_log", "error_path", "artifact"}
 )
 _PERCENT_HEX_RE = re.compile(r"%[0-9a-fA-F]{2}")
+# `fragment_canary` accepts 2..8 parts (`_MIN_FRAGMENTS`/`_MAX_FRAGMENTS` in
+# FTF-0905); a leak can use any split, so the scanner tries every one.
+_FRAGMENT_PART_COUNTS: tuple[int, ...] = tuple(range(2, 9))
 
 
 class EgressCaptureVerificationError(Exception):
@@ -386,6 +390,20 @@ def _needles_for_encoding(marker: CanaryMarker, encoding: str) -> tuple[str, ...
     return tuple(dict.fromkeys((base, base.upper(), percent_lower, percent_upper)))
 
 
+def _fragments_found(marker: CanaryMarker, text: str) -> bool:
+    """FRAGMENT-SCANNER-GAP: a `fragmented` canary is split into contiguous
+    pieces that a real leak scatters across separate places (two HTTP
+    headers, two log lines, two fields), each with unrelated bytes in
+    between -- so the contiguous literal never appears. It is found when,
+    for some split into 2..8 parts, EVERY piece appears somewhere in the
+    data (in any order; the random token pieces make an accidental
+    all-pieces match negligible)."""
+    for parts in _FRAGMENT_PART_COUNTS:
+        if all(piece in text for piece in fragment_canary(marker, parts)):
+            return True
+    return False
+
+
 def scan_store_for_canaries(
     data: bytes,
     markers: Mapping[str, CanaryMarker],
@@ -396,13 +414,11 @@ def scan_store_for_canaries(
     in `placements`, recording each individual check in `ledger` (which
     itself raises `CanaryLeakedError` immediately the moment any one check
     is a genuine find -- see `CanaryPlacementLedger.record_checked`; this
-    function never catches that, by design). `fragmented` is scanned as the
-    marker's own literal value: `fragment_canary`'s pieces are contiguous
-    and reassemble to it exactly, so a caller that deliberately placed
-    fragments non-contiguously across two real sink fields (e.g. two HTTP
-    headers) must itself concatenate the candidate text before calling this
-    function -- the exact same text a human or a downstream log scraper
-    would actually see.
+    function never catches that, by design). `fragmented` is found when the
+    marker's literal value appears OR every piece of any 2..8-way split
+    (`fragment_canary`) appears anywhere in `data`, in any order and with
+    unrelated bytes in between -- the way a real leak scatters pieces
+    across separate headers, log lines or fields.
 
     Returns the set of canary_ids found, for a caller building a
     `PlaintextInspection`/`PacketCaptureObservation`'s own `canary_found`
@@ -432,7 +448,9 @@ def scan_store_for_canaries(
             # FTF-0905's own `encode_canary` instead of one of this
             # function's own checks above.
             raise InvalidEgressEvidenceError(str(exc)) from exc
-        is_found = any(needle in text for needle in needles)
+        is_found = any(needle in text for needle in needles) or (
+            placement.encoding == "fragmented" and _fragments_found(marker, text)
+        )
         ledger.record_checked(
             placement.canary_id, placement.sink, placement.encoding, found=is_found
         )

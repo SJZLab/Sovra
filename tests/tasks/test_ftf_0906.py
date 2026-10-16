@@ -1896,6 +1896,95 @@ def test_report_inspected_stores_excludes_uninspected_records() -> None:
     )
 
 
+def _scan_fragmented(data: bytes, marker, other_markers=()) -> bool:
+    """True iff scanning `data` for the marker's `fragmented` placement
+    finds it (CanaryLeakedError -- the ledger's own fail-closed path)."""
+    ledger = CanaryPlacementLedger({("tool_result", "fragmented")})
+    placement = PlacementRecord(marker.canary_id, "tool_result", "fragmented", "r3-test")
+    ledger.record_placement(placement)
+    markers = {marker.canary_id: marker, **{m.canary_id: m for m in other_markers}}
+    try:
+        found = scan_store_for_canaries(data, markers, (placement,), ledger)
+    except CanaryLeakedError:
+        return True
+    return found == frozenset({marker.canary_id})
+
+
+def test_fragmented_canary_is_found_across_separate_places() -> None:
+    # FRAGMENT-SCANNER-GAP: pieces that land in separate headers/lines with
+    # unrelated bytes between them, in any order, for every split size.
+    from packages.security.canary_secret_generator import fragment_canary
+
+    marker = generate_canary()
+    other = generate_canary()
+    for parts in range(2, 9):
+        pieces = fragment_canary(marker, parts)
+        headers = "".join(f"X-Canary-Frag-{i}: {piece}\r\n" for i, piece in enumerate(pieces, 1))
+        noisy = "Host: 127.0.0.1\r\n" + headers + "Connection: close\r\n"
+        check(
+            "FTF-0906-R3-5",
+            f"{parts} pieces in {parts} separate headers are found",
+            _scan_fragmented(noisy.encode(), marker),
+        )
+        reversed_headers = "".join(f"H{i}: {piece}\r\n" for i, piece in enumerate(pieces[::-1]))
+        check(
+            "FTF-0906-R3-5",
+            f"{parts} pieces in reverse order are found",
+            _scan_fragmented(reversed_headers.encode(), marker),
+        )
+        check(
+            "FTF-0906-R3-5",
+            f"{parts} pieces in separate log lines of a larger log are found",
+            _scan_fragmented(
+                ("noise\n" * 50 + "\nline-x ".join(pieces) + "\ntail\n").encode(), marker
+            ),
+        )
+        # Negative, real default code with the attack input PARTLY present:
+        # every strict subset of the pieces must NOT count as a leak.
+        for missing in range(parts):
+            partial = "".join(f"H{i}: {p}\r\n" for i, p in enumerate(pieces) if i != missing)
+            check(
+                "FTF-0906-R3-5",
+                f"{parts} pieces with piece {missing} absent is not found",
+                not _scan_fragmented(partial.encode(), marker),
+            )
+        check(
+            "FTF-0906-R3-5",
+            f"{parts} pieces of a DIFFERENT canary do not match this one",
+            not _scan_fragmented(headers.encode(), other, other_markers=(marker,)),
+        )
+    scattered = "".join(
+        f"H{i}: {piece}\r\n" for i, piece in enumerate(fragment_canary(marker, 2), 1)
+    ).encode()
+    literal_ledger = CanaryPlacementLedger({("tool_result", "literal")})
+    literal_placement = PlacementRecord(marker.canary_id, "tool_result", "literal", "r3-test")
+    literal_ledger.record_placement(literal_placement)
+    check(
+        "FTF-0906-R3-5",
+        "pieces are only reassembled for a fragmented placement, never a literal one",
+        scan_store_for_canaries(
+            scattered, {marker.canary_id: marker}, (literal_placement,), literal_ledger
+        )
+        == frozenset(),
+    )
+    check(
+        "FTF-0906-R3-5",
+        "clean data is not found",
+        not _scan_fragmented(b"Host: 127.0.0.1\r\nConnection: close\r\n", marker),
+    )
+    check(
+        "FTF-0906-R3-5",
+        "the contiguous literal still counts for a fragmented placement",
+        _scan_fragmented(f"x {marker.value} y".encode(), marker),
+    )
+    first_piece_only = fragment_canary(marker, 2)[0]
+    check(
+        "FTF-0906-R3-5",
+        "a single piece alone (even the longest prefix-bearing one) is not a leak",
+        not _scan_fragmented(first_piece_only.encode(), marker),
+    )
+
+
 # --- Fault injection (Law 1): mutate the real module, prove each guard is load-bearing. ---
 
 MODULE = ROOT / "packages" / "security" / "egress_capture_verification.py"
@@ -2378,6 +2467,27 @@ SUITE_FAULTS = [
         "F-HASH-DIGEST: policy_digest dropped from report_sha256",
         r'            "policy_digest": policy_digest,\n',
         "",
+    ),
+    (
+        "F-FRAG-DROP: the fragmented piece scan removed",
+        r'or \(\n            placement\.encoding == "fragmented" and '
+        r"_fragments_found\(marker, text\)\n        \)",
+        "",
+    ),
+    (
+        "F-FRAG-ANY: any single piece counts as a leak",
+        r"if all\(piece in text for piece in fragment_canary\(marker, parts\)\):",
+        "if any(piece in text for piece in fragment_canary(marker, parts)):",
+    ),
+    (
+        "F-FRAG-RANGE: only 2-way splits are tried",
+        r"tuple\(range\(2, 9\)\)",
+        "(2,)",
+    ),
+    (
+        "F-FRAG-SCOPE: pieces scanned for every encoding, not only fragmented",
+        r'placement\.encoding == "fragmented" and _fragments_found',
+        "_fragments_found",
     ),
 ]
 
