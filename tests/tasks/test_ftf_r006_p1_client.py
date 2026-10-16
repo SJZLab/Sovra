@@ -40,8 +40,11 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
+from packages.integrations.argilla import client as client_mod  # noqa: E402
 from packages.integrations.argilla.client import (  # noqa: E402
     API_KEY_HEADER_NAME,
+    MAX_PAGE_ITEMS,
+    MAX_RESPONSE_BYTES,
     ArgillaClient,
     ArgillaConflictError,
     ArgillaNotFoundError,
@@ -260,6 +263,28 @@ def test_ensure_workspace_idempotent_and_race() -> None:
         "unresolved create-race is a rejection, never a fabricated workspace",
         raises(ArgillaRejectedError, c.ensure_workspace, "sovra-abc123"),
     )
+
+    # exact, case-sensitive name match on the initial list -- a differently-cased
+    # existing workspace is not a match, so a new one is created.
+    different_case = {"id": "33333333-3333-3333-3333-333333333333", "name": "SOVRA-ABC123"}
+    stub.reply(200, {"items": [WORKSPACE]})
+    stub.reply(201, dict(different_case))
+    distinct = c.ensure_workspace("SOVRA-ABC123")
+    check(
+        "R006P1-C",
+        "ensure_workspace is case-sensitive on the initial list (creates, does not reuse)",
+        distinct.id == different_case["id"],
+    )
+
+    # exact, case-sensitive name match on the re-list-after-conflict path too.
+    stub.reply(200, {"items": []})
+    stub.reply(409, {"detail": "Workspace name `SOVRA-ABC123` is not unique"})
+    stub.reply(200, {"items": [WORKSPACE]})  # only the lower-case one exists
+    check(
+        "R006P1-C",
+        "ensure_workspace is case-sensitive on the post-conflict re-list too",
+        raises(ArgillaRejectedError, c.ensure_workspace, "SOVRA-ABC123"),
+    )
     stub.server.shutdown()
 
 
@@ -305,6 +330,15 @@ def test_error_mapping() -> None:
         "non-JSON error body is still a clean rejection",
         raises(ArgillaRejectedError, c.get_user, USER["id"]),
     )
+    # get_status has no downstream field validation of its own, so this is the
+    # one call that would silently "succeed" with the error body as data if the
+    # generic non-404/409/5xx rejection branch were ever skipped.
+    stub.reply(422, {"detail": "schema validation failed"})
+    check(
+        "R006P1-C",
+        "a 422 on get_status is rejected, never returned as a parsed success value",
+        raises(ArgillaRejectedError, c.get_status),
+    )
     stub.server.shutdown()
 
 
@@ -334,6 +368,33 @@ def test_malformed_response_bodies() -> None:
     stub.reply(200, {"nothing": 1})
     check(
         "R006P1-C", "missing items key rejected", raises(ArgillaRejectedError, c.list_workspaces_me)
+    )
+    stub.reply(200, {"items": "not-a-list"})
+    check(
+        "R006P1-C",
+        "non-list items rejected for a user list too",
+        raises(ArgillaRejectedError, c.list_workspace_users, WORKSPACE["id"]),
+    )
+    # workspace payloads have their own required-field/type checks, exercised
+    # through create_workspace (list_workspaces_me's own malformed-items path
+    # above never reaches _workspace_of with a bad single record).
+    stub.reply(201, {"id": WORKSPACE["id"]})  # missing name
+    check(
+        "R006P1-C",
+        "a workspace missing its name is rejected",
+        raises(ArgillaRejectedError, c.create_workspace, "sovra-abc123"),
+    )
+    stub.reply(201, {"id": 123, "name": "sovra-abc123"})  # non-string id
+    check(
+        "R006P1-C",
+        "a workspace with a non-string id is rejected",
+        raises(ArgillaRejectedError, c.create_workspace, "sovra-abc123"),
+    )
+    stub.reply(201, {"id": WORKSPACE["id"], "name": ""})  # empty name
+    check(
+        "R006P1-C",
+        "a workspace with an empty name is rejected",
+        raises(ArgillaRejectedError, c.create_workspace, "sovra-abc123"),
     )
     stub.server.shutdown()
 
@@ -425,6 +486,26 @@ def test_input_validation_before_any_request() -> None:
             f"bad workspace name {bad_ws!r} refused before any request",
             raises(ArgillaRejectedError, c.create_workspace, bad_ws),
         )
+        check(
+            "R006P1-C",
+            f"bad workspace name {bad_ws!r} refused by ensure_workspace before any request",
+            raises(ArgillaRejectedError, c.ensure_workspace, bad_ws),
+        )
+    bad_id = "not-a-uuid"
+    good_id = WORKSPACE["id"]
+    for label, fn, args in (
+        ("list_workspace_users", c.list_workspace_users, (bad_id,)),
+        ("add_workspace_user workspace_id", c.add_workspace_user, (bad_id, good_id)),
+        ("add_workspace_user user_id", c.add_workspace_user, (good_id, bad_id)),
+        ("remove_workspace_user workspace_id", c.remove_workspace_user, (bad_id, good_id)),
+        ("remove_workspace_user user_id", c.remove_workspace_user, (good_id, bad_id)),
+        ("delete_user", c.delete_user, (bad_id,)),
+    ):
+        check(
+            "R006P1-C",
+            f"{label} refuses a non-uuid id before any request",
+            raises(ArgillaRejectedError, fn, *args),
+        )
     check("R006P1-C", "no request was ever sent for any invalid input above", len(stub.seen) == n)
     stub.server.shutdown()
 
@@ -438,10 +519,18 @@ def test_api_key_never_echoed_and_control_chars_refused() -> None:
         c.get_user(USER["id"])
         check("R006P1-C", "403 should have raised", False)
     except ArgillaRejectedError as exc:
+        text = str(exc)
         check(
             "R006P1-C",
             "the api key is redacted out of the raised error",
-            "super-secret-key" not in str(exc),
+            "super-secret-key" not in text,
+        )
+        # pinned so a `_scrub` mutant that swallows the message (e.g. returning
+        # None unconditionally) cannot hide behind the key-absence check alone.
+        check(
+            "R006P1-C",
+            "the raised error still carries the server's own (redacted) detail text",
+            "forbidden" in text and "not authorized" in text,
         )
 
     bad = stub.client(api_key="tok\r\nX-Evil: 1")
@@ -450,19 +539,93 @@ def test_api_key_never_echoed_and_control_chars_refused() -> None:
         "a control character in the api key is refused before any header is built",
         raises(ArgillaRejectedError, bad.get_user, USER["id"]) and len(stub.seen) == n + 1,
     )
+    # M2/M1 at this exact check are empirically equivalent to the generic
+    # `except ValueError` fallback a few lines down in `_call` (http.client's
+    # own `putheader` raises before any bytes reach the stub either way, and
+    # the fallback's own message is static too) -- confirmed by running the
+    # mutation gate, not assumed; disclosed in the submission for a
+    # Control-plane mutation-allowlist.yaml ruling rather than contorted into
+    # an artificial distinction here.
     stub.server.shutdown()
 
 
 def test_base_url_and_timeout_validation() -> None:
     pol = ConnectionPolicy(name="p")
-    for bad in ("https://h/path", "https://h?q=1", "https://u@h", "https://h#f"):
-        check("R006P1-C", f"base_url {bad} refused", raises(ValueError, ArgillaClient, bad, pol))
+    for bad in ("https://h/path", "https://h?q=1", "https://u@h", "https://h#f", "https://h/ "):
+        check("R006P1-C", f"base_url {bad!r} refused", raises(ValueError, ArgillaClient, bad, pol))
     for bad_t in (0, -1, True, "5"):
         check(
             "R006P1-C",
             f"timeout {bad_t!r} refused",
             raises(ValueError, ArgillaClient, "https://h", pol, timeout=bad_t),
         )
+
+
+def test_password_length_boundary() -> None:
+    """8..100 chars inclusive -- the upper bound needs a *passing* case at
+    exactly 100, not only a failing one at 101 (a `<=` -> `<` mutant on the
+    upper bound only shows up as a false rejection of the valid boundary)."""
+    stub = Stub()
+    c = stub.client()
+    stub.reply(201, dict(USER))
+    check(
+        "R006P1-C",
+        "a password of exactly 100 characters is accepted",
+        c.create_user(username="ok", role="annotator", password="x" * 100).id == USER["id"],
+    )
+    stub.reply(201, dict(USER))
+    check(
+        "R006P1-C",
+        "a password of exactly 8 characters is accepted",
+        c.create_user(username="ok", role="annotator", password="x" * 8).id == USER["id"],
+    )
+    stub.server.shutdown()
+
+
+def test_page_item_bound() -> None:
+    """MAX_PAGE_ITEMS is a `>` bound: exactly at the limit passes, one over
+    is rejected -- both directions, for both list helpers. Minimal per-item
+    payloads so MAX_PAGE_ITEMS+1 of them still stays well under
+    MAX_RESPONSE_BYTES -- only the item-count check should ever fire here."""
+    mini_ws = {"id": "0", "name": "n"}
+    mini_user = {"id": "0", "username": "n", "role": "a", "api_key": "k"}
+    check(
+        "R006P1-C",
+        "the minimal fixtures stay well under the response-size bound at MAX_PAGE_ITEMS+1",
+        len(json.dumps({"items": [mini_user] * (MAX_PAGE_ITEMS + 1)}).encode())
+        < MAX_RESPONSE_BYTES,
+    )
+    at_limit = [dict(mini_ws) for _ in range(MAX_PAGE_ITEMS)]
+    over_limit = [dict(mini_ws) for _ in range(MAX_PAGE_ITEMS + 1)]
+    stub = Stub()
+    c = stub.client()
+    stub.reply(200, {"items": at_limit})
+    check(
+        "R006P1-C",
+        "exactly MAX_PAGE_ITEMS workspaces is accepted",
+        len(c.list_workspaces_me()) == MAX_PAGE_ITEMS,
+    )
+    stub.reply(200, {"items": over_limit})
+    check(
+        "R006P1-C",
+        "one over MAX_PAGE_ITEMS workspaces is rejected",
+        raises(ArgillaRejectedError, c.list_workspaces_me),
+    )
+    at_limit_users = [dict(mini_user) for _ in range(MAX_PAGE_ITEMS)]
+    over_limit_users = [dict(mini_user) for _ in range(MAX_PAGE_ITEMS + 1)]
+    stub.reply(200, {"items": at_limit_users})
+    check(
+        "R006P1-C",
+        "exactly MAX_PAGE_ITEMS workspace users is accepted",
+        len(c.list_workspace_users(WORKSPACE["id"])) == MAX_PAGE_ITEMS,
+    )
+    stub.reply(200, {"items": over_limit_users})
+    check(
+        "R006P1-C",
+        "one over MAX_PAGE_ITEMS workspace users is rejected",
+        raises(ArgillaRejectedError, c.list_workspace_users, WORKSPACE["id"]),
+    )
+    stub.server.shutdown()
 
 
 def test_strict_json_helper_directly() -> None:
@@ -478,6 +641,75 @@ def test_strict_json_helper_directly() -> None:
         "R006P1-C",
         "non-utf8 body rejected",
         raises(ArgillaRejectedError, parse_strict_json, b"\xff\xfe"),
+    )
+    # exact size boundary, both sides -- a valid object padded to exactly
+    # MAX_RESPONSE_BYTES must parse; one byte over must raise. Both bodies are
+    # otherwise well-formed JSON, so only the size check itself can be why one
+    # succeeds and the other fails.
+    pad_key_at = MAX_RESPONSE_BYTES - len(b'{"a": ""}')
+    at_bound = b'{"a": "' + b"x" * pad_key_at + b'"}'
+    over_bound = b'{"a": "' + b"x" * (pad_key_at + 1) + b'"}'
+    check(
+        "R006P1-C", "body exactly at MAX_RESPONSE_BYTES parses", len(at_bound) == MAX_RESPONSE_BYTES
+    )
+    check(
+        "R006P1-C",
+        "a well-formed body exactly at the size bound is accepted",
+        parse_strict_json(at_bound) == {"a": "x" * pad_key_at},
+    )
+    check(
+        "R006P1-C",
+        "a well-formed body one byte over the size bound is rejected, not parsed as success",
+        raises(ArgillaRejectedError, parse_strict_json, over_bound),
+    )
+    # duplicate-key detection, direct and not masked by a downstream
+    # required-field check: a payload that would otherwise parse cleanly.
+    check(
+        "R006P1-C",
+        "a literal duplicate key is rejected",
+        raises(ArgillaRejectedError, parse_strict_json, b'{"a": 1, "a": 2}'),
+    )
+    check(
+        "R006P1-C",
+        "two keys that differ only by case/whitespace are NOT a duplicate",
+        parse_strict_json(b'{"a": 1, "A": 2, " a": 3}') == {"a": 1, "A": 2, " a": 3},
+    )
+    # non-finite constants, direct: a value that would otherwise be accepted.
+    check(
+        "R006P1-C",
+        "a bare NaN value is rejected, not silently parsed as None/other",
+        raises(ArgillaRejectedError, parse_strict_json, b'{"a": 1, "b": NaN}'),
+    )
+    check(
+        "R006P1-C",
+        "a bare Infinity value is rejected",
+        raises(ArgillaRejectedError, parse_strict_json, b'{"a": Infinity}'),
+    )
+
+
+def test_error_detail_text_directly() -> None:
+    f = client_mod._error_detail_text
+    check("R006P1-C", "plain string detail is returned verbatim", f({"detail": "boom"}) == "boom")
+    check(
+        "R006P1-C",
+        "FastAPI validation-list detail is joined from each item's msg",
+        f({"detail": [{"msg": "a"}, {"msg": "b"}]}) == "a; b",
+    )
+    check(
+        "R006P1-C",
+        "a list item with a non-string msg is excluded, not stringified",
+        f({"detail": [{"msg": 123}]}) == "",
+    )
+    check(
+        "R006P1-C",
+        "a list item missing msg entirely is excluded",
+        f({"detail": [{"loc": ["body"], "type": "x"}]}) == "",
+    )
+    check("R006P1-C", "a missing detail key gives an empty string", f({}) == "")
+    check(
+        "R006P1-C",
+        "a detail of the wrong type (neither str nor list) gives an empty string",
+        f({"detail": 5}) == "",
     )
 
 
