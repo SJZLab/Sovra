@@ -866,6 +866,20 @@ def test_preview_row_post_init_rejects_bad_combinations() -> None:
 
     raised = None
     try:
+        # " accepted " is close enough to "accepted" that a careless strip()/lower() on the
+        # outcome-membership check alone would silently accept it -- candidate=None, code=None
+        # again isolates this from the other two checks the same way ROW-2b does.
+        build(outcome=" accepted ", candidate=None, code=None)
+    except ValueError as exc:
+        raised = exc
+    check(
+        "ROW-2c",
+        "outcome membership is checked verbatim -- whitespace is not stripped before the check",
+        raised is not None,
+    )
+
+    raised = None
+    try:
         build(outcome="accepted", candidate=None)
     except ValueError as exc:
         raised = exc
