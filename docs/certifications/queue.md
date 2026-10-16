@@ -25121,3 +25121,12 @@ different session.
   detail and the fault → RED table: `docs/certifications/submissions/
   2026-10-15T2300Z-FTF-0906-r2.md`. Not self-certified (Law 4) — `certification_state` stays
   `PROVISIONAL`, `proof_state` stays `L1-PROVEN`. Needs L2 verification by a different session.
+
+## 2026-10-16T12:10Z — Control plane: FTF-1704 CERTIFIED
+- **Certified:** FTF-1704 (#848, merge 2a442fb2), round 2; UNWIRED.
+
+## 2026-10-16T12:10Z — Control plane: FTF-0906 returned (r3)
+- **Returned:** FTF-0906 r3 (0j): history always partial, unobserved -> incomplete, 8 pins, real integration evidence, fragment scan; stopping rule.
+
+## 2026-10-16T12:10Z — Control plane: FTF-H011-P1 returned (r2)
+- **Returned:** FTF-H011-P1 r2 (0l): whole-result masking, tool validator, Law 17 changed-object and probe states, 8 pins, deep-copy observer + differential test; stopping rule.

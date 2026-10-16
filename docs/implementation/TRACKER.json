@@ -1821,9 +1821,11 @@
       "blockers": []
     },
     "FTF-1704": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "2a442fb2e28c3f42f1e3f8c8a7498cd4b05ffcca"
+      ],
       "independent_review": null,
       "blockers": []
     },

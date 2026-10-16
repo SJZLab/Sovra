@@ -13097,10 +13097,10 @@ FTF-1703:
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1703.py
 FTF-1704:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Validation dataset
-  evidence_hash: bd4066f4e153b96c9b181222626bb52a910487ad
+  evidence_hash: 2a442fb2e28c3f42f1e3f8c8a7498cd4b05ffcca
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0517, FTF-1701,
@@ -13133,7 +13133,7 @@ FTF-1704:
     authenticates with the test principal resolver (as FTF-0602-P1 does). No live caller yet
     (reference-data task, FTF-1703 precedent), so proving_symbol stays blank. Submission:
     docs/certifications/submissions/2026-10-15T0815Z-FTF-1704.md.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1704.py
 FTF-1705:
