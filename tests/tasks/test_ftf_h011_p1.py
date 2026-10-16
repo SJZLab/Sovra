@@ -365,6 +365,26 @@ def test_pair_row_that_never_reaches_apply_mapping_has_no_raw_row() -> None:
     )
 
 
+def test_nmap_rejected_row_with_a_real_raw_row_still_computes_not_mapped() -> None:
+    # A row that reaches apply_mapping, carries extra data, but is still rejected (missing
+    # completion) -- pins the REJECTED branch's own `if row is not None` guard separately from
+    # the ACCEPTED branch's (NMAP-1 above only exercises the accepted one).
+    data = b'{"prompt": "p1", "extra": "unused"}\n'
+    result = rev.run_mapping_preview(
+        reader_for(data),
+        PROMPT_COMPLETION,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        tool_schemas=None,
+        reveal=True,
+    )
+    check(
+        "NMAP-4",
+        "a rejected row that did reach apply_mapping still gets its own not_mapped computed",
+        result.rows[0].outcome == "rejected" and result.rows[0].not_mapped == ("extra",),
+    )
+
+
 def test_nmap_csv_header_not_referenced_by_any_slot() -> None:
     data = b"q,a,unused\nhello,world,x\n"
     result = rev.run_mapping_preview(
@@ -801,6 +821,33 @@ def test_mask_row_none_passthrough() -> None:
     )
 
 
+def test_mapped_names_letters_slot_never_names_itself_as_a_header() -> None:
+    # A `letters`-kind slot addresses a spreadsheet column by position ("A", "AB", ...), never
+    # by a header's own text -- its own `slot.value` must never be added to `_mapped_names`'s
+    # result just because it happens to be a string.
+    mapping = ic.mapping_from_object(
+        {
+            "shape": "prompt_completion",
+            "csv": {"encoding": "utf-8", "delimiter": ",", "has_header": True, "header_row": 0},
+            "prompt": {"letters": "A"},
+            "completion": {"index": 1},
+        }
+    )
+    check(
+        "NMAPLET-1",
+        "a letters-kind slot's own column letter is never treated as a real header name",
+        "A" not in rev._mapped_names(mapping, ("A", "B")),
+    )
+
+
+def test_not_mapped_never_crashes_on_a_tabular_row_with_no_headers() -> None:
+    check(
+        "NMAPNONE-1",
+        "a tabular row with headers=None returns no not_mapped columns, never crashes",
+        rev._not_mapped(PROMPT_COMPLETION, ("a", "b"), None) == (),
+    )
+
+
 def test_mapped_names_index_boundaries() -> None:
     mapping = ic.mapping_from_object(
         {
@@ -913,8 +960,21 @@ def test_read_top_level_header_edge_cases() -> None:
     )
     check(
         "READTOP-5",
-        "a non-key/header slot against a Mapping row is missing",
-        rev._read_top_level(index_slot, {"a": "1"}, None) is rev._MISSING,
+        "a non-key/header slot against a Mapping row is missing, even when the dict happens "
+        "to have a key equal to str(slot.value) (the guard must fire, not fall through to "
+        "a coincidental .get() hit)",
+        rev._read_top_level(index_slot, {"1": "wrongly-found"}, None) is rev._MISSING,
+    )
+    check(
+        "READTOP-9",
+        "a bare str/bytes row is never indexed as if it were a tabular row",
+        rev._read_top_level(ic.Slot("index", 0), "hello", None) is rev._MISSING,
+    )
+    check(
+        "READTOP-10",
+        "a letters-kind slot against real headers that happen to equal its own letters "
+        "never resolves (this module cannot resolve spreadsheet column letters at all)",
+        rev._read_top_level(ic.Slot("letters", "A"), ("x", "y"), ("A", "B")) is rev._MISSING,
     )
     check(
         "READTOP-6",
@@ -953,6 +1013,62 @@ def test_not_mapped_header_names_are_exact() -> None:
         "a differently-cased/whitespaced header is its own distinct column, not folded into "
         "the mapped one",
         rev._not_mapped(mapping, ("x", "y", "z"), (" Q ", "a", "extra")) == (" Q ", "extra"),
+    )
+
+
+def test_comparison_cells_group_key_present_vs_missing() -> None:
+    mapping = ic.mapping_from_object(
+        {
+            "shape": "prompt_completion",
+            "prompt": {"key": "prompt"},
+            "completion": {"key": "completion"},
+            "group_key": {"key": "gid"},
+        }
+    )
+    with_gid = rev.run_mapping_preview(
+        reader_for(b'{"prompt": "p", "completion": "c", "gid": "g1"}\n'),
+        mapping,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(b'{"prompt": "p", "completion": "c", "gid": "g1"}\n'),
+        tool_schemas=None,
+        reveal=True,
+    )
+    cell = next(c for c in with_gid.rows[0].comparison if c.slot == "group_key")
+    check(
+        "CMPGID-1",
+        "a present group_key is a str cell, marked identical",
+        cell.raw_type == "str" and cell.identical,
+    )
+
+    without_gid = rev.run_mapping_preview(
+        reader_for(b'{"prompt": "p", "completion": "c"}\n'),
+        mapping,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(b'{"prompt": "p", "completion": "c"}\n'),
+        tool_schemas=None,
+        reveal=True,
+    )
+    cell2 = next(c for c in without_gid.rows[0].comparison if c.slot == "group_key")
+    check(
+        "CMPGID-2",
+        "an absent group_key is missing, not falsely str/identical",
+        cell2.raw_type == "missing" and not cell2.identical,
+    )
+
+
+def test_run_mapping_probe_populates_the_real_csv_headers() -> None:
+    data = b"q,a\nhello,world\n"
+    probe = rev.run_mapping_probe(
+        reader_for(data),
+        CSV_PROMPT_COMPLETION,
+        verified_content_type="text/csv",
+        dataset_sha256=sha(data),
+        reveal=True,
+    )
+    check(
+        "PROBEHDR-2",
+        "a CSV source's probe reports its own real headers, not None",
+        probe.headers == ("q", "a"),
     )
 
 
@@ -1380,6 +1496,41 @@ def test_applymap_messages_json_string_cell_is_parsed_as_json() -> None:
         "APPLYMAP-8",
         "malformed JSON text in a messages_json slot surfaces strict_loads's own real code",
         raised is not None and raised.code == "invalid_json" and raised.slot == "messages",
+    )
+
+
+def test_applymap_messages_empty_string_cell_tabular_vs_mapping() -> None:
+    tabular_mapping = ic.mapping_from_object(
+        {
+            "shape": "messages_json",
+            "messages": {"index": 0},
+            "role_key": "role",
+            "content_key": "content",
+            "role_map": {"human": "user"},
+            "on_unmapped_message_keys": "ignore",
+        }
+    )
+    raised = None
+    try:
+        ic.apply_mapping(tabular_mapping, ("",))
+    except ic.RowMappingError as exc:
+        raised = exc
+    check(
+        "APPLYMAP-14",
+        "an empty-string messages cell from a tabular (non-Mapping) row is required_field_empty",
+        raised is not None and raised.code == "required_field_empty",
+    )
+
+    raised2 = None
+    try:
+        ic.apply_mapping(MESSAGES_JSON, {"messages": ""})
+    except ic.RowMappingError as exc:
+        raised2 = exc
+    check(
+        "APPLYMAP-15",
+        "the same empty string from a Mapping row is never required_field_empty -- it reaches "
+        "strict_loads instead, which refuses it as invalid_json",
+        raised2 is not None and raised2.code == "invalid_json",
     )
 
 
