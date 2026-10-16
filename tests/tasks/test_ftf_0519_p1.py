@@ -39,7 +39,7 @@ import subprocess
 import sys
 import uuid
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -614,6 +614,14 @@ def part_p2(roles: Any, manifest: Any, origins: Any, built: Any, grant: Any) -> 
             "ACC-FREEZE-HASH",
             f"the frozen hash covers {field}",
             raises(lambda other=other: ism.verify_frozen_content(other, frozen)),
+        )
+    for field in ("reviewed_leakage_report_sha256", "approved_by"):
+        check(
+            "ACC-FREEZE-HASH",
+            f"a manifest with every other frozen field but no {field} has no frozen hash",
+            raises(
+                lambda f=field: ism.compute_frozen_manifest_sha256(replace(reviewed, **{f: None}))
+            ),
         )
     for missing in ("organization_id", "created_by", "locked_at"):
         check(
@@ -1860,6 +1868,8 @@ def part_s() -> None:
         per_source_cases(world)
     with sqlite_world() as world:
         saturation_cases(world)
+    with sqlite_world() as world:
+        unit_cases(world)
 
 
 def standard_world(world: World) -> dict[str, Any]:
@@ -3096,6 +3106,85 @@ def per_source_cases(world: World) -> None:
     world.connections[conn_a].allowed_purposes_json = list(ALL_PURPOSES)
     check(
         "NEG-FINAL-GRANT", "control: the training source's grant is back", len(training().rows) > 0
+    )
+
+
+def unit_cases(world: World) -> None:
+    """ROUND 2 mutation-gate kills: the pure helpers pinned by exact value."""
+    check(
+        "ACC-FREEZE-HASH",
+        "a naive instant is read as UTC",
+        store._instant_text(datetime(2026, 1, 2, 3, 4, 5, 6)) == "2026-01-02T03:04:05.000006+00:00",
+    )
+    plus_three = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone(timedelta(hours=3)))
+    check(
+        "ACC-FREEZE-HASH",
+        "an aware instant is converted to UTC",
+        store._instant_text(plus_three) == "2026-01-02T00:04:05+00:00",
+    )
+    check("ACC-FREEZE-HASH", "no instant stays None", store._instant_text(None) is None)
+
+    body = {
+        "findings": [
+            {"method": "exact", "disposition": "blocking", "record_id_a": "rid-secret"},
+            {"method": "exact", "disposition": "blocking"},
+            {"method": "exact", "disposition": "advisory"},
+            {"method": "token_jaccard", "disposition": "advisory"},
+            "not-a-finding",
+        ],
+        "methods_run": ["token_jaccard", "exact"],
+        "methods_not_run": ["embedding"],
+    }
+    fake = SimpleNamespace(
+        leakage_report=body,
+        leakage_status="blocked",
+        leakage_reviews=[{"finding_id": "x"}, {"finding_id": "y"}],
+        leakage_report_sha256="a" * 64,
+        reviewed_leakage_report_sha256="b" * 64,
+    )
+    check(
+        "ACC-FREEZE-READ",
+        "the leakage summary is exactly counts, method names, review count and hashes",
+        store._leakage_summary(fake)  # type: ignore[arg-type]
+        == {
+            "status": "blocked",
+            "finding_counts": {
+                "exact": {"advisory": 1, "blocking": 2},
+                "token_jaccard": {"advisory": 1},
+            },
+            "methods_run": ["exact", "token_jaccard"],
+            "methods_not_run": ["embedding"],
+            "review_count": 2,
+            "leakage_report_sha256": "a" * 64,
+            "reviewed_leakage_report_sha256": "b" * 64,
+        },
+    )
+    check(
+        "ACC-FREEZE-READ",
+        "the view exposes exactly the table's columns minus the report and the reviews",
+        set(store._VIEW_COLUMNS)
+        == {c.key for c in store.DatasetSplitManifest.__table__.columns}
+        - {"leakage_report", "leakage_reviews"},
+    )
+
+    ds = standard_world(world)
+    m = world.propose("unit", [ds["a"], ds["b"], ds["d"], ds["h"]])
+    world.approve(m)
+    sources = store._fetch_sources(world.session, _CTX, m.id)
+    orphan = SimpleNamespace(id=det_uuid("manifest-with-no-assignments"))
+    refuses(
+        world,
+        "a frozen source with no assignment in the manifest is tampering",
+        "manifest_tampered",
+        lambda: store._recheck_sources(
+            world.session,
+            _CTX,
+            _PROJECT,
+            orphan,
+            sources,
+            training=False,  # type: ignore[arg-type]
+        ),
+        "NEG-FINAL-TAMPER",
     )
 
 

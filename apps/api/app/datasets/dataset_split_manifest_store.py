@@ -332,7 +332,33 @@ class ReviewInput:
     rationale: str
 
 
-_VIEW_HIDDEN_COLUMNS = frozenset({"leakage_report", "leakage_reviews"})
+_VIEW_COLUMNS: tuple[str, ...] = (
+    "id",
+    "organization_id",
+    "project_id",
+    "name",
+    "version",
+    "parent_version",
+    "strategy",
+    "seed",
+    "ratios",
+    "cutoff",
+    "normalization_version",
+    "tokenizer_identity",
+    "split_manifest_sha256",
+    "proposal_sha256",
+    "leakage_report_sha256",
+    "leakage_status",
+    "reviewed_leakage_report_sha256",
+    "migrated_from_legacy_sha256",
+    "status",
+    "frozen_manifest_sha256",
+    "approved_by",
+    "locked_at",
+    "created_by",
+    "created_at",
+    "updated_at",
+)
 
 
 @dataclass(frozen=True)
@@ -381,11 +407,7 @@ def _leakage_summary(manifest: DatasetSplitManifest) -> dict[str, Any]:
 
 
 def _view(manifest: DatasetSplitManifest) -> ManifestView:
-    columns = {
-        c.key: getattr(manifest, c.key)
-        for c in DatasetSplitManifest.__table__.columns
-        if c.key not in _VIEW_HIDDEN_COLUMNS
-    }
+    columns = {name: getattr(manifest, name) for name in _VIEW_COLUMNS}
     return ManifestView(values=columns, leakage_summary=_leakage_summary(manifest))
 
 
