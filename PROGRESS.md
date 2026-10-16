@@ -30318,3 +30318,59 @@ PR, not `[relay]`-titled, so direct edits to the shared files are allowed). STEP
 (`secret-scanning`/`mutation-gate` green); `ci-verdict` itself not yet concluded when this shift
 ended, stalled on an already-precedented slow step unrelated to this fix. No `BLOCKER.md` entry (no
 systemic failure). No new owner ask.
+
+## 2026-10-16T01:50Z — Shift close-out: all four CI items from this shift resolved and merged
+
+Continuing the same shift (CI took far longer than usual today -- individual `gate` runs ranged
+from ~20 minutes to over 2.5 hours across the several items below, driven by sustained heavy
+concurrent PR volume from other sessions). Final outcomes, in order:
+
+1. **PR #827 (FTF-1704-r1) merged** (`bd4066f4`) once the stale-baseline fix (this file's own entry
+   above) went green. Evidence appended to `docs/certifications/queue.md`/`docs/spec-matrix.yaml`
+   via a separate docs-only PR (#837, see below for its own detour).
+2. **PR #831 (FTF-0904-W1-F1-r1) merged** (`f7646ecf`) once green, same stale-baseline fix. Its own
+   queue.md evidence PR (#838) turned out redundant -- Control plane independently reviewed PR #831
+   directly and certified it while #838 was still waiting on CI -- so #838 was closed, not merged,
+   with a comment explaining why (re-adding a `PROVISIONAL` entry for an already-certified item
+   would have contradicted the authoritative state on `main`).
+3. **PR #825 (FTF-0904-F1-r3)** re-ran twice after the stale-baseline merge and failed both times on
+   `FTF-0904-R11` (`qp-assign-run` at 262144 chars, 4.113s then 4.039s against a 4.0s limit) -- a
+   genuine marginal performance regression, not a flake (two independent runs landing within 2% of
+   each other, both just over the limit, after the one sanctioned re-run was already spent). Root
+   cause: round 3's new `_is_glued_compound` glued-compound-chain check ran its full `O(size x
+   words)` DP loop unconditionally on every query-param candidate, including the ~131,000 trivial
+   one-character `"a"` candidates this adversarial input produces -- none of which could ever match,
+   since no name in `_QUERY_PARAM_NAMES` is shorter than 3 characters. Fixed
+   (`packages/security/log_redaction.py`, commit `1295d1fb`) with a cheap length-guard bail-out
+   before building the DP table; verified behavior-preserving (every name is >=3 chars, so the
+   guard can never reject a string that could have matched) and microbenchmarked directly (131,072
+   calls to `_is_glued_compound("a")`: negligible 0.031s). `ruff`/`mypy` clean. Merged (`eea46ca3`)
+   once CI confirmed green.
+4. **PR #837's own evidence-recording PR hit two more, unrelated issues** while it sat waiting on
+   CI behind the other three: (a) its own `gate`/`secret-scanning` failed on a *different*,
+   pre-existing gap -- a missing baseline entry for one of four PEM-header test fixtures in
+   `tests/security/secret_scan_baseline.yaml` (three of
+   `test_pem_private_key_variants`'s four header literals -- RSA, ENCRYPTED, plain -- were already
+   baselined; the OPENSSH variant's fingerprint had simply never been added, from whichever earlier
+   round added the other three). Verified directly (fetched the flagged historical blob with `git
+   cat-file -p`, confirmed it's the bare header string with no key body, recomputed the fingerprint
+   by hand) and fixed via a dedicated PR (#851, commit `27a226a8`, merged `264c1ff7`). (b) After
+   merging that fix's own `main` into #837, a *second* CI run failed with `duplicate secret-scan
+   baseline fingerprint` -- an unrelated, independently-landed FTF-1505 round-3 rebuild (merged to
+   `main` by a different session in the interim) had added its own entry for the exact same OPENSSH
+   fingerprint, and git's text merge kept both copies without flagging a conflict (they landed in
+   different parts of the file). Deduped (kept the round-3 rebuild's own entry, removed the
+   redundant one) and pushed (`413dfb45`). #837 then went green and merged (`84b76d45`).
+
+**Running total of real, independent issues found and fixed in this one shift: four** -- the
+original stale-baseline false positive (3 PRs), a real performance regression (1 PR), a pre-existing
+baseline gap (1 PR), and a duplicate-fingerprint collision from two sessions independently finding
+the same gap (1 PR). None were flakes chased with re-runs beyond the one sanctioned attempt on
+item 3; every fix was verified against the real failure before pushing (reproduced the blob/value,
+recomputed the fingerprint, or microbenchmarked the hot path) per CLAUDE.md's evidence-first rules.
+
+STEP 3: this file updated (plain docs-only PR, not `[relay]`-titled). STEP 4 stop condition (a): all
+four items merged PROVISIONAL (FTF-1704, FTF-0904-W1-F1 already Control-plane CERTIFIED,
+FTF-0904-F1-r3), each awaiting or already past L2 review; the two baseline-hygiene fixes (#851,
+dedupe in #837) are infrastructure fixes, not task submissions, so nothing to certify there. No
+`BLOCKER.md` entry. No new owner ask. Stopping here -- this shift is done.
