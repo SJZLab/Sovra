@@ -11802,3 +11802,37 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   candidate/role values/headers/keys in clear; no tool_argument_validator; changed object read to the limit -> completed;
   probe has no Law 17 state; F2/F2b/F6/F9/F11/F14/F15/F16 GREEN; observer copy shallow, differential test missing;
   submission's tracker claims wrong. Stopping rule set.
+
+## 2026-10-16T14:05Z — CERTIFIED (child slice): FTF-0519-P1
+- **FTF-0519-P1: CERTIFIED (L2)** (round 2; PR #859, merge ced8203b0314d03ba04abb5eb9623744c728cedf, head 4441f468, first parent bce004d8).
+  Producer session_01GfXW3562wJd3Tk9eMn7KS3 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI run 38867778761
+  77/77 success, ci-verdict 116933772146; dataset-split-manifest-integration 116864936603 "FTF-0519-P1 split manifest
+  real proof: all checks passed"; gate 116864842560 "FTF-0519-P1: all checks passed"; mutation-gate 200/200 (capped);
+  local uncapped 209/209 KILLED. No migration, ci.yml or certified module changed (Law 15). Law 18: 4 tables ENABLE +
+  FORCE RLS, tenant_isolation policy, sovra_app SELECT/INSERT + column-limited UPDATE, no BYPASSRLS. Round-2 points:
+  every frozen (source, role) re-authorized on both loads (ruling) - revoked held-out/dev connection and removed
+  held_out_evaluation give grant_changed; frozen hash covers organization_id/created_by/locked_at (UTC); ManifestView
+  whitelist + id-free leakage_summary; saturation fixture (215 -> blocked, lock refused). Probes 215 (round-1 set
+  115/116 + 36/36, new 63/63), no violation. Faults 39 RED (G1-G15, G1b; round-1 23/23), none GREEN. Advisories to P2:
+  propose/approve/reject return the ORM row with finding record ids; real-PG coverage of the round-2 cases;
+  created_at/updated_at outside the hash; A1/A4. Child slice: no count change. UNWIRED.
+
+## 2026-10-16T14:05Z — RETURNED: FTF-0904-F1 (r4); FTF-0904 stays CERTIFIED
+- **FTF-0904-F1: RETURNED** (round 4 → 5; PR #857, merge bce004d885f9edbb48b514ca9c6bf6980029d5f8, head e63c77a6).
+  Producer session_01FKhoJ6y7VvqNmcjaZsAGkE ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 77/77 success, ci-verdict
+  116882390088; gate 116834871105 step 187 (full matrix, 1h48m) "FTF-0904 Log redaction tests: all checks passed", W1
+  F1-F15 RED, FTF-0905 passed; mutation-gate 116834871057 7/7. Local full matrix 110/110 RED. Closed: glued compounds
+  (deny by default), random-case separator compounds with independent prefixes, separator-strip pins, W1 docstring.
+  Return: the required lowercase segment lookup is missing (benign-list split words leak in random case, 192/192, live
+  9/9); ASCII-only fallback fault GREEN with non-ASCII prefixes leaking. Stopping rule set. FTF-0904 stays CERTIFIED.
+
+## 2026-10-16T14:05Z — RETURNED: FTF-1505 (r4)
+- **FTF-1505: RETURNED** (round 4 → 5; PR #860, merge 2d18491a2fccc432f344567c4218c03163b419b9, head fb062645).
+  Producer session_01WBivTmyjB3VmBxtppqErB1 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 77/77 success, ci-verdict
+  116934959972; secret-scanning 116867173289 "SECRET SCAN: 9961 unit(s) scanned, 12881 finding(s), 0 blocking -- clean
+  (scope=pr)"; gate 116867173441 step 64 success. Baseline and .github/ untouched (Law 9). No real exposed credential
+  (local 10,041 units, 0 blocking). Closed: window seam, one-line JSON JWT, per-member archive failures, source/artifact
+  truncation and over-bound members, callback error probes. Return: decode cap silently drops candidates (regression);
+  history lane never opens tar.gz/.gz; 16/55 faults GREEN (F16/F17/F18 among them); live lane has no startup-line check,
+  no positive control, shared access key; no seeded recall in main(); quadratic whole-line matchers. Round 5 produced by
+  the Control plane (owner-approved), certified by a separate session. Stopping rule set.

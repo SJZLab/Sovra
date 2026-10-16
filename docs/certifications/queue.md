@@ -25130,3 +25130,12 @@ different session.
 
 ## 2026-10-16T12:10Z — Control plane: FTF-H011-P1 returned (r2)
 - **Returned:** FTF-H011-P1 r2 (0l): whole-result masking, tool validator, Law 17 changed-object and probe states, 8 pins, deep-copy observer + differential test; stopping rule.
+
+## 2026-10-16T14:05Z — Control plane: FTF-0519-P1 certified (child slice)
+- **Certified:** FTF-0519-P1 (#859, merge ced8203b), round 2; UNWIRED. FTF-0519-P2 ready.
+
+## 2026-10-16T14:05Z — Control plane: FTF-0904-F1 returned (r5)
+- **Returned:** FTF-0904-F1 r5 (0g): segment lookup before camel split, non-ASCII-prefix pin; stopping rule. FTF-0904 stays CERTIFIED.
+
+## 2026-10-16T14:05Z — Control plane: FTF-1505 returned (r5)
+- **Returned:** FTF-1505 r5 (0h): decode cap blocking or removed, history archive type, behavioural main() faults, live positive control, seeded recall in main(), linear matchers; stopping rule. Round 5 produced by the Control plane (owner "Go"); relay skips it.
