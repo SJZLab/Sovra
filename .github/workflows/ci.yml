@@ -3465,6 +3465,46 @@ jobs:
       - name: Prove the dataset source reader against PostgreSQL 16 and SeaweedFS
         run: uv run python3 tests/integration/test_ftf_0502_p1_dataset_source_postgres_s3.py
 
+  dataset-mapping-preview-integration:
+    # FTF-H011-P1: the dataset mapping probe/preview service
+    # (apps/api/app/datasets/dataset_mapping_service.py) over PostgreSQL 16 as the restricted
+    # sovra_app role and the live SeaweedFS S3 API, through the real FTF-0501 upload routes and
+    # the FTF-0502-P1 dataset source reader: a real JSONL dataset previews with its own real raw
+    # rows (masked / revealed correctly), foreign-org / foreign-project / missing / hidden
+    # held-out datasets all the same DatasetNotFoundError, a revoked connection denies a new
+    # preview before any storage call, a real CSV dataset's headers and rows round-trip through
+    # the probe and the preview alike, and a storage outage ends blocked/source_unavailable,
+    # never a raised exception -- tests/integration/test_ftf_h011_p1_mapping_preview_postgres_s3.py.
+    # The test boots the compose `s3` service itself when nothing answers.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' dataset-mapping-preview-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftfh011p1
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftfh011p1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfh011p1
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the dataset mapping preview service against PostgreSQL 16 and SeaweedFS
+        run: uv run python3 tests/integration/test_ftf_h011_p1_mapping_preview_postgres_s3.py
+
   model-import-integration:
     # FTF-H010-P1: real Postgres evidence for the model import fields +
     # import-validation jobs slice (migration 0027): upgrade/downgrade/upgrade,
@@ -3817,6 +3857,7 @@ jobs:
       - model-import-integration
       - candidate-selection-integration
       - dataset-import-source-integration
+      - dataset-mapping-preview-integration
       - csv-import-integration
       - jsonl-import-integration
       - json-import-integration

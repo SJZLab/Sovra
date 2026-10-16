@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# mypy: disable-error-code="arg-type,attr-defined,assignment,call-arg,index,var-annotated,misc,call-overload,union-attr"  # noqa: E501
+# mypy: disable-error-code="arg-type,attr-defined,assignment,call-arg,index,var-annotated,misc"
 """FTF-H011-P1 -- dataset mapping probe and preview, pure domain.
 
 Runnable without a database or network. `workers/data/dataset_mapping_review.py` is pure;
@@ -181,6 +181,13 @@ def test_dispatch_unavailable_for_xlsx_and_unknown() -> None:
             f"{content_type!r} is importer_unavailable",
             raised is not None and raised.code == "importer_unavailable",
         )
+        check(
+            "DISP-1b",
+            f"{content_type!r}'s exception carries the content type, in its message and attribute",
+            raised is not None
+            and raised.verified_content_type == content_type
+            and content_type in str(raised),
+        )
         probe_raised = None
         try:
             rev.run_mapping_probe(
@@ -284,7 +291,7 @@ def test_mask_tabular_row_pairs_with_headers() -> None:
     check(
         "MASK-12",
         "its values are masked",
-        all(rev._MASK_PREFIX in str(v) for v in row.raw_row.values()),
+        all(rev._MASK_PREFIX in str(v) for v in row.raw_row.values()),  # type: ignore[union-attr]
     )
 
 
@@ -309,7 +316,7 @@ def test_pair_accepted_and_rejected_rows_in_order() -> None:
     check(
         "PAIR-2",
         "row 1 accepted with its own raw row",
-        result.rows[0].outcome == "accepted" and result.rows[0].raw_row["prompt"] == "p1",
+        result.rows[0].outcome == "accepted" and result.rows[0].raw_row["prompt"] == "p1",  # type: ignore[call-overload]
     )
     check(
         "PAIR-3",
@@ -318,7 +325,11 @@ def test_pair_accepted_and_rejected_rows_in_order() -> None:
         and result.rows[1].code == "required_field_missing"
         and result.rows[1].raw_row == {"prompt": "p2"},
     )
-    check("PAIR-4", "row 3 accepted with its own raw row", result.rows[2].raw_row["extra"] == 1)
+    check(
+        "PAIR-4",
+        "row 3 accepted with its own raw row",
+        result.rows[2].raw_row["extra"] == 1,  # type: ignore[call-overload]
+    )
     check("NMAP-1", "row 3's extra key is not_mapped", result.rows[2].not_mapped == ("extra",))
     check("NMAP-2", "row 1 has nothing left over", result.rows[0].not_mapped == ())
     check(
@@ -345,6 +356,12 @@ def test_pair_row_that_never_reaches_apply_mapping_has_no_raw_row() -> None:
         "PAIR-7",
         "row 2 (invalid_json) never reached apply_mapping, so it has no raw row",
         result.rows[1].code == "invalid_json" and result.rows[1].raw_row is None,
+    )
+    check(
+        "PAIR-8",
+        "a rejected row with no raw row has no not_mapped columns either (nothing to compute "
+        "them from)",
+        result.rows[1].not_mapped == (),
     )
 
 
@@ -505,6 +522,74 @@ def test_outage_mid_stream() -> None:
     )
 
 
+def test_deadline_checked_per_event_not_only_per_chunk() -> None:
+    # Every row below arrives in a *single* in-memory chunk, so the ChunkReader's own internal
+    # deadline check (run once, before that one chunk is handed back) cannot by itself catch a
+    # deadline that expires while several already-buffered rows are then processed one by one
+    # -- proving this module's own explicit per-event `reader.deadline.check()` call (the same
+    # defense-in-depth convention `jsonl_importer._drive` already uses) is load-bearing.
+    calls = {"n": 0}
+
+    def clock() -> float:
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            return 0.0
+        return 1000.0
+
+    data = b"".join(f'{{"prompt": "p{i}", "completion": "c{i}"}}\n'.encode() for i in range(5))
+    reader = ic.ChunkReader(
+        [data],
+        expected_size=len(data),
+        expected_sha256=sha(data),
+        limits=dataclasses.replace(rev.PREVIEW_LIMITS, deadline_seconds=1.0),
+        clock=clock,
+    )
+    result = rev.run_mapping_preview(
+        reader,
+        PROMPT_COMPLETION,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        tool_schemas=None,
+        reveal=True,
+    )
+    check(
+        "DEADLINE-1",
+        f"a clock that expires between buffered events aborts as a timeout ({result.state}/"
+        f"{result.failure_code}, {len(result.rows)} rows seen)",
+        result.state == "failed"
+        and result.failure_code == "parse_timeout"
+        and len(result.rows) < 5,
+    )
+
+    calls2 = {"n": 0}
+
+    def clock2() -> float:
+        calls2["n"] += 1
+        if calls2["n"] <= 2:
+            return 0.0
+        return 1000.0
+
+    reader2 = ic.ChunkReader(
+        [data],
+        expected_size=len(data),
+        expected_sha256=sha(data),
+        limits=dataclasses.replace(rev.PREVIEW_LIMITS, deadline_seconds=1.0),
+        clock=clock2,
+    )
+    probe_result = rev.run_mapping_probe(
+        reader2,
+        PROMPT_COMPLETION,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        reveal=True,
+    )
+    check(
+        "DEADLINE-2",
+        "the probe's own per-event check aborts the same way, never returning all 5 rows",
+        len(probe_result.raw_rows) < 5 and probe_result.complete is False,
+    )
+
+
 # --- TOOL / SHA --------------------------------------------------------------------------------
 
 
@@ -621,6 +706,442 @@ def test_observed_role_values_from_message_shaped_rows() -> None:
         "ROLE-4",
         "a tabular row (no message_keys apply) is never observed",
         rev._observed_role_value(PROMPT_COMPLETION, ("a", "b")) is None,
+    )
+
+
+# --- Additional boundary/internal tests (round 1 mutation-gate closure) --------------------
+
+
+def test_preview_row_post_init_rejects_bad_combinations() -> None:
+    def build(**overrides: object) -> rev.MappingPreviewRow:
+        base = {
+            "locator": "record:1",
+            "outcome": "accepted",
+            "code": None,
+            "slot": None,
+            "raw_row": {},
+            "not_mapped": (),
+            "candidate": {"x": 1},
+            "comparison": (),
+        }
+        base.update(overrides)
+        return rev.MappingPreviewRow(**base)  # type: ignore[arg-type]
+
+    check("ROW-1", "a valid accepted row builds", build().outcome == "accepted")
+    raised = None
+    try:
+        build(outcome="maybe")
+    except ValueError as exc:
+        raised = exc
+    check("ROW-2", "an unknown outcome is refused", raised is not None)
+    raised = None
+    try:
+        # Isolates the *first* post_init check: candidate=None and code=None both agree with
+        # outcome="maybe" under the other two checks ((False) != (False) is False for each), so
+        # only the outcome-membership check itself can catch this one.
+        build(outcome="maybe", candidate=None, code=None)
+    except ValueError as exc:
+        raised = exc
+    check(
+        "ROW-2b",
+        "an unknown outcome is refused even when it would not trip the other two checks",
+        raised is not None,
+    )
+
+    raised = None
+    try:
+        build(outcome="accepted", candidate=None)
+    except ValueError as exc:
+        raised = exc
+    check("ROW-3", "accepted with no candidate is refused", raised is not None)
+
+    raised = None
+    try:
+        build(outcome="rejected", candidate=None, code=None)
+    except ValueError as exc:
+        raised = exc
+    check("ROW-4", "rejected with no code is refused", raised is not None)
+
+    rejected = build(outcome="rejected", candidate=None, code="required_field_missing")
+    check("ROW-5", "a valid rejected row builds", rejected.code == "required_field_missing")
+
+
+def test_size_bucket_boundaries() -> None:
+    check("SIZE-1", "0 is its own bucket", rev._size_bucket(0) == ">=0")
+    check("SIZE-2", "1..8 share a bucket", rev._size_bucket(1) == rev._size_bucket(8) == ">=1")
+    check("SIZE-3", "9 starts the next bucket", rev._size_bucket(9) == ">=9")
+    check("SIZE-4", "8 and 9 are different buckets", rev._size_bucket(8) != rev._size_bucket(9))
+
+
+def test_mask_value_distinguishes_str_from_numeric() -> None:
+    masked_str = rev._mask_value("hi")
+    masked_int = rev._mask_value(7)
+    masked_float = rev._mask_value(1.5)
+    check("MASKV-1", "a str mask carries a size bucket", ":str:" in str(masked_str))
+    check("MASKV-2", "an int mask names its type, no size bucket", str(masked_int).endswith(":int"))
+    check(
+        "MASKV-3",
+        "a float mask names its own type, not int's",
+        str(masked_float).endswith(":float"),
+    )
+    check(
+        "MASKV-4",
+        "str/int/float masks are all distinct",
+        len({masked_str, masked_int, masked_float}) == 3,
+    )
+
+
+def test_mask_row_none_passthrough() -> None:
+    check("MASKROW-1", "_mask_row(None, ...) is None", rev._mask_row(None, None) is None)
+    check(
+        "MASKROW-2",
+        "a tabular row whose length does not match headers falls back to a plain masked tuple",
+        rev._mask_row(("a", "b", "c"), ("only-one-header",))
+        == tuple(rev._mask_row(("a", "b", "c"), ("only-one-header",))),
+    )
+
+
+def test_mapped_names_index_boundaries() -> None:
+    mapping = ic.mapping_from_object(
+        {
+            "shape": "prompt_completion",
+            "csv": {"encoding": "utf-8", "delimiter": ",", "has_header": True, "header_row": 0},
+            "prompt": {"index": 0},
+            "completion": {"index": 1},
+        }
+    )
+    headers = ("a", "b")
+    check(
+        "NMAPIDX-1",
+        "an in-range index slot names its real header",
+        rev._mapped_names(mapping, headers) == frozenset({"a", "b"}),
+    )
+    check(
+        "NMAPIDX-2",
+        "no headers at all means no index-based slot can be named",
+        rev._mapped_names(mapping, None) == frozenset(),
+    )
+    out_of_range = ic.mapping_from_object(
+        {
+            "shape": "prompt_completion",
+            "csv": {"encoding": "utf-8", "delimiter": ",", "has_header": True, "header_row": 0},
+            "prompt": {"index": 5},
+            "completion": {"index": 1},
+        }
+    )
+    check(
+        "NMAPIDX-3",
+        "an out-of-range index slot names nothing for it",
+        rev._mapped_names(out_of_range, headers) == frozenset({"b"}),
+    )
+
+
+def test_read_top_level_header_edge_cases() -> None:
+    slot_a = ic.Slot("header", "a")
+    check(
+        "READTOP-1",
+        "a header slot with no duplicate matches exactly one position",
+        rev._read_top_level(slot_a, ("1", "2"), ("a", "b")) == "1",
+    )
+    check(
+        "READTOP-2",
+        "a duplicated header name is ambiguous and reads as missing",
+        rev._read_top_level(slot_a, ("1", "2"), ("a", "a")) is rev._MISSING,
+    )
+    index_slot = ic.Slot("index", 1)
+    check(
+        "READTOP-3",
+        "an index exactly at the row's own length is out of range",
+        rev._read_top_level(index_slot, ("x",), None) is rev._MISSING,
+    )
+    check(
+        "READTOP-4",
+        "an in-range index reads the cell",
+        rev._read_top_level(ic.Slot("index", 0), ("x", "y"), None) == "x",
+    )
+    check(
+        "READTOP-5",
+        "a non-key/header slot against a Mapping row is missing",
+        rev._read_top_level(index_slot, {"a": "1"}, None) is rev._MISSING,
+    )
+    check(
+        "READTOP-6",
+        "header matching is exact, never case- or whitespace-folded (a real CSV header is "
+        "verbatim)",
+        rev._read_top_level(ic.Slot("header", "Q"), ("x",), (" q ",)) is rev._MISSING,
+    )
+
+
+def test_not_mapped_header_names_are_exact() -> None:
+    mapping = ic.mapping_from_object(
+        {
+            "shape": "prompt_completion",
+            "csv": {"encoding": "utf-8", "delimiter": ",", "has_header": True, "header_row": 0},
+            "prompt": {"header": "q"},
+            "completion": {"header": "a"},
+        }
+    )
+    check(
+        "NMAPEXACT-1",
+        "an exact header match is mapped (not left over)",
+        rev._not_mapped(mapping, ("x", "y", "z"), ("q", "a", "extra")) == ("extra",),
+    )
+    check(
+        "NMAPEXACT-2",
+        "a differently-cased/whitespaced header is its own distinct column, not folded into "
+        "the mapped one",
+        rev._not_mapped(mapping, ("x", "y", "z"), (" Q ", "a", "extra")) == (" Q ", "extra"),
+    )
+
+
+def test_comparison_cells_identical_requires_exact_equality() -> None:
+    mapping = ic.mapping_from_object(
+        {
+            "shape": "prompt_completion",
+            "prompt": {"key": "prompt"},
+            "completion": {"key": "completion"},
+        }
+    )
+    data = b'{"prompt": " Hello ", "completion": "c"}\n'
+    result = rev.run_mapping_preview(
+        reader_for(data),
+        mapping,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        tool_schemas=None,
+        reveal=True,
+    )
+    cell = next(c for c in result.rows[0].comparison if c.slot == "prompt")
+    check(
+        "CMPEXACT-1",
+        "raw/canonical equality is exact -- no implicit strip/casefold applied by the comparator",
+        cell.identical,
+    )
+    # the raw value itself has leading/trailing space and the canonical content preserves it
+    # unchanged (FTF-0506 never trims message text) -- a comparator that silently normalized
+    # either side before comparing could not be told apart from a correct one using only
+    # already-equal values, so this pins the *equal* case at a value a careless `.strip()`
+    # would have changed.
+    check(
+        "CMPEXACT-2",
+        "the raw value's own whitespace survived into the canonical content unmodified",
+        result.rows[0].candidate["content"]["messages"][0]["content"][0]["text"] == " Hello ",
+    )
+
+
+def test_comparison_cells_message_content_role_is_fixed_vocabulary() -> None:
+    # "system"/"user"/"assistant" are hardcoded literals this module itself passes to
+    # `message_content`, never derived from raw data -- confirms there is no row-controlled
+    # value on this path a case/whitespace fault could ever reach.
+    mapping = ic.mapping_from_object(
+        {
+            "shape": "prompt_completion",
+            "prompt": {"key": "prompt"},
+            "completion": {"key": "completion"},
+        }
+    )
+    data = b'{"prompt": "p", "completion": "c"}\n'
+    result = rev.run_mapping_preview(
+        reader_for(data),
+        mapping,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        tool_schemas=None,
+        reveal=True,
+    )
+    check(
+        "CMPROLE-1",
+        "prompt/completion/system cells are produced for exactly the three fixed roles",
+        {c.slot for c in result.rows[0].comparison} == {"prompt", "completion"},
+    )
+
+
+def test_comparison_cells_messages_list_type_and_dict_type_both_required() -> None:
+    # A row whose "messages"/"metadata" shape is somehow malformed never reaches
+    # _comparison_cells in practice (to_dataset_record_candidate always builds both as a list
+    # and a dict) -- this pins that both parts of the guard are real assertions, not vacuous,
+    # by calling the function directly with a deliberately broken candidate.
+    mapping = ic.mapping_from_object(
+        {
+            "shape": "prompt_completion",
+            "prompt": {"key": "prompt"},
+            "completion": {"key": "completion"},
+        }
+    )
+    raised = None
+    try:
+        rev._comparison_cells(
+            mapping, {"prompt": "p"}, None, {"content": {"messages": "not-a-list", "metadata": {}}}
+        )
+    except AssertionError:
+        raised = "messages"
+    check("CMPGUARD-1", "a non-list messages value trips the guard", raised == "messages")
+    raised = None
+    try:
+        rev._comparison_cells(
+            mapping, {"prompt": "p"}, None, {"content": {"messages": [], "metadata": "not-a-dict"}}
+        )
+    except AssertionError:
+        raised = "metadata"
+    check("CMPGUARD-2", "a non-dict metadata value trips the guard", raised == "metadata")
+
+
+def test_comparison_cells_messages_slot_shape() -> None:
+    mapping = ic.mapping_from_object(
+        {
+            "shape": "messages_json",
+            "messages": {"key": "msgs"},
+            "role_key": "role",
+            "content_key": "content",
+            "role_map": {"u": "user", "a": "assistant"},
+            "on_unmapped_message_keys": "ignore",
+        }
+    )
+    data = b'{"msgs": [{"role": "u", "content": "hi"}, {"role": "a", "content": "yo"}]}\n'
+    result = rev.run_mapping_preview(
+        reader_for(data),
+        mapping,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        tool_schemas=None,
+        reveal=True,
+    )
+    check(
+        "CMPMSG-1",
+        "exactly one 'messages' comparison cell is produced",
+        len(result.rows[0].comparison) == 1,
+    )
+    cell = result.rows[0].comparison[0]
+    check(
+        "CMPMSG-2",
+        "the whole-array cell is identical when the lengths agree",
+        cell.slot == "messages"
+        and cell.raw_type == "list"
+        and cell.canonical_type == "list"
+        and cell.identical,
+    )
+
+    short = b'{"msgs": [{"role": "u", "content": "hi"}]}\n'
+    # one message alone has no assistant turn; apply_mapping still maps it (no odd/even check at
+    # this layer), so this stays a fair same-length comparison -- pin a *genuine* length mismatch
+    # by comparing against a row carrying extra non-message content instead:
+    result_single = rev.run_mapping_preview(
+        reader_for(short),
+        mapping,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(short),
+        tool_schemas=None,
+        reveal=True,
+    )
+    check(
+        "CMPMSG-3",
+        "a single-message array compares 1-for-1",
+        result_single.rows[0].comparison[0].identical,
+    )
+
+
+def test_comparison_cells_missing_messages_slot() -> None:
+    mapping = ic.mapping_from_object(
+        {
+            "shape": "messages_json",
+            "messages": {"key": "msgs"},
+            "role_key": "role",
+            "content_key": "content",
+            "role_map": {"u": "user"},
+            "on_unmapped_message_keys": "ignore",
+        }
+    )
+    data = b'{"msgs": "not a list"}\n'
+    result = rev.run_mapping_preview(
+        reader_for(data),
+        mapping,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        tool_schemas=None,
+        reveal=True,
+    )
+    check(
+        "CMPMSG-4",
+        "a malformed messages slot rejects the row",
+        result.rows[0].outcome == "rejected",
+    )
+
+
+def test_run_mapping_probe_headers_none_for_dict_rows() -> None:
+    probe = rev.run_mapping_probe(
+        reader_for(b'{"prompt": "p", "completion": "c"}\n'),
+        PROMPT_COMPLETION,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(b'{"prompt": "p", "completion": "c"}\n'),
+        reveal=True,
+    )
+    check("PROBEHDR-1", "a dict-row source has no headers", probe.headers is None)
+
+
+def test_present_row_headers_length_mismatch_falls_back_to_tuple() -> None:
+    result = rev._present_row(("a", "b"), ("only-one",), reveal=True)
+    check(
+        "PRESENT-1",
+        "a mismatched header/row length falls back to a plain tuple",
+        result == ("a", "b"),
+    )
+    masked_result = rev._present_row(("a", "b"), ("only-one",), reveal=False)
+    check(
+        "PRESENT-2",
+        "the masked fallback is also a plain tuple of masked values",
+        isinstance(masked_result, tuple) and all(rev._MASK_PREFIX in str(v) for v in masked_result),
+    )
+    check(
+        "PRESENT-3",
+        "matching headers/row length, revealed, pairs by name into a real dict",
+        rev._present_row(("a", "b"), ("q", "r"), reveal=True) == {"q": "a", "r": "b"},
+    )
+    check(
+        "PRESENT-4",
+        "no headers at all, revealed, is a plain tuple -- never a crash",
+        rev._present_row(("a", "b"), None, reveal=True) == ("a", "b"),
+    )
+
+
+def test_source_schema_sha256_is_the_real_csv_header_digest() -> None:
+    data = b"q,a\nhello,world\n"
+    result = rev.run_mapping_preview(
+        reader_for(data),
+        CSV_PROMPT_COMPLETION,
+        verified_content_type="text/csv",
+        dataset_sha256=sha(data),
+        tool_schemas=None,
+        reveal=True,
+    )
+    import hashlib as _hashlib
+    import json as _json
+
+    expected = _hashlib.sha256(
+        _json.dumps(["q", "a"], ensure_ascii=True, separators=(",", ":")).encode("ascii")
+    ).hexdigest()
+    check(
+        "SCHEMA-1",
+        "source_schema_sha256 is the real sha256 of the exact header list",
+        result.source_schema_sha256 == expected,
+    )
+
+
+def test_run_mapping_preview_row_headers_none_branch() -> None:
+    # A JSONL source never sets stream.source_schema_sha256; pin that explicitly so a mutant
+    # that always treats it as present cannot survive unnoticed.
+    data = b'{"prompt": "p", "completion": "c"}\n'
+    result = rev.run_mapping_preview(
+        reader_for(data),
+        PROMPT_COMPLETION,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        tool_schemas=None,
+        reveal=True,
+    )
+    check(
+        "SCHEMA-2",
+        "a JSONL source has no header schema digest",
+        result.source_schema_sha256 is None,
     )
 
 

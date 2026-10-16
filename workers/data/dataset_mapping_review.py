@@ -156,12 +156,15 @@ def _size_bucket(length: int) -> str:
 
 
 def _mask_value(value: object) -> object:
+    """None/bool are never masked (never sensitive text); a str gets its own size-bucketed
+    marker (`_size_bucket`); every other scalar (int, float, and anything else this module
+    does not otherwise recognise) shares one plain type-name marker -- there is nothing a
+    number's own value could leak that its type name does not already say, so it needs no
+    bucket of its own."""
     if value is None or type(value) is bool:
         return value
     if type(value) is str:
         return f"{_MASK_PREFIX}:str:{_size_bucket(len(value))}"
-    if type(value) in (int, float):
-        return f"{_MASK_PREFIX}:{type(value).__name__}"
     if type(value) is list:
         return [_mask_value(v) for v in value]
     if type(value) is dict:
