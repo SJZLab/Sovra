@@ -795,6 +795,27 @@ def test_raw_message_roles_rejects_a_non_list_resolved_array() -> None:
     )
 
 
+def test_raw_message_roles_message_keys_guard_is_its_own_safety_net() -> None:
+    # `mapping_from_object` never produces `message_keys=None` together with a real
+    # `messages_slot`/`messages_pointer` (import_common.py's own `mapping_from_object` sets
+    # `keys` and the slot/pointer in the same `if spec.message_based:` branch, together or not
+    # at all) -- but `ImportMapping` itself (like `Slot` above) has no construction-time
+    # validation of its own enforcing that pairing, so nothing stops a mapping from carrying a
+    # real `messages_slot` with `message_keys=None`, the same construction-bypass technique as
+    # NMAPLET-2/READTOP-11/READTOP-12. Without the `if keys is None: return ()` guard, this
+    # would reach `element[keys.role_key]` with `keys` still `None` and raise `AttributeError`
+    # instead of returning `()`.
+    bypassed = dataclasses.replace(MESSAGES_JSON, message_keys=None)
+    check(
+        "ROLE-12",
+        "message_keys=None (construction-bypassed, a real messages_slot still attached) "
+        "returns empty, never crashes trying to read a role key off a mapping with no "
+        "message_keys",
+        rev._raw_message_roles(bypassed, {"messages": [{"role": "human", "content": "hi"}]}, None)
+        == (),
+    )
+
+
 def test_observed_role_values_end_to_end_includes_rejected_rows() -> None:
     # One row with a role already in role_map (accepted), one with a raw role that is not
     # (rejected, unmapped_role) -- both raw role strings must still show up, since the whole
@@ -1010,6 +1031,18 @@ def test_mapped_names_index_boundaries() -> None:
         "NMAPIDX-4",
         "an index exactly at the header count (one past the last valid position) is out of range",
         rev._mapped_names(at_length, headers) == frozenset({"b"}),
+    )
+    # Same construction-bypass technique as NMAPLET-2: `Slot` has no construction-time
+    # validation of its own `kind`, so a real in-range index slot whose `kind` carries
+    # whitespace/case must still be refused by the `slot.kind == "index"` check -- proving
+    # that comparison is exact, not case/whitespace-normalized, the same way NMAPLET-2 already
+    # proved it for the `("key", "header")` membership check above.
+    bypassed_index = dataclasses.replace(mapping, prompt=ic.Slot(" index ", 0))
+    check(
+        "NMAPIDX-5",
+        "a Slot whose own kind is not exactly 'index' (construction-bypassed) is never added, "
+        "even when its value is a real in-range position",
+        "a" not in rev._mapped_names(bypassed_index, headers),
     )
 
 
