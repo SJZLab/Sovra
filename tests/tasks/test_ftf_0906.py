@@ -2523,9 +2523,24 @@ def test_round3_faults_turn_this_suite_red() -> None:
 
 
 def main() -> None:
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
+    # The two fault-injection tests re-run this suite in subprocesses: run
+    # them last, and only when everything else is still green (a suite that
+    # is already RED has nothing more to prove, and each mutation-gate
+    # mutant would otherwise pay for ~20 nested runs).
+    heavy = {
+        "test_fault_injection_each_rule_is_load_bearing",
+        "test_round3_faults_turn_this_suite_red",
+    }
+    tests = sorted(
+        (name, fn) for name, fn in globals().items() if name.startswith("test_") and callable(fn)
+    )
+    for name, fn in tests:
+        if name not in heavy:
             fn()
+    if not FAILURES:
+        for name, fn in tests:
+            if name in heavy:
+                fn()
     if FAILURES:
         print(f"FTF-0906 Egress capture/verification tests: {len(FAILURES)} failed")
         for failure in FAILURES:
