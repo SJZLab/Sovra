@@ -3076,11 +3076,13 @@ FAULTS: list[tuple[str, str, str, int]] = [
 ]
 
 # every name in `_QUERY_PARAM_NAMES` is its own fault: dropping any one must turn a check RED
+# (totp/hotp/sessid/phpsessid are not listed: they end in `otp`/`sid`, so listing them was
+# redundant; they stay in `_F3_NAMES` and are redacted through those endings)
 FAULTS += [
     (f"F1-name {name!r} dropped from _QUERY_PARAM_NAMES", f'        "{name}",\n', "", 1)
     for name in (
         "key", "sig", "auth", "session", "jwt", "code", "state", "verifier", "ticket", "otp",
-        "totp", "hotp", "pass", "sid", "sessid", "phpsessid", "jsessionid",
+        "pass", "sid", "jsessionid",
     )
 ]  # fmt: skip
 

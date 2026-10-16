@@ -253,6 +253,7 @@ _KEY_VALUE = re.compile(
 # front of it: a query serialized without one (`str(request.query_params)`), a urlencoded form body
 # and a name after a space/quote/`/` are the same leak. Over-redaction (`state=CA`, prose `code=5`)
 # is FTF-0904's design.
+# (`totp`, `hotp`, `sessid` and `phpsessid` need no entry: they end in `otp` / `sid`.)
 _QUERY_PARAM_NAMES = frozenset(
     {
         "key",
@@ -265,12 +266,8 @@ _QUERY_PARAM_NAMES = frozenset(
         "verifier",
         "ticket",
         "otp",
-        "totp",
-        "hotp",
         "pass",
         "sid",
-        "sessid",
-        "phpsessid",
         "jsessionid",
     }
 )
