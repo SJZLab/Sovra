@@ -527,6 +527,101 @@ def test_mask_candidate_type_tag_and_identical_flag_stay_visible() -> None:
     )
 
 
+def test_mask_rejected_row_candidate_stays_none() -> None:
+    # A rejected row's own candidate is None, never built -- masking it
+    # must be a safe no-op, never a crash, under reveal=False.
+    data = b'{"prompt": "p1"}\n'  # rejected: missing completion
+    result = rev.run_mapping_preview(
+        reader_for(data),
+        PROMPT_COMPLETION,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        tool_schemas=None,
+        reveal=False,
+    )
+    check(
+        "MASK-REJECTED-1",
+        "a rejected row is reported as such",
+        result.rows[0].outcome == "rejected",
+    )
+    check(
+        "MASK-REJECTED-2",
+        "masking a rejected row's own None candidate is a safe no-op, never a crash",
+        result.rows[0].candidate is None,
+    )
+
+
+def test_mask_candidate_type_tag_exact_not_case_folded() -> None:
+    # EXACT: `_mask_candidate`'s own `key == "type"` comparison must stay
+    # exact -- a differently-cased "Type" key (never produced by this
+    # module's own fixed candidate schema, but white-box-constructed here
+    # the same way every other EXACT test in this file bypasses a real
+    # construction path) is never folded into the real "type" tag
+    # exception by a `.strip().lower()` normalization.
+    tampered = {"Type": "secret-should-be-masked", "type": "text", "text": "also-secret"}
+    masked = rev._mask_candidate(tampered)
+    assert masked is not None
+    check(
+        "MASK-EXACT-1",
+        "a case-tampered 'Type' key is not treated as the real 'type' tag -- its own "
+        "value is masked",
+        _is_masked_marker(masked["Type"]),
+    )
+    check(
+        "MASK-EXACT-2",
+        "the real, exact 'type' key is still left in clear",
+        masked["type"] == "text",
+    )
+    check("MASK-EXACT-3", "an ordinary value is masked", _is_masked_marker(masked["text"]))
+
+
+def test_mask_not_mapped_and_observed_role_values_and_probe_headers() -> None:
+    # F-MASKNAMES: `_mask_names` actually feeds `not_mapped`/
+    # `observed_role_values`/`ProbeResult.headers` -- not merely exercised
+    # as a side effect of some other check.
+    data = b'{"messages": [{"role": "human", "content": "hi"}], "extra_col": "secret-value"}\n'
+    result = rev.run_mapping_preview(
+        reader_for(data),
+        MESSAGES_JSON,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        tool_schemas=None,
+        reveal=False,
+    )
+    check(
+        "MASK-NAMES-1",
+        "not_mapped is non-empty (the fixture names an unmapped column) and every name in "
+        "it is masked",
+        len(result.rows[0].not_mapped) == 1 and _is_masked_marker(result.rows[0].not_mapped[0]),
+    )
+    check(
+        "MASK-NAMES-2",
+        "observed_role_values is non-empty and every raw role string in it is masked",
+        len(result.observed_role_values) == 1 and _is_masked_marker(result.observed_role_values[0]),
+    )
+    check(
+        "MASK-NAMES-3",
+        "none of the real names leak through",
+        "extra_col" not in str(result.rows[0].not_mapped)
+        and "human" not in str(result.observed_role_values),
+    )
+    csv_data = b"q,a\nhello,world\n"
+    csv_probe = rev.run_mapping_probe(
+        reader_for(csv_data),
+        CSV_PROMPT_COMPLETION,
+        verified_content_type="text/csv",
+        dataset_sha256=sha(csv_data),
+        reveal=False,
+    )
+    check(
+        "MASK-NAMES-4",
+        "a masked probe's own headers are masked too",
+        csv_probe.headers is not None
+        and len(csv_probe.headers) == 2
+        and all(_is_masked_marker(h) for h in csv_probe.headers),
+    )
+
+
 def test_mask_tabular_row_pairs_with_headers() -> None:
     data = b"q,a\nhello,world\n"
     result = rev.run_mapping_preview(
