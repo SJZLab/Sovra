@@ -934,6 +934,13 @@ def test_mapped_names_letters_slot_never_names_itself_as_a_header() -> None:
         "a letters-kind slot's own column letter is never treated as a real header name",
         "A" not in rev._mapped_names(mapping, ("A", "B")),
     )
+    bypassed = dataclasses.replace(mapping, prompt=ic.Slot(" key ", "A"))
+    check(
+        "NMAPLET-2",
+        "a Slot whose own kind is not exactly 'key' (construction-bypassed) is never added, "
+        "even when its value is a plain string that would otherwise qualify",
+        "A" not in rev._mapped_names(bypassed, ("A", "B")),
+    )
 
 
 def test_not_mapped_never_crashes_on_a_tabular_row_with_no_headers() -> None:
@@ -1088,6 +1095,27 @@ def test_read_top_level_header_edge_cases() -> None:
         "a slot name carrying whitespace/case against a clean real header does not match",
         rev._read_top_level(ic.Slot("header", " Q "), ("x",), ("q",)) is rev._MISSING,
     )
+    # `Slot` itself has no construction-time validation (that is `import_common._slot()`'s own
+    # job, on the parse path); constructing one directly, bypassing that parser, is this
+    # project's own established technique for proving a kind-matching check is exact and not
+    # silently normalized -- see FTF-0503's own "slot_kind_match_is_exact_no_normalization".
+    bypassed_kind_mapping = ic.mapping_from_object(
+        {"shape": "prompt_completion", "prompt": {"key": "x"}, "completion": {"key": "y"}}
+    )
+    bypassed = dataclasses.replace(bypassed_kind_mapping, prompt=ic.Slot(" key ", "x"))
+    check(
+        "READTOP-11",
+        "a Slot whose own kind is not exactly 'key' (construction-bypassed) is refused by the "
+        "Mapping-row guard, never normalized into a match",
+        rev._read_top_level(bypassed.prompt, {"x": "wrongly-found"}, None) is rev._MISSING,
+    )
+    bypassed_header = dataclasses.replace(bypassed_kind_mapping, prompt=ic.Slot(" header ", "h"))
+    check(
+        "READTOP-12",
+        "a Slot whose own kind is not exactly 'header' (construction-bypassed) never enters "
+        "the header-matching branch, even when a header would otherwise match",
+        rev._read_top_level(bypassed_header.prompt, ("v",), ("h",)) is rev._MISSING,
+    )
 
 
 def test_not_mapped_header_names_are_exact() -> None:
@@ -1149,6 +1177,29 @@ def test_comparison_cells_group_key_present_vs_missing() -> None:
         "CMPGID-2",
         "an absent group_key is missing, not falsely str/identical",
         cell2.raw_type == "missing" and not cell2.identical,
+    )
+
+    class Weird:  # not a real importer value -- forces _type_name's own fallback branch
+        pass
+
+    candidate = {
+        "content": {
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": "p"}]},
+                {"role": "assistant", "content": [{"type": "text", "text": "c"}]},
+            ],
+            "metadata": {},
+        }
+    }
+    cells = rev._comparison_cells(
+        mapping, {"prompt": "p", "completion": "c", "gid": Weird()}, None, candidate
+    )
+    weird_cell = next(c for c in cells if c.slot == "group_key")
+    check(
+        "CMPGID-3",
+        f"raw_type carries the real type name verbatim, never case-folded "
+        f"({weird_cell.raw_type!r})",
+        weird_cell.raw_type == "Weird",
     )
 
 
