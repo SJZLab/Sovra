@@ -25077,6 +25077,15 @@ different session.
 ## 2026-10-16T01:58Z — Control plane: FTF-1505 returned (r4)
 - **Returned:** FTF-1505 r4 (0h): behavioural fault rows, live positive control, archive fail-closed, window seam, per-lane seeded recall. [GOVERNANCE] all-refs sweep workflow to follow.
 
+## 2026-10-16T05:05Z — Control plane: FTF-1304-S1 certified (child slice)
+- **Certified:** FTF-1304-S1 (#849, merge f490784c) under the stopping rule; UNWIRED.
+
+## 2026-10-16T05:05Z — Control plane: FTF-0213-S1 certified (child slice)
+- **Certified:** FTF-0213-S1 (#850, merge 7460dcbe) under the stopping rule; UNWIRED.
+
+## 2026-10-16T05:05Z — Control plane: FTF-0519-P1 returned (r2)
+- **Returned:** FTF-0519-P1 r2 (0k): re-authorize every frozen grant, full frozen hash, id-free manifest summary, saturation fixture.
+
 ## 2026-10-16T05:47Z — PR #852 merged (FTF-0906 round 2; green ci-verdict)
 - **Merged, PROVISIONAL (Law 4, not self-certified):** PR #852 (FTF-0906 round 2, item 0j) merged
   on a fully green `ci-verdict` (run `38841748420`), after merging `main` into the branch once to
