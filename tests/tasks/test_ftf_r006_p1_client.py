@@ -285,6 +285,33 @@ def test_ensure_workspace_idempotent_and_race() -> None:
         "ensure_workspace is case-sensitive on the post-conflict re-list too",
         raises(ArgillaRejectedError, c.ensure_workspace, "SOVRA-ABC123"),
     )
+
+    # one-sided proof against a `workspace.name -> workspace.name.strip().lower()`
+    # mutant specifically: a *stored* name with whitespace/case that would only
+    # collide with the lowercase, unpadded target name after normalization (a
+    # same-case/no-whitespace target, as `different_case` above used, can never
+    # distinguish which side of the comparison a normalizer was added to).
+    # `_require_workspace_name` only ever validates this client's own input, so
+    # a server-returned record's own name is free to carry whatever the fake
+    # server sends.
+    mangled = {"id": "44444444-4444-4444-4444-444444444444", "name": " Foo "}
+    fresh = {"id": "55555555-5555-5555-5555-555555555555", "name": "foo"}
+    stub.reply(200, {"items": [mangled]})
+    stub.reply(201, dict(fresh))
+    not_reused = c.ensure_workspace("foo")
+    check(
+        "R006P1-C",
+        "a padded/differently-cased stored name does not match on the initial list",
+        not_reused.id == fresh["id"],
+    )
+    stub.reply(200, {"items": []})
+    stub.reply(409, {"detail": "Workspace name `foo` is not unique"})
+    stub.reply(200, {"items": [mangled]})
+    check(
+        "R006P1-C",
+        "a padded/differently-cased stored name does not match on the post-conflict re-list",
+        raises(ArgillaRejectedError, c.ensure_workspace, "foo"),
+    )
     stub.server.shutdown()
 
 
