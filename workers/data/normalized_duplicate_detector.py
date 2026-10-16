@@ -175,7 +175,9 @@ _MAX_COMBINING_RUN = 30
 # bump this whenever `_normalize_text`'s behaviour changes again.
 # FTF-0512-F1 round 3: 3 -- NFKC compatibility mappings that would fuse
 # alphanumerics into their neighbours are now separated (`_fold_action`).
-_DETECTOR_VERSION = 3
+# FTF-0512-F2: 4 -- Unicode symbols (Sm/Sc/Sk/So) are kept as their own
+# tokens instead of being stripped like punctuation (`_strip_punctuation`).
+_DETECTOR_VERSION = 4
 
 
 class NormalizedDuplicateDetectionError(ValueError):
@@ -300,6 +302,13 @@ def _decomposition_tag(char: str) -> str:
 def _fold_action(char: str) -> int:
     if unicodedata.category(char) in _DIGIT_LIKE_CATEGORIES:
         return _FOLD_ISOLATE_VERBATIM
+    if unicodedata.category(char).startswith("S") and any(
+        unicodedata.category(part).startswith("M") for part in unicodedata.normalize("NFKC", char)
+    ):
+        # FTF-0512-F2: a spacing diacritic symbol (Sk, e.g. U+00A8 DIAERESIS)
+        # folds to SPACE + a combining mark, which the punctuation rule would
+        # then strip as non-word -- the symbol would vanish. Keep it verbatim.
+        return _FOLD_ISOLATE_VERBATIM
     if not _decomposition_tag(char) or _decomposition_tag(char) in _SAME_CHARACTER_TAGS:
         return _FOLD_KEEP
     if _decomposition_tag(char) == "<compat>" and unicodedata.category(char).startswith("L"):
@@ -339,6 +348,20 @@ def _lower_case(text: str) -> str:
     return text.lower()
 
 
+def _punctuation_replacement(match: re.Match[str]) -> str:
+    # Section 10 method 3 says punctuation normalization: Unicode P* is
+    # stripped. A math/currency/modifier/other symbol (Sm/Sc/Sk/So) carries
+    # meaning ("x <= 5" vs "x >= 5", "$100" vs "EUR100"), so it is kept as its own
+    # space-separated token instead -- FTF-0512's "cannot collapse distinct
+    # customer outcomes" negative_acceptance clause.
+    char = match.group()
+    return f" {char} " if unicodedata.category(char).startswith("S") else " "
+
+
+def _strip_punctuation(text: str) -> str:
+    return _PUNCTUATION_PATTERN.sub(_punctuation_replacement, text)
+
+
 def _finish_text(folded: str) -> str:
     lowered = _lower_case(folded)
     # Generated IDs/timestamps are REMOVED, not replaced by a placeholder:
@@ -348,8 +371,7 @@ def _finish_text(folded: str) -> str:
     # says "generated timestamp".
     redacted = _ISO_TIMESTAMP_PATTERN.sub(" ", lowered)
     redacted = _UUID_PATTERN.sub(" ", redacted)
-    no_punctuation = _PUNCTUATION_PATTERN.sub(" ", redacted)
-    return _WHITESPACE_PATTERN.sub(" ", no_punctuation).strip()
+    return _WHITESPACE_PATTERN.sub(" ", _strip_punctuation(redacted)).strip()
 
 
 def _normalize_text(text: str) -> str:
