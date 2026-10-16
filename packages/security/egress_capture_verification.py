@@ -597,14 +597,17 @@ def verify_egress(plan: EgressPlan, evidence: EgressEvidence) -> EgressVerificat
         if enf is None or client_log is None or dest_log is None:
             status = "incomplete"
             codes.append("connection_log_missing")
-        elif dest_log.outcome == "unobserved":
-            # UNOBSERVABLE-AS-NOT-SEEN (Law 17): an unchecked destination
-            # state is never treated as a confirmed "nothing arrived" --
-            # that would let a flow this test genuinely could not observe
-            # pass a deny flow, or fail an allow flow, on a claim nobody
-            # actually verified.
+        elif dest_log.outcome == "unobserved" or client_log.outcome == "unobserved":
+            # UNOBSERVABLE-AS-NOT-SEEN (Law 17): an unchecked state on ANY
+            # side (destination or client) is never treated as a confirmed
+            # "nothing arrived" / "refused" -- that would let a flow this
+            # test genuinely could not observe pass a deny flow, or fail an
+            # allow flow, on a claim nobody actually verified.
             status = "incomplete"
-            codes.append("destination_unobserved")
+            if dest_log.outcome == "unobserved":
+                codes.append("destination_unobserved")
+            if client_log.outcome == "unobserved":
+                codes.append("client_unobserved")
         elif capture is not None and capture.encrypted and not has_real_inspection:
             # Section 12: "No TLS packet capture alone proves absence of
             # leakage" -- a capture with nothing else to corroborate it can
@@ -677,7 +680,10 @@ def verify_egress(plan: EgressPlan, evidence: EgressEvidence) -> EgressVerificat
         report_codes.append("unattributed_canary_found")
 
     not_exercised: tuple[str, ...] = ()
-    if "workflow_history" in plan.required_stores and "workflow_history" not in inspected_stores:
+    # HISTORY-OPTIONAL: a missing workflow_history is ALWAYS `partial`,
+    # whatever the caller's `required_stores` says -- the caller cannot
+    # opt out of the one store this task cannot yet exercise.
+    if "workflow_history" not in inspected_stores:
         not_exercised = ("workflow_history",)
 
     overall = _aggregate_overall_status(
