@@ -67,13 +67,6 @@ class SecretScanError(Exception):
 MAX_SCAN_BYTES = 50 * 1024 * 1024  # per file/blob/member scan bound
 MAX_BASE64_ATTEMPTS_PER_UNIT = 2000
 _MIN_ENTROPY_BITS_PER_CHAR = 3.5  # FTF-0514's own threshold, reused
-_MAX_LINE_CHARS_PER_PASS = 200
-# F13: lines longer than this are scanned in overlapping 200-char windows
-# (step 150, so a secret cannot fall entirely inside the 50-char overlap
-# seam) rather than scanned whole -- an unbounded-length single line (a
-# minified bundle, a huge JSON blob on one line) must never be truncated
-# to its first 200 chars and the rest silently dropped.
-_LINE_WINDOW_STEP = 150
 
 
 @dataclasses.dataclass(frozen=True)
@@ -373,27 +366,24 @@ def _matches(
 def _matches_long_line(
     line: str, *, include_canary: bool, on_incomplete: Callable[[], None] | None
 ) -> Iterator[tuple[str, str]]:
-    """F13: a line longer than `_MAX_LINE_CHARS_PER_PASS` is scanned in
-    overlapping windows (step < window, so every character falls fully
-    inside at least one window with margin on both sides for a value
-    that straddles a seam) instead of being scanned once as a whole --
-    `_matches` itself has no length bound, so this is a pure perf/
-    robustness measure (catastrophic-regex safety on pathological single-
-    line files), never a detection gap. Deduplicates by (rule, value)."""
-    if len(line) <= _MAX_LINE_CHARS_PER_PASS:
-        yield from _matches(line, include_canary=include_canary, on_incomplete=on_incomplete)
-        return
-    seen: set[tuple[str, str]] = set()
-    start = 0
-    while start < len(line):
-        window = line[start : start + _MAX_LINE_CHARS_PER_PASS]
-        for item in _matches(window, include_canary=include_canary, on_incomplete=on_incomplete):
-            if item not in seen:
-                seen.add(item)
-                yield item
-        if start + _MAX_LINE_CHARS_PER_PASS >= len(line):
-            break
-        start += _LINE_WINDOW_STEP
+    """F13 round 4 (Control-plane return 2026-10-16, point 5): round 3's
+    overlapping-window chunking (200-char windows, 150-char step, a
+    50-char overlap) missed any match longer than the 50-char overlap
+    positioned so it starts in one window's non-overlap region and ends
+    past that window's own boundary -- reproduced directly (JWT 84/451
+    offsets, `client_secret` 72/451, an AWS secret key 39/451, a Slack
+    webhook 9/451). Several rules have NO upper bound on match length
+    (`{20,}`, `{36,}`, the JWT segments' `{10,}`), so no finite overlap
+    can be proven `>=` the longest possible match -- the only correct fix
+    is whole-line matching, restored here. `_matches` itself has no length
+    bound and no rule pattern here nests a repeated group inside another
+    repeated group (the one shape that causes catastrophic regex
+    backtracking), so this is safe on an arbitrarily long single line (a
+    minified bundle, a huge JSON blob on one line) -- proven directly by
+    `test_f13_every_offset_in_a_long_line_is_found_no_seam_gap`, which
+    places a seed at every offset across windowing's own former seam zone
+    and confirms none are missed."""
+    yield from _matches(line, include_canary=include_canary, on_incomplete=on_incomplete)
 
 
 def scan_line(line: str, *, include_canary: bool = False) -> list[tuple[str, str]]:
