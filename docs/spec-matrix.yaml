@@ -10587,36 +10587,74 @@ FTF-0906:
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0904,
-    FTF-0905. Path: `packages/security/egress_capture_verification.py`. Pure verifier combining
-    enforcement observations, connection logs and plaintext/packet-capture inspection into one
-    report (never claims `passed` from an encrypted capture alone; `workflow_history` always
-    forces `partial`, never silently covered). Round 1 (PR #832, merge
-    `23056b0f8e4b95f1c22f15c7a3722e92bab46150`) returned: verifier passed with unattributed/
-    unplanned leaks, caller-narrowed coverage, fabricated (unscanned) inspections, a vacuous
-    positive control, allow-flow/enforcement mismatch, an encrypted-capture loophole, a hard-coded
-    "not_seen", no gate step, report not bound to policy/scope. Round 2 (this evidence) closes all
-    12 return points: `verify_egress` now forces `failed` on any evidence naming an undeclared
-    `flow_id` (`unplanned_egress_evidence`) or a `canary_found` inspection with no flow
-    attribution (`unattributed_canary_found`); `EgressPlan.required_stores` can no longer omit the
-    mandatory log stores (`application_log`/`error_path`/`artifact`); the allow branch's `arrived`
-    check now requires enforcement/client/destination agreement AND a real `canary_found` at the
+    FTF-0905 (all CERTIFIED). Path: packages/security/egress_capture_verification.py. Pure verifier
+    (`verify_egress`) combining enforcement, connection-log and plaintext/packet-capture inspection
+    into one `EgressVerificationReport` (Section 12: "allowlist enforcement, verified destination
+    identity, blocked-egress counters and inspection at authorized application endpoints
+    together"); a flow whose only no-leak evidence is an encrypted packet capture is `incomplete`,
+    never `passed` (Section 12's negative clause -- a capture alone cannot prove absence of
+    leakage). Reuses FTF-0905's `CanaryMarker`/`PlacementRecord`/`CanaryPlacementLedger`/
+    `encode_canary`/`fragment_canary` unmodified; `scan_store_for_canaries` scans every declared
+    encoding and fails closed (`CanaryLeakedError`) the instant a real canary is recovered.
+    Real-integration proof (`tests/integration/test_ftf_0906_egress_verification.py`, CI job
+    `egress-verification-integration`): real loopback sockets, an allowed plaintext sink, an
+    allowed TLS sink behind a real byte-for-byte recording relay, a denied non-allowlisted sink, a
+    denied cloud-metadata address, a real direct-socket enforcement bypass, and a real log leak
+    that FTF-0904's own redaction does not catch (canaries aren't a recognized secret shape) but
+    this module's own scanner does.
+
+
+    Round 1's own internal CI fix (same PR #832, not a Control-plane return): round 1 shipped with
+    `mutation-gate` red (93.5%, 11 survivors, all operator M9 -- a frozen-dataclass string field
+    normalized by `.strip().lower()` before an `==`/`!=`/`in` comparison). Every survivor sat on a
+    field already validated at construction against a closed, already-lowercase/whitespace-free
+    tuple, so the mutant was unobservable via normal construction. `_hex64`'s own per-character
+    loop (one survivor) was mathematically unkillable by any test -- replaced with a single
+    `re.fullmatch`, no behaviour change. The other ten were killed via `object.__setattr__`
+    bypassing each frozen dataclass's own `__post_init__`; one of those ten needed a real
+    production fix: `scan_store_for_canaries` was letting FTF-0905's own
+    `InvalidCanaryRequestError` leak through its own public API instead of this module's
+    documented `InvalidEgressEvidenceError`. Extracted `_aggregate_overall_status` out of
+    `verify_egress` so the report-status aggregation is directly testable. Final local mutation
+    gate: 172 run / 172 KILLED / 0 SURVIVED / 100.0%. Full detail:
+    `docs/certifications/submissions/2026-10-15T1112Z-FTF-0906.md` (round 1) and
+    `docs/certifications/submissions/2026-10-15T1500Z-FTF-0906-ci-fix.md` (round 1's own CI fix).
+
+
+    Round 2 (Control-plane return, PR #852, this evidence) closed all 12 named return points:
+    `verify_egress` now forces `failed` on any evidence naming an undeclared `flow_id`
+    (`unplanned_egress_evidence`) or a `canary_found` inspection with no flow attribution
+    (`unattributed_canary_found`); `EgressPlan.required_stores` can no longer omit the mandatory
+    log stores (`application_log`/`error_path`/`artifact`); the allow branch's `arrived` check now
+    requires enforcement/client/destination agreement AND a real `canary_found` at the
     destination; the encrypted-capture-insufficient check now requires a genuinely inspected
     record; a new `"unobserved"` destination outcome fails closed instead of a fabricated
     `not_seen` (Law 17); `EgressVerificationReport` gained `policy_digest`/`scope`/
     `inspected_stores`, all bound into `report_sha256`; `scan_store_for_canaries` now matches a
-    case-insensitive hex variant and a lower-cased-percent-escape url variant. The real-socket
-    integration test (`tests/integration/test_ftf_0906_egress_verification.py`) now derives
-    canary_found/enforcement-code from what the real guard/sinks actually did (never hard-coded),
-    feeds the real caught error-path leak into `verify_egress` itself, really scans a snapshot of
-    the real access-log text, and fails closed (`sys.exit(1)`) rather than skipping when the TLS
-    fixture is unavailable. `tests/tasks/test_ftf_0906.py`'s own fault-injection table grew from 7
-    to 13 regex-mutation probes, one per production fix; F5 (uninspected destination as positive
-    control) is disclosed as a reviewed equivalent under this round's own fix (the
-    `PlaintextInspection.__post_init__` invariant `canary_found implies inspected` makes that one
-    filter unkillable now that `arrived` also checks `canary_found`), not a live gap. Full detail
-    and the fault -> RED table: `docs/certifications/submissions/2026-10-15T2300Z-FTF-0906-r2.md`.
-    No live caller yet (disclosed, same blank-`proving_symbol` precedent FTF-0901/0902/0903/0905
-    already carry).
+    case-insensitive hex variant and a lower-cased-percent-escape url variant (via
+    `_needles_for_encoding`, which generates these unconditionally rather than dispatching on
+    `encoding` -- a per-encoding `==` dispatch would only ever compare an already-validated value,
+    an unobservable mutant found while re-running the mutation gate for real). The real-socket
+    integration test now derives canary_found/enforcement-code from what the real guard/sinks
+    actually did (never hard-coded), feeds the real caught error-path leak into `verify_egress`
+    itself, really scans a snapshot of the real access-log text, and fails closed (`sys.exit(1)`)
+    rather than skipping when the TLS fixture is unavailable. `tests/tasks/test_ftf_0906.py`'s own
+    fault-injection table grew from 7 to 13 regex-mutation probes, one per production fix; F5
+    (uninspected destination as positive control) is disclosed as a reviewed equivalent under this
+    round's own fix (the `PlaintextInspection.__post_init__` invariant `canary_found implies
+    inspected` makes that one filter unkillable now that `arrived` also checks `canary_found`),
+    not a live gap. Mutation gate run for real three times against the actual committed diff (not
+    merely asserted clean): 11 real survivors found and closed, then 2 more, then a final clean
+    152/152 KILLED, 0 SURVIVED, 100.0%. Full detail and the fault -> RED table:
+    `docs/certifications/submissions/2026-10-15T2300Z-FTF-0906-r2.md`.
+
+
+    UNWIRED -- `proving_symbol` blank, no live caller yet (same precedent as FTF-0901/FTF-0902/
+    FTF-0905). `workflow_history` is never exercised (no Temporal workflow exists), so every report
+    this task produces is `partial`, never `passed`, by design. Process scope only; cluster/CNI-
+    topology evidence is FTF-H027's own job on top of this one. Not self-certified (Law 4):
+    certification_state stays PROVISIONAL / proof_state stays L1-PROVEN pending independent
+    Control-plane L2 review.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0906.py
@@ -13062,7 +13100,7 @@ FTF-1704:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Validation dataset
-  evidence_hash: ''
+  evidence_hash: bd4066f4e153b96c9b181222626bb52a910487ad
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0517, FTF-1701,
