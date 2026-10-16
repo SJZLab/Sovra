@@ -11767,3 +11767,38 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   frozen grants of non-served sources not re-authorized (revoked held-out/dev connection still serves training);
   frozen hash omits organization_id/created_by/locked_at; get_split_manifest leaks finding record ids; no saturation
   fixture. Ruling: re-authorize every frozen source on every load.
+
+## 2026-10-16T12:10Z — CERTIFIED: FTF-1704
+- **FTF-1704: CERTIFIED** (round 2; PR #848, merge 2a442fb2e28c3f42f1e3f8c8a7498cd4b05ffcca, head 8107fd70, first parent 984a0b8a).
+  Producers session_014vUsTx4TN37hSRDiVVYmfc (main change), session_01LM7M5LQqRz4VfgucXuJDXr, session_01BafthcwGsJjcK5PEP9Zz9V,
+  session_016deTdx216HZcaazY1tnqNA, session_01DB2u38VQVz5gMUBpRSxnHJ ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent
+  (merge commit f86a7c7d has no trailer, advisory). CI: 77/77 success, ci-verdict 116839909862; integration 116800436531
+  "FTF-1704 development suite import: all checks passed" (PG 16.15); mutation-gate 116800366414 48/48 KILLED; gate
+  116800366887 step 70 test_ftf_1704.py success. Net diff 5 files; secret-scan baseline, ci.yml, scripts/ unchanged (Law 9).
+  Round-2 points: DEV-UNLABELLED fixed (provenance origin/producer/label/index regenerated and compared exactly; 600/600
+  stored rows checked by SQL); FREEZE-CONTENT-BLIND fixed (content_sha256 over every validation + development record;
+  assert_split_unchanged checks ids and recomputes; edit/mutation/truncation/duplication/same-id change raise
+  SplitChangedError). Local: test_ftf_1704 1,562/0, test_ftf_1703 417/0, integration 16/0. Probes 57/57 new, 57/59 round-1
+  (2 informational). FTF-0518 scan clear at partners=5000; blocked/semantic_scan_saturated at 200. Faults A,K refused by
+  the freeze; L,R,S,Q,M,N,O,P RED. Advisories: persist content_sha256 in FTF-0519/0603; optional golden content hash pin.
+  UNWIRED.
+
+## 2026-10-16T12:10Z — RETURNED: FTF-0906 (r2)
+- **FTF-0906: RETURNED** (round 2 → 3; PR #852, merge 984a0b8ae622947575b9a825132058c96922682d, head 49a65034).
+  Producer session_01T31ZNFX5tHqE4p1LuxaoHb ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 77/77 success, ci-verdict
+  116832453416; gate 116783196075 step 190 "FTF-0906 Egress capture/verification tests: all checks passed";
+  egress-verification-integration 116783644109 "all checks passed" (real run; skip path exits 1). Uncapped mutation
+  202/202 (no allowlist). Met: points 1, 5, 7, 10, 12. Return: missing workflow_history passes; unobserved client log
+  passes (Law 17); F5b/F9/F10/F10b/F10c/F24/F25/F29 GREEN; integration still hard-codes canary_found and enforcement
+  decisions, ledger completeness not asserted on application_log, G1 GREEN; fragmented-header canary missed.
+  Stopping rule set.
+
+## 2026-10-16T12:10Z — RETURNED: FTF-H011-P1 (r1)
+- **FTF-H011-P1: RETURNED** (child slice of FTF-H011; round 1 → 2; PR #854, merge f88040d3bb75f0fe9e68f880cbe437c87a889776, head
+  036893fa). Producers session_01PKNMcPg4y66uRtgMc9b1N3, session_01EcVmqJMjXN5B4XtDGvLm8J, session_016TP2TkNEjfg8NYWKgqtsG3 ≠
+  certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 116874615049 success; dataset-mapping-preview-integration
+  116840117216 "FTF-H011-P1 dataset mapping preview (PG16 + SeaweedFS): all checks passed"; gate 116840018741 both task
+  scripts "all checks passed". Law 9: ci.yml +45/-0. Law 15: 0502-P1/0502/0503/0504/0505 pass. Return: masking leaves
+  candidate/role values/headers/keys in clear; no tool_argument_validator; changed object read to the limit -> completed;
+  probe has no Law 17 state; F2/F2b/F6/F9/F11/F14/F15/F16 GREEN; observer copy shallow, differential test missing;
+  submission's tracker claims wrong. Stopping rule set.

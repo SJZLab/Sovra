@@ -1,8 +1,8 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-16T05:05Z. Source: `python3 scripts/status.py` on main.
-- **Status: 153/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
+Updated: 2026-10-16T12:10Z. Source: `python3 scripts/status.py` on main.
+- **Status: 154/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
@@ -12,6 +12,12 @@ Updated: 2026-10-16T05:05Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-16T12:10Z:**
+  - Returned: FTF-H011-P1 r2 (dataset mapping preview: text types, limits, XLSX refusal and tenant/grant checks all hold; but masked previews still show candidate text and headers, tool-call rows can't be previewed, a changed file can come back as completed, and 7 named faults stay undetected). Stopping rule set.
+- **2026-10-16T12:10Z:**
+  - Returned: FTF-0906 r3 (egress verification: most round-2 fixes landed and the network blocking still holds; but a report can still pass with no workflow-history evidence or an unobserved client log, the integration still feeds some hand-typed results into the checker, and 8 checks are unpinned). Stopping rule set.
+- **2026-10-16T12:10Z:**
+  - CERTIFIED: FTF-1704 (validation dataset), round 2: development cases now carry a checked synthetic-provenance label and the frozen split hashes record content, so edits, truncation and same-id changes are refused. UNWIRED.
 - **2026-10-16T05:05Z:**
   - Returned: FTF-0519-P1 r2 (immutable split manifest: tenant isolation, immutability and held-out separation all hold; but revoking a held-out or development source's permission does not stop training from being served, and the frozen hash leaves out three columns).
   - CERTIFIED (child slice): FTF-0213-S1 - a live probe that checks a model is forced to answer from a fixed list of choices and measures its real output tokens; impossible token counts from the gateway are refused, never reported as cheap output (ADR 0004 idea 2). UNWIRED.
