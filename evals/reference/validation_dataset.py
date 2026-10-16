@@ -1190,7 +1190,15 @@ def build_reference_eval_splits(
     )
 
 
-_EVAL_ROLES = ("validation", "development_eval")
+# Closed role -> "records of this role live in the validation/development content" table.
+# A subscript, not a membership test: an unrecognised role raises KeyError (fail closed)
+# instead of silently falling through as "not an eval record".
+_ROLE_HAS_CONTENT = {
+    "train": False,
+    "validation": True,
+    "development_eval": True,
+    "final_qualification": False,
+}
 
 
 def assert_split_unchanged(
@@ -1220,7 +1228,9 @@ def assert_split_unchanged(
     ):
         raise SplitChangedError("split differs from the recorded manifest hash")
     manifest_eval_ids = {
-        record_id for record_id, role, _group in splits.manifest.assignments if role in _EVAL_ROLES
+        record_id
+        for record_id, role, _group in splits.manifest.assignments
+        if _ROLE_HAS_CONTENT[role]
     }
     content_ids = {t.trace_id for t in splits.validation} | {
         c["case_key"] for c in splits.development
