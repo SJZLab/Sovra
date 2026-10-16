@@ -101,8 +101,9 @@ import threading
 import time
 import uuid
 import zipfile
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
+from typing import IO
 from urllib.parse import quote
 
 import yaml
@@ -422,8 +423,8 @@ _ZIP_SUFFIXES = (".zip", ".whl", ".jar", ".egg")
 _TAR_SUFFIXES = (".tar.gz", ".tgz", ".tar")
 
 
-def _read_bounded(handle: io.BufferedIOBase | object) -> tuple[bytes, bool]:
-    data = handle.read(MAX_SCAN_BYTES + 1)  # type: ignore[attr-defined]
+def _read_bounded(handle: IO[bytes]) -> tuple[bytes, bool]:
+    data = handle.read(MAX_SCAN_BYTES + 1)
     return data[:MAX_SCAN_BYTES], len(data) > MAX_SCAN_BYTES
 
 
@@ -1114,7 +1115,7 @@ def _live_app_env() -> dict[str, str]:
 
 
 def _live_probes(
-    marker_values: dict[str, str], fragments: list[str], family_seeds: dict[str, str]
+    marker_values: dict[str, str], fragments: Sequence[str], family_seeds: dict[str, str]
 ) -> list[tuple[str, str, dict[str, str], str, bytes | None, int]]:
     """Every probe is tagged in its PATH (`/<name>` suffix or a `probe=` query
     parameter, neither of which the redactor touches) so its own access-log
