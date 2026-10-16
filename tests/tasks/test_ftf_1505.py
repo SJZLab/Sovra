@@ -1,5 +1,27 @@
 #!/usr/bin/env python3
-"""FTF-1505 -- Secret scanning, round 3 (unit/fault tests).
+"""FTF-1505 -- Secret scanning, round 5 (unit/fault tests).
+
+Round 4 (Control-plane return 2026-10-16, QUEUE.md "0h") replaces every
+source-text check with a behavioural one and adds:
+
+  - F-FAULTS-BEHAVIOURAL: `main()` is run for real on disposable repositories
+    (`--root`/`--baseline`) to prove each lane's result and each completeness
+    check decides the run -- a history-only, artifact-only or source-only
+    secret, an uncovered upload path, an untracked production directory, a
+    tracked file that was never scanned, and a blocking finding whose own
+    scenario passed each make `main()` raise; a clean repository passes.
+  - F-LIVE-POSITIVE-CONTROL: the live lane is run for real and must see
+    uvicorn's stderr startup line, one access-log line per probe and a
+    path-placed canary, and reaches the 422/400 error paths.
+  - F-ARCHIVE-ZLIB / CORRUPT / OVERSIZE: a corrupt deflated member, a
+    truncated zip/tar.gz/gz and an oversized member are blocking
+    `scan_incomplete`, never silent.
+  - F13-SEAM: no line windows; long secrets are found at every offset of a
+    long line, and the linear JWT matcher is proven equal to its regex.
+  - F-SEEDS-PER-LANE: `scan_seeded_recall` (called by `main()`) plants every
+    family in every file lane.
+
+Round 3 notes follow.
 
 Runnable without network egress. Several checks use a disposable temporary
 git repository (real `git init`/`commit`, no network) to prove the real
@@ -44,16 +66,16 @@ Run directly: python3 tests/tasks/test_ftf_1505.py
 
 from __future__ import annotations
 
+import atexit
 import base64
 import contextlib
 import io
 import logging
-import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import zipfile
-from collections.abc import Callable, Iterator
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -62,7 +84,6 @@ sys.path.insert(0, str(ROOT / "tests" / "security"))
 
 import secret_rules as sr  # noqa: E402
 import secret_scanning as ss  # noqa: E402
-from packages.security.canary_secret_generator import generate_canary  # noqa: E402
 from secret_rules import (  # noqa: E402
     RULES,
     SecretFinding,
@@ -89,7 +110,6 @@ from secret_scanning import (  # noqa: E402
     iter_tracked_files_under,
     load_baseline,
     parse_upload_artifact_paths,
-    scan_artifact_roots,
     scan_history,
     scan_line,
     scan_log_samples,
@@ -124,8 +144,23 @@ def _run_git(*args: str, cwd: Path) -> str:
     ).stdout
 
 
+_TEMP_DIRS: list[Path] = []
+
+
+@atexit.register
+def _remove_temp_dirs() -> None:
+    for path in _TEMP_DIRS:
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def _mkdtemp(prefix: str) -> Path:
+    path = Path(tempfile.mkdtemp(prefix=prefix))
+    _TEMP_DIRS.append(path)
+    return path
+
+
 def _build_temp_repo() -> Path:
-    tmp = Path(tempfile.mkdtemp(prefix="ftf1505_"))
+    tmp = _mkdtemp("ftf1505_")
     _run_git("init", "-q", "-b", "main", cwd=tmp)
     _run_git("config", "user.email", "t@example.com", cwd=tmp)
     _run_git("config", "user.name", "t", cwd=tmp)
@@ -422,93 +457,282 @@ def test_f13_long_line_window_finds_a_secret_past_the_200_char_boundary() -> Non
     )
 
 
-def _fault_round3_overlapping_windows(text: str) -> list[tuple[str, str]]:
-    """Round 3's own `_matches_long_line` shape: 200-char windows, 150-char
-    step (a 50-char overlap) -- the exact algorithm round 4's point 5
-    found could miss a match longer than the 50-char overlap positioned
-    to straddle a window boundary."""
-    window, step = 200, 150
-    if len(text) <= window:
-        return list(sr._matches(text, include_canary=False))
-    seen: set[tuple[str, str]] = set()
-    out: list[tuple[str, str]] = []
-    start = 0
-    while start < len(text):
-        chunk = text[start : start + window]
-        for item in sr._matches(chunk, include_canary=False):
-            if item not in seen:
-                seen.add(item)
-                out.append(item)
-        if start + window >= len(text):
-            break
-        start += step
-    return out
+def test_no_decode_cap_every_candidate_is_decoded() -> None:
+    """Round 4: the per-unit base64/hex candidate caps are gone (runs found by
+    `finditer` are disjoint, so decoding all of them is linear). A secret
+    wrapped in base64 after thousands of other candidates on the same line, in
+    the same binary unit and through the CI-report CLI is still found; the
+    round-3 shape (stop after 2,000) is reproduced as a fault and misses it."""
+    import secrets as _secrets
 
+    seed = generate_seed_for_rule("github_token")
+    wrapped = base64.b64encode(f"note {seed}".encode()).decode()
+    noise = " ".join(_secrets.token_urlsafe(24) for _ in range(3000))
+    line = f"{noise} {wrapped}"
+    check(
+        "FTF-1505-NO-CAP",
+        "a base64-wrapped secret after 3,000 other candidates on one line is found",
+        any(rule == "github_token" and value == seed for rule, value in scan_line(line)),
+    )
 
-def test_f13_every_offset_in_a_long_line_is_found_no_seam_gap() -> None:
-    """F13-SEAM (round 4, point 5, Control-plane return 2026-10-16):
-    round 3's 200-char/150-step overlapping windows (a 50-char overlap)
-    missed any match longer than 50 chars positioned to straddle a window
-    boundary -- reproduced by the verifier at specific offsets (JWT
-    84/451, `client_secret` 72/451, an AWS secret key 39/451, a Slack
-    webhook 9/451). Several rule patterns have no upper length bound, so
-    no finite overlap is provably `>=` the longest possible match -- the
-    fix (whole-line matching, restored in `secret_rules._matches_long_
-    line`) is swept here across EVERY offset in a long line, not just one
-    hand-picked position, for both an `aws_secret_access_key` assignment
-    (its own full match, keyword + value + quotes, is ~65 chars -- well
-    past the 50-char overlap) and a Slack webhook URL (~81 chars, via an
-    unbounded `{20,}` run)."""
-    for rule in ("aws_secret_access_key", "slack_webhook"):
-        seed = generate_seed_for_rule(rule)
-        padding_total = 420
-        missed_offsets_real: list[int] = []
-        missed_offsets_fault: list[int] = []
-        for offset in range(0, padding_total, 3):  # every 3rd offset: full sweep, bounded runtime
-            line = ("x" * offset) + f" {seed} " + ("y" * (padding_total - offset))
-            real_hits = scan_line(line)
-            if not any(r == rule for r, _v in real_hits):
-                missed_offsets_real.append(offset)
-            fault_hits = _fault_round3_overlapping_windows(line)
-            if not any(r == rule for r, _v in fault_hits):
-                missed_offsets_fault.append(offset)
-        check(
-            "FTF-1505",
-            f"GREEN (fixed): whole-line matching finds {rule}'s seed at every swept offset "
-            f"(0 missed of {padding_total // 3})",
-            not missed_offsets_real,
+    def _fault_capped(text: str, cap: int = 2000) -> list[tuple[str, str]]:
+        out: list[tuple[str, str]] = []
+        for i, match in enumerate(sr._BASE64_RUN.finditer(text)):
+            if i >= cap:
+                break
+            decoded = sr._try_base64_decode(match.group(0))
+            if decoded and sr._could_match_any_rule(decoded.lower()):
+                out.extend(sr._iter_shape_matches(decoded))
+        return out
+
+    check(
+        "FTF-1505-NO-CAP",
+        "RED (fault reproduced): a 2,000-candidate cap silently drops the same secret",
+        not any(rule == "github_token" for rule, _ in _fault_capped(line)),
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        report = Path(tmp) / "report.bin"
+        report.write_bytes(b"\xff\xfe" + line.encode())
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                str(ROOT / "tests" / "security" / "secret_rules.py"),
+                str(report),
+            ],
+            capture_output=True,
+            text=True,
         )
         check(
-            "FTF-1505",
-            f"RED (fault reproduced): round 3's overlapping-window algorithm misses {rule}'s "
-            f"seed at >=1 swept offset straddling a window seam "
-            f"(missed: {missed_offsets_fault[:5]}{'...' if len(missed_offsets_fault) > 5 else ''})",
-            bool(missed_offsets_fault),
+            "FTF-1505-NO-CAP",
+            "the CI-report CLI finds it in a non-UTF-8 file with >2,000 base64 runs",
+            result.returncode == 1 and "github_token" in result.stderr,
         )
 
 
-def test_f6_decode_cap_overrun_is_a_blocking_scan_incomplete_finding() -> None:
-    """F6/F-DECODE: a base64 candidate past the per-unit cap is dropped
-    silently today only by accident (no observable signal either way);
-    round 3 makes it an explicit, blocking `scan_incomplete`."""
-    many_candidates = " ".join(
-        f"{'A' * 24}{i:04d}" for i in range(sr.MAX_BASE64_ATTEMPTS_PER_UNIT + 5)
+def _long_secret_cases() -> dict[str, tuple[str, str]]:
+    import json as _json
+    import secrets as _secrets
+    import string as _string
+    from urllib.parse import quote as _quote
+
+    alnum = _string.ascii_letters + _string.digits
+
+    def rnd(alphabet: str, n: int) -> str:
+        return "".join(_secrets.choice(alphabet) for _ in range(n))
+
+    jwt = generate_seed_for_rule("jwt_shaped")
+    jwt_long = (
+        jwt.split(".")[0]
+        + "."
+        + base64.urlsafe_b64encode(_json.dumps({"sub": rnd(alnum, 40)}).encode())
+        .decode()
+        .rstrip("=")
+        + "."
+        + rnd(alnum, 43)
     )
-    flagged: list[bool] = []
-    list(sr._matches(many_candidates, on_incomplete=lambda: flagged.append(True)))
+    return {
+        "jwt_shaped": (jwt_long, "jwt_shaped"),
+        "jwt_percent_encoded": (_quote(jwt_long, safe=""), "jwt_shaped"),
+        "client_secret_64": (
+            'client_secret = "' + rnd(alnum, 64) + '"',
+            "quoted_secret_assignment",
+        ),
+        "aws_secret_access_key": (
+            "aws_secret_access_key = " + rnd(alnum + "/+", 40),
+            "aws_secret_access_key",
+        ),
+        "slack_webhook": (generate_seed_for_rule("slack_webhook"), "slack_webhook"),
+        "base64_github_token": (
+            base64.b64encode(generate_seed_for_rule("github_token").encode()).decode(),
+            "github_token",
+        ),
+        "url_userinfo_40": (
+            "postgresql://svc:" + rnd(alnum, 40) + "@db.internal:5432/x",
+            "url_userinfo_password",
+        ),
+    }
+
+
+# The cases the round-3 verifier reproduced as missed at a window seam.
+_ROUND3_SEAM_MISSES = frozenset(
+    {"jwt_shaped", "client_secret_64", "aws_secret_access_key", "slack_webhook"}
+)
+
+
+def test_f13_seam_long_secrets_found_at_every_offset() -> None:
+    """F13-SEAM (round-3 regression): 200-char windows with a 50-char overlap
+    missed any secret longer than 50 chars straddling a seam. Every case is
+    placed at every offset 0..450 of a >1,000-char line; all must be found.
+    The round-3 window shape is reproduced as a fault and misses some."""
+
+    def _fault_round3_windows(line: str) -> list[tuple[str, str]]:
+        if len(line) <= 200:
+            return list(sr._matches(line))
+        out: list[tuple[str, str]] = []
+        start = 0
+        while start < len(line):
+            out.extend(sr._matches(line[start : start + 200]))
+            if start + 200 >= len(line):
+                break
+            start += 150
+        return out
+
+    for name, (seed, rule) in _long_secret_cases().items():
+        missed = []
+        fault_missed = 0
+        for offset in range(451):
+            line = ("ab" * 300)[:offset] + " " + seed + " " + ("cd " * 200)
+            if not any(r == rule for r, _ in scan_line(line)):
+                missed.append(offset)
+            if not any(r == rule for r, _ in _fault_round3_windows(line)):
+                fault_missed += 1
+        check(
+            "FTF-1505-SEAM",
+            f"{name} (len {len(seed)}) is found at every one of 451 offsets in a long line "
+            f"(missed at {missed[:5]})",
+            not missed,
+        )
+        if name in _ROUND3_SEAM_MISSES:
+            check(
+                "FTF-1505-SEAM",
+                f"RED (fault reproduced): round-3 windows miss {name} at some offset",
+                fault_missed > 0,
+            )
+
+    jwt = _long_secret_cases()["jwt_shaped"][0]
+    one_line_json = (
+        '{"pad": "' + "z" * 113 + '", "auth": "' + jwt + '", "more": "' + "q" * 400 + '"}'
+    )
+    tmp = _build_temp_repo()
+    (tmp / "fixture.json").write_text(one_line_json + "\n", encoding="utf-8")
+    _run_git("add", "-A", cwd=tmp)
+    _run_git("commit", "-q", "-m", "one-line json", cwd=tmp)
+    source_findings, _ = scan_source(tmp, {})
+    history_findings, _ = scan_history(tmp, {})
     check(
-        "FTF-1505",
-        "exceeding the base64-candidate cap calls on_incomplete at least once",
-        bool(flagged),
+        "FTF-1505-SEAM",
+        "end to end: a JWT inside a one-line JSON file is found by the source lane",
+        any(f.rule == "jwt_shaped" for f in source_findings),
     )
-    under_cap = " ".join(f"{'A' * 24}{i:04d}" for i in range(10))
-    flagged_under: list[bool] = []
-    list(sr._matches(under_cap, on_incomplete=lambda: flagged_under.append(True)))
     check(
-        "FTF-1505",
-        "staying under the cap never calls on_incomplete",
-        not flagged_under,
+        "FTF-1505-SEAM",
+        "end to end: the same blob is found by the history lane",
+        any(f.rule == "jwt_shaped" for f in history_findings),
     )
+
+
+def test_jwt_linear_matcher_equals_the_regex() -> None:
+    """`_jwt_tokens` replaces `_JWT_CANDIDATE.finditer` (quadratic on a long
+    dotless `a-a-a-...` run). Differential over 60,000 random strings built
+    from the characters that matter (word chars, `-`, `.`, separators): the
+    same tokens, in the same order. Plus a scaling check on the regex's own
+    worst case."""
+    import random
+    import time
+
+    rng = random.Random(1505)
+    mismatches = 0
+    compared = 0
+    for _ in range(60_000):
+        parts = []
+        for _ in range(rng.randint(1, 8)):
+            parts.append("".join(rng.choice("aB9_--") for _ in range(rng.randint(0, 25))))
+            parts.append(rng.choice([".", " ", ".", "/", "", ".."]))
+        text = "".join(parts)
+        expected = [m.group(1) for m in sr._JWT_CANDIDATE.finditer(text)]
+        compared += len(expected)
+        if list(sr._jwt_tokens(text)) != expected:
+            mismatches += 1
+    check("FTF-1505-JWT", f"0 mismatches over 60,000 strings (got {mismatches})", mismatches == 0)
+    check("FTF-1505-JWT", f"the differential compared real matches ({compared})", compared > 1000)
+
+    timings = []
+    for k in (20_000, 80_000):
+        text = "x " + "a-" * k + "." + "b" * 12 + "." + "c" * 12
+        start = time.perf_counter()
+        scan_line(text)
+        timings.append(time.perf_counter() - start)
+    check(
+        "FTF-1505-JWT",
+        f"scan_line is linear on the JWT regex's worst case (x4 input: {timings})",
+        timings[1] < 2.0 and timings[1] < 12 * max(timings[0], 0.005),
+    )
+
+
+def test_url_userinfo_linear_matcher_equals_the_regex() -> None:
+    """`_url_userinfo_passwords` replaces `_URL_USERINFO.finditer` (quadratic
+    on `http://a:http://a:...` with no `@`). Differential over 60,000 random
+    strings built from the characters the pattern branches on: the same
+    passwords, in the same order."""
+    import random
+
+    rng = random.Random(15051)
+    atoms = [
+        "://",
+        ":",
+        "/",
+        "@",
+        "a",
+        "Z",
+        "9",
+        "+",
+        ".",
+        "-",
+        "_",
+        " ",
+        "\n",
+        "\t",
+        '"',
+        "'",
+        "http",
+        "s3",
+        "x+y",
+        "\u00e9",
+        "\x1c",
+        "\v",
+        "://a:b@",
+        "\nhttp",
+    ]
+    mismatches = 0
+    compared = 0
+    for _ in range(60_000):
+        text = "".join(rng.choice(atoms) for _ in range(rng.randint(0, 40)))
+        expected = [m.group(2) for m in sr._URL_USERINFO.finditer(text)]
+        compared += len(expected)
+        if list(sr._url_userinfo_passwords(text)) != expected:
+            mismatches += 1
+    check("FTF-1505-URL", f"0 mismatches over 60,000 strings (got {mismatches})", mismatches == 0)
+    check("FTF-1505-URL", f"the differential compared real matches ({compared})", compared > 1000)
+
+
+def test_whole_line_scanning_stays_linear_on_pathological_lines() -> None:
+    """No window means each rule sees the whole line; every rule must stay
+    linear on the shapes that make naive patterns backtrack."""
+    import time
+
+    shapes = {
+        "dash_words": lambda k: "a-" * k,
+        "long_base64_run": lambda k: "Q" * (2 * k),
+        "many_urls": lambda k: "https://host:8080/p " * (k // 10),
+        "many_assignments": lambda k: 'api_key = "' * (k // 6),
+        "hex_then_word": lambda k: "ab" * k + "g",
+        "userinfo_without_at": lambda k: "http://a:" * (k // 9),
+        "userinfo_password_runs": lambda k: "a://b:c/d" * (k // 9),
+    }
+    for name, build in shapes.items():
+        small, big = build(25_000), build(100_000)
+        t0 = time.perf_counter()
+        scan_line(small)
+        t1 = time.perf_counter()
+        scan_line(big)
+        t2 = time.perf_counter()
+        small_t, big_t = t1 - t0, t2 - t1
+        check(
+            "FTF-1505-LINEAR",
+            f"{name}: 4x input stays roughly linear ({small_t:.3f}s -> {big_t:.3f}s)",
+            big_t < 5.0 and big_t < 12 * max(small_t, 0.01),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -553,21 +777,20 @@ def test_source_scan_has_no_path_exclusion() -> None:
     )
     check("FTF-1505", "scanned_paths captured every tracked file", scanned == set(tracked))
 
-    # F4 fault, reproduced directly: a path exclusion added to file inclusion
-    # would hide a real production directory's own secrets.
-    def _fault_excludes_docs_and_vendor(root: Path) -> list[str]:
-        return [
-            f
-            for f in iter_tracked_files(root)
-            if not (f.startswith("docs/") or f.startswith("vendor/"))
-        ]
-
-    with_fault = _fault_excludes_docs_and_vendor(tmp)
-    check(
-        "FTF-1505",
-        "sanity: the fault helper itself actually excludes tests/ files -- no, it should not",
-        "tests/fixtures/leaked.py" in with_fault,
-    )
+    # F4: no directory is excluded -- docs/ and vendor/ included.
+    for rel in ("docs/notes.md", "vendor/lib/x.py"):
+        path = tmp / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f'k = "{generate_seed_for_rule("github_token")}"\n', encoding="utf-8")
+    _run_git("add", "-A", cwd=tmp)
+    _run_git("commit", "-q", "-m", "docs and vendor", cwd=tmp)
+    findings_dv, _ = scan_source(tmp, {})
+    for rel in ("docs/notes.md", "vendor/lib/x.py"):
+        check(
+            "FTF-1505-F4",
+            f"a secret under {rel.split('/')[0]}/ is found by scan_source",
+            any(f.rule == "github_token" and f.location.startswith(rel) for f in findings_dv),
+        )
 
 
 def test_non_ascii_filename_is_scanned_not_silently_skipped() -> None:
@@ -712,11 +935,6 @@ def test_archive_member_bomb_safety_caps() -> None:
     data = buf.getvalue()
     members = list(ss._iter_archive_members(data, "bundle.zip"))
     check("FTF-1505", "zip members are extracted and bounded", len(members) == 3)
-    check(
-        "FTF-1505",
-        "none of these small members are flagged truncated",
-        not any(truncated for _name, _content, truncated in members),
-    )
 
     with _monkeypatch(ss, "_MAX_ARCHIVE_MEMBERS", 1):
         raised = False
@@ -731,214 +949,174 @@ def test_archive_member_bomb_safety_caps() -> None:
         )
 
 
-def _zip_with_corrupt_deflate_member(good_names: tuple[str, str], bad_name: str) -> bytes:
-    """A real 3-member ZIP_DEFLATED archive with the middle member's own
-    compressed bytes corrupted at the deflate-stream level (BFINAL=1,
-    BTYPE=0b11 -- deflate's own reserved/invalid block type), not merely a
-    CRC mismatch (round 3's own `test_corrupt_archive_member_does_not_
-    abort_later_members` already covers CRC via ZIP_STORED). Reading this
-    member raises `zlib.error`, not `zipfile.BadZipFile`."""
-    import struct
+def _scan_incomplete_labels(name: str, data: bytes, archive_name: str | None = None) -> list[str]:
+    return [
+        location
+        for rule, _value, location in ss._scan_content_and_members(
+            name, data, include_canary=False, content_truncated=False, archive_name=archive_name
+        )
+        if rule == "scan_incomplete"
+    ]
 
+
+def test_corrupt_deflated_member_is_blocking_and_later_members_still_scanned() -> None:
+    """F-ARCHIVE-ZLIB (round-2 P9, unchanged in round 3): a corrupt DEFLATED
+    member raises `zlib.error`, which escaped the per-member except tuple and
+    silently dropped every later member. Now any per-member failure yields a
+    blocking scan_incomplete and the later member's secret is still found."""
+    import secrets as _secrets
+
+    seed = generate_seed_for_rule("huggingface_token")
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(good_names[0], "A" * 200)
-        zf.writestr(bad_name, "B" * 200)
-        zf.writestr(good_names[1], "C" * 200)
+        zf.writestr("a.txt", "".join(_secrets.choice("abcdefgh") for _ in range(4000)))
+        zf.writestr("b.txt", seed + "\n")
     data = bytearray(buf.getvalue())
-    with zipfile.ZipFile(io.BytesIO(bytes(data))) as zf:
-        info = zf.getinfo(bad_name)
-        header_offset = info.header_offset
-    fname_len, extra_len = struct.unpack(
-        "<HH", bytes(data[header_offset + 26 : header_offset + 30])
+    idx = data.find(b"a.txt") + len("a.txt") + 10
+    data[idx] ^= 0xFF
+    results = ss._scan_content_and_members(
+        "x.zip", bytes(data), include_canary=False, content_truncated=False
     )
-    data_start = header_offset + 30 + fname_len + extra_len
-    data[data_start] = 0xFF
-    return bytes(data)
-
-
-def test_f_archive_zlib_corrupt_deflate_member_does_not_abort_later_members() -> None:
-    """F-ARCHIVE-ZLIB (round 4, point 3): a corrupt DEFLATED zip member
-    raises `zlib.error` from `handle.read()` mid-stream -- round 3's own
-    per-member except tuple (`BadZipFile, OSError, RuntimeError, EOFError`)
-    did not include it, so it escaped the member loop entirely, landed on
-    the function's own outer bare `except Exception: return`, and
-    silently abandoned every member after the corrupt one. Reproduced
-    directly: the real, fixed extractor still yields all 3 members (the
-    corrupt one marked unreadable); the OLD per-member except tuple
-    (missing `zlib.error`) abandons the member after it, same as round 2's
-    already-fixed CRC-mismatch class."""
-    data = _zip_with_corrupt_deflate_member(("good1.txt", "good2.txt"), "bad.txt")
-
-    members = list(ss._iter_archive_members(data, "bundle.zip"))
-    names = [name for name, _content, _truncated in members]
+    rules = [rule for rule, _value, _location in results]
     check(
-        "FTF-1505",
-        "all 3 members are enumerated despite the corrupt deflate stream",
-        names == ["good1.txt", "bad.txt", "good2.txt"],
-    )
-    content_by_name = {name: content for name, content, _truncated in members}
-    check(
-        "FTF-1505",
-        "GREEN (fixed): the corrupt member itself yields None (fail closed)",
-        content_by_name["bad.txt"] is None,
+        "FTF-1505-ARCHIVE",
+        "a corrupt deflated member is a blocking scan_incomplete (unreadable member)",
+        any(
+            "x.zip!a.txt (unreadable member)" in loc
+            for loc in _scan_incomplete_labels("x.zip", bytes(data))
+        ),
     )
     check(
-        "FTF-1505",
-        "GREEN (fixed): the member AFTER the corrupt deflate stream is still read, not abandoned",
-        content_by_name["good2.txt"] is not None,
+        "FTF-1505-ARCHIVE",
+        "the member after the corrupt deflated one is still scanned (its secret is found)",
+        "huggingface_token" in rules,
     )
 
-    def _fault_old_except_tuple_without_zlib_error(
-        data: bytes, name: str
-    ) -> list[tuple[str, bytes | None]]:
-        out: list[tuple[str, bytes | None]] = []
+    def _fault_round3_except_tuple(blob: bytes) -> list[str]:
+        out = []
         try:
-            with zipfile.ZipFile(io.BytesIO(data)) as zf:
-                infos = [i for i in zf.infolist() if not i.is_dir()]
-                for info in infos:
+            with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+                for info in zf.infolist():
                     try:
                         with zf.open(info) as handle:
-                            out.append((info.filename, handle.read(sr.MAX_SCAN_BYTES)))
+                            out.append(handle.read().decode("latin-1"))
                     except (zipfile.BadZipFile, OSError, RuntimeError, EOFError):
-                        out.append((info.filename, None))
+                        out.append("")
         except Exception:
-            pass
+            return out
         return out
 
-    with_fault = _fault_old_except_tuple_without_zlib_error(data, "bundle.zip")
-    fault_names = [n for n, _c in with_fault]
     check(
-        "FTF-1505",
-        "RED (fault reproduced): the old except tuple (no zlib.error) lets the raw "
-        "zlib.error escape the member loop and abandon every member after the corrupt one",
-        fault_names == ["good1.txt"] or "good2.txt" not in fault_names,
+        "FTF-1505-ARCHIVE",
+        "RED (fault reproduced): the round-3 except tuple loses every member after the zlib error",
+        not any(seed in text for text in _fault_round3_except_tuple(bytes(data))),
     )
 
 
-def test_f_archive_corrupt_open_is_a_blocking_scan_incomplete_finding() -> None:
-    """F-ARCHIVE-CORRUPT (round 4, point 4a): a truncated .zip/.tar.gz/.gz
-    fails at the OPEN call itself (`zipfile.BadZipFile`, `tarfile.
-    ReadError`, `EOFError`) -- round 3's outer bare `except Exception:
-    return` swallowed this with no signal at all, silently treating an
-    unreadable archive as if it had zero members. Fixed: an open failure
-    yields one `(_ARCHIVE_SENTINEL_NAME, None, False)` row, which
-    `_scan_content_and_members` turns into a blocking `scan_incomplete`
-    finding."""
-    good_zip = io.BytesIO()
-    with zipfile.ZipFile(good_zip, "w") as zf:
-        zf.writestr("a.txt", "hello\n")
-    truncated_zip = good_zip.getvalue()[:10]  # cuts off mid local-file-header
+def test_truncated_archives_are_blocking_not_silent() -> None:
+    """F-ARCHIVE-CORRUPT: a truncated .zip, .tar.gz and .gz used to hit an
+    outer `except Exception: return` (and EOFError escaped the .gz path) and
+    passed clean. Each is now a blocking scan_incomplete."""
+    import gzip
+    import tarfile
 
-    members = list(ss._iter_archive_members(truncated_zip, "broken.zip"))
-    check(
-        "FTF-1505",
-        "GREEN (fixed): a truncated zip that fails to open yields the archive-sentinel "
-        "unreadable row, not silence",
-        members == [(ss._ARCHIVE_SENTINEL_NAME, None, False)],
-    )
-
-    results, incomplete = ss._scan_content_and_members(
-        "broken.zip", truncated_zip, include_canary=False, content_truncated=False
-    )
-    check(
-        "FTF-1505",
-        "the truncated archive is a blocking scan_incomplete finding via the real "
-        "_scan_content_and_members caller",
-        incomplete and any(rule == "scan_incomplete" for rule, _v, _loc in results),
-    )
-
-    import tarfile as _tarfile
-
-    good_tar = io.BytesIO()
-    with _tarfile.open(fileobj=good_tar, mode="w:gz") as tf:
-        info = _tarfile.TarInfo("a.txt")
-        payload = b"hello\n"
+    seed = generate_seed_for_rule("huggingface_token")
+    zbuf = io.BytesIO()
+    with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("m.txt", seed + "\n")
+    tbuf = io.BytesIO()
+    payload = ("x" * 3000 + "\n" + seed + "\n").encode()
+    with tarfile.open(fileobj=tbuf, mode="w:gz") as tf:
+        info = tarfile.TarInfo("c.ini")
         info.size = len(payload)
         tf.addfile(info, io.BytesIO(payload))
-    truncated_tar = good_tar.getvalue()[:10]
-    tar_members = list(ss._iter_archive_members(truncated_tar, "broken.tar.gz"))
+    gz = gzip.compress(("x" * 3000 + seed).encode())
+    for name, blob in (
+        ("t.zip", zbuf.getvalue()[:-30]),
+        ("t.tar.gz", tbuf.getvalue()[: len(tbuf.getvalue()) // 2]),
+        ("t.txt.gz", gz[: len(gz) // 2]),
+    ):
+        labels = _scan_incomplete_labels(name, blob)
+        check(
+            "FTF-1505-ARCHIVE",
+            f"a truncated {name} yields a blocking scan_incomplete (got {labels})",
+            bool(labels),
+        )
     check(
-        "FTF-1505",
-        "GREEN (fixed): a truncated tar.gz that fails to open also yields the "
-        "archive-sentinel unreadable row",
-        tar_members == [(ss._ARCHIVE_SENTINEL_NAME, None, False)],
-    )
-
-    def _fault_old_bare_except_return(data: bytes, name: str) -> list[object]:
-        try:
-            with zipfile.ZipFile(io.BytesIO(data)):
-                pass
-        except Exception:
-            return []
-        return [object()]
-
-    check(
-        "FTF-1505",
-        "RED (fault reproduced): the old bare except-and-return shape yields nothing at "
-        "all for a truncated archive -- no scan_incomplete signal is even possible",
-        _fault_old_bare_except_return(truncated_zip, "broken.zip") == [],
+        "FTF-1505-ARCHIVE",
+        "an intact archive yields no scan_incomplete",
+        not _scan_incomplete_labels("ok.zip", zbuf.getvalue()),
     )
 
 
-def test_f_archive_oversized_member_is_a_blocking_scan_incomplete_finding() -> None:
-    """F-ARCHIVE-OVERSIZE (round 4, point 4b): round 2/3 read each archive
-    member with `handle.read(MAX_SCAN_BYTES)`, which silently truncates a
-    member larger than the cap with NO signal -- unlike the top-level
-    per-file/blob bound, which already flags `content_truncated`. Fixed:
-    `_iter_archive_members` itself detects the overrun (reads one byte
-    past the cap) and reports it; `_scan_content_and_members` raises a
-    blocking `scan_incomplete` for it, same as the top-level bound."""
-    with _monkeypatch(sr, "MAX_SCAN_BYTES", 100):
-        with _monkeypatch(ss, "MAX_SCAN_BYTES", 100):
-            buf = io.BytesIO()
-            with zipfile.ZipFile(buf, "w") as zf:
-                zf.writestr("big.txt", "x" * 500)
-                zf.writestr("small.txt", "y" * 10)
-            data = buf.getvalue()
+def test_oversized_archive_member_is_blocking_and_history_names_resolve() -> None:
+    """F-ARCHIVE-OVERSIZE: a member longer than MAX_SCAN_BYTES was read to the
+    bound and the rest dropped silently. Now it is a blocking scan_incomplete,
+    for zip, tar.gz and .gz alike -- also for a history blob, whose location
+    label (`path@sha`) no longer hides the archive's extension."""
+    import gzip
+    import tarfile
 
-            members = list(ss._iter_archive_members(data, "bundle.zip"))
-            truncated_by_name = {name: truncated for name, _c, truncated in members}
+    with _monkeypatch(ss, "MAX_SCAN_BYTES", 100):
+        zbuf = io.BytesIO()
+        with zipfile.ZipFile(zbuf, "w") as zf:
+            zf.writestr("big.txt", "x" * 500)
+        tbuf = io.BytesIO()
+        with tarfile.open(fileobj=tbuf, mode="w:gz") as tf:
+            info = tarfile.TarInfo("big.txt")
+            info.size = 500
+            tf.addfile(info, io.BytesIO(b"y" * 500))
+        cases = (
+            ("a.zip", zbuf.getvalue(), None, "a.zip!big.txt (member exceeds scan bound)"),
+            ("a.tar.gz", tbuf.getvalue(), None, "a.tar.gz!big.txt (member exceeds scan bound)"),
+            (
+                "a.txt.gz",
+                gzip.compress(b"z" * 500),
+                None,
+                "a.txt.gz!a.txt (member exceeds scan bound)",
+            ),
+            (
+                "a.tar.gz@0123456789ab",
+                tbuf.getvalue(),
+                "a.tar.gz",
+                "a.tar.gz@0123456789ab!big.txt (member exceeds scan bound)",
+            ),
+        )
+        for name, blob, archive_name, expected in cases:
+            labels = _scan_incomplete_labels(name, blob, archive_name)
             check(
-                "FTF-1505",
-                "GREEN (fixed): the oversized member is flagged truncated",
-                truncated_by_name["big.txt"],
-            )
-            check(
-                "FTF-1505",
-                "the under-cap member is not flagged truncated",
-                not truncated_by_name["small.txt"],
+                "FTF-1505-ARCHIVE",
+                f"oversized member in {name} is a blocking scan_incomplete (got {labels})",
+                expected in labels,
             )
 
-            results, incomplete = ss._scan_content_and_members(
-                "bundle.zip", data, include_canary=False, content_truncated=False
-            )
-            check(
-                "FTF-1505",
-                "the oversized member yields a blocking scan_incomplete finding via the "
-                "real _scan_content_and_members caller",
-                incomplete and any(rule == "scan_incomplete" for rule, _v, _loc in results),
-            )
 
-    def _fault_old_read_no_overrun_check(data: bytes, cap: int) -> bool:
-        """RED: round 2/3's own shape -- `handle.read(cap)` alone can never
-        distinguish 'member was exactly `cap` bytes' from 'member was
-        truncated to `cap` bytes', so no caller could ever raise
-        scan_incomplete for it."""
-        with zipfile.ZipFile(io.BytesIO(data)) as zf:
-            info = zf.getinfo("big.txt")
-            with zf.open(info) as handle:
-                content = handle.read(cap)
-        return len(content) == cap  # indistinguishable from an exact-cap member
-
-    buf2 = io.BytesIO()
-    with zipfile.ZipFile(buf2, "w") as zf:
-        zf.writestr("big.txt", "x" * 500)
+def test_history_blob_over_the_bound_is_blocking() -> None:
+    """F6h: the history lane's own truncation flag must reach the result -- a
+    history-only blob larger than MAX_SCAN_BYTES is a blocking scan_incomplete."""
+    tmp = _build_temp_repo()
+    (tmp / "big.txt").write_text("x" * 500, encoding="utf-8")
+    _run_git("add", "-A", cwd=tmp)
+    _run_git("commit", "-q", "-m", "big", cwd=tmp)
+    (tmp / "big.txt").unlink()
+    (tmp / "small.txt").write_text("ok\n", encoding="utf-8")
+    _run_git("add", "-A", cwd=tmp)
+    _run_git("commit", "-q", "-m", "drop big", cwd=tmp)
+    with _monkeypatch(ss, "MAX_SCAN_BYTES", 100):
+        findings, _ = scan_history(tmp, {})
     check(
-        "FTF-1505",
-        "RED (fault reproduced): the old read(cap)-only shape cannot tell truncation "
-        "from an exact-cap member -- no scan_incomplete signal was ever possible",
-        _fault_old_read_no_overrun_check(buf2.getvalue(), 100),
+        "FTF-1505-F6h",
+        "a history-only blob over the scan bound is a blocking scan_incomplete",
+        any(
+            f.rule == "scan_incomplete" and f.blocking and "big.txt@" in f.location
+            for f in findings
+        ),
+    )
+    findings_ok, _ = scan_history(tmp, {})
+    check(
+        "FTF-1505-F6h",
+        "the same blob under the real bound is not flagged",
+        not any(f.rule == "scan_incomplete" for f in findings_ok),
     )
 
 
@@ -1192,7 +1370,7 @@ def test_assert_not_shallow_fails_closed_on_a_real_shallow_clone() -> None:
     _run_git("add", "-A", cwd=tmp)
     _run_git("commit", "-q", "-m", "second", cwd=tmp)
 
-    shallow = Path(tempfile.mkdtemp(prefix="ftf1505_shallow_"))
+    shallow = _mkdtemp("ftf1505_shallow_")
     subprocess.run(
         ["git", "clone", "-q", "--depth", "1", f"file://{tmp}", str(shallow)],
         check=True,
@@ -1405,7 +1583,7 @@ def test_scan_history_pr_scope_excludes_other_refs_all_refs_scope_attributes_the
     check(
         "FTF-1505",
         "the all-refs finding's location names the branch that actually carries it",
-        "other-pr-branch" in aws_hits[0].location,
+        bool(aws_hits) and "other-pr-branch" in aws_hits[0].location,
     )
 
     raised = False
@@ -1418,155 +1596,6 @@ def test_scan_history_pr_scope_excludes_other_refs_all_refs_scope_attributes_the
         "an unknown scope is refused outright, not silently treated as a default",
         raised,
     )
-
-
-def test_f6h_history_oversize_blob_is_a_blocking_scan_incomplete_finding() -> None:
-    """F6h (round 4, Control-plane return 2026-10-16, point 1): the
-    history lane's own `truncated` flag (`_iter_history_blob_contents`'s
-    `size > MAX_SCAN_BYTES` check, read from `git cat-file --batch`'s own
-    header -- the TRUE blob size, before any truncation) must actually
-    reach `_scan_content_and_members` as `content_truncated`, or an
-    oversized blob committed to history is silently scanned only up to
-    the cap with no signal at all (the top-level per-file bound already
-    gets this right; history historically has not)."""
-    tmp = _build_temp_repo()
-    target = tmp / "apps" / "api" / "big.bin"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with _monkeypatch(sr, "MAX_SCAN_BYTES", 100):
-        with _monkeypatch(ss, "MAX_SCAN_BYTES", 100):
-            target.write_bytes(b"x" * 500)
-            _run_git("add", "-A", cwd=tmp)
-            _run_git("commit", "-q", "-m", "oversized blob", cwd=tmp)
-
-            findings, _results = scan_history(tmp, {})
-            check(
-                "FTF-1505",
-                "GREEN (fixed): an oversized history blob yields a blocking "
-                "scan_incomplete finding",
-                any(f.rule == "scan_incomplete" and f.blocking for f in findings),
-            )
-
-            _original_iter_history_blob_contents = ss._iter_history_blob_contents
-
-            def _fault_iter_without_truncation_flag(
-                root: Path, blob_ids: list[str]
-            ) -> Iterator[tuple[str, bytes, bool]]:
-                """F6h fault: the old shape -- `truncated` hardcoded False
-                regardless of the blob's own real size."""
-                for sha, data, _real_truncated in _original_iter_history_blob_contents(
-                    root, blob_ids
-                ):
-                    yield sha, data, False
-
-            with _monkeypatch(
-                ss, "_iter_history_blob_contents", _fault_iter_without_truncation_flag
-            ):
-                fault_findings, _fault_results = scan_history(tmp, {})
-                check(
-                    "FTF-1505",
-                    "RED (fault reproduced): with the oversize flag hardcoded off, the same "
-                    "oversized blob yields no scan_incomplete signal at all",
-                    not any(f.rule == "scan_incomplete" for f in fault_findings),
-                )
-
-
-def test_f21_artifact_canary_is_detected() -> None:
-    """F21 (round 4, Control-plane return 2026-10-16, point 1): the
-    artifact lane's own `include_canary=True` (an FTF-0905 marker placed
-    in a reviewed artifact, such as a pasted log excerpt in a submission,
-    must be caught) is a regression guard here -- reproduced directly
-    against a real artifact root with a canary planted in it, with a
-    local fault standing in for the one-word regression (`include_
-    canary=False`) that would silently stop catching it."""
-    tmp = _build_temp_repo()
-    report_dir = tmp / "reports"
-    report_dir.mkdir(parents=True, exist_ok=True)
-    marker = generate_canary()
-    (report_dir / "leak.json").write_text(f'{{"token": "{marker.value}"}}', encoding="utf-8")
-
-    findings, _results = scan_artifact_roots(tmp, {}, roots=("reports",))
-    check(
-        "FTF-1505",
-        "GREEN: a canary placed in a real artifact file is caught by the artifact lane",
-        any(f.rule == "canary_leaked" and f.blocking for f in findings),
-    )
-
-    def _fault_artifact_scan_canary_off(root: Path, roots: tuple[str, ...]) -> list[SecretFinding]:
-        """F21 fault: `include_canary=False` on the artifact lane -- the
-        one-word regression that would stop catching a leaked canary."""
-        out: list[SecretFinding] = []
-        for base in roots:
-            base_path = root / base
-            if not base_path.is_dir():
-                continue
-            for file_path in sorted(p for p in base_path.rglob("*") if p.is_file()):
-                data = file_path.read_bytes()
-                raw_results, _incomplete = ss._scan_content_and_members(
-                    file_path.relative_to(root).as_posix(),
-                    data,
-                    include_canary=False,  # the fault
-                    content_truncated=False,
-                )
-                for rule, _value, location in raw_results:
-                    out.append(
-                        SecretFinding(
-                            rule=rule,
-                            target="artifact",
-                            location=location,
-                            value_sha256="",
-                            blocking=True,
-                        )
-                    )
-        return out
-
-    fault_findings = _fault_artifact_scan_canary_off(tmp, ("reports",))
-    check(
-        "FTF-1505",
-        "RED (fault reproduced): with include_canary=False, the same planted canary is never found",
-        not any(f.rule == "canary_leaked" for f in fault_findings),
-    )
-
-
-def test_f23_post_redaction_scan_catches_a_real_redaction_regression() -> None:
-    """F23 (round 4, Control-plane return 2026-10-16, point 1): the
-    log-samples lane's own post-redaction `scan_line(sink_output)` check
-    is proven to matter, not merely present, by actually defeating
-    redaction (`install_redaction` replaced with a no-op) and showing the
-    real post-redaction check still catches the resulting leak; the fault
-    (the check itself disabled, `scan_line` replaced with a no-op) then
-    shows the SAME real leak go uncaught."""
-    seed = generate_seed_for_rule("aws_access_key_id")
-
-    def _no_redaction(_logger: logging.Logger) -> None:
-        return None
-
-    with _monkeypatch(ss, "install_redaction", _no_redaction):
-        findings, results = scan_log_samples([("aws_access_key_id", seed)])
-        check(
-            "FTF-1505",
-            "GREEN: with redaction genuinely defeated, the real post-redaction scan "
-            "catches the resulting leak",
-            any(f.rule == "aws_access_key_id" and f.blocking for f in findings)
-            and any(
-                r.check == "post_redaction_clean[aws_access_key_id]" and not r.passed
-                for r in results
-            ),
-        )
-
-        def _fault_scan_line_off(_line: str, *, include_canary: bool = False) -> list[object]:
-            return []
-
-        with _monkeypatch(ss, "scan_line", _fault_scan_line_off):
-            fault_findings, fault_results = scan_log_samples([("aws_access_key_id", seed)])
-            check(
-                "FTF-1505",
-                "RED (fault reproduced): with the post-redaction check itself disabled, "
-                "the exact same real leak (redaction still defeated) goes uncaught",
-                not any(f.rule == "aws_access_key_id" for f in fault_findings)
-                and all(
-                    r.passed for r in fault_results if r.check.startswith("post_redaction_clean")
-                ),
-            )
 
 
 # ---------------------------------------------------------------------------
@@ -1595,6 +1624,30 @@ def test_baseline_rejects_a_value_path_or_glob_key() -> None:
             check(
                 "FTF-1505",
                 f"a baseline entry carrying a {bad_key!r} key is refused, not silently accepted",
+                raised,
+            )
+
+
+def test_baseline_schema_is_strict() -> None:
+    """Advisory from round 3: only fingerprint/reason/reviewed_by/reviewed_on
+    are accepted on an entry, and only `entries` at the top level."""
+    for body in (
+        f'entries:\n  - fingerprint: "{"a" * 64}"\n    reason: x\n    reviewed_by: y\n'
+        "    reviewed_on: z\n    note: extra\n",
+        f'entries:\n  - fingerprint: "{"a" * 64}"\n    reason: x\n    reviewed_by: y\n'
+        "    reviewed_on: z\nwaive_all: true\n",
+    ):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "baseline.yaml"
+            path.write_text(body, encoding="utf-8")
+            raised = False
+            try:
+                load_baseline(path)
+            except SecretScanError:
+                raised = True
+            check(
+                "FTF-1505-BASELINE",
+                f"a baseline with an unknown key is refused: {body[-20:]!r}",
                 raised,
             )
 
@@ -1816,77 +1869,6 @@ def test_log_sample_real_pipeline_detects_and_then_redacts_every_family() -> Non
     )
 
 
-def test_f_seeds_per_lane_every_family_recalled_in_every_scan_lane() -> None:
-    """F-SEEDS-PER-LANE (round 4, Control-plane return 2026-10-16, point
-    6): a run-time per-family seed must be recalled by name in EVERY scan
-    lane, not just by `scan_line` itself
-    (`test_every_rule_fires_on_its_own_generated_seed`, unit-level) and
-    not just the log-samples lane (`test_log_sample_real_pipeline_
-    detects_and_then_redacts_every_family`, immediately above -- the
-    'log line' lane the return names; already GREEN, N14, not repeated
-    here). Covers the five remaining named lanes: a tracked source file,
-    a base64-encoded value (both via the real `scan_source`), a zip
-    archive member (via `scan_source`'s own archive extraction), a
-    history-only blob (committed, then removed from the tree -- via the
-    real `scan_history`), and an artifact-root file (via the real
-    `scan_artifact_roots`). A miss anywhere is reported by rule AND lane,
-    not aggregated away."""
-    tmp = _build_temp_repo()
-    base = tmp / "apps" / "api"
-    base.mkdir(parents=True, exist_ok=True)
-    (tmp / "reports").mkdir(parents=True, exist_ok=True)
-
-    seeds = {rule: generate_seed_for_rule(rule) for rule in RULES}
-
-    for rule, seed in seeds.items():
-        (base / f"source_{rule}.txt").write_text(f"source_value={seed}\n", encoding="utf-8")
-        encoded = base64.b64encode(seed.encode("utf-8")).decode("ascii")
-        (base / f"b64_{rule}.txt").write_text(f"blob={encoded}\n", encoding="utf-8")
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w") as zf:
-            zf.writestr("inner.txt", f"value={seed}\n")
-        (base / f"zip_{rule}.zip").write_bytes(buf.getvalue())
-        (tmp / "reports" / f"artifact_{rule}.txt").write_text(
-            f"artifact_value={seed}\n", encoding="utf-8"
-        )
-    _run_git("add", "-A", cwd=tmp)
-    _run_git("commit", "-q", "-m", "seed every lane", cwd=tmp)
-
-    for rule in seeds:
-        (base / f"source_{rule}.txt").unlink()
-    _run_git("add", "-A", cwd=tmp)
-    _run_git("commit", "-q", "-m", "remove the plain source files (history-only)", cwd=tmp)
-
-    source_findings, _src_results = scan_source(tmp, {})
-    history_findings, _hist_results = scan_history(tmp, {})
-    artifact_findings, _art_results = scan_artifact_roots(tmp, {}, roots=("reports",))
-
-    for rule in seeds:
-        check(
-            "FTF-1505",
-            f"lane=source, carrier=zip-member: {rule} recalled from a zip archive member "
-            "still tracked at HEAD",
-            any(f.rule == rule and f"zip_{rule}.zip" in f.location for f in source_findings),
-        )
-        check(
-            "FTF-1505",
-            f"lane=source, carrier=base64: {rule} recalled from a base64-encoded value "
-            "still tracked at HEAD",
-            any(f.rule == rule and f"b64_{rule}.txt" in f.location for f in source_findings),
-        )
-        check(
-            "FTF-1505",
-            f"lane=history: {rule} recalled from a blob removed from the tree in a "
-            "later commit (HEAD-reachable history only)",
-            any(f.rule == rule and f"source_{rule}.txt" in f.location for f in history_findings),
-        )
-        check(
-            "FTF-1505",
-            f"lane=artifact: {rule} recalled from a real artifact-root file",
-            any(f.rule == rule and f"artifact_{rule}.txt" in f.location for f in artifact_findings),
-        )
-
-
 def test_structured_event_cross_check_detects_a_misused_canary() -> None:
     findings, results = scan_structured_event_cross_check()
     check(
@@ -1897,398 +1879,328 @@ def test_structured_event_cross_check_detects_a_misused_canary() -> None:
     )
 
 
-def _counting_wrapper(fn: Callable[..., object]) -> tuple[Callable[..., object], dict[str, int]]:
-    calls = {"n": 0}
+def test_log_sample_recall_and_control_sink_can_fail() -> None:
+    """N14 / F23: a seed that does NOT fire its own rule must fail both the
+    pre-redaction recall check and the unredacted control-sink check -- so
+    neither check can pass vacuously."""
+    _findings, results = scan_log_samples([("aws_access_key_id", "not-a-key-shape")])
+    by_check = {r.check: r.passed for r in results}
+    check(
+        "FTF-1505-LOG",
+        "pre-redaction recall fails for a non-firing seed",
+        by_check.get("pre_redaction_detects_seeded_shape[aws_access_key_id]") is False,
+    )
+    check(
+        "FTF-1505-LOG",
+        "the control-sink positive control fails for a non-firing seed",
+        by_check.get("control_sink_detects_seed[aws_access_key_id]") is False,
+    )
+    _f2, real_results = scan_log_samples()
+    control = [r for r in real_results if r.check.startswith("control_sink_detects_seed")]
+    check(
+        "FTF-1505-LOG",
+        "with real seeds the unredacted control sink is detected for every family",
+        len(control) == len(RULES) and all(r.passed for r in control),
+    )
 
-    def wrapper(*args: object, **kwargs: object) -> object:
-        calls["n"] += 1
-        return fn(*args, **kwargs)
 
-    return wrapper, calls
+def test_live_lane_positive_controls_and_error_paths() -> None:
+    """F14/F15/F22 and F-LIVE-POSITIVE-CONTROL, run for real: the live lane
+    must see uvicorn's stderr startup line, one access-log line per probe, and
+    detect the path-placed positive-control canary through the same scan that
+    finds nothing else; the OIDC callback's unauthenticated 422 and 400 paths
+    are probed and answer as expected."""
+    findings, results = ss.scan_live_app_log_samples(ROOT)
+    by_check = {r.check: r for r in results}
+    check("FTF-1505-LIVE", "the real app booted", by_check["live_app_boot"].passed)
+    for name in (
+        "live_app_stderr_captured",
+        "live_app_scan_detects_positive_control",
+        "live_app_output_clean",
+        "live_app_status_callback_validation_422",
+        "live_app_status_callback_rejected_400",
+        "live_app_access_line[callback_validation_422]",
+        "live_app_access_line[positive_control]",
+    ):
+        check(
+            "FTF-1505-LIVE",
+            f"{name} is present and passed",
+            name in by_check and by_check[name].passed,
+        )
+    access = [r for r in results if r.check.startswith("live_app_access_line[")]
+    check(
+        "FTF-1505-LIVE",
+        f"every probe produced its own access-log line ({len(access)} probes)",
+        len(access) > len(RULES) and all(r.passed for r in access),
+    )
+    check("FTF-1505-LIVE", "no live-output leak", not findings)
 
 
-def test_build_scan_lanes_and_guards_are_real_callables_not_names() -> None:
-    """F19/F20 (round 4, replaces round 3's own `inspect.getsource`
-    substring grep, Control-plane return 2026-10-16, point 1): each entry
-    `_build_scan_lanes`/`_build_pre_scan_guards` returns is called
-    directly here, with the real underlying function wrapped by a call
-    counter -- proving each closure actually reaches its own real
-    function (not a copy-pasted call to the wrong one), with no full real
-    scan needed."""
-    lane_targets = {
-        "source": "scan_source",
-        "artifact": "scan_artifact_roots",
-        "history": "scan_history",
-        "log_samples": "scan_log_samples",
-        "structured_event": "scan_structured_event_cross_check",
-        "live_app": "scan_live_app_log_samples",
-    }
-    guard_targets = {
-        "dirs_covered": "assert_dirs_covered",
-        "artifact_uploads_covered": "assert_artifact_uploads_covered",
-    }
+def test_seeded_recall_covers_every_lane_and_can_fail() -> None:
+    results = ss.scan_seeded_recall()
+    lanes = {r.check.split("]")[0].split("[")[1] for r in results}
+    check(
+        "FTF-1505-RECALL",
+        "seeded recall covers source, base64, zip_member, history and artifact lanes",
+        lanes == {"source", "base64", "zip_member", "history", "artifact"},
+    )
+    check(
+        "FTF-1505-RECALL",
+        "one result per lane per rule family, all found",
+        len(results) == 5 * len(RULES) and all(r.passed for r in results),
+    )
+    with _monkeypatch(ss, "_iter_archive_members", lambda data, name: iter(())):
+        blind = ss.scan_seeded_recall()
+    check(
+        "FTF-1505-RECALL",
+        "RED (fault reproduced): a scanner that stops opening archives fails zip_member recall",
+        any(not r.passed and "[zip_member]" in r.check for r in blind),
+    )
+
+
+def test_live_lane_helpers_cannot_pass_vacuously() -> None:
+    """The live lane's own decisions, pinned on inputs the real app never
+    produces: a probe whose access line is missing (only a longer tag that
+    contains its name is present) is NOT seen, and a canary other than the
+    positive control's exact value IS a leak."""
+    lines = ['127.0.0.1:1 - "GET /auth/callback?code=[REDACTED]&probe=error_family_x HTTP/1.1" 400']
+    check(
+        "FTF-1505-LIVE", "an exact probe tag is seen", ss._access_line_seen("error_family_x", lines)
+    )
+    check(
+        "FTF-1505-LIVE",
+        "a probe whose own line is missing is not satisfied by a longer tag containing it",
+        not ss._access_line_seen("family_x", lines),
+    )
+    control = generate_seed_for_rule("canary_leaked")
+    other = generate_seed_for_rule("canary_leaked")
+    leaks = ss._live_output_leaks([("canary_leaked", control), ("canary_leaked", other)], control)
+    check(
+        "FTF-1505-LIVE",
+        "only the positive control's exact value is exempt; any other canary is a leak",
+        leaks == [("canary_leaked", other)],
+    )
+
+
+def test_history_only_tar_gz_member_is_scanned() -> None:
+    """A tar.gz is recognised by its name only (no magic check), so the
+    history lane must pass the blob's real path, not its `path@sha` label."""
+    import tarfile
 
     tmp = _build_temp_repo()
-    for rel in ("apps/api/x.py",):
-        path = tmp / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("x = 1\n", encoding="utf-8")
+    seed = generate_seed_for_rule("github_token")
+    payload = f"token = {seed}\n".encode()
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        info = tarfile.TarInfo("conf/app.ini")
+        info.size = len(payload)
+        tf.addfile(info, io.BytesIO(payload))
+    (tmp / "bundle.tar.gz").write_bytes(buf.getvalue())
     _run_git("add", "-A", cwd=tmp)
-    _run_git("commit", "-q", "-m", "init", cwd=tmp)
+    _run_git("commit", "-q", "-m", "add tarball", cwd=tmp)
+    (tmp / "bundle.tar.gz").unlink()
+    _run_git("add", "-A", cwd=tmp)
+    _run_git("commit", "-q", "-m", "remove tarball", cwd=tmp)
+    findings, _ = scan_history(tmp, {})
+    check(
+        "FTF-1505-HISTORY-ARCHIVE",
+        "a secret inside a history-only tar.gz member is found",
+        any(
+            f.rule == "github_token"
+            and "bundle.tar.gz@" in f.location
+            and "!conf/app.ini" in f.location
+            for f in findings
+        ),
+    )
 
-    with _monkeypatch(ss, "SOURCE_ROOTS", ("apps/api",)):
-        guards = ss._build_pre_scan_guards(tmp)
-        guard_names = [name for name, _g in guards]
-        check(
-            "FTF-1505",
-            f"_build_pre_scan_guards returns every expected guard (got {guard_names})",
-            set(guard_names) == set(guard_targets),
-        )
-        for name, target_fn_name in guard_targets.items():
-            real_fn = getattr(ss, target_fn_name)
-            wrapped, calls = _counting_wrapper(real_fn)
-            with _monkeypatch(ss, target_fn_name, wrapped):
-                guards_rebuilt = ss._build_pre_scan_guards(tmp)
-                guard_fn = dict(guards_rebuilt)[name]
-                guard_fn()
-            check(
-                "FTF-1505",
-                f"guard {name!r} really calls through to {target_fn_name}",
-                calls["n"] == 1,
+
+def _fake_live_lane(blocking: bool = False):
+    def _lane(root: Path, **_kw: object) -> tuple[list[SecretFinding], list[ScenarioResult]]:
+        findings = []
+        if blocking:
+            findings.append(
+                SecretFinding(
+                    rule="aws_access_key_id",
+                    target="log_sample",
+                    location="<injected-for-test>",
+                    value_sha256="",
+                    blocking=True,
+                )
             )
-
-    baseline: dict[str, BaselineEntry] = {}
-    seen: set[str] = set()
-    scanned: set[str] = set()
-    lanes = ss._build_scan_lanes(tmp, baseline, seen, scanned, "pr")
-    lane_names = [name for name, _fn in lanes]
-    check(
-        "FTF-1505",
-        f"_build_scan_lanes returns every expected lane, in order (got {lane_names})",
-        lane_names
-        == ["source", "artifact", "history", "log_samples", "structured_event", "live_app"],
-    )
-    for name, target_fn_name in lane_targets.items():
-        real_fn = getattr(ss, target_fn_name)
-        wrapped, calls = _counting_wrapper(real_fn)
-        with _monkeypatch(ss, target_fn_name, wrapped):
-            lanes_rebuilt = ss._build_scan_lanes(tmp, baseline, seen, scanned, "pr")
-            lane_fn = dict(lanes_rebuilt)[name]
-            if name == "history":
-                # scan_history asserts not-shallow against the real repo's own git
-                # metadata only when called against a real root with real refs;
-                # the disposable temp repo here is a real (non-shallow) git repo too.
-                lane_fn()
-            else:
-                lane_fn()
-        check(
-            "FTF-1505",
-            f"lane {name!r} really calls through to {target_fn_name}",
-            calls["n"] == 1,
-        )
-
-
-def test_dropped_scan_lane_findings_are_not_silently_lost() -> None:
-    """F16/F17/F20b fixed (round 4, Control-plane return 2026-10-16,
-    point 1): `main()` aggregates every lane in `_build_scan_lanes`'s own
-    list uniformly (the same real list proven wired above) -- a lane
-    accidentally dropped from that list (the shape six near-identical
-    copy-pasted `all_findings.extend(...)` blocks invited) is now a data
-    fault a test can inject and detect directly, never a silent one only
-    a source-text grep of `main` could have caught. Reproduced with two
-    synthetic lanes standing in for any real pair (history/artifact):
-    the aggregation loop `main()` itself uses is exercised verbatim."""
-    injected_history = SecretFinding(
-        rule="aws_access_key_id",
-        target="history",
-        location="<injected-history>",
-        value_sha256="",
-        blocking=True,
-    )
-    injected_history_result = ScenarioResult(
-        resource_kind="history",
-        check="injected_for_test",
-        method="SCAN",
-        path="<injected-history>",
-        status=1,
-        expected_denied=True,
-        passed=False,
-    )
-    _Lane = tuple[str, Callable[[], tuple[list[SecretFinding], list[ScenarioResult]]]]
-    lanes: list[_Lane] = [
-        ("source", lambda: ([], [])),
-        ("history", lambda: ([injected_history], [injected_history_result])),
-        ("artifact", lambda: ([], [])),
-    ]
-
-    def _run_lanes(active_lanes: list[_Lane]) -> list[SecretFinding]:
-        all_findings: list[SecretFinding] = []
-        for _name, lane_fn in active_lanes:
-            findings, _results = lane_fn()
-            all_findings.extend(findings)
-        return all_findings
-
-    full_findings = _run_lanes(lanes)
-    check(
-        "FTF-1505",
-        "GREEN: a real lane's blocking finding surfaces when its own entry is present "
-        "in the lane list `main()` iterates",
-        any(f.blocking for f in full_findings),
-    )
-
-    dropped_lanes = [item for item in lanes if item[0] != "history"]
-    dropped_findings = _run_lanes(dropped_lanes)
-    check(
-        "FTF-1505",
-        "RED (fault reproduced): dropping the history lane's own entry from the list "
-        "silently loses its blocking finding -- the exact shape a forgotten "
-        "`all_findings.extend(history_findings)` call used to take",
-        not any(f.blocking for f in dropped_findings),
-    )
-
-
-def test_main_raises_on_a_real_blocking_finding() -> None:
-    """F18 fixed: `main()` must actually raise when a blocking finding is
-    present -- proven by injecting one real blocking finding through a
-    cooperating scan function and running `main()` for real (every other
-    lane is cheap/fast; only the live-app boot is monkeypatched out, since
-    it alone takes real wall-clock time irrelevant to this specific
-    check). The same real run also proves every guard (F19/F20) and
-    `assert_baseline_fresh` is actually invoked, piggybacked on this
-    one already-expensive real `main()` call rather than paying for a
-    second one."""
-    original_live = ss.scan_live_app_log_samples
-    original_structured = ss.scan_structured_event_cross_check
-
-    guard_wrap_dirs, dirs_calls = _counting_wrapper(ss.assert_dirs_covered)
-    guard_wrap_uploads, uploads_calls = _counting_wrapper(ss.assert_artifact_uploads_covered)
-    guard_wrap_scanned, scanned_calls = _counting_wrapper(
-        ss.assert_scanned_set_matches_tracked_files
-    )
-    guard_wrap_fresh, fresh_calls = _counting_wrapper(ss.assert_baseline_fresh)
-
-    def _fake_live(root: Path, **_kw: object) -> tuple[list[SecretFinding], list[ScenarioResult]]:
-        finding = SecretFinding(
-            rule="aws_access_key_id",
-            target="log_sample",
-            location="<injected-for-test>",
-            value_sha256="",
-            blocking=True,
-        )
-        result = ScenarioResult(
-            resource_kind="log_sample",
-            check="injected_for_test",
-            method="SCAN",
-            path="<injected-for-test>",
-            status=1,
-            expected_denied=True,
-            passed=False,
-        )
-        return [finding], [result]
-
-    def _fake_structured() -> tuple[list[SecretFinding], list[ScenarioResult]]:
-        return [], [
+        return findings, [
             ScenarioResult(
                 resource_kind="log_sample",
-                check="structured_event_canary_detected",
+                check="injected_for_test",
                 method="SCAN",
-                path="<structured-event>",
+                path="<injected-for-test>",
                 status=0,
                 expected_denied=True,
                 passed=True,
             )
         ]
 
+    return _lane
+
+
+_MINIMAL_CI_YML = """jobs:
+  x:
+    steps:
+      - uses: actions/upload-artifact@abc
+        with:
+          path: reports/thing.json
+"""
+
+
+def _main_repo() -> Path:
+    tmp = _build_temp_repo()
+    ci = tmp / ".github" / "workflows" / "ci.yml"
+    ci.parent.mkdir(parents=True)
+    ci.write_text(_MINIMAL_CI_YML, encoding="utf-8")
+    (tmp / "README.md").write_text("clean\n", encoding="utf-8")
+    _run_git("add", "-A", cwd=tmp)
+    _run_git("commit", "-q", "-m", "init", cwd=tmp)
+    return tmp
+
+
+def _failing_recall() -> list[ScenarioResult]:
+    return [
+        ScenarioResult(
+            resource_kind="seeded_recall",
+            check="seeded_recall[source][aws_access_key_id]",
+            method="SCAN",
+            path="source/aws_access_key_id.txt:",
+            status=1,
+            expected_denied=True,
+            passed=False,
+        )
+    ]
+
+
+def _run_main(
+    root: Path, *, live_blocking: bool = False, failing_recall: bool = False
+) -> tuple[bool, str]:
+    """`main()` for real on `root` with an empty baseline; only the live app
+    boot is replaced (it needs this repository's app, not `root`'s)."""
+    stderr = io.StringIO()
+    stdout = io.StringIO()
+    raised = False
+    recall = _failing_recall if failing_recall else ss.scan_seeded_recall
     with (
-        _monkeypatch(ss, "scan_live_app_log_samples", _fake_live),
-        _monkeypatch(ss, "scan_structured_event_cross_check", _fake_structured),
-        _monkeypatch(ss, "assert_dirs_covered", guard_wrap_dirs),
-        _monkeypatch(ss, "assert_artifact_uploads_covered", guard_wrap_uploads),
-        _monkeypatch(ss, "assert_scanned_set_matches_tracked_files", guard_wrap_scanned),
-        _monkeypatch(ss, "assert_baseline_fresh", guard_wrap_fresh),
+        _monkeypatch(ss, "scan_live_app_log_samples", _fake_live_lane(live_blocking)),
+        _monkeypatch(ss, "scan_seeded_recall", recall),
+        contextlib.redirect_stderr(stderr),
+        contextlib.redirect_stdout(stdout),
     ):
-        raised = False
         try:
-            ss.main(["--scope", "pr"])
-        except SecretScanError:
+            ss.main(["--root", str(root), "--baseline", str(root / "no-baseline.yaml")])
+        except SecretScanError as exc:
             raised = True
-        check(
-            "FTF-1505",
-            "main() raises SecretScanError when a real blocking finding is present",
-            raised,
-        )
-    check(
-        "FTF-1505",
-        "the real functions are restored after the test",
-        ss.scan_live_app_log_samples is original_live,
-    )
-    check(
-        "FTF-1505",
-        "the real functions are restored after the test",
-        ss.scan_structured_event_cross_check is original_structured,
-    )
-    check("FTF-1505", "F19 fixed: main() really calls assert_dirs_covered", dirs_calls["n"] == 1)
-    check(
-        "FTF-1505",
-        "F19 fixed: main() really calls assert_artifact_uploads_covered",
-        uploads_calls["n"] == 1,
-    )
-    check(
-        "FTF-1505",
-        "F20b fixed: main() really calls assert_scanned_set_matches_tracked_files "
-        "(bound into the source lane's own closure)",
-        scanned_calls["n"] == 1,
-    )
-    check(
-        "FTF-1505",
-        "F20 fixed: main() really calls assert_baseline_fresh",
-        fresh_calls["n"] == 1,
-    )
+            stderr.write(f"\nraised: {exc}\n")
+    return raised, stderr.getvalue() + stdout.getvalue()[-300:]
 
 
-def test_f22_live_output_scan_catches_a_real_leak_in_captured_output() -> None:
-    """F22 (round 4, Control-plane return 2026-10-16, point 1): the
-    live-app lane's own output-scan step (`scan_line(captured, include_
-    canary=True)`) is proven to matter via the pure `_evaluate_live_app_
-    output` (no uvicorn boot needed -- this sandbox has none available;
-    the function is deliberately separated from the real boot/probe
-    orchestration for exactly this reason), with a fabricated `captured`
-    string standing in for a real one."""
+def test_main_decides_on_every_lane_and_every_completeness_check() -> None:
+    """F16/F17/F18/F19/F20/F20b, behavioural: `main()` runs for real on
+    disposable repositories. A clean repository passes; each single defect
+    below makes it raise, naming the lane or check that caught it."""
+    clean_raised, clean_out = _run_main(_main_repo())
+    check(
+        "FTF-1505-MAIN",
+        f"a clean repository passes main() (output tail: {clean_out[-200:]!r})",
+        not clean_raised and "0 blocking -- clean" in clean_out,
+    )
+
     seed = generate_seed_for_rule("aws_access_key_id")
-    path = f"/no-such-route-family?token={seed}"
-    captured = f'127.0.0.1:12345 - "GET {path} HTTP/1.1" 404\n'
-    probes: list[ss._LiveAppProbe] = [("family_aws_access_key_id", path, {}, "GET", None, 404)]
-    statuses: dict[str, int | None] = {"family_aws_access_key_id": 404}
 
-    findings, results = ss._evaluate_live_app_output(
-        target="log_sample", booted=True, captured=captured, probes=probes, statuses=statuses
-    )
+    history_repo = _main_repo()
+    (history_repo / "old.py").write_text(f'k = "{seed}"\n', encoding="utf-8")
+    _run_git("add", "-A", cwd=history_repo)
+    _run_git("commit", "-q", "-m", "leak", cwd=history_repo)
+    (history_repo / "old.py").unlink()
+    _run_git("add", "-A", cwd=history_repo)
+    _run_git("commit", "-q", "-m", "remove", cwd=history_repo)
+    raised, out = _run_main(history_repo)
+    check("FTF-1505-F16", "a history-only secret makes main() raise", raised and "[history]" in out)
+
+    artifact_repo = _main_repo()
+    (artifact_repo / "reports").mkdir()
+    (artifact_repo / "reports" / "run.json").write_text(f'{{"k": "{seed}"}}\n', encoding="utf-8")
+    raised, out = _run_main(artifact_repo)
     check(
-        "FTF-1505",
-        "GREEN: the real output-scan step catches a leaked seed in the captured output",
-        any(f.rule == "aws_access_key_id" and f.blocking for f in findings)
-        and any(r.check == "live_app_output_clean" and not r.passed for r in results),
+        "FTF-1505-F17",
+        "an artifact-only (untracked reports/) secret makes main() raise",
+        raised and "[artifact]" in out and "[source]" not in out,
     )
 
-    def _fault_scan_line_off(_line: str, *, include_canary: bool = False) -> list[object]:
-        return []
+    source_repo = _main_repo()
+    (source_repo / "docs").mkdir()
+    (source_repo / "docs" / "cfg.md").write_text(f'k = "{seed}"\n', encoding="utf-8")
+    _run_git("add", "-A", cwd=source_repo)
+    _run_git("commit", "-q", "-m", "leak", cwd=source_repo)
+    raised, out = _run_main(source_repo)
+    check("FTF-1505-MAIN", "a tracked secret makes main() raise", raised and "[source]" in out)
 
-    with _monkeypatch(ss, "scan_line", _fault_scan_line_off):
-        fault_findings, fault_results = ss._evaluate_live_app_output(
-            target="log_sample", booted=True, captured=captured, probes=probes, statuses=statuses
-        )
+    raised, out = _run_main(_main_repo(), live_blocking=True)
     check(
-        "FTF-1505",
-        "RED (fault reproduced): with the output-scan step itself disabled, the same "
-        "real leak in the same captured output goes uncaught and is reported clean",
-        not any(f.rule == "aws_access_key_id" for f in fault_findings)
-        and any(r.check == "live_app_output_clean" and r.passed for r in fault_results),
+        "FTF-1505-F18",
+        "a blocking finding whose own scenario PASSED still makes main() raise",
+        raised and "secret-shaped finding" in out,
     )
 
-
-def test_f14_missing_access_log_evidence_is_caught_by_the_positive_control() -> None:
-    """F14 (round 4, Control-plane return 2026-10-16, point 2 and point 1):
-    today's own `clean = not hits` check passes just as happily over
-    NOTHING as over a real, fully-logged request -- round 3 never proved
-    the live app's own access logging was actually reaching the scanned
-    stream. This round's new positive control
-    (`_access_log_evidence_present`, wired into `_evaluate_live_app_
-    output`) is proven directly: GREEN when a real access-log-shaped
-    line for the probe is present, RED (the exact observable effect
-    `--no-access-log` or a swallowed stderr would have) when it is
-    not -- with no uvicorn boot needed, same reasoning as F22 above."""
-    path = "/api/v1/organizations/11111111-1111-1111-1111-111111111111/projects?token=X"
-    probes: list[ss._LiveAppProbe] = [("query_literal", path, {}, "GET", None, 401)]
-    statuses: dict[str, int | None] = {"query_literal": 401}
-    static_path = path.split("?", 1)[0]
-
-    captured_with_access_log = f'127.0.0.1:1 - "GET {path} HTTP/1.1" 401\n'
-    _findings, results = ss._evaluate_live_app_output(
-        target="log_sample",
-        booted=True,
-        captured=captured_with_access_log,
-        probes=probes,
-        statuses=statuses,
+    upload_repo = _main_repo()
+    (upload_repo / ".github" / "workflows" / "ci.yml").write_text(
+        _MINIMAL_CI_YML.replace("reports/thing.json", "build/out.bin"), encoding="utf-8"
     )
+    raised, out = _run_main(upload_repo)
     check(
-        "FTF-1505",
-        "GREEN: a real access-log line for the probe satisfies the positive control",
-        any(r.check == "live_app_access_logged_query_literal" and r.passed for r in results),
+        "FTF-1505-F19",
+        "an upload-artifact path outside every scanned root makes main() raise",
+        raised and "lies under none of the declared artifact roots" in out,
     )
+
+    dirs_repo = _main_repo()
+    hidden = dirs_repo / SOURCE_ROOTS[0]
+    hidden.mkdir(parents=True)
+    (hidden / "x.py").write_text("x = 1\n", encoding="utf-8")
+    (dirs_repo / ".gitignore").write_text(f"/{SOURCE_ROOTS[0]}/\n", encoding="utf-8")
+    _run_git("add", "-A", cwd=dirs_repo)
+    _run_git("commit", "-q", "-m", "ignore a production dir", cwd=dirs_repo)
+    raised, out = _run_main(dirs_repo)
     check(
-        "FTF-1505",
-        "the positive control keys off the probe's own static path, never a secret value",
-        static_path in captured_with_access_log,
+        "FTF-1505-F20",
+        "a production directory with no tracked file makes main() raise",
+        raised and "covers zero tracked files" in out,
     )
 
-    captured_without_access_log = ""  # what --no-access-log, or a discarded stderr, produces
-    _findings2, results2 = ss._evaluate_live_app_output(
-        target="log_sample",
-        booted=True,
-        captured=captured_without_access_log,
-        probes=probes,
-        statuses=statuses,
-    )
+    raised, out = _run_main(_main_repo(), failing_recall=True)
     check(
-        "FTF-1505",
-        "RED (fault reproduced): with no access-log evidence in the captured output "
-        "(the observable effect of --no-access-log/F14, or discarded stderr/F15), the "
-        "positive control fails closed instead of a 'clean' scan over nothing",
-        any(r.check == "live_app_access_logged_query_literal" and not r.passed for r in results2),
+        "FTF-1505-RECALL",
+        "a failed seeded-recall check makes main() raise",
+        raised and "seeded_recall[source][aws_access_key_id]" in out,
+    )
+
+    unscanned_repo = _main_repo()
+    (unscanned_repo / "README.md").unlink()
+    raised, out = _run_main(unscanned_repo)
+    check(
+        "FTF-1505-F20b",
+        "a tracked file the source lane never scanned makes main() raise",
+        raised and "were never scanned" in out,
     )
 
 
-def test_f15_capture_subprocess_output_includes_stderr() -> None:
-    """F15 (round 4, Control-plane return 2026-10-16, point 1): the real,
-    extracted `_capture_subprocess_output` helper `scan_live_app_log_
-    samples` calls to launch uvicorn is exercised directly with a tiny
-    REAL subprocess (no uvicorn needed) that writes to both stdout and
-    stderr -- proving the real helper's `stderr=subprocess.STDOUT`
-    merges both into the captured file. The fault (the old/wrong shape,
-    `stderr=subprocess.DEVNULL`) is reproduced locally, not in
-    production -- production never had a toggle for this, by design
-    (Law 11: no feature exists only to be disabled in a test)."""
-    script = "import sys; sys.stdout.write('OUT_MARKER\\n'); sys.stderr.write('ERR_MARKER\\n')"
-    cmd = [sys.executable, "-c", script]
-    env = dict(os.environ)
-
-    with tempfile.TemporaryDirectory() as tmp:
-        out_path = Path(tmp) / "out.log"
-        proc = ss._capture_subprocess_output(cmd, cwd=ROOT, env=env, out_path=out_path)
-        proc.wait(timeout=15)
-        captured = out_path.read_text(encoding="utf-8")
-    check(
-        "FTF-1505",
-        "GREEN: the real helper captures stdout",
-        "OUT_MARKER" in captured,
+def test_artifact_lane_detects_a_canary() -> None:
+    """F21: the artifact lane must apply the FTF-0905 canary rule."""
+    tmp = _build_temp_repo()
+    (tmp / "reports").mkdir()
+    (tmp / "reports" / "out.log").write_text(
+        f"line {generate_seed_for_rule('canary_leaked')}\n", encoding="utf-8"
     )
+    findings, _ = ss.scan_artifact_roots(tmp, {})
     check(
-        "FTF-1505",
-        "GREEN: the real helper also captures stderr (F15 fixed)",
-        "ERR_MARKER" in captured,
-    )
-
-    def _fault_capture_stderr_discarded(
-        fault_cmd: list[str], *, cwd: Path, env: dict[str, str], out_path: Path
-    ) -> subprocess.Popen[bytes]:
-        out = out_path.open("wb")
-        try:
-            return subprocess.Popen(
-                fault_cmd, cwd=str(cwd), env=env, stdout=out, stderr=subprocess.DEVNULL
-            )
-        finally:
-            out.close()
-
-    with tempfile.TemporaryDirectory() as tmp2:
-        out_path2 = Path(tmp2) / "out.log"
-        fault_proc = _fault_capture_stderr_discarded(cmd, cwd=ROOT, env=env, out_path=out_path2)
-        fault_proc.wait(timeout=15)
-        fault_captured = out_path2.read_text(encoding="utf-8")
-    check(
-        "FTF-1505",
-        "RED (fault reproduced): with stderr routed to DEVNULL, the same real subprocess's "
-        "stderr output never reaches the captured file (stdout alone still arrives)",
-        "OUT_MARKER" in fault_captured and "ERR_MARKER" not in fault_captured,
+        "FTF-1505-F21",
+        "a canary in an artifact-root file is a blocking canary_leaked finding",
+        any(f.rule == "canary_leaked" and f.blocking for f in findings),
     )
 
 
@@ -2466,17 +2378,21 @@ def main() -> None:
     test_quick_gate_previously_missed_shapes_now_covered()
     test_quick_gate_is_a_performance_filter_only_never_a_detection_gap()
     test_f13_long_line_window_finds_a_secret_past_the_200_char_boundary()
-    test_f13_every_offset_in_a_long_line_is_found_no_seam_gap()
-    test_f6_decode_cap_overrun_is_a_blocking_scan_incomplete_finding()
+    test_no_decode_cap_every_candidate_is_decoded()
+    test_f13_seam_long_secrets_found_at_every_offset()
+    test_jwt_linear_matcher_equals_the_regex()
+    test_url_userinfo_linear_matcher_equals_the_regex()
+    test_whole_line_scanning_stays_linear_on_pathological_lines()
     test_source_scan_has_no_path_exclusion()
     test_non_ascii_filename_is_scanned_not_silently_skipped()
     test_binary_file_is_scanned()
     test_zip_archive_member_is_scanned()
     test_corrupt_archive_member_does_not_abort_later_members()
     test_archive_member_bomb_safety_caps()
-    test_f_archive_zlib_corrupt_deflate_member_does_not_abort_later_members()
-    test_f_archive_corrupt_open_is_a_blocking_scan_incomplete_finding()
-    test_f_archive_oversized_member_is_a_blocking_scan_incomplete_finding()
+    test_corrupt_deflated_member_is_blocking_and_later_members_still_scanned()
+    test_truncated_archives_are_blocking_not_silent()
+    test_oversized_archive_member_is_blocking_and_history_names_resolve()
+    test_history_blob_over_the_bound_is_blocking()
     test_oversized_content_is_a_blocking_scan_incomplete_finding()
     test_long_line_is_not_silently_skipped()
     test_source_roots_come_from_product_truth_check_not_a_second_list()
@@ -2494,10 +2410,8 @@ def main() -> None:
     test_history_blob_ids_are_deduplicated()
     test_archive_member_in_a_history_only_blob_is_scanned()
     test_scan_history_pr_scope_excludes_other_refs_all_refs_scope_attributes_them()
-    test_f6h_history_oversize_blob_is_a_blocking_scan_incomplete_finding()
-    test_f21_artifact_canary_is_detected()
-    test_f23_post_redaction_scan_catches_a_real_redaction_regression()
     test_baseline_rejects_a_value_path_or_glob_key()
+    test_baseline_schema_is_strict()
     test_baseline_rejects_malformed_or_missing_fields()
     test_baseline_fingerprint_waives_every_recurrence_of_the_same_value()
     test_stale_baseline_entry_is_itself_a_blocking_finding()
@@ -2508,14 +2422,14 @@ def main() -> None:
     test_generate_seed_values_covers_every_rule_fresh_each_call()
     test_log_sample_fault_an_unwired_logger_leaks_the_seeded_marker()
     test_log_sample_real_pipeline_detects_and_then_redacts_every_family()
-    test_f_seeds_per_lane_every_family_recalled_in_every_scan_lane()
     test_structured_event_cross_check_detects_a_misused_canary()
-    test_build_scan_lanes_and_guards_are_real_callables_not_names()
-    test_dropped_scan_lane_findings_are_not_silently_lost()
-    test_main_raises_on_a_real_blocking_finding()
-    test_f22_live_output_scan_catches_a_real_leak_in_captured_output()
-    test_f14_missing_access_log_evidence_is_caught_by_the_positive_control()
-    test_f15_capture_subprocess_output_includes_stderr()
+    test_log_sample_recall_and_control_sink_can_fail()
+    test_live_lane_positive_controls_and_error_paths()
+    test_seeded_recall_covers_every_lane_and_can_fail()
+    test_live_lane_helpers_cannot_pass_vacuously()
+    test_history_only_tar_gz_member_is_scanned()
+    test_main_decides_on_every_lane_and_every_completeness_check()
+    test_artifact_lane_detects_a_canary()
     test_f27_aws_access_key_id_matches_both_akia_and_asia()
     test_secret_rules_module_is_stdlib_only()
     test_secret_rules_cli_scans_a_single_file_with_no_baseline()
