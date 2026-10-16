@@ -45,8 +45,8 @@ import workers.data.normalized_duplicate_detector as production  # noqa: E402
 MODULE_PATH = ROOT / "workers" / "data" / "normalized_duplicate_detector.py"
 FAILURES: list[str] = []
 
-# Frozen digest of _conv("Hello") under detector_version 3 (golden pin).
-FROZEN_SAMPLE_DIGEST = "0e77397e6326dd0c6be3a47ec8725811286512d1024bb5f171e614c4c3e366a7"
+# Frozen digest of _conv("Hello") under detector_version 4 (golden pin).
+FROZEN_SAMPLE_DIGEST = "ef687d35e73fd218193b7d3065c6b086415bb01a4d8c4eddd4d79a375a4f02a6"
 
 
 def check(
@@ -645,12 +645,12 @@ def run_checks(mod: types.ModuleType, sink: list[str]) -> None:
     # version fails if the field is dropped or the number is reverted.
     sample = _conv("Hello")
     expected_document = (
-        '{"detector_version":3,"messages":[{"content":[{"text":"hello","type":"text"}],'
+        '{"detector_version":4,"messages":[{"content":[{"text":"hello","type":"text"}],'
         '"role":"user"}]}'
     )
     check(
         "FTF-0512-F1",
-        "F1-DETECTOR-VERSION: digest == sha256 of the canonical document with detector_version 3",
+        "F1-DETECTOR-VERSION: digest == sha256 of the canonical document with detector_version 4",
         h(sample) == hashlib.sha256(expected_document.encode("utf-8")).hexdigest(),
         sink,
     )
@@ -1085,6 +1085,7 @@ FAULTS: dict[str, Callable[[Any], None]] = {
     "F1-DETECTOR-VERSION-DROPPED": _fault_drop_version,
     "F1-DETECTOR-VERSION-REVERTED-1": _fault_version(1),
     "F1-DETECTOR-VERSION-REVERTED-2": _fault_version(2),
+    "F2-DETECTOR-VERSION-REVERTED-3": _fault_version(3),
     "F1-FUSING-FOLD-UNSEPARATED": _fault_no_separation,
     "F1-FUSING-FOLD-HAND-PICKED": _fault_separation_hand_picked,
     "F1-FUSING-FOLD-OVER-SEPARATES-GLYPHS": _fault_separate_glyph_variants,
