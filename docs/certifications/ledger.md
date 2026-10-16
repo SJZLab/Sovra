@@ -11718,3 +11718,24 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   regression: 5,891 B file 92 MB; 1,200 x 2 MiB rows 92/93 MB; cap shapes 80-205 MiB; fuzz 0 raised. 155/165 faults RED
   (all 138 round-4 REDs still RED; GREEN = equivalents, exempted header-bound variants and 4 hand-picked variants with
   production correct - advisories A1/A2). Outage check discriminating. UNWIRED.
+
+## 2026-10-16T01:58Z — RETURNED: FTF-0904-F1 (r3); FTF-0904 stays CERTIFIED
+- **FTF-0904-F1: RETURNED** (round 3 → 4; PR #825, merge eea46ca36ea8db38bef306735559fd04dcc671cc, head 1295d1fb).
+  Producers session_01TQXcVhBNPuEYoxNSEno7x4, session_01Vp6PiUFMTTuptuJPp1ZtTh ≠ certifier session_01QVznorVMjnmcttUhyDnoGR.
+  CI: 75/75 success, ci-verdict 116677066694; gate 116613765034 "FTF-0904 Log redaction tests: all checks passed" (full
+  matrix, 109 faults, 1h48m), W1 F1-F15 RED, FTF-0905 passed; mutation-gate 12/12. Local full matrix 109/109 RED on
+  3.11. Closed: bare-name case split, guard tail, empty value, value class. Return: separator compounds with prefixes
+  outside the vocabulary leak (1,344/3,060, live); glued compounds closed only by enumeration (46/67 realistic names
+  leak live); separator-strip faults GREEN; stale W1 docstring. Ruling: deny-by-default suffix match with a closed
+  benign allowlist and a quantified over-redaction count. FTF-0904 stays CERTIFIED (no certified behaviour regressed).
+
+## 2026-10-16T01:58Z — RETURNED: FTF-1505 (r3)
+- **FTF-1505: RETURNED** (round 3 → 4; PR #845, merge 012756b847acd0d2525300c58ac85970c2ad1146, head c29671da).
+  Producer session_014VPD3n9bHU1k5D78GMKA2a ≠ certifier session_01QVznorVMjnmcttUhyDnoGR (merge-of-main commit c68c3946
+  has no trailer). CI: 76/76 success; secret-scanning 116656080585 "SECRET SCAN: 9788 unit(s) scanned, 12497 finding(s),
+  0 blocking -- clean (scope=pr)"; gate 116656081123 step 64 success (20 min, full runs); ci-verdict 116712327860.
+  0 real exposed credentials (all refs; 65/65 baseline fingerprints reviewed). Met: points 4, 6, 7, 8 (PR scope).
+  Return: 12 GREEN fault rows (source greps, F18 test cannot fail); no live positive control, reachable 422/400 paths
+  unprobed; corrupt deflated member hides later members (round-2 P9 unchanged); truncated archives and >50 MB members
+  silent; window-seam regression misses long secrets; no per-lane seeded recall in main(). Control-plane action: the
+  all-refs push/schedule sweep is a [GOVERNANCE] workflow change.

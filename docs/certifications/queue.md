@@ -25070,3 +25070,9 @@ different session.
   FTF-0901/FTF-0902/FTF-0905); `workflow_history` never exercised (no Temporal workflow exists),
   so every report is `partial`, never `passed`, by design. Count unchanged: 151/304 certified, 48
   product-true.
+
+## 2026-10-16T01:58Z — Control plane: FTF-0904-F1 returned (r4)
+- **Returned:** FTF-0904-F1 r4 (0g): segment lookup before camel split, deny-by-default credential-suffix rule, separator-strip pins, W1 docstring. FTF-0904 stays CERTIFIED.
+
+## 2026-10-16T01:58Z — Control plane: FTF-1505 returned (r4)
+- **Returned:** FTF-1505 r4 (0h): behavioural fault rows, live positive control, archive fail-closed, window seam, per-lane seeded recall. [GOVERNANCE] all-refs sweep workflow to follow.
