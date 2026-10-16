@@ -120,12 +120,18 @@ class MappingPreviewRow:
     comparison: tuple[ComparisonCell, ...]
 
     def __post_init__(self) -> None:
-        if self.outcome not in ("accepted", "rejected"):
+        if self.outcome == "accepted":
+            if self.candidate is None:
+                raise ValueError("candidate is set exactly when outcome is accepted")
+            if self.code is not None:
+                raise ValueError("code is set exactly when outcome is rejected")
+        elif self.outcome == "rejected":
+            if self.candidate is not None:
+                raise ValueError("candidate is set exactly when outcome is accepted")
+            if self.code is None:
+                raise ValueError("code is set exactly when outcome is rejected")
+        else:
             raise ValueError("outcome must be accepted or rejected")
-        if (self.outcome == "accepted") != (self.candidate is not None):
-            raise ValueError("candidate is set exactly when outcome is accepted")
-        if (self.outcome == "rejected") != (self.code is not None):
-            raise ValueError("code is set exactly when outcome is rejected")
 
 
 @dataclass(frozen=True)
@@ -324,18 +330,21 @@ def _comparison_cells(
         one ("prompt"/"completion"/"system" slots are always a single plain string going in,
         Section 67.2's own typed transform allow-list has no multi-part content transform) --
         the raw content-part list itself otherwise, so a genuine mismatch still shows as one."""
+        first_by_role: dict[object, Mapping[str, object]] = {}
         for message in messages:
-            if message.get("role") == role:
-                parts = message["content"]
-                if (
-                    isinstance(parts, list)
-                    and len(parts) == 1
-                    and isinstance(parts[0], dict)
-                    and parts[0].get("type") == "text"
-                ):
-                    return parts[0].get("text")
-                return parts
-        return _MISSING
+            first_by_role.setdefault(message.get("role"), message)
+        message = first_by_role.get(role)
+        if message is None:
+            return _MISSING
+        parts = message["content"]
+        if (
+            isinstance(parts, list)
+            and len(parts) == 1
+            and isinstance(parts[0], dict)
+            and parts[0].get("type") == "text"
+        ):
+            return parts[0].get("text")
+        return parts
 
     if mapping.prompt is not None:
         cell("system", mapping.system, message_content("system"))

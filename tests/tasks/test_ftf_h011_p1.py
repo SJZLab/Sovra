@@ -913,6 +913,25 @@ def test_preview_row_post_init_rejects_bad_combinations() -> None:
         raised = exc
     check("ROW-4", "rejected with no code is refused", raised is not None)
 
+    for label, kwargs in (
+        ("padded accepted with its candidate", {"outcome": " accepted ", "code": None}),
+        ("upper-case accepted with its candidate", {"outcome": "ACCEPTED", "code": None}),
+        (
+            "padded rejected with its code",
+            {"outcome": " rejected ", "candidate": None, "code": "c"},
+        ),
+        (
+            "upper-case rejected with its code",
+            {"outcome": "Rejected", "candidate": None, "code": "c"},
+        ),
+    ):
+        raised = None
+        try:
+            build(**kwargs)
+        except ValueError as exc:
+            raised = exc
+        check("ROW-2d", f"{label} is refused verbatim", raised is not None)
+
     rejected = build(outcome="rejected", candidate=None, code="required_field_missing")
     check("ROW-5", "a valid rejected row builds", rejected.code == "required_field_missing")
 
