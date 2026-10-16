@@ -302,6 +302,13 @@ def _decomposition_tag(char: str) -> str:
 def _fold_action(char: str) -> int:
     if unicodedata.category(char) in _DIGIT_LIKE_CATEGORIES:
         return _FOLD_ISOLATE_VERBATIM
+    if unicodedata.category(char).startswith("S") and any(
+        unicodedata.category(part).startswith("M") for part in unicodedata.normalize("NFKC", char)
+    ):
+        # FTF-0512-F2: a spacing diacritic symbol (Sk, e.g. U+00A8 DIAERESIS)
+        # folds to SPACE + a combining mark, which the punctuation rule would
+        # then strip as non-word -- the symbol would vanish. Keep it verbatim.
+        return _FOLD_ISOLATE_VERBATIM
     if not _decomposition_tag(char) or _decomposition_tag(char) in _SAME_CHARACTER_TAGS:
         return _FOLD_KEEP
     if _decomposition_tag(char) == "<compat>" and unicodedata.category(char).startswith("L"):
