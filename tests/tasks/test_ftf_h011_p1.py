@@ -914,6 +914,8 @@ def test_preview_row_post_init_rejects_bad_combinations() -> None:
     check("ROW-4", "rejected with no code is refused", raised is not None)
 
     for label, kwargs in (
+        ("accepted that also carries a code", {"outcome": "accepted", "code": "c"}),
+        ("rejected that also carries a candidate", {"outcome": "rejected", "code": "c"}),
         ("padded accepted with its candidate", {"outcome": " accepted ", "code": None}),
         ("upper-case accepted with its candidate", {"outcome": "ACCEPTED", "code": None}),
         (
