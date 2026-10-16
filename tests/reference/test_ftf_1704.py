@@ -1027,7 +1027,8 @@ def test_roles_cannot_share_a_group() -> None:
 def test_resplit_is_detected() -> None:
     splits = _build()
     recorded = splits.manifest.manifest_sha256
-    assert_split_unchanged(splits, recorded)
+    recorded_content = splits.content_sha256
+    assert_split_unchanged(splits, recorded, recorded_content)
     shuffled = _build(
         validation=list(reversed(VAL)),
         development=list(reversed(DEVELOPMENT)),
@@ -1048,7 +1049,7 @@ def test_resplit_is_detected() -> None:
     check(
         "FTF-1704-N2",
         "swapping one record's role is refused",
-        _raises(SplitChangedError, assert_split_unchanged, swapped, recorded),
+        _raises(SplitChangedError, assert_split_unchanged, swapped, recorded, recorded_content),
     )
     regrouped = list(splits.manifest.assignments)
     regrouped[0] = (regrouped[0][0], regrouped[0][1], "g-other")
@@ -1058,7 +1059,9 @@ def test_resplit_is_detected() -> None:
     check(
         "FTF-1704-N2",
         "changing one group key is refused",
-        _raises(SplitChangedError, assert_split_unchanged, regrouped_split, recorded),
+        _raises(
+            SplitChangedError, assert_split_unchanged, regrouped_split, recorded, recorded_content
+        ),
     )
     # An attacker who recomputes the manifest hash still cannot match the recorded one.
     from workers.data import group_aware_split_engine as eng
@@ -1069,7 +1072,7 @@ def test_resplit_is_detected() -> None:
     check(
         "FTF-1704-N2",
         "a re-hashed different split differs from the recorded hash",
-        _raises(SplitChangedError, assert_split_unchanged, resplit, recorded),
+        _raises(SplitChangedError, assert_split_unchanged, resplit, recorded, recorded_content),
     )
     reseeded = dataclasses.replace(splits.manifest, seed="another-seed")
     reseeded = dataclasses.replace(reseeded, manifest_sha256=eng.compute_manifest_sha256(reseeded))
@@ -1082,13 +1085,19 @@ def test_resplit_is_detected() -> None:
             assert_split_unchanged,
             dataclasses.replace(splits, manifest=reseeded),
             recorded,
+            recorded_content,
         ),
     )
     for bad in ("", "abc", recorded.upper(), recorded[:-1], None, 5, recorded + "0"):
         check(
             "FTF-1704-N2",
-            f"recorded hash {bad!r} refused",
-            _raises(SplitChangedError, assert_split_unchanged, splits, bad),
+            f"recorded manifest hash {bad!r} refused",
+            _raises(SplitChangedError, assert_split_unchanged, splits, bad, recorded_content),
+        )
+        check(
+            "FTF-1704-N2",
+            f"recorded content hash {bad!r} refused",
+            _raises(SplitChangedError, assert_split_unchanged, splits, recorded, bad),
         )
     different = dataclasses.replace(
         splits, manifest=dataclasses.replace(splits.manifest, manifest_sha256="0" * 64)
@@ -1096,13 +1105,113 @@ def test_resplit_is_detected() -> None:
     check(
         "FTF-1704-N2",
         "a manifest whose hash does not match its content is refused",
-        _raises(SplitChangedError, assert_split_unchanged, different, "0" * 64),
+        _raises(SplitChangedError, assert_split_unchanged, different, "0" * 64, recorded_content),
     )
     regenerated = _build(validation=[t.to_dict() for t in generate_validation_traces(count=181)])
     check(
         "FTF-1704-N2",
         "a regenerated (larger) set is a new manifest hash",
         regenerated.manifest.manifest_sha256 != recorded,
+    )
+    check(
+        "FTF-1704-N2",
+        "a regenerated (larger) set is also a new content hash",
+        regenerated.content_sha256 != recorded_content,
+    )
+
+    # FREEZE-CONTENT-BLIND (2026-10-15T17:21Z return): the manifest hash alone covers
+    # record ids/roles/group keys only -- an edited record, a truncated set, or a
+    # same-id regeneration with different content must all be caught by the content
+    # hash / record-id checks even when the manifest itself is untouched.
+    edited_case = copy.deepcopy(DEVELOPMENT[4])
+    edited_case["expected_json"]["reference_answer"] = "This was never produced by any run."
+    edited_development = tuple(
+        edited_case if c["case_key"] == edited_case["case_key"] else c for c in splits.development
+    )
+    edited = dataclasses.replace(splits, development=edited_development)
+    check(
+        "FTF-1704-N2",
+        "an edited development record (same case_key, different content) is refused",
+        _raises(SplitChangedError, assert_split_unchanged, edited, recorded, recorded_content),
+    )
+    edited_trace = dataclasses.replace(VALIDATION[7], entity_title="Forged entity title")
+    edited_validation = tuple(
+        edited_trace if t.trace_id == edited_trace.trace_id else t for t in splits.validation
+    )
+    edited_val_splits = dataclasses.replace(splits, validation=edited_validation)
+    check(
+        "FTF-1704-N2",
+        "an edited validation record (same trace_id, different content) is refused",
+        _raises(
+            SplitChangedError, assert_split_unchanged, edited_val_splits, recorded, recorded_content
+        ),
+    )
+    truncated_development = splits.development[:-1]
+    # The attacker recomputes a content hash that is internally consistent with their
+    # truncated set (so the content-hash comparison alone would not catch this) -- only
+    # the record-id-against-manifest check can, because the (untouched) manifest still
+    # names the removed case's id.
+    truncated_content_sha256 = real._content_sha256(splits.validation, truncated_development)
+    truncated = dataclasses.replace(
+        splits, development=truncated_development, content_sha256=truncated_content_sha256
+    )
+    check(
+        "FTF-1704-N2",
+        "a truncated development set, even with a self-consistent recomputed content hash, "
+        "is refused because the manifest still names the removed record",
+        _raises(
+            SplitChangedError,
+            assert_split_unchanged,
+            truncated,
+            recorded,
+            truncated_content_sha256,
+        ),
+    )
+
+    def refuses_edited_content(module: types.ModuleType) -> bool:
+        return _raises_named(
+            "SplitChangedError",
+            module.assert_split_unchanged,
+            edited,
+            recorded,
+            recorded_content,
+        )
+
+    _fault(
+        "FTF-1704-F8b",
+        "assert_split_unchanged skips the validation/development content comparison",
+        [
+            (
+                "    if not hmac.compare_digest(\n"
+                '        recomputed_content_sha256.encode("ascii"), recorded_content_sha256.encode("ascii")\n'
+                "    ):",
+                "    if False and not hmac.compare_digest(\n"
+                '        recomputed_content_sha256.encode("ascii"), recorded_content_sha256.encode("ascii")\n'
+                "    ):",
+            )
+        ],
+        refuses_edited_content,
+    )
+
+    def refuses_truncation(module: types.ModuleType) -> bool:
+        return _raises_named(
+            "SplitChangedError",
+            module.assert_split_unchanged,
+            truncated,
+            recorded,
+            truncated_content_sha256,
+        )
+
+    _fault(
+        "FTF-1704-F8c",
+        "assert_split_unchanged skips the record-id-against-manifest comparison",
+        [
+            (
+                "    if content_ids != manifest_eval_ids:",
+                "    if False and content_ids != manifest_eval_ids:",
+            )
+        ],
+        refuses_truncation,
     )
 
 
@@ -1307,6 +1416,64 @@ def test_provenance_forgeries_refused() -> None:
         "FTF-1704-P1",
         "a forged validation trace cannot enter a split",
         _raises(DatasetVerificationError, _build, validation=[forged]),
+    )
+
+    # DEV-UNLABELLED (2026-10-15T17:21Z return): development cases must carry
+    # explicit synthetic provenance, not just be told apart by naming convention.
+    check(
+        "FTF-1704-P1",
+        "every development case's input_json carries explicit synthetic provenance",
+        all(
+            c["input_json"]["provenance"]
+            == {
+                "origin": "synthetic_generator",
+                "producer": "generator:ftf-1704-development-v1",
+                "label": "synthetic",
+                "index": i,
+            }
+            for i, c in enumerate(DEVELOPMENT)
+        ),
+    )
+    missing_provenance = copy.deepcopy(case)
+    del missing_provenance["input_json"]["provenance"]
+    check(
+        "FTF-1704-P1",
+        "a development case with provenance stripped is refused",
+        _raises(DatasetVerificationError, verify_development_case, missing_provenance),
+    )
+    for field, value in (
+        ("origin", "harvested"),
+        ("producer", "generator:ftf-1703-v1"),
+        ("label", "real"),
+        ("index", 0 if case["input_json"]["provenance"]["index"] != 0 else 1),
+    ):
+        forged_provenance = copy.deepcopy(case)
+        forged_provenance["input_json"]["provenance"][field] = value
+        check(
+            "FTF-1704-P1",
+            f"a development case with provenance.{field} forged to {value!r} is refused",
+            _raises(DatasetVerificationError, verify_development_case, forged_provenance),
+        )
+
+    def dev_case_lacks_provenance(module: types.ModuleType) -> bool:
+        cases = module.generate_development_cases(count=1)
+        return "provenance" not in cases[0]["input_json"]
+
+    _fault(
+        "FTF-1704-F12",
+        "development cases drop their synthetic provenance (DEV-UNLABELLED regression)",
+        [
+            (
+                '            "provenance": {\n'
+                '                "origin": _ORIGIN,\n'
+                '                "producer": DEVELOPMENT_GENERATOR_ID,\n'
+                '                "label": "synthetic",\n'
+                '                "index": i,\n'
+                "            },\n",
+                "",
+            )
+        ],
+        lambda module: not dev_case_lacks_provenance(module),
     )
     secrets = [
         s
@@ -1607,12 +1774,22 @@ def test_faults() -> None:
             module.assert_split_unchanged,
             resplit,
             splits.manifest.manifest_sha256,
+            splits.content_sha256,
         )
 
     _fault(
         "FTF-1704-F8",
-        "assert_split_unchanged skips the hash comparison",
-        [("    if not hmac.compare_digest(", "    if False and not hmac.compare_digest(")],
+        "assert_split_unchanged skips the manifest hash comparison",
+        [
+            (
+                '        splits.manifest.manifest_sha256.encode("ascii"), recorded_manifest_sha256.encode("ascii")\n'
+                "    ):\n"
+                '        raise SplitChangedError("split differs from the recorded manifest hash")',
+                '        splits.manifest.manifest_sha256.encode("ascii"), recorded_manifest_sha256.encode("ascii")\n'
+                "    ) and False:\n"
+                '        raise SplitChangedError("split differs from the recorded manifest hash")',
+            )
+        ],
         refuses_resplit,
     )
 
