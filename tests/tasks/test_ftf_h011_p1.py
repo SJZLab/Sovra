@@ -711,21 +711,79 @@ def test_observed_role_values_from_message_shaped_rows() -> None:
         result.observed_role_values == (),
     )
 
-    row = {"role": "human", "content": "hi"}
+    messages_json_row = {
+        "messages": [{"role": "human", "content": "hi"}, {"role": "weird", "content": "x"}]
+    }
     check(
         "ROLE-2",
-        "a message-shaped row's own raw role string is observed",
-        rev._observed_role_value(MESSAGES_JSON, row) == "human",
+        "every raw role string across the row's own resolved messages array is observed, in "
+        "order, mapped or not",
+        rev._raw_message_roles(MESSAGES_JSON, messages_json_row, None) == ("human", "weird"),
     )
     check(
         "ROLE-3",
-        "a non-string role is never observed",
-        rev._observed_role_value(MESSAGES_JSON, {"role": 1, "content": "x"}) is None,
+        "a non-string role is skipped, never crashes",
+        rev._raw_message_roles(MESSAGES_JSON, {"messages": [{"role": 1, "content": "x"}]}, None)
+        == (),
     )
     check(
         "ROLE-4",
         "a tabular row (no message_keys apply) is never observed",
-        rev._observed_role_value(PROMPT_COMPLETION, ("a", "b")) is None,
+        rev._raw_message_roles(PROMPT_COMPLETION, ("a", "b"), None) == (),
+    )
+    pointer_mapping = ic.mapping_from_object(
+        {
+            "shape": "messages",
+            "messages_pointer": "/conversation",
+            "role_key": "role",
+            "content_key": "content",
+            "role_map": {"u": "user"},
+            "on_unmapped_message_keys": "ignore",
+        }
+    )
+    check(
+        "ROLE-5",
+        "a pointer-based 'messages' shape resolves its own real pointer target too",
+        rev._raw_message_roles(
+            pointer_mapping, {"conversation": [{"role": "u", "content": "hi"}]}, None
+        )
+        == ("u",),
+    )
+    check(
+        "ROLE-6",
+        "an unresolvable row never raises -- it is a display aid, not a second enforcement path",
+        rev._raw_message_roles(MESSAGES_JSON, {"messages": "not valid json"}, None) == ()
+        and rev._raw_message_roles(MESSAGES_JSON, {"no_messages_key": True}, None) == (),
+    )
+
+
+def test_observed_role_values_end_to_end_includes_rejected_rows() -> None:
+    # One row with a role already in role_map (accepted), one with a raw role that is not
+    # (rejected, unmapped_role) -- both raw role strings must still show up, since the whole
+    # point of this field is to help the user find every raw role that needs a role_map entry,
+    # including the ones that got a row rejected.
+    data = (
+        b'{"messages": [{"role": "human", "content": "hi"}]}\n'
+        b'{"messages": [{"role": "robot", "content": "beep"}]}\n'
+    )
+    result = rev.run_mapping_preview(
+        reader_for(data),
+        MESSAGES_JSON,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        tool_schemas=None,
+        reveal=True,
+    )
+    check(
+        "ROLE-7",
+        f"both the mapped and the unmapped raw role strings are observed "
+        f"({result.observed_role_values})",
+        set(result.observed_role_values) == {"human", "robot"},
+    )
+    check(
+        "ROLE-8",
+        "the second row was in fact rejected for the unmapped role, confirming it is real",
+        result.rows[1].outcome == "rejected" and result.rows[1].code == "unmapped_role",
     )
 
 

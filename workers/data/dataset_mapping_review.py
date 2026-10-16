@@ -56,6 +56,7 @@ from workers.data.import_common import (
     Row,
     RowRejection,
     Slot,
+    resolve_pointer,
 )
 from workers.data.json_importer import json_events
 from workers.data.jsonl_importer import jsonl_events
@@ -373,16 +374,42 @@ def _with_row_tap(
     return dataclasses.replace(mapping, row_observer=observe)
 
 
-def _observed_role_value(mapping: ImportMapping, row: Row) -> str | None:
-    """The raw role string of one accepted/rejected row, for `observed_role_values` -- only
-    when the row names exactly one message-shaped object directly (the common `messages_json`/
-    `messages` single-record wizard step); a batched array of several messages has several role
-    values and is left to the per-record canonical candidate the wizard already shows."""
+def _raw_message_roles(
+    mapping: ImportMapping, row: Row, headers: Sequence[str] | None
+) -> tuple[str, ...]:
+    """Every raw role string, exactly as it appeared in the row, across the row's own resolved
+    messages array -- for `observed_role_values`, so the wizard can show which raw role strings
+    still need a `role_map` entry, including ones from a row that was itself *rejected*
+    (`unmapped_role`): the array resolves the same way `apply_mapping` resolves it, but this
+    helper never raises -- a row whose array cannot be resolved at all already has its own
+    rejection code to explain that, and this is a display aid, not a second enforcement path.
+    Empty for `prompt_completion` mappings (`message_keys` is `None`: there is no message array
+    to look inside)."""
     keys = mapping.message_keys
-    if keys is None or not isinstance(row, Mapping):
-        return None
-    raw_role = row.get(keys.role_key)
-    return raw_role if isinstance(raw_role, str) else None
+    if keys is None:
+        return ()
+    array: object
+    try:
+        if mapping.messages_slot is None:
+            if not isinstance(row, Mapping):
+                return ()
+            found, array = resolve_pointer(dict(row), mapping.messages_pointer or ())
+            if not found:
+                return ()
+        else:
+            cell = _read_top_level(mapping.messages_slot, row, headers)
+            if cell is _MISSING or cell is None:
+                return ()
+            array = json.loads(cell) if type(cell) is str else cell
+    except (ValueError, TypeError):
+        return ()
+    if type(array) is not list:
+        return ()
+    return tuple(
+        element[keys.role_key]
+        for element in array
+        if isinstance(element, dict) and isinstance(element.get(keys.role_key), str)
+    )
 
 
 def run_mapping_probe(
@@ -500,6 +527,8 @@ def run_mapping_preview(
                 break
             counts["seen"] += 1
             masked_row = _present_row(row, row_headers, reveal) if row is not None else None
+            if row is not None:
+                role_values.update(_raw_message_roles(mapping, row, row_headers))
             if isinstance(event, AcceptedRecord):
                 counts["accepted"] += 1
                 not_mapped = _not_mapped(mapping, row, row_headers) if row is not None else ()
@@ -508,10 +537,6 @@ def run_mapping_preview(
                     if row is not None
                     else ()
                 )
-                if row is not None:
-                    value = _observed_role_value(mapping, row)
-                    if value is not None:
-                        role_values.add(value)
                 rows.append(
                     MappingPreviewRow(
                         locator=f"record:{locator_index}",
