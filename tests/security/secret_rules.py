@@ -141,6 +141,9 @@ _URL_USERINFO_RULE = "url_userinfo_password"
 _URL_USERINFO = re.compile(r"(?a)\b[a-zA-Z][a-zA-Z0-9+.-]{1,20}://([^\s:/@\"']+):([^\s@\"']+)@")
 _URL_PASSWORD_PLACEHOLDER = re.compile(r"^(?:\$\{.*\}|<.*>|\{.*\}|\*+|\[REDACTED\])$")
 _URL_USERINFO_HINTS = ("://",)
+_URL_SCHEME_BEFORE = re.compile(r"(?a)\b[a-zA-Z][a-zA-Z0-9+.-]{1,20}\Z")
+_URL_USER_STOP = frozenset(" \t\n\r\f\v:/@\"'")
+_URL_PASSWORD_STOP = frozenset(" \t\n\r\f\v@\"'")
 
 # F-RULES keyword pairs for quoted_secret_assignment: (first_word, second_word) joined by an
 # optional `[_-]?` separator, plus a few bare keywords with no pairing. The quick-gate hint for
@@ -308,6 +311,43 @@ def _jwt_tokens(text: str) -> Iterator[str]:
             yield from _jwt_tokens_in_run(run)
 
 
+def _url_userinfo_passwords(text: str) -> Iterator[str]:
+    """Group 2 of every `_URL_USERINFO.finditer(text)` match, in linear time.
+    The regex is quadratic on `http://a:http://a:...` with no `@`: every
+    scheme start rescans the password class to the end of the line. A match
+    is anchored on the first `://` after its scheme (the scheme class has no
+    `:` or `/`), the user part is the maximal run up to a stop character and
+    must end at `:`, and the password is the maximal run up to the next
+    password stop character and must end at `@` (neither can backtrack into
+    a match). Both stop scans only move forward, so each character is
+    examined a bounded number of times."""
+    n = len(text)
+    prev_end = 0
+    password_stop_from = -1
+    password_stop_at = -1
+    p = text.find("://")
+    while p != -1:
+        if _URL_SCHEME_BEFORE.search(text, max(prev_end, p - 21), p):
+            user_start = p + 3
+            q = user_start
+            while q < n and text[q] not in _URL_USER_STOP:
+                q += 1
+            if q > user_start and q < n and text[q] == ":":
+                pw_start = q + 1
+                if pw_start > password_stop_at or pw_start < password_stop_from:
+                    r = pw_start
+                    while r < n and text[r] not in _URL_PASSWORD_STOP:
+                        r += 1
+                    password_stop_from, password_stop_at = pw_start, r
+                r = password_stop_at
+                if r > pw_start and r < n and text[r] == "@":
+                    yield text[pw_start:r]
+                    prev_end = r + 1
+                    p = text.find("://", prev_end)
+                    continue
+        p = text.find("://", p + 1)
+
+
 def _jwt_matches(text: str) -> Iterator[tuple[str, str]]:
     for token in _jwt_tokens(text):
         header_b64 = token.split(".", 1)[0]
@@ -329,8 +369,7 @@ def _iter_shape_matches(text: str) -> Iterator[tuple[str, str]]:
             yield name, match.group(0)
     for match in _AWS_SECRET_KEY.finditer(text):
         yield _AWS_SECRET_KEY_RULE, match.group(1)
-    for match in _URL_USERINFO.finditer(text):
-        password = match.group(2)
+    for password in _url_userinfo_passwords(text):
         if not _is_url_password_placeholder(password):
             yield _URL_USERINFO_RULE, password
     for match in _QUOTED_SECRET_ASSIGNMENT.finditer(text):

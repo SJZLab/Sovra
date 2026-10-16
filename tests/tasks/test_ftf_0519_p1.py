@@ -39,7 +39,7 @@ import subprocess
 import sys
 import uuid
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -501,6 +501,9 @@ def make_content(
         values.update(
             reviewed_leakage_report_sha256=report.report_sha256,
             approved_by="approver",
+            organization_id="11111111-1111-4111-8111-111111111111",
+            created_by="proposer",
+            locked_at="2026-10-16T00:00:00+00:00",
         )
     values.update(over)
     return ism.ManifestContent(**values)
@@ -589,6 +592,10 @@ def part_p2(roles: Any, manifest: Any, origins: Any, built: Any, grant: Any) -> 
     frozen_variants: dict[str, Any] = {
         **{f: v for f, v in variants.items() if f not in ("strategy", "version")},
         "approved_by": "someone-else",
+        # ROUND 2 (FROZEN-HASH-OMITS-COLUMNS): organization_id, created_by and locked_at are frozen.
+        "organization_id": "22222222-2222-4222-8222-222222222222",
+        "created_by": "someone-else",
+        "locked_at": "2026-10-16T00:00:01+00:00",
         "reviewed_leakage_report_sha256": sha("other reviewed"),
         "leakage_reviews": (
             {
@@ -607,6 +614,22 @@ def part_p2(roles: Any, manifest: Any, origins: Any, built: Any, grant: Any) -> 
             "ACC-FREEZE-HASH",
             f"the frozen hash covers {field}",
             raises(lambda other=other: ism.verify_frozen_content(other, frozen)),
+        )
+    for field in ("reviewed_leakage_report_sha256", "approved_by"):
+        check(
+            "ACC-FREEZE-HASH",
+            f"a manifest with every other frozen field but no {field} has no frozen hash",
+            raises(
+                lambda f=field: ism.compute_frozen_manifest_sha256(replace(reviewed, **{f: None}))
+            ),
+        )
+    for missing in ("organization_id", "created_by", "locked_at"):
+        check(
+            "ACC-FREEZE-HASH",
+            f"a manifest without {missing} has no frozen hash (round 2)",
+            raises(
+                lambda m=missing: ism.compute_frozen_manifest_sha256(replace(reviewed, **{m: None}))
+            ),
         )
     check(
         "ACC-FREEZE-HASH",
@@ -1840,6 +1863,13 @@ def part_s() -> None:
         s_prior_groups(world)
     with sqlite_world() as world:
         s_tamper(world)
+    # ROUND 2 (GRANT-NOT-REAUTHORIZED): one connection per source, each revoked or narrowed alone.
+    with sqlite_world() as world:
+        per_source_cases(world)
+    with sqlite_world() as world:
+        saturation_cases(world)
+    with sqlite_world() as world:
+        unit_cases(world)
 
 
 def standard_world(world: World) -> dict[str, Any]:
@@ -2962,6 +2992,54 @@ def s_review(world: World) -> None:
         "an exact cross-role duplicate is a blocking finding",
         any(f["disposition"] == "blocking" for f in blocking.leakage_report["findings"]),
     )
+    # ROUND 2 (LEAKAGE-REPORT-RECORD-IDS): readers get counts and hashes, never a record id.
+    all_ids = {
+        row.record_id
+        for row in world.session.query(store.DatasetSplitAssignment).filter_by(
+            manifest_id=blocking.id
+        )
+    }
+    finding_ids = {
+        str(f[key])
+        for f in blocking.leakage_report["findings"]
+        for key in ("record_id_a", "record_id_b")
+        if f.get(key)
+    }
+    check(
+        "ACC-FREEZE-READ",
+        "control: the stored report really carries record ids",
+        bool(finding_ids) and finding_ids <= all_ids,
+    )
+    summary = store.get_split_manifest(
+        world.session, _CTX, project_id=_PROJECT, manifest_id=blocking.id
+    )
+    listed = [
+        v
+        for v in store.list_split_manifests(world.session, _CTX, project_id=_PROJECT, limit=50)
+        if v.id == blocking.id
+    ]
+    rendered = repr(summary) + json.dumps(summary.manifest.leakage_summary, default=str)
+    rendered += "".join(repr(v) + json.dumps(v.leakage_summary, default=str) for v in listed)
+    check(
+        "ACC-FREEZE-READ",
+        "no record id of any role appears anywhere in the get/list result",
+        len(listed) == 1 and not any(rid in rendered for rid in all_ids),
+    )
+    check(
+        "ACC-FREEZE-READ",
+        "the raw report and reviews are not attributes of the view",
+        not hasattr(summary.manifest, "leakage_report")
+        and not hasattr(summary.manifest, "leakage_reviews"),
+    )
+    counts = summary.manifest.leakage_summary["finding_counts"]
+    check(
+        "ACC-FREEZE-READ",
+        "the summary counts the blocking findings by method and keeps the report hashes",
+        sum(c.get("blocking", 0) for c in counts.values())
+        == sum(1 for f in blocking.leakage_report["findings"] if f["disposition"] == "blocking")
+        and summary.manifest.leakage_summary["leakage_report_sha256"]
+        == blocking.leakage_report_sha256,
+    )
     refuses(
         world,
         "unresolved blocking leakage cannot be frozen",
@@ -2982,6 +3060,180 @@ def s_review(world: World) -> None:
         "a blocked scan cannot be frozen",
         "leakage_not_clear",
         lambda: world.approve(routed),
+        "ACC-FREEZE-REVIEW",
+    )
+
+
+def per_source_cases(world: World) -> None:
+    conn_a = world.connection("ps-a", ALL_PURPOSES)
+    conn_b = world.connection("ps-b", ALL_PURPOSES)
+    conn_d = world.connection("ps-d", ALL_PURPOSES)
+    conn_h = world.connection("ps-h", ALL_PURPOSES)
+    a = world.dataset("ps-train-a", "training", 40, conn_a)
+    b = world.dataset("ps-val-b", "validation", 10, conn_b)
+    d = world.dataset("ps-dev", "candidate_development", 4, conn_d)
+    h = world.dataset("ps-held-out", "held_out_evaluation", 4, conn_h)
+    m = world.propose("ps-campaign", [a, b, d, h])
+    world.approve(m)
+
+    def training() -> store.TrainingSplitView:
+        return store.load_training_split(world.session, _CTX, project_id=_PROJECT, manifest_id=m.id)
+
+    def development() -> store.TrainingSplitView:
+        return store.load_development_split(
+            world.session, _CTX, project_id=_PROJECT, manifest_id=m.id
+        )
+
+    check(
+        "NEG-FINAL-GRANT",
+        "control: both views serve while every source's grant is intact",
+        len(training().rows) > 0 and len(development().rows) > 0,
+    )
+
+    def both_refused(label: str) -> None:
+        refuses(world, f"{label} (training)", "grant_changed", training, "NEG-FINAL-GRANT")
+        refuses(world, f"{label} (development)", "grant_changed", development, "NEG-FINAL-GRANT")
+
+    for name, conn_id in (("held-out source", conn_h), ("development source", conn_d)):
+        world.connections[conn_id].connection_status = "revoked"
+        both_refused(f"revoking the {name}'s connection")
+        world.connections[conn_id].connection_status = "active"
+        check("NEG-FINAL-GRANT", f"control: the {name} serves again", len(training().rows) > 0)
+    world.connections[conn_a].allowed_purposes_json = [
+        p for p in ALL_PURPOSES if p != "held_out_evaluation"
+    ]
+    both_refused("removing held_out_evaluation from the training source's grant")
+    world.connections[conn_a].allowed_purposes_json = list(ALL_PURPOSES)
+    check(
+        "NEG-FINAL-GRANT", "control: the training source's grant is back", len(training().rows) > 0
+    )
+
+
+def unit_cases(world: World) -> None:
+    """ROUND 2 mutation-gate kills: the pure helpers pinned by exact value."""
+    check(
+        "ACC-FREEZE-HASH",
+        "a naive instant is read as UTC",
+        store._instant_text(datetime(2026, 1, 2, 3, 4, 5, 6)) == "2026-01-02T03:04:05.000006+00:00",
+    )
+    plus_three = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone(timedelta(hours=3)))
+    check(
+        "ACC-FREEZE-HASH",
+        "an aware instant is converted to UTC",
+        store._instant_text(plus_three) == "2026-01-02T00:04:05+00:00",
+    )
+    check("ACC-FREEZE-HASH", "no instant stays None", store._instant_text(None) is None)
+
+    body = {
+        "findings": [
+            {"method": "exact", "disposition": "blocking", "record_id_a": "rid-secret"},
+            {"method": "exact", "disposition": "blocking"},
+            {"method": "exact", "disposition": "advisory"},
+            {"method": "token_jaccard", "disposition": "advisory"},
+            "not-a-finding",
+        ],
+        "methods_run": ["token_jaccard", "exact"],
+        "methods_not_run": ["embedding"],
+    }
+    fake = SimpleNamespace(
+        leakage_report=body,
+        leakage_status="blocked",
+        leakage_reviews=[{"finding_id": "x"}, {"finding_id": "y"}],
+        leakage_report_sha256="a" * 64,
+        reviewed_leakage_report_sha256="b" * 64,
+    )
+    check(
+        "ACC-FREEZE-READ",
+        "the leakage summary is exactly counts, method names, review count and hashes",
+        store._leakage_summary(fake)  # type: ignore[arg-type]
+        == {
+            "status": "blocked",
+            "finding_counts": {
+                "exact": {"advisory": 1, "blocking": 2},
+                "token_jaccard": {"advisory": 1},
+            },
+            "methods_run": ["exact", "token_jaccard"],
+            "methods_not_run": ["embedding"],
+            "review_count": 2,
+            "leakage_report_sha256": "a" * 64,
+            "reviewed_leakage_report_sha256": "b" * 64,
+        },
+    )
+    check(
+        "ACC-FREEZE-READ",
+        "the view exposes exactly the table's columns minus the report and the reviews",
+        set(store._VIEW_COLUMNS)
+        == {c.key for c in store.DatasetSplitManifest.__table__.columns}
+        - {"leakage_report", "leakage_reviews"},
+    )
+
+    ds = standard_world(world)
+    m = world.propose("unit", [ds["a"], ds["b"], ds["d"], ds["h"]])
+    world.approve(m)
+    sources = store._fetch_sources(world.session, _CTX, m.id)
+    orphan = SimpleNamespace(id=det_uuid("manifest-with-no-assignments"))
+    refuses(
+        world,
+        "a frozen source with no assignment in the manifest is tampering",
+        "manifest_tampered",
+        lambda: store._recheck_sources(
+            world.session,
+            _CTX,
+            _PROJECT,
+            orphan,
+            sources,
+            training=False,  # type: ignore[arg-type]
+        ),
+        "NEG-FINAL-TAMPER",
+    )
+
+
+def saturation_cases(world: World) -> None:
+    """ROUND 2 (verifier fault F24): the detector's partner cap is pinned from both sides. 215
+    near-duplicate records saturate it (a record reaches 200 partners); 150 do not."""
+    conn = world.connection("sat", ALL_PURPOSES)
+    base = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike"
+
+    def manifest_for(count: int) -> store.DatasetSplitManifest:
+        train = world.dataset(f"sat-train-{count}", "training", count, conn)
+        world.records[train.id] = tuple(
+            world.record(str(train.id), i, f"{base} variant{i}") for i in range(count)
+        )
+        return world.propose(
+            f"sat-{count}",
+            [
+                train,
+                world.dataset(f"sat-val-{count}", "validation", 10, conn),
+                world.dataset(f"sat-dev-{count}", "candidate_development", 4, conn),
+                world.dataset(f"sat-held-{count}", "held_out_evaluation", 4, conn),
+            ],
+        )
+
+    below = manifest_for(150)
+    check(
+        "ACC-FREEZE-REVIEW",
+        "control: 150 near-duplicates stay under the partner cap and the semantic scan runs",
+        below.leakage_report["reason_code"] != "semantic_scan_saturated"
+        and not below.leakage_report["methods_not_run"],
+    )
+    saturated = manifest_for(215)
+    check(
+        "ACC-FREEZE-REVIEW",
+        f"215 near-duplicates saturate the partner cap: {saturated.leakage_status}",
+        saturated.leakage_status == "blocked"
+        and saturated.leakage_report["reason_code"] == "semantic_scan_saturated",
+    )
+    check(
+        "ACC-FREEZE-REVIEW",
+        "a saturated scan reports every semantic method as not run, never as clear",
+        set(saturated.leakage_report["methods_not_run"])
+        == {"char_ngram", "token_jaccard", "embedding", "agent_trace_structural"},
+    )
+    refuses(
+        world,
+        "a saturated scan cannot be frozen",
+        "leakage_not_clear",
+        lambda: world.approve(saturated),
         "ACC-FREEZE-REVIEW",
     )
 
@@ -3089,20 +3341,17 @@ def s_access(world: World) -> None:
     refuses(
         world, "a narrowed grant (training removed)", "grant_changed", training, "NEG-FINAL-GRANT"
     )
-    check(
-        "NEG-FINAL-GRANT",
-        "a purpose the training view never serves does not stop it",
-        len(development().rows) > 0,
-    )
-    connection.allowed_purposes_json = ["training", "validation", "held_out_evaluation"]
+    # ROUND 2 (GRANT-NOT-REAUTHORIZED): every frozen source is re-authorized on every load, so a
+    # narrowed grant stops the development view too (the old "never serves" assertion is gone).
     refuses(
         world,
-        "a narrowed grant (candidate_development removed) stops the development view",
+        "a narrowed grant (training removed) also stops the development view",
         "grant_changed",
         development,
         "NEG-FINAL-GRANT",
     )
-    check("NEG-FINAL-GRANT", "while the training view is unaffected", len(training().rows) > 0)
+    connection.allowed_purposes_json = ["training", "validation", "held_out_evaluation"]
+    refused_both("a narrowed grant (candidate_development removed)", "grant_changed")
     connection.allowed_purposes_json = list(ALL_PURPOSES)
     removed = world.connections.pop(conn)
     refused_both("a connection that no longer exists", "grant_changed")
@@ -4256,6 +4505,38 @@ def s_tamper(world: World) -> None:
     )
     world.connections[conn_a].allowed_purposes_json = list(ALL_PURPOSES)
     check("NEG-FINAL-GRANT", "restored, it serves again", len(training().rows) > 0)
+
+    # ROUND 2 (FROZEN-HASH-OMITS-COLUMNS): an owner-level edit of any of the three columns the
+    # hash now covers is served as manifest_tampered, in both views, and restoring it serves again.
+    for column, forged_value in (
+        ("created_by", "someone-else"),
+        ("locked_at", m1.locked_at + timedelta(seconds=1)),
+        ("organization_id", det_uuid("another-organization")),
+    ):
+        original = getattr(m1, column)
+        setattr(m1, column, forged_value)
+        world.session.flush()
+        refuses(
+            world,
+            f"an owner-level edit of {column} (training)",
+            "manifest_tampered",
+            training,
+            "NEG-FINAL-TAMPER",
+        )
+        refuses(
+            world,
+            f"an owner-level edit of {column} (development)",
+            "manifest_tampered",
+            development,
+            "NEG-FINAL-TAMPER",
+        )
+        setattr(m1, column, original)
+        world.session.flush()
+        check(
+            "NEG-FINAL-TAMPER",
+            f"control: with {column} restored it serves again",
+            len(training().rows) > 0,
+        )
 
     # Status / frozen columns.
     m1.frozen_manifest_sha256 = None

@@ -332,9 +332,88 @@ class ReviewInput:
     rationale: str
 
 
+_VIEW_COLUMNS: tuple[str, ...] = (
+    "id",
+    "organization_id",
+    "project_id",
+    "name",
+    "version",
+    "parent_version",
+    "strategy",
+    "seed",
+    "ratios",
+    "cutoff",
+    "normalization_version",
+    "tokenizer_identity",
+    "split_manifest_sha256",
+    "proposal_sha256",
+    "leakage_report_sha256",
+    "leakage_status",
+    "reviewed_leakage_report_sha256",
+    "migrated_from_legacy_sha256",
+    "status",
+    "frozen_manifest_sha256",
+    "approved_by",
+    "locked_at",
+    "created_by",
+    "created_at",
+    "updated_at",
+)
+
+
+@dataclass(frozen=True)
+class ManifestView:
+    """A manifest as readers see it: every scalar column and hash, plus a content- and id-free
+    `leakage_summary`. The stored leakage report (finding record ids, including final-qualification
+    ids) and the review bodies never leave the store."""
+
+    values: Mapping[str, Any]
+    leakage_summary: Mapping[str, Any]
+
+    def __getattr__(self, name: str) -> Any:
+        try:
+            return self.values[name]
+        except KeyError:
+            raise AttributeError(name) from None
+
+
+def _leakage_summary(manifest: DatasetSplitManifest) -> dict[str, Any]:
+    """Finding counts by method and disposition, the methods run / not run and the report hashes.
+    No finding, record id, role pairing, score or review text."""
+    body = manifest.leakage_report if isinstance(manifest.leakage_report, Mapping) else {}
+    findings = body.get("findings")
+    counts: dict[str, dict[str, int]] = {}
+    for finding in findings if isinstance(findings, list) else []:
+        if not isinstance(finding, Mapping):
+            continue
+        method = str(finding.get("method"))
+        disposition = str(finding.get("disposition"))
+        bucket = counts.setdefault(method, {})
+        bucket[disposition] = bucket.get(disposition, 0) + 1
+
+    def names(key: str) -> list[str]:
+        value = body.get(key)
+        return sorted(str(v) for v in value) if isinstance(value, list) else []
+
+    return {
+        "status": manifest.leakage_status,
+        "finding_counts": {m: dict(sorted(c.items())) for m, c in sorted(counts.items())},
+        "methods_run": names("methods_run"),
+        "methods_not_run": names("methods_not_run"),
+        "review_count": len(manifest.leakage_reviews),
+        "leakage_report_sha256": manifest.leakage_report_sha256,
+        "reviewed_leakage_report_sha256": manifest.reviewed_leakage_report_sha256,
+    }
+
+
+def _view(manifest: DatasetSplitManifest) -> ManifestView:
+    columns = {name: getattr(manifest, name) for name in _VIEW_COLUMNS}
+    return ManifestView(values=columns, leakage_summary=_leakage_summary(manifest))
+
+
 @dataclass(frozen=True)
 class ManifestSummary:
-    manifest: DatasetSplitManifest
+    manifest: ManifestView
     roles: tuple[DatasetSplitManifestRole, ...]
     sources: tuple[DatasetSplitManifestSource, ...]
 
@@ -354,6 +433,15 @@ class TrainingSplitView:
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _instant_text(value: datetime | None) -> str | None:
+    """Canonical text of an instant (UTC ISO-8601), the form the frozen hash covers."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat()
 
 
 def _clean(value: object, limit: int) -> str:
@@ -470,6 +558,9 @@ def _content_from_rows(
             reviewed_leakage_report_sha256=manifest.reviewed_leakage_report_sha256,
             migrated_from_legacy_sha256=manifest.migrated_from_legacy_sha256,
             approved_by=manifest.approved_by,
+            organization_id=str(manifest.organization_id),
+            created_by=manifest.created_by,
+            locked_at=_instant_text(manifest.locked_at),
         )
     except (ManifestDomainError, TypeError, ValueError):
         raise SplitManifestError("manifest_tampered") from None
@@ -520,7 +611,7 @@ def get_split_manifest(
     assignment, record id, group id or storage key."""
     manifest = _fetch_manifest(session, context, project_id, manifest_id)
     return ManifestSummary(
-        manifest,
+        _view(manifest),
         _fetch_roles(session, context, manifest.id),
         _fetch_sources(session, context, manifest.id),
     )
@@ -533,7 +624,7 @@ def list_split_manifests(
     project_id: uuid.UUID,
     limit: int,
     after: uuid.UUID | None = None,
-) -> list[DatasetSplitManifest]:
+) -> list[ManifestView]:
     if type(limit) is not int or not 1 <= limit <= _MAX_PAGE_SIZE:
         raise ValueError("limit must be an integer between 1 and 200")
     if after is not None and not isinstance(after, uuid.UUID):
@@ -542,7 +633,8 @@ def list_split_manifests(
     if after is not None:
         statement = statement.where(DatasetSplitManifest.id > after)
     statement = statement.order_by(DatasetSplitManifest.id).limit(limit)
-    return list(execute_tenant_scoped(session, context.organization_id, statement).scalars())
+    rows = execute_tenant_scoped(session, context.organization_id, statement).scalars()
+    return [_view(row) for row in rows]
 
 
 # ------------------------------------------------------------------ propose
@@ -1230,6 +1322,7 @@ def approve_split_manifest(
             ),
             "reviewed_leakage_report_sha256": reviewed.report_sha256,
             "approved_by": actor.actor_id,
+            "locked_at": _instant_text(locked_at),
         }
     )
     manifest.leakage_reviews = [dict(r) for r in locked_content.leakage_reviews]
@@ -1340,18 +1433,17 @@ def _recheck_sources(
     project_id: uuid.UUID,
     manifest: DatasetSplitManifest,
     sources: Sequence[DatasetSplitManifestSource],
-    served_roles: tuple[str, ...],
     *,
     training: bool,
 ) -> None:
+    """Re-authorizes EVERY frozen source on every load (training and development alike): its
+    connection must still exist and be active and its live purposes must still include the purpose
+    of every role its records occupy, not only the roles this load serves (Section 67.4 / Q31)."""
     served = execute_tenant_scoped(
         session,
         context.organization_id,
         select(DatasetSplitAssignment.source_dataset_id, DatasetSplitAssignment.role)
-        .where(
-            DatasetSplitAssignment.manifest_id == manifest.id,
-            DatasetSplitAssignment.role.in_(served_roles),
-        )
+        .where(DatasetSplitAssignment.manifest_id == manifest.id)
         .distinct(),
     ).all()
     roles_by_source: dict[uuid.UUID, set[str]] = {}
@@ -1394,7 +1486,10 @@ def _recheck_sources(
             or not same(excluded_positions_sha256(excluded), source.excluded_positions_sha256)
         ):
             raise SplitManifestError("quality_report_changed")
-        for role in sorted(roles_by_source.get(source.dataset_id, ())):
+        occupied = sorted(roles_by_source.get(source.dataset_id, ()))
+        if not occupied:
+            raise SplitManifestError("manifest_tampered")
+        for role in occupied:
             try:
                 authorize_dataset_source_purpose(
                     session,
@@ -1467,7 +1562,7 @@ def load_training_split(
     manifest, content, sources = _verified_locked(
         session, context, project_id, manifest_id, stage="training"
     )
-    _recheck_sources(session, context, project_id, manifest, sources, TRAINING_ROLES, training=True)
+    _recheck_sources(session, context, project_id, manifest, sources, training=True)
     try:
         rows = assert_training_rows(_read_rows(session, context, manifest, TRAINING_ROLES))
     except ManifestDomainError:
@@ -1494,7 +1589,7 @@ def load_development_split(
     manifest, content, sources = _verified_locked(
         session, context, project_id, manifest_id, stage="final_freeze"
     )
-    _recheck_sources(session, context, project_id, manifest, sources, roles, training=False)
+    _recheck_sources(session, context, project_id, manifest, sources, training=False)
     try:
         rows = assert_development_rows(_read_rows(session, context, manifest, roles))
     except ManifestDomainError:

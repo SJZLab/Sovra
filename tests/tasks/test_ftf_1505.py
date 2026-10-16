@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FTF-1505 -- Secret scanning, round 4 (unit/fault tests).
+"""FTF-1505 -- Secret scanning, round 5 (unit/fault tests).
 
 Round 4 (Control-plane return 2026-10-16, QUEUE.md "0h") replaces every
 source-text check with a behavioural one and adds:
@@ -660,6 +660,52 @@ def test_jwt_linear_matcher_equals_the_regex() -> None:
     )
 
 
+def test_url_userinfo_linear_matcher_equals_the_regex() -> None:
+    """`_url_userinfo_passwords` replaces `_URL_USERINFO.finditer` (quadratic
+    on `http://a:http://a:...` with no `@`). Differential over 60,000 random
+    strings built from the characters the pattern branches on: the same
+    passwords, in the same order."""
+    import random
+
+    rng = random.Random(15051)
+    atoms = [
+        "://",
+        ":",
+        "/",
+        "@",
+        "a",
+        "Z",
+        "9",
+        "+",
+        ".",
+        "-",
+        "_",
+        " ",
+        "\n",
+        "\t",
+        '"',
+        "'",
+        "http",
+        "s3",
+        "x+y",
+        "\u00e9",
+        "\x1c",
+        "\v",
+        "://a:b@",
+        "\nhttp",
+    ]
+    mismatches = 0
+    compared = 0
+    for _ in range(60_000):
+        text = "".join(rng.choice(atoms) for _ in range(rng.randint(0, 40)))
+        expected = [m.group(2) for m in sr._URL_USERINFO.finditer(text)]
+        compared += len(expected)
+        if list(sr._url_userinfo_passwords(text)) != expected:
+            mismatches += 1
+    check("FTF-1505-URL", f"0 mismatches over 60,000 strings (got {mismatches})", mismatches == 0)
+    check("FTF-1505-URL", f"the differential compared real matches ({compared})", compared > 1000)
+
+
 def test_whole_line_scanning_stays_linear_on_pathological_lines() -> None:
     """No window means each rule sees the whole line; every rule must stay
     linear on the shapes that make naive patterns backtrack."""
@@ -671,6 +717,8 @@ def test_whole_line_scanning_stays_linear_on_pathological_lines() -> None:
         "many_urls": lambda k: "https://host:8080/p " * (k // 10),
         "many_assignments": lambda k: 'api_key = "' * (k // 6),
         "hex_then_word": lambda k: "ab" * k + "g",
+        "userinfo_without_at": lambda k: "http://a:" * (k // 9),
+        "userinfo_password_runs": lambda k: "a://b:c/d" * (k // 9),
     }
     for name, build in shapes.items():
         small, big = build(25_000), build(100_000)
@@ -2333,6 +2381,7 @@ def main() -> None:
     test_no_decode_cap_every_candidate_is_decoded()
     test_f13_seam_long_secrets_found_at_every_offset()
     test_jwt_linear_matcher_equals_the_regex()
+    test_url_userinfo_linear_matcher_equals_the_regex()
     test_whole_line_scanning_stays_linear_on_pathological_lines()
     test_source_scan_has_no_path_exclusion()
     test_non_ascii_filename_is_scanned_not_silently_skipped()

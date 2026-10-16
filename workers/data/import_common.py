@@ -507,6 +507,17 @@ class ImportMapping:
     system: Slot | None = None
     group_key: Slot | None = None
     metadata_slots: tuple[tuple[str, Slot], ...] = ()
+    # FTF-H011-P1's own additive field (IMPORTER ORDER catalog rule): a caller-supplied tap
+    # called first by `apply_mapping`, before any validation, with a *copy* of the row and
+    # headers so a mapping preview can show the exact raw row a rejection or candidate came
+    # from. Never set by `mapping_from_object`/`parse_mapping` (so no parsed MappingSpec ever
+    # carries one) and never read by `document`/`mapping_sha256` (`compare=False`,
+    # `repr=False`: two mappings that differ only by observer are the same mapping). A tap
+    # that mutates its own copy can never reach the importer's own row/headers, which stay
+    # the original objects.
+    row_observer: Callable[[Row, Sequence[str] | None], None] | None = field(
+        default=None, compare=False, repr=False
+    )
 
 
 def _bad(reason: str) -> MappingInvalidError:
@@ -852,6 +863,16 @@ def apply_mapping(
 ) -> MappedRow:
     """Builds the FTF-0506 raw record from one source row. A mapping never
     defaults a value: an empty optional slot is omitted."""
+    if mapping.row_observer is not None:
+        copied_row = (
+            dict(row)
+            if isinstance(row, Mapping)
+            else list(row)
+            if isinstance(row, Sequence) and not isinstance(row, str | bytes)
+            else row
+        )
+        copied_headers = None if headers is None else tuple(headers)
+        mapping.row_observer(copied_row, copied_headers)
     messages: list[dict[str, object]] = []
     if mapping.prompt is not None:
         system = _text_value(mapping.system, row, headers, "system", required=False)

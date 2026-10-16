@@ -11739,3 +11739,31 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   unprobed; corrupt deflated member hides later members (round-2 P9 unchanged); truncated archives and >50 MB members
   silent; window-seam regression misses long secrets; no per-lane seeded recall in main(). Control-plane action: the
   all-refs push/schedule sweep is a [GOVERNANCE] workflow change.
+
+## 2026-10-16T05:05Z — CERTIFIED (child slice): FTF-1304-S1
+- **FTF-1304-S1: CERTIFIED (L2)** (round 3 under the stopping rule, tests only; PR #849, merge f490784c7433106e838c18553dab5b67e4eec1d5, head 76bbdb56).
+  Producer session_019bSJLCBeQfUuKvkvkpQnDw ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 76/76 success, ci-verdict
+  116759038545; gate 116712903176 step 74 "FTF-1304-S1 Compound binding cost attribution tests: all checks passed" (27
+  faults, exits 1 on any GREEN). Production byte-identical to round 2; certified modules and ci.yml untouched. Pins
+  CUR6 (cross-attempt currency), CUR7 (exact currency compare), DSK1 (shared alias kinds) landed; all 27 producer
+  faults and every round-2 verifier fault RED; 215 probes, 0 violations. Advisory: pin a fullwidth card (F3-KEY-NFKC
+  GREEN, production correct); make SelfHostedWindow.currency keyword-only. Child slice: no count change. UNWIRED.
+
+## 2026-10-16T05:05Z — CERTIFIED (child slice): FTF-0213-S1
+- **FTF-0213-S1: CERTIFIED (L2)** (round 3 under the stopping rule, tests only; PR #850, merge 7460dcbe925bd4d73e607afe80efaf656326bba8, head e9f81797).
+  Producer session_019bSJLCBeQfUuKvkvkpQnDw ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 76/76 success, ci-verdict
+  116770972015; gate 116712914620 "FTF-0213-S1 constrained-choice probe: all checks passed" (live TLS checks ran).
+  Production byte-identical to round 2; certified probes and ci.yml untouched. Five real-wire usage modes (negative /
+  zero on all or one trial, mixed) -> MALFORMED_RESPONSE / USAGE_MISSING with max/mean None and raw counts kept; W1/W2/W3
+  and 11 verifier variants RED; all round-1/2 faults RED; 229 checks; 87/89 probes OK (2 = advisory A1, over-ceiling
+  value still shown while MALFORMED). Child slice: no count change. UNWIRED.
+
+## 2026-10-16T05:05Z — RETURNED: FTF-0519-P1 (r1)
+- **FTF-0519-P1: RETURNED** (round 1 → 2; PR #843, merge 73abde98ce543a084da1fa9f9d49b7411fa9f63c, head 18ed6ca3).
+  Producer session_0193jVS9JcLjjkyAggEtNa5k ≠ certifier session_01QVznorVMjnmcttUhyDnoGR (merge commit 608f48c5 has no
+  trailer). CI: 77/77 success, ci-verdict 116776744459; dataset-split-manifest-integration 116720987735 "FTF-0519-P1 split
+  manifest real proof: all checks passed"; gate 116720891848 "FTF-0519-P1: all checks passed"; mutation-gate 200/200
+  (capped). Law 18 verified with raw SQL; Law 15 none touched (0030 adds one UNIQUE FK target, disclosed). Return:
+  frozen grants of non-served sources not re-authorized (revoked held-out/dev connection still serves training);
+  frozen hash omits organization_id/created_by/locked_at; get_split_manifest leaks finding record ids; no saturation
+  fixture. Ruling: re-authorize every frozen source on every load.

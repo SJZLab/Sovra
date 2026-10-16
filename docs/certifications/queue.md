@@ -25076,3 +25076,48 @@ different session.
 
 ## 2026-10-16T01:58Z — Control plane: FTF-1505 returned (r4)
 - **Returned:** FTF-1505 r4 (0h): behavioural fault rows, live positive control, archive fail-closed, window seam, per-lane seeded recall. [GOVERNANCE] all-refs sweep workflow to follow.
+
+## 2026-10-16T05:05Z — Control plane: FTF-1304-S1 certified (child slice)
+- **Certified:** FTF-1304-S1 (#849, merge f490784c) under the stopping rule; UNWIRED.
+
+## 2026-10-16T05:05Z — Control plane: FTF-0213-S1 certified (child slice)
+- **Certified:** FTF-0213-S1 (#850, merge 7460dcbe) under the stopping rule; UNWIRED.
+
+## 2026-10-16T05:05Z — Control plane: FTF-0519-P1 returned (r2)
+- **Returned:** FTF-0519-P1 r2 (0k): re-authorize every frozen grant, full frozen hash, id-free manifest summary, saturation fixture.
+
+## 2026-10-16T05:47Z — PR #852 merged (FTF-0906 round 2; green ci-verdict)
+- **Merged, PROVISIONAL (Law 4, not self-certified):** PR #852 (FTF-0906 round 2, item 0j) merged
+  on a fully green `ci-verdict` (run `38841748420`), after merging `main` into the branch once to
+  resolve a real conflict with PR #844 (round 1's own doc record) on `docs/spec-matrix.yaml`'s
+  FTF-0906 entry — resolved by folding round 1's fuller history into this round's entry rather than
+  dropping either side. The real 12-point DoD for this round was only in `[CERT]` PR #847's own
+  diff (commits `e2f20ee`/`39db14b6`), not in its title/body — read directly from that PR's commit
+  history before claiming the item. All 12 named return points closed: `verify_egress` now forces
+  `failed` on unattributed-leak/unplanned-egress evidence; `EgressPlan.required_stores` can no
+  longer omit the mandatory log stores; the allow branch's positive-control check now requires a
+  real `canary_found` at the destination plus enforcement/client/destination agreement; the
+  encrypted-capture-insufficient check requires a genuinely inspected record; a new `"unobserved"`
+  destination outcome fails closed (Law 17) instead of a fabricated `not_seen`;
+  `EgressVerificationReport` gained `policy_digest`/`scope`/`inspected_stores`, all bound into
+  `report_sha256`; the scanner matches case-insensitive hex and lower-cased-percent-escape url
+  variants; the real-socket integration test derives canary_found/enforcement-code from what the
+  guard/sinks actually did, feeds the real caught error-path leak into `verify_egress` itself,
+  really scans a snapshot of the real access-log text, fails closed when its TLS fixture is
+  unavailable, and cleans up its own tmp directory; one additive `ci.yml` gate step added.
+  `scripts/mutation_gate.py` (diff mode) run for real three times against the actual committed
+  diff, not merely asserted clean: an initial run found 11 real survivors (3 masked by the new
+  mandatory-store check also rejecting the same malformed test input as an older, unrelated guard;
+  4 from a per-encoding `==` dispatch comparing an already-`_member`-validated value — genuinely
+  unobservable, fixed by removing the dispatch rather than chasing it; 4 from the new
+  UNPLANNED-EGRESS check's own case-sensitivity, a real gap that run itself caught); a second run
+  found 2 more (same encoding-dispatch class); final run: **152/152 KILLED, 0 SURVIVED, 100.0%**.
+  Full real-socket integration suite run end to end (this sandbox had openssl/
+  update-ca-certificates/sudo), not merely read. F5 (uninspected destination as positive control)
+  disclosed as a reviewed equivalent under this round's own fix (`PlaintextInspection.
+  __post_init__`'s own `canary_found implies inspected` invariant makes that filter unkillable now
+  that `arrived` also checks `canary_found`) — flagged for Control-plane classification, not
+  silently allowlisted (relay PRs cannot edit `docs/certifications/mutation-allowlist.yaml`). Full
+  detail and the fault → RED table: `docs/certifications/submissions/
+  2026-10-15T2300Z-FTF-0906-r2.md`. Not self-certified (Law 4) — `certification_state` stays
+  `PROVISIONAL`, `proof_state` stays `L1-PROVEN`. Needs L2 verification by a different session.
