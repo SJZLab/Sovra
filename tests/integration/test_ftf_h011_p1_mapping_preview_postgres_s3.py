@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# mypy: disable-error-code="arg-type,attr-defined,assignment,call-arg,index,misc,union-attr"
+# mypy: disable-error-code="arg-type,attr-defined,assignment,call-arg"
+# mypy: disable-error-code="call-overload,index,misc,union-attr"
 """FTF-H011-P1 -- the dataset mapping probe/preview service
 (`apps/api/app/datasets/dataset_mapping_service.py`) over PostgreSQL 16 as the restricted
 `sovra_app` role and the live SeaweedFS S3 API, through the real FTF-0501 upload routes and the
