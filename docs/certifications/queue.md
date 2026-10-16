@@ -24957,6 +24957,63 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 ## 2026-10-15T14:14Z — Control plane: FTF-1505 returned (r3)
 - **Returned:** FTF-1505 r3 (0h): fault matrix, run-time seeds, log lane, decode completeness, fail-closed omissions, redaction, artifacts, PR-scoped history lane; stopping rule.
 
+## 2026-10-15T15:29Z — FTF-1704 — Validation dataset (round 1) — PROVISIONAL / L1-PROVEN
+Relay lane C, PR #827 (`relay/FTF-1704-r1`, merged `bd4066f4`). Not self-certified (Law 4). Contract:
+Control-plane design 2026-10-14 (QUEUE.md Backlog "FTF-1704 Validation dataset").
+
+- **What was built:** `evals/reference/validation_dataset.py` (`generate_validation_traces(count=180)`,
+  `generate_development_cases(count=300)`, `case_oracle_verdict`, `verify_validation_trace`,
+  `verify_development_case`, `build_reference_eval_splits`, `assert_split_unchanged`); one additive,
+  serialized edit to `evals/reference/training_dataset.py` (public aliases + read-only vocab constants only,
+  no behaviour change — `test_ftf_1703.py` re-run unchanged, all pass); `tests/reference/test_ftf_1704.py`
+  (`gate` step) and `tests/integration/test_ftf_1704_development_suite_import.py` (real PG16, new job
+  `development-suite-import-integration`, in `ci-verdict` needs). No migration, route, UI, contract edit,
+  runtime dependency, secret or keyed service — synthetic data only.
+- **Clause map:** >=150 validation / >=250 development cases with 21 template-family groups per role
+  (FTF-0517 `allocate_splits`, boundary-tested at 149/250 and 150/249); real PG16 integration through the
+  evaluation-case routes (300 cases); independent human review disclosed BLOCKED_EXTERNAL
+  (FTF-R006 path, not claimed); cross-role sharing refused (`RoleOverlapError`, near-duplicate and
+  `reserved_final`-overlap guards, FTF-0513); no silent resplit (`assert_split_unchanged` raises on role
+  swap / group change / re-hash / seed change / bad hash text, no function takes a score/outcome); critical
+  cases (`forbidden_action`/`required_refusal`) checked by the already-certified FTF-0608/0609/0610 graders
+  on both the reference and the Postgres-round-trip record.
+- **Fault -> RED table:** 17 named faults/negative tests in
+  `docs/certifications/submissions/2026-10-15T0815Z-FTF-1704.md` (phrase/answer/entity reuse across roles,
+  casefold/family-key drops, `reserved_final` ignored, forged critical grader, count/split-skip mutants,
+  secret-shaped note, outcome-check removal, cross-subject oracle blindness, plus 2 integration-level
+  checks) — each a real production-source edit shown RED. Negative tests on the real default code: forged
+  traces, seeded overlaps, 149/249 counts, subclass/NaN/set/cycle/200,000-deep nesting inputs, reserved
+  suite rewritten after construction. Same-class sweep: plain-JSON round-trip copy on every `verify_*`/
+  `build_*` input, consistent with `training_dataset.py`'s own round-6 guard.
+- **Mutation gate (uncapped):** 234 run / 234 KILLED / 0 SURVIVED / 100.0% (894.7s). An earlier uncapped run
+  found 32 survivors (redundant shape checks); fixed by removing redundant checks or adding message-specific
+  tests, not by allowlisting — `mutation-allowlist.yaml` untouched.
+- **Verification:** `ruff`/`ruff format`/`mypy` clean (541 files); `test_ftf_1704.py`, `test_ftf_1703.py`,
+  `test_ftf_1701.py`, `test_ftf_1702.py`, `test_ftf_1706.py`, `tests/unit/test_ci_policy.py` all pass;
+  `test_ftf_1704_development_suite_import.py` against a real local PostgreSQL 16 passes;
+  `product_truth_check.py --fail-on-unwired` 48/48 (blank `proving_symbol`, UNWIRED — reference-data task,
+  same precedent as FTF-1703); `validate_spec.py --strict` clean; `data_exposure_check.py` OK (no
+  table/bucket/identity touched, Law 18). `status.py` unchanged at merge time (a submission is not a
+  certification, Law 2).
+- **Disclosed, not hidden:** no independent human review of either set (FTF-R006); no certified
+  `state_transition` grader exists yet (`note`/`note_retry` cases controlled via the sequence grader's state
+  check instead); `group_count` is 21 families per role, no floor claimed beyond the two acceptance counts;
+  `final_qualification` is empty in this manifest (FTF-1705's own job), so `manifest.status` is
+  `insufficient` by design; suite locking/suite sha (FTF-0603) not done, only the manifest hash freezes the
+  database side; the integration test mounts `build_evaluation_case_router` directly (not the full
+  `create_app()` OIDC path, which FTF-0103A already proves); tool behaviours are shared with FTF-1703 by
+  design, phrasing/entities/answers kept disjoint.
+- **CI note:** this PR's own `gate` was red for several hours on one unrelated step
+  (`tests/tasks/test_ftf_1505.py`'s history lane flagging a string that existed only on the then-unmerged
+  `relay/FTF-1505-r2` branch, per this PR's own comment at 10:21Z and the matching
+  `docs/progress/2026-10-15T1300Z-relay.md` root-cause trace) — not a defect in this task. Fixed by merging
+  `main` (which carries FTF-1505 round 2's real baseline) into the branch; `ci-verdict` green on the merged
+  head `0a48faf6`, mutation-gate and the new integration job both passing.
+
+Not self-certified (Law 4) — `certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN`,
+`evidence_hash` pinned to the merge commit `bd4066f4e153b96c9b181222626bb52a910487ad`. Needs L2 review by a
+different session.
+
 ## 2026-10-15T17:21Z — Control plane: FTF-1704 returned (r2)
 - **Returned:** FTF-1704 r2 (0i): synthetic provenance on development cases; content hash in the recorded freeze.
 

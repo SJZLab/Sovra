@@ -13078,7 +13078,7 @@ FTF-1704:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Validation dataset
-  evidence_hash: ''
+  evidence_hash: bd4066f4e153b96c9b181222626bb52a910487ad
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0517, FTF-1701,
