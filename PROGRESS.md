@@ -30385,3 +30385,44 @@ four items merged PROVISIONAL (FTF-1704, FTF-0904-W1-F1 already Control-plane CE
 FTF-0904-F1-r3), each awaiting or already past L2 review; the two baseline-hygiene fixes (#851,
 dedupe in #837) are infrastructure fixes, not task submissions, so nothing to certify there. No
 `BLOCKER.md` entry. No new owner ask. Stopping here -- this shift is done.
+
+## 2026-10-16T0504Z -- Scheduled relay shift -- FTF-H011-P1 red CI fix (PR #854)
+
+STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`. STEP 0.1: `BLOCKER.md` had no live
+entry. STEP 0.2: no `cognee-cli` binary -- text-search fallback declared.
+
+Returned work first: `list_pull_requests` showed one open `[relay]` PR with a failed check --
+PR #854 (`relay/FTF-H011-P1-r1`), `mutation-gate` FAILED on its own first real CI run
+(`38851093990`): 200 run / 196 KILLED / 4 SURVIVED / 98.0%. Independently re-derived each
+survivor from the committed code (Law 1) rather than trusting the existing submission's own
+disclosure at face value: two (`MappingPreviewRow.__post_init__`'s outcome strip/lower at
+`:125`/`:127`, `message_content`'s hardcoded-literal role strip/lower at `:328`) are genuinely
+unreachable equivalents; the other two were real, previously-undetected gaps --
+`_raw_message_roles`'s `if keys is None: return ()` (`:395`, reachable via the same
+construction-bypass technique already used elsewhere in this file for `Slot.kind`, since
+`ImportMapping` has no construction-time validation of its own) and `_mapped_names`'s
+`elif slot.kind == "index"` (`:244`, never even sampled by the CI job's own capped
+`--max-mutants 200` out of 213 total candidates -- found via an uncapped per-file re-run). Fixed
+both with real behavioural tests (`ROLE-12`, `NMAPIDX-5`), each independently verified to kill
+its own mutant by manual mutation + revert. Re-ran uncapped (`--files
+workers/data/dataset_mapping_review.py`, 171 mutants): 168 KILLED / 3 SURVIVED / 98.2%,
+confirming the 3 remaining equivalents are the complete set. Did not touch
+`docs/certifications/mutation-allowlist.yaml` (relay-forbidden; a Control-plane L2 decision per
+Law 9) -- pushed the fix to the same open branch/round (`61cac03`), updated the submission doc,
+and left a PR comment summarizing the state. `mutation-gate`/`ci-verdict` stays red on PR #854
+until Control plane reviews the 3 disclosed equivalents.
+
+Checked every other open `[relay]` PR for red CI/conflicts: #848/#852 green on `mutation-gate`
+(gate itself still running at check time); #839/#759/#709/#732 all green `ci-verdict` (drafts,
+intentionally WIP); #742 (FTF-H010-P2 r2, draft) is red on `mutation-gate` with 2 survivors
+(`STATE_SUCCEEDED`/`dialect.name` strip/lower) -- already independently diagnosed and disclosed
+by its own prior session (commit `930dfbf7`, submission
+`docs/certifications/submissions/2026-10-14T0343Z-FTF-H010-P2-r2-mutation-fix.md`) as the exact
+same equivalent-mutant class, correctly left for Control plane rather than relay-allowlisted.
+Nothing further to do there. No merge conflicts found on any open PR inspected.
+
+STEP 3: this file and the designated-branch docs-only PR. STEP 4 stop condition: single-item
+outcome (PR #854's own red CI reduced from 4 to 3 disclosed-equivalent survivors, awaiting a
+Control-plane allowlist decision) -- nothing further for relay on this item or on #742 until
+that decision lands. No new Backlog item claimed this shift (time went to the returned-work fix
+and the full-queue red-CI sweep). `BLOCKER.md` unchanged. No owner ask raised.
