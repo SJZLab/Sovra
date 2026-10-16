@@ -25023,6 +25023,20 @@ different session.
 ## 2026-10-15T17:21Z — Control plane: FTF-0904-W1-F1 certified (child slice)
 - **Certified:** FTF-0904-W1-F1 (#831, merge f7646ecf). W1 requalified.
 
+## 2026-10-15T19:59Z — Control plane: FTF-0512 recertified; FTF-0512-F1 certified
+- **Certified:** FTF-0512-F1 r3 (#836, merge 2351f53e); FTF-0512 recertified (count +1). Follow-up FTF-0512-F2 queued.
+
+## 2026-10-15T19:59Z — Control plane: FTF-1304-S1 returned (r3)
+- **Returned:** FTF-1304-S1 r3 (0b, tests only): cross-attempt currency, alias step-kind, currency case/whitespace pins; stopping rule.
+
+## 2026-10-15T20:22Z — Control plane: FTF-0906 returned (r2)
+- **Returned:** FTF-0906 r2 (0j): evidence-complete verifier, mandatory stores, scan/ledger-bound inspections, positive control, unobserved outcome, skip RED, report binding, gate step, faults. Allowlist: none.
+
+## 2026-10-15T20:22Z — Control plane: FTF-0213-S1 returned (r3)
+- **Returned:** FTF-0213-S1 r3 (0f, tests only): real-wire negative/zero usage modes, W1/W2/W3 RED; stopping rule.
+
+## 2026-10-15T22:45Z — Control plane: FTF-0505 CERTIFIED
+- **Certified:** FTF-0505 (#841, merge 870ec2ef) under the stopping rule; UNWIRED. All four R1 importers certified.
 ## 2026-10-15T19:32Z — PR #832 merged (FTF-0906 round 1; green ci-verdict)
 - **Merged, PROVISIONAL (Law 4, not self-certified):** PR #832 (FTF-0906, Backlog refill item)
   merged on a fully green `ci-verdict` (run `38772832106`), no merge conflict, new
@@ -25056,3 +25070,9 @@ different session.
   FTF-0901/FTF-0902/FTF-0905); `workflow_history` never exercised (no Temporal workflow exists),
   so every report is `partial`, never `passed`, by design. Count unchanged: 151/304 certified, 48
   product-true.
+
+## 2026-10-16T01:58Z — Control plane: FTF-0904-F1 returned (r4)
+- **Returned:** FTF-0904-F1 r4 (0g): segment lookup before camel split, deny-by-default credential-suffix rule, separator-strip pins, W1 docstring. FTF-0904 stays CERTIFIED.
+
+## 2026-10-16T01:58Z — Control plane: FTF-1505 returned (r4)
+- **Returned:** FTF-1505 r4 (0h): behavioural fault rows, live positive control, archive fail-closed, window seam, per-lane seeded recall. [GOVERNANCE] all-refs sweep workflow to follow.
