@@ -1366,6 +1366,40 @@ def test_comparison_cells_messages_slot_shape() -> None:
     )
 
 
+def test_comparison_cells_messages_slot_string_cell_is_never_falsely_identical() -> None:
+    # `_read_top_level` echoes the raw slot value verbatim (it never parses JSON text); when the
+    # messages_json slot holds a JSON-encoded *string* (apply_mapping parses it into a real list
+    # for the canonical candidate), the raw value here is still that string, not a list -- the
+    # comparison must say so, never collapse "present" and "actually a matching list" into one.
+    mapping = ic.mapping_from_object(
+        {
+            "shape": "messages_json",
+            "messages": {"key": "msgs"},
+            "role_key": "role",
+            "content_key": "content",
+            "role_map": {"human": "user"},
+            "on_unmapped_message_keys": "ignore",
+        }
+    )
+    data = b'{"msgs": "[{\\"role\\": \\"human\\", \\"content\\": \\"hi\\"}]"}\n'
+    result = rev.run_mapping_preview(
+        reader_for(data),
+        mapping,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        tool_schemas=None,
+        reveal=True,
+    )
+    check("CMPMSG-4", "the row was in fact accepted", result.rows[0].outcome == "accepted")
+    cell = result.rows[0].comparison[0]
+    check(
+        "CMPMSG-5",
+        f"a string-encoded messages cell is present but never falsely identical to the parsed "
+        f"list ({cell})",
+        cell.raw_type == "str" and not cell.identical,
+    )
+
+
 def test_comparison_cells_missing_messages_slot() -> None:
     mapping = ic.mapping_from_object(
         {
