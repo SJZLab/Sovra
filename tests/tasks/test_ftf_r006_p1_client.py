@@ -106,7 +106,13 @@ class Stub:
             def log_message(self, *args: Any) -> None:
                 pass
 
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        class CountingServer(ThreadingHTTPServer):
+            def get_request(self) -> Any:
+                stub.connections += 1
+                return super().get_request()
+
+        self.connections = 0
+        self.server = CountingServer(("127.0.0.1", 0), Handler)
         self.port = self.server.server_address[1]
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
@@ -566,13 +572,23 @@ def test_api_key_never_echoed_and_control_chars_refused() -> None:
         "a control character in the api key is refused before any header is built",
         raises(ArgillaRejectedError, bad.get_user, USER["id"]) and len(stub.seen) == n + 1,
     )
-    # M2/M1 at this exact check are empirically equivalent to the generic
-    # `except ValueError` fallback a few lines down in `_call` (http.client's
-    # own `putheader` raises before any bytes reach the stub either way, and
-    # the fallback's own message is static too) -- confirmed by running the
-    # mutation gate, not assumed; disclosed in the submission for a
-    # Control-plane mutation-allowlist.yaml ruling rather than contorted into
-    # an artificial distinction here.
+    # The explicit check is distinguishable from the generic ValueError
+    # fallback: its own static message, and no TCP connection at all (the
+    # fallback only fires after http.client has already connected).
+    conns = stub.connections
+    try:
+        bad.get_user(USER["id"])
+    except ArgillaRejectedError as exc:
+        check(
+            "R006P1-C",
+            "the control-character refusal carries its own static, key-free message",
+            str(exc) == "API key contains control characters",
+        )
+    check(
+        "R006P1-C",
+        "a control-character api key opens no connection to the server",
+        stub.connections == conns,
+    )
     stub.server.shutdown()
 
 
