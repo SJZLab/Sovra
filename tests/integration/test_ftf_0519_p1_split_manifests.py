@@ -1172,7 +1172,15 @@ def approvals_and_lock(env: Env, w: World, m1: Any, named: dict[str, Any]) -> No
     )
     check(f"get_split_manifest reads the summary: {error!r}", error is None)
     if error is None:
-        content = store._content_from_rows(summary.manifest, summary.roles, summary.sources)
+        content, content_error = env.run(
+            w.ctx,
+            lambda s: store._content_from_rows(
+                store._fetch_manifest(s, w.ctx, w.project_id, m1.id),
+                store._fetch_roles(s, w.ctx, m1.id),
+                store._fetch_sources(s, w.ctx, m1.id),
+            ),
+        )
+        check(f"the stored content is rebuilt: {content_error!r}", content_error is None)
         check(
             "the frozen hash is the hash of the stored content",
             ism.compute_frozen_manifest_sha256(content) == frozen,

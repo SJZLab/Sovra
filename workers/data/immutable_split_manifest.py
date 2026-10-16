@@ -400,6 +400,11 @@ class ManifestContent:
     reviewed_leakage_report_sha256: str | None = None
     migrated_from_legacy_sha256: str | None = None
     approved_by: str | None = None
+    # Frozen with the lock (FTF-0519-P1 round 2): the owning organization, the proposer and the
+    # lock instant, as canonical text. `None` only on a proposal, never on a locked manifest.
+    organization_id: str | None = None
+    created_by: str | None = None
+    locked_at: str | None = None
 
     def __post_init__(self) -> None:
         _uuid_text(self.project_id, "project_id")
@@ -452,6 +457,12 @@ class ManifestContent:
             raise ManifestDomainError("the legacy strategy and its lineage hash go together")
         if self.approved_by is not None:
             _text(self.approved_by, "approved_by")
+        if self.organization_id is not None:
+            _uuid_text(self.organization_id, "organization_id")
+        if self.created_by is not None:
+            _text(self.created_by, "created_by")
+        if self.locked_at is not None:
+            _text(self.locked_at, "locked_at")
 
 
 def _proposal_body(content: ManifestContent) -> dict[str, object]:
@@ -485,6 +496,8 @@ def compute_frozen_manifest_sha256(content: ManifestContent) -> str:
     reviews, the reviewed report hash, the approver, all four role rows and every source grant."""
     if content.reviewed_leakage_report_sha256 is None or content.approved_by is None:
         raise ManifestDomainError("only a reviewed and approved manifest has a frozen hash")
+    if content.organization_id is None or content.created_by is None or content.locked_at is None:
+        raise ManifestDomainError("the organization, proposer and lock instant are frozen too")
     return _digest(
         {
             "proposal": _proposal_body(content),
@@ -493,6 +506,9 @@ def compute_frozen_manifest_sha256(content: ManifestContent) -> str:
             "leakage_reviews": [dict(r) for r in content.leakage_reviews],
             "reviewed_leakage_report_sha256": content.reviewed_leakage_report_sha256,
             "approved_by": content.approved_by,
+            "organization_id": content.organization_id,
+            "created_by": content.created_by,
+            "locked_at": content.locked_at,
         }
     )
 

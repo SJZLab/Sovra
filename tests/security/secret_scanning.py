@@ -101,7 +101,8 @@ import threading
 import time
 import uuid
 import zipfile
-from collections.abc import Iterable, Iterator
+import zlib
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from urllib.parse import quote
 
@@ -406,17 +407,59 @@ def _bounded_gzip_decompress(data: bytes, max_bytes: int) -> bytes:
     return out.getvalue()
 
 
-def _iter_archive_members(data: bytes, name: str) -> Iterator[tuple[str, bytes | None]]:
+_ARCHIVE_SENTINEL_NAME = "<archive>"
+# Round 4 (Control-plane return 2026-10-16, points 3-4): round 3 caught a
+# corrupt MEMBER inside an already-open archive, but two fail-OPEN gaps
+# remained -- (a) a corrupt DEFLATED member's `zlib.error` was not in
+# either per-member except tuple, so it escaped past the member loop,
+# landed on the function's own outer `except Exception: return`, and
+# silently abandoned every member after it (the exact class round 3's own
+# member-loop fix was supposed to close); (b) a TRUNCATED archive (bad
+# header, EOF mid-central-directory, a corrupt gzip header) failed the
+# OPEN call itself, which the same outer bare `except: return` swallowed
+# with no signal at all, and an oversized MEMBER was silently truncated
+# with no `scan_incomplete` (round 2's top-level `content_truncated` flag
+# was never threaded down into archive-member extraction). Both are now
+# fail-closed: an open failure yields one `(_ARCHIVE_SENTINEL_NAME, None,
+# False)` row; a member/content-cap overrun yields `(name, data, True)`.
+_ARCHIVE_OPEN_ERRORS = (
+    zipfile.BadZipFile,
+    tarfile.TarError,
+    OSError,
+    EOFError,
+    zlib.error,
+)
+_ARCHIVE_MEMBER_READ_ERRORS = (
+    zipfile.BadZipFile,
+    tarfile.TarError,
+    OSError,
+    RuntimeError,
+    EOFError,
+    zlib.error,
+)
+
+
+def _iter_archive_members(data: bytes, name: str) -> Iterator[tuple[str, bytes | None, bool]]:
     """Bomb-safe bounded extraction of zip/whl/jar/egg and tar/tar.gz
     members, plus a bare .gz. Declared member count/uncompressed size is
-    checked BEFORE any member is read. A member that cannot itself be
-    read (a corrupt entry) yields `(name, None)` -- a fail-closed signal
-    the caller turns into a blocking finding -- and extraction CONTINUES
-    to the next member, rather than abandoning every member after it."""
+    checked BEFORE any member is read. Yields `(member_name, content,
+    truncated)`: `content is None` means the member (or, with
+    `member_name == _ARCHIVE_SENTINEL_NAME`, the archive itself) could not
+    be read at all -- a fail-closed signal the caller turns into a
+    blocking finding -- and extraction CONTINUES to the next member,
+    rather than abandoning every member after it. `truncated=True` means
+    the member read past `MAX_SCAN_BYTES`: the (bounded) content is still
+    yielded for scanning, but the caller must also raise `scan_incomplete`
+    for it, the same way the top-level per-file/blob bound already does."""
     lower = name.lower()
     try:
         if lower.endswith((".zip", ".whl", ".jar", ".egg")) or _looks_like_zip(data):
-            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            try:
+                zf = zipfile.ZipFile(io.BytesIO(data))
+            except _ARCHIVE_OPEN_ERRORS:
+                yield _ARCHIVE_SENTINEL_NAME, None, False
+                return
+            with zf:
                 infos = [i for i in zf.infolist() if not i.is_dir()]
                 if len(infos) > _MAX_ARCHIVE_MEMBERS:
                     raise SecretScanError(f"archive {name!r} exceeds member cap: {len(infos)}")
@@ -425,13 +468,24 @@ def _iter_archive_members(data: bytes, name: str) -> Iterator[tuple[str, bytes |
                 for info in infos:
                     try:
                         with zf.open(info) as handle:
-                            yield info.filename, handle.read(MAX_SCAN_BYTES)
-                    except (zipfile.BadZipFile, OSError, RuntimeError, EOFError):
-                        yield info.filename, None
+                            member_data = handle.read(MAX_SCAN_BYTES + 1)
+                    except _ARCHIVE_MEMBER_READ_ERRORS:
+                        yield info.filename, None, False
+                        continue
+                    yield (
+                        info.filename,
+                        member_data[:MAX_SCAN_BYTES],
+                        len(member_data) > MAX_SCAN_BYTES,
+                    )
             return
         if lower.endswith((".tar.gz", ".tgz", ".tar")):
             mode = "r:gz" if lower.endswith((".tar.gz", ".tgz")) else "r:"
-            with tarfile.open(fileobj=io.BytesIO(data), mode=mode) as tf:
+            try:
+                tf = tarfile.open(fileobj=io.BytesIO(data), mode=mode)
+            except _ARCHIVE_OPEN_ERRORS:
+                yield _ARCHIVE_SENTINEL_NAME, None, False
+                return
+            with tf:
                 members = [m for m in tf.getmembers() if m.isfile()]
                 if len(members) > _MAX_ARCHIVE_MEMBERS:
                     raise SecretScanError(f"archive {name!r} exceeds member cap: {len(members)}")
@@ -440,20 +494,29 @@ def _iter_archive_members(data: bytes, name: str) -> Iterator[tuple[str, bytes |
                 for member in members:
                     try:
                         extracted = tf.extractfile(member)
-                        if extracted is not None:
-                            yield member.name, extracted.read(MAX_SCAN_BYTES)
-                    except (tarfile.TarError, OSError, EOFError):
-                        yield member.name, None
+                        member_data = (
+                            extracted.read(MAX_SCAN_BYTES + 1) if extracted is not None else b""
+                        )
+                    except _ARCHIVE_MEMBER_READ_ERRORS:
+                        yield member.name, None, False
+                        continue
+                    yield (
+                        member.name,
+                        member_data[:MAX_SCAN_BYTES],
+                        len(member_data) > MAX_SCAN_BYTES,
+                    )
             return
         if lower.endswith(".gz") and _looks_like_gzip(data):
             try:
-                yield name[:-3], _bounded_gzip_decompress(data, MAX_SCAN_BYTES)
-            except OSError:
-                yield name[:-3], None
+                content = _bounded_gzip_decompress(data, MAX_SCAN_BYTES + 1)
+            except _ARCHIVE_OPEN_ERRORS:
+                yield _ARCHIVE_SENTINEL_NAME, None, False
+                return
+            yield name[:-3], content[:MAX_SCAN_BYTES], len(content) > MAX_SCAN_BYTES
     except SecretScanError:
         raise
     except Exception:
-        return
+        yield _ARCHIVE_SENTINEL_NAME, None, False
 
 
 def _scan_unit_text(
@@ -503,13 +566,22 @@ def _scan_content_and_members(
     incomplete = incomplete or content_truncated
     for rule, value, loc_suffix in matches:
         all_results.append((rule, value, f"{location_prefix}{loc_suffix}"))
-    for member_name, member_data in _iter_archive_members(data, location_prefix):
+    for member_name, member_data, member_truncated in _iter_archive_members(data, location_prefix):
         if member_data is None:
             incomplete = True
             all_results.append(
                 ("scan_incomplete", "", f"{location_prefix}!{member_name} (unreadable member)")
             )
             continue
+        if member_truncated:
+            incomplete = True
+            all_results.append(
+                (
+                    "scan_incomplete",
+                    "",
+                    f"{location_prefix}!{member_name} (member exceeds scan bound)",
+                )
+            )
         member_matches, m_incomplete = _scan_unit_text(member_data, include_canary=include_canary)
         incomplete = incomplete or m_incomplete
         for rule, value, loc_suffix in member_matches:
@@ -1016,22 +1088,10 @@ def _live_app_env() -> dict[str, str]:
     return env
 
 
-def scan_live_app_log_samples(
-    root: Path, *, target: str = "log_sample"
-) -> tuple[list[SecretFinding], list[ScenarioResult]]:
-    """Boots the real `uvicorn app.main:create_app --factory` and probes
-    it with every rule family's seed (behind the same `?token=` key name
-    the canary probes already use -- a coverage sweep over this suite's
-    own 16 shapes, not a search for FTF-0904-F1's own, separately-scoped,
-    key-NAME-heuristic gaps) and FTF-0905 canaries (literal, base64, hex,
-    url, fragmented) across the query string, a header, a cookie and a
-    JSON request body, against 401/404. Disclosed scope: every route
-    reachable here requires auth, which this lane has none of, so a 5xx/
-    422 validation-error path stays unreached (confirmed directly: an
-    invalid UUID path segment still gets 401, since the auth dependency
-    runs before path-param validation) -- same limit round 2 already
-    disclosed. Scans the process's captured stdout/stderr."""
-    port = _free_port()
+_LiveAppProbe = tuple[str, str, dict[str, str], str, bytes | None, int]
+
+
+def _build_live_app_probes() -> list[_LiveAppProbe]:
     marker = generate_canary()
     encoded = {
         encoding: encode_canary(marker, encoding)
@@ -1040,7 +1100,7 @@ def scan_live_app_log_samples(
     fragments = fragment_canary(marker, 2)
     family_seeds = generate_seed_values()
 
-    probes: list[tuple[str, str, dict[str, str], str, bytes | None, int]] = [
+    probes: list[_LiveAppProbe] = [
         (
             "query_literal",
             f"/api/v1/organizations/{uuid.uuid4()}/projects?token={encoded['literal']}",
@@ -1105,6 +1165,30 @@ def scan_live_app_log_samples(
             json.dumps({"name": encoded["literal"]}).encode(),
             401,
         ),
+        # Round 4 (Control-plane return 2026-10-16, point 2): round 3's own
+        # docstring claimed every reachable route requires auth, so a 422/
+        # 4xx validation-error path "stays unreached" here. That disclosure
+        # was false: `/auth/callback` (apps/api/app/auth/oidc_login.py)
+        # has no auth dependency at all (it IS the login flow) and its
+        # `code`/`state` are required, un-defaulted function parameters --
+        # FastAPI's own request-validation layer answers before the
+        # handler body runs.
+        (
+            "auth_callback_missing_code",
+            "/auth/callback?state=x",
+            {},
+            "GET",
+            None,
+            422,
+        ),
+        (
+            "auth_callback_invalid_txn",
+            "/auth/callback?code=x&state=x",
+            {},
+            "GET",
+            None,
+            400,
+        ),
     ]
     for rule, seed in family_seeds.items():
         # Same placement convention every other probe above already uses
@@ -1122,58 +1206,46 @@ def scan_live_app_log_samples(
                 404,
             )
         )
+    return probes
 
-    results: list[ScenarioResult] = []
-    findings: list[SecretFinding] = []
 
-    with tempfile.TemporaryDirectory() as tmp:
-        out_path = Path(tmp) / "out.log"
-        with out_path.open("wb") as out:
-            proc = subprocess.Popen(
-                [
-                    sys.executable,
-                    "-m",
-                    "uvicorn",
-                    "app.main:create_app",
-                    "--factory",
-                    "--host",
-                    "127.0.0.1",
-                    "--port",
-                    str(port),
-                    "--app-dir",
-                    str(root / "apps" / "api"),
-                ],
-                cwd=str(root),
-                env=_live_app_env(),
-                stdout=out,
-                stderr=subprocess.STDOUT,
-            )
-            try:
-                booted = _wait_for_port(port, proc, time.monotonic() + 60)
-                statuses: dict[str, int | None] = {}
-                if booted:
-                    for name, path, headers, method, body, _expected in probes:
-                        try:
-                            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
-                            conn.request(method, path, body=body, headers=headers)
-                            resp = conn.getresponse()
-                            resp.read()
-                            statuses[name] = resp.status
-                            conn.close()
-                        except (OSError, http.client.HTTPException):
-                            statuses[name] = None
-                    time.sleep(0.5)
-            finally:
-                if proc.poll() is None:
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=15)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                        proc.wait()
-        captured = out_path.read_text(encoding="utf-8", errors="replace")
+def _access_log_evidence_present(captured: str, static_path: str, expected_status: int) -> bool:
+    """F-LIVE-POSITIVE-CONTROL (round 4, point 2): a real, non-redacted
+    uvicorn access-log line for this exact probe -- its static path (the
+    part before any `?query`, which never itself carries a secret value)
+    together with the real status code, on the same line. uvicorn's
+    default access logger (`get_path_with_query_string`) always logs the
+    full request line BEFORE any redaction this process's own logging
+    config applies, so this line's static portion is never itself a
+    reason to redact -- its absence means nothing reached this stream for
+    this request at all (suppressed access logging -- F14's `--no-
+    access-log`; stderr discarded before merge -- F15), which a scan
+    reporting 'clean' over NOTHING would never catch (Law 1: nothing
+    proven until a test can fail)."""
+    needle_status = f" {expected_status}"
+    for line in captured.splitlines():
+        if static_path in line and needle_status in line:
+            return True
+    return False
 
-    results.append(
+
+def _evaluate_live_app_output(
+    *,
+    target: str,
+    booted: bool,
+    captured: str,
+    probes: list[_LiveAppProbe],
+    statuses: dict[str, int | None],
+) -> tuple[list[SecretFinding], list[ScenarioResult]]:
+    """Pure (no subprocess/network): turns one live-app boot's captured
+    stdout+stderr and per-probe HTTP statuses into findings/results.
+    Deliberately separated from the real boot/probe orchestration below
+    (`scan_live_app_log_samples`) so this round's positive control and
+    the F14/F15/F22 fault rows can be proven directly against a
+    fabricated `captured` string -- this sandbox has no `uvicorn`
+    available for a real boot, and even where one is, a real boot should
+    never be the ONLY way to exercise this evaluation logic."""
+    results: list[ScenarioResult] = [
         ScenarioResult(
             resource_kind=target,
             check="live_app_boot",
@@ -1183,11 +1255,12 @@ def scan_live_app_log_samples(
             expected_denied=True,
             passed=booted,
         )
-    )
+    ]
+    findings: list[SecretFinding] = []
     if not booted:
         return findings, results
 
-    for name, _path, _headers, _method, _body, expected in probes:
+    for name, path, _headers, _method, _body, expected in probes:
         got = statuses.get(name)
         ok = got == expected
         results.append(
@@ -1199,6 +1272,19 @@ def scan_live_app_log_samples(
                 status=0 if ok else 1,
                 expected_denied=True,
                 passed=ok,
+            )
+        )
+        static_path = path.split("?", 1)[0]
+        logged = _access_log_evidence_present(captured, static_path, expected)
+        results.append(
+            ScenarioResult(
+                resource_kind=target,
+                check=f"live_app_access_logged_{name}",
+                method="GET",
+                path=name,
+                status=0 if logged else 1,
+                expected_denied=True,
+                passed=logged,
             )
         )
 
@@ -1228,11 +1314,164 @@ def scan_live_app_log_samples(
     return findings, results
 
 
+def _capture_subprocess_output(
+    cmd: list[str], *, cwd: Path, env: dict[str, str], out_path: Path
+) -> subprocess.Popen[bytes]:
+    """F15 fixed: stdout AND stderr are both routed into `out_path` (never
+    `subprocess.DEVNULL` for either) -- a secret printed only to stderr
+    (an uncaught traceback, a logging call misconfigured to write there)
+    must still reach the scanned output, never silently discarded. The
+    file descriptor is duplicated into the child at spawn time, so
+    closing this process's own handle right after `Popen` returns is
+    safe -- the child keeps writing to it regardless."""
+    out = out_path.open("wb")
+    try:
+        return subprocess.Popen(cmd, cwd=str(cwd), env=env, stdout=out, stderr=subprocess.STDOUT)
+    finally:
+        out.close()
+
+
+def scan_live_app_log_samples(
+    root: Path, *, target: str = "log_sample"
+) -> tuple[list[SecretFinding], list[ScenarioResult]]:
+    """Boots the real `uvicorn app.main:create_app --factory` and probes
+    it with every rule family's seed (behind the same `?token=` key name
+    the canary probes already use -- a coverage sweep over this suite's
+    own 16 shapes, not a search for FTF-0904-F1's own, separately-scoped,
+    key-NAME-heuristic gaps), FTF-0905 canaries (literal, base64, hex,
+    url, fragmented) across the query string, a header, a cookie and a
+    JSON request body, and (round 4) `/auth/callback`'s own reachable,
+    unauthenticated 422/400 validation paths. Scans the process's
+    captured stdout+stderr (`_capture_subprocess_output`, F15) and proves
+    a real, non-redacted access-log line exists for every probe
+    (`_evaluate_live_app_output`'s own positive control, point 2) --
+    never just that nothing bad turned up."""
+    probes = _build_live_app_probes()
+    port = _free_port()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_path = Path(tmp) / "out.log"
+        proc = _capture_subprocess_output(
+            [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "app.main:create_app",
+                "--factory",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+                "--app-dir",
+                str(root / "apps" / "api"),
+            ],
+            cwd=root,
+            env=_live_app_env(),
+            out_path=out_path,
+        )
+        try:
+            booted = _wait_for_port(port, proc, time.monotonic() + 60)
+            statuses: dict[str, int | None] = {}
+            if booted:
+                for name, path, headers, method, body, _expected in probes:
+                    try:
+                        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+                        conn.request(method, path, body=body, headers=headers)
+                        resp = conn.getresponse()
+                        resp.read()
+                        statuses[name] = resp.status
+                        conn.close()
+                    except (OSError, http.client.HTTPException):
+                        statuses[name] = None
+                time.sleep(0.5)
+        finally:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+        captured = out_path.read_text(encoding="utf-8", errors="replace")
+
+    return _evaluate_live_app_output(
+        target=target, booted=booted, captured=captured, probes=probes, statuses=statuses
+    )
+
+
 def evaluate(results: list[ScenarioResult]) -> TenantIsolationEvidence:
     try:
         return build_evidence(results)
     except TenantIsolationSuiteError as exc:
         raise SecretScanError(str(exc)) from exc
+
+
+_ScanLane = tuple[str, Callable[[], tuple[list[SecretFinding], list[ScenarioResult]]]]
+_MainGuard = tuple[str, Callable[[], None]]
+
+
+def _build_pre_scan_guards(root: Path) -> list[_MainGuard]:
+    """Every completeness/coverage guard `main()` runs BEFORE scanning, as
+    (name, zero-arg callable) pairs -- round 4 fix (F19/F20, Control-plane
+    return 2026-10-16, point 1): round 3's own proof that `main()` still
+    calls these was `"assert_dirs_covered(" in inspect.getsource(main)`,
+    a textual grep that a copy-pasted call with the SAME name but
+    different (wrong) arguments would still satisfy. A real list of real,
+    already-bound callables lets a test invoke each one directly and
+    confirm it reaches the real, underlying guard function -- and lets a
+    dropped entry be reproduced as a DATA fault, not a source-text one."""
+    return [
+        ("dirs_covered", lambda: assert_dirs_covered(root, SOURCE_ROOTS)),
+        (
+            "artifact_uploads_covered",
+            lambda: assert_artifact_uploads_covered(
+                CI_WORKFLOW_PATH.read_text(encoding="utf-8"), ARTIFACT_ROOTS
+            ),
+        ),
+    ]
+
+
+def _build_scan_lanes(
+    root: Path,
+    baseline: dict[str, BaselineEntry],
+    seen_fingerprints: set[str],
+    scanned_paths: set[str],
+    scope: str,
+) -> list[_ScanLane]:
+    """Every scan lane `main()` runs, as (name, zero-arg callable) pairs
+    returning `(findings, results)` -- round 4 fix (F16/F17/F20b, same
+    return as `_build_pre_scan_guards` above): `main()` iterates this list
+    uniformly, so a lane silently dropped from orchestration (a forgotten
+    `.extend()` call, the old shape six near-identical copy-pasted blocks
+    invites) is now a list a test can inspect, filter and re-run, never a
+    gap only a source-text grep of `main` could have caught. The
+    `scanned_set_matches` guard is bound into the SOURCE lane's own
+    closure (not a separate list entry) because it is meaningless without
+    that exact scan having just populated `scanned_paths` -- dropping the
+    source lane drops its own guard with it, which is the correct,
+    coupled behaviour (F20b)."""
+
+    def _source_lane() -> tuple[list[SecretFinding], list[ScenarioResult]]:
+        findings, results = scan_source(
+            root, baseline, seen_fingerprints=seen_fingerprints, scanned_paths=scanned_paths
+        )
+        assert_scanned_set_matches_tracked_files(root, scanned_paths)
+        return findings, results
+
+    return [
+        ("source", _source_lane),
+        (
+            "artifact",
+            lambda: scan_artifact_roots(root, baseline, seen_fingerprints=seen_fingerprints),
+        ),
+        (
+            "history",
+            lambda: scan_history(root, baseline, seen_fingerprints=seen_fingerprints, scope=scope),
+        ),
+        ("log_samples", lambda: scan_log_samples()),
+        ("structured_event", lambda: scan_structured_event_cross_check()),
+        ("live_app", lambda: scan_live_app_log_samples(root)),
+    ]
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -1241,44 +1480,20 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     baseline = load_baseline()
-    assert_dirs_covered(ROOT, SOURCE_ROOTS)
-    assert_artifact_uploads_covered(CI_WORKFLOW_PATH.read_text(encoding="utf-8"), ARTIFACT_ROOTS)
+    for _name, guard in _build_pre_scan_guards(ROOT):
+        guard()
 
     all_findings: list[SecretFinding] = []
     all_results: list[ScenarioResult] = []
     seen_fingerprints: set[str] = set()
     scanned_paths: set[str] = set()
 
-    source_findings, source_results = scan_source(
-        ROOT, baseline, seen_fingerprints=seen_fingerprints, scanned_paths=scanned_paths
-    )
-    all_findings.extend(source_findings)
-    all_results.extend(source_results)
-    assert_scanned_set_matches_tracked_files(ROOT, scanned_paths)
-
-    artifact_findings, artifact_results = scan_artifact_roots(
-        ROOT, baseline, seen_fingerprints=seen_fingerprints
-    )
-    all_findings.extend(artifact_findings)
-    all_results.extend(artifact_results)
-
-    history_findings, history_results = scan_history(
-        ROOT, baseline, seen_fingerprints=seen_fingerprints, scope=args.scope
-    )
-    all_findings.extend(history_findings)
-    all_results.extend(history_results)
-
-    log_findings, log_results = scan_log_samples()
-    all_findings.extend(log_findings)
-    all_results.extend(log_results)
-
-    structured_findings, structured_results = scan_structured_event_cross_check()
-    all_findings.extend(structured_findings)
-    all_results.extend(structured_results)
-
-    live_findings, live_results = scan_live_app_log_samples(ROOT)
-    all_findings.extend(live_findings)
-    all_results.extend(live_results)
+    for _name, lane in _build_scan_lanes(
+        ROOT, baseline, seen_fingerprints, scanned_paths, args.scope
+    ):
+        findings, results = lane()
+        all_findings.extend(findings)
+        all_results.extend(results)
 
     evidence = evaluate(all_results)
     print(
