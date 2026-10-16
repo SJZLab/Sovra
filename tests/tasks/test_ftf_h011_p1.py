@@ -1116,6 +1116,13 @@ def test_read_top_level_header_edge_cases() -> None:
         "the header-matching branch, even when a header would otherwise match",
         rev._read_top_level(bypassed_header.prompt, ("v",), ("h",)) is rev._MISSING,
     )
+    bypassed_index = dataclasses.replace(bypassed_kind_mapping, prompt=ic.Slot(" index ", 0))
+    check(
+        "READTOP-13",
+        "a Slot whose own kind is not exactly 'index' (construction-bypassed) never enters "
+        "the index branch, even when position 0 would otherwise be in range",
+        rev._read_top_level(bypassed_index.prompt, ("v0", "v1"), None) is rev._MISSING,
+    )
 
 
 def test_not_mapped_header_names_are_exact() -> None:
@@ -1200,6 +1207,19 @@ def test_comparison_cells_group_key_present_vs_missing() -> None:
         f"raw_type carries the real type name verbatim, never case-folded "
         f"({weird_cell.raw_type!r})",
         weird_cell.raw_type == "Weird",
+    )
+
+    class STR:  # name case-insensitively equals "str" -- distinguishes the `== "str"` compare
+        pass
+
+    cells2 = rev._comparison_cells(
+        mapping, {"prompt": "p", "completion": "c", "gid": STR()}, None, candidate
+    )
+    str_cell = next(c for c in cells2 if c.slot == "group_key")
+    check(
+        "CMPGID-4",
+        "a type literally named 'STR' is never folded into matching the real 'str' literal",
+        str_cell.raw_type == "STR" and not str_cell.identical,
     )
 
 
