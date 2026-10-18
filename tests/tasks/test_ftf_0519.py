@@ -41,19 +41,22 @@ from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import uvicorn
 import yaml
 from fastapi import FastAPI
+from sqlalchemy.orm import Session
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from app.auth.rbac_middleware import AuthenticatedPrincipal, Role  # noqa: E402
+from app.auth.tenant_isolation_query_guards import TenantContextError  # noqa: E402
 from app.datasets import dataset_split_manifest_routes as real_routes  # noqa: E402
 from app.datasets import dataset_split_manifest_store as store  # noqa: E402
+from app.db.tenant_context import TenantContext  # noqa: E402
 
 FAILURES: list[str] = []
 CID = "FTF-0519-P2"
@@ -111,6 +114,9 @@ class Checker:
 # ------------------------------------------------------------------ fake store
 
 
+_UNSET: Any = object()
+
+
 class FakeStore:
     """A state machine standing in for the store: proposed -> locked | rejected."""
 
@@ -119,12 +125,14 @@ class FakeStore:
         self.raise_code: str | None = None
         self.raise_other: BaseException | None = None
         self.states: dict[uuid.UUID, dict[str, Any]] = {}
+        self.stored_reviews_override: Any = _UNSET
         self.reset()
 
     def reset(self) -> None:
         self.calls.clear()
         self.raise_code = None
         self.raise_other = None
+        self.stored_reviews_override = _UNSET
         self.states = {
             MANIFEST: self.fresh(MANIFEST),
             OTHER_MANIFEST: self.fresh(OTHER_MANIFEST),
@@ -227,7 +235,11 @@ class FakeStore:
                 object_key="tenants/o/projects/p/uploads/x/source",
             ),
         )
-        return store.ManifestSummary(self.view(state), roles, sources)
+        return store.ManifestSummary(
+            self.view(state),
+            cast("tuple[store.DatasetSplitManifestRole, ...]", roles),
+            cast("tuple[store.DatasetSplitManifestSource, ...]", sources),
+        )
 
     # ---- the patched store API
     def get_split_manifest(self, session: Any, ctx: Any, **kw: Any) -> store.ManifestSummary:
@@ -276,6 +288,8 @@ class FakeStore:
         return SimpleNamespace(leakage_report={"findings": ["ds-9f3a:12"]})
 
     def stored_reviews(self, session: Any, tenant: Any, project_id: Any, manifest_id: Any) -> Any:
+        if self.stored_reviews_override is not _UNSET:
+            return self.stored_reviews_override
         return list(self.states[manifest_id]["reviews"])
 
 
@@ -302,6 +316,167 @@ def patched(mod: ModuleType, fake: FakeStore) -> Iterator[None]:
     finally:
         for name, value in originals.items():
             setattr(mod, name, value)
+
+
+# ------------------------------------------------------------------ private-helper unit checks
+#
+# `patched()` above replaces `_stored_reviews` outright, so the route suite's HTTP-level checks
+# never run its real body -- a mutation inside it would never surface through any request. These
+# checks call the module's own private helpers directly, faking only `execute_tenant_scoped` (so
+# the real `_stored_reviews` body, including its SQLAlchemy WHERE clause, actually executes).
+
+
+class _ScalarsResult:
+    def __init__(self, value: Any) -> None:
+        self._value = value
+
+    def first(self) -> Any:
+        return self._value
+
+
+class _ExecResult:
+    def __init__(self, value: Any) -> None:
+        self._value = value
+
+    def scalars(self) -> _ScalarsResult:
+        return _ScalarsResult(self._value)
+
+
+def _fake_execute_for_stored_reviews(
+    rows: dict[tuple[uuid.UUID, uuid.UUID], Any],
+) -> Callable[[Any, Any, Any], _ExecResult]:
+    """Stands in for `execute_tenant_scoped`: evaluates the real WHERE clause's own operators and
+    bound values against `rows`, so a `==` mutated to `!=` (or the wrong column/value) changes
+    which row matches. A `.strip()`/`.lower()` spliced onto a UUID column or parameter raises
+    AttributeError while the statement is being built, before this fake is ever reached."""
+
+    def fake(session: Any, organization_id: Any, statement: Any) -> _ExecResult:
+        del session, organization_id
+        clause = statement.whereclause
+        clauses = getattr(clause, "clauses", (clause,))
+        conditions = [(c.left.key, c.operator, c.right.value) for c in clauses]
+        matches = [
+            value
+            for (row_id, row_project), value in rows.items()
+            for row in [{"id": row_id, "project_id": row_project}]
+            if all(op(row[key], bound) for key, op, bound in conditions)
+        ]
+        return _ExecResult(matches[0] if matches else None)
+
+    return fake
+
+
+def test_u_private_helpers_behave() -> None:
+    """Direct, no-HTTP checks on module-private helpers: `_stored_reviews` (see above -- its real
+    body never runs behind `patched()`), plus `_scalar`/`_refusal`, whose differentiating inputs
+    never arise from any real call site (every caller passes a fixed, clean literal), only from a
+    store/DB-level bug -- still worth a direct check that the guard, not case/whitespace folding,
+    is what is actually doing the refusing.
+
+    Two `.strip().lower()` mutations are genuine equivalent mutants, not tested here, because the
+    one value they touch can never be anything other than an already-clean, already-lowercase
+    literal: `_replayed`'s own `action` parameter (always exactly "approve" or "reject" at its
+    only two call sites, never user input), and every `SplitManifestError.code` anywhere in this
+    module (`_refusal`'s own comparisons included) -- `SplitManifestError.__init__` itself asserts
+    `code in CODES`, and every member of `CODES` is already lowercase with no whitespace, so no
+    `SplitManifestError` can even be constructed with a code `.strip().lower()` would change."""
+    check = Checker()
+
+    check(
+        "UNIT-SCALAR",
+        "a None UUID-field value returns None, not the string 'None'",
+        real_routes._scalar("id", None) is None,
+    )
+    some_uuid = uuid.uuid4()
+    check(
+        "UNIT-SCALAR",
+        "a non-canonical field name is never folded into a UUID field by case/whitespace",
+        real_routes._scalar(" ID ", some_uuid) is some_uuid,
+    )
+    listed = real_routes._scalar("ratios", (70, 10, 10, 10))
+    check(
+        "UNIT-SCALAR",
+        "a tuple column value is copied into a real list, not passed through unchanged",
+        isinstance(listed, list) and listed == [70, 10, 10, 10],
+    )
+
+    mid, other_mid = uuid.uuid4(), uuid.uuid4()
+    pid, other_pid = uuid.uuid4(), uuid.uuid4()
+    tenant_stub = SimpleNamespace(organization_id=ORG)
+    original_exec = real_routes.execute_tenant_scoped
+
+    def run(rows: dict[tuple[uuid.UUID, uuid.UUID], Any]) -> Any:
+        real_routes.execute_tenant_scoped = _fake_execute_for_stored_reviews(rows)  # type: ignore[assignment]
+        try:
+            return real_routes._stored_reviews(
+                cast(Session, object()), cast(TenantContext, tenant_stub), pid, mid
+            )
+        finally:
+            real_routes.execute_tenant_scoped = original_exec
+
+    check(
+        "UNIT-STORED-REVIEWS",
+        "a well-formed stored row parses to (finding_id, rationale) pairs in order",
+        run(
+            {
+                (mid, pid): [
+                    {"finding_id": "f-1", "rationale": "r-1"},
+                    {"finding_id": "f-2", "rationale": "r-2"},
+                ]
+            }
+        )
+        == [("f-1", "r-1"), ("f-2", "r-2")],
+    )
+    check(
+        "UNIT-STORED-REVIEWS",
+        "a non-list stored value is never treated as a replay-eligible review set",
+        run({(mid, pid): "not-a-list"}) is None,
+    )
+    check(
+        "UNIT-STORED-REVIEWS",
+        "a non-list iterable of otherwise well-formed reviews is still refused by its own type,"
+        " not accepted because its individual items happen to parse",
+        run({(mid, pid): ({"finding_id": "f-1", "rationale": "r-1"},)}) is None,
+    )
+    check(
+        "UNIT-STORED-REVIEWS",
+        "a stored list with a non-dict item is refused, not partially parsed",
+        run({(mid, pid): ["not-a-dict"]}) is None,
+    )
+    check(
+        "UNIT-STORED-REVIEWS",
+        "a stored review with a non-string rationale is refused",
+        run({(mid, pid): [{"finding_id": "f-1", "rationale": 5}]}) is None,
+    )
+    check(
+        "UNIT-STORED-REVIEWS",
+        "a stored review with a non-string finding_id is refused",
+        run({(mid, pid): [{"finding_id": 5, "rationale": "r"}]}) is None,
+    )
+    check(
+        "UNIT-STORED-REVIEWS",
+        "the query is scoped to this exact manifest id, not any row sharing the project id",
+        run(
+            {
+                (mid, pid): [{"finding_id": "match", "rationale": "r"}],
+                (other_mid, pid): [{"finding_id": "wrong-row", "rationale": "r"}],
+            }
+        )
+        == [("match", "r")],
+    )
+    check(
+        "UNIT-STORED-REVIEWS",
+        "the query is scoped to this exact project id, not any row sharing the manifest id",
+        run(
+            {
+                (mid, pid): [{"finding_id": "match", "rationale": "r"}],
+                (mid, other_pid): [{"finding_id": "wrong-row", "rationale": "r"}],
+            }
+        )
+        == [("match", "r")],
+    )
+
+    FAILURES.extend(check.fails)
 
 
 # ------------------------------------------------------------------ http plumbing
@@ -536,6 +711,17 @@ def route_suite(mod: ModuleType, check: Checker) -> None:
                 f"after={bad[:12]!r} is 400 invalid_after with no store call",
                 r.status == 400 and r.detail == "invalid_after" and fake.count("list") == before,
             )
+        fake.reset()
+        fake.raise_other = TenantContextError("no tenant context")
+        try:
+            r = call(base, "GET", BASE, "ml")
+            check(
+                "ACC-FREEZE-HASH",
+                "a tenant-context failure on list is 404 not_found, not a 500",
+                r.status == 404 and r.detail == "not_found",
+            )
+        finally:
+            fake.raise_other = None
 
         # ---- get one: shape and the leak canary
         r = call(base, "GET", f"{BASE}/{MANIFEST}", "ml")
@@ -753,6 +939,15 @@ def route_suite(mod: ModuleType, check: Checker) -> None:
             ),
         )
         check("ACC-FREEZE-REVIEW", "exactly 200 reviews are accepted", r.status == 200)
+        fake.reset()
+        r = call(
+            base,
+            "POST",
+            path,
+            "admin",
+            good_approve(leakage_reviews=[{"finding_id": "f" * 400, "rationale": "r"}]),
+        )
+        check("ACC-FREEZE-REVIEW", "a finding id of exactly 400 chars is accepted", r.status == 200)
 
         # ---- approve: success, the reviewer is the principal
         fake.reset()
@@ -1023,6 +1218,65 @@ def route_suite(mod: ModuleType, check: Checker) -> None:
             )
         finally:
             fake.raise_other = None
+        fake.reset()
+        fake.raise_other = TenantContextError("no tenant context")
+        try:
+            r = call(base, "POST", path, "admin", good_approve())
+            check(
+                "ACC-FREEZE-REVIEW",
+                "a tenant-context failure on approve is 404 not_found, not a 500",
+                r.status == 404 and r.detail == "not_found",
+            )
+        finally:
+            fake.raise_other = None
+
+        # a concurrent duplicate write that raises a code other than "manifest_not_proposed"
+        # must still surface that code -- it must never fall into the replay-race shortcut just
+        # because something else also happened to lock the manifest in the meantime.
+        fake.reset()
+        original_approve = fake.approve_split_manifest
+
+        def racing_approve_other(session: Any, ctx: Any, **kw: Any) -> Any:
+            fake.calls.append(("approve", kw))
+            fake.states[MANIFEST].update(
+                status="locked",
+                approved_by="admin",
+                reviews=[("f-1", "not leakage: different sources")],
+                frozen="8" * 64,
+            )
+            raise store.SplitManifestError("manifest_tampered")
+
+        _swap(mod, "approve_split_manifest", racing_approve_other)
+        try:
+            r = call(base, "POST", path, "admin", good_approve())
+        finally:
+            _swap(mod, "approve_split_manifest", original_approve)
+        check(
+            "ACC-FREEZE-REVIEW",
+            "a concurrent write that raised manifest_tampered is never folded into the "
+            "manifest_not_proposed replay race",
+            r.status == 409 and r.detail == "manifest_tampered",
+        )
+
+        # an unparsable stored-reviews read (a store/DB shape _stored_reviews cannot parse) must
+        # never be treated as a replay target -- _replayed must bail out, not fingerprint `None`.
+        fake.reset()
+        fake.states[MANIFEST].update(
+            status="locked",
+            approved_by="admin",
+            reviews=[("f-1", "not leakage: different sources")],
+            frozen="8" * 64,
+        )
+        fake.stored_reviews_override = None
+        try:
+            r = call(base, "POST", path, "admin", good_approve())
+            check(
+                "ACC-FREEZE-REVIEW",
+                "an unparsable stored-reviews read is refused, never fingerprinted as a replay",
+                r.status == 409 and r.detail == "manifest_not_proposed",
+            )
+        finally:
+            fake.stored_reviews_override = _UNSET
 
         # ---- reject
         fake.reset()
@@ -1138,6 +1392,68 @@ def route_suite(mod: ModuleType, check: Checker) -> None:
             "ACC-FREEZE-REVIEW",
             "rejecting a missing manifest is 404 not_found",
             r.status == 404 and r.detail == "not_found",
+        )
+        fake.reset()
+        fake.raise_other = TenantContextError("no tenant context")
+        try:
+            r = call(base, "POST", rpath, "admin", rgood)
+            check(
+                "ACC-FREEZE-REVIEW",
+                "a tenant-context failure on reject is 404 not_found, not a 500",
+                r.status == 404 and r.detail == "not_found",
+            )
+        finally:
+            fake.raise_other = None
+        fake.reset()
+        fake.states[MANIFEST]["status"] = " REJECTED "
+        r = call(base, "POST", rpath, "admin", rgood)
+        check(
+            "ACC-FREEZE-REVIEW",
+            "a non-canonical 'rejected' status is never folded by case/whitespace into a replay",
+            r.status == 409 and r.detail == "manifest_not_proposed",
+        )
+
+        # a concurrent identical reject that rejected it between our read and our write
+        fake.reset()
+        original_reject = fake.reject_split_manifest
+
+        def racing_reject_clean(session: Any, ctx: Any, **kw: Any) -> Any:
+            fake.calls.append(("reject", kw))
+            fake.states[MANIFEST]["status"] = "rejected"
+            raise store.SplitManifestError("manifest_not_proposed")
+
+        _swap(mod, "reject_split_manifest", racing_reject_clean)
+        try:
+            r = call(base, "POST", rpath, "admin", rgood)
+        finally:
+            _swap(mod, "reject_split_manifest", original_reject)
+        check(
+            "ACC-FREEZE-REVIEW",
+            "an identical reject that lost the race is a 200 replay",
+            r.status == 200 and r.json().get("replayed") is True,
+        )
+
+        # a concurrent duplicate reject that raises a code other than "manifest_not_proposed"
+        # must still surface that code -- it must never fall into the replay-race shortcut just
+        # because something else also happened to reject the manifest in the meantime.
+        fake.reset()
+        original_reject = fake.reject_split_manifest
+
+        def racing_reject_other(session: Any, ctx: Any, **kw: Any) -> Any:
+            fake.calls.append(("reject", kw))
+            fake.states[MANIFEST]["status"] = "rejected"
+            raise store.SplitManifestError("manifest_tampered")
+
+        _swap(mod, "reject_split_manifest", racing_reject_other)
+        try:
+            r = call(base, "POST", rpath, "admin", rgood)
+        finally:
+            _swap(mod, "reject_split_manifest", original_reject)
+        check(
+            "ACC-FREEZE-REVIEW",
+            "a concurrent reject that raised manifest_tampered is never folded into the "
+            "manifest_not_proposed replay race",
+            r.status == 409 and r.detail == "manifest_tampered",
         )
 
 
