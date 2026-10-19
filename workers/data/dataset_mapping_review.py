@@ -45,6 +45,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Final
 
+from workers.data.canonical_conversation_normalizer import ToolArgumentValidator
 from workers.data.csv_importer import csv_events
 from workers.data.import_common import (
     AcceptedRecord,
@@ -85,9 +86,6 @@ PREVIEW_CONTENT_TYPES: Final = JSONL_PREVIEW_CONTENT_TYPES | frozenset(
 # can only ever request *less* than the defaults, never more).
 PREVIEW_LIMITS: Final = ImportLimits(max_rejections=200, deadline_seconds=30.0)
 
-_MASK_PREFIX: Final = "⁣masked⁣"  # a word-joiner-delimited marker, never real content
-_SIZE_BUCKETS: Final = (0, 1, 9, 33, 129, 513, 2049)
-
 
 class MappingPreviewUnavailableError(ValueError):
     """The verified content type has no preview importer yet (XLSX, or anything this release
@@ -114,8 +112,13 @@ class MappingPreviewRow:
     outcome: str  # "accepted" | "rejected"
     code: str | None
     slot: str | None
+    # `raw_row`/`not_mapped`/`candidate` hold masked markers (`{"masked": True,
+    # "chars": n}`) in place of every real string once masking is applied
+    # (see `_mask_result_for_reveal` below) -- the type stays `object`-valued
+    # rather than naming the marker shape, since this dataclass itself never
+    # masks anything (a pure data holder, masked or not).
     raw_row: Mapping[str, object] | tuple[object, ...] | None
-    not_mapped: tuple[str, ...]
+    not_mapped: tuple[object, ...]
     candidate: Mapping[str, object] | None
     comparison: tuple[ComparisonCell, ...]
 
@@ -139,7 +142,7 @@ class MappingPreviewResult:
     state: str  # "completed" | "failed" | "blocked"
     failure_code: str | None
     rows: tuple[MappingPreviewRow, ...]
-    observed_role_values: tuple[str, ...]
+    observed_role_values: tuple[object, ...]
     counts: Mapping[str, int] = field(repr=False)
     complete: bool
     tool_definitions_sha256: str
@@ -149,50 +152,100 @@ class MappingPreviewResult:
 
 @dataclass(frozen=True)
 class ProbeResult:
-    headers: tuple[str, ...] | None
+    # PROBE-LAW17: the same verdict convention `MappingPreviewResult`/
+    # `import_common.ImportReport` already use -- a storage outage or a
+    # changed object is a visible `state`/`failure_code`, never silently
+    # folded into `complete=False` with no explanation (Law 17).
+    state: str  # "completed" | "failed" | "blocked"
+    failure_code: str | None
+    headers: tuple[object, ...] | None
     raw_rows: tuple[Mapping[str, object] | tuple[object, ...], ...]
     complete: bool
 
 
-def _size_bucket(length: int) -> str:
-    bucket = 0
-    for threshold in _SIZE_BUCKETS:
-        if length >= threshold:
-            bucket = threshold
-    return f">={bucket}"
+def _mask_marker(text: str) -> Mapping[str, object]:
+    """MASK-LEAK (Section 67.2 "every string leaf, header and key becomes
+    `{"masked":true,"chars":n}`"): the one masked-string shape this module
+    ever produces -- `chars` is `len(text)`, never a size bucket, and never
+    any fragment of `text` itself."""
+    return {"masked": True, "chars": len(text)}
 
 
-def _mask_value(value: object) -> object:
-    """None/bool are never masked (never sensitive text); a str gets its own size-bucketed
-    marker (`_size_bucket`); every other scalar (int, float, and anything else this module
-    does not otherwise recognise) shares one plain type-name marker -- there is nothing a
-    number's own value could leak that its type name does not already say, so it needs no
-    bucket of its own."""
-    if value is None or type(value) is bool:
-        return value
+def _mask_leaf(value: object) -> object:
+    """Masks every *string* reachable from `value`, recursively through
+    lists and dicts (dict *values* only -- this is for structures whose own
+    keys are this module's fixed schema names, like the canonical candidate,
+    never raw user-supplied column/key names; see `_mask_named_row` for
+    those). `None`/`bool`/`int`/`float` are never masked -- none of them
+    carries free text, so none of them needs `_mask_marker`'s own "how many
+    characters" shape."""
     if type(value) is str:
-        return f"{_MASK_PREFIX}:str:{_size_bucket(len(value))}"
+        return _mask_marker(value)
     if type(value) is list:
-        return [_mask_value(v) for v in value]
+        return [_mask_leaf(v) for v in value]
     if type(value) is dict:
-        return {key: _mask_value(v) for key, v in value.items()}
-    return f"{_MASK_PREFIX}:{type(value).__name__}"
+        return {key: _mask_leaf(v) for key, v in value.items()}
+    return value
 
 
-def _mask_row(
+def _mask_candidate(candidate: Mapping[str, object] | None) -> Mapping[str, object] | None:
+    """As `_mask_leaf`, with one disclosed exception the design itself
+    names: a `ContentPart`'s own `"type"` tag (`"text"`/`"json"`, never raw
+    content) stays in clear -- it is schema, the same way `ComparisonCell.
+    raw_type`/`canonical_type`/`identical` (never masked at all, below)
+    are."""
+    if candidate is None:
+        return None
+
+    def walk(value: object) -> object:
+        if type(value) is str:
+            return _mask_marker(value)
+        if type(value) is list:
+            return [walk(v) for v in value]
+        if type(value) is dict:
+            return {key: (v if key == "type" else walk(v)) for key, v in value.items()}
+        return value
+
+    masked = walk(dict(candidate))
+    assert isinstance(masked, dict)
+    return masked
+
+
+def _mask_names(names: tuple[str, ...]) -> tuple[object, ...]:
+    """Masks a tuple of raw header/key/role *names* (`not_mapped`,
+    `observed_role_values`, `ProbeResult.headers`) -- these are read
+    straight from the source's own raw data, not this module's fixed
+    schema, so Section 67.2's "header and key" half of the masking rule
+    applies to them exactly as it does to a raw row's own keys."""
+    return tuple(_mask_marker(name) for name in names)
+
+
+def _mask_named_row(
     row: Row | None, headers: Sequence[str] | None
 ) -> Mapping[str, object] | tuple[object, ...] | None:
-    """Masks every *value* reachable from a raw row; a header/object key is schema and is
-    never masked. A tabular row (a plain sequence) has no keys of its own, so pairs with
-    `headers` positionally when they are the same length; otherwise (a short/overlong row,
-    already its own distinct rejection elsewhere) it is masked positionally without names."""
+    """Masks a raw row for display: every value *and* every header/object
+    key it carries (Section 67.2's own "header and key" clause) -- a plain
+    `{header: masked_value}`/`{key: masked_value}` dict cannot represent a
+    masked *key* at all (a dict key must be hashable; the masked marker is
+    a dict, so it cannot be one), so a row with names of its own comes back
+    as an ordered tuple of `{"key"|"header": masked_name, "value":
+    masked_value}` pairs instead, never a bare dict keyed by the real name.
+    A tabular row with no names to pair against (no headers, or a
+    short/overlong row already its own distinct rejection elsewhere) has
+    nothing to mask but its own positional values."""
     if row is None:
         return None
     if isinstance(row, Mapping):
-        return {key: _mask_value(value) for key, value in row.items()}
+        return tuple(
+            {"key": _mask_marker(str(key)), "value": _mask_leaf(value)}
+            for key, value in row.items()
+        )
     if headers is not None and len(headers) == len(row):
-        return {name: _mask_value(value) for name, value in zip(headers, row, strict=True)}
-    return tuple(_mask_value(value) for value in row)
+        return tuple(
+            {"header": _mask_marker(name), "value": _mask_leaf(value)}
+            for name, value in zip(headers, row, strict=True)
+        )
+    return tuple(_mask_leaf(value) for value in row)
 
 
 def compute_tool_definitions_sha256(
@@ -422,6 +475,27 @@ def _raw_message_roles(
     )
 
 
+def _drain_and_verify(reader: ChunkReader) -> ImportAborted | None:
+    """SOURCE-CHANGED (Law 17): a preview/probe reads only up to
+    `limits.preview_max_records` rows, by design fewer bytes than the whole
+    object -- `ChunkReader`'s own size/sha256 check only ever fires at
+    end-of-stream (see its own docstring), so an object tampered with past
+    the point this call stopped reading would otherwise go completely
+    undetected. Forces that check to run by reading whatever bytes remain,
+    within the same deadline the main read already obeys (`reader.deadline`
+    is shared state, not reset here); returns the abort it raises (a size/
+    hash mismatch, a source outage, or the deadline itself), or `None` when
+    the remainder verifies clean. Safe to call unconditionally, including
+    after the caller's own loop already aborted: `ChunkReader` re-raises
+    the exact same `ImportAborted` on every read once aborted once."""
+    try:
+        for _ in reader:
+            pass
+    except ImportAborted as exc:
+        return exc
+    return None
+
+
 def run_mapping_probe(
     reader: ChunkReader,
     mapping: ImportMapping,
@@ -435,7 +509,9 @@ def run_mapping_probe(
     source, before any real mapping exists. `mapping` is one minimal, certified probe mapping
     for the dispatched importer (the caller picks it; see the sibling `*_PROBE_MAPPING`
     constants a service layer builds once) -- every candidate/rejection it produces is
-    discarded, only the raw rows the tap observed are kept."""
+    discarded, only the raw rows the tap observed are kept. Never raises for a storage outage
+    or a changed object (Law 17): the verdict is `state`/`failure_code`, same as
+    `run_mapping_preview`."""
     events_fn = _EVENTS_BY_CONTENT_TYPE.get(verified_content_type)
     if events_fn is None:
         raise MappingPreviewUnavailableError(verified_content_type)
@@ -450,7 +526,8 @@ def run_mapping_probe(
     )
     raw_rows: list[Mapping[str, object] | tuple[object, ...]] = []
     headers: Sequence[str] | None = None
-    complete = True
+    truncated = False
+    aborted: ImportAborted | None = None
     try:
         for event in stream:
             reader.deadline.check()
@@ -460,28 +537,42 @@ def run_mapping_probe(
             captured.clear()
             if row_headers is not None:
                 headers = row_headers
+            # The length check runs *before* this event is added -- once
+            # `raw_rows` already holds `preview_max_records` entries, the
+            # very next event proves the source was not actually exhausted
+            # at the limit (`complete` below), and is never itself added.
+            if len(raw_rows) >= limits.preview_max_records:
+                truncated = True
+                break
             if row is not None:
                 raw_rows.append(_present_row(row, row_headers, reveal))
-            if len(raw_rows) >= limits.preview_max_records:
-                break
-    except ImportAborted:
-        complete = False
-    return ProbeResult(None if headers is None else tuple(headers), tuple(raw_rows), complete)
+    except ImportAborted as exc:
+        aborted = exc
+    if aborted is None:
+        aborted = _drain_and_verify(reader)
+    state = aborted.state if aborted is not None else "completed"
+    failure_code = aborted.failure_code if aborted is not None else None
+    complete = aborted is None and not truncated
+    masked_headers = (
+        None if headers is None else (tuple(headers) if reveal else _mask_names(tuple(headers)))
+    )
+    return ProbeResult(state, failure_code, masked_headers, tuple(raw_rows), complete)
 
 
 def _present_row(
     row: Row, headers: Sequence[str] | None, reveal: bool
 ) -> Mapping[str, object] | tuple[object, ...]:
     """The raw row as the caller is allowed to see it: unchanged (but still a fresh copy,
-    paired positionally with `headers` when it is a tabular row) when `reveal` is True, every
-    value masked otherwise. Keys/headers are schema and are never masked either way."""
+    paired positionally with `headers` when it is a tabular row) when `reveal` is True; every
+    value *and* every header/object key it carries masked otherwise (`_mask_named_row`,
+    Section 67.2's own "header and key" clause -- MASK-LEAK)."""
     if reveal:
         if isinstance(row, Mapping):
             return dict(row)
         if headers is not None and len(headers) == len(row):
             return dict(zip(headers, row, strict=True))
         return tuple(row)
-    masked = _mask_row(row, headers)
+    masked = _mask_named_row(row, headers)
     assert masked is not None
     return masked
 
@@ -493,6 +584,7 @@ def run_mapping_preview(
     verified_content_type: str,
     dataset_sha256: str,
     tool_schemas: Mapping[str, Mapping[str, object]] | None,
+    tool_argument_validator: ToolArgumentValidator | None = None,
     reveal: bool,
     limits: ImportLimits = PREVIEW_LIMITS,
 ) -> MappingPreviewResult:
@@ -501,7 +593,14 @@ def run_mapping_preview(
     `mapping.row_observer` saw for it (absent for a row that never reached `apply_mapping`,
     e.g. malformed JSON or undecodable bytes: still a row, with no raw row to show). Never
     raises for a storage outage or a changed object (Section 67.3/Law 17): the verdict is
-    `state`/`failure_code`, the same convention `import_common.ImportReport` uses."""
+    `state`/`failure_code`, the same convention `import_common.ImportReport` uses.
+
+    `tool_argument_validator` (TOOL-VALIDATOR): the caller's own FTF-0405 `validate_instance`,
+    passed straight through to the dispatched importer alongside `tool_schemas` -- without it
+    every tool-call row is rejected `canonical_schema_invalid` (the importer's own documented
+    fail-closed default for "no validator supplied"), making a tool-call-bearing source
+    impossible to preview at all, accepted or rejected, which this task's own acceptance clause
+    requires to be shown either way."""
     events_fn = _EVENTS_BY_CONTENT_TYPE.get(verified_content_type)
     if events_fn is None:
         raise MappingPreviewUnavailableError(verified_content_type)
@@ -515,12 +614,14 @@ def run_mapping_preview(
         dataset_sha256=dataset_sha256,
         limits=limits,
         tool_schemas=tool_schemas,
+        tool_argument_validator=tool_argument_validator,
     )
     rows: list[MappingPreviewRow] = []
     role_values: set[str] = set()
     counts: dict[str, int] = {"seen": 0, "accepted": 0, "rejected": 0}
     source_schema_sha256: str | None = None
     aborted: ImportAborted | None = None
+    truncated = False
     locator_index = 0
     try:
         for event in stream:
@@ -530,18 +631,23 @@ def run_mapping_preview(
                 source_schema_sha256 = schema
             if isinstance(event, BlankLine):
                 continue
+            # As `run_mapping_probe`: checked *before* this event is added,
+            # so the event that proves truncation is never itself counted,
+            # paired or given a locator.
+            if len(rows) >= limits.preview_max_records:
+                truncated = True
+                break
             locator_index += 1
             row, row_headers = captured.pop() if captured else (None, None)
             captured.clear()
-            if len(rows) >= limits.preview_max_records:
-                break
             counts["seen"] += 1
             masked_row = _present_row(row, row_headers, reveal) if row is not None else None
+            not_mapped_real = _not_mapped(mapping, row, row_headers) if row is not None else ()
+            not_mapped = not_mapped_real if reveal else _mask_names(not_mapped_real)
             if row is not None:
                 role_values.update(_raw_message_roles(mapping, row, row_headers))
             if isinstance(event, AcceptedRecord):
                 counts["accepted"] += 1
-                not_mapped = _not_mapped(mapping, row, row_headers) if row is not None else ()
                 comparison = (
                     _comparison_cells(mapping, row, row_headers, event.candidate)
                     if row is not None
@@ -555,6 +661,12 @@ def run_mapping_preview(
                         slot=None,
                         raw_row=masked_row,
                         not_mapped=not_mapped,
+                        # Real, unmasked candidate -- MASK-LEAK masking is
+                        # applied in one final pass below, *after*
+                        # `preview_sha256` (which must stay the same
+                        # digest regardless of `reveal`) is computed from
+                        # these same real `record_sha256`/
+                        # `normalized_sha256` values.
                         candidate=event.candidate,
                         comparison=comparison,
                     )
@@ -563,7 +675,6 @@ def run_mapping_preview(
                 assert isinstance(event, RowRejection)
                 counts["rejected"] += 1
                 counts[f"rejected:{event.code}"] = counts.get(f"rejected:{event.code}", 0) + 1
-                not_mapped = _not_mapped(mapping, row, row_headers) if row is not None else ()
                 rows.append(
                     MappingPreviewRow(
                         locator=f"record:{locator_index}",
@@ -578,9 +689,11 @@ def run_mapping_preview(
                 )
     except ImportAborted as exc:
         aborted = exc
+    if aborted is None:
+        aborted = _drain_and_verify(reader)
     state = aborted.state if aborted is not None else "completed"
     failure_code = aborted.failure_code if aborted is not None else None
-    complete = aborted is None and len(rows) < limits.preview_max_records
+    complete = aborted is None and not truncated
     digest_source = {
         "dataset_sha256": dataset_sha256,
         "mapping_sha256": mapping.mapping_sha256,
@@ -604,11 +717,20 @@ def run_mapping_preview(
             "ascii"
         )
     ).hexdigest()
+    # MASK-LEAK: mask every row's own candidate document now, *after* the
+    # digest above has already bound its real hashes -- masking never
+    # changes `preview_sha256` for the same underlying data.
+    if not reveal:
+        rows = [dataclasses.replace(row, candidate=_mask_candidate(row.candidate)) for row in rows]
+    observed_role_values_real = tuple(sorted(role_values))
+    observed_role_values = (
+        observed_role_values_real if reveal else _mask_names(observed_role_values_real)
+    )
     return MappingPreviewResult(
         state=state,
         failure_code=failure_code,
         rows=tuple(rows),
-        observed_role_values=tuple(sorted(role_values)),
+        observed_role_values=observed_role_values,
         counts=counts,
         complete=complete,
         tool_definitions_sha256=tool_definitions_sha256,
