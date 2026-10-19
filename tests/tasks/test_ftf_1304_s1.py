@@ -172,6 +172,7 @@ def small_binding(m: types.ModuleType, artifact: str = "base") -> Any:
         provider="gateway",
         default_pricing_mode="provider",
         default_artifact_kind="existing",
+        default_step_kind="reasoning",
         steps=(
             m.StepBinding("classify", "small-local", "classify", "self_hosted", artifact),
             m.StepBinding("extract", "small-local", "extract", "self_hosted", artifact),
@@ -193,7 +194,7 @@ def pair(m: types.ModuleType, rid: str, outcome: str = "pass", minute: int = 1) 
 
 
 def self_window(m: types.ModuleType, window_: ServiceWindow, wid: str = "w1") -> Any:
-    return m.SelfHostedWindow(wid, ("small-local",), window_)
+    return m.SelfHostedWindow(wid, ("small-local",), window_, "USD")
 
 
 def refused(
@@ -544,6 +545,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         "gateway",
         "provider",
         "existing",
+        "reasoning",
         (
             m.StepBinding("classify", "small-a", "classify", "self_hosted", "base"),
             m.StepBinding("extract", "small-b", "extract", "self_hosted", "base"),
@@ -561,7 +563,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         )
         for i in range(5)
     ]
-    one_gpu = m.SelfHostedWindow("gpu", ("small-a", "small-b"), window("10", "0", "0"))
+    one_gpu = m.SelfHostedWindow("gpu", ("small-a", "small-b"), window("10", "0", "0"), "USD")
     out = attribute(shared, shared_attempts, {}, [one_gpu])
     spent = sum((a.settled_cost for a in out.attempt_costs), D(0))
     rec.check(
@@ -575,8 +577,8 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         sum((ln.cost for ln in out.route_lines), D(0)) == D("10"),
     )
     two_windows = [
-        m.SelfHostedWindow("ga", ("small-a",), window("10", "0", "0")),
-        m.SelfHostedWindow("gb", ("small-b",), window("4", "0", "0")),
+        m.SelfHostedWindow("ga", ("small-a",), window("10", "0", "0"), "USD"),
+        m.SelfHostedWindow("gb", ("small-b",), window("4", "0", "0"), "USD"),
     ]
     out2 = attribute(shared, shared_attempts, {}, two_windows)
     rec.check(
@@ -597,7 +599,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
             for i in range(n)
         ]
         total = D("10.000000000001") if n == 7 else D("100") / D(n) * D(n) + D("0.123456789012345")
-        win = m.SelfHostedWindow("many", ("small-local",), window(str(total), "0", "0"))
+        win = m.SelfHostedWindow("many", ("small-local",), window(str(total), "0", "0"), "USD")
         out = attribute(binding, many, {}, [win])
         costs = [a.settled_cost for a in out.attempt_costs]
         rec.check(
@@ -614,7 +616,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         rec.check(
             "FTF-1304-S1-W2", f"{n} calls: the shares are positive", all(c > 0 for c in costs)
         )
-    cent = m.SelfHostedWindow("cent", ("small-local",), window("0.01", "0", "0"))
+    cent = m.SelfHostedWindow("cent", ("small-local",), window("0.01", "0", "0"), "USD")
     three = [
         attempt(m, f"c{i}", "pass", [call(m, f"c{i}", "classify", "small-local", minute=i + 1)])
         for i in range(3)
@@ -632,6 +634,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         "gateway",
         "provider",
         "existing",
+        "reasoning",
         (
             m.StepBinding("c1", "mid-a", "classify", "provider", "base"),
             m.StepBinding("c2", "mid-b", "classify", "provider", "base"),
@@ -705,6 +708,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
             "p",
             "provider",
             "base",
+            "reasoning",
             (
                 m.StepBinding("z", "r1", "other", "provider", "base"),
                 m.StepBinding("b", "r2", "other", "provider", "base"),
@@ -726,6 +730,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
                 "p",
                 "provider",
                 "base",
+                "reasoning",
                 (
                     m.StepBinding("s", "r1", "other", "provider", "base"),
                     m.StepBinding("s", "r2", "other", "provider", "base"),
@@ -743,6 +748,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
                 "p",
                 "provider",
                 "base",
+                "reasoning",
                 (m.StepBinding("s", "a", "other", "self_hosted", "base"),),
             ),
         ),
@@ -757,6 +763,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
                 "p",
                 "provider",
                 "base",
+                "reasoning",
                 (
                     m.StepBinding("s", "r", "other", "self_hosted", "base"),
                     m.StepBinding("t", "r", "other", "provider", "base"),
@@ -774,6 +781,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
                 "p",
                 "provider",
                 "base",
+                "reasoning",
                 (
                     m.StepBinding("s", "r", "other", "provider", "base"),
                     m.StepBinding("t", "r", "other", "provider", "tuned"),
@@ -817,13 +825,17 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
     rec.check(
         "FTF-1304-S1-B2",
         "default pricing mode checked",
-        raises(m.CompoundAttributionError, lambda: m.CompoundBinding("a", "p", "nope", "base", ())),
+        raises(
+            m.CompoundAttributionError,
+            lambda: m.CompoundBinding("a", "p", "nope", "base", "reasoning", ()),
+        ),
     )
     rec.check(
         "FTF-1304-S1-B2",
         "default artifact kind checked",
         raises(
-            m.CompoundAttributionError, lambda: m.CompoundBinding("a", "p", "provider", "nope", ())
+            m.CompoundAttributionError,
+            lambda: m.CompoundBinding("a", "p", "provider", "nope", "reasoning", ()),
         ),
     )
     rec.check(
@@ -831,14 +843,15 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         "steps must be StepBinding",
         raises(
             m.CompoundAttributionError,
-            lambda: m.CompoundBinding("a", "p", "provider", "base", ("x",)),
+            lambda: m.CompoundBinding("a", "p", "provider", "base", "reasoning", ("x",)),
         ),
     )
     rec.check(
         "FTF-1304-S1-B2",
         "steps must be a sequence",
         raises(
-            m.CompoundAttributionError, lambda: m.CompoundBinding("a", "p", "provider", "base", "x")
+            m.CompoundAttributionError,
+            lambda: m.CompoundBinding("a", "p", "provider", "base", "reasoning", "x"),
         ),
     )
 
@@ -860,6 +873,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
             args["prov"],
             args["mode"],
             args["kind"],
+            "reasoning",
             (
                 m.StepBinding(
                     args["step"], args["sroute"], args["skind"], args["smode"], args["sart"]
@@ -890,9 +904,9 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
     rec.check(
         "FTF-1304-S1-B3",
         "binding hash independent of step order",
-        m.CompoundBinding("x", "p", "provider", "base", steps_ab).binding_sha256
+        m.CompoundBinding("x", "p", "provider", "base", "reasoning", steps_ab).binding_sha256
         == m.CompoundBinding(
-            "x", "p", "provider", "base", tuple(reversed(steps_ab))
+            "x", "p", "provider", "base", "reasoning", tuple(reversed(steps_ab))
         ).binding_sha256,
     )
 
@@ -903,6 +917,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
             "p",
             "provider",
             default,
+            "reasoning",
             tuple(
                 m.StepBinding(f"s{i}", f"r{i}", "other", "provider", x) for i, x in enumerate(arts)
             ),
@@ -927,6 +942,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         "gateway",
         "provider",
         "existing",
+        "reasoning",
         (m.StepBinding("classify", "small-local", "classify", "self_hosted", "tuned"),),
     )
     tuned_attempts = [pair(m, f"k{i}") for i in range(10)]
@@ -1261,29 +1277,33 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
     rec.check(
         "FTF-1304-S1-E3",
         "empty window aliases refused",
-        raises(m.CompoundAttributionError, lambda: m.SelfHostedWindow("w", (), window())),
+        raises(m.CompoundAttributionError, lambda: m.SelfHostedWindow("w", (), window(), "USD")),
     )
     rec.check(
         "FTF-1304-S1-E3",
         "duplicate window aliases refused",
-        raises(m.CompoundAttributionError, lambda: m.SelfHostedWindow("w", ("a", "a"), window())),
+        raises(
+            m.CompoundAttributionError, lambda: m.SelfHostedWindow("w", ("a", "a"), window(), "USD")
+        ),
     )
     rec.check(
         "FTF-1304-S1-E3",
         "blank window alias refused",
-        raises(m.CompoundAttributionError, lambda: m.SelfHostedWindow("w", ("a", " "), window())),
+        raises(
+            m.CompoundAttributionError, lambda: m.SelfHostedWindow("w", ("a", " "), window(), "USD")
+        ),
     )
     rec.check(
         "FTF-1304-S1-E3",
         "window must be a ServiceWindow",
-        raises(m.CompoundAttributionError, lambda: m.SelfHostedWindow("w", ("a",), "x")),
+        raises(m.CompoundAttributionError, lambda: m.SelfHostedWindow("w", ("a",), "x", "USD")),
     )
     rec.check(
         "FTF-1304-S1-E3",
         "only the proportional policy exists",
         raises(
             m.CompoundAttributionError,
-            lambda: m.SelfHostedWindow("w", ("a",), window(), allocation_policy="even"),
+            lambda: m.SelfHostedWindow("w", ("a",), window(), "USD", allocation_policy="even"),
         ),
     )
     naive_window = ServiceWindow(
@@ -1298,7 +1318,9 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
     rec.check(
         "FTF-1304-S1-E3",
         "naive service window refused",
-        raises(m.CompoundAttributionError, lambda: m.SelfHostedWindow("w", ("a",), naive_window)),
+        raises(
+            m.CompoundAttributionError, lambda: m.SelfHostedWindow("w", ("a",), naive_window, "USD")
+        ),
     )
 
     # ---- N: strict, case-sensitive identity of every id, alias and key.
@@ -1342,6 +1364,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         "gateway",
         "provider",
         "existing",
+        "reasoning",
         (
             m.StepBinding("Classify", "Small-Local", "classify", "self_hosted", "base"),
             m.StepBinding("classify", "small-local", "classify", "self_hosted", "base"),
@@ -1361,6 +1384,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
                 "p",
                 "provider",
                 "base",
+                "reasoning",
                 (
                     m.StepBinding("classify", "r1", "other", "provider", "base"),
                     m.StepBinding("Classify", "r2", "other", "provider", "base"),
@@ -1395,7 +1419,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         "default alias in another case is a binding violation",
         r.status == "binding_violation",
     )
-    upper = m.CompoundBinding("Large-API", "gateway", "provider", "existing", ())
+    upper = m.CompoundBinding("Large-API", "gateway", "provider", "existing", "reasoning", ())
     r = attribute(
         upper,
         [attempt(m, "n3", "pass", [call(m, "n3", None, "large-api", usage_=usage())])],
@@ -1419,9 +1443,10 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         "gateway",
         "provider",
         "existing",
+        "reasoning",
         (m.StepBinding("classify", "Small-Local", "classify", "self_hosted", "base"),),
     )
-    lowered = m.SelfHostedWindow("wl", ("small-local",), window())
+    lowered = m.SelfHostedWindow("wl", ("small-local",), window(), "USD")
     r = attribute(
         mixed_self,
         [attempt(m, "n5", "pass", [call(m, "n5", "classify", "Small-Local")])],
@@ -1433,7 +1458,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         plain,
         [attempt(m, "n6", "pass", [call(m, "n6", "classify", "small-local")])],
         RATES,
-        [m.SelfHostedWindow("wu", ("SMALL-LOCAL",), window())],
+        [m.SelfHostedWindow("wu", ("SMALL-LOCAL",), window(), "USD")],
     )
     refused(rec, "FTF-1304-S1-N4", m, r, "unpriced", "no_window", "n6", "small-local")
     foreign_case = (call(m, "R1", None, "large-api", usage_=usage()), "r1")
@@ -1474,7 +1499,12 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         raises(
             m.CompoundAttributionError,
             lambda: m.CompoundBinding(
-                "a", "p", "provider", "base", {m.StepBinding("s", "r", "other", "provider", "base")}
+                "a",
+                "p",
+                "provider",
+                "base",
+                "reasoning",
+                {m.StepBinding("s", "r", "other", "provider", "base")},
             ),
         ),
     )
@@ -1495,7 +1525,12 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         "FTF-1304-S1-N6",
         "a list of steps is accepted and frozen into a tuple",
         m.CompoundBinding(
-            "a", "p", "provider", "base", [m.StepBinding("s", "r", "other", "provider", "base")]
+            "a",
+            "p",
+            "provider",
+            "base",
+            "reasoning",
+            [m.StepBinding("s", "r", "other", "provider", "base")],
         )
         .steps[0]
         .step_key
@@ -1505,7 +1540,8 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         "FTF-1304-S1-N6",
         "a string is not a sequence of aliases",
         raises(
-            m.CompoundAttributionError, lambda: m.SelfHostedWindow("w", "small-local", window())
+            m.CompoundAttributionError,
+            lambda: m.SelfHostedWindow("w", "small-local", window(), "USD"),
         ),
     )
     for bad_policy in ("PROPORTIONAL_TO_CALLS", " proportional_to_calls", "proportional_to_calls "):
@@ -1514,7 +1550,9 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
             f"allocation policy {bad_policy!r} refused",
             raises(
                 m.CompoundAttributionError,
-                lambda p=bad_policy: m.SelfHostedWindow("w", ("a",), window(), allocation_policy=p),
+                lambda p=bad_policy: m.SelfHostedWindow(
+                    "w", ("a",), window(), "USD", allocation_policy=p
+                ),
             ),
         )
     exact_start = [attempt(m, "n8", "pass", [call(m, "n8", "classify", "small-local", minute=0)])]
@@ -1562,7 +1600,437 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         "FTF-1304-S1-N9",
         "status values are the documented strings",
         [s.value for s in m.AttributionStatus]
-        == ["priced", "binding_violation", "identity_unverified", "unpriced"],
+        == ["priced", "binding_violation", "identity_unverified", "currency_mismatch", "unpriced"],
+    )
+
+    # ---- R2: currency (Section 32 "decimal arithmetic with currency") and the declared default step kind.
+    jpy_card = ProviderRateCard(
+        currency="JPY", input_token_rate=D("0.0001"), output_token_rate=D("0.0005")
+    )
+    eur_card = ProviderRateCard(
+        currency="EUR", input_token_rate=D("0.000001"), output_token_rate=D("0.000005")
+    )
+    mid_binding = m.CompoundBinding(
+        "large-api",
+        "gateway",
+        "provider",
+        "existing",
+        "reasoning",
+        (m.StepBinding("extract", "mid-api", "extract", "provider", "base"),),
+    )
+
+    def mid_attempts(prefix: str, n: int = 2) -> list[Any]:
+        return [
+            attempt(
+                m,
+                f"{prefix}{i}",
+                "pass",
+                [
+                    call(m, f"{prefix}{i}", "extract", "mid-api", usage_=usage(), minute=i + 1),
+                    call(m, f"{prefix}{i}", None, "large-api", usage_=usage(), minute=i + 3),
+                ],
+            )
+            for i in range(n)
+        ]
+
+    def mismatch_refused(cid: str, result: Any, routes: set[str]) -> None:
+        rec.check(
+            cid,
+            f"status currency_mismatch, got {result.status!r}",
+            result.status == "currency_mismatch",
+        )
+        rec.check(cid, "no attempt costs on a currency mismatch", not result.attempt_costs)
+        rec.check(cid, "no route lines on a currency mismatch", not result.route_lines)
+        rec.check(cid, "no step-kind totals on a currency mismatch", not result.step_kind_totals)
+        rec.check(cid, "no single currency is reported", result.currency is None)
+        named = {i.route_alias for i in result.issues if i.code == "currency_mismatch"}
+        rec.check(cid, f"issues name every route involved {routes}, got {named}", named == routes)
+        rec.check(
+            cid,
+            "issue status",
+            all(
+                i.status == "currency_mismatch"
+                for i in result.issues
+                if i.code == "currency_mismatch"
+            ),
+        )
+
+    usd_jpy = attribute(
+        mid_binding, mid_attempts("cu"), {"large-api": LARGE_CARD, "mid-api": jpy_card}, []
+    )
+    mismatch_refused("FTF-1304-S1-CUR1", usd_jpy, {"large-api", "mid-api"})
+    usd_eur = attribute(
+        mid_binding, mid_attempts("ce"), {"large-api": LARGE_CARD, "mid-api": eur_card}, []
+    )
+    mismatch_refused("FTF-1304-S1-CUR1", usd_eur, {"large-api", "mid-api"})
+    rec.check(
+        "FTF-1304-S1-CUR1",
+        "a refused mismatch cannot become a ranking candidate",
+        raises(
+            m.CompoundAttributionError,
+            lambda: m.compound_ranking_candidate(
+                "c",
+                usd_jpy,
+                quality_lower_bound=D("0.9"),
+                interval_low=D("0.05"),
+                interval_high=D("0.5"),
+            ),
+        ),
+    )
+    reordered = attribute(
+        mid_binding,
+        list(reversed(mid_attempts("cu"))),
+        {"mid-api": jpy_card, "large-api": LARGE_CARD},
+        [],
+    )
+    rec.check(
+        "FTF-1304-S1-CUR1",
+        "a mismatch verdict does not depend on input order",
+        reordered.attribution_sha256 == usd_jpy.attribution_sha256,
+    )
+
+    eur_window = m.SelfHostedWindow("weur", ("small-local",), window("7", "0", "0"), "EUR")
+    provider_usd_window_eur = attribute(small_binding(m), [pair(m, "cw")], RATES, [eur_window])
+    mismatch_refused("FTF-1304-S1-CUR2", provider_usd_window_eur, {"large-api", "small-local"})
+    usd_window = m.SelfHostedWindow("wusd", ("small-local",), window("7", "0", "0"), "USD")
+    all_usd = attribute(small_binding(m), [pair(m, "cw")], RATES, [usd_window])
+    rec.check("FTF-1304-S1-CUR3", "all-USD attribution is priced", all_usd.status == "priced")
+    rec.check(
+        "FTF-1304-S1-CUR3",
+        f"the single currency is exposed: {all_usd.currency!r}",
+        all_usd.currency == "USD",
+    )
+    jpy_window = m.SelfHostedWindow("wjpy", ("small-local",), window("7", "0", "0"), "JPY")
+    jpy_attempts = [
+        attempt(
+            m,
+            "cj",
+            "pass",
+            [
+                call(m, "cj", "classify", "small-local", minute=1),
+                call(m, "cj", None, "large-api", usage_=usage(), minute=2),
+            ],
+        )
+    ]
+    all_jpy = attribute(small_binding(m), jpy_attempts, {"large-api": jpy_card}, [jpy_window])
+    usd_twin = attribute(small_binding(m), jpy_attempts, {"large-api": jpy_card}, [usd_window])
+    rec.check(
+        "FTF-1304-S1-CUR3",
+        f"an all-JPY attribution is priced in JPY: {all_jpy.status!r} {all_jpy.currency!r}",
+        all_jpy.status == "priced" and all_jpy.currency == "JPY",
+    )
+    rec.check(
+        "FTF-1304-S1-CUR3",
+        "JPY provider + USD window is a mismatch, JPY provider + JPY window is not",
+        usd_twin.status == "currency_mismatch" and all_jpy.status == "priced",
+    )
+    # Same numbers, different currency: the hash must tell them apart.
+    jpy_same = attribute(
+        small_binding(m),
+        [pair(m, "cw")],
+        {
+            "large-api": ProviderRateCard(
+                "JPY", LARGE_CARD.input_token_rate, LARGE_CARD.output_token_rate
+            )
+        },
+        [m.SelfHostedWindow("wusd", ("small-local",), window("7", "0", "0"), "JPY")],
+    )
+    rec.check(
+        "FTF-1304-S1-CUR3",
+        "identical amounts in USD and JPY have different attribution hashes",
+        jpy_same.status == "priced"
+        and jpy_same.currency == "JPY"
+        and [a.settled_cost for a in jpy_same.attempt_costs]
+        == [a.settled_cost for a in all_usd.attempt_costs]
+        and jpy_same.attribution_sha256 != all_usd.attribution_sha256,
+    )
+    # A rate card or window that no call used cannot taint a priced total.
+    unused = attribute(
+        small_binding(m),
+        [pair(m, "cw")],
+        {"large-api": LARGE_CARD, "never-called": jpy_card},
+        [usd_window, m.SelfHostedWindow("wother", ("elsewhere",), window("1", "0", "0"), "EUR")],
+    )
+    rec.check(
+        "FTF-1304-S1-CUR4",
+        "an unused JPY rate card does not refuse a USD attribution (the unused EUR window is already unpriced)",
+        unused.status == "unpriced"
+        and not any(i.code == "currency_mismatch" for i in unused.issues),
+    )
+    unused_card_only = attribute(
+        small_binding(m),
+        [pair(m, "cw")],
+        {"large-api": LARGE_CARD, "never-called": jpy_card},
+        [usd_window],
+    )
+    rec.check(
+        "FTF-1304-S1-CUR4",
+        "an unused JPY rate card alone leaves a USD attribution priced",
+        unused_card_only.status == "priced" and unused_card_only.currency == "USD",
+    )
+    rec.check(
+        "FTF-1304-S1-CUR5",
+        "a window needs a currency",
+        raises(TypeError, lambda: m.SelfHostedWindow("w", ("a",), window())),
+    )
+    for bad_currency in ("", " ", " USD", 3, None):
+        rec.check(
+            "FTF-1304-S1-CUR5",
+            f"window currency {bad_currency!r} refused",
+            raises(
+                m.CompoundAttributionError,
+                lambda c=bad_currency: m.SelfHostedWindow("w", ("a",), window(), c),
+            ),
+        )
+
+    # ---- R3: currency is compared ACROSS attempts and exactly (no casefold, no strip), and
+    # the default route's step kind is the declared one even when a step shares its alias.
+    def single_call_attempt(
+        rid: str, outcome: str, step: str | None, alias: str, minute: int
+    ) -> Any:
+        priced = None if alias == "small-local" else usage()
+        return attempt(m, rid, outcome, [call(m, rid, step, alias, usage_=priced, minute=minute)])
+
+    cross_usd_jpy = attribute(
+        mid_binding,
+        [
+            single_call_attempt("xa", "pass", None, "large-api", 1),
+            single_call_attempt("xb", "pass", "extract", "mid-api", 3),
+        ],
+        {"large-api": LARGE_CARD, "mid-api": jpy_card},
+        [],
+    )
+    mismatch_refused("FTF-1304-S1-CUR6", cross_usd_jpy, {"large-api", "mid-api"})
+    rec.check(
+        "FTF-1304-S1-CUR6",
+        "no attempt is priced in a currency of its own while another attempt differs",
+        not cross_usd_jpy.attempt_costs and cross_usd_jpy.currency is None,
+    )
+    cross_provider_window = attribute(
+        small_binding(m),
+        [
+            single_call_attempt("xc", "pass", None, "large-api", 1),
+            single_call_attempt("xd", "pass", "classify", "small-local", 3),
+        ],
+        RATES,
+        [eur_window],
+    )
+    mismatch_refused("FTF-1304-S1-CUR6", cross_provider_window, {"large-api", "small-local"})
+    cross_failed = attribute(
+        mid_binding,
+        [
+            single_call_attempt("xe", "pass", None, "large-api", 1),
+            single_call_attempt("xf", "model_fail", "extract", "mid-api", 3),
+        ],
+        {"large-api": LARGE_CARD, "mid-api": jpy_card},
+        [],
+    )
+    mismatch_refused("FTF-1304-S1-CUR6", cross_failed, {"large-api", "mid-api"})
+    cross_failed_first = attribute(
+        mid_binding,
+        [
+            single_call_attempt("xg", "model_fail", None, "large-api", 1),
+            single_call_attempt("xh", "pass", "extract", "mid-api", 3),
+        ],
+        {"large-api": LARGE_CARD, "mid-api": jpy_card},
+        [],
+    )
+    mismatch_refused("FTF-1304-S1-CUR6", cross_failed_first, {"large-api", "mid-api"})
+    cross_same = attribute(
+        mid_binding,
+        [
+            single_call_attempt("xi", "pass", None, "large-api", 1),
+            single_call_attempt("xj", "model_fail", "extract", "mid-api", 3),
+        ],
+        {"large-api": LARGE_CARD, "mid-api": LARGE_CARD},
+        [],
+    )
+    rec.check(
+        "FTF-1304-S1-CUR6",
+        "the same two attempts in ONE currency are priced (the refusal is the currency, not the shape)",
+        cross_same.status == "priced" and cross_same.currency == "USD",
+    )
+
+    def variant_card(currency: str) -> ProviderRateCard:
+        return ProviderRateCard(currency, D("0.000001"), D("0.000005"))
+
+    for variant in ("usd", "Usd", " USD", "USD ", "\tUSD"):
+        variant_result = attribute(
+            mid_binding,
+            mid_attempts("vc"),
+            {"large-api": LARGE_CARD, "mid-api": variant_card(variant)},
+            [],
+        )
+        mismatch_refused("FTF-1304-S1-CUR7", variant_result, {"large-api", "mid-api"})
+        variant_cross = attribute(
+            mid_binding,
+            [
+                single_call_attempt("vx", "pass", None, "large-api", 1),
+                single_call_attempt("vy", "pass", "extract", "mid-api", 3),
+            ],
+            {"large-api": LARGE_CARD, "mid-api": variant_card(variant)},
+            [],
+        )
+        mismatch_refused("FTF-1304-S1-CUR7", variant_cross, {"large-api", "mid-api"})
+    lower_window = m.SelfHostedWindow("wlow", ("small-local",), window("7", "0", "0"), "usd")
+    lower_window_result = attribute(small_binding(m), [pair(m, "cw")], RATES, [lower_window])
+    mismatch_refused("FTF-1304-S1-CUR7", lower_window_result, {"large-api", "small-local"})
+    same_variant = attribute(
+        mid_binding,
+        mid_attempts("sv"),
+        {"large-api": variant_card("usd"), "mid-api": variant_card("usd")},
+        [],
+    )
+    rec.check(
+        "FTF-1304-S1-CUR7",
+        "two cards spelled identically ('usd') are one currency and priced as given",
+        same_variant.status == "priced" and same_variant.currency == "usd",
+    )
+
+    shared_alias = m.CompoundBinding(
+        "large-api",
+        "gateway",
+        "provider",
+        "existing",
+        "reasoning",
+        (m.StepBinding("summarize", "large-api", "summarize", "provider", "existing"),),
+    )
+    shared_result = attribute(
+        shared_alias,
+        [
+            attempt(
+                m,
+                "sk",
+                "pass",
+                [
+                    call(m, "sk", None, "large-api", usage_=usage(), minute=1),
+                    call(m, "sk", "summarize", "large-api", usage_=usage(), minute=3),
+                ],
+            )
+        ],
+        RATES,
+        [],
+    )
+    shared_lines = {(ln.route_alias, ln.step_kind): ln.calls for ln in shared_result.route_lines}
+    rec.check(
+        "FTF-1304-S1-DSK1",
+        f"a default call on an alias shared with a summarize step is 'reasoning', got {shared_lines}",
+        shared_result.status == "priced"
+        and shared_lines == {("large-api", "reasoning"): 1, ("large-api", "summarize"): 1},
+    )
+    rec.check(
+        "FTF-1304-S1-DSK1",
+        "step-kind totals keep the shared alias apart",
+        dict(shared_result.step_kind_totals).keys() == {"reasoning", "summarize"},
+    )
+    shared_reverse = m.CompoundBinding(
+        "large-api",
+        "gateway",
+        "provider",
+        "existing",
+        "summarize",
+        (m.StepBinding("think", "large-api", "reasoning", "provider", "existing"),),
+    )
+    reverse_result = attribute(
+        shared_reverse,
+        [
+            attempt(
+                m,
+                "sr",
+                "pass",
+                [
+                    call(m, "sr", None, "large-api", usage_=usage(), minute=1),
+                    call(m, "sr", "think", "large-api", usage_=usage(), minute=3),
+                ],
+            )
+        ],
+        RATES,
+        [],
+    )
+    reverse_lines = {(ln.route_alias, ln.step_kind): ln.calls for ln in reverse_result.route_lines}
+    rec.check(
+        "FTF-1304-S1-DSK1",
+        f"the declared default kind wins in the opposite arrangement too, got {reverse_lines}",
+        reverse_result.status == "priced"
+        and reverse_lines == {("large-api", "summarize"): 1, ("large-api", "reasoning"): 1},
+    )
+
+    # ---- R2: the default route's step kind is declared, never inferred.
+    classify_default = m.CompoundBinding(
+        "large-api",
+        "gateway",
+        "provider",
+        "existing",
+        "classify",
+        (m.StepBinding("extract", "small-local", "extract", "self_hosted", "base"),),
+    )
+    default_attempt = [
+        attempt(
+            m,
+            "dk",
+            "pass",
+            [
+                call(m, "dk", "extract", "small-local", minute=1),
+                call(m, "dk", None, "large-api", usage_=usage(), minute=2),
+            ],
+        )
+    ]
+    declared = attribute(
+        classify_default, default_attempt, RATES, [self_window(m, window("7", "0", "0"))]
+    )
+    declared_lines = {(ln.route_alias, ln.step_kind) for ln in declared.route_lines}
+    rec.check(
+        "FTF-1304-S1-DSK1",
+        f"the default route is labelled with its declared kind: {declared_lines}",
+        declared.status == "priced"
+        and declared_lines == {("large-api", "classify"), ("small-local", "extract")},
+    )
+    rec.check(
+        "FTF-1304-S1-DSK1",
+        "no 'reasoning' total appears when none was declared",
+        "reasoning" not in dict(declared.step_kind_totals),
+    )
+    for kind_name in m.STEP_KINDS:
+        labelled = m.CompoundBinding("a", "p", "provider", "base", kind_name, ())
+        rec.check(
+            "FTF-1304-S1-DSK1",
+            f"default_step_kind {kind_name!r} accepted",
+            labelled.default_step_kind == kind_name,
+        )
+    for bad_kind in ("guess", "Reasoning", " reasoning", "", None, 3):
+        rec.check(
+            "FTF-1304-S1-DSK2",
+            f"default_step_kind {bad_kind!r} refused",
+            raises(
+                m.CompoundAttributionError,
+                lambda k=bad_kind: m.CompoundBinding("a", "p", "provider", "base", k, ()),
+            ),
+        )
+    rec.check(
+        "FTF-1304-S1-DSK2",
+        "default_step_kind is required",
+        raises(TypeError, lambda: m.CompoundBinding("a", "p", "provider", "base", ())),
+    )
+    hashes = {
+        m.CompoundBinding("a", "p", "provider", "base", k, ()).binding_sha256 for k in m.STEP_KINDS
+    }
+    rec.check(
+        "FTF-1304-S1-DSK3",
+        "binding_sha256 changes with the default step kind",
+        len(hashes) == len(m.STEP_KINDS),
+    )
+    default_kind_changed = attribute(
+        small_binding(m),
+        [pair(m, "dk")],
+        RATES,
+        [self_window(m, window("7", "0", "0"))],
+    )
+    rec.check(
+        "FTF-1304-S1-DSK3",
+        "the same calls under a different declared default kind hash differently",
+        default_kind_changed.status == "priced"
+        and default_kind_changed.binding_sha256 != declared.binding_sha256
+        and default_kind_changed.attribution_sha256 != declared.attribution_sha256,
     )
 
     # ---- O: tie-break and ordering are independent of input order.
@@ -1571,6 +2039,7 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
         "gateway",
         "provider",
         "existing",
+        "reasoning",
         (
             m.StepBinding("classify", "small-local", "classify", "self_hosted", "base"),
             m.StepBinding("extract", "small-local", "extract", "self_hosted", "base"),
@@ -1866,6 +2335,96 @@ FAULTS: list[tuple[str, str, str, str]] = [
         "validate_model_binding_override not called",
         "        return validate_model_binding_override(describe_result, self.to_model_binding())\n",
         "        return self.to_model_binding()\n",
+    ),
+    (
+        "F-CURRENCY-CHECK-DROPPED",
+        "mixed currencies summed into one total",
+        "    if len(aliases_by_currency) > 1:\n",
+        "    if False:\n",
+    ),
+    (
+        "F-CURRENCY-PRECEDENCE-DROPPED",
+        "currency_mismatch missing from the status precedence",
+        "    STATUS_CURRENCY_MISMATCH,\n    STATUS_UNPRICED,\n)",
+        "    STATUS_UNPRICED,\n)",
+    ),
+    (
+        "F-PROVIDER-CURRENCY-IGNORED",
+        "rate card currency never read",
+        "        call.currency = card.currency\n",
+        "        pass\n",
+    ),
+    (
+        "F-WINDOW-CURRENCY-IGNORED",
+        "window currency never read",
+        "            member.currency = window.currency\n",
+        "            pass\n",
+    ),
+    (
+        "F-CURRENCY-NOT-IN-HASH",
+        "currency left out of attribution_sha256",
+        '            "currency": currency,\n',
+        "",
+    ),
+    (
+        "F-CURRENCY-NOT-EXPOSED",
+        "single currency not exposed on the attribution",
+        "        currency=currency if status is STATUS_PRICED else None,\n",
+        "        currency=None,\n",
+    ),
+    (
+        "F-DEFAULT-STEP-KIND-HARDCODED",
+        "default-route calls labelled with a hard-coded kind",
+        "                step_kind = binding.default_step_kind\n",
+        '                step_kind = "reasoning"\n',
+    ),
+    (
+        "V2-CUR-PER-ATTEMPT",
+        "currency compared only inside each attempt, never across attempts",
+        "    if len(aliases_by_currency) > 1:\n",
+        "    per_attempt = {\n        index: {c.currency for c in calls if c.attempt_index == index and c.currency}\n        for index in {c.attempt_index for c in calls}\n    }\n    if any(len(found) > 1 for found in per_attempt.values()):\n",
+    ),
+    (
+        "V2-CUR-PASS-ONLY",
+        "currency compared only over passing attempts",
+        "    currency = _single_currency(calls, issues)\n",
+        '    currency = _single_currency(\n        [c for c in calls if ordered[c.attempt_index].outcome == "pass"], issues\n    )\n',
+    ),
+    (
+        "V2-DSK-ALIAS-STEP-KIND",
+        "default route's kind taken from a step bound to the same alias",
+        "                step_kind = binding.default_step_kind\n",
+        "                step_kind = next(\n                    (s.step_kind for s in binding.steps if s.route_alias == bound_alias),\n                    binding.default_step_kind,\n                )\n",
+    ),
+    (
+        "V2-CUR-CASEFOLD",
+        "rate card currency upper-cased before comparison",
+        "        call.currency = card.currency\n",
+        "        call.currency = card.currency.upper()\n",
+    ),
+    (
+        "V2-CUR-STRIP",
+        "rate card currency stripped before comparison",
+        "        call.currency = card.currency\n",
+        "        call.currency = card.currency.strip()\n",
+    ),
+    (
+        "V2-CUR-WINDOW-CASEFOLD",
+        "window currency upper-cased before comparison",
+        "            member.currency = window.currency\n",
+        "            member.currency = window.currency.upper()\n",
+    ),
+    (
+        "F-DEFAULT-STEP-KIND-NOT-IN-HASH",
+        "default step kind left out of binding_sha256",
+        "        document = asdict(self)\n",
+        '        document = asdict(self)\n        document.pop("default_step_kind")\n',
+    ),
+    (
+        "F-DEFAULT-STEP-KIND-UNVALIDATED",
+        "default step kind not validated",
+        '        _choice(self.default_step_kind, STEP_KINDS, "default_step_kind")\n',
+        "",
     ),
 ]
 

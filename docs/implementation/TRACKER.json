@@ -788,9 +788,11 @@
       "blockers": []
     },
     "FTF-0505": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "870ec2ef1abd97d6b7b0fc6cda776272cb944ba1"
+      ],
       "independent_review": null,
       "blockers": []
     },
@@ -849,13 +851,13 @@
       "blockers": []
     },
     "FTF-0512": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "2351f53e299dac7cc7c89058b14d885a9030d65c"
+      ],
       "independent_review": null,
-      "blockers": [
-        "DECERTIFIED 2026-10-14T23:44Z: FTF-0512-F1 (#812) merged a production regression into this module (NFKC digit merges -> false blocking leakage findings; quadratic NFKC at the 2 MiB cap); requalifies with FTF-0512-F1 round 2 (QUEUE item 0c)"
-      ]
+      "blockers": []
     },
     "FTF-0513": {
       "status": "CERTIFIED",
@@ -1819,9 +1821,11 @@
       "blockers": []
     },
     "FTF-1704": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "2a442fb2e28c3f42f1e3f8c8a7498cd4b05ffcca"
+      ],
       "independent_review": null,
       "blockers": []
     },

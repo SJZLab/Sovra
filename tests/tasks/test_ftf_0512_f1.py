@@ -17,8 +17,16 @@ because FTF-0512's normalization kept them distinct. Covered here:
     literally says "generated timestamp" does not collide with a timestamp.
   - F1-DIFFERENTIAL: a frozen copy of the pre-F1 normalization is compared
     over a corpus; the only pairs whose verdict changes are the intended ones.
-  - F1-FAULTS: each class has a fault (the production source rewritten in
-    memory) that must turn at least one check RED.
+  - F1-FAULTS: each class has a fault (a behavioural override of one seam on a
+    fresh copy of the real module, no text anchors) that must turn a check RED.
+
+FTF-0512-F2 (symbols and name fields) is covered by `run_f2_checks`:
+  - F2-SYMBOL-PAIR / F2-STILL-EQUAL: math/currency/modifier/other symbols are
+    distinct tokens ("x <= 5" != "x >= 5", "$100" != "EUR100"); P* is still stripped.
+  - F2-SYMBOL-TABLE: every Sm/Sc/Sk/So code point in one fixed sentence is kept
+    and distinct symbols never merge (all pairs, against an independent oracle).
+  - F2-NAME: tool_calls[].name and a message `name` stay byte-for-byte.
+  - F2-DIFFERENTIAL: over the repo's own prose only symbol-bearing texts change verdict.
 
 Run directly: python3 tests/tasks/test_ftf_0512_f1.py
 """
@@ -26,12 +34,16 @@ Run directly: python3 tests/tasks/test_ftf_0512_f1.py
 # ruff: noqa: E501
 from __future__ import annotations
 
+import hashlib
+import importlib.util
+import json
 import re
 import sys
 import types
 import unicodedata
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
@@ -40,6 +52,9 @@ import workers.data.normalized_duplicate_detector as production  # noqa: E402
 
 MODULE_PATH = ROOT / "workers" / "data" / "normalized_duplicate_detector.py"
 FAILURES: list[str] = []
+
+# Frozen digest of _conv("Hello") under detector_version 4 (golden pin).
+FROZEN_SAMPLE_DIGEST = "ef687d35e73fd218193b7d3065c6b086415bb01a4d8c4eddd4d79a375a4f02a6"
 
 
 def check(
@@ -219,7 +234,356 @@ def frozen_pre_f1_normalize(text: str) -> str:
     return re.sub(r"\s+", " ", no_punct).strip()
 
 
+def _nfkd_non_starter_code_points() -> list[int]:
+    return [
+        cp
+        for cp in range(0x110000)
+        if any(unicodedata.combining(part) for part in unicodedata.normalize("NFKD", chr(cp)))
+    ]
+
+
+def _trailing_non_starters(char: str) -> int:
+    count = 0
+    for part in reversed(unicodedata.normalize("NFKD", char)):
+        if not unicodedata.combining(part):
+            break
+        count += 1
+    return count
+
+
+def _accepts(mod: types.ModuleType, text: str) -> bool:
+    try:
+        mod._normalize_text(text)
+    except mod.NormalizedDuplicateDetectionError:
+        return False
+    return True
+
+
+# The test's own statement of which NFKC compatibility mappings are a mere
+# glyph variant of the same character (look-alikes that must keep folding).
+GLYPH_VARIANT_TAGS = frozenset(
+    {
+        "<wide>",
+        "<narrow>",
+        "<font>",
+        "<circle>",
+        "<initial>",
+        "<medial>",
+        "<final>",
+        "<isolated>",
+        "<vertical>",
+        "<small>",
+    }
+)
+
+
+def _compat_fold_code_points() -> list[tuple[int, str, str, str | None, str]]:
+    """(cp, char, NFKC(char), decomposition tag, category) for every code point
+    whose NFKC mapping changes it and yields an alphanumeric, excluding the
+    No/Nl categories (kept verbatim, checked by F1-NFKC-DIGIT-MERGE)."""
+    rows = []
+    for cp in range(0x110000):
+        char = chr(cp)
+        mapped = unicodedata.normalize("NFKC", char)
+        category = unicodedata.category(char)
+        if mapped == char or category in ("No", "Nl"):
+            continue
+        if not any(part.isalnum() for part in mapped):
+            continue
+        decomposition = unicodedata.decomposition(char)
+        tag = decomposition.split(" ", 1)[0] if decomposition.startswith("<") else None
+        rows.append((cp, char, mapped, tag, category))
+    return rows
+
+
+def _is_glyph_variant(tag: str | None, category: str) -> bool:
+    if tag is None or tag in GLYPH_VARIANT_TAGS:
+        return True
+    return tag == "<compat>" and category.startswith("L")
+
+
+def _fusing_fold_code_points() -> list[tuple[int, str, str]]:
+    return [
+        (cp, char, mapped)
+        for cp, char, mapped, tag, category in _compat_fold_code_points()
+        if not _is_glyph_variant(tag, category)
+    ]
+
+
+def _glyph_variant_code_points() -> list[tuple[int, str, str]]:
+    return [
+        (cp, char, mapped)
+        for cp, char, mapped, tag, category in _compat_fold_code_points()
+        if _is_glyph_variant(tag, category)
+    ]
+
+
 # --- the checks, parameterised by the module under test -------------------------
+
+
+# --- FTF-0512-F2: meaning-bearing symbols and name-field pins -----------------
+
+
+def _symbol_code_points() -> list[tuple[int, str]]:
+    """Every Sm/Sc/Sk/So code point, computed from `unicodedata` directly."""
+    return [
+        (cp, unicodedata.category(chr(cp)))
+        for cp in range(0x110000)
+        if unicodedata.category(chr(cp)).startswith("S")
+    ]
+
+
+def _meaning_key(char: str) -> str:
+    """Independent oracle: what a symbol MEANS once only case, whitespace and
+    Unicode P* are ignored (the only differences the detector may erase)."""
+    image = unicodedata.normalize("NFKC", char).lower()
+    return "".join(
+        c for c in image if not unicodedata.category(c).startswith("P") and not c.isspace()
+    )
+
+
+F2_SENTENCE = "pay 5{} now"
+F2_SYMBOL_PAIRS: list[tuple[str, str, str]] = [
+    ("math: less-or-equal vs greater-or-equal", "x \u2264 5", "x \u2265 5"),
+    ("currency: dollar vs euro", "$100", "\u20ac100"),
+    ("currency: dollar vs pound", "$100", "\u00a3100"),
+    ("currency: yen vs yuan sign", "\u00a5100", "\u5713100"),
+    ("math: plus vs minus-sign", "a + b", "a \u2212 b"),
+    ("math: plus vs nothing", "a+b", "ab"),
+    ("math: equals vs not-equals", "a = b", "a \u2260 b"),
+    ("math: less vs greater", "a < b", "a > b"),
+    ("modifier: caret", "a^b", "ab"),
+    ("other: degree sign", "20\u00b0", "20"),
+    ("other: copyright", "\u00a9 2020", "2020"),
+    ("spacing diacritic (Sk) is not erased", "a\u00a8b", "ab"),
+]
+F2_STILL_EQUAL: list[tuple[str, str, str]] = [
+    ("P*: comma and exclamation are still stripped", "Hello, world!", "Hello world"),
+    ("P*: hyphen / quotes / brackets still stripped", '("well-known")', "well known"),
+    ("symbol spacing is irrelevant", "x\u2264 5", "x \u2264  5"),
+    ("symbol fullwidth fold still applies", "\uff04100", "$100"),
+    ("case still folds next to a symbol", "COST: $100", "cost: $100"),
+]
+
+
+def run_f2_checks(mod: types.ModuleType, sink: list[str]) -> None:
+    h = mod.compute_normalized_text_hash
+    n = mod._normalize_text
+
+    for label, left, right in F2_SYMBOL_PAIRS:
+        check(
+            "FTF-0512-F2",
+            f"F2-SYMBOL-PAIR {label}: {left!r} != {right!r} (text and hash)",
+            n(left) != n(right) and h(_conv(left)) != h(_conv(right)),
+            sink,
+        )
+    for label, left, right in F2_STILL_EQUAL:
+        check(
+            "FTF-0512-F2",
+            f"F2-STILL-EQUAL {label}: {left!r} == {right!r}",
+            n(left) == n(right) and h(_conv(left)) == h(_conv(right)),
+            sink,
+        )
+
+    # F2-SYMBOL-TABLE: every Sm/Sc/Sk/So code point in one fixed sentence. A
+    # symbol must never normalize like the sentence without it, and two
+    # symbols may share a normalized form only when their NFKC meanings differ
+    # solely by case / whitespace / P* (checked against an independent oracle).
+    # Comparing the normalized forms covers every symbol PAIR at once.
+    baseline = n(F2_SENTENCE.format(""))
+    by_form: dict[str, set[str]] = {}
+    vanished: list[int] = []
+    for cp, _category in _symbol_code_points():
+        char = chr(cp)
+        form = n(F2_SENTENCE.format(char))
+        if form == baseline:
+            vanished.append(cp)
+        by_form.setdefault(form, set()).add(char)
+    check(
+        "FTF-0512-F2",
+        f"F2-SYMBOL-TABLE: no symbol is erased (first: {[hex(c) for c in vanished[:5]]}, {len(vanished)} total)",
+        not vanished,
+        sink,
+    )
+    merged = [
+        sorted(hex(ord(c)) for c in chars)[:4]
+        for chars in by_form.values()
+        if len({_meaning_key(c) for c in chars}) > 1
+    ]
+    check(
+        "FTF-0512-F2",
+        f"F2-SYMBOL-TABLE: distinct symbols never merge (first: {merged[:3]}, {len(merged)} groups)",
+        not merged,
+        sink,
+    )
+    # the Sm x Sc cross product in the fixed sentence, pair by pair
+    sm = [chr(cp) for cp, cat in _symbol_code_points() if cat == "Sm"][:60]
+    sc = [chr(cp) for cp, cat in _symbol_code_points() if cat == "Sc"]
+    forms = {(a, b): n(f"{a}5{b}") for a in sm for b in sc}
+    check(
+        "FTF-0512-F2",
+        "F2-SYMBOL-TABLE: Sm x Sc pairs in one sentence are all distinct from their single-symbol forms",
+        all(
+            form != n(f"{a}5") and form != n(f"5{b}") and form != n("5")
+            for (a, b), form in forms.items()
+        ),
+        sink,
+    )
+
+    # F2-NAME-FIELDS: tool_calls[].name and a message `name` are byte-for-byte
+    # identifiers; no case / width / Cf / whitespace variant may merge.
+    def tool_call_name(name: str) -> dict[str, object]:
+        return {
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": [],
+                    "tool_calls": [{"id": "call_1", "name": name, "arguments": {"k": "v"}}],
+                },
+            ],
+            "metadata": {},
+        }
+
+    def message_name(name: str) -> dict[str, object]:
+        return {
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": "hi"}], "name": name},
+            ],
+            "metadata": {},
+        }
+
+    for label, builder in [("tool_calls[].name", tool_call_name), ("message name", message_name)]:
+        check(
+            "FTF-0512-F2",
+            f"F2-NAME {label}: identical names hash identically",
+            h(builder("lookup_order")) == h(builder("lookup_order")),
+            sink,
+        )
+        for variant_label, base, variant in [
+            ("case", "lookup_order", "Lookup_Order"),
+            ("fullwidth letters", "lookup_order", "\uff4cookup_order"),
+            ("fullwidth underscore", "lookup_order", "lookup\uff3forder"),
+            ("zero-width space", "lookup_order", "lookup\u200b_order"),
+            ("soft hyphen", "lookup_order", "look\u00adup_order"),
+            ("BOM", "lookup_order", "\ufefflookup_order"),
+            ("trailing space", "lookup_order", "lookup_order "),
+            ("leading space", "lookup_order", " lookup_order"),
+            ("inner space", "lookup_order", "lookup _order"),
+            ("compat ligature", "file_order", "\ufb01le_order"),
+            ("superscript digit", "step2", "step\u00b2"),
+        ]:
+            check(
+                "FTF-0512-F2",
+                f"F2-NAME {label} {variant_label}: {variant!r} stays distinct from {base!r}",
+                h(builder(base)) != h(builder(variant)),
+                sink,
+            )
+
+    # F2-DIFFERENTIAL: against a frozen copy of the pre-F2 punctuation rule,
+    # over the repo corpus. New equality must imply old equality (F2 only
+    # un-merges), and every un-merged pair must differ in nothing but S*
+    # characters (the intended class).
+    differential_violations = _f2_differential(mod)
+    check(
+        "FTF-0512-F2",
+        f"F2-DIFFERENTIAL: only symbol-bearing pairs un-merge (first: {differential_violations[:2]})",
+        not differential_violations,
+        sink,
+    )
+    check(
+        "FTF-0512-F2",
+        "F2-DIFFERENTIAL: the corpus really contains symbol-only un-merges (the gap was real)",
+        _f2_unmerged_symbol_pairs(mod) > 0,
+        sink,
+    )
+
+
+def _pre_f2_normalize(mod: types.ModuleType, text: str) -> str:
+    """The pre-F2 pipeline: everything the current module does, except that
+    every non-word, non-space character (symbols included) is stripped."""
+    stripped = mod._strip_format_characters(text)
+    mod._assert_safe_combining_run(stripped)
+    lowered = mod._lower_case(mod._fold_look_alikes(stripped))
+    redacted = mod._UUID_PATTERN.sub(" ", mod._ISO_TIMESTAMP_PATTERN.sub(" ", lowered))
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", redacted)).strip()
+
+
+_F2_CORPUS_CACHE: list[str] = []
+
+
+def _f2_corpus() -> list[str]:
+    """Deterministic sample of the repo's own prose (docs/, spec/) -- every
+    line that carries a symbol (capped), a stride sample of the rest, and for
+    each symbol-bearing line its symbol-stripped twin (an old-equal pair by
+    construction) -- plus DISTINCT_CORPUS and the hand-written symbol pairs."""
+    if _F2_CORPUS_CACHE:
+        return _F2_CORPUS_CACHE
+    prose: set[str] = set()
+    for folder, patterns in (("docs", ("*.md",)), ("spec", ("*.json", "*.yaml"))):
+        for pattern in patterns:
+            for path in sorted((ROOT / folder).rglob(pattern)):
+                try:
+                    text = path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                for line in text.splitlines():
+                    line = line.strip()
+                    if 4 <= len(line) <= 300:
+                        prose.add(line)
+    ordered = sorted(prose)
+    with_symbols = [t for t in ordered if _strip_symbols(t) != t][:4000]
+    without = [t for t in ordered if _strip_symbols(t) == t]
+    lines: set[str] = (
+        set(DISTINCT_CORPUS) | set(with_symbols) | set(without[:: max(1, len(without) // 3000)])
+    )
+    lines.update(_strip_symbols(t) for t in with_symbols)
+    for _label, left, right in F2_SYMBOL_PAIRS + F2_STILL_EQUAL:
+        lines.update((left, right))
+    _F2_CORPUS_CACHE.extend(sorted(lines))
+    return _F2_CORPUS_CACHE
+
+
+def _f2_pairs(mod: types.ModuleType) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    old_to_texts: dict[str, set[str]] = {}
+    new_to_old: dict[str, set[str]] = {}
+    for text in _f2_corpus():
+        try:
+            new = mod._normalize_text(text)
+        except mod.NormalizedDuplicateDetectionError:
+            continue
+        old = _pre_f2_normalize(mod, text)
+        old_to_texts.setdefault(old, set()).add(text)
+        new_to_old.setdefault(new, set()).add(old)
+    return old_to_texts, new_to_old
+
+
+def _strip_symbols(text: str) -> str:
+    return "".join(c for c in text if not unicodedata.category(c).startswith("S"))
+
+
+def _f2_differential(mod: types.ModuleType) -> list[str]:
+    """Two invariants over the corpus: (1) F2 only un-merges -- new-equal
+    implies old-equal; (2) symbol-free texts are untouched -- among them
+    new-equal and old-equal agree exactly, so every verdict change involves a
+    symbol."""
+    old_to_texts, new_to_old = _f2_pairs(mod)
+    violations = [
+        f"new-equal pair is old-distinct: {sorted(olds)[:2]}"
+        for olds in new_to_old.values()
+        if len(olds) > 1
+    ]
+    for texts in old_to_texts.values():
+        symbol_free = [t for t in texts if _strip_symbols(t) == t]
+        if len({mod._normalize_text(t) for t in symbol_free}) > 1:
+            violations.append(f"symbol-free texts un-merged: {sorted(symbol_free)[:2]}")
+    return violations
+
+
+def _f2_unmerged_symbol_pairs(mod: types.ModuleType) -> int:
+    old_to_texts, _ = _f2_pairs(mod)
+    return sum(
+        1 for texts in old_to_texts.values() if len({mod._normalize_text(t) for t in texts}) > 1
+    )
 
 
 def run_checks(mod: types.ModuleType, sink: list[str]) -> None:
@@ -487,15 +851,223 @@ def run_checks(mod: types.ModuleType, sink: list[str]) -> None:
         sink,
     )
 
-    # F1-CF-HANDPICKED: every Cf code point in Unicode (not only the 8 in
-    # INSERTED_FORMAT_CHARS) is removed -- idempotent, never survives.
+    # F1-CF-HANDPICKED (FB2): every Cf code point in Unicode (not only the 8 in
+    # INSERTED_FORMAT_CHARS) is removed EXACTLY. `char not in once` is vacuous
+    # because the punctuation step turns a surviving Cf into a space, so the
+    # check is equality with the plain text.
     for cp in _cf_code_points():
-        char = chr(cp)
-        once = mod._normalize_text(f"a{char}b")
         check(
             "FTF-0512-F1",
-            f"F1-CF-HANDPICKED U+{cp:04X} is stripped",
-            char not in once,
+            f"F1-CF-HANDPICKED U+{cp:04X} is stripped exactly",
+            mod._normalize_text(f"a{chr(cp)}b") == "ab",
+            sink,
+        )
+
+    # F1-NFKD-STREAM-SAFE (round 3): the bound counts NFKD non-starters, driven
+    # by every code point whose NFKD contains one. "a" + c + enough U+0301 marks
+    # to make the run exactly 30 is accepted; exactly 31 is refused.
+    for cp in _nfkd_non_starter_code_points():
+        char = chr(cp)
+        trailing = _trailing_non_starters(char)
+        for run, expect_refused in ((30, False), (31, True)):
+            text = "a" + char + "\u0301" * (run - trailing)
+            try:
+                mod._normalize_text(text)
+                refused = False
+            except mod.NormalizedDuplicateDetectionError:
+                refused = True
+            check(
+                "FTF-0512-F1",
+                f"F1-NFKD-STREAM-SAFE U+{cp:04X}: NFKD run of {run} is "
+                f"{'refused' if expect_refused else 'accepted'}",
+                refused == expect_refused,
+                sink,
+            )
+    # timing-independent: a U+0F73 run (ccc 0, NFKD = two non-starters) and a
+    # Cf-interleaved run are refused by behaviour, not by elapsed time.
+    for label, text, expect_refused in [
+        ("U+0F73 x15 (30 NFKD non-starters)", "a" + "\u0f73" * 15, False),
+        ("U+0F73 x16 (32 NFKD non-starters)", "a" + "\u0f73" * 16, True),
+        ("U+0F73 x20000 (long run)", "a" + "\u0f73" * 20_000, True),
+        ("U+0F75 / U+0F81 / U+FF9E mix", "a" + ("\u0f75\u0f81\uff9e" * 11), True),
+        ("ZWSP every 29 marks", "a" + ("\u0301" * 29 + "\u200b") * 5, True),
+        ("ZWSP between every mark", "a" + "\u0301\u200b" * 40, True),
+        ("ZWSP every 15 marks, total 30", "a" + ("\u0301" * 15 + "\u200b") * 2, False),
+    ]:
+        try:
+            mod._normalize_text(text)
+            refused = False
+        except mod.NormalizedDuplicateDetectionError:
+            refused = True
+        check(
+            "FTF-0512-F1",
+            f"F1-NFKD-STREAM-SAFE {label}: {'refused' if expect_refused else 'accepted'}",
+            refused == expect_refused,
+            sink,
+        )
+    # a starter between marks resets the run (real text is not over-refused)
+    check(
+        "FTF-0512-F1",
+        "F1-NFKD-STREAM-SAFE: runs of 30 separated by starters are accepted",
+        _accepts(mod, ("a" + "\u0301" * 30) * 5),
+        sink,
+    )
+
+    # F1-DETECTOR-VERSION (round 3): the version is mixed into the digest and
+    # pinned. Rebuilding the canonical document by hand with the literal
+    # version fails if the field is dropped or the number is reverted.
+    sample = _conv("Hello")
+    expected_document = (
+        '{"detector_version":4,"messages":[{"content":[{"text":"hello","type":"text"}],'
+        '"role":"user"}]}'
+    )
+    check(
+        "FTF-0512-F1",
+        "F1-DETECTOR-VERSION: digest == sha256 of the canonical document with detector_version 4",
+        h(sample) == hashlib.sha256(expected_document.encode("utf-8")).hexdigest(),
+        sink,
+    )
+    check(
+        "FTF-0512-F1",
+        "F1-DETECTOR-VERSION: frozen digest for the sample conversation",
+        h(sample) == FROZEN_SAMPLE_DIGEST,
+        sink,
+    )
+
+    # Requalification gaps (round 3 item 4): role, JSON value and tool ids are
+    # meaningful and survive byte-for-byte.
+    def two_messages(first_role: str, second_role: str) -> dict[str, object]:
+        return {
+            "messages": [
+                {"role": first_role, "content": [{"type": "text", "text": "hi"}]},
+                {"role": second_role, "content": [{"type": "text", "text": "ok"}]},
+            ],
+            "metadata": {},
+        }
+
+    for first, second in [
+        ("user", "assistant"),
+        ("assistant", "user"),
+        ("system", "user"),
+        ("user", "tool"),
+        ("assistant", "assistant"),
+    ]:
+        for other_first, other_second in [("user", "user"), ("user", "assistant")]:
+            if (first, second) == (other_first, other_second):
+                continue
+            check(
+                "FTF-0512-F1",
+                f"REQUAL-ROLE {first}/{second} vs {other_first}/{other_second} stay distinct",
+                h(two_messages(first, second)) != h(two_messages(other_first, other_second)),
+                sink,
+            )
+
+    def json_result(value: object) -> dict[str, object]:
+        return {
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": "go"}]},
+                {"role": "tool", "content": [{"type": "json", "value": value}]},
+            ],
+            "metadata": {},
+        }
+
+    for left, right in [
+        ("Approved", "approved"),
+        ("APPROVED", "approved"),
+        ("approved", "ａpproved"),
+        ("approved", "approved\u200b"),
+        ({"Status": "OK"}, {"status": "ok"}),
+        ({"status": "Approved"}, {"status": "approved"}),
+        ({"status": "ok"}, {"status": "ｏｋ"}),
+        (["A", "b"], ["a", "b"]),
+    ]:
+        check(
+            "FTF-0512-F1",
+            f"REQUAL-JSON-VALUE {left!r} vs {right!r} stay distinct",
+            h(json_result(left)) != h(json_result(right)),
+            sink,
+        )
+
+    def entry_id(call_id: str) -> dict[str, object]:
+        return {
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": [],
+                    "tool_calls": [{"id": call_id, "name": "lookup", "arguments": {"k": "v"}}],
+                },
+            ],
+            "metadata": {},
+        }
+
+    def result_call_id(call_id: str) -> dict[str, object]:
+        return {
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": "go"}]},
+                {
+                    "role": "tool",
+                    "content": [{"type": "json", "value": "ok"}],
+                    "tool_call_id": call_id,
+                },
+            ],
+            "metadata": {},
+        }
+
+    for label, builder in [("tool_calls[].id", entry_id), ("tool_call_id", result_call_id)]:
+        for variant_label, variant in [
+            ("fullwidth", "ｃａｌｌ_1"),
+            ("fullwidth digit", "call_１"),
+            ("Cf-only", "call\u200b_1"),
+            ("soft hyphen", "cal\u00adl_1"),
+            ("compat ligature", "ﬁle_1"),
+        ]:
+            base = "file_1" if variant_label == "compat ligature" else "call_1"
+            check(
+                "FTF-0512-F1",
+                f"REQUAL-ID {label} {variant_label} stays distinct from {base!r}",
+                h(builder(base)) != h(builder(variant)),
+                sink,
+            )
+
+    # F1-FUSING-FOLD (round 3 item 5): every NFKC compatibility mapping that
+    # yields alphanumerics and is NOT a same-character glyph variant must never
+    # fuse into its neighbours. Driven by every code point.
+    for label, fused_text, plain_text in [
+        ("telegraph day", "2㏠", "21日"),
+        ("superscript n", "O(2ⁿ)", "O(2n)"),
+        ("squared unit", "5㎏", "5kg"),
+        ("trade mark", "Foo℠", "FooSM"),
+    ]:
+        check(
+            "FTF-0512-F1",
+            f"F1-FUSING-FOLD {label}: {fused_text!r} != {plain_text!r}",
+            mod._normalize_text(fused_text) != mod._normalize_text(plain_text),
+            sink,
+        )
+    for cp, char, mapped in _fusing_fold_code_points():
+        for left, right in (("7", "7"), ("a", "b"), ("7", "b")):
+            tokens = mod._normalize_text(f"{left}{char}{right}").split()
+            check(
+                "FTF-0512-F1",
+                f"F1-FUSING-FOLD U+{cp:04X}: neighbours {left!r}/{right!r} stay separate tokens",
+                bool(tokens) and tokens[0] == left and tokens[-1] == right,
+                sink,
+            )
+            if mapped[0].isalnum() and mapped[-1].isalnum():
+                check(
+                    "FTF-0512-F1",
+                    f"F1-FUSING-FOLD U+{cp:04X}: not equal to its fused spelling",
+                    mod._normalize_text(f"{left}{char}{right}")
+                    != mod._normalize_text(f"{left}{mapped}{right}"),
+                    sink,
+                )
+    # ...while same-character glyph variants (fullwidth, math styles, circled
+    # letters, positional forms, ligatures) still fold in place.
+    for cp, char, mapped in _glyph_variant_code_points():
+        check(
+            "FTF-0512-F1",
+            f"F1-FUSING-FOLD U+{cp:04X}: glyph variant still folds to its plain spelling",
+            mod._normalize_text(f"a{char}b") == mod._normalize_text(f"a{mapped}b"),
             sink,
         )
 
@@ -516,6 +1088,8 @@ def run_checks(mod: types.ModuleType, sink: list[str]) -> None:
         len(report.blocking_groups) == 1,
         sink,
     )
+
+    run_f2_checks(mod, sink)
 
 
 def test_look_alike_and_generated_tables_pass_on_production() -> None:
@@ -572,110 +1146,311 @@ def test_differential_against_frozen_pre_f1_normalization() -> None:
         )
 
 
-# --- fault injection: the production source rewritten in memory -----------------
+# --- fault injection: behavioural overrides on a fresh copy of the real module ----
+#
+# Each fault loads a FRESH copy of the real, current production source and then
+# overrides one named seam (a helper, a constant or a wrapped function) with the
+# faulty behaviour. There is no text anchor into the production source, so a
+# production edit can never make a fault "fail to build" and be miscounted as a
+# kill: a fault is RED only if a named behavioural check notices the behaviour.
 
 
-def _load_variant(name: str, replacements: list[tuple[str, str]]) -> types.ModuleType:
-    source = MODULE_PATH.read_text(encoding="utf-8")
-    for old, new in replacements:
-        if source.count(old) != 1:
-            raise AssertionError(f"fault {name}: anchor not unique/present: {old!r}")
-        source = source.replace(old, new)
-    module = types.ModuleType(f"ftf_0512_f1_fault_{name}")
-    module.__dict__["__file__"] = str(MODULE_PATH)
-    sys.modules[module.__name__] = module
-    exec(compile(source, str(MODULE_PATH), "exec"), module.__dict__)
+def _load_fresh(name: str) -> types.ModuleType:
+    spec = importlib.util.spec_from_file_location(f"ftf_0512_f1_fault_{name}", MODULE_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
     return module
 
 
-FAULTS: dict[str, list[tuple[str, str]]] = {
-    "F1-NFKC-REMOVED": [("folded = _fold_look_alikes(stripped)", "folded = stripped")],
-    "F1-CF-REMOVED": [('if unicodedata.category(char) != "Cf"', "if True")],
-    "F1-CF-STRIPPED-AFTER-NFKC": [
-        (
-            "stripped = _strip_format_characters(text)\n    _assert_safe_combining_run(stripped)\n    folded = _fold_look_alikes(stripped)",
-            "folded = _fold_look_alikes(text)\n    _assert_safe_combining_run(folded)\n    folded = _strip_format_characters(folded)",
-        )
-    ],
-    "F1-TS-PLACEHOLDER": [
-        (
-            '_ISO_TIMESTAMP_PATTERN.sub(" ", lowered)',
-            '_ISO_TIMESTAMP_PATTERN.sub("<generated_timestamp>", lowered)',
-        )
-    ],
-    "F1-UUID-PLACEHOLDER": [
-        ('_UUID_PATTERN.sub(" ", redacted)', '_UUID_PATTERN.sub("<generated_id>", redacted)')
-    ],
-    "F1-TS-NOT-REDACTED": [
-        ('redacted = _ISO_TIMESTAMP_PATTERN.sub(" ", lowered)', "redacted = lowered")
-    ],
-    "F1-UUID-NOT-REDACTED": [
-        ('redacted = _UUID_PATTERN.sub(" ", redacted)', "redacted = redacted")
-    ],
-    "F1-LOWER-REMOVED": [("lowered = folded.lower()", "lowered = folded")],
-    "F1-TOOL-ARGS-NORMALIZED": [
-        (
-            'return {"id": call_id, "name": name, "arguments": dict(arguments)}',
-            'return {"id": call_id, "name": name, "arguments": json.loads(json.dumps(dict(arguments)).lower())}',
-        ),
-    ],
-    "F1-TOOL-ARGS-NFKC": [
-        (
-            'return {"id": call_id, "name": name, "arguments": dict(arguments)}',
-            'return {"id": call_id, "name": unicodedata.normalize("NFKC", name), "arguments": json.loads(unicodedata.normalize("NFKC", json.dumps(dict(arguments), ensure_ascii=False)))}',
-        ),
-    ],
-    "F1-JSON-PART-NFKC": [
-        (
-            'return {"type": "json", "value": part["value"]}',
-            'return {"type": "json", "value": json.loads(unicodedata.normalize("NFKC", json.dumps(part["value"], ensure_ascii=False)))}',
-        ),
-    ],
-    "F1-DIGIT-LIKE-UNPROTECTED": [
-        (
-            "if unicodedata.category(char) in _DIGIT_LIKE_CATEGORIES:",
-            "if False:",
-        )
-    ],
-    "F1-COMBINING-RUN-UNCHECKED": [("_assert_safe_combining_run(stripped)", "None")],
-    "FG2-TOOL-CALL-ID-LOWERCASED": [
-        (
-            'return {"id": call_id, "name": name, "arguments": dict(arguments)}',
-            'return {"id": call_id.lower(), "name": name, "arguments": dict(arguments)}',
-        )
-    ],
-    "FI-TOOL-CALL-NAME-LOWERCASED": [
-        (
-            'return {"id": call_id, "name": name, "arguments": dict(arguments)}',
-            'return {"id": call_id, "name": name.lower(), "arguments": dict(arguments)}',
-        )
-    ],
-    "FJ-MESSAGE-NAME-LOWERCASED": [
-        ('normalized["name"] = name', 'normalized["name"] = name.lower()')
-    ],
-    "FK-TOOL-CALL-ID-FIELD-LOWERCASED": [
-        (
-            'normalized["tool_call_id"] = tool_call_id',
-            'normalized["tool_call_id"] = tool_call_id.lower()',
-        )
-    ],
+class _PatternShim:
+    """Stands in for a compiled regex; `sub` is replaced by `fn(real, repl, text)`."""
+
+    def __init__(self, real: re.Pattern[str], fn: Callable[[re.Pattern[str], str, str], str]):
+        self._real = real
+        self._fn = fn
+
+    def sub(self, repl: str, text: str) -> str:
+        return self._fn(self._real, repl, text)
+
+
+def _wrap(module: types.ModuleType, name: str, post: Callable[[dict[str, object]], None]) -> None:
+    original = getattr(module, name)
+
+    def wrapped(*args: object, **kwargs: object) -> dict[str, object]:
+        result = original(*args, **kwargs)
+        post(result)
+        return result
+
+    setattr(module, name, wrapped)
+
+
+def _nfkc(value: str) -> str:
+    return unicodedata.normalize("NFKC", value)
+
+
+def _strip_cf(value: str) -> str:
+    return "".join(c for c in value if unicodedata.category(c) != "Cf")
+
+
+def _fault_cf_handpicked(v: Any) -> None:
+    hand_picked = set(INSERTED_FORMAT_CHARS.values())
+    v._strip_format_characters = lambda text: "".join(c for c in text if c not in hand_picked)
+
+
+def _fault_cf_after_nfkc(v: Any) -> None:
+    def normalize(text: str) -> str:
+        folded = v._fold_look_alikes(text)
+        v._assert_safe_combining_run(folded)
+        return v._finish_text(v._strip_format_characters(folded))
+
+    v._normalize_text = normalize
+
+
+def _fault_guard_before_cf_strip(v: Any) -> None:
+    def normalize(text: str) -> str:
+        v._assert_safe_combining_run(text)
+        return v._finish_text(v._fold_look_alikes(v._strip_format_characters(text)))
+
+    v._normalize_text = normalize
+
+
+def _fault_guard_on_input_ccc(v: Any) -> None:
+    def guard(text: str) -> None:
+        run = 0
+        for char in text:
+            run = run + 1 if unicodedata.combining(char) else 0
+            if run > v._MAX_COMBINING_RUN:
+                raise v.NormalizedDuplicateDetectionError("run")
+
+    v._assert_safe_combining_run = guard
+
+
+def _fault_timestamp(replacement: str | None) -> Callable[[Any], None]:
+    def fault(v: Any) -> None:
+        def sub(real: re.Pattern[str], repl: str, text: str) -> str:
+            return text if replacement is None else real.sub(replacement, text)
+
+        v._ISO_TIMESTAMP_PATTERN = _PatternShim(v._ISO_TIMESTAMP_PATTERN, sub)
+
+    return fault
+
+
+def _fault_uuid(replacement: str | None) -> Callable[[Any], None]:
+    def fault(v: Any) -> None:
+        def sub(real: re.Pattern[str], repl: str, text: str) -> str:
+            return text if replacement is None else real.sub(replacement, text)
+
+        v._UUID_PATTERN = _PatternShim(v._UUID_PATTERN, sub)
+
+    return fault
+
+
+def _json_lower(value: object) -> object:
+    return json.loads(json.dumps(value, ensure_ascii=False).lower())
+
+
+def _json_nfkc(value: object) -> object:
+    return json.loads(_nfkc(json.dumps(value, ensure_ascii=False)))
+
+
+def _post_content_part(fn: Callable[[object], object]) -> Callable[[Any], None]:
+    def fault(v: Any) -> None:
+        def post(result: dict[str, object]) -> None:
+            if result.get("type") == "json":
+                result["value"] = fn(result["value"])
+
+        _wrap(v, "_normalize_content_part", post)
+
+    return fault
+
+
+def _post_tool_call(key: str, fn: Callable[[object], object]) -> Callable[[Any], None]:
+    def fault(v: Any) -> None:
+        def post(result: dict[str, object]) -> None:
+            result[key] = fn(result[key])
+
+        _wrap(v, "_normalize_tool_call", post)
+
+    return fault
+
+
+def _post_message(key: str, fn: Callable[[object], object]) -> Callable[[Any], None]:
+    def fault(v: Any) -> None:
+        def post(result: dict[str, object]) -> None:
+            if key in result:
+                result[key] = fn(result[key])
+
+        _wrap(v, "_normalize_message", post)
+
+    return fault
+
+
+def _fault_drop_version(v: Any) -> None:
+    v._digest_document = lambda messages: {"messages": messages}
+
+
+def _fault_bound(value: int) -> Callable[[Any], None]:
+    def fault(v: Any) -> None:
+        v._MAX_COMBINING_RUN = value
+
+    return fault
+
+
+def _fault_version(value: int) -> Callable[[Any], None]:
+    def fault(v: Any) -> None:
+        v._DETECTOR_VERSION = value
+
+    return fault
+
+
+def _fault_no_isolation(v: Any) -> None:
+    v._fold_action = lambda char: v._FOLD_KEEP
+
+
+def _fault_no_separation(v: Any) -> None:
+    original = v._fold_action
+    v._fold_action = lambda char: (
+        v._FOLD_KEEP if original(char) == v._FOLD_SEPARATE else original(char)
+    )
+
+
+def _fault_separation_hand_picked(v: Any) -> None:
+    # only the two classes the round-2 reviewer named are separated
+    original = v._fold_action
+    hand_picked = {"\u33e0", "\u207f"}
+    v._fold_action = lambda char: (
+        v._FOLD_KEEP
+        if original(char) == v._FOLD_SEPARATE and char not in hand_picked
+        else original(char)
+    )
+
+
+def _fault_separate_glyph_variants(v: Any) -> None:
+    original = v._fold_action
+    v._fold_action = lambda char: (
+        v._FOLD_SEPARATE
+        if original(char) == v._FOLD_KEEP and unicodedata.normalize("NFKC", char) != char
+        else original(char)
+    )
+
+
+def _fault_punctuation(keep: Callable[[str], bool], *, separate: bool) -> Callable[[Any], None]:
+    """Replace the punctuation rule: every non-word, non-space character for
+    which `keep` is true survives (spaced out when `separate`), the rest is
+    stripped to a space."""
+
+    def fault(v: Any) -> None:
+        def strip(text: str) -> str:
+            return re.sub(
+                r"[^\w\s]",
+                lambda m: (f" {m.group()} " if separate else m.group()) if keep(m.group()) else " ",
+                text,
+            )
+
+        v._strip_punctuation = strip
+
+    return fault
+
+
+def _category(char: str) -> str:
+    return unicodedata.category(char)
+
+
+def _fault_sk_compat_stripped(v: Any) -> None:
+    original = v._fold_action
+    v._fold_action = lambda char: (
+        v._FOLD_SEPARATE
+        if _category(char).startswith("S") and original(char) == v._FOLD_ISOLATE_VERBATIM
+        else original(char)
+    )
+
+
+FAULTS: dict[str, Callable[[Any], None]] = {
+    "F1-NFKC-REMOVED": lambda v: setattr(v, "_fold_look_alikes", lambda text: text),
+    "F1-CF-REMOVED": lambda v: setattr(v, "_strip_format_characters", lambda text: text),
+    "FB2-CF-HANDPICKED": _fault_cf_handpicked,
+    "F1-CF-STRIPPED-AFTER-NFKC": _fault_cf_after_nfkc,
+    "F1-GUARD-BEFORE-CF-STRIP": _fault_guard_before_cf_strip,
+    "F1-TS-PLACEHOLDER": _fault_timestamp("<generated_timestamp>"),
+    "F1-UUID-PLACEHOLDER": _fault_uuid("<generated_id>"),
+    "F1-TS-NOT-REDACTED": _fault_timestamp(None),
+    "F1-UUID-NOT-REDACTED": _fault_uuid(None),
+    "F1-LOWER-REMOVED": lambda v: setattr(v, "_lower_case", lambda text: text),
+    "F1-TOOL-ARGS-NORMALIZED": _post_tool_call("arguments", _json_lower),
+    "F1-TOOL-ARGS-NFKC": _post_tool_call("arguments", _json_nfkc),
+    "F1-JSON-PART-NFKC": _post_content_part(_json_nfkc),
+    "F1-DIGIT-LIKE-UNPROTECTED": _fault_no_isolation,
+    "F1-COMBINING-RUN-UNCHECKED": lambda v: setattr(
+        v, "_assert_safe_combining_run", lambda text: None
+    ),
+    "F1-NFKD-GUARD-ON-INPUT-CCC": _fault_guard_on_input_ccc,
+    "F1-NFKD-BOUND-31": _fault_bound(31),
+    "F1-NFKD-BOUND-29": _fault_bound(29),
+    "F1-DETECTOR-VERSION-DROPPED": _fault_drop_version,
+    "F1-DETECTOR-VERSION-REVERTED-1": _fault_version(1),
+    "F1-DETECTOR-VERSION-REVERTED-2": _fault_version(2),
+    "F2-DETECTOR-VERSION-REVERTED-3": _fault_version(3),
+    "F2-SYMBOLS-STRIPPED": _fault_punctuation(lambda c: False, separate=True),
+    "F2-SYMBOLS-UNSEPARATED": _fault_punctuation(
+        lambda c: _category(c).startswith("S"), separate=False
+    ),
+    "F2-SYMBOLS-SM-ONLY": _fault_punctuation(lambda c: _category(c) == "Sm", separate=True),
+    "F2-SYMBOLS-SM-SC-ONLY": _fault_punctuation(
+        lambda c: _category(c) in ("Sm", "Sc"), separate=True
+    ),
+    "F2-SYMBOLS-ASCII-ONLY": _fault_punctuation(
+        lambda c: _category(c).startswith("S") and ord(c) < 128, separate=True
+    ),
+    "F2-PUNCTUATION-NOT-STRIPPED": _fault_punctuation(lambda c: True, separate=True),
+    "F2-SK-COMPAT-SYMBOL-ERASED": _fault_sk_compat_stripped,
+    "F2-TOOL-CALL-NAME-NFKC": _post_tool_call("name", lambda value: _nfkc(str(value))),
+    "F2-TOOL-CALL-NAME-CF-STRIPPED": _post_tool_call("name", lambda value: _strip_cf(str(value))),
+    "F2-TOOL-CALL-NAME-WHITESPACE-STRIPPED": _post_tool_call(
+        "name", lambda value: str(value).strip()
+    ),
+    "F2-MESSAGE-NAME-NFKC": _post_message("name", lambda value: _nfkc(str(value))),
+    "F2-MESSAGE-NAME-CF-STRIPPED": _post_message("name", lambda value: _strip_cf(str(value))),
+    "F2-MESSAGE-NAME-WHITESPACE-STRIPPED": _post_message("name", lambda value: str(value).strip()),
+    "F1-FUSING-FOLD-UNSEPARATED": _fault_no_separation,
+    "F1-FUSING-FOLD-HAND-PICKED": _fault_separation_hand_picked,
+    "F1-FUSING-FOLD-OVER-SEPARATES-GLYPHS": _fault_separate_glyph_variants,
+    "FG2-TOOL-CALL-ID-LOWERCASED": _post_tool_call("id", lambda value: str(value).lower()),
+    "FG3-TOOL-CALL-ID-NFKC": _post_tool_call("id", lambda value: _nfkc(str(value))),
+    "FG4-TOOL-CALL-ID-CF-STRIPPED": _post_tool_call("id", lambda value: _strip_cf(str(value))),
+    "FI-TOOL-CALL-NAME-LOWERCASED": _post_tool_call("name", lambda value: str(value).lower()),
+    "FJ-MESSAGE-NAME-LOWERCASED": _post_message("name", lambda value: str(value).lower()),
+    "FK-TOOL-CALL-ID-FIELD-LOWERCASED": _post_message(
+        "tool_call_id", lambda value: str(value).lower()
+    ),
+    "FK2-TOOL-CALL-ID-FIELD-NFKC": _post_message("tool_call_id", lambda value: _nfkc(str(value))),
+    "FK3-TOOL-CALL-ID-FIELD-CF-STRIPPED": _post_message(
+        "tool_call_id", lambda value: _strip_cf(str(value))
+    ),
+    "FL-ROLE-COERCED-TO-USER": _post_message("role", lambda value: "user"),
+    "FM-JSON-VALUE-LOWERCASED": _post_content_part(_json_lower),
 }
 
 
 def test_each_fault_turns_a_check_red() -> None:
-    for name, replacements in FAULTS.items():
+    for name, apply_fault in FAULTS.items():
         sink: list[str] = []
-        try:
-            variant = _load_variant(name, replacements)
-            run_checks(variant, sink)
-            _differential_variant_check(variant, sink)
-        except AssertionError as exc:
-            sink.append(f"anchor-error {exc}")
-            check("FTF-0512-F1", f"fault {name} could not be built: {exc}", False)
-            continue
+        variant = _load_fresh(name)
+        apply_fault(variant)
+        run_checks(variant, sink)
+        _differential_variant_check(variant, sink)
         check(
             "FTF-0512-F1", f"F1-FAULTS {name}: fault must turn at least one check RED", bool(sink)
         )
+        if sink:
+            # the RED must come from a behavioural check, never from the fault
+            # failing to install: no check text mentions anchors any more.
+            check(
+                "FTF-0512-F1",
+                f"F1-FAULTS {name}: RED reason is a named check ({sink[0][:60]!r})",
+                sink[0].startswith("FAIL ["),
+            )
 
 
 def _differential_variant_check(variant: types.ModuleType, sink: list[str]) -> None:
