@@ -1783,6 +1783,178 @@ def suite(m: types.ModuleType, rec: Recorder, *, slow: bool) -> None:
             ),
         )
 
+    # ---- R3: currency is compared ACROSS attempts and exactly (no casefold, no strip), and
+    # the default route's step kind is the declared one even when a step shares its alias.
+    def single_call_attempt(
+        rid: str, outcome: str, step: str | None, alias: str, minute: int
+    ) -> Any:
+        priced = None if alias == "small-local" else usage()
+        return attempt(m, rid, outcome, [call(m, rid, step, alias, usage_=priced, minute=minute)])
+
+    cross_usd_jpy = attribute(
+        mid_binding,
+        [
+            single_call_attempt("xa", "pass", None, "large-api", 1),
+            single_call_attempt("xb", "pass", "extract", "mid-api", 3),
+        ],
+        {"large-api": LARGE_CARD, "mid-api": jpy_card},
+        [],
+    )
+    mismatch_refused("FTF-1304-S1-CUR6", cross_usd_jpy, {"large-api", "mid-api"})
+    rec.check(
+        "FTF-1304-S1-CUR6",
+        "no attempt is priced in a currency of its own while another attempt differs",
+        not cross_usd_jpy.attempt_costs and cross_usd_jpy.currency is None,
+    )
+    cross_provider_window = attribute(
+        small_binding(m),
+        [
+            single_call_attempt("xc", "pass", None, "large-api", 1),
+            single_call_attempt("xd", "pass", "classify", "small-local", 3),
+        ],
+        RATES,
+        [eur_window],
+    )
+    mismatch_refused("FTF-1304-S1-CUR6", cross_provider_window, {"large-api", "small-local"})
+    cross_failed = attribute(
+        mid_binding,
+        [
+            single_call_attempt("xe", "pass", None, "large-api", 1),
+            single_call_attempt("xf", "model_fail", "extract", "mid-api", 3),
+        ],
+        {"large-api": LARGE_CARD, "mid-api": jpy_card},
+        [],
+    )
+    mismatch_refused("FTF-1304-S1-CUR6", cross_failed, {"large-api", "mid-api"})
+    cross_failed_first = attribute(
+        mid_binding,
+        [
+            single_call_attempt("xg", "model_fail", None, "large-api", 1),
+            single_call_attempt("xh", "pass", "extract", "mid-api", 3),
+        ],
+        {"large-api": LARGE_CARD, "mid-api": jpy_card},
+        [],
+    )
+    mismatch_refused("FTF-1304-S1-CUR6", cross_failed_first, {"large-api", "mid-api"})
+    cross_same = attribute(
+        mid_binding,
+        [
+            single_call_attempt("xi", "pass", None, "large-api", 1),
+            single_call_attempt("xj", "model_fail", "extract", "mid-api", 3),
+        ],
+        {"large-api": LARGE_CARD, "mid-api": LARGE_CARD},
+        [],
+    )
+    rec.check(
+        "FTF-1304-S1-CUR6",
+        "the same two attempts in ONE currency are priced (the refusal is the currency, not the shape)",
+        cross_same.status == "priced" and cross_same.currency == "USD",
+    )
+
+    def variant_card(currency: str) -> ProviderRateCard:
+        return ProviderRateCard(currency, D("0.000001"), D("0.000005"))
+
+    for variant in ("usd", "Usd", " USD", "USD ", "\tUSD"):
+        variant_result = attribute(
+            mid_binding,
+            mid_attempts("vc"),
+            {"large-api": LARGE_CARD, "mid-api": variant_card(variant)},
+            [],
+        )
+        mismatch_refused("FTF-1304-S1-CUR7", variant_result, {"large-api", "mid-api"})
+        variant_cross = attribute(
+            mid_binding,
+            [
+                single_call_attempt("vx", "pass", None, "large-api", 1),
+                single_call_attempt("vy", "pass", "extract", "mid-api", 3),
+            ],
+            {"large-api": LARGE_CARD, "mid-api": variant_card(variant)},
+            [],
+        )
+        mismatch_refused("FTF-1304-S1-CUR7", variant_cross, {"large-api", "mid-api"})
+    lower_window = m.SelfHostedWindow("wlow", ("small-local",), window("7", "0", "0"), "usd")
+    lower_window_result = attribute(small_binding(m), [pair(m, "cw")], RATES, [lower_window])
+    mismatch_refused("FTF-1304-S1-CUR7", lower_window_result, {"large-api", "small-local"})
+    same_variant = attribute(
+        mid_binding,
+        mid_attempts("sv"),
+        {"large-api": variant_card("usd"), "mid-api": variant_card("usd")},
+        [],
+    )
+    rec.check(
+        "FTF-1304-S1-CUR7",
+        "two cards spelled identically ('usd') are one currency and priced as given",
+        same_variant.status == "priced" and same_variant.currency == "usd",
+    )
+
+    shared_alias = m.CompoundBinding(
+        "large-api",
+        "gateway",
+        "provider",
+        "existing",
+        "reasoning",
+        (m.StepBinding("summarize", "large-api", "summarize", "provider", "existing"),),
+    )
+    shared_result = attribute(
+        shared_alias,
+        [
+            attempt(
+                m,
+                "sk",
+                "pass",
+                [
+                    call(m, "sk", None, "large-api", usage_=usage(), minute=1),
+                    call(m, "sk", "summarize", "large-api", usage_=usage(), minute=3),
+                ],
+            )
+        ],
+        RATES,
+        [],
+    )
+    shared_lines = {(ln.route_alias, ln.step_kind): ln.calls for ln in shared_result.route_lines}
+    rec.check(
+        "FTF-1304-S1-DSK1",
+        f"a default call on an alias shared with a summarize step is 'reasoning', got {shared_lines}",
+        shared_result.status == "priced"
+        and shared_lines == {("large-api", "reasoning"): 1, ("large-api", "summarize"): 1},
+    )
+    rec.check(
+        "FTF-1304-S1-DSK1",
+        "step-kind totals keep the shared alias apart",
+        dict(shared_result.step_kind_totals).keys() == {"reasoning", "summarize"},
+    )
+    shared_reverse = m.CompoundBinding(
+        "large-api",
+        "gateway",
+        "provider",
+        "existing",
+        "summarize",
+        (m.StepBinding("think", "large-api", "reasoning", "provider", "existing"),),
+    )
+    reverse_result = attribute(
+        shared_reverse,
+        [
+            attempt(
+                m,
+                "sr",
+                "pass",
+                [
+                    call(m, "sr", None, "large-api", usage_=usage(), minute=1),
+                    call(m, "sr", "think", "large-api", usage_=usage(), minute=3),
+                ],
+            )
+        ],
+        RATES,
+        [],
+    )
+    reverse_lines = {(ln.route_alias, ln.step_kind): ln.calls for ln in reverse_result.route_lines}
+    rec.check(
+        "FTF-1304-S1-DSK1",
+        f"the declared default kind wins in the opposite arrangement too, got {reverse_lines}",
+        reverse_result.status == "priced"
+        and reverse_lines == {("large-api", "summarize"): 1, ("large-api", "reasoning"): 1},
+    )
+
     # ---- R2: the default route's step kind is declared, never inferred.
     classify_default = m.CompoundBinding(
         "large-api",
@@ -2205,6 +2377,42 @@ FAULTS: list[tuple[str, str, str, str]] = [
         "default-route calls labelled with a hard-coded kind",
         "                step_kind = binding.default_step_kind\n",
         '                step_kind = "reasoning"\n',
+    ),
+    (
+        "V2-CUR-PER-ATTEMPT",
+        "currency compared only inside each attempt, never across attempts",
+        "    if len(aliases_by_currency) > 1:\n",
+        "    per_attempt = {\n        index: {c.currency for c in calls if c.attempt_index == index and c.currency}\n        for index in {c.attempt_index for c in calls}\n    }\n    if any(len(found) > 1 for found in per_attempt.values()):\n",
+    ),
+    (
+        "V2-CUR-PASS-ONLY",
+        "currency compared only over passing attempts",
+        "    currency = _single_currency(calls, issues)\n",
+        '    currency = _single_currency(\n        [c for c in calls if ordered[c.attempt_index].outcome == "pass"], issues\n    )\n',
+    ),
+    (
+        "V2-DSK-ALIAS-STEP-KIND",
+        "default route's kind taken from a step bound to the same alias",
+        "                step_kind = binding.default_step_kind\n",
+        "                step_kind = next(\n                    (s.step_kind for s in binding.steps if s.route_alias == bound_alias),\n                    binding.default_step_kind,\n                )\n",
+    ),
+    (
+        "V2-CUR-CASEFOLD",
+        "rate card currency upper-cased before comparison",
+        "        call.currency = card.currency\n",
+        "        call.currency = card.currency.upper()\n",
+    ),
+    (
+        "V2-CUR-STRIP",
+        "rate card currency stripped before comparison",
+        "        call.currency = card.currency\n",
+        "        call.currency = card.currency.strip()\n",
+    ),
+    (
+        "V2-CUR-WINDOW-CASEFOLD",
+        "window currency upper-cased before comparison",
+        "            member.currency = window.currency\n",
+        "            member.currency = window.currency.upper()\n",
     ),
     (
         "F-DEFAULT-STEP-KIND-NOT-IN-HASH",

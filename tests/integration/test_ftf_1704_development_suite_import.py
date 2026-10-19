@@ -390,6 +390,16 @@ def main() -> None:
         )
         check(
             CID,
+            "the synthetic provenance label (DEV-UNLABELLED) survives the Postgres JSONB "
+            "round trip exactly, for every case",
+            all(
+                by_key[c["case_key"]]["input_json"]["provenance"] == c["input_json"]["provenance"]
+                and by_key[c["case_key"]]["input_json"]["provenance"]["label"] == "synthetic"
+                for c in cases
+            ),
+        )
+        check(
+            CID,
             "controlled grouping: 21 family group keys",
             len({c["group_key"] for c in listed}) == 21,
         )

@@ -7719,10 +7719,10 @@ FTF-0504:
   proving_test: tests/tasks/test_ftf_0504.py
 
 FTF-0505:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: XLSX importer
-  evidence_hash: d0f7827f9cc4854aa973669a6213cfed4de71170
+  evidence_hash: 870ec2ef1abd97d6b7b0fc6cda776272cb944ba1
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
@@ -7815,7 +7815,7 @@ FTF-0505:
     LookupError/ValueError from an unreadable XML encoding declaration. Full detail and the fault ->
     RED table: docs/certifications/submissions/2026-10-15T1100Z-FTF-0505-r4.md. Not run here: the
     xlsx-import-integration job (needs Postgres + SeaweedFS); it runs in CI.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0505.py
 FTF-0506:
@@ -8356,10 +8356,10 @@ FTF-0511:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0511.py
 FTF-0512:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Normalized duplicate detector
-  evidence_hash: bdd9c0e0a07da1ca5b18306277c50f841acc8ee7
+  evidence_hash: 2351f53e299dac7cc7c89058b14d885a9030d65c
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31;
@@ -8523,7 +8523,7 @@ FTF-0512:
     awaiting Control-plane L2 re-review; FTF-0512 requalifies with this
     round.
 
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0512.py
 FTF-0513:
@@ -10580,16 +10580,84 @@ FTF-0905:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0905.py
 FTF-0906:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Egress capture/verification
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0904,
-    FTF-0905
-  proof_state: UNPROVEN
+  evidence_hash: 870ac7695ea525d0d26c378a3068aad21d3781f4
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0904,
+    FTF-0905 (all CERTIFIED). Path: packages/security/egress_capture_verification.py. Pure verifier
+    (`verify_egress`) combining enforcement, connection-log and plaintext/packet-capture inspection
+    into one `EgressVerificationReport` (Section 12: "allowlist enforcement, verified destination
+    identity, blocked-egress counters and inspection at authorized application endpoints
+    together"); a flow whose only no-leak evidence is an encrypted packet capture is `incomplete`,
+    never `passed` (Section 12's negative clause -- a capture alone cannot prove absence of
+    leakage). Reuses FTF-0905's `CanaryMarker`/`PlacementRecord`/`CanaryPlacementLedger`/
+    `encode_canary`/`fragment_canary` unmodified; `scan_store_for_canaries` scans every declared
+    encoding and fails closed (`CanaryLeakedError`) the instant a real canary is recovered.
+    Real-integration proof (`tests/integration/test_ftf_0906_egress_verification.py`, CI job
+    `egress-verification-integration`): real loopback sockets, an allowed plaintext sink, an
+    allowed TLS sink behind a real byte-for-byte recording relay, a denied non-allowlisted sink, a
+    denied cloud-metadata address, a real direct-socket enforcement bypass, and a real log leak
+    that FTF-0904's own redaction does not catch (canaries aren't a recognized secret shape) but
+    this module's own scanner does.
+
+
+    Round 1's own internal CI fix (same PR #832, not a Control-plane return): round 1 shipped with
+    `mutation-gate` red (93.5%, 11 survivors, all operator M9 -- a frozen-dataclass string field
+    normalized by `.strip().lower()` before an `==`/`!=`/`in` comparison). Every survivor sat on a
+    field already validated at construction against a closed, already-lowercase/whitespace-free
+    tuple, so the mutant was unobservable via normal construction. `_hex64`'s own per-character
+    loop (one survivor) was mathematically unkillable by any test -- replaced with a single
+    `re.fullmatch`, no behaviour change. The other ten were killed via `object.__setattr__`
+    bypassing each frozen dataclass's own `__post_init__`; one of those ten needed a real
+    production fix: `scan_store_for_canaries` was letting FTF-0905's own
+    `InvalidCanaryRequestError` leak through its own public API instead of this module's
+    documented `InvalidEgressEvidenceError`. Extracted `_aggregate_overall_status` out of
+    `verify_egress` so the report-status aggregation is directly testable. Final local mutation
+    gate: 172 run / 172 KILLED / 0 SURVIVED / 100.0%. Full detail:
+    `docs/certifications/submissions/2026-10-15T1112Z-FTF-0906.md` (round 1) and
+    `docs/certifications/submissions/2026-10-15T1500Z-FTF-0906-ci-fix.md` (round 1's own CI fix).
+
+
+    Round 2 (Control-plane return, PR #852, this evidence) closed all 12 named return points:
+    `verify_egress` now forces `failed` on any evidence naming an undeclared `flow_id`
+    (`unplanned_egress_evidence`) or a `canary_found` inspection with no flow attribution
+    (`unattributed_canary_found`); `EgressPlan.required_stores` can no longer omit the mandatory
+    log stores (`application_log`/`error_path`/`artifact`); the allow branch's `arrived` check now
+    requires enforcement/client/destination agreement AND a real `canary_found` at the
+    destination; the encrypted-capture-insufficient check now requires a genuinely inspected
+    record; a new `"unobserved"` destination outcome fails closed instead of a fabricated
+    `not_seen` (Law 17); `EgressVerificationReport` gained `policy_digest`/`scope`/
+    `inspected_stores`, all bound into `report_sha256`; `scan_store_for_canaries` now matches a
+    case-insensitive hex variant and a lower-cased-percent-escape url variant (via
+    `_needles_for_encoding`, which generates these unconditionally rather than dispatching on
+    `encoding` -- a per-encoding `==` dispatch would only ever compare an already-validated value,
+    an unobservable mutant found while re-running the mutation gate for real). The real-socket
+    integration test now derives canary_found/enforcement-code from what the real guard/sinks
+    actually did (never hard-coded), feeds the real caught error-path leak into `verify_egress`
+    itself, really scans a snapshot of the real access-log text, and fails closed (`sys.exit(1)`)
+    rather than skipping when the TLS fixture is unavailable. `tests/tasks/test_ftf_0906.py`'s own
+    fault-injection table grew from 7 to 13 regex-mutation probes, one per production fix; F5
+    (uninspected destination as positive control) is disclosed as a reviewed equivalent under this
+    round's own fix (the `PlaintextInspection.__post_init__` invariant `canary_found implies
+    inspected` makes that one filter unkillable now that `arrived` also checks `canary_found`),
+    not a live gap. Mutation gate run for real three times against the actual committed diff (not
+    merely asserted clean): 11 real survivors found and closed, then 2 more, then a final clean
+    152/152 KILLED, 0 SURVIVED, 100.0%. Full detail and the fault -> RED table:
+    `docs/certifications/submissions/2026-10-15T2300Z-FTF-0906-r2.md`.
+
+
+    UNWIRED -- `proving_symbol` blank, no live caller yet (same precedent as FTF-0901/FTF-0902/
+    FTF-0905). `workflow_history` is never exercised (no Temporal workflow exists), so every report
+    this task produces is `partial`, never `passed`, by design. Process scope only; cluster/CNI-
+    topology evidence is FTF-H027's own job on top of this one. Not self-certified (Law 4):
+    certification_state stays PROVISIONAL / proof_state stays L1-PROVEN pending independent
+    Control-plane L2 review.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0906.py
 FTF-0907:
   certification_state: NONE
   criticality: MUST
@@ -13029,10 +13097,10 @@ FTF-1703:
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1703.py
 FTF-1704:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Validation dataset
-  evidence_hash: ''
+  evidence_hash: 2a442fb2e28c3f42f1e3f8c8a7498cd4b05ffcca
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0517, FTF-1701,
@@ -13065,7 +13133,7 @@ FTF-1704:
     authenticates with the test principal resolver (as FTF-0602-P1 does). No live caller yet
     (reference-data task, FTF-1703 precedent), so proving_symbol stays blank. Submission:
     docs/certifications/submissions/2026-10-15T0815Z-FTF-1704.md.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1704.py
 FTF-1705:

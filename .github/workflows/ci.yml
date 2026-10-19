@@ -323,6 +323,10 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0504.py
       - name: FTF-0505 negative-test proof (XLSX importer, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0505.py
+      - name: FTF-H011-P1 negative-test proof (dataset mapping probe/preview, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h011_p1.py
+      - name: FTF-H011-P1 negative-test proof (dataset mapping service wiring, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h011_p1_service.py
       - name: FTF-0206 negative-test proof (`/model_group/info` enrichment, no DB required)
         # Same watchdog finding as FTF-0205 above -- this is the FTF-0206
         # half of that gap, now closeable since this task's test file
@@ -364,6 +368,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_r005_r3.py
       - name: FTF-R005 round-7 negative-test proof (strictness from Factory's record, read-back before SYNCED, locked outbox row, no network or DB required)
         run: uv run python3 tests/tasks/test_ftf_r005_r4.py
+      - name: FTF-R006-P1 negative-test proof (Argilla REST adapter, no network required)
+        run: uv run python3 tests/tasks/test_ftf_r006_p1_client.py
       - name: FTF-1506 negative-test proof (Dependency scanning, no network required)
         run: uv run python3 tests/tasks/test_ftf_1506.py
       - name: FTF-04A17 negative-test proof (DiscoveredAgentCandidate schema/API, no DB required)
@@ -446,6 +452,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0517.py
       - name: FTF-0518 negative-test proof (Split leakage detector, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0518.py
+      - name: FTF-0519-P1 negative-test proof (Immutable split manifest - pure domain, migration shape, SQLite store, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0519_p1.py
       - name: FTF-1305 negative-test proof (Candidate ranking, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1305.py
       - name: FTF-0616 negative-test proof (LLM judge adapter, no DB required; real local gateway over HTTPS)
@@ -524,6 +532,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0904_w1.py
       - name: FTF-0905 negative-test proof (canary-secret generator -- unique prefixed markers, no real-secret collision, full-coverage leak ledger, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0905.py
+      - name: FTF-0906 negative-test proof (egress capture/verification -- unattributed/unplanned-egress fail-closed, mandatory log-store coverage, enforcement/client/destination-consistent positive control, unobserved-destination handling, report binding, fault-injected module copies, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0906.py
       - name: FTF-H010-P1 negative-test proof (model import fields + import-validation jobs -- migration SQL + RLS/GRANT shape + fault injection, store on SQLite, route seams, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_h010_p1.py
       - name: FTF-R004-P1 negative-test proof (Inspect bridge generation-config parity comparator, no DB required)
@@ -3218,6 +3228,50 @@ jobs:
       - name: Prove the real dataset quality evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0516_p1_quality_issues.py
 
+  dataset-split-manifest-integration:
+    # FTF-0519-P1: real Postgres evidence for immutable split manifests (migration 0030):
+    # upgrade/downgrade/upgrade with one head, ENABLE+FORCE RLS and a non-allow-all tenant
+    # policy on all four tables, the app role's grants (no DELETE, no UPDATE on a child, a
+    # column-limited UPDATE on manifests), the store over real datasets / quality reports /
+    # FTF-0517 allocation / FTF-0518 leakage reports (golden freeze with independently
+    # recomputed role hashes, version on change, every refusal code writing nothing, approve /
+    # reject, prior campaigns, the legacy three-split path), raw sovra_app SQL refused by the
+    # database (an edited or deleted locked row, a lock without four roles or with a mismatched
+    # count or a crossing group or a blocked report, a child insert after the lock, a held-out
+    # record outside final, a role outside the frozen grant, heldout_test as a role, a version
+    # gap, a legacy strategy without lineage, a cross-tenant INSERT) and training access that
+    # never serves a development or final record and refuses a revoked or narrowed grant, a
+    # changed quality report and any tampered row --
+    # tests/integration/test_ftf_0519_p1_split_manifests.py.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' dataset-split-manifest-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0519p1
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0519p1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0519p1
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real split manifest evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_0519_p1_split_manifests.py
+
   live-auth-path-integration:
     # FTF-0103A: real OIDC login -> real API call. A real idpyoidc OpenID
     # Provider (FTF-0101's harness), the REAL app.main.create_app() served
@@ -3418,6 +3472,46 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the dataset source reader against PostgreSQL 16 and SeaweedFS
         run: uv run python3 tests/integration/test_ftf_0502_p1_dataset_source_postgres_s3.py
+
+  dataset-mapping-preview-integration:
+    # FTF-H011-P1: the dataset mapping probe/preview service
+    # (apps/api/app/datasets/dataset_mapping_service.py) over PostgreSQL 16 as the restricted
+    # sovra_app role and the live SeaweedFS S3 API, through the real FTF-0501 upload routes and
+    # the FTF-0502-P1 dataset source reader: a real JSONL dataset previews with its own real raw
+    # rows (masked / revealed correctly), foreign-org / foreign-project / missing / hidden
+    # held-out datasets all the same DatasetNotFoundError, a revoked connection denies a new
+    # preview before any storage call, a real CSV dataset's headers and rows round-trip through
+    # the probe and the preview alike, and a storage outage ends blocked/source_unavailable,
+    # never a raised exception -- tests/integration/test_ftf_h011_p1_mapping_preview_postgres_s3.py.
+    # The test boots the compose `s3` service itself when nothing answers.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' dataset-mapping-preview-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftfh011p1
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftfh011p1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfh011p1
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the dataset mapping preview service against PostgreSQL 16 and SeaweedFS
+        run: uv run python3 tests/integration/test_ftf_h011_p1_mapping_preview_postgres_s3.py
 
   model-import-integration:
     # FTF-H010-P1: real Postgres evidence for the model import fields +
@@ -3762,6 +3856,7 @@ jobs:
       - dataset-upload-integration
       - dataset-upload-hardening-integration
       - dataset-quality-issues-integration
+      - dataset-split-manifest-integration
       - live-auth-path-integration
       - network-policy-enforcement-integration
       - object-storage-backup-integration
@@ -3770,6 +3865,7 @@ jobs:
       - model-import-integration
       - candidate-selection-integration
       - dataset-import-source-integration
+      - dataset-mapping-preview-integration
       - csv-import-integration
       - jsonl-import-integration
       - json-import-integration
