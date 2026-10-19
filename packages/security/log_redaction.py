@@ -304,6 +304,16 @@ _BENIGN_NAMES = frozenset(
 
 
 def _is_query_param_name(name: str) -> bool:
+    # Round 5 (QP-CASE-SPLIT-SEGMENT): check each separator-delimited segment lowercased
+    # BEFORE the camel split below. The camel split inserts a boundary at every
+    # lowercase-to-uppercase transition, which can fall *inside* a random-case spelling of a
+    # listed word that already sits in its own `_ - .`-delimited segment (`mon_KeY` -> the
+    # `e`-`Y` transition in "KeY" splits it into "Ke"+"Y", so the last-word check below never
+    # sees "key"; `status_CoDe` splits "CoDe" into "Co"+"De"). A segment produced by an actual
+    # separator is never split further by case here -- it is lowered and compared whole.
+    raw_segments = [w for w in _NAME_WORD_SPLIT.split(name) if w]
+    if raw_segments and raw_segments[-1].lower() in _QUERY_PARAM_NAMES:
+        return True
     words = [w for w in _NAME_WORD_SPLIT.split(_CAMEL_BOUNDARY.sub("_", name)) if w]
     if words and words[-1].lower() in _QUERY_PARAM_NAMES:
         return True
