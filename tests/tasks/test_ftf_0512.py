@@ -423,6 +423,52 @@ def test_compute_normalized_text_hash_rejects_non_canonical_shape() -> None:
         )
 
 
+def test_compute_normalized_text_hash_rejects_extra_key() -> None:
+    try:
+        compute_normalized_text_hash(
+            {"messages": [{"role": "user", "content": []}], "metadata": {}, "extra": 1}
+        )
+    except NormalizedDuplicateDetectionError:
+        pass
+    else:
+        check(
+            "FTF-0512",
+            "compute_normalized_text_hash rejects a document with an extra "
+            "top-level key, not only one with a missing key",
+            False,
+        )
+
+
+def test_compute_normalized_text_hash_rejects_non_mapping_content_even_if_keys_match() -> None:
+    try:
+        # not a Mapping, but set(content) happens to equal the required key
+        # set -- the two guard sub-conditions must be OR'd, not AND'd.
+        compute_normalized_text_hash(["messages", "metadata"])
+    except NormalizedDuplicateDetectionError:
+        pass
+    else:
+        check(
+            "FTF-0512",
+            "compute_normalized_text_hash rejects a non-Mapping content even "
+            "when its elements happen to match the required key names",
+            False,
+        )
+
+
+def test_compute_normalized_text_hash_rejects_empty_messages_list() -> None:
+    try:
+        compute_normalized_text_hash({"messages": [], "metadata": {}})
+    except NormalizedDuplicateDetectionError:
+        pass
+    else:
+        check(
+            "FTF-0512",
+            "compute_normalized_text_hash rejects an empty messages list "
+            "rather than hashing a vacuous document",
+            False,
+        )
+
+
 def test_supported_purposes_matches_ftf_0500_vocabulary() -> None:
     check(
         "FTF-0512",
@@ -439,6 +485,64 @@ def test_supported_purposes_matches_ftf_0500_vocabulary() -> None:
             }
         ),
     )
+
+
+def test_requalification_role_json_value_and_tool_ids_stay_distinct() -> None:
+    """FTF-0512-F1 round 3 item 4 (Law 15): role structure, JSON tool-result
+    values (case, width) and tool-call identifiers are meaningful and survive
+    byte-for-byte; none is a formatting variant."""
+
+    def roles(first: str, second: str) -> dict[str, object]:
+        return {
+            "messages": [
+                _text_content(role=first, text="hi"),
+                _text_content(role=second, text="ok"),
+            ],
+            "metadata": {},
+        }
+
+    check(
+        "FTF-0512",
+        "swapping roles with identical text is a different conversation",
+        compute_normalized_text_hash(roles("user", "assistant"))
+        != compute_normalized_text_hash(roles("assistant", "user")),
+    )
+    check(
+        "FTF-0512",
+        "a user/assistant pair is not a user/user pair",
+        compute_normalized_text_hash(roles("user", "assistant"))
+        != compute_normalized_text_hash(roles("user", "user")),
+    )
+
+    def json_value(value: object) -> dict[str, object]:
+        return {
+            "messages": [
+                _text_content(role="user", text="go"),
+                {"role": "tool", "content": [{"type": "json", "value": value}]},
+            ],
+            "metadata": {},
+        }
+
+    for left, right in [("Approved", "approved"), ("ok", "ｏｋ"), ({"A": "B"}, {"a": "b"})]:
+        check(
+            "FTF-0512",
+            f"json tool-result value {left!r} vs {right!r} are distinct outcomes",
+            compute_normalized_text_hash(json_value(left))
+            != compute_normalized_text_hash(json_value(right)),
+        )
+
+    def call_id(identifier: str) -> dict[str, object]:
+        return _conversation_with_tool_call(
+            "go", {"id": identifier, "name": "lookup", "arguments": {"k": "v"}}
+        )
+
+    for variant in ["CALL_1", "ｃａｌｌ_1", "call\u200b_1"]:
+        check(
+            "FTF-0512",
+            f"tool call id {variant!r} is a different identifier from 'call_1'",
+            compute_normalized_text_hash(call_id("call_1"))
+            != compute_normalized_text_hash(call_id(variant)),
+        )
 
 
 def main() -> None:

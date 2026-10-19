@@ -253,6 +253,7 @@ _KEY_VALUE = re.compile(
 # front of it: a query serialized without one (`str(request.query_params)`), a urlencoded form body
 # and a name after a space/quote/`/` are the same leak. Over-redaction (`state=CA`, prose `code=5`)
 # is FTF-0904's design.
+# (`totp`, `hotp`, `sessid` and `phpsessid` need no entry: they end in `otp` / `sid`.)
 _QUERY_PARAM_NAMES = frozenset(
     {
         "key",
@@ -267,8 +268,6 @@ _QUERY_PARAM_NAMES = frozenset(
         "otp",
         "pass",
         "sid",
-        "sessid",
-        "phpsessid",
         "jsessionid",
     }
 )
@@ -281,9 +280,35 @@ _NAME_WORD_SPLIT = re.compile(r"[_.\-]+")
 _CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
 
+# Round 4 (QP-GLUED-VOCAB, QP-CASE-SPLIT-SEPARATOR, QP-SEPSTRIP): deny by default. A name that
+# is not caught by its last word (above) is read with every separator stripped and lowercased;
+# if that run ENDS in a credential name (`mfacode`, `smscode`, `signingkey`, `connectsid`,
+# `recoverycode`, `hmacsig`, `aUtH_cOdE`, `sEsSiOn.KeY`, `co.de`) it is redacted, whatever the
+# prefix -- the old closed vocabulary of credential prefixes leaked every prefix it did not list.
+# The only way out is `_BENIGN_NAMES`, a CLOSED list of ordinary words that merely end in a
+# credential name; it is matched against the whole stripped name, so it never excuses a
+# credential prefix (`monkeysession` is still redacted) and a separator-split `mon_key` /
+# camelCase `monKey` is decided by the last-word rule above, not by this list.
+_NAME_SUFFIXES = tuple(sorted(_QUERY_PARAM_NAMES))
+_BENIGN_NAMES = frozenset(
+    {
+        "monkey", "turkey", "hockey", "jockey", "donkey", "whiskey", "lackey",
+        "decode", "encode", "barcode", "qrcode", "zipcode", "postcode", "geocode", "unicode",
+        "opcode", "statuscode", "errorcode", "exitcode", "returncode",
+        "estate", "realestate", "upstate", "restate",
+        "compass", "bypass", "overpass", "underpass", "trespass", "surpass",
+        "obsession", "possession", "concession", "profession", "procession", "recession",
+        "succession",
+    }
+)  # fmt: skip
+
+
 def _is_query_param_name(name: str) -> bool:
     words = [w for w in _NAME_WORD_SPLIT.split(_CAMEL_BOUNDARY.sub("_", name)) if w]
-    return bool(words) and words[-1].lower() in _QUERY_PARAM_NAMES
+    if words and words[-1].lower() in _QUERY_PARAM_NAMES:
+        return True
+    stripped = _NAME_WORD_SPLIT.sub("", name).lower()
+    return stripped.endswith(_NAME_SUFFIXES) and stripped not in _BENIGN_NAMES
 
 
 class _QueryParamRule:
