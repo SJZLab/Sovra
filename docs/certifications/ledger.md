@@ -11902,3 +11902,14 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   Local full matrix 114/114 RED. Production clean: exhaustive 0/62,496 text, 0/15,624 logging, non-ASCII 0/11,424,
   live 191/0. Return: the required generated benign-split table is a hand-picked 25-row list (7 words missing), so
   MY11/MY12 stay GREEN with leaks on the mutants; logging-path rows lowercase only. Stopping rule: tests only.
+
+## 2026-10-20T14:55Z — RETURNED: FTF-1505 (r5), tests only — certifier of record session_016xoeYyLgDc3cm43hScnvsc
+- **FTF-1505: RETURNED** (round 5 → 6, tests only; PR #868, merge 3bc4b5bacea13881c04d54e06af149cc8fc6f0e4, head
+  ca435de2). Producer: the Control-plane session session_01QVznorVMjnmcttUhyDnoGR (owner-approved); certifier of record:
+  the separate cloud session session_016xoeYyLgDc3cm43hScnvsc (not named in any commit) - this entry only records its
+  verdict. CI: ci-verdict 117120542023 success; gate 117074112825 step 64 "FTF-1505 secret scanning tests: all checks
+  passed"; secret-scanning 117074113346 "10225 unit(s) ... 0 blocking". Local: 246 checks; real full-history scan
+  10,318 units, 0 blocking. Baseline: comment/reason lines only. Production sound on points 1, 2, 6, 7. Return
+  (tests only): live-lane decision checks L1b/L2/L2b/L2c/L3/L4/L6/F15b GREEN, main() ignores live results, rule-set /
+  shallow-clone / stale-baseline / non-AWS-blocking faults GREEN, 20 KB / 64 KB / CLI truncation GREEN, >4 KB base64
+  run, .tgz and hex cap GREEN. Stopping rule set.
