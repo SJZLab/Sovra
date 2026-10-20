@@ -170,7 +170,7 @@ def test_secret_path_is_ignored() -> None:
     )
     check(
         "FTF-04A08",
-        "an explicit secret-shaped filename/suffix is ignored by explicit rule, never scanned",
+        "an explicit secret-shaped filename/suffix is ignored by explicit rule, " "never scanned",
         "config/.env" not in evidence.included_paths
         and "deploy/server.pem" not in evidence.included_paths,
     )
@@ -246,7 +246,7 @@ def test_max_total_entries_bounds_raw_iteration() -> None:
     evidence = run_source_analysis(refs, resource_limits=ResourceLimits(max_total_entries=4))
     check(
         "FTF-04A08",
-        "max_total_entries bounds the raw iteration even when every entry is ignored",
+        "max_total_entries bounds the raw iteration even when every entry is " "ignored",
         evidence.total_entries_examined == 4 and evidence.truncated is True,
     )
 

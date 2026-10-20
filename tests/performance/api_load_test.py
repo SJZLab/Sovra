@@ -212,7 +212,8 @@ def evaluate_acceptance(
         rate = unexpected_5xx_count / total_requests
         if rate > thresholds.max_unexpected_5xx_rate:
             reasons.append(
-                f"unexpected 5xx rate {rate:.4%} exceeds {thresholds.max_unexpected_5xx_rate:.4%}"
+                f"unexpected 5xx rate {rate:.4%} exceeds "
+                f"{thresholds.max_unexpected_5xx_rate:.4%}"
             )
     return AcceptanceResult(passed=not reasons, reasons=reasons)
 
@@ -671,7 +672,7 @@ def main() -> None:
     )
     check(
         "FTF-1401",
-        "at least one real read request and one real write request were measured",
+        "at least one real read request and one real write request were " "measured",
         report.read_stats is not None and report.write_stats is not None,
     )
     check(

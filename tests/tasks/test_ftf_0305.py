@@ -144,7 +144,8 @@ def test_gate_reports_unaccepted_for_a_fresh_artifact() -> None:
         )
         check(
             "FTF-0305",
-            f"assert_license_accepted_for_use raises for an unaccepted artifact ({source_type})",
+            f"assert_license_accepted_for_use raises for an unaccepted "
+            f"artifact ({source_type})",
             _rejects(lambda a=artifact: assert_license_accepted_for_use(a)),
         )
 
@@ -167,7 +168,8 @@ def test_gate_reports_accepted_with_real_attribution() -> None:
     )
     check(
         "FTF-0305",
-        "assert_license_accepted_for_use returns the passing result without raising once accepted",
+        "assert_license_accepted_for_use returns the passing result "
+        "without raising once accepted",
         assert_license_accepted_for_use(artifact).accepted is True,
     )
 
@@ -262,7 +264,7 @@ def test_apply_revoke_license_demotes_a_ready_artifact() -> None:
     )
     check(
         "FTF-0305",
-        "negative_acceptance: revoking a ready artifact's license reports a real change",
+        "negative_acceptance: revoking a ready artifact's license reports " "a real change",
         apply_revoke_license(artifact) is True,
     )
     check(

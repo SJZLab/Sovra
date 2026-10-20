@@ -401,7 +401,7 @@ def test_apply_revoke_is_idempotent() -> None:
     second = apply_revoke(connection)
     check(
         "FTF-0201",
-        "acceptance: revoking an already-revoked connection is idempotent -- reports no change",
+        "acceptance: revoking an already-revoked connection is idempotent " "-- reports no change",
         second is False,
     )
     check(

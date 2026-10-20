@@ -156,7 +156,7 @@ def test_evidence_records_are_content_free_by_construction() -> None:
     result = _result("connection", "cross_tenant_api_read_denied", True)
     check(
         "FTF-1501",
-        "ScenarioResult.to_dict() round-trips exactly the declared fields, nothing more",
+        "ScenarioResult.to_dict() round-trips exactly the declared fields, " "nothing more",
         set(result.to_dict()) == scenario_fields,
     )
 

@@ -312,7 +312,8 @@ def test_apply_revise_budget_policy_refuses_shrinking_below_reserved() -> None:
     policy = _make_policy(total_amount=Decimal("1000.00"), reserved_amount=Decimal("400.00"))
     check(
         "FTF-0403",
-        "negative_acceptance: revising total_amount below the already-reserved amount is refused",
+        "negative_acceptance: revising total_amount below the already-reserved amount "
+        "is refused",
         _rejects(
             apply_revise_budget_policy,
             policy,
@@ -419,7 +420,8 @@ def test_reserve_and_release_build_a_single_conditional_atomic_update() -> None:
     )
     check(
         "FTF-0403",
-        "every fetch authorizes through the real, imported authorize_resource_ownership (FTF-H003)",
+        "every fetch authorizes through the real, imported authorize_resource_ownership "
+        "(FTF-H003)",
         "authorize_resource_ownership(" in crud_source
         and "app.auth.resource_authorization" in crud_source,
     )

@@ -832,7 +832,8 @@ def main() -> None:
         )
         check(
             "FTF-0601",
-            "acceptance: locking a FINAL suite with a genuinely distinct reviewer succeeds (200)",
+            "acceptance: locking a FINAL suite with a genuinely distinct "
+            "reviewer succeeds (200)",
             r.status == 200,
         )
 
@@ -1137,7 +1138,7 @@ def main() -> None:
         )
         check(
             "FTF-0601",
-            "L2 round-2: grading_logic_version=2147483648 on PATCH is refused (400)",
+            "L2 round-2: grading_logic_version=2147483648 on PATCH is " "refused (400)",
             r.status == 400,
         )
 

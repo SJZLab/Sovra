@@ -161,7 +161,7 @@ def main() -> None:
 
     _run_migration()
     if FAILURES:
-        print(f"FTF-0306 real Postgres base-model-digest-resolver proof: {len(FAILURES)} failed")
+        print("FTF-0306 real Postgres base-model-digest-resolver proof: " f"{len(FAILURES)} failed")
         for failure in FAILURES:
             print(f"  {failure}")
         sys.exit(1)
@@ -315,7 +315,7 @@ def main() -> None:
             check("FTF-0306", f"unexpected ArtifactStateError: {exc}", False)
 
     if FAILURES:
-        print(f"FTF-0306 real Postgres base-model-digest-resolver proof: {len(FAILURES)} failed")
+        print("FTF-0306 real Postgres base-model-digest-resolver proof: " f"{len(FAILURES)} failed")
         for failure in FAILURES:
             print(f"  {failure}")
         sys.exit(1)

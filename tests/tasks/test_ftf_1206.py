@@ -409,7 +409,7 @@ def test_project_gateway_permission_request_validates_every_member() -> None:
     # `test_organization_gateway_policy_validates_every_member` above.
     check(
         "FTF-1206",
-        "an unsafe registration namespace in a project's own request is refused at construction",
+        "an unsafe registration namespace in a project's own request is refused " "at construction",
         _rejects(
             ProjectGatewayPermissionRequest,
             registration_namespaces=frozenset({"bad namespace"}),
@@ -419,7 +419,7 @@ def test_project_gateway_permission_request_validates_every_member() -> None:
     )
     check(
         "FTF-1206",
-        "an unsafe deployment namespace in a project's own request is refused at construction",
+        "an unsafe deployment namespace in a project's own request is refused " "at construction",
         _rejects(
             ProjectGatewayPermissionRequest,
             registration_namespaces=frozenset(),
@@ -429,7 +429,7 @@ def test_project_gateway_permission_request_validates_every_member() -> None:
     )
     check(
         "FTF-1206",
-        "an unsafe approver identity in a project's own request is refused at construction",
+        "an unsafe approver identity in a project's own request is refused " "at construction",
         _rejects(
             ProjectGatewayPermissionRequest,
             registration_namespaces=frozenset(),

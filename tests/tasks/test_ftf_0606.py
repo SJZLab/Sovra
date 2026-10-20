@@ -78,7 +78,7 @@ def test_required_call_satisfied_by_one_of_several_calls() -> None:
     )
     check(
         "FTF-0606",
-        "calling one of several required-one-of names, with no forbidden call, passes",
+        "calling one of several required-one-of names, with no forbidden " "call, passes",
         result.passed,
     )
 
@@ -190,7 +190,8 @@ def test_multiple_forbidden_calls_all_reported() -> None:
     )
     check(
         "FTF-0606",
-        "every forbidden call in the sequence is reported, in order, not just the first one found",
+        "every forbidden call in the sequence is reported, in order, not "
+        "just the first one found",
         result.forbidden_calls == ("refund_order", "delete_account"),
     )
 
@@ -203,7 +204,7 @@ def test_policy_is_explicit_not_defaulted() -> None:
     else:
         check(
             "FTF-0606",
-            "must_call_one_of/must_not_call are required keyword-only arguments with no default",
+            "must_call_one_of/must_not_call are required keyword-only " "arguments with no default",
             False,
         )
 
@@ -560,7 +561,7 @@ def main() -> None:
                 fn()
             except Exception as exc:  # noqa: BLE001 -- isolate one test's crash from the rest
                 FAILURES.append(
-                    f"FAIL [FTF-0606] {name} raised an unexpected {type(exc).__name__}: {exc}"
+                    f"FAIL [FTF-0606] {name} raised an unexpected " f"{type(exc).__name__}: {exc}"
                 )
 
     if FAILURES:

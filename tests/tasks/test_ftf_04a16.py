@@ -242,7 +242,7 @@ def test_python_os_getenv_reference_detected() -> None:
     refs = _refs_for_key(evidence, "DEPLOY_HOST")
     check(
         "FTF-04A16",
-        "a real os.getenv(...) call with a literal string key is statically traced via AST",
+        "a real os.getenv(...) call with a literal string key is " "statically traced via AST",
         len(refs) == 1 and refs[0].access_pattern == "os.getenv",
     )
 
@@ -275,7 +275,7 @@ def test_python_module_is_never_executed() -> None:
     if marker.exists():
         marker.unlink()
     content = (
-        f'import os\nos.system("touch {marker}")\nvalue = os.environ.get("OTEL_SERVICE_NAME")\n'
+        f'import os\nos.system("touch {marker}")\n' 'value = os.environ.get("OTEL_SERVICE_NAME")\n'
     ).encode()
     evidence = run_runtime_trace_deployment_contract_discovery([_ref("app/server.py", content)])
     check(

@@ -201,7 +201,7 @@ def test_tool_schema_resolved_from_literal_openai_function_list() -> None:
     tools = evidence.entrypoints[0].tool_schema
     check(
         "FTF-04A10",
-        "a literal, OpenAI-function-shaped tools array resolves the real tool name",
+        "a literal, OpenAI-function-shaped tools array resolves the real tool " "name",
         tools.resolved is True
         and tools.tool_names == ("lookup_order",)
         and tools.reason == "literal_openai_function_list",
@@ -460,7 +460,8 @@ def test_oversized_file_is_skipped_not_read() -> None:
     )
     check(
         "FTF-04A10",
-        "a file over max_file_bytes is never read at all (its own read_content is never invoked)",
+        "a file over max_file_bytes is never read at all (its own "
+        "read_content is never invoked)",
         read_calls == [] and evidence.files_skipped_oversized == 1 and evidence.entrypoints == (),
     )
 
@@ -516,7 +517,8 @@ def test_node_runtime_is_genuinely_available_in_this_environment() -> None:
     result = subprocess.run(["node", "--version"], capture_output=True, text=True, check=False)
     check(
         "FTF-04A10",
-        "the Node.js runtime this worker depends on is genuinely present in this test environment",
+        "the Node.js runtime this worker depends on is genuinely present in "
+        "this test environment",
         result.returncode == 0,
     )
 

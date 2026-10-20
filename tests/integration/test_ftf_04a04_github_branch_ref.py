@@ -665,7 +665,8 @@ def _run_checks(
             with Session(owner_engine) as verify_session:
                 row = verify_session.execute(
                     text(
-                        "SELECT selected_branch FROM target_application_connections WHERE id = :cid"
+                        "SELECT selected_branch FROM target_application_connections "
+                        "WHERE id = :cid"
                     ),
                     {"cid": str(connection_id)},
                 ).one_or_none()

@@ -490,7 +490,7 @@ def main() -> None:
         )
         check(
             "FTF-0301",
-            "resolving weights_digest for the license-isolation artifact succeeds (200)",
+            "resolving weights_digest for the license-isolation artifact " "succeeds (200)",
             r.status == 200,
         )
 
@@ -503,7 +503,7 @@ def main() -> None:
         )
         check(
             "FTF-0301",
-            "pinning base_model_revision for the license-isolation artifact succeeds (200)",
+            "pinning base_model_revision for the license-isolation artifact " "succeeds (200)",
             r.status == 200,
         )
 
@@ -531,7 +531,7 @@ def main() -> None:
         )
         check(
             "FTF-0301",
-            "accepting the license for the license-isolation artifact succeeds (200)",
+            "accepting the license for the license-isolation artifact " "succeeds (200)",
             r.status == 200,
         )
 

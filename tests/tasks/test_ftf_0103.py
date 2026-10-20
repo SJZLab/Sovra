@@ -462,7 +462,7 @@ def test_real_demo_app_enforces_roles_and_tenants() -> None:
         )
         check(
             "FTF-0103",
-            "a body tenant field that agrees with the URL path does not itself cause a denial",
+            "a body tenant field that agrees with the URL path does not " "itself cause a denial",
             result.status == 200,
         )
 

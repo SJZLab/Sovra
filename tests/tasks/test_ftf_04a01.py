@@ -135,7 +135,8 @@ def _make_connection(**overrides: object) -> TargetApplicationConnection:
 def test_validate_connector_type_is_the_closed_section_7a1_set() -> None:
     check(
         "FTF-04A01",
-        "ALLOWED_CONNECTOR_TYPES is exactly Section 7A.1's own two minimum production connectors",
+        "ALLOWED_CONNECTOR_TYPES is exactly Section 7A.1's own two minimum "
+        "production connectors",
         set(ALLOWED_CONNECTOR_TYPES) == {"github", "local_repository"},
     )
     for connector_type in ALLOWED_CONNECTOR_TYPES:
@@ -208,7 +209,7 @@ def test_validate_repository_url_or_none() -> None:
     )
     check(
         "FTF-04A01",
-        "a userinfo URL (user:pass@host) is refused -- FTF-H006's own shared shape rule",
+        "a userinfo URL (user:pass@host) is refused -- FTF-H006's own " "shared shape rule",
         _rejects(validate_repository_url_or_none, "https://user:pass@github.com/acme/repo"),
     )
     check(
@@ -681,7 +682,8 @@ def main() -> None:
 
     if FAILURES:
         print(
-            f"FTF-04A01 TargetApplicationConnection schema/API/RBAC tests: {len(FAILURES)} failed"
+            f"FTF-04A01 TargetApplicationConnection schema/API/RBAC tests: "
+            f"{len(FAILURES)} failed"
         )
         for failure in FAILURES:
             print(f"  {failure}")

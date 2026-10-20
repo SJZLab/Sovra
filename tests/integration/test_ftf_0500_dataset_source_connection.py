@@ -587,7 +587,7 @@ def _run_checks(migration_url: str, app_password: str) -> None:
         )
         check(
             "FTF-0500",
-            "training is genuinely authorized while the connection is still active",
+            "training is genuinely authorized while the connection is still " "active",
             r.status == 200,
         )
 
@@ -626,7 +626,7 @@ def _run_checks(migration_url: str, app_password: str) -> None:
         )
         check(
             "FTF-0500",
-            "editing an already-revoked connection is refused (409), a real database row",
+            "editing an already-revoked connection is refused (409), a real " "database row",
             r.status == 409,
         )
 

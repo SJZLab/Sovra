@@ -161,7 +161,9 @@ def _build_malicious_repository(repo: Path, base: Path, marker_dir: Path) -> Non
 
     (repo / ".gitattributes").write_text("*.bin filter=lfs diff=lfs merge=lfs -text\n")
     (repo / "model.bin").write_bytes(
-        b"version https://git-lfs.github.com/spec/v1\noid sha256:" + b"0" * 64 + b"\nsize 4096\n"
+        b"version https://git-lfs.github.com/spec/v1\n"
+        b"oid sha256:" + b"0" * 64 + b"\n"
+        b"size 4096\n"
     )
 
     (repo / ".gitmodules").write_text(
@@ -985,7 +987,7 @@ def test_round5_corrupt_index_boundary_scan_fails_closed() -> None:
 
         check(
             "FTF-H007",
-            "R1: a corrupt index makes the boundary scan report a git_read_error",
+            "R1: a corrupt index makes the boundary scan report a " "git_read_error",
             bool(report.git_read_errors),
         )
         check(
@@ -1021,12 +1023,12 @@ def test_round5_missing_head_tree_object_boundary_scan_fails_closed() -> None:
 
         check(
             "FTF-H007",
-            "R2: a missing HEAD tree object makes the boundary scan report a git_read_error",
+            "R2: a missing HEAD tree object makes the boundary scan report " "a git_read_error",
             bool(report.git_read_errors),
         )
         check(
             "FTF-H007",
-            "R2: a repository with a missing HEAD tree object is never safe to lock",
+            "R2: a repository with a missing HEAD tree object is never " "safe to lock",
             not report.is_safe_to_lock,
         )
 
@@ -1053,12 +1055,12 @@ def test_round5_missing_head_commit_object_boundary_scan_fails_closed() -> None:
 
         check(
             "FTF-H007",
-            "R6: a missing HEAD commit object makes the boundary scan report a git_read_error",
+            "R6: a missing HEAD commit object makes the boundary scan " "report a git_read_error",
             bool(report.git_read_errors),
         )
         check(
             "FTF-H007",
-            "R6: a repository with a missing HEAD commit object is never safe to lock",
+            "R6: a repository with a missing HEAD commit object is never " "safe to lock",
             not report.is_safe_to_lock,
         )
 
@@ -1108,7 +1110,7 @@ def test_round5_corrupt_index_with_staged_gitlink_is_not_safe() -> None:
         )
         check(
             "FTF-H007",
-            "a corrupt index with a real staged gitlink on record is never safe to lock",
+            "a corrupt index with a real staged gitlink on record is " "never safe to lock",
             not report.is_safe_to_lock,
         )
 

@@ -172,7 +172,8 @@ def test_validate_field_path_requires_a_real_manifest_content_field() -> None:
     )
     check(
         "FTF-04A20",
-        "negative_acceptance: a dotted path whose own leading segment is unknown is rejected too",
+        "negative_acceptance: a dotted path whose own leading segment is "
+        "unknown is rejected too",
         _rejects(validate_field_path, "not_a_real_field.nested"),
     )
     check(

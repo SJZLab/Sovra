@@ -118,7 +118,7 @@ def test_rank_is_strictly_increasing_in_declared_order() -> None:
     )
     check(
         "FTF-0402",
-        "security_profile_rank refuses an unrecognized name rather than guessing a rank for it",
+        "security_profile_rank refuses an unrecognized name rather than " "guessing a rank for it",
         _rejects(security_profile_rank, "unknown_profile"),
     )
 
@@ -172,7 +172,7 @@ def test_enforce_security_profile_selection_blocks_relaxation() -> None:
     )
     check(
         "FTF-0402",
-        "an equal request (org default == requested) is accepted and returned unchanged",
+        "an equal request (org default == requested) is accepted and returned " "unchanged",
         enforce_security_profile_selection("zero_egress", "zero_egress") == "zero_egress",
     )
     check(
@@ -229,7 +229,7 @@ def test_project_crud_genuinely_calls_the_enforcement_primitive() -> None:
     )
     check(
         "FTF-0402",
-        "project_crud.py imports the real enforcement primitive from this task's own module",
+        "project_crud.py imports the real enforcement primitive from this " "task's own module",
         "from app.services.project_security_profile import enforce_security_profile_selection"
         in crud_source,
     )

@@ -515,7 +515,7 @@ def test_evaluator_is_allowed_read() -> None:
         result = _request(base_url, "GET", _collection_path(), principal="evaluator")
         check(
             "FTF-04A19",
-            "an evaluator is allowed read (never 401/403) -- Section 45's widest read baseline",
+            "an evaluator is allowed read (never 401/403) -- Section 45's " "widest read baseline",
             result.status not in (401, 403),
         )
 
