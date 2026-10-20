@@ -550,7 +550,7 @@ def main() -> None:
             )
 
     add_tool(ctx1, p1_id, "lookup_order")
-    add_tool(ctx1, p1b_id, "only_in_the_other_project")
+    add_tool(ctx1, p1b_id, "get_other_project_order")
     tool_mapping = ic.mapping_from_object(
         {
             "shape": "messages_json",
@@ -607,7 +607,7 @@ def main() -> None:
         tool_row(arguments=canary_args, extra=canary_extra)  # 1 valid
         + tool_row(call_name="not_defined_anywhere")  # 2 unknown tool
         + tool_row(reply_id="call_orphan")  # 3 orphan id
-        + tool_row(call_name="only_in_the_other_project")  # 4 foreign project's tool
+        + tool_row(call_name="get_other_project_order")  # 4 foreign project's tool
         + tool_row(arguments={"order_id": 123})  # 5 bad-typed argument
     )
     tool_dataset = make_dataset("org1", p1_id, conn1, tool_data, "tool-calls")

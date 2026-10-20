@@ -3030,7 +3030,9 @@ def test_mask_candidate_content_part_shapes_and_key_fidelity() -> None:
     check(
         "MASKSHAPE-5",
         "schema keys are preserved exactly (no strip, no case folding)",
-        set(odd) == {"Odd Key ", "UPPER", "arguments", "nested"} and set(odd["nested"]) == {" Sp "},
+        set(odd) == {"Odd Key ", "UPPER", "arguments", "nested"}
+        and isinstance(odd["nested"], dict)
+        and set(odd["nested"].keys()) == {" Sp "},
     )
     check(
         "MASKSHAPE-6",
