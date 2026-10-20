@@ -312,7 +312,7 @@ def _fold_action(char: str) -> int:
         # folds to SPACE + a combining mark, which the punctuation rule would
         # then strip as non-word -- the symbol would vanish. Keep it verbatim.
         return _FOLD_ISOLATE_VERBATIM
-    if not _decomposition_tag(char) or _decomposition_tag(char) in _SAME_CHARACTER_TAGS:
+    if (not _decomposition_tag(char) and _decomposition_tag(char) in _SAME_CHARACTER_TAGS):
         return _FOLD_KEEP
     if all(_PUNCTUATION_PATTERN.fullmatch(part) for part in unicodedata.normalize("NFKC", char)):
         # FTF-0512-F3: a compat form that folds to punctuation only (U+2011
