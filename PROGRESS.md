@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-16T14:05Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-20T04:45Z. Source: `python3 scripts/status.py` on main.
 - **Status: 154/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,10 @@ Updated: 2026-10-16T14:05Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-20T04:45Z:**
+  - CERTIFIED (child slice): FTF-0512-F2 - the duplicate detector keeps math and currency symbols, so "x ≤ 5" and "x ≥ 5" or "$100" and "€100" no longer merge; tool and speaker names are compared exactly. FTF-0512 stays certified with the new evidence. Follow-up FTF-0512-F3 queued ("-5" vs "5", "5%" vs "5" still merge).
+- **2026-10-20T04:45Z:**
+  - Returned: FTF-R006-P1a r2 (Argilla review client: routes and error classes match the pinned Argilla version, but it can create admin users, some network errors escape unclassified and can carry the API key, huge responses are fully buffered, and 5 checks are unpinned). FTF-R006-P1 split into the client (P1a) and the identity/credential layer (P1b). Stopping rule set.
 - **2026-10-16T14:05Z:**
   - Returned: FTF-1505 r5 (secret scanning, relay round 4: no real secret anywhere and the split-secret gap is closed, but a new decode cap can silently skip secrets in very long lines, history-only .tar.gz files are never opened, and 16 of 55 faults stay undetected). Round 5 is the Control plane's own implementation (owner-approved), certified by a separate session. Stopping rule set.
 - **2026-10-16T14:05Z:**

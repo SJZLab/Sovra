@@ -25139,3 +25139,9 @@ different session.
 
 ## 2026-10-16T14:05Z — Control plane: FTF-1505 returned (r5)
 - **Returned:** FTF-1505 r5 (0h): decode cap blocking or removed, history archive type, behavioural main() faults, live positive control, seeded recall in main(), linear matchers; stopping rule. Round 5 produced by the Control plane (owner "Go"); relay skips it.
+
+## 2026-10-20T04:45Z — Control plane: FTF-0512-F2 certified (child slice)
+- **Certified:** FTF-0512-F2 (#861, merge 244ea3af); FTF-0512 requalified. Follow-up FTF-0512-F3 queued.
+
+## 2026-10-20T04:45Z — Control plane: FTF-R006-P1a returned (r2); FTF-R006-P1 split
+- **Returned:** FTF-R006-P1a r2 (0m): annotator-only, HTTPException -> Unavailable, bounded stream + deadline, strict schema, 5 pins; P1 split into P1a/P1b; stopping rule.

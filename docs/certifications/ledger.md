@@ -11836,3 +11836,31 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   history lane never opens tar.gz/.gz; 16/55 faults GREEN (F16/F17/F18 among them); live lane has no startup-line check,
   no positive control, shared access key; no seeded recall in main(); quadratic whole-line matchers. Round 5 produced by
   the Control plane (owner-approved), certified by a separate session. Stopping rule set.
+
+## 2026-10-20T04:45Z — Control plane: 6 equivalent mutants allowlisted (BLOCKER.md 2026-10-19T09:10Z resolved)
+- **mutation-allowlist.yaml +6 (Law 9, reviewed at L2):** PR #869 (FTF-0519-P2) M9 at
+  dataset_split_manifest_routes.py:304/387/446/512 (`exc.code` from the fixed lowercase CODES tuple, every raise a
+  literal; `action` only "approve"/"reject"); PR #742 (FTF-H010-P2) M9 at model_import_validation.py:382/383
+  (constant "succeeded"; SQLAlchemy Dialect.name). Each line-pinned. No test weakened, no other entry changed.
+
+## 2026-10-20T04:45Z — CERTIFIED (child slice): FTF-0512-F2; FTF-0512 requalified
+- **FTF-0512-F2: CERTIFIED (L2)** (round 1; PR #861, merge 244ea3af6ba6e9a65dda0485f271441662b2c10d, head a6c23d30). Producer
+  session_01KWYe2dN24HXcnsE8qH9Mym ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI: 78/78 success, ci-verdict
+  116969942228; gate 116899537775 "FTF-0512-F1 look-alike gaps: all checks passed" (holds run_f2_checks) on 3.12 and
+  3.11; 0512/0513/0515/0518/0516-P1 passed; mutation-gate 17/17. Local: all six suites + 0516-P1 integration on PG16.
+  Probes: 7,741 Sm/Sc/Sk/So code points x 10 contexts - 0 erased (6,847 before), Sm x Sc 59,724 pairs 0 collisions;
+  220 compatibility variants still merge; named pairs distinct, P*/case/space still merge; 25 name-field variants x 3
+  fields 0 collapsed; detector_version 4; corpus 338k texts 0 new merges; FTF-0518 positive controls hold. Faults 25/26
+  RED (G20 NFC-only name fold GREEN, production correct - pinned in F3); FTF-0518 certification faults 31/34 (unchanged).
+- **FTF-0512: stays CERTIFIED**, evidence_hash -> 244ea3af6ba6e9a65dda0485f271441662b2c10d (Law 15). Follow-up FTF-0512-F3: digit-adjacent P* ("-5" == "5",
+  "5%" == "5", "#1" == "1") merges distinct outcomes; NFC/NFD name pin; proving_test to include test_ftf_0512_f1.py.
+
+## 2026-10-20T04:45Z — RETURNED: FTF-R006-P1a (r1); FTF-R006-P1 split
+- **FTF-R006-P1a: RETURNED** (client-only sub-slice of FTF-R006-P1; round 1 → 2; PR #862, merge
+  697caf40f65c42893a129e6a697cd7144521fd3a, head 8194803e). Producers session_01JbrfDG7Ni3AHfj1P8stRGU,
+  session_01FaqQAMDmProPBwezTYE8FD ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 79/79 success, ci-verdict
+  117069053753; gate 116984001200 "FTF-R006-P1 Argilla client tests: all checks passed". Integration form matches
+  REFERENCE_REPOSITORIES.md (stdlib REST adapter, no SDK/fork/dependency); v2.8.0 routes/schemas match. Return:
+  admin/owner role on the wire; raw http.client exceptions escape (key in IncompleteRead.partial); body buffered
+  before the bound, no total deadline; lax response schema; FI8b/FI11/FI15/FI16/FI18 GREEN. Control-plane split:
+  P1 -> P1a (client) + P1b (identity store, migration, OpenBao, compose stack, live integration). Stopping rule set.
