@@ -523,6 +523,199 @@ def main() -> None:
         csv_probed.headers == ("q", "a", "secret"),
     )
 
+    # ---- I8: nested-key masking on the real stored bytes (whole-result canary scans) -----
+    from dataclasses import asdict  # noqa: PLC0415
+
+    from app.tools.tool_definition_crud import ActorInfo, create_tool_definition  # noqa: PLC0415
+
+    def add_tool(ctx: TenantContext, project_id: uuid.UUID, name: str) -> None:
+        with tenant_scoped_session_for(factory, ctx) as session:
+            create_tool_definition(
+                session,
+                ctx,
+                project_id=project_id,
+                name=name,
+                description=None,
+                input_schema_json={
+                    "type": "object",
+                    "properties": {"order_id": {"type": "string"}, "type": {"type": "string"}},
+                    "required": ["order_id"],
+                    "additionalProperties": False,
+                },
+                output_schema_json={"type": "object"},
+                side_effect_class="read_only",
+                requires_confirmation=False,
+                is_critical=False,
+                actor=ActorInfo("user", "seed", uuid.uuid4().hex),
+            )
+
+    add_tool(ctx1, p1_id, "lookup_order")
+    add_tool(ctx1, p1b_id, "only_in_the_other_project")
+    tool_mapping = ic.mapping_from_object(
+        {
+            "shape": "messages_json",
+            "messages": {"key": "messages"},
+            "role_key": "role",
+            "content_key": "content",
+            "tool_calls_key": "tool_calls",
+            "tool_call_id_key": "tool_call_id",
+            "name_key": "name",
+            "role_map": {"user": "user", "assistant": "assistant", "tool": "tool"},
+            "on_unmapped_message_keys": "ignore",
+        }
+    )
+
+    def tool_row(
+        call_name: str = "lookup_order",
+        reply_id: str = "call_1",
+        arguments: dict[str, Any] | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> bytes:
+        user: dict[str, Any] = {"role": "user", "content": "where is it"}
+        user.update(extra or {})
+        return (
+            json.dumps(
+                {
+                    "messages": [
+                        user,
+                        {
+                            "role": "assistant",
+                            "content": "checking",
+                            "tool_calls": [
+                                {
+                                    "id": "call_1",
+                                    "name": call_name,
+                                    "arguments": arguments or {"order_id": "abc"},
+                                }
+                            ],
+                        },
+                        {
+                            "role": "tool",
+                            "content": "found",
+                            "tool_call_id": reply_id,
+                            "name": call_name,
+                        },
+                    ]
+                }
+            ).encode()
+            + b"\n"
+        )
+
+    canary_args = {"order_id": "abc", "type": "CANARY-TYPE-VALUE"}
+    canary_extra = {"CANARY-NESTED-KEY": {"CANARY-JSON-KEY": "CANARY-NESTED-VALUE"}}
+    tool_data = (
+        tool_row(arguments=canary_args, extra=canary_extra)  # 1 valid
+        + tool_row(call_name="not_defined_anywhere")  # 2 unknown tool
+        + tool_row(reply_id="call_orphan")  # 3 orphan id
+        + tool_row(call_name="only_in_the_other_project")  # 4 foreign project's tool
+        + tool_row(arguments={"order_id": 123})  # 5 bad-typed argument
+    )
+    tool_dataset = make_dataset("org1", p1_id, conn1, tool_data, "tool-calls")
+    tool_masked = preview(ctx1, p1_id, tool_dataset.id, tool_mapping, reveal=False)
+    outcomes = [r.outcome for r in tool_masked.rows]
+    check(
+        f"I9 real tool definitions: valid call accepted, unknown/orphan/foreign/bad-typed "
+        f"rejected ({outcomes})",
+        outcomes == ["accepted", "rejected", "rejected", "rejected", "rejected"],
+    )
+    check(
+        "I9 the rejections carry a machine-readable code",
+        all(r.code is not None for r in tool_masked.rows[1:]),
+    )
+    canaries = ("CANARY-TYPE-VALUE", "CANARY-NESTED-KEY", "CANARY-JSON-KEY", "CANARY-NESTED-VALUE")
+    scan = repr(tool_masked) + json.dumps(asdict(tool_masked), default=repr)
+    check(
+        f"I8 no nested raw key or tool argument survives the masked preview "
+        f"(repr and asdict): {[c for c in canaries if c in scan]}",
+        not any(c in scan for c in canaries),
+    )
+    tool_probe = probe(ctx1, p1_id, tool_dataset.id, tool_mapping, reveal=False)
+    probe_scan = repr(tool_probe) + json.dumps(asdict(tool_probe), default=repr)
+    check(
+        f"I8 no nested raw key survives the masked probe (repr and asdict): "
+        f"{[c for c in canaries if c in probe_scan]}",
+        not any(c in probe_scan for c in canaries),
+    )
+    tool_revealed = preview(ctx1, p1_id, tool_dataset.id, tool_mapping, reveal=True)
+    reveal_scan = repr(tool_revealed)
+    check(
+        "I8 positive control: reveal=True shows the canaries",
+        "CANARY-TYPE-VALUE" in reveal_scan and "CANARY-NESTED-KEY" in reveal_scan,
+    )
+
+    # ---- I10: cp1256 ';' CSV, Arabic header on the third record --------------------------
+    arabic_csv = "ملاحظة;سطر\nأخرى;سطر\nسؤال;جواب;سري\nمرحبا;عالم;١٢٣\n".encode("cp1256")
+    arabic_mapping = ic.mapping_from_object(
+        {
+            "shape": "prompt_completion",
+            "csv": {
+                "encoding": "windows-1256",
+                "delimiter": ";",
+                "has_header": True,
+                "header_row": 2,
+            },
+            "prompt": {"header": "سؤال"},
+            "completion": {"header": "جواب"},
+        }
+    )
+    arabic_dataset = make_dataset(
+        "org1", p1_id, conn1, arabic_csv, "arabic-cp1256", content_type="text/csv"
+    )
+    arabic_preview = preview(ctx1, p1_id, arabic_dataset.id, arabic_mapping, reveal=True)
+    check(
+        f"I10 the cp1256 ';' CSV with its Arabic header on record 3 previews "
+        f"({arabic_preview.state}/{arabic_preview.failure_code})",
+        arabic_preview.state == "completed"
+        and arabic_preview.rows[0].outcome == "accepted"
+        and arabic_preview.rows[0].raw_row == {"سؤال": "مرحبا", "جواب": "عالم", "سري": "١٢٣"},
+    )
+
+    # ---- I11: JSON container pointer -----------------------------------------------------
+    json_doc = json.dumps(
+        {"meta": {"v": 1}, "rows": [{"prompt": "p1", "completion": "c1"}, {"prompt": "p2"}]}
+    ).encode()
+    json_mapping = ic.mapping_from_object(
+        {
+            "shape": "prompt_completion",
+            "json": {"container": "/rows", "ignored_top_level_keys": ["meta"]},
+            "prompt": {"key": "prompt"},
+            "completion": {"key": "completion"},
+        }
+    )
+    json_dataset = make_dataset(
+        "org1", p1_id, conn1, json_doc, "json-container", content_type="application/json"
+    )
+    json_preview = preview(ctx1, p1_id, json_dataset.id, json_mapping, reveal=True)
+    check(
+        f"I11 a JSON container pointer previews one accepted and one rejected row "
+        f"({json_preview.state}/{[r.outcome for r in json_preview.rows]})",
+        json_preview.state == "completed"
+        and [r.outcome for r in json_preview.rows] == ["accepted", "rejected"],
+    )
+
+    # ---- I12: a SAME-SIZE real overwrite, past the previewed rows, is caught ---------------
+    same_data = b"".join(line(i) for i in range(50))
+    same_dataset = make_dataset("org1", p1_id, conn1, same_data, "same-size-overwrite")
+    with tenant_scoped_session_for(factory, ctx1) as session:
+        same_key = store.get_upload_session(
+            session, ctx1, p1_id, same_dataset.upload_session_id
+        ).object_key
+    same_tampered = same_data.replace(b'"answer 35"', b'"answer 53"', 1)
+    check("I12 fixture: the tampered body is the same size", len(same_tampered) == len(same_data))
+    check("I12 fixture: the tampered body differs", same_tampered != same_data)
+    client.put_object(bucket, same_key, same_tampered)
+    same_preview = preview(ctx1, p1_id, same_dataset.id, PROMPT_COMPLETION, reveal=True)
+    check(
+        f"I12 a same-size overwrite is failed/source_changed ({same_preview.state}/"
+        f"{same_preview.failure_code})",
+        same_preview.state == "failed" and same_preview.failure_code == "source_changed",
+    )
+    same_probe = probe(ctx1, p1_id, same_dataset.id, probe_mapping, reveal=True)
+    check(
+        f"I12b the probe catches it too ({same_probe.state}/{same_probe.failure_code})",
+        same_probe.state == "failed" and same_probe.failure_code == "source_changed",
+    )
+
     # ---- I7: SOURCE-CHANGED -- a real object overwritten after verification, past what a
     # bounded (20-row) preview would ever need to read on its own, is still caught -------------
     overwrite_rows = 50

@@ -33,8 +33,9 @@ import dataclasses
 import hashlib
 import json
 import sys
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 API_ROOT = ROOT / "apps" / "api"
@@ -2908,7 +2909,7 @@ def _run_importer(kind: str, mapping: ic.ImportMapping, data: bytes):
         }[kind],
         "dataset_purpose": "training",
     }
-    runner = {
+    runner: Callable[..., Any] = {
         "jsonl": jsonl_importer.run_jsonl_import,
         "json": json_importer.run_json_import,
         "csv": csv_importer.run_csv_import,
