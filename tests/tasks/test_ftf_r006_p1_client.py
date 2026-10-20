@@ -55,6 +55,7 @@ from packages.integrations.argilla.client import (  # noqa: E402
     ArgillaUnavailableError,
     parse_strict_json,
 )
+from packages.security import outbound_guard as guard_mod  # noqa: E402
 from packages.security.outbound_guard import OutboundGuardError, guarded_stream_fetch  # noqa: E402
 from packages.security.url_policy import ConnectionPolicy, OutboundPolicyError  # noqa: E402
 
@@ -1321,8 +1322,78 @@ def test_r3_guard_deadline_directly() -> None:
             f"deadline={bad!r} is refused before any connection",
             raises(OutboundGuardError, fetch, deadline=bad),
         )
+    for bad in (0, -1.0, float("nan"), float("inf"), True, "1"):
+        _, text = _message_of(fetch, deadline=bad)
+        check(
+            "R006P1a-7",
+            f"deadline={bad!r} is refused as an invalid value, not as an expiry",
+            "positive finite" in text,
+        )
     check("R006P1a-7", "no refused deadline opened a connection", server.connections <= 1)
     server.close()
+
+    # the watchdog firing in the window after getresponse() but before the
+    # caller stops it must not hand back a half-killed stream, and the
+    # connection must be built with a timeout no longer than the deadline
+    quick = RawServer(
+        lambda _s, conn: conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}")
+    )
+    qpolicy = ConnectionPolicy(
+        name="raw",
+        allowed_schemes=frozenset({"http"}),
+        allowed_ports=frozenset({quick.port}),
+        explicit_private_allowlist=(ipaddress.ip_network("127.0.0.0/8"),),
+    )
+    qurl = f"http://127.0.0.1:{quick.port}/x"
+    real_prepare = guard_mod._prepare_pinned_connection
+    real_timer = guard_mod.threading.Timer
+    captured: dict[str, Any] = {}
+
+    class FakeTimer:
+        daemon = False
+
+        def __init__(self, _interval: float, fn: Any) -> None:
+            captured["fire"] = fn
+
+        def start(self) -> None:
+            pass
+
+        def cancel(self) -> None:
+            pass
+
+    def prepare(*a: Any, **k: Any) -> Any:
+        conn, path, host = real_prepare(*a, **k)
+        captured["conn"] = conn
+        real_get = conn.getresponse
+
+        def late_fire() -> Any:
+            resp = real_get()
+            captured["fire"]()  # the deadline expires right after the headers arrive
+            return resp
+
+        conn.getresponse = late_fire
+        return conn, path, host
+
+    guard_mod._prepare_pinned_connection = prepare
+    guard_mod.threading.Timer = FakeTimer  # type: ignore[misc,assignment]
+    try:
+        kind, text = _message_of(
+            guarded_stream_fetch, qurl, qpolicy, method="GET", timeout=10.0, deadline=0.5
+        )
+    finally:
+        guard_mod._prepare_pinned_connection = real_prepare
+        guard_mod.threading.Timer = real_timer  # type: ignore[misc]
+    check(
+        "R006P1a-7",
+        "a deadline that expires right after the headers arrive raises, not a dead stream",
+        kind is OutboundGuardError and "deadline" in text,
+    )
+    check(
+        "R006P1a-7",
+        "the connection timeout is capped at the deadline (10s timeout, 0.5s deadline)",
+        captured["conn"].timeout <= 0.5,
+    )
+    quick.close()
 
     # default (None) is unchanged: a prompt response still works, no thread left behind
     quick = RawServer(
