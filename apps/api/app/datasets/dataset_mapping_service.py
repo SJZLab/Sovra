@@ -176,7 +176,7 @@ def preview_dataset_mapping(
         expected_sha256=source.expected_sha256,
         limits=limits,
     )
-    _r = run_mapping_preview(
+    return run_mapping_preview(
         reader,
         mapping,
         verified_content_type=source.verified_content_type,
@@ -186,7 +186,3 @@ def preview_dataset_mapping(
         reveal=reveal,
         limits=limits,
     )
-    import logging
-
-    logging.getLogger("svc").warning("%r", _r)
-    return _r
