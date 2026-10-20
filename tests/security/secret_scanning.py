@@ -1234,6 +1234,70 @@ def _live_output_leaks(
     return [(rule, value) for rule, value in hits if value != positive_control_value]
 
 
+def _live_decisions(
+    captured: str,
+    booted: bool,
+    statuses: dict[str, int | None],
+    probes: list[tuple[str, str, dict[str, str], str, bytes | None, int]],
+    positive_control_value: str,
+    *,
+    target: str = "log_sample",
+) -> tuple[list[SecretFinding], list[ScenarioResult]]:
+    """Every decision the live lane makes, on what the app run produced: the
+    captured stdout+stderr text, whether it booted, and each probe's status.
+    Kept apart from the boot so a synthetic capture can prove every check can
+    fail (round 6): no startup line, a wrong status, a missing access line, no
+    positive control, or any other hit each turn a result red."""
+    results: list[ScenarioResult] = []
+    findings: list[SecretFinding] = []
+
+    def _result(check: str, path: str, passed: bool, method: str = "SCAN") -> None:
+        results.append(
+            ScenarioResult(
+                resource_kind=target,
+                check=check,
+                method=method,
+                path=path,
+                status=0 if passed else 1,
+                expected_denied=True,
+                passed=passed,
+            )
+        )
+
+    _result("live_app_boot", "<startup>", booted, method="GET")
+    if not booted:
+        return findings, results
+
+    _result("live_app_stderr_captured", "<stderr>", _STARTUP_LINE in captured)
+    access_lines = [line for line in captured.splitlines() if "HTTP/1.1" in line]
+    for name, _path, _headers, method, _body, expected in probes:
+        got = statuses.get(name)
+        _result(f"live_app_status_{name}", name, got == expected, method=method)
+        _result(
+            f"live_app_access_line[{name}]",
+            name,
+            _access_line_seen(name, access_lines),
+            method=method,
+        )
+
+    hits = scan_line(captured, include_canary=True)
+    control_found = ("canary_leaked", positive_control_value) in hits
+    leaks = _live_output_leaks(hits, positive_control_value)
+    _result("live_app_scan_detects_positive_control", "<positive-control>", control_found)
+    for rule, _value in leaks:
+        findings.append(
+            SecretFinding(
+                rule=rule,
+                target=target,
+                location="<live-app-output>",
+                value_sha256="",
+                blocking=True,
+            )
+        )
+    _result("live_app_output_clean", "<live-app-output>", not leaks)
+    return findings, results
+
+
 def scan_live_app_log_samples(
     root: Path, *, target: str = "log_sample"
 ) -> tuple[list[SecretFinding], list[ScenarioResult]]:
@@ -1273,9 +1337,8 @@ def scan_live_app_log_samples(
         )
     )
 
-    results: list[ScenarioResult] = []
-    findings: list[SecretFinding] = []
     statuses: dict[str, int | None] = {}
+    booted = False
 
     with tempfile.TemporaryDirectory() as tmp:
         out_path = Path(tmp) / "out.log"
@@ -1323,51 +1386,9 @@ def scan_live_app_log_samples(
                         proc.wait()
         captured = out_path.read_text(encoding="utf-8", errors="replace")
 
-    def _result(check: str, path: str, passed: bool, method: str = "SCAN") -> None:
-        results.append(
-            ScenarioResult(
-                resource_kind=target,
-                check=check,
-                method=method,
-                path=path,
-                status=0 if passed else 1,
-                expected_denied=True,
-                passed=passed,
-            )
-        )
-
-    _result("live_app_boot", "<startup>", booted, method="GET")
-    if not booted:
-        return findings, results
-
-    _result("live_app_stderr_captured", "<stderr>", _STARTUP_LINE in captured)
-    access_lines = [line for line in captured.splitlines() if "HTTP/1.1" in line]
-    for name, _path, _headers, method, _body, expected in probes:
-        got = statuses.get(name)
-        _result(f"live_app_status_{name}", name, got == expected, method=method)
-        _result(
-            f"live_app_access_line[{name}]",
-            name,
-            _access_line_seen(name, access_lines),
-            method=method,
-        )
-
-    hits = scan_line(captured, include_canary=True)
-    control_found = ("canary_leaked", positive_control.value) in hits
-    leaks = _live_output_leaks(hits, positive_control.value)
-    _result("live_app_scan_detects_positive_control", "<positive-control>", control_found)
-    for rule, _value in leaks:
-        findings.append(
-            SecretFinding(
-                rule=rule,
-                target=target,
-                location="<live-app-output>",
-                value_sha256="",
-                blocking=True,
-            )
-        )
-    _result("live_app_output_clean", "<live-app-output>", not leaks)
-    return findings, results
+    return _live_decisions(
+        captured, booted, statuses, probes, positive_control.value, target=target
+    )
 
 
 # ---------------------------------------------------------------------------
