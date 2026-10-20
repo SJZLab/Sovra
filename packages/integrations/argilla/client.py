@@ -72,6 +72,8 @@ __all__ = [
 MAX_RESPONSE_BYTES = 1 * 1024 * 1024
 MAX_PAGE_ITEMS = 10_000
 _READ_CHUNK = 64 * 1024
+_DIGITS = re.compile(r"[0-9]+")
+_CREATABLE_ROLES = frozenset({"annotator"})
 # 408 / 425 / 429 are transient by definition (request timeout, too early,
 # rate limited): the outcome is retryable, not a permanent refusal.
 _TRANSIENT_4XX = frozenset({408, 425, 429})
@@ -332,7 +334,9 @@ class ArgillaTransport:
             if not chunk:
                 body = b"".join(chunks)
                 declared = {k.lower(): v for k, v in stream.headers.items()}.get("content-length")
-                if declared is not None and declared.strip() != str(len(body)):
+                if declared is not None and (
+                    not _DIGITS.fullmatch(declared) or int(declared) != len(body)
+                ):
                     # `read1` reports a short body as plain EOF: a response
                     # cut off before its declared length is an unknown
                     # outcome, never a (possibly valid-looking) success.
@@ -459,8 +463,7 @@ class ArgillaClient:
         in plaintext -- the caller (`argilla_identity_store.py`) must send
         it straight to OpenBao and never persist or log it itself."""
         _require_username(username)
-        _require_role(role)
-        if role != "annotator":
+        if not isinstance(role, str) or role not in _CREATABLE_ROLES:
             # Review identities are annotators only; owner/admin are never
             # created by the Factory (they would out-privilege the sandbox).
             raise ArgillaRejectedError("only the annotator role may be created")
@@ -472,7 +475,7 @@ class ArgillaClient:
             body={"first_name": username, "username": username, "role": role, "password": password},
         )
         user = _user_of(created)
-        if user.role != "annotator":
+        if user.role not in _CREATABLE_ROLES:
             raise ArgillaRejectedError("Argilla created a user that is not an annotator")
         return user
 

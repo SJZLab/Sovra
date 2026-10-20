@@ -1132,6 +1132,118 @@ def test_r2_repr_and_shared_transport() -> None:
     stub.server.shutdown()
 
 
+def test_r2_mutation_kills() -> None:
+    stub = Stub()
+    c = stub.client()
+    for raw in (b"[]", b'"s"', b"1", b"null", b"true"):
+        check(
+            "R006P1a-4",
+            f"parse_strict_json refuses the non-object top level {raw!r} directly",
+            raises(ArgillaRejectedError, parse_strict_json, raw),
+        )
+    for role in ("Annotator", "ANNOTATOR", " annotator", "annotator "):
+        n = len(stub.seen)
+        check(
+            "R006P1a-1",
+            f"create_user role {role!r} is refused before any request",
+            raises(
+                ArgillaRejectedError,
+                c.create_user,
+                username="sovra-a",
+                role=role,
+                password="correct-horse-battery",
+            )
+            and len(stub.seen) == n,
+        )
+    check(
+        "R006P1a-1",
+        "a non-string role is refused as a rejection, not a crash",
+        raises(
+            ArgillaRejectedError,
+            c.create_user,
+            username="sovra-a",
+            role=5,
+            password="correct-horse-battery",
+        ),
+    )
+    for items in ({}, "", None, 5, {"a": 1}):
+        stub.reply(200, {"items": items})
+        check(
+            "R006P1a-4",
+            f"a user list whose items is {items!r} is rejected",
+            raises(ArgillaRejectedError, c.list_workspace_users, WORKSPACE["id"]),
+        )
+        stub.reply(200, {"items": items})
+        check(
+            "R006P1a-4",
+            f"a workspace list whose items is {items!r} is rejected",
+            raises(ArgillaRejectedError, c.list_workspaces_me),
+        )
+    # exactly MAX_RESPONSE_BYTES is accepted; one byte more is refused
+    prefix = b'{"pad": "'
+    suffix = b'"}'
+    exact = prefix + b"x" * (MAX_RESPONSE_BYTES - len(prefix) - len(suffix)) + suffix
+    check(
+        "R006P1a-3", "the fixture is exactly MAX_RESPONSE_BYTES", len(exact) == MAX_RESPONSE_BYTES
+    )
+    stub.reply(200, exact)
+    check(
+        "R006P1a-3",
+        "a body of exactly MAX_RESPONSE_BYTES is accepted",
+        len(c.get_status()["pad"]) > 0,
+    )
+    stub.reply(200, exact[:-2] + b"x" + suffix)
+    check(
+        "R006P1a-3",
+        "a body one byte over MAX_RESPONSE_BYTES is rejected",
+        raises(ArgillaRejectedError, c.get_status),
+    )
+    # a zero-padded Content-Length still equals the body: not a truncation
+    padded = RawServer(
+        lambda _s, conn: conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 02\r\n\r\n{}")
+    )
+    check(
+        "R006P1a-3",
+        "Content-Length: 02 on a 2-byte body is a normal success",
+        padded.client().get_status() == {},
+    )
+    padded.close()
+    junk = RawServer(
+        lambda _s, conn: conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 0x2\r\n\r\n{}")
+    )
+    kind, _ = _message_of(junk.client().get_status)
+    check(
+        "R006P1a-3", "a non-numeric Content-Length is Unavailable", kind is ArgillaUnavailableError
+    )
+    junk.close()
+    stub.server.shutdown()
+
+
+def test_r2_deadline_between_chunks_with_fake_clock() -> None:
+    """The deadline check itself (not the socket timeout): a clock that has
+    already passed the deadline must give the deadline error, and exactly
+    at the deadline counts as expired."""
+    import types
+
+    server = RawServer(
+        lambda _s, conn: conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}")
+    )
+    real = client_mod.time
+    try:
+        for offset, label in ((100.0, "past the deadline"), (2.0, "exactly at the deadline")):
+            ticks = iter([1000.0] + [1000.0 + offset] * 50)
+            client_mod.time = types.SimpleNamespace(monotonic=lambda it=ticks: next(it))  # type: ignore[assignment]
+            kind, text = _message_of(server.client(timeout=2).get_status)
+            check(
+                "R006P1a-3",
+                f"a clock {label} gives the call-deadline error",
+                kind is ArgillaUnavailableError and "call deadline" in text,
+            )
+    finally:
+        client_mod.time = real
+    server.close()
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
