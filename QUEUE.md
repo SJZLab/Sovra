@@ -9274,6 +9274,7 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
+- 2026-10-20 (FTF-1506, relay lane C): approve adding `vite@8.3.3` as an exact-pinned root devDependency in package.json. `dependency-scanning-integration` now fails every PR on npm:vite==8.3.0 GHSA-587h-7wmj-h5pm (HIGH); vite is only a peer of vitest 5.0.1, so neither `pnpm update` nor `pnpm.overrides` moves it. Until then #905 (and every other PR) cannot reach green ci-verdict.
 - 2026-10-20 (FTF-UX01, relay lane C): approve adding `@radix-ui/react-dialog@1.3.1` (+ optionally `@radix-ui/react-progress@1.2.1`) to apps/web/package.json, exact-pinned. §72.1 fixes Radix, but the session's dependency-install guard denied `pnpm add`, so the Dialog (focus trap + return) component is parked.
 - 2026-10-08: FTF-0616 (LLM judge) needs a real judge call through the org LiteLLM gateway for its acceptance clause: a CI secret holding a gateway virtual key, plus the approved judge model id. Until then that clause stays BLOCKED_EXTERNAL; the rest of FTF-0616 continues.
 - 2026-10-07: FTF-04A31 needs a private-repo test credential (or approval to use this repo with `github.token`). See Parked.
@@ -10827,6 +10828,9 @@ docs/spec-matrix.yaml. It never invents criteria.)
     - The 25 uncontracted route-verbs are listed as a contract gap.
 
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
+- **FTF-1506 vite HIGH advisory: PARKED (new devDependency needs owner), 2026-10-20T22:30Z.**
+  - What failed: dependency scan blocks on vite 8.3.0 GHSA-587h-7wmj-h5pm (fixed 8.3.3) and certifi 2026.7.22 GHSA-6q48-6c7w-9gw2 (fixed 2026.10.19). certifi bumped in this PR (uv.lock, 3 lines). vite: `pnpm update vite@8.3.3` resolved only rolldown bumps (vite is a vitest peer); `pnpm.overrides` left vite@8.3.0 (peer resolution).
+  - Routes: (1) owner approves exact-pinned root devDependency vite@8.3.3, relay adds it; (2) Control plane adds a reviewed policy exception; (3) bump vitest to a release whose peer resolution picks vite >=8.3.3.
 - **FTF-UX01 Dialog component: PARKED (new runtime dep install denied), 2026-10-20T15:30Z.**
   - What failed: `pnpm --filter @sovra/web add --save-exact @radix-ui/react-dialog@1.3.1 @radix-ui/react-progress@1.2.1` was denied by the session's untrusted-code-integration guard. Everything else in FTF-UX01 (tokens.css, Button, Field, ErrorSummary, StatusBadge, EmptyState, DataTable, Banner, Breadcrumbs, Pending) shipped in PR `relay/FTF-UX01-r1` with no new deps.
   - Tried: one install, not retried (no workaround attempted).
