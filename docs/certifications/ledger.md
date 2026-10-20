@@ -11913,3 +11913,44 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   (tests only): live-lane decision checks L1b/L2/L2b/L2c/L3/L4/L6/F15b GREEN, main() ignores live results, rule-set /
   shallow-clone / stale-baseline / non-AWS-blocking faults GREEN, 20 KB / 64 KB / CLI truncation GREEN, >4 KB base64
   run, .tgz and hex cap GREEN. Stopping rule set.
+
+## 2026-10-20T21:15Z — CERTIFIED (child slice): FTF-0904-F1; FTF-0904 requalified
+- **FTF-0904-F1: CERTIFIED (L2)** (round 6 under the stopping rule, tests only; PR #890, merge 51f8753fe8aa21a6105fb62d78b4e758921d1788, head f28a07b1).
+  Producer session_01Dz7cuaX6tTe4hwuhxHwBHS ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI: 78/78 success,
+  ci-verdict 118714998566; gate 118619223023 full matrix (2h27m) "FTF-0904 Log redaction tests: all checks passed",
+  W1 F1-F15 RED, FTF-0905 passed. Production byte-identical to round 5. Round-6 points: benign-split table generated
+  from _BENIGN_NAMES (32 words, 1,377 rows + count pin), MY11/MY12 in FAULTS and RED; the same rows through the real
+  logging path. Local full matrix 116/116 RED. Probes: exhaustive 0/62,496 text, 0/15,624 logging, non-ASCII 0/11,424,
+  5 logging forms x 8 threads 0 leaks, live uvicorn 1,386 requests 0 leaks. GREEN non-blocking: MY17, MY19, MY24
+  (hand-picked, production redacts). Advisory -> FTF-0904-F2: quoted values after credential names not redacted.
+- **FTF-0904: stays CERTIFIED**, evidence_hash -> 51f8753fe8aa21a6105fb62d78b4e758921d1788 (Law 15).
+
+## 2026-10-20T21:15Z — RETURNED: FTF-H011-P1 (r3), tests only; FTF-0501-F2 queued
+- **FTF-H011-P1: RETURNED** (child slice; round 3 → 4, tests only; PR #892, merge f7b5972a473c3ad887cc295fa96932b8513e9829,
+  head 67e515a6). Producer session_01PaNZJR2d9fNXB2LZBydoGX ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 78/78,
+  ci-verdict 118733247512; dataset-mapping-preview-integration 118660890587 "all checks passed" (with s3 outage
+  cycle); gate 118659584272 steps 90/91 success; mutation-gate success. Production change only
+  dataset_mapping_review.py (+49/-33). Closed: nested masking (whole-result whitelist over 900 fuzzed + 15 real rows),
+  F2/F2b/F6/F11/F15/F16, P4 tool-call/JSON-pointer/same-size-overwrite fixtures, importer-level differential. Return:
+  F14 (service socket), R16 (service eval), R18 (service content log) GREEN - hooks only on the pure path. Ruling:
+  the cp1256 fixture is waived for P1; the finalize-sniff gap (UTF-8-only, first 64 KiB) is queued as FTF-0501-F2.
+
+## 2026-10-20T21:15Z — RETURNED: FTF-1505 (r6), tests only — certifier of record session_016dKFHNZEopWerUhMGrQnLG
+- **FTF-1505: RETURNED** (round 6 → 7, tests only; PR #889, merge c6535af7fe3d5a782cef6de14789b80285731603, head
+  81390e41). Producer: the Control-plane session session_01QVznorVMjnmcttUhyDnoGR (owner-approved); certifier of
+  record: the separate cloud session session_016dKFHNZEopWerUhMGrQnLG (named in no commit) - this entry records its
+  verdict. CI: ci-verdict 118693089492 success; gate 118603397909 "FTF-1505 secret scanning tests: all checks
+  passed"; secret-scanning 118603398003 "10457 unit(s) ... 0 blocking". Local: 80/80 tests; real scan 10,469 units 0
+  blocking. Production sound; `_live_decisions` is a pure move called on the real capture. 57/67 faults RED. Return:
+  base64 run length cap {24,4096}, hex run length cap {16,512}, and three live call-site faults (expected
+  statuses, appended startup line, own capture) GREEN. Stopping rule set.
+
+## 2026-10-20T21:15Z — RETURNED: FTF-R006-P1a (r2)
+- **FTF-R006-P1a: RETURNED** (round 2 → 3; PR #894, merge 1ed91607fbc30a0fcf18ac94d0f6f9ae564791f7, head 39e7e748).
+  Producer session_017m65fZtR4NysZ28iWtV2zG (commit 7ac7a26a has no trailer - advisory) ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 78/78, ci-verdict 118751983405; gate 118652379970 step 111 "FTF-R006-P1 Argilla
+  client tests: all checks passed"; mutation-gate 138/138; local uncapped 197/197. Integration form unchanged (stdlib
+  REST adapter). Closed: round-1 points 1, 2, 4, 5, body-phase 3, P1b prep, both advisories. Return: header-phase
+  drip holds a call 302 s / >597 s at timeout=0.5; final 1xx unpinned (N3); provisioning key echoed in the role error
+  (KE9). Ruling: optional total `deadline` added additively to outbound_guard.guarded_stream_fetch (default None
+  unchanged; Law 15 requalification of the guard's suites). Stopping rule set.

@@ -10270,7 +10270,7 @@ FTF-0904:
   certification_state: CERTIFIED
   criticality: MUST
   description: Log redaction
-  evidence_hash: 5a0f708c29a61e7fe0fea3fc25ef838b7f5471df
+  evidence_hash: 51f8753fe8aa21a6105fb62d78b4e758921d1788
   implementation_state: IMPLEMENTED
   notes: >-
     WIRED 2026-10-14 via FTF-0904-W1 (child slice, CERTIFIED, PR #792 merge b4d401fc): create_app() calls
