@@ -2014,7 +2014,7 @@ def test_history_only_tar_gz_member_is_scanned() -> None:
     )
 
 
-def _fake_live_lane(blocking: bool = False):
+def _fake_live_lane(blocking: bool = False, failing: bool = False):
     def _lane(root: Path, **_kw: object) -> tuple[list[SecretFinding], list[ScenarioResult]]:
         findings = []
         if blocking:
@@ -2030,12 +2030,12 @@ def _fake_live_lane(blocking: bool = False):
         return findings, [
             ScenarioResult(
                 resource_kind="log_sample",
-                check="injected_for_test",
+                check="live_app_stderr_captured" if failing else "injected_for_test",
                 method="SCAN",
                 path="<injected-for-test>",
-                status=0,
+                status=1 if failing else 0,
                 expected_denied=True,
-                passed=True,
+                passed=not failing,
             )
         ]
 
@@ -2077,7 +2077,12 @@ def _failing_recall() -> list[ScenarioResult]:
 
 
 def _run_main(
-    root: Path, *, live_blocking: bool = False, failing_recall: bool = False
+    root: Path,
+    *,
+    live_blocking: bool = False,
+    live_failing: bool = False,
+    failing_recall: bool = False,
+    baseline: Path | None = None,
 ) -> tuple[bool, str]:
     """`main()` for real on `root` with an empty baseline; only the live app
     boot is replaced (it needs this repository's app, not `root`'s)."""
@@ -2086,13 +2091,13 @@ def _run_main(
     raised = False
     recall = _failing_recall if failing_recall else ss.scan_seeded_recall
     with (
-        _monkeypatch(ss, "scan_live_app_log_samples", _fake_live_lane(live_blocking)),
+        _monkeypatch(ss, "scan_live_app_log_samples", _fake_live_lane(live_blocking, live_failing)),
         _monkeypatch(ss, "scan_seeded_recall", recall),
         contextlib.redirect_stderr(stderr),
         contextlib.redirect_stdout(stdout),
     ):
         try:
-            ss.main(["--root", str(root), "--baseline", str(root / "no-baseline.yaml")])
+            ss.main(["--root", str(root), "--baseline", str(baseline or root / "no-baseline.yaml")])
         except SecretScanError as exc:
             raised = True
             stderr.write(f"\nraised: {exc}\n")
@@ -2186,6 +2191,368 @@ def test_main_decides_on_every_lane_and_every_completeness_check() -> None:
         "FTF-1505-F20b",
         "a tracked file the source lane never scanned makes main() raise",
         raised and "were never scanned" in out,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Round 6 (tests only): every live-lane decision, main() on live results, the
+# rule set, the history/baseline guards, lane truncation and the named
+# decode/archive cases, each pinned by a behavioural check that can fail.
+# ---------------------------------------------------------------------------
+
+_EXPECTED_RULES = (
+    "aws_access_key_id",
+    "aws_secret_access_key",
+    "bearer_or_basic_header",
+    "github_pat",
+    "github_token",
+    "gitlab_token",
+    "google_api_key",
+    "huggingface_token",
+    "jwt_shaped",
+    "openai_style_key",
+    "pem_private_key",
+    "quoted_secret_assignment",
+    "slack_token",
+    "slack_webhook",
+    "stripe_style_key",
+    "url_userinfo_password",
+)
+
+
+def _synthetic_live_run() -> tuple[str, dict[str, int | None], list, str]:
+    """What a correct live run produces, built by hand: uvicorn's startup line,
+    one redacted access line per probe (tagged like the real ones) and the
+    path-placed positive control printed verbatim."""
+    marker = ss.generate_canary()
+    marker_values = {
+        encoding: ss.encode_canary(marker, encoding)
+        for encoding in ("literal", "base64", "hex", "url")
+    }
+    control = ss.generate_canary().value
+    probes = ss._live_probes(marker_values, ss.fragment_canary(marker, 2), generate_seed_values())
+    probes.append(
+        ("positive_control", f"/no-such-route/positive_control/{control}", {}, "GET", None, 404)
+    )
+    lines = [f"INFO:     {ss._STARTUP_LINE}"]
+    statuses: dict[str, int | None] = {}
+    for name, _path, _headers, method, _body, expected in probes:
+        shown = (
+            f"/no-such-route/positive_control/{control}"
+            if name == "positive_control"
+            else f"/x?token=[REDACTED]&probe={name}"
+        )
+        lines.append(f'INFO:     127.0.0.1:5 - "{method} {shown} HTTP/1.1" {expected}')
+        statuses[name] = expected
+    return "\n".join(lines) + "\n", statuses, probes, control
+
+
+def _decide(captured: str, statuses: dict[str, int | None], probes: list, control: str):
+    findings, results = ss._live_decisions(captured, True, statuses, probes, control)
+    return findings, {r.check: r.passed for r in results}
+
+
+def test_live_lane_decisions_fail_on_synthetic_captures() -> None:
+    """L1b/L2/L3/L4/L6/F15b: the live lane's own decision code, run on a
+    hand-built capture. The correct capture passes every check; each single
+    defect below turns exactly the check that must catch it red."""
+    captured, statuses, probes, control = _synthetic_live_run()
+    findings, by = _decide(captured, statuses, probes, control)
+    check(
+        "FTF-1505-LIVE-DECIDE",
+        f"a correct synthetic capture passes every live check ({len(by)} checks)",
+        all(by.values()) and not findings and len(by) == 2 * len(probes) + 4,
+    )
+
+    no_startup = captured.replace(ss._STARTUP_LINE, "uvicorn running")
+    _, by = _decide(no_startup, statuses, probes, control)
+    check(
+        "FTF-1505-LIVE-DECIDE",
+        "L1b: a capture without uvicorn's startup line fails live_app_stderr_captured",
+        by["live_app_stderr_captured"] is False,
+    )
+
+    for name, wrong in (("callback_validation_422", 404), ("callback_rejected_400", 200)):
+        bad = dict(statuses, **{name: wrong})
+        _, by = _decide(captured, bad, probes, control)
+        check(
+            "FTF-1505-LIVE-DECIDE",
+            f"L2: {name} answering {wrong} (a response, but the wrong one) fails its status check",
+            by[f"live_app_status_{name}"] is False,
+        )
+    _, by = _decide(captured, dict(statuses, body_json=None), probes, control)
+    check(
+        "FTF-1505-LIVE-DECIDE",
+        "L2: a probe with no response at all fails its status check",
+        by["live_app_status_body_json"] is False,
+    )
+
+    missing = "\n".join(
+        line for line in captured.splitlines() if "probe=error_family_jwt_shaped " not in line
+    )
+    _, by = _decide(missing, statuses, probes, control)
+    check(
+        "FTF-1505-LIVE-DECIDE",
+        "L3: a probe whose access line is missing fails its live_app_access_line check",
+        by["live_app_access_line[error_family_jwt_shaped]"] is False
+        and by["live_app_access_line[family_jwt_shaped]"] is True,
+    )
+
+    no_control = captured.replace(control, "CANARY-REMOVED")
+    _, by = _decide(no_control, statuses, probes, control)
+    check(
+        "FTF-1505-LIVE-DECIDE",
+        "L4: a capture without the positive control fails live_app_scan_detects_positive_control",
+        by["live_app_scan_detects_positive_control"] is False,
+    )
+
+    for rule in ("canary_leaked", "aws_access_key_id", "jwt_shaped"):
+        leaked = captured + f"ERROR: request failed value={generate_seed_for_rule(rule)}\n"
+        findings, by = _decide(leaked, statuses, probes, control)
+        check(
+            "FTF-1505-LIVE-DECIDE",
+            f"L6/F15b: a {rule} leak beside the positive control fails live_app_output_clean "
+            "and is a blocking finding",
+            by["live_app_output_clean"] is False
+            and by["live_app_scan_detects_positive_control"] is True
+            and any(f.rule == rule and f.blocking for f in findings),
+        )
+
+    findings, results = ss._live_decisions(captured, False, statuses, probes, control)
+    check(
+        "FTF-1505-LIVE-DECIDE",
+        "a lane whose app never booted reports only a failed live_app_boot",
+        [(r.check, r.passed) for r in results] == [("live_app_boot", False)] and not findings,
+    )
+
+
+def test_live_probe_table_targets_the_unauthenticated_error_paths() -> None:
+    """L2b/L2c: the probes that must reach the OIDC callback's error paths do,
+    with the statuses those paths answer; re-pointing one at a 404 route (or
+    expecting 404 from it) turns this red even though the live run would still
+    see the status it was told to expect."""
+    marker = ss.generate_canary()
+    values = {e: ss.encode_canary(marker, e) for e in ("literal", "base64", "hex", "url")}
+    probes = ss._live_probes(values, ss.fragment_canary(marker, 2), generate_seed_values())
+    by_name = {name: (path, method, expected) for name, path, _h, method, _b, expected in probes}
+    path, method, expected = by_name["callback_validation_422"]
+    check(
+        "FTF-1505-LIVE-TABLE",
+        "callback_validation_422 hits /auth/callback with no code and expects 422",
+        path.startswith("/auth/callback?")
+        and "code=" not in path
+        and method == "GET"
+        and expected == 422,
+    )
+    path, method, expected = by_name["callback_rejected_400"]
+    check(
+        "FTF-1505-LIVE-TABLE",
+        "callback_rejected_400 hits /auth/callback with code and state and expects 400",
+        path.startswith("/auth/callback?code=") and "&state=" in path and expected == 400,
+    )
+    families = sorted(n[len("error_family_") :] for n in by_name if n.startswith("error_family_"))
+    check(
+        "FTF-1505-LIVE-TABLE",
+        "one error-path probe per rule family",
+        families == sorted(_EXPECTED_RULES),
+    )
+    check(
+        "FTF-1505-LIVE-TABLE",
+        "every error_family_* probe hits /auth/callback with its seed in `code` and expects 400",
+        all(
+            by_name[f"error_family_{r}"][0].startswith("/auth/callback?code=")
+            and by_name[f"error_family_{r}"][2] == 400
+            for r in families
+        ),
+    )
+    check(
+        "FTF-1505-LIVE-TABLE",
+        "every family_* probe hits a 404 route and expects 404",
+        all(
+            by_name[f"family_{r}"][0].startswith("/no-such-route/family_")
+            and by_name[f"family_{r}"][2] == 404
+            for r in families
+        ),
+    )
+
+
+def test_main_raises_when_a_live_result_fails() -> None:
+    """`main()` decides on the live lane's RESULTS, not only its findings: a
+    failed live check with no finding at all still makes it raise."""
+    raised, out = _run_main(_main_repo(), live_failing=True)
+    check(
+        "FTF-1505-MAIN",
+        "a failed live-lane check (no finding) makes main() raise naming it",
+        raised and "live_app_stderr_captured" in out,
+    )
+
+
+def test_rule_set_is_pinned() -> None:
+    """Removing a rule from the table makes its seeds, recall rows and probes
+    vanish with it, so nothing derived from the table can notice; the rule set
+    is pinned here against a fixed list instead."""
+    check(
+        "FTF-1505-RULES",
+        f"the scanner's rule set is exactly the reviewed 16 ({sorted(RULES)})",
+        sorted(RULES) == sorted(_EXPECTED_RULES) and len(RULES) == len(_EXPECTED_RULES),
+    )
+    seeds = generate_seed_values()
+    check(
+        "FTF-1505-RULES",
+        "every pinned rule has a generated seed that scan_line finds as that rule",
+        sorted(seeds) == sorted(_EXPECTED_RULES)
+        and all(any(rule == r for rule, _ in scan_line(f"value = {s}")) for r, s in seeds.items()),
+    )
+
+
+def test_history_lane_and_main_refuse_shallow_and_stale_baseline() -> None:
+    """The guards are pinned where they are called: scan_history itself refuses
+    a shallow clone, and main() itself refuses a baseline entry that matched
+    nothing this run."""
+    tmp = _build_temp_repo()
+    for i in range(2):
+        (tmp / "f.py").write_text(f"x = {i}\n", encoding="utf-8")
+        _run_git("add", "-A", cwd=tmp)
+        _run_git("commit", "-q", "-m", f"c{i}", cwd=tmp)
+    shallow = _mkdtemp("ftf1505_shallow_r6_")
+    subprocess.run(
+        ["git", "clone", "-q", "--depth", "1", f"file://{tmp}", str(shallow)],
+        check=True,
+        capture_output=True,
+    )
+    raised = False
+    try:
+        scan_history(shallow, {})
+    except SecretScanError as exc:
+        raised = "shallow" in str(exc)
+    check("FTF-1505-SHALLOW", "scan_history itself refuses a shallow clone", raised)
+
+    repo = _main_repo()
+    stale = repo / "stale-baseline.yaml"
+    stale.write_text(
+        "entries:\n"
+        f'  - fingerprint: "{"ab" * 32}"\n'
+        '    reason: "an entry that matches nothing"\n'
+        '    reviewed_by: "test"\n'
+        '    reviewed_on: "2026-10-20"\n',
+        encoding="utf-8",
+    )
+    raised, out = _run_main(repo, baseline=stale)
+    check(
+        "FTF-1505-STALE",
+        "main() itself raises on a baseline entry that matched nothing",
+        raised and "stale secret-scan baseline entr" in out,
+    )
+
+
+def test_main_blocks_on_every_rule_family_not_only_aws() -> None:
+    """A tracked secret of EVERY rule family is a blocking finding that makes
+    main() raise naming that rule (round 5 pinned only aws_access_key_id)."""
+    repo = _main_repo()
+    seeds = generate_seed_values()
+    (repo / "leaks").mkdir()
+    for rule, seed in seeds.items():
+        (repo / "leaks" / f"{rule}.txt").write_text(f"value = {seed}\n", encoding="utf-8")
+    _run_git("add", "-A", cwd=repo)
+    _run_git("commit", "-q", "-m", "one leak per family", cwd=repo)
+    raised, out = _run_main(repo)
+    missing = [r for r in seeds if f"] {r} at leaks/{r}.txt" not in out]
+    check(
+        "FTF-1505-MAIN",
+        f"every rule family's tracked seed is blocking in main() (not blocking: {missing})",
+        raised and not missing,
+    )
+
+
+def test_file_lanes_and_cli_scan_whole_long_lines_and_units() -> None:
+    """W2/W4 and the non-UTF-8 cap: a secret beyond 20 KB in one text line and
+    beyond 64 KB in one non-UTF-8 unit is found by scan_source and by
+    scan_history; a secret in a 40 KB UTF-8 line is found by the CLI."""
+    seed = generate_seed_for_rule("github_token")
+    long_line = ("lorem ipsum " * 2500) + f"value = {seed}\n"  # ~30 KB before the secret
+    binary = b"\xff\xfe" + (b"\x00\x81" * 40_000) + f" value = {seed} ".encode()  # ~80 KB
+    tmp = _build_temp_repo()
+    (tmp / "long.txt").write_text(long_line, encoding="utf-8")
+    (tmp / "blob.bin").write_bytes(binary)
+    _run_git("add", "-A", cwd=tmp)
+    _run_git("commit", "-q", "-m", "long units", cwd=tmp)
+    src, _ = scan_source(tmp, {})
+    for name in ("long.txt", "blob.bin"):
+        check(
+            "FTF-1505-LONG",
+            f"scan_source finds the secret at the end of {name}",
+            any(f.rule == "github_token" and f.location.startswith(name) for f in src),
+        )
+    (tmp / "long.txt").unlink()
+    (tmp / "blob.bin").unlink()
+    _run_git("add", "-A", cwd=tmp)
+    _run_git("commit", "-q", "-m", "removed", cwd=tmp)
+    hist, _ = scan_history(tmp, {})
+    for name in ("long.txt", "blob.bin"):
+        check(
+            "FTF-1505-LONG",
+            f"scan_history finds the secret at the end of history-only {name}",
+            any(f.rule == "github_token" and f.location.startswith(f"{name}@") for f in hist),
+        )
+    with tempfile.TemporaryDirectory() as d:
+        report = Path(d) / "report.json"
+        report.write_text('{"log": "' + ("x" * 40_000) + f' {seed}"}}\n', encoding="utf-8")
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                str(ROOT / "tests" / "security" / "secret_rules.py"),
+                str(report),
+            ],
+            capture_output=True,
+            text=True,
+        )
+    check(
+        "FTF-1505-LONG",
+        "the CLI finds a secret 40 KB into one UTF-8 line",
+        result.returncode == 1 and "github_token" in result.stderr,
+    )
+
+
+def test_long_base64_run_hex_after_many_runs_and_history_tgz() -> None:
+    """Point 1/2 named cases: a secret inside ONE base64 run longer than 4 KB;
+    a hex-wrapped secret after 3,000 other hex runs; a history-only .tgz member."""
+    import secrets as _secrets
+    import tarfile
+
+    seed = generate_seed_for_rule("github_token")
+    run = base64.b64encode(("a" * 5000 + f" token {seed}").encode()).decode()
+    check(
+        "FTF-1505-NO-CAP",
+        f"a secret inside one {len(run)}-char base64 run is found",
+        len(run) > 4096 and any(r == "github_token" and v == seed for r, v in scan_line(run)),
+    )
+    hex_noise = " ".join(_secrets.token_hex(12) for _ in range(3000))
+    hex_line = f"{hex_noise} {f'note {seed}'.encode().hex()}"
+    check(
+        "FTF-1505-NO-CAP",
+        "a hex-wrapped secret after 3,000 other hex runs on one line is found",
+        any(r == "github_token" and v == seed for r, v in scan_line(hex_line)),
+    )
+
+    tmp = _build_temp_repo()
+    payload = f"token = {seed}\n".encode()
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        info = tarfile.TarInfo("conf/app.ini")
+        info.size = len(payload)
+        tf.addfile(info, io.BytesIO(payload))
+    (tmp / "bundle.tgz").write_bytes(buf.getvalue())
+    _run_git("add", "-A", cwd=tmp)
+    _run_git("commit", "-q", "-m", "add tgz", cwd=tmp)
+    (tmp / "bundle.tgz").unlink()
+    _run_git("add", "-A", cwd=tmp)
+    _run_git("commit", "-q", "-m", "remove tgz", cwd=tmp)
+    findings, _ = scan_history(tmp, {})
+    check(
+        "FTF-1505-HISTORY-ARCHIVE",
+        "a secret inside a history-only .tgz member is found",
+        any(f.rule == "github_token" and "bundle.tgz@" in f.location for f in findings),
     )
 
 
@@ -2428,6 +2795,14 @@ def main() -> None:
     test_seeded_recall_covers_every_lane_and_can_fail()
     test_live_lane_helpers_cannot_pass_vacuously()
     test_history_only_tar_gz_member_is_scanned()
+    test_live_lane_decisions_fail_on_synthetic_captures()
+    test_live_probe_table_targets_the_unauthenticated_error_paths()
+    test_main_raises_when_a_live_result_fails()
+    test_rule_set_is_pinned()
+    test_history_lane_and_main_refuse_shallow_and_stale_baseline()
+    test_main_blocks_on_every_rule_family_not_only_aws()
+    test_file_lanes_and_cli_scan_whole_long_lines_and_units()
+    test_long_base64_run_hex_after_many_runs_and_history_tgz()
     test_main_decides_on_every_lane_and_every_completeness_check()
     test_artifact_lane_detects_a_canary()
     test_f27_aws_access_key_id_matches_both_akia_and_asia()
