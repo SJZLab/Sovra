@@ -123,7 +123,8 @@ def _two_words_changed(text: str) -> str:
 
 
 _UNRELATED_TEXT = (
-    "completely unrelated sentence about weather forecasts and traffic patterns in the city today"
+    "completely unrelated sentence about weather forecasts and traffic "
+    "patterns in the city today"
 )
 
 

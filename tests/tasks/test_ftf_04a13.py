@@ -424,7 +424,7 @@ def test_unrelated_config_key_is_not_treated_as_prompt_source() -> None:
     evidence = run_prompt_source_discovery([], config_documents=[document])
     check(
         "FTF-04A13",
-        "an unrelated config key is never treated as a prompt-source candidate",
+        "an unrelated config key is never treated as a prompt-source " "candidate",
         evidence.candidates == (),
     )
 
@@ -463,7 +463,7 @@ def test_summary_counts_are_accurate() -> None:
     )
     check(
         "FTF-04A13",
-        "the real aggregate resolved_count matches the real per-candidate outcomes",
+        "the real aggregate resolved_count matches the real per-candidate " "outcomes",
         evidence.resolved_count == 1 and len(evidence.candidates) == 2,
     )
 

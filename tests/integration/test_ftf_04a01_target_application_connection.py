@@ -559,7 +559,7 @@ def _run_checks(migration_url: str, app_password: str) -> None:
         )
         check(
             "FTF-04A01",
-            "a real local_repository connection (no credential, no URL) create succeeds (201)",
+            "a real local_repository connection (no credential, no URL) " "create succeeds (201)",
             r.status == 201,
         )
         check(
@@ -650,7 +650,8 @@ def _run_checks(migration_url: str, app_password: str) -> None:
         )
         check(
             "FTF-04A01",
-            "the same connection is genuinely reachable through its own real project's URL (200)",
+            "the same connection is genuinely reachable through its own "
+            "real project's URL (200)",
             r.status == 200,
         )
 

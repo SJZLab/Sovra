@@ -379,7 +379,7 @@ def test_to_policy_round_trips_without_a_database() -> None:
     policy = store._to_policy(record)
     check(
         "FTF-1206A",
-        "_to_policy round-trips every field into a real, validated OrganizationGatewayPolicy",
+        "_to_policy round-trips every field into a real, validated " "OrganizationGatewayPolicy",
         isinstance(policy, OrganizationGatewayPolicy)
         and policy.allowed_registration_namespaces
         == frozenset({"factory-candidates", "factory-staging"})

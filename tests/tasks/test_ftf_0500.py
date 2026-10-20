@@ -299,7 +299,8 @@ def test_apply_edits_refuses_to_touch_a_revoked_connection() -> None:
     connection = _make_connection(connection_status="revoked")
     check(
         "FTF-0500",
-        "editing an already-revoked connection is refused -- a revoked source is a closed record",
+        "editing an already-revoked connection is refused -- a revoked source "
+        "is a closed record",
         _rejects(
             apply_edits,
             connection,
@@ -335,7 +336,7 @@ def test_apply_edits_applies_a_real_subset() -> None:
     )
     check(
         "FTF-0500",
-        "allowed_purposes is genuinely re-granted (this task's own real re-authorization path)",
+        "allowed_purposes is genuinely re-granted (this task's own real " "re-authorization path)",
         connection.allowed_purposes_json == ["held_out_evaluation"],
     )
     check(

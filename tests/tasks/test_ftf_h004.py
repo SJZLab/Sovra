@@ -569,7 +569,8 @@ def main() -> None:
 
     if FAILURES:
         print(
-            f"FTF-H004 authorized LiteLLM catalog and revocation semantics: {len(FAILURES)} failed"
+            f"FTF-H004 authorized LiteLLM catalog and revocation semantics: "
+            f"{len(FAILURES)} failed"
         )
         for failure in FAILURES:
             print(f"  {failure}")

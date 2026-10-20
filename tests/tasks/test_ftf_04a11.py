@@ -222,7 +222,7 @@ def test_malformed_json_does_not_raise() -> None:
     document = _only_document(evidence, "config/app.json")
     check(
         "FTF-04A11",
-        "malformed JSON is caught and disclosed as unresolved, never raised out of this worker",
+        "malformed JSON is caught and disclosed as unresolved, never raised " "out of this worker",
         document.resolved is False and document.reason == "malformed_document",
     )
 
@@ -233,7 +233,7 @@ def test_malformed_toml_does_not_raise() -> None:
     document = _only_document(evidence, "config/app.toml")
     check(
         "FTF-04A11",
-        "malformed TOML is caught and disclosed as unresolved, never raised out of this worker",
+        "malformed TOML is caught and disclosed as unresolved, never raised " "out of this worker",
         document.resolved is False and document.reason == "malformed_document",
     )
 
@@ -244,7 +244,7 @@ def test_malformed_yaml_does_not_raise() -> None:
     document = _only_document(evidence, "config/app.yaml")
     check(
         "FTF-04A11",
-        "malformed YAML is caught and disclosed as unresolved, never raised out of this worker",
+        "malformed YAML is caught and disclosed as unresolved, never raised " "out of this worker",
         document.resolved is False and document.reason == "malformed_document",
     )
 

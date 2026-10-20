@@ -144,7 +144,8 @@ def _post(
 
 
 _PATH = (
-    f"/api/v1/organizations/{_ORG_ID}/projects/{_PROJECT_ID}/target-connections/github-repositories"
+    f"/api/v1/organizations/{_ORG_ID}/projects/{_PROJECT_ID}/target-connections"
+    "/github-repositories"
 )
 
 
@@ -203,7 +204,8 @@ def test_organization_admin_reaches_the_session_layer() -> None:
         )
         check(
             "FTF-04A03",
-            "organization_admin passes the role gate and reaches the session layer (never 401/403)",
+            "organization_admin passes the role gate and reaches the session layer "
+            "(never 401/403)",
             result.status not in (401, 403),
         )
         check(

@@ -758,7 +758,7 @@ def main() -> None:
             ("no tenant context", None),
             (
                 "empty-string tenant context",
-                "SELECT set_config('app.current_organization_id', '', true)",
+                "SELECT set_config(" "'app.current_organization_id', '', true)",
             ),
         ):
             fresh_engine = (

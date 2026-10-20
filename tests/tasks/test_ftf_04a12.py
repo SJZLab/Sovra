@@ -514,7 +514,8 @@ def test_no_inputs_produces_empty_evidence() -> None:
     evidence = discover_current_model_bindings()
     check(
         "FTF-04A12",
-        "no upstream evidence at all produces empty, honest evidence, never a fabricated candidate",
+        "no upstream evidence at all produces empty, honest evidence, never a "
+        "fabricated candidate",
         evidence.candidates == ()
         and evidence.resolved_count == 0
         and evidence.gateway_confirmed_count == 0,

@@ -257,7 +257,8 @@ def test_happy_path_resolves_and_verifies_real_object() -> None:
     )
     check(
         "FTF-0303",
-        "a plain single-part ETag is disclosed as looking like a content hash (informational only)",
+        "a plain single-part ETag is disclosed as looking like a content hash (informational "
+        "only)",
         result.etag_looks_like_content_hash is True,
     )
 
@@ -345,7 +346,8 @@ def test_cross_tenant_prefix_rejects_sibling_tenant_string_collision() -> None:
     )
     check(
         "FTF-0303",
-        "the sibling-tenant-string-collision check is applied before any network request is made",
+        "the sibling-tenant-string-collision check is applied before any network request is "
+        "made",
         len(REQUEST_LOG) == before,
     )
 

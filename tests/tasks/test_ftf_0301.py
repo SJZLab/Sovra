@@ -552,7 +552,7 @@ def test_serialize_reports_license_and_status_fields() -> None:
     body = _serialize(artifact)
     check(
         "FTF-0301",
-        "the serialized response carries every real field this task's own domain model owns",
+        "the serialized response carries every real field this task's own " "domain model owns",
         {
             "id",
             "organization_id",
@@ -719,7 +719,8 @@ def test_evaluator_can_read_but_not_write() -> None:
         )
         check(
             "FTF-0301",
-            "an evaluator is denied create (403) -- write is ml_engineer/organization_admin only",
+            "an evaluator is denied create (403) -- write is ml_engineer/"
+            "organization_admin only",
             result.status == 403,
         )
         check(

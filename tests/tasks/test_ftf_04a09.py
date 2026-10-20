@@ -81,7 +81,9 @@ def test_entrypoint_detected_from_bare_litellm_import() -> None:
 
 
 def test_entrypoint_detected_from_aliased_module_import() -> None:
-    content = b'import litellm as ll\n\ndef handle_request():\n    ll.acompletion(model="gpt-4o")\n'
+    content = (
+        b"import litellm as ll\n\ndef handle_request():\n" b'    ll.acompletion(model="gpt-4o")\n'
+    )
     evidence = run_python_agent_config_tool_discovery([_ref("src/agent.py", content)])
     check(
         "FTF-04A09",
@@ -94,7 +96,8 @@ def test_entrypoint_detected_from_aliased_module_import() -> None:
 
 def test_entrypoint_detected_from_from_import() -> None:
     content = (
-        b'from litellm import completion\n\ndef handle_request():\n    completion(model="gpt-4o")\n'
+        b"from litellm import completion\n\ndef handle_request():\n"
+        b'    completion(model="gpt-4o")\n'
     )
     evidence = run_python_agent_config_tool_discovery([_ref("src/agent.py", content)])
     check(
@@ -350,7 +353,8 @@ def test_oversized_file_is_skipped_not_read() -> None:
     )
     check(
         "FTF-04A09",
-        "a file over max_file_bytes is never read at all (its own read_content is never invoked)",
+        "a file over max_file_bytes is never read at all (its own read_content is "
+        "never invoked)",
         read_calls == [] and evidence.files_skipped_oversized == 1 and evidence.entrypoints == (),
     )
 

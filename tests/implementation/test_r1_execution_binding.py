@@ -288,7 +288,8 @@ def test_openhands_claim_without_run_rejected():
     result = validate_receipt(receipt)
     check(
         "FTF-R014",
-        "claimed OpenHands qualification without OpenHands actually selected and run is rejected",
+        "claimed OpenHands qualification without OpenHands actually selected and run "
+        "is rejected",
         result.status is GateStatus.FAIL,
     )
 
