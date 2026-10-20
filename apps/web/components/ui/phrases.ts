@@ -1,0 +1,28 @@
+/** Standard system phrases in both languages (CLAUDE.md "Do without asking"; UX_STANDARD.md §3). */
+export type Locale = "en" | "ar";
+
+export const PHRASES = {
+  abandonDraft: { en: "Abandon draft", ar: "تجاهل المسودة" },
+  keepDraft: { en: "Keep draft", ar: "الاحتفاظ بالمسودة" },
+  abandonConfirmBody: {
+    en: "Abandon this draft? The partly uploaded file is discarded and a new upload starts from the beginning. This cannot be undone.",
+    ar: "هل تريد تجاهل هذه المسودة؟ سيتم التخلص من الملف المرفوع جزئيًا ويبدأ رفع جديد من البداية. لا يمكن التراجع عن ذلك.",
+  },
+  noConnectionsTitle: {
+    en: "No dataset source connections yet",
+    ar: "لا توجد اتصالات بمصادر البيانات بعد",
+  },
+  noConnectionsWhy: {
+    en: "A connection tells Sovra where a dataset may be read from. Create one below to begin.",
+    ar: "يحدد الاتصال المكان الذي يمكن قراءة مجموعة البيانات منه. أنشئ اتصالًا أدناه للبدء.",
+  },
+  uploadProgress: { en: "Upload progress", ar: "تقدم الرفع" },
+} as const satisfies Record<string, Record<Locale, string>>;
+
+export function phrase(key: keyof typeof PHRASES, locale: Locale = "en"): string {
+  return PHRASES[key][locale];
+}
+
+export function dirFor(locale: Locale): "ltr" | "rtl" {
+  return locale === "ar" ? "rtl" : "ltr";
+}
