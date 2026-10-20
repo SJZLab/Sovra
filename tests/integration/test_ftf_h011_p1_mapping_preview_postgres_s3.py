@@ -644,7 +644,7 @@ def main() -> None:
     )
 
     # ---- I10: cp1256 ';' CSV, Arabic header on the third record --------------------------
-    arabic_csv = "ملاحظة;سطر\nأخرى;سطر\nسؤال;جواب;سري\nمرحبا;عالم;١٢٣\n".encode("cp1256")
+    arabic_csv = "ملاحظة;سطر\nأخرى;سطر\nسؤال;جواب;سري\nمرحبا;عالم;123\n".encode("cp1256")
     arabic_mapping = ic.mapping_from_object(
         {
             "shape": "prompt_completion",
@@ -667,7 +667,7 @@ def main() -> None:
         f"({arabic_preview.state}/{arabic_preview.failure_code})",
         arabic_preview.state == "completed"
         and arabic_preview.rows[0].outcome == "accepted"
-        and arabic_preview.rows[0].raw_row == {"سؤال": "مرحبا", "جواب": "عالم", "سري": "١٢٣"},
+        and arabic_preview.rows[0].raw_row == {"سؤال": "مرحبا", "جواب": "عالم", "سري": "123"},
     )
 
     # ---- I11: JSON container pointer -----------------------------------------------------
