@@ -71,12 +71,14 @@ import base64
 import contextlib
 import io
 import logging
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
@@ -2556,6 +2558,119 @@ def test_long_base64_run_hex_after_many_runs_and_history_tgz() -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Round 7 (tests only): long single base64/hex runs at every alignment, and the
+# real live lane's call site (observed statuses, the real uvicorn capture).
+# ---------------------------------------------------------------------------
+
+
+def test_secret_straddling_base64_run_length_boundaries_is_found() -> None:
+    """One base64 run far longer than 4 KB: a secret whose encoding starts at
+    every char offset across the 4,096 and 8,192 boundaries (every alignment
+    mod 4) is found. A regex length cap on the run splits it there and drops
+    the straddling cases."""
+    seed = generate_seed_for_rule("github_token")
+    missed: list[int] = []
+    checked = 0
+    for boundary in (4096, 8192):
+        first = (boundary * 3) // 4 - 64
+        for filler in range(first, first + 72):
+            raw = b"a" * filler + f" token {seed} ".encode() + b"a" * 3000
+            run = base64.b64encode(raw).decode()
+            start = (filler * 4) // 3
+            if not (boundary - 120 <= start <= boundary + 8):
+                continue
+            checked += 1
+            if not any(r == "github_token" and v == seed for r, v in scan_line(run)):
+                missed.append(start)
+    check(
+        "FTF-1505-NO-CAP",
+        f"a secret straddling 4,096/8,192 chars inside one base64 run is found at all "
+        f"{checked} offsets (missed at {missed[:5]})",
+        checked >= 100 and not missed,
+    )
+
+
+def test_secret_deep_inside_one_long_hex_run_is_found() -> None:
+    """One hex run longer than 4 KB (and 60 KB): a hex-wrapped secret deep
+    inside it is found. A length cap on the hex-run regex finds no run at all
+    once the run is longer than the cap."""
+    seed = generate_seed_for_rule("github_token")
+    for before in (340, 3000, 30000):
+        raw = b"a" * before + f" note {seed} ".encode() + b"a" * 200
+        run = raw.hex()
+        check(
+            "FTF-1505-NO-CAP",
+            f"a secret {2 * before} hex chars into one {len(run)}-char hex run is found",
+            len(run) > 600 and any(r == "github_token" and v == seed for r, v in scan_line(run)),
+        )
+
+
+def test_real_live_lane_decides_on_observed_statuses_and_the_real_capture() -> None:
+    """LIVE-CALLSITE, on real boots: (a) an extra probe expecting a status the
+    app never returns (418) fails, so the statuses handed to the decisions are
+    the ones observed, never the expected ones; (b) the capture handed to
+    `_live_decisions` is uvicorn's real output (its own process/port lines);
+    (c) with uvicorn's stderr dropped, the startup check fails, so nothing
+    adds the startup line on uvicorn's behalf."""
+    seen: dict[str, Any] = {}
+    real_decisions = ss._live_decisions
+
+    def _spy(captured, booted, statuses, probes, control, **kw):
+        seen["captured"] = captured
+        seen["statuses"] = dict(statuses)
+        return real_decisions(captured, booted, statuses, probes, control, **kw)
+
+    real_probes = ss._live_probes
+
+    def _probes_plus_teapot(*a, **kw):
+        return real_probes(*a, **kw) + [
+            ("expect_418_never", "/no-such-route/expect_418_never", {}, "GET", None, 418)
+        ]
+
+    with (
+        _monkeypatch(ss, "_live_decisions", _spy),
+        _monkeypatch(ss, "_live_probes", _probes_plus_teapot),
+    ):
+        _findings, results = ss.scan_live_app_log_samples(ROOT)
+    by = {r.check: r.passed for r in results}
+    check(
+        "FTF-1505-LIVE-CALLSITE",
+        "a probe expecting 418 (never returned) fails its status check on a real boot",
+        by.get("live_app_status_expect_418_never") is False
+        and seen.get("statuses", {}).get("expect_418_never") == 404,
+    )
+    others = [k for k, v in by.items() if k.startswith("live_app_status_") and not v]
+    check(
+        "FTF-1505-LIVE-CALLSITE",
+        f"every other probe's observed status matches (failed: {others})",
+        others == ["live_app_status_expect_418_never"],
+    )
+    captured = str(seen.get("captured", ""))
+    check(
+        "FTF-1505-LIVE-CALLSITE",
+        "the capture handed to _live_decisions is uvicorn's own output",
+        bool(re.search(r"Started server process \[\d+\]", captured))
+        and "Waiting for application startup." in captured
+        and 'GET /no-such-route/expect_418_never HTTP/1.1" 404' in captured,
+    )
+
+    real_popen = ss.subprocess.Popen
+
+    def _popen_without_stderr(*a, **kw):
+        kw["stderr"] = ss.subprocess.DEVNULL
+        return real_popen(*a, **kw)
+
+    with _monkeypatch(ss.subprocess, "Popen", _popen_without_stderr):
+        _f2, results2 = ss.scan_live_app_log_samples(ROOT)
+    by2 = {r.check: r.passed for r in results2}
+    check(
+        "FTF-1505-LIVE-CALLSITE",
+        "with uvicorn's stderr dropped the app still boots and live_app_stderr_captured fails",
+        by2.get("live_app_boot") is True and by2.get("live_app_stderr_captured") is False,
+    )
+
+
 def test_artifact_lane_detects_a_canary() -> None:
     """F21: the artifact lane must apply the FTF-0905 canary rule."""
     tmp = _build_temp_repo()
@@ -2803,6 +2918,9 @@ def main() -> None:
     test_main_blocks_on_every_rule_family_not_only_aws()
     test_file_lanes_and_cli_scan_whole_long_lines_and_units()
     test_long_base64_run_hex_after_many_runs_and_history_tgz()
+    test_secret_straddling_base64_run_length_boundaries_is_found()
+    test_secret_deep_inside_one_long_hex_run_is_found()
+    test_real_live_lane_decides_on_observed_statuses_and_the_real_capture()
     test_main_decides_on_every_lane_and_every_completeness_check()
     test_artifact_lane_detects_a_canary()
     test_f27_aws_access_key_id_matches_both_akia_and_asia()
