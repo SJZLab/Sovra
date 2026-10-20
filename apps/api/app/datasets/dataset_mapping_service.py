@@ -19,6 +19,13 @@ the one place that holds everything a preview needs to be *authorized*, not mere
   decided from the connection's own `security_classification` before calling either function
   here.
 
+TOOL-VALIDATOR: `preview_dataset_mapping` builds `tool_schemas` itself, live, from FTF-0404's
+own `list_tool_definitions` -- never accepted from a caller, which would let a stale or
+outright forged schema decide whether a tool-call row validates. FTF-0405's own
+`validate_instance` is passed straight through as `tool_argument_validator`; without it every
+tool-call row is rejected `canonical_schema_invalid` regardless of whether its own arguments
+are genuinely valid, making a tool-call-bearing source impossible to preview meaningfully.
+
 Scope: read-only, exactly as the task's own `database_changes` clause says ("Consume frozen
 contract"). Neither function here writes a row; a `MappingSpec` is proposed and approved by
 FTF-H011-P2/P3, not here. `proving_symbol` stays blank -- FTF-H011-P3 is the first live route to
@@ -28,7 +35,6 @@ call this module.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping
 
 from sqlalchemy.orm import Session
 from workers.data.dataset_mapping_review import (
@@ -48,8 +54,22 @@ from app.datasets.dataset_object_source import (
 from app.datasets.dataset_source_connection_crud import authorize_dataset_source_purpose
 from app.datasets.dataset_upload_store import Dataset, get_dataset, get_upload_session
 from app.db.tenant_context import TenantContext
+from app.services.json_schema_tool_validation import validate_instance
+from app.tools.tool_definition_crud import list_tool_definitions
 
 __all__ = ["preview_dataset_mapping", "probe_dataset_source"]
+
+
+def _live_tool_schemas(
+    session: Session, context: TenantContext, project_id: uuid.UUID
+) -> dict[str, dict[str, object]]:
+    """TOOL-VALIDATOR: the project's *current* tool definitions, read live
+    (never a caller-supplied override) -- the exact set `validate_instance`
+    below validates every tool-call row's arguments against."""
+    return {
+        definition.name: dict(definition.input_schema_json)
+        for definition in list_tool_definitions(session, context, project_id)
+    }
 
 
 def _authorize_and_open(
@@ -136,11 +156,12 @@ def preview_dataset_mapping(
     include_held_out: bool,
     storage: DatasetObjectStorage,
     mapping: ImportMapping,
-    tool_schemas: Mapping[str, Mapping[str, object]] | None,
     reveal: bool,
     limits: ImportLimits = PREVIEW_LIMITS,
 ) -> MappingPreviewResult:
-    """Previews a real, already-parsed `MappingSpec` against a real dataset's real bytes."""
+    """Previews a real, already-parsed `MappingSpec` against a real dataset's real bytes.
+    `tool_schemas` is never a caller argument (TOOL-VALIDATOR): it is always this project's own
+    live tool definitions, read fresh on every call."""
     _dataset, source = _authorize_and_open(
         session,
         context,
@@ -160,7 +181,8 @@ def preview_dataset_mapping(
         mapping,
         verified_content_type=source.verified_content_type,
         dataset_sha256=source.expected_sha256,
-        tool_schemas=tool_schemas,
+        tool_schemas=_live_tool_schemas(session, context, project_id),
+        tool_argument_validator=validate_instance,
         reveal=reveal,
         limits=limits,
     )

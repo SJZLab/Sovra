@@ -52,6 +52,7 @@ Run directly: python3 tests/integration/test_ftf_0906_egress_verification.py
 from __future__ import annotations
 
 import atexit
+import ipaddress
 import logging
 import shutil
 import socket
@@ -69,7 +70,9 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from packages.security.canary_secret_generator import (  # noqa: E402
+    ENCODINGS,
     CanaryLeakedError,
+    CanaryMarker,
     CanaryPlacementLedger,
     PlacementRecord,
     encode_canary,
@@ -89,6 +92,7 @@ from packages.security.egress_capture_verification import (  # noqa: E402
 )
 from packages.security.log_redaction import attach_sink, install_redaction  # noqa: E402
 from packages.security.outbound_guard import (  # noqa: E402
+    GuardedResponse,
     OutboundGuardError,
     guarded_fetch,
 )
@@ -141,6 +145,12 @@ def _generate_trusted_server_cert() -> tuple[Path, Path]:
             str(ca_crt),
             "-subj",
             "/CN=FTF-0906 Test CA",
+            # Python 3.13's default verification context is strict: a CA
+            # without basicConstraints/keyUsage is refused outright.
+            "-addext",
+            "basicConstraints=critical,CA:TRUE",
+            "-addext",
+            "keyUsage=critical,keyCertSign,cRLSign",
         ]
     )
     _run_openssl(["genrsa", "-out", str(leaf_key), "2048"])
@@ -343,6 +353,85 @@ if _PORT_B_BACKEND is not None:
     atexit.register(_RELAY.stop)
 
 
+def _request_bytes(request: dict[str, object]) -> bytes:
+    """The exact bytes a sink really received: request line, every real
+    header and the body -- what a downstream log scraper or packet
+    inspector at the controlled destination would actually see."""
+    headers = request["headers"]
+    assert isinstance(headers, dict)
+    lines = "".join(f"{name}: {value}\r\n" for name, value in headers.items())
+    body = request["body"]
+    assert isinstance(body, bytes)
+    return f"{request['method']} {request['path']} HTTP/1.1\r\n{lines}\r\n".encode() + body
+
+
+def _scan(data: bytes, marker: CanaryMarker, sink: str, encodings: tuple[str, ...]) -> bool:
+    """A REAL scan of `data` (never a typed-in claim): True when the canary
+    is recovered in any declared encoding (the ledger's own fail-closed
+    CanaryLeakedError is the positive result)."""
+    ledger = CanaryPlacementLedger({(sink, encoding) for encoding in encodings})
+    placements = []
+    for encoding in encodings:
+        placement = PlacementRecord(marker.canary_id, sink, encoding, "integration-test")
+        ledger.record_placement(placement)
+        placements.append(placement)
+    try:
+        found = scan_store_for_canaries(data, {marker.canary_id: marker}, tuple(placements), ledger)
+    except CanaryLeakedError:
+        return True
+    return bool(found)
+
+
+def _scan_store_clean(
+    data: bytes, marker: CanaryMarker, sink: str, what: str
+) -> PlaintextInspection:
+    """Scan a store that must stay clean under EVERY FTF-0905 encoding and
+    prove the ledger's declared coverage is complete (assert_leak_test_
+    complete) -- the inspection's canary_found is the real scan result."""
+    ledger = CanaryPlacementLedger({(sink, encoding) for encoding in ENCODINGS})
+    placements = []
+    for encoding in ENCODINGS:
+        placement = PlacementRecord(marker.canary_id, sink, encoding, "integration-test")
+        ledger.record_placement(placement)
+        placements.append(placement)
+    leaked = False
+    try:
+        found = scan_store_for_canaries(data, {marker.canary_id: marker}, tuple(placements), ledger)
+        leaked = bool(found)
+    except CanaryLeakedError:
+        leaked = True
+    try:
+        ledger.assert_leak_test_complete()
+        complete = True
+    except Exception:
+        complete = False
+    check("FTF-0906-ACC1", f"the {what} stays clean of the canary under every encoding", not leaked)
+    check(
+        "FTF-0906-ACC1",
+        f"the {what} ledger's declared coverage is really complete (assert_leak_test_complete)",
+        complete,
+    )
+    store = {"trace": "application_log", "error_path": "error_path", "artifact": "artifact"}[sink]
+    return PlaintextInspection(store, what, None, True, decrypted=False, canary_found=leaked)
+
+
+def _guard_flow(
+    url: str, policy: ConnectionPolicy, **kwargs: object
+) -> tuple[GuardedResponse | None, str, str, str]:
+    """Run one flow through the real guard and take the enforcement decision
+    and client outcome from what the guard actually did: a policy refusal
+    (OutboundPolicyError) is a deny; a connection failure AFTER the policy
+    passed (OutboundGuardError) is NOT a deny -- the policy allowed it and
+    the dial failed. Returns (response, decision, detail, client_outcome)."""
+    try:
+        response = guarded_fetch(url, policy, **kwargs)  # type: ignore[arg-type]
+    except OutboundPolicyError as exc:
+        return None, "deny", f"{type(exc).__name__}: {exc}", "refused"
+    except OutboundGuardError as exc:
+        return None, "allow", f"{type(exc).__name__}: {exc}", "reset"
+    return response, "allow", "policy_allowed", "connected"
+
+
 def main() -> None:
     if not _CA_AVAILABLE or _RELAY is None:
         # SKIP-EXIT-0: a missing openssl/update-ca-certificates/sudo means
@@ -361,11 +450,20 @@ def main() -> None:
         )
         sys.exit(1)
 
+    # Ports 80 and _PORT_C are listed on purpose: flows C and D must be
+    # refused by the rule they are meant to exercise (the explicit private
+    # allowlist for C, the unconditional cloud-metadata rule for D), never
+    # incidentally by the port rule that runs first. D's address is even
+    # placed on the explicit allowlist: only the H006 metadata rule can
+    # still deny it.
     policy = ConnectionPolicy(
         name="ftf-0906-test",
         allowed_schemes=frozenset({"http", "https"}),
-        allowed_ports=frozenset({_PORT_A, _RELAY.port}),
-        explicit_private_allowlist=(__import__("ipaddress").ip_network("127.0.0.1/32"),),
+        allowed_ports=frozenset({_PORT_A, _PORT_C, _RELAY.port, 80}),
+        explicit_private_allowlist=(
+            ipaddress.ip_network("127.0.0.1/32"),
+            ipaddress.ip_network("169.254.169.254/32"),
+        ),
     )
 
     marker = generate_canary()
@@ -380,55 +478,44 @@ def main() -> None:
     }
     body = b'{"payload":"ordinary, non-secret request body"}'
 
-    # --- Flow A: allowed, plaintext HTTP -----------------------------------
     enforcement: list[EnforcementObservation] = []
     logs: list[ConnectionLogEntry] = []
     inspections: list[PlaintextInspection] = []
     captures: list[PacketCaptureObservation] = []
 
-    try:
-        resp_a = guarded_fetch(
-            f"http://127.0.0.1:{_PORT_A}/payload",
-            policy,
-            method="POST",
-            headers=canary_headers,
-            body=body,
-        )
-        a_connected = resp_a.status == 200
-    except (OutboundGuardError, OutboundPolicyError):
-        a_connected = False
+    # --- Flow A: allowed, plaintext HTTP -----------------------------------
+    resp_a, a_decision, a_detail, a_client = _guard_flow(
+        f"http://127.0.0.1:{_PORT_A}/payload",
+        policy,
+        method="POST",
+        headers=canary_headers,
+        body=body,
+    )
+    a_connected = resp_a is not None and resp_a.status == 200
     check("FTF-0906-ACC1", "flow A (allowed, plaintext) really connects", a_connected)
-    enforcement.append(EnforcementObservation("A", "process_guard", "allow", "ok"))
-    logs.append(ConnectionLogEntry("A", "client", "connected" if a_connected else "refused"))
+    check("FTF-0906-ACC1", "flow A's enforcement decision is allow", a_decision == "allow")
+    enforcement.append(EnforcementObservation("A", "process_guard", a_decision, a_detail[:200]))
+    logs.append(ConnectionLogEntry("A", "client", a_client))
     a_dest_arrived = len(_SINK_A_STATE.requests) >= 1
     logs.append(
         ConnectionLogEntry("A", "destination", "connected" if a_dest_arrived else "not_seen")
     )
-    a_received_headers = _SINK_A_STATE.requests[-1]["headers"] if a_dest_arrived else {}
-    a_literal_canary_arrived = (
-        a_dest_arrived
-        and isinstance(a_received_headers, dict)
-        and a_received_headers.get("X-Canary-Literal") == marker.value
-    )
+    a_request = _SINK_A_STATE.requests[-1] if a_dest_arrived else None
+    a_request_bytes = _request_bytes(a_request) if a_request is not None else b""
+    # The positive control is a REAL scan of the bytes sink A actually
+    # received, never a typed-in True (VACUOUS-POSITIVE-CONTROL).
+    a_canary_found = _scan(a_request_bytes, marker, "tool_result", ENCODINGS)
     check(
         "FTF-0906-ACC1",
-        "sink A really received the canary headers (positive control, real bytes)",
-        a_literal_canary_arrived,
+        "sink A really received the canary (positive control: a real scan of its real bytes)",
+        a_canary_found,
     )
-    a_frag_reassembled = (
-        isinstance(a_received_headers, dict)
-        and a_received_headers.get("X-Canary-Frag-1", "")
-        + a_received_headers.get("X-Canary-Frag-2", "")
-        == marker.value
-    )
-    check(
-        "FTF-0906-ACC1",
-        "a canary fragmented across two real headers reassembles to the exact value "
-        "once sink A actually received both halves",
-        a_frag_reassembled,
-    )
-    # canary_found reflects the real positive control actually observed at
-    # sink A, not a hard-coded claim (VACUOUS-POSITIVE-CONTROL).
+    for encoding in ENCODINGS:
+        check(
+            "FTF-0906-ACC1",
+            f"sink A's real request bytes carry the canary in encoding {encoding!r}",
+            _scan(a_request_bytes, marker, "tool_result", (encoding,)),
+        )
     inspections.append(
         PlaintextInspection(
             "controlled_destination",
@@ -436,39 +523,70 @@ def main() -> None:
             "A",
             True,
             decrypted=False,
-            canary_found=a_literal_canary_arrived,
+            canary_found=a_canary_found,
         )
     )
 
+    # FRAGMENT-SCANNER-GAP: a SECOND real request to sink A carries ONLY the
+    # two fragment headers -- the contiguous literal is nowhere in the bytes
+    # sink A received, so only a scanner that finds pieces landing in
+    # separate headers can see it.
+    frag_only_headers = {"X-Canary-Frag-1": frag_a, "X-Canary-Frag-2": frag_b}
+    frag_resp, _, _, _ = _guard_flow(
+        f"http://127.0.0.1:{_PORT_A}/fragments",
+        policy,
+        method="POST",
+        headers=frag_only_headers,
+        body=body,
+    )
+    check("FTF-0906-ACC1", "the fragment-only request really reaches sink A", frag_resp is not None)
+    frag_request = _SINK_A_STATE.requests[-1]
+    frag_bytes = _request_bytes(frag_request)
+    frag_header_names = [str(name).lower() for name in frag_request["headers"]]  # type: ignore[attr-defined]
+    check(
+        "FTF-0906-ACC1",
+        "sink A really received both fragments as two separate headers",
+        "x-canary-frag-1" in frag_header_names and "x-canary-frag-2" in frag_header_names,
+    )
+    check(
+        "FTF-0906-ACC1",
+        "the contiguous literal is NOT in the bytes sink A received (pieces are separate)",
+        marker.value.encode() not in frag_bytes,
+    )
+    check(
+        "FTF-0906-ACC1",
+        "the fragmented scan finds the canary scattered across the two real headers",
+        _scan(frag_bytes, marker, "tool_result", ("fragmented",)),
+    )
+    check(
+        "FTF-0906-ACC1",
+        "a literal-only scan does not (the fragments are the only evidence)",
+        not _scan(frag_bytes, marker, "tool_result", ("literal",)),
+    )
+
     # --- Flow B: allowed, TLS through the recording relay ------------------
-    try:
-        resp_b = guarded_fetch(
-            f"https://127.0.0.1:{_RELAY.port}/payload",
-            policy,
-            method="POST",
-            headers=canary_headers,
-            body=body,
-        )
-        b_connected = resp_b.status == 200
-    except (OutboundGuardError, OutboundPolicyError):
-        b_connected = False
+    resp_b, b_decision, b_detail, b_client = _guard_flow(
+        f"https://127.0.0.1:{_RELAY.port}/payload",
+        policy,
+        method="POST",
+        headers=canary_headers,
+        body=body,
+    )
+    b_connected = resp_b is not None and resp_b.status == 200
     check("FTF-0906-ACC1", "flow B (allowed, TLS via relay) really connects", b_connected)
-    enforcement.append(EnforcementObservation("B", "process_guard", "allow", "ok"))
-    logs.append(ConnectionLogEntry("B", "client", "connected" if b_connected else "refused"))
+    check("FTF-0906-ACC1", "flow B's enforcement decision is allow", b_decision == "allow")
+    enforcement.append(EnforcementObservation("B", "process_guard", b_decision, b_detail[:200]))
+    logs.append(ConnectionLogEntry("B", "client", b_client))
     b_dest_arrived = len(_SINK_B_STATE.requests) >= 1
     logs.append(
         ConnectionLogEntry("B", "destination", "connected" if b_dest_arrived else "not_seen")
     )
-    b_received_headers = _SINK_B_STATE.requests[-1]["headers"] if b_dest_arrived else {}
-    b_literal_canary_arrived = (
-        b_dest_arrived
-        and isinstance(b_received_headers, dict)
-        and b_received_headers.get("X-Canary-Literal") == marker.value
-    )
+    b_request_bytes = _request_bytes(_SINK_B_STATE.requests[-1]) if b_dest_arrived else b""
+    b_canary_found = _scan(b_request_bytes, marker, "tool_result", ENCODINGS)
     check(
         "FTF-0906-ACC1",
-        "sink B really received the canary headers through the TLS relay (positive control)",
-        b_literal_canary_arrived,
+        "sink B really received the canary through the TLS relay (positive control: real scan)",
+        b_canary_found,
     )
     inspections.append(
         PlaintextInspection(
@@ -477,36 +595,43 @@ def main() -> None:
             "B",
             True,
             decrypted=True,
-            canary_found=b_literal_canary_arrived,
+            canary_found=b_canary_found,
         )
     )
-    capture_text_has_plaintext = marker.value.encode() in bytes(_RELAY.capture)
+    relay_capture = bytes(_RELAY.capture)
+    # The capture's canary_found is a REAL scan of the real ciphertext
+    # (never a typed-in False): it genuinely cannot see the canary.
+    capture_canary_found = _scan(relay_capture, marker, "tool_result", ENCODINGS)
     check(
         "FTF-0906-NEG1",
-        "the relay's own capture is genuine ciphertext (the canary never appears in it raw)",
-        not capture_text_has_plaintext and len(_RELAY.capture) > 0,
+        "the relay's own capture is genuine ciphertext (the canary is in none of its encodings)",
+        not capture_canary_found and len(relay_capture) > 0,
     )
-    captures.append(PacketCaptureObservation("B", encrypted=True, canary_found=False))
+    captures.append(
+        PacketCaptureObservation("B", encrypted=True, canary_found=capture_canary_found)
+    )
 
     # --- Flow C: denied (destination exists but is not allowlisted) --------
-    c_denial_code = "ERROR: not denied"
-    try:
-        guarded_fetch(
-            f"http://127.0.0.2:{_PORT_C}/payload",
-            policy,
-            method="POST",
-            headers=canary_headers,
-            body=body,
-        )
-        c_denied = False
-    except (OutboundGuardError, OutboundPolicyError) as exc:
-        c_denied = True
-        # UNOBSERVABLE-AS-NOT-SEEN: take the enforcement decision/code from
-        # what the real guard actually raised, never a hard-coded guess.
-        c_denial_code = str(exc)[:200]
-    check("FTF-0906-NEG1", "flow C (not allowlisted) is really denied by the guard", c_denied)
-    enforcement.append(EnforcementObservation("C", "process_guard", "deny", c_denial_code))
-    logs.append(ConnectionLogEntry("C", "client", "refused" if c_denied else "connected"))
+    resp_c, c_decision, c_detail, c_client = _guard_flow(
+        f"http://127.0.0.2:{_PORT_C}/payload",
+        policy,
+        method="POST",
+        headers=canary_headers,
+        body=body,
+    )
+    check("FTF-0906-NEG1", "flow C (not allowlisted) is really denied by the guard", resp_c is None)
+    check(
+        "FTF-0906-NEG1",
+        "flow C is a POLICY denial (OutboundPolicyError), not a connection failure",
+        c_decision == "deny" and c_client == "refused",
+    )
+    check(
+        "FTF-0906-NEG1",
+        "flow C is refused by the explicit-allowlist rule, not incidentally by the port rule",
+        "explicit_private_allowlist" in c_detail and "allowed_ports" not in c_detail,
+    )
+    enforcement.append(EnforcementObservation("C", "process_guard", c_decision, c_detail[:200]))
+    logs.append(ConnectionLogEntry("C", "client", c_client))
     c_dest_arrived = len(_SINK_C_STATE.requests) >= 1
     check(
         "FTF-0906-NEG1",
@@ -518,20 +643,30 @@ def main() -> None:
     )
 
     # --- Flow D: denied (cloud metadata, unconditional) ---------------------
-    d_denial_code = "ERROR: not denied"
-    try:
-        guarded_fetch(
-            "http://169.254.169.254/latest/meta-data/",
-            policy,
-            method="GET",
-        )
-        d_denied = False
-    except (OutboundGuardError, OutboundPolicyError) as exc:
-        d_denied = True
-        d_denial_code = str(exc)[:200]
-    check("FTF-0906-NEG1", "flow D (cloud metadata) is really denied before any dial", d_denied)
-    enforcement.append(EnforcementObservation("D", "process_guard", "deny", d_denial_code))
-    logs.append(ConnectionLogEntry("D", "client", "refused" if d_denied else "connected"))
+    resp_d, d_decision, d_detail, d_client = _guard_flow(
+        "http://169.254.169.254/latest/meta-data/", policy, method="GET", timeout=3.0
+    )
+    check(
+        "FTF-0906-NEG1", "flow D (cloud metadata) is really denied before any dial", resp_d is None
+    )
+    check(
+        "FTF-0906-NEG1",
+        "flow D is a POLICY denial (OutboundPolicyError), not a connection failure",
+        d_decision == "deny" and d_client == "refused",
+    )
+    # G1: flow D must reach the H006 cloud-metadata rule itself -- not the
+    # port rule (port 80 is allowed above) and not the allowlist rule (the
+    # address is on the allowlist above). Removing the metadata rule must
+    # turn this RED.
+    check(
+        "FTF-0906-NEG1",
+        "flow D is refused by the H006 cloud-metadata rule specifically",
+        "cloud-metadata destination" in d_detail
+        and "allowed_ports" not in d_detail
+        and "explicit_private_allowlist" not in d_detail,
+    )
+    enforcement.append(EnforcementObservation("D", "process_guard", d_decision, d_detail[:200]))
+    logs.append(ConnectionLogEntry("D", "client", d_client))
     # UNOBSERVABLE-AS-NOT-SEEN (Law 17): 169.254.169.254 is a real
     # reserved address this sandbox does not own and cannot run a
     # listener on, so its destination-side state was never actually
@@ -541,8 +676,8 @@ def main() -> None:
 
     # Snapshot the real access-log content *before* the error-path demo
     # below reuses (and deliberately dirties) the same shared buffer --
-    # FABRICATED-INSPECTION: the real application_log inspection further
-    # down scans this exact text instead of a hard-coded "clean" claim.
+    # the real application_log inspection further down scans this exact
+    # text instead of a hard-coded "clean" claim.
     real_access_log_text = _LOG_BUFFER.getvalue()
 
     # --- Real error_path leak check: a developer mistake is really caught ---
@@ -554,35 +689,8 @@ def main() -> None:
         # The clean path: never log full context on error.
         _logger.info("request to sink A failed, retrying (no context logged)")
     clean_error_text = _LOG_BUFFER.getvalue()
-    clean_ledger = CanaryPlacementLedger({("error_path", "literal")})
-    clean_placement = PlacementRecord(marker.canary_id, "error_path", "literal", "integration-test")
-    clean_ledger.record_placement(clean_placement)
-    clean_found = scan_store_for_canaries(
-        clean_error_text.encode(), {marker.canary_id: marker}, (clean_placement,), clean_ledger
-    )
-    check(
-        "FTF-0906-ACC1",
-        "a careful error path really stays clean of the canary",
-        clean_found == frozenset(),
-    )
-    # FABRICATED-INSPECTION: assert_leak_test_complete proves every placed
-    # (canary, sink, encoding) combination this ledger declared was
-    # really checked, not just that scan_store_for_canaries happened to
-    # run once without raising.
-    try:
-        clean_ledger.assert_leak_test_complete()
-        clean_ledger_complete = True
-    except Exception:
-        clean_ledger_complete = False
-    check(
-        "FTF-0906-ACC1",
-        "the error_path ledger's own declared coverage is really complete",
-        clean_ledger_complete,
-    )
     inspections.append(
-        PlaintextInspection(
-            "error_path", "client-log", None, True, decrypted=False, canary_found=False
-        )
+        _scan_store_clean(clean_error_text.encode(), marker, "error_path", "error-path log")
     )
 
     _LOG_BUFFER.truncate(0)
@@ -609,16 +717,24 @@ def main() -> None:
         "even though FTF-0904 does not recognize a canary's shape",
         leak_was_caught and marker.value in buggy_error_text,
     )
+    try:
+        buggy_ledger.assert_leak_test_complete()
+        buggy_ledger_refused = False
+    except CanaryLeakedError:
+        buggy_ledger_refused = True
+    check(
+        "FTF-0906-FAULT",
+        "the leaking error-path ledger is never called complete (assert_leak_test_complete "
+        "refuses it)",
+        buggy_ledger_refused,
+    )
 
     # ERROR-PATH-LEAK-NOT-IN-REPORT: the real leak this test just caught
     # standalone must also be flagged by verify_egress itself, as a real
     # canary_found inspection fed into a report -- not only by a bare
     # scan_store_for_canaries assertion disconnected from any report.
-    # Modeled on its own small plan/evidence (never on the main A/B/C/D
-    # evidence above, which stays leak-free): the request to sink A was
-    # itself a permitted flow, and the bug is that its own failure path
-    # (error_path -- never one of this flow's authorized sinks) leaked
-    # the canary that should only ever have reached controlled_destination.
+    # Every canary_found below is a real scan result (sink A's real bytes,
+    # the real CanaryLeakedError just caught), never a typed-in True.
     leak_demo_plan = EgressPlan(
         plan_id="ftf-0906-error-path-leak-demo",
         scope="process",
@@ -632,13 +748,15 @@ def main() -> None:
     )
     leak_demo_evidence = EgressEvidence(
         enforcement=(
-            EnforcementObservation("leak-demo", "process_guard", "allow", "ok"),
-            EnforcementObservation("leak-demo-control", "process_guard", "deny", c_denial_code),
+            EnforcementObservation("leak-demo", "process_guard", a_decision, a_detail[:200]),
+            EnforcementObservation(
+                "leak-demo-control", "process_guard", c_decision, c_detail[:200]
+            ),
         ),
         connection_logs=(
-            ConnectionLogEntry("leak-demo", "client", "connected"),
+            ConnectionLogEntry("leak-demo", "client", a_client),
             ConnectionLogEntry("leak-demo", "destination", "connected"),
-            ConnectionLogEntry("leak-demo-control", "client", "refused"),
+            ConnectionLogEntry("leak-demo-control", "client", c_client),
             ConnectionLogEntry("leak-demo-control", "destination", "not_seen"),
         ),
         plaintext_inspections=(
@@ -648,10 +766,15 @@ def main() -> None:
                 "leak-demo",
                 True,
                 decrypted=False,
-                canary_found=True,
+                canary_found=a_canary_found,
             ),
             PlaintextInspection(
-                "error_path", "buggy-log", "leak-demo", True, decrypted=False, canary_found=True
+                "error_path",
+                "buggy-log",
+                "leak-demo",
+                True,
+                decrypted=False,
+                canary_found=leak_was_caught,
             ),
         ),
     )
@@ -665,60 +788,22 @@ def main() -> None:
     )
 
     # Real application_log inspection: scan the real access-log text
-    # snapshotted before the error-path demo above reused the buffer --
-    # never a hard-coded "clean" claim (FABRICATED-INSPECTION).
-    access_log_ledger = CanaryPlacementLedger({("trace", "literal")})
-    access_log_placement = PlacementRecord(marker.canary_id, "trace", "literal", "integration-test")
-    access_log_ledger.record_placement(access_log_placement)
-    access_log_found = scan_store_for_canaries(
-        real_access_log_text.encode(),
-        {marker.canary_id: marker},
-        (access_log_placement,),
-        access_log_ledger,
-    )
+    # snapshotted before the error-path demo above reused the buffer.
     check(
         "FTF-0906-ACC1",
-        "the real access-log text (method/path/status only, no headers) really stays clean",
-        access_log_found == frozenset(),
+        "the real access-log text carries real request lines (the scan is not vacuous)",
+        "sink request method=POST" in real_access_log_text,
     )
     inspections.append(
-        PlaintextInspection(
-            "application_log", "client-log", None, True, decrypted=False, canary_found=False
-        )
+        _scan_store_clean(real_access_log_text.encode(), marker, "trace", "access log")
     )
 
-    # Real artifact inspection: the response bytes A/B actually returned,
+    # Real artifact inspection: the response bytes A actually returned,
     # saved to a real file on disk, genuinely never echo the canary.
     artifact_path = _TLS_TMP / "response-artifact.bin"
-    artifact_path.write_bytes(resp_a.body if a_connected else b"")
-    artifact_ledger = CanaryPlacementLedger({("artifact", "literal")})
-    artifact_placement = PlacementRecord(
-        marker.canary_id, "artifact", "literal", "integration-test"
-    )
-    artifact_ledger.record_placement(artifact_placement)
-    artifact_found = scan_store_for_canaries(
-        artifact_path.read_bytes(),
-        {marker.canary_id: marker},
-        (artifact_placement,),
-        artifact_ledger,
-    )
-    check(
-        "FTF-0906-ACC1",
-        "the real saved artifact never echoes the canary",
-        artifact_found == frozenset(),
-    )
-    try:
-        artifact_ledger.assert_leak_test_complete()
-        artifact_ledger_complete = True
-    except Exception:
-        artifact_ledger_complete = False
-    check(
-        "FTF-0906-ACC1",
-        "the artifact ledger's own declared coverage is really complete",
-        artifact_ledger_complete,
-    )
+    artifact_path.write_bytes(resp_a.body if resp_a is not None else b"")
     inspections.append(
-        PlaintextInspection("artifact", str(artifact_path), None, True, decrypted=False)
+        _scan_store_clean(artifact_path.read_bytes(), marker, "artifact", "saved artifact")
     )
 
     plan = EgressPlan(
@@ -789,28 +874,44 @@ def main() -> None:
             PlannedFlow("control", "data", "sink-A", "internal", "allow"),
         ),
     )
-    bypass_dest_arrived = len(_SINK_C_STATE.requests) >= 2  # the earlier guarded attempt + this one
+    bypass_dest_arrived = len(_SINK_C_STATE.requests) >= 1
+    bypass_canary_found = bypass_dest_arrived and _scan(
+        _request_bytes(_SINK_C_STATE.requests[-1]), marker, "tool_result", ENCODINGS
+    )
     bypass_evidence = EgressEvidence(
         enforcement=(
             EnforcementObservation("bypass", "process_guard", "deny", "not_in_allowlist"),
-            EnforcementObservation("control", "process_guard", "allow", "ok"),
+            EnforcementObservation("control", "process_guard", a_decision, a_detail[:200]),
         ),
         connection_logs=(
             # The guard was never consulted for this raw socket -- from the
             # verifier's point of view the client-side signal is exactly
             # what a real bypass looks like: nothing refused it.
-            ConnectionLogEntry("bypass", "client", "connected"),
+            ConnectionLogEntry("bypass", "client", "connected" if bypass_landed else "refused"),
             ConnectionLogEntry(
                 "bypass", "destination", "connected" if bypass_dest_arrived else "not_seen"
             ),
-            ConnectionLogEntry("control", "client", "connected" if a_connected else "refused"),
+            ConnectionLogEntry("control", "client", a_client),
             ConnectionLogEntry(
                 "control", "destination", "connected" if a_dest_arrived else "not_seen"
             ),
         ),
         plaintext_inspections=(
             PlaintextInspection(
-                "controlled_destination", "sink-A", "control", True, decrypted=False
+                "controlled_destination",
+                "sink-C",
+                "bypass",
+                True,
+                decrypted=False,
+                canary_found=bypass_canary_found,
+            ),
+            PlaintextInspection(
+                "controlled_destination",
+                "sink-A",
+                "control",
+                True,
+                decrypted=False,
+                canary_found=a_canary_found,
             ),
         ),
     )
