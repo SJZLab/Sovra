@@ -2815,7 +2815,12 @@ def test_f1_round3_value_class_covers_every_admitted_character() -> None:
 
 # --- FTF-0904-F2: quoted values after credential names -------------------------------------
 _F2_NAMES = tuple(sorted(lr._QUERY_PARAM_NAMES)) + (
-    "session_key", "mfa_code", "authCode", "re_state", "monkeysession", "access.token_sid",
+    "session_key",
+    "mfa_code",
+    "authCode",
+    "re_state",
+    "monkeysession",
+    "access.token_sid",
 )
 _F2_QUOTES = ('"', "'")
 _F2_SEPARATORS = ("=", ": ", ":", " = ", '":  ', "'=")
@@ -2850,8 +2855,11 @@ def test_f2_quoted_values_after_credential_names_are_redacted() -> None:
         line = f"ctx {text} tail_ok"
         out = lr.redact_text(line)
         check("FTF-0904-F2", f"{text!r}: leaked {out!r}", "Zq7Lm2" not in out)
-        check("FTF-0904-F2", f"{text!r}: text around the value lost {out!r}",
-              out.startswith("ctx ") and out.endswith("tail_ok") and spelling[:1] in out)
+        check(
+            "FTF-0904-F2",
+            f"{text!r}: text around the value lost {out!r}",
+            out.startswith("ctx ") and out.endswith("tail_ok") and spelling[:1] in out,
+        )
 
 
 def test_f2_quoted_rows_through_the_logging_path() -> None:
