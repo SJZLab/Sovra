@@ -2661,6 +2661,85 @@ def test_f1_round5_non_ascii_prefix_does_not_excuse_a_credential_name() -> None:
         )
 
 
+# ---------------------------------------------------------------------------------------------
+# FTF-0904-F1 round 6 (QP-SEGMENT-TABLE-HANDPICKED / QP-SEGMENT-LOGGING-LOWERCASE). Round 5's own
+# `_F5_BENIGN_COLLIDING_SPLITS` table above was hand-picked (25 rows) and missed 7 of the 32
+# `_BENIGN_NAMES` words that actually end in a credential name -- every "-state" word among them
+# (estate, realestate, upstate, restate) plus compass, jockey and qrcode -- so a mutant that drops
+# "state" from the segment lookup (or narrows it to only key/code/pass/session) stayed GREEN while
+# `re_StAtE` / `up_StAtE` leaked. This table is GENERATED from `lr._BENIGN_NAMES` and `lr.
+# _NAME_SUFFIXES` themselves -- every word split at EVERY credential ending it actually has -- so a
+# future addition to either closed list is covered without a hand-picked table drifting out of
+# sync again. (Unlike `_F4_PREFIXES`/`_F4_REALISTIC` above, this is sound to derive from the
+# implementation's own closed enumeration: the point is exhaustive coverage of that exact
+# enumeration, not an independent check of its vocabulary.)
+# ---------------------------------------------------------------------------------------------
+
+
+def _f1_benign_split_rows() -> list[tuple[str, str, str]]:
+    """Every `_BENIGN_NAMES` word split into (prefix, suffix) at EVERY `_NAME_SUFFIXES` ending it
+    actually has. A handful of `_BENIGN_NAMES` entries (concession/profession/procession/
+    recession/succession) do not end in any listed suffix ("cession" != "session") and
+    correctly produce no row -- they are not evidence their defence is reachable (Law 5)."""
+    rows: list[tuple[str, str, str]] = []
+    for word in sorted(lr._BENIGN_NAMES):
+        for suffix in lr._NAME_SUFFIXES:
+            if word.endswith(suffix) and len(word) > len(suffix):
+                rows.append((word[: -len(suffix)], suffix, word))
+    return rows
+
+
+_F6_BENIGN_SPLIT_ROWS = _f1_benign_split_rows()
+_F6_REPORTED_LITERALS = (
+    "mon_KeY", "de_CoDe", "zip_cOdE", "status_CoDe", "by_PaSs", "re_StAtE", "up_StAtE",
+)  # fmt: skip
+
+
+def test_f1_round6_generated_benign_split_table_is_redacted() -> None:
+    """QP-SEGMENT-TABLE-GENERATED: every `_BENIGN_NAMES` word, split at every credential ending it
+    has and glued back with each separator in a random-case spelling of the ending, must still be
+    redacted -- the generated superset that closes round 5's hand-picked table's gap."""
+    check(
+        "FTF-0904-F1",
+        "generated benign-split table covers every matched _BENIGN_NAMES word",
+        len({word for _p, _s, word in _F6_BENIGN_SPLIT_ROWS}) == 32,
+    )
+    for prefix, suffix, word in _F6_BENIGN_SPLIT_ROWS:
+        for sep in _F4_SEPS:
+            for spelling in _f3_random_case(suffix):
+                text = f"GET /x?{prefix}{sep}{spelling}={_F1_VALUE} HTTP/1.1"
+                check(
+                    "FTF-0904-F1",
+                    f"QP-SEGMENT-TABLE-GENERATED {prefix}{sep}{spelling} ({word}) leaked",
+                    not _f4_leaks(text),
+                )
+    for literal in _F6_REPORTED_LITERALS:
+        check(
+            "FTF-0904-F1",
+            f"reported spelling {literal} leaked",
+            not _f4_leaks(f"GET /x?{literal}={_F1_VALUE} HTTP/1.1"),
+        )
+
+
+def test_f1_round6_generated_benign_split_rows_through_the_logging_path() -> None:
+    """QP-SEGMENT-LOGGING-LOWERCASE: round 5's own logging-path test fed only LOWERCASE rows (plus
+    5 reported literals), never a random-case spelling -- run the same generated rows this round's
+    `redact_text` test uses through the real logging path too."""
+    rows = [
+        f"{prefix}{sep}{spelling}"
+        for prefix, suffix, _word in _F6_BENIGN_SPLIT_ROWS
+        for sep in _F4_SEPS
+        for spelling in _f3_random_case(suffix)
+    ]
+    rows += list(_F6_REPORTED_LITERALS)
+    for row in rows:
+        with _Harness() as h:
+            logging.getLogger("t").error("GET /x?%s=%s", row, _F1_VALUE)
+            logging.getLogger("t").error(f"{row}={_F1_VALUE}")
+            found = leaked([_F1_VALUE], h.outputs())
+        check("FTF-0904-F1", f"{row}: logging-path leak {found}", not found)
+
+
 _F3_HEADS = (
     "sk-abcdefgh12",
     "ghp_" + "a1B2c3D4" * 5,
