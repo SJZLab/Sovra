@@ -3037,6 +3037,14 @@ def test_mask_candidate_content_part_shapes_and_key_fidelity() -> None:
         "an 'arguments' object is masked key and value even without a sibling 'name'",
         isinstance(odd["arguments"], tuple) and "Q r" not in repr(odd["arguments"]),
     )
+    near = rev._mask_candidate({" Arguments ": {"k": "v"}})
+    assert near is not None
+    check(
+        "MASKSHAPE-6b",
+        "only the exact key 'arguments' takes the raw-object path; a case/space variant is "
+        "schema-walked like any other key (its key kept, its string value masked)",
+        isinstance(near[" Arguments "], dict) and _is_masked_marker(near[" Arguments "]["k"]),
+    )
     check(
         "MASKSHAPE-7",
         "a metadata-shaped object's string values are masked",
