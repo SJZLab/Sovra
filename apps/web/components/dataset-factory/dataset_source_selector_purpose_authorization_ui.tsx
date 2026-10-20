@@ -64,6 +64,8 @@
 
 import { useEffect, useState } from "react";
 
+import { dirFor, type Locale, phrase } from "../ui/phrases";
+
 // Section 6.8F's own literal enumeration -- redeclared to match
 // `dataset_source_connection_schema.py::ALLOWED_SOURCE_TYPES` exactly.
 export const DATASET_SOURCE_TYPES = [
@@ -119,6 +121,8 @@ export interface DatasetSourceSelectorPurposeAuthorizationProps {
   apiBaseUrl: string;
   organizationId: string;
   projectId: string;
+  /** Standard-phrase language; "ar" renders right-to-left. */
+  locale?: Locale;
 }
 
 type FormStep = "form" | "preview";
@@ -164,6 +168,7 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
   apiBaseUrl,
   organizationId,
   projectId,
+  locale = "en",
 }: DatasetSourceSelectorPurposeAuthorizationProps) {
   const [connections, setConnections] = useState<DatasetSourceConnectionSummary[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -322,10 +327,19 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
     connections?.find((connection) => connection.id === selectedConnectionId) ?? null;
 
   return (
-    <div data-testid="dataset-source-selector">
+    <div data-testid="dataset-source-selector" dir={dirFor(locale)}>
       <section data-testid="dataset-source-list-section">
         <h2>Dataset source connections</h2>
         {listError && <p data-testid="dataset-source-list-error">{listError}</p>}
+        {connections !== null && connections.length === 0 && !listError && (
+          <section
+            data-testid="dataset-source-empty-state"
+            aria-label={phrase("noConnectionsTitle", locale)}
+          >
+            <h3>{phrase("noConnectionsTitle", locale)}</h3>
+            <p>{phrase("noConnectionsWhy", locale)}</p>
+          </section>
+        )}
         <ul data-testid="dataset-source-connection-list">
           {(connections ?? []).map((connection) => (
             <li key={connection.id}>

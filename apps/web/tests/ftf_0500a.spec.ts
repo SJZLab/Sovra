@@ -121,6 +121,55 @@ test("existing connections render from the real backend list, none pre-selected"
   expect(screen.queryByTestId("dataset-source-authorization-section")).toBeNull();
 });
 
+test("FTF-UX02 empty state: no connections yet explains why and offers the first action", async () => {
+  vi.stubGlobal("fetch", mockFetch({ list: () => ({ ok: true, json: async () => [] }) }));
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("dataset-source-empty-state")).toBeTruthy());
+  expect(screen.getByTestId("dataset-source-empty-state").textContent).toContain(
+    "No dataset source connections yet",
+  );
+});
+
+test("FTF-UX02 empty state is absent when a connection exists", async () => {
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({ list: () => ({ ok: true, json: async () => [connection()] }) }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId(`dataset-source-option-${connection().id}`)).toBeTruthy(),
+  );
+  expect(screen.queryByTestId("dataset-source-empty-state")).toBeNull();
+});
+
+test("FTF-UX02 X4: the empty state is Arabic and right-to-left when locale is ar", async () => {
+  vi.stubGlobal("fetch", mockFetch({ list: () => ({ ok: true, json: async () => [] }) }));
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("dataset-source-empty-state")).toBeTruthy());
+  const empty = screen.getByTestId("dataset-source-empty-state");
+  expect(empty.closest("[dir]")?.getAttribute("dir")).toBe("rtl");
+  expect(empty.textContent).toMatch(/[\u0600-\u06FF]/);
+});
+
 test("the Review button stays disabled until a purpose and privacy boundary are explicitly chosen", async () => {
   vi.stubGlobal("fetch", mockFetch({ list: () => ({ ok: true, json: async () => [] }) }));
 
