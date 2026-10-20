@@ -177,7 +177,9 @@ _MAX_COMBINING_RUN = 30
 # alphanumerics into their neighbours are now separated (`_fold_action`).
 # FTF-0512-F2: 4 -- Unicode symbols (Sm/Sc/Sk/So) are kept as their own
 # tokens instead of being stripped like punctuation (`_strip_punctuation`).
-_DETECTOR_VERSION = 4
+# FTF-0512-F3: 5 -- a P* character directly adjacent to a digit is kept
+# ("-5" != "5", "5%" != "5", "#1" != "1").
+_DETECTOR_VERSION = 5
 
 
 class NormalizedDuplicateDetectionError(ValueError):
@@ -348,14 +350,26 @@ def _lower_case(text: str) -> str:
     return text.lower()
 
 
+def _is_digit(char: str) -> bool:
+    return unicodedata.category(char) == "Nd"
+
+
 def _punctuation_replacement(match: re.Match[str]) -> str:
     # Section 10 method 3 says punctuation normalization: Unicode P* is
     # stripped. A math/currency/modifier/other symbol (Sm/Sc/Sk/So) carries
     # meaning ("x <= 5" vs "x >= 5", "$100" vs "EUR100"), so it is kept as its own
     # space-separated token instead -- FTF-0512's "cannot collapse distinct
     # customer outcomes" negative_acceptance clause.
+    # FTF-0512-F3: the same clause keeps a P* character that is directly
+    # adjacent to a digit ("-5", "5%", "#1", "5\u2032"): dropping it would merge
+    # distinct numbers. Elsewhere P* is still stripped ("hello, world").
     char = match.group()
-    return f" {char} " if unicodedata.category(char).startswith("S") else " "
+    if unicodedata.category(char).startswith("S"):
+        return f" {char} "
+    text, start, end = match.string, match.start(), match.end()
+    if (start > 0 and _is_digit(text[start - 1])) or (end < len(text) and _is_digit(text[end])):
+        return char
+    return " "
 
 
 def _strip_punctuation(text: str) -> str:

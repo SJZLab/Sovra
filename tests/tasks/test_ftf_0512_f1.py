@@ -28,6 +28,12 @@ FTF-0512-F2 (symbols and name fields) is covered by `run_f2_checks`:
   - F2-NAME: tool_calls[].name and a message `name` stay byte-for-byte.
   - F2-DIFFERENTIAL: over the repo's own prose only symbol-bearing texts change verdict.
 
+FTF-0512-F3 (digit-adjacent punctuation) is covered by `run_f3_checks`:
+  - F3-PAIR / F3-STILL-EQUAL: "-5", "5%", "#1", "5\u2032" stay distinct from "5"; "hello, world" still merges.
+  - F3-PUNCT-TABLE: every Unicode P* code point x before/after a digit x a fixed sentence.
+  - F3-NAME-NFC: an NFC/NFD pair in tool_calls[].name / message `name` stays distinct.
+  - F3-DIFFERENTIAL: over the repo corpus only digit-adjacent-punctuation pairs un-merge.
+
 Run directly: python3 tests/tasks/test_ftf_0512_f1.py
 """
 
@@ -53,8 +59,8 @@ import workers.data.normalized_duplicate_detector as production  # noqa: E402
 MODULE_PATH = ROOT / "workers" / "data" / "normalized_duplicate_detector.py"
 FAILURES: list[str] = []
 
-# Frozen digest of _conv("Hello") under detector_version 4 (golden pin).
-FROZEN_SAMPLE_DIGEST = "ef687d35e73fd218193b7d3065c6b086415bb01a4d8c4eddd4d79a375a4f02a6"
+# Frozen digest of _conv("Hello") under detector_version 5 (golden pin).
+FROZEN_SAMPLE_DIGEST = "7022b46370cd40ade19ff0c4faa3f62614a9308241247bffb6e34198e6b374e8"
 
 
 def check(
@@ -558,7 +564,22 @@ def _f2_pairs(mod: types.ModuleType) -> tuple[dict[str, set[str]], dict[str, set
 
 
 def _strip_symbols(text: str) -> str:
-    return "".join(c for c in text if not unicodedata.category(c).startswith("S"))
+    """Drop the characters F2/F3 deliberately keep distinct: every S* symbol and
+    every non-word P* character directly adjacent to a decimal digit."""
+    return "".join(
+        c
+        for i, c in enumerate(text)
+        if not unicodedata.category(c).startswith("S") and not _digit_adjacent_punct(text, i)
+    )
+
+
+def _digit_adjacent_punct(text: str, index: int) -> bool:
+    char = text[index]
+    if not unicodedata.category(char).startswith("P") or re.match(r"\w", char):
+        return False
+    return (index > 0 and unicodedata.category(text[index - 1]) == "Nd") or (
+        index + 1 < len(text) and unicodedata.category(text[index + 1]) == "Nd"
+    )
 
 
 def _f2_differential(mod: types.ModuleType) -> list[str]:
@@ -581,6 +602,228 @@ def _f2_differential(mod: types.ModuleType) -> list[str]:
 
 def _f2_unmerged_symbol_pairs(mod: types.ModuleType) -> int:
     old_to_texts, _ = _f2_pairs(mod)
+    return sum(
+        1 for texts in old_to_texts.values() if len({mod._normalize_text(t) for t in texts}) > 1
+    )
+
+
+F3_PAIRS: list[tuple[str, str, str]] = [
+    ("hyphen-minus: negative five", "-5", "5"),
+    ("percent", "5%", "5"),
+    ("per mille", "5\u2030", "5"),
+    ("number sign", "#1", "1"),
+    ("prime", "5\u2032", "5"),
+    ("decimal point vs none", "5.0", "50"),
+    ("thousands comma vs none", "1,000", "1000"),
+    ("minus between digits", "5-3", "53"),
+    ("colon between digits", "10:30", "1030"),
+    ("slash between digits", "1/2", "12"),
+    ("fullwidth digit keeps its percent", "\uff15%", "5"),
+    ("fullwidth percent next to a digit", "5\uff05", "5"),
+    ("Cf between digit and punctuation is inert", "5\u200b%", "5"),
+    ("sentence-final period after a number", "total 5.", "total 5"),
+]
+F3_STILL_EQUAL: list[tuple[str, str, str]] = [
+    ("comma between words", "hello, world", "hello world"),
+    ("period and quotes between words", 'say "hi." now', "say hi now"),
+    ("punctuation separated from a digit by a space", "5 , 6", "5 6"),
+    ("punctuation after a word that ends in a letter", "item5 (a)", "item5 a"),
+    ("fullwidth punctuation away from digits", "hello\uff0c world", "hello world"),
+    ("same number, same punctuation", "-5", "\uff0d5"),
+    ("a removed timestamp leaves no digit neighbour", "at 2026-10-20T10:00:00Z, ok", "at , ok"),
+]
+F3_SENTENCE_AFTER = "pay 5{} now"
+F3_SENTENCE_BEFORE = "pay {}5 now"
+F3_SENTENCE_FAR = "pay a{}b now"
+
+
+def _punctuation_code_points() -> list[str]:
+    """Every non-word P* code point, computed from `unicodedata` directly."""
+    return [
+        chr(cp)
+        for cp in range(0x110000)
+        if unicodedata.category(chr(cp)).startswith("P") and not re.match(r"\w", chr(cp))
+    ]
+
+
+def run_f3_checks(mod: types.ModuleType, sink: list[str]) -> None:
+    h = mod.compute_normalized_text_hash
+    n = mod._normalize_text
+
+    for label, left, right in F3_PAIRS:
+        check(
+            "FTF-0512-F3",
+            f"F3-PAIR {label}: {left!r} != {right!r} (text and hash)",
+            n(left) != n(right) and h(_conv(left)) != h(_conv(right)),
+            sink,
+        )
+    for label, left, right in F3_STILL_EQUAL:
+        check(
+            "FTF-0512-F3",
+            f"F3-STILL-EQUAL {label}: {left!r} == {right!r}",
+            n(left) == n(right) and h(_conv(left)) == h(_conv(right)),
+            sink,
+        )
+
+    # F3-PUNCT-TABLE: every P* code point, on each side of a digit, in a fixed
+    # sentence. Next to a digit it must survive (never normalize like the
+    # sentence without it); away from a digit it must still be stripped; two
+    # different marks may share a form only when their NFKC images are equal.
+    points = _punctuation_code_points()
+    baseline = {
+        "after": n(F3_SENTENCE_AFTER.format("")),
+        "before": n(F3_SENTENCE_BEFORE.format("")),
+        "far": n(F3_SENTENCE_FAR.format("")),
+    }
+    erased: list[str] = []
+    leaked: list[str] = []
+    by_form: dict[str, set[str]] = {}
+    for char in points:
+        for side, template in (("after", F3_SENTENCE_AFTER), ("before", F3_SENTENCE_BEFORE)):
+            form = n(template.format(char))
+            if form == baseline[side]:
+                erased.append(f"{side}:{ord(char):#x}")
+            by_form.setdefault(form, set()).add(char)
+        if n(F3_SENTENCE_FAR.format(char)) != baseline["far"]:
+            leaked.append(f"far:{ord(char):#x}")
+    check(
+        "FTF-0512-F3",
+        f"F3-PUNCT-TABLE: no digit-adjacent mark is erased (first: {erased[:5]}, {len(erased)} total of {len(points)})",
+        not erased and len(points) > 100,
+        sink,
+    )
+    check(
+        "FTF-0512-F3",
+        f"F3-PUNCT-TABLE: a mark away from a digit is still stripped (first: {leaked[:5]}, {len(leaked)} total)",
+        not leaked,
+        sink,
+    )
+    merged = [
+        sorted(hex(ord(c)) for c in chars)[:4]
+        for chars in by_form.values()
+        if len({unicodedata.normalize("NFKC", c) for c in chars}) > 1
+    ]
+    check(
+        "FTF-0512-F3",
+        f"F3-PUNCT-TABLE: distinct marks next to a digit never merge (first: {merged[:3]}, {len(merged)} groups)",
+        not merged,
+        sink,
+    )
+    # a mark between two digits and a mark on both sides: still kept
+    between = [c for c in points if n(f"5{c}5") == n("5 5")]
+    check(
+        "FTF-0512-F3",
+        f"F3-PUNCT-TABLE: a mark between two digits is kept (first: {[hex(ord(c)) for c in between[:5]]})",
+        not between,
+        sink,
+    )
+
+    # F3-NAME-NFC: tool_calls[].name and a message `name` are byte-for-byte; an
+    # NFC / NFD pair of the same name must stay distinct.
+    nfc, nfd = "caf\u00e9_lookup", "cafe\u0301_lookup"
+    assert unicodedata.normalize("NFC", nfd) == nfc and nfc != nfd
+    for label, build in (
+        (
+            "tool_calls[].name",
+            lambda name: {
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "content": [],
+                        "tool_calls": [{"id": "call_1", "name": name, "arguments": {}}],
+                    }
+                ],
+                "metadata": {},
+            },
+        ),
+        (
+            "message name",
+            lambda name: {
+                "messages": [
+                    {"role": "user", "content": [{"type": "text", "text": "hi"}], "name": name}
+                ],
+                "metadata": {},
+            },
+        ),
+    ):
+        check(
+            "FTF-0512-F3",
+            f"F3-NAME-NFC {label}: the NFC and NFD spellings stay distinct",
+            h(build(nfc)) != h(build(nfd)) and h(build(nfc)) == h(build(nfc)),
+            sink,
+        )
+
+    differential_violations = _f3_differential(mod)
+    check(
+        "FTF-0512-F3",
+        f"F3-DIFFERENTIAL: only digit-adjacent-punctuation pairs un-merge (first: {differential_violations[:2]})",
+        not differential_violations,
+        sink,
+    )
+    check(
+        "FTF-0512-F3",
+        "F3-DIFFERENTIAL: the corpus really contains digit-adjacent un-merges (the gap was real)",
+        _f3_unmerged_pairs(mod) > 0,
+        sink,
+    )
+
+
+def _pre_f3_normalize(mod: types.ModuleType, text: str) -> str:
+    """The pre-F3 pipeline: everything the current module does, except that
+    every P* character is stripped wherever it sits (S* kept as a token)."""
+    stripped = mod._strip_format_characters(text)
+    mod._assert_safe_combining_run(stripped)
+    lowered = mod._lower_case(mod._fold_look_alikes(stripped))
+    redacted = mod._UUID_PATTERN.sub(" ", mod._ISO_TIMESTAMP_PATTERN.sub(" ", lowered))
+    spaced = re.sub(
+        r"[^\w\s]",
+        lambda m: f" {m.group()} " if unicodedata.category(m.group()).startswith("S") else " ",
+        redacted,
+    )
+    return re.sub(r"\s+", " ", spaced).strip()
+
+
+def _strip_digit_punct(text: str) -> str:
+    return "".join(c for i, c in enumerate(text) if not _digit_adjacent_punct(text, i))
+
+
+def _f3_pairs(mod: types.ModuleType) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    corpus = set(_f2_corpus())
+    for _label, left, right in F3_PAIRS + F3_STILL_EQUAL:
+        corpus.update((left, right))
+    old_to_texts: dict[str, set[str]] = {}
+    new_to_old: dict[str, set[str]] = {}
+    for text in sorted(corpus):
+        try:
+            new = mod._normalize_text(text)
+        except mod.NormalizedDuplicateDetectionError:
+            continue
+        old = _pre_f3_normalize(mod, text)
+        old_to_texts.setdefault(old, set()).add(text)
+        new_to_old.setdefault(new, set()).add(old)
+    return old_to_texts, new_to_old
+
+
+def _f3_differential(mod: types.ModuleType) -> list[str]:
+    """(1) F3 only un-merges -- new-equal implies old-equal; (2) texts with no
+    digit-adjacent P* are untouched -- among them new-equal and old-equal agree."""
+    old_to_texts, new_to_old = _f3_pairs(mod)
+    violations = [
+        f"new-equal pair is old-distinct: {sorted(olds)[:2]}"
+        for olds in new_to_old.values()
+        if len(olds) > 1
+    ]
+    for texts in old_to_texts.values():
+        plain = [t for t in texts if _strip_digit_punct(t) == t]
+        if len({mod._normalize_text(t) for t in plain}) > 1:
+            violations.append(
+                f"texts without digit-adjacent punctuation un-merged: {sorted(plain)[:2]}"
+            )
+    return violations
+
+
+def _f3_unmerged_pairs(mod: types.ModuleType) -> int:
+    old_to_texts, _ = _f3_pairs(mod)
     return sum(
         1 for texts in old_to_texts.values() if len({mod._normalize_text(t) for t in texts}) > 1
     )
@@ -918,12 +1161,12 @@ def run_checks(mod: types.ModuleType, sink: list[str]) -> None:
     # version fails if the field is dropped or the number is reverted.
     sample = _conv("Hello")
     expected_document = (
-        '{"detector_version":4,"messages":[{"content":[{"text":"hello","type":"text"}],'
+        '{"detector_version":5,"messages":[{"content":[{"text":"hello","type":"text"}],'
         '"role":"user"}]}'
     )
     check(
         "FTF-0512-F1",
-        "F1-DETECTOR-VERSION: digest == sha256 of the canonical document with detector_version 4",
+        "F1-DETECTOR-VERSION: digest == sha256 of the canonical document with detector_version 5",
         h(sample) == hashlib.sha256(expected_document.encode("utf-8")).hexdigest(),
         sink,
     )
@@ -1090,6 +1333,7 @@ def run_checks(mod: types.ModuleType, sink: list[str]) -> None:
     )
 
     run_f2_checks(mod, sink)
+    run_f3_checks(mod, sink)
 
 
 def test_look_alike_and_generated_tables_pass_on_production() -> None:
@@ -1367,7 +1611,66 @@ def _fault_sk_compat_stripped(v: Any) -> None:
     )
 
 
+def _fault_digit_adjacent(side: str) -> Callable[[Any], None]:
+    """Replace the digit-adjacency rule: which side(s) of a P* mark are checked."""
+
+    def fault(v: Any) -> None:
+        def strip(text: str) -> str:
+            def replace(m: re.Match[str]) -> str:
+                char, start, end = m.group(), m.start(), m.end()
+                if _category(char).startswith("S"):
+                    return f" {char} "
+                left = start > 0 and _category(text[start - 1]) == "Nd"
+                right = end < len(text) and _category(text[end]) == "Nd"
+                keep = {"left": left, "right": right, "none": False, "both": left and right}[side]
+                return char if keep else " "
+
+            return re.sub(r"[^\w\s]", replace, text)
+
+        v._strip_punctuation = strip
+
+    return fault
+
+
+def _fault_digit_adjacent_ascii(v: Any) -> None:
+    v._strip_punctuation = _ascii_only_strip
+
+
+def _ascii_only_strip(text: str) -> str:
+    def replace(m: re.Match[str]) -> str:
+        char, start, end = m.group(), m.start(), m.end()
+        if _category(char).startswith("S"):
+            return f" {char} "
+        near = (start > 0 and text[start - 1] in "0123456789") or (
+            end < len(text) and text[end] in "0123456789"
+        )
+        return char if near else " "
+
+    return re.sub(r"[^\w\s]", replace, text)
+
+
+def _fault_every_punctuation_kept(v: Any) -> None:
+    v._strip_punctuation = lambda text: re.sub(
+        r"[^\w\s]",
+        lambda m: f" {m.group()} " if _category(m.group()).startswith("S") else m.group(),
+        text,
+    )
+
+
 FAULTS: dict[str, Callable[[Any], None]] = {
+    "F3-DETECTOR-VERSION-REVERTED-4": _fault_version(4),
+    "F3-DIGIT-ADJACENT-IGNORED": _fault_digit_adjacent("none"),
+    "F3-DIGIT-ADJACENT-LEFT-ONLY": _fault_digit_adjacent("left"),
+    "F3-DIGIT-ADJACENT-RIGHT-ONLY": _fault_digit_adjacent("right"),
+    "F3-DIGIT-ADJACENT-BOTH-SIDES-REQUIRED": _fault_digit_adjacent("both"),
+    "F3-DIGIT-ADJACENT-ASCII-DIGITS-ONLY": _fault_digit_adjacent_ascii,
+    "F3-EVERY-PUNCTUATION-KEPT": _fault_every_punctuation_kept,
+    "F3-TOOL-CALL-NAME-NFC": _post_tool_call(
+        "name", lambda value: unicodedata.normalize("NFC", str(value))
+    ),
+    "F3-MESSAGE-NAME-NFC": _post_message(
+        "name", lambda value: unicodedata.normalize("NFC", str(value))
+    ),
     "F1-NFKC-REMOVED": lambda v: setattr(v, "_fold_look_alikes", lambda text: text),
     "F1-CF-REMOVED": lambda v: setattr(v, "_strip_format_characters", lambda text: text),
     "FB2-CF-HANDPICKED": _fault_cf_handpicked,
