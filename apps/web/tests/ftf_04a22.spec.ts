@@ -981,3 +981,68 @@ test("a locked manifest disables every mandate input", async () => {
     expect(input.disabled, field).toBe(true);
   }
 });
+
+// -- FTF-UX03 (audit #15, H10): inline guidance on every structured field ---
+
+describe("UX03 field guidance", () => {
+  const ALL_FIELDS = [...MANDATE_TEXT_FIELDS, ...MANDATE_LIST_FIELDS, ...MANDATE_NUMBER_FIELDS];
+
+  function renderLocale(locale?: "en" | "ar") {
+    return render(
+      createElement(MandateEditorAndConflictResolutionUI, {
+        apiBaseUrl: API_BASE,
+        organizationId: ORG_ID,
+        projectId: PROJECT_ID,
+        manifestId: MANIFEST_ID,
+        locale,
+      }),
+    );
+  }
+
+  function helpText(field: string): string {
+    const id = screen.getByTestId(`mandate-field-${field}`).getAttribute("aria-describedby");
+    expect(id, `${field} has no aria-describedby`).toBeTruthy();
+    const el = document.getElementById(id as string);
+    expect(el, `${field} help element missing`).toBeTruthy();
+    return (el as HTMLElement).textContent ?? "";
+  }
+
+  test("every one of the 14 structured fields has distinct, non-trivial help (en)", async () => {
+    renderLocale();
+    await waitFor(() => expect(screen.getByTestId("mandate-fields-section")).toBeTruthy());
+    const seen = new Set<string>();
+    for (const field of ALL_FIELDS) {
+      const text = helpText(field);
+      expect(text.length).toBeGreaterThan(30);
+      expect(/[؀-ۿ]/.test(text)).toBe(false);
+      seen.add(text);
+    }
+    expect(ALL_FIELDS.length).toBe(14);
+    expect(seen.size).toBe(14);
+  });
+
+  test("every field's help is Arabic with locale=ar and the editor is rtl", async () => {
+    renderLocale("ar");
+    await waitFor(() => expect(screen.getByTestId("mandate-fields-section")).toBeTruthy());
+    for (const field of ALL_FIELDS) {
+      expect(/[؀-ۿ]/.test(helpText(field))).toBe(true);
+    }
+    expect(screen.getByTestId("mandate-editor-ui").getAttribute("dir")).toBe("rtl");
+  });
+
+  test("list fields state that items are separated by commas", async () => {
+    renderLocale();
+    await waitFor(() => expect(screen.getByTestId("mandate-fields-section")).toBeTruthy());
+    for (const field of MANDATE_LIST_FIELDS) {
+      expect(helpText(field)).toMatch(/comma/i);
+    }
+  });
+
+  test("help text does not change what a field saves (value path unchanged)", async () => {
+    renderLocale();
+    await waitFor(() => expect(screen.getByTestId("mandate-fields-section")).toBeTruthy());
+    const input = screen.getByTestId("mandate-field-business_purpose") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Refund orders" } });
+    expect(input.value).toBe("Refund orders");
+  });
+});
