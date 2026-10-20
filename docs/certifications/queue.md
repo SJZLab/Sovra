@@ -25154,3 +25154,6 @@ different session.
 
 ## 2026-10-20T06:35Z — Control plane: FTF-0904-F1 returned (r6, tests only)
 - **Returned:** FTF-0904-F1 r6 (0g): generated benign-split table from _BENIGN_NAMES, MY11/MY12 RED, random-case logging rows. FTF-0904 stays CERTIFIED.
+
+## 2026-10-20T14:55Z — Control plane: FTF-1505 returned (r6, tests only; verdict by independent session_016xoeYyLgDc3cm43hScnvsc)
+- **Returned:** FTF-1505 r6 (0h): live-lane decision pins, main() on live results, rule-set/shallow/stale-baseline pins, truncation and base64/.tgz cases. Control plane produces round 6.
