@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import json
 import sys
 from collections.abc import Iterator, Mapping
 from pathlib import Path
@@ -472,15 +473,19 @@ def test_mask_nested_structures_and_scalars() -> None:
         "the masked chars count is the real string's own length",
         masked_list[1]["chars"] == 1,
     )
+    nested = masked_list[4]
     check(
         "MASK-9",
-        "a nested dict's own key stays in clear (schema, not raw data, for this helper)",
-        "k" in masked_list[4],
+        "a nested dict's own key is masked too (MASK-LEAK-NESTED): a pair tuple, no raw key",
+        isinstance(nested, tuple)
+        and len(nested) == 1
+        and "'k'" not in repr(nested)
+        and _is_masked_marker(nested[0]["key"]),
     )
     check(
         "MASK-10",
         "a nested dict's own value is masked",
-        _is_masked_marker(masked_list[4]["k"]),
+        _is_masked_marker(nested[0]["value"]),
     )
 
 
@@ -558,21 +563,28 @@ def test_mask_candidate_type_tag_exact_not_case_folded() -> None:
     # the same way every other EXACT test in this file bypasses a real
     # construction path) is never folded into the real "type" tag
     # exception by a `.strip().lower()` normalization.
-    tampered = {"Type": "secret-should-be-masked", "type": "text", "text": "also-secret"}
-    masked = rev._mask_candidate(tampered)
-    assert masked is not None
-    check(
-        "MASK-EXACT-1",
-        "a case-tampered 'Type' key is not treated as the real 'type' tag -- its own "
-        "value is masked",
-        _is_masked_marker(masked["Type"]),
-    )
+    # A real ContentPart keeps its "type" tag; every other object -- a differently-cased tag, an
+    # extra key, a case-tampered "Type" -- is not a ContentPart, so its "type" is masked too.
+    part = rev._mask_candidate({"type": "text", "text": "also-secret"})
+    assert part is not None
     check(
         "MASK-EXACT-2",
-        "the real, exact 'type' key is still left in clear",
-        masked["type"] == "text",
+        "a real ContentPart's exact 'type' tag stays in clear",
+        part["type"] == "text",
     )
-    check("MASK-EXACT-3", "an ordinary value is masked", _is_masked_marker(masked["text"]))
+    check("MASK-EXACT-3", "an ordinary value is masked", _is_masked_marker(part["text"]))
+    for tag, body in (
+        ("MASK-EXACT-1a", {"Type": "secret-A", "type": "text", "text": "secret-B"}),
+        ("MASK-EXACT-1b", {"type": "Text", "text": "secret-C"}),
+        ("MASK-EXACT-1c", {"type": "text ", "text": "secret-D"}),
+    ):
+        masked = rev._mask_candidate(body)
+        assert masked is not None
+        check(
+            tag,
+            "an object that is not an exact ContentPart masks its 'type' value as well",
+            all(_is_masked_marker(v) for v in masked.values()),
+        )
 
 
 def test_mask_not_mapped_and_observed_role_values_and_probe_headers() -> None:
@@ -2428,6 +2440,439 @@ def test_applymap_group_key_present_and_absent() -> None:
     mapped2 = ic.apply_mapping(without_key, {"prompt": "p", "completion": "c"})
     check(
         "APPLYMAP-13", "no group_key slot at all leaves group_key None", mapped2.group_key is None
+    )
+
+
+# --- MASK-LEAK-NESTED / canaries (round 3) -------------------------------------------------
+
+CANARIES = ("CANARY-NESTED-KEY", "CANARY-ARG-KEY", "CANARY-TYPE-VALUE", "CANARY-JSON-KEY")
+
+TOOL_MAPPING_R3 = ic.mapping_from_object(
+    {
+        "shape": "messages_json",
+        "messages": {"key": "messages"},
+        "role_key": "role",
+        "content_key": "content",
+        "tool_calls_key": "tool_calls",
+        "tool_call_id_key": "tool_call_id",
+        "name_key": "name",
+        "role_map": {"user": "user", "assistant": "assistant", "tool": "tool"},
+        "on_unmapped_message_keys": "ignore",
+    }
+)
+TOOL_SCHEMA_R3 = {
+    "type": "object",
+    "properties": {
+        "CANARY-ARG-KEY": {"type": "string"},
+        "type": {"type": "string"},
+    },
+    "additionalProperties": False,
+}
+CANARY_ROW = (
+    b'{"messages": [{"role": "user", "content": "hi", '
+    b'"CANARY-NESTED-KEY": {"CANARY-JSON-KEY": 1}}, '
+    b'{"role": "assistant", "content": "ok", "tool_calls": [{"id": "call_1", "name": "lookup", '
+    b'"arguments": {"CANARY-ARG-KEY": "v", "type": "CANARY-TYPE-VALUE"}}]}, '
+    b'{"role": "tool", "content": [{"type": "json", "value": {"CANARY-JSON-KEY": "x"}}], '
+    b'"tool_call_id": "call_1", "name": "lookup"}]}\n'
+)
+
+
+def _whole(value: object) -> str:
+    return repr(value) + json.dumps(value, default=repr, sort_keys=True)
+
+
+def _leaks(value: object) -> list[str]:
+    text = _whole(value)
+    return [c for c in CANARIES if c in text]
+
+
+def _canary_preview(reveal: bool) -> rev.MappingPreviewResult:
+    return rev.run_mapping_preview(
+        reader_for(CANARY_ROW),
+        TOOL_MAPPING_R3,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(CANARY_ROW),
+        tool_schemas={"lookup": TOOL_SCHEMA_R3},
+        tool_argument_validator=validate_instance,
+        reveal=reveal,
+    )
+
+
+def test_mask_nested_keys_whole_result_canary_preview_and_probe() -> None:
+    preview = _canary_preview(False)
+    check(
+        "MASKNEST-0",
+        "the canary row is accepted, so its tool arguments reach the masked candidate",
+        preview.rows[0].outcome == "accepted",
+    )
+    check(
+        "MASKNEST-1",
+        "no nested raw key or tool-argument value survives anywhere in the masked preview "
+        "(repr and asdict of the whole result)",
+        _leaks(preview) == [] and _leaks(dataclasses.asdict(preview)) == [],
+    )
+    probe = rev.run_mapping_probe(
+        reader_for(CANARY_ROW),
+        TOOL_MAPPING_R3,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(CANARY_ROW),
+        reveal=False,
+    )
+    check(
+        "MASKNEST-2",
+        "no nested raw key survives anywhere in the masked probe (repr and asdict)",
+        _leaks(probe) == [] and _leaks(dataclasses.asdict(probe)) == [],
+    )
+    revealed = _canary_preview(True)
+    check(
+        "MASKNEST-3",
+        "positive control: with reveal=True the same scan finds every canary",
+        set(_leaks(revealed)) == set(CANARIES),
+    )
+
+
+def test_mask_type_exemption_only_on_content_parts() -> None:
+    preview = _canary_preview(False)
+    candidate = preview.rows[0].candidate
+    assert candidate is not None
+    messages = candidate["content"]["messages"]
+    assistant = messages[1]
+    args = assistant["tool_calls"][0]["arguments"]
+    check(
+        "MASKTYPE-1",
+        "a raw tool argument named 'type' is masked (key and value), not exempted",
+        isinstance(args, tuple)
+        and all(_is_masked_marker(p["key"]) and _is_masked_marker(p["value"]) for p in args),
+    )
+    tool_part = messages[2]["content"][0]
+    check(
+        "MASKTYPE-2",
+        "a real ContentPart keeps its own 'type' tag in clear and masks its json value's keys",
+        tool_part["type"] == "json"
+        and isinstance(tool_part["value"], tuple)
+        and _is_masked_marker(tool_part["value"][0]["key"]),
+    )
+    metadata_mapping = ic.mapping_from_object(
+        {
+            "shape": "prompt_completion",
+            "prompt": {"key": "prompt"},
+            "completion": {"key": "completion"},
+            "metadata": {"language": {"key": "meta"}},
+        }
+    )
+    data = b'{"prompt": "p", "completion": "c", "meta": "CANARY-TYPE-VALUE"}\n'
+    result = rev.run_mapping_preview(
+        reader_for(data),
+        metadata_mapping,
+        verified_content_type="application/jsonl",
+        dataset_sha256=sha(data),
+        tool_schemas=None,
+        reveal=False,
+    )
+    check(
+        "MASKTYPE-3",
+        "a raw metadata value is masked",
+        result.rows[0].outcome == "accepted" and _leaks(result) == [],
+    )
+
+
+# --- UNPINNED faults (round 3): F2/F2b, F6, F11, F14, F15, F16 -----------------------------
+
+JSONL = "application/jsonl"
+
+
+def _preview(data: bytes, mapping: ic.ImportMapping = PROMPT_COMPLETION, **kw: object):
+    kw.setdefault("reveal", True)
+    return rev.run_mapping_preview(
+        reader_for(data),
+        mapping,
+        verified_content_type=kw.pop("verified_content_type", JSONL),
+        dataset_sha256=sha(data),
+        tool_schemas=None,
+        **kw,
+    )
+
+
+def test_observer_never_part_of_equality_or_hashes() -> None:
+    # F2: the tap must not take part in mapping equality or hashing; F2b: it must not reach
+    # mapping_sha256 or the preview digest.
+    tapped = dataclasses.replace(PROMPT_COMPLETION, row_observer=lambda r, h: None)
+    other = dataclasses.replace(PROMPT_COMPLETION, row_observer=lambda r, h: None)
+    check("OBSEQ-1", "a tapped mapping equals the untapped one", tapped == PROMPT_COMPLETION)
+    check("OBSEQ-2", "two different observers compare equal", tapped == other)
+    check("OBSEQ-4", "repr never shows the observer", "lambda" not in repr(tapped))
+    expected = ic._canonical_sha256(
+        {
+            "shape": "prompt_completion",
+            "prompt": {"key": "prompt"},
+            "completion": {"key": "completion"},
+        }
+    )
+    check(
+        "OBSEQ-5",
+        "mapping_sha256 equals an independent recompute over the document",
+        tapped.mapping_sha256 == PROMPT_COMPLETION.mapping_sha256
+        and PROMPT_COMPLETION.mapping_sha256 == expected,
+    )
+    data = b'{"prompt": "p", "completion": "c"}\n'
+    check(
+        "OBSEQ-6",
+        "preview_sha256 is identical whether the caller's mapping already carries an observer",
+        _preview(data).preview_sha256 == _preview(data, tapped).preview_sha256,
+    )
+    check(
+        "OBSEQ-7",
+        "the module's own tap leaves the caller's mapping without an observer",
+        PROMPT_COMPLETION.row_observer is None and tapped.row_observer is not None,
+    )
+
+
+def test_raw_display_is_never_normalized() -> None:
+    odd_prompt = " Cafe\u0301 \u00a0\t\u200b"
+    odd_completion = "c\r\nd  "
+    line = json.dumps(
+        {" Spaced Key ": "kv", "prompt": odd_prompt, "completion": odd_completion}
+    ).encode()
+    result = _preview(line + b"\n")
+    row = result.rows[0]
+    check(
+        "RAWDISP-1",
+        "revealed JSONL raw_row is exactly the parsed line (no strip, NFC, newline or case change)",
+        row.raw_row == json.loads(line) and list(row.raw_row) == list(json.loads(line)),
+    )
+    check(
+        "RAWDISP-2",
+        "revealed not_mapped names are the raw key strings, unnormalized",
+        row.not_mapped == (" Spaced Key ",),
+    )
+    csv_data = "q;a;Extra Col \n ask ;Reply\u0301 ;  x\n".encode()
+    csv_mapping = ic.mapping_from_object(
+        {
+            "shape": "prompt_completion",
+            "csv": {"encoding": "utf-8", "delimiter": ";", "has_header": True, "header_row": 0},
+            "prompt": {"header": "q"},
+            "completion": {"header": "a"},
+        }
+    )
+    csv_result = _preview(csv_data, csv_mapping, verified_content_type="text/csv")
+    csv_row = csv_result.rows[0]
+    check(
+        "RAWDISP-3",
+        "revealed CSV raw_row keeps every cell and header byte-for-byte",
+        csv_row.raw_row == {"q": " ask ", "a": "Reply\u0301 ", "Extra Col ": "  x"},
+    )
+    check(
+        "RAWDISP-4",
+        "revealed CSV not_mapped keeps the raw header, trailing space included",
+        csv_row.not_mapped == ("Extra Col ",),
+    )
+    probe = rev.run_mapping_probe(
+        reader_for(line + b"\n"),
+        PROMPT_COMPLETION,
+        verified_content_type=JSONL,
+        dataset_sha256=sha(line + b"\n"),
+        reveal=True,
+    )
+    check(
+        "RAWDISP-5", "revealed probe rows are unnormalized", probe.raw_rows[0] == json.loads(line)
+    )
+
+
+def _oracle_preview_sha(result: rev.MappingPreviewResult, data: bytes, mapping) -> str:
+    rows = [
+        {
+            "locator": r.locator,
+            "outcome": r.outcome,
+            "code": r.code,
+            "record_sha256": r.candidate["record_sha256"] if r.candidate else None,
+            "normalized_sha256": r.candidate["normalized_sha256"] if r.candidate else None,
+        }
+        for r in result.rows
+    ]
+    document = {
+        "dataset_sha256": sha(data),
+        "mapping_sha256": mapping.mapping_sha256,
+        "tool_definitions_sha256": rev.compute_tool_definitions_sha256(None),
+        "rows": rows,
+        "counts": dict(result.counts),
+    }
+    text = json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(text.encode("ascii")).hexdigest()
+
+
+def test_preview_sha256_binds_rejections_and_matches_an_oracle() -> None:
+    data = b'{"prompt": "p", "completion": "c"}\n{"prompt": "p2"}\n{"completion": "c3"}\n'
+    result = _preview(data)
+    codes = [r.code for r in result.rows]
+    check("PSHA-1", "fixture holds one accepted and two rejected rows", codes.count(None) == 1)
+    check(
+        "PSHA-2",
+        "preview_sha256 equals an independent oracle recompute (rejections included)",
+        result.preview_sha256 == _oracle_preview_sha(result, data, PROMPT_COMPLETION),
+    )
+    masked = _preview(data, reveal=False)
+    check(
+        "PSHA-3",
+        "the digest is the same masked or revealed",
+        masked.preview_sha256 == result.preview_sha256,
+    )
+    one = b'{"prompt": "p", "completion": "c"}\n{"prompt": "p2"}\n'
+    two = b'{"prompt": "p", "completion": "c"}\n{"completion": "c3"}\n'
+    a, b = _preview(one), _preview(two)
+    check(
+        "PSHA-4",
+        "two sources whose only difference is which field a rejected row lacks differ in digest "
+        "once the dataset hash is held equal",
+        a.rows[1].outcome == b.rows[1].outcome == "rejected"
+        and a.rows[1].slot != b.rows[1].slot
+        and a.preview_sha256 != b.preview_sha256,
+    )
+    c = _preview(b'{"prompt": "p", "completion": "c"}\n{"prompt": "p2"}\n')
+    d = _preview(b'{"prompt": "p", "completion": "c"}\n{"prompt": "p2"}\n\n{"prompt": "z"}\n')
+    check("PSHA-5", "an extra row changes the digest", c.preview_sha256 != d.preview_sha256)
+
+
+def _scenarios() -> list[object]:
+    """Every public preview/probe path, over the canary rows, for the meta-leak helpers."""
+    canary_jsonl = (
+        b'{"prompt": "CANARY-RAW-P", "completion": "CANARY-RAW-C", '
+        b'"CANARY-RAW-K": "CANARY-RAW-V"}\n'
+    )
+    bad = b'{"prompt": "CANARY-RAW-P"\n'
+    runs: list[object] = []
+    for reveal in (True, False):
+        runs.append(_preview(canary_jsonl, reveal=reveal))
+        runs.append(_preview(bad, reveal=reveal))
+        runs.append(
+            rev.run_mapping_probe(
+                reader_for(canary_jsonl),
+                PROMPT_COMPLETION,
+                verified_content_type=JSONL,
+                dataset_sha256=sha(canary_jsonl),
+                reveal=reveal,
+            )
+        )
+    try:
+        _preview(canary_jsonl, verified_content_type="application/CANARY-RAW-X")
+    except rev.MappingPreviewUnavailableError as exc:
+        runs.append(str(exc))
+    wrong = ic.ChunkReader(
+        [canary_jsonl],
+        expected_size=len(canary_jsonl) + 1,
+        expected_sha256="0" * 64,
+        limits=rev.PREVIEW_LIMITS,
+    )
+    runs.append(
+        rev.run_mapping_preview(
+            wrong,
+            PROMPT_COMPLETION,
+            verified_content_type=JSONL,
+            dataset_sha256="0" * 64,
+            tool_schemas=None,
+            reveal=False,
+        )
+    )
+    return runs
+
+
+def _meta_leaks(fn, needle: str) -> list[str]:
+    """Shared META-LEAK helper: runs `fn` with every side channel captured (root logging at
+    DEBUG, warnings, stdout, stderr) and returns the channels that contain `needle`."""
+    import contextlib
+    import io
+    import logging
+    import warnings
+
+    records: list[str] = []
+
+    class Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record.getMessage() + repr(record.args) + repr(record.exc_info))
+
+    root = logging.getLogger()
+    handler, level = Capture(level=logging.DEBUG), root.level
+    root.addHandler(handler)
+    root.setLevel(logging.DEBUG)
+    out, err = io.StringIO(), io.StringIO()
+    try:
+        with (
+            warnings.catch_warnings(record=True) as caught,
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
+            warnings.simplefilter("always")
+            fn()
+    finally:
+        root.removeHandler(handler)
+        root.setLevel(level)
+    channels = {
+        "logging": "".join(records),
+        "warnings": "".join(str(w.message) for w in caught),
+        "stdout": out.getvalue(),
+        "stderr": err.getvalue(),
+    }
+    return [name for name, text in channels.items() if needle in text]
+
+
+def test_no_raw_row_in_logs_stdout_stderr_warnings_or_exception_text() -> None:
+    leaks = _meta_leaks(_scenarios, "CANARY-RAW")
+    check("METALEAK-1", f"no raw row text reaches any side channel: {leaks}", leaks == [])
+
+    def positive_control() -> None:
+        import logging
+
+        logging.getLogger("x").warning("CANARY-RAW logged")
+        print("CANARY-RAW printed")
+
+    check(
+        "METALEAK-2",
+        "positive control: the helper does see a canary logged or printed",
+        set(_meta_leaks(positive_control, "CANARY-RAW")) == {"logging", "stdout"},
+    )
+    masked_texts = [
+        _whole(r) for r in _scenarios() if isinstance(r, rev.MappingPreviewResult | rev.ProbeResult)
+    ]
+    check("METALEAK-3", "scenarios actually ran", len(masked_texts) == 7)
+
+
+def test_no_socket_and_no_eval_compile_in_the_preview_path() -> None:
+    import sys as _sys
+
+    _scenarios()  # warm every lazy import first: module import itself is not the preview path
+    events: list[str] = []
+
+    def hook(event: str, args: tuple) -> None:
+        if events is not None and (event.startswith("socket.") or event in ("compile", "exec")):
+            events.append(event)
+
+    active = [True]
+
+    def guarded(event: str, args: tuple) -> None:
+        if active[0]:
+            hook(event, args)
+
+    _sys.addaudithook(guarded)
+    try:
+        _scenarios()
+        clean = list(events)
+        events.clear()
+        socket_module = __import__("socket")
+        with __import__("contextlib").suppress(OSError):
+            socket_module.getaddrinfo("localhost", 1)
+        eval("1 + 1")  # noqa: S307 - positive control for the audit hook
+        control = list(events)
+    finally:
+        active[0] = False
+    check(
+        "NOEXEC-1",
+        f"no socket, compile or exec audit event in any preview/probe path: {clean}",
+        clean == [],
+    )
+    check(
+        "NOEXEC-2",
+        "positive control: the same hook sees a socket call and an eval",
+        any(e.startswith("socket.") for e in control) and "compile" in control,
     )
 
 

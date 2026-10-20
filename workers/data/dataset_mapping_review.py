@@ -172,28 +172,41 @@ def _mask_marker(text: str) -> Mapping[str, object]:
 
 
 def _mask_leaf(value: object) -> object:
-    """Masks every *string* reachable from `value`, recursively through
-    lists and dicts (dict *values* only -- this is for structures whose own
-    keys are this module's fixed schema names, like the canonical candidate,
-    never raw user-supplied column/key names; see `_mask_named_row` for
-    those). `None`/`bool`/`int`/`float` are never masked -- none of them
-    carries free text, so none of them needs `_mask_marker`'s own "how many
-    characters" shape."""
+    """Masks everything reachable from a raw-derived `value`, recursively through lists and
+    objects: every string leaf becomes a marker, and every object *key* does too (MASK-LEAK-
+    NESTED: a nested raw key is data -- a message key, a tool-call argument name -- exactly as a
+    top-level header is). A dict key cannot hold a marker dict, so an object comes back as an
+    ordered tuple of `{"key": marker, "value": masked}` pairs, the shape `_mask_named_row`
+    already uses for a row's own keys. `None`/`bool`/`int`/`float` carry no free text and stay."""
     if type(value) is str:
         return _mask_marker(value)
     if type(value) is list:
         return [_mask_leaf(v) for v in value]
     if type(value) is dict:
-        return {key: _mask_leaf(v) for key, v in value.items()}
+        return tuple(
+            {"key": _mask_marker(str(key)), "value": _mask_leaf(v)} for key, v in value.items()
+        )
     return value
 
 
+def _mask_metadata(metadata: object) -> object:
+    """Metadata keys are the mapping's own names (schema); its values are raw."""
+    if type(metadata) is not dict:
+        return _mask_leaf(metadata)
+    return {key: _mask_leaf(v) for key, v in metadata.items()}
+
+
+def _is_content_part(value: dict[object, object]) -> bool:
+    return value.get("type") in ("text", "json") and set(value) <= {"type", "text", "value"}
+
+
 def _mask_candidate(candidate: Mapping[str, object] | None) -> Mapping[str, object] | None:
-    """As `_mask_leaf`, with one disclosed exception the design itself
-    names: a `ContentPart`'s own `"type"` tag (`"text"`/`"json"`, never raw
-    content) stays in clear -- it is schema, the same way `ComparisonCell.
-    raw_type`/`canonical_type`/`identical` (never masked at all, below)
-    are."""
+    """The candidate document with every raw-derived string and key masked. The walk follows
+    the candidate's own fixed schema; the raw-bearing positions -- a `json` ContentPart's
+    `value`, a tool call's `arguments`, a metadata value -- go through `_mask_leaf`, which masks
+    their keys too. The one disclosed exception: a `ContentPart`'s own `"type"` tag
+    (`"text"`/`"json"`, never raw content) stays in clear, on a ContentPart only -- never on any
+    other object, so a raw argument named `type` is masked like every other value."""
     if candidate is None:
         return None
 
@@ -202,9 +215,22 @@ def _mask_candidate(candidate: Mapping[str, object] | None) -> Mapping[str, obje
             return _mask_marker(value)
         if type(value) is list:
             return [walk(v) for v in value]
-        if type(value) is dict:
-            return {key: (v if key == "type" else walk(v)) for key, v in value.items()}
-        return value
+        if type(value) is not dict:
+            return value
+        if _is_content_part(value):
+            return {
+                key: (v if key == "type" else _mask_leaf(v) if key == "value" else walk(v))
+                for key, v in value.items()
+            }
+        if "metadata" in value and "messages" in value:
+            return {
+                key: (_mask_metadata(item) if key == "metadata" else walk(item))
+                for key, item in value.items()
+            }
+        return {
+            key: (_mask_leaf(v) if key == "arguments" and "name" in value else walk(v))
+            for key, v in value.items()
+        }
 
     masked = walk(dict(candidate))
     assert isinstance(masked, dict)
