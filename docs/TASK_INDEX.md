@@ -3,7 +3,7 @@
 
 ## Canonical meaning
 
-This is the complete Factory queue index. It contains 300 frozen required work-item records plus 2 owner-approved addenda (FTF-1206A, docs/adr/0002; FTF-0103A, docs/adr/0003; contracts in spec/addenda/; denominator 302): 246 retained feature tasks, 36 hardening tasks, and 18 reuse-architecture tasks. The complete task contracts define the acceptance, negative-acceptance, ownership, dependency, and verification rules for every row.
+This is the complete Factory queue index. It contains 300 frozen required work-item records plus 4 owner-approved addenda (FTF-1206A, docs/adr/0002; FTF-0103A, docs/adr/0003; FTF-0708A and FTF-1004A, docs/adr/0004; contracts in spec/addenda/; denominator 304): 246 retained feature tasks, 36 hardening tasks, and 18 reuse-architecture tasks. The complete task contracts define the acceptance, negative-acceptance, ownership, dependency, and verification rules for every row.
 
 ## Queue rules
 
@@ -154,6 +154,7 @@ A task is READY only when its contract, exact scope/files, positive and negative
 | FTF-0706 | retained_feature | Base artifact loading | FTF-0306, FTF-0701 | CAP-09 | Q10, Q13 | FTF-0701 |
 | FTF-0707 | retained_feature | Chat template validation | FTF-0506, FTF-0507, FTF-0701, FTF-0706 | AF-17 | Q10, Q13 | FTF-0701 |
 | FTF-0708 | retained_feature | LoRA integration through Axolotl | FTF-0701, FTF-0707, FTF-R003 | AF-17 | Q10, Q13 | FTF-0701 |
+| FTF-0708A | retained_feature (addendum, ADR 0004) | Sequence-classification-head training (seq_cls_lora) | FTF-R003, FTF-0701, FTF-0712, FTF-0713, FTF-0519, FTF-0307 | CAP-09, AF-17, CAP-19 | Q10, Q13 | FTF-0701 |
 | FTF-0709 | retained_feature | QLoRA integration through Axolotl | FTF-0701, FTF-0705, FTF-0707, FTF-R003 | AF-17 | Q10, Q13 | FTF-0701 |
 | FTF-0710 | retained_feature | Preflight train step | FTF-0701, FTF-0705, FTF-0708, FTF-0709 | CAP-09 | Q10, Q13 | FTF-0701 |
 | FTF-0711 | retained_feature | Numeric metric reporting | FTF-0006, FTF-0701, FTF-0710 | CAP-09 | Q10, Q13 | FTF-0701 |
@@ -188,6 +189,7 @@ A task is READY only when its contract, exact scope/files, positive and negative
 | FTF-1002 | retained_feature | Artifact lineage manifest | FTF-0306, FTF-1001 | AF-14 | Q07, Q20 | FTF-1001 |
 | FTF-1003 | retained_feature | vLLM serving controller | FTF-0803, FTF-0804, FTF-1001, FTF-1002 | AF-27 | Q07, Q20 | FTF-1001 |
 | FTF-1004 | retained_feature | LoRA loading | FTF-1001, FTF-1002, FTF-1003 | AF-27 | Q07, Q20 | FTF-1001 |
+| FTF-1004A | retained_feature (addendum, ADR 0004) | Classifier serving via vLLM pooling runner behind LiteLLM | FTF-1001, FTF-1002, FTF-1003, FTF-1005, FTF-04A25, FTF-1201 | AF-27, CAP-12, CAP-19 | Q07, Q20, Q21 | FTF-1001 |
 | FTF-1005 | retained_feature | Serving health checks | FTF-1001, FTF-1003 | AF-27 | Q07, Q20 | FTF-1001 |
 | FTF-1006 | retained_feature | Tool-call compatibility validation | FTF-0707, FTF-1001, FTF-1004, FTF-1005 | AF-27 | Q07, Q20 | FTF-1001 |
 | FTF-1007 | retained_feature | Serving benchmark | FTF-0006, FTF-1001, FTF-1006 | CAP-12 | Q07, Q20 | FTF-1001 |

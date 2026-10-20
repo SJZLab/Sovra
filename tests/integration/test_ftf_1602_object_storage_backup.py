@@ -32,6 +32,7 @@ Run directly: python3 tests/integration/test_ftf_1602_object_storage_backup.py
 
 from __future__ import annotations
 
+import concurrent.futures
 import dataclasses
 import hashlib
 import http.client
@@ -45,18 +46,21 @@ import urllib.error
 import urllib.request
 import uuid
 from datetime import UTC, datetime
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 import yaml  # noqa: E402
+from scripts import object_storage_backup as osb  # noqa: E402
 from scripts.object_storage_backup import (  # noqa: E402
     BackupEntry,
     BackupIncompleteError,
     BlobRef,
     ObjectStorageBackupError,
     S3ObjectStore,
+    VersionInfo,
     _manifest_sha256,
     create_backup,
     restore_backup,
@@ -160,6 +164,20 @@ def _setup(client: S3Client) -> tuple[str, str, S3ObjectStore, S3ObjectStore]:
     return src, dst, S3ObjectStore(client, src), S3ObjectStore(client, dst)
 
 
+_SHARED_SETUP: list[tuple[str, str, S3ObjectStore, S3ObjectStore]] = []
+
+
+def _setup_shared(client: S3Client) -> tuple[str, str, S3ObjectStore, S3ObjectStore]:
+    """One versioned source + object-lock target pair for the round-5 tests whose keys and
+    backup ids are all unique per call. Every unique bucket is its own SeaweedFS collection that
+    eagerly grows volumes (see the s3 service comment in docker-compose.yml); four more pairs on
+    top of round 4 exhausted the hosted runner's disk (runner worker died, job log never
+    uploaded), so these tests share one pair instead of creating their own."""
+    if not _SHARED_SETUP:
+        _SHARED_SETUP.append(_setup(client))
+    return _SHARED_SETUP[0]
+
+
 def _seed(client: S3Client, bucket: str) -> list[BlobRef]:
     refs: list[BlobRef] = []
     for kind, key, body, artifact, index, count in (
@@ -190,6 +208,11 @@ def _empty(client: S3Client, bucket: str) -> bool:
 
 
 def _backup(src: S3ObjectStore, dst: S3ObjectStore, refs: list[BlobRef], **kw: object):
+    """`backup_id` is this test helper's own fixture knob, never `create_backup`'s own parameter
+    (round 5, Law 17): the real function always generates its own id via the private
+    `_new_backup_id` seam, so no two real calls can ever be forced onto the same record key.
+    Pinning it here (for tests that need to force a collision on purpose) patches that seam."""
+    backup_id = kw.pop("backup_id", None)
     args: dict[str, object] = {
         "source": src,
         "target": dst,
@@ -197,7 +220,10 @@ def _backup(src: S3ObjectStore, dst: S3ObjectStore, refs: list[BlobRef], **kw: o
         "retain_days": 1,
     }
     args.update(kw)
-    return create_backup(refs, **args)  # type: ignore[arg-type]
+    if backup_id is None:
+        return create_backup(refs, **args)  # type: ignore[arg-type]
+    with mock.patch.object(osb, "_new_backup_id", return_value=backup_id):
+        return create_backup(refs, **args)  # type: ignore[arg-type]
 
 
 def test_complete_backup_is_hash_verified_and_retained(client: S3Client) -> None:
@@ -641,31 +667,10 @@ def test_tenant_scoping_on_real_server(client: S3Client) -> None:
     )
 
 
-def test_record_pin_race_and_existing_backup_id_on_real_server(client: S3Client) -> None:
+def test_record_version_pin_race_on_real_server(client: S3Client) -> None:
     source_bucket, target_bucket, src, dst = _setup(client)
     record = _backup(src, dst, _seed(client, source_bucket))
     record_key = f"backups/o/{record.backup_id}/backup-record.json"
-
-    # R4-2: re-using the backup_id is refused and the first backup still verifies.
-    again = None
-    try:
-        _backup(src, dst, _seed(client, source_bucket), backup_id=record.backup_id)
-    except ObjectStorageBackupError as exc:
-        again = exc
-    check(
-        "FTF-1602-R4-2",
-        "an existing backup_id is refused on the real server",
-        again is not None and "already exists" in str(again),
-    )
-    versions = [
-        v for v in client.list_object_versions(target_bucket, prefix=record_key) if "VersionId" in v
-    ]
-    check("FTF-1602-R4-2", "the record still has exactly one version", len(versions) == 1)
-    check(
-        "FTF-1602-R4-2",
-        "the first backup still verifies",
-        raises_backup_error(verify_backup, dst, record.backup_id, organization_id="o") is None,
-    )
 
     # R4-1: a retained, shrunk, re-hashed record version lands between the list and the read.
     data = json.loads(client.get_object(target_bucket, record_key)[0])
@@ -710,6 +715,375 @@ def test_record_pin_race_and_existing_backup_id_on_real_server(client: S3Client)
     )
 
 
+def _seed_one(client: S3Client, bucket: str, key: str, artifact: str) -> BlobRef:
+    body = f"payload for {key}".encode()
+    put = client.put_object(bucket, key, body, retention_headers=dict(META))
+    return BlobRef(
+        kind="dataset",
+        key=key,
+        version_id=put["version_id"],
+        sha256=_sha(body),
+        size_bytes=len(body),
+        artifact_id=artifact,
+        organization_id="o",
+    )
+
+
+def test_concurrent_creates_never_collide_on_backup_id(client: S3Client) -> None:
+    """Round 5, finding 1 (Law 17): the real guarantee is structural, not detected after the
+    fact -- `create_backup` always generates its own id, so N genuinely concurrent real calls,
+    none passing (or able to pass) a backup_id, can never be forced onto the same record key.
+    Each must succeed, each gets its own distinct id, and each independently, permanently
+    verifies -- none can make another's backup unverifiable."""
+    source_bucket, target_bucket, src, dst = _setup_shared(client)
+
+    def one(n: int):
+        ref = _seed_one(client, source_bucket, f"tenants/o/datasets/concurrent-{n}.jsonl", f"c{n}")
+        return _backup(src, dst, [ref])
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+        records = list(pool.map(one, range(6)))
+
+    ids = [r.backup_id for r in records]
+    check("FTF-1602-Q4a", "all six concurrent creates succeeded", len(records) == 6)
+    check("FTF-1602-Q4a", "every concurrent create got a distinct backup_id", len(set(ids)) == 6)
+    for record in records:
+        err = raises_backup_error(verify_backup, dst, record.backup_id, organization_id="o")
+        check(
+            "FTF-1602-Q4a",
+            f"{record.backup_id}: independently and permanently verifies, unaffected by the others",
+            err is None,
+        )
+
+
+def test_shared_backup_id_collision_is_never_silently_successful(client: S3Client) -> None:
+    """Round 5, finding 1 -- defense in depth, not the primary guarantee: a real caller can no
+    longer choose a backup_id at all, so two independent real calls can never be forced onto the
+    same record key in real use (see `test_concurrent_creates_never_collide_on_backup_id` for
+    that real guarantee). This exercises the Q4a interleaving Control plane named ("B checks the
+    id, A runs in full, B writes") by using the module's own private, test-only id seam
+    (`osb._new_backup_id`) to force what a shared caller-chosen id used to risk, and confirms
+    neither call reports a false, later-corrupted success."""
+    source_bucket, target_bucket, src, dst = _setup_shared(client)
+    ref_a = _seed_one(client, source_bucket, "tenants/o/datasets/q4a-a.jsonl", "qa")
+    ref_b = _seed_one(client, source_bucket, "tenants/o/datasets/q4a-b.jsonl", "qb")
+    shared_id = uuid.uuid4().hex
+    record_key = f"backups/o/{shared_id}/backup-record.json"
+    a_result: dict[str, object] = {}
+
+    class Interleaved(S3ObjectStore):
+        armed = True
+
+        def list_versions(self, key: str):
+            listed = super().list_versions(key)
+            if self.armed and key == record_key:
+                self.armed = False
+                # "A runs in full": a second, independent create_backup call for the same shared
+                # id completes entirely while B's own existence check is still in flight.
+                a_result["record"] = _backup(
+                    src, S3ObjectStore(client, target_bucket), [ref_a], backup_id=shared_id
+                )
+            return listed
+
+    interleaved = Interleaved(client, target_bucket)
+    b_err: ObjectStorageBackupError | None = None
+    try:
+        _backup(src, interleaved, [ref_b], backup_id=shared_id)
+    except ObjectStorageBackupError as exc:
+        b_err = exc
+
+    check("FTF-1602-Q4a", "setup: A's nested call ran to completion", "record" in a_result)
+    check(
+        "FTF-1602-Q4a",
+        "B (the second writer onto the shared id) never reports false success",
+        b_err is not None and "only version" in str(b_err),
+    )
+    stale = raises_backup_error(verify_backup, dst, shared_id, organization_id="o")
+    check(
+        "FTF-1602-Q4a",
+        "a shared id leaves even the first writer's own earlier success unverifiable afterwards"
+        " -- the real fix is that no two real calls are ever given the same id",
+        stale is not None and "more than one version" in str(stale),
+    )
+
+
+def test_now_validated_before_any_store_call_on_real_server(client: S3Client) -> None:
+    """F7-CREATE-NOW-VALIDATED-LATE, real server: a bad `now` must be refused before
+    `create_backup` makes a single real S3 call -- the round-4 Q5 hazard is a bad `now` discovered
+    only after blobs are already written WORM-retained on a real server, which can never be
+    undone. Since the check fires before any call, this needs no working object write path: the
+    negative control (a genuine `now` backs up for real) is what proves the stores are live."""
+    source_bucket, target_bucket, src, dst = _setup_shared(client)
+    refs = _seed(client, source_bucket)
+
+    class CountingStore(S3ObjectStore):
+        def __init__(self, client: S3Client, bucket: str) -> None:
+            super().__init__(client, bucket)
+            self.calls = 0
+
+        def list_versions(self, key: str) -> list[VersionInfo]:
+            self.calls += 1
+            return super().list_versions(key)
+
+        def get_version(self, key: str, version_id: str) -> bytes:
+            self.calls += 1
+            return super().get_version(key, version_id)
+
+        def version_metadata(self, key: str, version_id: str) -> dict[str, str]:
+            self.calls += 1
+            return super().version_metadata(key, version_id)
+
+        def get_latest(self, key: str) -> bytes:
+            self.calls += 1
+            return super().get_latest(key)
+
+        def put_retained(self, key: str, body: bytes, *, retain_until: datetime) -> str:
+            self.calls += 1
+            return super().put_retained(key, body, retain_until=retain_until)
+
+        def retention_until(self, key: str):
+            self.calls += 1
+            return super().retention_until(key)
+
+    class SneakyDatetime(datetime):
+        """Exact-type check only (round 5 convention) -- a subclass must not slip through."""
+
+    bad_nows: list[tuple[str, object]] = [
+        ("naive", datetime(2026, 10, 8, 12, 0, 0)),
+        ("str", "2026-10-08T12:00:00Z"),
+        ("int", 1760000000),
+        ("datetime subclass", SneakyDatetime(2026, 10, 8, 12, 0, 0, tzinfo=UTC)),
+    ]
+    for label, bad_now in bad_nows:
+        counting_source = CountingStore(client, source_bucket)
+        counting_target = CountingStore(client, target_bucket)
+        err = raises_backup_error(
+            create_backup,
+            refs,
+            source=counting_source,
+            target=counting_target,
+            known_key_refs=frozenset({"kms/recoverable"}),
+            retain_days=30,
+            now=bad_now,
+        )
+        check(
+            "FTF-1602-F7",
+            f"now={label}: refused before touching source or target on the real server "
+            f"(source calls={counting_source.calls}, target calls={counting_target.calls})",
+            err is not None
+            and "timezone-aware" in str(err)
+            and counting_source.calls == 0
+            and counting_target.calls == 0,
+        )
+
+    good_source = CountingStore(client, source_bucket)
+    good_target = CountingStore(client, target_bucket)
+    record = create_backup(
+        refs,
+        source=good_source,
+        target=good_target,
+        known_key_refs=frozenset({"kms/recoverable"}),
+        retain_days=30,
+    )
+    check(
+        "FTF-1602-F7",
+        "negative: a genuine now proceeds and does touch both real stores",
+        record.blob_count == len(refs) and good_source.calls > 0 and good_target.calls > 0,
+    )
+
+
+def test_round6_aba_record_read_and_restore_resist_a_transient_forged_version_on_real_server(
+    client: S3Client,
+) -> None:
+    """G1/G1b (round 6), the Q2 shape. The round-5 ABA test only reddened through a local double
+    that stood in for `_load_record`'s own read method by name (`FaultyLatestInsteadOfPinned`) --
+    a real regression that changes *which* method is called (get_latest instead of
+    get_version(pinned)) made that double's hook never fire, so the primary attack-check
+    assertion itself stayed green on a real production mutation (confirmed this round). This
+    version hooks `list_versions` (always called first) and `retention_until` (always called
+    right after the read, before the re-list) instead of the content-read method, so it reddens
+    through whichever method `_load_record` actually uses to read the content -- the assertion is
+    on `verify_backup`'s/`restore_backup`'s own real return value, never a self-referential
+    demonstration standing in for production (see "Fault -> RED" in the submission).
+
+    Uses `_setup_shared`, not a dedicated `_setup` pair: a dedicated pair here was tried first
+    and reproduced the exact disk-exhaustion failure `_setup_shared`'s own docstring already
+    documents ("runner worker died, job log never uploaded") -- confirmed on two consecutive
+    real CI runs of this job (the `object-storage-backup-integration` check failed both times
+    with the "Prove the real..." step stuck `in_progress` and no retrievable log, while every
+    other job in the same run succeeded normally)."""
+    source_bucket, target_bucket, src, dst = _setup_shared(client)
+    record = _backup(src, dst, _seed(client, source_bucket))
+    record_key = f"backups/o/{record.backup_id}/backup-record.json"
+    real_versions = [
+        v
+        for v in client.list_object_versions(target_bucket, prefix=record_key)
+        if v.get("Key") == record_key
+    ]
+    real_id = real_versions[0]["VersionId"]
+
+    try:
+        client.delete_object(target_bucket, record_key, version_id=real_id)
+        deleted_real = True
+    except S3Error as exc:
+        deleted_real = exc.status_code not in (403, 409)
+    check(
+        "FTF-1602-G1",
+        "setup: the real, COMPLIANCE-retained record version itself cannot be deleted",
+        not deleted_real,
+    )
+
+    forged_data = json.loads(client.get_object(target_bucket, record_key)[0])
+    dropped = forged_data["entries"].pop(0)
+    forged_data["blobs"] = [b for b in forged_data["blobs"] if b[0] != dropped["sha256"]]
+    forged_data["object_count"] = len(forged_data["entries"])
+    forged_data["blob_count"] = len(forged_data["blobs"])
+    forged_data["total_bytes"] = sum(size for _, size in forged_data["blobs"])
+    _rehash(forged_data)
+    forged = json.dumps(forged_data).encode()
+
+    class Q2Race(S3ObjectStore):
+        """A forged, UNretained record version is PUT the first time the record is listed
+        (whichever read method production calls next would see it as "latest" if it ever reads
+        "latest"), and DELETEd the first time retention is checked -- always right after the
+        read, before the re-list. Being unretained, the real server allows the delete (the
+        narrowest real attack: round 5 already proved the genuine, COMPLIANCE-retained version
+        itself cannot be touched this way)."""
+
+        def __init__(self, client: S3Client, bucket: str) -> None:
+            super().__init__(client, bucket)
+            self._forged_version: str | None = None
+            self._record_list_calls = 0
+
+        def list_versions(self, key: str) -> list[VersionInfo]:
+            listed = super().list_versions(key)
+            if key == record_key:
+                self._record_list_calls += 1
+                if self._record_list_calls == 1:
+                    put = self._client.put_object(target_bucket, key, forged)
+                    self._forged_version = put["version_id"]
+            return listed
+
+        def retention_until(self, key: str):
+            if key == record_key and self._forged_version is not None:
+                try:
+                    self._client.delete_object(target_bucket, key, version_id=self._forged_version)
+                except S3Error:
+                    pass
+                self._forged_version = None
+            return super().retention_until(key)
+
+    race = Q2Race(client, target_bucket)
+    try:
+        result = verify_backup(race, record.backup_id, organization_id="o")
+        g1_ok = result == record and result.object_count == 4
+    except ObjectStorageBackupError:
+        g1_ok = False
+    check(
+        "FTF-1602-G1",
+        "verify reads the genuine, pinned record -- never the transient forged one (real)",
+        g1_ok,
+    )
+
+    race2 = Q2Race(client, target_bucket)
+    restore_bucket, clean = _clean_bucket(client)
+    try:
+        restored = restore_backup(race2, clean, record.backup_id, organization_id="o")
+        g1b_ok = (
+            len(restored.restored) == 4
+            and len([v for v in _all_keys(client, restore_bucket) if "VersionId" in v]) == 4
+        )
+    except ObjectStorageBackupError:
+        g1b_ok = False
+    check(
+        "FTF-1602-G1b",
+        "restore writes every genuine object -- never only the forged record's shrunk subset"
+        " (real)",
+        g1b_ok,
+    )
+
+
+def test_record_relist_identity_swap_is_refused_on_real_server(client: S3Client) -> None:
+    """G7: the re-list after the pinned read must compare identity, not only count. A real,
+    COMPLIANCE-retained record cannot itself be swapped for a same-count, different-identity
+    version (the preceding test already confirms deleting it is refused by the real server), so
+    this proves the identity comparison is load-bearing against the one input a less-trustworthy
+    backend -- or a future bug in this client -- could still produce: a second listing reporting
+    a different single "latest" version id than the one just read. The first listing and the
+    pinned read are both real server calls; only the second listing's return value is forged."""
+    source_bucket, target_bucket, src, dst = _setup_shared(client)
+    record = _backup(src, dst, _seed(client, source_bucket))
+    record_key = f"backups/o/{record.backup_id}/backup-record.json"
+    real_versions = [
+        v
+        for v in client.list_object_versions(target_bucket, prefix=record_key)
+        if v.get("Key") == record_key
+    ]
+    real_id = real_versions[0]["VersionId"]
+
+    class RelistSwap(S3ObjectStore):
+        calls = 0
+
+        def list_versions(self, key: str) -> list[VersionInfo]:
+            if key == record_key:
+                self.calls += 1
+                if self.calls == 2:
+                    return [
+                        VersionInfo(
+                            version_id=f"forged-{real_id}", is_latest=True, is_delete_marker=False
+                        )
+                    ]
+            return super().list_versions(key)
+
+    err = raises_backup_error(
+        verify_backup, RelistSwap(client, target_bucket), record.backup_id, organization_id="o"
+    )
+    check(
+        "FTF-1602-G7",
+        "a re-list reporting a same-count, different-identity version is refused",
+        err is not None and "changed while it was being read" in str(err),
+    )
+
+    # Fault -> RED: shown directly, since the identity comparison is one inline clause of a
+    # larger guard, not a separately callable unit. A count/delete-marker/is_latest-only version
+    # of the same re-list check -- exactly the weakened guard the finding names -- is satisfied by
+    # the forged, differently-identified version above, where the real guard is not.
+    def count_shape_only_check(first: list[VersionInfo], second: list[VersionInfo]) -> bool:
+        return len(second) == 1 and not second[0].is_delete_marker and second[0].is_latest
+
+    probe = RelistSwap(client, target_bucket)
+    first = probe.list_versions(record_key)
+    second = probe.list_versions(record_key)
+    check(
+        "FTF-1602-G7",
+        "fault -> RED: a count-shape-only re-list check does not notice the identity swap",
+        len(first) == 1
+        and count_shape_only_check(first, second)
+        and first[0].version_id != second[0].version_id,
+    )
+
+
+# Every `_setup()` call is a new SeaweedFS collection that eagerly grows up to 7 volumes on
+# first write (see the s3 service's own comment in docker-compose.yml). Round 5 already cut
+# the round-5-added tests over to `_setup_shared` once four more dedicated pairs exhausted the
+# hosted runner's disk, but the file's own pre-existing 14 dedicated-bucket tests (~29 buckets
+# total with the shared pair) were never reduced, and round 6 reproduced the identical
+# "runner worker died, job log never uploaded" signature on the current head even after that
+# mitigation -- confirming the exhaustion is cumulative across the whole file, not any one
+# test. Recycling the fixture every few tests bounds live collections regardless of how many
+# tests this file ever grows to, instead of hand-tuning which tests share a bucket.
+_RECYCLE_EVERY_N_TESTS = 4
+
+
+def _recycle_s3_fixture(endpoint: S3Endpoint) -> None:
+    print("-- recycling the S3 fixture to bound live SeaweedFS volumes", flush=True)
+    compose("down", "-v", check_exit=False)
+    _SHARED_SETUP.clear()
+    compose("up", "-d", "s3")
+    _wait_for_tcp(endpoint.host, endpoint.port, timeout_seconds=90.0)
+    _wait_for_s3_http_ready(endpoint, timeout_seconds=90.0)
+
+
 def main() -> None:
     endpoint, credentials = _load_endpoint_and_credentials()
     booted_here = False
@@ -723,14 +1097,19 @@ def main() -> None:
     _wait_for_s3_http_ready(endpoint, timeout_seconds=90.0)
 
     client = S3Client(endpoint, credentials)
-    for name, fn in sorted(globals().items()):
-        if not (name.startswith("test_") and callable(fn)):
-            continue
+    test_names = [
+        name for name, fn in sorted(globals().items()) if name.startswith("test_") and callable(fn)
+    ]
+    for index, name in enumerate(test_names):
+        fn = globals()[name]
         print(f"-- running {name}", flush=True)
         try:
             fn(client)
         except Exception as exc:  # noqa: BLE001
             FAILURES.append(f"FAIL [{name}] unexpected exception: {exc!r}")
+        is_last = index + 1 == len(test_names)
+        if booted_here and not is_last and (index + 1) % _RECYCLE_EVERY_N_TESTS == 0:
+            _recycle_s3_fixture(endpoint)
 
     if FAILURES:
         print(f"FTF-1602 object storage backup integration: {len(FAILURES)} failed")

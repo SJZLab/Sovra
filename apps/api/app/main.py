@@ -149,6 +149,7 @@ from app.litellm.connection_routes import build_litellm_connection_router
 from app.litellm.model_capability_routes import build_model_capability_router
 from app.litellm.model_catalog_mapping_routes import build_model_catalog_mapping_router
 from app.litellm.model_catalog_routes import build_model_catalog_router
+from app.log_redaction_setup import install_api_log_redaction
 from app.model_versions.model_import_routes import build_model_import_router
 from app.model_versions.model_version_routes import build_model_version_router
 from app.projects.project_routes import build_project_router
@@ -180,6 +181,9 @@ from app.tools.tool_definition_routes import build_tool_definition_router
 
 
 def create_app() -> FastAPI:
+    # FTF-0904-W1: redact every log record (incl. uvicorn's access log) before
+    # anything else can log a request line, a secret setting or a traceback.
+    install_api_log_redaction()
     production = os.environ.get("SOVRA_ENVIRONMENT") == "production"
     settings = OidcSettings.from_env(production=production)
     app_settings = Settings.from_env()

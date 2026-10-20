@@ -11197,3 +11197,708 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   catalog names differ from the importer entries and refuse their codes; raw IncompleteRead/BadStatusLine escape with
   `.partial` object bytes (reproduced); FE/FE2 bounded-resource faults GREEN; integration fixture bypasses the FTF-0501
   routes. Ruling: P1 owns the catalog the importer entries name.
+
+## 2026-10-13T21:22Z — CERTIFIED: FTF-1206 (145/302); RETURNED: FTF-0503 (r2); importer-order ruling
+- **FTF-0503: RETURNED** (round 1 → 2; PR #761, merge 396577c2f0aacd09c53802cafada2fa05b4852c0, head 107799ac). Producer
+  session_01XVwUcrzcU4AG5dFB7ecRmx ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: gate 115434069294 "all checks
+  passed"; ci-verdict 115463526738; no integration job. Built on the returned FTF-0502 r1 types, not P1. 12 reproduced
+  violations (whole-document json.loads 62x memory; 4301-digit int mid-stream crash; duplicate keys/NaN/1e999/surrogates
+  accepted; 3 MiB element accepted; content leaks; no mapping; encoding rules; no content-type gate, report, Law 17 states,
+  deterministic record_id); F2/F3/F9/F10 GREEN. Depth handling held.
+- **Ruling (importer order):** FTF-0502-P1 must certify before FTF-0502/0503/0504/0505 are claimed or merged; #766
+  (FTF-0504) must not merge until rebased on certified P1.
+- **FTF-1206: CERTIFIED** (round 6, tests only; PR #763, merge e5f6e5ee327ba60bdae73b43eda2e31a0dc02da3, head 00230073; production byte-identical to round 5).
+  Producer session_013JoRRjen6ucsJAjfWjUzJF (earlier rounds session_01MdGt1NvNbMm8F8qpsUxJ3S and others) ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR, absent from the PR. CI: ci-verdict 115490617389; gate 115460282991 "FTF-1206
+  Organization policy control tests: all checks passed"; integration 115460419697 (PG16.15) FTF-1206A real proof passed.
+  F19 RED (3 failures) plus verifier variants; tests (a)/(b)/(c) present. Local 122 + 33 + 43 checks; uncapped mutation
+  47/47. 171 + 26 unit probes and 19 real-PG probes (incl. revocation saved through the real store under RLS): no
+  production violation. 34/37 faults RED. Ruling: F19d (refusal raises a sibling GatewayPolicyError subclass) is not
+  clause-level - every decision is unchanged, production raises RouteChangeNotAuthorizedError, no consumer depends on the
+  subclass; advisory to assert exact classes. F7c/F9b hand-picked variants of closed classes. UNWIRED.
+
+## 2026-10-13T22:52Z — RETURNED: FTF-0517 (r4)
+- **FTF-0517: RETURNED** (round 3 → 4; PR #765, merge b08a8900c3ee2f709e8f2c868ad466f06e4fbcdc, head 68962b00). Producer
+  session_01JiPHdfhvLuQViXzs5qSbnw ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 115522031442; gate
+  115489488759 "all checks passed"; mutation 94/94. V3/V42 RED; 62/67 faults RED; no production violation in 336 sparse
+  random graphs. Return: the property test is vacuous (1 group, 1 role per configuration), so N9/N10/N12 union-truncation
+  faults stay GREEN (unclosed members of the class, not hand-picked variants); N13 exact-type at position 0 only; raw
+  TypeErrors from verify_manifest incl. the named assignments=None case; N8 masked by zero counts.
+
+## 2026-10-13T23:59Z — CERTIFIED: slice FTF-0502-P1; RETURNED: FTF-0504 (r2); importer-order ruling updated
+- **FTF-0504: RETURNED** (round 1 → 2; PR #766, merge 78c8211bb34b4a370d298c1e55f7e8b5f41d0ed5, head 117f0148; merged
+  2026-10-13T21:21:38Z, one minute before the importer-order ruling). Producer session_01R7UTG7i8fws9ir2DLJUXXE ≠ certifier.
+  CI: gate 115511564228 "all checks passed"; mutation 97 killed + 1 timeout; ci-verdict 115543259098; no integration job.
+  Builds on P1 (its 9-code catalog edit is superseded by P1 r2). Reproduced: chunk-size-dependent encoding locator;
+  process-global csv.field_size_limit race (102-144/300 valid imports failed); unbounded single wide record (61 MiB → 69 MiB
+  peak); no content-type gate. Missing: integration test + CI job, generated tables, META-LEAK over tracebacks/logs.
+  Ruling: wrong-but-valid declared encoding is disclosed (FTF-H011 preview must show decoded samples).
+- **FTF-0502-P1 (child slice of FTF-0502): CERTIFIED** (round 2; PR #770, merge 507ce05a422ad5addb94a1700172fa348f871662, head c10b4b85). Producer
+  session_01VfxMSF5Fe8UxsFtHvaqbQq (round 1 session_01GnLMpxv8D3zPYhCXae6H6e) ≠ certifier, absent from the PR. CI: gate
+  115557959813 "FTF-0502-P1 dataset import common contract: all checks passed"; dataset-import-source-integration
+  115558053946 (real FTF-0501 routes, compose s3 stopped mid-stream) passed; mutation 15/15; ci-verdict 115575526457. Local:
+  66 tests / 5,892 checks; real PG16 + SeaweedFS integration incl. mid-stream stop. Catalog matches every code the
+  importer entries name (disjoint catalogs); `_stream` wraps every non-storage exception from None (54 injected + 12
+  malformed-socket probes, 0 leaks); RES-1 memory ratio 1.00 at 4/64 KiB chunks, 1-byte-chunk 2 MiB read in 0.95 s;
+  every-offset tables clean. All round-1 and new faults RED (FE, FE2, FV, FW-FX6, FY1-FY8, FE3/FE4/FE2b, IFM/IFD); uncapped
+  mutation of dataset_object_source.py 31/31. GREEN: FF (equivalent), FE5 (hand-picked retention variant unreachable at
+  1 MiB chunks; non-blocking). Advisories: RES-1 2 MiB baseline (single-chunk effect, justified); expected_sha256 vs declared
+  hash mismatch still completes (importers must fail it - ruling in QUEUE). UNWIRED.
+
+## 2026-10-14T01:22Z — CERTIFIED: FTF-0517
+- **FTF-0517: CERTIFIED** (round 4 per QUEUE, relay branch r6; PR #772, merge 042d82331196e99e5f7091597fd987914a0a6c2b, head 4f5428c4). Producer
+  session_01LFcCEnvzBry7SbewU1AkWx (earlier rounds session_01JiPHdfhvLuQViXzs5qSbnw, session_01M6PUZDwx7dSwgToeFa7nWu,
+  session_01Q1B9x7DYUJR1TpXchAqFkJ) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent from the PR. CI: ci-verdict
+  115617513579; gate 115596481498 "all checks passed"; mutation 58/58. Sparse-pool property test (4,000 keys, 213-241
+  groups, 4 roles per configuration) RED alone under V3, V42, N9, N10, N12 and more; exact-type keys at every position
+  (N13 RED); verify_manifest structure checked before hashing; N8 RED. 79/84 faults RED (GREEN S6/S9/S11/S15/S17: ratio/
+  cutoff type relaxations and subclass entries with no clause impact). Probes: 195 sparse graphs, 300/300 against an
+  independent connected-components oracle, 2000-key bridge, threads and hash seeds - no violation. Advisories: 4301+-digit
+  ratio/cutoff and lone-surrogate ids raise raw ValueError subclasses (fail closed); rehash structure-table cases; old
+  60-key property test still vacuous. UNWIRED.
+
+## 2026-10-14T02:42Z — CERTIFIED: FTF-0904
+- **FTF-0904: CERTIFIED** (round 7; PR #768, merge 5a0f708c29a61e7fe0fea3fc25ef838b7f5471df, head 7b397a7e). Producer session_018przUEwyVfFtXnVGLCVK2J ≠
+  certifier session_01QVznorVMjnmcttUhyDnoGR, absent from the PR. Certified under the Control-plane stopping rule (QUEUE 0d,
+  2026-10-13T18:55Z): all three round-7 test items landed and no production violation was reproduced. Production
+  packages/security/log_redaction.py byte-identical to round 6 (c8352a2b, sha256 d080fc73…). CI: ci-verdict 115581355452;
+  gate 115555363496 full 69-fault run "all checks passed". Round-7 items: Q-PAIR-KEY-WS-QUAD named and RED (R10 redact_text
+  + R11 logging path, 8K/64K/256K, 4 s bound); Q-JWT-LOWER-IN-LOOP RED (mutant 19-27 s at 256K vs 0.33-0.36 s real);
+  evidence_hash 4c0962ed, FAULTS 69. Local full run rc 0 (3537 s); 4/4 idle runs green. Probes: P1 0/49, P2 0/35,
+  long-secret 0/306, ls6 0/198, same-segment glued contexts 0/30, 16-thread 0 leaks, differential 0 regressions;
+  504 + 1,716 timing runs linear, 0 timeouts. GREEN faults are hand-picked variants of closed classes (non-blocking per
+  ruling): J-SKIP-GIVEUP, Q-PAIR-WS-AFTER-KEY/COMMA-QUAD, Q-JWT-SLICE-IN-LOOP, Q-JWT-PREFIX-SLICE, isalnum->isalpha.
+  Advisories: A1 same-run glued JWT contexts (`accessKeyJwt_`, `token_aeyJ_`); A2 `'("password"' + " "*n` shapes; A3 a
+  scaling check for sub-4 s quadratics; A4 percent shapes >4 s at 256K (linear) and unpinned _PREFIXES caps. UNWIRED.
+
+## 2026-10-14T06:52Z — RETURNED: FTF-0504 (r3)
+- **FTF-0504: RETURNED** (round 2 → 3; PR #775, merge d59d68232419416c5ab4b46da7dd8216d9b8acd7, head 182dcd72). Producer
+  session_01NaZZXQEiaHC7wqpLTq4gUC (r1 session_01R7UTG7i8fws9ir2DLJUXXE) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR.
+  CI: ci-verdict 115675106955; gate 115660606138 "all checks passed"; csv-import-integration 115660663774 (PG16 + SeaweedFS);
+  mutation 118/122 killed, 4 timeouts. Held: importer order, no import_common edit, own parser (401,153-parse differential,
+  0 mismatches), 64 MiB record refused under 8 MiB read, content-type gate, Law 17 outage states. Return: utf-8-sig
+  locator 3 bytes short (51/150 files; failure code chunk-dependent); expected_sha256 mismatch completes (catalog rule);
+  mid-stream stop no-op stays GREEN; V-PENDING-ZERO GREEN; evidence gaps. Ruling: fatal locator = one additive optional
+  ImportReport field, digest-neutral when None. Advisory P-LARGE: SeaweedFS ends slowly read downloads (~18 MB at the
+  importer's ~0.6 MiB/s), so imports over ~15-20 MB cannot finish through open_dataset_source; needs resumable/range reads
+  in the FTF-0502-P1/FTF-0501 source layer (Control-plane follow-up).
+
+## 2026-10-14T06:52Z — RETURNED: FTF-1602 (r6)
+- **FTF-1602: RETURNED** (round 5 → 6, tests only; PR #672, merge 724cfdd4b85d738c687677001f34a530260fe9f9, head 5892e5db).
+  Producers session_017p4BuRpvUsXr4X4Hp9DZnt (code) and others on the PR ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent.
+  CI: ci-verdict 115672292256; real SeaweedFS 115657809750 (18 tests) and gate 115657736993 "all checks passed"; mutation
+  61/61; local uncapped 405/405. Production correct: own uuid4 backup_id (caller id refused), Q4a/Q4b on real SeaweedFS all
+  verify, typed `now` before any write. Return: F7 (create `now` check after writes) GREEN in both suites; G7 GREEN in unit;
+  G1 RED only incidentally, G1b GREEN in unit; spec-matrix Q4a note overclaims, evidence_hash stale. Stopping rule: round 6
+  certifies once these land with no production violation. Advisory: a tzinfo whose utcoffset() raises gives raw ValueError
+  (hand-picked variant of the closed typed-`now` class).
+
+## 2026-10-14T08:18Z — CERTIFIED (child slice): FTF-0616-F1; FTF-0616 requalified
+- **FTF-0616-F1: CERTIFIED** (child slice, round 2, tests only; PR #750, merge 02961dbe0a005967ee5d82e0a1ee10fd2c8bf9a5, head 733e07b7; production module
+  byte-identical to round 1, sha256 b888cf28). Producers session_013tQiFekDRUj9Lm7ADSLJTd, session_01WY29KQFBNWXnopkiLpcwKJ,
+  session_01GkRrV1pZn1LR3BmCLYVct6 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI: ci-verdict 115665638223; gate
+  115650268253 with live TLS: "FTF-0616 llm judge adapter tests: all checks passed", "FTF-0616-F1 judge fingerprint tests:
+  all checks passed". Local: both suites incl. FTF_0616_FULL_SWEEP=1. Round-1 fixes in place (golden round-8 bytes, value
+  normalisers swept over every code point, generated header-name pool). Probes 34/34 hold (full code space, length
+  1..256, statuses 100..599, wire probes on live TLS). Faults 27/28 RED incl. all 9 round-1 GREEN faults; GREEN only
+  G-HEADER-EXTRA (request headers never pinned - advisory).
+- **FTF-0616 Law 15 requalification: COMPLETE.** The uncapped whole-file mutation run was executed by the verifier:
+  339/339 killed, 0 timeouts (chunks 106 + 146 + 87, matching the 339-mutant dry run). Correction: the submission's
+  "uncapped 200/200" ran the default cap (no `--max-mutants 0`); this 339/339 run is the evidence of record. FTF-0616
+  stays CERTIFIED. Count unchanged. Advisories: request header set unpinned; two same-case x-litellm-model-id copies keep
+  the last value (FTF-0617 must not treat the header as tamper-evident); live-TLS checks return silently with no port.
+
+## 2026-10-14T08:18Z — RETURNED: FTF-0502 (r3)
+- **FTF-0502: RETURNED** (round 2 → 3; PR #778, merge 309e17af3c7a187ae29cd8b111d22e32a2411218, head eb6b3382). Producer
+  session_014U894sNcHjmQULfhwWLrjb (r1 session_014eb1RZDqBdz3dG7AVtYJcs) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR.
+  CI: ci-verdict 115702722653; gate 115683422403 "all checks passed"; jsonl-import-integration 115683488857 (PG16 +
+  SeaweedFS); mutation 73/73. Held: importer order, all round-1 defects, chunking (96,264 runs), content-type gate, Law 17,
+  memory, META-LEAK. Return: expected_sha256 mismatch completes (binding rule); fatal locator not in ImportReport; J4 stop
+  no-op stays GREEN; tables missing; V-SLOT-DROPPED GREEN. Serialization ruling: FTF-0502 r3 makes the one additive
+  ImportReport.fatal_locator edit for the importer family; FTF-0504 r3 reuses it. Advisory (second confirmation of
+  P-LARGE): SeaweedFS ends slowly read downloads, so JSONL > ~20 MB cannot finish through open_dataset_source (fails
+  closed, blocked); source-layer follow-up. NUL in the first 4 bytes makes the whole file fatal (fails closed).
+
+## 2026-10-14T09:46Z — RETURNED: FTF-0904-W1 (r2)
+- **FTF-0904-W1 (child slice): RETURNED** (round 1 → 2; PR #779, merge 25ecc13668826383f3d239106aefa539f403f51d, head
+  840f579f). Producer: the Control-plane session session_01QVznorVMjnmcttUhyDnoGR (owner-requested); verifier: separate
+  session session_0161278Aosjx54vgoMAk3jN6 (Law 4). CI: gate 115694035388 "FTF-0904-W1 live log redaction tests: all
+  checks passed"; ci-verdict 115719250007. Held: every logging path in every uvicorn mode (debug/trace/no-access-log/colors/
+  2 workers), 500 tracebacks, app loggers with extra=, headers not logged; F1-F6 and verifier faults G2-G7 RED. Return:
+  (1) an exception escaping create_app() is printed by sys.excepthook outside logging - a secret-shaped bad setting
+  reaches stderr raw; (2) the install call moved late stayed GREEN. Rule-set gaps (key, sig, auth, session, jwt, code,
+  state, percent-encoded fullwidth '=') reproduce in redact_text itself → FTF-0904-F1 (Law 15).
+
+## 2026-10-14T09:46Z — RETURNED: FTF-0503 (r3)
+- **FTF-0503: RETURNED** (round 2 → 3; PR #781, merge 63c2d7b026c2f0f9e9938db47a2e425cb999c17d, head c2c0fef4; record
+  PR #788). Producers session_01RMzi9P3PkjFrJohRUdi9MC, session_01SDbGVaZPBUNR9c4bgKSUWm (r1 session_01XVwUcrzcU4AG5dFB7ecRmx)
+  ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 115756332292; gate 115728721347 "all checks passed";
+  mutation 200/200 capped (237 generated). import_common edit additive (json_malformed; parse_pointer exported), P1
+  tests extended, P1/0502/0504 suites green. Return: whole document buffered (64 MiB → 200 MiB peak, 62.6x); expected
+  sha mismatch completes; structure errors not fatal (silent element loss, 542/2,119 invalid mutants complete); UTF-8
+  BOM refused; oversize element fatal; no integration suite/job; 10 observable faults GREEN.
+
+## 2026-10-14T11:30Z — RETURNED: FTF-0904-W1 (r3)
+- **FTF-0904-W1 (child slice): RETURNED** (round 2 → 3; PR #791, merge 609a12fcdb336533f84fb3dc8eb87d10e151114c, head
+  f0a44af9). Verifier session_0161278Aosjx54vgoMAk3jN6 ≠ producer session_01QVznorVMjnmcttUhyDnoGR. CI: gate
+  115788821624 "all checks passed" (F1-F12 RED); ci-verdict 115816786845. r1 findings fixed for single-process uvicorn
+  (3 settings, -X dev) and the late-install fault is RED. New-path probes held (__str__ raising/recursing, __notes__,
+  chains, ExceptionGroup, KeyboardInterrupt, secret thread names, unraisable repr, warnings in message/category/source/
+  filename). Return: under --workers 2 and --reload the startup exception is printed in the spawned child by
+  multiprocessing's _bootstrap via traceback.print_exc() - raw. Disclosed: top-level SystemExit(str) printed by the
+  interpreter (no live path). PR #790 ("[certifier]" FTF-0904-W1 r1 CERTIFIED, routine session_01WJXX7GmTgoDTRqnFdoEKow)
+  is superseded by the independent RETURN and must not be merged.
+
+## 2026-10-14T13:02Z — RETURNED: FTF-0505 (r2)
+- **FTF-0505: RETURNED** (round 1 → 2; PR #782, merge 80fd4f90ba44715d16c4c000d6bccc2659675a5e, head 98482440). Producer
+  session_01Jo27En7iDrKgCGWP3zAQgU ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 115779848946; gate
+  115757402775 "all checks passed"; xlsx-import-integration 115757506383 (PG16 + SeaweedFS, real stop); mutation 199/200
+  + 1 timeout (capped, 404 generated). No import_common edit. Held: expected-sha mismatch, content-type gate, Law 17,
+  formulas never evaluated, shared-string index, sheet selection, traversal, macros/external links, DOCTYPE/XXE 80/80, zip
+  bombs, production constants, 6,834 split runs, 0 META-LEAK; outage check RED with a no-op stop. Return: raw zlib.error
+  escapes (577/6,000 fuzzed); pre-header/header rows unbounded (499 KiB → 1.57 GB RSS, completed); 4 observable faults
+  GREEN; sidecar fatal locator; evidence gaps. Rulings: field cap in bytes; XlsxLimits → ImportLimits (one serialized
+  edit after FTF-0502 r3). Advisories: sharedStrings at the cap ~0.94 GB RSS (folded into fix 2); FTF-0501 inspect_xlsx
+  likely does not catch zlib.error either (code reading) - add to the FTF-0501-F1 follow-up; relationship-only vbaProject
+  and " External" TargetMode accepted (never executed or fetched).
+## 2026-10-14T14:09Z — OWNER DECISION (not a certification): ADR 0004, addenda FTF-0708A and FTF-1004A (147/304)
+- **Recorded by the Control plane** (session_01QVznorVMjnmcttUhyDnoGR). Live owner decision, 2026-10-14: bring
+  ScaleDown's ideas into Sovra (not its hosted API): (1) per-step routing of routine agent sub-steps to small fine-tuned
+  models, priced by cost per successful agent task; (2) constrained/structured output; (3) encoder /
+  sequence-classification-head models. The owner approved item 3 explicitly ("Add item 3 too") after being told it
+  changes how two reused components are integrated.
+- Ideas 1-2: existing scope, child slices FTF-1304-S1 and FTF-0213-S1 (QUEUE.md Backlog); no denominator change.
+- Idea 3: ADR 0004 (docs/adr/0004-small-task-specific-models.md); contracts spec/addenda/FTF-0708A.json and
+  spec/addenda/FTF-1004A.json; spec-matrix rows NONE / ABSENT / UNPROVEN. Integration-form change recorded in
+  docs/architecture/REFERENCE_REPOSITORIES.md §2/§3: Axolotl stays the engine for chat LoRA/QLoRA, and
+  `seq_cls_lora` uses Transformers `Trainer` + PEFT SEQ_CLS inside the same pinned tuple and FTF-R003 supervisor; vLLM
+  gains the pooling/classify runner as an explicit supported adapter (§36); LiteLLM is unchanged. Denominator 302 → 304.
+  No status flip and no evidence: both addenda are blocked (FTF-R003/0701/0712/0713/0519, FTF-1003/1005 absent; GPU
+  BLOCKED_EXTERNAL).
+
+## 2026-10-14T14:23Z — CERTIFIED (child slice): FTF-0904-W1; FTF-0904 WIRED
+- **FTF-0904-W1: CERTIFIED** (child slice, round 3; PR #792, merge b4d401fc1fb1222c65ad4778b5aee2e1461a99c1, head 5b608ea4). Producer: the Control-plane
+  session session_01QVznorVMjnmcttUhyDnoGR (owner-requested live 2026-10-14). Verifier: separate session
+  session_0161278Aosjx54vgoMAk3jN6 (Law 4), which returned r1 (excepthook bypass) and r2 (multiprocess children) and
+  certified r3. CI: gate 115828639758 "FTF-0904-W1 live log redaction tests: all checks passed" (F1-F14 RED); ci-verdict
+  115866670772. Verified: plain, --workers 2 (60 s respawn loop), --reload, -X dev, PYTHONFAULTHANDLER startup failures
+  all redacted; logging in every uvicorn mode redacted at ingress and every sink; exception/thread/unraisable/warning/
+  traceback hooks incl. __str__ raising, __notes__, chains, ExceptionGroup, secret thread names, positional print_exception
+  args; G1 late install RED. packages/security unchanged. Advisories: A1 replacement rejects colorize= (3.13 C fallback /
+  pdb) → FTF-0904-W1-F1; A2 callers printing format_exc() themselves are raw (only live caller goes through logging);
+  A3 SystemExit(str) disclosed. PR #790 (routine "[certifier]" W1 r1) superseded.
+- **FTF-0904: WIRED** - proving_symbol `install_redaction` (live caller apps/api/app/log_redaction_setup.py, reached
+  from create_app()); product-true 45 → 46. FTF-0904-F1 (rule-set gaps) is in flight and requalifies FTF-0904 (Law 15).
+
+## 2026-10-14T14:23Z — RETURNED: FTF-0518 (r2)
+- **FTF-0518: RETURNED** (round 1 → 2; PR #787, merge 588cd8daa337d93bd48b0905def63cfdfea5ce20, head ba747478). Producer
+  session_01VedBiyLge6wojTPCKRCuVF ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict on head success; gate
+  115796865997 "all checks passed" (LK-RECALL 10,000 records, 334 findings). Held: contract clauses, 144 probes, scale
+  (10k/30k fail closed as saturated). Return: F14, F13, F8 GREEN; verify_report/assert_leakage_clear accept a self-sealed
+  clear report whose methods_not_run lists the semantic methods. Advisories: semantic stage often saturated in practice
+  (homogeneous 10k corpus saturated even at cap 5000) - revisit at wiring; prior final reused in development_eval not
+  checked (outside the design's pair list); look-alike normalization gaps → FTF-0512-F1.
+
+## 2026-10-14T14:23Z — RETURNED: FTF-0504 (r4)
+- **FTF-0504: RETURNED** (round 3 → 4, small; PR #786, merge aa40d5314a78976a4a1e68089b382c927a02bee0, head 2fb9f93f).
+  Producer session_01Jo27En7iDrKgCGWP3zAQgU ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 115821958282;
+  gate 115787989362 and csv-import-integration 115788103077 "all checks passed"; mutation 46/47 + 1 timeout. All five
+  round-3 items fixed; fatal_locator edit judged compliant with the #783 ruling (additive, digest-neutral 3,000/3,000,
+  inside the digest, fail-closed). The verifier proposed CERTIFY under the class-closing carve-out; the Control plane
+  returns instead because item 1 (record cap at the production constant) was an explicit round-3 DoD line that the
+  suite mislabels, and two typed-failure defects were found (preview hash TypeError; 1-2 BOM bytes swallowed). Stopping
+  rule: round 4 certifies once these land with no production violation.
+
+## 2026-10-14T16:30Z — RETURNED: FTF-0904-F1 (r2); FTF-0904 requalification pending
+- **FTF-0904-F1: RETURNED** (round 1 → 2; PR #794, merge 467299c3baa3ff1149e4a4ff51aed605dae87b8a, head a67d5001). Producer
+  session_013bKGKdbYZ1RJbKCyCQrkpg ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 115924636041; gate
+  115873398599 full FTF-0904 suite "all checks passed" (78 min, 77 faults); W1 suite green. Law 15 requalification of
+  FTF-0904 at the merge: full suite 77/77 faults RED locally (4,699 s); round-7 probe set byte-identical (P1 49/49, P2 35/35,
+  long-secret 0/306, ls6 0/198, fail-closed 8/8, threads, glued 0/30); jwt6 differential 0 regressions over 300k strings;
+  984 old-shape timing runs linear. Return: no `[REDACTED]` guard on the new rule (live access lines `code=[REDACTED]]]]`);
+  contract names leak in serialized queries / form bodies; hand-picked 7-name list (49/71 other credential names leak);
+  QP-BOUNDED-64/4096, QP-QUAD-DELIM-LOOKAHEAD, QP-NFKC-FIRST-LAYER-ONLY GREEN; three claimed faults missing from FAULTS.
+- **FTF-0904: stays CERTIFIED** (Control-plane ruling): no leak regression; the idempotence regression is cosmetic garbling
+  of already-redacted values, fixed first in F1 r2, with which the requalification completes (FTF-0616-F1 precedent).
+
+## 2026-10-14T18:11Z — OWNER DECISION: Control plane merges [GOVERNANCE] PRs
+- Live owner instruction (2026-10-14 ~16:35Z, Control-plane session session_01QVznorVMjnmcttUhyDnoGR): "Merge the
+  governance PRs without waiting me now and all coming ones." The Control plane merges [GOVERNANCE] PRs on a green
+  ci-verdict on the current head (updating a stale branch with main first); every other ask-first rule is unchanged.
+
+## 2026-10-14T18:11Z — RETURNED: FTF-0502 (r4)
+- **FTF-0502: RETURNED** (round 3 → 4; PR #793, merge 4b6dc4171f2425bbc299912b97f94c11badf83ba, head 108833ed). Producer
+  session_015f8kwfjs7Suf1My6UGmah5 (PR body; commits carry no Claude-Session trailer) ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 115923296742; gate 115919663141 and jsonl-import-integration
+  115919671862 "all checks passed"; mutation 17/17. Held: expected-sha mismatch (0 bytes read), shared fatal_locator
+  reused and digest-neutral (3,000 imports), chunking, line cap at the production constant, time budget, leaks.
+  Return: outage check passes 3/3 with a no-op stop; memory check allows linear growth (retain-all GREEN); sha-compare
+  precision faults GREEN; preview TypeError; stale evidence_hash; missing trailers. Stopping rule: round 4 certifies once
+  these land with no production violation.
+
+## 2026-10-14T20:19Z — CERTIFIED (child slice): FTF-0502-P1-F1; FTF-0502-P1 requalified
+- **FTF-0502-P1-F1: CERTIFIED** (round 1; PR #798, merge e57b4f98bdaa2e8e13298d5e743e3940cb1cfd56, head fe8cdd2a). Producer session_019whbjzk6tDSxBK91PawNXW ≠
+  certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI: ci-verdict 116015555890; gate 115967615134 (P1 + 0502/0503/0504/
+  0505 suites "all checks passed"); dataset-import-source-integration 115967729968 (real stop); mutation 87/91 + 4
+  timeouts, 0 survivors. Real SeaweedFS 3.99: If-Match on ranged GETs honoured (412); 63 overwrite-between-windows cases
+  (ETag-only, flipped byte, longer, shorter, emptied) all source_changed, never spliced bytes; delete mid-read
+  source_changed; window boundaries exact (1..7W+3, multipart 8 MiB±1/16 MiB/16 MiB+5); hostile server (200 for Range,
+  short 206, Content-Range mismatch, no ETag, 304/404/RST) blocked; 96 MiB completes at 0.6/0.15/0.05 MiB/s (old single
+  GET cut at 15.9/12.2 MB). Faults: no version pin, no final sha, wrong window offset, 412 handling, short window, 200
+  accepted, window size - all RED; GREEN only FA7 (equivalent) and FB2 (final-sha 8-char prefix, closed class).
+- **FTF-0502-P1: requalified (Law 15)** - P1 unit + integration, 0502/0503/0504/0505 unit + integration suites and 0501/
+  0501-P1 green; #770 probe classes re-run with 0 violations, ratios unchanged; report digests unchanged. Count unchanged.
+  Advisories: single PutObject > 4 MiB gets 412 on its own ETag on SeaweedFS (unreachable: datasets are multipart; fails
+  closed); FB2 near-miss final-sha test; hang-only faults (gate job has no timeout); 0-byte object Content-Range quirk
+  (unreachable). The JSONL J4 and P1 I5 stop checks are now non-vacuous (a no-op stop completes 96 MiB).
+
+## 2026-10-14T20:19Z — RETURNED: FTF-0505 (r3)
+- **FTF-0505: RETURNED** (round 2 → 3; PR #801, merge 4a467666f44b6209e868b229bc86f0a2c25516f3, head a6426bd1). Producer
+  session_01RdnwJqPswX14ptBomSxYX1 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 116036157906; gate
+  115986954306 and xlsx-import-integration 115987127298 "all checks passed"; mutation 139/140 + 1 timeout (capped, diff).
+  Held: zlib.error mapping, pre-header rows, shared fatal_locator, discriminating outage check, data-row memory, chunking.
+  Return: header row unbounded (1,573 MB, completed); per-reference shared-string decode (6 KB → 2,075 MB, completed);
+  surrogate shared string raises UnicodeEncodeError; zipfile NotImplementedError escapes (26/6,000); 6 observable faults
+  GREEN; preview TypeError after a full read; rulings (a) byte cap and (b) ImportLimits edit unmet; sharedStrings 757 MB at
+  the cap. The PR body claimed all items fixed while its submission deferred several.
+
+## 2026-10-14T20:19Z — RETURNED: FTF-0503 (r4)
+- **FTF-0503: RETURNED** (round 3 → 4, small; PR #799, merge b9083b069cef1485e9802b2c42b2b7e802f60353, head b3bc93ff).
+  Producers session_01TQCApsTmqruB1E7ZN6Fy3d, session_012VzyDahFi7g72tvagNtYUa, session_01EmbFbQRQPkxmSHRBAmU8FC ≠
+  certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 116041441377; gate 116002091759 (step 84 FTF-0503 success);
+  json-import-integration 116002230353 "all checks passed"; mutation 193/200 + 7 timeouts (capped; 322 generated -
+  verifier's uncapped run 322/322, 12 timeouts, 0 survivors). All seven round-3 classes fixed. Return: preview TypeError;
+  records before a fatal invalid_encoding depend on chunk size; V-SHA-FIRST-CHAR-COMPARE and V-ENC-OFFSET-PENDING-IGNORED
+  GREEN; misstated mutation claim; stale evidence_hash. Stopping rule set.
+
+## 2026-10-14T21:57Z — CERTIFIED: FTF-1602
+- **FTF-1602: CERTIFIED** (round 6, under the Control-plane stopping rule; PR #789, merge 963a0af45915a50014d870b5db2bdbe798e6780c, head f6628fb2). Producers
+  session_01QfH4EDfw4JyZF6MaJJ8GPf, session_01LfpVEG21xjpeidAgbXBp7L (earlier rounds session_017p4BuRpvUsXr4X4Hp9DZnt and
+  others) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. scripts/object_storage_backup.py byte-identical to round 5
+  (sha256 0858d6ca…). CI: ci-verdict 116091160678; object-storage-backup-integration 116042989845 (real SeaweedFS, 19 tests)
+  and gate 116042852933 "all checks passed". Local: unit 44 functions; real SeaweedFS 19/19; uncapped mutation 405/405.
+  Round-6 items met: F7 create-side `now` table with zero store calls (RED unit + real), unit Q7 swap (G7 RED in unit),
+  ABA rebuilt on the Q2 shape (G1/G1b RED in the attack check, unit + real), Q4a note corrected; all earlier faults RED.
+  Probes: 12 bad-`now` shapes 0 writes; 7 ABA timing variants held; 11 scope variants refused; Q1-Q7 incl. Q4a/Q4b held.
+  The producer did not rebind evidence_hash (still 47ca830, round 4) and the note misstated the ruling; the Control plane
+  rebinds evidence_hash to the merge and corrects the note in this record (the verifier's offered alternative). Relay
+  docs PR #811 repeats the false "no production line changed in round 5" claim (6d436104 changed it) - do not merge as is.
+  Advisories: raising-tzinfo raw ValueError (closed class); F7d `now or datetime.now(UTC)` GREEN (hand-picked). UNWIRED.
+
+## 2026-10-14T21:57Z — CERTIFIED: FTF-0504
+- **FTF-0504: CERTIFIED** (round 4, under the stopping rule; PR #802, merge 6d31a4608e93c6d5bae407ad4d158ac205d5ad92, head b688db08). Producer
+  session_01X2nNH1ddiFbkeJTtuG9pPp (earlier rounds session_01Jo27En7iDrKgCGWP3zAQgU, session_01NaZZXQEiaHC7wqpLTq4gUC,
+  session_01R7UTG7i8fws9ir2DLJUXXE) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI: ci-verdict 116042983951;
+  gate 116004706397 (0504 + P1/0502/0503/0505 "all checks passed"); csv-import-integration 116004826398 (real stop);
+  mutation 39/39. Round-4 items: record-cap row at the production constant (V-RECORD-CAP-PROD-ONLY RED), first/last-char
+  hash rows (prefix/suffix compare faults RED), str-subclass locator refused, typed preview refusal for 18 malformed
+  dataset_sha256 shapes with 0 bytes read, truncated BOM -> invalid_encoding line:1. Outage control discriminating
+  (no-op stop RED 3/3; 16 MiB control reads every byte via FTF-0502-P1-F1 windows). Probes: 64 single-char hash flips,
+  locator oracle 275,702 imports 0 wrong, 240 concurrent imports, 3,000-report digest neutrality. 60/63 faults RED; GREEN
+  only hand-picked variants of closed classes. Advisories: assert bytes_read == 0 on the malformed-hash test; a valid
+  1-2 byte non-BOM control row. evidence_hash set to the merge (the PR left fe13caf7 from round 3). UNWIRED.
+
+## 2026-10-14T21:57Z — RETURNED: FTF-0518 (r3)
+- **FTF-0518: RETURNED** (round 2 → 3; PR #803, merge 343eda8627c271e58da64f21f08be93f01d7a3c4, head e220469b). Producer
+  session_01X2nNH1ddiFbkeJTtuG9pPp ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 116064257830; gate
+  116017354223 "all checks passed"; mutation-gate success. Production correct: verify_report cross-check refuses the
+  closed forgery class (14/14) without overreach (11/11); F13/F14/F8/F16-F21/F24 RED; scan output byte-identical to round
+  1. Return: F22 (mirror of F14) GREEN; forgery disclosure over-claims. Stopping rule set.
+
+## 2026-10-14T21:57Z — RETURNED: FTF-H010-P3a (r3)
+- **FTF-H010-P3a (child slice): RETURNED** (round 2 → 3, tests only; PR #745, merge 139d1f4cef6f7f4af7f0cd936f83918ccc9ce2a6,
+  head 650c2c41). Producer session_01MyyyioLQTi6E2LearNYiQz ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict
+  116078401482; gate 116030679927 "OK -- 123688 checks in 68 suite runs, 67 faults RED, 0 failing"; mutation 39/41 + 2
+  timeouts. All four round-1 fixes class-closing; 365 probes 0 unexpected. Return: element-count `>=` fault and
+  last-component target fault caught only by a patch-text guard (no behavioural row); the mutation gate counted the text
+  guard as a kill. Stopping rule set. Advisory for P3: 100 MB header parse ~4.2 GB / 27 s.
+
+## 2026-10-14T23:44Z — DECERTIFIED: FTF-0512; RETURNED: FTF-0512-F1 (r2)
+- **FTF-0512-F1: RETURNED** (round 1 → 2; PR #812, merge faead7bee3d0ae5ea906d5facec6ca803903810a, head 848af688). Producer
+  session_01VojzMAj9r97yBUykfBtAun ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 116152473276; gate
+  116150085708 "FTF-0512-F1 look-alike gaps: all checks passed". Held: Cf removal (163/163), idempotence over all scalar
+  values, one-sided timestamp/UUID, no new Arabic collapse, corpus differential. Return: NFKC merges superscripts /
+  fractions / circled digits with adjacent digits ("10⁵" == "105") -> false blocking FTF-0518 finding; quadratic NFKC
+  (2.04 MB in 99.7 s vs 0.047 s); hand-picked Cf table; tool-id / tool-name / message-name / tool_call_id faults GREEN.
+- **FTF-0512: DECERTIFIED** (Law 15; the relay PR itself already set spec-matrix to PROVISIONAL, this record makes it official and syncs the trackers): the merged module now violates FTF-0512's negative acceptance (distinct texts merge)
+  and the linear-time rule, and its requalification run left four clause faults GREEN. CERTIFIED → PROVISIONAL; it
+  requalifies with FTF-0512-F1 round 2. Consumers FTF-0513/0515/0518 unaffected in certification state (0518 is
+  PROVISIONAL in flight). Count -1.
+
+## 2026-10-15T01:17Z — CERTIFIED: FTF-0502
+- **FTF-0502: CERTIFIED** (round 4, under the stopping rule; PR #810, merge 77af5699cf97776a519305acb1e9c0bfd7269ed4, head 3341fae0, code commit 6f1a7c50).
+  Producer session_01H5t3Zpy1ZKkJ1KcvG9fgRd (earlier rounds session_015f8kwfjs7Suf1My6UGmah5, session_014U894sNcHjmQULfhwWLrjb,
+  session_014eb1RZDqBdz3dG7AVtYJcs) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI: ci-verdict 116122700352; gate
+  116093257387 (0502 + P1/0503/0504/0505 "all checks passed"); jsonl-import-integration 116093412805 (real stop); mutation
+  18/18. Round-4 items: same-dataset outage control (no-op stop RED 3/3; control 16,777,216/16,777,216, stop blocked at
+  8,388,608); memory pin (retain-all and 1-in-100 RED 3/3; production within 1.0x); hash precision (1,920 single-char
+  substitutions refused on run and preview); typed preview refusal (86/86 malformed shapes, 0 reads); evidence_hash and
+  trailers. Round-3 probe classes re-run with 0 violations. 57/65 faults RED; GREEN only equivalent mutants and hand-picked
+  variants of closed classes. The Control plane annotated two stale round-3 sentences in the spec-matrix note. Advisories:
+  json_importer.py:275 / xlsx_importer.py:928 unguarded compare_digest (carried into FTF-0503 r4 / FTF-0505 r3); the
+  "vs 8 MiB of max-size records" memory check is weak. UNWIRED.
+
+## 2026-10-15T03:46Z — CERTIFIED: FTF-0518
+- **FTF-0518: CERTIFIED** (round 3, under the stopping rule; PR #815, merge 31bbf72b35d5bd60563805d648f9801b21f76eb9, head ea1b1d01). Producer
+  session_01EnqSPZUhpKPANcN4itAdCV (earlier rounds session_01VedBiyLge6wojTPCKRCuVF, session_01X2nNH1ddiFbkeJTtuG9pPp) ≠
+  certifier session_01QVznorVMjnmcttUhyDnoGR, absent. Production change since round 2: docstring only (equal parse trees).
+  CI: ci-verdict 116178961190; gate 116156042166 "all checks passed" (LK-RECALL 10,000 records, 334 findings). Mirror hub
+  (LK-SATURATION-F22) and F14 both RED; disclosure now states an unkeyed sha256 cannot refuse a fully self-consistent
+  forgery (authenticity is FTF-0519's). Probes: low/high/development_eval hubs saturate at caps 3-4 and clear at 5;
+  150-scan differential vs a both-sided count 150/150; round-2 probe set identical, determinism hash unchanged. 31/34
+  faults RED; GREEN only F9 (equivalent), optional F26, F31 (reason label only, still blocked). FTF-0512 interaction:
+  with FTF-0512's current digit merge, "10⁵" vs "105", "1¼" vs "11/4", "H₂O" vs "H2O" give BLOCKING findings
+  (fail-closed); FTF-0512's own return (#819) - re-run 0518 when it merges (Law 15). UNWIRED.
+
+## 2026-10-15T03:46Z — RETURNED: FTF-1505 (r2)
+- **FTF-1505: RETURNED** (round 1 → 2; PR #816, merge cb31e1f944ca023346088cc4f67bc9e1165a3856, head 5182fe99). Producer
+  session_01JsEV8tuLc512spHsASTGbq ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 116176926954; gate
+  116155564331 "FTF-1505 secret scanning tests: all checks passed". The shipped scanner ignores the 2026-10-14 design:
+  ~640/1,276 tracked files unscanned (tests/, packages/*, .github/, infra/, scripts/, root), history = added lines under
+  9 dirs, shallow clone accepted, no binary/archive/decoded scan, value+glob allowlist tolerating stale entries, 5
+  committed seeds, no uvicorn log lane, missing rule families; an AKIA marker was missed in 11 placements. Faults 9 RED,
+  11 GREEN. Real-repo scan (tracked files, 2,682 commits, 8,506 blobs / 2.87 GB): NO actually exposed credential - every
+  hit is a fixture (AWS documentation keys, *_ci_only CI password, hunter2/postgres/user:pass examples, test fixtures,
+  the scanner's own seeds).
+
+## 2026-10-15T03:46Z — RETURNED: FTF-0904-F1 (r3); FTF-0904 requalification pending
+- **FTF-0904-F1: RETURNED** (round 2 → 3; PR #807, merge 0017ed719cd5170717e54d7f7cdc384d9cc1aa5d, head d15be627). Producers
+  session_01TyAmtH3AeXV3t6zhJ6thec, session_01LfpVEG21xjpeidAgbXBp7L ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI:
+  ci-verdict 116179297362; gate 116127871705 full FTF-0904 suite "all checks passed" (2h05m, 97 faults). Fixed: idempotence
+  guard (live log clean), serialized/form positions, separator/camelCase compounds, long-secret, linearity, fullwidth
+  layers, FAULTS evidence. Return: random-case names split before lookup (cOdE= leaks live; round 1 redacted it);
+  glued compounds leak 191/210; guard-tail, break-on-empty and value-class faults GREEN with demonstrated leaks.
+- **FTF-0904: stays CERTIFIED** - no certified behaviour regressed (the leaking names were added by F1); requalification
+  completes with F1 round 3. Live caller confirmed: install_redaction ← apps/api/app/log_redaction_setup.py ← create_app().
+
+## 2026-10-15T06:09Z — CERTIFIED: FTF-0503
+- **FTF-0503: CERTIFIED** (round 4, under the stopping rule; PR #814, merge f653debd4e6e0a6624dbdb6a81549b372a36d640, head c948cc7a, code ce4e7ed2). Producer
+  session_017VCP3z71zqEcneedqhE9mY (earlier rounds session_01TQCApsTmqruB1E7ZN6Fy3d, session_012VzyDahFi7g72tvagNtYUa,
+  session_01EmbFbQRQPkxmSHRBAmU8FC, session_01RMzi9P3PkjFrJohRUdi9MC, session_01XVwUcrzcU4AG5dFB7ecRmx) ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR, absent. CI: gate 116184141225 (step 85 FTF-0503 success); json-import-integration
+  116184231807 "all checks passed"; mutation 20/20 (uncapped - 20 generated). Round-4 items: 34 malformed dataset_sha256
+  shapes typed with 0 reads on drain/preview/run; 960 single-digit hash variants refused; records before a fatal
+  invalid_encoding identical at every chunking (6,050 + 2,699 runs); evidence corrected (evidence_hash ce4e7ed2). Outage
+  check discriminating (no-op stop RED). Round-3 probe classes hold (memory flat 3.01 MiB at 64 MiB; 0/9,112 silent
+  completions). 50/55 faults RED; GREEN only equivalents and untested variants of classes closed this round.
+  Advisory A1: a chunk cut right after a UTF-8 lead byte between tokens reports json_malformed instead of invalid_encoding
+  (same offset/records; 77/6,050 runs). UNWIRED.
+
+## 2026-10-15T06:09Z — RETURNED: FTF-0505 (r4)
+- **FTF-0505: RETURNED** (round 3 → 4; PR #818, merge 044a48bce20d8d4d06dd4291510cbc10b49c3df1, head 770d09db). Producer
+  session_012PAwsP4rRhEgkzajPGfmm3 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: all 73 checks success;
+  xlsx-import-integration 116182566941 "all checks passed"; gate 116182488102 step 87 success; mutation 171/171 (diff
+  mode). Fixed: header row (78 MB, fatal), unmapped refs, archive-error class (30,000 fuzzed, 0 escapes), preview sha,
+  byte cap, ruling (b) ImportLimits, vbaProject type. Return: kept-cell shared-string amplification (5,891 B -> 4,993 MB,
+  completed); position-dependent row outcome; 764 MiB at the shared-strings cap; 12 observable faults GREEN; no
+  never-raises fuzz test; evidence item 10 missing while the submission claimed nothing deferred.
+
+## 2026-10-15T08:34Z — RETURNED: FTF-1304-S1 (r1)
+- **FTF-1304-S1: RETURNED** (round 1 → 2; PR #820, merge 938e777e853abd9a8a1dad44e696afb172ec5657, head 52b2a635).
+  Producer session_01M8hpLyAAKtJwVbTMzYRcp6 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 74/74 checks success,
+  ci-verdict 116248811227; gate 116213943686 "FTF-1304-S1 Compound binding cost attribution tests: all checks passed".
+  Certified modules untouched (no Law 15 requalification); ci.yml additive only. Return: mixed-currency calls summed into
+  a priced total (USD+JPY, USD+EUR; §32); default-route step_kind hard-coded as `reasoning` (never-inferred rule; design
+  refinement adds CompoundBinding.default_step_kind). Child slice: no count change.
+
+## 2026-10-15T08:34Z — RETURNED: FTF-0512-F1 (r2); FTF-0512 stays DECERTIFIED
+- **FTF-0512-F1: RETURNED** (round 2 → 3; PR #819, merge 04c47880b3ca7ac75bc5ffaffe0ed6e184dce503, head f72733c8).
+  Producer session_01GhpysYTBd23W39D9WmNm6X ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 116240683038
+  success; gate 116200149662 ran test_ftf_0512_f1 / 0512 / 0518 / 0513 / 0515 / 0516-P1 ("all checks passed");
+  mutation-gate 22/22 killed. Closed: NFKC digit merge (1,131 No/Nl x 7 contexts), kasra+shadda run, Cf inertness,
+  idempotence, tool-id FG2/FI/FJ/FK, detector version in digest. Return: combining-run bound bypassed via NFKD
+  non-starters (U+0F73 run, 2 MiB in 1,724 s on CPython 3.11, the declared floor); FB2, detector-version and three
+  tool/role/json requalification faults GREEN; NFKC So/modifier-letter folds still fuse with neighbours; text-anchor
+  faults are not behavioural evidence. FTF-0512 does not requalify (stays DECERTIFIED, Law 15).
+
+## 2026-10-15T08:53Z — RETURNED: FTF-0213-S1 (r1)
+- **FTF-0213-S1: RETURNED** (round 1 → 2; PR #821, merge 214753607f5651eae1fc39d2d20b313747d0d479, head 9175ec9e).
+  Producer session_01AaQvY4q44PkMAquDXeNARP ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 73/73 success, ci-verdict
+  116286089574; gate 116245033716 "FTF-0213-S1 constrained-choice probe: all checks passed" (live TLS checks ran).
+  New files only; ci.yml additive. Return: negative/zero completion_tokens -> CONSTRAINED_OBSERVED (Law 17/11);
+  V16 (later-trial 400 skipped) and V18 (max from partial usage) GREEN. Child slice: no count change.
+
+## 2026-10-15T09:14Z — RETURNED: FTF-H010-P3a (r3)
+- **FTF-H010-P3a: RETURNED** (round 3 → 4; PR #823, merge 382d3d9d6c265dc8210a3032e4a3a378c348d2a2, head 27da4387).
+  Producer session_014JKtwes4LjSGTob9p4MMSS ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 73/73 success,
+  ci-verdict 116293560326; gate 116266288887 "OK -- 128096 checks in 70 suite runs, 69 faults RED"; mutation-gate diff
+  mode generated 0 mutants. No production violation (production byte-identical to r2). Return: [H1] patch-text guard
+  still the kill signal - behaviour-only uncapped run 11 survivors (duplicate-key casefold, list depth, shard duplicate
+  casefold, target casefold, plus pins). Ruling: S05/S07/S08 reviewed equivalents; S03/S04/S06 pinned. Stopping rule set.
+
+## 2026-10-15T14:14Z — RETURNED: FTF-1505 (r2)
+- **FTF-1505: RETURNED** (round 2 → 3; PR #829, merge 2c877affaae6848253f329ca90ff41510243cc8b, head 9f2feb0f).
+  Producer session_01KXrQetEoGDNNb7Z2f4H9ow ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: secret-scanning job
+  116332940357 "SECRET SCAN: 10340 unit(s) scanned, 13297 finding(s), 0 blocking -- clean"; gate 116332940741 step 64
+  (test_ftf_1505, 14 min, full run); ci-verdict 116395868281 success. Real run: 0 exposed credentials; 64/64 baseline
+  entries reviewed value by value (fixtures/documented examples, exact pairs). Return: 16 clause-level faults GREEN;
+  committed seeds; live log lane without positive control; incomplete quick gate + silent 2000-candidate cap; silent
+  omissions (non-ASCII name, >50 MB, corrupt archive, history-only archive); unsalted hash of new findings printed and
+  reversed; real CI uploads unscanned; 08:43Z PR-scoped history ruling not yet met. Stopping rule set.
+
+## 2026-10-15T17:21Z — RETURNED: FTF-1704 (r1)
+- **FTF-1704: RETURNED** (round 1 → 2; PR #827, merge bd4066f4e153b96c9b181222626bb52a910487ad, head 0a48faf6).
+  Producer session_01DZpiSUyr8YTzvyBRiji5oc ≠ certifier session_01QVznorVMjnmcttUhyDnoGR (head merge-of-main commit has
+  no trailer - flagged). CI: 75/75 success, ci-verdict 116509504910; gate 116436463183 "FTF-1704 Validation dataset
+  tests: all checks passed"; development-suite-import-integration 116436611994 "all checks passed". ci.yml additive.
+  FTF-0518 scan clear (partners=5000). Return: development cases unlabelled (synthetic provenance missing); freeze
+  does not bind record content (faults A, K GREEN).
+
+## 2026-10-15T17:21Z — RETURNED: FTF-0505 (r4)
+- **FTF-0505: RETURNED** (round 4 → 5; PR #826, merge bfbc750763f5956a86fcd263341b0c9a9652db87, head b81c1da9).
+  Producer session_015Xyndpbs1EYDT52c8rdAfw ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 74/74 success,
+  ci-verdict 116484896266; xlsx-import-integration 116410845729 "all checks passed" (real stop s3); gate 116410709371
+  step 88 success; mutation-gate 116410709155 154/154 killed (diff mode). All six round-4 points closed in production.
+  Return (small): source_schema_sha256 dropped from mapping_column_missing reports (regression, undisclosed);
+  R4-HEADER-ERROR-RAISED-EARLY GREEN (blank_lines position-dependent in failed reports); production-constant tables
+  and evidence_hash refresh. Stopping rule set.
+
+## 2026-10-15T17:21Z — CERTIFIED (child slice): FTF-0904-W1-F1
+- **FTF-0904-W1-F1: CERTIFIED (L2)** (round 1; PR #831, merge f7646ecfc8d56cef80774c0c1d6191f038614683, head 8646ed59).
+  Producer session_01DZpiSUyr8YTzvyBRiji5oc ≠ certifier session_01QVznorVMjnmcttUhyDnoGR (the certifier produced the
+  parent W1 slice, which a separate session certified; this one-line follow-up is relay-produced). CI: 74/74 success,
+  ci-verdict 116514435690; gate 116436470784 step 185 "fault F15-print-exception-no-extra-keywords: RED", F1–F14 RED,
+  "FTF-0904-W1 live log redaction tests: all checks passed"; mutation-gate 3/3 killed. Local: test_ftf_0904_w1 all checks
+  passed with 15/15 faults RED on CPython 3.11/3.12/3.13 (Law 15 requalification of W1: live uvicorn socket, boot
+  failures incl. --workers 2/--reload children, hooks); test_ftf_0905 passed. Probes: every print_exception/print_exc
+  keyword and positional mix redacted and never raised; 3.13 fallback paths redacted. Advisories: CI has no 3.13 lane;
+  a hook reset by application code after create_app() prints raw (no such code exists); the write guard is unpinned.
+  Child slice: no count change.
+
+## 2026-10-15T19:59Z — CERTIFIED: FTF-0512 (recertified) + FTF-0512-F1 (child slice, r3)
+- **FTF-0512-F1: CERTIFIED (L2)** (round 3; PR #836, merge 2351f53e299dac7cc7c89058b14d885a9030d65c, head 1db450a1). Producer
+  session_01T6jqtC8W5mEtEAgiCGs5ey ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 75/75 success, ci-verdict
+  116575165189; gate 116530343997 "FTF-0512 normalized duplicate detector: all checks passed", "FTF-0512-F1 look-alike
+  gaps: all checks passed" on 3.12 and on the new additive CPython 3.11 step; 0513/0515/0518/0516-P1 passed;
+  mutation-gate 45/45. Local: F1 suite on 3.11/3.12/3.13 (580,919 checks); 0516-P1 integration on PG16. All six
+  round-3 points met: U+0F73 2 MiB refused in 0.12 s on 3.11 (was 1,724 s); 2,066-code-point non-starter table exact
+  at 30/31; FB2, detector_version (3), role/json/id requalification faults RED; 989 compatibility folds separated, 0
+  fusions; all 34 in-suite faults behavioural. Round-1/2 probe classes hold; corpus diff 0 new merges.
+- **FTF-0512: RECERTIFIED (L2)** with evidence 2351f53e299dac7cc7c89058b14d885a9030d65c (Law 15 requalification complete; decertified 2026-10-14). FTF-0518
+  re-run: test diff +27/-0, 31/34 certification faults RED (same 3 GREEN as at certification). Ruling: name-field
+  fold faults (D18, D31–D33) GREEN with production correct = a new field in a class closed for ids -> does not block;
+  pinned in follow-up FTF-0512-F2 together with the pre-existing math/currency-symbol merge ("x ≤ 5" == "x ≥ 5",
+  "$100" == "€100") found by the same verifier.
+
+## 2026-10-15T19:59Z — RETURNED: FTF-1304-S1 (r2)
+- **FTF-1304-S1: RETURNED** (round 2 → 3, tests only; PR #833, merge e3ffdb017b868f687422b15754ca0df45874dab1, head cf3f7742).
+  Producer session_019g1LK9r7ZccWKtEgteQpgw ≠ certifier session_01QVznorVMjnmcttUhyDnoGR (code commit e560d117 has no
+  trailer - advisory). CI: 74/74 success, ci-verdict 116523950845; gate 116442545766 step 73 "FTF-1304-S1 Compound
+  binding cost attribution tests: all checks passed"; mutation-gate 85/85. Production fixes for both round-1 findings
+  verified (128 probes, 0 violations). Return: V2-CUR-PER-ATTEMPT (re-opens the round-1 harm), V2-DSK-ALIAS-STEP-KIND,
+  V2-CUR-CASEFOLD/STRIP GREEN (Law 1). Stopping rule set.
+
+## 2026-10-15T20:22Z — RETURNED: FTF-0906 (r1)
+- **FTF-0906: RETURNED** (round 1 → 2; PR #832, merge 23056b0f8e4b95f1c22f15c7a3722e92bab46150, head 44fa8461).
+  Producer sessions session_012YYPmoT6SxFqSkgjmhjmu3, session_01CP1PPBTsTDUFx8sXeGuj7E ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI: 76/76 success, ci-verdict 116627746042; egress-verification-integration
+  116553524506 "all checks passed" (real run); mutation-gate 116553361962 172/172. Enforcement (FTF-H006 guard) sound
+  over real sockets. Return: verify_egress passes with unattributed/unplanned leaks, caller-narrowed coverage,
+  fabricated (unscanned) inspections, vacuous positive control, allow-flow/enforcement mismatch, encrypted-capture
+  loophole, hard-coded "not_seen"; integration skip exits 0; report not bound to policy/scope; no gate step; F3/F4/F5/F7
+  GREEN. Mutation allowlist ruling: nothing allowlisted (uncapped 172/172; the one equivalent mutant was refactored away).
+
+## 2026-10-15T20:22Z — RETURNED: FTF-0213-S1 (r2)
+- **FTF-0213-S1: RETURNED** (round 2 → 3, tests only; PR #842, merge a1ede6f83d51bbc72f6f026a4cf6145de7fd1cb1, head c406a7f5).
+  Producer session_01C9XVgQr6CtYks3VQ9QhNah ≠ certifier session_01QVznorVMjnmcttUhyDnoGR (merge-of-main commit c406a7f5
+  has no trailer). CI: 75/75 success, ci-verdict 116626142220; gate 116582417443 "FTF-0213-S1 constrained-choice probe:
+  all checks passed" (live TLS). V16/V18 met; production refuses impossible counts over the wire (68 probes). Return:
+  wire-level faults W1/W2 (and W3) GREEN - the impossible-count clause is pinned only at the aggregate helper. Stopping
+  rule set.
+
+## 2026-10-15T22:45Z — CERTIFIED: FTF-0505
+- **FTF-0505: CERTIFIED** (round 5, under the stopping rule; PR #841, merge 870ec2ef1abd97d6b7b0fc6cda776272cb944ba1, head 26103880, content d0f7827f).
+  Producer session_01AjM5eMb48sLdAMW7afMoh6 (earlier rounds session_015Xyndpbs1EYDT52c8rdAfw, session_012PAwsP4rRhEgkzajPGfmm3
+  and others) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI: 75/75 success, ci-verdict 116639788507; gate
+  116581026656 step 89 (FTF-0505) and steps 85-88 (0502-P1/0502/0503/0504) success; xlsx-import-integration 116581139802
+  "FTF-0505 XLSX import (PG16 + SeaweedFS): all checks passed"; mutation-gate 116581026495 13/13. Round-5 points: schema
+  digest on mapping_column_missing identical to round 3 (3,000-workbook differential: 2,998 identical, 2 = round-3
+  crashes fixed in r4); blank_lines position-independent (324 runs), R4-HEADER-ERROR-RAISED-EARLY RED; production-constant
+  sharedStrings tables end to end and the 50,000,000-cell cap via a seeded counter, evidence_hash refreshed. No
+  regression: 5,891 B file 92 MB; 1,200 x 2 MiB rows 92/93 MB; cap shapes 80-205 MiB; fuzz 0 raised. 155/165 faults RED
+  (all 138 round-4 REDs still RED; GREEN = equivalents, exempted header-bound variants and 4 hand-picked variants with
+  production correct - advisories A1/A2). Outage check discriminating. UNWIRED.
+
+## 2026-10-16T01:58Z — RETURNED: FTF-0904-F1 (r3); FTF-0904 stays CERTIFIED
+- **FTF-0904-F1: RETURNED** (round 3 → 4; PR #825, merge eea46ca36ea8db38bef306735559fd04dcc671cc, head 1295d1fb).
+  Producers session_01TQXcVhBNPuEYoxNSEno7x4, session_01Vp6PiUFMTTuptuJPp1ZtTh ≠ certifier session_01QVznorVMjnmcttUhyDnoGR.
+  CI: 75/75 success, ci-verdict 116677066694; gate 116613765034 "FTF-0904 Log redaction tests: all checks passed" (full
+  matrix, 109 faults, 1h48m), W1 F1-F15 RED, FTF-0905 passed; mutation-gate 12/12. Local full matrix 109/109 RED on
+  3.11. Closed: bare-name case split, guard tail, empty value, value class. Return: separator compounds with prefixes
+  outside the vocabulary leak (1,344/3,060, live); glued compounds closed only by enumeration (46/67 realistic names
+  leak live); separator-strip faults GREEN; stale W1 docstring. Ruling: deny-by-default suffix match with a closed
+  benign allowlist and a quantified over-redaction count. FTF-0904 stays CERTIFIED (no certified behaviour regressed).
+
+## 2026-10-16T01:58Z — RETURNED: FTF-1505 (r3)
+- **FTF-1505: RETURNED** (round 3 → 4; PR #845, merge 012756b847acd0d2525300c58ac85970c2ad1146, head c29671da).
+  Producer session_014VPD3n9bHU1k5D78GMKA2a ≠ certifier session_01QVznorVMjnmcttUhyDnoGR (merge-of-main commit c68c3946
+  has no trailer). CI: 76/76 success; secret-scanning 116656080585 "SECRET SCAN: 9788 unit(s) scanned, 12497 finding(s),
+  0 blocking -- clean (scope=pr)"; gate 116656081123 step 64 success (20 min, full runs); ci-verdict 116712327860.
+  0 real exposed credentials (all refs; 65/65 baseline fingerprints reviewed). Met: points 4, 6, 7, 8 (PR scope).
+  Return: 12 GREEN fault rows (source greps, F18 test cannot fail); no live positive control, reachable 422/400 paths
+  unprobed; corrupt deflated member hides later members (round-2 P9 unchanged); truncated archives and >50 MB members
+  silent; window-seam regression misses long secrets; no per-lane seeded recall in main(). Control-plane action: the
+  all-refs push/schedule sweep is a [GOVERNANCE] workflow change.
+
+## 2026-10-16T05:05Z — CERTIFIED (child slice): FTF-1304-S1
+- **FTF-1304-S1: CERTIFIED (L2)** (round 3 under the stopping rule, tests only; PR #849, merge f490784c7433106e838c18553dab5b67e4eec1d5, head 76bbdb56).
+  Producer session_019bSJLCBeQfUuKvkvkpQnDw ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 76/76 success, ci-verdict
+  116759038545; gate 116712903176 step 74 "FTF-1304-S1 Compound binding cost attribution tests: all checks passed" (27
+  faults, exits 1 on any GREEN). Production byte-identical to round 2; certified modules and ci.yml untouched. Pins
+  CUR6 (cross-attempt currency), CUR7 (exact currency compare), DSK1 (shared alias kinds) landed; all 27 producer
+  faults and every round-2 verifier fault RED; 215 probes, 0 violations. Advisory: pin a fullwidth card (F3-KEY-NFKC
+  GREEN, production correct); make SelfHostedWindow.currency keyword-only. Child slice: no count change. UNWIRED.
+
+## 2026-10-16T05:05Z — CERTIFIED (child slice): FTF-0213-S1
+- **FTF-0213-S1: CERTIFIED (L2)** (round 3 under the stopping rule, tests only; PR #850, merge 7460dcbe925bd4d73e607afe80efaf656326bba8, head e9f81797).
+  Producer session_019bSJLCBeQfUuKvkvkpQnDw ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 76/76 success, ci-verdict
+  116770972015; gate 116712914620 "FTF-0213-S1 constrained-choice probe: all checks passed" (live TLS checks ran).
+  Production byte-identical to round 2; certified probes and ci.yml untouched. Five real-wire usage modes (negative /
+  zero on all or one trial, mixed) -> MALFORMED_RESPONSE / USAGE_MISSING with max/mean None and raw counts kept; W1/W2/W3
+  and 11 verifier variants RED; all round-1/2 faults RED; 229 checks; 87/89 probes OK (2 = advisory A1, over-ceiling
+  value still shown while MALFORMED). Child slice: no count change. UNWIRED.
+
+## 2026-10-16T05:05Z — RETURNED: FTF-0519-P1 (r1)
+- **FTF-0519-P1: RETURNED** (round 1 → 2; PR #843, merge 73abde98ce543a084da1fa9f9d49b7411fa9f63c, head 18ed6ca3).
+  Producer session_0193jVS9JcLjjkyAggEtNa5k ≠ certifier session_01QVznorVMjnmcttUhyDnoGR (merge commit 608f48c5 has no
+  trailer). CI: 77/77 success, ci-verdict 116776744459; dataset-split-manifest-integration 116720987735 "FTF-0519-P1 split
+  manifest real proof: all checks passed"; gate 116720891848 "FTF-0519-P1: all checks passed"; mutation-gate 200/200
+  (capped). Law 18 verified with raw SQL; Law 15 none touched (0030 adds one UNIQUE FK target, disclosed). Return:
+  frozen grants of non-served sources not re-authorized (revoked held-out/dev connection still serves training);
+  frozen hash omits organization_id/created_by/locked_at; get_split_manifest leaks finding record ids; no saturation
+  fixture. Ruling: re-authorize every frozen source on every load.
+
+## 2026-10-16T12:10Z — CERTIFIED: FTF-1704
+- **FTF-1704: CERTIFIED** (round 2; PR #848, merge 2a442fb2e28c3f42f1e3f8c8a7498cd4b05ffcca, head 8107fd70, first parent 984a0b8a).
+  Producers session_014vUsTx4TN37hSRDiVVYmfc (main change), session_01LM7M5LQqRz4VfgucXuJDXr, session_01BafthcwGsJjcK5PEP9Zz9V,
+  session_016deTdx216HZcaazY1tnqNA, session_01DB2u38VQVz5gMUBpRSxnHJ ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent
+  (merge commit f86a7c7d has no trailer, advisory). CI: 77/77 success, ci-verdict 116839909862; integration 116800436531
+  "FTF-1704 development suite import: all checks passed" (PG 16.15); mutation-gate 116800366414 48/48 KILLED; gate
+  116800366887 step 70 test_ftf_1704.py success. Net diff 5 files; secret-scan baseline, ci.yml, scripts/ unchanged (Law 9).
+  Round-2 points: DEV-UNLABELLED fixed (provenance origin/producer/label/index regenerated and compared exactly; 600/600
+  stored rows checked by SQL); FREEZE-CONTENT-BLIND fixed (content_sha256 over every validation + development record;
+  assert_split_unchanged checks ids and recomputes; edit/mutation/truncation/duplication/same-id change raise
+  SplitChangedError). Local: test_ftf_1704 1,562/0, test_ftf_1703 417/0, integration 16/0. Probes 57/57 new, 57/59 round-1
+  (2 informational). FTF-0518 scan clear at partners=5000; blocked/semantic_scan_saturated at 200. Faults A,K refused by
+  the freeze; L,R,S,Q,M,N,O,P RED. Advisories: persist content_sha256 in FTF-0519/0603; optional golden content hash pin.
+  UNWIRED.
+
+## 2026-10-16T12:10Z — RETURNED: FTF-0906 (r2)
+- **FTF-0906: RETURNED** (round 2 → 3; PR #852, merge 984a0b8ae622947575b9a825132058c96922682d, head 49a65034).
+  Producer session_01T31ZNFX5tHqE4p1LuxaoHb ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 77/77 success, ci-verdict
+  116832453416; gate 116783196075 step 190 "FTF-0906 Egress capture/verification tests: all checks passed";
+  egress-verification-integration 116783644109 "all checks passed" (real run; skip path exits 1). Uncapped mutation
+  202/202 (no allowlist). Met: points 1, 5, 7, 10, 12. Return: missing workflow_history passes; unobserved client log
+  passes (Law 17); F5b/F9/F10/F10b/F10c/F24/F25/F29 GREEN; integration still hard-codes canary_found and enforcement
+  decisions, ledger completeness not asserted on application_log, G1 GREEN; fragmented-header canary missed.
+  Stopping rule set.
+
+## 2026-10-16T12:10Z — RETURNED: FTF-H011-P1 (r1)
+- **FTF-H011-P1: RETURNED** (child slice of FTF-H011; round 1 → 2; PR #854, merge f88040d3bb75f0fe9e68f880cbe437c87a889776, head
+  036893fa). Producers session_01PKNMcPg4y66uRtgMc9b1N3, session_01EcVmqJMjXN5B4XtDGvLm8J, session_016TP2TkNEjfg8NYWKgqtsG3 ≠
+  certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict 116874615049 success; dataset-mapping-preview-integration
+  116840117216 "FTF-H011-P1 dataset mapping preview (PG16 + SeaweedFS): all checks passed"; gate 116840018741 both task
+  scripts "all checks passed". Law 9: ci.yml +45/-0. Law 15: 0502-P1/0502/0503/0504/0505 pass. Return: masking leaves
+  candidate/role values/headers/keys in clear; no tool_argument_validator; changed object read to the limit -> completed;
+  probe has no Law 17 state; F2/F2b/F6/F9/F11/F14/F15/F16 GREEN; observer copy shallow, differential test missing;
+  submission's tracker claims wrong. Stopping rule set.
+
+## 2026-10-16T14:05Z — CERTIFIED (child slice): FTF-0519-P1
+- **FTF-0519-P1: CERTIFIED (L2)** (round 2; PR #859, merge ced8203b0314d03ba04abb5eb9623744c728cedf, head 4441f468, first parent bce004d8).
+  Producer session_01GfXW3562wJd3Tk9eMn7KS3 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI run 38867778761
+  77/77 success, ci-verdict 116933772146; dataset-split-manifest-integration 116864936603 "FTF-0519-P1 split manifest
+  real proof: all checks passed"; gate 116864842560 "FTF-0519-P1: all checks passed"; mutation-gate 200/200 (capped);
+  local uncapped 209/209 KILLED. No migration, ci.yml or certified module changed (Law 15). Law 18: 4 tables ENABLE +
+  FORCE RLS, tenant_isolation policy, sovra_app SELECT/INSERT + column-limited UPDATE, no BYPASSRLS. Round-2 points:
+  every frozen (source, role) re-authorized on both loads (ruling) - revoked held-out/dev connection and removed
+  held_out_evaluation give grant_changed; frozen hash covers organization_id/created_by/locked_at (UTC); ManifestView
+  whitelist + id-free leakage_summary; saturation fixture (215 -> blocked, lock refused). Probes 215 (round-1 set
+  115/116 + 36/36, new 63/63), no violation. Faults 39 RED (G1-G15, G1b; round-1 23/23), none GREEN. Advisories to P2:
+  propose/approve/reject return the ORM row with finding record ids; real-PG coverage of the round-2 cases;
+  created_at/updated_at outside the hash; A1/A4. Child slice: no count change. UNWIRED.
+
+## 2026-10-16T14:05Z — RETURNED: FTF-0904-F1 (r4); FTF-0904 stays CERTIFIED
+- **FTF-0904-F1: RETURNED** (round 4 → 5; PR #857, merge bce004d885f9edbb48b514ca9c6bf6980029d5f8, head e63c77a6).
+  Producer session_01FKhoJ6y7VvqNmcjaZsAGkE ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 77/77 success, ci-verdict
+  116882390088; gate 116834871105 step 187 (full matrix, 1h48m) "FTF-0904 Log redaction tests: all checks passed", W1
+  F1-F15 RED, FTF-0905 passed; mutation-gate 116834871057 7/7. Local full matrix 110/110 RED. Closed: glued compounds
+  (deny by default), random-case separator compounds with independent prefixes, separator-strip pins, W1 docstring.
+  Return: the required lowercase segment lookup is missing (benign-list split words leak in random case, 192/192, live
+  9/9); ASCII-only fallback fault GREEN with non-ASCII prefixes leaking. Stopping rule set. FTF-0904 stays CERTIFIED.
+
+## 2026-10-16T14:05Z — RETURNED: FTF-1505 (r4)
+- **FTF-1505: RETURNED** (round 4 → 5; PR #860, merge 2d18491a2fccc432f344567c4218c03163b419b9, head fb062645).
+  Producer session_01WBivTmyjB3VmBxtppqErB1 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 77/77 success, ci-verdict
+  116934959972; secret-scanning 116867173289 "SECRET SCAN: 9961 unit(s) scanned, 12881 finding(s), 0 blocking -- clean
+  (scope=pr)"; gate 116867173441 step 64 success. Baseline and .github/ untouched (Law 9). No real exposed credential
+  (local 10,041 units, 0 blocking). Closed: window seam, one-line JSON JWT, per-member archive failures, source/artifact
+  truncation and over-bound members, callback error probes. Return: decode cap silently drops candidates (regression);
+  history lane never opens tar.gz/.gz; 16/55 faults GREEN (F16/F17/F18 among them); live lane has no startup-line check,
+  no positive control, shared access key; no seeded recall in main(); quadratic whole-line matchers. Round 5 produced by
+  the Control plane (owner-approved), certified by a separate session. Stopping rule set.
+
+## 2026-10-20T04:45Z — Control plane: 6 equivalent mutants allowlisted (BLOCKER.md 2026-10-19T09:10Z resolved)
+- **mutation-allowlist.yaml +6 (Law 9, reviewed at L2):** PR #869 (FTF-0519-P2) M9 at
+  dataset_split_manifest_routes.py:304/387/446/512 (`exc.code` from the fixed lowercase CODES tuple, every raise a
+  literal; `action` only "approve"/"reject"); PR #742 (FTF-H010-P2) M9 at model_import_validation.py:382/383
+  (constant "succeeded"; SQLAlchemy Dialect.name). Each line-pinned. No test weakened, no other entry changed.
+
+## 2026-10-20T04:45Z — CERTIFIED (child slice): FTF-0512-F2; FTF-0512 requalified
+- **FTF-0512-F2: CERTIFIED (L2)** (round 1; PR #861, merge 244ea3af6ba6e9a65dda0485f271441662b2c10d, head a6c23d30). Producer
+  session_01KWYe2dN24HXcnsE8qH9Mym ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI: 78/78 success, ci-verdict
+  116969942228; gate 116899537775 "FTF-0512-F1 look-alike gaps: all checks passed" (holds run_f2_checks) on 3.12 and
+  3.11; 0512/0513/0515/0518/0516-P1 passed; mutation-gate 17/17. Local: all six suites + 0516-P1 integration on PG16.
+  Probes: 7,741 Sm/Sc/Sk/So code points x 10 contexts - 0 erased (6,847 before), Sm x Sc 59,724 pairs 0 collisions;
+  220 compatibility variants still merge; named pairs distinct, P*/case/space still merge; 25 name-field variants x 3
+  fields 0 collapsed; detector_version 4; corpus 338k texts 0 new merges; FTF-0518 positive controls hold. Faults 25/26
+  RED (G20 NFC-only name fold GREEN, production correct - pinned in F3); FTF-0518 certification faults 31/34 (unchanged).
+- **FTF-0512: stays CERTIFIED**, evidence_hash -> 244ea3af6ba6e9a65dda0485f271441662b2c10d (Law 15). Follow-up FTF-0512-F3: digit-adjacent P* ("-5" == "5",
+  "5%" == "5", "#1" == "1") merges distinct outcomes; NFC/NFD name pin; proving_test to include test_ftf_0512_f1.py.
+
+## 2026-10-20T04:45Z — RETURNED: FTF-R006-P1a (r1); FTF-R006-P1 split
+- **FTF-R006-P1a: RETURNED** (client-only sub-slice of FTF-R006-P1; round 1 → 2; PR #862, merge
+  697caf40f65c42893a129e6a697cd7144521fd3a, head 8194803e). Producers session_01JbrfDG7Ni3AHfj1P8stRGU,
+  session_01FaqQAMDmProPBwezTYE8FD ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 79/79 success, ci-verdict
+  117069053753; gate 116984001200 "FTF-R006-P1 Argilla client tests: all checks passed". Integration form matches
+  REFERENCE_REPOSITORIES.md (stdlib REST adapter, no SDK/fork/dependency); v2.8.0 routes/schemas match. Return:
+  admin/owner role on the wire; raw http.client exceptions escape (key in IncompleteRead.partial); body buffered
+  before the bound, no total deadline; lax response schema; FI8b/FI11/FI15/FI16/FI18 GREEN. Control-plane split:
+  P1 -> P1a (client) + P1b (identity store, migration, OpenBao, compose stack, live integration). Stopping rule set.
+
+- **Gate test change (Law 9, Control plane):** tests/tasks/test_mutation_gate.py's committed-allowlist check ("names
+  an existing production file") skips an entry with a positive integer `pending_pr` only while its file does not
+  exist on main; the check applies unchanged once the file lands. Needed because the mutation gate runs only on
+  [relay] PRs and a [relay] PR may not edit the allowlist, so a ruling on a survivor in a new file must land on main
+  first. No matching rule changed; the six entries above carry pending_pr 869/742.
+
+## 2026-10-20T06:35Z — CERTIFIED: FTF-0906
+- **FTF-0906: CERTIFIED** (round 3, under the stopping rule; PR #864, merge 12f1102895cee6dd5e300231666ddae42328ead9, head 365e507e).
+  Producer session_011c9ZCsPNzLfYzNdk8w5Ph9 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI: 78/78 success,
+  ci-verdict 117084546569; gate 116996577895 step 192 "FTF-0906 Egress capture/verification tests: all checks
+  passed"; egress-verification-integration 116996730112 "all checks passed" (skip path exits 1); mutation-gate 119/119.
+  Local: unit 41 functions; integration with a real openssl CA and loopback sockets; uncapped mutation 215/215, empty
+  allowlist. Round-3 points 1-5 met: missing history always partial; unobserved on any side -> incomplete (14
+  combinations); F5b/F9/F10/F10b/F10c/F24/F25/F29 RED; integration canary_found from real scans, enforcement from the
+  exception type, ledger completeness on every ledger, G1 (H006 metadata rule removed) RED; fragmented-header canary
+  found (2-8-way splits, no false positives). ~45 faults RED. GREEN: F5 (equivalent: an uninspected record cannot
+  carry canary_found) and A1/F15x (new hand-picked variant of the class closed in round 2; production correct). Law 9:
+  no ci.yml/scripts/spec change. Advisories A2-A9 (DNS failure labelled allow, upper-case digest, "b"*64 integration
+  digest, relay-capture ledger completeness, final-buffer scan). UNWIRED.
+
+## 2026-10-20T06:35Z — RETURNED: FTF-H011-P1 (r2)
+- **FTF-H011-P1: RETURNED** (child slice of FTF-H011; round 2 → 3; PR #866, merge 3de9b58bdd8b90e54902e4d875219dd4191496e2,
+  head f899adad). Producer session_01SkRPdyqRdU2ip5HuTPGG16 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI run
+  38916109562 78/78 success, ci-verdict 117110942691; dataset-mapping-preview-integration 117024653425 "all checks
+  passed" (incl. outage cycle); gate 117024502590 steps 90/91 success. Closed: tool validator (production), source
+  changed via drain, probe Law 17 states, complete flag, deepcopy observer, record. Return: nested keys and any
+  "type" value unmasked (reproduced on real storage), no whole-result canary check; F2/F2b/F6/F11/F14/F15/F16 GREEN;
+  P4 fixtures missing; differential not importer-level. Stopping rule restated.
+
+## 2026-10-20T06:35Z — RETURNED: FTF-0904-F1 (r5), tests only; FTF-0904 stays CERTIFIED
+- **FTF-0904-F1: RETURNED** (round 5 → 6, tests only; PR #867, merge 4cf6ac8ddee766d79eaa5783fc4a0c7190929ae8, head
+  263c8083). Producer session_01KHsqHhKJGFF3prVe3yT6Rn (PR body; commits carry no trailer - advisory) ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 78/78 success, ci-verdict 117121079353; gate 117052642666 full matrix
+  "FTF-0904 Log redaction tests: all checks passed" (1h53m), W1 F1-F15 RED, FTF-0905 passed; mutation-gate 10/10.
+  Local full matrix 114/114 RED. Production clean: exhaustive 0/62,496 text, 0/15,624 logging, non-ASCII 0/11,424,
+  live 191/0. Return: the required generated benign-split table is a hand-picked 25-row list (7 words missing), so
+  MY11/MY12 stay GREEN with leaks on the mutants; logging-path rows lowercase only. Stopping rule: tests only.

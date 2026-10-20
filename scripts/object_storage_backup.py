@@ -340,6 +340,13 @@ def _version_issue(ref: BlobRef, versions: Sequence[VersionInfo]) -> str | None:
     return None
 
 
+def _new_backup_id() -> str:
+    """The id a new backup is given. Never a caller input (see `create_backup`'s own docstring);
+    this private seam exists only so tests can pin a deterministic id without a public parameter
+    a real caller could also use to force two calls onto the same record key."""
+    return str(uuid.uuid4())
+
+
 def create_backup(
     manifest: Sequence[BlobRef],
     *,
@@ -348,21 +355,27 @@ def create_backup(
     known_key_refs: frozenset[str],
     retain_days: int,
     now: datetime | None = None,
-    backup_id: str | None = None,
     prefix: str = "backups",
 ) -> BackupRecord:
-    """Back up every blob `manifest` references; raise unless complete and verified."""
+    """Back up every blob `manifest` references; raise unless complete and verified.
+
+    `backup_id` is never a caller input (round 5, Law 17): two concurrent calls that shared a
+    caller-chosen id could race a real S3-compatible server's lack of a conditional (If-None-Match)
+    write, letting one caller observe a `BackupRecord` for a backup the other call's own write makes
+    immediately unverifiable (a second, racing record version). Generating the id here, always,
+    removes the shared key two independent calls could ever race on.
+    """
     refs = _validate_manifest(manifest)
     if type(known_key_refs) is not frozenset or not all(_is_text(k) for k in known_key_refs):
         raise ObjectStorageBackupError("known_key_refs must be a frozenset of non-empty strings")
     if not _is_int(retain_days) or not 1 <= retain_days <= MAX_RETENTION_DAYS:
         raise ObjectStorageBackupError(f"retain_days must be an integer in 1..{MAX_RETENTION_DAYS}")
     created = now if now is not None else datetime.now(UTC)
-    if created.tzinfo is None:
+    if type(created) is not datetime or created.utcoffset() is None:
         raise ObjectStorageBackupError("now must be timezone-aware")
-    identity = backup_id if backup_id is not None else str(uuid.uuid4())
-    if not _is_text(identity) or "/" in identity or not _is_text(prefix) or prefix.endswith("/"):
-        raise ObjectStorageBackupError("backup_id and prefix must be plain path segments")
+    identity = _new_backup_id()
+    if not _is_text(prefix) or prefix.endswith("/"):
+        raise ObjectStorageBackupError("prefix must be a plain path segment")
 
     issues = [*_shard_issues(refs), *_key_issues(refs, known_key_refs)]
     record_key = f"{prefix}/{refs[0].organization_id}/{identity}/{RECORD_NAME}"
@@ -611,7 +624,7 @@ def verify_backup(
     """Re-read a backup and prove its record is consistent and every blob is present,
     hashed as recorded and still retained."""
     current = now if now is not None else datetime.now(UTC)
-    if type(current) is not datetime or current.tzinfo is None:
+    if type(current) is not datetime or current.utcoffset() is None:
         raise ObjectStorageBackupError("now must be timezone-aware")
     record, base = _load_record(target, organization_id, backup_id, prefix, current)
     issues = _record_issues(record)

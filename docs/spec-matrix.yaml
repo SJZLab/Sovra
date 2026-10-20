@@ -7394,132 +7394,294 @@ FTF-0501:
   proving_symbol: build_direct_upload_router
   proving_test: tests/tasks/test_ftf_0501.py
 FTF-0502:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: JSONL importer
-  evidence_hash: 0eada57097f55ccb2a7203768aeef377a5a4f093
+  evidence_hash: 77af5699cf97776a519305acb1e9c0bfd7269ed4
   implementation_state: IMPLEMENTED
   notes: >-
+    Correction (Control plane, 2026-10-15, L2 certification of round 4): two round-3 sentences below are
+    superseded - the module has no fatal_locator property (it uses the shared ImportReport.fatal_locator /
+    LocatedImportReport), and the round-3 stop run did NOT show a real outage (it was vacuous; round 4 fixed it
+    with a same-dataset control).
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
-    FTF-0506 (all CERTIFIED, confirmed before relying on them). Path refined from the packet's
-    generic services/training-worker/data/jsonl_importer.py to workers/data/jsonl_importer.py
-    (this repo's real SOURCE_ROOT, same precedent FTF-0506/FTF-0507/FTF-0508/FTF-0517 already
-    established).
+    FTF-0506 (CERTIFIED) and FTF-0502-P1 (CERTIFIED, #770). Path refined to
+    workers/data/jsonl_importer.py. Round 2 rebuild on FTF-0502-P1 (ChunkReader, strict_loads,
+    apply_mapping, normalize_mapped_record, to_dataset_record_candidate, ImportAccumulator,
+    ImportReport): import_jsonl / run_jsonl_import / jsonl_events stream LF-delimited lines
+    (one trailing CR removed; U+2028/2029 are data), each decoded as strict UTF-8 on its own
+    (invalid_utf8, the next line still imports) and parsed as exactly one JSON object through
+    strict_loads (invalid_json, duplicate_key, non_finite_number, number_out_of_range,
+    nesting_too_deep, invalid_unicode, record_not_object). A line over max_record_bytes is
+    record_too_large and is discarded as it arrives (no buffering, followers import); the
+    line buffer is capped at max_record_bytes+1 and each chunk is searched once, so memory and
+    time do not depend on the chunking. A UTF-8 BOM is accepted at byte 0 only; UTF-16/32
+    (BOM or NUL pattern) is fatal unsupported_encoding at line:1; blank lines are counted
+    apart from records; only application/jsonl and application/x-ndjson are imported (else
+    failed content_type_not_supported_by_importer before a byte is read). A candidate whose
+    canonical (ASCII-escaped) content would exceed MAX_CANONICAL_RECORD_BYTES is rejected
+    record_too_large so every accepted candidate passes FTF-0508. Source outage is blocked /
+    source_unavailable, a changed source is failed / source_changed, never completed. Real PG16
+    + SeaweedFS evidence through the FTF-0501 routes in job jsonl-import-integration
+    (tests/integration/test_ftf_0502_jsonl_import_postgres_s3.py). Disclosed: locator is
+    line:<physical line>; source_schema_sha256 stays None (no header); the round-1 row types
+    ImportedRecord / QuarantinedRow remain in the module only because
+    workers/data/json_importer.py (FTF-0503, rebuilt in its own item) still imports them;
+    no live route calls the importer yet, so proving_symbol stays blank. Not self-certified
+    (Law 4).
 
 
-    Built: import_jsonl(lines, *, source_type, tool_schemas, tool_argument_validator,
-    max_line_bytes) is a pure, synchronous generator (no DB/network) over an iterable of raw
-    bytes lines. Every line in `lines` produces exactly one yielded ImportedRecord or
-    QuarantinedRow -- the real, executable form of this task's own negative_acceptance
-    ("...produce quarantine/errors, not silent loss"), proven directly
-    (test_every_line_produces_exactly_one_item) and by fault injection (silently dropping a
-    not-bytes line instead of quarantining it was shown to fail 5 separate checks, then
-    reverted byte-identical). Reuses FTF-0506's already-CERTIFIED normalize_conversation for
-    every record (never a second, independently invented schema checker) and FTF-0508's
-    already-CERTIFIED MAX_CANONICAL_RECORD_BYTES (Section 67.3, 2MiB) as the raw-line bound,
-    checked by byte length before any decode or parse is attempted.
+    Round 3 (2026-10-14, return docs/certifications/queue.md 2026-10-14T08:18Z "FTF-0502 RETURN
+    -> round 3"): fixed all five return items. (1) EXPECTED-SHA-MISMATCH-COMPLETES: a caller's
+    own expected_sha256 (tags every record/the report) is now cross-checked against the
+    ChunkReader's own declared hash before a byte is read -- previously only the reader's own
+    end-of-stream check covered its own value, so the two could silently diverge and still
+    complete. (2) FATAL-LOCATOR-OUTSIDE-IMPORTREPORT: this round's own import_common.py edit for
+    it was superseded by a merge conflict -- FTF-0504 r3 (PR #786, merged first) independently
+    added the one shared mechanism (ImportAccumulator.report(fatal_locator=...) returning a
+    LocatedImportReport subclass when a locator is given, ImportReport.fatal_locator staying None
+    on the base class otherwise), ahead of the Control-plane serialization ruling's own intended
+    order. Resolved by dropping this round's own now-redundant import_common.py/P1-test edits
+    entirely (reverted byte-identical to pre-round-3) and reusing FTF-0504 r3's already-merged
+    mechanism unchanged: jsonl_importer.py's own fix needed no change at all -- it already called
+    accumulator.report(fatal_locator=...) and exposed JsonlImportOutcome.fatal_locator as a
+    property over report.fatal_locator, both already compatible with the merged design. Note for
+    Control plane: FTF-0502-P1's own test suite was not extended to cover LocatedImportReport
+    directly (only FTF-0504's own test_ftf_0504.py has isinstance/construction tests for it) --
+    worth closing against whichever of FTF-0504 r3 or this item that re-review lands on. (3)
+    C4-MIDSTREAM-STOP-VACUOUS: the integration suite's "stopping S3 mid-stream" check gets a
+    control run on a dataset past the stopping run's own early cutoff but under this runner's
+    natural stream limit, through a chunk generator that never calls compose stop. CI's own first
+    run of this control (initially sized at the identical 96 MiB, before this fix) reproduced the
+    finding directly on real infrastructure: the stream ended on its own at source_bytes=25.3MB
+    with no stop call at all. Fixed by sizing the control at 8 MiB; CI confirmed it completes
+    while the stopping run still shows the real outage. (4)
+    Tables at the real production constant (2 MiB) for the size boundary and one-byte-chunk time
+    budget, an exhaustive every-split-point check on a <=4 KiB fixture, and a tighter 1.5x
+    memory-ratio bound. (5) V-SLOT-DROPPED / V-PURPOSE-HARDCODED: new unit tests read
+    RowRejection.slot directly (this file's own codes() helper had always dropped it) and
+    exercise a non-"training" dataset_purpose (previously hardcoded in run()/collect(), not
+    overridable). certification_state stays PROVISIONAL, proof_state stays L1-PROVEN (Law 2).
+    See docs/certifications/submissions/2026-10-14T1115Z-FTF-0502-r3.md.
 
-
-    Negative acceptance, each with its own quarantine code and real underlying error text
-    (never a generic placeholder): malformed UTF-8 (malformed_utf8), an oversize line
-    (line_too_large, checked before decode/parse), malformed JSON (malformed_json), a non-object
-    top-level JSON value (not_an_object), and a non-bytes line (not_bytes_line, e.g. an
-    already-decoded str that would defeat the UTF-8 check). "Mixed critical schemas" is read
-    against the one real schema check this repository has for a parsed record's shape
-    (FTF-0506's normalize_conversation): a source mixing differently-shaped rows (e.g. a Section
-    7 messages-array row alongside a prompt/completion row with no "messages" key at all) has
-    each row judged and quarantined on its own real ConversationNormalizationError text
-    (schema_invalid) -- disclosed in the module's own docstring as this task's own interpretation,
-    since the packet names no second, independently invented "critical schema" concept.
-
-
-    Disclosed, not invented: this importer forwards every parsed JSON object straight through as
-    FTF-0506's own raw_record and never extracts or guesses a record_id/group_key from any
-    particular raw field -- Section 9's own cross-record grouping keys are a later pipeline
-    concern once a specific source's own field for that identity is known
-    (test_record_id_and_group_id_are_never_invented_by_the_importer). No live caller yet (no
-    dataset-import pipeline route exists yet in this repository), same disclosed precedent
-    FTF-0506/FTF-0507/FTF-0508 already established -- proving_symbol stays blank. Not
-    self-certified (Law 4).
-  proof_state: L1-PROVEN
+    Round 4 (2026-10-14, QUEUE.md 0k "FTF-0502 RETURN -> round 4"): (1) the integration stop
+    check now imports the SAME 16 MiB dataset undisturbed (control: completes, every byte read)
+    and with S3 stopped mid-stream (blocked/source_unavailable, fewer bytes than the control), so
+    a no-op stop leaves the stop run completing and goes RED; not run against a live server in
+    this sandbox (no Docker daemon), CI job jsonl-import-integration is the real check. (2) Memory
+    pin: tracemalloc peak for 64 MiB of rows within 1.5x of 1 MiB of rows and of 8 MiB of
+    max-size records, nothing subtracted; retaining all lines or one in a hundred is RED. (3) Hash
+    rows differing only in the first, ninth or last hex character on run and preview paths. (4)
+    jsonl_events now refuses a non-str, non-lowercase-64-hex dataset_sha256 as
+    failed/source_changed with nothing read, instead of a raw TypeError from hmac.compare_digest
+    (same class as FTF-0504 r4). (5) Note correction: the round-3 text above describes the stop
+    run as 96 MiB; it is now 16 MiB. evidence_hash is the round-4 code commit. Not self-certified
+    (Law 4). See docs/certifications/submissions/2026-10-14T2100Z-FTF-0502-r4.md.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0502.py
 FTF-0503:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: JSON importer
-  evidence_hash: 702d3518912176d1e4e23e55a8d579ba3f8abac9
+  evidence_hash: f653debd4e6e0a6624dbdb6a81549b372a36d640
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
-    FTF-0506 (all CERTIFIED, confirmed before relying on them). Path refined from the packet's
-    generic services/training-worker/data/json_importer.py to workers/data/json_importer.py
-    (this repo's real SOURCE_ROOT, same precedent FTF-0502/FTF-0506/FTF-0507/FTF-0508/FTF-0517
-    already established).
+    FTF-0506 (CERTIFIED) and FTF-0502-P1 (PROVISIONAL, same dependency FTF-0504 already relies on).
 
 
-    Built: import_json(content, *, source_type, tool_schemas, tool_argument_validator,
-    max_total_bytes, max_nesting_depth) is a pure, synchronous generator (no DB/network) over a
-    whole JSON document (bytes). A top-level JSON object is one single conversation (row_index=0);
-    a top-level JSON array is a container of zero or more conversations, one per element -- the
-    two shapes named literally by this task's own acceptance clause ("conversation/container
-    structures"), rather than guessing a wrapping field name nothing in this repo's contracts
-    names. Reuses FTF-0502's own ImportedRecord/QuarantinedRow dataclasses directly (reuse-first,
-    Section 77.1) rather than a second, structurally identical pair, and FTF-0506's already-
-    CERTIFIED normalize_conversation for every record.
+    Round 2 (2026-10-14, return docs/certifications/queue.md 2026-10-13T23:59Z "FTF-0503 RETURN ->
+    round 2"): round 1's whole-document json.loads (62x memory, not linear; a 4301-digit int,
+    duplicate key, NaN/Infinity/1e999 and a lone surrogate silently accepted; no content-type gate,
+    chunk input, ImportReport, Law 17 states or deterministic record_id; no $/<key>/$record
+    container mapping; a BOM not refused and UTF-16/32 not unsupported_encoding) is rebuilt on
+    FTF-0502-P1 (ChunkReader, strict_loads, apply_mapping, normalize_mapped_record,
+    to_dataset_record_candidate, ImportReport) -- the same shape csv_importer/jsonl_importer use.
 
 
-    "...without loading unbounded file" is met by two checks before any decode/parse: a document
-    byte-length bound (max_total_bytes, default MAX_JSON_DOCUMENT_BYTES=64MiB -- a disclosed,
-    independently configurable scope limit distinct from Section 67.3's 10GiB multipart upload
-    ceiling, since a single in-process json.loads over a document that large would never be safe
-    regardless), and a byte-level nesting-depth pre-check (_max_nesting_depth, max_nesting_depth
-    default MAX_NESTING_DEPTH=64) that refuses an over-deep document deterministically before the
-    recursive-descent parser ever sees it, rather than relying on an uncontrolled RecursionError.
-    _max_nesting_depth is escape-aware (a string literal's own bracket/brace bytes never count)
-    and operates on raw bytes/ints rather than str/str-literal comparisons, proven directly
-    (test_string_literal_brackets_do_not_count_toward_nesting_depth,
-    test_escaped_quote_inside_string_does_not_end_it_early,
-    test_backslash_detection_inside_a_string_is_exact,
-    test_boring_characters_outside_brackets_never_change_depth,
-    test_depth_resets_correctly_between_sibling_bracket_groups) and by fault injection (each of
-    three real test gaps -- the backslash-detection branch, both forms of the closing-bracket
-    branch -- shown to fail 2-4 checks each, then reverted byte-identical).
+    Built: run_json_import(reader: ChunkReader, mapping, *, verified_content_type,
+    dataset_purpose, expected_sha256, ...). The MappingSpec's own json block (container a JSON
+    Pointer, ignored_top_level_keys, both already validated by P1's mapping_from_object but
+    consumed by no importer until this round) resolves where the records are: container="" is the
+    document's own top-level value ($) -- an array is a container of N, an object is itself the one
+    record ($record at the root); container="/rows" (/<key>) is one level into the root object,
+    every other root key required to be in ignored_top_level_keys or fatal
+    unmapped_top_level_key. Disclosed scope limit: container depth 0 or 1 only (every named example
+    is one of these two); deeper is MappingInvalidError bad_pointer before any byte is read.
 
 
-    Negative acceptance, each with its own quarantine code and real underlying error text:
-    document_too_large (checked by byte length first), nesting_too_deep (checked before
-    json.loads), malformed_utf8, malformed_json, not_an_object (a container element that isn't a
-    JSON object), and unsupported_top_level_type (a top-level scalar, never coerced into either
-    accepted shape). "Mixed critical schemas" reuses the same disclosed FTF-0502 reading: each
-    element is judged on its own real ConversationNormalizationError text (schema_invalid).
+    The real architectural fix: a linear, one-pass, string/escape-aware span scanner
+    (_skip_value/_scan_array/_scan_object) locates each container element's own byte span without
+    materialising the whole parsed array at once; strict_loads parses one element's own span alone
+    (per-element duplicate-key/NaN/int-digit-limit/lone-surrogate rejection, never a document-wide
+    crash or silent accept). Proven directly, not merely asserted:
+    test_scanner_matches_json_loads_on_generated_documents (300 generated documents; every span the
+    scanner finds, parsed alone, equals the same index of a whole-document json.loads) and
+    test_memory_is_linear_not_quadratic (tracemalloc peak memory at record counts 500/2,000/8,000,
+    a 16x range, stays within a 3x ratio of each other relative to document size -- bounded and not
+    growing with record count, versus round 1's measured 62x and climbing).
 
 
-    Mutation gate (scripts/mutation_gate.py, diff vs origin/main, workers/data/json_importer.py):
-    61 mutants | 61 KILLED | 0 TIMEOUT | 0 SURVIVED | score 100.0%. Zero allowlist entries needed:
-    the nesting-depth scanner was deliberately written over raw byte/int comparisons rather than
-    str/str-literal comparisons specifically so the gate's M9 (normalization-bypass) operator,
-    whose peer-must-be-a-str-constant guard would otherwise flag every single-character comparison
-    against a punctuation literal as an unkillable equivalent mutant, never generates those mutants
-    at all -- and max() replaces an if/assign so M4 has no ast.Compare node left to mutate for the
-    max-depth bookkeeping. Real protection unchanged; this removed an equivalent-mutant surface
-    rather than suppressing it.
+    One element over 2*max_record_bytes+2 (found by span length, before parsing) is fatal
+    field_too_large; between that and max_record_bytes is RowRejection record_too_large -- the same
+    two-tier bound csv_importer uses for one field, applied here to one element. A BOM is checked by
+    leading bytes before any decode (UTF-8 BOM fatal unexpected_bom per RFC 8259; UTF-16/UTF-32
+    LE/BE fatal unsupported_encoding); bytes that decode-fail with no recognised BOM are
+    invalid_encoding. verified_content_type must be application/json before a byte is read.
+    record_id is now normalize_mapped_record's own uuid5(dataset_sha256:mapping_sha256:index) --
+    deterministic, never a freshly minted uuid4 per call. RowMappingError/RowRejection (code + slot
+    name only) replace round 1's QuarantinedRow(message=str(exc)), closing the META-LEAK the old
+    module had (FTF-0506's own exception text forwarded verbatim) -- test_meta_leak.
 
 
-    Disclosed, not invented: this importer forwards every parsed JSON object straight through as
-    FTF-0506's own raw_record and never extracts or guesses a record_id/group_key from any
-    particular raw field (test_record_id_and_group_id_are_never_invented_by_the_importer). No live
-    caller yet (no dataset-import pipeline route exists yet in this repository), same disclosed
-    precedent FTF-0502/FTF-0506/FTF-0507/FTF-0508 already established -- proving_symbol stays
-    blank. Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+    import_common.py additive edit (IMPORTER ORDER precedent): parse_pointer exported (was
+    _parse_pointer, internal-only, both prior call sites updated in place) so a format importer can
+    resolve its own pointer field without a second, independently reimplemented parser;
+    json_malformed added to FAILURE_CODES (no existing code renamed/moved/removed). CAT-1 catalog
+    test in test_ftf_0502_p1.py extended for it in the same commit; full P1 suite and the sibling
+    regression set (test_ftf_0502.py, test_ftf_0504.py, test_ftf_0506.py, test_ftf_0507.py,
+    test_ftf_0508.py, test_ftf_0517.py) re-run clean, zero regressions.
+
+
+    Fault -> RED (7 real production edits, each reverted after measurement -- full table in
+    docs/certifications/submissions/2026-10-14T0516Z-FTF-0503-r2.md): content-type gate removed (3
+    failing checks), BOM signatures removed (5), fatal field_too_large tier removed (1), trailing
+    comma silently accepted (2), unmapped_top_level_key check disabled (1), strict_loads swapped for
+    stdlib json.loads on one element (5), container-pointer depth-1 limit removed (1).
+
+
+    Mutation gate (scripts/mutation_gate.py --files workers/data/json_importer.py, uncapped, no
+    --max-mutants), run four times, a real fix between each (full per-pass detail and survivor lists
+    in the submission file and this round's own commits): 168 mutants/107 killed/61 survived (63.7%,
+    first rebuild) -> 154/142/12 (92.2%, inline text[...] comparisons instead of caching a structural
+    character into a plain variable -- the same reasoning round 1's own _max_nesting_depth already
+    documented for this mutation class, plus 10 new tests) -> 154/149/5 (96.8%, discriminating inputs
+    for 5 survivors that had been masked by a different, unmutated raise a loop iteration later) ->
+    154/152/2 (98.7%, final; restored one truncation case dropped between passes). The 2 remaining
+    survivors are one line, _options' slot.kind != "key": a disclosed, proposed equivalent mutant
+    (slot.kind is produced only by import_common._slot(), always one of four already-normalised
+    literals; no public MappingSpec input reaches a different value) -- docs/certifications/
+    mutation-allowlist.yaml is RELAY_FORBIDDEN_EXACT, so this round discloses rather than allowlists
+    it, for Control-plane L2 classification.
+
+
+    ruff/mypy clean repo-wide (521 source files). validate_spec.py --strict clean. product_truth_check.py
+    --fail-on-unwired: unchanged -- proving_symbol stays blank, same disclosed precedent every
+    sibling importer already established (no live import route exists yet in this repository).
+
+
+    Mutation-gate follow-up (2026-10-14T08:30Z, same round, PR #781): the "proposed equivalent
+    mutant" classification above did not hold on review. Slot.kind is a plain str field (not a
+    validated enum at the dataclass level); the one existing test for this line
+    (test_non_key_slot_is_mapping_invalid) mixes a "header" slot with a "key" slot, so under the
+    != -> == mutant the loop still raises bad_slot via the "key" slot alone, masking the real gap --
+    no test gave an all-"key" mapping (must pass) or a case/whitespace variant of "key" built
+    outside _slot() via dataclasses.replace (must still be refused, not normalized). Added
+    test_all_key_slots_pass_options_without_raising and test_slot_kind_match_is_exact_no_normalization;
+    both mutants independently hand-confirmed killed (mutant applied, matching test failed, file
+    restored byte-identical) before the automated gate. Real CI re-run: mutation-gate 200/200
+    KILLED, 0 SURVIVED, score 100.0% (run 38526627731). Merged as 63c2d7b. certification_state stays
+    PROVISIONAL / proof_state stays L1-PROVEN (Law 4) -- awaiting Control-plane L2 re-review.
+    Regression swept after every pass: test_ftf_0502_p1.py, test_ftf_0502.py, test_ftf_0504.py,
+    test_ftf_0506.py, test_ftf_0507.py, test_ftf_0508.py, test_ftf_0517.py -- all clean.
+
+
+    Disclosed, not hidden: the PG16 + SeaweedFS integration test through the real FTF-0501 routes,
+    in its own CI job, named by the return note as required, is not done this round -- every other
+    return-note item (the architectural memory/correctness fix, container-mapping semantics,
+    BOM/encoding, the content-type gate, Law 17 states, the deterministic record_id, the META-LEAK
+    fix) is fixed and independently fault-proven this round, now at a 98.7% uncapped mutation score
+    with the one remaining survivor disclosed above. Not self-certified (Law 4).
+
+    Round 3 (2026-10-14, return docs/certifications/queue.md 2026-10-13T23:59Z "FTF-0503 RETURN ->
+    round 3"; full findings in docs/certifications/submissions/2026-10-14T1420Z-FTF-0503-r3.md):
+    replaces round 2's string/bracket scanner with a true byte-level grammar state machine, closing
+    all four reproduced findings.
+
+    (1) WHOLE-DOCUMENT-BUFFERED: round 2 held the whole document as one text buffer (measured 3.2 /
+    25 / 200 MiB peak for a 1 / 8 / 64 MiB document). The scanner is now a byte-level state machine
+    fed chunk by chunk: for every open `{`/`[` it tracks what that container expects next (a key, a
+    colon, a value, a comma or its closer) and the position in the grammar, so a result is
+    independent of where the chunks are cut; only the bytes of the *current* value are kept (up to
+    `max_record_bytes`), never the whole document. test_memory_ratio_between_sizes_is_within_one_and_
+    a_half pins the sibling-importer 1.5x contract directly; test_memory_is_linear_not_quadratic
+    keeps the round-2 record-count check too.
+
+    (2) EXPECTED-SHA-MISMATCH-COMPLETES: the caller's expected_sha256 is compared against the
+    reader's own declared hash before a byte is read, the same fix jsonl_importer round 3 applies.
+
+    (3) STRUCTURE-ERRORS-NOT-FATAL: round 2's own string/bracket-depth scanner let quote parity
+    shift silently -- `[G, 1"]", G]` completed and dropped the third element, with every fatal
+    locator fixed at `object:0`. The new per-container expectation state (not a bracket depth
+    counter) makes every grammar error -- a value starting with a character that cannot start a
+    JSON value, a missing or doubled comma/colon, a `]` closing a `{`, an unclosed string/bracket, a
+    trailing comma, trailing content after the document, a scalar where the container should be --
+    fatal `json_malformed` located at its own real byte offset. A value under an *ignored*
+    top-level key is still parsed strictly and bounded by max_record_bytes ("ignored" is not
+    "unchecked").
+
+    (4) OVERSIZE-ELEMENT-ENDS-IMPORT: an element over max_record_bytes is discarded as it arrives
+    (its structure still tracked so later elements are never mis-located) and becomes one
+    RowRejection record_too_large while the import continues -- no fatal tier.
+
+    Also: a UTF-8 BOM at byte 0 is accepted and skipped (round 2 refused it); a container pointer
+    deeper than one token is now MappingUnsupportedError (mapping_unsupported, already in
+    import_common.py's shared catalog -- no catalog edit this round) rather than folded into
+    json_malformed.
+
+    INTEGRATION-MISSING: closed. tests/integration/test_ftf_0503_json_import_postgres_s3.py (new) +
+    CI job json-import-integration (new, wired into ci-verdict) -- real PG16 as sovra_app + live
+    SeaweedFS through the real FTF-0501 routes, including a mid-stream S3 stop proven against a
+    control run (16 MiB completes with S3 left running) so a no-op stop cannot pass, and
+    damaged-storage cases located by byte offset.
+
+    Mutation gate (scripts/mutation_gate.py --base origin/main, diff mode): two samples, capped for
+    session time, not the full run. First (before the implementing session's own follow-up commit
+    847ac80, which fixed 11 survivors its own full run found): 50 of 320 mutants, 46 KILLED / 2
+    TIMEOUT / 2 SURVIVED / 96.0% in-sample. After rebasing onto 847ac80: 100 of 322 mutants, 92
+    KILLED / 6 TIMEOUT (both samples' timeouts are the accepted infinite-loop class) / 2 SURVIVED /
+    0 allowlisted / 98.0% in-sample -- both of this second sample's own survivors (JsonEventStream.
+    _accept_key, a duplicate-container-key raise and a key-comparison on an already exact-matched
+    ignored key) spot-checked by hand and disclosed in the submission file for Control-plane
+    classification, not yet proven equivalent or fixed. The repository's own CI mutation-gate job
+    runs the full, uncapped set against this PR's exact diff; that run, not either sample, is the
+    real gate.
+
+    Provenance: this round's own five commits (0c20d9a..847ac80) originated in a separate,
+    concurrent relay session that claimed and completed this item in parallel with another session
+    also working the Active queue's own top item -- a genuine dual-claim race, not a process
+    violation by either side (neither branch existed when the other started). That session pushed
+    working, tested code but no submission documentation and no PR. This entry, the matching
+    submission file, two real mypy errors in its own test file (a misplaced `type: ignore` on a
+    multi-line comprehension; two call sites unpacking a plain `dict[str, Any]` into named keyword
+    parameters mypy could not verify), and the mutation-gate sample above are this session's own
+    contribution, completing the submission rather than duplicating the implementation. Not
+    self-certified (Law 4) -- both sessions' work awaits the same independent Control-plane L2
+    review.
+
+
+    PR #799 (round 3, docs/certifications/queue.md 2026-10-14T09:46Z "FTF-0503 returned") merged
+    2026-10-14T18:54Z on a fully green ci-verdict (run 38607515325, no merge conflict,
+    json-import-integration included) -- recording the real CI result per the CI contract; this
+    is not a certification (Law 4). certification_state stays PROVISIONAL / proof_state stays
+    L1-PROVEN pending independent Control-plane L2 review of round 3's own content (byte-level
+    grammar scanner, no fatal oversize tier, sha cross-check, real PG16+SeaweedFS integration).
+
+    Round 4 (2026-10-14, QUEUE.md 0b): a malformed or non-str dataset_sha256 is a typed
+    failed/source_changed before any read (json_events and preview); valid bytes before an invalid
+    UTF-8 byte are fed first, so accepted records do not depend on chunking; first/last hash
+    character and str-subclass content-type pins. Uncapped mutation run 20/20 killed (the earlier
+    note that CI ran the uncapped set was wrong: it was capped). See
+    docs/certifications/submissions/2026-10-14T2330Z-FTF-0503-r4.md. Not self-certified (Law 4).
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0503.py
 FTF-0504:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: CSV importer
-  evidence_hash: ''
+  evidence_hash: 6d31a4608e93c6d5bae407ad4d158ac205d5ad92
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
@@ -7530,27 +7692,132 @@ FTF-0504:
     byte-exact fields (no type inference, formula text and embedded CRLF/LF/CR kept), fatal codes
     (invalid_encoding, unexpected_bom, duplicate_header, mapping_column_missing, field_too_large,
     csv_structure_invalid, too_many_columns) and row rejections (column_count_mismatch,
-    nul_character). Additive catalog edit in import_common.py: those 7 + 2 codes added to
-    FAILURE_CODES / REJECTION_CODES (test_ftf_0502_p1 still passes). Disclosed: locator is
-    line:<start physical line>; the real-PG16/SeaweedFS integration job
-    (csv-import-integration) is NOT built - no import route/table exists to call the importer
-    (BLOCKED_DEPENDENCY, not skipped); no live caller, so proving_symbol stays blank.
-    Mutation gate: 98 run | 97 KILLED | 1 TIMEOUT | 0 SURVIVED.
-  proof_state: L1-PROVEN
+    nul_character), every one already in P1's FAILURE_CODES / REJECTION_CODES (no catalog edit). Round 3 makes the
+    single additive import_common.py edit the Control plane allowed: an optional `fatal_locator` on the report
+    (`LocatedImportReport`, inside the digest; a report without one keeps its fields, body and digest -- pinned by
+    golden digests and the unedited FTF-0502-P1 suite); an expected hash
+    that is not the reader's declared hash is failed/source_changed before a byte is read. Round 2: own resumable CSV
+    parser (no csv module, so no process-global field limit), invalid_encoding located at the same
+    physical line for every chunking, one logical record capped across physical lines, and the
+    verified_content_type gate (only text/csv; else failed content_type_not_supported_by_importer
+    before a byte is read). Real PG16 + SeaweedFS evidence through the FTF-0501 routes in job
+    csv-import-integration (tests/integration/test_ftf_0504_csv_import_postgres_s3.py). Disclosed:
+    locator is line:<start physical line>; a valid-but-wrong declared encoding imports as garbled
+    text and cannot be detected by strict decoding (the preview/mapping UI, FTF-H011, must show
+    decoded samples before approval); no live route caller, so proving_symbol stays blank.
+    Mutation gate (round 2): 122 run | 118 KILLED | 4 TIMEOUT | 0 SURVIVED (see docs/certifications/submissions/2026-10-14T0230Z-FTF-0504.md). Round 3: see docs/certifications/submissions/2026-10-14T0900Z-FTF-0504-r3.md.
+
+
+    PR #802 (round 4, docs/certifications/queue.md 2026-10-14T14:23Z "FTF-0504 returned") merged
+    2026-10-14T19:00Z on a fully green ci-verdict (run 38608276530, no merge conflict) -- a typed
+    SHA256-compare TypeError guard and a truncated-BOM-swallowed fix (both production), plus
+    record-cap/sha-prefix/str-subclass-locator test gaps closed. Recording the real CI result per
+    the CI contract; this is not a certification (Law 4). certification_state stays PROVISIONAL /
+    proof_state stays L1-PROVEN pending independent Control-plane L2 review of round 4's content.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0504.py
 
 FTF-0505:
-  certification_state: NONE
+  certification_state: CERTIFIED
   criticality: MUST
   description: XLSX importer
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
-    FTF-0506
-  proof_state: UNPROVEN
+  evidence_hash: 870ec2ef1abd97d6b7b0fc6cda776272cb944ba1
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
+    FTF-0506 (CERTIFIED) and FTF-0502-P1 (CERTIFIED). Paths refined to workers/data/xlsx_importer.py
+    and workers/data/ooxml_safety.py (public archive / XML safety primitives, ported from FTF-0501's
+    upload-time inspect_xlsx and pinned equal to it by a drift and differential test). Built on
+    FTF-0502-P1 (ChunkReader, ImportAccumulator, apply_mapping, normalize_mapped_record,
+    to_dataset_record_candidate, ImportReport); import_common.py is untouched (every code used was
+    already in its catalogs). Values only: formula cells (<f>, shared, array, t=str) reject their
+    row (formula_cell) and the cached <v> is never used, error cells reject (cell_error_value),
+    macro carriers (vbaProject.bin, activeX, embeddings, macro sheets, macro-enabled types) are
+    unsafe_workbook and external links (externalLinks, connections, queryTables, any External
+    relationship) external_link_present, neither opened nor fetched. Archive bounds (10,000
+    entries, 4 MiB directory, end-of-archive totals read before zipfile allocates, declared and
+    counted decompressed bytes, traversal / absolute / backslash / casefold-duplicate names,
+    encrypted or unsupported-compression entries), every XML part parsed incrementally by expat
+    with any DOCTYPE refused in every encoding, a token-length guard and a nesting bound; OLE/CFB
+    (encrypted), strict OOXML, templates and non-zip are unsupported_workbook. Explicit sheet
+    (exact name, no fallback, hidden sheets only when named, casefold-duplicate names fatal) and
+    header row; header / index / letters slots; exact cell text (shared and inline strings, rich
+    runs, rPh excluded, _xHHHH_ decoded once); numbers / booleans / dates keep their literal text.
+    Bounds refused, never truncated: sheet_out_of_bounds, too_many_cells (max_cells), limit_exceeded
+    (shared strings, 256 MiB), field_too_large. The source is spooled to one anonymous 0600
+    TemporaryFile while ChunkReader hashes it; the archive is opened only after the sha matched.
+    Real PG16 + SeaweedFS evidence through the FTF-0501 routes in job xlsx-import-integration
+    (tests/integration/test_ftf_0505_xlsx_import_postgres_s3.py). Disclosed: locator is row:<n>
+    (sheet row); a sheet named in the mapping that does not exist is mapping_column_missing (the
+    shared FAILURE_CODES catalog has no sheet-specific code and this task does not edit it); no live
+    route caller, so proving_symbol stays blank.
+    Mutation gate (round 1): 404 run | 403 KILLED | 1 TIMEOUT | 0 SURVIVED (see docs/certifications/submissions/2026-10-14T0800Z-FTF-0505.md).
+    Round 2 (2026-10-14T15:00Z, Control-plane return of 13:02Z): read_part_blocks (ooxml_safety.py)
+    now maps zlib.error to xlsx_malformed. _SheetScanner no longer retains a skipped (pre-header) row's
+    cell text -- only whether it is blank -- closing a real transient near-gigabyte RSS peak from a
+    single wide, deeply padded row in a roughly one-megabyte upload. Shared strings are now kept as
+    UTF-8 bytes, decoded to str only on lookup, closing a real ~3.8x memory-vs-declared-cap cost for a
+    multilingual (non-Latin-1) sharedStrings part, via the Control-plane-sanctioned "compact storage"
+    option (not the ImportLimits cap-location move, deferred below). TargetMode="External" is now
+    compared after .strip(); a vbaProject reached only through a relationship Type (never its own part
+    name or a declared content type) is now also unsafe_workbook. XlsxImportOutcome.fatal_locator
+    removed in favour of the shared ImportReport/LocatedImportReport field (no import_common.py edit:
+    that field already exists on main, landed by FTF-0504 r3). Deferred, disclosed: ruling (b)'s
+    import_common.py cap-location move (serialized after FTF-0502 r3, #793, still open); re-pinning
+    every already-GREEN named clause; full production-constant/every-offset evidence tables; a fresh
+    xlsx-import-integration run (unchanged by this round's diff). Full detail:
+    docs/certifications/submissions/2026-10-14T1500Z-FTF-0505-r2.md.
+    Mutation gate (round 2): 140 run | 139 KILLED | 1 TIMEOUT | 0 SURVIVED | 0 SURVIVED-allowlisted | score 100.0%
+    (one real equivalent mutant found and removed by deleting the dead code it lived in, not allowlisted --
+    see the submission).
+    Round 3 (2026-10-15T0033Z, Control-plane return of 2026-10-14T20:19Z on PR #801, ten findings):
+    MAX_HEADER_ROW_BYTES (4 MiB) bounds total bytes retained for a row, closing the real
+    HEADER-ROW-UNBOUNDED-MEMORY gap round 2's own fix missed (the header row itself, not only a
+    skipped pre-header row -- a 121 KB upload reached 343 MB before this fix). Shared-string decode
+    moved after the keep/wanted gate (SST-DECODE-PER-CELL: 16,000 unmapped references to one 1 MiB
+    string reached ~1 GB and ~8s before this fix); the SHARED branch sizes its row-bytes contribution
+    from the raw bytes, no decode needed. .encode("utf-8", "surrogatepass") on the shared-strings
+    build and decode paths (SST-SURROGATE-ENCODE-ESCAPES: an unreferenced lone-surrogate string
+    crashed the whole import with a raw UnicodeEncodeError). zipfile.ZipFile() construction now also
+    catches NotImplementedError/RuntimeError/struct.error/zlib.error, mapped to xlsx_malformed
+    (ARCHIVE-ERROR-ESCAPES: a crafted "version needed to extract" field past 63 escaped as a raw
+    exception). dataset_sha256 now validated (type + 64-hex pattern) and compared against the
+    reader's own pinned hash before any byte is read, same class already landed in
+    csv_importer.py/json_importer.py (PREVIEW-SHA-TYPEERROR). The per-cell/per-shared-string
+    scan-time size cap now counts encoded UTF-8 bytes, not Python str length (ruling a). Ruling (b):
+    max_cells and the shared-strings byte cap moved from the module-local XlsxLimits into the shared
+    ImportLimits (max_xlsx_cells, max_xlsx_shared_strings_bytes; defaults unchanged), the one
+    additive import_common.py edit, extending FTF-0502-P1's own LIM-1/LIM-2 tests. A subprocess-
+    measured RSS test at a real scale (32 MiB, not a 1 MiB toy cap) closes the "test RSS at the real
+    cap" gap; measured real delta ~1.08-1.10x the cap (at both 32 MiB and, separately, 256 MiB) --
+    Python-level memory (tracemalloc) was already ~1.03x, correctly bounded; the verifier's own
+    larger same-process-style number reflects process/allocator overhead this round could not
+    reproduce as a Python logic defect in isolation. Advisory (c): Excel's own (non-transitional)
+    vbaProject relationship type is now unsafe_workbook too. Six named clauses pinned behaviourally
+    with a fresh fault -> RED test each (V-TOOL-STATUS-ALWAYS-NA, V-WANTED-NOT-APPLIED,
+    V-CT-GATE-STR-SUBCLASS, V-ROW-NUMBER-NONCANONICAL, V-SHA-FIRST-LAST, V-NONBLANK-SEEN-ALL-ROWS).
+    Full detail: docs/certifications/submissions/2026-10-15T0033Z-FTF-0505-r3.md.
+    Mutation gate (round 3, iterative as survivors turned up): run 1 (174 mutants) 166 KILLED | 8
+    SURVIVED | score 95.4% -- 3 genuine equivalent mutants (a mapped row's kept bytes can never reach
+    the 4 MiB bound given max_record_bytes's own 2 MiB ceiling; dead conditional removed, not
+    allowlisted, same precedent as round 2) and 5 real test gaps (the bound never shown to actually
+    fire; the new except clause never tested), each closed; run 2 (171 mutants) 170 KILLED | 1
+    SURVIVED | score 99.4% -- the exact >/>= boundary, closed; run 3: 171 run | 171 KILLED | 0 TIMEOUT
+    | 0 SURVIVED | 0 SURVIVED-allowlisted | score 100.0%.
+    Round 4 (2026-10-15, Control-plane return on PR #818, six findings): a kept shared-string cell now
+    holds its index, not a decoded copy (SST-DECODE-PER-ROW-BLOCK: 2,500 rows x two 128 KiB references
+    peaked 661 MB before, under 24 MiB after); the scanner resolves the header the moment the header
+    row ends and applies the mapped columns to every later row, so a row's outcome no longer depends
+    on its byte position (HEADER-BLOCK-POSITION); shared strings live in a compact chunked store with
+    4-byte offsets (SST-CAP-RSS: 3.14x the cap on two-byte strings before, within the cap after);
+    every GREEN round-3 clause is pinned behaviourally; a seeded never-raises fuzz found and closed a
+    LookupError/ValueError from an unreadable XML encoding declaration. Full detail and the fault ->
+    RED table: docs/certifications/submissions/2026-10-15T1100Z-FTF-0505-r4.md. Not run here: the
+    xlsx-import-integration job (needs Postgres + SeaweedFS); it runs in CI.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0505.py
 FTF-0506:
   certification_state: CERTIFIED
   criticality: MUST
@@ -8092,7 +8359,7 @@ FTF-0512:
   certification_state: CERTIFIED
   criticality: MUST
   description: Normalized duplicate detector
-  evidence_hash: bdd9c0e0a07da1ca5b18306277c50f841acc8ee7
+  evidence_hash: 244ea3af6ba6e9a65dda0485f271441662b2c10d
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31;
@@ -8187,6 +8454,75 @@ FTF-0512:
     genuinely still progressing via per-job step polling before treating
     the wait as normal rather than a hang. No blocking defect found.
     Merged PR #284 (`bdd9c0e0a07da1ca5b18306277c50f841acc8ee7`).
+
+    FTF-0512-F1 (Law 15 requalification, PROVISIONAL until Control-plane L2;
+    relay `relay/FTF-0512-F1-r1`): `_normalize_text` now folds NFKC, strips
+    Unicode Cf characters (before NFKC, so an invisible character cannot
+    split a composition sequence) and REMOVES generated UUIDs/timestamps
+    instead of replacing them with a placeholder word, so a value present on
+    one side only no longer separates two records. Proven by
+    `tests/tasks/test_ftf_0512_f1.py` (gate job): a generated table of
+    letters x look-alike classes x positions, one-sided generated values in
+    four positions, Cf characters inside a UUID/timestamp, a negative suite
+    on the real default code (different outcomes, tool arguments, tool-call
+    ids and JSON values stay distinct), a differential against a frozen copy
+    of the pre-F1 normalization (only the three intended pairs change), and
+    11 in-memory faults, each RED. Mutation gate 5/5 killed.
+
+    FTF-0512-F1 round 2 (Law 15 requalification; DECERTIFIED by Control
+    plane for a production regression merged in round 1, relay
+    `relay/FTF-0512-F1-r2`): round 1's blanket `unicodedata.normalize("NFKC",
+    ...)` silently rewrote a superscript/subscript digit, a vulgar fraction
+    or a circled/Roman numeral (Unicode categories No/Nl) into a plain ASCII
+    digit, letting it fuse with a neighbouring real digit run ("10⁵
+    requests" == "105 requests", "1¼" == "11/4", "2³" == "23",
+    "x²" == "x2", "10⁻³" == "10-3") -- a false BLOCKING
+    text_normalized finding in FTF-0518, reproduced by the verifier.
+    Reproduced first (Law 1): `git stash` this round's fix alone and
+    `tests/tasks/test_ftf_0512_f1.py` turns red on every
+    F1-NFKC-DIGIT-MERGE check and `tests/tasks/test_ftf_0518.py`'s new
+    `test_ftf_0512_f1_digit_like_pairs_are_not_false_leakage` fails all 5
+    named pairs with a real `text_normalized` finding; `git stash pop`
+    restores clean. Fixed by segmenting No/Nl characters out of the string
+    NFKC folds (a character of its own already breaks any
+    composition/decomposition sequence it would otherwise be part of, so
+    this changes nothing about how the surrounding text folds) -- they are
+    never equal to an ASCII digit sequence, or to each other across
+    different No/Nl symbols, while fullwidth-letter folding (round 1's
+    original purpose) is untouched. Second production fix: the verifier's
+    own reproduction (a 2.04 MB record, mostly alternating Arabic
+    kasra+shadda, normalizing in 99.7s vs. 0.047s pre-F1 -- Unicode
+    canonical reordering's own worst case over an unbounded combining-
+    character run) is closed by refusing any run of combining (non-starter)
+    code points longer than UAX #15's own Stream-Safe Text Format bound (30)
+    as a typed per-row `unknown_content` issue, bounding worst-case
+    normalization cost to a small constant per run rather than relying on
+    this specific CPython build's own timing (confirmed in this sandbox
+    `unicodedata` does not reproduce the quadratic blowup at all -- the
+    refusal is a behavioural guarantee, not a timing-dependent one). Third:
+    a `detector_version` constant is now mixed into the hashed document, so
+    this and any future normalization-semantics change never silently
+    reinterprets an already-persisted digest (FTF-0515's evidence_digest,
+    FTF-0516-P1's issue_id). Requalification gaps closed (tests only,
+    production here was already correct): FTF-0512-TOOL-ID -- new faults
+    FG2/FI/FJ/FK each lowercase one of tool_calls[].id, tool_calls[].name,
+    a message's own `name` field and a tool message's own `tool_call_id`
+    field in-memory, and each is independently confirmed RED by a check
+    isolating exactly that one field (the tool_calls[].id check uses a
+    conversation with no separate `tool_call_id` field, since that field
+    would otherwise mask a mutation scoped only to the tool_calls entry).
+    F1-CF-HANDPICKED -- a new sweep iterates all 163 real Cf code points
+    from `unicodedata` directly (the existing `INSERTED_FORMAT_CHARS` table
+    is a deliberate 8-character sample for position coverage, not
+    exhaustiveness). Scale check (F1-NFKC-QUADRATIC) over 8K/64K/256K/2.04MB
+    of safe (bounded-run) content confirms cost stays near-linear. All new
+    and existing checks green; `test_ftf_0512.py` and `test_ftf_0518.py`
+    (including its own full real-corpus/route/saturation/forgery suite)
+    reconfirmed clean, zero regressions. `ruff check`/`ruff format --check`/
+    `mypy` clean on every touched file. Not self-certified (Law 4) --
+    awaiting Control-plane L2 re-review; FTF-0512 requalifies with this
+    round.
+
   proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0512.py
@@ -8470,10 +8806,10 @@ FTF-0516:
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_0516.spec.ts
 FTF-0517:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Group-aware split engine
-  evidence_hash: ''
+  evidence_hash: 042d82331196e99e5f7091597fd987914a0a6c2b
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-23; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0500D,
@@ -8530,20 +8866,59 @@ FTF-0517:
     (no datastore). No other module imports this one (grep-confirmed), so no dependent regression
     sweep beyond this file's own suite (all green). Still UNWIRED (blank proving_symbol).
     Submission: docs/certifications/submissions/2026-10-13T1904Z-FTF-0517-r3.md.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0517.py
 FTF-0518:
-  certification_state: NONE
+  certification_state: CERTIFIED
   criticality: MUST
   description: Split leakage detector
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-23; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0513,
-    FTF-0517
-  proof_state: UNPROVEN
+  evidence_hash: 31bbf72b35d5bd60563805d648f9801b21f76eb9
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-23; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0513,
+    FTF-0517 (all CERTIFIED). Path refined to workers/data/split_leakage_detector.py (FTF-0506/0513/0517
+    precedent). detect_split_leakage(manifest, records, prior_sources=, route=, thresholds=,
+    max_semantic_partners=, max_findings=) verifies the FTF-0517 manifest first (tampered ->
+    failed/manifest_invalid, never scanned; record set differing -> failed/record_set_mismatch), then
+    runs eight Section 10 methods over every pair class (current records in different roles; a
+    prior development/final record against current train/validation; a prior final record against the
+    current final role = consumed_final_reuse): exact_raw and canonical_normalized through FTF-0511
+    detect_exact_duplicates, text_normalized through FTF-0512 detect_normalized_duplicates, group by
+    linkage keys (the manifest group id plus each record's own keys), and char_ngram / token_jaccard /
+    embedding / agent_trace_structural through FTF-0513 detect_near_duplicates called with zero
+    thresholds, the configured thresholds then applied with >=. Methods 1-4 and consumed-final reuse
+    are blocking and cannot be reviewed away; semantic/structural cross-role and prior-campaign
+    findings are review_required. Before any semantic work FTF-0901 enforce_effect decides the data
+    surface route: a coded refusal is blocked with its code, an internal destination runs the
+    in-process hashing embedding, any other allowed destination is blocked/embedding_provider_unavailable.
+    A record reaching max_semantic_partners (FTF-0513's silent cap) is blocked/semantic_scan_saturated,
+    more than max_findings is blocked/finding_limit_exceeded, an unscannable record is
+    failed/invalid_input: never clear. The report names both record ids, both roles and the method,
+    carries no content or content hash, and finding_id / report_sha256 are SHA-256 of canonical JSON
+    (independent of PYTHONHASHSEED and input order). apply_leakage_reviews binds a LeakageReview only to a
+    review_required finding; assert_leakage_clear(report, final_freeze|training) raises
+    LeakageBlockedError unless the report is clear or every finding is reviewed not_leakage, always for
+    blocked/failed, and refuses a report whose hash does not cover it. Round 2 correction: an unkeyed
+    sha256 alone cannot refuse a self-consistent forgery (one that recomputes its own hash over
+    fabricated content) -- verify_report round 1 missed exactly this for methods_run/methods_not_run,
+    accepting a self-sealed clear/leakage_found report that disclosed skipping the 4 semantic methods.
+    Closed by a dedicated cross-check: reason_code is None (the only case a clear/leakage_found status
+    can derive from) now requires methods_run == METHODS and methods_not_run == (); tampering that leaves
+    the hash stale or the status/reason/finding/review fields inconsistent with each other is refused via
+    the status-and-reason-derived canonical-hash check, which this does not change. A fully self-consistent
+    forgery (findings dropped, status re-derived, hash recomputed) is still accepted (G7/G7b/G7c): an
+    unkeyed sha256 cannot refuse it, and report authenticity belongs to FTF-0519 persistence.
+    Disclosed: the hashing embedding is a lexical proxy (FTF-0513); prior development vs current
+    development, same-role pairs and prior-vs-prior are not checked; no persistence of findings or
+    reviews; no live caller yet, so proving_symbol stays blank. Caller contract: FTF-0519 / the training
+    workflow calls this AND FTF-0515 assert_clear_for_training. Not self-certified (Law 4). See
+    docs/certifications/submissions/2026-10-14T0925Z-FTF-0518.md and
+    docs/certifications/submissions/2026-10-14T1741Z-FTF-0518-r2.md and
+    docs/certifications/submissions/2026-10-14T2340Z-FTF-0518-r3.md.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0518.py
 FTF-0519:
   certification_state: NONE
   criticality: MUST
@@ -9329,6 +9704,23 @@ FTF-0708:
   proof_state: UNPROVEN
   proving_symbol: ''
   proving_test: ''
+FTF-0708A:
+  certification_state: NONE
+  criticality: MUST
+  description: Sequence-classification-head training (seq_cls_lora; owner-approved integration-form change)
+  evidence_hash: ''
+  implementation_state: ABSENT
+  notes: >-
+    Owner-approved Release 1 addendum (2026-10-14), docs/adr/0004-small-task-specific-models.md.
+    The contract is spec/addenda/FTF-0708A.json; tools/r1_handoff.py covers only the frozen 300.
+    kind=retained_feature; requirements=CAP-09, AF-17, CAP-19; scenarios=Q10, Q13;
+    deps=FTF-R003, FTF-0701, FTF-0712, FTF-0713, FTF-0519, FTF-0307. Training method seq_cls_lora only:
+    HF Transformers Trainer + PEFT SEQ_CLS inside the pinned Axolotl compatibility tuple, under the FTF-R003
+    supervisor (owner-approved integration-form change). BLOCKED: FTF-R003/0701/0712/0713/0519 ABSENT; the
+    qualified run needs a real GPU (gpu_driver BLOCKED_EXTERNAL). Denominator 304.
+  proof_state: UNPROVEN
+  proving_symbol: ''
+  proving_test: ''
 FTF-0709:
   certification_state: NONE
   criticality: MUST
@@ -9875,12 +10267,15 @@ FTF-0903:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0903.py
 FTF-0904:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Log redaction
-  evidence_hash: c97190c388978b495d0d1a4e1a38b52d80b6be1a
+  evidence_hash: 5a0f708c29a61e7fe0fea3fc25ef838b7f5471df
   implementation_state: IMPLEMENTED
   notes: >-
+    WIRED 2026-10-14 via FTF-0904-W1 (child slice, CERTIFIED, PR #792 merge b4d401fc): create_app() calls
+    install_api_log_redaction() -> install_redaction() first; live-path proof tests/tasks/test_ftf_0904_w1.py
+    (real uvicorn factory, access log, startup failures incl. --workers/--reload children, hooks; faults F1-F14).
     kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0903
     (both CERTIFIED). Path: packages/security/log_redaction.py.
 
@@ -10118,14 +10513,24 @@ FTF-0904:
     middle, three-quarters and end (not only the whole marker), the base64 case checks fragments
     of the encoded text, and a logging-path sweep runs a real top tier per rule sized to fit
     MAX_TEXT_LENGTH. New time shapes for `_PAIR`, `_BASE64_RUN`, `_USERINFO` and the JWT scan are
-    swept 8 KB..256 KB through both paths. tests/tasks/test_ftf_0904.py now has 67 faults (was
-    52), including Q-PAIR-OVERLAP, Q-PAIR-KEY-WS-QUAD, Q-B64-NO-LOOKBEHIND,
+    swept 8 KB..256 KB through both paths. tests/tasks/test_ftf_0904.py had 67 faults (was
+    56), including Q-PAIR-OVERLAP, Q-PAIR-KEY-WS-QUAD, Q-B64-NO-LOOKBEHIND,
     Q-USERINFO-NO-LOOKBEHIND, V-JWT-SIG-BOUND-40, V-BEARER-BOUND-500, V-SK-BOUND-500 and
     V-B64-BOUND-500; every fault turns the suite RED (full file run, exit 0 on the real module).
-    Still UNWIRED (blank proving_symbol). Submission:
+    Still UNWIRED (blank proving_symbol). Round 6 submission:
     docs/certifications/submissions/2026-10-13T1530Z-FTF-0904-r6.md.
-  proof_state: L1-PROVEN
-  proving_symbol: ''
+
+    Round 7 (tests only; production unchanged): the named Q-PAIR-KEY-WS-QUAD mutation
+    (`[(\[]\s*b?` -> `[(\[]\s*\s*b?`) is now its own fault and goes RED via new single-opener
+    shapes `"(" + " "*(n-1)` and `"[" + "\t"*(n-1)`; the round-6 `[^'"]*` variant is kept as
+    Q-PAIR-KEY-ANY-QUAD. Q-JWT-LOWER-IN-LOOP (the `_jwt_start` skip loop re-lowering the segment)
+    goes RED via `"aeyJ"*k + ".abcdef.g"` and `"x" + "eyJ"*k + ".abcdef.g"`. All four shapes are
+    swept 8 KB..256 KB through redact_text and the logging path with absolute bounds, plus a
+    negative test that a real JWT after glued starts is still redacted. 69 faults (was 67).
+    evidence_hash is the round-7 code commit. Submission:
+    docs/certifications/submissions/2026-10-13T2035Z-FTF-0904-r7.md.
+  proof_state: L2-CERTIFIED
+  proving_symbol: install_redaction
   proving_test: tests/tasks/test_ftf_0904.py
 FTF-0905:
   certification_state: CERTIFIED
@@ -10175,16 +10580,84 @@ FTF-0905:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0905.py
 FTF-0906:
-  certification_state: NONE
+  certification_state: CERTIFIED
   criticality: MUST
   description: Egress capture/verification
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0904,
-    FTF-0905
-  proof_state: UNPROVEN
+  evidence_hash: 12f1102895cee6dd5e300231666ddae42328ead9
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0904,
+    FTF-0905 (all CERTIFIED). Path: packages/security/egress_capture_verification.py. Pure verifier
+    (`verify_egress`) combining enforcement, connection-log and plaintext/packet-capture inspection
+    into one `EgressVerificationReport` (Section 12: "allowlist enforcement, verified destination
+    identity, blocked-egress counters and inspection at authorized application endpoints
+    together"); a flow whose only no-leak evidence is an encrypted packet capture is `incomplete`,
+    never `passed` (Section 12's negative clause -- a capture alone cannot prove absence of
+    leakage). Reuses FTF-0905's `CanaryMarker`/`PlacementRecord`/`CanaryPlacementLedger`/
+    `encode_canary`/`fragment_canary` unmodified; `scan_store_for_canaries` scans every declared
+    encoding and fails closed (`CanaryLeakedError`) the instant a real canary is recovered.
+    Real-integration proof (`tests/integration/test_ftf_0906_egress_verification.py`, CI job
+    `egress-verification-integration`): real loopback sockets, an allowed plaintext sink, an
+    allowed TLS sink behind a real byte-for-byte recording relay, a denied non-allowlisted sink, a
+    denied cloud-metadata address, a real direct-socket enforcement bypass, and a real log leak
+    that FTF-0904's own redaction does not catch (canaries aren't a recognized secret shape) but
+    this module's own scanner does.
+
+
+    Round 1's own internal CI fix (same PR #832, not a Control-plane return): round 1 shipped with
+    `mutation-gate` red (93.5%, 11 survivors, all operator M9 -- a frozen-dataclass string field
+    normalized by `.strip().lower()` before an `==`/`!=`/`in` comparison). Every survivor sat on a
+    field already validated at construction against a closed, already-lowercase/whitespace-free
+    tuple, so the mutant was unobservable via normal construction. `_hex64`'s own per-character
+    loop (one survivor) was mathematically unkillable by any test -- replaced with a single
+    `re.fullmatch`, no behaviour change. The other ten were killed via `object.__setattr__`
+    bypassing each frozen dataclass's own `__post_init__`; one of those ten needed a real
+    production fix: `scan_store_for_canaries` was letting FTF-0905's own
+    `InvalidCanaryRequestError` leak through its own public API instead of this module's
+    documented `InvalidEgressEvidenceError`. Extracted `_aggregate_overall_status` out of
+    `verify_egress` so the report-status aggregation is directly testable. Final local mutation
+    gate: 172 run / 172 KILLED / 0 SURVIVED / 100.0%. Full detail:
+    `docs/certifications/submissions/2026-10-15T1112Z-FTF-0906.md` (round 1) and
+    `docs/certifications/submissions/2026-10-15T1500Z-FTF-0906-ci-fix.md` (round 1's own CI fix).
+
+
+    Round 2 (Control-plane return, PR #852, this evidence) closed all 12 named return points:
+    `verify_egress` now forces `failed` on any evidence naming an undeclared `flow_id`
+    (`unplanned_egress_evidence`) or a `canary_found` inspection with no flow attribution
+    (`unattributed_canary_found`); `EgressPlan.required_stores` can no longer omit the mandatory
+    log stores (`application_log`/`error_path`/`artifact`); the allow branch's `arrived` check now
+    requires enforcement/client/destination agreement AND a real `canary_found` at the
+    destination; the encrypted-capture-insufficient check now requires a genuinely inspected
+    record; a new `"unobserved"` destination outcome fails closed instead of a fabricated
+    `not_seen` (Law 17); `EgressVerificationReport` gained `policy_digest`/`scope`/
+    `inspected_stores`, all bound into `report_sha256`; `scan_store_for_canaries` now matches a
+    case-insensitive hex variant and a lower-cased-percent-escape url variant (via
+    `_needles_for_encoding`, which generates these unconditionally rather than dispatching on
+    `encoding` -- a per-encoding `==` dispatch would only ever compare an already-validated value,
+    an unobservable mutant found while re-running the mutation gate for real). The real-socket
+    integration test now derives canary_found/enforcement-code from what the real guard/sinks
+    actually did (never hard-coded), feeds the real caught error-path leak into `verify_egress`
+    itself, really scans a snapshot of the real access-log text, and fails closed (`sys.exit(1)`)
+    rather than skipping when the TLS fixture is unavailable. `tests/tasks/test_ftf_0906.py`'s own
+    fault-injection table grew from 7 to 13 regex-mutation probes, one per production fix; F5
+    (uninspected destination as positive control) is disclosed as a reviewed equivalent under this
+    round's own fix (the `PlaintextInspection.__post_init__` invariant `canary_found implies
+    inspected` makes that one filter unkillable now that `arrived` also checks `canary_found`),
+    not a live gap. Mutation gate run for real three times against the actual committed diff (not
+    merely asserted clean): 11 real survivors found and closed, then 2 more, then a final clean
+    152/152 KILLED, 0 SURVIVED, 100.0%. Full detail and the fault -> RED table:
+    `docs/certifications/submissions/2026-10-15T2300Z-FTF-0906-r2.md`.
+
+
+    UNWIRED -- `proving_symbol` blank, no live caller yet (same precedent as FTF-0901/FTF-0902/
+    FTF-0905). `workflow_history` is never exercised (no Temporal workflow exists), so every report
+    this task produces is `partial`, never `passed`, by design. Process scope only; cluster/CNI-
+    topology evidence is FTF-H027's own job on top of this one. Not self-certified (Law 4):
+    certification_state stays PROVISIONAL / proof_state stays L1-PROVEN pending independent
+    Control-plane L2 review.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0906.py
 FTF-0907:
   certification_state: NONE
   criticality: MUST
@@ -10503,6 +10976,23 @@ FTF-1004:
   proof_state: UNPROVEN
   proving_symbol: ''
   proving_test: ''
+FTF-1004A:
+  certification_state: NONE
+  criticality: MUST
+  description: Classifier serving via vLLM pooling runner behind LiteLLM (explicit supported classification adapter)
+  evidence_hash: ''
+  implementation_state: ABSENT
+  notes: >-
+    Owner-approved Release 1 addendum (2026-10-14), docs/adr/0004-small-task-specific-models.md.
+    The contract is spec/addenda/FTF-1004A.json; tools/r1_handoff.py covers only the frozen 300.
+    kind=retained_feature; requirements=AF-27, CAP-12, CAP-19; scenarios=Q07, Q20, Q21;
+    deps=FTF-1001, FTF-1002, FTF-1003, FTF-1005, FTF-04A25, FTF-1201. vLLM pooling/classify runner as an
+    explicit supported adapter (Section 36; owner-approved integration-form change); reached only through the
+    organization's LiteLLM route, else BLOCKED_ADMIN_ACTION. Does not depend on FTF-0708A. BLOCKED: FTF-1003
+    and FTF-1005 ABSENT. Denominator 304.
+  proof_state: UNPROVEN
+  proving_symbol: ''
+  proving_test: ''
 FTF-1005:
   certification_state: NONE
   criticality: MUST
@@ -10743,10 +11233,10 @@ FTF-1205:
   proving_symbol: ''
   proving_test: ''
 FTF-1206:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Organization policy control
-  evidence_hash: ''
+  evidence_hash: e5f6e5ee327ba60bdae73b43eda2e31a0dc02da3
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-02; scenarios=Q21, Q22; deps=FTF-0402, FTF-1201, FTF-1206A
@@ -10933,7 +11423,7 @@ FTF-1206:
     `organization_id`. Not self-certified (Law 4) -- `certification_state` stays `PROVISIONAL`,
     `proof_state` stays `L1-PROVEN`. Full evidence:
     `docs/certifications/submissions/2026-10-08T1903Z-FTF-1206.md`.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1206.py
 FTF-1206A:
@@ -11740,16 +12230,183 @@ FTF-1504:
   proving_symbol: ''
   proving_test: ''
 FTF-1505:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Secret scanning
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26; deps=FTF-0006, FTF-0904,
-    FTF-1501
-  proof_state: UNPROVEN
+  evidence_hash: f829749e19f248e7d8fc60962165dd24515c50f2
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26;
+    deps=FTF-0006, FTF-0904, FTF-1501 (all three CERTIFIED, confirmed before
+    relying on them). `shared_lock_required` is empty (confirmed via
+    `tools/r1_handoff.py packet FTF-1505`); contract_owner is FTF-1501 --
+    this task reuses that module's own `ScenarioResult`/`build_evidence`
+    directly rather than re-deriving an evidence shape, and touches neither
+    `packages/contracts/openapi/15-interface.yaml` nor
+    `packages/contracts/jsonschema/15-domain.schema.json`.
+
+    ROUND 2 (this evidence_hash): round 1 (PR #799/#816) was returned --
+    every lane was restricted to a hand-picked directory list and the
+    working tree, with no decode layer, no entropy check and a diff-based
+    (not blob-based) history scan. Full rebuild, verified empirically
+    against this repository's own real tree: `source`/`artifact` now scan
+    every `git ls-files` path with NO exclusion (binary files and zip/tar/gz
+    archive members included; `SOURCE_ROOTS` reused directly from
+    `scripts/product_truth_check.py`, never a second hand-maintained list);
+    `history` scans every UNIQUE BLOB reachable from any ref (`git rev-list
+    --objects --all` + `git cat-file --batch`, deduplicated by blob id --
+    not `git log --all -p`'s added lines, which never diffs a merge commit
+    by default) and refuses a shallow clone outright; `log_samples` adds a
+    real `uvicorn app.main:create_app --factory` boot (FTF-0904-W1 is
+    installed and confirmed wired) probed with FTF-0905 canaries
+    (literal/base64/hex/url/fragmented) in the query string, an
+    Authorization header and a Cookie header, alongside the existing
+    local-logger positive control. One layer of base64 and one layer of
+    percent-decoding are applied throughout (a cheap literal-substring
+    pre-filter bounds the cost of re-running the rule set on a decoded
+    candidate -- proven to be a performance gate only, never a detection
+    gap). New rule families: `ASIA` AWS session keys, `aws_secret_access_key`
+    pairing, GitHub PAT (82-char)/GitLab tokens, Slack webhook URLs,
+    `sk-proj-`/`sk-ant-`/`rk_live_`, an `ENCRYPTED`/generic PEM header, a
+    placeholder-aware URL-userinfo password, a decode-based JWT validator
+    (three base64url segments whose first decodes to a JSON object with
+    `alg`), and the FTF-0905 canary shape (log/artifact lanes only). The
+    `quoted_secret_assignment` rule's keyword match no longer requires a
+    `\b` boundary immediately before the keyword (which silently never
+    matched inside a continuous token like `db_password`/`client_secret`/
+    `SECRET_KEY`), the unconditional `your_`-prefix placeholder bypass is
+    removed, and a real value now needs >= 20 chars AND Shannon entropy
+    >= 3.5 bits/char (FTF-0514's own threshold, `workers/data/
+    pii_secrets_detector._shannon_entropy_bits_per_char`, reused directly --
+    round 1 had no entropy check at all).
+
+    `secret_scan_allowlist.yaml` (keyed by raw value + file glob) is
+    replaced by `tests/security/secret_scan_baseline.yaml`, keyed ONLY by
+    `fingerprint: sha256(rule NUL value)` with mandatory
+    reason/reviewer/date -- `load_baseline` refuses an entry carrying a
+    value/path/glob key outright, and `assert_baseline_fresh` makes a
+    baseline entry that matched nothing in a run itself a blocking finding,
+    so the file can only drift "too strict," never "too permissive." 64
+    entries, one per (rule, value) pair this round's own source+artifact+
+    history scan matched against this repository's real tracked files, each
+    reviewed value-by-value (AWS's own documented example keys, the
+    well-known `hunter2`/`s3cr3t`/`pass` placeholder passwords, the CI-only
+    migration-role password `ci.yml`'s own service containers use, held-out
+    test literals, fixture bearer/basic/JWT/PEM headers with no key body)
+    -- `reviewed_by` records `"relay (proposed; Control-plane L2 review
+    pending)"` per CLAUDE.md "Relay is execution-only."
+
+    An additive `secret-scanning` CI job (`fetch-depth: 0`, no services)
+    runs the real module directly as the live release gate (Section 53),
+    added to `ci-verdict`'s own `needs:`; `assert_artifact_uploads_covered`
+    parses every `actions/upload-artifact` `path:` out of `ci.yml` itself
+    and fails closed if one lies outside a declared `ARTIFACT_ROOTS` entry
+    (`docs/certifications`, `docs/progress`, the new `reports/`). No change
+    was needed to `scripts/ci_policy.py`/`tests/unit/test_ci_policy.py`:
+    both are already fully generic over `ci.yml`'s own job list, so the
+    existing 72 `test_ci_policy.py` checks enforce the new job's wiring.
+
+    Fault-injection (Law 1) for every F-* class above is a real,
+    independent test in `tests/tasks/test_ftf_1505.py` (33 checks): a
+    binary file and a real zip archive member are scanned; a secret hidden
+    behind one layer of base64/percent-decoding is found; a secret under
+    `tests/` (outside every `SOURCE_ROOTS` entry) is found; a real `git
+    clone --depth 1` is refused by `assert_not_shallow`, the same full
+    clone accepted; a secret introduced ONLY by a real `git merge --no-ff`
+    conflict resolution is found by `scan_history` even though plain `git
+    log --all -p` on that same real repo never shows it as an added line
+    (the concrete behavioural gap between round 1's diff-based scan and
+    round 2's blob-based one); a baseline entry carrying a value/path/glob
+    key, or one that matched nothing this run, is refused/blocking; a
+    high-entropy value prefixed `your_` is no longer waved through.
+
+    Real, current-state proof: a direct run of
+    `python3 tests/security/secret_scanning.py` against this repository's
+    own real production tree, full history (8,541 unique blobs, 2.89 GB)
+    and checked-in evidence artifacts, plus a real `uvicorn` boot --
+    measured at ~13 minutes end to end, within the new job's
+    `timeout-minutes: 30` -- comes back 0 blocking findings against the
+    committed baseline. `tests/tasks/test_ftf_1505.py`'s own
+    `test_real_module_run_against_this_repository` exercises that exact
+    real run as a subprocess (skipped only when the local clone is itself
+    shallow -- a sandbox capability check, not a weakening of the real
+    gate) and is wired into the new `secret-scanning` CI job, so a real
+    future leak fails CI, not merely a mocked unit test.
+
+    DISCLOSED -- the `scan_live_app_log_samples` lane
+    exercises a 401 and a 404 route only; a live 5xx validation-error
+    request path is not separately exercised (FTF-0904-W1's own suite
+    already covers a startup-failure 5xx-shaped case).
+
+    ROUND 3 (this evidence_hash, Control-plane return 2026-10-15T14:14Z):
+    the round-2 ephemeral-artifact gap above is CLOSED -- an additive step
+    in both `mutation-gate` and `ci-verdict` (the jobs that write
+    `reports/mutation-gate.json`/`reports/ci-verdict.json`) scans each
+    report with a new, dependency-free `tests/security/secret_rules.py`
+    (every rule/quick-gate/seed-generation primitive extracted out of
+    `secret_scanning.py`, stdlib-only, proven by AST inspection) the
+    moment it is written, in the same job, with no new setup step. Also
+    fixed: a quoted/octal-escaped non-ASCII git path silently skipped
+    (`iter_tracked_files` now uses `git ls-files -z`); oversized content
+    and a corrupt archive member silently truncating/aborting (`-- now
+    both a blocking `scan_incomplete` finding, and a corrupt member no
+    longer aborts every later member in the same archive); a history blob
+    that is itself an archive never getting member extraction at all (a
+    shared `_scan_content_and_members` helper now backs source/artifact/
+    history alike); an incomplete quick gate (missed `sk_live_`,
+    `private_key=`, `session_key=`, a tab after `Bearer` -- now DERIVED
+    from the same rule table every rule is matched with, per-rule
+    completeness proven directly); a reversible `value_sha256` printed for
+    a brand-new (unbaselined) finding (`SecretFinding.to_dict()` now omits
+    it for any blocking finding -- an unsalted hash of a low-entropy
+    secret is dictionary-reversible); `parse_upload_artifact_paths`
+    rewritten as a structural YAML parse (covers `actions/upload-artifact/
+    merge@...`, refuses a `..` traversal, no fixed lookahead window);
+    committed seed literals (`_default_seed_values()` plus several
+    `tests/tasks/test_ftf_1505.py` fixtures) replaced by
+    `secret_rules.generate_seed_for_rule`, generated fresh at runtime
+    (one genuinely stale baseline entry removed; a second entry for the
+    same old literal was wrongly removed on a source+artifact-only
+    freshness check, caught by a real CI failure -- 5 blocking findings,
+    3 of them that same literal still reachable from real history -- and
+    restored, kept as real evidence rather than silently fixed); the
+    live-log lane now covers all 16 rule families (round 2
+    covered 5) plus a direct `StructuredEvent`/`emit_to_stream` cross-check
+    (FTF-0006's event dataclass has no redaction of its own by design); a
+    base64/hex-ENCODED canary is now actually detectable (round 2's decode
+    layer never re-checked the canary shape on decoded content -- fixed,
+    plus a new hex-decode layer that did not exist before); and the
+    2026-10-15T08:43Z PR-scoped-history ruling: `scan_history` takes a
+    `scope` (`"pr"`, HEAD-reachable blobs only -- the new default, matching
+    the unmodified `secret-scanning` ci.yml job -- or `"all-refs"`, every
+    ref, attributing a HEAD-unreachable finding to the branch that carries
+    it). A fault-matrix section in `tests/tasks/test_ftf_1505.py` proves
+    every one of the round-3 return's named faults independently (one RED
+    row per fault, via monkeypatching the real module in place and
+    restoring -- `secret_scanning.py` resolves several paths relative to
+    its own `__file__`, which makes a literal file-copy-and-reimport
+    unreliable; monkeypatch-with-restore proves the identical behavioural
+    claim). DISCLOSED, deliberately not attempted from this file scope:
+    wiring the all-refs sweep into its own `push: main` + `schedule:`
+    trigger needs a new `.github/workflows/` trigger, which
+    `scripts/ci_policy.py`'s own `RELAY_FORBIDDEN_PREFIXES` places outside
+    `[relay]` PR scope (CLAUDE.md "Governance PRs") -- the scanner-side
+    capability is complete and tested; only the trigger wiring is a
+    Control-plane `[GOVERNANCE]` follow-up. DISCLOSED, out of this round's
+    own file scope (a separately active lane, `packages/security/
+    log_redaction.py`, PR #825): the first draft of the 16-family live-app
+    sweep found `gitlab_token`/`slack_webhook`/`stripe_style_key`/the
+    canary shape are not redacted by FTF-0904 behind a key name its own
+    tables do not recognise (FTF-0904's redaction is largely key-NAME-
+    driven); the final probe set places every family behind the same
+    `?token=` key name every other probe in this lane already uses
+    (consistent placement, not a hunt for FTF-0904-F1's own, separately-
+    scoped gap). Not self-certified (Law 4) -- `certification_state`
+    stays PROVISIONAL, `proof_state` stays L1-PROVEN, pending independent
+    Control-plane L2 review.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_1505.py
 FTF-1506:
   certification_state: CERTIFIED
   criticality: MUST
@@ -12025,10 +12682,10 @@ FTF-1601:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1601.py
 FTF-1602:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Object storage backup
-  evidence_hash: 47ca830e452409b12a3a30d7a9ae8728dd1db791
+  evidence_hash: 963a0af45915a50014d870b5db2bdbe798e6780c
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-32; scenarios=Q29, Q30; deps=FTF-0004, FTF-1002, FTF-1601
@@ -12085,8 +12742,53 @@ FTF-1602:
     unchanged in kind; the round-4 diff-scoped gate figure is in the submission. Real-SeaweedFS
     race and reuse tests have their first run in CI. Disclosed, not a return reason: a forged
     record that is the only version, with no expected hash supplied, is still accepted.
-    Not self-certified (Law 4).
-  proof_state: L1-PROVEN
+    Round 5 (QUEUE 0i): `create_backup` no longer accepts a `backup_id` at all -- it always
+    generates its own (a private `_new_backup_id` seam, patched only by tests), closing the real
+    defect a caller-chosen id risked: two concurrent calls sharing one id could leave one caller
+    holding a `BackupRecord` for a backup the other call's own write makes immediately
+    unverifiable, since the real server has no conditional (If-None-Match) write. `create_backup`/
+    `verify_backup` now require `type(now) is datetime and now.utcoffset() is not None`, not only
+    `tzinfo is not None`, so a tzinfo that is set but whose `utcoffset()` answers None (which
+    Python itself treats as naive) is refused up front instead of surfacing a later raw error.
+    New real-SeaweedFS evidence: N concurrent real creates never collide (each gets a distinct id
+    and independently, permanently verifies); a forced shared-id interleaving (Control plane's own
+    "B checks the id, A runs in full, B writes"), via the same private id seam a real caller
+    cannot reach, is what the test actually asserts: B (the second writer onto the shared id)
+    never reports false success, and A's own earlier run -- which did complete and return a
+    record at call time -- is left permanently unverifiable afterward by B's later write onto the
+    same key; the real fix is that no two real calls are ever given the same id, not that this
+    race is individually safe. The pinned record read ignores a transient, unretained forged
+    version injected between the pinned listing and the pinned read (G1), confirmed against the
+    real server that the genuine, COMPLIANCE-retained record itself cannot be deleted or replaced
+    at all; and the post-read re-list refuses a same-count, different-identity swap (G7), with an
+    inline comparison showing a count/delete-marker/is_latest-only version of that same check
+    would miss it. Whole-file mutation gate (uncapped): 405/405 killed, 0 survivors. Not
+    self-certified (Law 4).
+    Round 6 (QUEUE 0i, tests + spec-matrix only; production unchanged since round 5):
+    F7-CREATE-NOW-VALIDATED-LATE -- a unit and real-server table of bad `now` shapes (naive,
+    tzinfo set but utcoffset() is None, str, int, a datetime subclass) proves `create_backup`
+    refuses before making a single call to either store (a counting double on both suites), not
+    only before writing; fault -> RED by moving the check below the blob-read loop (the round-4
+    Q5 shape) reproduces the hazard. G7-COUNT-ONLY-RELIST gained a unit twin
+    (`test_round6_relist_identity_swap_is_refused_in_unit`) of the existing real-server test --
+    round 5 only proved this guard on the real suite, so a regression there stayed green in unit.
+    G1/G1b were rebuilt on the Q2 shape (a forged, unretained version PUT the first time the
+    record is listed, DELETEd the first time retention is checked -- both calls `_load_record`
+    always makes, regardless of which method it uses to read the content) in both suites: round
+    5's own ABA test only reddened through a local double standing in for the content-read method
+    by name, which a real production mutation (get_latest instead of the pinned get_version) does
+    not call at all, so the primary attack-check assertion itself stayed green against that exact
+    mutation (confirmed this round); the rebuilt test asserts on `verify_backup`'s/
+    `restore_backup`'s own real return value directly, with no self-referential demonstration, and
+    adds G1b (the same forged, shrunk record applied to restore, which previously could have
+    restored 3 of 4 objects as a silent, false success). Fault -> RED for all three confirmed by
+    mutating scripts/object_storage_backup.py on disk and restoring it byte-identical afterward
+    (see the round-6 submission's Fault -> RED table). Correction (Control plane, 2026-10-14): the earlier claim that evidence_hash stays pinned
+    to 47ca830 per the round-6 ruling was wrong - the ruling required a rebind, and round 5 changed
+    scripts/object_storage_backup.py (6d436104); evidence_hash is rebound to the round-6 merge 963a0af4 at
+    L2 certification. Whole-file mutation gate (uncapped) re-run clean; see
+    the round-6 submission for the exact count. Not self-certified (Law 4).
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1602.py
 FTF-1603:
@@ -12395,16 +13097,45 @@ FTF-1703:
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1703.py
 FTF-1704:
-  certification_state: NONE
+  certification_state: CERTIFIED
   criticality: MUST
   description: Validation dataset
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0517, FTF-1701,
-    FTF-1703
-  proof_state: UNPROVEN
+  evidence_hash: 2a442fb2e28c3f42f1e3f8c8a7498cd4b05ffcca
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0517, FTF-1701,
+    FTF-1703 (all CERTIFIED). PROVISIONAL / L1-PROVEN, not certified (Law 4).
+    evals/reference/validation_dataset.py generates 180 synthetic validation traces (7 scenario
+    kinds, 3 critical) and 300 development cases (plain dicts that validate as FTF-0602
+    EvaluationCaseInput), every tool result produced by FTF-1703's own executor on a fresh real
+    FTF-1702 ToolEnvironment. Each development case carries the backend's own records (calls,
+    effects, state) for its correct run and for the violation run; the certified FTF-0608
+    sequence, FTF-0609 forbidden-action and FTF-0610 refusal graders pass every reference run and
+    fail every violation run (critical cases: forbidden_action / required_refusal only; there is
+    no certified state_transition grader, so note/note_retry cases are controlled with the
+    sequence grader's state check, disclosed). Vocabularies, phrase tables and answer texts are
+    disjoint from FTF-1703's and from each other's (import-time guard + tests); the seven tool
+    behaviours are the shared reference domain. build_reference_eval_splits verifies every
+    record by regeneration, checks the sealed final suite (HeldOutLeakageError), cross-role
+    near-duplicate user turns and final answers (FTF-0513), then assigns training/validation/
+    development as PREASSIGNED FTF-0517 records keyed by template family, entity and answer hash,
+    so allocate_splits refuses any family/entity/answer in two roles. No function accepts a score
+    or result; assert_split_unchanged raises on any manifest change; reordering input keeps the
+    hash. meets_counts needs >=150 validation and >=250 development (149/249 fail).
+    Real-Postgres integration (job development-suite-import-integration): all 300 cases import
+    through the real evaluation-case routes under sovra_app (201), list back with 21 family group
+    keys, keep the oracle result after the round trip, a critical case altered to exact_match is
+    400 critical_oracle_not_independent with nothing inserted, the final suite stays empty,
+    cross-tenant is the same 404. Disclosed: no independent human review (BLOCKED_EXTERNAL,
+    FTF-R006); group_count is 21 template families per role, no floor claimed; final_qualification
+    is empty here (FTF-1705), so manifest status is insufficient by design; suite locking/sha
+    (FTF-0603) not done; the integration test seeds manifest and suites through the ORM and
+    authenticates with the test principal resolver (as FTF-0602-P1 does). No live caller yet
+    (reference-data task, FTF-1703 precedent), so proving_symbol stays blank. Submission:
+    docs/certifications/submissions/2026-10-15T0815Z-FTF-1704.md.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/reference/test_ftf_1704.py
 FTF-1705:
   certification_state: NONE
   criticality: MUST

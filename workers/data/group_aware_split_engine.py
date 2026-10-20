@@ -280,25 +280,43 @@ def allocate_splits(spec: SplitSpec, records: Sequence[SplitRecord]) -> SplitMan
     )
 
 
+def _check_manifest_shape(manifest: SplitManifest) -> None:
+    # Every field that compute_manifest_sha256 serialises is type-checked first, so a
+    # malformed manifest raises this module's own error and never a raw TypeError out of
+    # json.dumps (a set/bytes field) or iteration (None/int assignments).
+    if type(manifest.strategy) is not str or type(manifest.seed) is not str:
+        raise SplitEngineError("manifest strategy and seed must be strings")
+    ratios = manifest.ratios
+    if type(ratios) is not tuple or len(ratios) != len(ROLES):
+        raise SplitEngineError("manifest ratios must be a tuple of four ints")
+    for ratio in ratios:
+        if type(ratio) is not int:
+            raise SplitEngineError("manifest ratios must be a tuple of four ints")
+    if manifest.cutoff is not None and type(manifest.cutoff) is not int:
+        raise SplitEngineError("manifest cutoff must be None or an int")
+    if type(manifest.assignments) is not tuple:
+        raise SplitEngineError("manifest assignments must be a tuple")
+    for entry in manifest.assignments:
+        if type(entry) is not tuple or len(entry) != 3:
+            raise SplitEngineError("manifest has a malformed assignment")
+        if any(type(field) is not str for field in entry):
+            raise SplitEngineError("manifest has a malformed assignment")
+
+
 def verify_manifest(manifest: SplitManifest) -> None:
     """Raise SplitEngineError unless the manifest is untampered and group-isolated."""
     if not isinstance(manifest, SplitManifest):
         raise SplitEngineError("manifest must be a SplitManifest")
+    _check_manifest_shape(manifest)
     if manifest.manifest_sha256 != compute_manifest_sha256(manifest):
         raise SplitEngineError("manifest hash does not match its content")
     roles_in_group: dict[str, set[str]] = {}
     role_by_record: dict[str, str] = {}
     group_by_record: dict[str, str] = {}
     for entry in manifest.assignments:
-        # Structure and type checked before any dict lookup: a malformed entry (wrong
-        # arity, a list instead of a tuple, or an unhashable/non-str field) must raise
-        # this module's own error, never a raw TypeError or unpack ValueError.
-        if not isinstance(entry, tuple) or len(entry) != 3:
-            raise SplitEngineError("manifest has a malformed assignment")
+        # Entry structure and field types were validated by _check_manifest_shape.
         record_id, role, group_id = entry
-        if type(record_id) is not str or type(group_id) is not str:
-            raise SplitEngineError("manifest has a malformed assignment")
-        if type(role) is not str or role not in _IS_EVAL:
+        if role not in _IS_EVAL:
             raise SplitEngineError("manifest has an unknown role")
         roles_in_group.setdefault(group_id, set()).add(role)
         role_by_record[record_id] = role

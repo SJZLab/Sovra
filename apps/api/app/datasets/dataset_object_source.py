@@ -13,9 +13,15 @@ FTF-0501 already verified. This module is the only way they get them:
 - The object key comes from the dataset's own upload-session row, read as
   `sovra_app` under the tenant context. No caller string reaches storage, there
   is no listing call, and the key is never returned or put in an error.
-- The returned `chunks` iterator makes exactly one GET. A storage failure
+- The returned `chunks` iterator reads the object in bounded Range windows
+  (`_WINDOW_BYTES`), each pinned to the first window's ETag and size, so a
+  slowly consumed dataset is not ended by the server and a window of another
+  object version is never spliced on: that is `DatasetSourceChangedError`,
+  which `ChunkReader` turns into `failed` / `source_changed`. A storage failure
   surfaces from the iterator as `UploadStorageUnavailableError` (content-free,
-  `from None`: the original exception can carry the signed URL and key). A stream
+  `from None`: the original exception can carry the signed URL, the key or, for
+  `http.client.IncompleteRead`, object bytes). Every exception the stream raises
+  is converted, not only the ones a caller expects. A stream
   that ends before the verified size is the same outage, not a changed object:
   the object is immutable, and a dropped connection reads as a clean end.
 
@@ -24,7 +30,6 @@ This module never writes.
 
 from __future__ import annotations
 
-import urllib.error
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -40,12 +45,13 @@ from app.datasets.dataset_upload_store import (
 )
 from app.datasets.direct_object_storage_upload import UploadStorageUnavailableError
 from app.db.tenant_context import TenantContext
-from app.services.storage_semantics_client import S3Error
+from app.services.storage_semantics_client import S3Error, S3ObjectChanged
 
 __all__ = [
     "SOURCE_TYPE",
     "DatasetObjectSource",
     "DatasetObjectStorage",
+    "DatasetSourceChangedError",
     "DatasetSourceInconsistentError",
     "open_dataset_source",
 ]
@@ -54,10 +60,13 @@ __all__ = [
 # upload session can only be opened on an `upload` connection.
 SOURCE_TYPE = "upload"
 _CHUNK_SIZE = 1024 * 1024
+_WINDOW_BYTES = 8 * 1024 * 1024
 
 
 class _StreamingClient(Protocol):
-    def stream_object(self, bucket: str, key: str, *, chunk_size: int = ...) -> Iterator[bytes]: ...
+    def stream_object_windows(
+        self, bucket: str, key: str, *, window_bytes: int = ..., chunk_size: int = ...
+    ) -> Iterator[bytes]: ...
 
 
 @dataclass(frozen=True)
@@ -74,6 +83,14 @@ class DatasetSourceInconsistentError(RuntimeError):
     Content-free."""
 
 
+class DatasetSourceChangedError(RuntimeError):
+    """The object changed while it was being read. Content-free.
+    `source_changed` is the marker `ChunkReader` maps to `failed` /
+    `source_changed` (Law 17: neither an outage nor spliced bytes)."""
+
+    source_changed = True
+
+
 @dataclass(frozen=True)
 class DatasetObjectSource:
     dataset_id: uuid.UUID
@@ -88,21 +105,29 @@ class DatasetObjectSource:
 def _stream(storage: DatasetObjectStorage, key: str, expected_size: int) -> Iterator[bytes]:
     received = 0
     try:
-        for chunk in storage.client.stream_object(storage.bucket, key, chunk_size=_CHUNK_SIZE):
+        for chunk in storage.client.stream_object_windows(
+            storage.bucket, key, window_bytes=_WINDOW_BYTES, chunk_size=_CHUNK_SIZE
+        ):
             received += len(chunk)
             yield chunk
+    except S3ObjectChanged:
+        raise DatasetSourceChangedError("stream_object_windows: object changed") from None
     except S3Error as exc:
         raise UploadStorageUnavailableError(
-            f"stream_object: storage answered {exc.status_code} {exc.code}"
+            f"stream_object_windows: storage answered {exc.status_code} {exc.code}"
         ) from None
-    except (OSError, urllib.error.URLError, TimeoutError, ValueError) as exc:
+    except (UploadStorageUnavailableError, DatasetSourceChangedError):
+        raise
+    except Exception as exc:  # noqa: BLE001 - any storage-side failure is an outage; the original can carry object bytes
+        # http.client.IncompleteRead carries the partial object bytes and
+        # BadStatusLine the raw status line: neither may leave this module.
         raise UploadStorageUnavailableError(
-            f"stream_object: storage unreachable ({type(exc).__name__})"
+            f"stream_object_windows: storage failed ({type(exc).__name__})"
         ) from None
     if received < expected_size:
         # An immutable, verified object cannot get shorter: the connection ended
         # early and `http.client` reports that as a clean end of stream.
-        raise UploadStorageUnavailableError("stream_object: storage ended the stream early")
+        raise UploadStorageUnavailableError("stream_object_windows: storage ended the stream early")
 
 
 def open_dataset_source(

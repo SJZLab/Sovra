@@ -40,6 +40,7 @@ Rules this module enforces:
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import hmac
 import json
@@ -87,6 +88,7 @@ __all__ = [
     "mapping_from_object",
     "normalize_mapped_record",
     "parse_mapping",
+    "parse_pointer",
     "preview",
     "resolve_pointer",
     "run_import",
@@ -115,7 +117,7 @@ STRICT_JSON_CODES: Final = frozenset(
         "non_finite_number",
         "number_out_of_range",
         "invalid_unicode",
-        "depth_exceeded",
+        "nesting_too_deep",
     }
 )
 
@@ -132,25 +134,41 @@ REJECTION_CODES: Final = frozenset(
         "unmapped_message_key",
         "unmapped_role",
         "invalid_utf8",
+        "record_not_object",
+        "formula_cell",
+        "cell_error_value",
     }
     | STRICT_JSON_CODES
 )
 
 FAILURE_CODES: Final = frozenset(
     {
+        "content_type_not_supported_by_importer",
         "csv_structure_invalid",
-        "deadline_exceeded",
         "duplicate_header",
+        "duplicate_sheet_name",
+        "external_link_present",
         "field_too_large",
         "invalid_encoding",
+        "json_malformed",
+        "limit_exceeded",
         "mapping_column_missing",
+        "parse_timeout",
+        "sheet_out_of_bounds",
         "source_changed",
         "source_too_large",
         "source_unavailable",
         "stream_not_consumed",
+        "too_many_cells",
         "too_many_columns",
         "too_many_rejections",
         "unexpected_bom",
+        "unmapped_top_level_key",
+        "unsafe_archive",
+        "unsafe_workbook",
+        "unsupported_encoding",
+        "unsupported_workbook",
+        "xlsx_malformed",
     }
 )
 
@@ -276,6 +294,13 @@ class ImportLimits:
     max_rejections: int = 10_000
     preview_max_records: int = 20
     deadline_seconds: float = _MAX_DEADLINE_SECONDS
+    # FTF-0505's own bounds (the xlsx importer's cell count and shared-strings
+    # byte cap): additive fields under the catalog rule -- a limit a single
+    # importer needs becomes one field here, never a module-local dataclass,
+    # so a future importer's own limit is added the same way instead of
+    # re-inventing a second limits object.
+    max_xlsx_cells: int = 50_000_000
+    max_xlsx_shared_strings_bytes: int = 256 * 1024**2
 
     def __post_init__(self) -> None:
         defaults = ImportLimits.__dataclass_fields__
@@ -285,6 +310,8 @@ class ImportLimits:
             "max_depth",
             "max_rejections",
             "preview_max_records",
+            "max_xlsx_cells",
+            "max_xlsx_shared_strings_bytes",
         ):
             value = getattr(self, name)
             if not _is_int(value) or value < 1:
@@ -326,7 +353,7 @@ def _scan_depth(text: str, max_depth: int) -> None:
             case "[" | "{":
                 depth += 1
                 if depth > max_depth:
-                    raise StrictJsonError("depth_exceeded")
+                    raise StrictJsonError("nesting_too_deep")
             case "]" | "}":
                 depth -= 1
 
@@ -481,6 +508,17 @@ class ImportMapping:
     system: Slot | None = None
     group_key: Slot | None = None
     metadata_slots: tuple[tuple[str, Slot], ...] = ()
+    # FTF-H011-P1's own additive field (IMPORTER ORDER catalog rule): a caller-supplied tap
+    # called first by `apply_mapping`, before any validation, with a *copy* of the row and
+    # headers so a mapping preview can show the exact raw row a rejection or candidate came
+    # from. Never set by `mapping_from_object`/`parse_mapping` (so no parsed MappingSpec ever
+    # carries one) and never read by `document`/`mapping_sha256` (`compare=False`,
+    # `repr=False`: two mappings that differ only by observer are the same mapping). A tap
+    # that mutates its own copy can never reach the importer's own row/headers, which stay
+    # the original objects.
+    row_observer: Callable[[Row, Sequence[str] | None], None] | None = field(
+        default=None, compare=False, repr=False
+    )
 
 
 def _bad(reason: str) -> MappingInvalidError:
@@ -537,7 +575,13 @@ def _slot(value: object) -> Slot:
     raise _bad("bad_slot")
 
 
-def _parse_pointer(value: object) -> tuple[str, ...]:
+def parse_pointer(value: object) -> tuple[str, ...]:
+    """Parses a JSON-Pointer-shaped MappingSpec string (`""` or `/a/b/0`) into
+    its unescaped tokens. Raises `MappingInvalidError` (`bad_pointer`,
+    `wrong_type`). Exported so a format importer that reads its own pointer
+    field straight from `mapping.document` (the way `csv_importer` reads its
+    own `csv` block) can resolve it without a second, independently
+    reimplemented parser (FTF-0503's `json` block `container` field)."""
     if type(value) is not str:
         raise _bad("wrong_type")
     if value == "":
@@ -621,7 +665,7 @@ def _validate_formats(obj: dict[str, object]) -> None:
         _count(xlsx_block["header_row"], 1_000_000)
     if "json" in obj:
         json_block = _obj(obj["json"], ("container", "ignored_top_level_keys"), ())
-        _parse_pointer(json_block["container"])
+        parse_pointer(json_block["container"])
         ignored = json_block["ignored_top_level_keys"]
         if type(ignored) is not list or len(ignored) > MAX_ROLE_MAP_ENTRIES:
             raise _bad("wrong_type")
@@ -672,7 +716,7 @@ def mapping_from_object(obj: object) -> ImportMapping:
             raise _bad("bad_value")
         on_unmapped = policy
         if spec.pointer_based:
-            pointer = _parse_pointer(body["messages_pointer"])
+            pointer = parse_pointer(body["messages_pointer"])
         else:
             messages_slot = _slot(body["messages"])
     else:
@@ -820,6 +864,19 @@ def apply_mapping(
 ) -> MappedRow:
     """Builds the FTF-0506 raw record from one source row. A mapping never
     defaults a value: an empty optional slot is omitted."""
+    if mapping.row_observer is not None:
+        # OBSERVER-COPY: a *deep* copy, unconditionally -- a shallow
+        # `dict()`/`list()` still shares every nested mutable value with
+        # `row` itself, so an observer that mutates a nested list/dict in
+        # place would silently corrupt the very row this function is about
+        # to build the real candidate and hash from. `copy.deepcopy` is
+        # correct and safe for every `Row` shape uniformly (it is a no-op,
+        # returning the identical object, for the immutable `str`/`bytes`
+        # case -- unlike the old type-dispatched `dict()`/`list()` split,
+        # there is no longer a type check to get wrong here).
+        copied_row = copy.deepcopy(row)
+        copied_headers = None if headers is None else tuple(headers)
+        mapping.row_observer(copied_row, copied_headers)
     messages: list[dict[str, object]] = []
     if mapping.prompt is not None:
         system = _text_value(mapping.system, row, headers, "system", required=False)
@@ -991,6 +1048,10 @@ class ImportReport:
     rejection_counts: tuple[tuple[str, int], ...]
     rejections: tuple[RowRejection, ...]
     report_sha256: str
+    # Where a fatal problem happened (`line:<n>` / `row:<n>` ...). Additive and optional: None
+    # here, and a `LocatedImportReport` (below) when there is one, so a report without a
+    # locator keeps exactly the fields, the body and the digest it had before.
+    fatal_locator = None  # deliberately unannotated: not a dataclass field
 
     def body(self) -> dict[str, object]:
         """Every field except `report_sha256`, as canonical-JSON-ready data."""
@@ -1012,6 +1073,23 @@ class ImportReport:
 
 
 @dataclass(frozen=True)
+class LocatedImportReport(ImportReport):
+    """An `ImportReport` that ends at a fatal problem whose location is known; the
+    locator is inside the report digest."""
+
+    fatal_locator: str = ""  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if (
+            not _STATE_NEEDS_FAILURE_CODE.get(self.state)
+            or type(self.fatal_locator) is not str
+            or not _LOCATOR_PATTERN.fullmatch(self.fatal_locator)
+        ):
+            raise ValueError("fatal_locator must be a structural locator on a non-completed report")
+        super().__post_init__()
+
+
+@dataclass(frozen=True)
 class PreviewResult:
     accepted: tuple[Mapping[str, object], ...]
     rejections: tuple[RowRejection, ...]
@@ -1025,7 +1103,7 @@ class Deadline:
 
     def check(self) -> None:
         if self._clock() > self._limit:
-            raise ImportAborted("failed", "deadline_exceeded")
+            raise ImportAborted("failed", "parse_timeout")
 
 
 class ChunkReader(Iterator[bytes]):
@@ -1087,7 +1165,11 @@ class ChunkReader(Iterator[bytes]):
                 chunk = next(self._iterator)
             except StopIteration:
                 break
-            except Exception:  # noqa: BLE001 - any source failure is an outage, never a verdict
+            except Exception as exc:  # noqa: BLE001 - any source failure is an outage, never a verdict
+                if getattr(exc, "source_changed", False) is True:
+                    # The source itself says the verified object changed under
+                    # the read (a version difference between two windows).
+                    raise self._abort("failed", "source_changed") from None
                 raise self._abort("blocked", "source_unavailable") from None
             if type(chunk) is not bytes:
                 raise self._abort("blocked", "source_unavailable")
@@ -1175,6 +1257,7 @@ class ImportAccumulator:
         source_sha256: str,
         source_bytes: int,
         aborted: ImportAborted | None = None,
+        fatal_locator: str | None = None,
     ) -> ImportReport:
         importer, version, mapping_sha256, purpose, expected = self._meta
         fields: dict[str, object] = {
@@ -1200,6 +1283,13 @@ class ImportAccumulator:
             "rejection_counts": dict(self._counts),
             "rejections": [asdict(rejection) for rejection in self._rejections],
         }
+        if fatal_locator is not None:
+            unsealed["fatal_locator"] = fatal_locator
+            return LocatedImportReport(
+                **fields,  # type: ignore[arg-type]
+                fatal_locator=fatal_locator,
+                report_sha256=_canonical_sha256(unsealed),
+            )
         return ImportReport(**fields, report_sha256=_canonical_sha256(unsealed))  # type: ignore[arg-type]
 
 

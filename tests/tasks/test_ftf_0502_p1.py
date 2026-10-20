@@ -742,6 +742,12 @@ def test_lim_defaults_are_the_section_67_3_values() -> None:
     check("LIM-1", "max_rejections is 10,000", d.max_rejections == 10_000)
     check("LIM-1", "preview_max_records is 20", d.preview_max_records == 20)
     check("LIM-1", "deadline_seconds default is positive", d.deadline_seconds > 0)
+    check("LIM-1", "max_xlsx_cells is 50,000,000", d.max_xlsx_cells == 50_000_000)
+    check(
+        "LIM-1",
+        "max_xlsx_shared_strings_bytes is 256 MiB",
+        d.max_xlsx_shared_strings_bytes == 256 * 1024**2,
+    )
     text = Path(ic.__file__).read_text(encoding="utf-8")
     check(
         "LIM-1",
@@ -760,6 +766,8 @@ def test_lim_lower_only_table() -> None:
         "max_depth",
         "max_rejections",
         "preview_max_records",
+        "max_xlsx_cells",
+        "max_xlsx_shared_strings_bytes",
     ):
         default = getattr(d, name)
         check(
@@ -948,7 +956,7 @@ def _mixed(depth: int) -> str:
 
 def test_json_depth_boundary_and_pre_scan() -> None:
     for kind in ("array", "object", "mixed"):
-        for depth, expect in ((63, None), (64, None), (65, "depth_exceeded")):
+        for depth, expect in ((63, None), (64, None), (65, "nesting_too_deep")):
             check(
                 "JSON-1", f"{kind} depth {depth} -> {expect}", _code(_nest(depth, kind)) == expect
             )
@@ -956,18 +964,18 @@ def test_json_depth_boundary_and_pre_scan() -> None:
         for kind in ("array", "object"):
             check(
                 "JSON-1",
-                f"{kind} depth {depth} is depth_exceeded (no RecursionError)",
-                _code(_nest(depth, kind)) == "depth_exceeded",
+                f"{kind} depth {depth} is nesting_too_deep (no RecursionError)",
+                _code(_nest(depth, kind)) == "nesting_too_deep",
             )
         check(
             "JSON-1",
-            f"unclosed depth {depth} is depth_exceeded",
-            _code("[" * depth) == "depth_exceeded",
+            f"unclosed depth {depth} is nesting_too_deep",
+            _code("[" * depth) == "nesting_too_deep",
         )
     check(
         "JSON-1",
         "bytes input is scanned the same way",
-        _code(("[" * 65 + "]" * 65).encode()) == "depth_exceeded",
+        _code(("[" * 65 + "]" * 65).encode()) == "nesting_too_deep",
     )
     check("JSON-1", "brackets inside strings do not count", _code('["' + "[" * 5000 + '"]') is None)
     check(
@@ -981,7 +989,7 @@ def test_json_depth_boundary_and_pre_scan() -> None:
     check(
         "JSON-1",
         "a lower max_depth applies",
-        _code("[[1]]", max_depth=1) == "depth_exceeded" and _code("[[1]]", max_depth=2) is None,
+        _code("[[1]]", max_depth=1) == "nesting_too_deep" and _code("[[1]]", max_depth=2) is None,
     )
     check("JSON-1", "depth 0 containers: a scalar is fine", _code("1", max_depth=1) is None)
     for bad in (0, -1, True, 1.5, None, "64"):
@@ -993,7 +1001,7 @@ def test_json_depth_boundary_and_pre_scan() -> None:
     check(
         "JSON-1",
         "the default depth is 64",
-        _code(_nest(64, "array")) is None and _code(_nest(65, "array")) == "depth_exceeded",
+        _code(_nest(64, "array")) is None and _code(_nest(65, "array")) == "nesting_too_deep",
     )
 
 
@@ -1343,9 +1351,9 @@ def test_read_deadline() -> None:
     outcome = raises(ic.ImportAborted, next, reader)
     check(
         "READ-4",
-        "past the deadline is failed/deadline_exceeded",
+        "past the deadline is failed/parse_timeout",
         outcome is not None
-        and (outcome.state, outcome.failure_code) == ("failed", "deadline_exceeded"),
+        and (outcome.state, outcome.failure_code) == ("failed", "parse_timeout"),
     )
     check(
         "READ-4", "the deadline abort is sticky", raises(ic.ImportAborted, next, reader) is outcome
@@ -1361,7 +1369,7 @@ def test_read_deadline() -> None:
     check(
         "READ-4",
         "a stale deadline wins before the source is asked again",
-        outcome is not None and outcome.failure_code == "deadline_exceeded",
+        outcome is not None and outcome.failure_code == "parse_timeout",
     )
     deadline = ic.Deadline(5.0, clock2)
     deadline.check()
@@ -1514,8 +1522,8 @@ def test_read_run_import_states() -> None:
     report = _import(slow_events(), reader4)
     check(
         "READ-6",
-        "a deadline that passes between records is failed/deadline_exceeded",
-        (report.state, report.failure_code) == ("failed", "deadline_exceeded"),
+        "a deadline that passes between records is failed/parse_timeout",
+        (report.state, report.failure_code) == ("failed", "parse_timeout"),
     )
 
     seen: list[object] = []
@@ -2387,7 +2395,7 @@ def test_row_messages_json_cells() -> None:
         ('[{"role":"user","role":"x","content":"a"}]', "duplicate_key"),
         ('[{"role":"user","content":NaN}]', "non_finite_number"),
         ('[{"role":"user","content":1e999}]', "non_finite_number"),
-        ("[" * 65 + "]" * 65, "depth_exceeded"),
+        ("[" * 65 + "]" * 65, "nesting_too_deep"),
         ('[{"role":"user","content":"\\ud800"}]', "invalid_unicode"),
         ("9" * 4301, "number_out_of_range"),
         ("{}", "mapping_type_mismatch"),
@@ -3102,23 +3110,26 @@ BUCKET = "sovra-datasets"
 
 
 class FakeS3:
-    """Records every call; any method other than stream_object is a failure."""
+    """Records every call; any method other than stream_object_windows is a failure."""
 
     def __init__(self, data: bytes = SRC_BYTES) -> None:
         self.data = data
-        self.gets: list[tuple[str, str, int]] = []
+        self.gets: list[tuple[str, str, int, int]] = []
         self.fail_at: int | None = None
+        self.fail_after_last: bool = False
         self.error: BaseException = S3Error(503, "SlowDown", "slow", "")
 
-    def stream_object(
-        self, bucket: str, key: str, *, chunk_size: int = 1024 * 1024
+    def stream_object_windows(
+        self, bucket: str, key: str, *, window_bytes: int = 0, chunk_size: int = 1024 * 1024
     ) -> Iterator[bytes]:
-        self.gets.append((bucket, key, chunk_size))
+        self.gets.append((bucket, key, window_bytes, chunk_size))
         pieces = support.split_chunks(self.data, 64)
         for i, piece in enumerate(pieces):
             if self.fail_at is not None and i == self.fail_at:
                 raise self.error
             yield piece
+        if self.fail_after_last:
+            raise self.error
 
     def __getattr__(self, name: str) -> Any:
         raise AssertionError(f"dataset_object_source called S3Client.{name}")
@@ -3265,7 +3276,7 @@ def test_src_happy_path_is_lazy_one_get_and_exact() -> None:
         check(
             "SRC-1",
             "exactly one GET, of the session's own key, in the configured bucket",
-            fake.gets == [(BUCKET, seed.key, 1024 * 1024)],
+            fake.gets == [(BUCKET, seed.key, 8 * 1024 * 1024, 1024 * 1024)],
         )
         check(
             "SRC-1",
@@ -3435,7 +3446,7 @@ def test_src_no_list_no_write_and_inconsistent_rows() -> None:
         b"".join(_open(session, train, fake).chunks)
         check(
             "SRC-3",
-            "reading a dataset used no client method but stream_object",
+            "reading a dataset used no client method but stream_object_windows",
             len(fake.gets) == 1,
         )
         row = session.get(store.DatasetUploadSession, train.session_id)
@@ -3561,15 +3572,49 @@ def test_src_storage_failures_are_content_free_and_block_the_import() -> None:
             outcome is not None
             and (outcome.state, outcome.failure_code) == ("failed", "source_changed"),
         )
-        fake = FakeS3()
-        fake.fail_at, fake.error = 1, RuntimeError(marker)
-        src = _open(session, train, fake)
-        err = raises(RuntimeError, lambda: b"".join(src.chunks))
-        check(
-            "SRC-4",
-            "an error that is not a storage error is not relabelled as one",
-            err is not None and not isinstance(err, UploadStorageUnavailableError),
-        )
+        for position in ("at chunk 1", "after the last chunk"):
+            fake = FakeS3()
+            fake.error = UploadStorageUnavailableError("already content-free")
+            if position == "at chunk 1":
+                fake.fail_at = 1
+            else:
+                fake.fail_after_last = True
+            src = _open(session, train, fake)
+            err = raises(UploadStorageUnavailableError, _join, src.chunks)
+            check(
+                "SRC-4",
+                f"an UploadStorageUnavailableError raised {position} is passed through unchanged",
+                err is not None and str(err) == "already content-free",
+            )
+
+        import http.client
+
+        for odd in (
+            RuntimeError(marker),
+            KeyError(marker),
+            http.client.IncompleteRead(marker.encode(), 100),
+            http.client.BadStatusLine(marker),
+            http.client.RemoteDisconnected(marker),
+            UnicodeDecodeError("utf-8", marker.encode(), 0, 1, marker),
+        ):
+            fake = FakeS3()
+            fake.fail_at, fake.error = 1, odd
+            src = _open(session, train, fake)
+            err = raises(UploadStorageUnavailableError, _join, src.chunks)
+            label = type(odd).__name__
+            check(
+                "SRC-4",
+                f"{label}: any exception out of the stream is an outage, converted",
+                err is not None,
+            )
+            if err is not None:
+                check(
+                    "SRC-4",
+                    f"{label}: nothing from the original (partial bytes, status line) survives",
+                    support.leaked_markers(err, [marker]) == []
+                    and err.__cause__ is None
+                    and err.__suppress_context__,
+                )
 
 
 def _join(chunks: Iterator[bytes]) -> bytes:
@@ -3580,6 +3625,365 @@ def _failing(error: BaseException, at: int) -> FakeS3:
     fake = FakeS3()
     fake.fail_at, fake.error = at, error
     return fake
+
+
+# --- SRC-5: a real HTTP endpoint that dies mid-response -------------------------------
+
+
+@contextlib.contextmanager
+def _raw_http_endpoint(response: bytes) -> Iterator[int]:
+    """A TCP server that answers every request with the exact `response` bytes
+    and closes the connection: the way to make `http.client` raise
+    IncompleteRead / BadStatusLine from a real socket."""
+    import socket
+    import threading
+
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(8)
+    server.settimeout(0.2)
+    stop = threading.Event()
+
+    def serve() -> None:
+        while not stop.is_set():
+            try:
+                conn, _ = server.accept()
+            except (TimeoutError, OSError):
+                continue
+            with conn:
+                conn.settimeout(2)
+                with contextlib.suppress(OSError):
+                    conn.recv(65536)
+                    conn.sendall(response)
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    try:
+        yield server.getsockname()[1]
+    finally:
+        stop.set()
+        thread.join(2)
+        server.close()
+
+
+def _real_client(port: int) -> Any:
+    from app.services.storage_semantics_client import S3Client, S3Credentials, S3Endpoint
+
+    return S3Client(S3Endpoint("http", "127.0.0.1", port), S3Credentials("AKIATEST", "secret"), 2.0)
+
+
+def test_src_real_socket_failures_never_leak_object_bytes() -> None:
+    marker = support.make_marker("objbytes")
+    body = (marker * 3).encode()
+    head = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+    scenarios = {
+        # the chunk header promises 4096 bytes, the connection ends after `body`
+        "chunked response cut mid-chunk": head + b"1000\r\n" + body,
+        "chunked response cut after a whole chunk": head
+        + f"{len(body):x}\r\n".encode()
+        + body
+        + b"\r\n",
+        "garbage status line": (marker + "\r\n\r\n").encode(),
+        "content-length longer than the body": (
+            b"HTTP/1.1 200 OK\r\nContent-Length: 100000\r\nConnection: close\r\n\r\n" + body
+        ),
+    }
+    with _src_env() as (session, seeds):
+        train = seeds["train"]
+        for label, response in scenarios.items():
+            with _raw_http_endpoint(response) as port:
+                src = _open(session, train, _real_client(port))
+                caught = raises(UploadStorageUnavailableError, _join, src.chunks)
+            check(
+                "SRC-5",
+                f"{label}: UploadStorageUnavailableError, not a raw http.client error",
+                caught is not None,
+            )
+            if caught is not None:
+                check(
+                    "SRC-5",
+                    f"{label}: no object bytes, marker or key anywhere in the error or its chain",
+                    support.leaked_markers(caught, [marker, train.key]) == []
+                    and caught.__cause__ is None
+                    and (caught.__context__ is None or caught.__suppress_context__),
+                )
+            with _raw_http_endpoint(response) as port:
+                outcome = _drain(
+                    ic.ChunkReader(
+                        _open(session, train, _real_client(port)).chunks,
+                        expected_size=len(SRC_BYTES),
+                        expected_sha256=support.sha256_hex(SRC_BYTES),
+                    )
+                )
+            check(
+                "SRC-5",
+                f"{label}: the import is blocked/source_unavailable",
+                outcome is not None
+                and (outcome.state, outcome.failure_code) == ("blocked", "source_unavailable"),
+            )
+
+
+# --- CAT: the code catalog is the one the FTF-0502..0505 entries name -----------------
+
+_EXPECTED_STRICT_JSON = {
+    "invalid_json",
+    "duplicate_key",
+    "non_finite_number",
+    "number_out_of_range",
+    "invalid_unicode",
+    "nesting_too_deep",
+}
+_EXPECTED_ROW_ONLY = {
+    "canonical_schema_invalid",
+    "cell_error_value",
+    "column_count_mismatch",
+    "formula_cell",
+    "invalid_event_timestamp",
+    "invalid_utf8",
+    "mapping_type_mismatch",
+    "nul_character",
+    "record_not_object",
+    "record_too_large",
+    "required_field_empty",
+    "required_field_missing",
+    "unmapped_message_key",
+    "unmapped_role",
+}
+_EXPECTED_FAILURE = {
+    "content_type_not_supported_by_importer",
+    "csv_structure_invalid",
+    "duplicate_header",
+    "duplicate_sheet_name",
+    "external_link_present",
+    "field_too_large",
+    "invalid_encoding",
+    "json_malformed",
+    "limit_exceeded",
+    "mapping_column_missing",
+    "parse_timeout",
+    "sheet_out_of_bounds",
+    "source_changed",
+    "source_too_large",
+    "source_unavailable",
+    "stream_not_consumed",
+    "too_many_cells",
+    "too_many_columns",
+    "too_many_rejections",
+    "unexpected_bom",
+    "unmapped_top_level_key",
+    "unsafe_archive",
+    "unsafe_workbook",
+    "unsupported_encoding",
+    "unsupported_workbook",
+    "xlsx_malformed",
+}
+# Every code the FTF-0502 / 0503 / 0504 / 0505 QUEUE.md entries name as a row
+# rejection or a fatal failure, and which catalog each belongs to.
+_NAMED_BY_IMPORTERS = {
+    "nesting_too_deep": "row",
+    "parse_timeout": "failure",
+    "content_type_not_supported_by_importer": "failure",
+    "record_not_object": "row",
+    "unsupported_encoding": "failure",
+    "json_malformed": "failure",
+    "invalid_json": "row",
+    "duplicate_key": "row",
+    "non_finite_number": "row",
+    "invalid_unicode": "row",
+    "invalid_utf8": "row",
+    "record_too_large": "row",
+    "nul_character": "row",
+    "required_field_empty": "row",
+    "column_count_mismatch": "row",
+    "formula_cell": "row",
+    "cell_error_value": "row",
+    "invalid_encoding": "failure",
+    "unexpected_bom": "failure",
+    "duplicate_header": "failure",
+    "mapping_column_missing": "failure",
+    "field_too_large": "failure",
+    "csv_structure_invalid": "failure",
+    "too_many_columns": "failure",
+    "unmapped_top_level_key": "failure",
+    "unsafe_archive": "failure",
+    "unsupported_workbook": "failure",
+    "unsafe_workbook": "failure",
+    "external_link_present": "failure",
+    "duplicate_sheet_name": "failure",
+    "xlsx_malformed": "failure",
+    "sheet_out_of_bounds": "failure",
+    "too_many_cells": "failure",
+    "limit_exceeded": "failure",
+    "source_changed": "failure",
+    "source_unavailable": "failure",
+    "too_many_rejections": "failure",
+}
+
+
+def test_cat_catalog_is_exactly_the_one_the_importer_entries_name() -> None:
+    check(
+        "CAT-1",
+        "STRICT_JSON_CODES is exactly the pinned set",
+        set(ic.STRICT_JSON_CODES) == _EXPECTED_STRICT_JSON,
+    )
+    check(
+        "CAT-1",
+        "REJECTION_CODES is exactly the pinned row codes plus the strict-JSON codes",
+        set(ic.REJECTION_CODES) == _EXPECTED_ROW_ONLY | _EXPECTED_STRICT_JSON,
+    )
+    check(
+        "CAT-1",
+        "FAILURE_CODES is exactly the pinned set",
+        set(ic.FAILURE_CODES) == _EXPECTED_FAILURE,
+    )
+    for code, kind in sorted(_NAMED_BY_IMPORTERS.items()):
+        catalog = ic.REJECTION_CODES if kind == "row" else ic.FAILURE_CODES
+        other = ic.FAILURE_CODES if kind == "row" else ic.REJECTION_CODES
+        check(
+            "CAT-2",
+            f"{code} is a {kind} code the importers can emit",
+            code in catalog and code not in other,
+        )
+    for gone in ("depth_exceeded", "deadline_exceeded"):
+        check(
+            "CAT-3",
+            f"the pre-ruling name {gone} is gone from every catalog",
+            gone not in ic.REJECTION_CODES | ic.FAILURE_CODES | ic.STRICT_JSON_CODES,
+        )
+    raised = raises(ic.StrictJsonError, ic.strict_loads, "[" * 65 + "]" * 65)
+    check(
+        "CAT-3",
+        "strict_loads past max_depth raises nesting_too_deep",
+        raised is not None and raised.code == "nesting_too_deep",
+    )
+    clock = support.FakeClock()
+    reader = ic.ChunkReader(
+        [b"x"],
+        expected_size=1,
+        expected_sha256=support.sha256_hex(b"x"),
+        limits=ic.ImportLimits(deadline_seconds=1.0),
+        clock=clock,
+    )
+    clock.advance(5.0)
+    outcome = _drain(reader)
+    check(
+        "CAT-3",
+        "a passed deadline gives failed/parse_timeout",
+        outcome is not None
+        and (outcome.state, outcome.failure_code) == ("failed", "parse_timeout"),
+    )
+
+
+# --- RES: memory and time do not depend on the size of the file ------------------------
+
+
+def _hash_of_zero_chunks(chunk: int, count: int) -> str:
+    digest = hashlib.sha256()
+    block = bytes(chunk)
+    for _ in range(count):
+        digest.update(block)
+    return digest.hexdigest()
+
+
+def _peak_for_stream(chunk_size: int, chunk_count: int) -> int:
+    import tracemalloc
+
+    def source() -> Iterator[bytes]:
+        for _ in range(chunk_count):
+            yield bytes(chunk_size)
+
+    reader = ic.ChunkReader(
+        source(),
+        expected_size=chunk_size * chunk_count,
+        expected_sha256=_hash_of_zero_chunks(chunk_size, chunk_count),
+    )
+    tracemalloc.start()
+    try:
+        tracemalloc.reset_peak()
+        total = sum(len(piece) for piece in reader)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert total == chunk_size * chunk_count
+    return peak
+
+
+def test_res_memory_is_independent_of_file_size() -> None:
+    mib = 1024 * 1024
+    # The baseline holds two chunks (the one being yielded and the next one the
+    # source has already built), which is the steady state of any stream; a
+    # one-chunk baseline would make a correct reader look 2x.
+    small = _peak_for_stream(mib, 2)
+    large = _peak_for_stream(mib, 64)
+    check(
+        "RES-1",
+        f"ChunkReader peak for 64 MiB ({large}) is within 1.5x of the peak for 2 MiB ({small})",
+        large <= small * 1.5,
+    )
+    small7 = _peak_for_stream(7 * 1024, 1)
+    large7 = _peak_for_stream(7 * 1024, 4096)
+    check(
+        "RES-1",
+        f"...and with 7 KiB chunks: 28 MiB ({large7}) within 1.5x of 7 KiB ({small7})",
+        large7 <= max(small7, 64 * 1024) * 1.5,
+    )
+
+
+def test_res_one_byte_chunks_are_linear() -> None:
+    import time
+
+    size = 256 * 1024
+    data = bytes(range(256)) * (size // 256)
+    reader = ic.ChunkReader(
+        support.split_chunks(data, 1),
+        expected_size=size,
+        expected_sha256=support.sha256_hex(data),
+    )
+    started = time.monotonic()
+    joined = b"".join(reader)
+    elapsed = time.monotonic() - started
+    check("RES-2", "a 256 KiB input in 1-byte chunks is read back exactly", joined == data)
+    check(
+        "RES-2",
+        f"...inside a fixed budget (took {elapsed:.2f}s; quadratic re-hashing needs ~20s)",
+        elapsed < 5.0,
+    )
+
+
+def test_res_chunk_boundaries_do_not_change_the_result() -> None:
+    data = bytes(range(256)) * 3
+    digest = support.sha256_hex(data)
+    flipped = data[:-1] + bytes([data[-1] ^ 1])
+
+    def run(payload: bytes, pieces: list[bytes]) -> tuple[bytes, tuple[str, str] | None]:
+        reader = ic.ChunkReader(pieces, expected_size=len(data), expected_sha256=digest)
+        out = bytearray()
+        try:
+            for piece in reader:
+                out += piece
+        except ic.ImportAborted as exc:
+            return bytes(out), (exc.state, exc.failure_code)
+        return bytes(out), None
+
+    layouts: list[tuple[str, list[bytes]]] = [
+        ("1-byte chunks", support.split_chunks(data, 1)),
+        ("7-byte chunks", support.split_chunks(data, 7)),
+    ]
+    layouts += [(f"split at offset {i}", [data[:i], data[i:]]) for i in range(len(data) + 1)]
+    for label, pieces in layouts:
+        got, verdict = run(data, pieces)
+        check("RES-3", f"{label}: the exact bytes and a clean end", got == data and verdict is None)
+    for label, pieces in (
+        ("1-byte chunks", support.split_chunks(flipped, 1)),
+        ("7-byte chunks", support.split_chunks(flipped, 7)),
+        *[(f"split at offset {i}", [flipped[:i], flipped[i:]]) for i in range(len(data) + 1)],
+    ):
+        _, verdict = run(flipped, pieces)
+        check(
+            "RES-3",
+            f"{label}: a flipped last byte is failed/source_changed wherever the split falls",
+            verdict == ("failed", "source_changed"),
+        )
 
 
 # --- constructors, catalogs and whitespace ---------------------------------------------
@@ -3689,7 +4093,7 @@ def test_ctor_whitespace_outside_strings_is_not_nesting() -> None:
         check(
             "CTOR-2",
             f"65 arrays with 300 x {pad!r} of padding is still too deep",
-            _code(deep) == "depth_exceeded",
+            _code(deep) == "nesting_too_deep",
         )
         opened = "[" * 64 + pad * 300 + "1" + "]" * 64
         check(
@@ -3713,7 +4117,7 @@ def test_ctor_whitespace_outside_strings_is_not_nesting() -> None:
     check(
         "CTOR-2",
         "unbalanced closers never lower the depth below what was opened",
-        _code("]]]]]]" + "[" * 5, max_depth=4) == "depth_exceeded"
+        _code("]]]]]]" + "[" * 5, max_depth=4) == "nesting_too_deep"
         or _code("]]]]]]" + "[" * 5, max_depth=4) == "invalid_json",
     )
 
@@ -4170,7 +4574,7 @@ def test_surv_reader_edges() -> None:
     check(
         "SURV-7",
         "the importer loop stops at the deadline instead of draining the events",
-        (report.state, report.failure_code) == ("failed", "deadline_exceeded")
+        (report.state, report.failure_code) == ("failed", "parse_timeout")
         and len(pulled) == 2
         and report.records_accepted == 1,
     )
@@ -4203,6 +4607,441 @@ def test_wiring_ci_runs_this_suite_and_the_integration_job() -> None:
         (
             ROOT / "tests" / "integration" / "test_ftf_0502_p1_dataset_source_postgres_s3.py"
         ).is_file(),
+    )
+
+
+# --- WIN: bounded, ETag-pinned Range windows (FTF-0502-P1-F1) --------------------------
+
+
+class WindowServer:
+    """A scripted S3-style endpoint: one object per path, answering `Range` with a
+    206 + `Content-Range` + `ETag`, and `If-Match` with a 412 on a different ETag.
+    `on_request(server, n)` runs before request n (0-based) is answered, to swap the
+    object or break the server between windows. Every request is recorded."""
+
+    def __init__(self, objects: dict[str, tuple[bytes, str]], on_request: Any = None) -> None:
+        import http.server
+        import threading
+
+        self.objects = objects
+        self.requests: list[SimpleNamespace] = []
+        self.on_request = on_request
+        self.ignore_if_match = False
+        self.status_override: int | None = None
+        self.drop_etag = False
+        self.ok_status = 206
+        self.shift_start = 0
+        self.truncate_body = 0
+        outer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args: Any) -> None:
+                pass
+
+            def do_GET(self) -> None:  # noqa: N802
+                headers = {k.lower(): v for k, v in self.headers.items()}
+                outer.requests.append(SimpleNamespace(path=self.path, headers=headers))
+                if outer.on_request is not None:
+                    outer.on_request(outer, len(outer.requests) - 1)
+                data, etag = outer.objects[self.path.split("?")[0]]
+                if outer.status_override is not None:
+                    return self._send(outer.status_override, {}, b"")
+                if not data:
+                    return self._send(416, {"Content-Range": "bytes */0"}, b"")
+                first, _, last = headers["range"][len("bytes=") :].partition("-")
+                a, b = int(first), min(int(last), len(data) - 1)
+                if not outer.ignore_if_match and headers.get("if-match") not in (None, f'"{etag}"'):
+                    return self._send(412, {}, b"")
+                a_out = a + outer.shift_start
+                reply = {"Content-Range": f"bytes {a_out}-{b}/{len(data)}"}
+                if not outer.drop_etag:
+                    reply["ETag"] = f'"{etag}"'
+                body = data[a : b + 1]
+                self._send(
+                    outer.ok_status, reply, body[: len(body) - outer.truncate_body], len(body)
+                )
+
+            def _send(
+                self, status: int, headers: dict[str, str], body: bytes, length: int | None = None
+            ) -> None:
+                self.send_response(status)
+                for name, value in headers.items():
+                    self.send_header(name, value)
+                self.send_header("Content-Length", str(len(body) if length is None else length))
+                self.end_headers()
+                self.wfile.write(body)
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.thread = threading.Thread(
+            target=lambda: self.server.serve_forever(poll_interval=0.01), daemon=True
+        )
+
+    def __enter__(self) -> WindowServer:
+        self.thread.start()
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+    def client(self) -> Any:
+        from app.services import storage_semantics_client as s3
+
+        return s3.S3Client(
+            s3.S3Endpoint("http", "127.0.0.1", self.server.server_address[1]),
+            s3.S3Credentials("AK", "SK"),
+            timeout_seconds=5.0,
+        )
+
+
+def _windows(client: Any, key: str, **kwargs: Any) -> list[bytes]:
+    return list(client.stream_object_windows(BUCKET, key, **kwargs))
+
+
+def _count_requests(srv: WindowServer, call: Any) -> int:
+    before = len(srv.requests)
+    call()
+    return len(srv.requests) - before
+
+
+def _outcome(call: Any) -> Any:
+    try:
+        return call()
+    except Exception as exc:  # noqa: BLE001 - the exception is the observation
+        return exc
+
+
+def test_win_client_reads_pinned_windows_in_order() -> None:
+    from app.services.storage_semantics_client import S3ObjectChanged
+
+    data = bytes(range(100))
+    with WindowServer({f"/{BUCKET}/k": (data, "e1")}) as srv:
+        pieces = _windows(srv.client(), "k", window_bytes=16, chunk_size=5)
+        check("WIN-1", "the windows reassemble the exact object", b"".join(pieces) == data)
+        check("WIN-1", "no chunk is larger than chunk_size", max(map(len, pieces)) <= 5)
+        ranges = [r.headers["range"] for r in srv.requests]
+        check(
+            "WIN-1",
+            "consecutive 16-byte windows from offset 0, the last one asked past the end",
+            ranges == [f"bytes={i}-{i + 15}" for i in range(0, 100, 16)],
+        )
+        check(
+            "WIN-2",
+            "the first window carries no If-Match",
+            "if-match" not in srv.requests[0].headers,
+        )
+        check(
+            "WIN-2",
+            "every later window pins the first window's ETag",
+            all(r.headers.get("if-match") == '"e1"' for r in srv.requests[1:]),
+        )
+        check(
+            "WIN-1",
+            "an object that is an exact multiple of the window needs no extra request",
+            _count_requests(srv, lambda: _windows(srv.client(), "k", window_bytes=50)) == 2,
+        )
+        check(
+            "WIN-1",
+            "S3ObjectChanged is a source_changed marker",
+            S3ObjectChanged.source_changed is True,
+        )
+
+
+def test_win_empty_and_single_window_objects() -> None:
+    with WindowServer({f"/{BUCKET}/e": (b"", "e0"), f"/{BUCKET}/s": (b"abc", "e1")}) as srv:
+        check("WIN-3", "an empty object yields nothing", _windows(srv.client(), "e") == [])
+        check(
+            "WIN-3",
+            "an object smaller than the window is one request",
+            b"".join(_windows(srv.client(), "s")) == b"abc" and len(srv.requests) == 2,
+        )
+
+
+def test_win_version_change_between_windows_is_object_changed() -> None:
+    from app.services.storage_semantics_client import S3ObjectChanged
+
+    old, new = b"A" * 64, b"B" * 64
+
+    def swap(srv: WindowServer, n: int) -> None:
+        if n == 2:
+            srv.objects[f"/{BUCKET}/k"] = (new, "e2")
+
+    with WindowServer({f"/{BUCKET}/k": (old, "e1")}, swap) as srv:
+        got = _outcome(lambda: _windows(srv.client(), "k", window_bytes=16))
+        check(
+            "WIN-4",
+            "an overwrite between windows is S3ObjectChanged (If-Match refused)",
+            isinstance(got, S3ObjectChanged),
+        )
+
+    # A server that ignores If-Match still cannot splice: the ETag is compared too.
+    with WindowServer({f"/{BUCKET}/k": (old, "e1")}, swap) as srv:
+        srv.ignore_if_match = True
+        got = _outcome(lambda: _windows(srv.client(), "k", window_bytes=16))
+        check(
+            "WIN-4",
+            "a different ETag on a later window is S3ObjectChanged without relying on If-Match",
+            isinstance(got, S3ObjectChanged),
+        )
+
+    # Same ETag, other size.
+    def resize(srv: WindowServer, n: int) -> None:
+        if n == 2:
+            srv.objects[f"/{BUCKET}/k"] = (old + b"C" * 16, "e1")
+
+    with WindowServer({f"/{BUCKET}/k": (old, "e1")}, resize) as srv:
+        got = _outcome(lambda: _windows(srv.client(), "k", window_bytes=16))
+        check(
+            "WIN-4",
+            "a different total size on a later window is S3ObjectChanged",
+            isinstance(got, S3ObjectChanged),
+        )
+
+
+def test_win_protocol_violations_raise_never_complete() -> None:
+    from app.services.storage_semantics_client import S3Error, S3ObjectChanged
+
+    data = b"x" * 40
+    cases: dict[str, Any] = {
+        "a 200 instead of a 206": lambda s: setattr(s, "status_override", 200),
+        "a 500": lambda s: setattr(s, "status_override", 500),
+        "a 416 that does not say the object is empty": lambda s: setattr(s, "status_override", 416),
+        "a 200 with otherwise valid range headers": lambda s: setattr(s, "ok_status", 200),
+        "no ETag": lambda s: setattr(s, "drop_etag", True),
+        "a window that starts at the wrong offset": lambda s: setattr(s, "shift_start", 1),
+        "a body shorter than its Content-Range": lambda s: setattr(s, "truncate_body", 1),
+    }
+    for label, arm in cases.items():
+        with WindowServer({f"/{BUCKET}/k": (data, "e1")}) as srv:
+            arm(srv)
+            got = _outcome(lambda: _windows(srv.client(), "k", window_bytes=16))
+            check(
+                "WIN-5",
+                f"{label} raises and yields no complete object",
+                isinstance(got, Exception) and not isinstance(got, S3ObjectChanged),
+            )
+            check(
+                "WIN-5",
+                f"{label} is not reported as a changed object",
+                not getattr(got, "source_changed", False),
+            )
+    with WindowServer({f"/{BUCKET}/k": (data, "e1")}) as srv:
+        srv.status_override = 500
+        got = _outcome(lambda: _windows(srv.client(), "k"))
+        check(
+            "WIN-5", "a 500 carries its status", isinstance(got, S3Error) and got.status_code == 500
+        )
+    with WindowServer({f"/{BUCKET}/k": (data, "e1")}) as srv:
+        for kwargs in ({"window_bytes": 0}, {"window_bytes": -1}, {"chunk_size": 0}):
+            got = _outcome(lambda kw=kwargs: _windows(srv.client(), "k", **kw))
+            check("WIN-5", f"{kwargs} is refused", isinstance(got, ValueError))
+        check("WIN-5", "refusals sent no request", srv.requests == [])
+
+
+def _read_through_reader(srv: WindowServer, seed: Any, session: Session, data: bytes) -> Any:
+    saved = source_module._WINDOW_BYTES
+    source_module._WINDOW_BYTES = 64
+    try:
+        src = source_module.open_dataset_source(
+            session,
+            SimpleNamespace(organization_id=seed.org),
+            project_id=seed.project,
+            dataset_id=seed.dataset_id,
+            include_held_out=False,
+            storage=source_module.DatasetObjectStorage(srv.client(), BUCKET),
+        )
+        reader = ic.ChunkReader(
+            src.chunks, expected_size=src.expected_size, expected_sha256=src.expected_sha256
+        )
+        return _outcome(lambda: b"".join(reader))
+    finally:
+        source_module._WINDOW_BYTES = saved
+
+
+def test_win_reader_end_to_end_over_the_real_client() -> None:
+    with _src_env() as (session, seeds):
+        seed = seeds["train"]
+        path = f"/{BUCKET}/{seed.key}"
+        with WindowServer({path: (SRC_BYTES, "e1")}) as srv:
+            got = _read_through_reader(srv, seed, session, SRC_BYTES)
+            check(
+                "WIN-6", "a multi-window dataset completes with the right bytes", got == SRC_BYTES
+            )
+            check(
+                "WIN-6",
+                "it took one request per 64-byte window",
+                len(srv.requests) == -(-len(SRC_BYTES) // 64),
+            )
+
+        def swap(srv: WindowServer, n: int) -> None:
+            if n == 3:
+                srv.objects[path] = (SRC_BYTES[::-1], "e2")
+
+        with WindowServer({path: (SRC_BYTES, "e1")}, swap) as srv:
+            got = _read_through_reader(srv, seed, session, SRC_BYTES)
+            check(
+                "WIN-7",
+                "an overwrite mid-read ends failed / source_changed, never spliced bytes",
+                isinstance(got, ic.ImportAborted)
+                and (got.state, got.failure_code) == ("failed", "source_changed"),
+            )
+
+        def stop(srv: WindowServer, n: int) -> None:
+            if n == 3:
+                srv.status_override = 503
+
+        with WindowServer({path: (SRC_BYTES, "e1")}, stop) as srv:
+            got = _read_through_reader(srv, seed, session, SRC_BYTES)
+            check(
+                "WIN-8",
+                "a storage outage mid-read ends blocked / source_unavailable",
+                isinstance(got, ic.ImportAborted)
+                and (got.state, got.failure_code) == ("blocked", "source_unavailable"),
+            )
+
+        corrupt = SRC_BYTES[:-1] + b"!"
+        with WindowServer({path: (corrupt, "e1")}) as srv:
+            got = _read_through_reader(srv, seed, session, corrupt)
+            check(
+                "WIN-9",
+                "same ETag and size but other bytes still fails the whole-stream sha256",
+                isinstance(got, ic.ImportAborted)
+                and (got.state, got.failure_code) == ("failed", "source_changed"),
+            )
+
+        with WindowServer({path: (SRC_BYTES[:-70], "e1")}) as srv:
+            got = _read_through_reader(srv, seed, session, SRC_BYTES)
+            check(
+                "WIN-9",
+                "an object shorter than the verified size is an outage, not a change",
+                isinstance(got, ic.ImportAborted)
+                and (got.state, got.failure_code) == ("blocked", "source_unavailable"),
+            )
+
+
+def test_win_content_range_parser_is_exact() -> None:
+    from app.services.storage_semantics_client import _parse_content_range as parse
+
+    good = {
+        "bytes 0-9/10": (0, 9, 10),
+        "bytes 5-5/10": (5, 5, 10),
+        "bytes 0-0/1": (0, 0, 1),
+        "bytes 8-15/100": (8, 15, 100),
+    }
+    for value, want in good.items():
+        check("WIN-11", f"{value!r} parses to {want}", parse(value) == want)
+    bad = [
+        None,
+        "",
+        "garbage",
+        "items 0-9/10",
+        "bytes",
+        "bytes 0-9",
+        "bytes 0-9/*",
+        "bytes */10",
+        "bytes 9-0/10",
+        "bytes 0-10/10",
+        "bytes 0-11/10",
+        "bytes 0-9/9",
+        "bytes -1-5/10",
+        "bytes +1-5/10",
+        "bytes 1-x/10",
+        "bytes x-5/10",
+        "bytes 1-5/x",
+        "bytes 1-5/",
+        "bytes -5/10",
+        "bytes \u0663-5/10",
+        "bytes 1-\u0665/10",
+        "bytes 1-5/\u0661\u0660",
+    ]
+    for value in bad:
+        check("WIN-11", f"{value!r} is refused", _outcome(lambda v=value: parse(v)) is None)
+
+
+def test_win_etag_is_compared_exactly_and_status_text_kept() -> None:
+    from app.services.storage_semantics_client import S3Error, S3ObjectChanged
+
+    data = b"q" * 64
+
+    def swap(srv: WindowServer, n: int) -> None:
+        if n == 2:
+            srv.objects[f"/{BUCKET}/k"] = (data, "ABCdef")
+
+    with WindowServer({f"/{BUCKET}/k": (data, "abcdef")}, swap) as srv:
+        srv.ignore_if_match = True
+        got = _outcome(lambda: _windows(srv.client(), "k", window_bytes=16))
+        check(
+            "WIN-12",
+            "an ETag that differs only by case is a different version",
+            isinstance(got, S3ObjectChanged),
+        )
+
+    with WindowServer({f"/{BUCKET}/k": (data, "ABCdef")}) as srv:
+        check(
+            "WIN-12",
+            "an unchanged object whose ETag has upper-case letters reads to the end",
+            b"".join(_windows(srv.client(), "k", window_bytes=16)) == data,
+        )
+
+    def swap_lower(srv: WindowServer, n: int) -> None:
+        if n == 2:
+            srv.objects[f"/{BUCKET}/k"] = (data, "abcdef")
+
+    with WindowServer({f"/{BUCKET}/k": (data, "ABCdef")}, swap_lower) as srv:
+        srv.ignore_if_match = True
+        got = _outcome(lambda: _windows(srv.client(), "k", window_bytes=16))
+        check(
+            "WIN-12",
+            "the pinned ETag is not case-folded either",
+            isinstance(got, S3ObjectChanged),
+        )
+    with WindowServer({f"/{BUCKET}/k": (data, "e1")}) as srv:
+        srv.status_override = 503
+        got = _outcome(lambda: _windows(srv.client(), "k"))
+        check(
+            "WIN-12",
+            "a failed window keeps the HTTP reason text",
+            isinstance(got, S3Error)
+            and got.status_code == 503
+            and got.message == "Service Unavailable",
+        )
+
+
+def test_win_chunk_reader_only_trusts_a_true_source_changed_marker() -> None:
+    def failing(exc: BaseException) -> Any:
+        def gen() -> Iterator[bytes]:
+            yield b"ab"
+            raise exc
+
+        reader = ic.ChunkReader(gen(), expected_size=10, expected_sha256="0" * 64)
+        return _outcome(lambda: b"".join(reader))
+
+    class Marked(Exception):
+        source_changed = True
+
+    class Falsy(Exception):
+        source_changed = False
+
+    class Truthy(Exception):
+        source_changed = "yes"
+
+    for label, exc, want in (
+        ("a source_changed=True exception", Marked(), ("failed", "source_changed")),
+        ("a source_changed=False exception", Falsy(), ("blocked", "source_unavailable")),
+        ("a truthy non-bool source_changed", Truthy(), ("blocked", "source_unavailable")),
+        ("a plain exception", RuntimeError("x"), ("blocked", "source_unavailable")),
+    ):
+        got = failing(exc)
+        check(
+            "WIN-10",
+            f"{label} -> {want}",
+            isinstance(got, ic.ImportAborted) and (got.state, got.failure_code) == want,
+        )
+    err = source_module.DatasetSourceChangedError("object changed")
+    check(
+        "WIN-10",
+        "DatasetSourceChangedError carries the marker and no content",
+        err.source_changed is True and str(err) == "object changed",
     )
 
 

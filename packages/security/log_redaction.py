@@ -242,6 +242,105 @@ _KEY_VALUE = re.compile(
     rf"""(?P<val>\[REDACTED\]|{_QUOTED_VALUE}|[^\s&,;"'}}\])]+)""",
     re.I,
 )
+# FTF-0904-F1: generic credential-carrying parameter names (`?key=`, `?sig=`, OAuth `?code=` and
+# `?state=` on a callback, session ids, one-time codes). They cannot join `_SECRET_KEY_WORDS`: that
+# list matches a word *inside* a key run and also binds structured keys, so `state`/`code`/`key`
+# would redact `{"state": "running"}` and `monkey=1`. Round 2 (QP-NAME-CLASS, QP-POS-SERIALIZED):
+# the rule binds a parameter *name class* -- the LAST word of the name (split on `_ - .` and
+# camelCase) is one of `_QUERY_PARAM_NAMES` -- so `session_key`, `sessionKey`, `auth_code`,
+# `oauth_verifier`, `PHPSESSID` and `connect.sid` are covered, while `keyboard=`, `codec=`,
+# `monkey=`, `state_of=` and `code_path=` (last word not a name) survive. The name needs no `?` in
+# front of it: a query serialized without one (`str(request.query_params)`), a urlencoded form body
+# and a name after a space/quote/`/` are the same leak. Over-redaction (`state=CA`, prose `code=5`)
+# is FTF-0904's design.
+# (`totp`, `hotp`, `sessid` and `phpsessid` need no entry: they end in `otp` / `sid`.)
+_QUERY_PARAM_NAMES = frozenset(
+    {
+        "key",
+        "sig",
+        "auth",
+        "session",
+        "jwt",
+        "code",
+        "state",
+        "verifier",
+        "ticket",
+        "otp",
+        "pass",
+        "sid",
+        "jsessionid",
+    }
+)
+# One start per maximal key run (lookbehind) and a possessive run: linear, no restart inside a run.
+_QUERY_ASSIGN = re.compile(r"(?<![\w.\-])(?P<key>[\w.\-]++)(?P<sep>=)")
+# `[REDACTED]` is consumed whole (with anything glued to it) so the rule is idempotent: running it
+# over its own output (the logging sink re-redacts the formatted line) never grows the marker.
+_QUERY_VALUE = re.compile(r"""\[REDACTED\][^\s&,;"'}\])]*+|[^\s&,;"'}\])]++""")
+_NAME_WORD_SPLIT = re.compile(r"[_.\-]+")
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+# Round 4 (QP-GLUED-VOCAB, QP-CASE-SPLIT-SEPARATOR, QP-SEPSTRIP): deny by default. A name that
+# is not caught by its last word (above) is read with every separator stripped and lowercased;
+# if that run ENDS in a credential name (`mfacode`, `smscode`, `signingkey`, `connectsid`,
+# `recoverycode`, `hmacsig`, `aUtH_cOdE`, `sEsSiOn.KeY`, `co.de`) it is redacted, whatever the
+# prefix -- the old closed vocabulary of credential prefixes leaked every prefix it did not list.
+# The only way out is `_BENIGN_NAMES`, a CLOSED list of ordinary words that merely end in a
+# credential name; it is matched against the whole stripped name, so it never excuses a
+# credential prefix (`monkeysession` is still redacted) and a separator-split `mon_key` /
+# camelCase `monKey` is decided by the last-word rule above, not by this list.
+_NAME_SUFFIXES = tuple(sorted(_QUERY_PARAM_NAMES))
+_BENIGN_NAMES = frozenset(
+    {
+        "monkey", "turkey", "hockey", "jockey", "donkey", "whiskey", "lackey",
+        "decode", "encode", "barcode", "qrcode", "zipcode", "postcode", "geocode", "unicode",
+        "opcode", "statuscode", "errorcode", "exitcode", "returncode",
+        "estate", "realestate", "upstate", "restate",
+        "compass", "bypass", "overpass", "underpass", "trespass", "surpass",
+        "obsession", "possession", "concession", "profession", "procession", "recession",
+        "succession",
+    }
+)  # fmt: skip
+
+
+def _is_query_param_name(name: str) -> bool:
+    # Round 5 (QP-CASE-SPLIT-SEGMENT): check each separator-delimited segment lowercased
+    # BEFORE the camel split below. The camel split inserts a boundary at every
+    # lowercase-to-uppercase transition, which can fall *inside* a random-case spelling of a
+    # listed word that already sits in its own `_ - .`-delimited segment (`mon_KeY` -> the
+    # `e`-`Y` transition in "KeY" splits it into "Ke"+"Y", so the last-word check below never
+    # sees "key"; `status_CoDe` splits "CoDe" into "Co"+"De"). A segment produced by an actual
+    # separator is never split further by case here -- it is lowered and compared whole.
+    raw_segments = [w for w in _NAME_WORD_SPLIT.split(name) if w]
+    if raw_segments and raw_segments[-1].lower() in _QUERY_PARAM_NAMES:
+        return True
+    words = [w for w in _NAME_WORD_SPLIT.split(_CAMEL_BOUNDARY.sub("_", name)) if w]
+    if words and words[-1].lower() in _QUERY_PARAM_NAMES:
+        return True
+    stripped = _NAME_WORD_SPLIT.sub("", name).lower()
+    return stripped.endswith(_NAME_SUFFIXES) and stripped not in _BENIGN_NAMES
+
+
+class _QueryParamRule:
+    """Duck-types `re.Pattern.sub(repl, text)` for `_RULES` (the replacement is built in)."""
+
+    def sub(self, _repl: object, text: str) -> str:
+        out: list[str] = []
+        pos = 0
+        for match in _QUERY_ASSIGN.finditer(text):
+            if match.start() < pos or not _is_query_param_name(match.group("key")):
+                continue
+            value = _QUERY_VALUE.match(text, match.end())
+            if value is None:
+                continue
+            out.append(text[pos : match.end()])
+            out.append(REDACTED)
+            pos = value.end()
+        out.append(text[pos:])
+        return "".join(out)
+
+
+_QUERY_SECRET_PARAM = _QueryParamRule()
 _BASE64_RUN = re.compile(
     r"(?<![A-Za-z0-9+/_\-])(?P<body>[A-Za-z0-9+/_\-]{16,})={0,2}(?![A-Za-z0-9+/_=\-])"
 )
@@ -258,6 +357,7 @@ _RULES: tuple[tuple[str, Any], ...] = (
     ("jwt", _JWT_RUN),
     ("userinfo", _USERINFO),
     ("key_value", _KEY_VALUE),
+    ("query_param", _QUERY_SECRET_PARAM),
 )
 _REPLACEMENTS: Mapping[str, str | Callable[[re.Match[str]], str]] = {
     "jwt": _redact_jwts_in_run,
@@ -320,7 +420,7 @@ def _reveals_secret(segment: str) -> bool:
     """True if any percent-decoded layer (up to three) of `segment` contains a secret shape."""
     layer = segment
     for _ in range(_MAX_DECODE_LAYERS):
-        layer = unquote(layer)
+        layer = _normalise(unquote(layer))  # a decoded fullwidth `=` is `=` once NFKC'd (F1)
         if _scan(layer, _BASE64_LAYERS) != layer:
             return True
     return False
