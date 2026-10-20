@@ -7,7 +7,7 @@
 #869 M9 survivors act on `exc.code` (constructor-asserted member of the fixed lowercase `CODES`
 tuple, every raise site a literal) and on `action` (only the literals "approve"/"reject"); the two
 #742 M9 survivors act on the constant `STATE_SUCCEEDED = "succeeded"` and on SQLAlchemy's fixed
-lowercase `Dialect.name`. Each entry is line-pinned, so it resurfaces if the code moves. Both PRs'
+lowercase `Dialect.name`. Each entry is line-pinned, so it resurfaces if the code moves. Because both files exist only on the relay branches, each entry carries `pending_pr` (the committed-allowlist file-exists check in tests/tasks/test_mutation_gate.py now waits until the file lands on main; a Control-plane gate-test change, Law 9, recorded in the ledger). Both PRs'
 `mutation-gate` should go green on their next run (merge main into each branch). The Control-plane
 gap the entry noted (no certification record 2026-10-16T14:05Z..2026-10-20) was this session
 being suspended; it has resumed.

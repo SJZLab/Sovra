@@ -11864,3 +11864,41 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   admin/owner role on the wire; raw http.client exceptions escape (key in IncompleteRead.partial); body buffered
   before the bound, no total deadline; lax response schema; FI8b/FI11/FI15/FI16/FI18 GREEN. Control-plane split:
   P1 -> P1a (client) + P1b (identity store, migration, OpenBao, compose stack, live integration). Stopping rule set.
+
+- **Gate test change (Law 9, Control plane):** tests/tasks/test_mutation_gate.py's committed-allowlist check ("names
+  an existing production file") skips an entry with a positive integer `pending_pr` only while its file does not
+  exist on main; the check applies unchanged once the file lands. Needed because the mutation gate runs only on
+  [relay] PRs and a [relay] PR may not edit the allowlist, so a ruling on a survivor in a new file must land on main
+  first. No matching rule changed; the six entries above carry pending_pr 869/742.
+
+## 2026-10-20T06:35Z — CERTIFIED: FTF-0906
+- **FTF-0906: CERTIFIED** (round 3, under the stopping rule; PR #864, merge 12f1102895cee6dd5e300231666ddae42328ead9, head 365e507e).
+  Producer session_011c9ZCsPNzLfYzNdk8w5Ph9 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI: 78/78 success,
+  ci-verdict 117084546569; gate 116996577895 step 192 "FTF-0906 Egress capture/verification tests: all checks
+  passed"; egress-verification-integration 116996730112 "all checks passed" (skip path exits 1); mutation-gate 119/119.
+  Local: unit 41 functions; integration with a real openssl CA and loopback sockets; uncapped mutation 215/215, empty
+  allowlist. Round-3 points 1-5 met: missing history always partial; unobserved on any side -> incomplete (14
+  combinations); F5b/F9/F10/F10b/F10c/F24/F25/F29 RED; integration canary_found from real scans, enforcement from the
+  exception type, ledger completeness on every ledger, G1 (H006 metadata rule removed) RED; fragmented-header canary
+  found (2-8-way splits, no false positives). ~45 faults RED. GREEN: F5 (equivalent: an uninspected record cannot
+  carry canary_found) and A1/F15x (new hand-picked variant of the class closed in round 2; production correct). Law 9:
+  no ci.yml/scripts/spec change. Advisories A2-A9 (DNS failure labelled allow, upper-case digest, "b"*64 integration
+  digest, relay-capture ledger completeness, final-buffer scan). UNWIRED.
+
+## 2026-10-20T06:35Z — RETURNED: FTF-H011-P1 (r2)
+- **FTF-H011-P1: RETURNED** (child slice of FTF-H011; round 2 → 3; PR #866, merge 3de9b58bdd8b90e54902e4d875219dd4191496e2,
+  head f899adad). Producer session_01SkRPdyqRdU2ip5HuTPGG16 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI run
+  38916109562 78/78 success, ci-verdict 117110942691; dataset-mapping-preview-integration 117024653425 "all checks
+  passed" (incl. outage cycle); gate 117024502590 steps 90/91 success. Closed: tool validator (production), source
+  changed via drain, probe Law 17 states, complete flag, deepcopy observer, record. Return: nested keys and any
+  "type" value unmasked (reproduced on real storage), no whole-result canary check; F2/F2b/F6/F11/F14/F15/F16 GREEN;
+  P4 fixtures missing; differential not importer-level. Stopping rule restated.
+
+## 2026-10-20T06:35Z — RETURNED: FTF-0904-F1 (r5), tests only; FTF-0904 stays CERTIFIED
+- **FTF-0904-F1: RETURNED** (round 5 → 6, tests only; PR #867, merge 4cf6ac8ddee766d79eaa5783fc4a0c7190929ae8, head
+  263c8083). Producer session_01KHsqHhKJGFF3prVe3yT6Rn (PR body; commits carry no trailer - advisory) ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 78/78 success, ci-verdict 117121079353; gate 117052642666 full matrix
+  "FTF-0904 Log redaction tests: all checks passed" (1h53m), W1 F1-F15 RED, FTF-0905 passed; mutation-gate 10/10.
+  Local full matrix 114/114 RED. Production clean: exhaustive 0/62,496 text, 0/15,624 logging, non-ASCII 0/11,424,
+  live 191/0. Return: the required generated benign-split table is a hand-picked 25-row list (7 words missing), so
+  MY11/MY12 stay GREEN with leaks on the mutants; logging-path rows lowercase only. Stopping rule: tests only.

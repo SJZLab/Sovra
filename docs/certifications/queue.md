@@ -25145,3 +25145,12 @@ different session.
 
 ## 2026-10-20T04:45Z — Control plane: FTF-R006-P1a returned (r2); FTF-R006-P1 split
 - **Returned:** FTF-R006-P1a r2 (0m): annotator-only, HTTPException -> Unavailable, bounded stream + deadline, strict schema, 5 pins; P1 split into P1a/P1b; stopping rule.
+
+## 2026-10-20T06:35Z — Control plane: FTF-0906 CERTIFIED
+- **Certified:** FTF-0906 (#864, merge 12f11028), round 3 under the stopping rule; UNWIRED.
+
+## 2026-10-20T06:35Z — Control plane: FTF-H011-P1 returned (r3)
+- **Returned:** FTF-H011-P1 r3 (0l): nested masking + whole-result canary, 7 pins, P4 fixtures, importer-level differential.
+
+## 2026-10-20T06:35Z — Control plane: FTF-0904-F1 returned (r6, tests only)
+- **Returned:** FTF-0904-F1 r6 (0g): generated benign-split table from _BENIGN_NAMES, MY11/MY12 RED, random-case logging rows. FTF-0904 stays CERTIFIED.

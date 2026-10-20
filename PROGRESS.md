@@ -1,8 +1,8 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-20T04:45Z. Source: `python3 scripts/status.py` on main.
-- **Status: 154/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
+Updated: 2026-10-20T06:35Z. Source: `python3 scripts/status.py` on main.
+- **Status: 155/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
@@ -12,10 +12,16 @@ Updated: 2026-10-20T04:45Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-20T06:35Z:**
+  - Returned: FTF-0904-F1 r6, tests only (log redaction: production now redacts every tested name - 0 leaks over 62,496 generated cases and 191 live requests - but the required generated test table was hand-picked and misses every "-state" word, so two faults go undetected). FTF-0904 stays certified.
+- **2026-10-20T06:35Z:**
+  - Returned: FTF-H011-P1 r3 (dataset mapping preview: tool-call rows, changed-file detection and outage states now work; but masked previews still show nested keys and anything under "type", and 7 named faults stay undetected). Stopping rule restated.
 - **2026-10-20T04:45Z:**
   - CERTIFIED (child slice): FTF-0512-F2 - the duplicate detector keeps math and currency symbols, so "x ≤ 5" and "x ≥ 5" or "$100" and "€100" no longer merge; tool and speaker names are compared exactly. FTF-0512 stays certified with the new evidence. Follow-up FTF-0512-F3 queued ("-5" vs "5", "5%" vs "5" still merge).
 - **2026-10-20T04:45Z:**
   - Returned: FTF-R006-P1a r2 (Argilla review client: routes and error classes match the pinned Argilla version, but it can create admin users, some network errors escape unclassified and can carry the API key, huge responses are fully buffered, and 5 checks are unpinned). FTF-R006-P1 split into the client (P1a) and the identity/credential layer (P1b). Stopping rule set.
+- **2026-10-20T06:35Z:**
+  - CERTIFIED: FTF-0906 (egress capture/verification), round 3: a leak test now fails or stays incomplete whenever any evidence is missing or unobserved, the integration uses only real scan results and real guard decisions, and a secret split across two headers is found. UNWIRED.
 - **2026-10-16T14:05Z:**
   - Returned: FTF-1505 r5 (secret scanning, relay round 4: no real secret anywhere and the split-secret gap is closed, but a new decode cap can silently skip secrets in very long lines, history-only .tar.gz files are never opened, and 16 of 55 faults stay undetected). Round 5 is the Control plane's own implementation (owner-approved), certified by a separate session. Stopping rule set.
 - **2026-10-16T14:05Z:**
