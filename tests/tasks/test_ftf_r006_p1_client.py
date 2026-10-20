@@ -55,7 +55,7 @@ from packages.integrations.argilla.client import (  # noqa: E402
     ArgillaUnavailableError,
     parse_strict_json,
 )
-from packages.security.outbound_guard import OutboundGuardError  # noqa: E402
+from packages.security.outbound_guard import OutboundGuardError, guarded_stream_fetch  # noqa: E402
 from packages.security.url_policy import ConnectionPolicy, OutboundPolicyError  # noqa: E402
 
 FAILURES: list[str] = []
@@ -1242,6 +1242,218 @@ def test_r2_deadline_between_chunks_with_fake_clock() -> None:
     finally:
         client_mod.time = real
     server.close()
+
+
+# -- round 3 (Control-plane return 2026-10-20) ---------------------------------
+
+
+def _timed_call(fn: Any, *args: Any, limit: float) -> tuple[bool, float, type | None, str]:
+    """Run `fn` in a daemon thread so a call that never returns fails the
+    test instead of hanging it: (finished, elapsed, exc type, exc text)."""
+    out: dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            fn(*args)
+        except Exception as exc:
+            out["kind"] = type(exc)
+            out["text"] = str(exc) + repr(exc.__cause__) + repr(exc.__context__)
+
+    started = time.monotonic()
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(limit)
+    return (not worker.is_alive(), time.monotonic() - started, out.get("kind"), out.get("text", ""))
+
+
+def test_r3_header_phase_deadline() -> None:
+    def status_drip(_s: RawServer, conn: socket.socket) -> None:
+        for byte in b"HTTP/1.1 200 OK" * 40:
+            conn.sendall(bytes([byte]))
+            time.sleep(0.1)
+
+    def header_drip(_s: RawServer, conn: socket.socket) -> None:
+        conn.sendall(b"HTTP/1.1 200 OK\r\n")
+        for _ in range(2000):
+            conn.sendall(b"X")
+            time.sleep(0.1)
+
+    for label, handler in (("H1 status-line", status_drip), ("H2 header", header_drip)):
+        server = RawServer(handler)
+        c = server.client(timeout=0.5)
+        finished, elapsed, kind, _ = _timed_call(c.get_status, limit=8)
+        check("R006P1a-7", f"{label} drip: the call returns at all", finished)
+        check(
+            "R006P1a-7",
+            f"{label} drip is Unavailable within ~2x the timeout (took {elapsed:.2f}s)",
+            finished and kind is ArgillaUnavailableError and elapsed < 1.1,
+        )
+        server.close()
+
+
+def test_r3_guard_deadline_directly() -> None:
+    def status_drip(_s: RawServer, conn: socket.socket) -> None:
+        for byte in b"HTTP/1.1 200 OK" * 40:
+            conn.sendall(bytes([byte]))
+            time.sleep(0.1)
+
+    server = RawServer(status_drip)
+    policy = ConnectionPolicy(
+        name="raw",
+        allowed_schemes=frozenset({"http"}),
+        allowed_ports=frozenset({server.port}),
+        explicit_private_allowlist=(ipaddress.ip_network("127.0.0.0/8"),),
+    )
+    url = f"http://127.0.0.1:{server.port}/x"
+
+    def fetch(**kw: Any) -> Any:
+        return guarded_stream_fetch(url, policy, method="GET", timeout=10.0, **kw)
+
+    finished, elapsed, kind, text = _timed_call(lambda: fetch(deadline=0.4), limit=8)
+    check(
+        "R006P1a-7",
+        f"guarded_stream_fetch(deadline=0.4) raises OutboundGuardError (took {elapsed:.2f}s)",
+        finished and kind is OutboundGuardError and elapsed < 0.9 and "deadline" in text,
+    )
+    for bad in (0, -1.0, float("nan"), float("inf"), True, "1"):
+        check(
+            "R006P1a-7",
+            f"deadline={bad!r} is refused before any connection",
+            raises(OutboundGuardError, fetch, deadline=bad),
+        )
+    check("R006P1a-7", "no refused deadline opened a connection", server.connections <= 1)
+    server.close()
+
+    # default (None) is unchanged: a prompt response still works, no thread left behind
+    quick = RawServer(
+        lambda _s, conn: conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}")
+    )
+    quick_policy = ConnectionPolicy(
+        name="raw",
+        allowed_schemes=frozenset({"http"}),
+        allowed_ports=frozenset({quick.port}),
+        explicit_private_allowlist=(ipaddress.ip_network("127.0.0.0/8"),),
+    )
+    quick_url = f"http://127.0.0.1:{quick.port}/x"
+    before = threading.active_count()
+    for kw in ({}, {"deadline": 5.0}):
+        with guarded_stream_fetch(quick_url, quick_policy, method="GET", **kw) as resp:
+            check(
+                "R006P1a-7",
+                f"deadline={kw.get('deadline')} does not disturb a prompt response",
+                resp.status == 200 and resp.read_chunk() == b"{}",
+            )
+    time.sleep(0.2)
+    check(
+        "R006P1a-7",
+        "the deadline watchdog is cancelled once headers are in (no thread left behind)",
+        threading.active_count() <= before + 1,
+    )
+    quick.close()
+
+
+def test_r3_final_1xx_is_unavailable() -> None:
+    # No Content-Length: http.client treats a 1xx body as empty, so the
+    # truncation check cannot catch it and only `_classify` can.
+    for code in (102, 103, 199):
+        server = RawServer(
+            lambda _s, conn, code=code: conn.sendall(f"HTTP/1.1 {code} Info\r\n\r\n".encode())
+        )
+        kind, text = _message_of(server.client(api_key="k-1xx", timeout=2).get_status)
+        check(
+            "R006P1a-8",
+            f"a final HTTP {code} with no Content-Length is Unavailable, not Rejected",
+            kind is ArgillaUnavailableError and "k-1xx" not in text,
+        )
+        server.close()
+
+
+def test_r3_key_never_reaches_an_exception_from_response_fields() -> None:
+    key = "argilla.provisioning.key"
+    stub = Stub()
+    c = stub.client(api_key=key)
+    variants: list[tuple[str, dict[str, Any]]] = [
+        ("role", {**USER, "role": key}),
+        ("role+suffix", {**USER, "role": key + "x"}),
+        ("role list", {**USER, "role": [key]}),
+        ("id", {**USER, "id": key}),
+        ("username", {**USER, "username": key, "role": "root"}),
+    ]
+    for label, payload in variants:
+        for call, args in (
+            ("get_user", (USER["id"],)),
+            ("create_user", None),
+            ("list_workspace_users", (WORKSPACE["id"],)),
+        ):
+            stub.reply(
+                200 if call != "create_user" else 201,
+                payload if call != "list_workspace_users" else {"items": [payload]},
+            )
+            if call == "create_user":
+                kind, text = _message_of(
+                    c.create_user,
+                    username="sovra-a",
+                    role="annotator",
+                    password="correct-horse-battery",
+                )
+            else:
+                kind, text = _message_of(getattr(c, call), *args)
+            check(
+                "R006P1a-9",
+                f"{call}: the key echoed in {label} never reaches an exception",
+                kind is ArgillaRejectedError and _no_key(text, key),
+            )
+    for field_name in ("id", "name"):
+        stub.reply(200, {"items": [{**WORKSPACE, field_name: key}]})
+        kind, text = _message_of(c.list_workspaces_me)
+        check(
+            "R006P1a-9",
+            f"list_workspaces_me: the key echoed in {field_name} never reaches an exception",
+            _no_key(text, key),
+        )
+    stub.server.shutdown()
+
+
+def test_r3_create_response_api_key_shape() -> None:
+    stub = Stub()
+    c = stub.client()
+    for label, bad in (
+        ("whitespace", "has space"),
+        ("leading space", " key"),
+        ("CRLF", "key\r\nX-Evil: 1"),
+        ("NUL", "key\x00"),
+        ("tab", "k\tey"),
+        ("DEL", "k\x7fey"),
+        ("NBSP", "k\u00a0ey"),
+    ):
+        stub.reply(201, {**USER, "api_key": bad})
+        check(
+            "R006P1a-10",
+            f"a create_user response whose api_key has {label} is rejected",
+            raises(
+                ArgillaRejectedError,
+                c.create_user,
+                username="sovra-a",
+                role="annotator",
+                password="correct-horse-battery",
+            ),
+        )
+        stub.reply(200, {**USER, "api_key": bad})
+        check(
+            "R006P1a-10",
+            f"a get_user response whose api_key has {label} is rejected",
+            raises(ArgillaRejectedError, c.get_user, USER["id"]),
+        )
+    stub.reply(201, {**USER, "api_key": "argilla.A-b_c~9=="})
+    check(
+        "R006P1a-10",
+        "an ordinary printable api_key is still accepted",
+        c.create_user(
+            username="sovra-a", role="annotator", password="correct-horse-battery"
+        ).api_key
+        == "argilla.A-b_c~9==",
+    )
+    stub.server.shutdown()
 
 
 def main() -> None:
