@@ -8525,7 +8525,7 @@ FTF-0512:
 
   proof_state: L2-CERTIFIED
   proving_symbol: ''
-  proving_test: tests/tasks/test_ftf_0512.py
+  proving_test: tests/tasks/test_ftf_0512.py, tests/tasks/test_ftf_0512_f1.py
 FTF-0513:
   certification_state: CERTIFIED
   criticality: MUST

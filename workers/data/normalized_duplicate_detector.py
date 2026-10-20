@@ -177,7 +177,9 @@ _MAX_COMBINING_RUN = 30
 # alphanumerics into their neighbours are now separated (`_fold_action`).
 # FTF-0512-F2: 4 -- Unicode symbols (Sm/Sc/Sk/So) are kept as their own
 # tokens instead of being stripped like punctuation (`_strip_punctuation`).
-_DETECTOR_VERSION = 4
+# FTF-0512-F3: 5 -- a P* character directly adjacent to a digit is kept
+# ("-5" != "5", "5%" != "5", "#1" != "1").
+_DETECTOR_VERSION = 5
 
 
 class NormalizedDuplicateDetectionError(ValueError):
@@ -302,14 +304,21 @@ def _decomposition_tag(char: str) -> str:
 def _fold_action(char: str) -> int:
     if unicodedata.category(char) in _DIGIT_LIKE_CATEGORIES:
         return _FOLD_ISOLATE_VERBATIM
-    if unicodedata.category(char).startswith("S") and any(
+    if unicodedata.category(char)[0] in "SP" and any(
         unicodedata.category(part).startswith("M") for part in unicodedata.normalize("NFKC", char)
     ):
-        # FTF-0512-F2: a spacing diacritic symbol (Sk, e.g. U+00A8 DIAERESIS)
+        # FTF-0512-F2: a spacing diacritic symbol (Sk, e.g. U+00A8 DIAERESIS; F3: or
+        # a P* such as U+203E OVERLINE)
         # folds to SPACE + a combining mark, which the punctuation rule would
         # then strip as non-word -- the symbol would vanish. Keep it verbatim.
         return _FOLD_ISOLATE_VERBATIM
     if not _decomposition_tag(char) or _decomposition_tag(char) in _SAME_CHARACTER_TAGS:
+        return _FOLD_KEEP
+    if all(_PUNCTUATION_PATTERN.fullmatch(part) for part in unicodedata.normalize("NFKC", char)):
+        # FTF-0512-F3: a compat form that folds to punctuation only (U+2011
+        # NON-BREAKING HYPHEN, U+2024 ONE DOT LEADER) cannot fuse with a
+        # neighbour, so it is not spaced out: the punctuation rule must see it
+        # still adjacent to a digit ("\u20115" == "-5").
         return _FOLD_KEEP
     if _decomposition_tag(char) == "<compat>" and unicodedata.category(char).startswith("L"):
         # ligatures and digraphs (ﬁ, ǆ, ĳ, µ): the same letters, spelled differently
@@ -348,14 +357,26 @@ def _lower_case(text: str) -> str:
     return text.lower()
 
 
+def _is_digit(char: str) -> bool:
+    return unicodedata.category(char) == "Nd"
+
+
 def _punctuation_replacement(match: re.Match[str]) -> str:
     # Section 10 method 3 says punctuation normalization: Unicode P* is
     # stripped. A math/currency/modifier/other symbol (Sm/Sc/Sk/So) carries
     # meaning ("x <= 5" vs "x >= 5", "$100" vs "EUR100"), so it is kept as its own
     # space-separated token instead -- FTF-0512's "cannot collapse distinct
     # customer outcomes" negative_acceptance clause.
+    # FTF-0512-F3: the same clause keeps a P* character that is directly
+    # adjacent to a digit ("-5", "5%", "#1", "5\u2032"): dropping it would merge
+    # distinct numbers. Elsewhere P* is still stripped ("hello, world").
     char = match.group()
-    return f" {char} " if unicodedata.category(char).startswith("S") else " "
+    if unicodedata.category(char).startswith("S"):
+        return f" {char} "
+    text, start, end = match.string, match.start(), match.end()
+    if (start > 0 and _is_digit(text[start - 1])) or (end < len(text) and _is_digit(text[end])):
+        return char
+    return " "
 
 
 def _strip_punctuation(text: str) -> str:
