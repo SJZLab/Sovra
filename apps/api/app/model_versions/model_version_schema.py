@@ -139,6 +139,10 @@ from app.artifacts.artifact_schema import (
     validate_weights_digest,
 )
 from app.auth.organization_workspace_schema import Base
+from app.model_versions.model_import_schema import (
+    ModelImportValidationError,
+    validate_external_provider_model_ref,
+)
 
 __all__ = [
     "ALLOWED_IMPORT_KINDS",
@@ -276,7 +280,9 @@ class ModelVersion(Base):
         CheckConstraint(
             "(import_kind = 'endpoint' AND trainable_artifact_id IS NULL "
             "AND weights_digest IS NULL AND base_model_revision IS NULL "
-            "AND endpoint_reference IS NOT NULL) "
+            "AND (endpoint_reference IS NOT NULL "
+            "OR (endpoint_reference IS NULL AND origin = 'external_endpoint' "
+            "AND external_provider_model_ref IS NOT NULL))) "
             "OR "
             "(import_kind in ('full_weight','adapter') AND trainable_artifact_id IS NOT NULL "
             "AND weights_digest IS NOT NULL AND base_model_revision IS NOT NULL "
@@ -365,9 +371,25 @@ class ModelVersion(Base):
                         "back an endpoint import (this task's own negative_acceptance)"
                     )
                 if not has_endpoint:
-                    raise ModelVersionValidationError(
-                        "an 'endpoint' import requires a real endpoint_reference"
-                    )
+                    # FTF-H010-P2 (Control-plane ruling 2026-10-10T03:57Z, route 3): a gateway
+                    # alias is not a URL, so an endpoint row may carry no endpoint_reference --
+                    # but only when it is explicitly an external_endpoint origin AND names an
+                    # explicit external_provider_model_ref (never the derived copy below).
+                    # FTF-1001's own POST never reaches this branch: it still requires an https
+                    # endpoint_reference before it constructs a row.
+                    if kwargs.get("origin") != "external_endpoint":
+                        raise ModelVersionValidationError(
+                            "an 'endpoint' import requires a real endpoint_reference"
+                        )
+                    try:
+                        validate_external_provider_model_ref(
+                            kwargs.get("external_provider_model_ref")
+                        )
+                    except ModelImportValidationError as exc:
+                        raise ModelVersionValidationError(
+                            "an 'endpoint' import without endpoint_reference requires an "
+                            f"explicit external_provider_model_ref: {exc}"
+                        ) from exc
             elif kind in _ARTIFACT_ONLY_KINDS:
                 if has_endpoint:
                     raise ModelVersionValidationError(

@@ -417,6 +417,7 @@ _ORG = uuid.uuid4()
 _PROJECT = uuid.uuid4()
 _CTX: Any = SimpleNamespace(organization_id=_ORG)
 _ACTOR = crud.ActorInfo(actor_type="user", actor_id="user-1", request_id="req-1")
+_CONN = uuid.uuid4()  # FTF-H010-P2: an external_endpoint job names its gateway connection
 
 
 @contextlib.contextmanager
@@ -446,13 +447,18 @@ def _store_env(
             raise ArtifactNotFoundError("no such artifact")
         return SimpleNamespace(id=artifact_id)
 
+    def fake_get_connection(session: Any, context: Any, connection_id: Any) -> Any:
+        return SimpleNamespace(id=connection_id)
+
     saved = (
         crud._authorize_project_or_raise,
         crud._fetch_model_version_or_raise,
         crud.get_artifact,
         crud.execute_tenant_scoped,
         crud.write_audit_event,
+        crud.get_connection,
     )
+    crud.get_connection = fake_get_connection
     crud._authorize_project_or_raise = fake_authorize_project
     crud._fetch_model_version_or_raise = fake_fetch_model_version
     crud.get_artifact = fake_get_artifact
@@ -468,6 +474,7 @@ def _store_env(
             crud.get_artifact,
             crud.execute_tenant_scoped,
             crud.write_audit_event,
+            crud.get_connection,
         ) = saved
         engine.dispose()
 
@@ -565,6 +572,7 @@ def test_s1_each_origin_creates_a_queued_job_with_one_audit_event() -> None:
             trainable_artifact_id=None,
             external_provider_model_ref="provider://model/x",
             actor=_ACTOR,
+            litellm_connection_id=_CONN,
         )
         check(
             CID,
@@ -572,6 +580,25 @@ def test_s1_each_origin_creates_a_queued_job_with_one_audit_event() -> None:
             job3.state == "queued"
             and job3.trainable_artifact_id is None
             and job3.external_provider_model_ref == "provider://model/x",
+        )
+        check(
+            CID,
+            "FTF-H010-P2: job3 carries the real litellm_connection_id, not None",
+            job3.litellm_connection_id == _CONN,
+        )
+        event3 = audit.events[-1]
+        check(
+            CID,
+            "FTF-H010-P2: the audit details record the real litellm_connection_id for a "
+            "connection-bearing job (never None when a connection was actually given)",
+            event3["details"]["litellm_connection_id"] == str(_CONN),
+        )
+        check(
+            CID,
+            "FTF-H010-P2: the earlier imported_weights/imported_adapter jobs (no connection) "
+            "record None for litellm_connection_id in their own audit details",
+            audit.events[0]["details"]["litellm_connection_id"] is None
+            and audit.events[1]["details"]["litellm_connection_id"] is None,
         )
 
         check(
@@ -615,6 +642,7 @@ def test_s2_external_endpoint_with_artifact_is_refused() -> None:
                     trainable_artifact_id=artifact,
                     external_provider_model_ref="provider://x",
                     actor=_ACTOR,
+                    litellm_connection_id=_CONN,
                 ),
                 schema.ModelImportValidationError,
             ),
@@ -644,6 +672,76 @@ def test_s2_external_endpoint_with_artifact_is_refused() -> None:
         )
 
 
+def test_s2b_litellm_connection_id_required_exactly_for_external_endpoint() -> None:
+    """FTF-H010-P2: `create_model_import_job`'s own XOR guard --
+    `litellm_connection_id` is required for `external_endpoint` and refused for every other
+    origin, defense in depth with the route and the `ck_model_import_jobs_connection_matches_
+    origin` CHECK. Both halves of the XOR, each with nothing written by the refusal."""
+    artifact = uuid.uuid4()
+    with _store_env(artifacts={artifact}) as (session, audit):
+        check(
+            CID,
+            "external_endpoint with no litellm_connection_id is a ModelImportValidationError",
+            _raises(
+                lambda: crud.create_model_import_job(
+                    session,
+                    _CTX,
+                    project_id=_PROJECT,
+                    requested_origin="external_endpoint",
+                    parent_model_version_id=None,
+                    trainable_artifact_id=None,
+                    external_provider_model_ref="provider://y",
+                    actor=_ACTOR,
+                    litellm_connection_id=None,
+                ),
+                schema.ModelImportValidationError,
+            ),
+        )
+        check(CID, "nothing was written by the missing-connection refusal", not _jobs(session))
+        check(
+            CID,
+            "imported_weights WITH a litellm_connection_id is a ModelImportValidationError "
+            "(the connection is refused for every origin but external_endpoint)",
+            _raises(
+                lambda: crud.create_model_import_job(
+                    session,
+                    _CTX,
+                    project_id=_PROJECT,
+                    requested_origin="imported_weights",
+                    parent_model_version_id=None,
+                    trainable_artifact_id=artifact,
+                    external_provider_model_ref=None,
+                    actor=_ACTOR,
+                    litellm_connection_id=_CONN,
+                ),
+                schema.ModelImportValidationError,
+            ),
+        )
+        check(
+            CID,
+            "imported_adapter WITH a litellm_connection_id is also a ModelImportValidationError",
+            _raises(
+                lambda: crud.create_model_import_job(
+                    session,
+                    _CTX,
+                    project_id=_PROJECT,
+                    requested_origin="imported_adapter",
+                    parent_model_version_id=None,
+                    trainable_artifact_id=artifact,
+                    external_provider_model_ref=None,
+                    actor=_ACTOR,
+                    litellm_connection_id=_CONN,
+                ),
+                schema.ModelImportValidationError,
+            ),
+        )
+        check(
+            CID,
+            "none of the three mismatched-connection refusals wrote a job or an audit event",
+            not _jobs(session) and not audit.events,
+        )
+
+
 def test_s3_external_endpoint_with_no_provider_ref_is_refused() -> None:
     with _store_env() as (session, audit):
         for bad_ref in (
@@ -665,6 +763,7 @@ def test_s3_external_endpoint_with_no_provider_ref_is_refused() -> None:
                         trainable_artifact_id=None,
                         external_provider_model_ref=r,
                         actor=_ACTOR,
+                        litellm_connection_id=_CONN,
                     ),
                     schema.ModelImportValidationError,
                 ),
@@ -1302,6 +1401,8 @@ def _job_ns(
         parent_model_version_id=parent_model_version_id,
         trainable_artifact_id=trainable_artifact_id,
         external_provider_model_ref=None,
+        litellm_connection_id=None,
+        result_model_version_id=None,
         state=state,
         failure_code=None,
         created_by="ml-1",
@@ -1544,6 +1645,8 @@ def test_r_get_list_and_item() -> None:
                     "parent_model_version_id",
                     "trainable_artifact_id",
                     "external_provider_model_ref",
+                    "litellm_connection_id",
+                    "result_model_version_id",
                     "state",
                     "failure_code",
                     "created_by",
