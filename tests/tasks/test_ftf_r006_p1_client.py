@@ -1424,6 +1424,137 @@ def test_r3_guard_deadline_directly() -> None:
     quick.close()
 
 
+def test_r3_guard_deadline_mutation_kills() -> None:
+    import types
+
+    handler = lambda _s, conn: conn.sendall(  # noqa: E731
+        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}"
+    )
+    quick = RawServer(handler)
+    policy = ConnectionPolicy(
+        name="raw",
+        allowed_schemes=frozenset({"http"}),
+        allowed_ports=frozenset({quick.port}),
+        explicit_private_allowlist=(ipaddress.ip_network("127.0.0.0/8"),),
+    )
+    url = f"http://127.0.0.1:{quick.port}/x"
+
+    # (a) a budget that is already spent (exactly 0 left, on a fake clock)
+    # raises the deadline error before any connection or timer exists.
+    real_time = guard_mod.time
+    real_timer = guard_mod.threading.Timer
+    timers: list[Any] = []
+
+    class CountingTimer:
+        daemon = False
+
+        def __init__(self, interval: float, fn: Any) -> None:
+            timers.append(fn)
+            self._real = real_timer(interval, fn)
+
+        def start(self) -> None:
+            self._real.start()
+
+        def cancel(self) -> None:
+            self._real.cancel()
+
+    ticks = iter([100.0] + [100.5] * 50)
+    guard_mod.time = types.SimpleNamespace(monotonic=lambda: next(ticks))  # type: ignore[assignment]
+    guard_mod.threading.Timer = CountingTimer  # type: ignore[misc,assignment]
+    try:
+        kind, text = _message_of(
+            guarded_stream_fetch, url, policy, method="GET", timeout=10.0, deadline=0.5
+        )
+    finally:
+        guard_mod.time = real_time
+        guard_mod.threading.Timer = real_timer  # type: ignore[misc]
+    check(
+        "R006P1a-7",
+        "a spent budget (exactly 0 remaining) raises the deadline error",
+        kind is OutboundGuardError and "exceeded the call deadline" in text,
+    )
+    check(
+        "R006P1a-7",
+        "a spent budget starts no watchdog and opens no connection",
+        not timers and quick.connections == 0,
+    )
+
+    # (b) a watchdog that fires after the call finished must not abort the
+    # stream the caller now holds.
+    captured: list[Any] = []
+
+    class FakeTimer:
+        daemon = False
+
+        def __init__(self, _interval: float, fn: Any) -> None:
+            captured.append(fn)
+
+        def start(self) -> None:
+            pass
+
+        def cancel(self) -> None:
+            pass
+
+    guard_mod.threading.Timer = FakeTimer  # type: ignore[misc,assignment]
+    try:
+        stream = guarded_stream_fetch(url, policy, method="GET", timeout=5.0, deadline=5.0)
+    finally:
+        guard_mod.threading.Timer = real_timer  # type: ignore[misc]
+    with stream:
+        captured[0]()  # late timer callback, after the headers were accepted
+        check(
+            "R006P1a-7",
+            "a late watchdog callback does not abort a stream already handed back",
+            stream.read_chunk() == b"{}"
+            and stream.final_url == url
+            and stream.status == 200
+            and stream._connection.sock is not None
+            and stream._connection.sock.fileno() != -1,
+        )
+
+    # (c) a plain connection failure with a deadline set is still wrapped.
+    hangup = RawServer(lambda _s, conn: None)
+    hpolicy = ConnectionPolicy(
+        name="raw",
+        allowed_schemes=frozenset({"http"}),
+        allowed_ports=frozenset({hangup.port}),
+        explicit_private_allowlist=(ipaddress.ip_network("127.0.0.0/8"),),
+    )
+    kind, text = _message_of(
+        guarded_stream_fetch,
+        f"http://127.0.0.1:{hangup.port}/x",
+        hpolicy,
+        method="GET",
+        timeout=5.0,
+        deadline=5.0,
+    )
+    check(
+        "R006P1a-7",
+        "a server that hangs up is OutboundGuardError('... failed'), not a raw OSError",
+        kind is OutboundGuardError and "failed" in text and "deadline" not in text,
+    )
+    hangup.close()
+    quick.close()
+
+    # (d) the HTTPS connect hook records the raw socket for the watchdog.
+    class FakeCtx:
+        def wrap_socket(self, raw: Any, server_hostname: str) -> str:
+            return f"tls({server_hostname})"
+
+    real_cc = guard_mod.socket.create_connection
+    guard_mod.socket.create_connection = lambda *_a, **_k: "RAW"  # type: ignore[assignment]
+    try:
+        tls = guard_mod._PinnedHTTPSConnection("h.example", "127.0.0.1", 443, 1.0, FakeCtx())  # type: ignore[arg-type]
+        tls.connect()
+    finally:
+        guard_mod.socket.create_connection = real_cc
+    check(
+        "R006P1a-7",
+        "_PinnedHTTPSConnection.connect wraps the pinned socket and keeps the raw one",
+        tls.sock == "tls(h.example)" and tls._raw_sock == "RAW",
+    )
+
+
 def test_r3_final_1xx_is_unavailable() -> None:
     # No Content-Length: http.client treats a 1xx body as empty, so the
     # truncation check cannot catch it and only `_classify` can.
