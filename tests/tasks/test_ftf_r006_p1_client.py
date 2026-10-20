@@ -1371,7 +1371,7 @@ def test_r3_guard_deadline_directly() -> None:
             captured["fire"]()  # the deadline expires right after the headers arrive
             return resp
 
-        conn.getresponse = late_fire
+        conn.getresponse = late_fire  # type: ignore[method-assign]
         return conn, path, host
 
     guard_mod._prepare_pinned_connection = prepare
@@ -1407,7 +1407,8 @@ def test_r3_guard_deadline_directly() -> None:
     )
     quick_url = f"http://127.0.0.1:{quick.port}/x"
     before = threading.active_count()
-    for kw in ({}, {"deadline": 5.0}):
+    kws: list[dict[str, Any]] = [{}, {"deadline": 5.0}]
+    for kw in kws:
         with guarded_stream_fetch(quick_url, quick_policy, method="GET", **kw) as resp:
             check(
                 "R006P1a-7",
@@ -1453,7 +1454,7 @@ def test_r3_key_never_reaches_an_exception_from_response_fields() -> None:
     for label, payload in variants:
         for call, args in (
             ("get_user", (USER["id"],)),
-            ("create_user", None),
+            ("create_user", ()),
             ("list_workspace_users", (WORKSPACE["id"],)),
         ):
             stub.reply(
