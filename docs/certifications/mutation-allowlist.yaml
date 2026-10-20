@@ -15,6 +15,10 @@
 # given it must match exactly, so it goes stale and resurfaces if the code
 # moves, which is the intended, conservative behavior):
 #
+# An entry for a file that exists only on an open [relay] PR's branch also carries
+# `pending_pr: <n>`; tests/tasks/test_mutation_gate.py skips its file-exists check
+# until that file lands on main (remove `pending_pr` once it has).
+#
 #   entries:
 #     - file: apps/api/app/example.py        # repo-relative path
 #       function: ExampleClass.method        # dotted qualname as the gate prints it
@@ -27,3 +31,39 @@ entries:
     operator: M3
     line: 221
     reason: "Protocol method stub whose body is `...`; it is never executed (implementations override it), so an inserted `return None` cannot change behavior. Ruled equivalent by the FTF-0510 round-5 L2 verifier, 2026-10-06."
+  - file: apps/api/app/datasets/dataset_split_manifest_routes.py
+    pending_pr: 869
+    function: _refusal
+    operator: M9
+    line: 304
+    reason: "`exc.code` is a SplitManifestError code: the constructor asserts `code in CODES` and every raise site (store and routes) passes a string literal from that fixed tuple, all lowercase with no whitespace, so `.strip().lower()` returns the identical string on every reachable value. Control-plane L2 review 2026-10-20 (BLOCKER.md 2026-10-19T09:10Z, PR #869)."
+  - file: apps/api/app/datasets/dataset_split_manifest_routes.py
+    pending_pr: 869
+    function: build_dataset_split_manifest_router._replayed
+    operator: M9
+    line: 387
+    reason: "`action` is passed only as the literal 'approve' or 'reject' by the four `_replayed` call sites in this router, so `.strip().lower()` is the identity on every reachable value. Control-plane L2 review 2026-10-20 (PR #869)."
+  - file: apps/api/app/datasets/dataset_split_manifest_routes.py
+    pending_pr: 869
+    function: build_dataset_split_manifest_router.approve
+    operator: M9
+    line: 446
+    reason: "`exc.code` is a SplitManifestError code: the constructor asserts `code in CODES` and every raise site (store and routes) passes a string literal from that fixed tuple, all lowercase with no whitespace, so `.strip().lower()` returns the identical string on every reachable value. Control-plane L2 review 2026-10-20 (BLOCKER.md 2026-10-19T09:10Z, PR #869)."
+  - file: apps/api/app/datasets/dataset_split_manifest_routes.py
+    pending_pr: 869
+    function: build_dataset_split_manifest_router.reject
+    operator: M9
+    line: 512
+    reason: "`exc.code` is a SplitManifestError code: the constructor asserts `code in CODES` and every raise site (store and routes) passes a string literal from that fixed tuple, all lowercase with no whitespace, so `.strip().lower()` returns the identical string on every reachable value. Control-plane L2 review 2026-10-20 (BLOCKER.md 2026-10-19T09:10Z, PR #869)."
+  - file: apps/api/app/model_versions/model_import_validation.py
+    pending_pr: 742
+    function: _finish
+    operator: M9
+    line: 382
+    reason: "`STATE_SUCCEEDED` is the module constant 'succeeded' (line 88), already lowercase with no whitespace, so `.strip().lower()` is the identity. Control-plane L2 review 2026-10-20 (BLOCKER.md 2026-10-19T09:10Z, PR #742)."
+  - file: apps/api/app/model_versions/model_import_validation.py
+    pending_pr: 742
+    function: _finish
+    operator: M9
+    line: 383
+    reason: "SQLAlchemy `Dialect.name` is a fixed lowercase class attribute ('postgresql', 'sqlite'), never padded, so `.strip().lower()` is the identity on every dialect this code can run on. Control-plane L2 review 2026-10-20 (PR #742)."

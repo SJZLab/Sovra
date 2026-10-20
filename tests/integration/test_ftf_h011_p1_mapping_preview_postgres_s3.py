@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# mypy: disable-error-code="arg-type,attr-defined,assignment,call-arg,index,misc,union-attr"
+# mypy: disable-error-code="arg-type,attr-defined,assignment,call-arg"
+# mypy: disable-error-code="call-overload,index,misc,union-attr"
 """FTF-H011-P1 -- the dataset mapping probe/preview service
 (`apps/api/app/datasets/dataset_mapping_service.py`) over PostgreSQL 16 as the restricted
 `sovra_app` role and the live SeaweedFS S3 API, through the real FTF-0501 upload routes and the
@@ -333,7 +334,6 @@ def main() -> None:
                 include_held_out=include_held_out,
                 storage=source_module.DatasetObjectStorage(storage_client or client, bucket),
                 mapping=mapping,
-                tool_schemas=None,
                 reveal=reveal,
             )
 
@@ -375,10 +375,47 @@ def main() -> None:
         "I1 the real dataset previews completed, with real accepted rows",
         masked.state == "completed" and masked.counts["accepted"] == 10,
     )
+
+    def _is_masked_marker(value: Any) -> bool:
+        return (
+            isinstance(value, dict)
+            and value.get("masked") is True
+            and isinstance(value["chars"], int)
+        )
+
     check(
-        "I1 masking applies to the real stored bytes too",
-        all("⁣masked⁣" in str(v) for row in masked.rows for v in row.raw_row.values())
-        and "question 0" not in str(masked.rows[0].raw_row),
+        "I1 masking applies to the real stored bytes too (every key and value, MASK-LEAK)",
+        all(
+            _is_masked_marker(entry["key"]) and _is_masked_marker(entry["value"])
+            for row in masked.rows
+            for entry in row.raw_row
+        )
+        and "question 0" not in str(masked.rows[0].raw_row)
+        and "prompt" not in str(masked.rows[0].raw_row),
+    )
+    candidate_type_tags_ok = True
+    candidate_text_masked = True
+    for row in masked.rows:
+        if row.candidate is None:
+            continue
+        for message in row.candidate["content"]["messages"]:
+            for part in message["content"]:
+                if part["type"] not in ("text", "json"):
+                    candidate_type_tags_ok = False
+                if part["type"] == "text" and not _is_masked_marker(part["text"]):
+                    candidate_text_masked = False
+    check(
+        "I1 the candidate's own JSON type tags stay in clear (disclosed MASK-LEAK exception)",
+        candidate_type_tags_ok,
+    )
+    check("I1 the candidate's own text content is masked", candidate_text_masked)
+    check(
+        "I1 not_mapped column names are masked too",
+        all(_is_masked_marker(name) for row in masked.rows for name in row.not_mapped),
+    )
+    check(
+        "I1 none of the real text leaks through the masked candidates",
+        "question 0" not in str([row.candidate for row in masked.rows]),
     )
     revealed = preview(ctx1, p1_id, train.id, PROMPT_COMPLETION, reveal=True)
     check(
@@ -394,7 +431,7 @@ def main() -> None:
     probed = probe(ctx1, p1_id, train.id, probe_mapping, reveal=True)
     check(
         "I1 a probe over the same real dataset returns real raw rows",
-        len(probed.raw_rows) == 10 and probed.raw_rows[0]["prompt"] == "question 0",  # type: ignore[call-overload]
+        len(probed.raw_rows) == 10 and probed.raw_rows[0]["prompt"] == "question 0",
     )
 
     # ---- I2: scoping, identical to FTF-0502-P1's own I2 --------------------------------
@@ -470,7 +507,7 @@ def main() -> None:
         "I5 a real CSV dataset's headers and rows round-trip",
         csv_preview.source_schema_sha256 is not None
         and csv_preview.rows[0].raw_row == {"q": "hello", "a": "world", "secret": "123-45-6789"}
-        and csv_preview.rows[1].raw_row["q"] == "مرحبا",  # type: ignore[call-overload]
+        and csv_preview.rows[1].raw_row["q"] == "مرحبا",
     )
     csv_probe_mapping = ic.mapping_from_object(
         {
@@ -484,6 +521,34 @@ def main() -> None:
     check(
         "I5 the probe discovers the real CSV headers",
         csv_probed.headers == ("q", "a", "secret"),
+    )
+
+    # ---- I7: SOURCE-CHANGED -- a real object overwritten after verification, past what a
+    # bounded (20-row) preview would ever need to read on its own, is still caught -------------
+    overwrite_rows = 50
+    overwrite_data = b"".join(line(i) for i in range(overwrite_rows))
+    overwrite_dataset = make_dataset("org1", p1_id, conn1, overwrite_data, "overwrite-me")
+    with tenant_scoped_session_for(factory, ctx1) as session:
+        overwrite_upload = store.get_upload_session(
+            session, ctx1, p1_id, overwrite_dataset.upload_session_id
+        )
+        overwrite_key = overwrite_upload.object_key
+    tampered = b"".join(line(i) for i in range(overwrite_rows)) + line(overwrite_rows) * 5
+    client.put_object(bucket, overwrite_key, tampered)
+    overwritten_preview = preview(ctx1, p1_id, overwrite_dataset.id, PROMPT_COMPLETION, reveal=True)
+    check(
+        f"I7 the real overwritten object is detected (failed/source_changed), never reported "
+        f"as a clean completed preview, even though only the first 20 of {overwrite_rows} rows "
+        f"were ever needed to fill the preview limit (got {overwritten_preview.state}/"
+        f"{overwritten_preview.failure_code})",
+        overwritten_preview.state == "failed"
+        and overwritten_preview.failure_code == "source_changed",
+    )
+    overwritten_probe = probe(ctx1, p1_id, overwrite_dataset.id, probe_mapping, reveal=True)
+    check(
+        f"I7b the probe also detects the real overwrite (got {overwritten_probe.state}/"
+        f"{overwritten_probe.failure_code})",
+        overwritten_probe.state == "failed" and overwritten_probe.failure_code == "source_changed",
     )
 
     # ---- I6: storage outage before the first real read -------------------------------------
@@ -503,7 +568,6 @@ def main() -> None:
                     include_held_out=False,
                     storage=source_module.DatasetObjectStorage(client, bucket),
                     mapping=PROMPT_COMPLETION,
-                    tool_schemas=None,
                     reveal=True,
                 )
             )

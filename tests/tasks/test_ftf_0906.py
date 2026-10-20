@@ -32,6 +32,7 @@ Run directly: python3 tests/tasks/test_ftf_0906.py
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -1577,6 +1578,446 @@ def test_scan_rejects_unknown_canary_id_and_bad_types() -> None:
     )
 
 
+# --- Round 3: HISTORY-OPTIONAL, CLIENT-UNOBSERVED and the unpinned clauses ---
+
+
+def _clean_all_but_history(flow_ids: tuple[str, str] = ("a1", "d1")) -> EgressEvidence:
+    a_enf, a_logs, a_insp = _passing_allow(flow_ids[0])
+    d_enf, d_c_log, d_d_log = _passing_deny(flow_ids[1])
+    return EgressEvidence(
+        enforcement=(a_enf, d_enf),
+        connection_logs=(*a_logs, d_c_log, d_d_log),
+        plaintext_inspections=(a_insp, *_clean_mandatory_store_inspections()),
+    )
+
+
+def test_history_is_always_partial_whatever_required_stores_says() -> None:
+    # HISTORY-OPTIONAL: a caller that leaves workflow_history out of
+    # `required_stores` must still never get `passed` without history
+    # evidence. Runs the real default code with the attack input present.
+    no_history = frozenset({"controlled_destination", *_MANDATORY_REQUIRED_STORES})
+    plan = _plan((_flow("a1", "allow"), _flow("d1", "deny")), required_stores=no_history)
+    report = verify_egress(plan, _clean_all_but_history())
+    check(
+        "FTF-0906-R3-1",
+        "required_stores without workflow_history still reports partial, never passed",
+        report.status == "partial" and report.not_exercised == ("workflow_history",),
+    )
+    history = PlaintextInspection("workflow_history", "wf-1", None, True, decrypted=False)
+    evidence = _clean_all_but_history()
+    with_history = EgressEvidence(
+        enforcement=evidence.enforcement,
+        connection_logs=evidence.connection_logs,
+        plaintext_inspections=(*evidence.plaintext_inspections, history),
+    )
+    check(
+        "FTF-0906-R3-1",
+        "real workflow_history evidence still lets the same narrowed plan pass",
+        verify_egress(plan, with_history).status == "passed",
+    )
+    uninspected = PlaintextInspection("workflow_history", "wf-1", None, False, decrypted=False)
+    not_looked_at = EgressEvidence(
+        enforcement=evidence.enforcement,
+        connection_logs=evidence.connection_logs,
+        plaintext_inspections=(*evidence.plaintext_inspections, uninspected),
+    )
+    check(
+        "FTF-0906-R3-1",
+        "an uninspected workflow_history record is not history evidence",
+        verify_egress(plan, not_looked_at).status == "partial",
+    )
+
+
+def test_unobserved_on_any_side_is_incomplete() -> None:
+    # CLIENT-UNOBSERVED-PASSES (Law 17): `unobserved` on the client side, the
+    # destination side or both is never a pass and never a fabricated verdict.
+    for flow_id, expected in (("d1", "deny"), ("a1", "allow")):
+        for client_outcome, dest_outcome, codes in (
+            ("unobserved", "not_seen", ("client_unobserved",)),
+            ("refused", "unobserved", ("destination_unobserved",)),
+            ("unobserved", "unobserved", ("destination_unobserved", "client_unobserved")),
+        ):
+            other = "a1" if flow_id == "d1" else "d1"
+            plan = _plan((_flow("a1", "allow"), _flow("d1", "deny")))
+            base = _clean_all_but_history()
+            logs = tuple(entry for entry in base.connection_logs if entry.flow_id == other)
+            enforcement = tuple(o for o in base.enforcement if o.flow_id == other)
+            if expected == "deny":
+                enf = EnforcementObservation(flow_id, "process_guard", "deny", "blocked")
+            else:
+                enf = EnforcementObservation(flow_id, "process_guard", "allow", "ok")
+            evidence = EgressEvidence(
+                enforcement=(*enforcement, enf),
+                connection_logs=(
+                    *logs,
+                    ConnectionLogEntry(flow_id, "client", client_outcome),
+                    ConnectionLogEntry(flow_id, "destination", dest_outcome),
+                ),
+                plaintext_inspections=base.plaintext_inspections,
+            )
+            report = verify_egress(plan, evidence)
+            verdict = next(v for v in report.flow_verdicts if v.flow_id == flow_id)
+            check(
+                "FTF-0906-R3-2",
+                f"{expected} flow client={client_outcome} dest={dest_outcome} is incomplete "
+                f"with {codes}",
+                verdict.status == "incomplete" and verdict.codes == codes,
+            )
+            check(
+                "FTF-0906-R3-2",
+                f"{expected} flow client={client_outcome} dest={dest_outcome} never passes "
+                "the whole report",
+                report.status == "incomplete",
+            )
+
+
+def test_unobserved_codes_match_exactly_not_normalized() -> None:
+    # The side outcomes are validated at construction, so a non-canonical
+    # value can only appear if forged past the dataclass; it must never be
+    # read as `unobserved` (no strip/lower folding) -- the other side's real
+    # `unobserved` still makes the flow incomplete, with only ITS own code.
+    plan = _plan((_flow("a1", "allow"), _flow("d1", "deny")))
+    base = _clean_all_but_history()
+    a_logs = tuple(e for e in base.connection_logs if e.flow_id == "a1")
+    a_enf = tuple(o for o in base.enforcement if o.flow_id == "a1")
+    for forged_side, real_side, forged_value, expected_codes in (
+        ("destination", "client", " Unobserved ", ("client_unobserved",)),
+        ("client", "destination", "UNOBSERVED", ("destination_unobserved",)),
+    ):
+        entries = {
+            "client": ConnectionLogEntry("d1", "client", "refused"),
+            "destination": ConnectionLogEntry("d1", "destination", "not_seen"),
+        }
+        entries[real_side] = ConnectionLogEntry("d1", real_side, "unobserved")
+        object.__setattr__(entries[forged_side], "outcome", forged_value)
+        evidence = EgressEvidence(
+            enforcement=(*a_enf, EnforcementObservation("d1", "process_guard", "deny", "blocked")),
+            connection_logs=(*a_logs, entries["client"], entries["destination"]),
+            plaintext_inspections=base.plaintext_inspections,
+        )
+        verdict = next(v for v in verify_egress(plan, evidence).flow_verdicts if v.flow_id == "d1")
+        check(
+            "FTF-0906-R3-2",
+            f"forged {forged_side}={forged_value!r} is not folded into unobserved; "
+            f"real {real_side} unobserved gives only {expected_codes}",
+            verdict.status == "incomplete" and verdict.codes == expected_codes,
+        )
+
+
+def test_allow_flow_destination_inspection_must_have_found_the_canary() -> None:
+    # F5b: an allow flow whose controlled destination WAS inspected but the
+    # canary was not found there is vacuous even though enforcement, client
+    # and destination logs all say connected.
+    plan = _plan((_flow("a1", "allow"), _flow("d1", "deny")))
+    a_enf, a_logs, _ = _passing_allow()
+    d_enf, d_c_log, d_d_log = _passing_deny()
+    not_found = PlaintextInspection(
+        "controlled_destination", "sink-A", "a1", True, decrypted=False, canary_found=False
+    )
+    evidence = EgressEvidence(
+        enforcement=(a_enf, d_enf),
+        connection_logs=(*a_logs, d_c_log, d_d_log),
+        plaintext_inspections=(not_found, *_clean_mandatory_store_inspections()),
+    )
+    verdict = next(v for v in verify_egress(plan, evidence).flow_verdicts if v.flow_id == "a1")
+    check(
+        "FTF-0906-R3-3-F5b",
+        "an inspected destination with canary_found=False is vacuous_permitted_flow",
+        verdict.status == "failed" and verdict.codes == ("vacuous_permitted_flow",),
+    )
+
+
+def test_allow_flow_capture_canary_is_canary_leaked() -> None:
+    # F24: a plaintext packet capture of an allow flow that found the canary
+    # is a leak outside the authorized sinks, not a clean pass.
+    plan = _plan((_flow("a1", "allow"), _flow("d1", "deny")))
+    base = _clean_all_but_history()
+    capture = PacketCaptureObservation("a1", encrypted=False, canary_found=True)
+    evidence = EgressEvidence(
+        enforcement=base.enforcement,
+        connection_logs=base.connection_logs,
+        plaintext_inspections=base.plaintext_inspections,
+        packet_captures=(capture,),
+    )
+    verdict = next(v for v in verify_egress(plan, evidence).flow_verdicts if v.flow_id == "a1")
+    check(
+        "FTF-0906-R3-3-F24",
+        "an allow-flow plaintext capture that found the canary is canary_leaked",
+        verdict.status == "failed" and verdict.codes == ("canary_leaked",),
+    )
+    clean_capture = PacketCaptureObservation("a1", encrypted=False, canary_found=False)
+    clean = EgressEvidence(
+        enforcement=base.enforcement,
+        connection_logs=base.connection_logs,
+        plaintext_inspections=base.plaintext_inspections,
+        packet_captures=(clean_capture,),
+    )
+    clean_verdict = next(v for v in verify_egress(plan, clean).flow_verdicts if v.flow_id == "a1")
+    check(
+        "FTF-0906-R3-3-F24",
+        "the same capture without the canary leaves the allow flow passed",
+        clean_verdict.status == "passed",
+    )
+
+
+def test_policy_digest_must_be_exactly_64_hex() -> None:
+    # F25: shape, not just length.
+    flows = (_flow("a1", "allow"), _flow("d1", "deny"))
+    for bad in ("g" * 64, "a" * 63, "a" * 65, "a" * 64 + "\n", " " + "a" * 63, "é" * 64):
+        check(
+            "FTF-0906-R3-3-F25",
+            f"policy_digest {bad!r} is refused",
+            _raises(
+                InvalidEgressPlanError,
+                EgressPlan,
+                plan_id="p",
+                scope="process",
+                policy_digest=bad,
+                flows=flows,
+            ),
+        )
+    check(
+        "FTF-0906-R3-3-F25",
+        "a mixed-case 64-hex digest is accepted",
+        EgressPlan(plan_id="p", scope="process", policy_digest="aB" * 32, flows=flows).policy_digest
+        == "aB" * 32,
+    )
+
+
+def test_report_hash_binds_every_report_field() -> None:
+    # F9 / F10 / F10b / F10c: each field of the report is bound into
+    # report_sha256 -- the pure helper is called with ONE field changed.
+    from packages.security.egress_capture_verification import _report_sha256
+
+    verdicts = (FlowVerdict("a1", "passed", ()),)
+    base_args = ("p", "a" * 64, "process", "passed", verdicts, (), (), ("artifact",))
+    base = _report_sha256(*base_args)
+    variants = {
+        "plan_id": ("q", "a" * 64, "process", "passed", verdicts, (), (), ("artifact",)),
+        "policy_digest": ("p", "b" * 64, "process", "passed", verdicts, (), (), ("artifact",)),
+        "scope": ("p", "a" * 64, "cluster", "passed", verdicts, (), (), ("artifact",)),
+        "status": ("p", "a" * 64, "process", "partial", verdicts, (), (), ("artifact",)),
+        "flow_verdicts": (
+            "p",
+            "a" * 64,
+            "process",
+            "passed",
+            (FlowVerdict("a2", "passed", ()),),
+            (),
+            (),
+            ("artifact",),
+        ),
+        "flow_verdict_codes": (
+            "p",
+            "a" * 64,
+            "process",
+            "passed",
+            (FlowVerdict("a1", "passed", ("x",)),),
+            (),
+            (),
+            ("artifact",),
+        ),
+        "codes": (
+            "p",
+            "a" * 64,
+            "process",
+            "passed",
+            verdicts,
+            ("unplanned_egress_evidence",),
+            (),
+            ("artifact",),
+        ),
+        "not_exercised": (
+            "p",
+            "a" * 64,
+            "process",
+            "passed",
+            verdicts,
+            (),
+            ("workflow_history",),
+            ("artifact",),
+        ),
+        "inspected_stores": ("p", "a" * 64, "process", "passed", verdicts, (), (), ("error_path",)),
+    }
+    for field_name, args in variants.items():
+        check(
+            "FTF-0906-R3-3-HASH",
+            f"changing only {field_name} changes report_sha256",
+            _report_sha256(*args) != base,
+        )
+    check("FTF-0906-R3-3-HASH", "the helper is deterministic", _report_sha256(*base_args) == base)
+
+    # End to end through verify_egress: the same pairs of reports differ only
+    # in the one field the fault would drop.
+    flows = (_flow("a1", "allow"), _flow("d1", "deny"))
+    process_plan = _plan(flows)
+    cluster_plan = EgressPlan(plan_id="plan-1", scope="cluster", policy_digest=_DIGEST, flows=flows)
+    empty = EgressEvidence()
+    check(
+        "FTF-0906-R3-3-F9",
+        "plans that differ only in scope produce different report hashes",
+        verify_egress(process_plan, empty).report_sha256
+        != verify_egress(cluster_plan, empty).report_sha256,
+    )
+    only_codes_a = EgressEvidence(
+        enforcement=(EnforcementObservation("zz", "process_guard", "deny", "blocked"),),
+        plaintext_inspections=(PlaintextInspection("application_log", "l", None, True, False),),
+    )
+    only_codes_b = EgressEvidence(
+        plaintext_inspections=(
+            PlaintextInspection("application_log", "l", None, True, False, canary_found=True),
+        ),
+    )
+    report_a = verify_egress(process_plan, only_codes_a)
+    report_b = verify_egress(process_plan, only_codes_b)
+    check(
+        "FTF-0906-R3-3-F10b",
+        "fixture isolates codes: same status, verdicts, stores and not_exercised",
+        report_a.status == report_b.status == "failed"
+        and report_a.flow_verdicts == report_b.flow_verdicts
+        and report_a.inspected_stores == report_b.inspected_stores
+        and report_a.not_exercised == report_b.not_exercised
+        and report_a.codes != report_b.codes,
+    )
+    check(
+        "FTF-0906-R3-3-F10b",
+        "reports differing only in codes have different hashes",
+        report_a.report_sha256 != report_b.report_sha256,
+    )
+    no_stores = verify_egress(process_plan, empty)
+    one_store = verify_egress(
+        process_plan,
+        EgressEvidence(
+            plaintext_inspections=(PlaintextInspection("artifact", "l", None, True, False),)
+        ),
+    )
+    check(
+        "FTF-0906-R3-3-F10",
+        "fixture isolates inspected_stores: same status, verdicts, codes",
+        no_stores.status == one_store.status
+        and no_stores.flow_verdicts == one_store.flow_verdicts
+        and no_stores.codes == one_store.codes
+        and no_stores.inspected_stores != one_store.inspected_stores,
+    )
+    check(
+        "FTF-0906-R3-3-F10",
+        "reports differing only in inspected_stores have different hashes",
+        no_stores.report_sha256 != one_store.report_sha256,
+    )
+
+
+def test_report_inspected_stores_excludes_uninspected_records() -> None:
+    # F29: the report's own `inspected_stores` lists exactly the stores that
+    # were really inspected -- an inspected=False record does not count.
+    plan = _plan((_flow("a1", "allow"), _flow("d1", "deny")))
+    base = _clean_all_but_history()
+    evidence = EgressEvidence(
+        enforcement=base.enforcement,
+        connection_logs=base.connection_logs,
+        plaintext_inspections=(
+            *base.plaintext_inspections,
+            PlaintextInspection("workflow_history", "wf", None, False, decrypted=False),
+        ),
+    )
+    report = verify_egress(plan, evidence)
+    check(
+        "FTF-0906-R3-3-F29",
+        "report.inspected_stores is exactly the inspected stores, sorted, and omits "
+        "the uninspected workflow_history record",
+        report.inspected_stores
+        == ("application_log", "artifact", "controlled_destination", "error_path"),
+    )
+
+
+def _scan_fragmented(data: bytes, marker, other_markers=()) -> bool:
+    """True iff scanning `data` for the marker's `fragmented` placement
+    finds it (CanaryLeakedError -- the ledger's own fail-closed path)."""
+    ledger = CanaryPlacementLedger({("tool_result", "fragmented")})
+    placement = PlacementRecord(marker.canary_id, "tool_result", "fragmented", "r3-test")
+    ledger.record_placement(placement)
+    markers = {marker.canary_id: marker, **{m.canary_id: m for m in other_markers}}
+    try:
+        found = scan_store_for_canaries(data, markers, (placement,), ledger)
+    except CanaryLeakedError:
+        return True
+    return found == frozenset({marker.canary_id})
+
+
+def test_fragmented_canary_is_found_across_separate_places() -> None:
+    # FRAGMENT-SCANNER-GAP: pieces that land in separate headers/lines with
+    # unrelated bytes between them, in any order, for every split size.
+    from packages.security.canary_secret_generator import fragment_canary
+
+    marker = generate_canary()
+    other = generate_canary()
+    for parts in range(2, 9):
+        pieces = fragment_canary(marker, parts)
+        headers = "".join(f"X-Canary-Frag-{i}: {piece}\r\n" for i, piece in enumerate(pieces, 1))
+        noisy = "Host: 127.0.0.1\r\n" + headers + "Connection: close\r\n"
+        check(
+            "FTF-0906-R3-5",
+            f"{parts} pieces in {parts} separate headers are found",
+            _scan_fragmented(noisy.encode(), marker),
+        )
+        reversed_headers = "".join(f"H{i}: {piece}\r\n" for i, piece in enumerate(pieces[::-1]))
+        check(
+            "FTF-0906-R3-5",
+            f"{parts} pieces in reverse order are found",
+            _scan_fragmented(reversed_headers.encode(), marker),
+        )
+        check(
+            "FTF-0906-R3-5",
+            f"{parts} pieces in separate log lines of a larger log are found",
+            _scan_fragmented(
+                ("noise\n" * 50 + "\nline-x ".join(pieces) + "\ntail\n").encode(), marker
+            ),
+        )
+        # Negative, real default code with the attack input PARTLY present:
+        # every strict subset of the pieces must NOT count as a leak.
+        for missing in range(parts):
+            partial = "".join(f"H{i}: {p}\r\n" for i, p in enumerate(pieces) if i != missing)
+            check(
+                "FTF-0906-R3-5",
+                f"{parts} pieces with piece {missing} absent is not found",
+                not _scan_fragmented(partial.encode(), marker),
+            )
+        check(
+            "FTF-0906-R3-5",
+            f"{parts} pieces of a DIFFERENT canary do not match this one",
+            not _scan_fragmented(headers.encode(), other, other_markers=(marker,)),
+        )
+    scattered = "".join(
+        f"H{i}: {piece}\r\n" for i, piece in enumerate(fragment_canary(marker, 2), 1)
+    ).encode()
+    literal_ledger = CanaryPlacementLedger({("tool_result", "literal")})
+    literal_placement = PlacementRecord(marker.canary_id, "tool_result", "literal", "r3-test")
+    literal_ledger.record_placement(literal_placement)
+    check(
+        "FTF-0906-R3-5",
+        "pieces are only reassembled for a fragmented placement, never a literal one",
+        scan_store_for_canaries(
+            scattered, {marker.canary_id: marker}, (literal_placement,), literal_ledger
+        )
+        == frozenset(),
+    )
+    check(
+        "FTF-0906-R3-5",
+        "clean data is not found",
+        not _scan_fragmented(b"Host: 127.0.0.1\r\nConnection: close\r\n", marker),
+    )
+    check(
+        "FTF-0906-R3-5",
+        "the contiguous literal still counts for a fragmented placement",
+        _scan_fragmented(f"x {marker.value} y".encode(), marker),
+    )
+    first_piece_only = fragment_canary(marker, 2)[0]
+    check(
+        "FTF-0906-R3-5",
+        "a single piece alone (even the longest prefix-bearing one) is not a leak",
+        not _scan_fragmented(first_piece_only.encode(), marker),
+    )
+
+
 # --- Fault injection (Law 1): mutate the real module, prove each guard is load-bearing. ---
 
 MODULE = ROOT / "packages" / "security" / "egress_capture_verification.py"
@@ -1915,14 +2356,13 @@ MUTATIONS = [
     ),
     (
         "workflow_history not_exercised/partial forcing removed",
-        r'if "workflow_history" in plan\.required_stores and '
-        r'"workflow_history" not in inspected_stores:',
+        r'if "workflow_history" not in inspected_stores:',
         "if False:",
         6,
     ),
     (
         "UNOBSERVABLE-AS-NOT-SEEN: the unobserved-destination branch removed",
-        r'elif dest_log\.outcome == "unobserved":',
+        r'elif dest_log\.outcome == "unobserved" or client_log\.outcome == "unobserved":',
         "elif False:",
         7,
     ),
@@ -1967,6 +2407,8 @@ MUTATIONS = [
 
 
 def test_fault_injection_each_rule_is_load_bearing() -> None:
+    if os.environ.get("FTF0906_SUITE_FAULT") == "1":
+        return  # inside a round-3 fault run: that run must be RED on behaviour alone
     check("FTF-0906-FAULT", "unmutated probe matches baseline", _probe(None) == BASELINE)
     text = MODULE.read_text(encoding="utf-8")
     for description, pattern, replacement, index in MUTATIONS:
@@ -1982,10 +2424,156 @@ def test_fault_injection_each_rule_is_load_bearing() -> None:
         )
 
 
+# Round-3 faults: each is applied to a copy of the real module and this very
+# file is re-run as CI runs it (`python3 tests/tasks/test_ftf_0906.py`) in a
+# fresh subprocess; the suite must exit non-zero (RED) for each of them.
+SUITE_FAULTS = [
+    (
+        "F-HIST: workflow_history made optional again when required_stores omits it",
+        r'if "workflow_history" not in inspected_stores:',
+        'if "workflow_history" in plan.required_stores and '
+        '"workflow_history" not in inspected_stores:',
+    ),
+    (
+        "F-CLIENT-UNOBS: an unobserved client log no longer makes the flow incomplete",
+        r' or client_log\.outcome == "unobserved":',
+        ":",
+    ),
+    (
+        "F-CLIENT-UNOBS-CODE: the client_unobserved code dropped",
+        r'codes\.append\("client_unobserved"\)',
+        "pass",
+    ),
+    (
+        "F5b: dest_inspection.canary_found dropped from `arrived`",
+        r"\n                and dest_inspection\.canary_found\n",
+        "\n",
+    ),
+    (
+        "F9: scope dropped from report_sha256",
+        r'            "scope": scope,\n',
+        "",
+    ),
+    (
+        "F10: inspected_stores dropped from report_sha256",
+        r'            "inspected_stores": list\(inspected_stores\),\n',
+        "",
+    ),
+    (
+        "F10b: codes dropped from report_sha256",
+        r'            "codes": list\(codes\),\n',
+        "",
+    ),
+    (
+        "F10c: not_exercised dropped from report_sha256",
+        r'            "not_exercised": list\(not_exercised\),\n',
+        "",
+    ),
+    (
+        "F29: report.inspected_stores counts uninspected stores",
+        r"inspected_stores_sorted = tuple\(sorted\(inspected_stores\)\)",
+        "inspected_stores_sorted = tuple(\n"
+        "    sorted({i.store for i in evidence.plaintext_inspections}))",
+    ),
+    (
+        "F24: an allow-flow capture canary is no longer canary_leaked",
+        r"\) or \(capture is not None and capture\.canary_found\)\n"
+        r"                if leaked_elsewhere:",
+        ")\n                if leaked_elsewhere:",
+    ),
+    (
+        "F25: policy_digest regex accepts any 64 characters",
+        r'_HEX64_RE = re\.compile\(r"\[0-9a-fA-F\]\{64\}"\)',
+        '_HEX64_RE = re.compile(r".{64}", re.DOTALL)',
+    ),
+    (
+        "F-HASH-PLAN: plan_id dropped from report_sha256",
+        r'            "plan_id": plan_id,\n',
+        "",
+    ),
+    (
+        "F-HASH-STATUS: status dropped from report_sha256",
+        r'            "status": status,\n',
+        "",
+    ),
+    (
+        "F-HASH-DIGEST: policy_digest dropped from report_sha256",
+        r'            "policy_digest": policy_digest,\n',
+        "",
+    ),
+    (
+        "F-FRAG-DROP: the fragmented piece scan removed",
+        r'or \(\n            placement\.encoding == "fragmented" and '
+        r"_fragments_found\(marker, text\)\n        \)",
+        "",
+    ),
+    (
+        "F-FRAG-ANY: any single piece counts as a leak",
+        r"if all\(piece in text for piece in fragment_canary\(marker, parts\)\):",
+        "if any(piece in text for piece in fragment_canary(marker, parts)):",
+    ),
+    (
+        "F-FRAG-RANGE: only 2-way splits are tried",
+        r"tuple\(range\(2, 9\)\)",
+        "(2,)",
+    ),
+    (
+        "F-FRAG-SCOPE: pieces scanned for every encoding, not only fragmented",
+        r'placement\.encoding == "fragmented" and _fragments_found',
+        "_fragments_found",
+    ),
+]
+
+
+def test_round3_faults_turn_this_suite_red() -> None:
+    if os.environ.get("FTF0906_SUITE_FAULT") == "1":
+        return  # already inside a fault run: never recurse
+    original = MODULE.read_bytes()
+    text = original.decode("utf-8")
+    try:
+        for description, pattern, replacement in SUITE_FAULTS:
+            mutated, count = re.subn(pattern, replacement, text, count=1)
+            check("FTF-0906-R3-FAULT", f"fault pattern matches once: {description}", count == 1)
+            if count != 1:
+                continue
+            MODULE.write_text(mutated, encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(Path(__file__).resolve())],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+                env={**os.environ, "FTF0906_SUITE_FAULT": "1"},
+            )
+            check(
+                "FTF-0906-R3-FAULT",
+                f"fault turns the suite RED: {description}",
+                result.returncode != 0,
+            )
+    finally:
+        MODULE.write_bytes(original)
+    check("FTF-0906-R3-FAULT", "module restored byte-identical", MODULE.read_bytes() == original)
+
+
 def main() -> None:
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
+    # The two fault-injection tests re-run this suite in subprocesses: run
+    # them last, and only when everything else is still green (a suite that
+    # is already RED has nothing more to prove, and each mutation-gate
+    # mutant would otherwise pay for ~20 nested runs).
+    heavy = {
+        "test_fault_injection_each_rule_is_load_bearing",
+        "test_round3_faults_turn_this_suite_red",
+    }
+    tests = sorted(
+        (name, fn) for name, fn in globals().items() if name.startswith("test_") and callable(fn)
+    )
+    for name, fn in tests:
+        if name not in heavy:
             fn()
+    if not FAILURES:
+        for name, fn in tests:
+            if name in heavy:
+                fn()
     if FAILURES:
         print(f"FTF-0906 Egress capture/verification tests: {len(FAILURES)} failed")
         for failure in FAILURES:
