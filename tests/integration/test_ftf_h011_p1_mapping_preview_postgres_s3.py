@@ -643,31 +643,69 @@ def main() -> None:
         "CANARY-TYPE-VALUE" in reveal_scan and "CANARY-NESTED-KEY" in reveal_scan,
     )
 
-    # ---- I10: cp1256 ';' CSV, Arabic header on the third record --------------------------
-    arabic_csv = "ملاحظة;سطر\nأخرى;سطر\nسؤال;جواب;سري\nمرحبا;عالم;123\n".encode("cp1256")
+    # ---- I10: ';' CSV with an Arabic header on the third record (UTF-8) -------------------
+    # FTF-0501 finalize refuses a text/csv object that is not UTF-8, so a windows-1256 CSV can
+    # never be stored through the real routes; that decoding is pinned on the real importer in
+    # tests/tasks/test_ftf_h011_p1.py (CP1256-*). Here: the same shape in UTF-8 on real storage,
+    # and the refusal of the cp1256 object itself.
+    arabic_text = "ملاحظة;سطر\nأخرى;سطر\nسؤال;جواب;سري\nمرحبا;عالم;123\n"
     arabic_mapping = ic.mapping_from_object(
         {
             "shape": "prompt_completion",
-            "csv": {
-                "encoding": "windows-1256",
-                "delimiter": ";",
-                "has_header": True,
-                "header_row": 2,
-            },
+            "csv": {"encoding": "utf-8", "delimiter": ";", "has_header": True, "header_row": 2},
             "prompt": {"header": "سؤال"},
             "completion": {"header": "جواب"},
         }
     )
     arabic_dataset = make_dataset(
-        "org1", p1_id, conn1, arabic_csv, "arabic-cp1256", content_type="text/csv"
+        "org1", p1_id, conn1, arabic_text.encode(), "arabic-semicolon", content_type="text/csv"
     )
     arabic_preview = preview(ctx1, p1_id, arabic_dataset.id, arabic_mapping, reveal=True)
     check(
-        f"I10 the cp1256 ';' CSV with its Arabic header on record 3 previews "
+        f"I10 the ';' CSV with its Arabic header on record 3 previews "
         f"({arabic_preview.state}/{arabic_preview.failure_code})",
         arabic_preview.state == "completed"
         and arabic_preview.rows[0].outcome == "accepted"
         and arabic_preview.rows[0].raw_row == {"سؤال": "مرحبا", "جواب": "عالم", "سري": "123"},
+    )
+    cp1256_bytes = arabic_text.encode("cp1256")
+    cp_collection = f"/api/v1/organizations/{org1_id}/projects/{p1_id}/upload-sessions"
+    cp_principal = principals[("org1", "training")]
+    cp_status, cp_created = route(
+        "POST",
+        cp_collection,
+        {
+            "dataset_source_connection_id": str(conn1),
+            "purpose": "training",
+            "declared_size_bytes": len(cp1256_bytes),
+            "declared_sha256": sha(cp1256_bytes),
+            "declared_content_type": "text/csv",
+        },
+        cp_principal,
+    )
+    check(f"I10 cp1256 fixture: create session answers 201 (got {cp_status})", cp_status == 201)
+    cp_status, cp_granted = route(
+        "POST",
+        f"{cp_collection}/{cp_created['id']}/part-urls",
+        {"part_numbers": list(range(1, cp_created["part_count"] + 1))},
+        cp_principal,
+    )
+    for grant in cp_granted["parts"]:
+        size = cp_created["part_size_bytes"]
+        s3lab._put(
+            grant["url"],
+            cp1256_bytes[(grant["part_number"] - 1) * size : grant["part_number"] * size],
+        )
+    cp_status, cp_done = route(
+        "POST",
+        f"{cp_collection}/{cp_created['id']}/finalize",
+        {"dataset_name": "cp1256-refused"},
+        cp_principal,
+    )
+    check(
+        f"I10 a windows-1256 text/csv object is refused at finalize, so it never reaches a "
+        f"preview (got {cp_status} {cp_done})",
+        cp_status != 201 and "id" not in (cp_done if isinstance(cp_done, dict) else {}),
     )
 
     # ---- I11: JSON container pointer -----------------------------------------------------

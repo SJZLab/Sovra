@@ -3059,6 +3059,55 @@ def test_mask_candidate_content_part_shapes_and_key_fidelity() -> None:
     )
 
 
+def test_cp1256_semicolon_csv_arabic_header_on_record_three() -> None:
+    text = "ملاحظة;سطر\nأخرى;سطر\nسؤال;جواب;سري\nمرحبا;عالم;123\nمرحبا\n"
+    data = text.encode("cp1256")
+    mapping = ic.mapping_from_object(
+        {
+            "shape": "prompt_completion",
+            "csv": {
+                "encoding": "windows-1256",
+                "delimiter": ";",
+                "has_header": True,
+                "header_row": 2,
+            },
+            "prompt": {"header": "سؤال"},
+            "completion": {"header": "جواب"},
+        }
+    )
+    result = _preview(data, mapping, verified_content_type="text/csv")
+    check(
+        "CP1256-1",
+        "cp1256 bytes with ';' and the Arabic header on record 3 decode to the real names",
+        result.state == "completed"
+        and result.rows[0].outcome == "accepted"
+        and result.rows[0].raw_row == {"سؤال": "مرحبا", "جواب": "عالم", "سري": "123"},
+    )
+    check(
+        "CP1256-2",
+        "the short last record is a rejected row, not a crash",
+        result.rows[1].outcome == "rejected",
+    )
+    masked = _preview(data, mapping, verified_content_type="text/csv", reveal=False)
+    check(
+        "CP1256-3",
+        "masked: no Arabic header or value survives anywhere in the result",
+        not any(word in _whole(masked) for word in ("سؤال", "جواب", "مرحبا", "عالم")),
+    )
+    probe = rev.run_mapping_probe(
+        reader_for(data),
+        mapping,
+        verified_content_type="text/csv",
+        dataset_sha256=sha(data),
+        reveal=True,
+    )
+    check(
+        "CP1256-4",
+        "the probe reports the decoded Arabic headers",
+        probe.headers == ("سؤال", "جواب", "سري"),
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
