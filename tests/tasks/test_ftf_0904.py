@@ -3291,6 +3291,25 @@ FAULTS: list[tuple[str, str, str, int]] = [
         "and stripped not in _BENIGN_NAMES",
         1,
     ),
+    # round 6 (FTF-0904-F1-r6). Round 5's own hand-picked table never tested a "state"-suffixed
+    # `_BENIGN_NAMES` collision (estate/realestate/upstate/restate all missing), so a narrowed
+    # segment-lookup set survived undetected (`up_StAtE` leaks: line 318's camel split defeats the
+    # last-word check, and the fallback wrongly excuses "upstate" as benign). Confirmed directly:
+    # both mutants below SURVIVE the pre-round-6 test file (all checks pass) and are KILLED by
+    # this round's generated table (388 checks fail).
+    (
+        "F1r6-MY11 segment lookup drops 'state' from the set it checks",
+        "    if raw_segments and raw_segments[-1].lower() in _QUERY_PARAM_NAMES:\n",
+        '    if raw_segments and raw_segments[-1].lower() in (_QUERY_PARAM_NAMES - {"state"}):\n',
+        1,
+    ),
+    (
+        "F1r6-MY12 segment lookup covers only key/code/pass/session",
+        "    if raw_segments and raw_segments[-1].lower() in _QUERY_PARAM_NAMES:\n",
+        "    if raw_segments and raw_segments[-1].lower() in "
+        '{"key", "code", "pass", "session"}:\n',
+        1,
+    ),
 ]
 
 # every name in `_QUERY_PARAM_NAMES` is its own fault: dropping any one must turn a check RED
