@@ -94,6 +94,7 @@ _UUID_TEXT = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 # http.client's own header-value validation as a raw, uncaught ValueError
 # that echoes the key; refused before any header is ever built.
 _UNSAFE_KEY_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+_UNSAFE_API_KEY = re.compile(r"[\x00-\x20\x7f-\x9f]|\s")
 
 
 def _redact(text: str, api_key: str | None) -> str:
@@ -183,7 +184,8 @@ def _require_workspace_name(value: object) -> str:
 
 def _require_role(value: object, allowed: frozenset[str] = ARGILLA_ROLES) -> str:
     if not isinstance(value, str) or value not in allowed:
-        raise ArgillaRejectedError(f"{value!r} is not a recognized Argilla role")
+        # Static: `value` is server-supplied and can echo the caller's key.
+        raise ArgillaRejectedError("response role is not a recognized Argilla role")
     return value
 
 
@@ -292,6 +294,9 @@ class ArgillaTransport:
                 headers=headers,
                 body=payload,
                 timeout=self._timeout,
+                # Total budget for connect + status line + headers: the
+                # per-socket-op `timeout` alone lets a drip hold the call.
+                deadline=self._timeout,
             )
             with stream:
                 status = stream.status
@@ -516,6 +521,10 @@ def _user_of(payload: object, roles: frozenset[str] = ARGILLA_ROLES) -> ArgillaU
         raise ArgillaRejectedError("Argilla returned a malformed user")
     if not isinstance(api_key, str) or not api_key:
         raise ArgillaRejectedError("Argilla returned a user without an api_key")
+    if _UNSAFE_API_KEY.search(api_key):
+        # Whitespace or a control character would corrupt the header it is
+        # later sent in, and the OpenBao write the identity store makes.
+        raise ArgillaRejectedError("Argilla returned an api_key with unsafe characters")
     user_id = _require_uuid_text(payload.get("id"), name="user id")
     role = _require_role(payload.get("role"), roles)
     return ArgillaUser(id=user_id, username=username, role=role, api_key=api_key)
