@@ -181,8 +181,8 @@ def _require_workspace_name(value: object) -> str:
     return value
 
 
-def _require_role(value: object) -> str:
-    if not isinstance(value, str) or value not in ARGILLA_ROLES:
+def _require_role(value: object, allowed: frozenset[str] = ARGILLA_ROLES) -> str:
+    if not isinstance(value, str) or value not in allowed:
         raise ArgillaRejectedError(f"{value!r} is not a recognized Argilla role")
     return value
 
@@ -474,10 +474,7 @@ class ArgillaClient:
             "/users",
             body={"first_name": username, "username": username, "role": role, "password": password},
         )
-        user = _user_of(created)
-        if user.role not in _CREATABLE_ROLES:
-            raise ArgillaRejectedError("Argilla created a user that is not an annotator")
-        return user
+        return _user_of(created, roles=_CREATABLE_ROLES)
 
     def get_user(self, user_id: str) -> ArgillaUser:
         _require_uuid_text(user_id, name="user_id")
@@ -510,7 +507,7 @@ def _workspace_list(payload: Mapping[str, Any]) -> list[ArgillaWorkspace]:
     return [_workspace_of(item) for item in items]
 
 
-def _user_of(payload: object) -> ArgillaUser:
+def _user_of(payload: object, roles: frozenset[str] = ARGILLA_ROLES) -> ArgillaUser:
     if not isinstance(payload, dict):
         raise ArgillaRejectedError("Argilla returned a malformed user")
     username = payload.get("username")
@@ -520,7 +517,7 @@ def _user_of(payload: object) -> ArgillaUser:
     if not isinstance(api_key, str) or not api_key:
         raise ArgillaRejectedError("Argilla returned a user without an api_key")
     user_id = _require_uuid_text(payload.get("id"), name="user id")
-    role = _require_role(payload.get("role"))
+    role = _require_role(payload.get("role"), roles)
     return ArgillaUser(id=user_id, username=username, role=role, api_key=api_key)
 
 

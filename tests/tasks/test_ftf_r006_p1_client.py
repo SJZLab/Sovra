@@ -844,7 +844,7 @@ def test_r2_create_user_annotator_only() -> None:
             )
             and len(stub.seen) == n,
         )
-    for bad in ("admin", "owner"):
+    for bad in ("admin", "owner", "Annotator", "ANNOTATOR", " annotator", "annotator "):
         stub.reply(201, {**USER, "role": bad})
         check(
             "R006P1a-1",
