@@ -9274,6 +9274,7 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
+- 2026-10-20 (FTF-UX01, relay lane C): approve adding `@radix-ui/react-dialog@1.3.1` (+ optionally `@radix-ui/react-progress@1.2.1`) to apps/web/package.json, exact-pinned. §72.1 fixes Radix, but the session's dependency-install guard denied `pnpm add`, so the Dialog (focus trap + return) component is parked.
 - 2026-10-08: FTF-0616 (LLM judge) needs a real judge call through the org LiteLLM gateway for its acceptance clause: a CI secret holding a gateway virtual key, plus the approved judge model id. Until then that clause stays BLOCKED_EXTERNAL; the rest of FTF-0616 continues.
 - 2026-10-07: FTF-04A31 needs a private-repo test credential (or approval to use this repo with `github.token`). See Parked.
 
@@ -10826,6 +10827,10 @@ docs/spec-matrix.yaml. It never invents criteria.)
     - The 25 uncontracted route-verbs are listed as a contract gap.
 
 ## Parked (item-level blockers — relay continues other work; Control plane resolves)
+- **FTF-UX01 Dialog component: PARKED (new runtime dep install denied), 2026-10-20T15:30Z.**
+  - What failed: `pnpm --filter @sovra/web add --save-exact @radix-ui/react-dialog@1.3.1 @radix-ui/react-progress@1.2.1` was denied by the session's untrusted-code-integration guard. Everything else in FTF-UX01 (tokens.css, Button, Field, ErrorSummary, StatusBadge, EmptyState, DataTable, Banner, Breadcrumbs, Pending) shipped in PR `relay/FTF-UX01-r1` with no new deps.
+  - Tried: one install, not retried (no workaround attempted).
+  - Routes: (1) owner approves the two pinned Radix deps, relay adds `Dialog.tsx` + focus-trap/return test; (2) hand-write a focus-trapped dialog (violates §72.1 "Radix primitives"); (3) drop Dialog from UX01 and let UX02 own it.
 - **FTF-H010-P3a round 2: PARKED (relay-policy item-ID regex collapse, false collision), 2026-10-14T07:00Z.**
   - What failed: PR #745 (`relay/FTF-H010-P3a-r2`)'s `ci-verdict` fails on `relay-policy` alone: "item(s)
     FTF-H010 already owned by open PR #742". `scripts/ci_policy.py`'s `ITEM_ID` regex

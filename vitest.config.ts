@@ -11,5 +11,8 @@ export default defineConfig({
       "apps/web/tests/**/*.spec.ts",
     ],
     passWithNoTests: false,
+    // FTF-UX01: the design tokens are read as text (`?raw`) so contrast is computed from the real file;
+    // Vitest blanks every other stylesheet.
+    css: { include: [/styles\/tokens\.css/] },
   },
 });
