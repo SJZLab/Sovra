@@ -45,8 +45,8 @@ connection and no migration can invent one, so the constraint is enforced on eve
 updated row and not re-checked against those legacy rows; the claim refuses such a row
 (`job_invalid`) instead of validating it.
 
-Revision ID: 0030_model_import_validation
-Revises: 0029_artifact_ready_license
+Revision ID: 0031_model_import_validation
+Revises: 0030_dataset_split_manifests
 Create Date: 2026-10-10
 
 Renumbered from 0029 to 0030 (2026-10-13): this migration and 0029_artifact_ready_license
@@ -58,6 +58,19 @@ integration job that runs `alembic upgrade head`. Per QUEUE.md's own serializati
 0029_artifact_ready_license landed on main first, so this migration is renumbered to the
 next free slot and rechained onto it. No schema change: the two migrations touch disjoint
 tables (trainable_artifacts vs. model_import_jobs).
+
+Renumbered again, 0030 to 0031 (2026-10-20): the same fork recurred -- 0030_dataset_split_
+manifests (FTF-0519-P1) was independently claimed off 0029_artifact_ready_license while
+this migration sat as an open draft PR, forking the chain at 0030 once both existed on
+their own branches. 0030_dataset_split_manifests landed on main first, so this migration
+is renumbered again to the next free slot and rechained onto it. Still no schema change:
+0030_dataset_split_manifests touches disjoint tables (dataset_split_manifests and its three
+child tables, plus a new unique constraint on dataset_quality_reports) from this
+migration's own model_import_jobs/model_versions. The real round trip from head now passes
+through two unrelated migrations (0030_dataset_split_manifests, then 0029_artifact_ready_
+license) before reaching 0028's state, so the task and integration tests' own full-rollback
+assertions move from `downgrade -2` to `downgrade -3` -- see test_ftf_h010_p2.py and
+test_ftf_h010_p2_import_validation.py.
 """
 
 from __future__ import annotations
@@ -67,8 +80,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "0030_model_import_validation"
-down_revision = "0029_artifact_ready_license"
+revision = "0031_model_import_validation"
+down_revision = "0030_dataset_split_manifests"
 branch_labels = None
 depends_on = None
 
@@ -319,7 +332,7 @@ def downgrade() -> None:
     ).scalar_one()
     if null_reference_rows:
         raise RuntimeError(
-            "cannot downgrade 0030: endpoint model_versions rows with a NULL endpoint_reference "
+            "cannot downgrade 0031: endpoint model_versions rows with a NULL endpoint_reference "
             "exist and the 0009 constraint cannot hold them (no data is deleted)"
         )
     op.drop_constraint("ck_model_versions_kind_consistency", "model_versions", type_="check")

@@ -66,7 +66,7 @@ from app.model_versions import model_version_schema as version_schema  # noqa: E
 
 CID = "FTF-H010-P2"
 MODULE_PATH = ROOT / "apps" / "api" / "app" / "model_versions" / "model_import_validation.py"
-MIGRATION_PATH = ROOT / "apps" / "api" / "alembic" / "versions" / "0030_model_import_validation.py"
+MIGRATION_PATH = ROOT / "apps" / "api" / "alembic" / "versions" / "0031_model_import_validation.py"
 
 _failures: list[str] = []
 CHECK_COUNT = [0]
@@ -1679,7 +1679,7 @@ def group_h(m: Any, vs: Any = None) -> None:
     )
 
 
-# -- H6: migration 0030's own upgrade()/downgrade() -- the real Postgres round trip is
+# -- H6: migration 0031's own upgrade()/downgrade() -- the real Postgres round trip is
 # tests/integration/test_ftf_h010_p1_model_import.py; this exercises the migration's own Python
 # against a recording fake `op`/bind, the only place this task test can prove `upgrade()` and
 # `downgrade()` actually run their own statements (never a silent no-op) and that `downgrade()`'s
@@ -1747,7 +1747,7 @@ def group_h6_migration() -> None:
         check(
             "H6",
             "the refusal names the reason and deletes no data",
-            "cannot downgrade 0030" in str(exc) and "no data is deleted" in str(exc),
+            "cannot downgrade 0031" in str(exc) and "no data is deleted" in str(exc),
         )
     check(
         "H6",

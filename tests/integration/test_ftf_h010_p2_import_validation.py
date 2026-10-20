@@ -608,11 +608,12 @@ def main() -> None:
         not_valid is True,
     )
 
-    # Two steps back from head: this migration (0030) first, then the unrelated
-    # 0029_artifact_ready_license migration that now sits between it and 0028 on main
-    # (two independent relay sessions each claimed "0029" off 0028; this one was
-    # renumbered to 0030 and rechained, see 0030_model_import_validation.py's own docstring).
-    alembic("downgrade -2", "downgrade", "-2")
+    # Three steps back from head: this migration (0031) first, then the two unrelated
+    # migrations that now sit between it and 0028 on main -- 0030_dataset_split_manifests,
+    # then 0029_artifact_ready_license (each independently claimed off 0028/0029 by a
+    # different relay session; this migration was renumbered twice and rechained each time,
+    # see 0031_model_import_validation.py's own docstring).
+    alembic("downgrade -3", "downgrade", "-3")
     check(
         CID,
         "M: the downgrade restores the 0028 trigger function body byte-identically",
@@ -2344,13 +2345,13 @@ def main() -> None:
     check(
         CID,
         "M: a downgrade with NULL-reference endpoint rows is refused",
-        refused.returncode != 0 and "cannot downgrade 0030" in (refused.stderr + refused.stdout),
+        refused.returncode != 0 and "cannot downgrade 0031" in (refused.stderr + refused.stdout),
     )
     check(
         CID,
-        "M: ... deleted nothing and left the schema at 0030",
+        "M: ... deleted nothing and left the schema at 0031",
         n_after == n_null
-        and "0030_model_import_validation" in current.stdout + current.stderr
+        and "0031_model_import_validation" in current.stdout + current.stderr
         and func_source() == src_0029,
     )
     owner_sql(
@@ -2359,7 +2360,7 @@ def main() -> None:
     owner_sql(
         "DELETE FROM model_versions WHERE import_kind = 'endpoint' AND endpoint_reference IS NULL"
     )
-    alembic("downgrade -2 after removing the NULL-reference rows", "downgrade", "-2")
+    alembic("downgrade -3 after removing the NULL-reference rows", "downgrade", "-3")
     check(
         CID,
         "M: that downgrade restores both definitions byte-identically",
