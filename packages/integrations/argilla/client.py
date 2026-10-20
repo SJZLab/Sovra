@@ -40,14 +40,17 @@ records only. It never calls a dataset/record/response endpoint -- that is
 
 from __future__ import annotations
 
+import http.client
 import json
+import math
 import re
+import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlencode, urlsplit
 
-from packages.security.outbound_guard import OutboundGuardError, guarded_fetch
+from packages.security.outbound_guard import OutboundGuardError, guarded_stream_fetch
 from packages.security.url_policy import ConnectionPolicy, OutboundPolicyError
 
 __all__ = [
@@ -56,6 +59,7 @@ __all__ = [
     "MAX_RESPONSE_BYTES",
     "ArgillaClient",
     "ArgillaClientError",
+    "ArgillaTransport",
     "ArgillaConflictError",
     "ArgillaNotFoundError",
     "ArgillaRejectedError",
@@ -67,6 +71,12 @@ __all__ = [
 
 MAX_RESPONSE_BYTES = 1 * 1024 * 1024
 MAX_PAGE_ITEMS = 10_000
+_READ_CHUNK = 64 * 1024
+_DIGITS = re.compile(r"[0-9]+")
+_CREATABLE_ROLES = frozenset({"annotator"})
+# 408 / 425 / 429 are transient by definition (request timeout, too early,
+# rate limited): the outcome is retryable, not a permanent refusal.
+_TRANSIENT_4XX = frozenset({408, 425, 429})
 _API = "/api/v1"
 
 # `argilla_server.constants.API_KEY_HEADER_NAME`, pinned v2.8.0.
@@ -132,13 +142,23 @@ def _reject_constant(name: str) -> Any:
     raise ArgillaRejectedError(f"non-finite constant {name} in Argilla response")
 
 
+def _reject_float(text: str) -> float:
+    value = float(text)
+    if not math.isfinite(value):
+        raise ArgillaRejectedError("non-finite number in Argilla response")
+    return value
+
+
 def parse_strict_json(raw: bytes) -> dict[str, Any]:
     if len(raw) > MAX_RESPONSE_BYTES:
         raise ArgillaRejectedError("Argilla response exceeds the size bound")
     try:
         text = raw.decode("utf-8")
         parsed = json.loads(
-            text, object_pairs_hook=_reject_duplicate_keys, parse_constant=_reject_constant
+            text,
+            object_pairs_hook=_reject_duplicate_keys,
+            parse_constant=_reject_constant,
+            parse_float=_reject_float,
         )
     except ArgillaRejectedError:
         raise
@@ -161,8 +181,8 @@ def _require_workspace_name(value: object) -> str:
     return value
 
 
-def _require_role(value: object) -> str:
-    if not isinstance(value, str) or value not in ARGILLA_ROLES:
+def _require_role(value: object, allowed: frozenset[str] = ARGILLA_ROLES) -> str:
+    if not isinstance(value, str) or value not in allowed:
         raise ArgillaRejectedError(f"{value!r} is not a recognized Argilla role")
     return value
 
@@ -197,7 +217,8 @@ class ArgillaUser:
     id: str
     username: str
     role: str
-    api_key: str
+    # Never in repr(): a logged user or a list of users must not show a key.
+    api_key: str = field(repr=False)
 
 
 @dataclass(frozen=True)
@@ -206,10 +227,14 @@ class ArgillaWorkspace:
     name: str
 
 
-class ArgillaClient:
-    """REST v1 adapter for one internal Argilla server, authenticated with
-    one caller-supplied API key (the provisioning/"owner" key for identity
-    and workspace management; never a per-annotator key for this client)."""
+class ArgillaTransport:
+    """The one guarded request path to the Argilla server, shared by this
+    client and any later Argilla module (identity store, review mapping):
+    every call is SSRF-checked and address-pinned by `guarded_stream_fetch`,
+    the body is read in bounded chunks (never buffered past the size bound),
+    one total deadline covers connect, headers and body, and every outcome
+    is an `ArgillaClientError` subclass with a message that never carries
+    the API key."""
 
     def __init__(
         self,
@@ -222,16 +247,19 @@ class ArgillaClient:
         parts = urlsplit(base_url)
         if parts.path not in ("", "/") or parts.query or parts.fragment or parts.username:
             raise ValueError("base_url must be scheme://host[:port] only")
-        if not isinstance(timeout, int | float) or isinstance(timeout, bool) or timeout <= 0:
-            raise ValueError("timeout must be a positive number")
+        if (
+            not isinstance(timeout, int | float)
+            or isinstance(timeout, bool)
+            or not math.isfinite(timeout)
+            or timeout <= 0
+        ):
+            raise ValueError("timeout must be a positive finite number")
         self._base = f"{parts.scheme}://{parts.netloc}"
         self._policy = policy
         self._api_key = api_key
         self._timeout = float(timeout)
 
-    # -- transport ---------------------------------------------------------
-
-    def _call(
+    def call(
         self, method: str, path: str, *, query: dict[str, str] | None = None, body: Any = None
     ) -> dict[str, Any]:
         url = self._base + _API + path
@@ -252,9 +280,12 @@ class ArgillaClient:
                 # a static message that never carries the key.
                 raise ArgillaRejectedError("API key contains control characters")
             headers[API_KEY_HEADER_NAME] = self._api_key
+        deadline = time.monotonic() + self._timeout
         failure: ArgillaClientError | None = None
+        status = 0
+        raw = b""
         try:
-            response = guarded_fetch(
+            stream = guarded_stream_fetch(
                 url,
                 self._policy,
                 method=method,
@@ -262,10 +293,19 @@ class ArgillaClient:
                 body=payload,
                 timeout=self._timeout,
             )
+            with stream:
+                status = stream.status
+                raw = self._read_bounded(stream, deadline)
         except OutboundPolicyError as exc:
             failure = ArgillaRejectedError(self._scrub(f"destination denied by policy: {exc}"))
+        except http.client.HTTPException:
+            # IncompleteRead.partial / BadStatusLine / LineTooLong carry raw
+            # server bytes (which can echo the key): a static message only.
+            failure = ArgillaUnavailableError("Argilla sent a malformed HTTP response")
         except (OutboundGuardError, OSError) as exc:
             failure = ArgillaUnavailableError(self._scrub(f"Argilla unreachable: {exc}"))
+        except ArgillaClientError as exc:
+            failure = exc
         except ValueError:
             # Defense in depth for any other transport-level ValueError
             # (e.g. a header built from something other than the key): a
@@ -276,13 +316,46 @@ class ArgillaClient:
             # Raised outside the handler so the original exception (whose
             # text could carry request data) is not chained onto this one.
             raise failure
-        status = response.status
-        if status >= 500:
+        return self._classify(status, raw)
+
+    def _read_bounded(self, stream: Any, deadline: float) -> bytes:
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ArgillaUnavailableError("Argilla response exceeded the call deadline")
+            sock = getattr(stream._connection, "sock", None)
+            if sock is not None:
+                # One total deadline, not one per recv: a server dripping a
+                # byte at a time can never hold the call past `timeout`.
+                sock.settimeout(remaining)
+            chunk = stream.read_chunk(_READ_CHUNK)
+            if not chunk:
+                body = b"".join(chunks)
+                declared = {k.lower(): v for k, v in stream.headers.items()}.get("content-length")
+                if declared is not None and (
+                    not _DIGITS.fullmatch(declared) or int(declared) != len(body)
+                ):
+                    # `read1` reports a short body as plain EOF: a response
+                    # cut off before its declared length is an unknown
+                    # outcome, never a (possibly valid-looking) success.
+                    raise ArgillaUnavailableError("Argilla response was truncated")
+                return body
+            total += len(chunk)
+            if total > MAX_RESPONSE_BYTES:
+                raise ArgillaRejectedError("Argilla response exceeds the size bound")
+            chunks.append(chunk)
+
+    def _classify(self, status: int, raw: bytes) -> dict[str, Any]:
+        if status >= 500 or status < 200:
+            raise ArgillaUnavailableError(f"Argilla returned HTTP {status}")
+        if status in _TRANSIENT_4XX:
             raise ArgillaUnavailableError(f"Argilla returned HTTP {status}")
         if status not in (200, 201):
             detail = ""
             try:
-                detail = self._scrub(_error_detail_text(parse_strict_json(response.body)))
+                detail = self._scrub(_error_detail_text(parse_strict_json(raw)))
             except ArgillaRejectedError:
                 pass
             message = f"Argilla returned HTTP {status}" + (f": {detail}" if detail else "")
@@ -291,14 +364,38 @@ class ArgillaClient:
             if status == 409:
                 raise ArgillaConflictError(message)
             raise ArgillaRejectedError(message)
+        failure: ArgillaClientError
         try:
-            return parse_strict_json(response.body)
+            return parse_strict_json(raw)
         except ArgillaRejectedError as exc:
             failure = ArgillaRejectedError(self._scrub(str(exc)))
         raise failure
 
     def _scrub(self, text: str) -> str:
         return _redact(text, self._api_key)
+
+
+class ArgillaClient:
+    """REST v1 adapter for one internal Argilla server, authenticated with
+    one caller-supplied API key (the provisioning/"owner" key for identity
+    and workspace management; never a per-annotator key for this client).
+    `transport` is the shared guarded request path for later Argilla
+    modules."""
+
+    def __init__(
+        self,
+        base_url: str,
+        policy: ConnectionPolicy,
+        *,
+        api_key: str | None = None,
+        timeout: float = 10.0,
+    ) -> None:
+        self.transport = ArgillaTransport(base_url, policy, api_key=api_key, timeout=timeout)
+
+    def _call(
+        self, method: str, path: str, *, query: dict[str, str] | None = None, body: Any = None
+    ) -> dict[str, Any]:
+        return self.transport.call(method, path, query=query, body=body)
 
     # -- health --------------------------------------------------------
 
@@ -366,7 +463,10 @@ class ArgillaClient:
         in plaintext -- the caller (`argilla_identity_store.py`) must send
         it straight to OpenBao and never persist or log it itself."""
         _require_username(username)
-        _require_role(role)
+        if not isinstance(role, str) or role not in _CREATABLE_ROLES:
+            # Review identities are annotators only; owner/admin are never
+            # created by the Factory (they would out-privilege the sandbox).
+            raise ArgillaRejectedError("only the annotator role may be created")
         if not isinstance(password, str) or not (8 <= len(password) <= 100):
             raise ArgillaRejectedError("password must be 8..100 characters")
         created = self._call(
@@ -374,7 +474,7 @@ class ArgillaClient:
             "/users",
             body={"first_name": username, "username": username, "role": role, "password": password},
         )
-        return _user_of(created)
+        return _user_of(created, roles=_CREATABLE_ROLES)
 
     def get_user(self, user_id: str) -> ArgillaUser:
         _require_uuid_text(user_id, name="user_id")
@@ -386,11 +486,15 @@ class ArgillaClient:
         self._call("DELETE", f"/users/{user_id}")
 
 
-def _workspace_of(payload: Mapping[str, Any]) -> ArgillaWorkspace:
+def _workspace_of(payload: object) -> ArgillaWorkspace:
+    if not isinstance(payload, dict):
+        raise ArgillaRejectedError("Argilla returned a malformed workspace")
     workspace_id = payload.get("id")
     name = payload.get("name")
-    if not isinstance(workspace_id, str) or not isinstance(name, str) or not name:
+    if not isinstance(name, str) or not name:
         raise ArgillaRejectedError("Argilla returned a malformed workspace")
+    _require_uuid_text(workspace_id, name="workspace id")
+    assert isinstance(workspace_id, str)
     return ArgillaWorkspace(id=workspace_id, name=name)
 
 
@@ -400,22 +504,20 @@ def _workspace_list(payload: Mapping[str, Any]) -> list[ArgillaWorkspace]:
         raise ArgillaRejectedError("Argilla returned a malformed workspace list")
     if len(items) > MAX_PAGE_ITEMS:
         raise ArgillaRejectedError("Argilla workspace list exceeds the page bound")
-    return [_workspace_of(item) for item in items if isinstance(item, dict)]
+    return [_workspace_of(item) for item in items]
 
 
-def _user_of(payload: Mapping[str, Any]) -> ArgillaUser:
-    user_id = payload.get("id")
-    username = payload.get("username")
-    role = payload.get("role")
-    api_key = payload.get("api_key", "")
-    if (
-        not isinstance(user_id, str)
-        or not isinstance(username, str)
-        or not username
-        or not isinstance(role, str)
-        or not isinstance(api_key, str)
-    ):
+def _user_of(payload: object, roles: frozenset[str] = ARGILLA_ROLES) -> ArgillaUser:
+    if not isinstance(payload, dict):
         raise ArgillaRejectedError("Argilla returned a malformed user")
+    username = payload.get("username")
+    api_key = payload.get("api_key")
+    if not isinstance(username, str) or not username:
+        raise ArgillaRejectedError("Argilla returned a malformed user")
+    if not isinstance(api_key, str) or not api_key:
+        raise ArgillaRejectedError("Argilla returned a user without an api_key")
+    user_id = _require_uuid_text(payload.get("id"), name="user id")
+    role = _require_role(payload.get("role"), roles)
     return ArgillaUser(id=user_id, username=username, role=role, api_key=api_key)
 
 
@@ -425,4 +527,4 @@ def _user_list(payload: Mapping[str, Any]) -> list[ArgillaUser]:
         raise ArgillaRejectedError("Argilla returned a malformed user list")
     if len(items) > MAX_PAGE_ITEMS:
         raise ArgillaRejectedError("Argilla user list exceeds the page bound")
-    return [_user_of(item) for item in items if isinstance(item, dict)]
+    return [_user_of(item) for item in items]
