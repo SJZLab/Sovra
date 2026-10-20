@@ -189,21 +189,18 @@ def _mask_leaf(value: object) -> object:
     return value
 
 
-def _mask_metadata(metadata: object) -> object:
-    """Metadata keys are the mapping's own names (schema); its values are raw."""
-    if type(metadata) is not dict:
-        return _mask_leaf(metadata)
-    return {key: _mask_leaf(v) for key, v in metadata.items()}
-
-
 def _is_content_part(value: dict[object, object]) -> bool:
-    return value.get("type") in ("text", "json") and set(value) <= {"type", "text", "value"}
+    keys = set(value)
+    kind = value.get("type")
+    return (kind == "text" and keys == {"type", "text"}) or (
+        kind == "json" and keys == {"type", "value"}
+    )
 
 
 def _mask_candidate(candidate: Mapping[str, object] | None) -> Mapping[str, object] | None:
     """The candidate document with every raw-derived string and key masked. The walk follows
     the candidate's own fixed schema; the raw-bearing positions -- a `json` ContentPart's
-    `value`, a tool call's `arguments`, a metadata value -- go through `_mask_leaf`, which masks
+    `value`, a tool call's `arguments` -- go through `_mask_leaf`, which masks
     their keys too. The one disclosed exception: a `ContentPart`'s own `"type"` tag
     (`"text"`/`"json"`, never raw content) stays in clear, on a ContentPart only -- never on any
     other object, so a raw argument named `type` is masked like every other value."""
@@ -218,19 +215,13 @@ def _mask_candidate(candidate: Mapping[str, object] | None) -> Mapping[str, obje
         if type(value) is not dict:
             return value
         if _is_content_part(value):
-            return {
-                key: (v if key == "type" else _mask_leaf(v) if key == "value" else walk(v))
-                for key, v in value.items()
-            }
-        if "metadata" in value and "messages" in value:
-            return {
-                key: (_mask_metadata(item) if key == "metadata" else walk(item))
-                for key, item in value.items()
-            }
-        return {
-            key: (_mask_leaf(v) if key == "arguments" and "name" in value else walk(v))
-            for key, v in value.items()
-        }
+            part: dict[object, object] = {"type": value["type"]}
+            if "text" in value:
+                part["text"] = _mask_leaf(value["text"])
+            else:
+                part["value"] = _mask_leaf(value["value"])
+            return part
+        return {key: (_mask_leaf(v) if key == "arguments" else walk(v)) for key, v in value.items()}
 
     masked = walk(dict(candidate))
     assert isinstance(masked, dict)

@@ -2990,6 +2990,65 @@ def _run_ct(kind: str) -> str:
     return {"jsonl": "application/jsonl", "json": "application/json", "csv": "text/csv"}[kind]
 
 
+def test_mask_candidate_content_part_shapes_and_key_fidelity() -> None:
+    both = rev._mask_candidate({"type": "text", "text": "s1", "value": "s2"})
+    assert both is not None
+    check(
+        "MASKSHAPE-1",
+        "text+value together is not a ContentPart: its 'type' is masked too",
+        _is_masked_marker(both["type"]),
+    )
+    mixed = rev._mask_candidate({"type": "json", "text": "s3"})
+    assert mixed is not None
+    check(
+        "MASKSHAPE-2",
+        "a json-tagged object with a text key is not a ContentPart",
+        _is_masked_marker(mixed["type"]),
+    )
+    json_part = rev._mask_candidate({"type": "json", "value": {"k": "v"}})
+    assert json_part is not None
+    check(
+        "MASKSHAPE-3",
+        "an exact json ContentPart keeps its tag and masks the value's keys",
+        json_part["type"] == "json"
+        and set(json_part) == {"type", "value"}
+        and _is_masked_marker(json_part["value"][0]["key"]),
+    )
+    text_part = rev._mask_candidate({"type": "text", "text": "s4"})
+    assert text_part is not None
+    check(
+        "MASKSHAPE-4",
+        "an exact text ContentPart carries exactly type and text",
+        text_part["type"] == "text"
+        and set(text_part) == {"type", "text"}
+        and _is_masked_marker(text_part["text"]),
+    )
+    odd = rev._mask_candidate(
+        {"Odd Key ": "x", "UPPER": 1, "arguments": {"Q r": "z"}, "nested": {" Sp ": "y"}}
+    )
+    assert odd is not None
+    check(
+        "MASKSHAPE-5",
+        "schema keys are preserved exactly (no strip, no case folding)",
+        set(odd) == {"Odd Key ", "UPPER", "arguments", "nested"} and set(odd["nested"]) == {" Sp "},
+    )
+    check(
+        "MASKSHAPE-6",
+        "an 'arguments' object is masked key and value even without a sibling 'name'",
+        isinstance(odd["arguments"], tuple) and "Q r" not in repr(odd["arguments"]),
+    )
+    check(
+        "MASKSHAPE-7",
+        "a metadata-shaped object's string values are masked",
+        all(
+            _is_masked_marker(v)
+            for v in (rev._mask_candidate({"metadata": {"language": "en"}}) or {})[
+                "metadata"
+            ].values()
+        ),
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
