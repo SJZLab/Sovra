@@ -40,6 +40,7 @@ Run directly: python3 tests/tasks/test_ftf_0512_f1.py
 # ruff: noqa: E501
 from __future__ import annotations
 
+import functools
 import hashlib
 import importlib.util
 import json
@@ -330,13 +331,14 @@ def _glyph_variant_code_points() -> list[tuple[int, str, str]]:
 # --- FTF-0512-F2: meaning-bearing symbols and name-field pins -----------------
 
 
-def _symbol_code_points() -> list[tuple[int, str]]:
+@functools.cache
+def _symbol_code_points() -> tuple[tuple[int, str], ...]:
     """Every Sm/Sc/Sk/So code point, computed from `unicodedata` directly."""
-    return [
+    return tuple(
         (cp, unicodedata.category(chr(cp)))
         for cp in range(0x110000)
         if unicodedata.category(chr(cp)).startswith("S")
-    ]
+    )
 
 
 def _meaning_key(char: str) -> str:
@@ -489,7 +491,8 @@ def run_f2_checks(mod: types.ModuleType, sink: list[str]) -> None:
     # over the repo corpus. New equality must imply old equality (F2 only
     # un-merges), and every un-merged pair must differ in nothing but S*
     # characters (the intended class).
-    differential_violations = _f2_differential(mod)
+    f2_pairs = _f2_pairs(mod)
+    differential_violations = _f2_differential(f2_pairs, mod)
     check(
         "FTF-0512-F2",
         f"F2-DIFFERENTIAL: only symbol-bearing pairs un-merge (first: {differential_violations[:2]})",
@@ -499,7 +502,7 @@ def run_f2_checks(mod: types.ModuleType, sink: list[str]) -> None:
     check(
         "FTF-0512-F2",
         "F2-DIFFERENTIAL: the corpus really contains symbol-only un-merges (the gap was real)",
-        _f2_unmerged_symbol_pairs(mod) > 0,
+        _f2_unmerged_symbol_pairs(f2_pairs, mod) > 0,
         sink,
     )
 
@@ -549,10 +552,23 @@ def _f2_corpus() -> list[str]:
     return _F2_CORPUS_CACHE
 
 
+# The fault replays below re-run every check ~60 times; the repo-corpus
+# differentials then look at every 8th corpus line (the production run, and the
+# hand-written pairs, always see all of it) so the whole file fits the mutation
+# gate's per-command timeout.
+_CORPUS_STRIDE = [1]
+
+
+def _sampled_corpus() -> list[str]:
+    return _f2_corpus()[:: _CORPUS_STRIDE[0]]
+
+
 def _f2_pairs(mod: types.ModuleType) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
     old_to_texts: dict[str, set[str]] = {}
     new_to_old: dict[str, set[str]] = {}
-    for text in _f2_corpus():
+    for text in _sampled_corpus() + [
+        t for _l, a, b in F2_SYMBOL_PAIRS + F2_STILL_EQUAL for t in (a, b)
+    ]:
         try:
             new = mod._normalize_text(text)
         except mod.NormalizedDuplicateDetectionError:
@@ -590,12 +606,14 @@ def _digit_adjacent_punct(text: str, index: int) -> bool:
     )
 
 
-def _f2_differential(mod: types.ModuleType) -> list[str]:
+def _f2_differential(
+    pairs: tuple[dict[str, set[str]], dict[str, set[str]]], mod: types.ModuleType
+) -> list[str]:
     """Two invariants over the corpus: (1) F2 only un-merges -- new-equal
     implies old-equal; (2) symbol-free texts are untouched -- among them
     new-equal and old-equal agree exactly, so every verdict change involves a
     symbol."""
-    old_to_texts, new_to_old = _f2_pairs(mod)
+    old_to_texts, new_to_old = pairs
     violations = [
         f"new-equal pair is old-distinct: {sorted(olds)[:2]}"
         for olds in new_to_old.values()
@@ -608,8 +626,10 @@ def _f2_differential(mod: types.ModuleType) -> list[str]:
     return violations
 
 
-def _f2_unmerged_symbol_pairs(mod: types.ModuleType) -> int:
-    old_to_texts, _ = _f2_pairs(mod)
+def _f2_unmerged_symbol_pairs(
+    pairs: tuple[dict[str, set[str]], dict[str, set[str]]], mod: types.ModuleType
+) -> int:
+    old_to_texts, _ = pairs
     return sum(
         1 for texts in old_to_texts.values() if len({mod._normalize_text(t) for t in texts}) > 1
     )
@@ -629,6 +649,8 @@ F3_PAIRS: list[tuple[str, str, str]] = [
     ("fullwidth digit keeps its percent", "\uff15%", "5"),
     ("fullwidth percent next to a digit", "5\uff05", "5"),
     ("Cf between digit and punctuation is inert", "5\u200b%", "5"),
+    ("non-ASCII decimal digit, mark after", "\u0665%", "\u0665"),
+    ("non-ASCII decimal digit, mark before", "-\u0665", "\u0665"),
     ("sentence-final period after a number", "total 5.", "total 5"),
 ]
 F3_STILL_EQUAL: list[tuple[str, str, str]] = [
@@ -645,14 +667,15 @@ F3_SENTENCE_BEFORE = "pay {}5 now"
 F3_SENTENCE_FAR = "pay a{}b now"
 
 
-def _punctuation_code_points() -> list[str]:
+@functools.cache
+def _punctuation_code_points() -> tuple[str, ...]:
     """Every non-word P* code point, computed from `unicodedata` directly."""
-    return [
+    return tuple(
         chr(cp)
         for cp in range(0x110000)
         if unicodedata.category(chr(cp)).startswith("P")
         and not re.search(r"\w", unicodedata.normalize("NFKC", chr(cp)))
-    ]
+    )
 
 
 def run_f3_checks(mod: types.ModuleType, sink: list[str]) -> None:
@@ -768,7 +791,8 @@ def run_f3_checks(mod: types.ModuleType, sink: list[str]) -> None:
             sink,
         )
 
-    differential_violations = _f3_differential(mod)
+    f3_pairs = _f3_pairs(mod)
+    differential_violations = _f3_differential(f3_pairs, mod)
     check(
         "FTF-0512-F3",
         f"F3-DIFFERENTIAL: only digit-adjacent-punctuation pairs un-merge (first: {differential_violations[:2]})",
@@ -778,7 +802,7 @@ def run_f3_checks(mod: types.ModuleType, sink: list[str]) -> None:
     check(
         "FTF-0512-F3",
         "F3-DIFFERENTIAL: the corpus really contains digit-adjacent un-merges (the gap was real)",
-        _f3_unmerged_pairs(mod) > 0,
+        _f3_unmerged_pairs(f3_pairs, mod) > 0,
         sink,
     )
 
@@ -799,7 +823,7 @@ def _pre_f3_normalize(mod: types.ModuleType, text: str) -> str:
 
 
 def _f3_pairs(mod: types.ModuleType) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
-    corpus = set(_f2_corpus())
+    corpus = set(_sampled_corpus())
     for _label, left, right in F3_PAIRS + F3_STILL_EQUAL:
         corpus.update((left, right))
     old_to_texts: dict[str, set[str]] = {}
@@ -815,10 +839,12 @@ def _f3_pairs(mod: types.ModuleType) -> tuple[dict[str, set[str]], dict[str, set
     return old_to_texts, new_to_old
 
 
-def _f3_differential(mod: types.ModuleType) -> list[str]:
+def _f3_differential(
+    pairs: tuple[dict[str, set[str]], dict[str, set[str]]], mod: types.ModuleType
+) -> list[str]:
     """(1) F3 only un-merges -- new-equal implies old-equal; (2) texts with no
     digit-adjacent P* are untouched -- among them new-equal and old-equal agree."""
-    old_to_texts, new_to_old = _f3_pairs(mod)
+    old_to_texts, new_to_old = pairs
     violations = [
         f"new-equal pair is old-distinct: {sorted(olds)[:2]}"
         for olds in new_to_old.values()
@@ -833,8 +859,10 @@ def _f3_differential(mod: types.ModuleType) -> list[str]:
     return violations
 
 
-def _f3_unmerged_pairs(mod: types.ModuleType) -> int:
-    old_to_texts, _ = _f3_pairs(mod)
+def _f3_unmerged_pairs(
+    pairs: tuple[dict[str, set[str]], dict[str, set[str]]], mod: types.ModuleType
+) -> int:
+    old_to_texts, _ = pairs
     return sum(
         1 for texts in old_to_texts.values() if len({mod._normalize_text(t) for t in texts}) > 1
     )
@@ -1752,7 +1780,11 @@ def test_each_fault_turns_a_check_red() -> None:
         sink: list[str] = []
         variant = _load_fresh(name)
         apply_fault(variant)
-        run_checks(variant, sink)
+        _CORPUS_STRIDE[0] = 8
+        try:
+            run_checks(variant, sink)
+        finally:
+            _CORPUS_STRIDE[0] = 1
         _differential_variant_check(variant, sink)
         check(
             "FTF-0512-F1", f"F1-FAULTS {name}: fault must turn at least one check RED", bool(sink)
