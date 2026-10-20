@@ -8359,7 +8359,7 @@ FTF-0512:
   certification_state: CERTIFIED
   criticality: MUST
   description: Normalized duplicate detector
-  evidence_hash: 2351f53e299dac7cc7c89058b14d885a9030d65c
+  evidence_hash: 244ea3af6ba6e9a65dda0485f271441662b2c10d
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31;
@@ -10580,10 +10580,10 @@ FTF-0905:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0905.py
 FTF-0906:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Egress capture/verification
-  evidence_hash: 870ac7695ea525d0d26c378a3068aad21d3781f4
+  evidence_hash: 12f1102895cee6dd5e300231666ddae42328ead9
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0904,
@@ -10655,7 +10655,7 @@ FTF-0906:
     topology evidence is FTF-H027's own job on top of this one. Not self-certified (Law 4):
     certification_state stays PROVISIONAL / proof_state stays L1-PROVEN pending independent
     Control-plane L2 review.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0906.py
 FTF-0907:
