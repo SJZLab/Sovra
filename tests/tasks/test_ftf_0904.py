@@ -41,6 +41,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -2812,6 +2813,98 @@ def test_f1_round3_value_class_covers_every_admitted_character() -> None:
             )
 
 
+# --- FTF-0904-F2: quoted values after credential names -------------------------------------
+_F2_NAMES = tuple(sorted(lr._QUERY_PARAM_NAMES)) + (
+    "session_key", "mfa_code", "authCode", "re_state", "monkeysession", "access.token_sid",
+)
+_F2_QUOTES = ('"', "'")
+_F2_SEPARATORS = ("=", ": ", ":", " = ", '":  ', "'=")
+_F2_VALUES = (
+    _F1_VALUE,
+    f"a b {_F1_VALUE} c",
+    f"x,y;z&{_F1_VALUE}&w",
+    f"esc\\{{Q}}aped {_F1_VALUE}",
+)
+
+
+def _f2_rows() -> list[tuple[str, str]]:
+    rows: list[tuple[str, str]] = []
+    for name in _F2_NAMES:
+        for spelling in _f3_random_case(name)[::6]:
+            for qch in _F2_QUOTES:
+                for sep in _F2_SEPARATORS:
+                    for value in _F2_VALUES:
+                        body = value.replace("{Q}", qch)
+                        rows.append((f"{spelling}{sep}{qch}{body}{qch}", spelling))
+    return rows
+
+
+_F2_ROWS = _f2_rows()
+
+
+def test_f2_quoted_values_after_credential_names_are_redacted() -> None:
+    """QUOTED-VALUE-CLEAR: `state="v"`, `code='v'`, `session_key="v"`... in every case spelling,
+    both `name=` and `name: ` forms, with escapes and spaces inside the value."""
+    check("FTF-0904-F2", "generated quoted table is large", len(_F2_ROWS) > 2000)
+    for text, spelling in _F2_ROWS:
+        line = f"ctx {text} tail_ok"
+        out = lr.redact_text(line)
+        check("FTF-0904-F2", f"{text!r}: leaked {out!r}", "Zq7Lm2" not in out)
+        check("FTF-0904-F2", f"{text!r}: text around the value lost {out!r}",
+              out.startswith("ctx ") and out.endswith("tail_ok") and spelling[:1] in out)
+
+
+def test_f2_quoted_rows_through_the_logging_path() -> None:
+    for text, _spelling in _F2_ROWS[::7]:
+        with _Harness() as h:
+            logging.getLogger("t").error("%s", text)
+            logging.getLogger("t").error(text)
+            found = leaked([_F1_VALUE], h.outputs())
+        check("FTF-0904-F2", f"{text!r}: logging-path leak {found}", not found)
+
+
+def test_f2_json_object_and_unterminated_quote() -> None:
+    out = lr.redact_text('{"state": "' + _F1_VALUE + '", "user": "bob"}')
+    check("FTF-0904-F2", f"json state leaked {out!r}", _F1_VALUE not in out)
+    check("FTF-0904-F2", f"json neighbour lost {out!r}", '"user": "bob"' in out)
+    out = lr.redact_text('state="' + _F1_VALUE)
+    check("FTF-0904-F2", f"unterminated quote leaked {out!r}", _F1_VALUE not in out)
+    out = lr.redact_text('state="' + _F1_VALUE + '" next="kept" code=\'' + _F1_VALUE + "'")
+    check("FTF-0904-F2", f"two quoted values leaked {out!r}", _F1_VALUE not in out)
+    check("FTF-0904-F2", f"non-credential value lost {out!r}", 'next="kept"' in out)
+
+
+def test_f2_non_credential_quoted_values_survive_and_rule_is_idempotent() -> None:
+    for text in (
+        'message="the state of the art"', "monkey='ripe banana'", 'status: "ok"',
+        "city: 'Riyadh'", 'name="bob"', 'title: "state of play"',
+    ):  # fmt: skip
+        check("FTF-0904-F2", f"over-redacted {text!r}", lr.redact_text(text) == text)
+    for text, _s in _F2_ROWS[::97]:
+        once = lr.redact_text(text)
+        check("FTF-0904-F2", f"not idempotent {text!r}", lr.redact_text(once) == once)
+    # a bare (unquoted) `name: value` stays unredacted: only the quoted form is in scope
+    check("FTF-0904-F2", "bare 'state: ok' changed", lr.redact_text("state: ok") == "state: ok")
+
+
+def test_f2_quoted_scan_is_linear() -> None:
+    for payload in ('state="' * 4000, 'code: "' + "\\" * 20000, "key=" + '"a\\"' * 5000):
+        started = time.perf_counter()
+        lr.redact_text(payload)
+        check("FTF-0904-F2", "quoted scan super-linear", time.perf_counter() - started < 2.0)
+
+
+def test_f2_escaped_quote_inside_a_credential_keyed_quoted_value() -> None:
+    """Same-class sweep: the generic key=value rule ended a quoted value at an escaped quote."""
+    for name in ("password", "token", "api_key", "client_secret"):
+        for q in _F2_QUOTES:
+            for sep in ("=", ": "):
+                text = f"{name}{sep}{q}ab\\{q}cd {_F1_VALUE}{q} after"
+                out = lr.redact_text(text)
+                check("FTF-0904-F2", f"{text!r}: leaked {out!r}", "Zq7Lm2" not in out)
+                check("FTF-0904-F2", f"{text!r}: tail lost {out!r}", out.endswith(" after"))
+
+
 FAULTS: list[tuple[str, str, str, int]] = [
     # --- rules removed one at a time -------------------------------------------------
     ("F01 header rule removed", '    ("header", _HEADER),\n', "", 1),
@@ -3415,6 +3508,41 @@ FAULTS += [
         "QP-VALUE-STOPS-AT-PLUS-PCT",
         '|[^\\s&,;"\'}\\])]++"""',
         '|[^\\s&,;"\'}\\])+%]++"""',
+        1,
+    ),
+]
+
+
+# FTF-0904-F2: each fault removes one protection added this round
+FAULTS += [
+    (
+        "F2-quoted branch disabled",
+        'if match.group("qsep") is not None:',
+        "if False:",
+        1,
+    ),
+    (
+        "F2-unterminated double quote not redacted to end of line",
+        r"""\\++[^\r\n]?)*+"?|'""",
+        r"""\\++[^\r\n]?)*+"|'""",
+        1,
+    ),
+    (
+        "F2-single-quoted values dropped",
+        "|'(?:[^'\\\\\\r\\n]|\\\\++[^\\r\\n]?)*+'?" + '"' * 3,
+        '"' * 3,
+        1,
+    ),
+    (
+        "F2-escaped quote ends the double-quoted value",
+        r""""(?:[^"\\\r\n]|\\++[^\r\n]?)*+"?|'""",
+        r""""[^"\r\n]*+"?|'""",
+        1,
+    ),
+    (
+        "F2-generic key=value quoted value ends at an escaped quote",
+        r"""|"(?:[^"\\\r\n]++|\\++[^\r\n]?)*+"|'""",
+        r"""|"[^"\r\n]*+"|'""",
         1,
     ),
 ]

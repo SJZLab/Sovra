@@ -171,7 +171,10 @@ _SEP = r"""\\*["']?[ \t]*[:=][ \t]*"""
 # `(?<!\\)` on the opening run means only the first backslash of a maximal backslash run can ever
 # start an attempt -- the same "one start per run" fix as the JWT shape below -- so a long,
 # unterminated backslash run (no second quote at all) is one linear scan, not O(n) restarts.
-_QUOTED_VALUE = r'(?<!\\)\\++"(?:[^"\\\r\n]++|\\++(?!"))*+\\+"' r"""|"[^"\r\n]*+"|'[^'\r\n]*+'"""
+_QUOTED_VALUE = (
+    r'(?<!\\)\\++"(?:[^"\\\r\n]++|\\++(?!"))*+\\+"'
+    r"""|"(?:[^"\\\r\n]++|\\++[^\r\n]?)*+"|'(?:[^'\\\r\n]++|\\++[^\r\n]?)*+'"""
+)
 
 _PEM = re.compile(
     r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|\Z)",
@@ -272,7 +275,17 @@ _QUERY_PARAM_NAMES = frozenset(
     }
 )
 # One start per maximal key run (lookbehind) and a possessive run: linear, no restart inside a run.
-_QUERY_ASSIGN = re.compile(r"(?<![\w.\-])(?P<key>[\w.\-]++)(?P<sep>=)")
+# F2: a QUOTED value after a credential name (`state="v"`, `code: 'v'`, JSON `"state": "v"`) is read
+# up to its closing quote (a quote after ANY run of backslashes is escaped, so a JSON-re-encoded
+# `\\"` cannot end it early; an unterminated quote runs to end of line,
+# deny by default). The bare `name: value` form is not a query position and stays unredacted.
+_QUERY_ASSIGN = re.compile(
+    r"""(?<![\w.\-])(?P<key>[\w.\-]++)"""
+    r"""(?:(?P<qsep>["']?[ \t]*[:=][ \t]*)(?=["'])|(?P<sep>=))"""
+)
+_QUOTED_SECRET = re.compile(
+    r""""(?:[^"\\\r\n]|\\++[^\r\n]?)*+"?|'(?:[^'\\\r\n]|\\++[^\r\n]?)*+'?"""
+)
 # `[REDACTED]` is consumed whole (with anything glued to it) so the rule is idempotent: running it
 # over its own output (the logging sink re-redacts the formatted line) never grows the marker.
 _QUERY_VALUE = re.compile(r"""\[REDACTED\][^\s&,;"'}\])]*+|[^\s&,;"'}\])]++""")
@@ -330,7 +343,10 @@ class _QueryParamRule:
         for match in _QUERY_ASSIGN.finditer(text):
             if match.start() < pos or not _is_query_param_name(match.group("key")):
                 continue
-            value = _QUERY_VALUE.match(text, match.end())
+            if match.group("qsep") is not None:
+                value = _QUOTED_SECRET.match(text, match.end())
+            else:
+                value = _QUERY_VALUE.match(text, match.end())
             if value is None:
                 continue
             out.append(text[pos : match.end()])
