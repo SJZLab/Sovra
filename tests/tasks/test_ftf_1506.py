@@ -199,7 +199,7 @@ def test_evaluate_blocks_an_unpatched_critical_finding_with_no_exception() -> No
     evidence = evaluate([_DEP], vulns, [])
     check(
         "FTF-1506",
-        "negative_acceptance: an unpatched CRITICAL finding with no policy " "exception blocks",
+        "negative_acceptance: an unpatched CRITICAL finding with no policy exception blocks",
         evidence.findings_blocking == 1 and evidence.findings[0].blocking is True,
     )
 

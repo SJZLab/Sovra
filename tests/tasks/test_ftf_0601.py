@@ -208,7 +208,7 @@ def test_validate_grading_logic_version() -> None:
     )
     check(
         "FTF-0601",
-        "negative_acceptance: 'unversioned grading logic ... rejected' -- " "None is refused",
+        "negative_acceptance: 'unversioned grading logic ... rejected' -- None is refused",
         _rejects(validate_grading_logic_version, None),
     )
     check(
@@ -239,7 +239,7 @@ def test_validate_grading_logic_version() -> None:
     )
     check(
         "FTF-0601",
-        "the real upper bound itself round-trips unchanged (boundary, not " "off-by-one)",
+        "the real upper bound itself round-trips unchanged (boundary, not off-by-one)",
         validate_grading_logic_version(GRADING_LOGIC_VERSION_MAX) == GRADING_LOGIC_VERSION_MAX,
     )
     check(
@@ -281,7 +281,7 @@ def test_validate_reviewer_id_or_none() -> None:
     )
     check(
         "FTF-0601",
-        "the 200-char length cap applies to the stripped value, not the " "raw padded input",
+        "the 200-char length cap applies to the stripped value, not the raw padded input",
         validate_reviewer_id_or_none(" " + "x" * 200 + " ") == "x" * 200,
     )
 

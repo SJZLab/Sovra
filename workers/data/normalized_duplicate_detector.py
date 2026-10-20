@@ -304,14 +304,21 @@ def _decomposition_tag(char: str) -> str:
 def _fold_action(char: str) -> int:
     if unicodedata.category(char) in _DIGIT_LIKE_CATEGORIES:
         return _FOLD_ISOLATE_VERBATIM
-    if unicodedata.category(char).startswith("S") and any(
+    if unicodedata.category(char)[0] in "SP" and any(
         unicodedata.category(part).startswith("M") for part in unicodedata.normalize("NFKC", char)
     ):
-        # FTF-0512-F2: a spacing diacritic symbol (Sk, e.g. U+00A8 DIAERESIS)
+        # FTF-0512-F2: a spacing diacritic symbol (Sk, e.g. U+00A8 DIAERESIS; F3: or
+        # a P* such as U+203E OVERLINE)
         # folds to SPACE + a combining mark, which the punctuation rule would
         # then strip as non-word -- the symbol would vanish. Keep it verbatim.
         return _FOLD_ISOLATE_VERBATIM
     if not _decomposition_tag(char) or _decomposition_tag(char) in _SAME_CHARACTER_TAGS:
+        return _FOLD_KEEP
+    if all(_PUNCTUATION_PATTERN.fullmatch(part) for part in unicodedata.normalize("NFKC", char)):
+        # FTF-0512-F3: a compat form that folds to punctuation only (U+2011
+        # NON-BREAKING HYPHEN, U+2024 ONE DOT LEADER) cannot fuse with a
+        # neighbour, so it is not spaced out: the punctuation rule must see it
+        # still adjacent to a digit ("\u20115" == "-5").
         return _FOLD_KEEP
     if _decomposition_tag(char) == "<compat>" and unicodedata.category(char).startswith("L"):
         # ligatures and digraphs (ﬁ, ǆ, ĳ, µ): the same letters, spelled differently

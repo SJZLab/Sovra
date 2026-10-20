@@ -112,8 +112,7 @@ def test_pytest_default_convention_file_is_classified_python_test() -> None:
     record = _only(evidence, "src/tests/test_widget.py")
     check(
         "FTF-04A15",
-        "a filename matching pytest's own default 'test_*.py' convention is "
-        "classified python_test",
+        "a filename matching pytest's own default 'test_*.py' convention is classified python_test",
         record.category == "python_test" and evidence.python_test_count == 1,
     )
 
@@ -123,7 +122,7 @@ def test_conftest_py_is_classified_python_test() -> None:
     record = _only(evidence, "src/conftest.py")
     check(
         "FTF-04A15",
-        "conftest.py is classified python_test regardless of its own " "directory location",
+        "conftest.py is classified python_test regardless of its own directory location",
         record.category == "python_test",
     )
 
@@ -133,7 +132,7 @@ def test_underscore_test_suffix_is_classified_python_test() -> None:
     record = _only(evidence, "src/widget_test.py")
     check(
         "FTF-04A15",
-        "a filename matching pytest's own '*_test.py' convention is " "classified python_test",
+        "a filename matching pytest's own '*_test.py' convention is classified python_test",
         record.category == "python_test",
     )
 
@@ -198,7 +197,7 @@ def test_pytest_ini_is_classified_test_framework_config() -> None:
     record = _only(evidence, "pytest.ini")
     check(
         "FTF-04A15",
-        "pytest.ini is recognized as a possible test-framework marker by " "filename only",
+        "pytest.ini is recognized as a possible test-framework marker by filename only",
         record.category == "test_framework_config" and evidence.framework_config_count == 1,
     )
 
@@ -220,7 +219,7 @@ def test_jest_config_is_classified_test_framework_config() -> None:
     record = _only(evidence, "jest.config.ts")
     check(
         "FTF-04A15",
-        "jest.config.ts is recognized as a possible test-framework marker " "by filename only",
+        "jest.config.ts is recognized as a possible test-framework marker by filename only",
         record.category == "test_framework_config",
     )
 
@@ -230,7 +229,7 @@ def test_fixture_json_under_fixtures_dir_is_classified_evaluation_fixture_data()
     record = _only(evidence, "tests/fixtures/customer.json")
     check(
         "FTF-04A15",
-        "a .json file under a fixtures/ directory is classified " "evaluation_fixture_data",
+        "a .json file under a fixtures/ directory is classified evaluation_fixture_data",
         record.category == "evaluation_fixture_data" and evidence.fixture_data_count == 1,
     )
 
@@ -299,7 +298,7 @@ def test_evidence_records_size_bytes_from_source_file_ref_size() -> None:
     record = _only(evidence, "tests/test_widget.py")
     check(
         "FTF-04A15",
-        "size_bytes is read straight from SourceFileRef.size, never from " "reading content",
+        "size_bytes is read straight from SourceFileRef.size, never from reading content",
         record.size_bytes == 1234,
     )
 

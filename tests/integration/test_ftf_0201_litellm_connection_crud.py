@@ -398,8 +398,7 @@ def main() -> None:
         r = _request(base_url, "DELETE", item_path(org2_id, connection_id), principal=org2_admin)
         check(
             "FTF-0201",
-            "negative_acceptance: org2's admin cannot revoke org1's real "
-            "connection either (404)",
+            "negative_acceptance: org2's admin cannot revoke org1's real connection either (404)",
             r.status == 404,
         )
 
@@ -447,8 +446,7 @@ def main() -> None:
         )
         check(
             "FTF-0201",
-            "negative_acceptance: a rejected base_url (tls_verify=false) "
-            "fails on edit too (400)",
+            "negative_acceptance: a rejected base_url (tls_verify=false) fails on edit too (400)",
             r.status == 400,
         )
 
@@ -487,7 +485,7 @@ def main() -> None:
         )
         check(
             "FTF-0201",
-            "acceptance: editing a revoked connection is refused (409), not " "silently applied",
+            "acceptance: editing a revoked connection is refused (409), not silently applied",
             r.status == 409,
         )
 

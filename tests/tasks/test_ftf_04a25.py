@@ -349,7 +349,7 @@ def test_attestation_requires_every_fingerprint_except_retrieval_index() -> None
     )
     check(
         "FTF-04A25",
-        "retrieval_index_fingerprint may legitimately be None (no retrieval " "component)",
+        "retrieval_index_fingerprint may legitimately be None (no retrieval component)",
         _attestation(retrieval_index_fingerprint=None).retrieval_index_fingerprint is None,
     )
     check(
@@ -422,8 +422,7 @@ class _PartialAdapter:
 def test_runtime_adapter_protocol_matches_full_implementation() -> None:
     check(
         "FTF-04A25",
-        "an object implementing all seven Section 66.3 operations satisfies "
-        "RuntimeAdapterProtocol",
+        "an object implementing all seven Section 66.3 operations satisfies RuntimeAdapterProtocol",
         isinstance(_FullAdapter(), RuntimeAdapterProtocol),
     )
 
@@ -559,8 +558,7 @@ def main() -> None:
 
     if FAILURES:
         print(
-            f"FTF-04A25 Production-faithful target-agent harness contract: "
-            f"{len(FAILURES)} failed"
+            f"FTF-04A25 Production-faithful target-agent harness contract: {len(FAILURES)} failed"
         )
         for failure in FAILURES:
             print(f"  {failure}")

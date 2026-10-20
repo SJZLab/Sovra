@@ -3999,9 +3999,11 @@ def test_m15_list_parts_pages_forward_only() -> None:
         )
 
     with _RawS3(
-        lambda r: _xml(_parts_xml([1], truncated="True", marker=1))
-        if r.query.get("part-number-marker") == "0"
-        else _xml(_parts_xml([2], truncated="FALSE", marker=2))
+        lambda r: (
+            _xml(_parts_xml([1], truncated="True", marker=1))
+            if r.query.get("part-number-marker") == "0"
+            else _xml(_parts_xml([2], truncated="FALSE", marker=2))
+        )
     ) as raw:
         got = raw.client().list_parts("b", "k", "u")
         check(

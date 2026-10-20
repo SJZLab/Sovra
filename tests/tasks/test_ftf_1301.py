@@ -338,8 +338,7 @@ def test_crud_uses_real_imported_primitives_not_duplicates() -> None:
     )
     check(
         "FTF-1301",
-        "every fetch authorizes through the real, imported authorize_resource_ownership "
-        "(FTF-H003)",
+        "every fetch authorizes through the real, imported authorize_resource_ownership (FTF-H003)",
         "authorize_resource_ownership(" in crud_source
         and "app.auth.resource_authorization" in crud_source,
     )
@@ -549,8 +548,7 @@ def test_search_endpoint_is_gated_identically() -> None:
         result = _request(
             base_url,
             "GET",
-            f"/api/v1/organizations/{_ORG_ID}/projects/{project_id}"
-            "/costs/cost-per-success/search",
+            f"/api/v1/organizations/{_ORG_ID}/projects/{project_id}/costs/cost-per-success/search",
         )
         check(
             "FTF-1301",

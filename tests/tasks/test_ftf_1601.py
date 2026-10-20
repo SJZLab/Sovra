@@ -573,8 +573,7 @@ def test_restore_backup_reports_valid_for_a_genuinely_complete_restore() -> None
     result = _restore_with_incomplete_metadata(_fake_metadata)
     check(
         "FTF-1601",
-        "restoration_validated is True when the restored state matches "
-        "the original backup exactly",
+        "restoration_validated is True when the restored state matches the original backup exactly",
         result.restoration_validated is True,
     )
 

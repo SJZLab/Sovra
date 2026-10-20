@@ -169,8 +169,7 @@ def build_evidence(results: list[ScenarioResult]) -> TenantIsolationEvidence:
     able to fail" -- there is nothing here that could have failed)."""
     if not results:
         raise TenantIsolationSuiteError(
-            "refusing to build evidence from zero scenario results -- an "
-            "empty suite proves nothing"
+            "refusing to build evidence from zero scenario results -- an empty suite proves nothing"
         )
     kinds = tuple(dict.fromkeys(r.resource_kind for r in results))
     passed = sum(1 for r in results if r.passed)

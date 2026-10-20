@@ -463,9 +463,9 @@ def test_verdict_aggregates_every_job_in_ci_yml():
     block = _jobs_block(text, "ci-verdict")
     needs = set(re.findall(r"^\s+- ([A-Za-z0-9_-]+)\s*$", block.split("steps:")[0], re.M))
     assert needs == set(jobs) - {"ci-verdict"}
-    assert re.search(
-        r"^    if: \$\{\{ !cancelled\(\) \}\}$", block, re.M
-    ), "verdict must run even when jobs fail"
+    assert re.search(r"^    if: \$\{\{ !cancelled\(\) \}\}$", block, re.M), (
+        "verdict must run even when jobs fail"
+    )
 
 
 def test_every_integration_job_is_scope_gated_and_nothing_else_is():

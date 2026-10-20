@@ -343,8 +343,7 @@ def test_construction_enforces_frozen_architecture_invariants() -> None:
     )
     check(
         "FTF-R002",
-        "architecture.schema.json's own invariant: Inspect AI claiming "
-        "existing_gateway is refused",
+        "architecture.schema.json's own invariant: Inspect AI claiming existing_gateway is refused",
         _rejects(
             _make_binding,
             component_key="inspect_ai",
@@ -646,7 +645,7 @@ def test_job_identity_rejects_expired_token() -> None:
     token = sign_worker_job_identity(identity, signing_key=key)
     check(
         "FTF-R002",
-        "a real expired token is refused by verify_worker_job_identity, never " "silently trusted",
+        "a real expired token is refused by verify_worker_job_identity, never silently trusted",
         _rejects(verify_worker_job_identity, token, signing_key=key, now=later),
     )
 

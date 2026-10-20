@@ -282,8 +282,7 @@ def test_doc_names_the_real_certified_modules_and_discloses_unwired_scope():
         )
     check(
         "FTF-1807",
-        "runbook discloses no live route/scheduler caller yet (Law 6/7 -- "
-        "designed is not wired)",
+        "runbook discloses no live route/scheduler caller yet (Law 6/7 -- designed is not wired)",
         "no live" in doc_text.lower() and "not a claim that a live" in doc_text.lower(),
     )
     check(
@@ -313,7 +312,7 @@ def test_revocation_refuses_calls_immediately_independent_of_freshness():
     decision = catalog.is_call_authorized("m1", now=_T0 + timedelta(seconds=3))
     check(
         "FTF-1807",
-        "a revoked connection refuses the same model immediately, well within " "the freshness TTL",
+        "a revoked connection refuses the same model immediately, well within the freshness TTL",
         not decision.authorized and decision.reason is AuthorizationReason.ACCESS_REVOKED,
     )
 
@@ -412,7 +411,7 @@ def test_bounded_retry_ceiling_on_consecutive_transient_failures():
     )
     check(
         "FTF-1807",
-        "the third consecutive transient failure reaches the real 3-attempt " "retry ceiling",
+        "the third consecutive transient failure reaches the real 3-attempt retry ceiling",
         statuses[2] is SyncCycleStatus.RETRY_CEILING_REACHED,
     )
 

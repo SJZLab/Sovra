@@ -86,9 +86,7 @@ def _ref(relative_path: str, content: bytes = b"") -> SourceFileRef:
 
 
 def test_python_bare_tool_decorator_uses_function_name() -> None:
-    content = (
-        b"from mytools import tool\n\n" b"@tool\n" b"def get_order_status():\n" b"    return {}\n"
-    )
+    content = b"from mytools import tool\n\n@tool\ndef get_order_status():\n    return {}\n"
     evidence = run_tool_schema_permission_discovery([_ref("src/tools.py", content)])
     candidate = evidence.candidates[0]
     check(
@@ -151,7 +149,7 @@ def test_function_tool_decorator_name_alias_also_matches() -> None:
     candidate = evidence.candidates[0]
     check(
         "FTF-04A14",
-        "the closed second decorator name @function_tool is also matched, " "the same as @tool",
+        "the closed second decorator name @function_tool is also matched, the same as @tool",
         candidate.tool_name == "list_orders"
         and candidate.side_effect_class.value == "read_only"
         and candidate.requires_confirmation.value is False,
@@ -159,9 +157,7 @@ def test_function_tool_decorator_name_alias_also_matches() -> None:
 
 
 def test_python_attribute_decorator_form_also_matches() -> None:
-    content = (
-        b"import mytools\n\n" b'@mytools.tool(name="ping")\n' b"def ping():\n" b"    return True\n"
-    )
+    content = b'import mytools\n\n@mytools.tool(name="ping")\ndef ping():\n    return True\n'
     evidence = run_tool_schema_permission_discovery([_ref("src/tools.py", content)])
     check(
         "FTF-04A14",
@@ -433,7 +429,7 @@ def test_config_derived_requires_confirmation_key_is_resolved() -> None:
     candidate = evidence.candidates[0]
     check(
         "FTF-04A14",
-        "a closed 'requires_confirmation' config key's real literal " "boolean value is resolved",
+        "a closed 'requires_confirmation' config key's real literal boolean value is resolved",
         candidate.requires_confirmation.resolved is True
         and candidate.requires_confirmation.value is True,
     )
@@ -490,12 +486,7 @@ def test_unrelated_config_key_is_not_treated_as_permission_source() -> None:
 
 
 def test_summary_counts_are_accurate() -> None:
-    content_a = (
-        b"from mytools import tool\n\n"
-        b'@tool(name="tool_a")\n'
-        b"def tool_a():\n"
-        b"    return {}\n"
-    )
+    content_a = b'from mytools import tool\n\n@tool(name="tool_a")\ndef tool_a():\n    return {}\n'
     content_b = b"from mytools import tool\n\n@tool\ndef tool_b():\n    return {}\n"
     evidence = run_tool_schema_permission_discovery(
         [_ref("src/a.py", content_a), _ref("src/b.py", content_b)]

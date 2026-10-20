@@ -468,7 +468,7 @@ def test_fault_injection_unknown_cost_guard():
     target = ROOT / "tools" / "implementation" / "usage_ledger.py"
     original = target.read_text(encoding="utf-8")
 
-    guard_block = "    if any(m.has_unknown_cost() for m in accepted):\n" "        return None\n"
+    guard_block = "    if any(m.has_unknown_cost() for m in accepted):\n        return None\n"
     check(
         "FTF-R016",
         "the unknown-cost guard is present in the real tracked source before fault injection",

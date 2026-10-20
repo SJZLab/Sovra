@@ -392,8 +392,7 @@ def main() -> None:
         print(f"FTF-1503 CSRF suite: {len(failures)} failed")
         for r in failures:
             print(
-                f"  FAIL [FTF-1503] {r.resource_kind}/{r.check}: "
-                f"{r.method} {r.path} -> {r.status}"
+                f"  FAIL [FTF-1503] {r.resource_kind}/{r.check}: {r.method} {r.path} -> {r.status}"
             )
         sys.exit(1)
 

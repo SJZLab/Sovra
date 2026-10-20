@@ -473,8 +473,7 @@ def test_a_real_agent_tool_schema_using_defs_and_ref_survives_the_full_pipeline(
 def test_allowed_keywords_is_the_documented_pinned_vocabulary() -> None:
     check(
         "FTF-0405",
-        "core structural keywords this task's own tests rely on are all in the "
-        "pinned vocabulary",
+        "core structural keywords this task's own tests rely on are all in the pinned vocabulary",
         {"type", "properties", "required", "$ref", "$defs", "additionalProperties"}
         <= ALLOWED_KEYWORDS,
     )

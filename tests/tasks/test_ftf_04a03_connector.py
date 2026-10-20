@@ -344,8 +344,7 @@ def test_get_only_no_request_body() -> None:
     last = REQUEST_LOG[-1]
     check(
         "FTF-04A03",
-        "negative_acceptance: no write scope requested -- the real request was a GET with no "
-        "body",
+        "negative_acceptance: no write scope requested -- the real request was a GET with no body",
         last["method"] == "GET" and last.get("content_length") in (None, "0"),
     )
 
@@ -392,8 +391,7 @@ def test_rate_limit_is_distinguished_from_forbidden() -> None:
         forbidden_raised = not isinstance(exc, listing.GitHubRateLimitExceededError)
     check(
         "FTF-04A03",
-        "acceptance: a real non-rate-limited HTTP 403 is denied as a distinct, non-transient "
-        "error",
+        "acceptance: a real non-rate-limited HTTP 403 is denied as a distinct, non-transient error",
         forbidden_raised,
     )
 
@@ -459,8 +457,7 @@ def test_pagination_parameters_validated_before_any_request() -> None:
             rejected = True
         check(
             "FTF-04A03",
-            f"negative_acceptance: per_page={bad_per_page!r} is refused before any network "
-            "request",
+            f"negative_acceptance: per_page={bad_per_page!r} is refused before any network request",
             rejected,
         )
 

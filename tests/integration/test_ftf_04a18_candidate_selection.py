@@ -644,8 +644,7 @@ def main() -> None:
         confirmation = r.json() if r.status == 201 else {}
         check(
             "FTF-04A18",
-            "the response body names the real candidate/snapshot/actor "
-            "that was actually selected",
+            "the response body names the real candidate/snapshot/actor that was actually selected",
             confirmation.get("candidate_id") == str(candidate_current_id)
             and confirmation.get("target_source_snapshot_id") == str(snapshot_current_id)
             and confirmation.get("selected_by") == f"user-org1-{Role.ORGANIZATION_ADMIN.value}",

@@ -147,8 +147,7 @@ _BRANCHES_PATH = (
     f"/api/v1/organizations/{_ORG_ID}/projects/{_PROJECT_ID}/target-connections/github-branches"
 )
 _RESOLVE_PATH = (
-    f"/api/v1/organizations/{_ORG_ID}/projects/{_PROJECT_ID}"
-    "/target-connections/github-resolve-ref"
+    f"/api/v1/organizations/{_ORG_ID}/projects/{_PROJECT_ID}/target-connections/github-resolve-ref"
 )
 
 

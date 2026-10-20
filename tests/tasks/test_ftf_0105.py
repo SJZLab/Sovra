@@ -209,13 +209,13 @@ def test_tenant_scoped_session_rejects_non_uuid_organization_id() -> None:
             pass
         check(
             "FTF-0105",
-            "a string organization_id (not a real uuid.UUID) is refused, " "never silently coerced",
+            "a string organization_id (not a real uuid.UUID) is refused, never silently coerced",
             False,
         )
     except TenantContextError:
         check(
             "FTF-0105",
-            "a string organization_id (not a real uuid.UUID) is refused, " "never silently coerced",
+            "a string organization_id (not a real uuid.UUID) is refused, never silently coerced",
             True,
         )
 

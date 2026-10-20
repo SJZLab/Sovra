@@ -264,8 +264,7 @@ def test_happy_path_lists_and_previews_real_objects() -> None:
     )
     check(
         "FTF-0500B",
-        "a plain single-part ETag is disclosed as looking like a content hash (informational "
-        "only)",
+        "a plain single-part ETag is disclosed as looking like a content hash (informational only)",
         result.objects[0].etag_looks_like_content_hash is True,
     )
     check(
@@ -1410,8 +1409,7 @@ def test_non_integer_size_is_refused() -> None:
         raised = True
     check(
         "FTF-0500B",
-        "negative_acceptance: a non-integer <Size> is refused with this module's own error "
-        "class",
+        "negative_acceptance: a non-integer <Size> is refused with this module's own error class",
         raised,
     )
 

@@ -539,8 +539,7 @@ def main() -> None:
         r = _request(base_url, "POST", validate_path(org1_id, connected_id), principal=org1_admin)
         check(
             "FTF-0203",
-            "acceptance: a revoked connection is refused validation (409), "
-            "never silently dialed",
+            "acceptance: a revoked connection is refused validation (409), never silently dialed",
             r.status == 409,
         )
 

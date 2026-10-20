@@ -752,7 +752,7 @@ def test_membership_admin_cli_behaviour() -> None:
     fake_session = _FakeSession(lambda sql, params: _FakeResult(rowcount=1))
     saved_ce, saved_sm = cli.create_engine, cli.sessionmaker
     cli.__dict__["create_engine"] = lambda url: _Engine()
-    cli.__dict__["sessionmaker"] = lambda bind: (lambda: fake_session)
+    cli.__dict__["sessionmaker"] = lambda bind: lambda: fake_session
     os.environ["SOVRA_DATABASE_URL"] = "postgresql+psycopg://migrate@localhost/none"
     try:
         with contextlib.redirect_stdout(io.StringIO()):

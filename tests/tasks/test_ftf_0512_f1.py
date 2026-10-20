@@ -573,6 +573,14 @@ def _strip_symbols(text: str) -> str:
     )
 
 
+def _is_plain(text: str) -> bool:
+    """No S* symbol and no digit-adjacent P* once Cf is stripped and NFKC folded."""
+    prepared = unicodedata.normalize(
+        "NFKC", "".join(c for c in text if unicodedata.category(c) != "Cf")
+    )
+    return _strip_symbols(prepared) == prepared
+
+
 def _digit_adjacent_punct(text: str, index: int) -> bool:
     char = text[index]
     if not unicodedata.category(char).startswith("P") or re.match(r"\w", char):
@@ -594,7 +602,7 @@ def _f2_differential(mod: types.ModuleType) -> list[str]:
         if len(olds) > 1
     ]
     for texts in old_to_texts.values():
-        symbol_free = [t for t in texts if _strip_symbols(t) == t]
+        symbol_free = [t for t in texts if _is_plain(t)]
         if len({mod._normalize_text(t) for t in symbol_free}) > 1:
             violations.append(f"symbol-free texts un-merged: {sorted(symbol_free)[:2]}")
     return violations
@@ -642,7 +650,8 @@ def _punctuation_code_points() -> list[str]:
     return [
         chr(cp)
         for cp in range(0x110000)
-        if unicodedata.category(chr(cp)).startswith("P") and not re.match(r"\w", chr(cp))
+        if unicodedata.category(chr(cp)).startswith("P")
+        and not re.search(r"\w", unicodedata.normalize("NFKC", chr(cp)))
     ]
 
 
@@ -673,17 +682,21 @@ def run_f3_checks(mod: types.ModuleType, sink: list[str]) -> None:
     baseline = {
         "after": n(F3_SENTENCE_AFTER.format("")),
         "before": n(F3_SENTENCE_BEFORE.format("")),
-        "far": n(F3_SENTENCE_FAR.format("")),
+        "far": n(F3_SENTENCE_FAR.format(" ")),
     }
     erased: list[str] = []
     leaked: list[str] = []
-    by_form: dict[str, set[str]] = {}
+    by_form: dict[tuple[str, str], set[str]] = {}
     for char in points:
-        for side, template in (("after", F3_SENTENCE_AFTER), ("before", F3_SENTENCE_BEFORE)):
+        image = unicodedata.normalize("NFKC", char)
+        for side, template, edge in (
+            ("after", F3_SENTENCE_AFTER, image[0]),
+            ("before", F3_SENTENCE_BEFORE, image[-1]),
+        ):
             form = n(template.format(char))
             if form == baseline[side]:
                 erased.append(f"{side}:{ord(char):#x}")
-            by_form.setdefault(form, set()).add(char)
+            by_form.setdefault((form, edge), set()).add(char)
         if n(F3_SENTENCE_FAR.format(char)) != baseline["far"]:
             leaked.append(f"far:{ord(char):#x}")
     check(
@@ -698,11 +711,13 @@ def run_f3_checks(mod: types.ModuleType, sink: list[str]) -> None:
         not leaked,
         sink,
     )
-    merged = [
-        sorted(hex(ord(c)) for c in chars)[:4]
-        for chars in by_form.values()
-        if len({unicodedata.normalize("NFKC", c) for c in chars}) > 1
-    ]
+    # marks that fold to the same character next to the digit may share a form;
+    # two marks whose digit-side characters differ must not (an oracle that is
+    # independent of the detector: the NFKC image's edge character)
+    forms_by_edge: dict[str, set[str]] = {}
+    for (form, edge), _chars in by_form.items():
+        forms_by_edge.setdefault(form, set()).add(edge)
+    merged = [form for form, edges in forms_by_edge.items() if len(edges) > 1]
     check(
         "FTF-0512-F3",
         f"F3-PUNCT-TABLE: distinct marks next to a digit never merge (first: {merged[:3]}, {len(merged)} groups)",
@@ -783,10 +798,6 @@ def _pre_f3_normalize(mod: types.ModuleType, text: str) -> str:
     return re.sub(r"\s+", " ", spaced).strip()
 
 
-def _strip_digit_punct(text: str) -> str:
-    return "".join(c for i, c in enumerate(text) if not _digit_adjacent_punct(text, i))
-
-
 def _f3_pairs(mod: types.ModuleType) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
     corpus = set(_f2_corpus())
     for _label, left, right in F3_PAIRS + F3_STILL_EQUAL:
@@ -814,7 +825,7 @@ def _f3_differential(mod: types.ModuleType) -> list[str]:
         if len(olds) > 1
     ]
     for texts in old_to_texts.values():
-        plain = [t for t in texts if _strip_digit_punct(t) == t]
+        plain = [t for t in texts if _is_plain(t)]
         if len({mod._normalize_text(t) for t in plain}) > 1:
             violations.append(
                 f"texts without digit-adjacent punctuation un-merged: {sorted(plain)[:2]}"

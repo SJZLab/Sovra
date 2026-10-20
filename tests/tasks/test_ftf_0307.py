@@ -984,8 +984,7 @@ def test_fault_injection_registered_artifact_treated_as_ready_is_caught() -> Non
         '    "ready": ArtifactAvailability.READY,\n'
     )
     replacement = (
-        '    "registered": ArtifactAvailability.READY,\n'
-        '    "ready": ArtifactAvailability.READY,\n'
+        '    "registered": ArtifactAvailability.READY,\n    "ready": ArtifactAvailability.READY,\n'
     )
     probe_script = (
         _FAULT_PRELUDE

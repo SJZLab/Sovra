@@ -362,7 +362,7 @@ def main() -> None:
         )
         check(
             "FTF-0402",
-            "an unrecognized security_profile name is refused (400), never " "silently accepted",
+            "an unrecognized security_profile name is refused (400), never silently accepted",
             r.status == 400,
         )
 
@@ -389,7 +389,7 @@ def main() -> None:
         air_gapped_project = r.json() if r.status == 201 else {}
         check(
             "FTF-0402",
-            "the created project's real, persisted security_profile is " "genuinely 'air_gapped'",
+            "the created project's real, persisted security_profile is genuinely 'air_gapped'",
             air_gapped_project.get("security_profile") == "air_gapped",
         )
         air_gapped_project_id = air_gapped_project.get("id")
