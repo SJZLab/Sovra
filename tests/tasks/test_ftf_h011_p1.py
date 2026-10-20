@@ -2876,6 +2876,119 @@ def test_no_socket_and_no_eval_compile_in_the_preview_path() -> None:
     )
 
 
+# --- OBSERVER-DIFF at importer level (round 3) ---------------------------------------------
+
+
+def _mutating_observer(row: object, headers: object) -> None:
+    """Deep mutation of everything the tap is handed: nested lists/objects cleared, keys added."""
+
+    def wreck(value: object) -> None:
+        if isinstance(value, dict):
+            for inner in list(value.values()):
+                wreck(inner)
+            value.clear()
+            value["WRECKED"] = "x"
+        elif isinstance(value, list):
+            for inner in list(value):
+                wreck(inner)
+            value.clear()
+
+    wreck(row)
+
+
+def _run_importer(kind: str, mapping: ic.ImportMapping, data: bytes):
+    from workers.data import csv_importer, json_importer, jsonl_importer
+
+    accepted: list[object] = []
+    common = {
+        "verified_content_type": {
+            "jsonl": "application/jsonl",
+            "json": "application/json",
+            "csv": "text/csv",
+        }[kind],
+        "dataset_purpose": "training",
+    }
+    runner = {
+        "jsonl": jsonl_importer.run_jsonl_import,
+        "json": json_importer.run_json_import,
+        "csv": csv_importer.run_csv_import,
+    }[kind]
+    outcome = runner(
+        reader_for(data),
+        mapping,
+        expected_sha256=sha(data),
+        on_accepted=lambda c: accepted.append(json.loads(json.dumps(c))),
+        **common,
+    )
+    return outcome.report, accepted
+
+
+def test_importer_level_observer_differential_across_jsonl_json_csv() -> None:
+    messages = (
+        '{"messages": [{"role": "user", "content": "q1", "extra": {"k": [1, 2]}}, '
+        '{"role": "assistant", "content": "a1"}]}'
+    )
+    bad = '{"messages": [{"role": "nobody", "content": "q"}]}'
+    jsonl = f"{messages}\n{bad}\n{messages}\n".encode()
+    json_doc = f"[{messages}, {bad}, {messages}]".encode()
+    json_mapping = ic.mapping_from_object(
+        {
+            "shape": "messages_json",
+            "json": {"container": "", "ignored_top_level_keys": []},
+            "messages": {"key": "messages"},
+            "role_key": "role",
+            "content_key": "content",
+            "role_map": {"user": "user", "assistant": "assistant"},
+            "on_unmapped_message_keys": "ignore",
+        }
+    )
+    jsonl_mapping = ic.mapping_from_object(
+        {
+            "shape": "messages_json",
+            "messages": {"key": "messages"},
+            "role_key": "role",
+            "content_key": "content",
+            "role_map": {"user": "user", "assistant": "assistant"},
+            "on_unmapped_message_keys": "ignore",
+        }
+    )
+    csv_data = b"q,a\np1,c1\n,c2\np3,c3\n"
+    cases = (
+        ("jsonl", jsonl_mapping, jsonl),
+        ("json", json_mapping, json_doc),
+        ("csv", CSV_PROMPT_COMPLETION, csv_data),
+    )
+    for kind, mapping, data in cases:
+        plain_report, plain_accepted = _run_importer(kind, mapping, data)
+        tapped = dataclasses.replace(mapping, row_observer=_mutating_observer)
+        tapped_report, tapped_accepted = _run_importer(kind, tapped, data)
+        check(
+            f"OBSDIFF-{kind}-1",
+            "the import ran and accepted and rejected rows (the fixture is not vacuous)",
+            plain_report.records_accepted == 2 and plain_report.records_rejected == 1,
+        )
+        check(
+            f"OBSDIFF-{kind}-2",
+            "report_sha256 is identical with a nested-mutating observer attached",
+            tapped_report.report_sha256 == plain_report.report_sha256,
+        )
+        check(
+            f"OBSDIFF-{kind}-3",
+            "every accepted candidate is identical with the observer attached",
+            tapped_accepted == plain_accepted and len(plain_accepted) == 2,
+        )
+        check(
+            f"OBSDIFF-{kind}-4",
+            "the preview over the same source reports the same accepted/rejected split",
+            _preview(data, mapping, verified_content_type=_run_ct(kind)).counts["accepted"]
+            == plain_report.records_accepted,
+        )
+
+
+def _run_ct(kind: str) -> str:
+    return {"jsonl": "application/jsonl", "json": "application/json", "csv": "text/csv"}[kind]
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
