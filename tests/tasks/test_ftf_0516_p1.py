@@ -596,16 +596,16 @@ def _full_runs(clean: bool = False, drop: tuple[str, ...] = ()) -> list[Detector
         ]
     )
     record_schema = validate_record_batch(batch)
-    assert record_schema.is_clean, (
-        f"test fixture itself failed real FTF-0508 validation: {record_schema.issues!r}"
-    )
+    assert (
+        record_schema.is_clean
+    ), f"test fixture itself failed real FTF-0508 validation: {record_schema.issues!r}"
     tool_arguments = validate_tool_calls(
         [], locked_manifest={}, current_tool_versions={}, instance_validator=None
     )
     tokenization = analyze_tokenization(batch, tokenizer=_REAL_TOKENIZER, max_sequence_length=4096)
-    assert tokenization.certifies_training_fit, (
-        f"test fixture itself failed real FTF-0510 tokenization: {tokenization.issues!r}"
-    )
+    assert (
+        tokenization.certifies_training_fit
+    ), f"test fixture itself failed real FTF-0510 tokenization: {tokenization.issues!r}"
     reports: dict[str, object] = {
         "record_schema": record_schema,
         "tool_arguments": tool_arguments,
