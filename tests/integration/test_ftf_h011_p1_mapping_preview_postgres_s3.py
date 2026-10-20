@@ -32,7 +32,9 @@ import hashlib
 import http.client
 import importlib.util
 import json
+import socket
 import sys
+import threading
 import urllib.parse
 import uuid
 from datetime import UTC, datetime
@@ -68,8 +70,8 @@ HERE = Path(__file__).resolve().parent
 MIB = 1024**2
 
 
-def _load(name: str) -> Any:
-    spec = importlib.util.spec_from_file_location(name[:-3], HERE / name)
+def _load(name: str, directory: Path = HERE) -> Any:
+    spec = importlib.util.spec_from_file_location(name[:-3], directory / name)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -79,6 +81,9 @@ def _load(name: str) -> Any:
 
 p1 = _load("test_ftf_0501_p1_dataset_uploads.py")
 s3lab = _load("test_ftf_0501_direct_upload_s3.py")
+# The pure suite's own META-LEAK helper (root logging at DEBUG, warnings, stdout, stderr), reused
+# here so the same channels are captured around the real service, not a second copy of it.
+unit = _load("test_ftf_h011_p1.py", HERE.parent / "tasks")
 
 
 def check(description: str, condition: bool) -> None:
@@ -128,6 +133,50 @@ CSV_PROMPT_COMPLETION = ic.mapping_from_object(
         "completion": {"header": "a"},
     }
 )
+
+
+def _allowed_endpoints(*pairs: tuple[str, int]) -> set[tuple[str, int]]:
+    """Every (host, port) the preview path may talk to, plus the addresses those names resolve to
+    (a connect event carries the resolved address, never the configured name)."""
+    allowed: set[tuple[str, int]] = set()
+    for host, port in pairs:
+        allowed.add((host, port))
+        for info in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM):
+            allowed.add((info[4][0], info[4][1]))
+    return allowed
+
+
+def _audited(fn: Any, allowed: set[tuple[str, int]]) -> tuple[list[Any], list[str]]:
+    """Runs `fn` once unhooked (warms every lazy import and cache: the first call is not the
+    steady-state preview path), then again under an audit hook confined to this thread. Returns
+    (network events outside `allowed`, compile/exec events)."""
+    fn()
+    me = threading.get_ident()
+    hosts = {host for host, _port in allowed}
+    active = [True]
+    outside: list[Any] = []
+    code: list[str] = []
+
+    def hook(event: str, args: tuple[Any, ...]) -> None:
+        if not active[0] or threading.get_ident() != me:
+            return
+        if event in ("socket.connect", "socket.sendto"):
+            address = args[1]
+            endpoint = tuple(address[:2]) if isinstance(address, tuple) else address
+            if endpoint not in allowed:
+                outside.append((event, endpoint))
+        elif event in ("socket.getaddrinfo", "socket.gethostbyname"):
+            if args[0] not in hosts:
+                outside.append((event, args[0]))
+        elif event in ("compile", "exec"):
+            code.append(event)
+
+    sys.addaudithook(hook)
+    try:
+        fn()
+    finally:
+        active[0] = False
+    return outside, code
 
 
 def main() -> None:
@@ -780,6 +829,77 @@ def main() -> None:
         f"I7b the probe also detects the real overwrite (got {overwritten_probe.state}/"
         f"{overwritten_probe.failure_code})",
         overwritten_probe.state == "failed" and overwritten_probe.failure_code == "source_changed",
+    )
+
+    # ---- I13: the REAL service, not the pure path, opens no foreign socket, runs no
+    # eval/exec and leaks no raw row into any side channel (F14 / R16 / R18) ---------------------
+    allowed = _allowed_endpoints(
+        (endpoint.host, endpoint.port),
+        (str(app_engine.url.host), int(app_engine.url.port or 5432)),
+    )
+    counting = CountingClient(client)
+    audited_results: list[Any] = []
+
+    def real_service() -> None:
+        audited_results.clear()
+        audited_results.append(
+            preview(ctx1, p1_id, train.id, PROMPT_COMPLETION, reveal=True, storage_client=counting)
+        )
+        audited_results.append(
+            probe(ctx1, p1_id, train.id, probe_mapping, reveal=True, storage_client=counting)
+        )
+
+    outside, code = _audited(real_service, allowed)
+    check(
+        "I13 fixture: the audited real calls completed against real storage "
+        f"({[getattr(r, 'state', None) for r in audited_results]})",
+        len(audited_results) == 2
+        and all(r.state == "completed" for r in audited_results)
+        and any(name == "stream_object_windows" for name, _args in counting.calls),
+    )
+    check(
+        f"I13 F14 the real service opens a socket only to the storage endpoint and the DB: "
+        f"{outside}",
+        outside == [],
+    )
+    check(
+        f"I13 R16 the real service executes no compile/exec/eval after warm-up: {code}",
+        code == [],
+    )
+
+    def positive_control() -> None:
+        sock = socket.socket()
+        sock.settimeout(0.05)
+        with contextlib.suppress(OSError):
+            sock.connect(("203.0.113.9", 80))
+        sock.close()
+        eval("1 + 1")  # noqa: S307 - positive control for the audit hook
+
+    control_outside, control_code = _audited(positive_control, allowed)
+    check(
+        "I13 positive control: the same hook sees a connect to 203.0.113.9:80 and an eval "
+        f"({control_outside}, {control_code})",
+        ("socket.connect", ("203.0.113.9", 80)) in control_outside and "compile" in control_code,
+    )
+
+    needles = ("question 0", "answer 0", "1-2-3")
+    leaks = {n: unit._meta_leaks(real_service, n) for n in needles}
+    check(
+        f"I13 R18 no raw row text reaches logging/warnings/stdout/stderr from the real "
+        f"service: {leaks}",
+        all(found == [] for found in leaks.values()),
+    )
+
+    def logged_control() -> None:
+        import logging
+
+        logging.getLogger("h011").warning("question 0 logged by the service")
+        print("answer 0 printed")
+
+    check(
+        "I13 positive control: the shared META-LEAK helper sees a logged and a printed raw value",
+        set(unit._meta_leaks(logged_control, "question 0")) == {"logging"}
+        and set(unit._meta_leaks(logged_control, "answer 0")) == {"stdout"},
     )
 
     # ---- I6: storage outage before the first real read -------------------------------------
