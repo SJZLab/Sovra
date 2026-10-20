@@ -38,7 +38,9 @@ src = ["apps/api", "workers/training", "workers/evaluation", "workers/data", "wo
 # own Section 86 helper (FINE_TUNING_FACTORY_RELEASE_1.md) — excluded from both
 # lint and format so it stays byte-for-byte identical to that source rather
 # than being reformatted or rewritten to satisfy line-length/lambda rules.
-extend-exclude = ["tools/r1_handoff.py"]
+# .claude/skills/ui-ux-pro-max is vendored third-party code (MIT, pinned upstream commit - see its
+# VENDORED.md), kept identical to upstream; it is a dev-time design reference, not product code.
+extend-exclude = ["tools/r1_handoff.py", ".claude/skills/ui-ux-pro-max"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
@@ -50,7 +52,7 @@ warn_redundant_casts = true
 ignore_missing_imports = true
 # tools/r1_handoff.py: see the matching ruff per-file-ignore note above — kept
 # byte-identical to the master spec's own Section 86, not type-annotated here.
-exclude = ["\\.venv/", "^tools/r1_handoff\\.py$"]
+exclude = ["\\.venv/", "^tools/r1_handoff\\.py$", "^\\.claude/skills/ui-ux-pro-max/"]
 
 [tool.uv]
 package = false

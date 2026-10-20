@@ -11836,3 +11836,69 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   history lane never opens tar.gz/.gz; 16/55 faults GREEN (F16/F17/F18 among them); live lane has no startup-line check,
   no positive control, shared access key; no seeded recall in main(); quadratic whole-line matchers. Round 5 produced by
   the Control plane (owner-approved), certified by a separate session. Stopping rule set.
+
+## 2026-10-20T04:45Z — Control plane: 6 equivalent mutants allowlisted (BLOCKER.md 2026-10-19T09:10Z resolved)
+- **mutation-allowlist.yaml +6 (Law 9, reviewed at L2):** PR #869 (FTF-0519-P2) M9 at
+  dataset_split_manifest_routes.py:304/387/446/512 (`exc.code` from the fixed lowercase CODES tuple, every raise a
+  literal; `action` only "approve"/"reject"); PR #742 (FTF-H010-P2) M9 at model_import_validation.py:382/383
+  (constant "succeeded"; SQLAlchemy Dialect.name). Each line-pinned. No test weakened, no other entry changed.
+
+## 2026-10-20T04:45Z — CERTIFIED (child slice): FTF-0512-F2; FTF-0512 requalified
+- **FTF-0512-F2: CERTIFIED (L2)** (round 1; PR #861, merge 244ea3af6ba6e9a65dda0485f271441662b2c10d, head a6c23d30). Producer
+  session_01KWYe2dN24HXcnsE8qH9Mym ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI: 78/78 success, ci-verdict
+  116969942228; gate 116899537775 "FTF-0512-F1 look-alike gaps: all checks passed" (holds run_f2_checks) on 3.12 and
+  3.11; 0512/0513/0515/0518/0516-P1 passed; mutation-gate 17/17. Local: all six suites + 0516-P1 integration on PG16.
+  Probes: 7,741 Sm/Sc/Sk/So code points x 10 contexts - 0 erased (6,847 before), Sm x Sc 59,724 pairs 0 collisions;
+  220 compatibility variants still merge; named pairs distinct, P*/case/space still merge; 25 name-field variants x 3
+  fields 0 collapsed; detector_version 4; corpus 338k texts 0 new merges; FTF-0518 positive controls hold. Faults 25/26
+  RED (G20 NFC-only name fold GREEN, production correct - pinned in F3); FTF-0518 certification faults 31/34 (unchanged).
+- **FTF-0512: stays CERTIFIED**, evidence_hash -> 244ea3af6ba6e9a65dda0485f271441662b2c10d (Law 15). Follow-up FTF-0512-F3: digit-adjacent P* ("-5" == "5",
+  "5%" == "5", "#1" == "1") merges distinct outcomes; NFC/NFD name pin; proving_test to include test_ftf_0512_f1.py.
+
+## 2026-10-20T04:45Z — RETURNED: FTF-R006-P1a (r1); FTF-R006-P1 split
+- **FTF-R006-P1a: RETURNED** (client-only sub-slice of FTF-R006-P1; round 1 → 2; PR #862, merge
+  697caf40f65c42893a129e6a697cd7144521fd3a, head 8194803e). Producers session_01JbrfDG7Ni3AHfj1P8stRGU,
+  session_01FaqQAMDmProPBwezTYE8FD ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: 79/79 success, ci-verdict
+  117069053753; gate 116984001200 "FTF-R006-P1 Argilla client tests: all checks passed". Integration form matches
+  REFERENCE_REPOSITORIES.md (stdlib REST adapter, no SDK/fork/dependency); v2.8.0 routes/schemas match. Return:
+  admin/owner role on the wire; raw http.client exceptions escape (key in IncompleteRead.partial); body buffered
+  before the bound, no total deadline; lax response schema; FI8b/FI11/FI15/FI16/FI18 GREEN. Control-plane split:
+  P1 -> P1a (client) + P1b (identity store, migration, OpenBao, compose stack, live integration). Stopping rule set.
+
+- **Gate test change (Law 9, Control plane):** tests/tasks/test_mutation_gate.py's committed-allowlist check ("names
+  an existing production file") skips an entry with a positive integer `pending_pr` only while its file does not
+  exist on main; the check applies unchanged once the file lands. Needed because the mutation gate runs only on
+  [relay] PRs and a [relay] PR may not edit the allowlist, so a ruling on a survivor in a new file must land on main
+  first. No matching rule changed; the six entries above carry pending_pr 869/742.
+
+## 2026-10-20T06:35Z — CERTIFIED: FTF-0906
+- **FTF-0906: CERTIFIED** (round 3, under the stopping rule; PR #864, merge 12f1102895cee6dd5e300231666ddae42328ead9, head 365e507e).
+  Producer session_011c9ZCsPNzLfYzNdk8w5Ph9 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI: 78/78 success,
+  ci-verdict 117084546569; gate 116996577895 step 192 "FTF-0906 Egress capture/verification tests: all checks
+  passed"; egress-verification-integration 116996730112 "all checks passed" (skip path exits 1); mutation-gate 119/119.
+  Local: unit 41 functions; integration with a real openssl CA and loopback sockets; uncapped mutation 215/215, empty
+  allowlist. Round-3 points 1-5 met: missing history always partial; unobserved on any side -> incomplete (14
+  combinations); F5b/F9/F10/F10b/F10c/F24/F25/F29 RED; integration canary_found from real scans, enforcement from the
+  exception type, ledger completeness on every ledger, G1 (H006 metadata rule removed) RED; fragmented-header canary
+  found (2-8-way splits, no false positives). ~45 faults RED. GREEN: F5 (equivalent: an uninspected record cannot
+  carry canary_found) and A1/F15x (new hand-picked variant of the class closed in round 2; production correct). Law 9:
+  no ci.yml/scripts/spec change. Advisories A2-A9 (DNS failure labelled allow, upper-case digest, "b"*64 integration
+  digest, relay-capture ledger completeness, final-buffer scan). UNWIRED.
+
+## 2026-10-20T06:35Z — RETURNED: FTF-H011-P1 (r2)
+- **FTF-H011-P1: RETURNED** (child slice of FTF-H011; round 2 → 3; PR #866, merge 3de9b58bdd8b90e54902e4d875219dd4191496e2,
+  head f899adad). Producer session_01SkRPdyqRdU2ip5HuTPGG16 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI run
+  38916109562 78/78 success, ci-verdict 117110942691; dataset-mapping-preview-integration 117024653425 "all checks
+  passed" (incl. outage cycle); gate 117024502590 steps 90/91 success. Closed: tool validator (production), source
+  changed via drain, probe Law 17 states, complete flag, deepcopy observer, record. Return: nested keys and any
+  "type" value unmasked (reproduced on real storage), no whole-result canary check; F2/F2b/F6/F11/F14/F15/F16 GREEN;
+  P4 fixtures missing; differential not importer-level. Stopping rule restated.
+
+## 2026-10-20T06:35Z — RETURNED: FTF-0904-F1 (r5), tests only; FTF-0904 stays CERTIFIED
+- **FTF-0904-F1: RETURNED** (round 5 → 6, tests only; PR #867, merge 4cf6ac8ddee766d79eaa5783fc4a0c7190929ae8, head
+  263c8083). Producer session_01KHsqHhKJGFF3prVe3yT6Rn (PR body; commits carry no trailer - advisory) ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 78/78 success, ci-verdict 117121079353; gate 117052642666 full matrix
+  "FTF-0904 Log redaction tests: all checks passed" (1h53m), W1 F1-F15 RED, FTF-0905 passed; mutation-gate 10/10.
+  Local full matrix 114/114 RED. Production clean: exhaustive 0/62,496 text, 0/15,624 logging, non-ASCII 0/11,424,
+  live 191/0. Return: the required generated benign-split table is a hand-picked 25-row list (7 words missing), so
+  MY11/MY12 stay GREEN with leaks on the mutants; logging-path rows lowercase only. Stopping rule: tests only.
