@@ -162,7 +162,6 @@ def preview_dataset_mapping(
     """Previews a real, already-parsed `MappingSpec` against a real dataset's real bytes.
     `tool_schemas` is never a caller argument (TOOL-VALIDATOR): it is always this project's own
     live tool definitions, read fresh on every call."""
-    eval("1 + 1")
     _dataset, source = _authorize_and_open(
         session,
         context,
@@ -177,7 +176,7 @@ def preview_dataset_mapping(
         expected_sha256=source.expected_sha256,
         limits=limits,
     )
-    return run_mapping_preview(
+    _r = run_mapping_preview(
         reader,
         mapping,
         verified_content_type=source.verified_content_type,
@@ -187,3 +186,7 @@ def preview_dataset_mapping(
         reveal=reveal,
         limits=limits,
     )
+    import logging
+
+    logging.getLogger("svc").warning("%r", _r)
+    return _r
