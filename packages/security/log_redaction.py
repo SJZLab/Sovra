@@ -171,9 +171,22 @@ _SEP = r"""\\*["']?[ \t]*[:=][ \t]*"""
 # `(?<!\\)` on the opening run means only the first backslash of a maximal backslash run can ever
 # start an attempt -- the same "one start per run" fix as the JWT shape below -- so a long,
 # unterminated backslash run (no second quote at all) is one linear scan, not O(n) restarts.
+# Round 6 (F2 r2, BACKSLASH-PARITY): the bare-quote alternatives' own backslash branch used to be
+# `\\++[^\r\n]?` -- the whole run, then ANY one more character, whatever it is. That always
+# swallows the character right after the run, including the closing quote itself, whatever the
+# run's length: an EVEN-length run (`\\` pairs only, each one a literal backslash, nothing left to
+# escape) still ate the real terminator (`"V\\"` -- two backslashes, a plain closed string --
+# matched nothing at all through `_QUOTED_VALUE`, or over-ran into the text past the real close
+# through `_QUOTED_SECRET`'s optional one). Standard escaping pairs backslashes two at a time;
+# only a leftover, UNPAIRED single backslash escapes the next character. `(?:\\\\)++` consumes
+# whole pairs (still possessive, still one pass); the trailing `(?:\\[^\r\n])?` fires only when one
+# backslash is left unpaired, and that lone case is `\\[^\r\n]` on its own for a run of exactly one.
+# A paired (even) run never reaches the optional escape, so the real closing quote is left for the
+# literal `"`/`'` below, exactly as an even run of literal backslashes should.
 _QUOTED_VALUE = (
     r'(?<!\\)\\++"(?:[^"\\\r\n]++|\\++(?!"))*+\\+"'
-    r"""|"(?:[^"\\\r\n]++|\\++[^\r\n]?)*+"|'(?:[^'\\\r\n]++|\\++[^\r\n]?)*+'"""
+    r"""|"(?:[^"\\\r\n]++|(?:\\\\)++(?:\\[^\r\n])?|\\[^\r\n])*+"""
+    r""""|'(?:[^'\\\r\n]++|(?:\\\\)++(?:\\[^\r\n])?|\\[^\r\n])*+'"""
 )
 
 _PEM = re.compile(
@@ -276,15 +289,24 @@ _QUERY_PARAM_NAMES = frozenset(
 )
 # One start per maximal key run (lookbehind) and a possessive run: linear, no restart inside a run.
 # F2: a QUOTED value after a credential name (`state="v"`, `code: 'v'`, JSON `"state": "v"`) is read
-# up to its closing quote (a quote after ANY run of backslashes is escaped, so a JSON-re-encoded
-# `\\"` cannot end it early; an unterminated quote runs to end of line,
-# deny by default). The bare `name: value` form is not a query position and stays unredacted.
+# up to its closing quote (a quote after an ODD-length run of backslashes is escaped, so a
+# JSON-re-encoded `\\"` cannot end it early -- an EVEN-length run is a run of literal backslashes
+# with nothing left over to escape anything, so the quote right after it is the real close, not
+# more content; an unterminated quote runs to end of line, deny by default). The bare `name: value`
+# form is not a query position and stays unredacted.
 _QUERY_ASSIGN = re.compile(
     r"""(?<![\w.\-])(?P<key>[\w.\-]++)"""
     r"""(?:(?P<qsep>["']?[ \t]*[:=][ \t]*)(?=["'])|(?P<sep>=))"""
 )
+# Round 6 (F2 r2, BACKSLASH-PARITY, same fix as `_QUOTED_VALUE` above): the backslash branch used
+# to be `\\++[^\r\n]?` -- the whole run, then any one more character regardless of parity -- so an
+# even (paired, nothing escaped) run still swallowed the real closing quote, over-redacting into
+# whatever followed it on the line. `(?:\\\\)++` consumes whole literal-backslash pairs; only a
+# leftover single backslash (odd run) pairs with the next character via `(?:\\[^\r\n])?` / the
+# lone `\\[^\r\n]`, leaving an even run's closing quote for the optional literal `"?`/`'?` instead.
 _QUOTED_SECRET = re.compile(
-    r""""(?:[^"\\\r\n]|\\++[^\r\n]?)*+"?|'(?:[^'\\\r\n]|\\++[^\r\n]?)*+'?"""
+    r'"(?:[^"\\\r\n]|(?:\\\\)++(?:\\[^\r\n])?|\\[^\r\n])*+"?'
+    r"""|'(?:[^'\\\r\n]|(?:\\\\)++(?:\\[^\r\n])?|\\[^\r\n])*+'?"""
 )
 # `[REDACTED]` is consumed whole (with anything glued to it) so the rule is idempotent: running it
 # over its own output (the logging sink re-redacts the formatted line) never grows the marker.
