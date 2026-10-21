@@ -250,13 +250,10 @@ function CandidateSelection({
   // "no auto-selection" guarantee: nothing in this component's own state
   // ever names a confirmed candidate before the user explicitly acts.
   const [confirmed, setConfirmed] = useState<CandidateSelectionConfirmation | null>(null);
-  const latestList = useRef(0);
-  const latestSelect = useRef(0);
 
   const lang = resolveLocale(locale);
 
   async function handleLoadCandidates() {
-    const requestId = ++latestList.current;
     setLoading(true);
     setFailure(null);
     try {
@@ -266,7 +263,7 @@ function CandidateSelection({
       );
       if (!response.ok) {
         const refused = await failureFromResponse(response);
-        if (requestId === latestList.current) setFailure(refused);
+        setFailure(refused);
         return;
       }
       let raw: unknown;
@@ -275,7 +272,6 @@ function CandidateSelection({
       } catch {
         raw = null;
       }
-      if (requestId !== latestList.current) return;
       const body = bindListing(raw);
       if (!body) {
         // Never swallowed into an empty list: the previous list stays and the problem is shown.
@@ -286,14 +282,13 @@ function CandidateSelection({
       setLoaded(true);
     } catch {
       // A network failure is surfaced, never turned into an empty or "successful" listing.
-      if (requestId === latestList.current) setFailure(NETWORK_FAILURE);
+      setFailure(NETWORK_FAILURE);
     } finally {
-      if (requestId === latestList.current) setLoading(false);
+      setLoading(false);
     }
   }
 
   async function handleSelect(candidateId: string) {
-    const requestId = ++latestSelect.current;
     setSelectingId(candidateId);
     setFailure(null);
     try {
@@ -310,7 +305,7 @@ function CandidateSelection({
       );
       if (!response.ok) {
         const refused = await failureFromResponse(response);
-        if (requestId === latestSelect.current) setFailure(refused);
+        setFailure(refused);
         return;
       }
       let raw: unknown;
@@ -319,7 +314,6 @@ function CandidateSelection({
       } catch {
         raw = null;
       }
-      if (requestId !== latestSelect.current) return;
       const body = bindSelection(candidateId, snapshotId, raw);
       if (!body) {
         // Nothing is confirmed unless the POST really succeeded with a bound body.
@@ -329,9 +323,9 @@ function CandidateSelection({
       setConfirmed(body);
       onSelected?.(body);
     } catch {
-      if (requestId === latestSelect.current) setFailure(NETWORK_FAILURE);
+      setFailure(NETWORK_FAILURE);
     } finally {
-      if (requestId === latestSelect.current) setSelectingId(null);
+      setSelectingId(null);
     }
   }
 

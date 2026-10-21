@@ -1193,3 +1193,415 @@ describe("[UX03-R2-EXTRA] 04A03 fault-injection pins", () => {
     expect(screen.getByTestId("github-repository-option-acme/newer")).toBeTruthy();
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Pins added after the 04A04 / 04A18 fault-injection pass (every one covers a mutation that
+// stayed GREEN).
+// ---------------------------------------------------------------------------------------------
+async function busyLabelAppearsAfterOneSecond(
+  mountIt: () => void,
+  trigger: () => void,
+  label: string,
+) {
+  vi.useFakeTimers();
+  try {
+    const pending = inFlight();
+    fetchMock().mockReturnValueOnce(pending.promise);
+    mountIt();
+    trigger();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    expect(screen.queryByText(label)).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(screen.getByText(label)).toBeTruthy();
+    await act(async () => {
+      pending.release(ok({}));
+      await vi.advanceTimersByTimeAsync(10);
+    });
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
+describe("[UX03-R2-EXTRA] 04A04 fault-injection pins", () => {
+  const SHA64 = "e".repeat(64);
+  function withDefault(locale?: string, org = ORG, extra: Record<string, unknown> = {}) {
+    return createElement(GitHubBranchRefSelector, {
+      apiBaseUrl: API,
+      organizationId: org,
+      projectId: PROJECT,
+      credential: "t",
+      repositoryIdentity: "acme/app",
+      targetApplicationConnectionId: CONNECTION,
+      defaultBranch: "main",
+      ...(locale ? { locale: locale as "en" | "ar" } : {}),
+      ...extra,
+    });
+  }
+
+  test("an unknown locale renders English and says lang=en", () => {
+    render(branchSelector("fr"));
+    expect(screen.getByTestId("github-branch-ref-selector").getAttribute("lang")).toBe("en");
+  });
+
+  test("the Field carries the locale: Arabic required marker and helper", () => {
+    render(branchSelector("ar"));
+    expect(document.querySelector("label")?.textContent).toContain("(مطلوب)");
+    expect(document.body.textContent).toContain(
+      "اختر فرعًا أعلاه أو اكتب واحدًا. يؤدي التحليل إلى تثبيته على إيداع محدد.",
+    );
+  });
+
+  test("the ref field is described by its helper in English", () => {
+    render(branchSelector());
+    const input = screen.getByTestId("github-ref-input");
+    const text = input
+      .getAttribute("aria-describedby")!
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent)
+      .join("|");
+    expect(text).toContain("Resolving pins it to an exact commit.");
+  });
+
+  test("the branch list is a named list", async () => {
+    fetchMock().mockResolvedValueOnce(ok(BRANCH_PAGE()));
+    render(branchSelector());
+    fireEvent.click(screen.getByTestId("github-load-branches-button"));
+    await screen.findByTestId("github-branch-option-main");
+    expect(screen.getByRole("list", { name: "Branches" })).toBeTruthy();
+  });
+
+  test("zero branches then a failed reload shows the error, not 'no branches'", async () => {
+    fetchMock().mockResolvedValueOnce(ok(BRANCH_PAGE({ branches: [] })));
+    render(branchSelector());
+    fireEvent.click(screen.getByTestId("github-load-branches-button"));
+    await screen.findByRole("region", { name: "No branches found" });
+    fetchMock().mockResolvedValueOnce(refused(500, {}));
+    fireEvent.click(screen.getByTestId("github-load-branches-button"));
+    await screen.findByTestId("github-branch-ref-error");
+    expect(screen.queryByRole("region", { name: "No branches found" })).toBeNull();
+  });
+
+  test("a busy label appears after one second while branches load (Arabic)", async () => {
+    await busyLabelAppearsAfterOneSecond(
+      () => void render(branchSelector("ar")),
+      () => fireEvent.click(screen.getByTestId("github-load-branches-button")),
+      "جارٍ تحميل الفروع…",
+    );
+  });
+
+  test("a busy label appears after one second while a ref resolves (Arabic)", async () => {
+    await busyLabelAppearsAfterOneSecond(
+      () => void render(withDefault("ar")),
+      () => fireEvent.click(screen.getByTestId("github-resolve-ref-button")),
+      "جارٍ التحليل…",
+    );
+  });
+
+  test("the resolved commit is isolated left-to-right and a 64-hex object id is accepted", async () => {
+    render(withDefault("ar"));
+    fetchMock().mockResolvedValueOnce(ok({ ref: "main", resolved_commit_sha: SHA64 }));
+    fireEvent.click(screen.getByTestId("github-resolve-ref-button"));
+    const notice = await screen.findByTestId("github-resolved-ref-notice");
+    expect(notice.getAttribute("role")).toBe("status");
+    expect(notice.querySelector('bdi[dir="ltr"]')?.textContent).toBe(SHA64);
+  });
+
+  test("the selected branch is marked by a check, aria-pressed and the primary variant", async () => {
+    fetchMock().mockResolvedValueOnce(
+      ok(
+        BRANCH_PAGE({
+          branches: [
+            { name: "main", list_time_commit_sha: "a".repeat(40) },
+            { name: "dev", list_time_commit_sha: "b".repeat(40) },
+          ],
+        }),
+      ),
+    );
+    render(branchSelector());
+    fireEvent.click(screen.getByTestId("github-load-branches-button"));
+    const main = await screen.findByTestId("github-branch-option-main");
+    const dev = screen.getByTestId("github-branch-option-dev");
+    fireEvent.click(main);
+    expect(main.textContent).toContain("✓");
+    expect(main.getAttribute("data-variant")).toBe("primary");
+    expect(dev.getAttribute("data-variant")).toBe("secondary");
+    expect(dev.textContent).not.toContain("✓");
+  });
+
+  test("a non-JSON 200 on the branch list and on resolve are 'cannot read' errors, never a network error", async () => {
+    const unreadable = {
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError("x");
+      },
+    };
+    fetchMock().mockResolvedValueOnce(unreadable);
+    render(withDefault());
+    fireEvent.click(screen.getByTestId("github-load-branches-button"));
+    await waitFor(() =>
+      expect(screen.getByTestId("github-branch-ref-error").textContent).toContain("cannot read"),
+    );
+    fetchMock().mockResolvedValueOnce(unreadable);
+    fireEvent.click(screen.getByTestId("github-resolve-ref-button"));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByTestId("github-branch-ref-error").textContent).toContain("cannot read"),
+    );
+    expect(screen.queryByTestId("github-resolved-ref-notice")).toBeNull();
+  });
+
+  test("a listing without a branches array, or with a non-object entry, is 'cannot read'", async () => {
+    expect(bindBranchListing(1, { page: 1, per_page: 30, has_next_page: false })).toBeNull();
+    expect(bindBranchListing(1, BRANCH_PAGE({ branches: [5] }))).toBeNull();
+    expect(bindBranchListing(1, BRANCH_PAGE({ branches: [null] }))).toBeNull();
+    fetchMock().mockResolvedValueOnce(ok({ page: 1, per_page: 30, has_next_page: false }));
+    render(branchSelector());
+    fireEvent.click(screen.getByTestId("github-load-branches-button"));
+    await waitFor(() =>
+      expect(screen.getByTestId("github-branch-ref-error").textContent).toContain("cannot read"),
+    );
+  });
+
+  test("submitting a blank ref sends nothing even if the form is submitted directly", () => {
+    render(branchSelector());
+    fireEvent.submit(screen.getByTestId("github-ref-form"));
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  test("Resolve is disabled while a resolve is in flight", async () => {
+    render(withDefault());
+    const pending = inFlight();
+    fetchMock().mockReturnValueOnce(pending.promise);
+    fireEvent.click(screen.getByTestId("github-resolve-ref-button"));
+    await waitFor(() =>
+      expect((screen.getByTestId("github-resolve-ref-button") as HTMLButtonElement).disabled).toBe(
+        true,
+      ),
+    );
+    await act(async () => {
+      pending.release(ok({ ref: "main", resolved_commit_sha: SHA }));
+    });
+  });
+
+  test("two overlapping resolves of the same ref: the older reply never replaces the newer one", async () => {
+    render(withDefault());
+    const first = inFlight();
+    fetchMock().mockReturnValueOnce(first.promise);
+    fireEvent.submit(screen.getByTestId("github-ref-form"));
+    fetchMock().mockResolvedValueOnce(ok({ ref: "main", resolved_commit_sha: "b".repeat(40) }));
+    fireEvent.submit(screen.getByTestId("github-ref-form"));
+    await waitFor(() =>
+      expect(screen.getByTestId("github-resolved-ref-notice").textContent).toContain(
+        "b".repeat(40),
+      ),
+    );
+    await act(async () => {
+      first.release(ok({ ref: "main", resolved_commit_sha: "a".repeat(40) }));
+    });
+    expect(screen.getByTestId("github-resolved-ref-notice").textContent).toContain("b".repeat(40));
+    expect(screen.getByTestId("github-resolved-ref-notice").textContent).not.toContain(
+      "a".repeat(40),
+    );
+  });
+
+  test("Load more and Load branches are disabled while loading, and Load more asks for page 2", async () => {
+    fetchMock().mockResolvedValueOnce(ok(BRANCH_PAGE({ has_next_page: true })));
+    render(branchSelector());
+    fireEvent.click(screen.getByTestId("github-load-branches-button"));
+    await screen.findByTestId("github-branch-load-more-button");
+    const pending = inFlight();
+    fetchMock().mockReturnValueOnce(pending.promise);
+    fireEvent.click(screen.getByTestId("github-branch-load-more-button"));
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("github-branch-load-more-button") as HTMLButtonElement).disabled,
+      ).toBe(true),
+    );
+    expect((screen.getByTestId("github-load-branches-button") as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(JSON.parse(fetchMock().mock.calls[1]![1].body).page).toBe(2);
+    await act(async () => {
+      pending.release(ok(BRANCH_PAGE({ page: 2 })));
+    });
+  });
+
+  test("the identity includes organization, connection and credential, not only the repository", async () => {
+    for (const change of [
+      { org: ORG_B },
+      { extra: { targetApplicationConnectionId: "88888888-8888-8888-8888-888888888888" } },
+      { extra: { credential: "other-token" } },
+    ]) {
+      cleanup();
+      fetchMock().mockReset();
+      fetchMock().mockResolvedValueOnce(ok(BRANCH_PAGE()));
+      const view = render(withDefault(undefined, ORG));
+      fireEvent.click(screen.getByTestId("github-load-branches-button"));
+      await screen.findByTestId("github-branch-option-main");
+      view.rerender(withDefault(undefined, change.org ?? ORG, change.extra ?? {}));
+      expect(screen.queryByTestId("github-branch-option-main")).toBeNull();
+    }
+  });
+
+  test("the resolve request body carries credential, repository, ref and connection exactly", async () => {
+    render(withDefault());
+    fetchMock().mockResolvedValueOnce(ok({ ref: "main", resolved_commit_sha: SHA }));
+    fireEvent.click(screen.getByTestId("github-resolve-ref-button"));
+    await screen.findByTestId("github-resolved-ref-notice");
+    expect(JSON.parse(fetchMock().mock.calls[0]![1].body)).toEqual({
+      credential: "t",
+      repository_identity: "acme/app",
+      ref: "main",
+      target_application_connection_id: CONNECTION,
+    });
+  });
+});
+
+describe("[UX03-R2-EXTRA] 04A18 fault-injection pins", () => {
+  test("an unknown locale renders English and says lang=en", () => {
+    render(candidateUI("fr"));
+    expect(screen.getByTestId("candidate-selection-ui").getAttribute("lang")).toBe("en");
+  });
+
+  test("a failed reload after an empty result shows the error, not the empty state", async () => {
+    fetchMock().mockResolvedValueOnce(ok(CANDIDATE_PAGE({ items: [], total: 0 })));
+    render(candidateUI());
+    fireEvent.click(screen.getByTestId("candidate-load-button"));
+    await screen.findByRole("region", { name: "No agent candidates detected" });
+    fetchMock().mockResolvedValueOnce(refused(500, {}));
+    fireEvent.click(screen.getByTestId("candidate-load-button"));
+    await screen.findByTestId("candidate-selection-error");
+    expect(screen.queryByRole("region", { name: "No agent candidates detected" })).toBeNull();
+  });
+
+  test("a busy label appears after one second while candidates load (Arabic)", async () => {
+    await busyLabelAppearsAfterOneSecond(
+      () => void render(candidateUI("ar")),
+      () => fireEvent.click(screen.getByTestId("candidate-load-button")),
+      "جارٍ تحميل الوكلاء المكتشفين…",
+    );
+  });
+
+  test("a busy label appears after one second while a selection is recorded (Arabic)", async () => {
+    fetchMock().mockResolvedValueOnce(ok(CANDIDATE_PAGE()));
+    render(candidateUI("ar"));
+    fireEvent.click(screen.getByTestId("candidate-load-button"));
+    await screen.findByTestId(`candidate-row-${CAND_A}`);
+    await busyLabelAppearsAfterOneSecond(
+      () => undefined,
+      () => fireEvent.click(screen.getByTestId(`candidate-select-button-${CAND_A}`)),
+      "جارٍ تسجيل اختيارك…",
+    );
+  });
+
+  test("runtime names are isolated in <bdi>, the confirmation is a status, the chosen row is primary", async () => {
+    fetchMock().mockResolvedValueOnce(ok(CANDIDATE_PAGE()));
+    render(candidateUI());
+    fireEvent.click(screen.getByTestId("candidate-load-button"));
+    const row = await screen.findByTestId(`candidate-row-${CAND_A}`);
+    expect(Array.from(row.querySelectorAll("bdi")).map((el) => el.textContent)).toEqual([
+      "TriageAgent",
+      "python",
+    ]);
+    fetchMock().mockResolvedValueOnce(ok(SELECTION({ candidate_id: CAND_A })));
+    fireEvent.click(screen.getByTestId(`candidate-select-button-${CAND_A}`));
+    const confirmation = await screen.findByTestId("candidate-selection-confirmation");
+    expect(confirmation.getAttribute("role")).toBe("status");
+    expect(
+      screen.getByTestId(`candidate-select-button-${CAND_A}`).getAttribute("data-variant"),
+    ).toBe("primary");
+    expect(
+      screen.getByTestId(`candidate-select-button-${CAND_B}`).getAttribute("data-variant"),
+    ).toBe("secondary");
+  });
+
+  test("a non-JSON 200 on the list is 'cannot read'; a listing without items or with a non-object entry is refused", async () => {
+    expect(bindCandidateListing({ limit: 50, offset: 0, total: 0 })).toBeNull();
+    expect(bindCandidateListing(CANDIDATE_PAGE({ items: [7] }))).toBeNull();
+    expect(bindCandidateListing(CANDIDATE_PAGE({ items: [null] }))).toBeNull();
+    fetchMock().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError("x");
+      },
+    });
+    render(candidateUI());
+    fireEvent.click(screen.getByTestId("candidate-load-button"));
+    await waitFor(() =>
+      expect(screen.getByTestId("candidate-selection-error").textContent).toContain("cannot read"),
+    );
+    fetchMock().mockResolvedValueOnce(ok({ limit: 50, offset: 0, total: 0 }));
+    fireEvent.click(screen.getByTestId("candidate-load-button"));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByTestId("candidate-selection-error").textContent).toContain("cannot read"),
+    );
+  });
+
+  test("a non-JSON 200 on select is 'cannot read' and confirms nothing", async () => {
+    fetchMock().mockResolvedValueOnce(ok(CANDIDATE_PAGE()));
+    render(candidateUI());
+    fireEvent.click(screen.getByTestId("candidate-load-button"));
+    await screen.findByTestId(`candidate-row-${CAND_A}`);
+    fetchMock().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError("x");
+      },
+    });
+    fireEvent.click(screen.getByTestId(`candidate-select-button-${CAND_A}`));
+    await waitFor(() =>
+      expect(screen.getByTestId("candidate-selection-error").textContent).toContain("cannot read"),
+    );
+    expect(screen.queryByTestId("candidate-selection-confirmation")).toBeNull();
+  });
+
+  test("the candidate list is a named list and Load is disabled while loading", async () => {
+    fetchMock().mockResolvedValueOnce(ok(CANDIDATE_PAGE()));
+    render(candidateUI("ar"));
+    fireEvent.click(screen.getByTestId("candidate-load-button"));
+    await screen.findByTestId(`candidate-row-${CAND_A}`);
+    expect(screen.getByRole("list", { name: "الوكلاء المرشحون المكتشفون" })).toBeTruthy();
+    const pending = inFlight();
+    fetchMock().mockReturnValueOnce(pending.promise);
+    fireEvent.click(screen.getByTestId("candidate-load-button"));
+    await waitFor(() =>
+      expect((screen.getByTestId("candidate-load-button") as HTMLButtonElement).disabled).toBe(
+        true,
+      ),
+    );
+    await act(async () => {
+      pending.release(ok(CANDIDATE_PAGE()));
+    });
+  });
+
+  test("the identity includes project and connection, not only the snapshot", async () => {
+    for (const change of [
+      { projectId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" },
+      { connectionId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" },
+    ]) {
+      cleanup();
+      fetchMock().mockReset();
+      fetchMock().mockResolvedValueOnce(ok(CANDIDATE_PAGE()));
+      const base = {
+        apiBaseUrl: API,
+        organizationId: ORG,
+        projectId: PROJECT,
+        connectionId: CONNECTION,
+        snapshotId: SNAPSHOT,
+      };
+      const view = render(createElement(CandidateSelectionUI, base));
+      fireEvent.click(screen.getByTestId("candidate-load-button"));
+      await screen.findByTestId(`candidate-row-${CAND_A}`);
+      view.rerender(createElement(CandidateSelectionUI, { ...base, ...change }));
+      expect(screen.queryByTestId(`candidate-row-${CAND_A}`)).toBeNull();
+    }
+  });
+});

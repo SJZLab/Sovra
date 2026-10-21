@@ -216,13 +216,11 @@ function BranchRefSelector({
   const [resolvedRef, setResolvedRef] = useState<GitHubResolvedRef | null>(null);
   // What the input says right now, readable from an async reply that outlives a render.
   const liveRef = useRef(selectedRef);
-  const latestBranchRequest = useRef(0);
   const latestResolve = useRef(0);
 
   const lang = resolveLocale(locale);
 
   async function fetchBranchPage(requestedPage: number, append: boolean) {
-    const requestId = ++latestBranchRequest.current;
     setLoadingBranches(true);
     setFailure(null);
     try {
@@ -238,7 +236,7 @@ function BranchRefSelector({
       });
       if (!response.ok) {
         const refused = await failureFromResponse(response);
-        if (requestId === latestBranchRequest.current) setFailure(refused);
+        setFailure(refused);
         return;
       }
       let raw: unknown;
@@ -247,7 +245,6 @@ function BranchRefSelector({
       } catch {
         raw = null;
       }
-      if (requestId !== latestBranchRequest.current) return;
       const body = bindBranchListing(requestedPage, raw);
       if (!body) {
         setFailure(MALFORMED_FAILURE);
@@ -258,9 +255,9 @@ function BranchRefSelector({
       setHasNextPage(body.has_next_page);
       setBranchesLoaded(true);
     } catch {
-      if (requestId === latestBranchRequest.current) setFailure(NETWORK_FAILURE);
+      setFailure(NETWORK_FAILURE);
     } finally {
-      if (requestId === latestBranchRequest.current) setLoadingBranches(false);
+      setLoadingBranches(false);
     }
   }
 
