@@ -25,6 +25,7 @@ Run directly: python3 tests/tasks/test_ftf_0519.py
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import http.client
 import importlib.util
 import json
@@ -71,6 +72,9 @@ OTHER_MANIFEST = uuid.uuid4()
 BASE = f"/api/v1/organizations/{ORG}/projects/{PROJECT}/dataset-splits"
 PROPOSAL = "a" * 64
 NOW = datetime(2026, 10, 16, 12, 0, tzinfo=UTC)
+HELD_OUT_DATASET = uuid.UUID(int=0x4E1D)
+HELD_OUT_CONNECTION = uuid.UUID(int=0x4E1E)
+HELD_OUT_REPORT = uuid.UUID(int=0x4E1F)
 CANARIES = (
     "ds-9f3a:12",
     "group-secret-77",
@@ -126,6 +130,8 @@ class FakeStore:
         self.raise_other: BaseException | None = None
         self.states: dict[uuid.UUID, dict[str, Any]] = {}
         self.stored_reviews_override: Any = _UNSET
+        self.requests: dict[tuple[uuid.UUID, str], store.StoredRequest] = {}
+        self.hide_key_once = False
         self.reset()
 
     def reset(self) -> None:
@@ -133,6 +139,7 @@ class FakeStore:
         self.raise_code = None
         self.raise_other = None
         self.stored_reviews_override = _UNSET
+        self.requests = {}
         self.states = {
             MANIFEST: self.fresh(MANIFEST),
             OTHER_MANIFEST: self.fresh(OTHER_MANIFEST),
@@ -234,6 +241,19 @@ class FakeStore:
                 excluded_positions_sha256="9" * 64,
                 object_key="tenants/o/projects/p/uploads/x/source",
             ),
+            SimpleNamespace(
+                dataset_id=HELD_OUT_DATASET,
+                dataset_name="held-out-canary-name",
+                dataset_purpose="held_out_evaluation",
+                dataset_version=1,
+                dataset_sha256="a1" * 32,
+                dataset_source_connection_id=HELD_OUT_CONNECTION,
+                allowed_purposes_snapshot=["held_out_evaluation"],
+                quality_report_id=HELD_OUT_REPORT,
+                quality_report_sha256="b2" * 32,
+                excluded_positions_sha256="c3" * 32,
+                object_key="tenants/o/projects/p/uploads/x/held-out",
+            ),
         )
         return store.ManifestSummary(
             self.view(state),
@@ -287,6 +307,24 @@ class FakeStore:
         state["status"] = "rejected"
         return SimpleNamespace(leakage_report={"findings": ["ds-9f3a:12"]})
 
+    def find_split_request(self, session: Any, ctx: Any, **kw: Any) -> store.StoredRequest | None:
+        self.calls.append(("find_request", kw))
+        if self.raise_other is not None:
+            raise self.raise_other
+        if self.hide_key_once:
+            self.hide_key_once = False
+            return None
+        return self.requests.get((kw["project_id"], kw["idempotency_key"]))
+
+    def record_split_request(self, session: Any, ctx: Any, **kw: Any) -> None:
+        self.calls.append(("record_request", kw))
+        slot = (kw["project_id"], kw["idempotency_key"])
+        if slot in self.requests:
+            raise store.SplitManifestError("idempotency_key_reused")
+        self.requests[slot] = store.StoredRequest(
+            kw["manifest_id"], kw["action"], kw["request_digest"]
+        )
+
     def stored_reviews(self, session: Any, tenant: Any, project_id: Any, manifest_id: Any) -> Any:
         if self.stored_reviews_override is not _UNSET:
             return self.stored_reviews_override
@@ -306,6 +344,8 @@ def patched(mod: ModuleType, fake: FakeStore) -> Iterator[None]:
         "list_split_manifests": fake.list_split_manifests,
         "approve_split_manifest": fake.approve_split_manifest,
         "reject_split_manifest": fake.reject_split_manifest,
+        "find_split_request": fake.find_split_request,
+        "record_split_request": fake.record_split_request,
         "_stored_reviews": fake.stored_reviews,
     }
     originals = {name: getattr(mod, name) for name in names}
@@ -541,11 +581,13 @@ def call(
     path: str,
     principal: str | None = "admin",
     body: Any = None,
-    key: str | None = "key-0001-abcd",
+    key: str | None = "",
 ) -> Http:
+    """`key=""` sends a fresh Idempotency-Key per call (so a repeat is a repeat of the request, not
+    of the key); `key=None` sends none; any other string is sent as given."""
     headers = {"X-Test-Principal": principal} if principal else {}
     if key is not None and method == "POST":
-        headers["Idempotency-Key"] = key
+        headers["Idempotency-Key"] = key or f"auto-{uuid.uuid4().hex}"
     payload = None
     if body is not None:
         payload = body if isinstance(body, bytes) else json.dumps(body).encode()
@@ -723,8 +765,8 @@ def route_suite(mod: ModuleType, check: Checker) -> None:
         finally:
             fake.raise_other = None
 
-        # ---- get one: shape and the leak canary
-        r = call(base, "GET", f"{BASE}/{MANIFEST}", "ml")
+        # ---- get one: shape and the leak canary (an admin may read held-out data)
+        r = call(base, "GET", f"{BASE}/{MANIFEST}", "admin")
         body = r.json()
         check(
             "ACC-FREEZE-HASH",
@@ -750,7 +792,7 @@ def route_suite(mod: ModuleType, check: Checker) -> None:
         check(
             "ACC-FREEZE-HASH",
             "sources carry the frozen grants and hashes only",
-            len(body["sources"]) == 1 and set(body["sources"][0]) == SOURCE_KEYS,
+            len(body["sources"]) == 2 and all(set(x) == SOURCE_KEYS for x in body["sources"]),
         )
         check(
             "ACC-FREEZE-HASH",
@@ -782,6 +824,57 @@ def route_suite(mod: ModuleType, check: Checker) -> None:
                 "leakage_report_sha256",
                 "reviewed_leakage_report_sha256",
             },
+        )
+        # ---- held-out SOURCE identity is hidden from a role that may not read held-out data
+        held_ids = (
+            str(HELD_OUT_DATASET),
+            str(HELD_OUT_CONNECTION),
+            str(HELD_OUT_REPORT),
+            "held-out-canary-name",
+            "a1" * 32,
+            "b2" * 32,
+            "c3" * 32,
+        )
+        for who in ("admin", "orgadmin"):
+            text = call(base, "GET", f"{BASE}/{MANIFEST}", who).body.decode()
+            check(
+                "NEG-FINAL-VIEW",
+                f"{who} (may read held-out) still sees the held-out source",
+                all(token in text for token in held_ids),
+            )
+        r = call(base, "GET", f"{BASE}/{MANIFEST}", "ml")
+        text = r.body.decode()
+        ml_body = r.json()
+        check(
+            "NEG-FINAL-VIEW",
+            "ml_engineer sees only the non-held-out source",
+            r.status == 200 and [x["dataset_purpose"] for x in ml_body["sources"]] == ["training"],
+        )
+        for token in held_ids:
+            check(
+                "NEG-FINAL-VIEW",
+                f"ml_engineer never sees held-out source identity {token[:12]!r}",
+                token not in text,
+            )
+        final_row = ml_body["roles"][3]
+        check(
+            "NEG-FINAL-VIEW",
+            "ml_engineer's final role row keeps only its record count and role hash",
+            final_row["role"] == "final_qualification"
+            and final_row["record_count"] == 13
+            and final_row["role_sha256"] == "4" * 64
+            and "group_count" not in final_row
+            and set(final_row) == {"role", "purpose", "record_count", "role_sha256"},
+        )
+        check(
+            "NEG-FINAL-VIEW",
+            "ml_engineer still sees group_count on the non-final roles",
+            all(set(x) == ROLE_KEYS for x in ml_body["roles"][:3]),
+        )
+        check(
+            "NEG-FINAL-VIEW",
+            "the admin's final role row keeps group_count",
+            body["roles"][3]["group_count"] == 8,
         )
         for path in (BASE, f"{BASE}/{MANIFEST}"):
             text = call(base, "GET", path, "ml").body.decode()
@@ -1278,6 +1371,250 @@ def route_suite(mod: ModuleType, check: Checker) -> None:
         finally:
             fake.stored_reviews_override = _UNSET
 
+        # ---- Idempotency-Key is stored with the request digest (FTF-0519-P2 round 2)
+        def digest_of(action: str, manifest: uuid.UUID, expected: str, reviews: list[Any]) -> str:
+            """Independent of the module under test: the documented fingerprint."""
+            canonical = json.dumps(
+                {
+                    "action": action,
+                    "manifest_id": str(manifest),
+                    "expected_proposal_sha256": expected,
+                    "reviews": sorted((r["finding_id"], r["rationale"]) for r in reviews),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            )
+            return hashlib.sha256(canonical.encode()).hexdigest()
+
+        approve_path = f"{BASE}/{MANIFEST}/approve"
+        reject_path = f"{BASE}/{MANIFEST}/reject"
+        key_a = "idem-key-0001-aaaa"
+        fake.reset()
+        reviews_a = [{"finding_id": "f-1", "rationale": "not leakage: different sources"}]
+        first = call(base, "POST", approve_path, "admin", good_approve(), key=key_a)
+        check(
+            "ACC-FREEZE-REVIEW",
+            "the first approve under a new key is 200 replayed false",
+            first.status == 200 and first.json()["replayed"] is False,
+        )
+        check(
+            "ACC-FREEZE-REVIEW",
+            "the key is stored once, with the independent digest, action and manifest",
+            fake.count("record_request") == 1
+            and fake.last("record_request")["idempotency_key"] == key_a
+            and fake.last("record_request")["action"] == "approve"
+            and fake.last("record_request")["manifest_id"] == MANIFEST
+            and fake.last("record_request")["project_id"] == PROJECT
+            and fake.last("record_request")["request_digest"]
+            == digest_of("approve", MANIFEST, PROPOSAL, reviews_a),
+        )
+        check(
+            "ACC-FREEZE-REVIEW",
+            "the stored request carries the principal as actor, not a body value",
+            fake.last("record_request")["actor"].actor_id == "admin",
+        )
+        writes = fake.count("approve")
+        fake.stored_reviews_override = None  # the locked row can no longer vouch for a replay
+        again = call(base, "POST", approve_path, "admin", good_approve(), key=key_a)
+        fake.stored_reviews_override = _UNSET
+        check(
+            "ACC-FREEZE-REVIEW",
+            "the same key and the same request replays from the stored key, not the row",
+            again.status == 200
+            and again.json()["replayed"] is True
+            and fake.count("approve") == writes
+            and fake.count("record_request") == 1,
+        )
+        check(
+            "ACC-FREEZE-REVIEW",
+            "the key replay returns the stored outcome",
+            {k: v for k, v in again.json().items() if k != "replayed"}
+            == {k: v for k, v in first.json().items() if k != "replayed"},
+        )
+        swapped = call(
+            base,
+            "POST",
+            approve_path,
+            "orgadmin",
+            good_approve(),
+            key=key_a,
+        )
+        check(
+            "ACC-FREEZE-REVIEW",
+            "the same key and request from another admin replays and writes nothing",
+            swapped.status == 200 and fake.count("approve") == writes,
+        )
+        for label, who, path, body, _action in (
+            (
+                "different reviews",
+                "admin",
+                approve_path,
+                good_approve(leakage_reviews=[{"finding_id": "f-2", "rationale": "other"}]),
+                "approve",
+            ),
+            (
+                "an empty review list",
+                "admin",
+                approve_path,
+                good_approve(leakage_reviews=[]),
+                "approve",
+            ),
+            (
+                "another expected hash",
+                "admin",
+                approve_path,
+                good_approve(expected_proposal_sha256="b" * 64),
+                "approve",
+            ),
+            (
+                "a reject",
+                "admin",
+                reject_path,
+                {"expected_proposal_sha256": PROPOSAL},
+                "reject",
+            ),
+            (
+                "another manifest",
+                "admin",
+                f"{BASE}/{OTHER_MANIFEST}/approve",
+                good_approve(),
+                "approve",
+            ),
+        ):
+            counts_before = (
+                fake.count("approve"),
+                fake.count("reject"),
+                fake.count("record_request"),
+            )
+            r = call(base, "POST", path, who, body, key=key_a)
+            check(
+                "ACC-FREEZE-REVIEW",
+                f"the same key with {label} is 409 idempotency_key_reused",
+                r.status == 409 and r.detail == "idempotency_key_reused",
+            )
+            check(
+                "ACC-FREEZE-REVIEW",
+                f"the same key with {label} writes nothing",
+                (fake.count("approve"), fake.count("reject"), fake.count("record_request"))
+                == counts_before,
+            )
+        check(
+            "ACC-FREEZE-REVIEW",
+            "a reused key leaves the other manifest proposed",
+            fake.states[OTHER_MANIFEST]["status"] == "proposed",
+        )
+        # a refused request stores no key: the key is free for the corrected request
+        fake.reset()
+        key_b = "idem-key-0002-bbbb"
+        fake.raise_code = "leakage_not_clear"
+        r = call(base, "POST", approve_path, "admin", good_approve(), key=key_b)
+        fake.raise_code = None
+        check(
+            "ACC-FREEZE-REVIEW",
+            "a refused approve is 409 leakage_not_clear and stores no key",
+            r.status == 409
+            and r.detail == "leakage_not_clear"
+            and fake.count("record_request") == 0
+            and not fake.requests,
+        )
+        r = call(
+            base,
+            "POST",
+            approve_path,
+            "admin",
+            good_approve(leakage_reviews=[{"finding_id": "f-9", "rationale": "corrected"}]),
+            key=key_b,
+        )
+        check(
+            "ACC-FREEZE-REVIEW",
+            "the corrected request may reuse the key of a refused one",
+            r.status == 200 and r.json()["replayed"] is False and fake.count("record_request") == 1,
+        )
+        # reject: stored key replays, another digest is reused, an approve key is not a reject key
+        fake.reset()
+        key_c = "idem-key-0003-cccc"
+        reject_body = {"expected_proposal_sha256": PROPOSAL}
+        first = call(base, "POST", reject_path, "admin", reject_body, key=key_c)
+        check(
+            "ACC-FREEZE-REVIEW",
+            "reject stores its key with the independent digest",
+            first.status == 200
+            and first.json()["replayed"] is False
+            and fake.count("record_request") == 1
+            and fake.last("record_request")["action"] == "reject"
+            and fake.last("record_request")["request_digest"]
+            == digest_of("reject", MANIFEST, PROPOSAL, []),
+        )
+        writes = fake.count("reject")
+        again = call(base, "POST", reject_path, "admin", reject_body, key=key_c)
+        check(
+            "ACC-FREEZE-REVIEW",
+            "reject under the same key and request replays and writes nothing",
+            again.status == 200
+            and again.json()["replayed"] is True
+            and fake.count("reject") == writes
+            and fake.count("record_request") == 1,
+        )
+        r = call(
+            base,
+            "POST",
+            reject_path,
+            "admin",
+            {"expected_proposal_sha256": "b" * 64},
+            key=key_c,
+        )
+        check(
+            "ACC-FREEZE-REVIEW",
+            "reject under the same key with another expected hash is idempotency_key_reused",
+            r.status == 409 and r.detail == "idempotency_key_reused",
+        )
+        r = call(base, "POST", approve_path, "admin", good_approve(), key=key_c)
+        check(
+            "ACC-FREEZE-REVIEW",
+            "an approve under a reject's key is idempotency_key_reused",
+            r.status == 409 and r.detail == "idempotency_key_reused",
+        )
+        # a key is scoped to the project: the same key stored under another project is not a hit
+        fake.reset()
+        fake.requests[(uuid.UUID(int=0xBEEF), key_a)] = store.StoredRequest(
+            MANIFEST, "approve", "0" * 64
+        )
+        r = call(base, "POST", approve_path, "admin", good_approve(), key=key_a)
+        check(
+            "ACC-FREEZE-REVIEW",
+            "a key stored under another project does not block this project's request",
+            r.status == 200 and r.json()["replayed"] is False,
+        )
+        check(
+            "ACC-FREEZE-REVIEW",
+            "the key lookup is scoped to the path's project",
+            fake.last("find_request")["project_id"] == PROJECT
+            and fake.last("find_request")["idempotency_key"] == key_a,
+        )
+        # a concurrent request that stored the key first: the same digest replays, another is reused
+        for label, stored_digest, status, replayed in (
+            ("same digest", digest_of("approve", MANIFEST, PROPOSAL, reviews_a), 200, True),
+            ("another digest", "e" * 64, 409, None),
+        ):
+            fake.reset()
+            fake.hide_key_once = True
+            fake.requests[(PROJECT, key_a)] = store.StoredRequest(
+                MANIFEST, "approve", stored_digest
+            )
+            r = call(base, "POST", approve_path, "admin", good_approve(), key=key_a)
+            fake.hide_key_once = False
+            check(
+                "ACC-FREEZE-REVIEW",
+                f"a key stored by a concurrent request ({label}) resolves to {status}",
+                r.status == status
+                and (
+                    r.json().get("replayed") is replayed
+                    if status == 200
+                    else r.detail == "idempotency_key_reused"
+                ),
+            )
+
         # ---- reject
         fake.reset()
         rpath = f"{BASE}/{MANIFEST}/reject"
@@ -1456,6 +1793,36 @@ def route_suite(mod: ModuleType, check: Checker) -> None:
             r.status == 409 and r.detail == "manifest_tampered",
         )
 
+        # a code that merely looks like the race codes (case / padding) is not one of them: only
+        # the exact codes fall into the replay shortcut. The constructor asserts the code is
+        # fixed, so the look-alike is built around it.
+        for look_alike in (
+            "MANIFEST_NOT_PROPOSED",
+            " manifest_not_proposed ",
+            "Idempotency_Key_Reused",
+        ):
+            fake.reset()
+
+            def racing_reject_lookalike(
+                session: Any, ctx: Any, _code: str = look_alike, **kw: Any
+            ) -> Any:
+                fake.calls.append(("reject", kw))
+                fake.states[MANIFEST]["status"] = "rejected"
+                err = store.SplitManifestError("manifest_not_proposed")
+                err.code = _code
+                raise err
+
+            _swap(mod, "reject_split_manifest", racing_reject_lookalike)
+            try:
+                r = call(base, "POST", rpath, "admin", rgood)
+            finally:
+                _swap(mod, "reject_split_manifest", original_reject)
+            check(
+                "ACC-FREEZE-REVIEW",
+                f"a reject refusal coded {look_alike!r} is not the replay race (409 with that code)",
+                r.status == 409 and r.detail == look_alike,
+            )
+
 
 # ------------------------------------------------------------------ module copies for fault injection
 
@@ -1576,6 +1943,61 @@ FAULTS: tuple[tuple[str, str, str], ...] = (
         "if not isinstance(raw, list | dict | str) or len(raw) > _MAX_REVIEWS:",
     ),
     (
+        "F31 the stored key is never looked up",
+        "        if outcome is not None:\n            return outcome\n",
+        "        if False:\n            return outcome\n",
+    ),
+    (
+        "F32 a reused key with another digest replays",
+        "            if not hmac.compare_digest(stored.request_digest, digest):",
+        "            if False:",
+    ),
+    (
+        "F34 approve stores the key under a different name",
+        '                        action="approve",\n                        idempotency_key=key,',
+        '                        action="approve",\n                        idempotency_key=key + "-x",',
+    ),
+    (
+        "F35 reject stores a constant digest",
+        '                        action="reject",\n                        idempotency_key=key,\n                        request_digest=digest,',
+        '                        action="reject",\n                        idempotency_key=key,\n                        request_digest="0" * 64,',
+    ),
+    (
+        "F36 a held-out source is shown to every role",
+        "        if include_held_out or s.dataset_purpose != _HELD_OUT_PURPOSE",
+        "        if True",
+    ),
+    (
+        "F37 the final role keeps group_count for everyone",
+        "    if not include_held_out and r.role == _FINAL_ROLE:",
+        "    if False:",
+    ),
+    (
+        "F38 every role may see held-out data",
+        "    return ctx.role is not Role.ML_ENGINEER",
+        "    return True",
+    ),
+    (
+        "F39 the held-out purpose is misspelled",
+        '_HELD_OUT_PURPOSE = "held_out_evaluation"',
+        '_HELD_OUT_PURPOSE = "held_out"',
+    ),
+    (
+        "F40 only ml_engineer may see held-out data",
+        "    return ctx.role is not Role.ML_ENGINEER",
+        "    return ctx.role is Role.ML_ENGINEER",
+    ),
+    (
+        "F41 the key replay of a race is dropped on approve",
+        '                if exc.code not in ("manifest_not_proposed", "idempotency_key_reused"):\n                    raise\n                # A concurrent identical request may have locked it first.',
+        '                if exc.code not in ("manifest_not_proposed",):\n                    raise\n                # A concurrent identical request may have locked it first.',
+    ),
+    (
+        "F42 the key is not recorded on reject",
+        '                    record_split_request(\n                        session,\n                        tenant_context,\n                        project_id=project_id,\n                        manifest_id=manifest_id,\n                        action="reject",',
+        '                    (lambda *a, **k: None)(\n                        session,\n                        tenant_context,\n                        project_id=project_id,\n                        manifest_id=manifest_id,\n                        action="reject",',
+    ),
+    (
         "F30 the leakage summary is dropped",
         'body["leakage_summary"] = json.loads(json.dumps(dict(view.leakage_summary)))',
         'body["leakage_summary"] = {}',
@@ -1612,6 +2034,205 @@ def test_f_each_fault_is_red() -> None:
                 check.fails.append("crashed")
             if not check.fails:
                 FAILURES.append(f"FAIL [{CID}] fault stays GREEN: {label}")
+
+
+# ------------------------------------------------------------------ stored requests (SQLite)
+
+
+def test_s_stored_requests_store_behaviour() -> None:
+    """`find_split_request` / `record_split_request` against a real table (SQLite: the model carries
+    the same unique key as migration 0032; the live Postgres evidence is the integration suite)."""
+    from sqlalchemy import create_engine
+
+    engine = create_engine("sqlite://")
+    store.DatasetSplitManifestRequest.__table__.create(engine)  # type: ignore[attr-defined]
+    saved = store.execute_tenant_scoped
+
+    def passthrough(
+        session: Session, organization_id: Any, statement: Any, params: Any = None
+    ) -> Any:
+        del organization_id, params
+        return session.execute(statement)
+
+    store.execute_tenant_scoped = passthrough
+    try:
+        org, other_org, other_project = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        ctx, other_ctx = (
+            TenantContext(organization_id=org),
+            TenantContext(organization_id=other_org),
+        )
+        actor = store.SplitActor("user", "admin-1", "workspace_admin", "req-1")
+        digest = "ab" * 32
+        with Session(engine) as session:
+
+            def find(project: uuid.UUID, key: str, context: Any = ctx) -> Any:
+                return store.find_split_request(
+                    session, context, project_id=project, idempotency_key=key
+                )
+
+            def record(**over: Any) -> None:
+                kw: dict[str, Any] = {
+                    "project_id": PROJECT,
+                    "manifest_id": MANIFEST,
+                    "action": "approve",
+                    "idempotency_key": "key-0001-abcd",
+                    "request_digest": digest,
+                    "actor": actor,
+                    "now": NOW,
+                }
+                kw.update(over)
+                store.record_split_request(session, ctx, **kw)
+                session.commit()
+
+            def rows() -> list[Any]:
+                return list(
+                    session.execute(store.select(store.DatasetSplitManifestRequest)).scalars()
+                )
+
+            def refusal(fn: Callable[[], None]) -> str | None:
+                try:
+                    fn()
+                except store.SplitManifestError as exc:
+                    session.rollback()
+                    return exc.code
+                return None
+
+            if find(PROJECT, "key-0001-abcd") is not None:
+                FAILURES.append(f"FAIL [{CID}] an unused key finds nothing")
+            record()
+            stored = find(PROJECT, "key-0001-abcd")
+            if stored != store.StoredRequest(MANIFEST, "approve", digest):
+                FAILURES.append(f"FAIL [{CID}] the stored request round-trips: {stored!r}")
+            row = rows()[0]
+            if not (
+                row.organization_id == org
+                and row.project_id == PROJECT
+                and row.manifest_id == MANIFEST
+                and row.action == "approve"
+                and row.idempotency_key == "key-0001-abcd"
+                and row.request_digest == digest
+                and row.created_by == "admin-1"
+                and row.created_at.replace(tzinfo=UTC) == NOW
+            ):
+                FAILURES.append(
+                    f"FAIL [{CID}] the stored row carries the actor, tenant and instant"
+                )
+            if find(other_project, "key-0001-abcd") is not None:
+                FAILURES.append(f"FAIL [{CID}] a key is scoped to its project")
+            if find(PROJECT, "key-0002-abcd") is not None:
+                FAILURES.append(f"FAIL [{CID}] a different key finds nothing")
+            record(idempotency_key="Key-MIXED-0009-AbCd")
+            if find(PROJECT, "Key-MIXED-0009-AbCd") is None:
+                FAILURES.append(f"FAIL [{CID}] a mixed-case key is found by its exact text")
+            for variant_key in (
+                "key-mixed-0009-abcd",
+                " Key-MIXED-0009-AbCd",
+                "Key-MIXED-0009-AbCd ",
+            ):
+                if find(PROJECT, variant_key) is not None:
+                    FAILURES.append(f"FAIL [{CID}] a key is matched exactly, not {variant_key!r}")
+            code = refusal(lambda: record(request_digest="cd" * 32))
+            if code != "idempotency_key_reused" or len(rows()) != 2:
+                FAILURES.append(f"FAIL [{CID}] a stored key is not overwritten ({code!r})")
+            kept = find(PROJECT, "key-0001-abcd")
+            if kept is None or kept.request_digest != digest:
+                FAILURES.append(f"FAIL [{CID}] a refused second write leaves the first digest")
+            record(project_id=other_project)  # same key, another project: a different slot
+            if len(rows()) != 3:
+                FAILURES.append(f"FAIL [{CID}] the same key in another project is its own row")
+            record(idempotency_key="key-0003-abcd", action="reject", manifest_id=OTHER_MANIFEST)
+            third = find(PROJECT, "key-0003-abcd")
+            if third != store.StoredRequest(OTHER_MANIFEST, "reject", digest):
+                FAILURES.append(f"FAIL [{CID}] a reject request is stored as a reject: {third!r}")
+            for bad in ("approved", "", "APPROVE", "approve "):
+                before = len(rows())
+
+                def bad_action(bad: str = bad) -> None:
+                    record(idempotency_key="key-bad-0001", action=bad)
+
+                if refusal(bad_action) != "invalid_request" or len(rows()) != before:
+                    FAILURES.append(
+                        f"FAIL [{CID}] action {bad!r} is refused invalid_request, no write"
+                    )
+            before = len(rows())
+            code = refusal(lambda: record(idempotency_key="key-bad-0002", actor=None))
+            if code != "invalid_request" or len(rows()) != before:
+                FAILURES.append(f"FAIL [{CID}] a request without an actor is refused ({code!r})")
+            viewer = store.SplitActor("user", "viewer-1", "viewer", "req-2")
+            code = refusal(lambda: record(idempotency_key="key-bad-0003", actor=viewer))
+            if code != "actor_not_permitted" or len(rows()) != before:
+                FAILURES.append(f"FAIL [{CID}] a non-admin actor is refused ({code!r})")
+            del other_ctx
+    finally:
+        store.execute_tenant_scoped = saved
+        engine.dispose()
+
+
+# ------------------------------------------------------------------ migration 0032 shape (offline SQL)
+
+
+def _offline_sql(action: str, revision_range: str) -> str:
+    import subprocess
+
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", action, revision_range, "--sql"],
+        cwd=str(ROOT / "apps" / "api"),
+        capture_output=True,
+        text=True,
+        env={**os.environ, "SOVRA_DATABASE_URL": "postgresql+psycopg://x:y@localhost:5432/z"},
+    )
+    if result.returncode != 0:
+        FAILURES.append(
+            f"FAIL [{CID}] alembic {action} {revision_range} --sql: {result.stderr[-300:]}"
+        )
+    return result.stdout
+
+
+def test_m_migration_0032_shape() -> None:
+    """Law 18: the new table ships with FORCE row-level security, a tenant policy and no UPDATE /
+    DELETE grant. Rendered offline; the live proof is the Postgres integration suite."""
+    up = _offline_sql("upgrade", "0031_model_import_validation:0032_split_manifest_requests")
+    down = _offline_sql("downgrade", "0032_split_manifest_requests:0031_model_import_validation")
+    table = "dataset_split_manifest_requests"
+    for needle in (
+        f"CREATE TABLE {table}",
+        "CONSTRAINT uq_dataset_split_manifest_requests_key UNIQUE (organization_id, project_id, idempotency_key)",
+        "CONSTRAINT fk_dataset_split_manifest_requests_manifest FOREIGN KEY(organization_id, manifest_id) "
+        "REFERENCES dataset_split_manifests (organization_id, id) ON DELETE RESTRICT",
+        "CHECK (action IN ('approve', 'reject'))",
+        "request_digest ~ '^[0-9a-f]{64}$'",
+        "char_length(idempotency_key) BETWEEN 8 AND 200",
+        f'GRANT SELECT, INSERT ON {table} TO "sovra_app"',
+        f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY",
+        f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY",
+        f"CREATE POLICY tenant_isolation ON {table} FOR ALL",
+        "current_setting('app.current_organization_id', true)",
+        f"CREATE INDEX ix_{table}_organization_id ON {table} (organization_id)",
+        f"CREATE INDEX ix_{table}_manifest ON {table} (manifest_id)",
+        "0032_split_manifest_requests",
+    ):
+        if needle not in up:
+            FAILURES.append(f"FAIL [{CID}] migration 0032 upgrade SQL lacks {needle!r}")
+    if "DELETE ON" in up or "UPDATE ON" in up or ", UPDATE" in up or "ALL ON" in up:
+        FAILURES.append(f"FAIL [{CID}] migration 0032 grants more than SELECT, INSERT")
+    for needle in (
+        f"DROP POLICY IF EXISTS tenant_isolation ON {table}",
+        f'REVOKE ALL ON {table} FROM "sovra_app"',
+        f"DROP INDEX ix_{table}_manifest",
+        f"DROP INDEX ix_{table}_organization_id",
+        f"DROP TABLE {table}",
+        "0031_model_import_validation",
+    ):
+        if needle not in down:
+            FAILURES.append(f"FAIL [{CID}] migration 0032 downgrade SQL lacks {needle!r}")
+    sys_path_src = (
+        ROOT / "apps" / "api" / "alembic" / "versions" / "0032_dataset_split_manifest_requests.py"
+    ).read_text()
+    if (
+        'revision = "0032_split_manifest_requests"' not in sys_path_src
+        or len("0032_split_manifest_requests") > 32
+    ):
+        FAILURES.append(f"FAIL [{CID}] migration 0032 revision id fits alembic_version")
 
 
 # ------------------------------------------------------------------ contract and wiring
@@ -1720,6 +2341,7 @@ def test_c1_interface_contract() -> None:
         "invalid_body",
         "invalid_idempotency_key",
         "invalid_review",
+        "idempotency_key_reused",
     ):
         if code not in codes:
             FAILURES.append(f"FAIL [{CID}] approve documents {code}")
@@ -1733,9 +2355,26 @@ def test_c1_interface_contract() -> None:
         "manifest_not_proposed",
         "invalid_body",
         "invalid_idempotency_key",
+        "idempotency_key_reused",
     ):
         if code not in reject_codes:
             FAILURES.append(f"FAIL [{CID}] reject documents {code}")
+    role_row = schemas["DatasetSplitManifestRoleRow"]
+    if set(role_row["required"]) != {"role", "purpose", "record_count", "role_sha256"}:
+        FAILURES.append(
+            f"FAIL [{CID}] group_count is optional (omitted on the final row for ml_engineer)"
+        )
+    if "held_out_evaluation" not in json.dumps(
+        schemas["DatasetSplitManifestDetail"]["allOf"][1]["properties"]["sources"]
+    ):
+        FAILURES.append(
+            f"FAIL [{CID}] the contract says held-out sources are hidden from ml_engineer"
+        )
+    for action in ("approve", "reject"):
+        if "idempotency_key_reused" not in json.dumps(
+            paths[prefix + "/{manifest_id}/" + action]["post"]["summary"]
+        ):
+            FAILURES.append(f"FAIL [{CID}] {action} summary documents the key digest rule")
 
 
 def _full_app_env() -> dict[str, str]:

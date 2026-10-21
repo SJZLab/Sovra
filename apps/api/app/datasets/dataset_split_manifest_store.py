@@ -55,6 +55,7 @@ from sqlalchemy import (
     DateTime,
     Integer,
     String,
+    UniqueConstraint,
     and_,
     func,
     select,
@@ -143,6 +144,7 @@ __all__ = [
     "CODES",
     "DatasetSplitAssignment",
     "DatasetSplitManifest",
+    "DatasetSplitManifestRequest",
     "DatasetSplitManifestRole",
     "DatasetSplitManifestSource",
     "ManifestSummary",
@@ -151,14 +153,17 @@ __all__ = [
     "SplitActor",
     "SplitManifestError",
     "SplitSourceInput",
+    "StoredRequest",
     "TrainingSplitView",
     "approve_split_manifest",
+    "find_split_request",
     "get_split_manifest",
     "list_split_manifests",
     "load_development_split",
     "load_training_split",
     "migrate_legacy_split_manifest",
     "propose_split_manifest",
+    "record_split_request",
     "reject_split_manifest",
 ]
 
@@ -166,6 +171,7 @@ CODES = (
     "actor_not_permitted",
     "dataset_not_found",
     "grant_changed",
+    "idempotency_key_reused",
     "invalid_request",
     "invalid_review",
     "leakage_not_clear",
@@ -289,6 +295,31 @@ class DatasetSplitAssignment(Base):
     group_id: Mapped[str] = mapped_column(String(400), nullable=False)
     record_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     normalized_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class DatasetSplitManifestRequest(Base):
+    """One approve / reject request that took effect, keyed by its Idempotency-Key. Written in the
+    same transaction as the lock or rejection; SELECT / INSERT only (migration 0032)."""
+
+    __tablename__ = "dataset_split_manifest_requests"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "project_id",
+            "idempotency_key",
+            name="uq_dataset_split_manifest_requests_key",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    manifest_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 # ------------------------------------------------------------------ inputs
@@ -1371,6 +1402,78 @@ def reject_split_manifest(
     _audit(session, context, actor, "dataset_split_manifest.rejected", manifest)
     session.flush()
     return manifest
+
+
+# ------------------------------------------------------------------ idempotent requests
+
+
+@dataclass(frozen=True)
+class StoredRequest:
+    manifest_id: uuid.UUID
+    action: str
+    request_digest: str
+
+
+def find_split_request(
+    session: Session,
+    context: TenantContext,
+    *,
+    project_id: uuid.UUID,
+    idempotency_key: str,
+) -> StoredRequest | None:
+    """The request stored under this key in this project, or None. Read-only."""
+    row = (
+        execute_tenant_scoped(
+            session,
+            context.organization_id,
+            select(DatasetSplitManifestRequest).where(
+                DatasetSplitManifestRequest.project_id == project_id,
+                DatasetSplitManifestRequest.idempotency_key == idempotency_key,
+            ),
+        )
+        .scalars()
+        .first()
+    )
+    if row is None:
+        return None
+    return StoredRequest(row.manifest_id, row.action, row.request_digest)
+
+
+def record_split_request(
+    session: Session,
+    context: TenantContext,
+    *,
+    project_id: uuid.UUID,
+    manifest_id: uuid.UUID,
+    action: str,
+    idempotency_key: str,
+    request_digest: str,
+    actor: SplitActor,
+    now: datetime | None = None,
+) -> None:
+    """Stores the key with the request digest. Call it in the transaction that locked or
+    rejected the manifest, so the key exists exactly when the request took effect. A key already
+    stored (another request got there first) raises `idempotency_key_reused`; nothing is written."""
+    _require_actor(actor)
+    if action not in ("approve", "reject"):
+        raise SplitManifestError("invalid_request")
+    session.add(
+        DatasetSplitManifestRequest(
+            id=uuid.uuid4(),
+            organization_id=context.organization_id,
+            project_id=project_id,
+            manifest_id=manifest_id,
+            action=action,
+            idempotency_key=idempotency_key,
+            request_digest=request_digest,
+            created_by=actor.actor_id,
+            created_at=now or _now(),
+        )
+    )
+    try:
+        session.flush()
+    except IntegrityError:
+        raise SplitManifestError("idempotency_key_reused") from None
 
 
 # ------------------------------------------------------------------ training access

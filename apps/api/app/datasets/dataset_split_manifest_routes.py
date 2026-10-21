@@ -21,10 +21,18 @@ finding record ids, final-qualification ids included) is never serialized.
 
 `Idempotency-Key` is required on both POST routes. The request fingerprint binds
 the action, the manifest, the expected proposal hash and the reviews (order
-insensitive). A replay of a request that already took effect returns the stored
-outcome (200, `replayed: true`) and writes nothing: approve recognises it from
-the locked row itself (same proposal hash, same reviews, same approver); reject
-from the rejected row and the expected proposal hash.
+insensitive). The key is stored with that digest in the transaction that locks or
+rejects the manifest (`dataset_split_manifest_requests`): the same key with the
+same digest returns the stored outcome (200, `replayed: true`) and writes nothing;
+the same key with another digest is 409 `idempotency_key_reused`. A request that
+already took effect under another key is still recognised from the manifest row
+itself (approve: same proposal hash, same reviews, same approver; reject: the
+rejected row and the expected proposal hash).
+
+A caller that may not read held-out data (ml_engineer) sees no source whose
+dataset purpose is `held_out_evaluation` (the certified dataset and quality routes
+hide those datasets too) and the final role row carries only its record count and
+role hash.
 """
 
 from __future__ import annotations
@@ -62,8 +70,10 @@ from app.datasets.dataset_split_manifest_store import (
     SplitActor,
     SplitManifestError,
     approve_split_manifest,
+    find_split_request,
     get_split_manifest,
     list_split_manifests,
+    record_split_request,
     reject_split_manifest,
 )
 from app.db.tenant_context import TenantContext, tenant_scoped_session_for
@@ -83,6 +93,8 @@ _APPROVE_FIELDS = frozenset({"expected_proposal_sha256", "leakage_reviews"})
 _REJECT_FIELDS = frozenset({"expected_proposal_sha256"})
 _REVIEW_FIELDS = frozenset({"finding_id", "rationale"})
 _WRITE_ROLES: frozenset[Role] = frozenset({Role.WORKSPACE_ADMIN, Role.ORGANIZATION_ADMIN})
+_HELD_OUT_PURPOSE = "held_out_evaluation"
+_FINAL_ROLE = "final_qualification"
 
 _VIEW_FIELDS = (
     "id",
@@ -140,18 +152,28 @@ def _serialize_view(view: ManifestView) -> dict[str, Any]:
     return body
 
 
-def _serialize_summary(summary: ManifestSummary) -> dict[str, Any]:
+def _may_see_held_out(ctx: AuthorizedContext) -> bool:
+    # Section 9/69.1: among the roles allowed on this surface only ml_engineer may not read
+    # held-out evaluation data (the certified dataset and quality routes use the same rule).
+    return ctx.role is not Role.ML_ENGINEER
+
+
+def _serialize_role(r: Any, include_held_out: bool) -> dict[str, Any]:
+    row = {
+        "role": r.role,
+        "purpose": r.purpose,
+        "record_count": r.record_count,
+        "group_count": r.group_count,
+        "role_sha256": r.role_sha256,
+    }
+    if not include_held_out and r.role == _FINAL_ROLE:
+        del row["group_count"]
+    return row
+
+
+def _serialize_summary(summary: ManifestSummary, include_held_out: bool) -> dict[str, Any]:
     body = _serialize_view(summary.manifest)
-    body["roles"] = [
-        {
-            "role": r.role,
-            "purpose": r.purpose,
-            "record_count": r.record_count,
-            "group_count": r.group_count,
-            "role_sha256": r.role_sha256,
-        }
-        for r in summary.roles
-    ]
+    body["roles"] = [_serialize_role(r, include_held_out) for r in summary.roles]
     body["sources"] = [
         {
             "dataset_id": str(s.dataset_id),
@@ -166,6 +188,7 @@ def _serialize_summary(summary: ManifestSummary) -> dict[str, Any]:
             "excluded_positions_sha256": s.excluded_positions_sha256,
         }
         for s in summary.sources
+        if include_held_out or s.dataset_purpose != _HELD_OUT_PURPOSE
     ]
     return body
 
@@ -362,29 +385,58 @@ def build_dataset_split_manifest_router(
                 summary = get_split_manifest(
                     session, tenant_context, project_id=project_id, manifest_id=manifest_id
                 )
-                body = _serialize_summary(summary)
+                body = _serialize_summary(summary, _may_see_held_out(ctx))
         except (SplitManifestError, TenantContextError) as exc:
             raise _not_found() from exc
         return JSONResponse(body)
+
+    def _stored_outcome(
+        tenant_context: TenantContext,
+        project_id: uuid.UUID,
+        manifest_id: uuid.UUID,
+        key: str,
+        digest: str,
+        include_held_out: bool,
+    ) -> dict[str, Any] | None:
+        """The outcome stored under this Idempotency-Key: the manifest as it is now when the key
+        was used by this very request, None when the key is unused, and 409
+        `idempotency_key_reused` when it was used by any other request. Read-only."""
+        with tenant_scoped_session_for(session_factory, tenant_context) as session:
+            stored = find_split_request(
+                session, tenant_context, project_id=project_id, idempotency_key=key
+            )
+            if stored is None:
+                return None
+            # The digest binds the action, the manifest, the expected hash and the reviews.
+            if not hmac.compare_digest(stored.request_digest, digest):
+                raise SplitManifestError("idempotency_key_reused")
+            return _serialize_summary(
+                get_split_manifest(
+                    session, tenant_context, project_id=project_id, manifest_id=manifest_id
+                ),
+                include_held_out,
+            )
 
     def _replayed(
         tenant_context: TenantContext,
         project_id: uuid.UUID,
         manifest_id: uuid.UUID,
-        action: str,
+        approving: bool,
         expected: str,
         reviews: list[tuple[str, str]],
         subject: str,
+        include_held_out: bool,
     ) -> dict[str, Any] | None:
         """The stored outcome when the manifest is already in the state this exact request
-        produces; None otherwise. Read-only."""
+        produces (a request that took effect under another key); None otherwise. Read-only."""
         with tenant_scoped_session_for(session_factory, tenant_context) as session:
             summary = get_split_manifest(
                 session, tenant_context, project_id=project_id, manifest_id=manifest_id
             )
             view = summary.manifest
+            action = "approve" if approving else "reject"
             wanted = _fingerprint(action, manifest_id, expected, reviews)
-            if action == "approve":
+            if approving:
                 if view.status != "locked" or view.approved_by != subject:
                     return None
                 stored = _stored_reviews(session, tenant_context, project_id, manifest_id)
@@ -397,7 +449,35 @@ def build_dataset_split_manifest_router(
                 have = _fingerprint(action, manifest_id, view.proposal_sha256, [])
             if not hmac.compare_digest(wanted, have):
                 return None
-            return _serialize_summary(summary)
+            return _serialize_summary(summary, include_held_out)
+
+    def _replay_or_none(
+        tenant_context: TenantContext,
+        project_id: uuid.UUID,
+        manifest_id: uuid.UUID,
+        approving: bool,
+        expected: str,
+        reviews: list[tuple[str, str]],
+        key: str,
+        digest: str,
+        ctx: AuthorizedContext,
+    ) -> dict[str, Any] | None:
+        include_held_out = _may_see_held_out(ctx)
+        outcome = _stored_outcome(
+            tenant_context, project_id, manifest_id, key, digest, include_held_out
+        )
+        if outcome is not None:
+            return outcome
+        return _replayed(
+            tenant_context,
+            project_id,
+            manifest_id,
+            approving,
+            expected,
+            reviews,
+            ctx.principal.subject,
+            include_held_out,
+        )
 
     @router.post(_BASE_PATH + "/{manifest_id}/approve")
     async def approve(
@@ -408,26 +488,30 @@ def build_dataset_split_manifest_router(
         ctx: AuthorizedContext = write_dependency,
     ) -> JSONResponse:
         del organization_id
-        _idempotency_key(request)
+        key = _idempotency_key(request)
         payload = await _read_body(request, _APPROVE_FIELDS)
         reviews = _parse_reviews(payload["leakage_reviews"])
         expected = payload["expected_proposal_sha256"]
         pairs = [(r.finding_id, r.rationale) for r in reviews]
+        digest = _fingerprint("approve", manifest_id, expected, pairs)
         tenant_context = TenantContext.from_authorized_context(ctx)
         try:
-            replay = _replayed(
+            replay = _replay_or_none(
                 tenant_context,
                 project_id,
                 manifest_id,
-                "approve",
+                True,
                 expected,
                 pairs,
-                ctx.principal.subject,
+                key,
+                digest,
+                ctx,
             )
             if replay is not None:
                 return JSONResponse({**replay, "replayed": True})
             try:
                 with tenant_scoped_session_for(session_factory, tenant_context) as session:
+                    actor = _actor(ctx)
                     approve_split_manifest(
                         session,
                         tenant_context,
@@ -435,25 +519,38 @@ def build_dataset_split_manifest_router(
                         manifest_id=manifest_id,
                         expected_proposal_sha256=expected,
                         reviews=reviews,
-                        actor=_actor(ctx),
+                        actor=actor,
+                    )
+                    record_split_request(
+                        session,
+                        tenant_context,
+                        project_id=project_id,
+                        manifest_id=manifest_id,
+                        action="approve",
+                        idempotency_key=key,
+                        request_digest=digest,
+                        actor=actor,
                     )
                     body = _serialize_summary(
                         get_split_manifest(
                             session, tenant_context, project_id=project_id, manifest_id=manifest_id
-                        )
+                        ),
+                        _may_see_held_out(ctx),
                     )
             except SplitManifestError as exc:
-                if exc.code != "manifest_not_proposed":
+                if exc.code not in ("manifest_not_proposed", "idempotency_key_reused"):
                     raise
                 # A concurrent identical request may have locked it first.
-                replay = _replayed(
+                replay = _replay_or_none(
                     tenant_context,
                     project_id,
                     manifest_id,
-                    "approve",
+                    True,
                     expected,
                     pairs,
-                    ctx.principal.subject,
+                    key,
+                    digest,
+                    ctx,
                 )
                 if replay is None:
                     raise
@@ -473,19 +570,14 @@ def build_dataset_split_manifest_router(
         ctx: AuthorizedContext = write_dependency,
     ) -> JSONResponse:
         del organization_id
-        _idempotency_key(request)
+        key = _idempotency_key(request)
         payload = await _read_body(request, _REJECT_FIELDS)
         expected = payload["expected_proposal_sha256"]
+        digest = _fingerprint("reject", manifest_id, expected, [])
         tenant_context = TenantContext.from_authorized_context(ctx)
         try:
-            replay = _replayed(
-                tenant_context,
-                project_id,
-                manifest_id,
-                "reject",
-                expected,
-                [],
-                ctx.principal.subject,
+            replay = _replay_or_none(
+                tenant_context, project_id, manifest_id, False, expected, [], key, digest, ctx
             )
             if replay is not None:
                 return JSONResponse({**replay, "replayed": True})
@@ -496,29 +588,43 @@ def build_dataset_split_manifest_router(
                     )
                     if not hmac.compare_digest(current.manifest.proposal_sha256, expected):
                         raise SplitManifestError("manifest_changed")
+                    actor = _actor(ctx)
                     reject_split_manifest(
                         session,
                         tenant_context,
                         project_id=project_id,
                         manifest_id=manifest_id,
-                        actor=_actor(ctx),
+                        actor=actor,
+                    )
+                    record_split_request(
+                        session,
+                        tenant_context,
+                        project_id=project_id,
+                        manifest_id=manifest_id,
+                        action="reject",
+                        idempotency_key=key,
+                        request_digest=digest,
+                        actor=actor,
                     )
                     body = _serialize_summary(
                         get_split_manifest(
                             session, tenant_context, project_id=project_id, manifest_id=manifest_id
-                        )
+                        ),
+                        _may_see_held_out(ctx),
                     )
             except SplitManifestError as exc:
-                if exc.code != "manifest_not_proposed":
+                if exc.code not in ("manifest_not_proposed", "idempotency_key_reused"):
                     raise
-                replay = _replayed(
+                replay = _replay_or_none(
                     tenant_context,
                     project_id,
                     manifest_id,
-                    "reject",
+                    False,
                     expected,
                     [],
-                    ctx.principal.subject,
+                    key,
+                    digest,
+                    ctx,
                 )
                 if replay is None:
                     raise

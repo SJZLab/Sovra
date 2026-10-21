@@ -457,6 +457,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0518.py
       - name: FTF-0519-P1 negative-test proof (Immutable split manifest - pure domain, migration shape, SQLite store, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0519_p1.py
+      - name: FTF-0519-P2 negative-test proof (Split manifest routes - real uvicorn over a state-machine store, stored Idempotency-Key, held-out source hidden from ml_engineer, contract, wiring, 40+ route faults; no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0519.py
       - name: FTF-1305 negative-test proof (Candidate ranking, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1305.py
       - name: FTF-0616 negative-test proof (LLM judge adapter, no DB required; real local gateway over HTTPS)
@@ -3277,6 +3279,48 @@ jobs:
       - name: Prove the real split manifest evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0519_p1_split_manifests.py
 
+  dataset-split-manifest-routes-integration:
+    # FTF-0519-P2: the four split-manifest routes on a real uvicorn server over the restricted
+    # sovra_app role and a real Postgres 16 with the full migration chain (migration 0032
+    # upgrade/downgrade/upgrade with one head; ENABLE+FORCE RLS and a non-allow-all policy on
+    # dataset_split_manifest_requests; SELECT/INSERT only; raw sovra_app SQL refused for an
+    # overwrite, a delete, a cross-tenant row, a malformed digest / action / key and an unknown
+    # manifest): the 401/403/404/409 matrix, paging, the body-validation table, approve / reject
+    # with the authenticated reviewer, the stored Idempotency-Key (replay, idempotency_key_reused,
+    # a refused request leaves its key free, 12 concurrent identical requests, approve-vs-reject),
+    # blocking / blocked / saturated / unreviewed / tampered / empty-role refusals writing nothing,
+    # grant_changed after a revoked connection, held-out sources hidden from ml_engineer, and a
+    # canary scan of every response body --
+    # tests/integration/test_ftf_0519_routes_postgres.py.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' dataset-split-manifest-routes-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0519p2
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0519p2"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0519p2
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real split manifest route evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_0519_routes_postgres.py
+
   live-auth-path-integration:
     # FTF-0103A: real OIDC login -> real API call. A real idpyoidc OpenID
     # Provider (FTF-0101's harness), the REAL app.main.create_app() served
@@ -3900,6 +3944,7 @@ jobs:
       - dataset-upload-hardening-integration
       - dataset-quality-issues-integration
       - dataset-split-manifest-integration
+      - dataset-split-manifest-routes-integration
       - live-auth-path-integration
       - network-policy-enforcement-integration
       - object-storage-backup-integration

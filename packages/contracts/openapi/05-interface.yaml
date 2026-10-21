@@ -961,7 +961,9 @@ paths:
       summary: >-
         Lock a proposed manifest (FTF-0519-P2). The reviewer is the authenticated principal.
         Needs workspace_admin or organization_admin. The same request replays the stored
-        outcome (200, `replayed: true`) and writes nothing.
+        outcome (200, `replayed: true`) and writes nothing. The Idempotency-Key is stored with a
+        digest of the request (action, manifest, expected hash, reviews); the same key with
+        another digest is 409 `idempotency_key_reused`.
       operationId: approveDatasetSplitManifest
       parameters:
         - name: Idempotency-Key
@@ -993,7 +995,8 @@ paths:
         '409':
           description: >-
             `manifest_changed`, `manifest_not_proposed`, `leakage_not_clear`,
-            `manifest_insufficient` or `manifest_tampered`.
+            `manifest_insufficient`, `manifest_tampered` or `idempotency_key_reused` (the
+            Idempotency-Key was already used by a request with another digest).
         '413':
           description: '`request_too_large`.'
   /api/v1/organizations/{organization_id}/projects/{project_id}/dataset-splits/{manifest_id}/reject:
@@ -1020,7 +1023,8 @@ paths:
       summary: >-
         Reject a proposed manifest (FTF-0519-P2); the next proposal is a new version. Needs
         workspace_admin or organization_admin. The same request replays (200,
-        `replayed: true`) and writes nothing.
+        `replayed: true`) and writes nothing. The Idempotency-Key is stored with a digest of the
+        request; the same key with another digest is 409 `idempotency_key_reused`.
       operationId: rejectDatasetSplitManifest
       parameters:
         - name: Idempotency-Key
@@ -1049,7 +1053,9 @@ paths:
         '404':
           description: '`not_found`.'
         '409':
-          description: '`manifest_changed` or `manifest_not_proposed`.'
+          description: >-
+            `manifest_changed`, `manifest_not_proposed` or `idempotency_key_reused` (the
+            Idempotency-Key was already used by a request with another digest).
         '413':
           description: '`request_too_large`.'
 components:
@@ -1629,9 +1635,14 @@ components:
         role: {$ref: '#/components/schemas/DatasetSplitRole'}
         purpose: {type: string}
         record_count: {type: integer, minimum: 0}
-        group_count: {type: integer, minimum: 0}
+        group_count:
+          type: integer
+          minimum: 0
+          description: >-
+            Omitted on the `final_qualification` row for a caller that may not read held-out data
+            (ml_engineer), whose final row keeps only its record count and role hash.
         role_sha256: {$ref: '#/components/schemas/Sha256Hex'}
-      required: [role, purpose, record_count, group_count, role_sha256]
+      required: [role, purpose, record_count, role_sha256]
       additionalProperties: false
     DatasetSplitManifestSourceRow:
       type: object
@@ -1658,6 +1669,9 @@ components:
               items: {$ref: '#/components/schemas/DatasetSplitManifestRoleRow'}
             sources:
               type: array
+              description: >-
+                A caller that may not read held-out data (ml_engineer) gets no source whose
+                `dataset_purpose` is `held_out_evaluation`.
               items: {$ref: '#/components/schemas/DatasetSplitManifestSourceRow'}
           required: [roles, sources]
     DatasetSplitManifestOutcome:
