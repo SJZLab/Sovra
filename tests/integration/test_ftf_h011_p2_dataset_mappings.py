@@ -1321,6 +1321,10 @@ def section_raw(env: Env) -> None:
         "'jsonl', '1', 'h011.1', :h, :h, CAST(:counts AS jsonb), :status, CAST(:snap AS text[]), 'raw' "
         "FROM datasets d JOIN dataset_upload_sessions u ON u.id = d.upload_session_id WHERE d.id=:ds"
     )
+
+    def newds() -> ustore.Dataset:
+        return env.dataset(w, f"raw-{uuid.uuid4().hex[:8]}", "training", jsonl(convo()))
+
     base = dict(
         id=narrow_id,
         mv=1,
@@ -1364,7 +1368,10 @@ def section_raw(env: Env) -> None:
     err = raw(env, w.ctx, insert_sql, **{**base, "id": uuid.uuid4(), "mv": 5, "pv": 1})
     check("a parent that is not the previous version is refused", err is not None)
     err = raw(
-        env, w.ctx, insert_sql, **{**base, "id": uuid.uuid4(), "mv": 1, "pv": None, "h": "XYZ"}
+        env,
+        w.ctx,
+        insert_sql,
+        **{**base, "id": uuid.uuid4(), "ds": newds().id, "mv": 1, "pv": None, "h": "XYZ"},
     )
     check("a malformed hash is refused", err is not None)
     err = raw(
@@ -1374,9 +1381,9 @@ def section_raw(env: Env) -> None:
         **{
             **base,
             "id": uuid.uuid4(),
-            "ds": ds.id,
-            "mv": 9,
-            "pv": 8,
+            "ds": newds().id,
+            "mv": 1,
+            "pv": None,
             "counts": json.dumps({"seen": 1, "accepted": 1, "rejected": 0, "secret value": 3}),
         },
     )
@@ -1388,9 +1395,9 @@ def section_raw(env: Env) -> None:
         **{
             **base,
             "id": uuid.uuid4(),
-            "ds": ds.id,
-            "mv": 9,
-            "pv": 8,
+            "ds": newds().id,
+            "mv": 1,
+            "pv": None,
             "counts": json.dumps({"seen": "many", "accepted": 1, "rejected": 0}),
         },
     )
@@ -1399,16 +1406,41 @@ def section_raw(env: Env) -> None:
         env,
         w.ctx,
         insert_sql,
-        **{**base, "id": uuid.uuid4(), "ds": ds.id, "mv": 9, "pv": 8, "snap": "{}"},
+        **{**base, "id": uuid.uuid4(), "ds": newds().id, "mv": 1, "pv": None, "snap": "{}"},
     )
     check("an empty grant snapshot is refused", err is not None)
     err = raw(
         env,
         w.ctx,
         insert_sql,
-        **{**base, "id": uuid.uuid4(), "ds": ds.id, "mv": 9, "pv": 8, "snap": "{marketing}"},
+        **{
+            **base,
+            "id": uuid.uuid4(),
+            "ds": newds().id,
+            "mv": 1,
+            "pv": None,
+            "snap": "{marketing}",
+        },
     )
     check("a snapshot with an unknown purpose is refused", err is not None)
+
+    check(
+        "positive control: a clean insert on a fresh dataset is accepted",
+        raw(
+            env,
+            w.ctx,
+            insert_sql,
+            **{
+                **base,
+                "id": uuid.uuid4(),
+                "ds": newds().id,
+                "mv": 1,
+                "pv": None,
+                "snap": "{training}",
+            },
+        )
+        is None,
+    )
 
     # a superseded version is never approved, even by raw SQL
     sup = env.dataset(w, "raw4", "training", jsonl(convo()))
