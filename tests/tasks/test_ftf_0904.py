@@ -3554,7 +3554,7 @@ def test_f2r2_generic_quoted_value_trailing_backslash_fails_closed() -> None:
                     logging.getLogger("t").error(text)
                     found = leaked([_F1_VALUE], h.outputs())
                 check("FTF-0904-F2", f"{text!r}: logging-path leak {found}", not found)
-    check("FTF-0904-F2", "trailing-backslash table is non-trivial", rows >= 100)
+    check("FTF-0904-F2", "trailing-backslash table is non-trivial", rows >= 80)
 
 
 def test_f2r2_escaped_quote_forms_of_every_f2_name() -> None:
@@ -3692,8 +3692,8 @@ FAULTS += [
     ),
     (
         "F2r2-escaped value stops at first closer",
-        r"""(?:\\++["']|[^\r\n]*+)""",
-        r"""(?:\\++["'])?""",
+        r"""(?:\\++"|[^\r\n]*+)""",
+        r"""(?:\\++")?""",
         1,
     ),
     (

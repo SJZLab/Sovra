@@ -178,6 +178,10 @@ _QUOTED_VALUE = (
     # find (`password="V\\"` -- the backslash run eats the closing quote) is read to end of line,
     # never left printed: deny by default, like `_QUOTED_SECRET`.
     r"""|"[^\r\n]*+|'[^\r\n]*+"""
+    # An escaped opening quote with no escaped closer (or an escaped single quote at all) is read
+    # the same way: to its closer, else to end of line.
+    r"""|(?<!\\)\\++'(?:[^'\\\r\n]++|\\++(?!'))*+(?:\\++'|[^\r\n]*+)"""
+    r"""|(?<!\\)\\++"[^\r\n]*+"""
 )
 
 _PEM = re.compile(
@@ -289,7 +293,10 @@ _QUERY_ASSIGN = re.compile(
 )
 # F2 r2 (F2-ESCAPED-QUOTE-FORM): a backslash-escaped opening quote (`{\"state\": \"v\"}`, any
 # number of escape levels) is read to its escaped closing quote, or to end of line if there is none.
-_ESCAPED_QUOTED_SECRET = re.compile(r'''\\++["'](?:[^"'\\\r\n]++|\\++(?!["']))*+(?:\\++["']|[^\r\n]*+)''')
+_ESCAPED_QUOTED_SECRET = re.compile(
+    r'''\\++"(?:[^"\\\r\n]++|\\++(?!"))*+(?:\\++"|[^\r\n]*+)'''
+    r"""|\\++'(?:[^'\\\r\n]++|\\++(?!'))*+(?:\\++'|[^\r\n]*+)"""
+)
 _QUOTED_SECRET = re.compile(
     r""""(?:[^"\\\r\n]|\\++[^\r\n]?)*+"?|'(?:[^'\\\r\n]|\\++[^\r\n]?)*+'?"""
 )
