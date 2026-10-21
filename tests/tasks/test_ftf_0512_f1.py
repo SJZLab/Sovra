@@ -60,8 +60,8 @@ import workers.data.normalized_duplicate_detector as production  # noqa: E402
 MODULE_PATH = ROOT / "workers" / "data" / "normalized_duplicate_detector.py"
 FAILURES: list[str] = []
 
-# Frozen digest of _conv("Hello") under detector_version 5 (golden pin).
-FROZEN_SAMPLE_DIGEST = "7022b46370cd40ade19ff0c4faa3f62614a9308241247bffb6e34198e6b374e8"
+# Frozen digest of _conv("Hello") under detector_version 6 (golden pin).
+FROZEN_SAMPLE_DIGEST = "0633f7b5f79943a690348429751f75c6bee7c5bbba26a8e715cb4ee02fbbcd77"
 
 
 def check(
@@ -652,6 +652,15 @@ F3_PAIRS: list[tuple[str, str, str]] = [
     ("non-ASCII decimal digit, mark after", "\u0665%", "\u0665"),
     ("non-ASCII decimal digit, mark before", "-\u0665", "\u0665"),
     ("sentence-final period after a number", "total 5.", "total 5"),
+    ("F3 r2: inches vs feet (\u2033 folds to two primes)", "5\u2033", "5\u2032"),
+    ("F3 r2: triple prime vs prime", "5\u2034", "5\u2032"),
+    ("F3 r2: double exclamation vs exclamation", "5\u203c", "5!"),
+    ("F3 r2: sign then currency vs currency", "-$5", "$5"),
+    ("F3 r2: sign then euro vs euro", "-\u20ac5", "\u20ac5"),
+    ("F3 r2: sign then point vs point", "-.5", ".5"),
+    ("F3 r2: doubled sign vs sign", "--5", "-5"),
+    ("F3 r2: kept mark spaced into its own token (decimal)", "1.5", "1. 5"),
+    ("F3 r2: kept mark spaced into its own token (sign)", "-5", "- 5"),
 ]
 F3_STILL_EQUAL: list[tuple[str, str, str]] = [
     ("comma between words", "hello, world", "hello world"),
@@ -713,8 +722,8 @@ def run_f3_checks(mod: types.ModuleType, sink: list[str]) -> None:
     for char in points:
         image = unicodedata.normalize("NFKC", char)
         for side, template, edge in (
-            ("after", F3_SENTENCE_AFTER, image[0]),
-            ("before", F3_SENTENCE_BEFORE, image[-1]),
+            ("after", F3_SENTENCE_AFTER, image),
+            ("before", F3_SENTENCE_BEFORE, image),
         ):
             form = n(template.format(char))
             if form == baseline[side]:
@@ -736,7 +745,8 @@ def run_f3_checks(mod: types.ModuleType, sink: list[str]) -> None:
     )
     # marks that fold to the same character next to the digit may share a form;
     # two marks whose digit-side characters differ must not (an oracle that is
-    # independent of the detector: the NFKC image's edge character)
+    # independent of the detector: the FULL NFKC image -- an edge-character key
+    # hid a run whose outer mark was dropped)
     forms_by_edge: dict[str, set[str]] = {}
     for (form, edge), _chars in by_form.items():
         forms_by_edge.setdefault(form, set()).add(edge)
@@ -1200,12 +1210,12 @@ def run_checks(mod: types.ModuleType, sink: list[str]) -> None:
     # version fails if the field is dropped or the number is reverted.
     sample = _conv("Hello")
     expected_document = (
-        '{"detector_version":5,"messages":[{"content":[{"text":"hello","type":"text"}],'
+        '{"detector_version":6,"messages":[{"content":[{"text":"hello","type":"text"}],'
         '"role":"user"}]}'
     )
     check(
         "FTF-0512-F1",
-        "F1-DETECTOR-VERSION: digest == sha256 of the canonical document with detector_version 5",
+        "F1-DETECTOR-VERSION: digest == sha256 of the canonical document with detector_version 6",
         h(sample) == hashlib.sha256(expected_document.encode("utf-8")).hexdigest(),
         sink,
     )
@@ -1671,6 +1681,34 @@ def _fault_digit_adjacent(side: str) -> Callable[[Any], None]:
     return fault
 
 
+def _fault_kept_mark_spaced(v: Any) -> None:
+    """A kept mark spaced into its own token ("1.5" == "1. 5", "-5" == "- 5")."""
+    v._strip_punctuation = lambda text: re.sub(
+        r"[^\w\s]",
+        lambda m: f" {m.group()} ",
+        text,
+    )
+
+
+def _fault_only_touching_char_kept(v: Any) -> None:
+    """The round-1 rule: only the single mark touching a digit is kept, the rest of
+    a mark run attached to the number is stripped (F3-RUN-ATTACHED-MARK-DROPPED)."""
+
+    def strip(text: str) -> str:
+        def replace(m: re.Match[str]) -> str:
+            char, start, end = m.group(), m.start(), m.end()
+            if _category(char).startswith("S"):
+                return f" {char} "
+            near = (start > 0 and _category(text[start - 1]) == "Nd") or (
+                end < len(text) and _category(text[end]) == "Nd"
+            )
+            return char if near else " "
+
+        return re.sub(r"[^\w\s]", replace, text)
+
+    v._strip_punctuation = strip
+
+
 def _fault_digit_adjacent_ascii(v: Any) -> None:
     v._strip_punctuation = _ascii_only_strip
 
@@ -1697,7 +1735,9 @@ def _fault_every_punctuation_kept(v: Any) -> None:
 
 
 FAULTS: dict[str, Callable[[Any], None]] = {
-    "F3-DETECTOR-VERSION-REVERTED-4": _fault_version(4),
+    "F3-DETECTOR-VERSION-REVERTED-5": _fault_version(5),
+    "F3-KEPT-MARK-SPACED": _fault_kept_mark_spaced,
+    "F3-RUN-ATTACHED-MARK-DROPPED": _fault_only_touching_char_kept,
     "F3-DIGIT-ADJACENT-IGNORED": _fault_digit_adjacent("none"),
     "F3-DIGIT-ADJACENT-LEFT-ONLY": _fault_digit_adjacent("left"),
     "F3-DIGIT-ADJACENT-RIGHT-ONLY": _fault_digit_adjacent("right"),

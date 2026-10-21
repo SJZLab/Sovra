@@ -141,6 +141,7 @@ _ISO_TIMESTAMP_PATTERN = re.compile(
     r"\b\d{4}-\d{2}-\d{2}[t ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:z|[+-]\d{2}:\d{2})?\b"
 )
 _PUNCTUATION_PATTERN = re.compile(r"[^\w\s]")
+_PUNCTUATION_RUN_PATTERN = re.compile(r"[^\w\s]+")
 _WHITESPACE_PATTERN = re.compile(r"\s+")
 
 # FTF-0512-F1 round 2: NFKC's compatibility decomposition is not limited to
@@ -179,7 +180,7 @@ _MAX_COMBINING_RUN = 30
 # tokens instead of being stripped like punctuation (`_strip_punctuation`).
 # FTF-0512-F3: 5 -- a P* character directly adjacent to a digit is kept
 # ("-5" != "5", "5%" != "5", "#1" != "1").
-_DETECTOR_VERSION = 5
+_DETECTOR_VERSION = 6
 
 
 class NormalizedDuplicateDetectionError(ValueError):
@@ -367,20 +368,28 @@ def _punctuation_replacement(match: re.Match[str]) -> str:
     # meaning ("x <= 5" vs "x >= 5", "$100" vs "EUR100"), so it is kept as its own
     # space-separated token instead -- FTF-0512's "cannot collapse distinct
     # customer outcomes" negative_acceptance clause.
-    # FTF-0512-F3: the same clause keeps a P* character that is directly
-    # adjacent to a digit ("-5", "5%", "#1", "5\u2032"): dropping it would merge
-    # distinct numbers. Elsewhere P* is still stripped ("hello, world").
-    char = match.group()
-    if unicodedata.category(char).startswith("S"):
-        return f" {char} "
+    # FTF-0512-F3: the same clause keeps every P* character of a contiguous
+    # run of non-word, non-space characters (P* or S*) that touches a digit
+    # ("-5", "5%", "#1", "5\u2032", "-$5", "5\u2033"): dropping any of them would
+    # merge distinct numbers ("-$5" with "$5", inches with feet). The run is
+    # decided on the folded string, before S* is spaced out. Elsewhere P* is
+    # still stripped ("hello, world").
+    run = match.group()
     text, start, end = match.string, match.start(), match.end()
-    if (start > 0 and _is_digit(text[start - 1])) or (end < len(text) and _is_digit(text[end])):
-        return char
-    return " "
+    keep_marks = (start > 0 and _is_digit(text[start - 1])) or (
+        end < len(text) and _is_digit(text[end])
+    )
+    pieces: list[str] = []
+    for char in run:
+        if unicodedata.category(char).startswith("S"):
+            pieces.append(f" {char} ")
+        else:
+            pieces.append(char if keep_marks else " ")
+    return "".join(pieces)
 
 
 def _strip_punctuation(text: str) -> str:
-    return _PUNCTUATION_PATTERN.sub(_punctuation_replacement, text)
+    return _PUNCTUATION_RUN_PATTERN.sub(_punctuation_replacement, text)
 
 
 def _finish_text(folded: str) -> str:
