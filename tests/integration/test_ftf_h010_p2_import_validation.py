@@ -612,12 +612,10 @@ def main() -> None:
         not_valid is True,
     )
 
-    # Three steps back from head: this migration (0031) first, then the two unrelated
-    # migrations that now sit between it and 0028 on main -- 0030_dataset_split_manifests,
-    # then 0029_artifact_ready_license (each independently claimed off 0028/0029 by a
-    # different relay session; this migration was renumbered twice and rechained each time,
-    # see 0031_model_import_validation.py's own docstring).
-    alembic("downgrade -3", "downgrade", "-3")
+    # Back to 0028 by name, not by a step count: later migrations keep landing on top of
+    # this one (0030, 0029 below it were claimed independently; 0032 and 0033 now sit above
+    # it), so a relative step breaks every time the chain grows.
+    alembic("downgrade to 0028", "downgrade", "0028_model_import_state_machine")
     check(
         CID,
         "M: the downgrade restores the 0028 trigger function body byte-identically",
@@ -2402,6 +2400,8 @@ def main() -> None:
         f"M: NULL-reference endpoint rows exist before the downgrade attempt ({n_null})",
         n_null > 0,
     )
+    # Undo the migrations above 0031 first, so the step that is refused is 0031's own.
+    alembic("downgrade to 0031", "downgrade", "0031_model_import_validation")
     refused = _alembic(["downgrade", "-1"], migration_url)
     with Session(owner_engine) as s:
         n_after = s.execute(
@@ -2428,7 +2428,11 @@ def main() -> None:
     owner_sql(
         "DELETE FROM model_versions WHERE import_kind = 'endpoint' AND endpoint_reference IS NULL"
     )
-    alembic("downgrade -3 after removing the NULL-reference rows", "downgrade", "-3")
+    alembic(
+        "downgrade to 0028 after removing the NULL-reference rows",
+        "downgrade",
+        "0028_model_import_state_machine",
+    )
     check(
         CID,
         "M: that downgrade restores both definitions byte-identically",

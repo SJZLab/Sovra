@@ -8359,7 +8359,7 @@ FTF-0512:
   certification_state: CERTIFIED
   criticality: MUST
   description: Normalized duplicate detector
-  evidence_hash: 244ea3af6ba6e9a65dda0485f271441662b2c10d
+  evidence_hash: a4dff1f8287d31d6832f9f526598ca4ccbc47b20
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31;
@@ -10273,6 +10273,9 @@ FTF-0904:
   evidence_hash: 51f8753fe8aa21a6105fb62d78b4e758921d1788
   implementation_state: IMPLEMENTED
   notes: >-
+    REQUALIFICATION PENDING (Law 15, 2026-10-21T12:49Z): PR #905 (FTF-0904-F2 r1) made the generic quoted-value
+    rule print a quoted secret ending in a backslash; restored when FTF-0904-F2 r2 is certified (QUEUE 0b).
+
     WIRED 2026-10-14 via FTF-0904-W1 (child slice, CERTIFIED, PR #792 merge b4d401fc): create_app() calls
     install_api_log_redaction() -> install_redaction() first; live-path proof tests/tasks/test_ftf_0904_w1.py
     (real uvicorn factory, access log, startup failures incl. --workers/--reload children, hooks; faults F1-F14).
@@ -10735,7 +10738,7 @@ FTF-1001:
   certification_state: CERTIFIED
   criticality: MUST
   description: ModelVersion schema/API
-  evidence_hash: 8b51c85edd35652ba3263dd6a6fcbf590f2f81bd
+  evidence_hash: c3c8da60009a70924dcd684c14cd0892eaa01e81
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-14; scenarios=Q07, Q20; deps=FTF-0301, FTF-0401, FTF-0103
