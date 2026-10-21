@@ -11954,3 +11954,61 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   drip holds a call 302 s / >597 s at timeout=0.5; final 1xx unpinned (N3); provisioning key echoed in the role error
   (KE9). Ruling: optional total `deadline` added additively to outbound_guard.guarded_stream_fetch (default None
   unchanged; Law 15 requalification of the guard's suites). Stopping rule set.
+
+## 2026-10-21T00:25Z — RETURNED: FTF-UX01 (r1)
+- **FTF-UX01: RETURNED** (child slice of the FTF-UX program; round 1 → 2; PR #898, merge
+  b89c85bbf09e74d6b99de476baab51451b8b57c2, head a45226dd). Producer session_01Nkoi3GRKa5gXECnBsY7FAj ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 78/78, ci-verdict 118811785702; gate 118715070742 vitest 1429 tests (13 new),
+  lint/prettier/tsc clean. Met: §72.1 tokens, dark tokens, system fonts, StatusBadge words, roles/association of 5
+  components; package.json unchanged. Return: no Dialog (severity 3; Radix install refused by the session guard -
+  owner action), Pending shows no visible progress (severity 3), F6/F7/F20/F17/F21/F26/F15 GREEN, duplicate ids and
+  dropped aria-describedby, ErrorSummary refocus, whitespace reasons, §4 evidence incomplete. Rulings: §72.5
+  viewport/keyboard/zoom on a real-browser component harness now, screen reader + journeys with FTF-H029; Arabic phrases, non-throwing StatusBadge and a visible Button
+  variant required. Note: UX01/UX02 merged before the UX00 audit. Stopping rule set.
+
+## 2026-10-21T00:25Z — RETURNED: FTF-UX02 (r1); FTF-0500A, FTF-0501-UI, FTF-0516 requalified
+- **FTF-UX02: RETURNED** (child slice; round 1 → 2; PR #902, merge 69908165923e3429309970bc13a90e548ead967c, head
+  cde322dc). Producer session_013mHZpTB6jccViWQoc3ucsK (submission self-declared PARTIAL) ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 79/79, ci-verdict 118924676697; gate 118836128732 vitest 1435 tests;
+  resumable-upload-ui-real-api-integration 118836298895 and dataset-quality-ui-real-api-integration 118836298703 success.
+  Law 15: FTF-0500A, FTF-0501-UI, FTF-0516 suites and real-API suites pass on PG16 + SeaweedFS - their certifications
+  stand; Law 9 clean. Return: severity 3 x3 (confirm focus lost, not bilingual / no lang, not on UX01 components);
+  10 faults GREEN; confirm promises a discard the system does not perform; §4 evidence missing. Waits on FTF-UX01 r2.
+
+## 2026-10-21T00:25Z — RETURNED: FTF-0512-F3 (r1); FTF-0512 stays CERTIFIED
+- **FTF-0512-F3: RETURNED** (follow-up child slice; round 1 → 2; PR #895, merge 250794f83b2b5ca333129c310d5eb1f3198d3a93,
+  head a2e99467). Producers session_01AASqW8neC1nQsHMyTjkTU7, session_01GGfmkb2dut3Cfsa3sKv2oy ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 78/78, ci-verdict 118843673566; gate 118839941693 "FTF-0512-F1 look-alike gaps:
+  all checks passed" (runs run_f3_checks) on 3.12 and 3.11, 0512/0513/0515/0518/0516-P1 passed; mutation-gate 24/24.
+  Met: the named single-character cases, decimal separators, Arabic-Indic digits, F2 holds, corpus 0 new merges, G20.
+  Return: run-attached marks beyond the touching character dropped ("-$5" == "$5", "5″" == "5′"); the table's merge
+  oracle keyed on edge chars hides it; kept-mark spacing unpinned (H08). Ruling: keep the whole touching mark run.
+  FTF-0512 stays CERTIFIED (no regression of certified behaviour).
+
+## 2026-10-21T00:50Z — RETURNED: FTF-0519-P2 (r1)
+- **FTF-0519-P2: RETURNED** (child slice of FTF-0519; round 1 → 2; PR #869, merge 703008e2831c25dcd43e6d4fd3758551b66d0884,
+  head 87cc2102). Producers session_01TQtDCcDjx1MPxErpM9tagU, session_01E9nxhsBLMd3pCfcNhAQcJT (merge commit 87cc2102 has no
+  trailer) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 78/78, ci-verdict 118676790443; mutation-gate 118588814377
+  baseline runs test_ftf_0519.py, 176/180 + 4 allowlisted; gate has NO step for it. Met: wiring, auth/paging/body
+  validation, replay/concurrency, refusals, grant_changed after lock, id-free bodies (136-body canary scan), 20/20
+  faults RED, uncapped mutation clean. Return: missing PG route integration + CI job; no gate step; held-out source
+  identity shown to ml_engineer (ruling: apply _may_see_held_out); Idempotency-Key ignored (bind to request digest).
+
+## 2026-10-21T00:50Z — RETURNED: FTF-H010-P2 (r2); FTF-1001 requalified
+- **FTF-H010-P2: RETURNED** (child slice of FTF-H010; round 2 → 3; PR #742, merge c8e8ab1511097cd99b5ea69e3878810e035a3b89,
+  head a099d7a9). Producers session_01Hts4P1s3owaWykrVgdtuxa, session_01178i577DXdw2t3Ks6yg3iA, session_01Db6rmjjBn2Ehv1MPdw5F3J
+  ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 78/78, ci-verdict 118666669042; mutation-gate 118593164210 (capped
+  200/359: 198 KILLED + 2 allowlisted); gate has no P2 step; no P2 integration job. Local: P2 31,525 checks / 81 faults
+  RED; P1, FTF-1001 and all three integration suites pass on PG16; migration single head, byte-identical downgrade;
+  Law 18 verified by raw SQL. Return: 10-interface contract not updated; no CI wiring; missing echo ends
+  blocked_external (DoD: failed); mismatched echo succeeds; revoke race succeeds; 2 unallowlisted uncapped survivors;
+  re-claim boundary text-pinned only; submission incomplete. FTF-1001: REQUALIFIED (route-3 ruling holds).
+
+## 2026-10-21T00:50Z — RETURNED: FTF-1505 (r7), tests only — certifier of record session_013icfdVeuzbsh6xmPLWBZ1d
+- **FTF-1505: RETURNED** (round 7 → 8, tests only; PR #900, merge 80232b45bc0b50c30dfdb1a94025ae29da17b336, head 40c53b7f).
+  Producer: the Control-plane session session_01QVznorVMjnmcttUhyDnoGR (owner-approved); certifier of record: the separate
+  cloud session session_013icfdVeuzbsh6xmPLWBZ1d (named in no commit). CI: ci-verdict 118888716343; gate 118795135934
+  "FTF-1505 secret scanning tests: all checks passed"; secret-scanning 118795135528 "10515 unit(s) ... 0 blocking". Real
+  scan 10,682 units, 0 blocking. Production sound; LIVE-CALLSITE closed; no round-6 regression; 41/51 faults RED.
+  Return: base64 and hex run-length caps of other sizes (4000/5000/6000/16384/65536; hex unanchored 512, 65536) GREEN -
+  pin the whole class (one whole match on a >= 1 MB run + dense placement sweep).
