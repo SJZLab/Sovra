@@ -1793,6 +1793,36 @@ def route_suite(mod: ModuleType, check: Checker) -> None:
             r.status == 409 and r.detail == "manifest_tampered",
         )
 
+        # a code that merely looks like the race codes (case / padding) is not one of them: only
+        # the exact codes fall into the replay shortcut. The constructor asserts the code is
+        # fixed, so the look-alike is built around it.
+        for look_alike in (
+            "MANIFEST_NOT_PROPOSED",
+            " manifest_not_proposed ",
+            "Idempotency_Key_Reused",
+        ):
+            fake.reset()
+
+            def racing_reject_lookalike(
+                session: Any, ctx: Any, _code: str = look_alike, **kw: Any
+            ) -> Any:
+                fake.calls.append(("reject", kw))
+                fake.states[MANIFEST]["status"] = "rejected"
+                err = store.SplitManifestError("manifest_not_proposed")
+                err.code = _code
+                raise err
+
+            _swap(mod, "reject_split_manifest", racing_reject_lookalike)
+            try:
+                r = call(base, "POST", rpath, "admin", rgood)
+            finally:
+                _swap(mod, "reject_split_manifest", original_reject)
+            check(
+                "ACC-FREEZE-REVIEW",
+                f"a reject refusal coded {look_alike!r} is not the replay race (409 with that code)",
+                r.status == 409 and r.detail == look_alike,
+            )
+
 
 # ------------------------------------------------------------------ module copies for fault injection
 
@@ -2091,14 +2121,24 @@ def test_s_stored_requests_store_behaviour() -> None:
                 FAILURES.append(f"FAIL [{CID}] a key is scoped to its project")
             if find(PROJECT, "key-0002-abcd") is not None:
                 FAILURES.append(f"FAIL [{CID}] a different key finds nothing")
+            record(idempotency_key="Key-MIXED-0009-AbCd")
+            if find(PROJECT, "Key-MIXED-0009-AbCd") is None:
+                FAILURES.append(f"FAIL [{CID}] a mixed-case key is found by its exact text")
+            for variant_key in (
+                "key-mixed-0009-abcd",
+                " Key-MIXED-0009-AbCd",
+                "Key-MIXED-0009-AbCd ",
+            ):
+                if find(PROJECT, variant_key) is not None:
+                    FAILURES.append(f"FAIL [{CID}] a key is matched exactly, not {variant_key!r}")
             code = refusal(lambda: record(request_digest="cd" * 32))
-            if code != "idempotency_key_reused" or len(rows()) != 1:
+            if code != "idempotency_key_reused" or len(rows()) != 2:
                 FAILURES.append(f"FAIL [{CID}] a stored key is not overwritten ({code!r})")
             kept = find(PROJECT, "key-0001-abcd")
             if kept is None or kept.request_digest != digest:
                 FAILURES.append(f"FAIL [{CID}] a refused second write leaves the first digest")
             record(project_id=other_project)  # same key, another project: a different slot
-            if len(rows()) != 2:
+            if len(rows()) != 3:
                 FAILURES.append(f"FAIL [{CID}] the same key in another project is its own row")
             record(idempotency_key="key-0003-abcd", action="reject", manifest_id=OTHER_MANIFEST)
             third = find(PROJECT, "key-0003-abcd")
@@ -2126,6 +2166,73 @@ def test_s_stored_requests_store_behaviour() -> None:
     finally:
         store.execute_tenant_scoped = saved
         engine.dispose()
+
+
+# ------------------------------------------------------------------ migration 0032 shape (offline SQL)
+
+
+def _offline_sql(action: str, revision_range: str) -> str:
+    import subprocess
+
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", action, revision_range, "--sql"],
+        cwd=str(ROOT / "apps" / "api"),
+        capture_output=True,
+        text=True,
+        env={**os.environ, "SOVRA_DATABASE_URL": "postgresql+psycopg://x:y@localhost:5432/z"},
+    )
+    if result.returncode != 0:
+        FAILURES.append(
+            f"FAIL [{CID}] alembic {action} {revision_range} --sql: {result.stderr[-300:]}"
+        )
+    return result.stdout
+
+
+def test_m_migration_0032_shape() -> None:
+    """Law 18: the new table ships with FORCE row-level security, a tenant policy and no UPDATE /
+    DELETE grant. Rendered offline; the live proof is the Postgres integration suite."""
+    up = _offline_sql("upgrade", "0031_model_import_validation:0032_split_manifest_requests")
+    down = _offline_sql("downgrade", "0032_split_manifest_requests:0031_model_import_validation")
+    table = "dataset_split_manifest_requests"
+    for needle in (
+        f"CREATE TABLE {table}",
+        "CONSTRAINT uq_dataset_split_manifest_requests_key UNIQUE (organization_id, project_id, idempotency_key)",
+        "CONSTRAINT fk_dataset_split_manifest_requests_manifest FOREIGN KEY(organization_id, manifest_id) "
+        "REFERENCES dataset_split_manifests (organization_id, id) ON DELETE RESTRICT",
+        "CHECK (action IN ('approve', 'reject'))",
+        "request_digest ~ '^[0-9a-f]{64}$'",
+        "char_length(idempotency_key) BETWEEN 8 AND 200",
+        f'GRANT SELECT, INSERT ON {table} TO "sovra_app"',
+        f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY",
+        f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY",
+        f"CREATE POLICY tenant_isolation ON {table} FOR ALL",
+        "current_setting('app.current_organization_id', true)",
+        f"CREATE INDEX ix_{table}_organization_id ON {table} (organization_id)",
+        f"CREATE INDEX ix_{table}_manifest ON {table} (manifest_id)",
+        "0032_split_manifest_requests",
+    ):
+        if needle not in up:
+            FAILURES.append(f"FAIL [{CID}] migration 0032 upgrade SQL lacks {needle!r}")
+    if "DELETE ON" in up or "UPDATE ON" in up or ", UPDATE" in up or "ALL ON" in up:
+        FAILURES.append(f"FAIL [{CID}] migration 0032 grants more than SELECT, INSERT")
+    for needle in (
+        f"DROP POLICY IF EXISTS tenant_isolation ON {table}",
+        f'REVOKE ALL ON {table} FROM "sovra_app"',
+        f"DROP INDEX ix_{table}_manifest",
+        f"DROP INDEX ix_{table}_organization_id",
+        f"DROP TABLE {table}",
+        "0031_model_import_validation",
+    ):
+        if needle not in down:
+            FAILURES.append(f"FAIL [{CID}] migration 0032 downgrade SQL lacks {needle!r}")
+    sys_path_src = (
+        ROOT / "apps" / "api" / "alembic" / "versions" / "0032_dataset_split_manifest_requests.py"
+    ).read_text()
+    if (
+        'revision = "0032_split_manifest_requests"' not in sys_path_src
+        or len("0032_split_manifest_requests") > 32
+    ):
+        FAILURES.append(f"FAIL [{CID}] migration 0032 revision id fits alembic_version")
 
 
 # ------------------------------------------------------------------ contract and wiring

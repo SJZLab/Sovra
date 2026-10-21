@@ -421,7 +421,7 @@ def build_dataset_split_manifest_router(
         tenant_context: TenantContext,
         project_id: uuid.UUID,
         manifest_id: uuid.UUID,
-        action: str,
+        approving: bool,
         expected: str,
         reviews: list[tuple[str, str]],
         subject: str,
@@ -434,8 +434,9 @@ def build_dataset_split_manifest_router(
                 session, tenant_context, project_id=project_id, manifest_id=manifest_id
             )
             view = summary.manifest
+            action = "approve" if approving else "reject"
             wanted = _fingerprint(action, manifest_id, expected, reviews)
-            if action == "approve":
+            if approving:
                 if view.status != "locked" or view.approved_by != subject:
                     return None
                 stored = _stored_reviews(session, tenant_context, project_id, manifest_id)
@@ -454,7 +455,7 @@ def build_dataset_split_manifest_router(
         tenant_context: TenantContext,
         project_id: uuid.UUID,
         manifest_id: uuid.UUID,
-        action: str,
+        approving: bool,
         expected: str,
         reviews: list[tuple[str, str]],
         key: str,
@@ -471,7 +472,7 @@ def build_dataset_split_manifest_router(
             tenant_context,
             project_id,
             manifest_id,
-            action,
+            approving,
             expected,
             reviews,
             ctx.principal.subject,
@@ -499,7 +500,7 @@ def build_dataset_split_manifest_router(
                 tenant_context,
                 project_id,
                 manifest_id,
-                "approve",
+                True,
                 expected,
                 pairs,
                 key,
@@ -544,7 +545,7 @@ def build_dataset_split_manifest_router(
                     tenant_context,
                     project_id,
                     manifest_id,
-                    "approve",
+                    True,
                     expected,
                     pairs,
                     key,
@@ -576,7 +577,7 @@ def build_dataset_split_manifest_router(
         tenant_context = TenantContext.from_authorized_context(ctx)
         try:
             replay = _replay_or_none(
-                tenant_context, project_id, manifest_id, "reject", expected, [], key, digest, ctx
+                tenant_context, project_id, manifest_id, False, expected, [], key, digest, ctx
             )
             if replay is not None:
                 return JSONResponse({**replay, "replayed": True})
@@ -618,7 +619,7 @@ def build_dataset_split_manifest_router(
                     tenant_context,
                     project_id,
                     manifest_id,
-                    "reject",
+                    False,
                     expected,
                     [],
                     key,
