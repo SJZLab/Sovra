@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-21T00:25Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-21T00:50Z. Source: `python3 scripts/status.py` on main.
 - **Status: 155/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,12 @@ Updated: 2026-10-21T00:25Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-21T00:50Z:**
+  - Returned: FTF-1505 r8, tests only (secret scanning round 7, certified by a separate session: the scanner and the live-log checks hold, but the long-text tests only caught size limits at the exact sizes they named). Round 8 pins any size limit.
+- **2026-10-21T00:50Z:**
+  - Returned: FTF-H010-P2 r3 (model import validation: job locking, migration and access control are sound, but a model endpoint that answers with no model name or the wrong one is not failed, a connection revoked mid-check still succeeds, and the API contract and CI wiring are missing). FTF-1001 stays certified.
+- **2026-10-21T00:50Z:**
+  - Returned: FTF-0519-P2 r2 (split-manifest API routes: the routes work and leak no record ids, but the required real-database route test and CI step are missing, an ML engineer can see which held-out dataset a split uses, and the idempotency key is ignored).
 - **2026-10-21T00:25Z:**
   - Returned: FTF-0512-F3 r2 (duplicate detector: "-5" vs "5" and "5%" vs "5" are now kept apart, but "-$5" still matches "$5" and 5 inches matches 5 feet - the whole mark run next to a number must be kept, not just one character).
 - **2026-10-21T00:25Z:**

@@ -25178,3 +25178,12 @@ different session.
 
 ## 2026-10-21T00:25Z — Control plane: FTF-0512-F3 returned (r2)
 - **Returned:** FTF-0512-F3 r2 (0c): keep the whole mark run touching a digit (ruling), full-NFKC oracle, spacing pins, version 6.
+
+## 2026-10-21T00:50Z — Control plane: FTF-0519-P2 returned (r2)
+- **Returned:** FTF-0519-P2 r2 (0d): PG route integration + CI job, gate step, held-out source hidden (ruling), Idempotency-Key bound to the request digest.
+
+## 2026-10-21T00:50Z — Control plane: FTF-H010-P2 returned (r3)
+- **Returned:** FTF-H010-P2 r3 (0f): contract 10, CI wiring, echo missing/mismatch fail, revoke race, 2 survivors, boundary pin, submission. FTF-1001 requalified.
+
+## 2026-10-21T00:50Z — Control plane: FTF-1505 returned (r8, tests only; verdict by independent session_013icfdVeuzbsh6xmPLWBZ1d)
+- **Returned:** FTF-1505 r8 (0h): whole-class run-length cap pins. Control plane produces round 8.

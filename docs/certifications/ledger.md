@@ -11984,3 +11984,31 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   Return: run-attached marks beyond the touching character dropped ("-$5" == "$5", "5″" == "5′"); the table's merge
   oracle keyed on edge chars hides it; kept-mark spacing unpinned (H08). Ruling: keep the whole touching mark run.
   FTF-0512 stays CERTIFIED (no regression of certified behaviour).
+
+## 2026-10-21T00:50Z — RETURNED: FTF-0519-P2 (r1)
+- **FTF-0519-P2: RETURNED** (child slice of FTF-0519; round 1 → 2; PR #869, merge 703008e2831c25dcd43e6d4fd3758551b66d0884,
+  head 87cc2102). Producers session_01TQtDCcDjx1MPxErpM9tagU, session_01E9nxhsBLMd3pCfcNhAQcJT (merge commit 87cc2102 has no
+  trailer) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 78/78, ci-verdict 118676790443; mutation-gate 118588814377
+  baseline runs test_ftf_0519.py, 176/180 + 4 allowlisted; gate has NO step for it. Met: wiring, auth/paging/body
+  validation, replay/concurrency, refusals, grant_changed after lock, id-free bodies (136-body canary scan), 20/20
+  faults RED, uncapped mutation clean. Return: missing PG route integration + CI job; no gate step; held-out source
+  identity shown to ml_engineer (ruling: apply _may_see_held_out); Idempotency-Key ignored (bind to request digest).
+
+## 2026-10-21T00:50Z — RETURNED: FTF-H010-P2 (r2); FTF-1001 requalified
+- **FTF-H010-P2: RETURNED** (child slice of FTF-H010; round 2 → 3; PR #742, merge c8e8ab1511097cd99b5ea69e3878810e035a3b89,
+  head a099d7a9). Producers session_01Hts4P1s3owaWykrVgdtuxa, session_01178i577DXdw2t3Ks6yg3iA, session_01Db6rmjjBn2Ehv1MPdw5F3J
+  ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 78/78, ci-verdict 118666669042; mutation-gate 118593164210 (capped
+  200/359: 198 KILLED + 2 allowlisted); gate has no P2 step; no P2 integration job. Local: P2 31,525 checks / 81 faults
+  RED; P1, FTF-1001 and all three integration suites pass on PG16; migration single head, byte-identical downgrade;
+  Law 18 verified by raw SQL. Return: 10-interface contract not updated; no CI wiring; missing echo ends
+  blocked_external (DoD: failed); mismatched echo succeeds; revoke race succeeds; 2 unallowlisted uncapped survivors;
+  re-claim boundary text-pinned only; submission incomplete. FTF-1001: REQUALIFIED (route-3 ruling holds).
+
+## 2026-10-21T00:50Z — RETURNED: FTF-1505 (r7), tests only — certifier of record session_013icfdVeuzbsh6xmPLWBZ1d
+- **FTF-1505: RETURNED** (round 7 → 8, tests only; PR #900, merge 80232b45bc0b50c30dfdb1a94025ae29da17b336, head 40c53b7f).
+  Producer: the Control-plane session session_01QVznorVMjnmcttUhyDnoGR (owner-approved); certifier of record: the separate
+  cloud session session_013icfdVeuzbsh6xmPLWBZ1d (named in no commit). CI: ci-verdict 118888716343; gate 118795135934
+  "FTF-1505 secret scanning tests: all checks passed"; secret-scanning 118795135528 "10515 unit(s) ... 0 blocking". Real
+  scan 10,682 units, 0 blocking. Production sound; LIVE-CALLSITE closed; no round-6 regression; 41/51 faults RED.
+  Return: base64 and hex run-length caps of other sizes (4000/5000/6000/16384/65536; hex unanchored 512, 65536) GREEN -
+  pin the whole class (one whole match on a >= 1 MB run + dense placement sweep).
