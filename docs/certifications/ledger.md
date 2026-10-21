@@ -12128,3 +12128,48 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   plane's own code (Law 4), a separate cloud session certifies the fix, FTF-0501-F2 and the FTF-0519 parent.
   Advisories: A1 wrong-endian utf-16 BOM accepted; A2 NUL detection only in the 64 KiB head (pre-existing); A3 a
   `charset=` parameter is ignored in favour of declared_encoding.
+## 2026-10-21T20:05Z — CERTIFIED: FTF-0519 (parent); Control-plane Alembic fix certified — certifier of record session_01FxdpwdR6T7wbuY17C6gw3o
+- **FTF-0519: CERTIFIED** (parent union of FTF-0519-P1 #859 and FTF-0519-P2 #915; at main b61a0acb89d245897e769d35fb8d4aa778dccc01, PR #924's merge). Certifier of
+  record: the separate cloud session session_01FxdpwdR6T7wbuY17C6gw3o (named in no commit); producers of the children
+  session_01GfXW3562wJd3Tk9eMn7KS3 and session_01NfHRGTZv5ha9hMN3Au7X3L. A prior parent-union review (Control-plane
+  verifier) found every clause met except the two Alembic heads on main; fixed in #924. CI on #924's head 39129cbb:
+  ci-verdict 119370937722 pass (scope full); dataset-split-manifest-integration 119275902551 and
+  dataset-split-manifest-routes-integration 119275902393 "all checks passed". Local on PG16: both PG suites and both task
+  suites pass; end-to-end journey 24/24 (propose -> approve 403/200 -> held-out hidden from ml_engineer -> training load
+  serves only train/validation -> quality change refuses v1 and the next propose is v2 with parent v1, v1
+  byte-identical); Law 18 on all five tables (ENABLE+FORCE RLS, tenant policy, SELECT/INSERT only + the designed column
+  UPDATE; cross-tenant 0 rows, DELETE denied, locked->proposed refused); faults 7/7 RED; both packet clauses, the
+  negative clause and all 34 QUEUE clauses owned. product_truth 49/49 with proving_symbol build_dataset_split_manifest_router.
+  Count 155 -> 156.
+- **Control-plane fix for main's two Alembic heads (#924, 69bce600 + a33b43f2): CERTIFIED** by the same separate session
+  (Law 4: the Control plane's own code). One head; 0033 body byte-identical to the old 0032; upgrade/downgrade round trip
+  clean with an identical schema dump; test changes rename pins only or equivalent (Law 9); 10 PG suites pass locally;
+  migration faults A-F3/F4/F5 RED (A-F1/A-F2 GREEN in their own 0519 suites, caught via H010-P2 - advisory: downgrade
+  by name).
+## 2026-10-21T20:05Z — RETURNED: FTF-UX01 (r3)
+- **FTF-UX01: RETURNED** (child slice of the FTF-UX program; round 3 → 4; PR #928, merge
+  020487d79878b4f7960a5474a00e0c4270331476, head 1669495a). Producers session_01HMUVT7NjygqpMHMXPnEQAM,
+  session_01R9gBrVedX9pRABzJmiAeM2 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 80/80, ci-verdict 119379649237;
+  gate 119296046436 installed Chromium and ran the TypeScript unit tests (vitest count line not readable: log hosts 403).
+  Met: dark link contrast (6.70:1 / 9.90:1, axe 0 violations x 8), P6 / F15b / F15c pins, six severity-2 decisions,
+  submit-driven refocus; local UX01 54/54 (Chromium), vitest 1488/1488, downstream specs 1284/1284. Return: focus still
+  taken on the empty-to-non-empty edge without a submit (severity 3, reproduced with the producer's own caller); §4
+  evidence incomplete (no `--stack react` record, abbreviated checklist, partial H1-H10 table). Faults 35/42 RED.
+## 2026-10-21T20:05Z — RETURNED: FTF-0501-F2 (r1 -> r2, tests only) — certifier of record session_01FxdpwdR6T7wbuY17C6gw3o
+- **FTF-0501-F2: RETURNED** (PR #914, merge e62c1acc + the #924 rechain, reviewed at main b61a0acb). Decode logic sound
+  (29/29 probes, 9/9 real-route probes, Law 18 holds); FTF-0501 REQUALIFIED on main (its task suites and PG16 +
+  SeaweedFS routes/P1/P2/sweeper integrations pass; the 0502-P1/0503/0504/H011-P1 Docker-only outage steps passed in CI
+  jobs 119275909195/119275909089/119275910126/119275909349/119275908978). Return: fault B-F9 (non-utf-8 declared
+  encodings treat the sniff window as complete) GREEN - pin a declared utf-16 surrogate pair at SNIFF_BYTES.
+## 2026-10-21T21:58Z — CERTIFIED: FTF-1505 — certifier of record session_01FeAArcFJu2Z9bw7JQZTBSY
+- **FTF-1505: CERTIFIED** (round 9 under the stopping rule, tests only; PR #931, merge 05554535c727ace16d043735d7800fea9950a648, head 768099fc). Producer of
+  rounds 4-9: the Control-plane session session_01QVznorVMjnmcttUhyDnoGR (owner-approved, live 2026-10-16); certifier of
+  record: the separate cloud session session_01FeAArcFJu2Z9bw7JQZTBSY (named in no commit). CI: ci-verdict 119388043225;
+  gate 119303116816 step 65 "FTF-1505 negative-test proof" passed (12m13s); secret-scanning 119303116537 "10898 unit(s)
+  scanned, 14004 finding(s), 0 blocking -- clean". Local: full suite "all checks passed" (18m17s); real full-history scan
+  10,940 units, 0 blocking, no exposed credential; gates clean. Fault matrix 69 + 3 controls: 48 RED on the targeted run
+  tests (regex caps anchored/unanchored to MAX-1, caller slices head/tail, decoder slices and skips, run skips, finditer
+  pos/endpos, decoded-byte caps, chunking, shape cap, break after one run) covering C2/C8/C10/C12/C13/C15/C16/H8/H9/B10;
+  controls at exactly MAX_SCAN_BYTES GREEN as expected; earlier-round sample RED. Law 9: tests + submission only.
+  Non-blocking GREEN rows (new variants / outside the class): quick-gate prefix cap, run-count break >3,000, shape cap at
+  MAX-1, 36-char ghp_ token, silent tar-member read failure -> follow-up FTF-1505-F1. UNWIRED (a CI gate).

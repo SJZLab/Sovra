@@ -8920,16 +8920,26 @@ FTF-0518:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0518.py
 FTF-0519:
-  certification_state: NONE
+  certification_state: CERTIFIED
   criticality: MUST
   description: Immutable split manifest
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-16, AF-23; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0516,
+  evidence_hash: b61a0acb89d245897e769d35fb8d4aa778dccc01
+  implementation_state: IMPLEMENTED
+  notes: >-
+    CERTIFIED 2026-10-21 (parent of FTF-0519-P1 #859 and FTF-0519-P2 #915; independent session
+    session_01FxdpwdR6T7wbuY17C6gw3o at b61a0acb). WIRED for the review surface only: list/get/approve/reject
+    routes (build_dataset_split_manifest_router, apps/api/app/main.py). propose, the legacy migration and
+    load_training_split / load_development_split have no live caller yet (designed: no create route); the
+    loaders take no principal, so their future caller owns authorization.
+    kind=retained_feature; requirements=AF-16, AF-23; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0516,
     FTF-0517, FTF-0518
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  proof_state: L2-CERTIFIED
+  proving_symbol: build_dataset_split_manifest_router
+  proving_test: >-
+    tests/tasks/test_ftf_0519_p1.py,
+    tests/tasks/test_ftf_0519.py,
+    tests/integration/test_ftf_0519_p1_split_manifests.py,
+    tests/integration/test_ftf_0519_routes_postgres.py
 FTF-0520:
   certification_state: NONE
   criticality: MUST
@@ -12233,10 +12243,10 @@ FTF-1504:
   proving_symbol: ''
   proving_test: ''
 FTF-1505:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Secret scanning
-  evidence_hash: f829749e19f248e7d8fc60962165dd24515c50f2
+  evidence_hash: 05554535c727ace16d043735d7800fea9950a648
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26;
@@ -12407,7 +12417,7 @@ FTF-1505:
     scoped gap). Not self-certified (Law 4) -- `certification_state`
     stays PROVISIONAL, `proof_state` stays L1-PROVEN, pending independent
     Control-plane L2 review.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1505.py
 FTF-1506:
