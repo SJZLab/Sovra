@@ -34,6 +34,7 @@ import hashlib
 import importlib.util
 import itertools
 import json
+import os
 import struct
 import sys
 import tempfile
@@ -48,6 +49,19 @@ sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 MODULE_PATH = ROOT / "apps" / "api" / "app" / "model_versions" / "import_artifact_validators.py"
 CID = "FTF-H010-P3a"
+
+# The mutation gate (scripts/mutation_gate.py) mutates MODULE_PATH on disk and runs this
+# script to decide whether the mutant is "killed" (nonzero exit). H1 below re-patches the
+# *already-mutated* source text against its own hardcoded FAULTS strings, so under the gate
+# a patch that no longer matches (because the gate's own mutation already changed that text)
+# fails with "patch text occurs N time(s), expected M" -- a mismatch that says nothing about
+# whether the behavioural suite (`suite(m, source, big=True)` above) actually caught the
+# gate's mutation. That inflates the kill count with false positives unrelated to real
+# coverage. Same class as FTF-0904/FTF-0616-F1's own FTF0904_BEHAVIOUR_ONLY/
+# FTF0616_F1_NO_FAULTS: detect the gate by its private PYTHONPYCACHEPREFIX and skip H1 then,
+# so the gate's kill signal is purely the behavioural suite, like every other suite's.
+UNDER_MUTATION_GATE = "mutation-gate-pyc" in os.environ.get("PYTHONPYCACHEPREFIX", "")
+BEHAVIOUR_ONLY = os.environ.get("FTF_H010_P3A_BEHAVIOUR_ONLY") == "1" or UNDER_MUTATION_GATE
 
 _failures: list[str] = []
 
@@ -2688,20 +2702,26 @@ def main() -> int:
     names = [f[0] for f in FAULTS]
     if len(set(names)) != len(names):
         failures.append("FAIL [H1] duplicate fault names")
-    for name, old, new, count, big in FAULTS:
-        ok, detail = run_fault(source, name, old, new, count, big)
-        if ok:
-            print(f"  fault {name}: RED ({detail})")
-        else:
-            failures.append(f"FAIL [H1] fault {name}: {detail}")
+    if not BEHAVIOUR_ONLY:
+        for name, old, new, count, big in FAULTS:
+            ok, detail = run_fault(source, name, old, new, count, big)
+            if ok:
+                print(f"  fault {name}: RED ({detail})")
+            else:
+                failures.append(f"FAIL [H1] fault {name}: {detail}")
     if failures:
         print(f"{len(failures)} failing check(s):")
         for failure in failures[:80]:
             print(f"  {failure}")
         return 1
-    print(
-        f"OK -- {CHECK_COUNT[0]} checks in {len(FAULTS) + 1} suite runs, {len(FAULTS)} faults RED, 0 failing ({CID})"
-    )
+    if BEHAVIOUR_ONLY:
+        print(
+            f"OK -- {CHECK_COUNT[0]} checks, behaviour-only (H1 skipped under the mutation gate) ({CID})"
+        )
+    else:
+        print(
+            f"OK -- {CHECK_COUNT[0]} checks in {len(FAULTS) + 1} suite runs, {len(FAULTS)} faults RED, 0 failing ({CID})"
+        )
     return 0
 
 
