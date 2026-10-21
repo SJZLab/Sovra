@@ -1879,6 +1879,50 @@ def test_r4_tls_late_handshake_then_header_drip_is_bounded() -> None:
     )
 
 
+def test_r4_deadline_helpers_directly() -> None:
+    class FakeSock:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def shutdown(self, _how: int) -> None:
+            self.calls.append("shutdown")
+
+        def close(self) -> None:
+            self.calls.append("close")
+
+    def conn_with(sock: Any, expired: bool) -> Any:
+        conn = guard_mod._PinnedHTTPConnection("h.example", "127.0.0.1", 80, 1.0)
+        conn.sock = sock
+        if expired:
+            conn._deadline_expired.set()
+        return conn
+
+    sock = FakeSock()
+    check(
+        "R006P1a-11",
+        "an expired deadline makes the post-connect check raise OSError and abort the socket",
+        raises(OSError, guard_mod._refuse_if_deadline_expired, conn_with(sock, True))
+        and sock.calls == ["shutdown", "close"],
+    )
+    sock = FakeSock()
+    guard_mod._refuse_if_deadline_expired(conn_with(sock, False))
+    check(
+        "R006P1a-11",
+        "an unexpired deadline neither raises nor touches the socket",
+        sock.calls == [],
+    )
+    no_sock_error: str | None = None
+    try:
+        guard_mod._abort_connection(conn_with(None, True))
+    except Exception as exc:
+        no_sock_error = type(exc).__name__
+    check(
+        "R006P1a-11",
+        f"aborting a connection that has no socket yet is a quiet no-op (raised {no_sock_error})",
+        no_sock_error is None,
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
