@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-20T21:15Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-21T00:25Z. Source: `python3 scripts/status.py` on main.
 - **Status: 155/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,12 @@ Updated: 2026-10-20T21:15Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-21T00:25Z:**
+  - Returned: FTF-0512-F3 r2 (duplicate detector: "-5" vs "5" and "5%" vs "5" are now kept apart, but "-$5" still matches "$5" and 5 inches matches 5 feet - the whole mark run next to a number must be kept, not just one character).
+- **2026-10-21T00:25Z:**
+  - Returned: FTF-UX02 r2 (dataset screens redesign: nothing certified broke, but the new "abandon" confirmation loses keyboard focus, Arabic is not done, and the screens are not yet built on the shared design system). Round 2 starts after the design system (UX01) is certified.
+- **2026-10-21T00:25Z:**
+  - Returned: FTF-UX01 r2 (UI design-system foundation: the colour and size tokens match the spec exactly, but there is no confirm dialog yet (waiting on the owner's approval to add the Radix package), the "in progress" state shows no visible progress, several accessibility details are not tested, and Arabic text is missing). Real-browser viewport, keyboard and zoom checks run now on a component test page; only screen-reader checks wait for the app shell (FTF-H029).
 - **2026-10-20T21:15Z:**
   - Returned: FTF-R006-P1a r3 (Argilla review client: round 2 fixed almost everything, but a server that sends its reply headers very slowly can still hold a call for minutes, and one error message can echo the API key). The shared network guard gets an optional overall time limit for this (existing callers unchanged).
 - **2026-10-20T21:15Z:**

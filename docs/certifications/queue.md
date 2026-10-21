@@ -25169,3 +25169,12 @@ different session.
 
 ## 2026-10-20T21:15Z — Control plane: FTF-R006-P1a returned (r3)
 - **Returned:** FTF-R006-P1a r3 (0m): header-phase deadline via an optional guard deadline (ruling), final-1xx pin, static role error; stopping rule.
+
+## 2026-10-21T00:25Z — Control plane: FTF-UX01 returned (r2)
+- **Returned:** FTF-UX01 r2 (0n): visible Pending progress, 7 pins incl. keyboard tests, ids/association, refocus, whitespace, §4 evidence, Arabic; Dialog waits on the owner's Radix approval; §72.5 viewport/keyboard/zoom now on a real-browser harness.
+
+## 2026-10-21T00:25Z — Control plane: FTF-UX02 returned (r2)
+- **Returned:** FTF-UX02 r2 (0k, after UX01 r2): Dialog focus, en/ar + lang, rebuild on UX01, 10 pins, truthful confirm, §4 evidence.
+
+## 2026-10-21T00:25Z — Control plane: FTF-0512-F3 returned (r2)
+- **Returned:** FTF-0512-F3 r2 (0c): keep the whole mark run touching a digit (ruling), full-NFKC oracle, spacing pins, version 6.

@@ -11954,3 +11954,33 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   drip holds a call 302 s / >597 s at timeout=0.5; final 1xx unpinned (N3); provisioning key echoed in the role error
   (KE9). Ruling: optional total `deadline` added additively to outbound_guard.guarded_stream_fetch (default None
   unchanged; Law 15 requalification of the guard's suites). Stopping rule set.
+
+## 2026-10-21T00:25Z — RETURNED: FTF-UX01 (r1)
+- **FTF-UX01: RETURNED** (child slice of the FTF-UX program; round 1 → 2; PR #898, merge
+  b89c85bbf09e74d6b99de476baab51451b8b57c2, head a45226dd). Producer session_01Nkoi3GRKa5gXECnBsY7FAj ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 78/78, ci-verdict 118811785702; gate 118715070742 vitest 1429 tests (13 new),
+  lint/prettier/tsc clean. Met: §72.1 tokens, dark tokens, system fonts, StatusBadge words, roles/association of 5
+  components; package.json unchanged. Return: no Dialog (severity 3; Radix install refused by the session guard -
+  owner action), Pending shows no visible progress (severity 3), F6/F7/F20/F17/F21/F26/F15 GREEN, duplicate ids and
+  dropped aria-describedby, ErrorSummary refocus, whitespace reasons, §4 evidence incomplete. Rulings: §72.5
+  viewport/keyboard/zoom on a real-browser component harness now, screen reader + journeys with FTF-H029; Arabic phrases, non-throwing StatusBadge and a visible Button
+  variant required. Note: UX01/UX02 merged before the UX00 audit. Stopping rule set.
+
+## 2026-10-21T00:25Z — RETURNED: FTF-UX02 (r1); FTF-0500A, FTF-0501-UI, FTF-0516 requalified
+- **FTF-UX02: RETURNED** (child slice; round 1 → 2; PR #902, merge 69908165923e3429309970bc13a90e548ead967c, head
+  cde322dc). Producer session_013mHZpTB6jccViWQoc3ucsK (submission self-declared PARTIAL) ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 79/79, ci-verdict 118924676697; gate 118836128732 vitest 1435 tests;
+  resumable-upload-ui-real-api-integration 118836298895 and dataset-quality-ui-real-api-integration 118836298703 success.
+  Law 15: FTF-0500A, FTF-0501-UI, FTF-0516 suites and real-API suites pass on PG16 + SeaweedFS - their certifications
+  stand; Law 9 clean. Return: severity 3 x3 (confirm focus lost, not bilingual / no lang, not on UX01 components);
+  10 faults GREEN; confirm promises a discard the system does not perform; §4 evidence missing. Waits on FTF-UX01 r2.
+
+## 2026-10-21T00:25Z — RETURNED: FTF-0512-F3 (r1); FTF-0512 stays CERTIFIED
+- **FTF-0512-F3: RETURNED** (follow-up child slice; round 1 → 2; PR #895, merge 250794f83b2b5ca333129c310d5eb1f3198d3a93,
+  head a2e99467). Producers session_01AASqW8neC1nQsHMyTjkTU7, session_01GGfmkb2dut3Cfsa3sKv2oy ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 78/78, ci-verdict 118843673566; gate 118839941693 "FTF-0512-F1 look-alike gaps:
+  all checks passed" (runs run_f3_checks) on 3.12 and 3.11, 0512/0513/0515/0518/0516-P1 passed; mutation-gate 24/24.
+  Met: the named single-character cases, decimal separators, Arabic-Indic digits, F2 holds, corpus 0 new merges, G20.
+  Return: run-attached marks beyond the touching character dropped ("-$5" == "$5", "5″" == "5′"); the table's merge
+  oracle keyed on edge chars hides it; kept-mark spacing unpinned (H08). Ruling: keep the whole touching mark run.
+  FTF-0512 stays CERTIFIED (no regression of certified behaviour).
