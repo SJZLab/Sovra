@@ -1050,3 +1050,146 @@ describe("[UX03-R2-KEEP] no auto-selection, selection marked by more than colour
     expect(screen.queryByTestId("candidate-selection-confirmation")).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Pins added after the first fault-injection pass: each one covers a protection that stayed GREEN
+// when removed.
+// ---------------------------------------------------------------------------------------------
+describe("[UX03-R2-EXTRA] 04A03 fault-injection pins", () => {
+  test("an empty result followed by a failed search shows the error, not the empty state", async () => {
+    await loadRepositories(undefined, REPO_PAGE({ repositories: [] }));
+    await screen.findByRole("region", { name: "No accessible repositories found" });
+    fetchMock().mockResolvedValueOnce(refused(500, {}));
+    fireEvent.click(screen.getByTestId("github-load-repositories-button"));
+    await screen.findByTestId("github-repository-error");
+    expect(screen.queryByRole("region", { name: "No accessible repositories found" })).toBeNull();
+  });
+
+  test("an empty first page that still has a next page is not reported as 'no repositories'", async () => {
+    await loadRepositories(undefined, REPO_PAGE({ repositories: [], has_next_page: true }));
+    await screen.findByTestId("github-load-more-button");
+    expect(screen.queryByRole("region", { name: "No accessible repositories found" })).toBeNull();
+  });
+
+  test("the empty state is hidden for the whole of a following search (loading), not only after it", async () => {
+    await loadRepositories(undefined, REPO_PAGE({ repositories: [] }));
+    await screen.findByRole("region", { name: "No accessible repositories found" });
+    const pending = inFlight();
+    fetchMock().mockReturnValueOnce(pending.promise);
+    fireEvent.submit(screen.getByTestId("github-credential-form"));
+    expect(screen.queryByRole("region", { name: "No accessible repositories found" })).toBeNull();
+    await act(async () => {
+      pending.release(ok(REPO_PAGE({ repositories: [] })));
+    });
+    await screen.findByRole("region", { name: "No accessible repositories found" });
+  });
+
+  test("a busy indicator with the right words appears after one second of waiting (NN/g 1 s rule)", async () => {
+    vi.useFakeTimers();
+    try {
+      const pending = inFlight();
+      fetchMock().mockReturnValueOnce(pending.promise);
+      render(repoSelector("ar"));
+      fireEvent.change(screen.getByTestId("github-credential-input"), { target: { value: "tok" } });
+      fireEvent.click(screen.getByTestId("github-load-repositories-button"));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      expect(screen.queryByText("جارٍ تحميل المستودعات…")).toBeNull();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(screen.getByText("جارٍ تحميل المستودعات…")).toBeTruthy();
+      await act(async () => {
+        pending.release(ok(REPO_PAGE()));
+        await vi.advanceTimersByTimeAsync(10);
+      });
+      expect(screen.queryByText("جارٍ تحميل المستودعات…")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("the selected repository is a primary button and the others stay secondary", async () => {
+    await loadRepositories(
+      undefined,
+      REPO_PAGE({
+        repositories: [
+          { repository_identity: "acme/one", private: false, default_branch: "main" },
+          { repository_identity: "acme/two", private: false, default_branch: "main" },
+        ],
+      }),
+    );
+    const one = await screen.findByTestId("github-repository-option-acme/one");
+    const two = screen.getByTestId("github-repository-option-acme/two");
+    expect(one.getAttribute("data-variant")).toBe("secondary");
+    fireEvent.click(one);
+    expect(one.getAttribute("data-variant")).toBe("primary");
+    expect(two.getAttribute("data-variant")).toBe("secondary");
+  });
+
+  test("the selected notice isolates the repository name in <bdi>", async () => {
+    await loadRepositories("ar");
+    fireEvent.click(await screen.findByTestId("github-repository-option-acme/one"));
+    expect(
+      screen.getByTestId("github-repository-selected-notice").querySelector("bdi")?.textContent,
+    ).toBe("acme/one");
+  });
+
+  test("the repository list is a named list", async () => {
+    await loadRepositories("ar");
+    await screen.findByTestId("github-repository-option-acme/one");
+    expect(screen.getByRole("list", { name: "المستودعات المتاحة" })).toBeTruthy();
+  });
+
+  test("Load more is disabled while the next page is loading", async () => {
+    await loadRepositories(undefined, REPO_PAGE({ has_next_page: true }));
+    await screen.findByTestId("github-load-more-button");
+    const pending = inFlight();
+    fetchMock().mockReturnValueOnce(pending.promise);
+    fireEvent.click(screen.getByTestId("github-load-more-button"));
+    await waitFor(() =>
+      expect((screen.getByTestId("github-load-more-button") as HTMLButtonElement).disabled).toBe(
+        true,
+      ),
+    );
+    await act(async () => {
+      pending.release(ok(REPO_PAGE({ page: 2 })));
+    });
+  });
+
+  test("a late reply for an earlier search is ignored once a newer search has been made", async () => {
+    render(repoSelector());
+    fireEvent.change(screen.getByTestId("github-credential-input"), { target: { value: "first" } });
+    const first = inFlight();
+    fetchMock().mockReturnValueOnce(first.promise);
+    fireEvent.submit(screen.getByTestId("github-credential-form"));
+    fireEvent.change(screen.getByTestId("github-credential-input"), {
+      target: { value: "second" },
+    });
+    fetchMock().mockResolvedValueOnce(
+      ok(
+        REPO_PAGE({
+          repositories: [
+            { repository_identity: "acme/newer", private: false, default_branch: "m" },
+          ],
+        }),
+      ),
+    );
+    fireEvent.submit(screen.getByTestId("github-credential-form"));
+    await screen.findByTestId("github-repository-option-acme/newer");
+    await act(async () => {
+      first.release(
+        ok(
+          REPO_PAGE({
+            repositories: [
+              { repository_identity: "acme/older", private: false, default_branch: "m" },
+            ],
+          }),
+        ),
+      );
+    });
+    expect(screen.queryByTestId("github-repository-option-acme/older")).toBeNull();
+    expect(screen.getByTestId("github-repository-option-acme/newer")).toBeTruthy();
+  });
+});

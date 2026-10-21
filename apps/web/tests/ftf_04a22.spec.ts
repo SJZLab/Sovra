@@ -20,6 +20,7 @@ import { createElement } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { failureMessage } from "../components/target-application/common";
 import {
   manifestUrl,
   type ManifestRecord,
@@ -366,9 +367,10 @@ test("loads the manifest and requirements views from the real FTF-04A19/FTF-0407
     "en, ar",
   );
   expect(screen.getByTestId("forbidden-action-name-refund").textContent).toBe("refund");
-  expect(screen.getByTestId("forbidden-action-status-refund").textContent).toBe(
-    "not_runtime_enforced",
-  );
+  // UX03: the status is human words (icon + text), never the raw reason code.
+  const statusText = screen.getByTestId("forbidden-action-status-refund").textContent ?? "";
+  expect(statusText).toContain("not yet seen blocked at runtime");
+  expect(statusText).not.toContain("not_runtime_enforced");
   expect(screen.getByTestId("forbidden-action-conflict-refund")).toBeTruthy();
   expect(callsOf("GET", MANIFEST_PATH)).toHaveLength(1);
   expect(callsOf("GET", REQUIREMENTS_PATH)).toHaveLength(1);
@@ -393,8 +395,8 @@ test("malformed manifest/requirements responses are refused, not silently treate
   );
   renderUI();
   await waitFor(() =>
-    expect(screen.getByTestId("mandate-load-error").textContent).toBe(
-      "malformed manifest response",
+    expect(screen.getByTestId("mandate-load-error").textContent).toContain(
+      failureMessage({ kind: "malformed" }),
     ),
   );
 });
@@ -749,7 +751,9 @@ describe("refresh enforcement failures", () => {
     );
     fireEvent.click(screen.getByTestId("refresh-enforcement-button"));
     await waitFor(() =>
-      expect(screen.getByTestId("refresh-enforcement-error").textContent).toContain("offline"),
+      expect(screen.getByTestId("refresh-enforcement-error").textContent).toContain(
+        failureMessage({ kind: "network" }),
+      ),
     );
     expect(screen.getByTestId("mandate-lock-blocked")).toBeTruthy();
     expect(screen.queryByTestId("mandate-lock-ready")).toBeNull();
@@ -766,7 +770,9 @@ test("a load network error is surfaced", async () => {
   );
   renderUI();
   await waitFor(() =>
-    expect(screen.getByTestId("mandate-load-error").textContent).toContain("boom"),
+    expect(screen.getByTestId("mandate-load-error").textContent).toContain(
+      failureMessage({ kind: "network" }),
+    ),
   );
 });
 
@@ -782,7 +788,9 @@ test("a save network error is surfaced and the draft is kept", async () => {
   );
   fireEvent.click(screen.getByTestId("mandate-save-button"));
   await waitFor(() =>
-    expect(screen.getByTestId("mandate-save-error").textContent).toContain("down"),
+    expect(screen.getByTestId("mandate-save-error").textContent).toContain(
+      failureMessage({ kind: "network" }),
+    ),
   );
   expect((screen.getByTestId("mandate-field-business_purpose") as HTMLTextAreaElement).value).toBe(
     "draft",
@@ -821,7 +829,7 @@ test("clearing business_purpose and latency_slo_ms sends JSON null with the key 
 test("a locked manifest has no remove buttons and every input is disabled", async () => {
   installServer({
     manifest: manifestRecord({
-      status: "approved",
+      status: "locked",
       forbidden_actions_json: { actions: [{ name: "refund", reason: "x" }] },
     }),
     requirements: [requirement()],

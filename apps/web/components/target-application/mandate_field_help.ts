@@ -66,3 +66,11 @@ export const MANDATE_FIELD_HELP: Record<string, Help> = {
     ar: "أقصى مبلغ مستعد لإنفاقه على نتيجة ناجحة واحدة، بعملة الفوترة. اتركه فارغًا إن لم يوجد سقف.",
   },
 };
+
+/** Help for one field in the language actually rendered (an unknown locale falls back to English;
+ * an unknown field has no help rather than throwing). */
+export function helpFor(field: string, locale: Locale | string): string | undefined {
+  if (!Object.hasOwn(MANDATE_FIELD_HELP, field)) return undefined;
+  const help = MANDATE_FIELD_HELP[field]!;
+  return locale === "ar" ? help.ar : help.en;
+}

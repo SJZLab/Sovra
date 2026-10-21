@@ -254,15 +254,17 @@ test("each field shows only its own evidence, and says so when there is none", a
     ],
   });
   await renderLoaded();
-  expect(screen.getByTestId("evidence-type-ev-1").textContent).toBe("repo_symbol");
+  expect(screen.getByTestId("evidence-type-ev-1").textContent).toBe("Repository symbol");
   expect(screen.getByTestId("evidence-location-ev-1").textContent).toBe("agent/main.py:10-24");
   expect(screen.getByTestId("evidence-commit-ev-1").textContent).toBe("abcdef012345");
-  expect(screen.getByTestId("evidence-confidence-ev-1").textContent).toBe("confidence: 0.9");
+  expect(screen.getByTestId("evidence-confidence-ev-1").textContent).toBe("Confidence: 0.9");
   // dotted field_path attaches to its leading segment only
   const bindingEvidence = screen.getByTestId("field-evidence-current_model_binding_json");
   expect(bindingEvidence.querySelector('[data-testid="evidence-ev-2"]')).toBeTruthy();
   expect(bindingEvidence.querySelector('[data-testid="evidence-ev-1"]')).toBeNull();
-  expect(screen.getByTestId("evidence-confidence-ev-2").textContent).toBe("confidence: n/a");
+  expect(screen.getByTestId("evidence-confidence-ev-2").textContent).toBe(
+    "Confidence: not available",
+  );
   // a field with no row says so instead of showing nothing or inventing one
   expect(screen.getByTestId("field-no-evidence-mandate_json").textContent).toBe(
     "No recorded evidence",
@@ -283,7 +285,9 @@ test("an evidence load failure refuses to render fields rather than showing 'no 
   installServer({ evidenceStatus: 500 });
   renderUI();
   await waitFor(() => expect(screen.getByTestId("manifest-load-error")).toBeTruthy());
-  expect(screen.getByTestId("manifest-load-error").textContent).toBe("evidence unavailable");
+  expect(screen.getByTestId("manifest-load-error").textContent).toContain(
+    "The service had a problem (500). Wait a minute, then try again.",
+  );
   expect(screen.queryByTestId("field-mandate_json")).toBeNull();
 });
 
@@ -297,7 +301,9 @@ test("overriding a field shows a line diff against the server value and labels i
   expect(removed?.textContent).toContain('">=3.11"');
   expect(added?.textContent).toContain('">=3.12"');
   expect(screen.getByTestId("field-overridden-runtime_dependencies_json")).toBeTruthy();
-  expect(screen.getByTestId("field-state-runtime_dependencies_json").textContent).toBe("unsaved");
+  expect(
+    screen.getByTestId("field-state-runtime_dependencies_json").getAttribute("data-state"),
+  ).toBe("unsaved");
   // editing back to the server value removes the override
   edit("runtime_dependencies_json", JSON.stringify({ python: ">=3.11" }, null, 2));
   expect(screen.queryByTestId("field-overridden-runtime_dependencies_json")).toBeNull();
@@ -398,7 +404,7 @@ test("Save draft PATCHes only the changed fields with parsed values and clears t
     mandate_json: { goal: "resolve tickets" },
   });
   await waitFor(() =>
-    expect(screen.getByTestId("field-state-agent_name").textContent).toBe("clean"),
+    expect(screen.getByTestId("field-state-agent_name").getAttribute("data-state")).toBe("clean"),
   );
   expect(storage.getItem(STORAGE_KEY)).toBeNull();
   expect(saveButton().disabled).toBe(true);
@@ -410,10 +416,12 @@ test("a refused save keeps every edit, locally and on screen", async () => {
   edit("mandate_json", '{"goal":"keep me"}');
   fireEvent.click(saveButton());
   await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
-  expect(screen.getByTestId("manifest-action-error").textContent).toBe("manifest is locked");
+  expect(screen.getByTestId("manifest-action-error").textContent).toContain(
+    "The server refused the request: manifest is locked. Check what you entered, then try again.",
+  );
   expect(input("mandate_json").value).toBe('{"goal":"keep me"}');
   expect(storage.getItem(STORAGE_KEY)).toContain("keep me");
-  expect(screen.getByTestId("field-state-mandate_json").textContent).toBe("unsaved");
+  expect(screen.getByTestId("field-state-mandate_json").getAttribute("data-state")).toBe("unsaved");
 });
 
 test("a page refresh does not lose unsaved work", async () => {
@@ -426,7 +434,7 @@ test("a page refresh does not lose unsaved work", async () => {
   await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
   expect(input("mandate_json").value).toBe('{"goal":"survive refresh"}');
   expect(screen.getByTestId("draft-restored")).toBeTruthy();
-  expect(screen.getByTestId("field-state-mandate_json").textContent).toBe("unsaved");
+  expect(screen.getByTestId("field-state-mandate_json").getAttribute("data-state")).toBe("unsaved");
   // restored work is not silently saved
   expect(callsOf("PATCH")).toHaveLength(0);
 });
@@ -438,7 +446,7 @@ test("a stored draft equal to the server's value is dropped, not shown as restor
   );
   await renderLoaded();
   expect(screen.queryByTestId("draft-restored")).toBeNull();
-  expect(screen.getByTestId("field-state-agent_name").textContent).toBe("clean");
+  expect(screen.getByTestId("field-state-agent_name").getAttribute("data-state")).toBe("clean");
 });
 
 test("a stored draft for an unknown field or a malformed blob is ignored", async () => {
@@ -470,7 +478,7 @@ test("unusable storage never breaks the page and edits still work", async () => 
   renderUI(broken);
   await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
   edit("agent_name", "still-works");
-  expect(screen.getByTestId("field-state-agent_name").textContent).toBe("unsaved");
+  expect(screen.getByTestId("field-state-agent_name").getAttribute("data-state")).toBe("unsaved");
   fireEvent.click(saveButton());
   await waitFor(() => expect(callsOf("PATCH")).toHaveLength(1));
 });
@@ -481,18 +489,18 @@ test("a draft based on an older server value is a conflict that blocks save and 
     JSON.stringify({ agent_name: { text: "my-name", baseText: "older-server-name" } }),
   );
   await renderLoaded();
-  expect(screen.getByTestId("field-state-agent_name").textContent).toBe("conflict");
+  expect(screen.getByTestId("field-state-agent_name").getAttribute("data-state")).toBe("conflict");
   expect(screen.getByTestId("field-conflict-server-agent_name").textContent).toBe("support-agent");
   expect(screen.getByTestId("field-conflict-mine-agent_name").textContent).toBe("my-name");
   expect(saveButton().disabled).toBe(true);
   expect(lockButton().disabled).toBe(true);
   expect(screen.getByTestId("lock-blockers").textContent).toContain(
-    "agent_name: unresolved conflict",
+    "Agent name: unresolved conflict. Choose a version.",
   );
 
   // Keep mine rebases the draft; it is then ordinary unsaved work, never auto-saved.
   fireEvent.click(screen.getByTestId("keep-mine-agent_name"));
-  expect(screen.getByTestId("field-state-agent_name").textContent).toBe("unsaved");
+  expect(screen.getByTestId("field-state-agent_name").getAttribute("data-state")).toBe("unsaved");
   expect(input("agent_name").value).toBe("my-name");
   expect(callsOf("PATCH")).toHaveLength(0);
   expect(saveButton().disabled).toBe(false);
@@ -505,15 +513,15 @@ test("C6: typing into a conflicting field keeps it a conflict and Lock stays blo
     JSON.stringify({ agent_name: { text: "my-name", baseText: "older-server-name" } }),
   );
   await renderLoaded();
-  expect(screen.getByTestId("field-state-agent_name").textContent).toBe("conflict");
+  expect(screen.getByTestId("field-state-agent_name").getAttribute("data-state")).toBe("conflict");
   // the user keeps typing without choosing "keep mine" or "take server's" first
   edit("agent_name", "my-name-v2");
   expect(input("agent_name").value).toBe("my-name-v2");
-  expect(screen.getByTestId("field-state-agent_name").textContent).toBe("conflict");
+  expect(screen.getByTestId("field-state-agent_name").getAttribute("data-state")).toBe("conflict");
   expect(screen.getByTestId("field-conflict-mine-agent_name")).toBeTruthy();
   expect(lockButton().disabled).toBe(true);
   expect(screen.getByTestId("lock-blockers").textContent).toContain(
-    "agent_name: unresolved conflict",
+    "Agent name: unresolved conflict. Choose a version.",
   );
   expect(callsOf("PATCH")).toHaveLength(0);
 });
@@ -526,7 +534,7 @@ test("Take server's drops the conflicting draft and clears the lock blocker", as
   await renderLoaded();
   fireEvent.click(screen.getByTestId("take-server-agent_name"));
   expect(input("agent_name").value).toBe("support-agent");
-  expect(screen.getByTestId("field-state-agent_name").textContent).toBe("clean");
+  expect(screen.getByTestId("field-state-agent_name").getAttribute("data-state")).toBe("clean");
   expect(lockButton().disabled).toBe(false);
   expect(storage.getItem(STORAGE_KEY)).toBeNull();
 });
@@ -534,7 +542,7 @@ test("Take server's drops the conflicting draft and clears the lock blocker", as
 test("invalid JSON is flagged, blocks save and lock, and sends nothing", async () => {
   await renderLoaded();
   edit("mandate_json", "{not json");
-  expect(screen.getByTestId("field-state-mandate_json").textContent).toBe("invalid");
+  expect(screen.getByTestId("field-state-mandate_json").getAttribute("data-state")).toBe("invalid");
   expect(saveButton().disabled).toBe(true);
   expect(lockButton().disabled).toBe(true);
   fireEvent.click(saveButton());
@@ -549,7 +557,7 @@ test("Lock is enabled only when every gate is clear, and then POSTs /lock", asyn
   await waitFor(() => expect(callsOf("POST")).toHaveLength(1));
   expect(callsOf("POST")[0]!.path).toBe(`${MANIFEST_PATH}/lock`);
   await waitFor(() =>
-    expect(screen.getByTestId("manifest-status").textContent).toBe("Status: locked"),
+    expect(screen.getByTestId("manifest-status").textContent).toContain("Locked"),
   );
   expect(screen.getByTestId("manifest-sha256")).toBeTruthy();
 });
@@ -558,15 +566,17 @@ test("Lock is blocked while the manifest is still a draft", async () => {
   installServer({ manifest: manifestRecord({ status: "draft" }) });
   await renderLoaded();
   expect(lockButton().disabled).toBe(true);
-  expect(screen.getByTestId("lock-blockers").textContent).toContain("submitted for review first");
+  expect(screen.getByTestId("lock-blockers").textContent).toContain(
+    "Submit the manifest for review first.",
+  );
   fireEvent.click(lockButton());
   expect(callsOf("POST")).toHaveLength(0);
 });
 
 test.each([
-  ["agent_entrypoint_json", "agent_entrypoint_json: required before lock"],
-  ["current_model_binding_json", "current_model_binding_json: required before lock"],
-  ["runtime_dependencies_json", "runtime_dependencies_json: required before lock"],
+  ["agent_entrypoint_json", "Agent entrypoint: required before locking."],
+  ["current_model_binding_json", "Current model binding: required before locking."],
+  ["runtime_dependencies_json", "Runtime dependencies: required before locking."],
 ])("Lock is blocked when critical field %s is missing", async (field, message) => {
   installServer({ manifest: manifestRecord({ [field]: null }) });
   await renderLoaded();
@@ -583,7 +593,7 @@ test("a model binding with an alias but no explicit role never satisfies the rol
   await renderLoaded();
   expect(lockButton().disabled).toBe(true);
   expect(screen.getByTestId("lock-blockers").textContent).toContain(
-    "current model role not set to an explicit role",
+    "Choose an explicit role for the current model.",
   );
   expect((screen.getByTestId("model-role-select") as HTMLSelectElement).value).toBe("");
 });
@@ -607,7 +617,7 @@ test("an unresolved model binding blocks lock even when a role is present", asyn
   await renderLoaded();
   expect(lockButton().disabled).toBe(true);
   expect(screen.getByTestId("lock-blockers").textContent).toContain(
-    "current model binding is unresolved",
+    "The current model binding is unresolved.",
   );
 });
 
@@ -639,7 +649,7 @@ test("unsaved edits block Lock and Submit for review", async () => {
   edit("mandate_json", '{"goal":"x"}');
   expect(lockButton().disabled).toBe(true);
   expect(screen.getByTestId("lock-blockers").textContent).toContain(
-    "mandate_json: unsaved changes",
+    "Mandate: has unsaved changes. Save the draft.",
   );
   cleanup();
   installServer({ manifest: manifestRecord({ status: "draft" }) });
@@ -659,7 +669,7 @@ test("Submit for review POSTs the real route from a draft manifest", async () =>
   await waitFor(() => expect(callsOf("POST")).toHaveLength(1));
   expect(callsOf("POST")[0]!.path).toBe(`${MANIFEST_PATH}/submit-for-review`);
   await waitFor(() =>
-    expect(screen.getByTestId("manifest-status").textContent).toBe("Status: review_required"),
+    expect(screen.getByTestId("manifest-status").textContent).toContain("In review"),
   );
 });
 
@@ -668,8 +678,10 @@ test("a backend lock refusal is shown and the manifest is not shown as locked", 
   await renderLoaded();
   fireEvent.click(lockButton());
   await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
-  expect(screen.getByTestId("manifest-action-error").textContent).toBe("missing required field(s)");
-  expect(screen.getByTestId("manifest-status").textContent).toBe("Status: review_required");
+  expect(screen.getByTestId("manifest-action-error").textContent).toContain(
+    "The server refused the request: missing required field(s). Check what you entered, then try again.",
+  );
+  expect(screen.getByTestId("manifest-status").textContent).toContain("In review");
 });
 
 test("a locked manifest is read-only: edits are ignored and every action is disabled", async () => {
@@ -680,7 +692,7 @@ test("a locked manifest is read-only: edits are ignored and every action is disa
   expect(screen.getByTestId("manifest-read-only")).toBeTruthy();
   expect(input("agent_name").readOnly).toBe(true);
   edit("agent_name", "tamper");
-  expect(screen.getByTestId("field-state-agent_name").textContent).toBe("clean");
+  expect(screen.getByTestId("field-state-agent_name").getAttribute("data-state")).toBe("clean");
   expect(input("agent_name").value).toBe("support-agent");
   expect(storage.getItem(STORAGE_KEY)).toBeNull();
   expect(saveButton().disabled).toBe(true);
@@ -701,7 +713,7 @@ test("R3: a stored draft restored onto a locked manifest leaves Save disabled an
   expect(screen.getByTestId("manifest-read-only")).toBeTruthy();
   // the draft is restored (not conflicting), so only the locked status can disable Save
   expect(screen.getByTestId("draft-restored")).toBeTruthy();
-  expect(screen.getByTestId("field-state-agent_name").textContent).toBe("unsaved");
+  expect(screen.getByTestId("field-state-agent_name").getAttribute("data-state")).toBe("unsaved");
   expect(saveButton().disabled).toBe(true);
   fireEvent.click(saveButton());
   expect(callsOf("PATCH")).toHaveLength(0);
@@ -714,7 +726,9 @@ test("a manifest load failure renders only the error", async () => {
   );
   renderUI();
   await waitFor(() => expect(screen.getByTestId("manifest-load-error")).toBeTruthy());
-  expect(screen.getByTestId("manifest-load-error").textContent).toBe("not_found");
+  expect(screen.getByTestId("manifest-load-error").textContent).toContain(
+    "The server refused the request: not_found. Check what you entered, then try again.",
+  );
   expect(screen.queryByTestId("lock-button")).toBeNull();
 });
 
@@ -727,7 +741,9 @@ test("a network failure on load is surfaced, never rendered as an empty manifest
   );
   renderUI();
   await waitFor(() => expect(screen.getByTestId("manifest-load-error")).toBeTruthy());
-  expect(screen.getByTestId("manifest-load-error").textContent).toBe("network error: offline");
+  expect(screen.getByTestId("manifest-load-error").textContent).toContain(
+    "Could not reach the server. Check your connection, then try again.",
+  );
 });
 
 test("clearing the agent name saves null, never an empty string", async () => {
@@ -742,10 +758,939 @@ test("S8: a JSON field edited to the literal null is sent as an explicit null in
   await renderLoaded();
   // runtime_dependencies_json starts non-null ({python: ">=3.11"}), so editing to "null" is a real change
   edit("runtime_dependencies_json", "null");
-  expect(screen.getByTestId("field-state-runtime_dependencies_json").textContent).toBe("unsaved");
+  expect(
+    screen.getByTestId("field-state-runtime_dependencies_json").getAttribute("data-state"),
+  ).toBe("unsaved");
   fireEvent.click(saveButton());
   await waitFor(() => expect(callsOf("PATCH")).toHaveLength(1));
   const body = callsOf("PATCH")[0]!.body as Record<string, unknown>;
   expect("runtime_dependencies_json" in body).toBe(true);
   expect(body.runtime_dependencies_json).toBeNull();
+});
+
+// ---------------------------------------------------------------------------------------------
+// FTF-UX03 round 2 (QUEUE 0g): bilingual en/ar, UX01 components, typed errors, strict parse of every
+// reply field, bound replies, identity reset, no simulated progress. Each block names the behaviour
+// it pins; the fault -> RED table in the submission records the mutation that turns each one red.
+// ---------------------------------------------------------------------------------------------
+import { act } from "@testing-library/react";
+
+import {
+  blockerMessage,
+  EDITABLE_FIELDS,
+  type LockBlocker,
+  parseEvidence,
+  parseManifest,
+  unboundFields,
+} from "../components/target-application/manifest_review_edit_ui_with_per_field_evidence";
+import {
+  evidenceTypeLabel,
+  fieldLabel,
+  roleLabel,
+  t04a21,
+} from "../components/target-application/strings_04a21";
+
+type Handler = (
+  url: URL,
+  method: string,
+  body: unknown,
+) => ReturnType<typeof jsonResponse> | Promise<ReturnType<typeof jsonResponse>>;
+
+function stubFetch(handler: Handler) {
+  const calls: { method: string; path: string; body: unknown }[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const parsed = new URL(url);
+      const method = init?.method ?? "GET";
+      const body = init?.body ? JSON.parse(init.body as string) : undefined;
+      calls.push({ method, path: parsed.pathname, body });
+      return handler(parsed, method, body);
+    }),
+  );
+  return calls;
+}
+
+/** A well-behaved server whose individual replies the caller can override. */
+function stubServer(
+  opts: {
+    manifest?: unknown;
+    evidence?: unknown;
+    patch?: (body: Record<string, unknown>) => unknown;
+    submit?: unknown;
+    lock?: unknown;
+  } = {},
+) {
+  const manifest = "manifest" in opts ? opts.manifest : manifestRecord();
+  const evidence = "evidence" in opts ? opts.evidence : [evidenceRow()];
+  return stubFetch((url, method, body) => {
+    if (url.pathname === `${MANIFEST_PATH}/evidence`) return jsonResponse(200, evidence);
+    if (url.pathname === MANIFEST_PATH && method === "GET") return jsonResponse(200, manifest);
+    if (url.pathname === MANIFEST_PATH && method === "PATCH") {
+      const reply = opts.patch
+        ? opts.patch(body as Record<string, unknown>)
+        : { ...(manifest as object), ...(body as object) };
+      return jsonResponse(200, reply);
+    }
+    if (url.pathname === `${MANIFEST_PATH}/submit-for-review`) {
+      return jsonResponse(
+        200,
+        opts.submit ?? { ...(manifest as object), status: "review_required" },
+      );
+    }
+    if (url.pathname === `${MANIFEST_PATH}/lock`) {
+      return jsonResponse(
+        200,
+        opts.lock ?? { ...(manifest as object), status: "locked", manifest_sha256: "a".repeat(64) },
+      );
+    }
+    return jsonResponse(404, { detail: "not_found" });
+  });
+}
+
+function renderLocale(locale: string, storageOverride: unknown = storage) {
+  return render(
+    createElement(ManifestReviewEditUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      manifestId: MANIFEST_ID,
+      storage: storageOverride as Storage | null,
+      locale: locale as "en" | "ar",
+    }),
+  );
+}
+
+function shell() {
+  return screen.getByTestId("manifest-review-ui");
+}
+
+// --- [UX03-A] bilingual: exact Arabic strings, lang/dir on every state -------------------------
+
+test("[UX03-A1] Arabic: every system string is the exact Arabic catalogue string, in an rtl/ar shell", async () => {
+  storage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({ agent_name: { text: "my-name", baseText: "older-server-name" } }),
+  );
+  renderLocale("ar");
+  await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+  expect(shell().getAttribute("lang")).toBe("ar");
+  expect(shell().getAttribute("dir")).toBe("rtl");
+  expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("مراجعة بيان الوكيل");
+  expect(screen.getByTestId("manifest-status").textContent).toContain("قيد المراجعة");
+  expect(saveButton().textContent).toBe("حفظ المسودة");
+  expect(lockButton().textContent).toBe("قفل البيان");
+  expect(screen.getByTestId("submit-for-review-button").textContent).toBe("إرسال للمراجعة");
+  expect(screen.getByTestId("field-no-evidence-mandate_json").textContent).toBe(
+    "لا توجد أدلة مسجلة",
+  );
+  expect(screen.getByTestId("evidence-type-ev-1").textContent).toBe("رمز مستودع");
+  expect(screen.getByTestId("evidence-confidence-ev-1").textContent).toBe("الثقة: 0.9");
+  expect(screen.getByTestId("field-state-agent_name").textContent).toContain("تعارض");
+  expect(screen.getByTestId("field-conflict-agent_name").textContent).toContain(
+    "تغيّر هذا الحقل على الخادم بعد أن بدأت تعديله. اختر النسخة التي تريد الاحتفاظ بها.",
+  );
+  expect(screen.getByTestId("keep-mine-agent_name").textContent).toBe("الاحتفاظ بنسختي");
+  expect(screen.getByTestId("take-server-agent_name").textContent).toBe("استخدام نسخة الخادم");
+  expect(screen.getByTestId("lock-blockers").textContent).toContain(
+    "اسم الوكيل: تعارض غير محسوم. اختر نسخة.",
+  );
+  expect(screen.getByTestId("draft-restored").textContent).toContain(
+    "تمت استعادة تعديلاتك غير المحفوظة من هذا المتصفح. لم تُحفظ على الخادم بعد.",
+  );
+  expect(screen.getByLabelText("اسم الوكيل")).toBeTruthy();
+  expect(screen.getByLabelText("دور النموذج الحالي")).toBeTruthy();
+  // no English system string is left on the page
+  const text = shell().textContent ?? "";
+  for (const english of [
+    "Save draft",
+    "Lock manifest",
+    "No recorded evidence",
+    "Conflict",
+    "Evidence",
+  ]) {
+    expect(text, english).not.toContain(english);
+  }
+});
+
+test("[UX03-A2] lang and dir are set on EVERY state: loading, load error, populated, read-only, conflict", async () => {
+  const states: { name: string; setup: () => void; ready: () => void }[] = [
+    {
+      name: "loading",
+      setup: () => stubFetch(() => new Promise(() => undefined)),
+      ready: () => expect(screen.getByTestId("manifest-loading")).toBeTruthy(),
+    },
+    {
+      name: "load error",
+      setup: () => stubFetch(() => jsonResponse(500, {})),
+      ready: () => expect(screen.getByTestId("manifest-load-error")).toBeTruthy(),
+    },
+    {
+      name: "populated",
+      setup: () => stubServer(),
+      ready: () => expect(screen.getByTestId("manifest-status")).toBeTruthy(),
+    },
+    {
+      name: "read-only",
+      setup: () =>
+        stubServer({
+          manifest: manifestRecord({ status: "locked", manifest_sha256: "b".repeat(64) }),
+        }),
+      ready: () => expect(screen.getByTestId("manifest-read-only")).toBeTruthy(),
+    },
+    {
+      name: "conflict",
+      setup: () => {
+        storage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({ agent_name: { text: "mine", baseText: "older" } }),
+        );
+        stubServer();
+      },
+      ready: () => expect(screen.getByTestId("field-conflict-agent_name")).toBeTruthy(),
+    },
+  ];
+  for (const state of states) {
+    for (const [locale, lang, dir] of [
+      ["en", "en", "ltr"],
+      ["ar", "ar", "rtl"],
+      ["fr", "en", "ltr"],
+    ] as const) {
+      cleanup();
+      storage = new MemoryStorage();
+      state.setup();
+      renderLocale(locale);
+      await waitFor(state.ready);
+      expect(shell().getAttribute("lang"), `${state.name}/${locale} lang`).toBe(lang);
+      expect(shell().getAttribute("dir"), `${state.name}/${locale} dir`).toBe(dir);
+    }
+  }
+});
+
+test("[UX03-A3] server data (hash, path, symbol, commit) is isolated in <bdi dir=ltr>; JSON editors are ltr", async () => {
+  installServer({
+    manifest: manifestRecord({ status: "locked", manifest_sha256: "c".repeat(64) }),
+  });
+  renderLocale("ar");
+  await waitFor(() => expect(screen.getByTestId("manifest-sha256")).toBeTruthy());
+  for (const id of [
+    "manifest-sha256",
+    "evidence-location-ev-1",
+    "evidence-symbol-ev-1",
+    "evidence-commit-ev-1",
+  ]) {
+    const node = screen.getByTestId(id);
+    const bdi = node.tagName === "BDI" ? node : node.querySelector("bdi");
+    expect(bdi, id).toBeTruthy();
+    expect(bdi!.getAttribute("dir"), id).toBe("ltr");
+  }
+  expect(input("mandate_json").getAttribute("dir")).toBe("ltr");
+  expect(input("agent_name").getAttribute("dir")).toBe("auto");
+});
+
+test("[UX03-A4] the catalogue is complete: every key has a non-empty English and Arabic string and every field has a label", () => {
+  for (const field of EDITABLE_FIELDS) {
+    expect(fieldLabel(field, "en")).not.toBe(field);
+    expect(fieldLabel(field, "ar")).toMatch(/[؀-ۿ]/);
+    expect(fieldLabel(field, "ar")).not.toBe(fieldLabel(field, "en"));
+  }
+  for (const role of ["current_production", "baseline", "candidate", "teacher", "judge"]) {
+    expect(roleLabel(role, "ar")).toMatch(/[؀-ۿ]/);
+    expect(roleLabel(role, "en")).not.toBe(role);
+  }
+  for (const type of [
+    "repo_file",
+    "repo_symbol",
+    "config",
+    "test",
+    "runtime_probe",
+    "user_input",
+  ]) {
+    expect(evidenceTypeLabel(type, "ar")).toMatch(/[؀-ۿ]/);
+    expect(evidenceTypeLabel(type, "en")).not.toBe(type);
+  }
+  expect(t04a21("saveDraft", "ar")).toBe("حفظ المسودة");
+  // an unknown field / role / type shows itself, never "undefined" and never throws
+  expect(fieldLabel("toString", "en")).toBe("toString");
+  expect(roleLabel("__proto__", "en")).toBe("__proto__");
+  expect(evidenceTypeLabel("constructor", "ar")).toBe("constructor");
+});
+
+// --- [UX03-B] typed errors: nothing blank, nothing unmounted, always a way forward -------------
+
+test("[UX03-B1] a rejected fetch on load is an announced error with a Retry that reloads for real", async () => {
+  let online = false;
+  const calls = stubFetch((url) => {
+    if (!online) throw new Error("offline");
+    if (url.pathname.endsWith("/evidence")) return jsonResponse(200, [evidenceRow()]);
+    return jsonResponse(200, manifestRecord());
+  });
+  renderLocale("en");
+  await waitFor(() => expect(screen.getByTestId("manifest-load-error")).toBeTruthy());
+  const alert = screen.getByRole("alert");
+  expect(alert.textContent).toContain(
+    "Could not reach the server. Check your connection, then try again.",
+  );
+  expect(screen.queryByTestId("lock-button")).toBeNull();
+  const before = calls.length;
+  online = true;
+  fireEvent.click(screen.getByTestId("manifest-retry-button"));
+  await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+  expect(calls.length).toBeGreaterThan(before);
+  expect(screen.queryByTestId("manifest-load-error")).toBeNull();
+});
+
+test("[UX03-B2] the load error and Retry are Arabic in an Arabic page", async () => {
+  stubFetch(() => {
+    throw new Error("offline");
+  });
+  renderLocale("ar");
+  await waitFor(() => expect(screen.getByTestId("manifest-load-error")).toBeTruthy());
+  expect(screen.getByRole("alert").textContent).toContain(
+    "تعذّر الاتصال بالخادم. تحقق من اتصالك ثم حاول مرة أخرى.",
+  );
+  expect(screen.getByTestId("manifest-retry-button").textContent).toBe("حاول مرة أخرى");
+});
+
+test("[UX03-B3] an unreadable (non-JSON) 200 body is a malformed-reply error, never a blank page", async () => {
+  stubFetch((url) =>
+    url.pathname.endsWith("/evidence")
+      ? jsonResponse(200, [])
+      : ({
+          ok: true,
+          status: 200,
+          json: async () => {
+            throw new SyntaxError("Unexpected token <");
+          },
+        } as unknown as ReturnType<typeof jsonResponse>),
+  );
+  renderLocale("en");
+  await waitFor(() => expect(screen.getByTestId("manifest-load-error")).toBeTruthy());
+  expect(screen.getByTestId("manifest-load-error").textContent).toContain(
+    "The server sent a reply this page cannot read.",
+  );
+  expect(screen.queryByTestId("field-mandate_json")).toBeNull();
+});
+
+test.each([
+  [401, "Your session has ended. Sign in again, then retry."],
+  [
+    403,
+    "You do not have access to this. Ask an organization administrator to grant it, then retry.",
+  ],
+  [503, "The service had a problem (503). Wait a minute, then try again."],
+])("[UX03-B4] a %s on load names the problem and the next step", async (status, sentence) => {
+  stubFetch(() => jsonResponse(status, {}));
+  renderLocale("en");
+  await waitFor(() => expect(screen.getByTestId("manifest-load-error")).toBeTruthy());
+  expect(screen.getByTestId("manifest-load-error").textContent).toContain(sentence);
+});
+
+test("[UX03-B5] a rejected PATCH is announced, keeps every draft, and the page stays mounted and retryable", async () => {
+  let fail = true;
+  stubFetch((url, method, body) => {
+    if (url.pathname.endsWith("/evidence")) return jsonResponse(200, [evidenceRow()]);
+    if (method === "PATCH") {
+      if (fail) throw new Error("offline");
+      return jsonResponse(200, { ...manifestRecord(), ...(body as object) });
+    }
+    return jsonResponse(200, manifestRecord());
+  });
+  renderLocale("en");
+  await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+  edit("mandate_json", '{"goal":"keep me"}');
+  fireEvent.click(saveButton());
+  await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
+  expect(screen.getByTestId("manifest-action-error").textContent).toContain(
+    "Could not reach the server. Check your connection, then try again.",
+  );
+  expect(input("mandate_json").value).toBe('{"goal":"keep me"}');
+  expect(storage.getItem(STORAGE_KEY)).toContain("keep me");
+  expect(screen.queryByTestId("manifest-action-notice")).toBeNull();
+  fail = false;
+  expect(saveButton().disabled).toBe(false);
+  fireEvent.click(saveButton());
+  await waitFor(() => expect(screen.getByTestId("manifest-action-notice")).toBeTruthy());
+});
+
+test.each([
+  [
+    "a 500 with a non-JSON body",
+    () => ({
+      ok: false,
+      status: 500,
+      json: async () => {
+        throw new Error("html");
+      },
+    }),
+  ],
+  ["a 502 with an unknown code", () => jsonResponse(502, { detail: "brand_new_code" })],
+  ["a 418 with an unknown code", () => jsonResponse(418, { detail: "teapot" })],
+])("[UX03-B6] %s on Lock is retryable and keeps the manifest un-locked", async (_name, reply) => {
+  stubFetch((url, method) => {
+    if (url.pathname.endsWith("/evidence")) return jsonResponse(200, [evidenceRow()]);
+    if (method === "POST") return reply() as ReturnType<typeof jsonResponse>;
+    return jsonResponse(200, manifestRecord());
+  });
+  renderLocale("en");
+  await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+  fireEvent.click(lockButton());
+  await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
+  expect(screen.getByTestId("manifest-status").getAttribute("data-manifest-status")).toBe(
+    "review_required",
+  );
+  expect(screen.queryByTestId("manifest-action-notice")).toBeNull();
+  expect(lockButton().disabled).toBe(false);
+});
+
+test("[UX03-B7] invalid JSON is tied to its editor: aria-invalid, aria-describedby -> an announced message", async () => {
+  renderLocale("en");
+  await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+  expect(input("mandate_json").getAttribute("aria-invalid")).toBeNull();
+  edit("mandate_json", "{not json");
+  const editor = input("mandate_json");
+  expect(editor.getAttribute("aria-invalid")).toBe("true");
+  const error = screen.getByTestId("field-error-mandate_json");
+  expect(error.getAttribute("role")).toBe("alert");
+  expect(error.textContent).toBe(
+    "This is not valid JSON. Fix the syntax, for example a missing quote or bracket, to be able to save.",
+  );
+  expect(editor.getAttribute("aria-describedby")!.split(" ")).toContain(error.id);
+  edit("mandate_json", '{"ok":1}');
+  expect(screen.queryByTestId("field-error-mandate_json")).toBeNull();
+  expect(input("mandate_json").getAttribute("aria-invalid")).toBeNull();
+});
+
+// --- [UX03-C] strict parse of EVERY reply field (QUEUE UI CHECKLIST a) --------------------------
+
+const MANIFEST_SCALAR_FAULTS: [string, string, unknown][] = [
+  ["id", "wrong type", 5],
+  ["id", "blank", ""],
+  ["project_id", "wrong type", null],
+  ["project_id", "blank", ""],
+  ["status", "outside the enum", "approved"],
+  ["status", "wrong type", 7],
+  ["status", "wrong case", "LOCKED"],
+  ["version", "string", "1"],
+  ["version", "zero", 0],
+  ["version", "fractional", 1.5],
+  ["version", "null", null],
+  ["manifest_sha256", "number", 5],
+  ["agent_name", "number", 5],
+  ["agent_name", "object", {}],
+];
+
+const MANIFEST_MISSING = [
+  "id",
+  "project_id",
+  "status",
+  "version",
+  "manifest_sha256",
+  "agent_name",
+  ...EDITABLE_FIELDS.filter((f) => f !== "agent_name"),
+];
+
+async function expectMalformedAndInert() {
+  await waitFor(() => expect(screen.getByTestId("manifest-load-error")).toBeTruthy());
+  expect(screen.getByTestId("manifest-load-error").textContent).toContain(
+    "The server sent a reply this page cannot read.",
+  );
+  for (const control of [
+    "save-draft-button",
+    "submit-for-review-button",
+    "lock-button",
+    "model-role-select",
+  ]) {
+    expect(screen.queryByTestId(control), control).toBeNull();
+  }
+  expect(screen.queryByTestId("field-agent_name")).toBeNull();
+  expect(screen.queryByTestId("manifest-status")).toBeNull();
+}
+
+test.each(MANIFEST_SCALAR_FAULTS)(
+  "[UX03-C1] manifest.%s %s -> malformed, no action control",
+  async (field, _kind, value) => {
+    stubServer({ manifest: manifestRecord({ [field]: value }) });
+    renderLocale("en");
+    await expectMalformedAndInert();
+  },
+);
+
+test.each(MANIFEST_MISSING)(
+  "[UX03-C2] manifest without %s -> malformed, no action control",
+  async (field) => {
+    const record = manifestRecord() as Record<string, unknown>;
+    delete record[field];
+    stubServer({ manifest: record });
+    renderLocale("en");
+    await expectMalformedAndInert();
+  },
+);
+
+test.each([
+  ["null", null],
+  ["an array", []],
+  ["a string", "manifest"],
+])("[UX03-C3] a manifest body that is %s -> malformed", async (_name, body) => {
+  stubServer({ manifest: body });
+  renderLocale("en");
+  await expectMalformedAndInert();
+});
+
+const EVIDENCE_KEYS = [
+  "id",
+  "field_path",
+  "evidence_type",
+  "repository_commit_sha",
+  "file_path",
+  "line_start",
+  "line_end",
+  "symbol",
+  "content_hash",
+  "confidence_score",
+];
+const EVIDENCE_WRONG: [string, unknown][] = [
+  ["id", 5],
+  ["id", ""],
+  ["field_path", null],
+  ["evidence_type", "guess"],
+  ["evidence_type", 3],
+  ["repository_commit_sha", 5],
+  ["file_path", 5],
+  ["line_start", "10"],
+  ["line_end", "24"],
+  ["symbol", 5],
+  ["content_hash", 5],
+  ["confidence_score", "0.9"],
+  ["confidence_score", Number.NaN],
+];
+
+test.each(EVIDENCE_WRONG)(
+  "[UX03-C4] evidence.%s = %j -> malformed, never 'no evidence'",
+  async (key, value) => {
+    stubServer({ evidence: [evidenceRow({ [key]: value } as Partial<EvidenceRecord>)] });
+    renderLocale("en");
+    await expectMalformedAndInert();
+  },
+);
+
+test.each(EVIDENCE_KEYS)("[UX03-C5] evidence row without %s -> malformed", async (key) => {
+  const row = { ...evidenceRow() } as Record<string, unknown>;
+  delete row[key];
+  stubServer({ evidence: [row] });
+  renderLocale("en");
+  await expectMalformedAndInert();
+});
+
+test.each([
+  ["an object", {}],
+  ["null", null],
+  ["a row that is a string", ["ev"]],
+  ["a good row followed by a bad one", [evidenceRow(), { id: "x" }]],
+])("[UX03-C6] an evidence body that is %s -> malformed", async (_name, body) => {
+  stubServer({ evidence: body });
+  renderLocale("en");
+  await expectMalformedAndInert();
+});
+
+test("[UX03-C7] the parsers accept the real shapes and reject the wrong ones directly", () => {
+  expect(parseManifest(manifestRecord())).not.toBeNull();
+  expect(parseManifest({ ...manifestRecord(), status: "superseded" })).not.toBeNull();
+  expect(parseManifest({ ...manifestRecord(), manifest_sha256: "a".repeat(64) })).not.toBeNull();
+  expect(parseManifest(undefined)).toBeNull();
+  expect(parseEvidence([])).toEqual([]);
+  expect(
+    parseEvidence([evidenceRow({ line_start: null, line_end: null, confidence_score: null })]),
+  ).toHaveLength(1);
+  expect(parseEvidence(undefined)).toBeNull();
+});
+
+// --- [UX03-D] one binding function: the reply must match what was sent --------------------------
+
+const CTX = { manifestId: MANIFEST_ID, projectId: PROJECT_ID };
+
+test("[UX03-D1] unboundFields names every mismatch and nothing else", () => {
+  const base = manifestRecord();
+  const patch = {
+    kind: "patch" as const,
+    sent: { mandate_json: { goal: "x" }, agent_name: null },
+    previousStatus: "review_required",
+  };
+  const good = { ...base, mandate_json: { goal: "x" }, agent_name: null };
+  expect(unboundFields(patch, good, CTX)).toEqual([]);
+  expect(unboundFields(patch, { ...good, id: "other" }, CTX)).toEqual(["id"]);
+  expect(unboundFields(patch, { ...good, project_id: "other" }, CTX)).toEqual(["project_id"]);
+  expect(unboundFields(patch, { ...good, status: "locked" }, CTX)).toEqual(["status"]);
+  expect(unboundFields(patch, { ...good, mandate_json: { goal: "y" } }, CTX)).toEqual([
+    "mandate_json",
+  ]);
+  expect(unboundFields(patch, { ...good, agent_name: "kept" }, CTX)).toEqual(["agent_name"]);
+  // key order inside a JSON object is not a difference; array order is
+  expect(
+    unboundFields(
+      {
+        kind: "patch",
+        sent: { tool_contracts_json: { a: 1, b: [1, 2] } },
+        previousStatus: "review_required",
+      },
+      { ...base, tool_contracts_json: { b: [1, 2], a: 1 } },
+      CTX,
+    ),
+  ).toEqual([]);
+  expect(
+    unboundFields(
+      { kind: "patch", sent: { tool_contracts_json: [1, 2] }, previousStatus: "review_required" },
+      { ...base, tool_contracts_json: [2, 1] },
+      CTX,
+    ),
+  ).toEqual(["tool_contracts_json"]);
+  expect(unboundFields({ kind: "submit" }, { ...base, status: "review_required" }, CTX)).toEqual(
+    [],
+  );
+  expect(unboundFields({ kind: "submit" }, { ...base, status: "draft" }, CTX)).toEqual(["status"]);
+  expect(
+    unboundFields(
+      { kind: "lock" },
+      { ...base, status: "locked", manifest_sha256: "a".repeat(64) },
+      CTX,
+    ),
+  ).toEqual([]);
+  expect(
+    unboundFields(
+      { kind: "lock" },
+      { ...base, status: "review_required", manifest_sha256: null },
+      CTX,
+    ),
+  ).toEqual(["status", "manifest_sha256"]);
+});
+
+const SAMPLE_EDIT: Record<string, string> = Object.fromEntries(
+  EDITABLE_FIELDS.map((f) => [f, f === "agent_name" ? "renamed" : '{"changed":true}']),
+);
+
+test.each(EDITABLE_FIELDS)(
+  "[UX03-D2] a PATCH reply that does not carry the saved %s is refused: not saved, draft kept",
+  async (field) => {
+    stubServer({
+      patch: (body) => {
+        const reply = { ...manifestRecord(), ...body } as Record<string, unknown>;
+        reply[field] = field === "agent_name" ? "somebody-else" : { server: "differs" };
+        return reply;
+      },
+    });
+    renderLocale("en");
+    await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+    edit(field, SAMPLE_EDIT[field]!);
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
+    expect(screen.getByTestId("manifest-action-error").textContent).toContain(
+      "The server's reply does not match what was sent, so nothing was marked as done.",
+    );
+    expect(screen.queryByTestId("manifest-action-notice")).toBeNull();
+    expect(input(field).value).toBe(SAMPLE_EDIT[field]);
+    expect(screen.getByTestId(`field-state-${field}`).getAttribute("data-state")).toBe("unsaved");
+    expect(storage.getItem(STORAGE_KEY)).toContain(field);
+  },
+);
+
+test.each([
+  ["another manifest's id", { id: "99999999-9999-9999-9999-999999999999" }],
+  ["another project's id", { project_id: "88888888-8888-8888-8888-888888888888" }],
+  ["a changed status", { status: "locked" }],
+])("[UX03-D3] a PATCH reply carrying %s is refused", async (_name, change) => {
+  stubServer({ patch: (body) => ({ ...manifestRecord(), ...body, ...change }) });
+  renderLocale("en");
+  await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+  edit("mandate_json", '{"goal":"x"}');
+  fireEvent.click(saveButton());
+  await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
+  expect(screen.getByTestId("manifest-status").getAttribute("data-manifest-status")).toBe(
+    "review_required",
+  );
+  expect(screen.getByTestId("field-state-mandate_json").getAttribute("data-state")).toBe("unsaved");
+});
+
+test("[UX03-D4] a submit reply still in draft, and a lock reply that is not locked, are refused", async () => {
+  stubServer({
+    manifest: manifestRecord({ status: "draft" }),
+    submit: manifestRecord({ status: "draft" }),
+  });
+  renderLocale("en");
+  await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+  fireEvent.click(screen.getByTestId("submit-for-review-button"));
+  await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
+  expect(screen.queryByTestId("manifest-action-notice")).toBeNull();
+  expect(screen.getByTestId("manifest-status").getAttribute("data-manifest-status")).toBe("draft");
+  cleanup();
+  stubServer({ lock: manifestRecord({ status: "locked", manifest_sha256: null }) });
+  renderLocale("en");
+  await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+  fireEvent.click(lockButton());
+  await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
+  expect(screen.getByTestId("manifest-status").getAttribute("data-manifest-status")).toBe(
+    "review_required",
+  );
+  expect(screen.queryByTestId("manifest-sha256")).toBeNull();
+});
+
+test("[UX03-D5] a malformed 200 reply to an action is refused and never replaces the manifest", async () => {
+  stubServer({ patch: () => ({ nope: true }) });
+  renderLocale("en");
+  await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+  edit("mandate_json", '{"goal":"x"}');
+  fireEvent.click(saveButton());
+  await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
+  expect(screen.getByTestId("manifest-action-error").textContent).toContain("cannot read");
+  expect(screen.getByTestId("manifest-status")).toBeTruthy();
+  expect(input("mandate_json").value).toBe('{"goal":"x"}');
+});
+
+// --- [UX03-E] identity: every prop that names the manifest resets drafts, results and errors ----
+
+test.each([
+  ["manifestId", { manifestId: "55555555-5555-5555-5555-555555555555" }],
+  ["projectId", { projectId: "66666666-6666-6666-6666-666666666666" }],
+  ["organizationId", { organizationId: "77777777-7777-7777-7777-777777777777" }],
+  ["apiBaseUrl", { apiBaseUrl: "http://other.example:9000" }],
+])(
+  "[UX03-E1] changing %s drops the previous manifest, its drafts and its notices at once",
+  async (_name, change) => {
+    const props = {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      manifestId: MANIFEST_ID,
+      storage: storage as unknown as Storage,
+    };
+    const view = render(createElement(ManifestReviewEditUI, props));
+    await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+    edit("mandate_json", '{"goal":"mine"}');
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(screen.getByTestId("manifest-action-notice")).toBeTruthy());
+    edit("agent_name", "unsaved-name");
+    stubFetch(() => new Promise(() => undefined)); // the next manifest never answers
+    view.rerender(createElement(ManifestReviewEditUI, { ...props, ...change }));
+    expect(screen.getByTestId("manifest-loading")).toBeTruthy();
+    expect(screen.queryByTestId("field-input-agent_name")).toBeNull();
+    expect(screen.queryByTestId("manifest-action-notice")).toBeNull();
+    expect(screen.queryByTestId("manifest-status")).toBeNull();
+    expect(screen.queryByTestId("draft-restored")).toBeNull();
+  },
+);
+
+test("[UX03-E2] a slow reply for the previous manifest never lands on the new one", async () => {
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  stubFetch(async (url) => {
+    await gate;
+    return url.pathname.endsWith("/evidence")
+      ? jsonResponse(200, [])
+      : jsonResponse(200, manifestRecord({ agent_name: "from-the-old-manifest" }));
+  });
+  const props = {
+    apiBaseUrl: API_BASE,
+    organizationId: ORG_ID,
+    projectId: PROJECT_ID,
+    manifestId: MANIFEST_ID,
+    storage: storage as unknown as Storage,
+  };
+  const view = render(createElement(ManifestReviewEditUI, props));
+  stubFetch(() => new Promise(() => undefined));
+  view.rerender(
+    createElement(ManifestReviewEditUI, {
+      ...props,
+      manifestId: "55555555-5555-5555-5555-555555555555",
+    }),
+  );
+  await act(async () => {
+    release?.();
+    await gate;
+  });
+  expect(screen.queryByTestId("field-input-agent_name")).toBeNull();
+  expect(screen.getByTestId("manifest-loading")).toBeTruthy();
+});
+
+// --- [UX03-F] no simulated progress or success ---------------------------------------------------
+
+test("[UX03-F1] nothing is shown as saved until a typed 2xx arrives; meanwhile the page is busy and inert", async () => {
+  let reply: (() => void) | undefined;
+  stubFetch((url, method, body) => {
+    if (url.pathname.endsWith("/evidence")) return jsonResponse(200, [evidenceRow()]);
+    if (method === "PATCH") {
+      return new Promise((resolve) => {
+        reply = () => resolve(jsonResponse(200, { ...manifestRecord(), ...(body as object) }));
+      });
+    }
+    return jsonResponse(200, manifestRecord());
+  });
+  renderLocale("en");
+  await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+  edit("mandate_json", '{"goal":"x"}');
+  fireEvent.click(saveButton());
+  await waitFor(() => expect(saveButton().disabled).toBe(true));
+  expect(shell().getAttribute("aria-busy")).toBe("true");
+  expect(lockButton().disabled).toBe(true);
+  expect(screen.getByTestId("submit-for-review-button")).toHaveProperty("disabled", true);
+  expect(screen.queryByTestId("manifest-action-notice")).toBeNull();
+  expect(screen.getByTestId("field-state-mandate_json").getAttribute("data-state")).toBe("unsaved");
+  await act(async () => reply?.());
+  await waitFor(() => expect(screen.getByTestId("manifest-action-notice")).toBeTruthy());
+  expect(screen.getByTestId("manifest-action-notice").textContent).toContain("Draft saved.");
+  expect(shell().getAttribute("aria-busy")).toBeNull();
+});
+
+test("[UX03-F2] the success notice is announced politely and names what happened (save, submit, lock)", async () => {
+  stubServer({ manifest: manifestRecord({ status: "draft" }) });
+  renderLocale("en");
+  await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+  fireEvent.click(screen.getByTestId("submit-for-review-button"));
+  await waitFor(() => expect(screen.getByTestId("manifest-action-notice")).toBeTruthy());
+  expect(screen.getByTestId("manifest-action-notice").textContent).toContain(
+    "Submitted for review.",
+  );
+  expect(screen.getByTestId("manifest-action-notice").querySelector("[role=status]")).toBeTruthy();
+});
+
+test("[UX03-F3] while loading: busy shell, the loading text, and no 'no evidence' empty state", async () => {
+  stubFetch(() => new Promise(() => undefined));
+  renderLocale("en");
+  expect(shell().getAttribute("aria-busy")).toBe("true");
+  expect(screen.getByTestId("manifest-loading").textContent).toBe("Loading manifest…");
+  expect(screen.queryByTestId("field-no-evidence-mandate_json")).toBeNull();
+  expect(screen.queryByTestId("lock-button")).toBeNull();
+});
+
+test("[UX03-F4] a busy indicator appears after 1 s of waiting (NN/g response times)", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+  try {
+    stubFetch(() => new Promise(() => undefined));
+    renderLocale("en");
+    expect(screen.queryByRole("status")).toBeNull();
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+    });
+    expect(screen.getByRole("status").textContent).toContain("Loading manifest…");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+// --- [UX03-G] UX01 components: targets, names, reasons, state not by colour alone ---------------
+
+test("[UX03-G1] every button is a UX01 Button: >= 24 px target token, in every state", async () => {
+  storage.setItem(STORAGE_KEY, JSON.stringify({ agent_name: { text: "mine", baseText: "older" } }));
+  await renderLoaded();
+  const buttons = Array.from(shell().querySelectorAll("button"));
+  expect(buttons.length).toBeGreaterThanOrEqual(5);
+  for (const button of buttons) {
+    expect(button.style.minBlockSize, button.textContent ?? "").toBe("var(--target-min)");
+    expect(button.style.minInlineSize).toBe("var(--target-min)");
+    expect(button.getAttribute("data-variant")).toBeTruthy();
+  }
+});
+
+test("[UX03-G2] a disabled action states WHY, in the page's language (H5)", async () => {
+  installServer({ manifest: manifestRecord({ status: "draft" }) });
+  renderLocale("en");
+  await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+  const reasons = () => screen.getAllByTestId("disabled-reason").map((n) => n.textContent);
+  expect(reasons()).toContain("There are no unsaved changes");
+  expect(reasons()).toContain("Finish the items listed below first");
+  expect(saveButton().getAttribute("aria-describedby")).toBeTruthy();
+  cleanup();
+  installServer({
+    manifest: manifestRecord({ status: "locked", manifest_sha256: "d".repeat(64) }),
+  });
+  renderLocale("ar");
+  await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+  expect(screen.getAllByTestId("disabled-reason").map((n) => n.textContent)).toContain(
+    "لا يمكن تعديل بيان مقفل أو مستبدل",
+  );
+});
+
+test("[UX03-G3] controls have programmatic names: labelled editors, distinct conflict buttons", async () => {
+  storage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({
+      agent_name: { text: "mine", baseText: "older" },
+      mandate_json: { text: '{"a":1}', baseText: '{"x":1}' },
+    }),
+  );
+  await renderLoaded();
+  for (const field of EDITABLE_FIELDS) {
+    expect(screen.getByLabelText(fieldLabel(field, "en")), field).toBe(input(field));
+  }
+  expect(screen.getByTestId("keep-mine-agent_name").getAttribute("aria-label")).toBe(
+    "Keep my version of Agent name",
+  );
+  expect(screen.getByTestId("keep-mine-mandate_json").getAttribute("aria-label")).toBe(
+    "Keep my version of Mandate",
+  );
+  expect(screen.getByTestId("take-server-agent_name").getAttribute("aria-label")).toBe(
+    "Use the server's version of Agent name",
+  );
+  const ids = new Set(Array.from(shell().querySelectorAll("[id]")).map((n) => n.id));
+  expect(ids.size).toBe(shell().querySelectorAll("[id]").length);
+});
+
+test("[UX03-G4] state is words + an icon, never colour alone: field state, status, diff marks", async () => {
+  await renderLoaded();
+  edit("runtime_dependencies_json", JSON.stringify({ python: ">=3.12" }, null, 2));
+  const state = screen.getByTestId("field-state-runtime_dependencies_json");
+  expect(state.textContent).toBe("● Unsaved changes");
+  expect(state.querySelector("[aria-hidden=true]")).toBeTruthy();
+  const diff = screen.getByTestId("field-diff-runtime_dependencies_json");
+  expect(diff.querySelector('[data-diff="added"]')!.textContent!.startsWith("+ ")).toBe(true);
+  expect(diff.querySelector('[data-diff="removed"]')!.textContent!.startsWith("- ")).toBe(true);
+  expect(screen.getByTestId("manifest-status").textContent).toContain("In review");
+});
+
+test("[UX03-G5] a conflict is announced in words with its own banner, not only styled", async () => {
+  storage.setItem(STORAGE_KEY, JSON.stringify({ agent_name: { text: "mine", baseText: "older" } }));
+  await renderLoaded();
+  const region = screen.getByTestId("field-conflict-agent_name");
+  const banner = region.querySelector("[data-kind=warning]");
+  expect(banner).toBeTruthy();
+  expect(banner!.getAttribute("role")).toBe("status");
+  expect(banner!.textContent).toContain("Choose which version to keep.");
+  expect(screen.getByTestId("field-state-agent_name").textContent).toBe("! Conflict");
+  expect(input("agent_name").getAttribute("aria-describedby")!.split(" ")).toContain(region.id);
+});
+
+test("[UX03-G6] blockerMessage and the lock list are localized for every blocker kind", () => {
+  const cases: [LockBlocker, string, string][] = [
+    [
+      { code: "needs_review" as const },
+      "Submit the manifest for review first.",
+      "أرسل البيان للمراجعة أولًا.",
+    ],
+    [
+      { code: "invalid" as const, field: "mandate_json" },
+      "Mandate: the JSON is not valid.",
+      "التفويض: بنية JSON غير صالحة.",
+    ],
+    [
+      { code: "role" as const },
+      "Choose an explicit role for the current model.",
+      "اختر دورًا صريحًا للنموذج الحالي.",
+    ],
+    [
+      { code: "binding_object" as const },
+      "The current model binding must be a JSON object.",
+      "يجب أن يكون ربط النموذج الحالي كائن JSON.",
+    ],
+  ];
+  for (const [blocker, en, ar] of cases) {
+    expect(blockerMessage(blocker, "en")).toBe(en);
+    expect(blockerMessage(blocker, "ar")).toBe(ar);
+  }
+});
+
+test("[UX03-G7] evidence with a start line but no end line shows the start only, never ':10-null'", async () => {
+  stubServer({ evidence: [evidenceRow({ line_start: 10, line_end: null })] });
+  renderLocale("en");
+  await waitFor(() => expect(screen.getByTestId("evidence-location-ev-1")).toBeTruthy());
+  expect(screen.getByTestId("evidence-location-ev-1").textContent).toBe("agent/main.py:10");
 });

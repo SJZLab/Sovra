@@ -219,7 +219,6 @@ function RepositorySelector({
     }
     setTokenMissing(false);
     setSelectedRepositoryIdentity(null);
-    setSearched(false);
     await fetchPage(1, false);
   }
 
@@ -241,7 +240,9 @@ function RepositorySelector({
   }
 
   const tokenError = tokenMissing ? t04a03("tokenRequired", locale) : undefined;
-  const showEmpty = searched && !loading && failure === null && repositories.length === 0;
+  // Only a finished, successful search that found nothing and has no further page is "empty".
+  const showEmpty =
+    searched && !loading && failure === null && !hasNextPage && repositories.length === 0;
 
   return (
     <div data-testid="github-repository-selector" lang={lang} dir={dirFor(locale)}>
