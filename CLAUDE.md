@@ -159,6 +159,13 @@ Each shift, in this order:
 2. Then the top QUEUE.md "## Active" item, then "## Backlog" in order.
 3. Claim before implementing: push `relay/<item-id>` or open a draft `[relay]` PR first. Skip
    any item that already has a claim branch or open PR.
+4. Pre-review before submitting (owner instruction, 2026-10-21, live): after your own self-attack,
+   merge current main and give docs/operations/l2-review-brief.md, filled in for the item, to a
+   fresh reviewer subagent that did not write the code (strongest model available). Fix what it
+   finds and repeat until it reports CERTIFY or three rounds fail (then park); paste its final
+   report into the submission. It is evidence, never certification (Law 4).
+5. Fresh base before merging: if main moved after your PR's CI run started, merge main, push, and
+   merge only on the new run's green `ci-verdict`.
 Item-level park, not a full stop: 3 failed attempts on the same item, an unclear DoD, or an
 ask-first need moves that item to QUEUE.md "## Parked" (what failed, what was tried, three
 route options; an ask-first park also gets a dated "Owner actions — current" line). Then take
