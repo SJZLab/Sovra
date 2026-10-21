@@ -163,6 +163,9 @@ def part_p() -> None:
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "text/plain",
         "TEXT/CSV",
+        "APPLICATION/JSONL",
+        "application/jsonl ",
+        "Application/Json",
         "text/csv ",
         "",
         None,
@@ -2462,6 +2465,246 @@ def part_s_reads() -> None:
         )
 
 
+def part_s_variants() -> None:
+    """Values that differ only by case or whitespace are different values, everywhere."""
+    from dataclasses import replace as dc_replace
+
+    json_doc = {
+        "shape": "messages_json",
+        "messages": {"header": "m"},
+        "role_key": "role",
+        "content_key": "content",
+        "role_map": {"human": "user"},
+        "on_unmapped_message_keys": "ignore",
+    }
+    mapping = mapping_of(json_doc)
+    cell = json.dumps([{"role": "human", "content": "x", "k1": 1}])
+    loud = dc_replace(mapping, messages_slot=ic.Slot("HEADER", "m"))
+    check(
+        "VARIANT-1",
+        "a slot kind is exact (HEADER is not header)",
+        store.ignored_message_keys(loud, preview_rows({"m": cell})) == (),
+    )
+    shouting = dc_replace(mapping, messages_slot=ic.Slot("header", "M"))
+    check(
+        "VARIANT-2",
+        "a slot name is exact (M is not m)",
+        store.ignored_message_keys(shouting, preview_rows({"m": cell})) == (),
+    )
+    check(
+        "VARIANT-3",
+        "an index slot at exactly len(row) finds nothing",
+        store.ignored_message_keys(
+            mapping_of(dict(json_doc, messages={"index": 1})), preview_rows((cell,))
+        )
+        == (),
+    )
+
+    with sqlite_world() as w:
+        conn = w.connection("v", [*ALL_PURPOSES, "Training"])
+        ds = w.dataset("alpha", "training", conn)
+        for state in ("BLOCKED", " blocked", "Blocked"):
+            w.preview_state = (state, "source_unavailable")
+            refuses(
+                w,
+                f"preview state {state!r} is not blocked",
+                "preview_incomplete",
+                lambda: w.propose(ds),
+                "VARIANT-4",
+            )
+        for state in ("COMPLETED", " completed", "Completed "):
+            w.preview_state = (state, None)
+            refuses(
+                w,
+                f"preview state {state!r} is not completed",
+                "preview_incomplete",
+                lambda: w.propose(ds),
+                "VARIANT-5",
+            )
+        w.preview_state = ("completed", None)
+        m = w.propose(ds, now=_NOW)
+        for attr, value in (
+            ("mapping_sha256", m.mapping_sha256.upper()),
+            ("preview_sha256", m.preview_sha256.upper()),
+            ("tool_definitions_sha256", m.tool_definitions_sha256.upper()),
+            ("importer", "JSONL"),
+            ("importer_version", " 1"),
+            ("transform_version", "H011.1"),
+        ):
+            saved = getattr(m, attr)
+            setattr(m, attr, value)
+            w.session.flush()
+            again = w.propose(ds, now=_NOW)
+            check(
+                "VARIANT-6",
+                f"a stored {attr} differing only by case/space is a different proposal",
+                again.id != m.id,
+            )
+            w.session.delete(again)
+            w.session.flush()
+            setattr(m, attr, saved)
+            w.session.flush()
+        for status in ("Proposed", " proposed", "PROPOSED"):
+            m.status = status
+            w.session.flush()
+            n = len(w.preview_calls)
+            refuses(
+                w,
+                f"approve a mapping with status {status!r}",
+                "mapping_not_proposed",
+                lambda: w.approve(m),
+                "VARIANT-7",
+            )
+            refuses(
+                w,
+                f"reject a mapping with status {status!r}",
+                "mapping_not_proposed",
+                lambda: w.reject(m),
+                "VARIANT-8",
+            )
+            check(
+                "VARIANT-9",
+                "the status is checked before any byte is read",
+                len(w.preview_calls) == n,
+            )
+        m.status = "proposed"
+        w.session.flush()
+        m.dataset_purpose = "Training"
+        w.session.flush()
+        refuses(
+            w,
+            "a stored dataset purpose that differs only by case",
+            "purpose_mismatch",
+            lambda: w.approve(m, purpose="training"),
+            "VARIANT-10",
+        )
+        m.dataset_purpose = "training"
+        w.session.flush()
+        m2 = w.propose(ds, msg_doc({"human": "user", "bot": "assistant", "s": "system"}), now=_NOW)
+        n = len(w.preview_calls)
+        refuses(
+            w,
+            "a superseded version is refused before any byte is read",
+            "mapping_superseded",
+            lambda: w.approve(m),
+            "VARIANT-11",
+        )
+        check("VARIANT-12", "no storage read for the superseded version", len(w.preview_calls) == n)
+        w.approve(m2)
+        refuses(
+            w,
+            "a purpose that differs only by case",
+            "purpose_mismatch",
+            lambda: w.resolve(ds, purpose="Training"),
+            "VARIANT-13",
+        )
+
+    csv_doc = {
+        "shape": "prompt_completion",
+        "csv": {"encoding": "utf-8", "delimiter": ",", "has_header": True, "header_row": 0},
+        "prompt": {"header": "q"},
+        "completion": {"header": "a"},
+    }
+    with sqlite_world() as w:
+        conn = w.connection("v2", [*ALL_PURPOSES, "Training"])
+        w.schema_sha = sha("q,a")
+        v1 = w.dataset("tab", "training", conn, version=1, content_type="text/csv")
+        cm = w.propose(v1, csv_doc)
+        w.approve(cm)
+        v2 = w.dataset("tab", "training", conn, version=2, content_type="text/csv")
+        check("VARIANT-14", "positive control: reuse works", w.resolve(v2).reused is True)
+        cm.approved_purpose = "Training"
+        w.session.flush()
+        refuses(
+            w,
+            "an approved purpose that differs only by case",
+            "mapping_reapproval_required",
+            lambda: w.resolve(v2),
+            "VARIANT-15",
+        )
+        cm.approved_purpose = "training"
+        cm.importer = "CSV"
+        w.session.flush()
+        refuses(
+            w,
+            "a stored importer that differs only by case",
+            "mapping_reapproval_required",
+            lambda: w.resolve(v2),
+            "VARIANT-16",
+        )
+        cm.importer = "csv"
+        w.session.flush()
+        caps = w.dataset("tab", "Training", conn, version=3, content_type="text/csv")
+        refuses(
+            w,
+            "a dataset purpose that differs only by case has no prior",
+            "mapping_not_found",
+            lambda: w.resolve(caps, purpose="Training"),
+            "VARIANT-17",
+        )
+        # hash comparisons are byte exact
+        cm.source_schema_sha256 = sha("q,a").upper()
+        w.session.flush()
+        refuses(
+            w,
+            "an upper-case stored header hash",
+            "mapping_reapproval_required",
+            lambda: w.resolve(v2),
+            "VARIANT-18",
+        )
+        cm.source_schema_sha256 = sha("q,a")
+        cm.tool_definitions_sha256 = cm.tool_definitions_sha256.upper()
+        w.session.flush()
+        refuses(
+            w,
+            "an upper-case stored tool-definitions hash",
+            "mapping_reapproval_required",
+            lambda: w.resolve(v2),
+            "VARIANT-19",
+        )
+
+    with sqlite_world() as w:
+        ds, m = seeded(w)
+        m.mapping_sha256 = m.mapping_sha256.upper()
+        w.session.flush()
+        refuses(
+            w,
+            "an upper-case stored mapping hash at approval",
+            "mapping_tampered",
+            lambda: w.approve(m),
+            "VARIANT-20",
+        )
+        m.mapping_sha256 = m.mapping_sha256.lower()
+        m.preview_sha256 = m.preview_sha256.upper()
+        w.session.flush()
+        refuses(
+            w,
+            "an upper-case stored preview hash",
+            "invalid_request",
+            lambda: w.approve(m),
+            "VARIANT-21",
+        )
+        refuses(
+            w,
+            "an upper-case stored preview hash against the live one",
+            "preview_changed",
+            lambda: w.approve(m, expected_preview_sha256=m.preview_sha256.lower()),
+            "VARIANT-22",
+        )
+        m.preview_sha256 = m.preview_sha256.lower()
+        w.session.flush()
+        w.approve(m)
+        m.mapping_sha256 = m.mapping_sha256.upper()
+        w.session.flush()
+        refuses(
+            w,
+            "an upper-case stored mapping hash at resolve",
+            "mapping_tampered",
+            lambda: w.resolve(ds),
+            "VARIANT-23",
+        )
+
+
 def main() -> None:
     part_p()
     part_m()
@@ -2469,6 +2712,7 @@ def main() -> None:
     part_s_approve()
     part_s_resolve()
     part_s_reads()
+    part_s_variants()
     if FAILURES:
         for failure in FAILURES:
             print(failure, file=sys.stderr)

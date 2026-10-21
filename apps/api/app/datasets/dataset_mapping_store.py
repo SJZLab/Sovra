@@ -45,6 +45,7 @@ counts, never the preview, a raw row or a key name.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import re
 import uuid
@@ -124,7 +125,7 @@ _IMPORTER_VERSIONS: Final = {
     json_importer.IMPORTER_NAME: json_importer.IMPORTER_VERSION,
     jsonl_importer.IMPORTER_NAME: jsonl_importer.IMPORTER_VERSION,
 }
-_TABULAR_IMPORTERS: Final = frozenset({csv_importer.IMPORTER_NAME})
+_REUSABLE_PAIRS: Final = frozenset({(csv_importer.IMPORTER_NAME, csv_importer.IMPORTER_NAME)})
 
 CODES: Final = frozenset(
     {
@@ -327,6 +328,11 @@ def ignored_message_keys(mapping: ImportMapping, preview: MappingPreviewResult) 
             if isinstance(message, dict):
                 seen.update(str(key) for key in message if key not in known)
     return tuple(sorted(seen))
+
+
+def _same_hash(left: str | None, right: str | None) -> bool:
+    """Digest equality: both present and equal, byte for byte."""
+    return left is not None and right is not None and hmac.compare_digest(left, right)
 
 
 def _now() -> datetime:
@@ -565,8 +571,6 @@ def _counts(result: MappingPreviewResult) -> dict[str, int]:
 
 
 def _parse_document(document: object) -> ImportMapping:
-    if type(document) is not dict:
-        raise MappingStoreError("mapping_invalid")
     try:
         return mapping_from_object(document)
     except MappingUnsupportedError:
@@ -676,10 +680,7 @@ def _fetch_version(
         DatasetMapping.dataset_id == dataset_id,
         DatasetMapping.mapping_version == version,
     )
-    row = execute_tenant_scoped(session, context.organization_id, statement).scalars().first()
-    if row is None:
-        raise MappingStoreError("mapping_not_found")
-    return row
+    return execute_tenant_scoped(session, context.organization_id, statement).scalars().one()
 
 
 def _same_proposal(
@@ -691,15 +692,25 @@ def _same_proposal(
     snapshot: Sequence[str],
 ) -> bool:
     return (
-        previous.mapping_sha256 == mapping.mapping_sha256
-        and previous.preview_sha256 == preview.preview_sha256
-        and previous.source_schema_sha256 == preview.source_schema_sha256
-        and previous.tool_definitions_sha256 == preview.tool_definitions_sha256
-        and previous.dataset_source_connection_id == connection_id
-        and previous.importer == importer
-        and previous.importer_version == _IMPORTER_VERSIONS[importer]
-        and previous.transform_version == TRANSFORM_VERSION
-        and sorted(previous.allowed_purposes_snapshot) == sorted(snapshot)
+        previous.mapping_sha256,
+        previous.preview_sha256,
+        previous.source_schema_sha256,
+        previous.tool_definitions_sha256,
+        previous.dataset_source_connection_id,
+        previous.importer,
+        previous.importer_version,
+        previous.transform_version,
+        sorted(previous.allowed_purposes_snapshot),
+    ) == (
+        mapping.mapping_sha256,
+        preview.preview_sha256,
+        preview.source_schema_sha256,
+        preview.tool_definitions_sha256,
+        connection_id,
+        importer,
+        _IMPORTER_VERSIONS[importer],
+        TRANSFORM_VERSION,
+        sorted(snapshot),
     )
 
 
@@ -748,10 +759,10 @@ def approve_dataset_mapping(
     )
     if purpose != row.dataset_purpose:
         raise MappingStoreError("purpose_mismatch")
-    if expected_preview_sha256 != row.preview_sha256:
+    if not _same_hash(expected_preview_sha256, row.preview_sha256):
         raise MappingStoreError("preview_changed")
     mapping = _parse_document(row.mapping_document)
-    if mapping.mapping_sha256 != row.mapping_sha256:
+    if not _same_hash(mapping.mapping_sha256, row.mapping_sha256):
         raise MappingStoreError("mapping_tampered")
     preview = _finished_preview(
         session,
@@ -763,7 +774,7 @@ def approve_dataset_mapping(
         mapping=mapping,
         reveal=True,
     )
-    if preview.preview_sha256 != row.preview_sha256:
+    if not _same_hash(preview.preview_sha256, row.preview_sha256):
         raise MappingStoreError("preview_changed")
     counts = _counts(preview)
     if any(counts.get(code, 0) > 0 for code in _CRITICAL_ROW_CODES):
@@ -841,7 +852,7 @@ def _approved_for(
 
 def _verified_mapping(row: DatasetMapping) -> ImportMapping:
     mapping = _parse_document(row.mapping_document)
-    if mapping.mapping_sha256 != row.mapping_sha256:
+    if not _same_hash(mapping.mapping_sha256, row.mapping_sha256):
         raise MappingStoreError("mapping_tampered")
     return mapping
 
@@ -889,7 +900,7 @@ def resolve_approved_mapping(
     if prior is None:
         raise MappingStoreError("mapping_not_found")
     mapping = _verified_mapping(prior)
-    if prior.importer not in _TABULAR_IMPORTERS or prior.importer != importer:
+    if (prior.importer, importer) not in _REUSABLE_PAIRS:
         raise MappingStoreError("mapping_reapproval_required")
     if prior.approved_purpose != purpose:
         raise MappingStoreError("mapping_reapproval_required")
@@ -912,9 +923,8 @@ def resolve_approved_mapping(
         raise
     counts = _counts(preview)
     if (
-        preview.source_schema_sha256 is None
-        or preview.source_schema_sha256 != prior.source_schema_sha256
-        or preview.tool_definitions_sha256 != prior.tool_definitions_sha256
+        not _same_hash(preview.source_schema_sha256, prior.source_schema_sha256)
+        or not _same_hash(preview.tool_definitions_sha256, prior.tool_definitions_sha256)
         or any(counts.get(code, 0) > 0 for code in _CRITICAL_ROW_CODES)
     ):
         raise MappingStoreError("mapping_reapproval_required")
