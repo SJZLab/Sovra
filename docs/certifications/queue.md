@@ -25203,3 +25203,4 @@ different session.
 - **Certified:** FTF-0519 parent (main b61a0acb; count 155 -> 156), and the Control-plane two-heads fix (#924) - both by the separate session session_01FxdpwdR6T7wbuY17C6gw3o.
 - **Returned:** FTF-UX01 r3 -> r4 (0n): focus only on submitCount change; complete §4 evidence.
 - **Returned:** FTF-0501-F2 r1 -> r2 (0c, tests only): pin the non-UTF-8 split-at-SNIFF_BYTES path (B-F9). FTF-0501 requalified on main.
+- **Certified:** FTF-1505 (#931, merge 05554535), round 9; verdict by the separate session session_01FeAArcFJu2Z9bw7JQZTBSY. Follow-up FTF-1505-F1 queued.

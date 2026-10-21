@@ -12161,3 +12161,15 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   SeaweedFS routes/P1/P2/sweeper integrations pass; the 0502-P1/0503/0504/H011-P1 Docker-only outage steps passed in CI
   jobs 119275909195/119275909089/119275910126/119275909349/119275908978). Return: fault B-F9 (non-utf-8 declared
   encodings treat the sniff window as complete) GREEN - pin a declared utf-16 surrogate pair at SNIFF_BYTES.
+## 2026-10-21T21:58Z — CERTIFIED: FTF-1505 — certifier of record session_01FeAArcFJu2Z9bw7JQZTBSY
+- **FTF-1505: CERTIFIED** (round 9 under the stopping rule, tests only; PR #931, merge 05554535c727ace16d043735d7800fea9950a648, head 768099fc). Producer of
+  rounds 4-9: the Control-plane session session_01QVznorVMjnmcttUhyDnoGR (owner-approved, live 2026-10-16); certifier of
+  record: the separate cloud session session_01FeAArcFJu2Z9bw7JQZTBSY (named in no commit). CI: ci-verdict 119388043225;
+  gate 119303116816 step 65 "FTF-1505 negative-test proof" passed (12m13s); secret-scanning 119303116537 "10898 unit(s)
+  scanned, 14004 finding(s), 0 blocking -- clean". Local: full suite "all checks passed" (18m17s); real full-history scan
+  10,940 units, 0 blocking, no exposed credential; gates clean. Fault matrix 69 + 3 controls: 48 RED on the targeted run
+  tests (regex caps anchored/unanchored to MAX-1, caller slices head/tail, decoder slices and skips, run skips, finditer
+  pos/endpos, decoded-byte caps, chunking, shape cap, break after one run) covering C2/C8/C10/C12/C13/C15/C16/H8/H9/B10;
+  controls at exactly MAX_SCAN_BYTES GREEN as expected; earlier-round sample RED. Law 9: tests + submission only.
+  Non-blocking GREEN rows (new variants / outside the class): quick-gate prefix cap, run-count break >3,000, shape cap at
+  MAX-1, 36-char ghp_ token, silent tar-member read failure -> follow-up FTF-1505-F1. UNWIRED (a CI gate).

@@ -1,8 +1,8 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-21T20:05Z. Source: `python3 scripts/status.py` on main.
-- **Status: 156/304 certified · 49 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
+Updated: 2026-10-21T21:58Z. Source: `python3 scripts/status.py` on main.
+- **Status: 157/304 certified · 49 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
@@ -12,6 +12,8 @@ Updated: 2026-10-21T20:05Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-21T21:58Z:**
+  - CERTIFIED: FTF-1505 (secret scanning) after 9 rounds - the release-blocking scan covers source, full git history, archives, artifacts and live log samples, with no size limit that can hide a secret; the real full-history scan finds 0 exposed credentials. Follow-up FTF-1505-F1 adds five hardening tests.
 - **2026-10-21T20:05Z:**
   - Returned: FTF-0501-F2 (declared text encodings on upload): the code is correct and FTF-0501 stays certified, but one test is missing for a UTF-16 character split at the 64 KiB check boundary. Round 2 is tests only.
   - Returned: FTF-UX01 r3 (UI foundation: dark-mode links, all-state icons and the six smaller decisions are now fixed, but the error summary still grabs focus when an error first appears while typing, and the design-review checklist is still incomplete). Round 4 is small.

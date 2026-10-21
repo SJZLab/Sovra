@@ -12243,10 +12243,10 @@ FTF-1504:
   proving_symbol: ''
   proving_test: ''
 FTF-1505:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Secret scanning
-  evidence_hash: f829749e19f248e7d8fc60962165dd24515c50f2
+  evidence_hash: 05554535c727ace16d043735d7800fea9950a648
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26;
@@ -12417,7 +12417,7 @@ FTF-1505:
     scoped gap). Not self-certified (Law 4) -- `certification_state`
     stays PROVISIONAL, `proof_state` stays L1-PROVEN, pending independent
     Control-plane L2 review.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1505.py
 FTF-1506:
