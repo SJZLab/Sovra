@@ -3521,6 +3521,114 @@ FAULTS += [
 ]
 
 
+# --- FTF-0904-F2 round 2 -------------------------------------------------------------------
+_R2_LATER = ("", ' "later"', " 'later'", ' x="later"')
+
+
+def _r2_assert_clean(label: str, text: str) -> None:
+    out = lr.redact_text(text)
+    check("FTF-0904-F2", f"{label} {text!r}: leaked {out!r}", _F1_VALUE not in out)
+    out2 = lr.redact_text(out)
+    check("FTF-0904-F2", f"{label} {text!r}: not idempotent", out2 == out)
+
+
+def test_f2r2_generic_quoted_value_trailing_backslash_fails_closed() -> None:
+    """GENERIC-QUOTED-FAIL-OPEN: a closing quote that follows a backslash run is not printed,
+    with and without a later quote on the line (the certified module redacted all of these)."""
+    rows = 0
+    for n in (1, 2, 3, 4):
+        bs = "\\" * n
+        for later in _R2_LATER:
+            for template in (
+                'password="{v}{bs}"',
+                '{{"password": "{v}{bs}"}}',
+                '{{"client_secret": "C:{bs}{v}{bs}"}}',
+                "api_key='{v}{bs}'",
+                "token: '{v}{bs}'",
+            ):
+                text = template.format(v=_F1_VALUE, bs=bs) + later
+                rows += 1
+                _r2_assert_clean("FAIL-OPEN", text)
+                with _Harness() as h:
+                    logging.getLogger("t").error("%s", text)
+                    logging.getLogger("t").error(text)
+                    found = leaked([_F1_VALUE], h.outputs())
+                check("FTF-0904-F2", f"{text!r}: logging-path leak {found}", not found)
+    check("FTF-0904-F2", "trailing-backslash table is non-trivial", rows >= 100)
+
+
+def test_f2r2_escaped_quote_forms_of_every_f2_name() -> None:
+    """F2-ESCAPED-QUOTE-FORM: backslash-escaped quotes at 1-3 escape levels, JSON and logfmt."""
+    rows = 0
+    for name in _F2_NAMES:
+        for spelling in _f3_random_case(name)[::10]:
+            for n in (1, 2, 3):
+                e = "\\" * n
+                for text in (
+                    f'{{{e}"{spelling}{e}": {e}"{_F1_VALUE}{e}"}}',
+                    f'{{{e}"{spelling}{e}":{e}"{_F1_VALUE}{e}"}}',
+                    f'{spelling}={e}"{_F1_VALUE}{e}"',
+                    f'msg="x {spelling}={e}"{_F1_VALUE}{e}" y"',
+                    f"{spelling}={e}'{_F1_VALUE}{e}' tail",
+                    f'{{{e}"{spelling}{e}": {e}"{_F1_VALUE}',  # escaped, unterminated
+                ):
+                    rows += 1
+                    _r2_assert_clean("ESCAPED-FORM", text)
+                    if rows % 9 == 0:
+                        with _Harness() as h:
+                            logging.getLogger("t").error("%s", text)
+                            found = leaked([_F1_VALUE], h.outputs())
+                        check("FTF-0904-F2", f"{text!r}: logging-path leak {found}", not found)
+    check("FTF-0904-F2", "escaped-quote table is non-trivial", rows > 500)
+
+
+def test_f2r2_unterminated_and_oversized_quoted_values() -> None:
+    """V6 / V10 / V11: unterminated single quotes run to end of line; no length bound."""
+    for name in ("state", "code", "session_key"):
+        for q in _F2_QUOTES:
+            _r2_assert_clean("V6", f"{name}={q}{_F1_VALUE} and the rest of the line")
+            for size in (300, 4097, 9000, 70000):
+                filler = "a b" * (size // 3)
+                _r2_assert_clean("V10/V11", f"{name}={q}{filler}{_F1_VALUE}{q} tail")
+                _r2_assert_clean("V10/V11-open", f"{name}: {q}{filler}{_F1_VALUE}")
+    out = lr.redact_text("state='x" + _F1_VALUE + "\nnext line kept")
+    check("FTF-0904-F2", f"unterminated quote crossed the line {out!r}", out.endswith("next line kept"))
+
+
+def test_f2r2_composite_endings_every_ending_every_case() -> None:
+    """TABLE-ENDINGS / V17: every ending in `_QUERY_PARAM_NAMES` as the tail of a composite name
+    (separated, camelCase and glued), random case, both quotes, both separators."""
+    rows = 0
+    for ending in sorted(lr._QUERY_PARAM_NAMES):
+        for prefix in ("mfa_", "x_", "user_", "oauth_", "my.", "app-", "zz"):
+            for spelling in _f3_random_case(prefix + ending)[::5]:
+                for qch in _F2_QUOTES:
+                    for sep in ("=", ": "):
+                        text = f"ctx {spelling}{sep}{qch}{_F1_VALUE}{qch} tail_ok"
+                        rows += 1
+                        out = lr.redact_text(text)
+                        check("FTF-0904-F2", f"{text!r}: leaked {out!r}", _F1_VALUE not in out)
+                        if rows % 11 == 0:
+                            with _Harness() as h:
+                                logging.getLogger("t").error("%s", text)
+                                found = leaked([_F1_VALUE], h.outputs())
+                            check("FTF-0904-F2", f"{text!r}: logging leak {found}", not found)
+    check("FTF-0904-F2", "composite-ending table covers all 13 endings", len(lr._QUERY_PARAM_NAMES) == 13)
+    check("FTF-0904-F2", "composite table is non-trivial", rows > 1000)
+
+
+def test_f2r2_structured_benign_lines_redacted_by_design() -> None:
+    """OVER-REDACTION decision (Control plane): a quoted VALUE after a credential NAME is redacted
+    by design; the structured benign lines are pinned so the decision cannot drift silently."""
+    for text, want in (
+        ('{"state": "running"}', '{"state": [REDACTED]}'),
+        ("state='running'", "state=[REDACTED]"),
+        ('code="200" ok', "code=[REDACTED] ok"),
+    ):
+        check("FTF-0904-F2", f"{text!r}: got {lr.redact_text(text)!r}", lr.redact_text(text) == want)
+    check("FTF-0904-F2", "bare 'state: running' changed", lr.redact_text("state: running") == "state: running")
+
+
 # FTF-0904-F2: each fault removes one protection added this round
 FAULTS += [
     (
@@ -3551,6 +3659,53 @@ FAULTS += [
         "F2-generic key=value quoted value ends at an escaped quote",
         r"""|"(?:[^"\\\r\n]++|\\++[^\r\n]?)*+"|'""",
         r"""|"[^"\r\n]*+"|'""",
+        1,
+    ),
+]
+
+
+# FTF-0904-F2 round 2
+FAULTS += [
+    (
+        "F2r2-generic quoted value no end-of-line fallback",
+        "    r\"\"\"|\"[^\\r\\n]*+|'[^\\r\\n]*+\"\"\"\n",
+        "",
+        1,
+    ),
+    (
+        "F2r2-qsep ignores escaped key quote",
+        r"""(?P<qsep>\\*["']?""",
+        r"""(?P<qsep>["']?""",
+        1,
+    ),
+    (
+        "F2r2-qsep lookahead needs a bare quote",
+        r"""(?=\\*["'])""",
+        r"""(?=["'])""",
+        1,
+    ),
+    (
+        "F2r2-escaped opening quote read as bare",
+        'text[match.end()] == "\\"',
+        "False",
+        1,
+    ),
+    (
+        "F2r2-escaped value stops at first closer",
+        r"""(?:\\++["']|[^\r\n]*+)""",
+        r"""(?:\\++["'])?""",
+        1,
+    ),
+    (
+        "F2r2-quoted branch skipped for composite endings",
+        'if match.group("qsep") is not None:',
+        'if match.group("qsep") is not None and not match.group("key").lower().endswith(("sig", "pass", "otp", "verifier", "ticket", "auth", "sid", "jwt")):',
+        1,
+    ),
+    (
+        "F2r2-single-quote unterminated bound",
+        "|'(?:[^'\\\\\\r\\n]|\\\\++[^\\r\\n]?)*+'?",
+        "|'(?:[^'\\\\\\r\\n]|\\\\++[^\\r\\n]?){0,4096}'?",
         1,
     ),
 ]

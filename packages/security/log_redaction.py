@@ -174,6 +174,10 @@ _SEP = r"""\\*["']?[ \t]*[:=][ \t]*"""
 _QUOTED_VALUE = (
     r'(?<!\\)\\++"(?:[^"\\\r\n]++|\\++(?!"))*+\\+"'
     r"""|"(?:[^"\\\r\n]++|\\++[^\r\n]?)*+"|'(?:[^'\\\r\n]++|\\++[^\r\n]?)*+'"""
+    # FTF-0904-F2 r2 (GENERIC-QUOTED-FAIL-OPEN): a quote whose closing quote the pairs above cannot
+    # find (`password="V\\"` -- the backslash run eats the closing quote) is read to end of line,
+    # never left printed: deny by default, like `_QUOTED_SECRET`.
+    r"""|"[^\r\n]*+|'[^\r\n]*+"""
 )
 
 _PEM = re.compile(
@@ -281,8 +285,11 @@ _QUERY_PARAM_NAMES = frozenset(
 # deny by default). The bare `name: value` form is not a query position and stays unredacted.
 _QUERY_ASSIGN = re.compile(
     r"""(?<![\w.\-])(?P<key>[\w.\-]++)"""
-    r"""(?:(?P<qsep>["']?[ \t]*[:=][ \t]*)(?=["'])|(?P<sep>=))"""
+    r"""(?:(?P<qsep>\\*["']?[ \t]*[:=][ \t]*)(?=\\*["'])|(?P<sep>=))"""
 )
+# F2 r2 (F2-ESCAPED-QUOTE-FORM): a backslash-escaped opening quote (`{\"state\": \"v\"}`, any
+# number of escape levels) is read to its escaped closing quote, or to end of line if there is none.
+_ESCAPED_QUOTED_SECRET = re.compile(r'''\\++["'](?:[^"'\\\r\n]++|\\++(?!["']))*+(?:\\++["']|[^\r\n]*+)''')
 _QUOTED_SECRET = re.compile(
     r""""(?:[^"\\\r\n]|\\++[^\r\n]?)*+"?|'(?:[^'\\\r\n]|\\++[^\r\n]?)*+'?"""
 )
@@ -344,7 +351,8 @@ class _QueryParamRule:
             if match.start() < pos or not _is_query_param_name(match.group("key")):
                 continue
             if match.group("qsep") is not None:
-                value = _QUOTED_SECRET.match(text, match.end())
+                rule = _ESCAPED_QUOTED_SECRET if text[match.end()] == "\\" else _QUOTED_SECRET
+                value = rule.match(text, match.end())
             else:
                 value = _QUERY_VALUE.match(text, match.end())
             if value is None:
