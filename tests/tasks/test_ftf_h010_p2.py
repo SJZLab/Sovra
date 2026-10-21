@@ -446,7 +446,7 @@ def group_a(m: Any) -> None:
     )
     for state in RouteAttestationState:
         for identity in RouteIdentityState:
-            got = m.attestation_outcome(state, identity, FINGERPRINT, REF, REF)
+            got = m.attestation_outcome(state, identity, FINGERPRINT)
             if (
                 state is RouteAttestationState.ATTESTED
                 and identity is RouteIdentityState.UNVERIFIED
@@ -478,49 +478,19 @@ def group_a(m: Any) -> None:
         check(
             "A3",
             f"a VERIFIED attestation with a {label} fingerprint is failed route_identity_unverified",
-            m.attestation_outcome(attested, verified, value, REF, REF)
+            m.attestation_outcome(attested, verified, value)
             == (failed, "route_identity_unverified"),
         )
     for label, value in (("1 char", "x"), ("256 chars", "x" * 256), ("typical", FINGERPRINT)):
         check(
             "A3",
             f"a {label} fingerprint is usable",
-            m.attestation_outcome(attested, verified, value, REF, REF) is None,
+            m.attestation_outcome(attested, verified, value) is None,
         )
     check(
         "A3",
         "an unverified identity is never usable even with a perfect fingerprint",
-        m.attestation_outcome(attested, RouteIdentityState.UNVERIFIED, FINGERPRINT, REF, REF)
-        == (failed, "route_identity_unverified"),
-    )
-    # the resolved-model echo must equal the ref exactly (ROUND 3 findings 3 and 4)
-    for label, echo in (
-        ("another model", "other-model"),
-        ("an upper-cased ref", REF.upper()),
-        ("a padded ref", f" {REF} "),
-        ("a prefix of the ref", REF[:-1]),
-        ("a longer ref", REF + "x"),
-        ("an empty echo", ""),
-        ("no echo", None),
-        ("a non-string echo", 7),
-        ("a bytes echo", REF.encode()),
-        ("a list echo", [REF]),
-    ):
-        check(
-            "A4",
-            f"a VERIFIED attestation whose echo is {label} is failed route_identity_unverified",
-            m.attestation_outcome(attested, verified, FINGERPRINT, echo, REF)
-            == (failed, "route_identity_unverified"),
-        )
-    check(
-        "A4",
-        "an exact echo of the ref is accepted",
-        m.attestation_outcome(attested, verified, FINGERPRINT, REF, REF) is None,
-    )
-    check(
-        "A4",
-        "the echo is compared with the expected model, not with itself",
-        m.attestation_outcome(attested, verified, FINGERPRINT, "x", "y")
+        m.attestation_outcome(attested, RouteIdentityState.UNVERIFIED, FINGERPRINT)
         == (failed, "route_identity_unverified"),
     )
     check(
@@ -530,8 +500,6 @@ def group_a(m: Any) -> None:
             RouteAttestationState.MALFORMED_RESPONSE,
             RouteIdentityState.UNVERIFIED,
             None,
-            None,
-            REF,
         )
         == (failed, "route_identity_unverified"),
     )
@@ -976,7 +944,7 @@ def group_d(m: Any) -> None:
         with Env(m, Gateway(attestation_state=state)).patched() as env:
             job, token = claimed(env)
             out = env.validate(token)
-            want = m.attestation_outcome(state, RouteIdentityState.VERIFIED, FINGERPRINT, REF, REF)
+            want = m.attestation_outcome(state, RouteIdentityState.VERIFIED, FINGERPRINT)
             check(
                 "D3",
                 f"attestation {state.name}: {want}",
@@ -2349,44 +2317,50 @@ def group_r(mir: Any = None) -> None:
 FAULTS: list[tuple[str, str, str, int]] = [
     (
         "attest-malformed-blocked",
-        "    if state is RouteAttestationState.MALFORMED_RESPONSE:\n        return STATE_FAILED, CODE_ROUTE_IDENTITY_UNVERIFIED",
+        "    if state is RouteAttestationState.MALFORMED_RESPONSE:  # no resolved-model echo at all\n        return STATE_FAILED, CODE_ROUTE_IDENTITY_UNVERIFIED",
         "    if False:\n        return STATE_FAILED, CODE_ROUTE_IDENTITY_UNVERIFIED",
         1,
     ),
     (
         "echo-not-compared",
-        "    if not isinstance(resolved_model, str) or resolved_model != expected_model:\n        return STATE_FAILED, CODE_ROUTE_IDENTITY_UNVERIFIED",
-        "    if False:\n        return STATE_FAILED, CODE_ROUTE_IDENTITY_UNVERIFIED",
+        "        attestation.deployment_fingerprint if echo_ok else None,",
+        "        attestation.deployment_fingerprint,",
         1,
     ),
     (
         "echo-case-folded",
-        "resolved_model != expected_model",
-        "str(resolved_model).lower() != expected_model.lower()",
+        "    echo_ok = attestation.resolved_model == snapshot.ref",
+        "    echo_ok = (attestation.resolved_model or '').lower() == snapshot.ref.lower()",
         1,
     ),
     (
-        "echo-mismatch-blocked",
-        "    if not isinstance(resolved_model, str) or resolved_model != expected_model:\n        return STATE_FAILED, CODE_ROUTE_IDENTITY_UNVERIFIED",
-        "    if not isinstance(resolved_model, str) or resolved_model != expected_model:\n        return STATE_BLOCKED_EXTERNAL, CODE_ROUTE_IDENTITY_UNVERIFIED",
+        "echo-stripped",
+        "    echo_ok = attestation.resolved_model == snapshot.ref",
+        "    echo_ok = (attestation.resolved_model or '').strip() == snapshot.ref",
         1,
     ),
     (
         "echo-compared-with-itself",
-        "        attestation.resolved_model,\n        snapshot.ref,\n    )",
-        "        attestation.resolved_model,\n        attestation.resolved_model or snapshot.ref,\n    )",
+        "    echo_ok = attestation.resolved_model == snapshot.ref",
+        "    echo_ok = attestation.resolved_model == attestation.resolved_model",
         1,
     ),
     (
-        "echo-not-passed",
-        "        attestation.resolved_model,\n        snapshot.ref,\n    )",
-        "        snapshot.ref,\n        snapshot.ref,\n    )",
+        "echo-inverted",
+        "    echo_ok = attestation.resolved_model == snapshot.ref",
+        "    echo_ok = attestation.resolved_model != snapshot.ref",
+        1,
+    ),
+    (
+        "echo-prefix-accepted",
+        "    echo_ok = attestation.resolved_model == snapshot.ref",
+        "    echo_ok = snapshot.ref.startswith(attestation.resolved_model or '')",
         1,
     ),
     (
         "revoke-recheck-skipped",
-        "            if state == STATE_SUCCEEDED and not _connection_still_active(",
-        "            if False and not _connection_still_active(",
+        "                if _connection_still_active(session, context, snapshot.connection_id):",
+        "                if True:",
         1,
     ),
     (
@@ -2433,14 +2407,14 @@ FAULTS: list[tuple[str, str, str, int]] = [
     ),
     (
         "revoke-recheck-wrong-code",
-        "                state, failure_code = STATE_FAILED, CODE_CONNECTION_REVOKED",
-        "                state, failure_code = STATE_FAILED, CODE_GATEWAY_UNAVAILABLE",
+        "                    state, failure_code = STATE_FAILED, CODE_CONNECTION_REVOKED",
+        "                    state, failure_code = STATE_FAILED, CODE_GATEWAY_UNAVAILABLE",
         1,
     ),
     (
         "revoke-recheck-blocked-not-failed",
-        "                state, failure_code = STATE_FAILED, CODE_CONNECTION_REVOKED",
-        "                state, failure_code = STATE_BLOCKED_EXTERNAL, CODE_CONNECTION_REVOKED",
+        "                    state, failure_code = STATE_FAILED, CODE_CONNECTION_REVOKED",
+        "                    state, failure_code = STATE_BLOCKED_EXTERNAL, CODE_CONNECTION_REVOKED",
         1,
     ),
     (
