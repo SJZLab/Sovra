@@ -1,5 +1,7 @@
 import type { InputHTMLAttributes } from "react";
 
+import { dirFor, phrase, type Locale } from "./phrases";
+
 export interface FieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "id"> {
   id: string;
   /** Visible label above the field; a placeholder is never a label (NN/g forms). */
@@ -8,28 +10,42 @@ export interface FieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   error?: string;
   /** Required or optional is always marked, consistently. */
   requirement: "required" | "optional";
+  locale?: Locale;
 }
 
-export function Field({ id, label, helper, error, requirement, ...rest }: FieldProps) {
+export function Field({
+  id,
+  label,
+  helper,
+  error,
+  requirement,
+  locale = "en",
+  "aria-describedby": callerDescribedBy,
+  ...rest
+}: FieldProps) {
+  const trimmedError = error?.trim();
   const helperId = helper ? `${id}-helper` : undefined;
-  const errorId = error ? `${id}-error` : undefined;
-  const describedBy = [helperId, errorId].filter(Boolean).join(" ") || undefined;
+  const errorId = trimmedError ? `${id}-error` : undefined;
+  const describedBy = [callerDescribedBy, helperId, errorId].filter(Boolean).join(" ") || undefined;
   return (
-    <div>
+    <div lang={locale} dir={dirFor(locale)}>
       <label htmlFor={id}>
-        {label} <span>{requirement === "required" ? "(required)" : "(optional)"}</span>
+        {label}{" "}
+        <span>
+          {phrase(requirement === "required" ? "fieldRequired" : "fieldOptional", locale)}
+        </span>
       </label>
       {helper ? <div id={helperId}>{helper}</div> : null}
       <input
         {...rest}
         id={id}
         aria-required={requirement === "required" ? true : undefined}
-        aria-invalid={error ? true : undefined}
+        aria-invalid={trimmedError ? true : undefined}
         aria-describedby={describedBy}
       />
-      {error ? (
+      {trimmedError ? (
         <div id={errorId} role="alert">
-          {error}
+          {trimmedError}
         </div>
       ) : null}
     </div>

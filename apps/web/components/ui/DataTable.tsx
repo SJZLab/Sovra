@@ -45,6 +45,10 @@ export function DataTable<Row>({ caption, columns, rows, rowKey, empty }: DataTa
                 {c.sortValue ? (
                   <button
                     type="button"
+                    style={{
+                      minBlockSize: "var(--target-min)",
+                      minInlineSize: "var(--target-min)",
+                    }}
                     onClick={() =>
                       setSort({
                         key: c.key,
