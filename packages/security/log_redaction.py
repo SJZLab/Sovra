@@ -299,9 +299,18 @@ _QUERY_PARAM_NAMES = frozenset(
 # with nothing left over to escape anything, so the quote right after it is the real close, not
 # more content; an unterminated quote runs to end of line, deny by default). The bare `name: value`
 # form is not a query position and stays unredacted.
+# Round 3 (F2 r3, ESCAPED-QUOTE-FORM): a JSON-escaped key (`\"state\":`) or an escaped opening
+# value quote (`: \"V\"`) left `qsep`'s lookahead unmet (it required a literal `"`/`'` right after
+# the separator), so `_QUOTED_SECRET.match` was never even attempted and the whole match (key
+# included) was skipped -- a total leak, not a truncation. `qsep` now accepts a backslash run
+# before the key's own closing quote, exactly as `_SEP` already does for the header/key_value
+# rules, and its lookahead accepts a backslash run before the value's opening quote too -- the
+# backslash itself is left unconsumed (not swallowed into `qsep`), for `_QUOTED_SECRET`'s own new
+# escaped-open alternatives below to match, the same split `_HEADER`/`_KEY_VALUE` already use with
+# `_SEP` + `_QUOTED_VALUE`.
 _QUERY_ASSIGN = re.compile(
     r"""(?<![\w.\-])(?P<key>[\w.\-]++)"""
-    r"""(?:(?P<qsep>["']?[ \t]*[:=][ \t]*)(?=["'])|(?P<sep>=))"""
+    r"""(?:(?P<qsep>\\*["']?[ \t]*[:=][ \t]*)(?=\\*["'])|(?P<sep>=))"""
 )
 # Round 6 (F2 r2, BACKSLASH-PARITY, same fix as `_QUOTED_VALUE` above): the backslash branch used
 # to be `\\++[^\r\n]?` -- the whole run, then any one more character regardless of parity -- so an
@@ -309,8 +318,21 @@ _QUERY_ASSIGN = re.compile(
 # whatever followed it on the line. `(?:\\\\)++` consumes whole literal-backslash pairs; only a
 # leftover single backslash (odd run) pairs with the next character via `(?:\\[^\r\n])?` / the
 # lone `\\[^\r\n]`, leaving an even run's closing quote for the optional literal `"?`/`'?` instead.
+# Round 3 (F2 r3, ESCAPED-QUOTE-FORM): the two alternatives below only ever matched a value whose
+# OPENING quote is a literal `"`/`'` -- `_QUERY_ASSIGN`'s lookahead now also admits a backslash run
+# before that opening quote (JSON-escaped `\"state\": \"V\"`, logfmt `code=\"V\"`), left
+# unconsumed for this regex to match. The two new LEADING alternatives mirror `_QUOTED_VALUE`'s own
+# escaped-open branch exactly: a possessive backslash run (one start per run, `(?<!\\)`) then the
+# opening quote, content that is either plain chars or a backslash run NOT immediately followed by
+# the SAME quote char (so a `\"` pair inside the content is reserved for the terminator, never
+# content), then the closing backslash run and quote. An escaped-open value with no later escaped
+# close is left to the two bare-quote alternatives (kept last, adjacent, and byte-for-byte
+# unchanged from round 2), which cannot match a backslash as their first character either -- the
+# same disclosed limitation `_QUOTED_VALUE` already has.
 _QUOTED_SECRET = re.compile(
-    r'"(?:[^"\\\r\n]|(?:\\\\)++(?:\\[^\r\n])?|\\[^\r\n])*+"?'
+    r'(?<!\\)\\++"(?:[^"\\\r\n]++|\\++(?!"))*+\\+"'
+    r"""|(?<!\\)\\++'(?:[^'\\\r\n]++|\\++(?!'))*+\\+'"""
+    r'|"(?:[^"\\\r\n]|(?:\\\\)++(?:\\[^\r\n])?|\\[^\r\n])*+"?'
     r"""|'(?:[^'\\\r\n]|(?:\\\\)++(?:\\[^\r\n])?|\\[^\r\n])*+'?"""
 )
 # `[REDACTED]` is consumed whole (with anything glued to it) so the rule is idempotent: running it
