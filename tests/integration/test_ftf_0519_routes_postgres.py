@@ -1411,7 +1411,11 @@ def main() -> None:
             finish()
     heads = _alembic(["heads"], migration_url)
     check(f"exactly one Alembic head: {heads.stdout!r}", heads.stdout.count("(head)") == 1)
-    check("the head is migration 0032", "0032_split_manifest_requests" in heads.stdout)
+    history = _alembic(["history"], migration_url)
+    check(
+        "migration 0032 is on the single head's chain",
+        "0032_split_manifest_requests" in history.stdout,
+    )
 
     env = Env()
     env.owner = create_engine(migration_url)
