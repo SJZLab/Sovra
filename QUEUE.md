@@ -9274,6 +9274,16 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
+- 2026-10-21: approve a root `package.json` devDependency bump to clear the `vite` 8.3.0 HIGH advisory
+  (GHSA-587h-7wmj-h5pm, fixed in 8.1.6/8.2.4/8.3.3) that `dependency-scanning-integration` now blocks on
+  repo-wide. `vite` is only a transitive peer of `vitest` here, so `pnpm update`/`pnpm.overrides` both
+  leave 8.3.0 in place; fixing it means adding a new root devDependency (new runtime dep = ask-first per
+  CLAUDE.md). PR #906 (FTF-1506 round 2) already fixed the companion `certifi` CRITICAL advisory and
+  parked this half; its own body and PR #907/#909's comments pointed here, but the ask itself was never
+  actually recorded until this entry — every open `[relay]` PR's `ci-verdict` stays red on this alone
+  until it's decided (confirmed via real `dependency-scanning-integration` job logs on #907/#908/#909/
+  #912/#914/#915, each failing identically with `"blocking": true` on the same vite entry, no dependency
+  file touched by any of those diffs).
 - 2026-10-20 (FTF-UX01, relay lane C): approve adding `@radix-ui/react-dialog@1.3.1` (+ optionally `@radix-ui/react-progress@1.2.1`) to apps/web/package.json, exact-pinned. §72.1 fixes Radix, but the session's dependency-install guard denied `pnpm add`, so the Dialog (focus trap + return) component is parked.
 - 2026-10-08: FTF-0616 (LLM judge) needs a real judge call through the org LiteLLM gateway for its acceptance clause: a CI secret holding a gateway virtual key, plus the approved judge model id. Until then that clause stays BLOCKED_EXTERNAL; the rest of FTF-0616 continues.
 - 2026-10-07: FTF-04A31 needs a private-repo test credential (or approval to use this repo with `github.token`). See Parked.
