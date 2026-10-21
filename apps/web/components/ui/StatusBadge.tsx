@@ -1,4 +1,4 @@
-import { dirFor, phrase, type Locale } from "./phrases";
+import { dirFor, phrase, resolveLocale, type Locale } from "./phrases";
 import { cleanText } from "./text";
 
 /** The section 72.2 state words. Status is always text AND icon, never colour alone. */
@@ -31,7 +31,7 @@ const ICON: Record<StatusState, string> = {
   draft: "✎",
   not_connected: "⊘",
   validation_required: "!",
-  blocked: "⛔",
+  blocked: "⊗",
   queued: "…",
   running: "▶",
   failed: "✕",
@@ -79,7 +79,7 @@ export function statusLabel({ state, detail, locale = "en" }: StatusBadgeProps):
 /** Same mapping as `statusLabel`, but falls back instead of throwing — used by the component. */
 function renderLabel(state: StatusState, detail: string | undefined, locale: Locale): string {
   const d = cleanText(detail);
-  if (!(state in WORD_KEY)) return phrase("statusUnknown", locale);
+  if (!Object.hasOwn(WORD_KEY, state)) return phrase("statusUnknown", locale);
   if (state === "blocked")
     return d
       ? `${phrase("statusBlocked", locale)} — ${d}`
@@ -93,14 +93,14 @@ function renderLabel(state: StatusState, detail: string | undefined, locale: Loc
 const UNKNOWN_ICON = "?";
 
 export function StatusBadge({ state, detail, locale = "en" }: StatusBadgeProps) {
-  const known = state in WORD_KEY;
+  const known = Object.hasOwn(WORD_KEY, state);
   const label = renderLabel(state, detail, locale);
   const tone = known ? TONE[state] : "muted";
   return (
     <span
       data-status={known ? state : "unknown"}
       data-tone={tone}
-      lang={locale}
+      lang={resolveLocale(locale)}
       dir={dirFor(locale)}
       style={{
         color: `var(--color-${tone === "muted" ? "muted" : tone})`,

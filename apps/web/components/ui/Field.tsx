@@ -1,6 +1,6 @@
 import type { InputHTMLAttributes } from "react";
 
-import { dirFor, phrase, type Locale } from "./phrases";
+import { dirFor, phrase, resolveLocale, type Locale } from "./phrases";
 import { cleanText } from "./text";
 
 export interface FieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "id"> {
@@ -29,7 +29,7 @@ export function Field({
   const errorId = trimmedError ? `${id}-error` : undefined;
   const describedBy = [callerDescribedBy, helperId, errorId].filter(Boolean).join(" ") || undefined;
   return (
-    <div lang={locale} dir={dirFor(locale)}>
+    <div lang={resolveLocale(locale)} dir={dirFor(locale)}>
       <label htmlFor={id}>
         {label}{" "}
         <span>
