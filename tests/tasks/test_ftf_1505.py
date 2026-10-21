@@ -2606,6 +2606,55 @@ def test_secret_deep_inside_one_long_hex_run_is_found() -> None:
         )
 
 
+def test_long_base64_and_hex_runs_are_one_whole_match_and_dense_sweeps_find_every_secret() -> None:
+    """Round 8, the whole length-cap class: (a) a single base64 run and a
+    single hex run of more than 1 MB each come back from the run regex as ONE
+    match spanning the whole run, so a length cap of any size below 1 MB is
+    RED; (b) a dense sweep places a secret every 40 bytes (finer than the
+    secret's own encoded length) across one long run of each kind, and every
+    placement is found, so no cap or window inside the run can hide one."""
+    b64 = base64.b64encode(b"a" * 800_000).decode()
+    b64_matches = [m.span() for m in sr._BASE64_RUN.finditer(b64)]
+    check(
+        "FTF-1505-NO-CAP",
+        f"a {len(b64):,}-char base64 run is one whole match ({b64_matches[:3]})",
+        len(b64) > 1_000_000 and b64_matches == [(0, len(b64))],
+    )
+    hex_run = (b"a" * 600_000).hex()
+    hex_matches = [m.span() for m in sr._HEX_RUN.finditer(hex_run)]
+    check(
+        "FTF-1505-NO-CAP",
+        f"a {len(hex_run):,}-char hex run is one whole match ({hex_matches[:3]})",
+        len(hex_run) > 1_000_000 and hex_matches == [(0, len(hex_run))],
+    )
+
+    seed = generate_seed_for_rule("github_token")
+    secret = f" token {seed} ".encode()
+    missed_b64: list[int] = []
+    missed_hex: list[int] = []
+    placements = range(0, 15_000, 40)
+    for offset in placements:
+        raw = b"a" * offset + secret + b"a" * (15_000 - offset)
+        if not any(
+            r == "github_token" and v == seed for r, v in scan_line(base64.b64encode(raw).decode())
+        ):
+            missed_b64.append(offset)
+        if not any(r == "github_token" and v == seed for r, v in scan_line(raw.hex())):
+            missed_hex.append(offset)
+    check(
+        "FTF-1505-NO-CAP",
+        f"a secret at every 40-byte offset of one ~20 KB base64 run is found "
+        f"({len(placements)} placements, missed {missed_b64[:5]})",
+        not missed_b64,
+    )
+    check(
+        "FTF-1505-NO-CAP",
+        f"a secret at every 40-byte offset of one ~30 KB hex run is found "
+        f"({len(placements)} placements, missed {missed_hex[:5]})",
+        not missed_hex,
+    )
+
+
 def test_real_live_lane_decides_on_observed_statuses_and_the_real_capture() -> None:
     """LIVE-CALLSITE, on real boots: (a) an extra probe expecting a status the
     app never returns (418) fails, so the statuses handed to the decisions are
@@ -2920,6 +2969,7 @@ def main() -> None:
     test_long_base64_run_hex_after_many_runs_and_history_tgz()
     test_secret_straddling_base64_run_length_boundaries_is_found()
     test_secret_deep_inside_one_long_hex_run_is_found()
+    test_long_base64_and_hex_runs_are_one_whole_match_and_dense_sweeps_find_every_secret()
     test_real_live_lane_decides_on_observed_statuses_and_the_real_capture()
     test_main_decides_on_every_lane_and_every_completeness_check()
     test_artifact_lane_detects_a_canary()
