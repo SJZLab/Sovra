@@ -12173,3 +12173,29 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   controls at exactly MAX_SCAN_BYTES GREEN as expected; earlier-round sample RED. Law 9: tests + submission only.
   Non-blocking GREEN rows (new variants / outside the class): quick-gate prefix cap, run-count break >3,000, shape cap at
   MAX-1, 36-char ghp_ token, silent tar-member read failure -> follow-up FTF-1505-F1. UNWIRED (a CI gate).
+## 2026-10-21T22:49Z — CERTIFIED (child slice): FTF-UX01
+- **FTF-UX01: CERTIFIED (L2)** (round 4 under the stopping rule; PR #938, merge 8de3116d8b82c126851615f250d3fff4142d2cc7, head f29e305a). Producer
+  session_01W7x1JBBoGr7KYLNQPseSNm ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI 80/80, ci-verdict 119495603278;
+  gate 119478012264 installed Chromium and ran vitest and the harness gate (count line not readable: log hosts 403; local
+  1499/1499 matches the PR body). ErrorSummary focus keyed on submitCount only: round-3 cases reproduced with user-event and
+  in real Chromium keep focus and value; the round-3 effect re-injected turns R4-T1/T1b/T2 RED. Evidence: the three skill
+  queries re-run byte-identical; 39 pro-rules items and all 221 quick-reference ids recorded; H1-H10 x state for all nine
+  components. Probes: axe wcag2a-22aa 0 violations over 4 modes x en/ar; 0 overflow at 1280/768/390/320; 13 Tab stops with
+  a visible outline. Faults 46/47 RED (GREEN: unknown-state icon, severity-1 advisory). Downstream specs 1284/1284.
+  Gates: product_truth 48/48, validate_spec --strict, data_exposure OK. UNWIRED until FTF-H029. Dialog parked (owner).
+## 2026-10-21T22:49Z — RETURNED: FTF-0904-F2 (r2); Control-plane fix #940 for the generic leak
+- **FTF-0904-F2: RETURNED** (round 2 → 3; PR #925, merge 06aec8a8ef6af4b43e71537f654203d310d72085, head 01d8bb0e). Producers
+  session_01SuhzXFzDsUaHFtfJqUzcYN, session_01R9gBrVedX9pRABzJmiAeM2 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 80/80,
+  ci-verdict 119496469070; gate 119392544610 full FTF-0904 matrix "all checks passed" (2h39m), W1 F1-F15 RED, FTF-0905 passed.
+  Met: even-run parity (747,600-row table 0 failures). Reproduced: odd-run quoted secrets with no later quote still printed
+  (6,028/120,000 differential leaks vs the certified module; 4 lines via create_app()); escaped-quote forms leak for 26/27 F2
+  names (live 28/30); V6/V10/V11/V11s/V17 GREEN; over-redaction not recorded. FTF-0904 NOT requalified.
+- **Control plane (urgent, Law 15):** PR #940 makes an unterminated quoted value fail closed in `_QUOTED_VALUE`
+  (differential 0/120,000; new test + faults RED). Certification of #940 goes to a separate session (Law 4).
+## 2026-10-21T22:49Z — RETURNED: FTF-R006-P1a (r4) — round 5 produced by the Control plane (#941)
+- **FTF-R006-P1a: RETURNED** (round 4 → 5, tests only; PR #927, merge a9edabcf24269b9164d6e701a8155ff01461f4f6, head 923f402a).
+  Producer session_01MPMJL8GLy978iKzWvgp2AT ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 80/80, ci-verdict 119478717338;
+  gate 119374968491 "FTF-R006-P1 Argilla client tests: all checks passed"; mutation-gate 42/42. Point 1 closed (late TLS
+  handshake bounded, 2.33 s at timeout 2.0; 52 probes within 1.52x; deadline=None unchanged 28/28). Production leaks no key
+  (77 probes). Return: response-side key-echo faults G21/G22/G17 GREEN. Round 5 (tests only) written by the Control plane
+  in #941 to avoid a fifth relay round; certification by a separate session (Law 4).
