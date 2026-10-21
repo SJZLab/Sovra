@@ -101,7 +101,7 @@ def _raises(fn: Any, error: type[BaseException]) -> bool:
 # -- M: migration shape --------------------------------------------------------
 
 
-_MIGRATION_0032 = MIGRATION_PATH.parent / "0032_upload_declared_encoding.py"  # FTF-0501-F2
+_MIGRATION_0032 = MIGRATION_PATH.parent / "0033_upload_declared_encoding.py"  # FTF-0501-F2
 
 
 def _migration() -> str:
