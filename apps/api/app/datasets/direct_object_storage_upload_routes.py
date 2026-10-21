@@ -73,8 +73,6 @@ from app.datasets.dataset_upload_store import (
 )
 from app.datasets.direct_object_storage_upload import (
     DEFAULT_TEXT_ENCODING,
-    TEXT_ENCODINGS,
-    XLSX_CONTENT_TYPE,
     UploadExpired,
     UploadIncomplete,
     UploadRejection,
@@ -283,14 +281,7 @@ def build_direct_upload_router(
         size = payload["declared_size_bytes"]
         content_type = payload["declared_content_type"]
         encoding = payload.get("declared_encoding", DEFAULT_TEXT_ENCODING)
-        if (
-            not isinstance(encoding, str)
-            or encoding not in TEXT_ENCODINGS
-            or (
-                encoding != DEFAULT_TEXT_ENCODING
-                and normalize_content_type(content_type) == XLSX_CONTENT_TYPE
-            )
-        ):
+        if not isinstance(encoding, str):
             raise HTTPException(status_code=400, detail="invalid_body")
         if (
             not isinstance(purpose, str)

@@ -67,6 +67,7 @@ __all__ = [
     "SNIFF_BYTES",
     "SUPPORTED_CONTENT_TYPES",
     "TEXT_ENCODINGS",
+    "encodings_for",
     "PartGrant",
     "PartPlan",
     "UploadExpired",
@@ -296,6 +297,14 @@ def normalize_content_type(value: object) -> str | None:
     if not isinstance(value, str):
         return None
     return _SUPPORTED_BY_NAME.get(value.split(";", 1)[0].strip().lower())
+
+
+def encodings_for(content_type: str) -> tuple[str, ...]:
+    """The encodings an upload of this content type may declare: a spreadsheet is
+    a binary package, so only the default; every text type takes any of the five."""
+    if normalize_content_type(content_type) in _ZIP_MAGIC_BY_TYPE:
+        return (DEFAULT_TEXT_ENCODING,)
+    return TEXT_ENCODINGS
 
 
 def _decode_head(head: bytes, *, complete: bool, encoding: str) -> bytes | None:
@@ -713,8 +722,8 @@ def verify_and_complete(
     if moment > target.expires_at:
         raise UploadExpired
     plan = plan_parts(target.declared_size_bytes)
-    if target.declared_encoding not in TEXT_ENCODINGS:
-        raise ValueError(f"declared_encoding must be one of {TEXT_ENCODINGS}")
+    if target.declared_encoding not in encodings_for(target.declared_content_type):
+        raise ValueError("declared_encoding is not allowed for this content type")
     if normalize_content_type(target.declared_content_type) is None:
         raise _reject(client, settings, target, "unsupported_content_type")
 
@@ -769,7 +778,7 @@ def verify_and_complete(
     try:
         for chunk in client.stream_object(settings.bucket, target.object_key):
             first += chunk[: SNIFF_BYTES - len(first)]
-            if is_text and not undecodable:
+            if is_text:
                 try:
                     decoder.decode(chunk)
                 except UnicodeDecodeError:
@@ -786,19 +795,21 @@ def verify_and_complete(
         raise _reject(client, settings, target, "size_mismatch")
     if digest.hexdigest() != target.declared_sha256:
         raise _reject(client, settings, target, "sha256_mismatch")
+    # The whole object is decoded above (the tail included), so the head is sniffed as a
+    # window: a character cut at its end is only where reading stopped.
     reason = sniff_content(
         target.declared_content_type,
         first,
-        complete=target.declared_size_bytes <= SNIFF_BYTES,
+        complete=False,
         encoding=target.declared_encoding,
     )
-    if reason is None and is_text:
+    if is_text:
         try:
             decoder.decode(b"", final=True)
         except UnicodeDecodeError:
             undecodable = True
-        if undecodable:
-            reason = "content_type_mismatch"
+    if undecodable and reason is None:
+        reason = "content_type_mismatch"
     if (
         reason is None
         and normalize_content_type(target.declared_content_type) in _ZIP_MAGIC_BY_TYPE

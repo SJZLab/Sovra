@@ -56,7 +56,7 @@ from app.datasets.dataset_source_connection_crud import (
     authorize_dataset_source_purpose,
 )
 from app.datasets.dataset_source_connection_schema import ALLOWED_PURPOSES
-from app.datasets.direct_object_storage_upload import TEXT_ENCODINGS as DECLARED_ENCODINGS
+from app.datasets.direct_object_storage_upload import encodings_for
 from app.db.tenant_context import TenantContext
 
 __all__ = [
@@ -296,8 +296,8 @@ def create_upload_session(
         raise ValueError("require 0 < declared_size_bytes <= max_bytes <= 10 GiB")
     sha = _require_sha256(declared_sha256, "declared_sha256")
     content_type = _require_content_type(declared_content_type, "declared_content_type")
-    if declared_encoding not in DECLARED_ENCODINGS:
-        raise ValueError(f"declared_encoding must be one of {DECLARED_ENCODINGS}")
+    if declared_encoding not in encodings_for(content_type):
+        raise ValueError(f"declared_encoding must be one of {encodings_for(content_type)}")
     if not isinstance(ttl, timedelta) or not timedelta(0) < ttl <= MAX_UPLOAD_TTL:
         raise ValueError("ttl must be positive and at most 24 hours")
     if purpose not in ALLOWED_PURPOSES:

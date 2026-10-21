@@ -185,9 +185,9 @@ def _target(body: bytes, encoding: str, content_type: str = "text/csv") -> dos.U
     )
 
 
-def _finalize(body: bytes, encoding: str, **overrides: Any) -> Any:
+def _finalize(body: bytes, encoding: str, content_type: str = "text/csv", **overrides: Any) -> Any:
     with base.FakeS3() as fake:
-        target = _target(body, encoding)
+        target = _target(body, encoding, content_type=content_type)
         base._stored(fake, target, body)
         return base._verify_with(fake, target, **overrides)
 
@@ -384,8 +384,8 @@ def test_r2_bad_declarations_are_refused_before_anything_is_written() -> None:
 def test_r3_the_store_validates_the_encoding() -> None:
     check(
         f"{CID}-R3",
-        "the store's list is the upload module's list",
-        store.DECLARED_ENCODINGS == dos.TEXT_ENCODINGS == ENCODINGS,
+        "the upload module's list is the five importer encodings",
+        dos.TEXT_ENCODINGS == ENCODINGS,
     )
     check(
         f"{CID}-R3",
@@ -414,6 +414,152 @@ def test_r3_the_store_validates_the_encoding() -> None:
         )
         check(f"{CID}-R3", "create_upload_session refuses an unknown encoding first", ok)
         del env
+
+
+def test_s3_encoding_names_are_exact() -> None:
+    for name in ("UTF-8", " utf-8", "Windows-1256", "utf8", "utf-16"):
+        check(
+            f"{CID}-S3",
+            f"sniff refuses the non-canonical name {name!r}",
+            base._raises(
+                lambda n=name: dos.sniff_content("text/csv", b"a,b\n", complete=True, encoding=n),
+                ValueError,
+            ),
+        )
+        check(
+            f"{CID}-S3",
+            f"finalize refuses {name!r} before touching storage",
+            _guard_outcome(name, "text/csv"),
+        )
+    check(
+        f"{CID}-S3",
+        "finalize refuses a non-default encoding on a spreadsheet before touching storage",
+        _guard_outcome("windows-1256", dos.XLSX_CONTENT_TYPE),
+    )
+    check(
+        f"{CID}-S3",
+        "encodings_for: a spreadsheet takes only the default, text takes all five",
+        dos.encodings_for(dos.XLSX_CONTENT_TYPE) == ("utf-8",)
+        and dos.encodings_for("text/csv") == ENCODINGS
+        and dos.encodings_for("application/jsonl") == ENCODINGS,
+    )
+
+
+def _guard_outcome(encoding: str, content_type: str) -> bool:
+    touched: list[str] = []
+
+    def boom(*_a: Any, **_k: Any) -> Any:
+        touched.append("storage")
+        raise AssertionError("storage was touched")
+
+    body = b"a,b\n"
+    with base.FakeS3() as fake:
+        target = _target(body, encoding, content_type=content_type)
+        base._stored(fake, target, body)
+        outcome = base._verify_with(
+            fake, target, head_object=boom, stream_object=boom, find_upload_id=boom
+        )
+    return isinstance(outcome, ValueError) and not touched
+
+
+def _create_error(**over: Any) -> BaseException | None:
+    import uuid
+    from datetime import timedelta
+
+    args: dict[str, Any] = {
+        "project_id": uuid.uuid4(),
+        "connection_id": uuid.uuid4(),
+        "purpose": "training",
+        "declared_size_bytes": 4,
+        "declared_sha256": "0" * 64,
+        "declared_content_type": "text/csv",
+        "max_bytes": 4,
+        "ttl": timedelta(hours=1),
+        "actor": store.UploadActor(actor_type="user", actor_id="u", request_id="r"),
+    }
+    args.update(over)
+    try:
+        # Validation runs before the database is touched, so no session is needed to see
+        # it refuse; an accepted value falls through to the (absent) session and fails
+        # with something that is not a ValueError.
+        store.create_upload_session(None, None, **args)  # type: ignore[arg-type]
+    except BaseException as exc:  # noqa: BLE001 - the type is the result under test
+        return exc
+    return None
+
+
+def _refused(**over: Any) -> bool:
+    return isinstance(_create_error(**over), ValueError)
+
+
+def test_r4_the_store_validates_every_declared_value_before_the_database() -> None:
+    from datetime import timedelta
+
+    check(f"{CID}-R4", "a valid request passes validation", not _refused())
+    for label, over in (
+        ("zero size", {"declared_size_bytes": 0}),
+        ("size above max_bytes", {"declared_size_bytes": 5}),
+        ("max_bytes above the 10 GiB cap", {"max_bytes": store.MAX_UPLOAD_BYTES + 1}),
+        ("zero ttl", {"ttl": timedelta(0)}),
+        ("ttl above 24 hours", {"ttl": store.MAX_UPLOAD_TTL + timedelta(seconds=1)}),
+        ("non-timedelta ttl", {"ttl": 3600}),
+        ("cased purpose", {"purpose": "Training"}),
+        ("cased encoding", {"declared_encoding": "UTF-8"}),
+        ("padded encoding", {"declared_encoding": " windows-1256"}),
+        (
+            "non-default encoding on a spreadsheet",
+            {"declared_content_type": dos.XLSX_CONTENT_TYPE, "declared_encoding": "utf-16-le"},
+        ),
+    ):
+        check(f"{CID}-R4", f"{label} is refused", _refused(**over))
+    for label, over in (
+        (
+            "size equal to max_bytes at the 10 GiB cap",
+            {"declared_size_bytes": store.MAX_UPLOAD_BYTES, "max_bytes": store.MAX_UPLOAD_BYTES},
+        ),
+        ("ttl of exactly 24 hours", {"ttl": store.MAX_UPLOAD_TTL}),
+        ("every declared encoding on text", {"declared_encoding": "utf-16-be"}),
+        (
+            "the default encoding on a spreadsheet",
+            {"declared_content_type": dos.XLSX_CONTENT_TYPE, "declared_encoding": "utf-8"},
+        ),
+    ):
+        check(f"{CID}-R4", f"{label} passes validation", not _refused(**over))
+
+
+def test_r5_a_non_upload_source_is_refused_exactly() -> None:
+    with base._routes_env() as env:
+        env.world.source_type = "Upload"
+        reply = base._call(env.base, "POST", base._col(), base._create_body(b"a,b\n"))
+        check(
+            f"{CID}-R5",
+            "a connection typed 'Upload' is not an upload connection",
+            reply.status == 409 and reply.detail == "not_an_upload_source",
+        )
+        check(f"{CID}-R5", "nothing was written", not env.sessions() and not env.fake.uploads)
+
+
+def test_v5_the_tail_decision_is_made_on_the_whole_object() -> None:
+    window = dos.SNIFF_BYTES
+    exact = b'{"k":"' + b"x" * (window - 7) + b"\xc3"
+    check(
+        f"{CID}-V5",
+        "a cut character at the very end of an object exactly one window long is refused",
+        len(exact) == window and _rejected(_finalize(exact, "utf-8", "application/jsonl")),
+    )
+    clean = b'{"k":"' + b"x" * (window - 9) + b'"}\n'
+    check(
+        f"{CID}-V5",
+        "the same size with whole characters verifies",
+        len(clean) == window - 1 + 1
+        and isinstance(_finalize(clean, "utf-8", "application/jsonl"), dos.VerifiedObject),
+    )
+    mixed = "a,b\r\n".encode("utf-16-le") * 3 + b"\x00\xd8"
+    check(
+        f"{CID}-V5",
+        "a lone high surrogate ending a small utf-16 object is refused",
+        _rejected(_finalize(mixed, "utf-16-le")),
+    )
 
 
 # -- M1: migration --------------------------------------------------------------
