@@ -1733,6 +1733,41 @@ def group_h(m: Any, vs: Any = None) -> None:
             return False
         return False
 
+    # ROUND 3 (survivor model_version_schema.py:343): the import_kind validation is reached only
+    # when the key is present, and an invalid kind is refused with the domain error.
+    for bad_kind in ("bogus", "Endpoint", " endpoint", "endpoint ", "", "weights\x00", 7, None):
+        check(
+            "H9",
+            f"import_kind {bad_kind!r} is refused with ModelVersionValidationError",
+            refused(
+                import_kind=bad_kind, origin="external_endpoint", external_provider_model_ref=REF
+            ),
+        )
+    try:
+        MV(organization_id=ORG, project_id=PROJECT, version_number=1, created_by="u")
+        no_kind = "constructed"
+    except VE:
+        no_kind = "refused"
+    except Exception as exc:  # noqa: BLE001
+        no_kind = f"crashed with {type(exc).__name__}"
+    check(
+        "H9",
+        f"a ModelVersion built without import_kind never crashes in the kind validation ({no_kind})",
+        no_kind in ("constructed", "refused"),
+    )
+    check(
+        "H9",
+        "an https endpoint_reference (FTF-1001's own synchronous path) is kept verbatim",
+        build(endpoint_reference="https://gw.example/v1").endpoint_reference
+        == "https://gw.example/v1",
+    )
+    for bad_url in ("http://gw.example", "ftp://x", "gw.example", ""):
+        check(
+            "H9",
+            f"endpoint_reference {bad_url!r} is refused with ModelVersionValidationError",
+            refused(endpoint_reference=bad_url),
+        )
+
     ok = build(origin="external_endpoint", external_provider_model_ref=REF)
     check(
         "H1",
@@ -2865,6 +2900,164 @@ ROUTE_FAULTS: list[tuple[str, str, str, int]] = [
 ]
 
 
+# -- K: the creation path's connection check (ROUND 3 survivor model_import_crud.py:175) -----
+
+
+def group_k() -> None:
+    from app.litellm.connection_crud import ConnectionNotFoundError
+    from app.model_versions import model_import_crud as crud
+
+    known = uuid.uuid4()
+    calls: list[uuid.UUID] = []
+
+    def fake_get_connection(session: Any, context: Any, connection_id: Any) -> Any:
+        calls.append(connection_id)
+        if connection_id != known:
+            raise ConnectionNotFoundError("foreign")
+        return SimpleNamespace(id=connection_id)
+
+    engine = create_engine("sqlite://")
+    job_schema.ModelImportJob.__table__.create(engine)
+    audit = Audit()
+    saved = (
+        crud.get_connection,
+        crud._authorize_project_or_raise,
+        crud.execute_tenant_scoped,
+        crud.write_audit_event,
+    )
+    crud.get_connection = fake_get_connection
+    crud._authorize_project_or_raise = lambda session, context, project_id: None
+    crud.execute_tenant_scoped = lambda session, organization_id, statement: session.execute(
+        statement
+    )
+    crud.write_audit_event = audit
+    ctx: Any = SimpleNamespace(organization_id=ORG)
+    actor = crud.ActorInfo(actor_type="user", actor_id="u1", request_id="r1")
+
+    def create(session: Session, **over: Any) -> Any:
+        args: dict[str, Any] = dict(
+            project_id=PROJECT,
+            requested_origin="external_endpoint",
+            parent_model_version_id=None,
+            trainable_artifact_id=None,
+            external_provider_model_ref=REF,
+            actor=actor,
+            litellm_connection_id=known,
+        )
+        args.update(over)
+        return crud.create_model_import_job(session, ctx, **args)
+
+    try:
+        with Session(engine) as session:
+            job = create(session)
+            session.commit()
+            check(
+                "K1",
+                "a known connection is looked up once and stored on the job",
+                calls == [known] and job.litellm_connection_id == known and job.state == "queued",
+            )
+            before = len(audit.events)
+            calls.clear()
+            foreign = uuid.uuid4()
+            try:
+                create(session, litellm_connection_id=foreign)
+                outcome = "created"
+            except ConnectionNotFoundError:
+                outcome = "ConnectionNotFoundError"
+            except Exception as exc:  # noqa: BLE001
+                outcome = type(exc).__name__
+            session.rollback()
+            check(
+                "K1",
+                f"a foreign or missing connection is ConnectionNotFoundError, nothing written ({outcome})",
+                outcome == "ConnectionNotFoundError"
+                and calls == [foreign]
+                and len(audit.events) == before
+                and session.query(job_schema.ModelImportJob).count() == 1,
+            )
+            calls.clear()
+            for origin_kwargs in (
+                dict(requested_origin="external_endpoint", litellm_connection_id=None),
+                dict(requested_origin="imported_weights", litellm_connection_id=known),
+            ):
+                try:
+                    create(session, **origin_kwargs)
+                    outcome = "created"
+                except job_schema.ModelImportValidationError:
+                    outcome = "refused"
+                except Exception as exc:  # noqa: BLE001
+                    outcome = type(exc).__name__
+                session.rollback()
+                check(
+                    "K1",
+                    f"{origin_kwargs} is refused before any connection lookup ({outcome})",
+                    outcome == "refused" and calls == [],
+                )
+    finally:
+        (
+            crud.get_connection,
+            crud._authorize_project_or_raise,
+            crud.execute_tenant_scoped,
+            crud.write_audit_event,
+        ) = saved
+        engine.dispose()
+
+
+# -- C10: the interface contract matches the route (ROUND 3 finding 1) -----------------------
+
+
+def group_c10() -> None:
+    import yaml
+
+    doc = yaml.safe_load(
+        (ROOT / "packages" / "contracts" / "openapi" / "10-interface.yaml").read_text()
+    )
+    schemas = doc["components"]["schemas"]
+    request = schemas["ModelImportJobCreateRequest"]
+    job = schemas["ModelImportJob"]
+    check(
+        "C10",
+        "the request allow-list names litellm_connection_id as an optional nullable uuid",
+        "litellm_connection_id" in request["properties"]
+        and "litellm_connection_id" not in request["required"]
+        and request["properties"]["litellm_connection_id"]["format"] == "uuid"
+        and request["additionalProperties"] is False,
+    )
+    check(
+        "C10",
+        "the job response carries litellm_connection_id and result_model_version_id as nullable uuids",
+        all(
+            job["properties"][name]["format"] == "uuid"
+            and "null" in job["properties"][name]["type"]
+            for name in ("litellm_connection_id", "result_model_version_id")
+        )
+        and job["additionalProperties"] is False,
+    )
+    base = "/api/v1/organizations/{organization_id}/projects/{project_id}/model-imports"
+    post = doc["paths"][base]["post"]["responses"]
+    check(
+        "C10",
+        "POST documents invalid_body for a bad connection id and 404 for a foreign one",
+        "invalid_body" in post["400"]["description"]
+        and "litellm_connection_id" in post["404"]["description"],
+    )
+    route_src = (
+        ROOT / "apps" / "api" / "app" / "model_versions" / "model_import_routes.py"
+    ).read_text()
+    emitted = set(
+        re.findall(
+            r'^        "([a-z_]+)":',
+            route_src.split("def _serialize")[1].split("async def")[0],
+            re.M,
+        )
+    )
+    check(
+        "C10",
+        f"the contract's response properties equal the route's emitted fields ({sorted(emitted ^ set(job['properties']))})",
+        emitted == set(job["properties"]),
+    )
+
+
 def suite(m: Any, with_routes: bool = False) -> list[str]:
     _failures.clear()
     group_a(m)
@@ -2881,6 +3074,8 @@ def suite(m: Any, with_routes: bool = False) -> list[str]:
     group_h6_migration()
     if with_routes:
         group_r()
+        group_k()
+        group_c10()
     return list(_failures)
 
 
