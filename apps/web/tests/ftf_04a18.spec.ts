@@ -290,3 +290,36 @@ test("an unparseable select response is surfaced as an error, never confirmed", 
   );
   expect(screen.queryByTestId("candidate-selection-confirmation")).toBeNull();
 });
+
+// FTF-UX03 (audit #12): the score is labelled so it is not a bare number.
+test("UX03: each candidate's confidence is labelled, in Arabic with locale=ar", async () => {
+  mockCandidateList();
+  render(
+    createElement(CandidateSelectionUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      connectionId: CONNECTION_ID,
+      snapshotId: SNAPSHOT_ID,
+      locale: "ar",
+    }),
+  );
+  fireEvent.click(screen.getByTestId("candidate-load-button"));
+  await waitFor(() => expect(screen.getByTestId(`candidate-row-${CANDIDATE_HIGH}`)).toBeTruthy());
+  expect(screen.getByTestId(`candidate-confidence-${CANDIDATE_HIGH}`).textContent).toContain(
+    "درجة الثقة",
+  );
+  expect(screen.getByTestId(`candidate-confidence-${CANDIDATE_HIGH}`).textContent).toContain(
+    "0.96",
+  );
+});
+
+test("UX03: English confidence label shows 'Confidence score' with the value", async () => {
+  mockCandidateList();
+  renderSelectionUI();
+  fireEvent.click(screen.getByTestId("candidate-load-button"));
+  await waitFor(() => expect(screen.getByTestId(`candidate-row-${CANDIDATE_LOW}`)).toBeTruthy());
+  expect(screen.getByTestId(`candidate-confidence-${CANDIDATE_LOW}`).textContent).toBe(
+    "Confidence score: 0.42",
+  );
+});

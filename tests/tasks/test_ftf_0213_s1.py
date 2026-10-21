@@ -206,6 +206,16 @@ def _completion(content: str, *, finish: str = "stop", usage: object = "default"
     return json.dumps(payload).encode()
 
 
+# Per-trial completion_tokens a gateway can report over the wire, by mode.
+_TOKEN_COUNT_MODES: dict[str, tuple[int, int, int]] = {
+    "tokens_negative_all": (-5, -5, -5),
+    "tokens_zero_all": (0, 0, 0),
+    "tokens_zero_one": (5, 0, 5),
+    "tokens_negative_one": (5, -1, 5),
+    "tokens_zero_and_negative": (0, -1, 5),
+}
+
+
 def _respond_for(body: dict[str, object]) -> tuple[int, bytes]:
     enum = _enum_of(body)
     mode = _GW.mode
@@ -219,6 +229,21 @@ def _respond_for(body: dict[str, object]) -> tuple[int, bytes]:
     if mode == "rejecting":
         err = {"error": {"type": "invalid_request_error", "param": "response_format"}}
         return 400, json.dumps(err).encode()
+    if mode == "mid_run_reject":
+        # V16: trial 1 (the first POST _respond_for ever sees for this run) succeeds; every
+        # later trial is rejected -- a later-trial 400 must stop the loop immediately, never
+        # let it continue to a further trial.
+        if len(_GW.bodies) == 1:
+            return 200, _completion(member)
+        err = {"error": {"type": "invalid_request_error", "param": "response_format"}}
+        return 400, json.dumps(err).encode()
+    if mode in _TOKEN_COUNT_MODES:
+        # USAGE-IMPOSSIBLE-COUNT-WIRE: the gateway reports an impossible completion_tokens on the
+        # trial(s) the mode names; the answer itself is a perfectly valid in-enum "stop".
+        trial = len(_GW.bodies)  # 1-based: _GatewayHandler appends before responding
+        counts = _TOKEN_COUNT_MODES[mode]
+        usage = {"prompt_tokens": 20, "completion_tokens": counts[trial - 1], "total_tokens": 25}
+        return 200, _completion(member, usage=usage)
     if mode == "truncating":
         return 200, _completion(member, finish="length")
     if mode == "no_usage":
@@ -310,6 +335,11 @@ _STATE_FOR_MODE = {
     "wrong_enum": S.NOT_ENFORCED,
     "duplicate_key": S.NOT_ENFORCED,
     "over_budget": S.MALFORMED_RESPONSE,
+    "tokens_negative_all": S.MALFORMED_RESPONSE,
+    "tokens_zero_all": S.USAGE_MISSING,
+    "tokens_zero_one": S.USAGE_MISSING,
+    "tokens_negative_one": S.MALFORMED_RESPONSE,
+    "tokens_zero_and_negative": S.MALFORMED_RESPONSE,
     "content_filter": S.CONTENT_FILTERED,
     "tool_calls_finish": S.NOT_ENFORCED,
     "malformed": S.MALFORMED_RESPONSE,
@@ -357,6 +387,44 @@ def test_enforcing_route_records_trials_identity_and_tokens() -> None:
         "detail is content-free",
         "banana" not in result.detail and _SECRET_VALUE not in result.detail,
     )
+
+
+def test_mid_run_400_stops_after_exactly_two_requests() -> None:
+    """V16: a 400 on a later trial (not the first) must stop the probe immediately -- never
+    let the loop continue to the next trial on the strength of an earlier success."""
+    if not _UPDATE_CA_AVAILABLE:
+        return
+    result = _run("mid_run_reject")
+    check("mid-run 400 is unsupported_parameter", result.state == S.UNSUPPORTED_PARAMETER)
+    check("exactly two requests were made", len(_GW.bodies) == 2)
+    check("the third trial was never attempted", len(_GW.bodies) != 3)
+    check("only the first (successful) trial's result was kept", len(result.trials) == 1)
+
+
+def test_impossible_token_counts_over_the_real_wire_are_never_a_metric() -> None:
+    """USAGE-IMPOSSIBLE-COUNT-WIRE: negative and zero completion_tokens arrive through the
+    real parse path (gateway -> TLS -> _parse_trial_body -> trial loop -> _aggregate_trials),
+    so a clamp (max(..., 1)), abs(), or a per-trial drop of the bad value in the trial loop
+    cannot hide behind the direct _aggregate_trials pins."""
+    if not _UPDATE_CA_AVAILABLE:
+        return
+    for mode, counts in _TOKEN_COUNT_MODES.items():
+        result = _run(mode)
+        expected = S.MALFORMED_RESPONSE if any(c < 0 for c in counts) else S.USAGE_MISSING
+        check(f"{mode}: state {expected.value}, got {result.state.value}", result.state == expected)
+        check(f"{mode}: all three trials were requested", len(_GW.bodies) == 3)
+        check(f"{mode}: never CONSTRAINED_OBSERVED", result.state != S.CONSTRAINED_OBSERVED)
+        check(f"{mode}: no max claim", result.max_completion_tokens_observed is None)
+        check(f"{mode}: no mean claim", result.mean_completion_tokens is None)
+        check(
+            f"{mode}: the raw per-trial counts are kept verbatim, got "
+            f"{[t.completion_tokens for t in result.trials]}",
+            tuple(t.completion_tokens for t in result.trials) == counts,
+        )
+        check(
+            f"{mode}: the answers themselves were valid in-enum stops",
+            all(t.label_in_enum and t.finish_reason == "stop" for t in result.trials),
+        )
 
 
 def test_usage_missing_is_unknown_not_zero() -> None:
@@ -634,9 +702,61 @@ def test_aggregate_states_are_exact_and_case_sensitive() -> None:
         "one missing usage is USAGE_MISSING",
         _aggregate([_trial(), _trial(tokens=None), _trial()]).state == S.USAGE_MISSING,
     )
+    partial = _aggregate([_trial(), _trial(tokens=None), _trial()])
     check(
-        "zero tokens is a real count, not missing",
-        _aggregate(three(tokens=0)).state == S.CONSTRAINED_OBSERVED,
+        "V18: usage missing on one trial reports no max claim from the others",
+        partial.max_completion_tokens_observed is None,
+    )
+    check(
+        "V18: usage missing on one trial reports no mean claim from the others",
+        partial.mean_completion_tokens is None,
+    )
+    # USAGE-IMPOSSIBLE-COUNT: every trial already proved it answered in-enum with finish_reason
+    # "stop" by the time these checks run, so a reported token count that is negative, or zero
+    # for that non-empty answer, is a gateway lie -- never a real cheap-output metric.
+    check(
+        "a negative completion-token count is MALFORMED_RESPONSE, not a real count",
+        _aggregate(three(tokens=-5)).state == S.MALFORMED_RESPONSE,
+    )
+    check(
+        "one negative-count trial outranks the others' valid usage",
+        _aggregate([_trial(), _trial(tokens=-1), _trial()]).state == S.MALFORMED_RESPONSE,
+    )
+    zero_all = _aggregate(three(tokens=0))
+    check(
+        "zero completion tokens for a non-empty answer is USAGE_MISSING, not a real count",
+        zero_all.state == S.USAGE_MISSING,
+    )
+    check(
+        "zero-token USAGE_MISSING reports no max claim (never a fake 0)",
+        zero_all.max_completion_tokens_observed is None,
+    )
+    check(
+        "zero-token USAGE_MISSING reports no mean claim (never a fake 0)",
+        zero_all.mean_completion_tokens is None,
+    )
+    check(
+        "one zero-count trial among otherwise-valid usage is still USAGE_MISSING",
+        _aggregate([_trial(), _trial(tokens=0), _trial()]).state == S.USAGE_MISSING,
+    )
+
+
+def test_aggregate_requires_exactly_trials_count() -> None:
+    """MUTATION-KILL-BY-TEXT-GUARD: _aggregate_trials refuses to be called with any count
+    other than _TRIALS, so a future change that lets the loop call it early (or extra) is
+    caught here, not by a model that happens to behave the same every time."""
+    for count in (0, 1, 2, probe_module._TRIALS + 1):
+        raised = False
+        try:
+            probe_module._aggregate_trials(
+                tuple(_trial() for _ in range(count)), ["m"] * count, datetime.now(UTC)
+            )
+        except ValueError:
+            raised = True
+        check(f"_aggregate_trials refuses {count} trials (expected {probe_module._TRIALS})", raised)
+    check(
+        "_aggregate_trials accepts exactly _TRIALS trials",
+        _aggregate([_trial()] * probe_module._TRIALS).state == S.CONSTRAINED_OBSERVED,
     )
 
 

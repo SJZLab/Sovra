@@ -136,6 +136,9 @@ jobs:
         run: uv sync --all-packages
       - name: Install JS/TS dev dependencies
         run: pnpm install --frozen-lockfile
+      - name: Install Playwright Chromium (FTF-UX01 real-browser §72.5 evidence)
+        working-directory: apps/web
+        run: pnpm exec playwright install --with-deps chromium
       - name: Python lint + format + type check (FTF-0002)
         run: |
           uv run ruff check .
@@ -323,6 +326,10 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0504.py
       - name: FTF-0505 negative-test proof (XLSX importer, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0505.py
+      - name: FTF-H011-P1 negative-test proof (dataset mapping probe/preview, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h011_p1.py
+      - name: FTF-H011-P1 negative-test proof (dataset mapping service wiring, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h011_p1_service.py
       - name: FTF-0206 negative-test proof (`/model_group/info` enrichment, no DB required)
         # Same watchdog finding as FTF-0205 above -- this is the FTF-0206
         # half of that gap, now closeable since this task's test file
@@ -364,6 +371,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_r005_r3.py
       - name: FTF-R005 round-7 negative-test proof (strictness from Factory's record, read-back before SYNCED, locked outbox row, no network or DB required)
         run: uv run python3 tests/tasks/test_ftf_r005_r4.py
+      - name: FTF-R006-P1 negative-test proof (Argilla REST adapter, no network required)
+        run: uv run python3 tests/tasks/test_ftf_r006_p1_client.py
       - name: FTF-1506 negative-test proof (Dependency scanning, no network required)
         run: uv run python3 tests/tasks/test_ftf_1506.py
       - name: FTF-04A17 negative-test proof (DiscoveredAgentCandidate schema/API, no DB required)
@@ -378,6 +387,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0512.py
       - name: FTF-0512-F1 look-alike gaps (NFKC + Cf folding, symmetric generated-value removal, generated table + per-class faults, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0512_f1.py
+      - name: FTF-0512-F1 look-alike gaps on the declared CPython 3.11 floor (NFKD stream-safe bound is version-sensitive, no DB required)
+        run: uv run --no-project --python 3.11 python3 tests/tasks/test_ftf_0512_f1.py
       - name: FTF-0513 negative-test proof (Near-duplicate detector, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0513.py
       - name: FTF-0514 negative-test proof (PII/secrets detector, no DB required)
@@ -444,6 +455,10 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0517.py
       - name: FTF-0518 negative-test proof (Split leakage detector, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0518.py
+      - name: FTF-0519-P1 negative-test proof (Immutable split manifest - pure domain, migration shape, SQLite store, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0519_p1.py
+      - name: FTF-0519-P2 negative-test proof (Split manifest routes - real uvicorn over a state-machine store, stored Idempotency-Key, held-out source hidden from ml_engineer, contract, wiring, 40+ route faults; no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0519.py
       - name: FTF-1305 negative-test proof (Candidate ranking, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1305.py
       - name: FTF-0616 negative-test proof (LLM judge adapter, no DB required; real local gateway over HTTPS)
@@ -500,6 +515,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0501_p2.py
       - name: FTF-0501 negative-test proof (direct object-storage upload -- SigV4 presign vector + tamper, part plan, content sniffing, finalize verification against an in-process S3, real routes over the real store on SQLite, contract, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0501.py
+      - name: FTF-0501-F2 negative-test proof (declared text encoding -- sniff table, whole-object decode at finalize wherever the bad byte falls, create route and store, migration 0032 SQL + CHECK shape, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0501_f2.py
       - name: FTF-0516-P1 negative-test proof (dataset quality issues -- migration SQL + RLS/GRANT/CHECK shape + fault injection, store on SQLite with the real detectors and engine, five routes, contract, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0516_p1.py
       - name: FTF-0103A negative-test proof (live session principal + Membership -- every /api/v1 route wired to the real resolver/role lookup, fail-closed resolver, no DB required)
@@ -522,8 +539,12 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0904_w1.py
       - name: FTF-0905 negative-test proof (canary-secret generator -- unique prefixed markers, no real-secret collision, full-coverage leak ledger, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0905.py
+      - name: FTF-0906 negative-test proof (egress capture/verification -- unattributed/unplanned-egress fail-closed, mandatory log-store coverage, enforcement/client/destination-consistent positive control, unobserved-destination handling, report binding, fault-injected module copies, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0906.py
       - name: FTF-H010-P1 negative-test proof (model import fields + import-validation jobs -- migration SQL + RLS/GRANT shape + fault injection, store on SQLite, route seams, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_h010_p1.py
+      - name: FTF-H010-P2 negative-test proof (import-validation activity -- outcome tables, resolved-model echo match, terminal-transaction connection re-check, claim/fencing, route seams, 97 fault-injected module copies; no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h010_p2.py
       - name: FTF-R004-P1 negative-test proof (Inspect bridge generation-config parity comparator, no DB required)
         run: uv run python3 tests/tasks/test_ftf_r004_p1.py
       - name: FTF-R004-P2 negative-test proof (Inspect bridge provider-side execution boundary + pre-filter attempt evidence, no DB/network required)
@@ -673,6 +694,13 @@ jobs:
           mkdir -p reports
           uv run python3 scripts/mutation_gate.py --base "origin/${BASE_REF}" "${args[@]}" \
             --timeout 300 --max-mutants 200 --json reports/mutation-gate.json
+      - name: Scan mutation report for secrets
+        if: always() && steps.select.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          if [ -f reports/mutation-gate.json ]; then
+            uv run python3 tests/security/secret_rules.py reports/mutation-gate.json
+          fi
       - name: Upload mutation report
         if: always() && steps.select.outputs.skip == 'false'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -3209,6 +3237,92 @@ jobs:
       - name: Prove the real dataset quality evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0516_p1_quality_issues.py
 
+  dataset-split-manifest-integration:
+    # FTF-0519-P1: real Postgres evidence for immutable split manifests (migration 0030):
+    # upgrade/downgrade/upgrade with one head, ENABLE+FORCE RLS and a non-allow-all tenant
+    # policy on all four tables, the app role's grants (no DELETE, no UPDATE on a child, a
+    # column-limited UPDATE on manifests), the store over real datasets / quality reports /
+    # FTF-0517 allocation / FTF-0518 leakage reports (golden freeze with independently
+    # recomputed role hashes, version on change, every refusal code writing nothing, approve /
+    # reject, prior campaigns, the legacy three-split path), raw sovra_app SQL refused by the
+    # database (an edited or deleted locked row, a lock without four roles or with a mismatched
+    # count or a crossing group or a blocked report, a child insert after the lock, a held-out
+    # record outside final, a role outside the frozen grant, heldout_test as a role, a version
+    # gap, a legacy strategy without lineage, a cross-tenant INSERT) and training access that
+    # never serves a development or final record and refuses a revoked or narrowed grant, a
+    # changed quality report and any tampered row --
+    # tests/integration/test_ftf_0519_p1_split_manifests.py.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' dataset-split-manifest-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0519p1
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0519p1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0519p1
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real split manifest evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_0519_p1_split_manifests.py
+
+  dataset-split-manifest-routes-integration:
+    # FTF-0519-P2: the four split-manifest routes on a real uvicorn server over the restricted
+    # sovra_app role and a real Postgres 16 with the full migration chain (migration 0032
+    # upgrade/downgrade/upgrade with one head; ENABLE+FORCE RLS and a non-allow-all policy on
+    # dataset_split_manifest_requests; SELECT/INSERT only; raw sovra_app SQL refused for an
+    # overwrite, a delete, a cross-tenant row, a malformed digest / action / key and an unknown
+    # manifest): the 401/403/404/409 matrix, paging, the body-validation table, approve / reject
+    # with the authenticated reviewer, the stored Idempotency-Key (replay, idempotency_key_reused,
+    # a refused request leaves its key free, 12 concurrent identical requests, approve-vs-reject),
+    # blocking / blocked / saturated / unreviewed / tampered / empty-role refusals writing nothing,
+    # grant_changed after a revoked connection, held-out sources hidden from ml_engineer, and a
+    # canary scan of every response body --
+    # tests/integration/test_ftf_0519_routes_postgres.py.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' dataset-split-manifest-routes-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0519p2
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0519p2"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0519p2
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real split manifest route evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_0519_routes_postgres.py
+
   live-auth-path-integration:
     # FTF-0103A: real OIDC login -> real API call. A real idpyoidc OpenID
     # Provider (FTF-0101's harness), the REAL app.main.create_app() served
@@ -3410,6 +3524,46 @@ jobs:
       - name: Prove the dataset source reader against PostgreSQL 16 and SeaweedFS
         run: uv run python3 tests/integration/test_ftf_0502_p1_dataset_source_postgres_s3.py
 
+  dataset-mapping-preview-integration:
+    # FTF-H011-P1: the dataset mapping probe/preview service
+    # (apps/api/app/datasets/dataset_mapping_service.py) over PostgreSQL 16 as the restricted
+    # sovra_app role and the live SeaweedFS S3 API, through the real FTF-0501 upload routes and
+    # the FTF-0502-P1 dataset source reader: a real JSONL dataset previews with its own real raw
+    # rows (masked / revealed correctly), foreign-org / foreign-project / missing / hidden
+    # held-out datasets all the same DatasetNotFoundError, a revoked connection denies a new
+    # preview before any storage call, a real CSV dataset's headers and rows round-trip through
+    # the probe and the preview alike, and a storage outage ends blocked/source_unavailable,
+    # never a raised exception -- tests/integration/test_ftf_h011_p1_mapping_preview_postgres_s3.py.
+    # The test boots the compose `s3` service itself when nothing answers.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' dataset-mapping-preview-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftfh011p1
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftfh011p1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfh011p1
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the dataset mapping preview service against PostgreSQL 16 and SeaweedFS
+        run: uv run python3 tests/integration/test_ftf_h011_p1_mapping_preview_postgres_s3.py
+
   model-import-integration:
     # FTF-H010-P1: real Postgres evidence for the model import fields +
     # import-validation jobs slice (migration 0027): upgrade/downgrade/upgrade,
@@ -3454,6 +3608,44 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real model import fields + import-validation jobs evidence against the live database
         run: uv run python3 tests/integration/test_ftf_h010_p1_model_import.py
+
+  model-import-validation-integration:
+    # FTF-H010-P2: real Postgres + a real local TLS gateway for the import-validation activity
+    # (migration 0031): upgrade/downgrade/upgrade over a legacy P1 row, the 5x5 transition matrix,
+    # column grants and RLS, database faults (including a re-claim exactly at lease expiry), the
+    # routes and the claim / fence / validate activity over a real gateway and OpenBao stand-in
+    # (success, outage table, alias exactness, missing header, resolved-model echo missing or
+    # naming another model, a connection revoked while the gateway is called, takeover, no lock
+    # held across a call) and the META-LEAK markers --
+    # tests/integration/test_ftf_h010_p2_import_validation.py.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' model-import-validation-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftfh010p2
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftfh010p2"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfh010p2
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real import-validation activity against the live database and a local TLS gateway
+        run: uv run python3 tests/integration/test_ftf_h010_p2_import_validation.py
 
   csv-import-integration:
     # FTF-0504: the CSV importer (workers/data/csv_importer.py) over PostgreSQL 16 as the
@@ -3617,6 +3809,29 @@ jobs:
       - name: Prove the JSON importer against PostgreSQL 16 and SeaweedFS
         run: uv run python3 tests/integration/test_ftf_0503_json_import_postgres_s3.py
 
+  egress-verification-integration:
+    # FTF-0906: the pure egress verifier (packages/security/egress_capture_verification.py)
+    # combined with real loopback sockets, no database -- an allowed plaintext HTTP sink and an
+    # allowed TLS sink (behind a real byte-for-byte recording relay, so its own capture is
+    # genuine ciphertext -- proving a packet capture alone cannot show absence of leakage), a
+    # denied non-allowlisted sink and a denied cloud-metadata address, a real direct-socket
+    # enforcement bypass, and a real FTF-0904-independent canary leak caught in a log.
+    # tests/integration/test_ftf_0906_egress_verification.py generates and installs its own
+    # ephemeral CA (ubuntu-latest ships openssl/update-ca-certificates/sudo already, same
+    # convention as connection-validation-integration/FTF-H005 above).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' egress-verification-integration ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove egress capture/verification over real loopback sockets
+        run: uv run python3 tests/integration/test_ftf_0906_egress_verification.py
+
   development-suite-import-integration:
     # FTF-1704: real Postgres evidence that the 300 generated development
     # cases import through the real evaluation-case routes under the restricted
@@ -3730,18 +3945,23 @@ jobs:
       - dataset-upload-integration
       - dataset-upload-hardening-integration
       - dataset-quality-issues-integration
+      - dataset-split-manifest-integration
+      - dataset-split-manifest-routes-integration
       - live-auth-path-integration
       - network-policy-enforcement-integration
       - object-storage-backup-integration
       - mlflow-projection-integration
       - mlflow-durable-outbox-integration
       - model-import-integration
+      - model-import-validation-integration
       - candidate-selection-integration
       - dataset-import-source-integration
+      - dataset-mapping-preview-integration
       - csv-import-integration
       - jsonl-import-integration
       - json-import-integration
       - xlsx-import-integration
+      - egress-verification-integration
       - development-suite-import-integration
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -3773,6 +3993,13 @@ jobs:
             --workflow .github/workflows/ci.yml --scope "$SCOPE" --scope-reason "$SCOPE_REASON" \
             --files-sha256 "$FILES_SHA256" --title "$PR_TITLE" --number "$PR_NUMBER" \
             --head-sha "$HEAD_SHA" --base-sha "$BASE_SHA" --evidence reports/ci-verdict.json
+      - name: Scan verdict evidence for secrets
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f reports/ci-verdict.json ]; then
+            python3 tests/security/secret_rules.py reports/ci-verdict.json
+          fi
       - name: Upload verdict evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

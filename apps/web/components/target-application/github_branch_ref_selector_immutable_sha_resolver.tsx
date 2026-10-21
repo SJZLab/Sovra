@@ -72,6 +72,8 @@ export interface GitHubBranchRefSelectorProps {
   repositoryIdentity: string;
   targetApplicationConnectionId: string;
   onResolve?: (resolved: GitHubResolvedRef) => void;
+  /** Pre-fills the ref input (e.g. the connection's default branch); never resolves it. */
+  defaultBranch?: string;
 }
 
 function trimBase(apiBaseUrl: string): string {
@@ -120,6 +122,7 @@ export function GitHubBranchRefSelector({
   repositoryIdentity,
   targetApplicationConnectionId,
   onResolve,
+  defaultBranch,
 }: GitHubBranchRefSelectorProps) {
   const [branches, setBranches] = useState<GitHubBranchSummary[]>([]);
   const [page, setPage] = useState(1);
@@ -128,7 +131,7 @@ export function GitHubBranchRefSelector({
   const [resolving, setResolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The ref currently being edited/selected (display value only).
-  const [selectedRef, setSelectedRef] = useState("");
+  const [selectedRef, setSelectedRef] = useState(defaultBranch ?? "");
   // Deliberately starts `null` and is set only from a real, fresh
   // `github-resolve-ref` response inside `handleResolve` -- cleared by
   // every code path that changes `selectedRef`, so a resolved SHA is

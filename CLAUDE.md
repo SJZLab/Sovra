@@ -171,12 +171,22 @@ docs/CONTROL_PLANE_MODES.md, or routine prompts (docs/operations/routines.md) is
 `[GOVERNANCE]`. Control plane opens it; the OWNER reviews and merges it. It is not logged in
 docs/certifications/queue.md.
 
+## UI design standard (owner instruction, 2026-10-16, live)
+Every UI change (apps/web, any screen, component or journey) is designed with the vendored
+ui-ux-pro-max skill (.claude/skills/ui-ux-pro-max) and must meet docs/design/UX_STANDARD.md: the
+NN/g 10 usability heuristics with severity-rated heuristic evaluation, NN/g form / error / empty-state /
+response-time rules, and WCAG 2.2 AA - all inside FINE_TUNING_FACTORY_RELEASE_1.md §72 (its tokens and
+component pattern are fixed; the skill never picks a new palette, font or style). A UI slice's DoD includes
+the UX_STANDARD.md §4 evidence; a severity 3-4 finding blocks certification.
+
 ## Definition of Done (per criterion)
 □ Test written and shown able to fail (failure output bound to criterion ID)
 □ Test passes — evidence bound (criterion ID, test ID, commit, hash)
 □ product_truth_check passes (live caller · user-visible assertion · fault injection reddens)
 □ data_exposure_check passes for any table/bucket/identity the criterion touches, plus a test
   that an unauthorized principal cannot read/write outside its scope (Law 18)
+□ UI slices: docs/design/UX_STANDARD.md §4 evidence (skill queries, NN/g H1-H10 heuristic evaluation, no
+  severity 3-4 finding, viewport/keyboard/zoom and WCAG 2.2 AA checks)
 □ PR opened as PROVISIONAL
 □ Appended to docs/certifications/queue.md for Control plane
 □ L2 certified by Control plane — never self-certified

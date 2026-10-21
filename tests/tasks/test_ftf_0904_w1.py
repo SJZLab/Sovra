@@ -40,9 +40,10 @@ default logging config, over a real socket -- with no database:
 5. Fault injection (Law 1): each mutation is applied to a *copy* of
    apps/api/app, served from that copy, and must turn the checks RED.
 
-Disclosed (not covered here): FTF-0904's rules do not treat the OAuth `code`
-and `state` query parameters on /auth/callback as secrets, so they still print
-in the access log; that is a rule-set follow-up on FTF-0904, not this wiring.
+Disclosed (not covered here): FTF-0904-F1's query-parameter rule redacts the
+OAuth `code` and `state` parameters on /auth/callback (and any credential-named
+parameter) in `redact_text` and on the logging path; that rule set is pinned in
+tests/tasks/test_ftf_0904.py. This suite proves the wiring, not those rules.
 
 Run directly: python3 tests/tasks/test_ftf_0904_w1.py
 """

@@ -1,0 +1,94 @@
+/* FTF-UX01 -- Sovra design tokens, versioned (FINE_TUNING_FACTORY_RELEASE_1.md section 72.1).
+   Light values are the section 72.1 values exactly. Dark values are separate and contrast-tested in
+   apps/web/tests/ftf_ux01.spec.ts (>= 4.5:1 text, >= 3:1 UI). System fonts only: no CDN (ZERO_EGRESS).
+   Layout uses logical properties (inline/block) so Arabic RTL needs no overrides. */
+:root {
+  --tokens-version: "1";
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --font-family:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Arabic", sans-serif;
+  --font-body: 14px;
+  --line-body: 20px;
+  --font-table: 13px;
+  --font-label: 12px;
+  --font-title: 24px;
+  --color-surface: #ffffff;
+  --color-surface-2: #f8fafc;
+  --color-border: #cbd5e1;
+  --color-text: #0f172a;
+  --color-muted: #475569;
+  --color-action: #1d4ed8;
+  --color-action-text: #ffffff;
+  --color-success: #166534;
+  --color-warning: #92400e;
+  --color-danger: #b91c1c;
+  --color-focus: #1d4ed8;
+  --color-link: #1d4ed8;
+  --target-min: 24px;
+  color-scheme: light dark;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-surface: #0f172a;
+  --color-surface-2: #1e293b;
+  --color-border: #64748b;
+  --color-text: #f8fafc;
+  --color-muted: #cbd5e1;
+  --color-action: #93c5fd;
+  --color-action-text: #0f172a;
+  --color-success: #86efac;
+  --color-warning: #fcd34d;
+  --color-danger: #fca5a5;
+  --color-focus: #93c5fd;
+  --color-link: #93c5fd;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-surface: #0f172a;
+    --color-surface-2: #1e293b;
+    --color-border: #64748b;
+    --color-text: #f8fafc;
+    --color-muted: #cbd5e1;
+    --color-action: #93c5fd;
+    --color-action-text: #0f172a;
+    --color-success: #86efac;
+    --color-warning: #fcd34d;
+    --color-danger: #fca5a5;
+    --color-focus: #93c5fd;
+    --color-link: #93c5fd;
+  }
+}
+
+a {
+  color: var(--color-link);
+}
+
+body {
+  margin: 0;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: var(--font-body) / var(--line-body) var(--font-family);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

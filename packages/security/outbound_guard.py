@@ -22,8 +22,11 @@ runs unmodified.
 from __future__ import annotations
 
 import ipaddress
+import math
 import socket
 import ssl
+import threading
+import time
 from dataclasses import dataclass
 from http.client import HTTPConnection, HTTPResponse, HTTPSConnection
 from urllib.parse import urljoin
@@ -123,7 +126,27 @@ class _PinnedHTTPSConnection(HTTPSConnection):
 
     def connect(self) -> None:
         raw_sock = socket.create_connection((self._pinned_ip, self.port), self.timeout)
+        # Kept so a total deadline can abort a TLS handshake that is still
+        # in progress (`self.sock` is not assigned until it completes).
+        self._raw_sock = raw_sock
         self.sock = self._tls_context.wrap_socket(raw_sock, server_hostname=self.host)
+
+
+def _abort_connection(conn: HTTPConnection) -> None:
+    """Unblocks a thread that is reading from `conn` right now: `shutdown`
+    wakes a blocked `recv` (a bare `close` from another thread does not),
+    then the descriptors are released. Never raises."""
+    for sock in (getattr(conn, "sock", None), getattr(conn, "_raw_sock", None)):
+        if sock is None:
+            continue
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            sock.close()
+        except OSError:
+            pass
 
 
 def _build_connection(
@@ -236,6 +259,7 @@ def guarded_stream_fetch(
     headers: dict[str, str] | None = None,
     body: bytes | None = None,
     timeout: float = 10.0,
+    deadline: float | None = None,
 ) -> GuardedStreamResponse:
     """As `guarded_fetch`, but returns the response open for incremental
     reads instead of buffering the whole body -- for a real chunked
@@ -248,16 +272,75 @@ def guarded_stream_fetch(
     caller may already be reading it, so silently reconnecting elsewhere
     would discard real, possibly non-empty state. No caller of this
     function targets a redirectable endpoint.
+
+    `timeout` bounds each individual socket operation, so a server that
+    drips one byte per interval can hold the connect / status-line /
+    header phase open indefinitely. `deadline` (seconds, measured on the
+    monotonic clock from entry; default `None` = no total bound, the
+    behaviour every existing caller gets unchanged) is one TOTAL budget for
+    connect + TLS + status line + headers: when it expires the connection
+    is shut down and `OutboundGuardError` is raised. It does not bound the
+    body, which the caller reads (and bounds) itself via `read_chunk`.
     """
+    if deadline is not None and (
+        isinstance(deadline, bool)
+        or not isinstance(deadline, int | float)
+        or not math.isfinite(deadline)
+        or deadline <= 0
+    ):
+        raise OutboundGuardError("deadline must be a positive finite number of seconds")
+    started = time.monotonic()
     conn, path, hostname = _prepare_pinned_connection(url, policy, timeout)
     request_headers = dict(headers or {})
     request_headers.setdefault("Connection", "close")
+
+    watchdog: threading.Timer | None = None
+    lock = threading.Lock()
+    state = {"done": False, "expired": False}
+    if deadline is not None:
+        remaining = deadline - (time.monotonic() - started)
+        if remaining <= 0:
+            conn.close()
+            raise OutboundGuardError(f"connection to {hostname!r} exceeded the call deadline")
+        conn.timeout = min(timeout, remaining)
+
+        def _expire() -> None:
+            with lock:
+                if state["done"]:
+                    return
+                state["expired"] = True
+            _abort_connection(conn)
+
+        watchdog = threading.Timer(remaining, _expire)
+        watchdog.daemon = True
+        watchdog.start()
+
+    def _finish() -> bool:
+        """Stops the watchdog; True when it had already fired."""
+        with lock:
+            state["done"] = True
+            fired = state["expired"]
+        if watchdog is not None:
+            watchdog.cancel()
+        return fired
+
     try:
         conn.request(method, path, body=body, headers=request_headers)
         response: HTTPResponse = conn.getresponse()
-    except OSError as exc:
+    except BaseException as exc:
+        fired = _finish()
+        if fired:
+            conn.close()
+            raise OutboundGuardError(
+                f"connection to {hostname!r} exceeded the call deadline"
+            ) from None
+        if isinstance(exc, OSError):
+            conn.close()
+            raise OutboundGuardError(f"connection to {hostname!r} failed: {exc}") from exc
+        raise
+    if _finish():
         conn.close()
-        raise OutboundGuardError(f"connection to {hostname!r} failed: {exc}") from exc
+        raise OutboundGuardError(f"connection to {hostname!r} exceeded the call deadline")
 
     return GuardedStreamResponse(
         status=response.status,

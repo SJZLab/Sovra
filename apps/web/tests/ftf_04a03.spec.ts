@@ -234,3 +234,73 @@ test("a failed listing surfaces the real server-provided error detail, never a g
   );
   expect(screen.getByTestId("github-repository-list").children.length).toBe(0);
 });
+
+// FTF-UX03 (audit #13): empty-after-search state and token guidance.
+test("UX03: a real search that returns zero repositories explains why and what to do", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ repositories: [], page: 1, per_page: 30, has_next_page: false }),
+  });
+  render(
+    createElement(GitHubAccessibleRepositorySelector, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  expect(screen.queryByText("No accessible repositories found")).toBeNull();
+  typeToken("ghs_example");
+  fireEvent.submit(screen.getByTestId("github-credential-form"));
+  await waitFor(() => expect(screen.getByText("No accessible repositories found")).toBeTruthy());
+  expect(screen.getByText(/does not give this token access/i)).toBeTruthy();
+});
+
+test("UX03: no empty state before searching, after an error, or when repositories exist", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: false,
+    status: 401,
+    json: async () => ({ detail: "bad credential" }),
+  });
+  render(
+    createElement(GitHubAccessibleRepositorySelector, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  typeToken("bad");
+  fireEvent.submit(screen.getByTestId("github-credential-form"));
+  await waitFor(() => expect(screen.getByTestId("github-repository-error")).toBeTruthy());
+  expect(screen.queryByText("No accessible repositories found")).toBeNull();
+});
+
+test("UX03: the token field is described by scope guidance, in Arabic with locale=ar", () => {
+  render(
+    createElement(GitHubAccessibleRepositorySelector, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  const input = screen.getByTestId("github-credential-input");
+  const helpId = input.getAttribute("aria-describedby");
+  expect(helpId).toBeTruthy();
+  const help = document.getElementById(helpId as string);
+  expect(help?.textContent).toContain("صلاحية");
+  expect(screen.getByTestId("github-repository-selector").getAttribute("dir")).toBe("rtl");
+});
+
+test("UX03: English token guidance names the required read scope", () => {
+  render(
+    createElement(GitHubAccessibleRepositorySelector, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  const helpId = screen.getByTestId("github-credential-input").getAttribute("aria-describedby");
+  expect(document.getElementById(helpId as string)?.textContent).toMatch(/read.*repositor/i);
+});

@@ -171,7 +171,10 @@ _SEP = r"""\\*["']?[ \t]*[:=][ \t]*"""
 # `(?<!\\)` on the opening run means only the first backslash of a maximal backslash run can ever
 # start an attempt -- the same "one start per run" fix as the JWT shape below -- so a long,
 # unterminated backslash run (no second quote at all) is one linear scan, not O(n) restarts.
-_QUOTED_VALUE = r'(?<!\\)\\++"(?:[^"\\\r\n]++|\\++(?!"))*+\\+"' r"""|"[^"\r\n]*+"|'[^'\r\n]*+'"""
+_QUOTED_VALUE = (
+    r'(?<!\\)\\++"(?:[^"\\\r\n]++|\\++(?!"))*+\\+"'
+    r"""|"(?:[^"\\\r\n]++|\\++[^\r\n]?)*+"|'(?:[^'\\\r\n]++|\\++[^\r\n]?)*+'"""
+)
 
 _PEM = re.compile(
     r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|\Z)",
@@ -253,6 +256,7 @@ _KEY_VALUE = re.compile(
 # front of it: a query serialized without one (`str(request.query_params)`), a urlencoded form body
 # and a name after a space/quote/`/` are the same leak. Over-redaction (`state=CA`, prose `code=5`)
 # is FTF-0904's design.
+# (`totp`, `hotp`, `sessid` and `phpsessid` need no entry: they end in `otp` / `sid`.)
 _QUERY_PARAM_NAMES = frozenset(
     {
         "key",
@@ -267,13 +271,21 @@ _QUERY_PARAM_NAMES = frozenset(
         "otp",
         "pass",
         "sid",
-        "sessid",
-        "phpsessid",
         "jsessionid",
     }
 )
 # One start per maximal key run (lookbehind) and a possessive run: linear, no restart inside a run.
-_QUERY_ASSIGN = re.compile(r"(?<![\w.\-])(?P<key>[\w.\-]++)(?P<sep>=)")
+# F2: a QUOTED value after a credential name (`state="v"`, `code: 'v'`, JSON `"state": "v"`) is read
+# up to its closing quote (a quote after ANY run of backslashes is escaped, so a JSON-re-encoded
+# `\\"` cannot end it early; an unterminated quote runs to end of line,
+# deny by default). The bare `name: value` form is not a query position and stays unredacted.
+_QUERY_ASSIGN = re.compile(
+    r"""(?<![\w.\-])(?P<key>[\w.\-]++)"""
+    r"""(?:(?P<qsep>["']?[ \t]*[:=][ \t]*)(?=["'])|(?P<sep>=))"""
+)
+_QUOTED_SECRET = re.compile(
+    r""""(?:[^"\\\r\n]|\\++[^\r\n]?)*+"?|'(?:[^'\\\r\n]|\\++[^\r\n]?)*+'?"""
+)
 # `[REDACTED]` is consumed whole (with anything glued to it) so the rule is idempotent: running it
 # over its own output (the logging sink re-redacts the formatted line) never grows the marker.
 _QUERY_VALUE = re.compile(r"""\[REDACTED\][^\s&,;"'}\])]*+|[^\s&,;"'}\])]++""")
@@ -281,9 +293,45 @@ _NAME_WORD_SPLIT = re.compile(r"[_.\-]+")
 _CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
 
+# Round 4 (QP-GLUED-VOCAB, QP-CASE-SPLIT-SEPARATOR, QP-SEPSTRIP): deny by default. A name that
+# is not caught by its last word (above) is read with every separator stripped and lowercased;
+# if that run ENDS in a credential name (`mfacode`, `smscode`, `signingkey`, `connectsid`,
+# `recoverycode`, `hmacsig`, `aUtH_cOdE`, `sEsSiOn.KeY`, `co.de`) it is redacted, whatever the
+# prefix -- the old closed vocabulary of credential prefixes leaked every prefix it did not list.
+# The only way out is `_BENIGN_NAMES`, a CLOSED list of ordinary words that merely end in a
+# credential name; it is matched against the whole stripped name, so it never excuses a
+# credential prefix (`monkeysession` is still redacted) and a separator-split `mon_key` /
+# camelCase `monKey` is decided by the last-word rule above, not by this list.
+_NAME_SUFFIXES = tuple(sorted(_QUERY_PARAM_NAMES))
+_BENIGN_NAMES = frozenset(
+    {
+        "monkey", "turkey", "hockey", "jockey", "donkey", "whiskey", "lackey",
+        "decode", "encode", "barcode", "qrcode", "zipcode", "postcode", "geocode", "unicode",
+        "opcode", "statuscode", "errorcode", "exitcode", "returncode",
+        "estate", "realestate", "upstate", "restate",
+        "compass", "bypass", "overpass", "underpass", "trespass", "surpass",
+        "obsession", "possession", "concession", "profession", "procession", "recession",
+        "succession",
+    }
+)  # fmt: skip
+
+
 def _is_query_param_name(name: str) -> bool:
+    # Round 5 (QP-CASE-SPLIT-SEGMENT): check each separator-delimited segment lowercased
+    # BEFORE the camel split below. The camel split inserts a boundary at every
+    # lowercase-to-uppercase transition, which can fall *inside* a random-case spelling of a
+    # listed word that already sits in its own `_ - .`-delimited segment (`mon_KeY` -> the
+    # `e`-`Y` transition in "KeY" splits it into "Ke"+"Y", so the last-word check below never
+    # sees "key"; `status_CoDe` splits "CoDe" into "Co"+"De"). A segment produced by an actual
+    # separator is never split further by case here -- it is lowered and compared whole.
+    raw_segments = [w for w in _NAME_WORD_SPLIT.split(name) if w]
+    if raw_segments and raw_segments[-1].lower() in _QUERY_PARAM_NAMES:
+        return True
     words = [w for w in _NAME_WORD_SPLIT.split(_CAMEL_BOUNDARY.sub("_", name)) if w]
-    return bool(words) and words[-1].lower() in _QUERY_PARAM_NAMES
+    if words and words[-1].lower() in _QUERY_PARAM_NAMES:
+        return True
+    stripped = _NAME_WORD_SPLIT.sub("", name).lower()
+    return stripped.endswith(_NAME_SUFFIXES) and stripped not in _BENIGN_NAMES
 
 
 class _QueryParamRule:
@@ -295,7 +343,10 @@ class _QueryParamRule:
         for match in _QUERY_ASSIGN.finditer(text):
             if match.start() < pos or not _is_query_param_name(match.group("key")):
                 continue
-            value = _QUERY_VALUE.match(text, match.end())
+            if match.group("qsep") is not None:
+                value = _QUOTED_SECRET.match(text, match.end())
+            else:
+                value = _QUERY_VALUE.match(text, match.end())
             if value is None:
                 continue
             out.append(text[pos : match.end()])

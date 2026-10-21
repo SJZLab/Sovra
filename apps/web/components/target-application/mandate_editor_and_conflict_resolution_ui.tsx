@@ -72,6 +72,8 @@ import {
   requirementsUrl,
   type CriticalBehaviorRequirementView,
 } from "../project-mandate/requirements_ui";
+import { dirFor, type Locale } from "../ui";
+import { MANDATE_FIELD_HELP } from "./mandate_field_help";
 
 export const MANDATE_TEXT_FIELDS = [
   "business_purpose",
@@ -283,6 +285,11 @@ export interface MandateEditorAndConflictResolutionUIProps {
   organizationId: string;
   projectId: string;
   manifestId: string;
+  locale?: Locale;
+}
+
+function FieldHelp({ field, locale }: { field: string; locale: Locale }) {
+  return <p id={`mandate-${field}-help`}>{MANDATE_FIELD_HELP[field]?.[locale]}</p>;
 }
 
 async function readErrorDetail(response: Response): Promise<string> {
@@ -305,6 +312,7 @@ export function MandateEditorAndConflictResolutionUI({
   organizationId,
   projectId,
   manifestId,
+  locale = "en",
 }: MandateEditorAndConflictResolutionUIProps) {
   const base = trimBase(apiBaseUrl);
 
@@ -534,7 +542,7 @@ export function MandateEditorAndConflictResolutionUI({
   }
 
   return (
-    <div data-testid="mandate-editor-ui">
+    <div data-testid="mandate-editor-ui" dir={dirFor(locale)}>
       <section data-testid="mandate-fields-section">
         <h2>Mandate</h2>
         {!editable && (
@@ -548,10 +556,12 @@ export function MandateEditorAndConflictResolutionUI({
             <textarea
               id={`mandate-${field}`}
               data-testid={`mandate-field-${field}`}
+              aria-describedby={`mandate-${field}-help`}
               value={mandate[field] ?? ""}
               disabled={!editable}
               onChange={(event) => setTextField(field, event.target.value)}
             />
+            <FieldHelp field={field} locale={locale} />
           </div>
         ))}
         {MANDATE_LIST_FIELDS.map((field) => (
@@ -560,10 +570,12 @@ export function MandateEditorAndConflictResolutionUI({
             <input
               id={`mandate-${field}`}
               data-testid={`mandate-field-${field}`}
+              aria-describedby={`mandate-${field}-help`}
               value={listDrafts[field] ?? mandate[field].join(", ")}
               disabled={!editable}
               onChange={(event) => setListField(field, event.target.value)}
             />
+            <FieldHelp field={field} locale={locale} />
           </div>
         ))}
         {MANDATE_NUMBER_FIELDS.map((field) => (
@@ -573,10 +585,12 @@ export function MandateEditorAndConflictResolutionUI({
               id={`mandate-${field}`}
               data-testid={`mandate-field-${field}`}
               type="number"
+              aria-describedby={`mandate-${field}-help`}
               value={mandate[field] ?? ""}
               disabled={!editable}
               onChange={(event) => setNumberField(field, event.target.value)}
             />
+            <FieldHelp field={field} locale={locale} />
           </div>
         ))}
       </section>

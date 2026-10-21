@@ -7719,10 +7719,10 @@ FTF-0504:
   proving_test: tests/tasks/test_ftf_0504.py
 
 FTF-0505:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: XLSX importer
-  evidence_hash: 62ef4927dbf4a3ac2493e8e236a4450c8d474631
+  evidence_hash: 870ec2ef1abd97d6b7b0fc6cda776272cb944ba1
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0501,
@@ -7815,7 +7815,7 @@ FTF-0505:
     LookupError/ValueError from an unreadable XML encoding declaration. Full detail and the fault ->
     RED table: docs/certifications/submissions/2026-10-15T1100Z-FTF-0505-r4.md. Not run here: the
     xlsx-import-integration job (needs Postgres + SeaweedFS); it runs in CI.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0505.py
 FTF-0506:
@@ -8356,10 +8356,10 @@ FTF-0511:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0511.py
 FTF-0512:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Normalized duplicate detector
-  evidence_hash: bdd9c0e0a07da1ca5b18306277c50f841acc8ee7
+  evidence_hash: a4dff1f8287d31d6832f9f526598ca4ccbc47b20
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31;
@@ -8523,9 +8523,9 @@ FTF-0512:
     awaiting Control-plane L2 re-review; FTF-0512 requalifies with this
     round.
 
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
-  proving_test: tests/tasks/test_ftf_0512.py
+  proving_test: tests/tasks/test_ftf_0512.py, tests/tasks/test_ftf_0512_f1.py
 FTF-0513:
   certification_state: CERTIFIED
   criticality: MUST
@@ -10270,9 +10270,12 @@ FTF-0904:
   certification_state: CERTIFIED
   criticality: MUST
   description: Log redaction
-  evidence_hash: 5a0f708c29a61e7fe0fea3fc25ef838b7f5471df
+  evidence_hash: 51f8753fe8aa21a6105fb62d78b4e758921d1788
   implementation_state: IMPLEMENTED
   notes: >-
+    REQUALIFICATION PENDING (Law 15, 2026-10-21T12:49Z): PR #905 (FTF-0904-F2 r1) made the generic quoted-value
+    rule print a quoted secret ending in a backslash; restored when FTF-0904-F2 r2 is certified (QUEUE 0b).
+
     WIRED 2026-10-14 via FTF-0904-W1 (child slice, CERTIFIED, PR #792 merge b4d401fc): create_app() calls
     install_api_log_redaction() -> install_redaction() first; live-path proof tests/tasks/test_ftf_0904_w1.py
     (real uvicorn factory, access log, startup failures incl. --workers/--reload children, hooks; faults F1-F14).
@@ -10580,16 +10583,84 @@ FTF-0905:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0905.py
 FTF-0906:
-  certification_state: NONE
+  certification_state: CERTIFIED
   criticality: MUST
   description: Egress capture/verification
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0904,
-    FTF-0905
-  proof_state: UNPROVEN
+  evidence_hash: 12f1102895cee6dd5e300231666ddae42328ead9
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0902, FTF-0904,
+    FTF-0905 (all CERTIFIED). Path: packages/security/egress_capture_verification.py. Pure verifier
+    (`verify_egress`) combining enforcement, connection-log and plaintext/packet-capture inspection
+    into one `EgressVerificationReport` (Section 12: "allowlist enforcement, verified destination
+    identity, blocked-egress counters and inspection at authorized application endpoints
+    together"); a flow whose only no-leak evidence is an encrypted packet capture is `incomplete`,
+    never `passed` (Section 12's negative clause -- a capture alone cannot prove absence of
+    leakage). Reuses FTF-0905's `CanaryMarker`/`PlacementRecord`/`CanaryPlacementLedger`/
+    `encode_canary`/`fragment_canary` unmodified; `scan_store_for_canaries` scans every declared
+    encoding and fails closed (`CanaryLeakedError`) the instant a real canary is recovered.
+    Real-integration proof (`tests/integration/test_ftf_0906_egress_verification.py`, CI job
+    `egress-verification-integration`): real loopback sockets, an allowed plaintext sink, an
+    allowed TLS sink behind a real byte-for-byte recording relay, a denied non-allowlisted sink, a
+    denied cloud-metadata address, a real direct-socket enforcement bypass, and a real log leak
+    that FTF-0904's own redaction does not catch (canaries aren't a recognized secret shape) but
+    this module's own scanner does.
+
+
+    Round 1's own internal CI fix (same PR #832, not a Control-plane return): round 1 shipped with
+    `mutation-gate` red (93.5%, 11 survivors, all operator M9 -- a frozen-dataclass string field
+    normalized by `.strip().lower()` before an `==`/`!=`/`in` comparison). Every survivor sat on a
+    field already validated at construction against a closed, already-lowercase/whitespace-free
+    tuple, so the mutant was unobservable via normal construction. `_hex64`'s own per-character
+    loop (one survivor) was mathematically unkillable by any test -- replaced with a single
+    `re.fullmatch`, no behaviour change. The other ten were killed via `object.__setattr__`
+    bypassing each frozen dataclass's own `__post_init__`; one of those ten needed a real
+    production fix: `scan_store_for_canaries` was letting FTF-0905's own
+    `InvalidCanaryRequestError` leak through its own public API instead of this module's
+    documented `InvalidEgressEvidenceError`. Extracted `_aggregate_overall_status` out of
+    `verify_egress` so the report-status aggregation is directly testable. Final local mutation
+    gate: 172 run / 172 KILLED / 0 SURVIVED / 100.0%. Full detail:
+    `docs/certifications/submissions/2026-10-15T1112Z-FTF-0906.md` (round 1) and
+    `docs/certifications/submissions/2026-10-15T1500Z-FTF-0906-ci-fix.md` (round 1's own CI fix).
+
+
+    Round 2 (Control-plane return, PR #852, this evidence) closed all 12 named return points:
+    `verify_egress` now forces `failed` on any evidence naming an undeclared `flow_id`
+    (`unplanned_egress_evidence`) or a `canary_found` inspection with no flow attribution
+    (`unattributed_canary_found`); `EgressPlan.required_stores` can no longer omit the mandatory
+    log stores (`application_log`/`error_path`/`artifact`); the allow branch's `arrived` check now
+    requires enforcement/client/destination agreement AND a real `canary_found` at the
+    destination; the encrypted-capture-insufficient check now requires a genuinely inspected
+    record; a new `"unobserved"` destination outcome fails closed instead of a fabricated
+    `not_seen` (Law 17); `EgressVerificationReport` gained `policy_digest`/`scope`/
+    `inspected_stores`, all bound into `report_sha256`; `scan_store_for_canaries` now matches a
+    case-insensitive hex variant and a lower-cased-percent-escape url variant (via
+    `_needles_for_encoding`, which generates these unconditionally rather than dispatching on
+    `encoding` -- a per-encoding `==` dispatch would only ever compare an already-validated value,
+    an unobservable mutant found while re-running the mutation gate for real). The real-socket
+    integration test now derives canary_found/enforcement-code from what the real guard/sinks
+    actually did (never hard-coded), feeds the real caught error-path leak into `verify_egress`
+    itself, really scans a snapshot of the real access-log text, and fails closed (`sys.exit(1)`)
+    rather than skipping when the TLS fixture is unavailable. `tests/tasks/test_ftf_0906.py`'s own
+    fault-injection table grew from 7 to 13 regex-mutation probes, one per production fix; F5
+    (uninspected destination as positive control) is disclosed as a reviewed equivalent under this
+    round's own fix (the `PlaintextInspection.__post_init__` invariant `canary_found implies
+    inspected` makes that one filter unkillable now that `arrived` also checks `canary_found`),
+    not a live gap. Mutation gate run for real three times against the actual committed diff (not
+    merely asserted clean): 11 real survivors found and closed, then 2 more, then a final clean
+    152/152 KILLED, 0 SURVIVED, 100.0%. Full detail and the fault -> RED table:
+    `docs/certifications/submissions/2026-10-15T2300Z-FTF-0906-r2.md`.
+
+
+    UNWIRED -- `proving_symbol` blank, no live caller yet (same precedent as FTF-0901/FTF-0902/
+    FTF-0905). `workflow_history` is never exercised (no Temporal workflow exists), so every report
+    this task produces is `partial`, never `passed`, by design. Process scope only; cluster/CNI-
+    topology evidence is FTF-H027's own job on top of this one. Not self-certified (Law 4):
+    certification_state stays PROVISIONAL / proof_state stays L1-PROVEN pending independent
+    Control-plane L2 review.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0906.py
 FTF-0907:
   certification_state: NONE
   criticality: MUST
@@ -10667,7 +10738,7 @@ FTF-1001:
   certification_state: CERTIFIED
   criticality: MUST
   description: ModelVersion schema/API
-  evidence_hash: 8b51c85edd35652ba3263dd6a6fcbf590f2f81bd
+  evidence_hash: c3c8da60009a70924dcd684c14cd0892eaa01e81
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-14; scenarios=Q07, Q20; deps=FTF-0301, FTF-0401, FTF-0103
@@ -12265,18 +12336,77 @@ FTF-1505:
     gate) and is wired into the new `secret-scanning` CI job, so a real
     future leak fails CI, not merely a mocked unit test.
 
-    DISCLOSED, NOT MET -- ephemeral CI-run JSON artifacts
-    (`reports/mutation-gate.json`, `reports/ci-verdict.json`) are never
-    committed to git, so a from-clean-checkout run of this suite's
-    `artifact` target covers zero of them unless this same job already
-    wrote one before this step ran; the same disclosed-gap class FTF-1501
-    already carries for worker/storage/cache paths that do not exist yet in
-    this repository. DISCLOSED -- the `scan_live_app_log_samples` lane
+    DISCLOSED -- the `scan_live_app_log_samples` lane
     exercises a 401 and a 404 route only; a live 5xx validation-error
     request path is not separately exercised (FTF-0904-W1's own suite
-    already covers a startup-failure 5xx-shaped case). Not self-certified
-    (Law 4) -- `certification_state` stays PROVISIONAL, `proof_state` stays
-    L1-PROVEN, pending independent Control-plane L2 review.
+    already covers a startup-failure 5xx-shaped case).
+
+    ROUND 3 (this evidence_hash, Control-plane return 2026-10-15T14:14Z):
+    the round-2 ephemeral-artifact gap above is CLOSED -- an additive step
+    in both `mutation-gate` and `ci-verdict` (the jobs that write
+    `reports/mutation-gate.json`/`reports/ci-verdict.json`) scans each
+    report with a new, dependency-free `tests/security/secret_rules.py`
+    (every rule/quick-gate/seed-generation primitive extracted out of
+    `secret_scanning.py`, stdlib-only, proven by AST inspection) the
+    moment it is written, in the same job, with no new setup step. Also
+    fixed: a quoted/octal-escaped non-ASCII git path silently skipped
+    (`iter_tracked_files` now uses `git ls-files -z`); oversized content
+    and a corrupt archive member silently truncating/aborting (`-- now
+    both a blocking `scan_incomplete` finding, and a corrupt member no
+    longer aborts every later member in the same archive); a history blob
+    that is itself an archive never getting member extraction at all (a
+    shared `_scan_content_and_members` helper now backs source/artifact/
+    history alike); an incomplete quick gate (missed `sk_live_`,
+    `private_key=`, `session_key=`, a tab after `Bearer` -- now DERIVED
+    from the same rule table every rule is matched with, per-rule
+    completeness proven directly); a reversible `value_sha256` printed for
+    a brand-new (unbaselined) finding (`SecretFinding.to_dict()` now omits
+    it for any blocking finding -- an unsalted hash of a low-entropy
+    secret is dictionary-reversible); `parse_upload_artifact_paths`
+    rewritten as a structural YAML parse (covers `actions/upload-artifact/
+    merge@...`, refuses a `..` traversal, no fixed lookahead window);
+    committed seed literals (`_default_seed_values()` plus several
+    `tests/tasks/test_ftf_1505.py` fixtures) replaced by
+    `secret_rules.generate_seed_for_rule`, generated fresh at runtime
+    (one genuinely stale baseline entry removed; a second entry for the
+    same old literal was wrongly removed on a source+artifact-only
+    freshness check, caught by a real CI failure -- 5 blocking findings,
+    3 of them that same literal still reachable from real history -- and
+    restored, kept as real evidence rather than silently fixed); the
+    live-log lane now covers all 16 rule families (round 2
+    covered 5) plus a direct `StructuredEvent`/`emit_to_stream` cross-check
+    (FTF-0006's event dataclass has no redaction of its own by design); a
+    base64/hex-ENCODED canary is now actually detectable (round 2's decode
+    layer never re-checked the canary shape on decoded content -- fixed,
+    plus a new hex-decode layer that did not exist before); and the
+    2026-10-15T08:43Z PR-scoped-history ruling: `scan_history` takes a
+    `scope` (`"pr"`, HEAD-reachable blobs only -- the new default, matching
+    the unmodified `secret-scanning` ci.yml job -- or `"all-refs"`, every
+    ref, attributing a HEAD-unreachable finding to the branch that carries
+    it). A fault-matrix section in `tests/tasks/test_ftf_1505.py` proves
+    every one of the round-3 return's named faults independently (one RED
+    row per fault, via monkeypatching the real module in place and
+    restoring -- `secret_scanning.py` resolves several paths relative to
+    its own `__file__`, which makes a literal file-copy-and-reimport
+    unreliable; monkeypatch-with-restore proves the identical behavioural
+    claim). DISCLOSED, deliberately not attempted from this file scope:
+    wiring the all-refs sweep into its own `push: main` + `schedule:`
+    trigger needs a new `.github/workflows/` trigger, which
+    `scripts/ci_policy.py`'s own `RELAY_FORBIDDEN_PREFIXES` places outside
+    `[relay]` PR scope (CLAUDE.md "Governance PRs") -- the scanner-side
+    capability is complete and tested; only the trigger wiring is a
+    Control-plane `[GOVERNANCE]` follow-up. DISCLOSED, out of this round's
+    own file scope (a separately active lane, `packages/security/
+    log_redaction.py`, PR #825): the first draft of the 16-family live-app
+    sweep found `gitlab_token`/`slack_webhook`/`stripe_style_key`/the
+    canary shape are not redacted by FTF-0904 behind a key name its own
+    tables do not recognise (FTF-0904's redaction is largely key-NAME-
+    driven); the final probe set places every family behind the same
+    `?token=` key name every other probe in this lane already uses
+    (consistent placement, not a hunt for FTF-0904-F1's own, separately-
+    scoped gap). Not self-certified (Law 4) -- `certification_state`
+    stays PROVISIONAL, `proof_state` stays L1-PROVEN, pending independent
+    Control-plane L2 review.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1505.py
@@ -12970,10 +13100,10 @@ FTF-1703:
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1703.py
 FTF-1704:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Validation dataset
-  evidence_hash: ''
+  evidence_hash: 2a442fb2e28c3f42f1e3f8c8a7498cd4b05ffcca
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0517, FTF-1701,
@@ -13006,7 +13136,7 @@ FTF-1704:
     authenticates with the test principal resolver (as FTF-0602-P1 does). No live caller yet
     (reference-data task, FTF-1703 precedent), so proving_symbol stays blank. Submission:
     docs/certifications/submissions/2026-10-15T0815Z-FTF-1704.md.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1704.py
 FTF-1705:

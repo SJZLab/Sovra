@@ -35,11 +35,13 @@ import io
 import json
 import logging
 import os
+import random
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -2169,7 +2171,7 @@ def test_f1_benign_look_alikes_survive() -> None:
     for text in (
         "GET /x?keyboard=us&codec=h264&statement=ok&sigma=1 HTTP/1.1",
         "state_of=running code_path=/srv keys=3",
-        "GET /x?a=1&mykey=zzz",
+        "GET /x?a=1&mykeyboard=zzz",
         "monkey=1 passage=2 ticketing=3 sidebar=4 authority=5 other=6 session_count=7",
     ):
         check(
@@ -2282,6 +2284,635 @@ def test_f1_round2_non_name_key_does_not_swallow_a_later_name() -> None:
     check("FTF-0904-F1", f"a non-name key swallowed a name: {out!r}", "Zq7Lm2" not in out)
 
 
+_F3_NAMES = (
+    "key", "sig", "auth", "session", "jwt", "code", "state", "verifier", "ticket", "otp",
+    "totp", "hotp", "pass", "sid", "sessid", "phpsessid", "jsessionid",
+)  # fmt: skip
+_F3_ENV = (
+    "GET /x?{p} HTTP/1.1",  # query position
+    "{p}&x=1",  # serialized / urlencoded form position
+)
+
+
+def _f3_random_case(name: str) -> list[str]:
+    """Alternating, inverted-alternating, upper and seeded random-case spellings of `name`."""
+    rng = random.Random(f"ftf-0904-f1-r3:{name}")
+    spellings = {
+        "".join(c.upper() if i % 2 else c.lower() for i, c in enumerate(name)),
+        "".join(c.lower() if i % 2 else c.upper() for i, c in enumerate(name)),
+        name.upper(),
+        name.title(),
+    }
+    for _ in range(24):
+        spellings.add("".join(c.upper() if rng.random() < 0.5 else c.lower() for c in name))
+    return sorted(spellings)
+
+
+def test_f1_round3_random_case_names_are_redacted() -> None:
+    """QP-CASE-SPLIT: the camelCase split must not hide a name spelled in random case."""
+    for name in _F3_NAMES:
+        for spelling in _f3_random_case(name):
+            for template in _F3_ENV:
+                out = lr.redact_text(template.format(p=f"{spelling}={_F1_VALUE}"))
+                check(
+                    "FTF-0904-F1", f"QP-CASE-SPLIT {spelling}: leaked {out!r}", _F1_VALUE not in out
+                )
+
+
+_F3_PREFIXES = (
+    "session", "auth", "access", "pass", "otp", "api", "oauth", "oauth2", "login", "sso",
+    "csrf", "xsrf", "refresh", "reset", "confirm", "verification", "magic", "signed", "client",
+    "user", "app", "private", "secret", "authorization", "key", "code",
+)  # fmt: skip
+
+
+def _f3_glue(prefix: str, name: str) -> dict[str, str]:
+    return {
+        "lower": prefix + name,
+        "UPPER": (prefix + name).upper(),
+        "Title": prefix.title() + name.title(),
+        "Capitalized": (prefix + name).capitalize(),
+        "random": _f3_random_case(prefix + name)[-1],
+    }
+
+
+def test_f1_round3_last_word_and_camel_split_with_unlisted_prefixes() -> None:
+    """The last-word and camelCase rules, isolated from the glued-chain vocabulary."""
+    for name in ("foo_key", "widget.code", "fooKey", "myWidgetState", "x-widget-sig", "zedTicket"):
+        out = lr.redact_text(f"GET /x?{name}={_F1_VALUE} HTTP/1.1")
+        check("FTF-0904-F1", f"last-word/camel {name}: leaked {out!r}", _F1_VALUE not in out)
+
+
+def test_f1_round3_glued_compounds_are_redacted() -> None:
+    """QP-GLUED-COMPOUND (round 3 contract, kept): prefix x name with no separator."""
+    for prefix in _F3_PREFIXES:
+        for name in _F3_NAMES:
+            for joiner, glued in _f3_glue(prefix, name).items():
+                out = lr.redact_text(f"GET /x?{glued}={_F1_VALUE} HTTP/1.1")
+                check(
+                    "FTF-0904-F1",
+                    f"QP-GLUED-COMPOUND[{joiner}] {glued}: leaked {out!r}",
+                    _F1_VALUE not in out,
+                )
+    for glued in ("sessionkey", "authcode", "accesscode", "passcode", "totp", "otpcode"):
+        out = lr.redact_text(f"{glued}={_F1_VALUE}&x=1")
+        check("FTF-0904-F1", f"QP-GLUED-COMPOUND contract {glued}: {out!r}", _F1_VALUE not in out)
+
+
+# ---------------------------------------------------------------------------------------------
+# FTF-0904-F1 round 4. The prefix lists below are written out HERE, independently of the
+# implementation (nothing is imported from `lr` to build them): a table derived from the
+# implementation's own vocabulary can only confirm it.
+# ---------------------------------------------------------------------------------------------
+_F4_PREFIXES = (
+    "mfa", "connect", "service", "php", "x", "sms", "device", "signing", "recovery", "hmac",
+    "foo", "widget", "tenant", "bot", "cli", "mobile", "web", "admin", "partner", "legacy",
+    "temp", "backup", "vendor", "gateway", "my", "the", "new", "old", "next", "prev",
+)  # fmt: skip
+_F4_REALISTIC = (
+    "mfacode", "smscode", "devicecode", "signingkey", "connectsid", "recoverycode", "hmacsig",
+    "servicekey", "phpkey", "xsid", "mfaotp", "webauthcode", "appsecretkey", "adminpass",
+    "userticket", "sessiontoken_state", "mykey", "mypass", "clientcode", "backupcode",
+)  # fmt: skip
+_F4_SEPS = ("_", "-", ".")
+
+
+def _f4_leaks(text: str) -> bool:
+    return _F1_VALUE in lr.redact_text(text)
+
+
+def test_f1_round4_glued_names_with_any_prefix_are_redacted() -> None:
+    """QP-GLUED-VOCAB: deny by default -- the prefix is irrelevant, only the ending binds."""
+    for prefix in _F4_PREFIXES:
+        for name in _F3_NAMES:
+            for style, glued in _f3_glue(prefix, name).items():
+                for template in _F3_ENV:
+                    text = template.format(p=f"{glued}={_F1_VALUE}")
+                    check(
+                        "FTF-0904-F1",
+                        f"QP-GLUED-VOCAB[{style}] {glued}: leaked {lr.redact_text(text)!r}",
+                        not _f4_leaks(text),
+                    )
+    for glued in _F4_REALISTIC:
+        for spelling in (glued, glued.upper(), glued.title()):
+            text = f"GET /x?{spelling}={_F1_VALUE} HTTP/1.1"
+            check("FTF-0904-F1", f"QP-GLUED-VOCAB realistic {spelling} leaked", not _f4_leaks(text))
+
+
+def test_f1_round4_random_case_after_any_separator_is_redacted() -> None:
+    """QP-CASE-SPLIT-SEPARATOR: `mfa_CodE`, `request_sTaTe`, `connect.sId`, `foo-kEy`."""
+    for prefix in _F4_PREFIXES:
+        for sep in _F4_SEPS:
+            for name in _F3_NAMES:
+                for spelling in _f3_random_case(name)[-3:]:
+                    for template in _F3_ENV:
+                        text = template.format(p=f"{prefix}{sep}{spelling}={_F1_VALUE}")
+                        check(
+                            "FTF-0904-F1",
+                            f"QP-CASE-SPLIT-SEPARATOR {prefix}{sep}{spelling} leaked",
+                            not _f4_leaks(text),
+                        )
+    for literal in ("mfa_CodE", "request_sTaTe", "connect.sId", "foo-kEy", "x_cOdE"):
+        check(
+            "FTF-0904-F1",
+            f"reported spelling {literal} leaked",
+            not _f4_leaks(f"{literal}={_F1_VALUE}"),
+        )
+
+
+def test_f1_round4_separator_compounds_in_every_case_and_separator() -> None:
+    """QP-SEPSTRIP: `aUtH_cOdE`, `SeSsIoN-kEy`, `sEsSiOn.KeY` -- each separator, each case."""
+    for literal in (
+        "aUtH_cOdE", "AUTH_CODE", "SeSsIoN-kEy", "SESSION-KEY", "sEsSiOn.KeY", "session.key",
+        "oAuTh-VeRiFiEr", "cOnNeCt.SiD", "mFa-OtP", "x.sIg", "pHp_SeSsId",
+    ):  # fmt: skip
+        check(
+            "FTF-0904-F1", f"QP-SEPSTRIP {literal} leaked", not _f4_leaks(f"{literal}={_F1_VALUE}")
+        )
+    # a separator INSIDE the final credential word is decided by the stripped run alone, so the
+    # strip must remove every separator class (`_`, `-` and `.`), not a subset
+    for name in _F3_NAMES:
+        for sep in _F4_SEPS:
+            for cut in range(1, len(name)):
+                for spelling in _f3_random_case(name)[-2:]:
+                    split = spelling[:cut] + sep + spelling[cut:]
+                    check(
+                        "FTF-0904-F1",
+                        f"QP-SEPSTRIP in-word split {split} leaked",
+                        not _f4_leaks(f"GET /x?foo{sep}{split}={_F1_VALUE} HTTP/1.1"),
+                    )
+
+
+def test_f1_round4_round4_rows_through_the_logging_path() -> None:
+    """The same classes on the real logging path (record scrub + formatter + sink)."""
+    rows = [f"{p}{n}" for p in _F4_PREFIXES[:10] for n in _F3_NAMES[::3]]
+    rows += ["mfa_CodE", "request_sTaTe", "connect.sId", "foo-kEy", "x_cOdE", "aUtH_cOdE"]
+    rows += list(_F4_REALISTIC)
+    for row in rows:
+        with _Harness() as h:
+            logging.getLogger("t").error("GET /x?%s=%s", row, _F1_VALUE)
+            logging.getLogger("t").error(f"{row}={_F1_VALUE}")
+            found = leaked([_F1_VALUE], h.outputs())
+        check("FTF-0904-F1", f"{row}: logging-path leak {found}", not found)
+
+
+_F4_BENIGN_CLOSED = (
+    "monkey", "turkey", "hockey", "donkey", "decode", "encode", "barcode", "zipcode",
+    "postcode", "statuscode", "errorcode", "estate", "realestate", "compass", "bypass",
+    "obsession", "possession",
+)  # fmt: skip
+_F4_BENIGN_NOT_ENDING = (
+    "keyboard", "codec", "decoded", "ticketing", "design", "assist", "sidebar", "passage",
+    "authority", "statement", "sigma", "keys", "codes", "session_count", "state_of", "code_path",
+)  # fmt: skip
+
+
+def test_f1_round4_closed_benign_list_and_non_endings_survive() -> None:
+    for name in _F4_BENIGN_CLOSED:
+        for spelling in (name, name.upper(), name.title()):
+            out = lr.redact_text(f"GET /x?{spelling}=plainvalue1 HTTP/1.1")
+            check(
+                "FTF-0904-F1",
+                f"closed benign {spelling} over-redacted: {out!r}",
+                "plainvalue1" in out,
+            )
+    for name in _F4_BENIGN_NOT_ENDING:
+        out = lr.redact_text(f"GET /x?{name}=plainvalue1 HTTP/1.1")
+        check("FTF-0904-F1", f"non-ending {name} over-redacted: {out!r}", "plainvalue1" in out)
+
+
+def test_f1_round4_benign_list_never_excuses_a_credential_or_a_split_word() -> None:
+    """The list is matched against the WHOLE stripped name: it excuses nothing else."""
+    for name in (
+        "monkeysession", "monkey_session", "sessionmonkey", "decodekey", "barcode_key",
+        "estatecode", "mon_key", "monKey", "MonKey", "zip_code", "zip-code", "bar.code",
+        "status_code", "de_code", "real_estate_state", "by_pass", "esTATE_state",
+    ):  # fmt: skip
+        check(
+            "FTF-0904-F1",
+            f"benign-looking credential {name} leaked",
+            not _f4_leaks(f"GET /x?{name}={_F1_VALUE} HTTP/1.1"),
+        )
+
+
+# A fixed corpus of ordinary request/log parameter names. Quantified for the submission: of
+# these 161 names the round-3 module redacted 5 and the deny-by-default module redacts 7; the 2
+# added are listed in `_F4_OVER_REDACTION_ADDED`. The set is pinned EXACTLY so a later change
+# that widens (or silently narrows) the rule shows up as a diff of this table.
+_F4_CORPUS = (
+    "page", "limit", "offset", "sort", "order", "q", "query", "search", "filter", "id",
+    "user_id", "userid", "lang", "locale", "format", "fields", "include", "expand", "cursor",
+    "next", "prev", "callback", "redirect_uri", "return_url", "utm_source", "utm_medium",
+    "utm_campaign", "ref", "referrer", "from", "to", "start", "end", "since", "until", "date",
+    "time", "timestamp", "tz", "version", "v", "debug", "verbose", "dry_run", "force", "async",
+    "name", "title", "description", "email", "phone", "country", "country_code", "region",
+    "city", "zip", "zipcode", "postcode", "status", "status_code", "error", "error_code",
+    "exit_code", "message", "msg", "reason", "type", "kind", "mode", "level", "category",
+    "tag", "tags", "label", "labels", "color", "size", "width", "height", "scale", "quality",
+    "currency", "amount", "price", "quantity", "count", "total", "min", "max", "limit_per_page",
+    "per_page", "page_size", "pagesize", "page_token", "next_page", "continuation", "etag",
+    "if_match", "request_id", "requestid", "trace_id", "traceid", "span_id", "correlation_id",
+    "job_id", "task_id", "run_id", "project_id", "org_id", "tenant_id", "workspace",
+    "environment", "env", "region_id", "zone", "host", "hostname", "port", "path", "url", "uri",
+    "domain", "scheme", "method", "action", "event", "topic", "channel", "stream", "source",
+    "target", "dest", "destination", "origin", "keyboard", "keyword", "keywords", "monkey",
+    "turkey", "decode", "encode", "barcode", "design", "assist", "statement", "authority",
+    "passage", "sidebar", "ticketing", "codec", "mypass", "mykey", "estate", "compass",
+    "bypass", "hockey", "session_count", "state_of", "code_path", "unicode", "opcode",
+)  # fmt: skip
+# redacted by the round-3 module AND still redacted (last word is a name / `token` key word)
+_F4_REDACTED_SINCE_R3 = frozenset(
+    {"country_code", "status_code", "error_code", "exit_code", "page_token"}
+)
+# newly redacted by deny-by-default (stripped name ends in a credential name, not on the list)
+_F4_OVER_REDACTION_ADDED = frozenset({"mykey", "mypass"})
+
+
+def test_f1_round4_over_redaction_on_the_fixed_corpus_is_pinned() -> None:
+    redacted = {n for n in _F4_CORPUS if "plainvalue1" not in lr.redact_text(f"{n}=plainvalue1")}
+    check(
+        "FTF-0904-F1",
+        f"corpus is {len(_F4_CORPUS)} unique names",
+        len(set(_F4_CORPUS)) == len(_F4_CORPUS),
+    )
+    expected = _F4_REDACTED_SINCE_R3 | _F4_OVER_REDACTION_ADDED
+    check(
+        "FTF-0904-F1",
+        f"over-redaction set changed: extra={sorted(redacted - expected)} "
+        f"missing={sorted(expected - redacted)}",
+        redacted == expected,
+    )
+
+
+def test_f1_round4_name_matching_is_exact_about_stray_whitespace() -> None:
+    """The decision is on the exact run: whitespace is neither a name ending nor a benign word.
+
+    (`_QUERY_ASSIGN` can never hand a name with whitespace in; this pins the function's own
+    contract so the closed benign list cannot be widened by trimming.)"""
+    check(
+        "FTF-0904-F1", "trailing space: not a name ending", lr._is_query_param_name("key ") is False
+    )
+    check(
+        "FTF-0904-F1", "leading space: ending still a name", lr._is_query_param_name(" key") is True
+    )
+    check(
+        "FTF-0904-F1",
+        "benign word with a stray space is not excused",
+        lr._is_query_param_name(" monkey") is True,
+    )
+    check(
+        "FTF-0904-F1", "benign word itself is excused", lr._is_query_param_name("monkey") is False
+    )
+
+
+def test_f1_round4_long_names_are_bounded_and_decided_by_the_ending() -> None:
+    check("FTF-0904-F1", "5000-char non-name stays", "v1" in lr.redact_text("a" * 5000 + "=v1"))
+    out = lr.redact_text("a" * 5000 + f"key={_F1_VALUE}")
+    check("FTF-0904-F1", "5000-char name ending in key redacted", _F1_VALUE not in out)
+    check("FTF-0904-F1", "empty key never matches", lr.redact_text("=abc") == "=abc")
+
+
+# ---------------------------------------------------------------------------------------------
+# FTF-0904-F1 round 5. A separator-delimited segment that is itself a random-case spelling of a
+# listed word (`mon_KeY`, `status_CoDe`), chosen with a prefix that COLLIDES with a
+# `_BENIGN_NAMES` entry once stripped and lowered (`mon`+`key` -> "monkey", `status`+`code` ->
+# "statuscode") -- only the segment-level lookup (not the deny-by-default fallback, which must
+# excuse these exact stripped forms) can close this.
+# ---------------------------------------------------------------------------------------------
+_F5_BENIGN_COLLIDING_SPLITS = (
+    ("mon", "key"), ("tur", "key"), ("hoc", "key"), ("don", "key"), ("whis", "key"),
+    ("lac", "key"), ("de", "code"), ("en", "code"), ("bar", "code"), ("zip", "code"),
+    ("post", "code"), ("geo", "code"), ("uni", "code"), ("op", "code"), ("status", "code"),
+    ("error", "code"), ("exit", "code"), ("return", "code"), ("by", "pass"), ("over", "pass"),
+    ("under", "pass"), ("tres", "pass"), ("sur", "pass"), ("ob", "session"), ("pos", "session"),
+)  # fmt: skip
+
+
+def test_f1_round5_random_case_segment_before_camel_split_is_redacted() -> None:
+    """QP-CASE-SPLIT-SEGMENT: the camel split's own lowercase-to-uppercase boundary can land
+    INSIDE a random-case spelling of a separator-delimited segment (`KeY` -> `Ke`+`Y`, `CoDe` ->
+    `Co`+`De`), so the last-word rule never sees "key"/"code" and only the deny-by-default
+    fallback is left to decide -- but the fallback's own benign list then wrongly excuses exactly
+    these stripped forms (`monkey`, `statuscode`, `bypass`, `obsession`). Each separator-delimited
+    segment must be looked up lowered, whole, BEFORE any camel split."""
+    for prefix, name in _F5_BENIGN_COLLIDING_SPLITS:
+        for sep in _F4_SEPS:
+            for spelling in _f3_random_case(name):
+                for template in _F3_ENV:
+                    text = template.format(p=f"{prefix}{sep}{spelling}={_F1_VALUE}")
+                    check(
+                        "FTF-0904-F1",
+                        f"QP-CASE-SPLIT-SEGMENT {prefix}{sep}{spelling} leaked",
+                        not _f4_leaks(text),
+                    )
+    for name in _F3_NAMES:
+        for sep in _F4_SEPS:
+            for spelling in _f3_random_case(name):
+                text = f"foo{sep}{spelling}={_F1_VALUE}&x=1"
+                check(
+                    "FTF-0904-F1",
+                    f"QP-CASE-SPLIT-SEGMENT foo{sep}{spelling} leaked",
+                    not _f4_leaks(text),
+                )
+    for literal in ("mon_KeY", "de_CoDe", "zip_cOdE", "status_CoDe", "by_PaSs"):
+        check(
+            "FTF-0904-F1",
+            f"reported spelling {literal} leaked",
+            not _f4_leaks(f"GET /x?{literal}={_F1_VALUE} HTTP/1.1"),
+        )
+
+
+def test_f1_round5_segment_rows_through_the_logging_path() -> None:
+    """The same QP-CASE-SPLIT-SEGMENT rows on the real logging path (record scrub + sink)."""
+    rows = [f"{p}{sep}{name}" for p, name in _F5_BENIGN_COLLIDING_SPLITS for sep in _F4_SEPS]
+    rows += ["mon_KeY", "de_CoDe", "zip_cOdE", "status_CoDe", "by_PaSs"]
+    for row in rows:
+        with _Harness() as h:
+            logging.getLogger("t").error("GET /x?%s=%s", row, _F1_VALUE)
+            logging.getLogger("t").error(f"{row}={_F1_VALUE}")
+            found = leaked([_F1_VALUE], h.outputs())
+        check("FTF-0904-F1", f"{row}: logging-path leak {found}", not found)
+
+
+# A non-ASCII prefix must not excuse a credential-ending name: the deny-by-default fallback
+# binds on the ENDING of the stripped, lowered name, never on whether the rest is ASCII.
+_F5_NONASCII_PREFIXES = (
+    "müller", "état", "中", "björk", "françois", "日本語", "ñoño", "žluťoučký",
+)  # fmt: skip
+
+
+def test_f1_round5_non_ascii_prefix_does_not_excuse_a_credential_name() -> None:
+    """QP-NONASCII-PREFIX: `müllerkey`, `étatcode`, `中code` are redacted exactly like
+    `foobarkey`, `widgetcode` -- the ending decides, whatever script the rest of the name is in."""
+    for prefix in _F5_NONASCII_PREFIXES:
+        for name in ("key", "code", "pass", "session", "sig", "state"):
+            glued = f"{prefix}{name}"
+            for spelling in (glued, glued.upper()):
+                text = f"GET /x?{spelling}={_F1_VALUE} HTTP/1.1"
+                check(
+                    "FTF-0904-F1",
+                    f"QP-NONASCII-PREFIX {spelling}: leaked {lr.redact_text(text)!r}",
+                    not _f4_leaks(text),
+                )
+    for literal in ("müllerkey", "étatcode", "中code"):
+        check(
+            "FTF-0904-F1",
+            f"reported spelling {literal} leaked",
+            not _f4_leaks(f"GET /x?{literal}={_F1_VALUE} HTTP/1.1"),
+        )
+
+
+# ---------------------------------------------------------------------------------------------
+# FTF-0904-F1 round 6 (QP-SEGMENT-TABLE-HANDPICKED / QP-SEGMENT-LOGGING-LOWERCASE). Round 5's own
+# `_F5_BENIGN_COLLIDING_SPLITS` table above was hand-picked (25 rows) and missed 7 of the 32
+# `_BENIGN_NAMES` words that actually end in a credential name -- every "-state" word among them
+# (estate, realestate, upstate, restate) plus compass, jockey and qrcode -- so a mutant that drops
+# "state" from the segment lookup (or narrows it to only key/code/pass/session) stayed GREEN while
+# `re_StAtE` / `up_StAtE` leaked. This table is GENERATED from `lr._BENIGN_NAMES` and `lr.
+# _NAME_SUFFIXES` themselves -- every word split at EVERY credential ending it actually has -- so a
+# future addition to either closed list is covered without a hand-picked table drifting out of
+# sync again. (Unlike `_F4_PREFIXES`/`_F4_REALISTIC` above, this is sound to derive from the
+# implementation's own closed enumeration: the point is exhaustive coverage of that exact
+# enumeration, not an independent check of its vocabulary.)
+# ---------------------------------------------------------------------------------------------
+
+
+def _f1_benign_split_rows() -> list[tuple[str, str, str]]:
+    """Every `_BENIGN_NAMES` word split into (prefix, suffix) at EVERY `_NAME_SUFFIXES` ending it
+    actually has. A handful of `_BENIGN_NAMES` entries (concession/profession/procession/
+    recession/succession) do not end in any listed suffix ("cession" != "session") and
+    correctly produce no row -- they are not evidence their defence is reachable (Law 5)."""
+    rows: list[tuple[str, str, str]] = []
+    for word in sorted(lr._BENIGN_NAMES):
+        for suffix in lr._NAME_SUFFIXES:
+            if word.endswith(suffix) and len(word) > len(suffix):
+                rows.append((word[: -len(suffix)], suffix, word))
+    return rows
+
+
+_F6_BENIGN_SPLIT_ROWS = _f1_benign_split_rows()
+_F6_REPORTED_LITERALS = (
+    "mon_KeY", "de_CoDe", "zip_cOdE", "status_CoDe", "by_PaSs", "re_StAtE", "up_StAtE",
+)  # fmt: skip
+
+
+def test_f1_round6_generated_benign_split_table_is_redacted() -> None:
+    """QP-SEGMENT-TABLE-GENERATED: every `_BENIGN_NAMES` word, split at every credential ending it
+    has and glued back with each separator in a random-case spelling of the ending, must still be
+    redacted -- the generated superset that closes round 5's hand-picked table's gap."""
+    check(
+        "FTF-0904-F1",
+        "generated benign-split table covers every matched _BENIGN_NAMES word",
+        len({word for _p, _s, word in _F6_BENIGN_SPLIT_ROWS}) == 32,
+    )
+    for prefix, suffix, word in _F6_BENIGN_SPLIT_ROWS:
+        for sep in _F4_SEPS:
+            for spelling in _f3_random_case(suffix):
+                text = f"GET /x?{prefix}{sep}{spelling}={_F1_VALUE} HTTP/1.1"
+                check(
+                    "FTF-0904-F1",
+                    f"QP-SEGMENT-TABLE-GENERATED {prefix}{sep}{spelling} ({word}) leaked",
+                    not _f4_leaks(text),
+                )
+    for literal in _F6_REPORTED_LITERALS:
+        check(
+            "FTF-0904-F1",
+            f"reported spelling {literal} leaked",
+            not _f4_leaks(f"GET /x?{literal}={_F1_VALUE} HTTP/1.1"),
+        )
+
+
+def test_f1_round6_generated_benign_split_rows_through_the_logging_path() -> None:
+    """QP-SEGMENT-LOGGING-LOWERCASE: round 5's own logging-path test fed only LOWERCASE rows (plus
+    5 reported literals), never a random-case spelling -- run the same generated rows this round's
+    `redact_text` test uses through the real logging path too."""
+    rows = [
+        f"{prefix}{sep}{spelling}"
+        for prefix, suffix, _word in _F6_BENIGN_SPLIT_ROWS
+        for sep in _F4_SEPS
+        for spelling in _f3_random_case(suffix)
+    ]
+    rows += list(_F6_REPORTED_LITERALS)
+    for row in rows:
+        with _Harness() as h:
+            logging.getLogger("t").error("GET /x?%s=%s", row, _F1_VALUE)
+            logging.getLogger("t").error(f"{row}={_F1_VALUE}")
+            found = leaked([_F1_VALUE], h.outputs())
+        check("FTF-0904-F1", f"{row}: logging-path leak {found}", not found)
+
+
+_F3_HEADS = (
+    "sk-abcdefgh12",
+    "ghp_" + "a1B2c3D4" * 5,
+    "AKIA" + "ABCDEFGH23456789",
+)
+_F3_TAILS = ("." + _F1_VALUE, "x" + _F1_VALUE, "." + "Tail9" * 40, "-" + "t" * 70 + _F1_VALUE)
+
+
+def test_f1_round3_redacted_head_swallows_the_whole_value_tail() -> None:
+    """QP-GUARD-NO-TAIL / QP-GUARD-TAIL-BOUNDED-64: an earlier rule redacts the head of a value
+    and more value follows (including a tail longer than 64 characters)."""
+    for name in ("code", "state", "key"):
+        for head in _F3_HEADS:
+            for tail in _F3_TAILS:
+                out = lr.redact_text(f"{name}={head}{tail}&x=1")
+                residue = tail.lstrip(".-x")
+                check(
+                    "FTF-0904-F1",
+                    f"QP-GUARD-TAIL {name}={head[:6]}..{tail[:8]}: leaked {out!r}",
+                    residue not in out and out.endswith("&x=1"),
+                )
+                check(
+                    "FTF-0904-F1",
+                    f"QP-GUARD-TAIL not idempotent {out!r}",
+                    lr.redact_text(out) == out,
+                )
+
+
+def test_f1_round3_empty_value_does_not_end_the_scan() -> None:
+    """QP-BREAK-ON-EMPTY-VALUE: an empty value followed by a secret one."""
+    for name_a in ("code", "error", "x", "state"):
+        for name_b in ("state", "code", "key", "sessionKey"):
+            for sep in ("&", "&&", "&amp;", "; ", ", "):
+                text = f"GET /cb?{name_a}={sep}{name_b}={_F1_VALUE} HTTP/1.1"
+                out = lr.redact_text(text)
+                check(
+                    "FTF-0904-F1",
+                    f"QP-BREAK-ON-EMPTY {text!r}: leaked {out!r}",
+                    _F1_VALUE not in out,
+                )
+    for text in (
+        f"?code=&state={_F1_VALUE}",
+        f"?error=&code={_F1_VALUE}",
+        f"code= state={_F1_VALUE}",
+    ):
+        out = lr.redact_text(text)
+        check("FTF-0904-F1", f"QP-BREAK-ON-EMPTY {text!r}: leaked {out!r}", _F1_VALUE not in out)
+
+
+_F3_TERMINATORS = set(" \t\r\n&,;\"'}])")
+
+
+def test_f1_round3_value_class_covers_every_admitted_character() -> None:
+    """QP-VALUE-STOPS-AT-*: for EVERY printable character the value class admits, a value that
+    carries it mid-way is redacted whole (Google OAuth codes contain `/`, `+` and `%`)."""
+    admitted = [c for c in map(chr, range(33, 127)) if c not in _F3_TERMINATORS]
+    check(
+        "FTF-0904-F1",
+        "value-class table is non-trivial",
+        {"/", "+", "%", "~", "@"} <= set(admitted),
+    )
+    for char in admitted:
+        for name in ("code", "state", "sessionKey"):
+            text = f"GET /cb?{name}=4{char}0Ab{_F1_VALUE} HTTP/1.1"
+            out = lr.redact_text(text)
+            check(
+                "FTF-0904-F1",
+                f"QP-VALUE-STOPS-AT {char!r} in {name}: leaked {out!r}",
+                _F1_VALUE not in out and out.endswith(" HTTP/1.1"),
+            )
+
+
+# --- FTF-0904-F2: quoted values after credential names -------------------------------------
+_F2_NAMES = tuple(sorted(lr._QUERY_PARAM_NAMES)) + (
+    "session_key",
+    "mfa_code",
+    "authCode",
+    "re_state",
+    "monkeysession",
+    "access.token_sid",
+)
+_F2_QUOTES = ('"', "'")
+_F2_SEPARATORS = ("=", ": ", ":", " = ", '":  ', "'=")
+_F2_VALUES = (
+    _F1_VALUE,
+    f"a b {_F1_VALUE} c",
+    f"x,y;z&{_F1_VALUE}&w",
+    f"esc\\{{Q}}aped {_F1_VALUE}",
+)
+
+
+def _f2_rows() -> list[tuple[str, str]]:
+    rows: list[tuple[str, str]] = []
+    for name in _F2_NAMES:
+        for spelling in _f3_random_case(name)[::6]:
+            for qch in _F2_QUOTES:
+                for sep in _F2_SEPARATORS:
+                    for value in _F2_VALUES:
+                        body = value.replace("{Q}", qch)
+                        rows.append((f"{spelling}{sep}{qch}{body}{qch}", spelling))
+    return rows
+
+
+_F2_ROWS = _f2_rows()
+
+
+def test_f2_quoted_values_after_credential_names_are_redacted() -> None:
+    """QUOTED-VALUE-CLEAR: `state="v"`, `code='v'`, `session_key="v"`... in every case spelling,
+    both `name=` and `name: ` forms, with escapes and spaces inside the value."""
+    check("FTF-0904-F2", "generated quoted table is large", len(_F2_ROWS) > 2000)
+    for text, spelling in _F2_ROWS:
+        line = f"ctx {text} tail_ok"
+        out = lr.redact_text(line)
+        check("FTF-0904-F2", f"{text!r}: leaked {out!r}", "Zq7Lm2" not in out)
+        check(
+            "FTF-0904-F2",
+            f"{text!r}: text around the value lost {out!r}",
+            out.startswith("ctx ") and out.endswith("tail_ok") and spelling[:1] in out,
+        )
+
+
+def test_f2_quoted_rows_through_the_logging_path() -> None:
+    for text, _spelling in _F2_ROWS[::7]:
+        with _Harness() as h:
+            logging.getLogger("t").error("%s", text)
+            logging.getLogger("t").error(text)
+            found = leaked([_F1_VALUE], h.outputs())
+        check("FTF-0904-F2", f"{text!r}: logging-path leak {found}", not found)
+
+
+def test_f2_json_object_and_unterminated_quote() -> None:
+    out = lr.redact_text('{"state": "' + _F1_VALUE + '", "user": "bob"}')
+    check("FTF-0904-F2", f"json state leaked {out!r}", _F1_VALUE not in out)
+    check("FTF-0904-F2", f"json neighbour lost {out!r}", '"user": "bob"' in out)
+    out = lr.redact_text('state="' + _F1_VALUE)
+    check("FTF-0904-F2", f"unterminated quote leaked {out!r}", _F1_VALUE not in out)
+    out = lr.redact_text('state="' + _F1_VALUE + '" next="kept" code=\'' + _F1_VALUE + "'")
+    check("FTF-0904-F2", f"two quoted values leaked {out!r}", _F1_VALUE not in out)
+    check("FTF-0904-F2", f"non-credential value lost {out!r}", 'next="kept"' in out)
+
+
+def test_f2_non_credential_quoted_values_survive_and_rule_is_idempotent() -> None:
+    for text in (
+        'message="the state of the art"', "monkey='ripe banana'", 'status: "ok"',
+        "city: 'Riyadh'", 'name="bob"', 'title: "state of play"',
+    ):  # fmt: skip
+        check("FTF-0904-F2", f"over-redacted {text!r}", lr.redact_text(text) == text)
+    for text, _s in _F2_ROWS[::97]:
+        once = lr.redact_text(text)
+        check("FTF-0904-F2", f"not idempotent {text!r}", lr.redact_text(once) == once)
+    # a bare (unquoted) `name: value` stays unredacted: only the quoted form is in scope
+    check("FTF-0904-F2", "bare 'state: ok' changed", lr.redact_text("state: ok") == "state: ok")
+
+
+def test_f2_quoted_scan_is_linear() -> None:
+    for payload in ('state="' * 4000, 'code: "' + "\\" * 20000, "key=" + '"a\\"' * 5000):
+        started = time.perf_counter()
+        lr.redact_text(payload)
+        check("FTF-0904-F2", "quoted scan super-linear", time.perf_counter() - started < 2.0)
+
+
+def test_f2_escaped_quote_inside_a_credential_keyed_quoted_value() -> None:
+    """Same-class sweep: the generic key=value rule ended a quoted value at an escaped quote."""
+    for name in ("password", "token", "api_key", "client_secret"):
+        for q in _F2_QUOTES:
+            for sep in ("=", ": "):
+                text = f"{name}{sep}{q}ab\\{q}cd {_F1_VALUE}{q} after"
+                out = lr.redact_text(text)
+                check("FTF-0904-F2", f"{text!r}: leaked {out!r}", "Zq7Lm2" not in out)
+                check("FTF-0904-F2", f"{text!r}: tail lost {out!r}", out.endswith(" after"))
+
+
 FAULTS: list[tuple[str, str, str, int]] = [
     # --- rules removed one at a time -------------------------------------------------
     ("F01 header rule removed", '    ("header", _HEADER),\n', "", 1),
@@ -2298,10 +2929,10 @@ FAULTS: list[tuple[str, str, str, int]] = [
         1,
     ),
     (
-        "F08 escaped-JSON value form dropped (round 5 retarget: round 5 replaced the bounded "
-        "lazy form this fault used to target with an unrolled, unbounded one)",
-        'r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+\\\\+"\' r"""|',
-        'r"""',
+        "F08 escaped-JSON value form dropped (F2 retarget: the quoted forms are now a "
+        "parenthesised multi-line literal, so the fault removes the first alternative and its `|`)",
+        'r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+\\\\+"\'\n    r"""|',
+        '\n    r"""',
         1,
     ),
     ("F09 userinfo stops at first @", '[^/\\s?#]*@")', '[^/\\s?#@]*@")', 1),
@@ -2705,8 +3336,8 @@ FAULTS: list[tuple[str, str, str, int]] = [
     ),
     (
         "F1-name class: only the whole name, not the last word",
-        "return bool(words) and words[-1].lower() in _QUERY_PARAM_NAMES",
-        "return name.lower() in _QUERY_PARAM_NAMES",
+        "if words and words[-1].lower() in _QUERY_PARAM_NAMES:",
+        "if name.lower() in _QUERY_PARAM_NAMES:",
         1,
     ),
     (
@@ -2717,8 +3348,8 @@ FAULTS: list[tuple[str, str, str, int]] = [
     ),
     (
         "F1-name class: name matched anywhere in the key (substring)",
-        "return bool(words) and words[-1].lower() in _QUERY_PARAM_NAMES",
-        "return any(n in name.lower() for n in _QUERY_PARAM_NAMES)",
+        "if words and words[-1].lower() in _QUERY_PARAM_NAMES:",
+        "if any(n in name.lower() for n in _QUERY_PARAM_NAMES):",
         1,
     ),
     (
@@ -2733,16 +3364,196 @@ FAULTS: list[tuple[str, str, str, int]] = [
         "layer = unquote(layer)  # a decoded fullwidth",
         1,
     ),
+    # round 5 (FTF-0904-F1-r5)
+    (
+        "F1r5-segment lookup before camel split removed (QP-CASE-SPLIT-SEGMENT)",
+        "    raw_segments = [w for w in _NAME_WORD_SPLIT.split(name) if w]\n"
+        "    if raw_segments and raw_segments[-1].lower() in _QUERY_PARAM_NAMES:\n"
+        "        return True\n",
+        "",
+        1,
+    ),
+    (
+        "F1r5-segment lookup not lowered before comparison",
+        "if raw_segments and raw_segments[-1].lower() in _QUERY_PARAM_NAMES:",
+        "if raw_segments and raw_segments[-1] in _QUERY_PARAM_NAMES:",
+        1,
+    ),
+    (
+        "F1r5-segment lookup uses the whole name, not the last separator segment",
+        "if raw_segments and raw_segments[-1].lower() in _QUERY_PARAM_NAMES:",
+        "if raw_segments and name.lower() in _QUERY_PARAM_NAMES:",
+        1,
+    ),
+    (
+        "F1r5-ASCII-only fallback (non-ASCII-prefixed names leak: müllerkey, étatcode, 中code)",
+        "    return stripped.endswith(_NAME_SUFFIXES) and stripped not in _BENIGN_NAMES",
+        "    return stripped.isascii() and stripped.endswith(_NAME_SUFFIXES) "
+        "and stripped not in _BENIGN_NAMES",
+        1,
+    ),
+    # round 6 (FTF-0904-F1-r6). Round 5's own hand-picked table never tested a "state"-suffixed
+    # `_BENIGN_NAMES` collision (estate/realestate/upstate/restate all missing), so a narrowed
+    # segment-lookup set survived undetected (`up_StAtE` leaks: line 318's camel split defeats the
+    # last-word check, and the fallback wrongly excuses "upstate" as benign). Confirmed directly:
+    # both mutants below SURVIVE the pre-round-6 test file (all checks pass) and are KILLED by
+    # this round's generated table (388 checks fail).
+    (
+        "F1r6-MY11 segment lookup drops 'state' from the set it checks",
+        "    if raw_segments and raw_segments[-1].lower() in _QUERY_PARAM_NAMES:\n",
+        '    if raw_segments and raw_segments[-1].lower() in (_QUERY_PARAM_NAMES - {"state"}):\n',
+        1,
+    ),
+    (
+        "F1r6-MY12 segment lookup covers only key/code/pass/session",
+        "    if raw_segments and raw_segments[-1].lower() in _QUERY_PARAM_NAMES:\n",
+        "    if raw_segments and raw_segments[-1].lower() in "
+        '{"key", "code", "pass", "session"}:\n',
+        1,
+    ),
 ]
 
 # every name in `_QUERY_PARAM_NAMES` is its own fault: dropping any one must turn a check RED
+# (totp/hotp/sessid/phpsessid are not listed: they end in `otp`/`sid`, so listing them was
+# redundant; they stay in `_F3_NAMES` and are redacted through those endings)
 FAULTS += [
     (f"F1-name {name!r} dropped from _QUERY_PARAM_NAMES", f'        "{name}",\n', "", 1)
     for name in (
         "key", "sig", "auth", "session", "jwt", "code", "state", "verifier", "ticket", "otp",
-        "pass", "sid", "sessid", "phpsessid", "jsessionid",
+        "pass", "sid", "jsessionid",
     )
 ]  # fmt: skip
+
+# round 3 (FTF-0904-F1-r3): each fault removes one protection added or pinned this round
+FAULTS += [
+    (
+        "F1r4-deny-by-default fallback off (QP-GLUED-VOCAB)",
+        "    return stripped.endswith(_NAME_SUFFIXES) and stripped not in _BENIGN_NAMES",
+        "    return False",
+        1,
+    ),
+    (
+        "F1r4-fallback case-sensitive (UPPER / random-case compounds leak)",
+        'stripped = _NAME_WORD_SPLIT.sub("", name).lower()',
+        'stripped = _NAME_WORD_SPLIT.sub("", name)',
+        1,
+    ),
+    (
+        "F1r4-QP-SEPSTRIP-DROPPED (no separator strip in the fallback)",
+        'stripped = _NAME_WORD_SPLIT.sub("", name).lower()',
+        "stripped = name.lower()",
+        1,
+    ),
+    (
+        "F1r4-QP-SEPSTRIP-UNDERSCORE-ONLY",
+        'stripped = _NAME_WORD_SPLIT.sub("", name).lower()',
+        'stripped = name.replace("_", "").lower()',
+        1,
+    ),
+    (
+        "F1r4-QP-SEPSTRIP-NO-HYPHEN",
+        'stripped = _NAME_WORD_SPLIT.sub("", name).lower()',
+        'stripped = re.sub(r"[_.]+", "", name).lower()',
+        1,
+    ),
+    (
+        "F1r4-QP-SEPSTRIP-NO-DOT",
+        'stripped = _NAME_WORD_SPLIT.sub("", name).lower()',
+        'stripped = re.sub(r"[_\\-]+", "", name).lower()',
+        1,
+    ),
+    (
+        "F1r4-benign list ignored (over-redacts monkey/decode/estate)",
+        "stripped.endswith(_NAME_SUFFIXES) and stripped not in _BENIGN_NAMES",
+        "stripped.endswith(_NAME_SUFFIXES)",
+        1,
+    ),
+    (
+        "F1r4-benign list matched as a substring (excuses monkeysession)",
+        "stripped not in _BENIGN_NAMES",
+        "not any(word in stripped for word in _BENIGN_NAMES)",
+        1,
+    ),
+    (
+        "F1r4-fallback matches a name ANYWHERE (over-redacts keyboard/codec)",
+        "stripped.endswith(_NAME_SUFFIXES) and",
+        "any(word in stripped for word in _NAME_SUFFIXES) and",
+        1,
+    ),
+    (
+        "F1r4-last-word rule removed (benign stripped zip_code / monKey leak)",
+        "    if words and words[-1].lower() in _QUERY_PARAM_NAMES:\n"
+        "        return True\n"
+        "    stripped",
+        "    stripped",
+        1,
+    ),
+    (
+        "QP-GUARD-NO-TAIL (marker consumed without the glued tail)",
+        r"""\[REDACTED\][^\s&,;"'}\])]*+|""",
+        r"\[REDACTED\]|",
+        1,
+    ),
+    (
+        "QP-GUARD-TAIL-BOUNDED-64 (glued tail capped at 64)",
+        r"""\[REDACTED\][^\s&,;"'}\])]*+|""",
+        r"""\[REDACTED\][^\s&,;"'}\])]{0,64}|""",
+        1,
+    ),
+    (
+        "QP-BREAK-ON-EMPTY-VALUE (empty value ends the scan)",
+        "            if value is None:\n                continue",
+        "            if value is None:\n                break",
+        1,
+    ),
+    (
+        "QP-VALUE-STOPS-AT-SLASH",
+        '|[^\\s&,;"\'}\\])]++"""',
+        '|[^\\s&,;"\'}\\])/]++"""',
+        1,
+    ),
+    (
+        "QP-VALUE-STOPS-AT-PLUS-PCT",
+        '|[^\\s&,;"\'}\\])]++"""',
+        '|[^\\s&,;"\'}\\])+%]++"""',
+        1,
+    ),
+]
+
+
+# FTF-0904-F2: each fault removes one protection added this round
+FAULTS += [
+    (
+        "F2-quoted branch disabled",
+        'if match.group("qsep") is not None:',
+        "if False:",
+        1,
+    ),
+    (
+        "F2-unterminated double quote not redacted to end of line",
+        r"""\\++[^\r\n]?)*+"?|'""",
+        r"""\\++[^\r\n]?)*+"|'""",
+        1,
+    ),
+    (
+        "F2-single-quoted values dropped",
+        "|'(?:[^'\\\\\\r\\n]|\\\\++[^\\r\\n]?)*+'?" + '"' * 3,
+        '"' * 3,
+        1,
+    ),
+    (
+        "F2-escaped quote ends the double-quoted value",
+        r""""(?:[^"\\\r\n]|\\++[^\r\n]?)*+"?|'""",
+        r""""[^"\r\n]*+"?|'""",
+        1,
+    ),
+    (
+        "F2-generic key=value quoted value ends at an escaped quote",
+        r"""|"(?:[^"\\\r\n]++|\\++[^\r\n]?)*+"|'""",
+        r"""|"[^"\r\n]*+"|'""",
+        1,
+    ),
+]
 
 
 def _run_mutant(fault_id: str, old: str, new: str, count: int) -> tuple[bool, str]:

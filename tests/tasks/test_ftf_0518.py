@@ -351,6 +351,33 @@ def test_ftf_0512_f1_digit_like_pairs_are_not_false_leakage() -> None:
         )
 
 
+def test_ftf_0512_f1_compat_fusing_pairs_are_not_false_leakage() -> None:
+    """FTF-0512-F1 round 3: an NFKC compatibility mapping that writes different
+    characters than the one it replaces (telegraph/unit symbols, superscript
+    letters, trade marks) must not fuse into its neighbours and create a false
+    BLOCKING `text_normalized` finding between two unrelated records."""
+    cid = "LK-0512-F1-FUSING"
+    base = solo("fz", "train", 3) + solo("fzv", "validation", 2)
+    pairs = [
+        ("2\u33e0", "21\u65e5"),
+        ("O(2\u207f)", "O(2n)"),
+        ("5\u338f", "5kg"),
+        ("Foo\u2120", "FooSM"),
+    ]
+    for i, (with_symbol, plain) in enumerate(pairs):
+        a = record(f"fz-sym-{i}", with_symbol, "answer")
+        b = record(f"fz-plain-{i}", plain, "answer")
+        report = scan(
+            [*base, (a, "train", (f"fz-g-{i}-a",)), (b, "final_qualification", (f"fz-g-{i}-b",))]
+        )
+        found = [f for f in report.findings if pair_of(f) == {f"fz-sym-{i}", f"fz-plain-{i}"}]
+        check(
+            cid,
+            f"{with_symbol!r} vs {plain!r}: no text_normalized finding links them",
+            not any(f.method == "text_normalized" for f in found),
+        )
+
+
 def test_findings_name_both_records_and_reason() -> None:
     cid = "LK-REPORT"
     marker = support.make_marker("leak")

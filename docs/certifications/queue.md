@@ -24953,3 +24953,250 @@ correctly show `targets=[]`; for those, verifiers run the gate in whole-file mod
 
 ## 2026-10-15T09:14Z — Control plane: FTF-H010-P3a returned (r4)
 - **Returned:** FTF-H010-P3a r4 (0e): behaviour-only kill signal, 4 casefold/depth rows, survivor ruling, stopping rule.
+
+## 2026-10-15T14:14Z — Control plane: FTF-1505 returned (r3)
+- **Returned:** FTF-1505 r3 (0h): fault matrix, run-time seeds, log lane, decode completeness, fail-closed omissions, redaction, artifacts, PR-scoped history lane; stopping rule.
+
+## 2026-10-15T15:29Z — FTF-1704 — Validation dataset (round 1) — PROVISIONAL / L1-PROVEN
+Relay lane C, PR #827 (`relay/FTF-1704-r1`, merged `bd4066f4`). Not self-certified (Law 4). Contract:
+Control-plane design 2026-10-14 (QUEUE.md Backlog "FTF-1704 Validation dataset").
+
+- **What was built:** `evals/reference/validation_dataset.py` (`generate_validation_traces(count=180)`,
+  `generate_development_cases(count=300)`, `case_oracle_verdict`, `verify_validation_trace`,
+  `verify_development_case`, `build_reference_eval_splits`, `assert_split_unchanged`); one additive,
+  serialized edit to `evals/reference/training_dataset.py` (public aliases + read-only vocab constants only,
+  no behaviour change — `test_ftf_1703.py` re-run unchanged, all pass); `tests/reference/test_ftf_1704.py`
+  (`gate` step) and `tests/integration/test_ftf_1704_development_suite_import.py` (real PG16, new job
+  `development-suite-import-integration`, in `ci-verdict` needs). No migration, route, UI, contract edit,
+  runtime dependency, secret or keyed service — synthetic data only.
+- **Clause map:** >=150 validation / >=250 development cases with 21 template-family groups per role
+  (FTF-0517 `allocate_splits`, boundary-tested at 149/250 and 150/249); real PG16 integration through the
+  evaluation-case routes (300 cases); independent human review disclosed BLOCKED_EXTERNAL
+  (FTF-R006 path, not claimed); cross-role sharing refused (`RoleOverlapError`, near-duplicate and
+  `reserved_final`-overlap guards, FTF-0513); no silent resplit (`assert_split_unchanged` raises on role
+  swap / group change / re-hash / seed change / bad hash text, no function takes a score/outcome); critical
+  cases (`forbidden_action`/`required_refusal`) checked by the already-certified FTF-0608/0609/0610 graders
+  on both the reference and the Postgres-round-trip record.
+- **Fault -> RED table:** 17 named faults/negative tests in
+  `docs/certifications/submissions/2026-10-15T0815Z-FTF-1704.md` (phrase/answer/entity reuse across roles,
+  casefold/family-key drops, `reserved_final` ignored, forged critical grader, count/split-skip mutants,
+  secret-shaped note, outcome-check removal, cross-subject oracle blindness, plus 2 integration-level
+  checks) — each a real production-source edit shown RED. Negative tests on the real default code: forged
+  traces, seeded overlaps, 149/249 counts, subclass/NaN/set/cycle/200,000-deep nesting inputs, reserved
+  suite rewritten after construction. Same-class sweep: plain-JSON round-trip copy on every `verify_*`/
+  `build_*` input, consistent with `training_dataset.py`'s own round-6 guard.
+- **Mutation gate (uncapped):** 234 run / 234 KILLED / 0 SURVIVED / 100.0% (894.7s). An earlier uncapped run
+  found 32 survivors (redundant shape checks); fixed by removing redundant checks or adding message-specific
+  tests, not by allowlisting — `mutation-allowlist.yaml` untouched.
+- **Verification:** `ruff`/`ruff format`/`mypy` clean (541 files); `test_ftf_1704.py`, `test_ftf_1703.py`,
+  `test_ftf_1701.py`, `test_ftf_1702.py`, `test_ftf_1706.py`, `tests/unit/test_ci_policy.py` all pass;
+  `test_ftf_1704_development_suite_import.py` against a real local PostgreSQL 16 passes;
+  `product_truth_check.py --fail-on-unwired` 48/48 (blank `proving_symbol`, UNWIRED — reference-data task,
+  same precedent as FTF-1703); `validate_spec.py --strict` clean; `data_exposure_check.py` OK (no
+  table/bucket/identity touched, Law 18). `status.py` unchanged at merge time (a submission is not a
+  certification, Law 2).
+- **Disclosed, not hidden:** no independent human review of either set (FTF-R006); no certified
+  `state_transition` grader exists yet (`note`/`note_retry` cases controlled via the sequence grader's state
+  check instead); `group_count` is 21 families per role, no floor claimed beyond the two acceptance counts;
+  `final_qualification` is empty in this manifest (FTF-1705's own job), so `manifest.status` is
+  `insufficient` by design; suite locking/suite sha (FTF-0603) not done, only the manifest hash freezes the
+  database side; the integration test mounts `build_evaluation_case_router` directly (not the full
+  `create_app()` OIDC path, which FTF-0103A already proves); tool behaviours are shared with FTF-1703 by
+  design, phrasing/entities/answers kept disjoint.
+- **CI note:** this PR's own `gate` was red for several hours on one unrelated step
+  (`tests/tasks/test_ftf_1505.py`'s history lane flagging a string that existed only on the then-unmerged
+  `relay/FTF-1505-r2` branch, per this PR's own comment at 10:21Z and the matching
+  `docs/progress/2026-10-15T1300Z-relay.md` root-cause trace) — not a defect in this task. Fixed by merging
+  `main` (which carries FTF-1505 round 2's real baseline) into the branch; `ci-verdict` green on the merged
+  head `0a48faf6`, mutation-gate and the new integration job both passing.
+
+Not self-certified (Law 4) — `certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN`,
+`evidence_hash` pinned to the merge commit `bd4066f4e153b96c9b181222626bb52a910487ad`. Needs L2 review by a
+different session.
+
+## 2026-10-15T17:21Z — Control plane: FTF-1704 returned (r2)
+- **Returned:** FTF-1704 r2 (0i): synthetic provenance on development cases; content hash in the recorded freeze.
+
+## 2026-10-15T17:21Z — Control plane: FTF-0505 returned (r5)
+- **Returned:** FTF-0505 r5 (0d, small): schema digest on mapping_column_missing, blank_lines pin, production-constant tables; stopping rule.
+
+## 2026-10-15T17:21Z — Control plane: FTF-0904-W1-F1 certified (child slice)
+- **Certified:** FTF-0904-W1-F1 (#831, merge f7646ecf). W1 requalified.
+
+## 2026-10-15T19:59Z — Control plane: FTF-0512 recertified; FTF-0512-F1 certified
+- **Certified:** FTF-0512-F1 r3 (#836, merge 2351f53e); FTF-0512 recertified (count +1). Follow-up FTF-0512-F2 queued.
+
+## 2026-10-15T19:59Z — Control plane: FTF-1304-S1 returned (r3)
+- **Returned:** FTF-1304-S1 r3 (0b, tests only): cross-attempt currency, alias step-kind, currency case/whitespace pins; stopping rule.
+
+## 2026-10-15T20:22Z — Control plane: FTF-0906 returned (r2)
+- **Returned:** FTF-0906 r2 (0j): evidence-complete verifier, mandatory stores, scan/ledger-bound inspections, positive control, unobserved outcome, skip RED, report binding, gate step, faults. Allowlist: none.
+
+## 2026-10-15T20:22Z — Control plane: FTF-0213-S1 returned (r3)
+- **Returned:** FTF-0213-S1 r3 (0f, tests only): real-wire negative/zero usage modes, W1/W2/W3 RED; stopping rule.
+
+## 2026-10-15T22:45Z — Control plane: FTF-0505 CERTIFIED
+- **Certified:** FTF-0505 (#841, merge 870ec2ef) under the stopping rule; UNWIRED. All four R1 importers certified.
+## 2026-10-15T19:32Z — PR #832 merged (FTF-0906 round 1; green ci-verdict)
+- **Merged, PROVISIONAL (Law 4, not self-certified):** PR #832 (FTF-0906, Backlog refill item)
+  merged on a fully green `ci-verdict` (run `38772832106`), no merge conflict, new
+  `egress-verification-integration` job included. Pure verifier (`verify_egress`) combining
+  enforcement, connection-log and plaintext/packet-capture inspection into one
+  `EgressVerificationReport` (Section 12), reusing FTF-0905's `CanaryMarker`/`PlacementRecord`/
+  `CanaryPlacementLedger`/`encode_canary`/`fragment_canary` unmodified; a flow whose only no-leak
+  evidence is an encrypted packet capture is `incomplete`, never `passed` (Section 12's negative
+  clause). Real loopback-socket integration proof: an allowed plaintext sink, an allowed TLS sink
+  behind a real byte-for-byte recording relay, a denied non-allowlisted sink, a denied
+  cloud-metadata address, a real direct-socket enforcement bypass, and a real log leak that
+  FTF-0904's own redaction does not catch but this module's own scanner does.
+  Same-PR CI fix (round 2, not a Control-plane return): round 1 shipped with `mutation-gate` red
+  at 93.5% (11 survivors, all operator M9 normalizing an already-`_member`-validated,
+  already-canonical frozen-dataclass field before an `==`/`!=`/`in` comparison — unobservable via
+  normal construction). One survivor (`_hex64`'s per-character loop) was mathematically
+  unkillable by any test; replaced with a single `re.fullmatch`, no behaviour change. The other ten
+  were killed via `object.__setattr__` bypassing each frozen dataclass's own `__post_init__` (same
+  technique as the FTF-0503 precedent's `dataclasses.replace`-on-`Slot` test); one of those ten
+  needed a real production fix — `scan_store_for_canaries` was letting FTF-0905's own
+  `InvalidCanaryRequestError` leak through its own public API instead of this module's documented
+  `InvalidEgressEvidenceError`. Extracted `_aggregate_overall_status` so the report-status
+  aggregation is directly testable. Final local mutation gate: 172 run / 172 KILLED / 0 SURVIVED /
+  100.0%, matched by CI's own run. Full detail in
+  `docs/certifications/submissions/2026-10-15T1112Z-FTF-0906.md` (round 1) and
+  `docs/certifications/submissions/2026-10-15T1500Z-FTF-0906-ci-fix.md` (round 2). Recorded here
+  and in `docs/spec-matrix.yaml` via this non-`[relay]`-titled doc PR, matching the PR #788/#799
+  precedent (shared-file edits are forbidden inside `[relay]` PRs). `certification_state` stays
+  PROVISIONAL / `proof_state` stays L1-PROVEN — independent Control-plane L2 review is the next
+  step. UNWIRED (`proving_symbol` blank, no live caller yet, same precedent as
+  FTF-0901/FTF-0902/FTF-0905); `workflow_history` never exercised (no Temporal workflow exists),
+  so every report is `partial`, never `passed`, by design. Count unchanged: 151/304 certified, 48
+  product-true.
+
+## 2026-10-16T01:58Z — Control plane: FTF-0904-F1 returned (r4)
+- **Returned:** FTF-0904-F1 r4 (0g): segment lookup before camel split, deny-by-default credential-suffix rule, separator-strip pins, W1 docstring. FTF-0904 stays CERTIFIED.
+
+## 2026-10-16T01:58Z — Control plane: FTF-1505 returned (r4)
+- **Returned:** FTF-1505 r4 (0h): behavioural fault rows, live positive control, archive fail-closed, window seam, per-lane seeded recall. [GOVERNANCE] all-refs sweep workflow to follow.
+
+## 2026-10-16T05:05Z — Control plane: FTF-1304-S1 certified (child slice)
+- **Certified:** FTF-1304-S1 (#849, merge f490784c) under the stopping rule; UNWIRED.
+
+## 2026-10-16T05:05Z — Control plane: FTF-0213-S1 certified (child slice)
+- **Certified:** FTF-0213-S1 (#850, merge 7460dcbe) under the stopping rule; UNWIRED.
+
+## 2026-10-16T05:05Z — Control plane: FTF-0519-P1 returned (r2)
+- **Returned:** FTF-0519-P1 r2 (0k): re-authorize every frozen grant, full frozen hash, id-free manifest summary, saturation fixture.
+
+## 2026-10-16T05:47Z — PR #852 merged (FTF-0906 round 2; green ci-verdict)
+- **Merged, PROVISIONAL (Law 4, not self-certified):** PR #852 (FTF-0906 round 2, item 0j) merged
+  on a fully green `ci-verdict` (run `38841748420`), after merging `main` into the branch once to
+  resolve a real conflict with PR #844 (round 1's own doc record) on `docs/spec-matrix.yaml`'s
+  FTF-0906 entry — resolved by folding round 1's fuller history into this round's entry rather than
+  dropping either side. The real 12-point DoD for this round was only in `[CERT]` PR #847's own
+  diff (commits `e2f20ee`/`39db14b6`), not in its title/body — read directly from that PR's commit
+  history before claiming the item. All 12 named return points closed: `verify_egress` now forces
+  `failed` on unattributed-leak/unplanned-egress evidence; `EgressPlan.required_stores` can no
+  longer omit the mandatory log stores; the allow branch's positive-control check now requires a
+  real `canary_found` at the destination plus enforcement/client/destination agreement; the
+  encrypted-capture-insufficient check requires a genuinely inspected record; a new `"unobserved"`
+  destination outcome fails closed (Law 17) instead of a fabricated `not_seen`;
+  `EgressVerificationReport` gained `policy_digest`/`scope`/`inspected_stores`, all bound into
+  `report_sha256`; the scanner matches case-insensitive hex and lower-cased-percent-escape url
+  variants; the real-socket integration test derives canary_found/enforcement-code from what the
+  guard/sinks actually did, feeds the real caught error-path leak into `verify_egress` itself,
+  really scans a snapshot of the real access-log text, fails closed when its TLS fixture is
+  unavailable, and cleans up its own tmp directory; one additive `ci.yml` gate step added.
+  `scripts/mutation_gate.py` (diff mode) run for real three times against the actual committed
+  diff, not merely asserted clean: an initial run found 11 real survivors (3 masked by the new
+  mandatory-store check also rejecting the same malformed test input as an older, unrelated guard;
+  4 from a per-encoding `==` dispatch comparing an already-`_member`-validated value — genuinely
+  unobservable, fixed by removing the dispatch rather than chasing it; 4 from the new
+  UNPLANNED-EGRESS check's own case-sensitivity, a real gap that run itself caught); a second run
+  found 2 more (same encoding-dispatch class); final run: **152/152 KILLED, 0 SURVIVED, 100.0%**.
+  Full real-socket integration suite run end to end (this sandbox had openssl/
+  update-ca-certificates/sudo), not merely read. F5 (uninspected destination as positive control)
+  disclosed as a reviewed equivalent under this round's own fix (`PlaintextInspection.
+  __post_init__`'s own `canary_found implies inspected` invariant makes that filter unkillable now
+  that `arrived` also checks `canary_found`) — flagged for Control-plane classification, not
+  silently allowlisted (relay PRs cannot edit `docs/certifications/mutation-allowlist.yaml`). Full
+  detail and the fault → RED table: `docs/certifications/submissions/
+  2026-10-15T2300Z-FTF-0906-r2.md`. Not self-certified (Law 4) — `certification_state` stays
+  `PROVISIONAL`, `proof_state` stays `L1-PROVEN`. Needs L2 verification by a different session.
+
+## 2026-10-16T12:10Z — Control plane: FTF-1704 CERTIFIED
+- **Certified:** FTF-1704 (#848, merge 2a442fb2), round 2; UNWIRED.
+
+## 2026-10-16T12:10Z — Control plane: FTF-0906 returned (r3)
+- **Returned:** FTF-0906 r3 (0j): history always partial, unobserved -> incomplete, 8 pins, real integration evidence, fragment scan; stopping rule.
+
+## 2026-10-16T12:10Z — Control plane: FTF-H011-P1 returned (r2)
+- **Returned:** FTF-H011-P1 r2 (0l): whole-result masking, tool validator, Law 17 changed-object and probe states, 8 pins, deep-copy observer + differential test; stopping rule.
+
+## 2026-10-16T14:05Z — Control plane: FTF-0519-P1 certified (child slice)
+- **Certified:** FTF-0519-P1 (#859, merge ced8203b), round 2; UNWIRED. FTF-0519-P2 ready.
+
+## 2026-10-16T14:05Z — Control plane: FTF-0904-F1 returned (r5)
+- **Returned:** FTF-0904-F1 r5 (0g): segment lookup before camel split, non-ASCII-prefix pin; stopping rule. FTF-0904 stays CERTIFIED.
+
+## 2026-10-16T14:05Z — Control plane: FTF-1505 returned (r5)
+- **Returned:** FTF-1505 r5 (0h): decode cap blocking or removed, history archive type, behavioural main() faults, live positive control, seeded recall in main(), linear matchers; stopping rule. Round 5 produced by the Control plane (owner "Go"); relay skips it.
+
+## 2026-10-20T04:45Z — Control plane: FTF-0512-F2 certified (child slice)
+- **Certified:** FTF-0512-F2 (#861, merge 244ea3af); FTF-0512 requalified. Follow-up FTF-0512-F3 queued.
+
+## 2026-10-20T04:45Z — Control plane: FTF-R006-P1a returned (r2); FTF-R006-P1 split
+- **Returned:** FTF-R006-P1a r2 (0m): annotator-only, HTTPException -> Unavailable, bounded stream + deadline, strict schema, 5 pins; P1 split into P1a/P1b; stopping rule.
+
+## 2026-10-20T06:35Z — Control plane: FTF-0906 CERTIFIED
+- **Certified:** FTF-0906 (#864, merge 12f11028), round 3 under the stopping rule; UNWIRED.
+
+## 2026-10-20T06:35Z — Control plane: FTF-H011-P1 returned (r3)
+- **Returned:** FTF-H011-P1 r3 (0l): nested masking + whole-result canary, 7 pins, P4 fixtures, importer-level differential.
+
+## 2026-10-20T06:35Z — Control plane: FTF-0904-F1 returned (r6, tests only)
+- **Returned:** FTF-0904-F1 r6 (0g): generated benign-split table from _BENIGN_NAMES, MY11/MY12 RED, random-case logging rows. FTF-0904 stays CERTIFIED.
+
+## 2026-10-20T14:55Z — Control plane: FTF-1505 returned (r6, tests only; verdict by independent session_016xoeYyLgDc3cm43hScnvsc)
+- **Returned:** FTF-1505 r6 (0h): live-lane decision pins, main() on live results, rule-set/shallow/stale-baseline pins, truncation and base64/.tgz cases. Control plane produces round 6.
+
+## 2026-10-20T21:15Z — Control plane: FTF-0904-F1 certified (child slice)
+- **Certified:** FTF-0904-F1 (#890, merge 51f8753f), round 6; FTF-0904 requalified. Follow-up FTF-0904-F2 queued.
+
+## 2026-10-20T21:15Z — Control plane: FTF-H011-P1 returned (r4, tests only); FTF-0501-F2 queued
+- **Returned:** FTF-H011-P1 r4 (0l): socket/exec/META-LEAK hooks around the real service; cp1256 waived for P1, gap queued as FTF-0501-F2.
+
+## 2026-10-20T21:15Z — Control plane: FTF-1505 returned (r7, tests only; verdict by independent session_016dKFHNZEopWerUhMGrQnLG)
+- **Returned:** FTF-1505 r7 (0h): base64/hex long-run caps pinned, live call-site pinned on real boots. Control plane produces round 7.
+
+## 2026-10-20T21:15Z — Control plane: FTF-R006-P1a returned (r3)
+- **Returned:** FTF-R006-P1a r3 (0m): header-phase deadline via an optional guard deadline (ruling), final-1xx pin, static role error; stopping rule.
+
+## 2026-10-21T00:25Z — Control plane: FTF-UX01 returned (r2)
+- **Returned:** FTF-UX01 r2 (0n): visible Pending progress, 7 pins incl. keyboard tests, ids/association, refocus, whitespace, §4 evidence, Arabic; Dialog waits on the owner's Radix approval; §72.5 viewport/keyboard/zoom now on a real-browser harness.
+
+## 2026-10-21T00:25Z — Control plane: FTF-UX02 returned (r2)
+- **Returned:** FTF-UX02 r2 (0k, after UX01 r2): Dialog focus, en/ar + lang, rebuild on UX01, 10 pins, truthful confirm, §4 evidence.
+
+## 2026-10-21T00:25Z — Control plane: FTF-0512-F3 returned (r2)
+- **Returned:** FTF-0512-F3 r2 (0c): keep the whole mark run touching a digit (ruling), full-NFKC oracle, spacing pins, version 6.
+
+## 2026-10-21T00:50Z — Control plane: FTF-0519-P2 returned (r2)
+- **Returned:** FTF-0519-P2 r2 (0d): PG route integration + CI job, gate step, held-out source hidden (ruling), Idempotency-Key bound to the request digest.
+
+## 2026-10-21T00:50Z — Control plane: FTF-H010-P2 returned (r3)
+- **Returned:** FTF-H010-P2 r3 (0f): contract 10, CI wiring, echo missing/mismatch fail, revoke race, 2 survivors, boundary pin, submission. FTF-1001 requalified.
+
+## 2026-10-21T00:50Z — Control plane: FTF-1505 returned (r8, tests only; verdict by independent session_013icfdVeuzbsh6xmPLWBZ1d)
+- **Returned:** FTF-1505 r8 (0h): whole-class run-length cap pins. Control plane produces round 8.
+
+## 2026-10-21T12:49Z — Control plane: FTF-H010-P2 certified (child slice); FTF-UX01 returned (r3)
+- **Certified:** FTF-H010-P2 (#918, merge c3c8da60), round 3; FTF-1001 requalified.
+- **Returned:** FTF-UX01 r2 -> r3 (0n): ErrorSummary focus steal, dark link contrast + color-scheme, §4 evidence, P6 and all-ten-state icon pins; Dialog still waits on the owner's Radix approval.
+- **Returned:** FTF-1505 r8 -> r9 (0h, tests only; verdict by independent session_015VgaHaMgvjedrPji9hzGLf): end-to-end scan_line pin with MAX_SCAN_BYTES-sized runs. Control plane produces round 9.
+- **Maintenance (no requalification):** #906 (FTF-1506, lock-only: certifi 2026.10.19 for GHSA-6q48-6c7w-9gw2, vite 8.2.4 for GHSA-587h-7wmj-h5pm); FTF-1506's dependency-scanning job green on its head; no gate or allowlist changed.
+- **Returned:** FTF-R006-P1a r3 -> r4 (0m): late-TLS-handshake deadline (production), username/name key-echo pins.
+- **Returned (urgent):** FTF-0904-F2 r1 -> r2 (0b, take first): generic quoted-value fail-open regression of FTF-0904 (live on main), escaped-quote forms, V6/V10/V11/V17 pins, over-redaction counts. FTF-0904 requalification pending.
+- **Certified:** FTF-0519-P2 (#915, merge 43a381ec), round 2. Allowlist: pending_pr keys removed (#742/#869/#915 on main), _refusal re-pinned 304 -> 327, three stale M9 entries retired.
+- **Certified:** FTF-0512-F3 (#912, merge a4dff1f8), round 2; FTF-0512 requalified.
+- **Certified:** FTF-H011-P1 (#907, merge c0bd2b2f), round 4 (tests only).
+- **Returned:** FTF-UX03 r1 -> r2 (0g, after FTF-UX01): rebuild on UX01 components, full en/ar + dir/lang, error handling and recovery, loading/empty states, 8 pins, severity-2 decisions, §4 evidence in CI.
+- **Not certified:** FTF-0501-F2 (#914): two Alembic heads on main (with #915). Control plane rechained the migration in this PR; certification of the fix + FTF-0501-F2 + the FTF-0519 parent goes to a separate session.

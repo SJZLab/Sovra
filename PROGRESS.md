@@ -1,8 +1,8 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-15T09:14Z. Source: `python3 scripts/status.py` on main.
-- **Status: 151/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
+Updated: 2026-10-21T14:16Z. Source: `python3 scripts/status.py` on main.
+- **Status: 155/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
@@ -12,6 +12,85 @@ Updated: 2026-10-15T09:14Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-21T14:16Z:**
+  - Not certified yet: FTF-0501-F2 (declared text encodings on upload). The encoding logic is sound in every probe, but its migration collided with another one and broke main; the Control plane fixed that here, and a separate session will certify both.
+  - Returned: FTF-UX03 r1 (target-application screens: a partial first pass - the five screens still pass all their tests, but they do not use the shared accessible components yet, Arabic screens still show English, network errors are silent, and the design-review evidence is missing). Round 2 starts after FTF-UX01 is certified.
+  - CERTIFIED (child slice): FTF-H011-P1 after 4 rounds - the dataset preview runner is proven, against real storage, to open no network connection except storage and the database, to run no code from the data, and to leak no raw value into logs or output.
+- **2026-10-21T13:21Z:**
+  - CERTIFIED (child slice): FTF-0512-F3 after 2 rounds - duplicate detection keeps every sign, unit and currency mark attached to a number ("-$5" and "$5", "5″" and "5′" stay different) while ordinary punctuation still merges; 0 new merges over 370,454 texts. FTF-0512 stays certified.
+  - CERTIFIED (child slice): FTF-0519-P2 after 2 rounds - the dataset split manifest API (propose, approve, reject, list) is live, hides held-out evaluation sources from roles that may not see them, and replays or refuses a reused Idempotency-Key. FTF-0519 itself is reviewed next.
+- **2026-10-21T12:49Z:**
+  - Returned, urgent: FTF-0904-F2 r1 (quoted values in logs). It fixed quoted values after names like state and code, but it broke the certified log redaction: a password whose quoted value ends in a backslash is now printed in clear (reproduced on main). Values in backslash-escaped JSON also still leak. FTF-0904 needs requalification; the relay takes this first.
+  - Returned: FTF-R006-P1a r3 (Argilla client: the header-time limit, the 1xx reply and the key-in-error fixes hold, but over HTTPS a server that finishes the TLS handshake late can still hold a call for 40+ seconds, and two key-leak checks are not tested).
+  - Returned: FTF-1505 r8, tests only (secret scanning, checked by a separate session: the scanner and the full-history scan are clean, but a size limit placed in the calling code rather than the pattern still passes the tests). Round 9 tests the whole path with runs as long as the largest file the scanner reads.
+  - CERTIFIED (child slice): FTF-H010-P2 after 3 rounds - importing an endpoint-only fine-tuned model is validated against the real gateway: the gateway must echo exactly the requested model, a connection revoked mid-check stops the import, and stale or duplicate workers cannot write. FTF-1001 stays certified. Not yet reachable from the product (no job dispatcher yet).
+  - Returned: FTF-UX01 r2 (UI design-system foundation: progress, keyboard pins, ids, Arabic phrases and the real-browser checks now pass, but a fix made the error summary steal focus while the user types, dark-mode links are unreadable (1.89:1 contrast), the design-review evidence is incomplete and three checks are still untested).
+- **2026-10-21T00:50Z:**
+  - Returned: FTF-1505 r8, tests only (secret scanning round 7, certified by a separate session: the scanner and the live-log checks hold, but the long-text tests only caught size limits at the exact sizes they named). Round 8 pins any size limit.
+- **2026-10-21T00:50Z:**
+  - Returned: FTF-H010-P2 r3 (model import validation: job locking, migration and access control are sound, but a model endpoint that answers with no model name or the wrong one is not failed, a connection revoked mid-check still succeeds, and the API contract and CI wiring are missing). FTF-1001 stays certified.
+- **2026-10-21T00:50Z:**
+  - Returned: FTF-0519-P2 r2 (split-manifest API routes: the routes work and leak no record ids, but the required real-database route test and CI step are missing, an ML engineer can see which held-out dataset a split uses, and the idempotency key is ignored).
+- **2026-10-21T00:25Z:**
+  - Returned: FTF-0512-F3 r2 (duplicate detector: "-5" vs "5" and "5%" vs "5" are now kept apart, but "-$5" still matches "$5" and 5 inches matches 5 feet - the whole mark run next to a number must be kept, not just one character).
+- **2026-10-21T00:25Z:**
+  - Returned: FTF-UX02 r2 (dataset screens redesign: nothing certified broke, but the new "abandon" confirmation loses keyboard focus, Arabic is not done, and the screens are not yet built on the shared design system). Round 2 starts after the design system (UX01) is certified.
+- **2026-10-21T00:25Z:**
+  - Returned: FTF-UX01 r2 (UI design-system foundation: the colour and size tokens match the spec exactly, but there is no confirm dialog yet (waiting on the owner's approval to add the Radix package), the "in progress" state shows no visible progress, several accessibility details are not tested, and Arabic text is missing). Real-browser viewport, keyboard and zoom checks run now on a component test page; only screen-reader checks wait for the app shell (FTF-H029).
+- **2026-10-20T21:15Z:**
+  - Returned: FTF-R006-P1a r3 (Argilla review client: round 2 fixed almost everything, but a server that sends its reply headers very slowly can still hold a call for minutes, and one error message can echo the API key). The shared network guard gets an optional overall time limit for this (existing callers unchanged).
+- **2026-10-20T21:15Z:**
+  - Returned: FTF-1505 r7, tests only (secret scanning round 6, certified by a separate session: no production problem and almost every check now pinned, but a length limit on very long base64 or hex text and three shortcuts at the live-log check's call site would still go unnoticed). Round 7 stays with the Control plane.
+- **2026-10-20T21:15Z:**
+  - Returned: FTF-H011-P1 r4, tests only (dataset mapping preview: nested masking is now fixed and verified; one named check still only runs on the offline path, not on the real service). FTF-0501-F2 queued: the upload step refuses Windows-1256 Arabic CSV files unless the first non-English byte happens to come after 64 KB.
+- **2026-10-20T21:15Z:**
+  - CERTIFIED (child slice): FTF-0904-F1 after 6 rounds - log redaction now hides a secret after any parameter name ending in a credential word, in any letter case or compound form (0 leaks in 62,496 generated cases and 1,386 live requests). FTF-0904 stays certified. Follow-up FTF-0904-F2 queued: quoted values like state="..." are still printed.
+- **2026-10-20T14:55Z:**
+  - Returned: FTF-1505 r6, tests only (secret scanning, Control-plane round 5, certified by a separate session: the scanner itself holds up - no exposed credential, every probed clause works - but several of its own checks, mostly in the live-log lane, can be disabled without any test noticing). Round 6 stays with the Control plane.
+- **2026-10-20T06:35Z:**
+  - Returned: FTF-0904-F1 r6, tests only (log redaction: production now redacts every tested name - 0 leaks over 62,496 generated cases and 191 live requests - but the required generated test table was hand-picked and misses every "-state" word, so two faults go undetected). FTF-0904 stays certified.
+- **2026-10-20T06:35Z:**
+  - Returned: FTF-H011-P1 r3 (dataset mapping preview: tool-call rows, changed-file detection and outage states now work; but masked previews still show nested keys and anything under "type", and 7 named faults stay undetected). Stopping rule restated.
+- **2026-10-20T04:45Z:**
+  - CERTIFIED (child slice): FTF-0512-F2 - the duplicate detector keeps math and currency symbols, so "x ≤ 5" and "x ≥ 5" or "$100" and "€100" no longer merge; tool and speaker names are compared exactly. FTF-0512 stays certified with the new evidence. Follow-up FTF-0512-F3 queued ("-5" vs "5", "5%" vs "5" still merge).
+- **2026-10-20T04:45Z:**
+  - Returned: FTF-R006-P1a r2 (Argilla review client: routes and error classes match the pinned Argilla version, but it can create admin users, some network errors escape unclassified and can carry the API key, huge responses are fully buffered, and 5 checks are unpinned). FTF-R006-P1 split into the client (P1a) and the identity/credential layer (P1b). Stopping rule set.
+- **2026-10-20T06:35Z:**
+  - CERTIFIED: FTF-0906 (egress capture/verification), round 3: a leak test now fails or stays incomplete whenever any evidence is missing or unobserved, the integration uses only real scan results and real guard decisions, and a secret split across two headers is found. UNWIRED.
+- **2026-10-16T14:05Z:**
+  - Returned: FTF-1505 r5 (secret scanning, relay round 4: no real secret anywhere and the split-secret gap is closed, but a new decode cap can silently skip secrets in very long lines, history-only .tar.gz files are never opened, and 16 of 55 faults stay undetected). Round 5 is the Control plane's own implementation (owner-approved), certified by a separate session. Stopping rule set.
+- **2026-10-16T14:05Z:**
+  - Returned: FTF-0904-F1 r5 (log redaction: compound names like mfa_CodE= and smscode= are now caught; two small gaps remain - a random-case split of a word on the allowed list (mon_KeY=, zip_cOdE=) and names starting with non-English letters (müllerkey=)). Stopping rule set. FTF-0904 stays certified.
+- **2026-10-16T14:05Z:**
+  - CERTIFIED (child slice): FTF-0519-P1 - frozen train/development/held-out/final split manifests; every source's permission is re-checked on every load, the frozen hash covers every column, and no record id leaks in the summary. UNWIRED. FTF-0519-P2 (routes) is now ready.
+- **2026-10-16T12:10Z:**
+  - Returned: FTF-H011-P1 r2 (dataset mapping preview: text types, limits, XLSX refusal and tenant/grant checks all hold; but masked previews still show candidate text and headers, tool-call rows can't be previewed, a changed file can come back as completed, and 7 named faults stay undetected). Stopping rule set.
+- **2026-10-16T12:10Z:**
+  - Returned: FTF-0906 r3 (egress verification: most round-2 fixes landed and the network blocking still holds; but a report can still pass with no workflow-history evidence or an unobserved client log, the integration still feeds some hand-typed results into the checker, and 8 checks are unpinned). Stopping rule set.
+- **2026-10-16T12:10Z:**
+  - CERTIFIED: FTF-1704 (validation dataset), round 2: development cases now carry a checked synthetic-provenance label and the frozen split hashes record content, so edits, truncation and same-id changes are refused. UNWIRED.
+- **2026-10-16T05:05Z:**
+  - Returned: FTF-0519-P1 r2 (immutable split manifest: tenant isolation, immutability and held-out separation all hold; but revoking a held-out or development source's permission does not stop training from being served, and the frozen hash leaves out three columns).
+  - CERTIFIED (child slice): FTF-0213-S1 - a live probe that checks a model is forced to answer from a fixed list of choices and measures its real output tokens; impossible token counts from the gateway are refused, never reported as cheap output (ADR 0004 idea 2). UNWIRED.
+  - CERTIFIED (child slice): FTF-1304-S1 - cost per success for a candidate that runs routine sub-steps on a small model and reasoning on a large one; mixed currencies are refused and every step's kind is declared (ADR 0004 idea 1). UNWIRED.
+- **2026-10-16T01:58Z:**
+  - Returned: FTF-1505 r4 (secret scanning: PR checks now scan only the PR's own history, so an unmerged branch can no longer break every PR; still no real exposed credential; but 12 scanner breakages go unnoticed by its tests, broken archives are skipped silently, and a long secret split across the scanner's 200-character windows is missed).
+  - Returned: FTF-0904-F1 r4 (log redaction: random-case names like cOdE= are now caught, but compound names outside a hand-written word list - mfa_CodE=, smscode=, signingkey= - still print their secret on the live log; the fix is to redact any name ending in a credential word). FTF-0904 stays certified.
+- **2026-10-15T22:45Z:**
+  - CERTIFIED: FTF-0505 (XLSX importer), after 5 rounds, under the stopping rule - all four dataset importers are now certified. UNWIRED.
+- **2026-10-15T20:22Z:**
+  - Returned: FTF-0213-S1 r3 (tests only - the probe now refuses impossible token counts, but the tests check this only inside a helper, so a one-line change elsewhere could bring the fake cheap-output figure back unnoticed). Stopping rule set.
+  - Returned: FTF-0906 r2 (egress verification: the network blocking itself held against every bypass tried, but the checker that turns evidence into a pass/fail can report "passed" while a canary secret sits in an unchecked log or an unplanned connection - 12 fixes).
+- **2026-10-15T19:59Z:**
+  - Returned: FTF-1304-S1 r3 (tests only - both cost-attribution fixes are correct in production, but three test pins are missing, one of which would let the mixed-currency bug come back unnoticed). Stopping rule set.
+  - CERTIFIED: FTF-0512 (normalized duplicate detector) again, with FTF-0512-F1 round 3 - look-alike text (fullwidth letters, invisible characters, one-sided timestamps) is now matched, the slow-hash bypass on Python 3.11 is closed (29 min -> 0.1 s refusal), and no meaningful difference collapses. UNWIRED. Follow-up FTF-0512-F2 queued (math/currency symbols such as ≤/≥ and $/€ are still stripped and merge).
+- **2026-10-15T17:21Z:**
+  - Returned: FTF-0505 r5 (XLSX importer: every round-4 memory problem fixed - 5 GB down to under 100 MB; a small regression in one error report's schema hash and two missing test pins remain). Stopping rule set for round 5.
+  - CERTIFIED (child slice): FTF-0904-W1-F1 - the live log-redaction traceback printer now accepts newer Python keyword arguments (e.g. colorize on 3.13) and still redacts; W1 re-checked with no regression.
+  - Returned: FTF-1704 r2 (validation dataset: no leakage found, but the 300 synthetic development cases are not labelled as synthetic, and the frozen split does not cover record content, so edited cases pass the "unchanged" check).
+- **2026-10-15T14:14Z:**
+  - Returned: FTF-1505 r3 (secret scanning: no real exposed credential anywhere and every allowlist entry reviewed; but 16 deliberate scanner breakages go unnoticed by its tests, some files and archive members are skipped silently, and the hash of a newly found secret is printed to the CI log, where a weak one can be reversed). Stopping rule set for round 3.
+  - Backlog refill: FTF-H011 (dataset preview, field mapping and purpose approval - six slices; P1 preview runner ready) and FTF-R006 (Argilla review with per-reviewer identity and immutable approved export - four slices; P1 Argilla deployment, client and reviewer identity ready; Redis 7.2.x for its permissive licence, owner ask only if it cannot run Argilla).
 - **2026-10-15T09:14Z:**
   - Returned: FTF-H010-P3a r4 (tests only - production still correct; 11 mutants were "killed" only by a text check, 4 of them hiding real gaps in tests for duplicate keys, list depth, duplicate shards and target matching). Stopping rule set for round 4.
   - Backlog refill: FTF-0519 (immutable split manifest - freezes the training/validation/dev/held-out split with its hashes and grants; held-out data cannot be read through the training path) designed as two slices; P1 is ready.
@@ -30270,6 +30349,40 @@ STEP 3: this file, the submission, and the shift log (`docs/progress/2026-10-14T
 this shift. STEP 4 stop condition (a): PR #801 merged PROVISIONAL, awaiting Control-plane L2 re-review — one
 item per shift, per this list's own precedent. No new owner ask. `BLOCKER.md` unchanged — no live entries.
 
+## 2026-10-15T05:00Z — Shift (relay)
+
+**STEP 0.1:** CLAUDE.md hash matches `CLAUDE.md.sha256` — no BLOCKER. Fetched `origin/main`
+fresh (`044a48bc`). Listed all 9 open PRs and their `mergeable_state`/check-run status
+before picking an item, per "Returned work first."
+
+**STEP 1 (item selection):** QUEUE.md Active item "0a" (merge conflicts on open relay PRs)
+outranks every other item. Of 9 open PRs, only `#759` (`relay/FTF-1504-r1`, FTF-1504 IDOR
+suite) had a real conflict (`mergeable_state: "dirty"`, last pushed 2026-10-13, ~60 merges
+behind `main`). `#742`/`#821` were `"unstable"` (failing checks, no conflict — out of 0a's
+scope). **Working: 0a — merge conflict on PR #759.**
+
+**STEP 2 (P/E/V):** P — merged `origin/main` into `relay/FTF-1504-r1`; one conflict, in
+`.github/workflows/ci.yml`, both branches independently adding a different, unrelated CI
+step at the same point (FTF-1504's own negative-test-proof step vs. FTF-1505's). E — kept
+both steps (neither supersedes the other); confirmed no remaining conflict markers and
+that the YAML still parses. V — `uv sync --all-packages`; `test_ftf_1504.py` still
+"all checks passed" (108/108 route-verbs) post-merge; `ruff check`/`ruff format --check`
+clean repo-wide; `test_ci_policy.py` (the file this conflict touched) 72/72 passed.
+Committed (`cc345dd1`), pushed to `origin/relay/FTF-1504-r1`. `ci-verdict`'s fresh run was
+still queued at push time — not polled synchronously (no bare-sleep polling); a later
+shift or PR event will show the result. PR `#759` stays `draft: true` — it is explicitly
+Phase 1 of a multi-phase task ("Live Postgres + SeaweedFS matrix follows" per its own
+body); resolving the conflict does not make it ready to merge.
+
+**STEP 3:** this file and the shift log (`docs/progress/2026-10-15T0500Z-relay.md`) both
+updated this shift. **STEP 4 stop condition (a)-adjacent:** one item per shift, per this
+list's own established precedent (see the 2026-10-14T1500Z entry above). No new owner ask.
+`BLOCKER.md` unchanged — no live entries. Next in QUEUE.md's fixed Active order after 0a is
+**0i, FTF-1602 round 6** — confirmed genuinely unclaimed (no open PR, no fresh
+`relay/FTF-1602-r6*` branch) but left for the next shift: a full production+test round
+with the required self-attack table and real-SeaweedFS evidence is its own shift's worth
+of work, not something to start and leave half-verified in this one.
+
 ## 2026-10-15T1300Z — Scheduled relay shift, branch `claude/wizardly-fermat-kwyc0r` — fixed stale-base
 ## false-positive red CI on PRs #825/#827/#831 (FTF-1505 baseline); investigated and declined FTF-0906's
 ## equivalent-mutant survivors
@@ -30311,3 +30424,180 @@ PR, not `[relay]`-titled, so direct edits to the shared files are allowed). STEP
 (`secret-scanning`/`mutation-gate` green); `ci-verdict` itself not yet concluded when this shift
 ended, stalled on an already-precedented slow step unrelated to this fix. No `BLOCKER.md` entry (no
 systemic failure). No new owner ask.
+
+## 2026-10-15T1900Z — Scheduled relay shift, branch `claude/wizardly-fermat-82fv61` — FTF-1505
+## round 3 opened (PR #845): fault matrix, runtime seeds, full 16-family log coverage, fail-closed
+## scope/binary/archive/history fixes, redaction, PR-scoped history
+
+STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` exactly. STEP 0.1: `BLOCKER.md` had no
+live entry. `QUEUE.md` "Owner actions — current" unchanged (two pre-existing entries, FTF-0616/
+FTF-04A31, neither blocking). `docs/certifications/queue.md` tail read fresh: latest entry
+`2026-10-15T14:14Z` (FTF-1505 returned round 3). STEP 0.2: no `cognee-cli` binary in this sandbox
+— text-search fallback declared, same as every prior shift.
+
+Returned work first: listed every open `[relay]` PR via the GitHub API. Checked every Active-list
+item in `QUEUE.md`'s own order (0e, IMPORTER ORDER/0d, 0g, 0c, 0h, 0b, 0f): 0e/0d/0g/0f each
+already had an open `[relay]` PR (skip per the claim rule). 0c (FTF-0512-F1 round 3) and 0b
+(FTF-1304-S1 round 2) had already been merged by other sessions before this shift started (PR
+#836, PR #833 — confirmed directly via `git log`/`search_pull_requests`, not assumed). 0h
+(FTF-1505 round 3) had no open PR and no `relay/FTF-1505-r3*` branch pushed (`git ls-remote`
+confirmed) — picked as the next unclaimed item in the Active list's own order.
+
+**P/E/V**, full detail in `docs/certifications/submissions/2026-10-15T1900Z-FTF-1505-r3.md` and
+`docs/progress/2026-10-15T1900Z-relay.md`: all 8 points of the round-3 return addressed. Extracted
+a new, dependency-free `tests/security/secret_rules.py` (rule table, derived quick-gate, runtime
+seed generation, a single-file CLI — proven stdlib-only by AST inspection) so the `mutation-gate`/
+`ci-verdict` jobs can scan their own freshly-written report in the same job, no new setup step.
+Fixed: a non-ASCII tracked filename silently skipped (`git ls-files` quotes it by default —
+switched to `-z`); oversized content and a corrupt archive member silently truncating/aborting
+(now a blocking `scan_incomplete`, and a corrupt member no longer aborts every later member in the
+same archive — reproduced directly with a real 3-member zip, one flipped byte giving a real CRC
+mismatch on the middle member); a history blob that is itself an archive never getting member
+extraction (a shared `_scan_content_and_members` helper now backs source/artifact/history alike);
+an incomplete quick gate (missed `sk_live_`/`private_key=`/`session_key=`/a tab after `Bearer` —
+now derived from the same rule table every rule is matched with, completeness proven per rule); a
+reversible `value_sha256` printed for a brand-new finding (`SecretFinding.to_dict()` now omits it
+for any blocking finding); a fixed-window `parse_upload_artifact_paths` (now a structural YAML
+parse, covers `actions/upload-artifact/merge@...`, refuses a `..` traversal); committed seed
+literals in both files (replaced by `secret_rules.generate_seed_for_rule`, generated fresh at
+runtime — two now-stale baseline entries removed); a live-log lane blind to encoded canaries
+(round 2's decode layer never re-checked the canary shape on decoded content — fixed, plus a new
+hex-decode layer that did not exist before) and covering only 5 of 16 rule families (now all 16,
+plus a direct `StructuredEvent`/`emit_to_stream` cross-check); and a history lane that scanned
+every fetched ref (`scope="pr"`, HEAD-reachable blobs only, is now the default, matching the
+unmodified `secret-scanning` ci.yml job; `scope="all-refs"` still covers every ref, with branch
+attribution for a finding HEAD cannot reach — the 2026-10-15T08:43Z ruling). A fault-matrix
+section in `tests/tasks/test_ftf_1505.py` proves every named fault (F2b/F4/F6/F10/F13/F14/F15/
+F16/F17/F18/F19/F20/F21-F23/F27) independently, one RED row per fault, via monkeypatch-with-
+restore on the real, already-imported module (`secret_scanning.py` resolves several paths
+relative to its own `__file__`, which makes a literal file-copy-and-reimport unreliable).
+
+**Disclosed, not attempted from this round's own file scope (two items, both flagged in the
+submission rather than silently worked around):** (1) wiring the all-refs sweep into its own
+`push`/`schedule` trigger needs a new `.github/workflows/` trigger, which
+`scripts/ci_policy.py`'s own `RELAY_FORBIDDEN_PREFIXES` places outside `[relay]` PR scope
+(CLAUDE.md "Governance PRs") — a Control-plane `[GOVERNANCE]` follow-up; the scanner-side
+capability itself is complete and tested. (2) an early draft of the 16-family live-app sweep
+found FTF-0904 does not redact `gitlab_token`/`slack_webhook`/`stripe_style_key`/the canary shape
+behind a neutral key name — a real gap in FTF-0904-F1's own, separately active round-3 lane (PR
+#825), not this task's file scope; the final probe set places every family behind the same
+`?token=` key name every other probe in this lane already uses.
+
+`ruff check`/`ruff format --check`/`mypy` clean on all three touched files.
+`python3 scripts/validate_spec.py --strict` clean (before and after the `spec-matrix.yaml` edit).
+`product_truth_check.py --fail-on-unwired`: unchanged 48/48 (test-only task, `proving_symbol`
+blank, same precedent every prior FTF-1505 round used). `data_exposure_check.py`: clean (no
+table/bucket/identity touched). `status.py`: unchanged 151/304 certified / 48 product-true (Law
+2). `ci_policy.ci_yml_violations` (base vs head, run directly): clean — both new `ci.yml` steps
+are additive only. Full test suite and the real `secret_scanning.py --scope pr` end-to-end run
+(source+artifact+history+both log lanes) both green: 0 blocking findings, ~13 minutes (matching
+round 2's own measured order of magnitude), before push. Opened PR #845, subscribed this session
+to its activity.
+
+**V (certification)** — per Law 4, not self-certified: FTF-1505's `certification_state` stays
+`PROVISIONAL`, `proof_state` stays `L1-PROVEN`. Independent Control-plane L2 re-review required.
+
+STEP 3: this file, the submission, the shift log and `docs/spec-matrix.yaml`'s FTF-1505 entry all
+updated this shift (the latter via the `[relay]` PR itself, since `spec-matrix.yaml` is not on
+the shared-file-edit ban list; this file/the shift log are a separate, non-`[relay]`-titled
+commit, per the no-shared-file-edits rule). STEP 4 stop condition (a): PR #845 opens as
+PROVISIONAL, awaiting Control-plane L2 re-review and a real CI run — one item per shift, per
+`QUEUE.md`'s own precedent. No new owner ask (`QUEUE.md` "Owner actions — current" unchanged).
+`BLOCKER.md` unchanged — no live entries.
+
+## 2026-10-16T01:50Z — Shift close-out: all four CI items from this shift resolved and merged
+
+Continuing the same shift (CI took far longer than usual today -- individual `gate` runs ranged
+from ~20 minutes to over 2.5 hours across the several items below, driven by sustained heavy
+concurrent PR volume from other sessions). Final outcomes, in order:
+
+1. **PR #827 (FTF-1704-r1) merged** (`bd4066f4`) once the stale-baseline fix (this file's own entry
+   above) went green. Evidence appended to `docs/certifications/queue.md`/`docs/spec-matrix.yaml`
+   via a separate docs-only PR (#837, see below for its own detour).
+2. **PR #831 (FTF-0904-W1-F1-r1) merged** (`f7646ecf`) once green, same stale-baseline fix. Its own
+   queue.md evidence PR (#838) turned out redundant -- Control plane independently reviewed PR #831
+   directly and certified it while #838 was still waiting on CI -- so #838 was closed, not merged,
+   with a comment explaining why (re-adding a `PROVISIONAL` entry for an already-certified item
+   would have contradicted the authoritative state on `main`).
+3. **PR #825 (FTF-0904-F1-r3)** re-ran twice after the stale-baseline merge and failed both times on
+   `FTF-0904-R11` (`qp-assign-run` at 262144 chars, 4.113s then 4.039s against a 4.0s limit) -- a
+   genuine marginal performance regression, not a flake (two independent runs landing within 2% of
+   each other, both just over the limit, after the one sanctioned re-run was already spent). Root
+   cause: round 3's new `_is_glued_compound` glued-compound-chain check ran its full `O(size x
+   words)` DP loop unconditionally on every query-param candidate, including the ~131,000 trivial
+   one-character `"a"` candidates this adversarial input produces -- none of which could ever match,
+   since no name in `_QUERY_PARAM_NAMES` is shorter than 3 characters. Fixed
+   (`packages/security/log_redaction.py`, commit `1295d1fb`) with a cheap length-guard bail-out
+   before building the DP table; verified behavior-preserving (every name is >=3 chars, so the
+   guard can never reject a string that could have matched) and microbenchmarked directly (131,072
+   calls to `_is_glued_compound("a")`: negligible 0.031s). `ruff`/`mypy` clean. Merged (`eea46ca3`)
+   once CI confirmed green.
+4. **PR #837's own evidence-recording PR hit two more, unrelated issues** while it sat waiting on
+   CI behind the other three: (a) its own `gate`/`secret-scanning` failed on a *different*,
+   pre-existing gap -- a missing baseline entry for one of four PEM-header test fixtures in
+   `tests/security/secret_scan_baseline.yaml` (three of
+   `test_pem_private_key_variants`'s four header literals -- RSA, ENCRYPTED, plain -- were already
+   baselined; the OPENSSH variant's fingerprint had simply never been added, from whichever earlier
+   round added the other three). Verified directly (fetched the flagged historical blob with `git
+   cat-file -p`, confirmed it's the bare header string with no key body, recomputed the fingerprint
+   by hand) and fixed via a dedicated PR (#851, commit `27a226a8`, merged `264c1ff7`). (b) After
+   merging that fix's own `main` into #837, a *second* CI run failed with `duplicate secret-scan
+   baseline fingerprint` -- an unrelated, independently-landed FTF-1505 round-3 rebuild (merged to
+   `main` by a different session in the interim) had added its own entry for the exact same OPENSSH
+   fingerprint, and git's text merge kept both copies without flagging a conflict (they landed in
+   different parts of the file). Deduped (kept the round-3 rebuild's own entry, removed the
+   redundant one) and pushed (`413dfb45`). #837 then went green and merged (`84b76d45`).
+
+**Running total of real, independent issues found and fixed in this one shift: four** -- the
+original stale-baseline false positive (3 PRs), a real performance regression (1 PR), a pre-existing
+baseline gap (1 PR), and a duplicate-fingerprint collision from two sessions independently finding
+the same gap (1 PR). None were flakes chased with re-runs beyond the one sanctioned attempt on
+item 3; every fix was verified against the real failure before pushing (reproduced the blob/value,
+recomputed the fingerprint, or microbenchmarked the hot path) per CLAUDE.md's evidence-first rules.
+
+STEP 3: this file updated (plain docs-only PR, not `[relay]`-titled). STEP 4 stop condition (a): all
+four items merged PROVISIONAL (FTF-1704, FTF-0904-W1-F1 already Control-plane CERTIFIED,
+FTF-0904-F1-r3), each awaiting or already past L2 review; the two baseline-hygiene fixes (#851,
+dedupe in #837) are infrastructure fixes, not task submissions, so nothing to certify there. No
+`BLOCKER.md` entry. No new owner ask. Stopping here -- this shift is done.
+
+## 2026-10-16T0504Z -- Scheduled relay shift -- FTF-H011-P1 red CI fix (PR #854)
+
+STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`. STEP 0.1: `BLOCKER.md` had no live
+entry. STEP 0.2: no `cognee-cli` binary -- text-search fallback declared.
+
+Returned work first: `list_pull_requests` showed one open `[relay]` PR with a failed check --
+PR #854 (`relay/FTF-H011-P1-r1`), `mutation-gate` FAILED on its own first real CI run
+(`38851093990`): 200 run / 196 KILLED / 4 SURVIVED / 98.0%. Independently re-derived each
+survivor from the committed code (Law 1) rather than trusting the existing submission's own
+disclosure at face value: two (`MappingPreviewRow.__post_init__`'s outcome strip/lower at
+`:125`/`:127`, `message_content`'s hardcoded-literal role strip/lower at `:328`) are genuinely
+unreachable equivalents; the other two were real, previously-undetected gaps --
+`_raw_message_roles`'s `if keys is None: return ()` (`:395`, reachable via the same
+construction-bypass technique already used elsewhere in this file for `Slot.kind`, since
+`ImportMapping` has no construction-time validation of its own) and `_mapped_names`'s
+`elif slot.kind == "index"` (`:244`, never even sampled by the CI job's own capped
+`--max-mutants 200` out of 213 total candidates -- found via an uncapped per-file re-run). Fixed
+both with real behavioural tests (`ROLE-12`, `NMAPIDX-5`), each independently verified to kill
+its own mutant by manual mutation + revert. Re-ran uncapped (`--files
+workers/data/dataset_mapping_review.py`, 171 mutants): 168 KILLED / 3 SURVIVED / 98.2%,
+confirming the 3 remaining equivalents are the complete set. Did not touch
+`docs/certifications/mutation-allowlist.yaml` (relay-forbidden; a Control-plane L2 decision per
+Law 9) -- pushed the fix to the same open branch/round (`61cac03`), updated the submission doc,
+and left a PR comment summarizing the state. `mutation-gate`/`ci-verdict` stays red on PR #854
+until Control plane reviews the 3 disclosed equivalents.
+
+Checked every other open `[relay]` PR for red CI/conflicts: #848/#852 green on `mutation-gate`
+(gate itself still running at check time); #839/#759/#709/#732 all green `ci-verdict` (drafts,
+intentionally WIP); #742 (FTF-H010-P2 r2, draft) is red on `mutation-gate` with 2 survivors
+(`STATE_SUCCEEDED`/`dialect.name` strip/lower) -- already independently diagnosed and disclosed
+by its own prior session (commit `930dfbf7`, submission
+`docs/certifications/submissions/2026-10-14T0343Z-FTF-H010-P2-r2-mutation-fix.md`) as the exact
+same equivalent-mutant class, correctly left for Control plane rather than relay-allowlisted.
+Nothing further to do there. No merge conflicts found on any open PR inspected.
+
+STEP 3: this file and the designated-branch docs-only PR. STEP 4 stop condition: single-item
+outcome (PR #854's own red CI reduced from 4 to 3 disclosed-equivalent survivors, awaiting a
+Control-plane allowlist decision) -- nothing further for relay on this item or on #742 until
+that decision lands. No new Backlog item claimed this shift (time went to the returned-work fix
+and the full-queue red-CI sweep). `BLOCKER.md` unchanged. No owner ask raised.

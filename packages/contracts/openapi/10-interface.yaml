@@ -61,8 +61,9 @@ paths:
           description: >-
             Malformed body, an unknown field, a missing/invalid
             `requested_origin`, an `external_endpoint` request carrying
-            `trainable_artifact_id`, or an `imported_adapter` request with
-            no `parent_model_version_id` (the base).
+            `trainable_artifact_id`, an `imported_adapter` request with
+            no `parent_model_version_id` (the base), or a missing, malformed or
+            non-applicable `litellm_connection_id` (`invalid_body`).
         '401':
           $ref: '#/components/responses/NotAuthenticated'
         '403':
@@ -70,7 +71,7 @@ paths:
         '404':
           description: >-
             `not_found` -- identical for a missing/foreign project,
-            `parent_model_version_id` or `trainable_artifact_id`.
+            `parent_model_version_id`, `trainable_artifact_id` or `litellm_connection_id`.
     get:
       summary: List the project's own import jobs, oldest first (FTF-H010-P1).
       operationId: listModelImportJobs
@@ -173,6 +174,13 @@ components:
           maxLength: 2048
           description: >-
             Required when `requested_origin` is `external_endpoint`.
+        litellm_connection_id:
+          type: [string, 'null']
+          format: uuid
+          description: >-
+            FTF-H010-P2. Required (a uuid) when `requested_origin` is `external_endpoint`: the
+            org-admin-registered gateway connection the import is validated through. Refused (a
+            non-null value is `400 invalid_body`) for the other origins.
       required: [requested_origin]
       additionalProperties: false
     ModelImportJob:
@@ -197,6 +205,16 @@ components:
           format: uuid
         external_provider_model_ref:
           type: [string, 'null']
+        litellm_connection_id:
+          type: [string, 'null']
+          format: uuid
+          description: Set for `external_endpoint` jobs (FTF-H010-P2), null for the other origins.
+        result_model_version_id:
+          type: [string, 'null']
+          format: uuid
+          description: >-
+            The endpoint-only ModelVersion a `succeeded` job created (FTF-H010-P2); null in every
+            other state.
         state:
           $ref: '#/components/schemas/ModelImportJobState'
         failure_code:

@@ -228,3 +228,26 @@ test("the Resolve button is disabled until a ref is present, and typing a ref ne
   );
   expect(fetch).not.toHaveBeenCalled();
 });
+
+// FTF-UX03 (audit #14): the connection's default branch pre-fills the ref, never resolves it.
+test("UX03: defaultBranch pre-fills the ref input but nothing is resolved until the user submits", () => {
+  render(
+    createElement(GitHubBranchRefSelector, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      credential: "ghp_realtoken",
+      repositoryIdentity: REPO,
+      targetApplicationConnectionId: CONNECTION_ID,
+      defaultBranch: "trunk",
+    }),
+  );
+  expect((screen.getByTestId("github-ref-input") as HTMLInputElement).value).toBe("trunk");
+  expect(screen.queryByTestId("github-resolved-ref-notice")).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+test("UX03: without defaultBranch the ref input starts empty", () => {
+  renderSelector();
+  expect((screen.getByTestId("github-ref-input") as HTMLInputElement).value).toBe("");
+});
