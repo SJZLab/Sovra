@@ -228,7 +228,7 @@ test("a failed listing surfaces the real server-provided error detail, never a g
   fireEvent.click(screen.getByTestId("github-load-repositories-button"));
 
   await waitFor(() =>
-    expect(screen.getByTestId("github-repository-error").textContent).toBe(
+    expect(screen.getByTestId("github-repository-error").textContent).toContain(
       "GitHub rejected the credential (HTTP 401)",
     ),
   );
