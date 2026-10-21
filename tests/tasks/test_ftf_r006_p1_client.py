@@ -1693,7 +1693,7 @@ def test_r4_key_never_echoed_by_username_or_workspace_rejection() -> None:
         not leaks_ws,
     )
 
-    # G21 / G22: a rejection that echoes the value must turn the probe RED.
+    # G23 / G24 (input validators): a rejection that echoes the value must turn the probe RED.
     real_user, real_ws = client_mod._require_username, client_mod._require_workspace_name
 
     def echo_user(value: object) -> str:
@@ -1717,12 +1717,125 @@ def test_r4_key_never_echoed_by_username_or_workspace_rejection() -> None:
     finally:
         client_mod._require_workspace_name = real_ws
     check(
-        "R006P1a-10", "G21: a username rejection that echoes the value turns the probe RED", g21[0]
+        "R006P1a-10",
+        "G23: an input-username rejection that echoes the value turns the probe RED",
+        g21[0],
     )
     check(
         "R006P1a-10",
-        "G22: a workspace-name rejection that echoes the value turns the probe RED",
+        "G24: an input-workspace-name rejection that echoes the value turns the probe RED",
         g22[1],
+    )
+
+
+def _full_text_of(fn: Any, *args: Any, **kwargs: Any) -> tuple[type | None, str]:
+    """The exception's str, repr, cause, context and the whole formatted traceback."""
+    import traceback
+
+    try:
+        fn(*args, **kwargs)
+    except Exception as exc:
+        parts = [str(exc), repr(exc), repr(exc.__cause__), repr(exc.__context__)]
+        parts.append("".join(traceback.format_exception(exc)))
+        return type(exc), "".join(parts)
+    return None, ""
+
+
+def _response_echo_probe(key: str) -> tuple[list[str], list[str]]:
+    """Server responses whose username / workspace name is INVALID and carries the key, through
+    every client call that parses them. Returns the calls whose exception text holds the key."""
+    stub = Stub()
+    c = stub.client(api_key=key)
+    user_leaks: list[str] = []
+    ws_leaks: list[str] = []
+    bad_values: list[Any] = [[key], {key: 1}]
+    for bad in bad_values:
+        user = {**USER, "username": bad}
+        user_calls: list[tuple[str, int, Any, Any]] = [
+            ("get_user", 200, user, lambda: c.get_user(USER["id"])),
+            (
+                "create_user",
+                201,
+                user,
+                lambda: c.create_user(
+                    username="sovra-a", role="annotator", password="correct-horse-battery"
+                ),
+            ),
+            (
+                "list_workspace_users",
+                200,
+                {"items": [user]},
+                lambda: c.list_workspace_users(WORKSPACE["id"]),
+            ),
+        ]
+        for call, status, payload, invoke in user_calls:
+            stub.reply(status, payload)
+            kind, text = _full_text_of(invoke)
+            if kind is not ArgillaRejectedError or not _no_key(text, key):
+                user_leaks.append(f"{call}:{type(bad).__name__}")
+        ws = {**WORKSPACE, "name": bad}
+        ws_calls: list[tuple[str, int, Any, Any]] = [
+            ("list_workspaces_me", 200, {"items": [ws]}, c.list_workspaces_me),
+            ("create_workspace", 201, ws, lambda: c.create_workspace("sovra-abc123")),
+            ("ensure_workspace", 200, {"items": [ws]}, lambda: c.ensure_workspace("sovra-abc123")),
+        ]
+        for call, status, payload, invoke in ws_calls:
+            stub.reply(status, payload)
+            kind, text = _full_text_of(invoke)
+            if kind is not ArgillaRejectedError or not _no_key(text, key):
+                ws_leaks.append(f"{call}:{type(bad).__name__}")
+    stub.server.shutdown()
+    return user_leaks, ws_leaks
+
+
+def test_r5_key_never_echoed_by_a_response_username_or_workspace_name() -> None:
+    """G21 / G22 (response side, `_user_of` / `_workspace_of`): a server response whose username
+    or workspace name is invalid and carries the provisioning key never puts the key into any
+    exception text (str, repr, cause, context, traceback)."""
+    key = "argilla.provisioning.key"
+    user_leaks, ws_leaks = _response_echo_probe(key)
+    check(
+        "R006P1a-12",
+        f"no response username rejection echoes the key ({user_leaks})",
+        not user_leaks,
+    )
+    check(
+        "R006P1a-12",
+        f"no response workspace-name rejection echoes the key ({ws_leaks})",
+        not ws_leaks,
+    )
+
+    real_user_of, real_workspace_of = client_mod._user_of, client_mod._workspace_of
+
+    def echo_user_of(payload: object, roles: frozenset[str] = client_mod.ARGILLA_ROLES) -> Any:
+        if isinstance(payload, dict) and not isinstance(payload.get("username"), str):
+            raise ArgillaRejectedError(f"Argilla returned a malformed user {payload!r}")
+        return real_user_of(payload, roles)
+
+    def echo_workspace_of(payload: object) -> Any:
+        if isinstance(payload, dict) and not isinstance(payload.get("name"), str):
+            raise ArgillaRejectedError(f"Argilla returned a malformed workspace {payload!r}")
+        return real_workspace_of(payload)
+
+    try:
+        client_mod._user_of = echo_user_of
+        g21 = _response_echo_probe(key)
+    finally:
+        client_mod._user_of = real_user_of
+    try:
+        client_mod._workspace_of = echo_workspace_of
+        g22 = _response_echo_probe(key)
+    finally:
+        client_mod._workspace_of = real_workspace_of
+    check(
+        "R006P1a-12",
+        f"G22 (response username echo) turns the probe RED ({g21[0]})",
+        len(g21[0]) == 6,
+    )
+    check(
+        "R006P1a-12",
+        f"G21 (response workspace-name echo) turns the probe RED ({g22[1]})",
+        len(g22[1]) == 6,
     )
 
 
