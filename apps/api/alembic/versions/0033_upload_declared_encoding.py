@@ -14,8 +14,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0032_upload_declared_encoding"
-down_revision = "0031_model_import_validation"
+revision = "0033_upload_declared_encoding"
+down_revision = "0032_split_manifest_requests"
 branch_labels = None
 depends_on = None
 
