@@ -256,7 +256,7 @@ def test_v3_decoding_survives_chunk_boundaries() -> None:
         body = _csv_in(encoding, ("الاسم;المدينة\r\n" * 40))
         chunks = [body[i : i + 3] for i in range(0, len(body), 3)]
 
-        def stream(_bucket: str, _key: str, _chunks: list[bytes] = chunks):  # type: ignore[no-untyped-def]
+        def stream(_bucket: str, _key: str, _chunks: list[bytes] = chunks):
             return iter(_chunks)
 
         check(
@@ -324,9 +324,11 @@ def test_r1_create_declares_and_returns_the_encoding() -> None:
         )
 
     with base._routes_env() as env:
-        sid = base._open_session(env, CP1256_CSV, declared_content_type="text/csv")["id"]
-        base._put_all(env, sid, CP1256_CSV)
-        done = base._call(env.base, "POST", f"{base._col()}/{sid}/finalize", base._finalize_body())
+        undeclared = base._open_session(env, CP1256_CSV, declared_content_type="text/csv")["id"]
+        base._put_all(env, undeclared, CP1256_CSV)
+        done = base._call(
+            env.base, "POST", f"{base._col()}/{undeclared}/finalize", base._finalize_body()
+        )
         check(
             f"{CID}-R1",
             "the same bytes without a declaration are refused and create no dataset",
@@ -392,8 +394,8 @@ def test_r3_the_store_validates_the_encoding() -> None:
     check(
         f"{CID}-R3",
         "the ORM column defaults to utf-8 in Python and in the database",
-        store.DatasetUploadSession.__table__.c.declared_encoding.default.arg == "utf-8"  # type: ignore[attr-defined]
-        and store.DatasetUploadSession.__table__.c.declared_encoding.server_default.arg == "utf-8",  # type: ignore[attr-defined]
+        store.DatasetUploadSession.__table__.c.declared_encoding.default.arg == "utf-8"
+        and store.DatasetUploadSession.__table__.c.declared_encoding.server_default.arg == "utf-8",
     )
     with base._routes_env() as env:
         import uuid
