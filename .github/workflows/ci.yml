@@ -136,6 +136,9 @@ jobs:
         run: uv sync --all-packages
       - name: Install JS/TS dev dependencies
         run: pnpm install --frozen-lockfile
+      - name: Install Playwright Chromium (FTF-UX01 real-browser §72.5 evidence)
+        working-directory: apps/web
+        run: pnpm exec playwright install --with-deps chromium
       - name: Python lint + format + type check (FTF-0002)
         run: |
           uv run ruff check .
