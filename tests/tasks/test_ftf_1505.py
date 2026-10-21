@@ -2655,6 +2655,37 @@ def test_long_base64_and_hex_runs_are_one_whole_match_and_dense_sweeps_find_ever
     )
 
 
+def test_unit_sized_base64_and_hex_runs_are_scanned_end_to_end() -> None:
+    """Round 9, the length-cap class closed by construction: one base64 run and
+    one hex run each exactly `MAX_SCAN_BYTES` long (no unit the scanner reads
+    can be longer) go through `scan_line` itself, and each is tiled end to end
+    with distinct secrets one space apart, the last ending on the run's last
+    byte. A bound shorter than a unit -- a regex cap, a slice or skip in the
+    caller or the decoder, a finditer endpos -- loses the tail; a cap that
+    splits the run into chunks that still decode cuts through a secret at a
+    chunk boundary. Every secret must come back; a bound of `MAX_SCAN_BYTES`
+    or more is a no-op."""
+    base = generate_seed_for_rule("github_token")
+    for kind, raw_len, encode in (
+        ("base64", sr.MAX_SCAN_BYTES // 4 * 3, lambda b: base64.b64encode(b).decode()),
+        ("hex", sr.MAX_SCAN_BYTES // 2, lambda b: b.hex()),
+    ):
+        count = raw_len // (len(base) + 1)
+        # distinct values of the same shape: the base seed's tail replaced by a counter
+        seeds = [f"{base[:-7]}{i:07d}" for i in range(count)]
+        raw = (" " * (raw_len - count * (len(base) + 1)) + "".join(" " + s for s in seeds)).encode()
+        run = encode(raw)
+        found = {v for r, v in scan_line(run) if r == "github_token"}
+        missed = [i for i, s in enumerate(seeds) if s not in found]
+        check(
+            "FTF-1505-NO-CAP",
+            f"one {len(run):,}-char {kind} run (= MAX_SCAN_BYTES) tiled with {count:,} "
+            f"secrets is scanned through scan_line and every secret is found "
+            f"(missed {len(missed):,}, first {missed[:3]}, last {missed[-3:]})",
+            len(run) == sr.MAX_SCAN_BYTES and len(raw) == raw_len and not missed,
+        )
+
+
 def test_real_live_lane_decides_on_observed_statuses_and_the_real_capture() -> None:
     """LIVE-CALLSITE, on real boots: (a) an extra probe expecting a status the
     app never returns (418) fails, so the statuses handed to the decisions are
@@ -2970,6 +3001,7 @@ def main() -> None:
     test_secret_straddling_base64_run_length_boundaries_is_found()
     test_secret_deep_inside_one_long_hex_run_is_found()
     test_long_base64_and_hex_runs_are_one_whole_match_and_dense_sweeps_find_every_secret()
+    test_unit_sized_base64_and_hex_runs_are_scanned_end_to_end()
     test_real_live_lane_decides_on_observed_statuses_and_the_real_capture()
     test_main_decides_on_every_lane_and_every_completeness_check()
     test_artifact_lane_detects_a_canary()

@@ -60,6 +60,9 @@ export function DataTable<Row>({ caption, columns, rows, rowKey, empty }: DataTa
                     }
                   >
                     {c.header}
+                    {sort?.key === c.key ? (
+                      <span aria-hidden="true">{sort.dir === "ascending" ? " ▲" : " ▼"}</span>
+                    ) : null}
                   </button>
                 ) : (
                   c.header

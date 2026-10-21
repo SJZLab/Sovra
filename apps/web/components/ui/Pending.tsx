@@ -51,12 +51,16 @@ export function PendingView({ phase, label, onCancel, value, locale = "en" }: Pe
           >
             <div
               data-testid="progress-fill"
+              data-indeterminate={determinate ? undefined : "true"}
               style={{
                 blockSize: "100%",
                 inlineSize: determinate
                   ? `${Math.min(100, Math.max(0, value as number))}%`
                   : "100%",
-                background: "var(--color-action)",
+                // Indeterminate: stripes, so the bar never reads as a finished 100%.
+                background: determinate
+                  ? "var(--color-action)"
+                  : "repeating-linear-gradient(45deg, var(--color-action) 0 8px, var(--color-surface-2) 8px 16px)",
               }}
             />
           </div>

@@ -8,3 +8,4 @@ export * from "./Field";
 export * from "./Pending";
 export * from "./StatusBadge";
 export * from "./phrases";
+export * from "./text";
