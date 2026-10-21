@@ -47,7 +47,7 @@ CID = "FTF-0501-F2"
 FAILURES = base.FAILURES
 check = base.check
 
-MIGRATION = ROOT / "apps" / "api" / "alembic" / "versions" / "0032_upload_declared_encoding.py"
+MIGRATION = ROOT / "apps" / "api" / "alembic" / "versions" / "0033_upload_declared_encoding.py"
 ENCODINGS = ("utf-8", "utf-8-sig", "utf-16-le", "utf-16-be", "windows-1256")
 ARABIC_HEADER = "الاسم;المدينة;الرقم"
 CP1256_CSV = (ARABIC_HEADER + "\r\nعلي;الرياض;1\r\n").encode("windows-1256")
@@ -571,10 +571,10 @@ def test_v5_the_tail_decision_is_made_on_the_whole_object() -> None:
 
 def test_m1_the_migration_adds_a_checked_immutable_column() -> None:
     src = MIGRATION.read_text()
-    check(f"{CID}-M1", "revision id", 'revision = "0032_upload_declared_encoding"' in src)
-    check(f"{CID}-M1", "parent revision", 'down_revision = "0031_model_import_validation"' in src)
+    check(f"{CID}-M1", "revision id", 'revision = "0033_upload_declared_encoding"' in src)
+    check(f"{CID}-M1", "parent revision", 'down_revision = "0032_split_manifest_requests"' in src)
     check(
-        f"{CID}-M1", "revision id fits alembic_version", len("0032_upload_declared_encoding") <= 32
+        f"{CID}-M1", "revision id fits alembic_version", len("0033_upload_declared_encoding") <= 32
     )
     check(
         f"{CID}-M1",
@@ -609,7 +609,7 @@ def test_m1_the_migration_adds_a_checked_immutable_column() -> None:
         )
         return result.stdout
 
-    up = sql("upgrade", "0031_model_import_validation:0032_upload_declared_encoding")
+    up = sql("upgrade", "0032_split_manifest_requests:0033_upload_declared_encoding")
     check(
         f"{CID}-M1",
         "upgrade adds the column",
@@ -620,7 +620,7 @@ def test_m1_the_migration_adds_a_checked_immutable_column() -> None:
         "upgrade adds the CHECK",
         "ck_dataset_upload_sessions_declared_encoding" in up and "'windows-1256'" in up,
     )
-    down = sql("downgrade", "0032_upload_declared_encoding:0031_model_import_validation")
+    down = sql("downgrade", "0033_upload_declared_encoding:0032_split_manifest_requests")
     check(
         f"{CID}-M1",
         "downgrade drops the CHECK then the column",
@@ -638,7 +638,7 @@ def test_m1_the_migration_adds_a_checked_immutable_column() -> None:
     check(
         f"{CID}-M1",
         "a single Alembic head",
-        heads.stdout.count("(head)") == 1 and "0032_upload_declared_encoding" in heads.stdout,
+        heads.stdout.count("(head)") == 1 and "0033_upload_declared_encoding" in heads.stdout,
     )
 
 
