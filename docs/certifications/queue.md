@@ -25187,3 +25187,16 @@ different session.
 
 ## 2026-10-21T00:50Z — Control plane: FTF-1505 returned (r8, tests only; verdict by independent session_013icfdVeuzbsh6xmPLWBZ1d)
 - **Returned:** FTF-1505 r8 (0h): whole-class run-length cap pins. Control plane produces round 8.
+
+## 2026-10-21T12:49Z — Control plane: FTF-H010-P2 certified (child slice); FTF-UX01 returned (r3)
+- **Certified:** FTF-H010-P2 (#918, merge c3c8da60), round 3; FTF-1001 requalified.
+- **Returned:** FTF-UX01 r2 -> r3 (0n): ErrorSummary focus steal, dark link contrast + color-scheme, §4 evidence, P6 and all-ten-state icon pins; Dialog still waits on the owner's Radix approval.
+- **Returned:** FTF-1505 r8 -> r9 (0h, tests only; verdict by independent session_015VgaHaMgvjedrPji9hzGLf): end-to-end scan_line pin with MAX_SCAN_BYTES-sized runs. Control plane produces round 9.
+- **Maintenance (no requalification):** #906 (FTF-1506, lock-only: certifi 2026.10.19 for GHSA-6q48-6c7w-9gw2, vite 8.2.4 for GHSA-587h-7wmj-h5pm); FTF-1506's dependency-scanning job green on its head; no gate or allowlist changed.
+- **Returned:** FTF-R006-P1a r3 -> r4 (0m): late-TLS-handshake deadline (production), username/name key-echo pins.
+- **Returned (urgent):** FTF-0904-F2 r1 -> r2 (0b, take first): generic quoted-value fail-open regression of FTF-0904 (live on main), escaped-quote forms, V6/V10/V11/V17 pins, over-redaction counts. FTF-0904 requalification pending.
+- **Certified:** FTF-0519-P2 (#915, merge 43a381ec), round 2. Allowlist: pending_pr keys removed (#742/#869/#915 on main), _refusal re-pinned 304 -> 327, three stale M9 entries retired.
+- **Certified:** FTF-0512-F3 (#912, merge a4dff1f8), round 2; FTF-0512 requalified.
+- **Certified:** FTF-H011-P1 (#907, merge c0bd2b2f), round 4 (tests only).
+- **Returned:** FTF-UX03 r1 -> r2 (0g, after FTF-UX01): rebuild on UX01 components, full en/ar + dir/lang, error handling and recovery, loading/empty states, 8 pins, severity-2 decisions, §4 evidence in CI.
+- **Not certified:** FTF-0501-F2 (#914): two Alembic heads on main (with #915). Control plane rechained the migration in this PR; certification of the fix + FTF-0501-F2 + the FTF-0519 parent goes to a separate session.
