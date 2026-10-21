@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from "react";
 
 import { dirFor, phrase, type Locale } from "./phrases";
+import { cleanText } from "./text";
 
 export interface ErrorSummaryItem {
   fieldId: string;
@@ -8,28 +9,33 @@ export interface ErrorSummaryItem {
 }
 
 /**
- * Focusable summary linking to each invalid field (NN/g H9). Takes focus on every failed
- * submit, even a repeat with the same error count — keyed on the errors array identity, which
- * a caller creates fresh on every submit attempt, not on its length.
+ * Focusable summary linking to each invalid field (NN/g H9). Takes focus on an explicit submit
+ * signal: when the summary first appears, and each time the caller raises `submitCount` (one per
+ * failed submit, so a repeat failure with the same errors still takes focus). It never keys on
+ * the `errors` array identity: a caller that builds the list during render hands over a fresh
+ * array on every keystroke, and re-focusing then would pull the user out of the field they just
+ * moved to and drop their typing.
  */
 export function ErrorSummary({
   errors,
   title,
   locale = "en",
+  submitCount = 0,
 }: {
   errors: ErrorSummaryItem[];
   title?: string;
   locale?: Locale;
+  submitCount?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const hasErrors = errors.length > 0;
   useEffect(() => {
-    if (errors.length > 0) ref.current?.focus();
-    // Intentionally depends on the `errors` array identity, not its length: a second failed
-    // submit with the same number of errors (but a fresh array) must re-take focus too.
-  }, [errors]);
-  if (errors.length === 0) return null;
-  const resolvedTitle = title?.trim() || phrase("errorSummaryTitle", locale);
+    if (hasErrors) ref.current?.focus();
+    // Only the submit signal and the appear/disappear edge, never the array identity.
+  }, [submitCount, hasErrors]);
+  if (!hasErrors) return null;
+  const resolvedTitle = cleanText(title) || phrase("errorSummaryTitle", locale);
   return (
     <div
       ref={ref}

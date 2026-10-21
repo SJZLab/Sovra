@@ -489,15 +489,14 @@ test("[UX01-T20b] Field: a caller aria-describedby is kept alongside the helper/
   expect(input.getAttribute("aria-describedby")).toBe("caller-hint name-helper");
 });
 
-test("[UX01-T21] ErrorSummary re-takes focus on a repeated failed submit with the same error count", () => {
-  const { rerender } = render(
-    createElement(ErrorSummary, { errors: [{ fieldId: "f1", message: "Enter a name" }] }),
-  );
+test("[UX01-T21] ErrorSummary re-takes focus on a repeated failed submit with the same error count (explicit submitCount, round 3)", () => {
+  const errs = () => [{ fieldId: "f1", message: "Enter a name" }];
+  const { rerender } = render(createElement(ErrorSummary, { errors: errs(), submitCount: 1 }));
   const summary = screen.getByRole("alert");
   (document.activeElement as HTMLElement)?.blur();
   expect(document.activeElement).not.toBe(summary);
-  // Same length (1), different content, but a FRESH array -- a real second submit.
-  rerender(createElement(ErrorSummary, { errors: [{ fieldId: "f1", message: "Enter a name" }] }));
+  // Same length (1), same content, but the caller counted a SECOND failed submit.
+  rerender(createElement(ErrorSummary, { errors: errs(), submitCount: 2 }));
   expect(document.activeElement).toBe(screen.getByRole("alert"));
 });
 
@@ -535,7 +534,7 @@ test("[UX01-T24] Button: each variant has a visibly distinct style (never colour
   const styles = (["primary", "secondary", "danger"] as const).map((variant) => {
     const { container, unmount } = render(createElement(Button, { variant }, "Go"));
     const btn = container.querySelector("button") as HTMLButtonElement;
-    const snapshot = `${btn.style.background}|${btn.style.border}`;
+    const snapshot = `${btn.style.background}|${btn.style.borderStyle}|${btn.style.borderColor}`;
     unmount();
     return snapshot;
   });
