@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-20T14:55Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-21T00:50Z. Source: `python3 scripts/status.py` on main.
 - **Status: 155/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,26 @@ Updated: 2026-10-20T14:55Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-21T00:50Z:**
+  - Returned: FTF-1505 r8, tests only (secret scanning round 7, certified by a separate session: the scanner and the live-log checks hold, but the long-text tests only caught size limits at the exact sizes they named). Round 8 pins any size limit.
+- **2026-10-21T00:50Z:**
+  - Returned: FTF-H010-P2 r3 (model import validation: job locking, migration and access control are sound, but a model endpoint that answers with no model name or the wrong one is not failed, a connection revoked mid-check still succeeds, and the API contract and CI wiring are missing). FTF-1001 stays certified.
+- **2026-10-21T00:50Z:**
+  - Returned: FTF-0519-P2 r2 (split-manifest API routes: the routes work and leak no record ids, but the required real-database route test and CI step are missing, an ML engineer can see which held-out dataset a split uses, and the idempotency key is ignored).
+- **2026-10-21T00:25Z:**
+  - Returned: FTF-0512-F3 r2 (duplicate detector: "-5" vs "5" and "5%" vs "5" are now kept apart, but "-$5" still matches "$5" and 5 inches matches 5 feet - the whole mark run next to a number must be kept, not just one character).
+- **2026-10-21T00:25Z:**
+  - Returned: FTF-UX02 r2 (dataset screens redesign: nothing certified broke, but the new "abandon" confirmation loses keyboard focus, Arabic is not done, and the screens are not yet built on the shared design system). Round 2 starts after the design system (UX01) is certified.
+- **2026-10-21T00:25Z:**
+  - Returned: FTF-UX01 r2 (UI design-system foundation: the colour and size tokens match the spec exactly, but there is no confirm dialog yet (waiting on the owner's approval to add the Radix package), the "in progress" state shows no visible progress, several accessibility details are not tested, and Arabic text is missing). Real-browser viewport, keyboard and zoom checks run now on a component test page; only screen-reader checks wait for the app shell (FTF-H029).
+- **2026-10-20T21:15Z:**
+  - Returned: FTF-R006-P1a r3 (Argilla review client: round 2 fixed almost everything, but a server that sends its reply headers very slowly can still hold a call for minutes, and one error message can echo the API key). The shared network guard gets an optional overall time limit for this (existing callers unchanged).
+- **2026-10-20T21:15Z:**
+  - Returned: FTF-1505 r7, tests only (secret scanning round 6, certified by a separate session: no production problem and almost every check now pinned, but a length limit on very long base64 or hex text and three shortcuts at the live-log check's call site would still go unnoticed). Round 7 stays with the Control plane.
+- **2026-10-20T21:15Z:**
+  - Returned: FTF-H011-P1 r4, tests only (dataset mapping preview: nested masking is now fixed and verified; one named check still only runs on the offline path, not on the real service). FTF-0501-F2 queued: the upload step refuses Windows-1256 Arabic CSV files unless the first non-English byte happens to come after 64 KB.
+- **2026-10-20T21:15Z:**
+  - CERTIFIED (child slice): FTF-0904-F1 after 6 rounds - log redaction now hides a secret after any parameter name ending in a credential word, in any letter case or compound form (0 leaks in 62,496 generated cases and 1,386 live requests). FTF-0904 stays certified. Follow-up FTF-0904-F2 queued: quoted values like state="..." are still printed.
 - **2026-10-20T14:55Z:**
   - Returned: FTF-1505 r6, tests only (secret scanning, Control-plane round 5, certified by a separate session: the scanner itself holds up - no exposed credential, every probed clause works - but several of its own checks, mostly in the live-log lane, can be disabled without any test noticing). Round 6 stays with the Control plane.
 - **2026-10-20T06:35Z:**

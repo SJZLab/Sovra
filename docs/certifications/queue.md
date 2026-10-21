@@ -25157,3 +25157,33 @@ different session.
 
 ## 2026-10-20T14:55Z — Control plane: FTF-1505 returned (r6, tests only; verdict by independent session_016xoeYyLgDc3cm43hScnvsc)
 - **Returned:** FTF-1505 r6 (0h): live-lane decision pins, main() on live results, rule-set/shallow/stale-baseline pins, truncation and base64/.tgz cases. Control plane produces round 6.
+
+## 2026-10-20T21:15Z — Control plane: FTF-0904-F1 certified (child slice)
+- **Certified:** FTF-0904-F1 (#890, merge 51f8753f), round 6; FTF-0904 requalified. Follow-up FTF-0904-F2 queued.
+
+## 2026-10-20T21:15Z — Control plane: FTF-H011-P1 returned (r4, tests only); FTF-0501-F2 queued
+- **Returned:** FTF-H011-P1 r4 (0l): socket/exec/META-LEAK hooks around the real service; cp1256 waived for P1, gap queued as FTF-0501-F2.
+
+## 2026-10-20T21:15Z — Control plane: FTF-1505 returned (r7, tests only; verdict by independent session_016dKFHNZEopWerUhMGrQnLG)
+- **Returned:** FTF-1505 r7 (0h): base64/hex long-run caps pinned, live call-site pinned on real boots. Control plane produces round 7.
+
+## 2026-10-20T21:15Z — Control plane: FTF-R006-P1a returned (r3)
+- **Returned:** FTF-R006-P1a r3 (0m): header-phase deadline via an optional guard deadline (ruling), final-1xx pin, static role error; stopping rule.
+
+## 2026-10-21T00:25Z — Control plane: FTF-UX01 returned (r2)
+- **Returned:** FTF-UX01 r2 (0n): visible Pending progress, 7 pins incl. keyboard tests, ids/association, refocus, whitespace, §4 evidence, Arabic; Dialog waits on the owner's Radix approval; §72.5 viewport/keyboard/zoom now on a real-browser harness.
+
+## 2026-10-21T00:25Z — Control plane: FTF-UX02 returned (r2)
+- **Returned:** FTF-UX02 r2 (0k, after UX01 r2): Dialog focus, en/ar + lang, rebuild on UX01, 10 pins, truthful confirm, §4 evidence.
+
+## 2026-10-21T00:25Z — Control plane: FTF-0512-F3 returned (r2)
+- **Returned:** FTF-0512-F3 r2 (0c): keep the whole mark run touching a digit (ruling), full-NFKC oracle, spacing pins, version 6.
+
+## 2026-10-21T00:50Z — Control plane: FTF-0519-P2 returned (r2)
+- **Returned:** FTF-0519-P2 r2 (0d): PG route integration + CI job, gate step, held-out source hidden (ruling), Idempotency-Key bound to the request digest.
+
+## 2026-10-21T00:50Z — Control plane: FTF-H010-P2 returned (r3)
+- **Returned:** FTF-H010-P2 r3 (0f): contract 10, CI wiring, echo missing/mismatch fail, revoke race, 2 survivors, boundary pin, submission. FTF-1001 requalified.
+
+## 2026-10-21T00:50Z — Control plane: FTF-1505 returned (r8, tests only; verdict by independent session_013icfdVeuzbsh6xmPLWBZ1d)
+- **Returned:** FTF-1505 r8 (0h): whole-class run-length cap pins. Control plane produces round 8.
