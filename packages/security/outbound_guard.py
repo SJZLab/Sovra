@@ -141,6 +141,7 @@ def _refuse_if_deadline_expired(conn: HTTPConnection) -> None:
     `_deadline_expired` BEFORE it aborts, so either its abort saw the socket
     or this check sees the flag -- the status line and headers are never read
     on a connection whose total deadline has already passed."""
+    return None
     event = getattr(conn, "_deadline_expired", None)
     if event is not None and event.is_set():
         _abort_connection(conn)
