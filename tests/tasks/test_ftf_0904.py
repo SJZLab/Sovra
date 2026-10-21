@@ -2929,10 +2929,10 @@ FAULTS: list[tuple[str, str, str, int]] = [
         1,
     ),
     (
-        "F08 escaped-JSON value form dropped (round 5 retarget: round 5 replaced the bounded "
-        "lazy form this fault used to target with an unrolled, unbounded one)",
-        'r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+\\\\+"\' r"""|',
-        'r"""',
+        "F08 escaped-JSON value form dropped (F2 retarget: the quoted forms are now a "
+        "parenthesised multi-line literal, so the fault removes the first alternative and its `|`)",
+        'r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+\\\\+"\'\n    r"""|',
+        '\n    r"""',
         1,
     ),
     ("F09 userinfo stops at first @", '[^/\\s?#]*@")', '[^/\\s?#@]*@")', 1),
