@@ -2913,6 +2913,68 @@ def test_f2_escaped_quote_inside_a_credential_keyed_quoted_value() -> None:
                 check("FTF-0904-F2", f"{text!r}: tail lost {out!r}", out.endswith(" after"))
 
 
+# --- FTF-0904-F2 round 2: backslash-run PARITY right before the closing quote -------------
+# Round 1's quoted-value rules treated ANY run of backslashes right before the closing quote as
+# escaping it (`\\++[^\r\n]?` consumed the whole run plus one more character unconditionally).
+# That is only correct for an ODD-length run (one backslash left over after pairing, which really
+# does escape the next character); an EVEN-length run is pairs of literal backslashes with nothing
+# left to escape, so the quote right after it is the real terminator. `password="V\\"` (two
+# backslashes) is a textbook even run: round 1 either dropped the match entirely (a total leak
+# through `_KEY_VALUE`/`_HEADER`, which have no quote-less fallback) or ran past the real close
+# into whatever followed on the line (over-redaction through the query-param rule's optional
+# close). Both credential-name classes (the `_SECRET_KEY_WORDS` name rule and the `_F2_NAMES`
+# query-param class) share the same two regexes (`_QUOTED_VALUE`, `_QUOTED_SECRET`), so both are
+# swept here, every even/odd run length from 0 to 6, both quote styles.
+_F2R2_SECRET_NAMES = ("password", "token", "api_key", "client_secret", "secret")
+
+
+def test_f2_r2_even_backslash_run_closes_the_value_cleanly() -> None:
+    for name in _F2R2_SECRET_NAMES + _F2_NAMES:
+        for q in _F2_QUOTES:
+            for sep in ("=", ": "):
+                for n in (0, 2, 4, 6):
+                    bs = "\\" * n
+                    text = f"{name}{sep}{q}{_F1_VALUE}{bs}{q} tail_ok"
+                    out = lr.redact_text(text)
+                    check(
+                        "FTF-0904-F2",
+                        f"{text!r}: leaked {out!r}",
+                        "Zq7Lm2" not in out,
+                    )
+                    check(
+                        "FTF-0904-F2",
+                        f"{text!r}: not redacted at all {out!r}",
+                        "[REDACTED]" in out,
+                    )
+                    check(
+                        "FTF-0904-F2",
+                        f"{text!r}: over-redacted past the real close {out!r}",
+                        out.endswith(" tail_ok"),
+                    )
+
+
+def test_f2_r2_odd_backslash_run_still_escapes_the_quote() -> None:
+    for name in _F2R2_SECRET_NAMES + _F2_NAMES:
+        for q in _F2_QUOTES:
+            for sep in ("=", ": "):
+                for n in (1, 3, 5):
+                    bs = "\\" * n
+                    # the quote right after `bs` is escaped (odd leftover), so the real close is
+                    # the SECOND quote, after more plain content.
+                    text = f"{name}{sep}{q}{_F1_VALUE}{bs}{q}more{q} tail_ok"
+                    out = lr.redact_text(text)
+                    check(
+                        "FTF-0904-F2",
+                        f"{text!r}: leaked {out!r}",
+                        "Zq7Lm2" not in out and "more" not in out,
+                    )
+                    check(
+                        "FTF-0904-F2",
+                        f"{text!r}: over-redacted past the real close {out!r}",
+                        out.endswith(" tail_ok"),
+                    )
+
+
 FAULTS: list[tuple[str, str, str, int]] = [
     # --- rules removed one at a time -------------------------------------------------
     ("F01 header rule removed", '    ("header", _HEADER),\n', "", 1),
@@ -3531,26 +3593,43 @@ FAULTS += [
     ),
     (
         "F2-unterminated double quote not redacted to end of line",
-        r"""\\++[^\r\n]?)*+"?|'""",
-        r"""\\++[^\r\n]?)*+"|'""",
+        '    r\'"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n',
+        '    r\'"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"\'\n',
         1,
     ),
     (
         "F2-single-quoted values dropped",
-        "|'(?:[^'\\\\\\r\\n]|\\\\++[^\\r\\n]?)*+'?" + '"' * 3,
-        '"' * 3,
+        '    r\'"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n',
+        '    r\'"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n',
         1,
     ),
     (
-        "F2-escaped quote ends the double-quoted value",
-        r""""(?:[^"\\\r\n]|\\++[^\r\n]?)*+"?|'""",
-        r""""[^"\r\n]*+"?|'""",
+        "F2-escaped quote ends the double-quoted value (query-param path)",
+        '"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?',
+        '"[^"\\r\\n]*+"?',
         1,
     ),
     (
-        "F2-generic key=value quoted value ends at an escaped quote",
-        r"""|"(?:[^"\\\r\n]++|\\++[^\r\n]?)*+"|'""",
-        r"""|"[^"\r\n]*+"|'""",
+        "F2-generic key=value quoted value ends at an escaped quote (key_value/header path)",
+        '"(?:[^"\\\\\\r\\n]++|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+',
+        '"[^"\\r\\n]*+',
+        1,
+    ),
+    (
+        "F2-r2 even backslash run before the close still treated as escaping it (query-param path)",
+        '    r\'"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n',
+        '    r\'"(?:[^"\\\\\\r\\n]|\\\\++[^\\r\\n]?)*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|\\\\++[^\\r\\n]?)*+\'?"""\n',
+        1,
+    ),
+    (
+        "F2-r2 even backslash run before the close still escapes it (key_value/header path)",
+        '    r"""|"(?:[^"\\\\\\r\\n]++|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"""\n'
+        '    r""""|\'(?:[^\'\\\\\\r\\n]++|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'"""\n',
+        '    r"""|"(?:[^"\\\\\\r\\n]++|\\\\++[^\\r\\n]?)*+"""\n'
+        '    r""""|\'(?:[^\'\\\\\\r\\n]++|\\\\++[^\\r\\n]?)*+\'"""\n',
         1,
     ),
 ]
