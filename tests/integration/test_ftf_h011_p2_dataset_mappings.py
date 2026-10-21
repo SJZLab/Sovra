@@ -1411,6 +1411,14 @@ def section_raw(env: Env) -> None:
     )
     for label, col, params in (
         ("mapping_sha256", "mapping_sha256=:v", {"v": _sha("other")}),
+        ("preview_sha256", "preview_sha256=:v", {"v": _sha("other-preview")}),
+        ("mapping_document", "mapping_document=CAST('{}' AS jsonb)", {}),
+        ("dataset_name", "dataset_name='renamed'", {}),
+        (
+            "dataset_source_connection_id",
+            "dataset_source_connection_id=CAST(:v AS uuid)",
+            {"v": str(w2.conns["all"])},
+        ),
         (
             "allowed_purposes_snapshot",
             "allowed_purposes_snapshot=CAST('{validation,training}' AS text[])",

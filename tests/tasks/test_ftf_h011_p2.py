@@ -3046,6 +3046,19 @@ def part_s_round2() -> None:
         )
 
 
+def part_s_approver() -> None:
+    """The stored approver role is the actor's own role, whichever admin role approves."""
+    for actor_name, role in (("admin", "workspace_admin"), ("org_admin", "organization_admin")):
+        with sqlite_world() as w:
+            _ds, m = seeded(w)
+            done = w.approve(m, actor=getattr(w, actor_name))
+            check(
+                "APPROVER-1",
+                f"{role} approval stores approver_role {role}",
+                done.approver_role == role,
+            )
+
+
 def main() -> None:
     part_p()
     part_m()
@@ -3057,6 +3070,7 @@ def main() -> None:
     part_s_variants2()
     part_s_review()
     part_s_round2()
+    part_s_approver()
     if FAILURES:
         for failure in FAILURES:
             print(failure, file=sys.stderr)
