@@ -102,6 +102,7 @@ BASE_URL = "https://gateway.example"
 SECRET_REF = "openbao://secret/litellm/org1/api_key"
 SECRET_CONFIG = OpenBaoConfig(address="http://127.0.0.1:1", token="vault-" + "LEAK" + "TOKEN")
 WORKER = "worker-1"
+ECHO_REQUEST: Any = object()
 
 
 @event.listens_for(job_schema.ModelImportJob, "load")
@@ -128,6 +129,7 @@ class Gateway:
     attestation_state: RouteAttestationState = RouteAttestationState.ATTESTED
     identity: RouteIdentityState = RouteIdentityState.VERIFIED
     fingerprint: str | None = FINGERPRINT
+    resolved_model: Any = ECHO_REQUEST  # ECHO_REQUEST echoes the model that was asked for
     discover_calls: list[dict[str, Any]] = None
     attest_calls: list[dict[str, Any]] = None
     sessions_open_during_call: list[int] = None
@@ -157,8 +159,15 @@ class Env:
         self.gateway.sessions_open_during_call = []
         self.open_sessions = 0
         self.connection = SimpleNamespace(
-            base_url=BASE_URL, secret_ref=SECRET_REF, status="active", revoked_at=None
+            id=CONN,
+            organization_id=ORG,
+            base_url=BASE_URL,
+            secret_ref=SECRET_REF,
+            status="active",
+            revoked_at=None,
         )
+        self.connection_reads = 0
+        self.last_lock_read: bool | None = None
         self.connection_missing = False
         self.factory = lambda: Session(self.engine)
         self.statements: list[Any] = []
@@ -183,7 +192,34 @@ class Env:
         self, session: Any, organization_id: Any, statement: Any, params: Any = None
     ) -> Any:
         self.statements.append(statement)
+        entity = (
+            statement.column_descriptions[0].get("entity")
+            if hasattr(statement, "column_descriptions")
+            else None
+        )
+        if entity is not None and entity.__name__ == "LiteLLMConnection":
+            return self.connection_rows(statement)
         return session.execute(statement)
+
+    def connection_rows(self, statement: Any) -> Any:
+        """The terminal transaction's share-locked re-read of the connection. The real WHERE
+        clause is evaluated over the one fake row, so a wrong id or organization matches nothing."""
+        self.connection_reads += 1
+        clauses = getattr(statement.whereclause, "clauses", (statement.whereclause,))
+        row = None if self.connection_missing else self.connection
+        values = {
+            "id": getattr(row, "id", None),
+            "organization_id": getattr(row, "organization_id", None),
+        }
+        matched = row is not None and all(
+            op(values[c.left.key], c.right.value) for c in clauses for op in (c.operator,)
+        )
+        locked = getattr(statement, "_for_update_arg", None)
+        self.last_lock_read = None if locked is None else bool(locked.read)
+        found = [row] if matched else []
+        return SimpleNamespace(
+            scalars=lambda: SimpleNamespace(first=lambda: found[0] if found else None)
+        )
 
     def get_connection(self, session: Any, context: Any, connection_id: Any) -> Any:
         if self.connection_missing:
@@ -208,7 +244,13 @@ class Env:
             self.gateway.on_call("attest")
         g = self.gateway
         return RouteAttestationResult(
-            g.attestation_state, g.identity, "resolved", g.fingerprint, 1.0, "d", NOW
+            g.attestation_state,
+            g.identity,
+            kwargs["model_id"] if g.resolved_model is ECHO_REQUEST else g.resolved_model,
+            g.fingerprint,
+            1.0,
+            "d",
+            NOW,
         )
 
     @contextlib.contextmanager
@@ -390,7 +432,7 @@ def group_a(m: Any) -> None:
         "CONNECTION_REFUSED": (blocked, "route_attestation_unavailable"),
         "UNREACHABLE": (blocked, "route_attestation_unavailable"),
         "DESTINATION_DENIED": (blocked, "route_attestation_unavailable"),
-        "MALFORMED_RESPONSE": (blocked, "route_attestation_unavailable"),
+        "MALFORMED_RESPONSE": (failed, "route_identity_unverified"),
         "SECRET_NOT_FOUND": (blocked, "route_attestation_unavailable"),
         "SECRET_ACCESS_DENIED": (blocked, "route_attestation_unavailable"),
         "SECRET_EXPIRED": (blocked, "route_attestation_unavailable"),
@@ -404,7 +446,7 @@ def group_a(m: Any) -> None:
     )
     for state in RouteAttestationState:
         for identity in RouteIdentityState:
-            got = m.attestation_outcome(state, identity, FINGERPRINT)
+            got = m.attestation_outcome(state, identity, FINGERPRINT, REF, REF)
             if (
                 state is RouteAttestationState.ATTESTED
                 and identity is RouteIdentityState.UNVERIFIED
@@ -436,19 +478,61 @@ def group_a(m: Any) -> None:
         check(
             "A3",
             f"a VERIFIED attestation with a {label} fingerprint is failed route_identity_unverified",
-            m.attestation_outcome(attested, verified, value)
+            m.attestation_outcome(attested, verified, value, REF, REF)
             == (failed, "route_identity_unverified"),
         )
     for label, value in (("1 char", "x"), ("256 chars", "x" * 256), ("typical", FINGERPRINT)):
         check(
             "A3",
             f"a {label} fingerprint is usable",
-            m.attestation_outcome(attested, verified, value) is None,
+            m.attestation_outcome(attested, verified, value, REF, REF) is None,
         )
     check(
         "A3",
         "an unverified identity is never usable even with a perfect fingerprint",
-        m.attestation_outcome(attested, RouteIdentityState.UNVERIFIED, FINGERPRINT)
+        m.attestation_outcome(attested, RouteIdentityState.UNVERIFIED, FINGERPRINT, REF, REF)
+        == (failed, "route_identity_unverified"),
+    )
+    # the resolved-model echo must equal the ref exactly (ROUND 3 findings 3 and 4)
+    for label, echo in (
+        ("another model", "other-model"),
+        ("an upper-cased ref", REF.upper()),
+        ("a padded ref", f" {REF} "),
+        ("a prefix of the ref", REF[:-1]),
+        ("a longer ref", REF + "x"),
+        ("an empty echo", ""),
+        ("no echo", None),
+        ("a non-string echo", 7),
+        ("a bytes echo", REF.encode()),
+        ("a list echo", [REF]),
+    ):
+        check(
+            "A4",
+            f"a VERIFIED attestation whose echo is {label} is failed route_identity_unverified",
+            m.attestation_outcome(attested, verified, FINGERPRINT, echo, REF)
+            == (failed, "route_identity_unverified"),
+        )
+    check(
+        "A4",
+        "an exact echo of the ref is accepted",
+        m.attestation_outcome(attested, verified, FINGERPRINT, REF, REF) is None,
+    )
+    check(
+        "A4",
+        "the echo is compared with the expected model, not with itself",
+        m.attestation_outcome(attested, verified, FINGERPRINT, "x", "y")
+        == (failed, "route_identity_unverified"),
+    )
+    check(
+        "A4",
+        "a chat response without a resolved-model echo (MALFORMED_RESPONSE) is failed, not blocked",
+        m.attestation_outcome(
+            RouteAttestationState.MALFORMED_RESPONSE,
+            RouteIdentityState.UNVERIFIED,
+            None,
+            None,
+            REF,
+        )
         == (failed, "route_identity_unverified"),
     )
 
@@ -892,7 +976,7 @@ def group_d(m: Any) -> None:
         with Env(m, Gateway(attestation_state=state)).patched() as env:
             job, token = claimed(env)
             out = env.validate(token)
-            want = m.attestation_outcome(state, RouteIdentityState.VERIFIED, FINGERPRINT)
+            want = m.attestation_outcome(state, RouteIdentityState.VERIFIED, FINGERPRINT, REF, REF)
             check(
                 "D3",
                 f"attestation {state.name}: {want}",
@@ -915,6 +999,131 @@ def group_d(m: Any) -> None:
                 == ("failed", "route_identity_unverified", None)
                 and not env.versions(),
             )
+
+    # ROUND 3: the resolved-model echo (findings 3 and 4)
+    for label, echo in (
+        ("no resolved-model echo in the chat body", None),
+        ("an echo naming another model", "other-model"),
+        ("an echo differing only by case", REF.upper()),
+        ("an echo with trailing space", REF + " "),
+    ):
+        with Env(m, Gateway(resolved_model=echo)).patched() as env:
+            job, token = claimed(env)
+            out = env.validate(token)
+            check(
+                "D6",
+                f"{label}: failed route_identity_unverified with no ModelVersion",
+                (out.state, out.failure_code, out.model_version_id)
+                == ("failed", "route_identity_unverified", None)
+                and env.job(job).state == "failed"
+                and not env.versions(),
+            )
+            check(
+                "D6",
+                f"{label}: one audit row and the lease cleared",
+                len(env.audit.events) == 1 and env.job(job).lease_expires_at is None,
+            )
+    with Env(
+        m, Gateway(attestation_state=RouteAttestationState.MALFORMED_RESPONSE, resolved_model=None)
+    ).patched() as env:
+        job, token = claimed(env)
+        out = env.validate(token)
+        check(
+            "D6",
+            "a malformed chat response (no echo) is failed, not blocked_external",
+            (out.state, out.failure_code) == ("failed", "route_identity_unverified")
+            and not env.versions(),
+        )
+    with Env(m).patched() as env:
+        job, token = claimed(env)
+        out = env.validate(token)
+        check("D6", "the exact echo still succeeds (control)", out.state == "succeeded")
+
+    # ROUND 3: a connection revoked while the gateway calls ran (finding 5)
+    def revoke_status(env: Env) -> None:
+        env.connection.status = "revoked"
+
+    def revoke_stamp(env: Env) -> None:
+        env.connection.revoked_at = NOW
+
+    def delete_connection(env: Env) -> None:
+        env.connection_missing = True
+
+    for label, action in (
+        ("status revoked", revoke_status),
+        ("revoked_at set", revoke_stamp),
+        ("connection deleted", delete_connection),
+    ):
+        for during in ("discover", "attest"):
+            gateway = Gateway()
+            with Env(m, gateway).patched() as env:
+                fired: list[str] = []
+
+                def hook(
+                    phase: str,
+                    env: Env = env,
+                    action: Any = action,
+                    during: str = during,
+                    fired: list[str] = fired,
+                ) -> None:
+                    if phase == during:
+                        action(env)
+                        fired.append(phase)
+
+                gateway.on_call = hook
+                job, token = claimed(env)
+                out = env.validate(token)
+                check(
+                    "D7",
+                    f"{label} during {during}: failed connection_revoked, nothing written but the terminal row",
+                    fired == [during]
+                    and (out.state, out.failure_code, out.model_version_id)
+                    == ("failed", "connection_revoked", None)
+                    and env.job(job).state == "failed"
+                    and env.job(job).failure_code == "connection_revoked"
+                    and env.job(job).result_model_version_id is None
+                    and not env.versions(),
+                )
+                check(
+                    "D7",
+                    f"{label} during {during}: one audit row naming connection_revoked only",
+                    len(env.audit.events) == 1
+                    and env.audit.events[0]["details"]["outcome"] == "connection_revoked",
+                )
+    with Env(m).patched() as env:
+        job, token = claimed(env)
+        out = env.validate(token)
+        check(
+            "D7",
+            "the terminal transaction re-reads the connection once, share-locked, and an active one succeeds",
+            out.state == "succeeded" and env.connection_reads == 1 and env.last_lock_read is True,
+        )
+    with Env(m).patched() as env:
+        env.connection.id = uuid.uuid4()
+        job, token = claimed(env)
+        out = env.validate(token)
+        check(
+            "D7",
+            "a connection row that is not the job's own connection never counts as active",
+            (out.state, out.failure_code) == ("failed", "connection_revoked"),
+        )
+    with Env(m).patched() as env:
+        env.connection.organization_id = OTHER_ORG
+        job, token = claimed(env)
+        out = env.validate(token)
+        check(
+            "D7",
+            "a connection of another organization never counts as active",
+            (out.state, out.failure_code) == ("failed", "connection_revoked"),
+        )
+    with Env(m, Gateway(discovery_state=DiscoveryState.TIMEOUT)).patched() as env:
+        job, token = claimed(env)
+        out = env.validate(token)
+        check(
+            "D7",
+            "a blocked outcome does not re-read the connection (the re-read guards success only)",
+            out.state == "blocked_external" and env.connection_reads == 0,
+        )
 
     # alias exactness: generated Unicode variants of the ref
     variants = alias_variants(REF)
@@ -2103,6 +2312,102 @@ def group_r(mir: Any = None) -> None:
 # -- faults ----------------------------------------------------------------------------------------
 
 FAULTS: list[tuple[str, str, str, int]] = [
+    (
+        "attest-malformed-blocked",
+        "    if state is RouteAttestationState.MALFORMED_RESPONSE:\n        return STATE_FAILED, CODE_ROUTE_IDENTITY_UNVERIFIED",
+        "    if False:\n        return STATE_FAILED, CODE_ROUTE_IDENTITY_UNVERIFIED",
+        1,
+    ),
+    (
+        "echo-not-compared",
+        "    if not isinstance(resolved_model, str) or resolved_model != expected_model:\n        return STATE_FAILED, CODE_ROUTE_IDENTITY_UNVERIFIED",
+        "    if False:\n        return STATE_FAILED, CODE_ROUTE_IDENTITY_UNVERIFIED",
+        1,
+    ),
+    (
+        "echo-case-folded",
+        "resolved_model != expected_model",
+        "str(resolved_model).lower() != expected_model.lower()",
+        1,
+    ),
+    (
+        "echo-mismatch-blocked",
+        "    if not isinstance(resolved_model, str) or resolved_model != expected_model:\n        return STATE_FAILED, CODE_ROUTE_IDENTITY_UNVERIFIED",
+        "    if not isinstance(resolved_model, str) or resolved_model != expected_model:\n        return STATE_BLOCKED_EXTERNAL, CODE_ROUTE_IDENTITY_UNVERIFIED",
+        1,
+    ),
+    (
+        "echo-compared-with-itself",
+        "        attestation.resolved_model,\n        snapshot.ref,\n    )",
+        "        attestation.resolved_model,\n        attestation.resolved_model or snapshot.ref,\n    )",
+        1,
+    ),
+    (
+        "echo-not-passed",
+        "        attestation.resolved_model,\n        snapshot.ref,\n    )",
+        "        snapshot.ref,\n        snapshot.ref,\n    )",
+        1,
+    ),
+    (
+        "revoke-recheck-skipped",
+        "            if state == STATE_SUCCEEDED and not _connection_still_active(",
+        "            if False and not _connection_still_active(",
+        1,
+    ),
+    (
+        "revoke-recheck-always-active",
+        '        connection is not None and connection.status == "active" and connection.revoked_at is None',
+        "        True",
+        1,
+    ),
+    (
+        "revoke-recheck-ignores-status",
+        '        connection is not None and connection.status == "active" and connection.revoked_at is None',
+        "        connection is not None and connection.revoked_at is None",
+        1,
+    ),
+    (
+        "revoke-recheck-ignores-revoked-at",
+        '        connection is not None and connection.status == "active" and connection.revoked_at is None',
+        '        connection is not None and connection.status == "active"',
+        1,
+    ),
+    (
+        "revoke-recheck-missing-is-active",
+        '        connection is not None and connection.status == "active" and connection.revoked_at is None',
+        '        connection is None or (connection.status == "active" and connection.revoked_at is None)',
+        1,
+    ),
+    (
+        "revoke-recheck-no-share-lock",
+        "        .with_for_update(read=True)",
+        "",
+        1,
+    ),
+    (
+        "revoke-recheck-wrong-org",
+        "            LiteLLMConnection.organization_id == context.organization_id,",
+        "            LiteLLMConnection.organization_id != context.organization_id,",
+        1,
+    ),
+    (
+        "revoke-recheck-wrong-id",
+        "            LiteLLMConnection.id == connection_id,",
+        "            LiteLLMConnection.id != connection_id,",
+        1,
+    ),
+    (
+        "revoke-recheck-wrong-code",
+        "                state, failure_code = STATE_FAILED, CODE_CONNECTION_REVOKED",
+        "                state, failure_code = STATE_FAILED, CODE_GATEWAY_UNAVAILABLE",
+        1,
+    ),
+    (
+        "revoke-recheck-blocked-not-failed",
+        "                state, failure_code = STATE_FAILED, CODE_CONNECTION_REVOKED",
+        "                state, failure_code = STATE_BLOCKED_EXTERNAL, CODE_CONNECTION_REVOKED",
+        1,
+    ),
     (
         "discovery-invalid-token-blocked",
         "    if state is DiscoveryState.INVALID_TOKEN:\n        return STATE_FAILED, CODE_GATEWAY_ACCESS_DENIED",

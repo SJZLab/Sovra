@@ -66,6 +66,7 @@ from app.auth.audit_event_writer import write_audit_event
 from app.auth.tenant_isolation_query_guards import execute_tenant_scoped
 from app.db.tenant_context import TenantContext, tenant_scoped_session_for
 from app.litellm.connection_crud import ConnectionNotFoundError, get_connection
+from app.litellm.connection_schema import LiteLLMConnection
 from app.model_versions.model_import_schema import (
     ALLOWED_ORIGINS,
     ORIGIN_EXTERNAL_ENDPOINT,
@@ -151,15 +152,23 @@ def attestation_outcome(
     state: RouteAttestationState,
     identity: RouteIdentityState,
     fingerprint: str | None,
+    resolved_model: str | None,
+    expected_model: str,
 ) -> tuple[str, str] | None:
-    """`None` only for an ATTESTED route whose identity is VERIFIED and carries a usable
-    fingerprint. Not attested: 401/403 is `failed`, everything else `blocked_external`. Attested
-    but unverified (a missing header or echo) is `failed` (Section 3.5: do not certify)."""
+    """`None` only for an ATTESTED route whose identity is VERIFIED, carries a usable fingerprint
+    and whose resolved-model echo is exactly `expected_model`. Not attested: 401/403 is `failed`,
+    a chat response with no resolved-model echo (MALFORMED_RESPONSE) is `failed`, everything else
+    `blocked_external`. Attested but unverified (a missing header) or echoing another model is
+    `failed` (Section 3.5: do not certify)."""
     if state is RouteAttestationState.INVALID_TOKEN:
         return STATE_FAILED, CODE_GATEWAY_ACCESS_DENIED
+    if state is RouteAttestationState.MALFORMED_RESPONSE:
+        return STATE_FAILED, CODE_ROUTE_IDENTITY_UNVERIFIED
     if state is not RouteAttestationState.ATTESTED:
         return STATE_BLOCKED_EXTERNAL, CODE_ROUTE_ATTESTATION_UNAVAILABLE
     if identity is not RouteIdentityState.VERIFIED or not _usable_fingerprint(fingerprint):
+        return STATE_FAILED, CODE_ROUTE_IDENTITY_UNVERIFIED
+    if not isinstance(resolved_model, str) or resolved_model != expected_model:
         return STATE_FAILED, CODE_ROUTE_IDENTITY_UNVERIFIED
     return None
 
@@ -359,6 +368,27 @@ def _read_snapshots(
         )
 
 
+def _connection_still_active(
+    session: Session, context: TenantContext, connection_id: uuid.UUID
+) -> bool:
+    """Re-reads the connection inside the terminal transaction, share-locked so a concurrent
+    revoke either commits first (seen here) or waits for this transaction."""
+    statement = (
+        select(LiteLLMConnection)
+        .where(
+            LiteLLMConnection.id == connection_id,
+            LiteLLMConnection.organization_id == context.organization_id,
+        )
+        .with_for_update(read=True)
+    )
+    connection = (
+        execute_tenant_scoped(session, context.organization_id, statement).scalars().first()
+    )
+    return (
+        connection is not None and connection.status == "active" and connection.revoked_at is None
+    )
+
+
 class _Fenced(Exception):
     """Raised inside the terminal transaction so the session rolls everything back."""
 
@@ -379,6 +409,11 @@ def _finish(
     model_version_id: uuid.UUID | None = None
     try:
         with tenant_scoped_session_for(session_factory, context) as session:
+            if state == STATE_SUCCEEDED and not _connection_still_active(
+                session, context, snapshot.connection_id
+            ):
+                # Revoked (or gone) while the gateway calls ran: no version is written.
+                state, failure_code = STATE_FAILED, CODE_CONNECTION_REVOKED
             if state == STATE_SUCCEEDED:
                 if session.get_bind().dialect.name == "postgresql":
                     # Serializes version-number allocation per project across concurrent
@@ -507,7 +542,11 @@ def validate_endpoint_import(
         now=now,
     )
     refused = attestation_outcome(
-        attestation.state, attestation.route_identity_state, attestation.deployment_fingerprint
+        attestation.state,
+        attestation.route_identity_state,
+        attestation.deployment_fingerprint,
+        attestation.resolved_model,
+        snapshot.ref,
     )
     if refused is not None:
         return finish(refused[0], refused[1])
