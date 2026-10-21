@@ -180,7 +180,11 @@ test("[UX01-T6] ErrorSummary takes focus, links to and focuses the invalid field
     createElement(
       "div",
       null,
-      createElement(ErrorSummary, { errors: [{ fieldId: "f1", message: "Enter a name" }] }),
+      // A failed submit hands over the errors and raises submitCount in the same update.
+      createElement(ErrorSummary, {
+        errors: [{ fieldId: "f1", message: "Enter a name" }],
+        submitCount: 1,
+      }),
       createElement("input", { id: "f1" }),
     ),
   );

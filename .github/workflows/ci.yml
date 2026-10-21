@@ -536,7 +536,21 @@ jobs:
       - name: FTF-0903 negative-test proof (content-free telemetry -- bounded workflow/log/span schemas, no snippet/traceback/prompt leak, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0903.py
       - name: FTF-0904 negative-test proof (log redaction -- secret headers/URLs/tokens/exception chains redacted at ingress and sink, redactor failure logs a constant marker only, fault-injected copies of the module, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0904.py
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          # The full fault matrix (121 fault-injected copies, ~2.5 h) proves this suite can fail.
+          # Its result depends only on these inputs, so it runs in full whenever one of them
+          # changes and the behavioural checks alone run otherwise (owner-approved 2026-10-21).
+          changed="$(git diff --name-only "$BASE_SHA"...HEAD)"
+          if printf '%s\n' "$changed" | grep -qE '^(packages/security/|tests/tasks/test_ftf_0904\.py$|\.github/workflows/ci\.yml$|pyproject\.toml$|uv\.lock$)'; then
+            echo "FTF-0904 inputs changed: full fault matrix"
+            uv run python3 tests/tasks/test_ftf_0904.py
+          else
+            echo "FTF-0904 inputs unchanged: behavioural checks only (the full matrix runs when they change)"
+            FTF0904_BEHAVIOUR_ONLY=1 uv run python3 tests/tasks/test_ftf_0904.py
+          fi
       - name: FTF-0904-W1 live log redaction (real uvicorn factory + default log config over a socket -- secret query params never printed, access lines kept redacted, sinks installed, fault-injected copies of apps/api/app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0904_w1.py
       - name: FTF-0905 negative-test proof (canary-secret generator -- unique prefixed markers, no real-secret collision, full-coverage leak ledger, no DB required)

@@ -1,4 +1,4 @@
-import { dirFor, phrase, type Locale } from "./phrases";
+import { dirFor, phrase, resolveLocale, type Locale } from "./phrases";
 
 export interface Crumb {
   label: string;
@@ -18,7 +18,11 @@ const CURRENT_STYLE = { display: "inline-block", paddingBlock: "4px" };
  * even when the caller also gave it an href. */
 export function Breadcrumbs({ items, locale = "en" }: { items: Crumb[]; locale?: Locale }) {
   return (
-    <nav aria-label={phrase("breadcrumbNav", locale)} lang={locale} dir={dirFor(locale)}>
+    <nav
+      aria-label={phrase("breadcrumbNav", locale)}
+      lang={resolveLocale(locale)}
+      dir={dirFor(locale)}
+    >
       <ol>
         {items.map((c, i) => {
           const last = i === items.length - 1;

@@ -61,7 +61,15 @@ export const PHRASES = {
 export function phrase(key: keyof typeof PHRASES, locale: Locale = "en"): string {
   // A locale arriving at runtime (an API value, a stored preference) may be one we do not ship:
   // fall back to English rather than render nothing.
-  return PHRASES[key][locale] ?? PHRASES[key].en;
+  // Own keys only: "toString" / "constructor" / "__proto__" exist on every object.
+  const words: Record<string, string> = PHRASES[key];
+  return Object.hasOwn(words, locale) ? words[locale]! : words.en!;
+}
+
+/** The language the text is actually rendered in: a locale we do not ship renders English, so
+ * `lang` must say "en", not echo the unknown value. */
+export function resolveLocale(locale: string): Locale {
+  return locale === "ar" ? "ar" : "en";
 }
 
 export function dirFor(locale: Locale): "ltr" | "rtl" {

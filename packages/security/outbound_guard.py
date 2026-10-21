@@ -106,9 +106,11 @@ class _PinnedHTTPConnection(HTTPConnection):
     def __init__(self, hostname: str, pinned_ip: str, port: int, timeout: float) -> None:
         super().__init__(hostname, port, timeout=timeout)
         self._pinned_ip = pinned_ip
+        self._deadline_expired = threading.Event()
 
     def connect(self) -> None:
         self.sock = socket.create_connection((self._pinned_ip, self.port), self.timeout)
+        _refuse_if_deadline_expired(self)
 
 
 class _PinnedHTTPSConnection(HTTPSConnection):
@@ -123,30 +125,43 @@ class _PinnedHTTPSConnection(HTTPSConnection):
         super().__init__(hostname, port, timeout=timeout, context=context)
         self._pinned_ip = pinned_ip
         self._tls_context = context
+        self._deadline_expired = threading.Event()
 
     def connect(self) -> None:
         raw_sock = socket.create_connection((self._pinned_ip, self.port), self.timeout)
-        # Kept so a total deadline can abort a TLS handshake that is still
-        # in progress (`self.sock` is not assigned until it completes).
-        self._raw_sock = raw_sock
+        # `wrap_socket` detaches `raw_sock`, so a watchdog that fires while the
+        # handshake runs has nothing to shut down; the expiry flag is checked
+        # once the handshake returns instead.
         self.sock = self._tls_context.wrap_socket(raw_sock, server_hostname=self.host)
+        _refuse_if_deadline_expired(self)
+
+
+def _refuse_if_deadline_expired(conn: HTTPConnection) -> None:
+    """Called right after a connection's socket is assigned. The watchdog sets
+    `_deadline_expired` BEFORE it aborts, so either its abort saw the socket
+    or this check sees the flag -- the status line and headers are never read
+    on a connection whose total deadline has already passed."""
+    event = getattr(conn, "_deadline_expired", None)
+    if event is not None and event.is_set():
+        _abort_connection(conn)
+        raise OSError("call deadline exceeded before the connection was established")
 
 
 def _abort_connection(conn: HTTPConnection) -> None:
     """Unblocks a thread that is reading from `conn` right now: `shutdown`
     wakes a blocked `recv` (a bare `close` from another thread does not),
     then the descriptors are released. Never raises."""
-    for sock in (getattr(conn, "sock", None), getattr(conn, "_raw_sock", None)):
-        if sock is None:
-            continue
-        try:
-            sock.shutdown(socket.SHUT_RDWR)
-        except OSError:
-            pass
-        try:
-            sock.close()
-        except OSError:
-            pass
+    sock = getattr(conn, "sock", None)
+    if sock is None:
+        return
+    try:
+        sock.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
+    try:
+        sock.close()
+    except OSError:
+        pass
 
 
 def _build_connection(
@@ -309,6 +324,9 @@ def guarded_stream_fetch(
                 if state["done"]:
                     return
                 state["expired"] = True
+            event = getattr(conn, "_deadline_expired", None)
+            if event is not None:
+                event.set()
             _abort_connection(conn)
 
         watchdog = threading.Timer(remaining, _expire)

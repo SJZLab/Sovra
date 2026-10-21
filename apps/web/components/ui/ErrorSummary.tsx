@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef } from "react";
 
-import { dirFor, phrase, type Locale } from "./phrases";
+import { dirFor, phrase, resolveLocale, type Locale } from "./phrases";
 import { cleanText } from "./text";
 
 export interface ErrorSummaryItem {
@@ -9,12 +9,14 @@ export interface ErrorSummaryItem {
 }
 
 /**
- * Focusable summary linking to each invalid field (NN/g H9). Takes focus on an explicit submit
- * signal: when the summary first appears, and each time the caller raises `submitCount` (one per
- * failed submit, so a repeat failure with the same errors still takes focus). It never keys on
- * the `errors` array identity: a caller that builds the list during render hands over a fresh
- * array on every keystroke, and re-focusing then would pull the user out of the field they just
- * moved to and drop their typing.
+ * Focusable summary linking to each invalid field (NN/g H9). Takes focus ONLY on an explicit submit
+ * signal: when it mounts with errors, and each time the caller raises `submitCount` (one per failed
+ * submit, in the same update that hands over the errors, so a repeat failure with the same errors
+ * still takes focus). It never moves focus because `errors` changed identity (a caller that builds
+ * the list during render hands over a fresh array on every keystroke) and never because the list
+ * went from empty to non-empty without a submit (typing or tabbing out of a field that becomes
+ * invalid): pulling the user out of the field they are in drops their typing. A caller that never
+ * passes `submitCount` gets focus on mount only.
  */
 export function ErrorSummary({
   errors,
@@ -31,9 +33,9 @@ export function ErrorSummary({
   const titleId = useId();
   const hasErrors = errors.length > 0;
   useEffect(() => {
-    if (hasErrors) ref.current?.focus();
-    // Only the submit signal and the appear/disappear edge, never the array identity.
-  }, [submitCount, hasErrors]);
+    // `ref` is null while there is nothing to show, so a submit with no errors focuses nothing.
+    ref.current?.focus();
+  }, [submitCount]);
   if (!hasErrors) return null;
   const resolvedTitle = cleanText(title) || phrase("errorSummaryTitle", locale);
   return (
@@ -42,7 +44,7 @@ export function ErrorSummary({
       tabIndex={-1}
       role="alert"
       aria-labelledby={titleId}
-      lang={locale}
+      lang={resolveLocale(locale)}
       dir={dirFor(locale)}
     >
       <h2 id={titleId}>{resolvedTitle}</h2>
