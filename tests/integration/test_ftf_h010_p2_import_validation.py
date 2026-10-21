@@ -373,7 +373,9 @@ class GatewayState:
     models_status: int = 200
     chat_status: int = 200
     fingerprint: str | None = FINGERPRINT
+    echo: str | None = REF  # the resolved-model echo in the chat body; None omits the field
     on_request: Any = None
+    side_effect: Any = None  # called with 'POST <route>' before on_request (survives run()'s hook)
     requests: list[str] = field(default_factory=list)
 
 
@@ -416,6 +418,8 @@ class _GatewayHandler(BaseHTTPRequestHandler):
             self.rfile.read(length)
         route = self._route()
         GATEWAY.requests.append(f"POST {route}")
+        if GATEWAY.side_effect is not None:
+            GATEWAY.side_effect("POST " + route)
         if GATEWAY.on_request is not None:
             GATEWAY.on_request("POST " + route)
         if self.headers.get("Authorization") != f"Bearer {_SECRET_VALUE}":
@@ -424,13 +428,13 @@ class _GatewayHandler(BaseHTTPRequestHandler):
         if route != "/v1/chat/completions":
             self._send(404, b"")
             return
-        body = json.dumps(
-            {
-                "id": "c1",
-                "model": REF,
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": "pong"}}],
-            }
-        ).encode()
+        payload: dict[str, Any] = {
+            "id": "c1",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "pong"}}],
+        }
+        if GATEWAY.echo is not None:
+            payload["model"] = GATEWAY.echo
+        body = json.dumps(payload).encode()
         self._send(
             GATEWAY.chat_status, body if GATEWAY.chat_status == 200 else b"{}", GATEWAY.fingerprint
         )
@@ -1319,6 +1323,12 @@ def main() -> None:
         job = seed_in_tx(s, state="validating", epoch=3, lease_sql="now() + interval '1 hour'")
         return tx_update(s, job, "claim_epoch = 4, lease_expires_at = now() + interval '2 hours'")
 
+    def probe_reclaim_at_expiry_boundary(s: Session) -> bool:
+        # now() is the transaction start time, so a lease set to now() expires exactly at now():
+        # `lease < now()` is false and the re-claim must be refused.
+        job = seed_in_tx(s, state="validating", epoch=3, lease_sql="now()")
+        return tx_update(s, job, "claim_epoch = 4, lease_expires_at = now() + interval '2 hours'")
+
     def probe_null_ref_no_provider(s: Session) -> bool:
         savepoint = s.begin_nested()
         try:
@@ -1350,10 +1360,15 @@ def main() -> None:
         "IF NEW.claim_epoch <> OLD.claim_epoch THEN", "IF false THEN"
     )
     drop_expiry = src_0029.replace(" AND OLD.lease_expires_at < now()", "")
+    reclaim_at_boundary = src_0029.replace(
+        "OLD.lease_expires_at < now()", "OLD.lease_expires_at <= now()"
+    )
     check(
         CID,
         "F: the fault text for the terminal-epoch clause occurs in the real function",
-        drop_terminal_clause != src_0029 and drop_expiry != src_0029,
+        drop_terminal_clause != src_0029
+        and drop_expiry != src_0029
+        and reclaim_at_boundary != src_0029,
     )
 
     def replace_function(body: str) -> str:
@@ -1375,6 +1390,12 @@ def main() -> None:
             probe_reclaim_before_expiry,
             False,
             [replace_function(drop_expiry)],
+        ),
+        (
+            "re-claim exactly at expiry allowed",
+            probe_reclaim_at_expiry_boundary,
+            False,
+            [replace_function(reclaim_at_boundary)],
         ),
         (
             "kind CHECK widened to any endpoint row",
@@ -1892,6 +1913,17 @@ def main() -> None:
         )
         note("success", job_id, outcome)
 
+        def revoke_during_chat(call: str) -> None:
+            if call.startswith("POST "):
+                with Session(owner_engine) as s:
+                    s.execute(
+                        text(
+                            "UPDATE litellm_connections SET status = 'revoked', revoked_at = now() WHERE id = :id"
+                        ),
+                        {"id": str(conn1_id)},
+                    )
+                    s.commit()
+
         # outage / refusal table over the real gateway
         scenarios: list[tuple[str, dict[str, Any], bool, tuple[str, str]]] = [
             ("gateway rejects the credential (401)", {}, True, ("failed", "gateway_access_denied")),
@@ -1925,6 +1957,30 @@ def main() -> None:
                 False,
                 ("failed", "route_identity_unverified"),
             ),
+            (
+                "resolved-model echo missing from the chat body",
+                {"echo": None},
+                False,
+                ("failed", "route_identity_unverified"),
+            ),
+            (
+                "resolved-model echo names another model",
+                {"echo": "some-other-model"},
+                False,
+                ("failed", "route_identity_unverified"),
+            ),
+            (
+                "resolved-model echo differs only by case",
+                {"echo": REF.upper()},
+                False,
+                ("failed", "route_identity_unverified"),
+            ),
+            (
+                "connection revoked while the gateway was being called",
+                {"side_effect": revoke_during_chat},
+                False,
+                ("failed", "connection_revoked"),
+            ),
         ]
         for label, config, bad_key, (want_state, want_code) in scenarios:
             GATEWAY.models, GATEWAY.models_status, GATEWAY.chat_status, GATEWAY.fingerprint = (
@@ -1933,6 +1989,7 @@ def main() -> None:
                 200,
                 FINGERPRINT,
             )
+            GATEWAY.echo = REF
             for key, value in config.items():
                 setattr(GATEWAY, key, value)
             versions_before = n_versions()
@@ -1941,6 +1998,16 @@ def main() -> None:
                 job_id, token, outcome = run()
             finally:
                 _SECRET_VALUE_BOX[0] = _SECRET_VALUE
+                GATEWAY.on_request = None
+                GATEWAY.side_effect = None
+                with Session(owner_engine) as s:
+                    s.execute(
+                        text(
+                            "UPDATE litellm_connections SET status = 'active', revoked_at = NULL WHERE id = :id"
+                        ),
+                        {"id": str(conn1_id)},
+                    )
+                    s.commit()
             row = job_row(job_id)
             check(
                 CID,
@@ -1965,6 +2032,7 @@ def main() -> None:
             200,
             FINGERPRINT,
         )
+        GATEWAY.echo = REF
 
         # gateway down: a connection to a closed port
         closed_port = _free_port()

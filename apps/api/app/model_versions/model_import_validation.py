@@ -27,18 +27,16 @@ every `DiscoveryState` / `RouteAttestationState` value; any state not listed fai
 
 Success writes, in one transaction, an endpoint-only ModelVersion: `external_provider_model_ref`
 verbatim, `endpoint_reference` NULL (Control-plane ruling 2026-10-10T03:57Z: never a fabricated
-URL and never the connection `base_url`), the attested deployment fingerprint, lineage always
-`unknown` (Section 68.1: display unknown parent/training data as unknown; a declared parent is
-kept as declared only), and no artifact, digest, revision, tokenizer or template. The gateway
-calls run outside any database transaction: no row lock is held across a network call.
+URL or the connection `base_url`), the attested deployment fingerprint, lineage always `unknown`
+(Section 68.1; a declared parent is kept as declared only) and no artifact, digest, revision,
+tokenizer or template. Gateway calls run outside any database transaction.
 
 Every error carries a stable code and never caller text (the ref, fingerprint, base URL and
 secret never reach an exception, a failure code or an audit row).
 
-Disclosed: UNWIRED. No Temporal or outbox dispatcher calls claim/validate yet (durable dispatch
-is FTF-0801/H016), so deployed jobs stay visibly `queued`. FTF-1001's synchronous
-`POST /model-versions` can still create an unvalidated endpoint row; P4's actions route denies
-such rows (`import_not_validated`).
+Round 3: the resolved-model echo must equal the ref; a connection revoked while the gateway calls
+ran fails the job (re-read in the terminal transaction). Disclosed: UNWIRED, no dispatcher calls
+claim/validate yet (FTF-0801/H016); FTF-1001's synchronous POST can still make an unvalidated row.
 """
 
 from __future__ import annotations
@@ -157,6 +155,8 @@ def attestation_outcome(
     but unverified (a missing header or echo) is `failed` (Section 3.5: do not certify)."""
     if state is RouteAttestationState.INVALID_TOKEN:
         return STATE_FAILED, CODE_GATEWAY_ACCESS_DENIED
+    if state is RouteAttestationState.MALFORMED_RESPONSE:  # no resolved-model echo at all
+        return STATE_FAILED, CODE_ROUTE_IDENTITY_UNVERIFIED
     if state is not RouteAttestationState.ATTESTED:
         return STATE_BLOCKED_EXTERNAL, CODE_ROUTE_ATTESTATION_UNAVAILABLE
     if identity is not RouteIdentityState.VERIFIED or not _usable_fingerprint(fingerprint):
@@ -387,23 +387,27 @@ def _finish(
                         text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
                         {"key": f"model_versions:{token.project_id}"},
                     )
-                version = ModelVersion(
-                    id=uuid.uuid4(),
-                    created_at=now,
-                    organization_id=token.organization_id,
-                    project_id=token.project_id,
-                    version_number=_next_version_number(session, context, token.project_id),
-                    import_kind="endpoint",
-                    origin=ORIGIN_EXTERNAL_ENDPOINT,
-                    external_provider_model_ref=snapshot.ref,
-                    observed_deployment_fingerprint=fingerprint,
-                    lineage_completeness="unknown",
-                    parent_model_version_id=snapshot.parent_model_version_id,
-                    created_by=snapshot.created_by,
-                )
-                session.add(version)
-                session.flush()
-                model_version_id = version.id
+                if _connection_still_active(session, context, snapshot.connection_id):
+                    version = ModelVersion(
+                        id=uuid.uuid4(),
+                        created_at=now,
+                        organization_id=token.organization_id,
+                        project_id=token.project_id,
+                        version_number=_next_version_number(session, context, token.project_id),
+                        import_kind="endpoint",
+                        origin=ORIGIN_EXTERNAL_ENDPOINT,
+                        external_provider_model_ref=snapshot.ref,
+                        observed_deployment_fingerprint=fingerprint,
+                        lineage_completeness="unknown",
+                        parent_model_version_id=snapshot.parent_model_version_id,
+                        created_by=snapshot.created_by,
+                    )
+                    session.add(version)
+                    session.flush()
+                    model_version_id = version.id
+                else:
+                    # Revoked (or gone) while the gateway calls ran: no version is written.
+                    state, failure_code = STATE_FAILED, CODE_CONNECTION_REVOKED
 
             statement = (
                 update(ModelImportJob)
@@ -444,6 +448,29 @@ def _finish(
     except _Fenced:
         raise ModelImportActivityError("fenced_out") from None
     return ImportOutcome(state=state, failure_code=failure_code, model_version_id=model_version_id)
+
+
+def _connection_still_active(
+    session: Session, context: TenantContext, connection_id: uuid.UUID
+) -> bool:
+    """Re-reads the connection inside the terminal transaction, share-locked so a concurrent
+    revoke either commits first (seen here) or waits for this transaction."""
+    from app.litellm.connection_schema import LiteLLMConnection
+
+    statement = (
+        select(LiteLLMConnection)
+        .where(
+            LiteLLMConnection.id == connection_id,
+            LiteLLMConnection.organization_id == context.organization_id,
+        )
+        .with_for_update(read=True)
+    )
+    connection = (
+        execute_tenant_scoped(session, context.organization_id, statement).scalars().first()
+    )
+    return (
+        connection is not None and connection.status == "active" and connection.revoked_at is None
+    )
 
 
 def validate_endpoint_import(
@@ -506,8 +533,12 @@ def validate_endpoint_import(
         timeout=timeout,
         now=now,
     )
+    # The resolved-model echo must be exactly the ref; a different echo is an unverified identity.
+    echo_ok = attestation.resolved_model == snapshot.ref
     refused = attestation_outcome(
-        attestation.state, attestation.route_identity_state, attestation.deployment_fingerprint
+        attestation.state,
+        attestation.route_identity_state,
+        attestation.deployment_fingerprint if echo_ok else None,
     )
     if refused is not None:
         return finish(refused[0], refused[1])
