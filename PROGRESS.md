@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-21T21:58Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-21T22:49Z. Source: `python3 scripts/status.py` on main.
 - **Status: 157/304 certified · 49 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,10 @@ Updated: 2026-10-21T21:58Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-21T22:49Z:**
+  - FTF-R006-P1a (Argilla client): the HTTPS time-limit fix is confirmed; the last gap was two missing tests, which the Control plane wrote (PR #941) instead of sending a fifth round back.
+  - Returned, urgent: FTF-0904-F2 r2 (quoted values in logs). It fixed only half of the password leak; the Control plane closed the rest in PR #940 (pending independent certification). The relay still owes the escaped-JSON leak for names like state and code, and three missing tests.
+  - CERTIFIED (child slice): FTF-UX01 after 4 rounds - the shared accessible UI components (buttons, fields, error summary, status badges, empty states, tables, progress) meet the UX standard: WCAG 2.2 AA with 0 automated violations in light and dark, English and Arabic, keyboard and 200% zoom checked in a real browser. The area redesigns UX02 and UX03 can now continue on them.
 - **2026-10-21T21:58Z:**
   - CERTIFIED: FTF-1505 (secret scanning) after 9 rounds - the release-blocking scan covers source, full git history, archives, artifacts and live log samples, with no size limit that can hide a secret; the real full-history scan finds 0 exposed credentials. Follow-up FTF-1505-F1 adds five hardening tests.
 - **2026-10-21T20:05Z:**
