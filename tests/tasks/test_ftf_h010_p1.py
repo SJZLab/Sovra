@@ -1725,6 +1725,7 @@ def test_c1_interface_contract_declares_the_routes() -> None:
             "parent_model_version_id",
             "trainable_artifact_id",
             "external_provider_model_ref",
+            "litellm_connection_id",
         },
     )
     job = schemas["ModelImportJob"]
@@ -1741,6 +1742,8 @@ def test_c1_interface_contract_declares_the_routes() -> None:
             "parent_model_version_id",
             "trainable_artifact_id",
             "external_provider_model_ref",
+            "litellm_connection_id",
+            "result_model_version_id",
             "state",
             "failure_code",
             "created_by",

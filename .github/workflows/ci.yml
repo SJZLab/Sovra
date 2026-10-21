@@ -536,6 +536,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0906.py
       - name: FTF-H010-P1 negative-test proof (model import fields + import-validation jobs -- migration SQL + RLS/GRANT shape + fault injection, store on SQLite, route seams, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_h010_p1.py
+      - name: FTF-H010-P2 negative-test proof (import-validation activity -- outcome tables, resolved-model echo match, terminal-transaction connection re-check, claim/fencing, route seams, 97 fault-injected module copies; no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h010_p2.py
       - name: FTF-R004-P1 negative-test proof (Inspect bridge generation-config parity comparator, no DB required)
         run: uv run python3 tests/tasks/test_ftf_r004_p1.py
       - name: FTF-R004-P2 negative-test proof (Inspect bridge provider-side execution boundary + pre-filter attempt evidence, no DB/network required)
@@ -3558,6 +3560,44 @@ jobs:
       - name: Prove the real model import fields + import-validation jobs evidence against the live database
         run: uv run python3 tests/integration/test_ftf_h010_p1_model_import.py
 
+  model-import-validation-integration:
+    # FTF-H010-P2: real Postgres + a real local TLS gateway for the import-validation activity
+    # (migration 0031): upgrade/downgrade/upgrade over a legacy P1 row, the 5x5 transition matrix,
+    # column grants and RLS, database faults (including a re-claim exactly at lease expiry), the
+    # routes and the claim / fence / validate activity over a real gateway and OpenBao stand-in
+    # (success, outage table, alias exactness, missing header, resolved-model echo missing or
+    # naming another model, a connection revoked while the gateway is called, takeover, no lock
+    # held across a call) and the META-LEAK markers --
+    # tests/integration/test_ftf_h010_p2_import_validation.py.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' model-import-validation-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftfh010p2
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftfh010p2"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfh010p2
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real import-validation activity against the live database and a local TLS gateway
+        run: uv run python3 tests/integration/test_ftf_h010_p2_import_validation.py
+
   csv-import-integration:
     # FTF-0504: the CSV importer (workers/data/csv_importer.py) over PostgreSQL 16 as the
     # restricted sovra_app role and the live SeaweedFS S3 API, through the real FTF-0501 upload
@@ -3863,6 +3903,7 @@ jobs:
       - mlflow-projection-integration
       - mlflow-durable-outbox-integration
       - model-import-integration
+      - model-import-validation-integration
       - candidate-selection-integration
       - dataset-import-source-integration
       - dataset-mapping-preview-integration
