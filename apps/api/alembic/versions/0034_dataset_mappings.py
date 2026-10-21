@@ -62,7 +62,6 @@ _UPDATABLE = (
     "updated_at",
 )
 _HEX64 = "'^[0-9a-f]{64}$'"
-_TABLE = "dataset_mappings"
 
 
 def _in(values: tuple[str, ...]) -> str:
@@ -90,9 +89,31 @@ _COUNTS_FUNCTION = (
 )
 _INSERT_FUNCTION = (
     "CREATE FUNCTION dataset_mappings_insert_guard() RETURNS trigger "
-    "LANGUAGE plpgsql AS $$ BEGIN "
+    "LANGUAGE plpgsql AS $$ "
+    "DECLARE grant_connection uuid; grant_json jsonb; BEGIN "
     "IF NEW.status <> 'proposed' THEN "
     + _raise("a mapping is inserted as proposed", "tr_dataset_mappings_insert_guard_status")
+    + "END IF; "
+    "SELECT u.dataset_source_connection_id, c.allowed_purposes_json "
+    "INTO grant_connection, grant_json FROM datasets d "
+    "JOIN dataset_upload_sessions u ON u.id = d.upload_session_id "
+    "AND u.organization_id = d.organization_id "
+    "JOIN dataset_source_connections c ON c.id = u.dataset_source_connection_id "
+    "AND c.organization_id = u.organization_id "
+    "WHERE d.id = NEW.dataset_id AND d.organization_id = NEW.organization_id; "
+    "IF grant_connection IS DISTINCT FROM NEW.dataset_source_connection_id THEN "
+    + _raise(
+        "a mapping names the upload connection of its dataset",
+        "tr_dataset_mappings_insert_guard_connection",
+    )
+    + "END IF; "
+    "IF (SELECT array_agg(g ORDER BY g) FROM jsonb_array_elements_text(grant_json) AS g) "
+    "IS DISTINCT FROM (SELECT array_agg(p ORDER BY p) FROM unnest(NEW.allowed_purposes_snapshot) "
+    "AS p) THEN "
+    + _raise(
+        "the grant snapshot is the grant of the connection",
+        "tr_dataset_mappings_insert_guard_snapshot",
+    )
     + "END IF; RETURN NEW; END $$"
 )
 _FROZEN = " - ".join(f"'{c}'" for c in _UPDATABLE)
@@ -152,7 +173,7 @@ def upgrade() -> None:
     op.execute(_COUNTS_FUNCTION)
 
     op.create_table(
-        _TABLE,
+        "dataset_mappings",
         sa.Column(
             "id",
             postgresql.UUID(as_uuid=True),
@@ -308,11 +329,11 @@ def upgrade() -> None:
             name="ck_dataset_mappings_ignored_keys_acknowledged",
         ),
     )
-    op.create_index("ix_dataset_mappings_organization_id", _TABLE, ["organization_id"])
-    op.create_index("ix_dataset_mappings_dataset_id", _TABLE, ["dataset_id"])
+    op.create_index("ix_dataset_mappings_organization_id", "dataset_mappings", ["organization_id"])
+    op.create_index("ix_dataset_mappings_dataset_id", "dataset_mappings", ["dataset_id"])
 
-    op.execute(f'GRANT SELECT, INSERT ON {_TABLE} TO "{APP_ROLE_NAME}"')
-    op.execute(f'GRANT UPDATE ({", ".join(_UPDATABLE)}) ON {_TABLE} TO "{APP_ROLE_NAME}"')
+    op.execute(f'GRANT SELECT, INSERT ON dataset_mappings TO "{APP_ROLE_NAME}"')
+    op.execute(f'GRANT UPDATE ({", ".join(_UPDATABLE)}) ON dataset_mappings TO "{APP_ROLE_NAME}"')
 
     op.execute(_INSERT_FUNCTION)
     op.execute(
@@ -326,10 +347,10 @@ def upgrade() -> None:
     )
 
     tenant_setting = "NULLIF(current_setting('app.current_organization_id', true), '')::uuid"
-    op.execute(f"ALTER TABLE {_TABLE} ENABLE ROW LEVEL SECURITY")
-    op.execute(f"ALTER TABLE {_TABLE} FORCE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE dataset_mappings ENABLE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE dataset_mappings FORCE ROW LEVEL SECURITY")
     op.execute(
-        f"CREATE POLICY tenant_isolation ON {_TABLE} FOR ALL "
+        f"CREATE POLICY tenant_isolation ON dataset_mappings FOR ALL "
         f"USING (organization_id = {tenant_setting}) "
         f"WITH CHECK (organization_id = {tenant_setting})"
     )
@@ -340,9 +361,9 @@ def downgrade() -> None:
     op.execute("DROP FUNCTION IF EXISTS dataset_mappings_update_guard()")
     op.execute("DROP TRIGGER IF EXISTS tr_dataset_mappings_insert_guard ON dataset_mappings")
     op.execute("DROP FUNCTION IF EXISTS dataset_mappings_insert_guard()")
-    op.execute(f"DROP POLICY IF EXISTS tenant_isolation ON {_TABLE}")
-    op.execute(f'REVOKE ALL ON {_TABLE} FROM "{APP_ROLE_NAME}"')
-    op.drop_index("ix_dataset_mappings_dataset_id", table_name=_TABLE)
-    op.drop_index("ix_dataset_mappings_organization_id", table_name=_TABLE)
-    op.drop_table(_TABLE)
+    op.execute("DROP POLICY IF EXISTS tenant_isolation ON dataset_mappings")
+    op.execute(f'REVOKE ALL ON dataset_mappings FROM "{APP_ROLE_NAME}"')
+    op.drop_index("ix_dataset_mappings_dataset_id", table_name="dataset_mappings")
+    op.drop_index("ix_dataset_mappings_organization_id", table_name="dataset_mappings")
+    op.drop_table("dataset_mappings")
     op.execute("DROP FUNCTION IF EXISTS dataset_mapping_counts_content_free(jsonb)")

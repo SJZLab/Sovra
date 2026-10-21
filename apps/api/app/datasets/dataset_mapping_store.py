@@ -886,7 +886,7 @@ def resolve_approved_mapping(
     _clean(purpose, 32)
     if type(include_held_out) is not bool:
         raise MappingStoreError("invalid_request")
-    dataset, _connection_id, _snapshot, importer = _authorized_dataset(
+    dataset, connection_id, _snapshot, importer = _authorized_dataset(
         session,
         context,
         project_id=project_id,
@@ -898,6 +898,8 @@ def resolve_approved_mapping(
         raise MappingStoreError("purpose_mismatch")
     own = _approved_for(session, context, dataset, earlier=False)
     if own is not None:
+        if own.dataset_source_connection_id != connection_id:
+            raise MappingStoreError("mapping_tampered")
         return ResolvedMapping(
             _verified_mapping(own),
             own.id,

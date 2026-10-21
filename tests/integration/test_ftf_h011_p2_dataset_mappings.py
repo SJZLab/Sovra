@@ -74,6 +74,7 @@ FAILURES: list[str] = []
 CID = "FTF-H011-P2"
 ALL_PURPOSES = ["training", "validation", "candidate_development", "held_out_evaluation"]
 CANARY = "CANARY-4c1d9e07-secret-value"
+ALLSNAP = "{candidate_development,held_out_evaluation,training,validation}"
 
 
 def check(description: str, condition: bool) -> None:
@@ -409,7 +410,7 @@ def check_catalog(env: Env) -> None:
         check(f"{TABLE} has ENABLE and FORCE row-level security", bool(enabled and forced))
         policies = conn.execute(
             text(
-                "SELECT polname, pg_get_expr(polqual, polrelid) FROM pg_policy "
+                "SELECT polname, pg_get_expr(polqual, polrelid), pg_get_expr(polwithcheck, polrelid) FROM pg_policy "
                 "WHERE polrelid = CAST(:t AS regclass)"
             ),
             {"t": TABLE},
@@ -419,7 +420,9 @@ def check_catalog(env: Env) -> None:
             len(policies) == 1
             and policies[0][0] == "tenant_isolation"
             and "app.current_organization_id" in str(policies[0][1])
-            and str(policies[0][1]).strip().lower() != "true",
+            and str(policies[0][1]).strip().lower() != "true"
+            and "app.current_organization_id" in str(policies[0][2])
+            and str(policies[0][2]).strip().lower() != "true",
         )
         for privilege, expected in (("SELECT", True), ("INSERT", True), ("DELETE", False)):
             granted = conn.execute(
@@ -456,6 +459,19 @@ def check_catalog(env: Env) -> None:
                 "updated_at",
             },
         )
+        constraints = {
+            row[0]
+            for row in conn.execute(
+                text("SELECT conname FROM pg_constraint WHERE conrelid = CAST(:t AS regclass)"),
+                {"t": TABLE},
+            )
+        }
+        for name in (
+            "fk_dataset_mappings_connection",
+            "fk_dataset_mappings_dataset_lineage",
+            "fk_dataset_mappings_parent",
+        ):
+            check(f"constraint {name} exists", name in constraints)
         triggers = {
             row[0]
             for row in conn.execute(text("SELECT tgname FROM pg_trigger WHERE NOT tgisinternal"))
@@ -1315,10 +1331,13 @@ def section_raw(env: Env) -> None:
         "dataset_purpose, dataset_version, dataset_sha256, dataset_source_connection_id, "
         "mapping_version, parent_mapping_version, mapping_document, mapping_sha256, importer, "
         "importer_version, transform_version, tool_definitions_sha256, preview_sha256, "
-        "preview_counts, status, allowed_purposes_snapshot, created_by) "
+        "preview_counts, status, allowed_purposes_snapshot, created_by, approved_purpose, "
+        "approved_by, approver_role, approved_at) "
         "SELECT :id, d.organization_id, d.project_id, d.id, d.name, d.purpose, d.version, "
-        "d.verified_sha256, u.dataset_source_connection_id, :mv, :pv, CAST(:doc AS jsonb), :h, "
-        "'jsonl', '1', 'h011.1', :h, :h, CAST(:counts AS jsonb), :status, CAST(:snap AS text[]), 'raw' "
+        "d.verified_sha256, COALESCE(CAST(:conn AS uuid), u.dataset_source_connection_id), :mv, :pv, CAST(:doc AS jsonb), :h, "
+        "'jsonl', '1', 'h011.1', :h, :h, CAST(:counts AS jsonb), :status, CAST(:snap AS text[]), 'raw', "
+        "CAST(:ap AS varchar), CAST(:ab AS varchar), CAST(:ar AS varchar), "
+        "CASE WHEN CAST(:ap AS varchar) IS NULL THEN NULL ELSE now() END "
         "FROM datasets d JOIN dataset_upload_sessions u ON u.id = d.upload_session_id WHERE d.id=:ds"
     )
 
@@ -1333,17 +1352,33 @@ def section_raw(env: Env) -> None:
         h=_sha("m"),
         counts=json.dumps({"seen": 1, "accepted": 1, "rejected": 0}),
         status="proposed",
-        snap="{validation}",
+        snap=ALLSNAP,
         ds=ds.id,
+        conn=None,
+        ap=None,
+        ab=None,
+        ar=None,
     )
-    # ds already has mappings 1 -> use a fresh dataset for the raw inserts
     fresh = env.dataset(w, "raw3", "training", jsonl(convo()))
     base["ds"] = fresh.id
-    err = raw(env, w.ctx, insert_sql, **base)
-    check(f"raw INSERT of a proposed row with a narrow snapshot is accepted ({err})", err is None)
+    # the snapshot is the connection's grant at that moment: a grant narrowed after the upload
+    # is the only way a snapshot can lack the dataset's own purpose
+    w2 = env.world("raw-narrow")
+    nd = env.dataset(w2, "n", "training", jsonl(convo()), connection="train")
+    env.execute(
+        "UPDATE dataset_source_connections SET allowed_purposes_json = CAST('[\"validation\"]' AS jsonb) WHERE id=:i",
+        i=w2.conns["train"],
+    )
+    err = raw(
+        env, w2.ctx, insert_sql, **{**base, "id": narrow_id, "ds": nd.id, "snap": "{validation}"}
+    )
+    check(
+        f"raw INSERT of a proposed row whose snapshot is the narrowed grant is accepted ({err})",
+        err is None,
+    )
     err = raw(
         env,
-        w.ctx,
+        w2.ctx,
         "UPDATE dataset_mappings SET status='approved', approved_purpose='training', approved_by='x', approver_role='workspace_admin', approved_at=now(), updated_at=now() WHERE id=:i",
         i=narrow_id,
     )
@@ -1352,10 +1387,74 @@ def section_raw(env: Env) -> None:
         err is not None and "approved_purpose_in_grant" in str(err),
     )
 
-    err = raw(env, w.ctx, insert_sql, **{**base, "id": uuid.uuid4(), "mv": 1, "status": "approved"})
-    check(
-        "a row inserted as approved is refused (and so is its duplicate version)", err is not None
+    # the snapshot and the connection cannot be forged at insert (insert guard)
+    forge = newds()
+    err = raw(
+        env, w.ctx, insert_sql, **{**base, "id": uuid.uuid4(), "ds": forge.id, "snap": "{training}"}
     )
+    check(
+        "a forged grant snapshot is refused by the insert guard",
+        err is not None and "grant snapshot" in str(err),
+    )
+    err = raw(
+        env,
+        w.ctx,
+        insert_sql,
+        **{
+            **base,
+            "id": uuid.uuid4(),
+            "ds": forge.id,
+            "conn": str(w.conns["train"]),
+            "snap": ALLSNAP,
+        },
+    )
+    check(
+        "a forged connection (another connection of the project) is refused by the insert guard",
+        err is not None and "upload connection" in str(err),
+    )
+    foreign_conn = env.world("raw-other-project").conns["all"]
+    err = raw(
+        env,
+        w.ctx,
+        insert_sql,
+        **{**base, "id": uuid.uuid4(), "ds": forge.id, "conn": str(foreign_conn)},
+    )
+    check("a connection of another project is refused", err is not None)
+    err = raw(
+        env,
+        w.ctx,
+        insert_sql,
+        **{**base, "id": uuid.uuid4(), "ds": forge.id, "snap": "{training,validation}"},
+    )
+    check(
+        "a partial snapshot of the real grant is refused",
+        err is not None and "grant snapshot" in str(err),
+    )
+    check(
+        "positive control: the exact grant on the real connection inserts",
+        raw(env, w.ctx, insert_sql, **{**base, "id": uuid.uuid4(), "ds": forge.id}) is None,
+    )
+    err = raw(
+        env,
+        w.ctx,
+        insert_sql,
+        **{
+            **base,
+            "id": uuid.uuid4(),
+            "ds": newds().id,
+            "status": "approved",
+            "ap": "training",
+            "ab": "x",
+            "ar": "workspace_admin",
+        },
+    )
+    check(
+        "a row inserted as approved with every approval column valid is refused by the insert guard",
+        err is not None and "inserted as proposed" in str(err),
+    )
+
+    err = raw(env, w.ctx, insert_sql, **{**base, "id": uuid.uuid4(), "mv": 1, "pv": None})
+    check(f"a first version on the fresh dataset inserts ({err})", err is None)
     err = raw(env, w.ctx, insert_sql, **{**base, "id": uuid.uuid4(), "mv": 3, "pv": 2})
     check(
         "a version gap (parent 2 of a missing version) is refused by the foreign key",
@@ -1436,7 +1535,7 @@ def section_raw(env: Env) -> None:
                 "ds": newds().id,
                 "mv": 1,
                 "pv": None,
-                "snap": "{training}",
+                "snap": ALLSNAP,
             },
         )
         is None,
@@ -1454,7 +1553,7 @@ def section_raw(env: Env) -> None:
             "ds": sup.id,
             "mv": 1,
             "pv": None,
-            "snap": "{training}",
+            "snap": ALLSNAP,
         },
     )
     check("a first version inserts", err is None)
@@ -1462,7 +1561,7 @@ def section_raw(env: Env) -> None:
         env,
         w.ctx,
         insert_sql,
-        **{**base, "id": uuid.uuid4(), "ds": sup.id, "mv": 2, "pv": 1, "snap": "{training}"},
+        **{**base, "id": uuid.uuid4(), "ds": sup.id, "mv": 2, "pv": 1, "snap": ALLSNAP},
     )
     check("a second version inserts", err is None)
     err = raw(
@@ -1495,7 +1594,7 @@ def section_raw(env: Env) -> None:
         env,
         other.ctx,
         "INSERT INTO dataset_mappings (id, organization_id, project_id, dataset_id, dataset_name, dataset_purpose, dataset_version, dataset_sha256, dataset_source_connection_id, mapping_version, mapping_document, mapping_sha256, importer, importer_version, transform_version, tool_definitions_sha256, preview_sha256, preview_counts, status, allowed_purposes_snapshot, created_by) "
-        "VALUES (:id, :o, :p, :d, :n, :pu, :v, :s, :c, 1, CAST(:doc AS jsonb), :h, 'jsonl', '1', 'h011.1', :h, :h, CAST(:counts AS jsonb), 'proposed', CAST('{training}' AS text[]), 'raw')",
+        "VALUES (:id, :o, :p, :d, :n, :pu, :v, :s, :c, 1, CAST(:doc AS jsonb), :h, 'jsonl', '1', 'h011.1', :h, :h, CAST(:counts AS jsonb), 'proposed', CAST('{candidate_development,held_out_evaluation,training,validation}' AS text[]), 'raw')",
         id=uuid.uuid4(),
         o=d[0],
         p=d[1],
@@ -1511,14 +1610,14 @@ def section_raw(env: Env) -> None:
     )
     check(
         "an org2 session cannot INSERT a row carrying org1's organization_id (RLS WITH CHECK)",
-        err is not None and "row-level security" in str(err),
+        err is not None and ("row-level security" in str(err) or "upload connection" in str(err)),
     )
     check(
         "positive control: the same INSERT as org1 is accepted",
         raw(
             env,
             w.ctx,
-            "INSERT INTO dataset_mappings (id, organization_id, project_id, dataset_id, dataset_name, dataset_purpose, dataset_version, dataset_sha256, dataset_source_connection_id, mapping_version, mapping_document, mapping_sha256, importer, importer_version, transform_version, tool_definitions_sha256, preview_sha256, preview_counts, status, allowed_purposes_snapshot, created_by) VALUES (:id, :o, :p, :d, :n, :pu, :v, :s, :c, 1, CAST(:doc AS jsonb), :h, 'jsonl', '1', 'h011.1', :h, :h, CAST(:counts AS jsonb), 'proposed', CAST('{training}' AS text[]), 'raw')",
+            "INSERT INTO dataset_mappings (id, organization_id, project_id, dataset_id, dataset_name, dataset_purpose, dataset_version, dataset_sha256, dataset_source_connection_id, mapping_version, mapping_document, mapping_sha256, importer, importer_version, transform_version, tool_definitions_sha256, preview_sha256, preview_counts, status, allowed_purposes_snapshot, created_by) VALUES (:id, :o, :p, :d, :n, :pu, :v, :s, :c, 1, CAST(:doc AS jsonb), :h, 'jsonl', '1', 'h011.1', :h, :h, CAST(:counts AS jsonb), 'proposed', CAST('{candidate_development,held_out_evaluation,training,validation}' AS text[]), 'raw')",
             id=uuid.uuid4(),
             o=d[0],
             p=d[1],

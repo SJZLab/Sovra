@@ -480,9 +480,9 @@ def migration_findings(src: str) -> list[str]:
     need("revision id", 'revision = "0034_dataset_mappings"' in src)
     need("chained onto 0033", 'down_revision = "0033_upload_declared_encoding"' in src)
     need("revision id fits alembic_version (<=32)", len("0034_dataset_mappings") <= 32)
-    need("ENABLE rls", 'f"ALTER TABLE {_TABLE} ENABLE ROW LEVEL SECURITY"' in src)
-    need("FORCE rls", 'f"ALTER TABLE {_TABLE} FORCE ROW LEVEL SECURITY"' in src)
-    need("policy name", "CREATE POLICY tenant_isolation ON {_TABLE} FOR ALL" in src)
+    need("ENABLE rls", '"ALTER TABLE dataset_mappings ENABLE ROW LEVEL SECURITY"' in src)
+    need("FORCE rls", '"ALTER TABLE dataset_mappings FORCE ROW LEVEL SECURITY"' in src)
+    need("policy name", "CREATE POLICY tenant_isolation ON dataset_mappings FOR ALL" in src)
     need("policy using", "USING (organization_id = {tenant_setting})" in src)
     need("policy with check", "WITH CHECK (organization_id = {tenant_setting})" in src)
     need("not allow-all", "USING (true)" not in src and "WITH CHECK (true)" not in src)
@@ -490,15 +490,18 @@ def migration_findings(src: str) -> list[str]:
         "tenant setting",
         "NULLIF(current_setting('app.current_organization_id', true), '')::uuid" in src,
     )
-    need("SELECT/INSERT grant only", 'GRANT SELECT, INSERT ON {_TABLE} TO "{APP_ROLE_NAME}"' in src)
+    need(
+        "SELECT/INSERT grant only",
+        'GRANT SELECT, INSERT ON dataset_mappings TO "{APP_ROLE_NAME}"' in src,
+    )
     need(
         "no DELETE grant",
         "DELETE ON" not in src.split("def downgrade")[0] and "GRANT DELETE" not in src,
     )
     need(
         "column-limited UPDATE",
-        'GRANT UPDATE ({", ".join(_UPDATABLE)}) ON {_TABLE}' in src
-        or "GRANT UPDATE ({', '.join(_UPDATABLE)}) ON {_TABLE}" in src,
+        'GRANT UPDATE ({", ".join(_UPDATABLE)}) ON dataset_mappings' in src
+        or "GRANT UPDATE ({', '.join(_UPDATABLE)}) ON dataset_mappings" in src,
     )
     match = re.search(r"_UPDATABLE = \(([^)]*)\)", src)
     need(
@@ -599,6 +602,21 @@ def migration_findings(src: str) -> list[str]:
         and "IF NEW.status = 'approved' AND EXISTS" in src,
     )
     need(
+        "the insert guard binds the connection to the dataset's upload connection",
+        "IF grant_connection IS DISTINCT FROM NEW.dataset_source_connection_id THEN" in src
+        and "JOIN dataset_upload_sessions u ON u.id = d.upload_session_id" in src,
+    )
+    need(
+        "the insert guard binds the snapshot to that connection's grant",
+        "jsonb_array_elements_text(grant_json)" in src
+        and "unnest(NEW.allowed_purposes_snapshot)" in src
+        and "IS DISTINCT FROM (SELECT array_agg(p ORDER BY p)" in src,
+    )
+    need(
+        "the table name is a literal (data_exposure_check reads it)",
+        'op.create_table(\n        "dataset_mappings",' in src and "_TABLE" not in src,
+    )
+    need(
         "both triggers are created",
         "CREATE TRIGGER tr_dataset_mappings_insert_guard BEFORE INSERT" in src
         and "CREATE TRIGGER tr_dataset_mappings_update_guard BEFORE UPDATE" in src,
@@ -630,7 +648,7 @@ def migration_findings(src: str) -> list[str]:
                 "DROP TRIGGER IF EXISTS tr_dataset_mappings_update_guard",
                 "DROP FUNCTION IF EXISTS dataset_mappings_update_guard()",
                 "DROP POLICY IF EXISTS tenant_isolation",
-                "op.drop_table(_TABLE)",
+                'op.drop_table("dataset_mappings")',
                 "dataset_mapping_counts_content_free(jsonb)",
             )
         ),
@@ -647,13 +665,16 @@ def part_m() -> None:
         not broken,
     )
     faults = {
-        "drop FORCE RLS": ('f"ALTER TABLE {_TABLE} FORCE ROW LEVEL SECURITY"', '"SELECT 1"'),
-        "drop ENABLE RLS": ('f"ALTER TABLE {_TABLE} ENABLE ROW LEVEL SECURITY"', '"SELECT 1"'),
+        "drop FORCE RLS": ('"ALTER TABLE dataset_mappings FORCE ROW LEVEL SECURITY"', '"SELECT 1"'),
+        "drop ENABLE RLS": (
+            '"ALTER TABLE dataset_mappings ENABLE ROW LEVEL SECURITY"',
+            '"SELECT 1"',
+        ),
         "allow-all policy": ("USING (organization_id = {tenant_setting})", "USING (true)"),
         "allow-all check": ("WITH CHECK (organization_id = {tenant_setting})", "WITH CHECK (true)"),
         "grant DELETE": (
-            'GRANT SELECT, INSERT ON {_TABLE} TO "{APP_ROLE_NAME}"',
-            'GRANT SELECT, INSERT, DELETE ON {_TABLE} TO "{APP_ROLE_NAME}"',
+            'GRANT SELECT, INSERT ON dataset_mappings TO "{APP_ROLE_NAME}"',
+            'GRANT SELECT, INSERT, DELETE ON dataset_mappings TO "{APP_ROLE_NAME}"',
         ),
         "widen the UPDATE columns": (
             '    "status",\n    "approved_purpose",',
@@ -713,6 +734,18 @@ def part_m() -> None:
         "ignored keys without an ignore mapping": (
             "'on_unmapped_message_keys', '') = 'ignore') = (ignored_keys_sha256 IS NOT NULL)",
             "'on_unmapped_message_keys', '') = 'ignore') OR (ignored_keys_sha256 IS NOT NULL)",
+        ),
+        "forged connection allowed": (
+            "IF grant_connection IS DISTINCT FROM NEW.dataset_source_connection_id THEN",
+            "IF false THEN",
+        ),
+        "forged snapshot allowed": (
+            "IS DISTINCT FROM (SELECT array_agg(p ORDER BY p)",
+            "IS NOT DISTINCT FROM (SELECT array_agg(p ORDER BY p)",
+        ),
+        "table name hidden behind a variable": (
+            'op.create_table(\n        "dataset_mappings",',
+            "op.create_table(\n        TABLE_NAME,",
         ),
         "wrong parent revision": (
             'down_revision = "0033_upload_declared_encoding"',
@@ -2945,6 +2978,41 @@ def part_s_variants2() -> None:
         )
 
 
+def part_s_review() -> None:
+    """Pre-review findings: JSON never reuses; a mapping bound to another connection never resolves."""
+    with sqlite_world() as w:
+        conn = w.connection("rv", ALL_PURPOSES)
+        j1 = w.dataset("doc", "training", conn, version=1, content_type="application/json")
+        jm = w.propose(j1)
+        w.approve(jm)
+        j2 = w.dataset("doc", "training", conn, version=2, content_type="application/json")
+        n = len(w.preview_calls)
+        refuses(
+            w,
+            "a JSON prior version",
+            "mapping_reapproval_required",
+            lambda: w.resolve(j2),
+            "REVIEW-1",
+        )
+        check(
+            "REVIEW-2", "JSON reuse is decided before any byte is read", len(w.preview_calls) == n
+        )
+        check(
+            "REVIEW-3",
+            "the JSON dataset's own approval still resolves",
+            w.resolve(j1).mapping_id == jm.id,
+        )
+        jm.dataset_source_connection_id = det_uuid("another-connection")
+        w.session.flush()
+        refuses(
+            w,
+            "an approval recorded for another connection",
+            "mapping_tampered",
+            lambda: w.resolve(j1),
+            "REVIEW-4",
+        )
+
+
 def main() -> None:
     part_p()
     part_m()
@@ -2954,6 +3022,7 @@ def main() -> None:
     part_s_reads()
     part_s_variants()
     part_s_variants2()
+    part_s_review()
     if FAILURES:
         for failure in FAILURES:
             print(failure, file=sys.stderr)
