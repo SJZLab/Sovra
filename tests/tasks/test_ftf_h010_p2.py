@@ -3160,6 +3160,12 @@ def main() -> int:
     source = MODULE_PATH.read_text()
     m = load_module(MODULE_PATH, "model_import_validation_real")
     failures = suite(m, with_routes=True)
+    if failures:
+        # The real module already fails: the fault runs below would only repeat that verdict.
+        print(f"{len(failures)} failing check(s) on the real module:")
+        for failure in failures[:80]:
+            print(f"  {failure}")
+        return 1
     names = [f[0] for f in FAULTS] + [f[0] for f in SCHEMA_FAULTS] + [f[0] for f in ROUTE_FAULTS]
     if len(set(names)) != len(names):
         failures.append("FAIL [I1] duplicate fault names")
