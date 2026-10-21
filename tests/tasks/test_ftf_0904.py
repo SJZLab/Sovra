@@ -3184,14 +3184,14 @@ FAULTS: list[tuple[str, str, str, int]] = [
         "backslash-run-inside-quoted-value quadratic this round fixes)",
         '(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+',
         '[^"\\r\\n]*?',
-        1,
+        2,
     ),
     (
         "V-QV-BOUND-16 escaped-value content re-bounded to ~16 chars (reproduces the "
         "round-4-style leak the round-5 class-closing ruling forbids)",
         '(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+',
         '(?:[^"\\\\\\r\\n]|\\\\++(?!")){0,16}+',
-        1,
+        2,
     ),
     # --- round 6: the JWT shape is a per-run scan; sweeps must be able to fail -------------
     (
@@ -3568,6 +3568,8 @@ def test_f2r2_escaped_quote_forms_of_every_f2_name() -> None:
                     f'{{{e}"{spelling}{e}": {e}"{_F1_VALUE}{e}"}}',
                     f'{{{e}"{spelling}{e}":{e}"{_F1_VALUE}{e}"}}',
                     f'{spelling}={e}"{_F1_VALUE}{e}"',
+                    f'{spelling}={e}"ab"{_F1_VALUE}{e}" tail',  # bare quote inside
+                    f"{spelling}={e}'ab'{_F1_VALUE}{e}' tail",
                     f'msg="x {spelling}={e}"{_F1_VALUE}{e}" y"',
                     f"{spelling}={e}'{_F1_VALUE}{e}' tail",
                     f'{{{e}"{spelling}{e}": {e}"{_F1_VALUE}',  # escaped, unterminated
@@ -3582,6 +3584,22 @@ def test_f2r2_escaped_quote_forms_of_every_f2_name() -> None:
     check("FTF-0904-F2", "escaped-quote table is non-trivial", rows > 500)
 
 
+def test_f2r2_long_escaped_value_ends_at_its_closer() -> None:
+    """The escaped value is read to ITS closer (no length bound, no early stop), so the text after
+    it survives: reading less would only over-redact, and this pins that it does not."""
+    for name in ("password", "state", "session_key"):
+        for n in (1, 2):
+            e = "\\" * n
+            for size in (40, 200, 5000):
+                value = "v" * size + _F1_VALUE
+                text = f'{{{e}"{name}{e}": {e}"{value}{e}", "user": "bob_kept"}}'
+                out = lr.redact_text(text)
+                check("FTF-0904-F2", f"{name}/{n}/{size}: leaked", _F1_VALUE not in out)
+                check(
+                    "FTF-0904-F2", f"{name}/{n}/{size}: tail lost {out[-40:]!r}", "bob_kept" in out
+                )
+
+
 def test_f2r2_unterminated_and_oversized_quoted_values() -> None:
     """V6 / V10 / V11: unterminated single quotes run to end of line; no length bound."""
     for name in ("state", "code", "session_key"):
@@ -3592,7 +3610,11 @@ def test_f2r2_unterminated_and_oversized_quoted_values() -> None:
                 _r2_assert_clean("V10/V11", f"{name}={q}{filler}{_F1_VALUE}{q} tail")
                 _r2_assert_clean("V10/V11-open", f"{name}: {q}{filler}{_F1_VALUE}")
     out = lr.redact_text("state='x" + _F1_VALUE + "\nnext line kept")
-    check("FTF-0904-F2", f"unterminated quote crossed the line {out!r}", out.endswith("next line kept"))
+    check(
+        "FTF-0904-F2",
+        f"unterminated quote crossed the line {out!r}",
+        out.endswith("next line kept"),
+    )
 
 
 def test_f2r2_composite_endings_every_ending_every_case() -> None:
@@ -3613,7 +3635,11 @@ def test_f2r2_composite_endings_every_ending_every_case() -> None:
                                 logging.getLogger("t").error("%s", text)
                                 found = leaked([_F1_VALUE], h.outputs())
                             check("FTF-0904-F2", f"{text!r}: logging leak {found}", not found)
-    check("FTF-0904-F2", "composite-ending table covers all 13 endings", len(lr._QUERY_PARAM_NAMES) == 13)
+    check(
+        "FTF-0904-F2",
+        "composite-ending table covers all 13 endings",
+        len(lr._QUERY_PARAM_NAMES) == 13,
+    )
     check("FTF-0904-F2", "composite table is non-trivial", rows > 1000)
 
 
@@ -3625,8 +3651,14 @@ def test_f2r2_structured_benign_lines_redacted_by_design() -> None:
         ("state='running'", "state=[REDACTED]"),
         ('code="200" ok', "code=[REDACTED] ok"),
     ):
-        check("FTF-0904-F2", f"{text!r}: got {lr.redact_text(text)!r}", lr.redact_text(text) == want)
-    check("FTF-0904-F2", "bare 'state: running' changed", lr.redact_text("state: running") == "state: running")
+        check(
+            "FTF-0904-F2", f"{text!r}: got {lr.redact_text(text)!r}", lr.redact_text(text) == want
+        )
+    check(
+        "FTF-0904-F2",
+        "bare 'state: running' changed",
+        lr.redact_text("state: running") == "state: running",
+    )
 
 
 # FTF-0904-F2: each fault removes one protection added this round
@@ -3668,7 +3700,7 @@ FAULTS += [
 FAULTS += [
     (
         "F2r2-generic quoted value no end-of-line fallback",
-        "    r\"\"\"|\"[^\\r\\n]*+|'[^\\r\\n]*+\"\"\"\n",
+        '    r"""|"[^\\r\\n]*+|\'[^\\r\\n]*+"""\n',
         "",
         1,
     ),
@@ -3686,7 +3718,7 @@ FAULTS += [
     ),
     (
         "F2r2-escaped opening quote read as bare",
-        'text[match.end()] == "\\"',
+        'text[match.end()] == "\\\\"',
         "False",
         1,
     ),
@@ -3699,7 +3731,8 @@ FAULTS += [
     (
         "F2r2-quoted branch skipped for composite endings",
         'if match.group("qsep") is not None:',
-        'if match.group("qsep") is not None and not match.group("key").lower().endswith(("sig", "pass", "otp", "verifier", "ticket", "auth", "sid", "jwt")):',
+        'if match.group("qsep") is not None and not match.group("key").lower().endswith('
+        '("sig", "pass", "otp", "verifier", "ticket", "auth", "sid", "jwt")):',
         1,
     ),
     (
