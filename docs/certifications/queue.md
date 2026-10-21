@@ -25195,3 +25195,5 @@ different session.
 - **Maintenance (no requalification):** #906 (FTF-1506, lock-only: certifi 2026.10.19 for GHSA-6q48-6c7w-9gw2, vite 8.2.4 for GHSA-587h-7wmj-h5pm); FTF-1506's dependency-scanning job green on its head; no gate or allowlist changed.
 - **Returned:** FTF-R006-P1a r3 -> r4 (0m): late-TLS-handshake deadline (production), username/name key-echo pins.
 - **Returned (urgent):** FTF-0904-F2 r1 -> r2 (0b, take first): generic quoted-value fail-open regression of FTF-0904 (live on main), escaped-quote forms, V6/V10/V11/V17 pins, over-redaction counts. FTF-0904 requalification pending.
+- **Certified:** FTF-0519-P2 (#915, merge 43a381ec), round 2. Allowlist: pending_pr keys removed (#742/#869/#915 on main), _refusal re-pinned 304 -> 327, three stale M9 entries retired.
+- **Certified:** FTF-0512-F3 (#912, merge a4dff1f8), round 2; FTF-0512 requalified.

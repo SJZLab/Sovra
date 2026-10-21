@@ -8359,7 +8359,7 @@ FTF-0512:
   certification_state: CERTIFIED
   criticality: MUST
   description: Normalized duplicate detector
-  evidence_hash: 244ea3af6ba6e9a65dda0485f271441662b2c10d
+  evidence_hash: a4dff1f8287d31d6832f9f526598ca4ccbc47b20
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31;

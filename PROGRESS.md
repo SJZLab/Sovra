@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-21T12:49Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-21T13:21Z. Source: `python3 scripts/status.py` on main.
 - **Status: 155/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,9 @@ Updated: 2026-10-21T12:49Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-21T13:21Z:**
+  - CERTIFIED (child slice): FTF-0512-F3 after 2 rounds - duplicate detection keeps every sign, unit and currency mark attached to a number ("-$5" and "$5", "5″" and "5′" stay different) while ordinary punctuation still merges; 0 new merges over 370,454 texts. FTF-0512 stays certified.
+  - CERTIFIED (child slice): FTF-0519-P2 after 2 rounds - the dataset split manifest API (propose, approve, reject, list) is live, hides held-out evaluation sources from roles that may not see them, and replays or refuses a reused Idempotency-Key. FTF-0519 itself is reviewed next.
 - **2026-10-21T12:49Z:**
   - Returned, urgent: FTF-0904-F2 r1 (quoted values in logs). It fixed quoted values after names like state and code, but it broke the certified log redaction: a password whose quoted value ends in a backslash is now printed in clear (reproduced on main). Values in backslash-escaped JSON also still leak. FTF-0904 needs requalification; the relay takes this first.
   - Returned: FTF-R006-P1a r3 (Argilla client: the header-time limit, the 1xx reply and the key-in-error fixes hold, but over HTTPS a server that finishes the TLS handshake late can still hold a call for 40+ seconds, and two key-leak checks are not tested).

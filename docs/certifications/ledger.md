@@ -12063,3 +12063,31 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   over-redaction not quantified. Gates: product_truth 48/48, validate_spec --strict, data_exposure OK.
 - **FTF-0904: REQUALIFICATION PENDING** (Law 15): certified evidence (51f8753f) no longer describes main; it is
   restored only when FTF-0904-F2 r2 is certified with the full matrix, W1 and FTF-0905 green.
+## 2026-10-21T13:21Z — CERTIFIED (child slice): FTF-0519-P2
+- **FTF-0519-P2: CERTIFIED (L2)** (round 2 under the stopping rule; PR #915, merge 43a381eca22a1e46e2939267acf0bc55effd43b0, head 4664dcd5).
+  Producer session_01NfHRGTZv5ha9hMN3Au7X3L ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI 79/79,
+  ci-verdict 119147699346; dataset-split-manifest-routes-integration 119085558864 "FTF-0519-P2 split manifest routes real
+  proof: all checks passed" on PG16.15; gate 119082580107 "FTF-0519-P2 split manifest route tests: all checks passed";
+  mutation-gate 86/86. All 4 round-1 points fixed (real-PG route suite + CI job, gate step, held-out source identity hidden
+  from roles that may not see it (14 identity values absent from every response to ml_engineer), Idempotency-Key stored
+  with the request digest -> replay or 409 idempotency_key_reused). Probes 142/144 round-1 (2 = known allOf advisory),
+  77/77 new, 19/19 true concurrency (8 uvicorn servers, 24 real unique-key collisions rolled back). Law 18 on the new key
+  table (ENABLE+FORCE RLS, SELECT/INSERT only). Uncapped mutation 196/197 (survivor = the allowlisted _refusal M9, moved
+  304 -> 327; re-pinned, three stale entries retired). Law 15: FTF-0519-P1, 0501, 0501-P1, 0516-P1, 0517, 0518 pass.
+  Gates: product_truth 48/48 (49/49 with the proving_symbol filled), validate_spec --strict, data_exposure OK.
+  Advisories: one uvicorn serializes requests (race path covered by the fake store + the 8-server probe); key scope and
+  case-sensitivity not stated in the contract; key table project_id not tied to the manifest's project (unreachable).
+## 2026-10-21T13:21Z — CERTIFIED (child slice): FTF-0512-F3; FTF-0512 requalified
+- **FTF-0512-F3: CERTIFIED (L2)** (round 2 under the stopping rule; PR #912, merge a4dff1f8287d31d6832f9f526598ca4ccbc47b20, head f839b614).
+  Producers session_01HhcnAoQFyzSKPrNbjPqvv6, session_017S7QA72dKr7Z9igrrDtyTL ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR, absent. CI 78/78, ci-verdict 119180997005; gate 119114414410 "FTF-0512-F1 look-alike
+  gaps: all checks passed" (3.12 and 3.11), 0512/0513/0515/0518/0516-P1 passed; mutation-gate 7/7. All 4 ruling points
+  landed (every P* of a digit-touching non-word run kept on the folded string; table keyed on the full NFKC image with
+  F3-PAIR rows; "1.5" != "1. 5"; detector_version 6). Probes: 66 distinct + 22 equal named pairs; exhaustive 1-3 char
+  runs (153,915 + 497k normalizations) 0 merges of distinct images; 9 Nd systems; 819 P* x 15 contexts; corpus 370,454
+  texts 0 new merges, 0 un-merges outside the run-attached class; FTF-0518 scan clean. Faults V01-V07, V09-V12, V14, V17
+  RED; V08/V13/V15/V16 GREEN are over-keeps (no merge). Uncapped mutation: 0 survivors in normalization/F1-F3 code; 44 in
+  untouched parent input-validation/report code (advisory). Gates: product_truth 48/48, validate_spec --strict,
+  data_exposure OK.
+- **FTF-0512: stays CERTIFIED**, evidence_hash -> a4dff1f8287d31d6832f9f526598ca4ccbc47b20 (Law 15). FTF-0516-P1's suites passed on the PR head; on main
+  they were red only from the two-Alembic-heads break (#914 + #915), fixed in this PR.
