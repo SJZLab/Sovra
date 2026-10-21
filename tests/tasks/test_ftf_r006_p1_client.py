@@ -1536,7 +1536,8 @@ def test_r3_guard_deadline_mutation_kills() -> None:
     hangup.close()
     quick.close()
 
-    # (d) the HTTPS connect hook records the raw socket for the watchdog.
+    # (d) the HTTPS connect hook wraps the pinned socket (the late-handshake
+    # deadline path is pinned for real in test_r4_*).
     class FakeCtx:
         def wrap_socket(self, raw: Any, server_hostname: str) -> str:
             return f"tls({server_hostname})"
@@ -1550,8 +1551,8 @@ def test_r3_guard_deadline_mutation_kills() -> None:
         guard_mod.socket.create_connection = real_cc
     check(
         "R006P1a-7",
-        "_PinnedHTTPSConnection.connect wraps the pinned socket and keeps the raw one",
-        tls.sock == "tls(h.example)" and tls._raw_sock == "RAW",
+        "_PinnedHTTPSConnection.connect wraps the pinned socket",
+        tls.sock == "tls(h.example)",
     )
 
 
@@ -1657,6 +1658,269 @@ def test_r3_create_response_api_key_shape() -> None:
         == "argilla.A-b_c~9==",
     )
     stub.server.shutdown()
+
+
+def _echo_probe(key: str) -> tuple[bool, bool]:
+    """(username rejection leaks the key, workspace-name rejection leaks it)."""
+    stub = Stub()
+    c = stub.client(api_key=key)
+    leaks_user = leaks_ws = False
+    for bad in (f"[{key}]", f"{key} x", f"{key}\n"):
+        _, text = _message_of(
+            c.create_user, username=bad, role="annotator", password="correct-horse-battery"
+        )
+        leaks_user = leaks_user or not _no_key(text, key)
+    bad_names: list[Any] = [f"[{key}]", {key: 1}, [key]]
+    for bad in bad_names:
+        for call in (c.ensure_workspace, c.create_workspace):
+            _, text = _message_of(call, bad)
+            leaks_ws = leaks_ws or not _no_key(text, key)
+    stub.server.shutdown()
+    return leaks_user, leaks_ws
+
+
+def test_r4_key_never_echoed_by_username_or_workspace_rejection() -> None:
+    key = "argilla.provisioning.key"
+    leaks_user, leaks_ws = _echo_probe(key)
+    check(
+        "R006P1a-10",
+        "an invalid username carrying the key never reaches an exception",
+        not leaks_user,
+    )
+    check(
+        "R006P1a-10",
+        "an invalid workspace name carrying the key never reaches an exception",
+        not leaks_ws,
+    )
+
+    # G21 / G22: a rejection that echoes the value must turn the probe RED.
+    real_user, real_ws = client_mod._require_username, client_mod._require_workspace_name
+
+    def echo_user(value: object) -> str:
+        if not isinstance(value, str) or not client_mod._USERNAME.fullmatch(value):
+            raise ArgillaRejectedError(f"bad username {value!r}")
+        return value
+
+    def echo_ws(value: object) -> str:
+        if not isinstance(value, str) or not client_mod._WORKSPACE_NAME.fullmatch(value):
+            raise ArgillaRejectedError(f"bad workspace {value!r}")
+        return value
+
+    try:
+        client_mod._require_username = echo_user
+        g21 = _echo_probe(key)
+    finally:
+        client_mod._require_username = real_user
+    try:
+        client_mod._require_workspace_name = echo_ws
+        g22 = _echo_probe(key)
+    finally:
+        client_mod._require_workspace_name = real_ws
+    check(
+        "R006P1a-10", "G21: a username rejection that echoes the value turns the probe RED", g21[0]
+    )
+    check(
+        "R006P1a-10",
+        "G22: a workspace-name rejection that echoes the value turns the probe RED",
+        g22[1],
+    )
+
+
+def _self_signed_context(tmp: Path) -> Any:
+    import ssl
+    import subprocess
+
+    cert, keyf = tmp / "c.pem", tmp / "k.pem"
+    subprocess.run(
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            str(keyf),
+            "-out",
+            str(cert),
+            "-days",
+            "1",
+            "-subj",
+            "/CN=127.0.0.1",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(str(cert), str(keyf))
+    return ctx
+
+
+class SlowTlsServer:
+    """HTTPS server whose TLS handshake is dripped (each gap shorter than the
+    client's per-read timeout) so it completes AFTER the client's total
+    deadline, then drips the status line one byte at a time."""
+
+    def __init__(self, ctx: Any, handshake_gap: float, chunks: int = 8) -> None:
+        self.ctx, self.gap, self.chunks = ctx, handshake_gap, chunks
+        self.sock = socket.socket()
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen(8)
+        self.port = self.sock.getsockname()[1]
+        threading.Thread(target=self._loop, daemon=True).start()
+
+    def _loop(self) -> None:
+        while True:
+            try:
+                conn, _ = self.sock.accept()
+            except OSError:
+                return
+            threading.Thread(target=self._one, args=(conn,), daemon=True).start()
+
+    def _flush(self, conn: socket.socket, out: Any, drip: bool) -> None:
+        data = out.read()
+        if not data:
+            return
+        step = max(1, len(data) // self.chunks) if drip else len(data)
+        for i in range(0, len(data), step):
+            conn.sendall(data[i : i + step])
+            if drip:
+                time.sleep(self.gap)
+
+    def _one(self, conn: socket.socket) -> None:
+        import ssl
+
+        try:
+            conn.settimeout(10)
+            inc, out = ssl.MemoryBIO(), ssl.MemoryBIO()
+            obj = self.ctx.wrap_bio(inc, out, server_side=True)
+            while True:
+                try:
+                    obj.do_handshake()
+                    self._flush(conn, out, drip=False)
+                    break
+                except ssl.SSLWantReadError:
+                    self._flush(conn, out, drip=True)
+                    data = conn.recv(65536)
+                    if not data:
+                        return
+                    inc.write(data)
+            while True:
+                try:
+                    obj.read(65536)
+                    break
+                except ssl.SSLWantReadError:
+                    data = conn.recv(65536)
+                    if not data:
+                        return
+                    inc.write(data)
+            for byte in b"HTTP/1.1 200 OK" * 40:
+                obj.write(bytes([byte]))
+                self._flush(conn, out, drip=False)
+                time.sleep(0.1)
+        except OSError:
+            pass
+        finally:
+            conn.close()
+
+    def close(self) -> None:
+        self.sock.close()
+
+
+def test_r4_tls_late_handshake_then_header_drip_is_bounded() -> None:
+    import ssl
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        ctx = _self_signed_context(Path(td))
+        server = SlowTlsServer(ctx, handshake_gap=0.05)
+        policy = ConnectionPolicy(
+            name="raw",
+            allowed_schemes=frozenset({"https"}),
+            allowed_ports=frozenset({server.port}),
+            explicit_private_allowlist=(ipaddress.ip_network("127.0.0.0/8"),),
+        )
+        client_ctx = ssl.create_default_context()
+        client_ctx.check_hostname = False
+        client_ctx.verify_mode = ssl.CERT_NONE
+        real_build = guard_mod._build_connection
+
+        def build(scheme: str, hostname: str, pinned_ip: str, port: int, timeout: float) -> Any:
+            return guard_mod._PinnedHTTPSConnection(hostname, pinned_ip, port, timeout, client_ctx)
+
+        url = f"https://127.0.0.1:{server.port}/x"
+
+        def fetch() -> Any:
+            return guarded_stream_fetch(url, policy, method="GET", timeout=2.0, deadline=0.5)
+
+        real_cc = guard_mod.socket.create_connection
+
+        def slow_connect(*a: Any, **k: Any) -> Any:
+            # A slow TCP connect delays the handshake start by 0.2 s, so the
+            # the handshake's own socket timeout (0.5 s)
+            # outlives the watchdog (fires at 0.5 s) by 0.2 s: the window in
+            # which the handshake completes AFTER the deadline.
+            time.sleep(0.2)
+            return real_cc(*a, **k)
+
+        guard_mod._build_connection = build
+        guard_mod.socket.create_connection = slow_connect
+        try:
+            finished, elapsed, kind, text = _timed_call(fetch, limit=15)
+        finally:
+            guard_mod._build_connection = real_build
+            guard_mod.socket.create_connection = real_cc
+            server.close()
+    check(
+        "R006P1a-11",
+        f"a TLS handshake that completes after the deadline, then a header drip, ends "
+        f"OutboundGuardError within ~2x the deadline-plus-handshake (took {elapsed:.2f}s)",
+        finished and kind is OutboundGuardError and elapsed < 3.0 and "deadline" in text,
+    )
+
+
+def test_r4_deadline_helpers_directly() -> None:
+    class FakeSock:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def shutdown(self, _how: int) -> None:
+            self.calls.append("shutdown")
+
+        def close(self) -> None:
+            self.calls.append("close")
+
+    def conn_with(sock: Any, expired: bool) -> Any:
+        conn = guard_mod._PinnedHTTPConnection("h.example", "127.0.0.1", 80, 1.0)
+        conn.sock = sock
+        if expired:
+            conn._deadline_expired.set()
+        return conn
+
+    sock = FakeSock()
+    check(
+        "R006P1a-11",
+        "an expired deadline makes the post-connect check raise OSError and abort the socket",
+        raises(OSError, guard_mod._refuse_if_deadline_expired, conn_with(sock, True))
+        and sock.calls == ["shutdown", "close"],
+    )
+    sock = FakeSock()
+    guard_mod._refuse_if_deadline_expired(conn_with(sock, False))
+    check(
+        "R006P1a-11",
+        "an unexpired deadline neither raises nor touches the socket",
+        sock.calls == [],
+    )
+    no_sock_error: str | None = None
+    try:
+        guard_mod._abort_connection(conn_with(None, True))
+    except Exception as exc:
+        no_sock_error = type(exc).__name__
+    check(
+        "R006P1a-11",
+        f"aborting a connection that has no socket yet is a quiet no-op (raised {no_sock_error})",
+        no_sock_error is None,
+    )
 
 
 def main() -> None:
