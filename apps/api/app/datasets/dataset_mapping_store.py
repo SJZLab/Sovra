@@ -169,6 +169,13 @@ class MappingStoreError(Exception):
         self.code = code
 
 
+class _PreviewIncompleteError(MappingStoreError):
+    """The preview did not finish (as opposed to an outage or a changed object)."""
+
+    def __init__(self) -> None:
+        super().__init__("preview_incomplete")
+
+
 class DatasetMapping(Base):
     """One mapping version of one dataset. Immutable except the single proposed -> approved |
     rejected step."""
@@ -284,12 +291,15 @@ def check_critical_mapping(mapping: ImportMapping) -> None:
         raise MappingStoreError("tool_id_unmapped")
 
 
+_ABSENT: Final = object()
+
+
 def _row_cell(slot: Any, row: Any) -> tuple[bool, object]:
     if isinstance(row, Mapping):
         if slot.kind not in ("key", "header"):
             return False, None
-        name = str(slot.value)
-        return (name in row), row.get(name)
+        cell = row.get(str(slot.value), _ABSENT)
+        return cell is not _ABSENT, cell
     if slot.kind == "index" and isinstance(row, tuple) and 0 <= int(slot.value) < len(row):
         return True, row[int(slot.value)]
     return False, None
@@ -562,7 +572,7 @@ def _finished_preview(
     if result.failure_code == "source_changed":
         raise MappingStoreError("source_changed")
     if result.state != "completed":
-        raise MappingStoreError("preview_incomplete")
+        raise _PreviewIncompleteError
     return result
 
 
@@ -600,7 +610,7 @@ def propose_dataset_mapping(
     _require_ids(project_id, dataset_id)
     mapping = _parse_document(mapping_document)
     check_critical_mapping(mapping)
-    include_held_out = actor.role in ADMIN_ROLES
+    include_held_out = ADMIN_ROLES.issuperset((actor.role,))
     dataset, connection_id, snapshot, importer = _authorized_dataset(
         session,
         context,
@@ -915,12 +925,10 @@ def resolve_approved_mapping(
             mapping=mapping,
             reveal=False,
         )
-    except MappingStoreError as exc:
+    except _PreviewIncompleteError:
         # A prior mapping that cannot even finish a preview over the new bytes (a header it
         # names is gone) needs a fresh approval; an outage or a changed object stays visible.
-        if exc.code == "preview_incomplete":
-            raise MappingStoreError("mapping_reapproval_required") from None
-        raise
+        raise MappingStoreError("mapping_reapproval_required") from None
     counts = _counts(preview)
     if (
         not _same_hash(preview.source_schema_sha256, prior.source_schema_sha256)

@@ -762,6 +762,42 @@ def part_m_sql() -> None:
         "UPDATE alembic_version SET version_num='0034_dataset_mappings'",
     ):
         check("LAW18-MIGRATION", f"the upgrade SQL contains: {needle[:90]}", needle in up)
+    for column in [
+        "id UUID DEFAULT gen_random_uuid() NOT NULL",
+        "organization_id UUID NOT NULL",
+        "project_id UUID NOT NULL",
+        "dataset_id UUID NOT NULL",
+        "dataset_name VARCHAR(200) NOT NULL",
+        "dataset_purpose VARCHAR(32) NOT NULL",
+        "dataset_version INTEGER NOT NULL",
+        "dataset_sha256 VARCHAR(64) NOT NULL",
+        "dataset_source_connection_id UUID NOT NULL",
+        "mapping_version INTEGER NOT NULL",
+        "parent_mapping_version INTEGER,",
+        "mapping_document JSONB NOT NULL",
+        "mapping_sha256 VARCHAR(64) NOT NULL",
+        "importer VARCHAR(16) NOT NULL",
+        "importer_version VARCHAR(16) NOT NULL",
+        "transform_version VARCHAR(16) NOT NULL",
+        "source_schema_sha256 VARCHAR(64),",
+        "tool_definitions_sha256 VARCHAR(64) NOT NULL",
+        "preview_sha256 VARCHAR(64) NOT NULL",
+        "preview_counts JSONB NOT NULL",
+        "ignored_keys_sha256 VARCHAR(64),",
+        "status VARCHAR(16) DEFAULT 'proposed' NOT NULL",
+        "allowed_purposes_snapshot TEXT[] NOT NULL",
+        "approved_purpose VARCHAR(32),",
+        "approved_by VARCHAR(200),",
+        "approver_role VARCHAR(32),",
+        "approved_at TIMESTAMP WITH TIME ZONE,",
+        "created_by VARCHAR(200) NOT NULL",
+        "created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL",
+        "updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL",
+        "CHECK (status IN ('proposed','approved','rejected'))",
+        "CHECK (importer IN ('csv','json','jsonl'))",
+        "ARRAY['training','validation','candidate_development','held_out_evaluation','baseline_only']::text[]",
+    ]:
+        check("LAW18-MIGRATION", f"the upgrade SQL pins: {column}", column in up)
     for forbidden in (
         "GRANT DELETE",
         "DELETE ON dataset_mappings",
@@ -877,15 +913,16 @@ class World:
         *,
         version: int = 1,
         content_type: str | None = "application/jsonl",
+        tag: str = "",
     ) -> ustore.Dataset:
         dataset = ustore.Dataset(
-            id=det_uuid(f"dataset-{name}-{version}-{purpose}"),
+            id=det_uuid(f"dataset-{name}-{version}-{purpose}{tag}"),
             organization_id=_ORG,
             project_id=_PROJECT,
             name=name,
             version=version,
             purpose=purpose,
-            upload_session_id=det_uuid(f"upload-{name}-{version}-{purpose}"),
+            upload_session_id=det_uuid(f"upload-{name}-{version}-{purpose}{tag}"),
             upload_status="verified",
             verified_sha256=sha(f"dataset-{name}-{version}"),
             verified_size_bytes=100,
@@ -900,7 +937,7 @@ class World:
                 project_id=_PROJECT,
                 dataset_source_connection_id=conn,
                 purpose=purpose,
-                object_key=f"k/{name}",
+                object_key=f"k/{name}/{tag}",
                 declared_size_bytes=100,
                 max_bytes=100,
                 declared_sha256=dataset.verified_sha256,
@@ -2705,6 +2742,209 @@ def part_s_variants() -> None:
         )
 
 
+def part_s_variants2() -> None:
+    from dataclasses import replace as dc_replace
+
+    for code in (" mapping_invalid", "Mapping_Invalid", "MAPPING_INVALID", "mapping_invalid "):
+        try:
+            store.MappingStoreError(code)
+            outcome = "accepted"
+        except AssertionError:
+            outcome = "refused"
+        check("VARIANT2-1", f"the code {code!r} is not a code", outcome == "refused")
+    ignore = mapping_of(msg_doc(policy="ignore"))
+    rows = preview_rows(
+        {"conversation": [{"role": "human", "content": "a", "ROLE": 1, " content": 2}]}
+    )
+    check(
+        "VARIANT2-2",
+        "message key names are exact (ROLE and ' content' are not the mapped keys)",
+        store.ignored_message_keys(ignore, rows) == (" content", "ROLE"),
+    )
+    shouting = dc_replace(ignore, on_unmapped_message_keys="IGNORE")
+    check(
+        "VARIANT2-3", "the ignore policy is exact", store.ignored_message_keys(shouting, rows) == ()
+    )
+    loud_index = dc_replace(
+        mapping_of(
+            {
+                "shape": "messages_json",
+                "messages": {"index": 0},
+                "role_key": "role",
+                "content_key": "content",
+                "role_map": {"human": "user"},
+                "on_unmapped_message_keys": "ignore",
+            }
+        ),
+        messages_slot=ic.Slot("INDEX", 0),
+    )
+    cell = json.dumps([{"role": "human", "content": "x", "k1": 1}])
+    check(
+        "VARIANT2-4",
+        "an index slot kind is exact",
+        store.ignored_message_keys(loud_index, preview_rows((cell,))) == (),
+    )
+
+    with sqlite_world() as w:
+        conn = w.connection("v3", [*ALL_PURPOSES, "Training"])
+        ds = w.dataset("alpha", "training", conn)
+        for who in (
+            store.MappingActor("user", "a ", "workspace_admin", "r"),
+            store.MappingActor("user", "a", "workspace_admin", "r "),
+        ):
+            refuses(
+                w,
+                "trailing whitespace in an actor field",
+                "invalid_request",
+                lambda who=who: w.propose(ds, actor=who),
+                "VARIANT2-5",
+            )
+        refuses(
+            w,
+            "a role that differs only by case",
+            "actor_not_permitted",
+            lambda: w.propose(ds, actor=store.MappingActor("user", "a", "Workspace_Admin", "r")),
+            "VARIANT2-6",
+        )
+        refuses(
+            w,
+            "an ML_ENGINEER in capitals",
+            "actor_not_permitted",
+            lambda: w.propose(ds, actor=store.MappingActor("user", "a", "ML_ENGINEER", "r")),
+            "VARIANT2-7",
+        )
+        edge = store.MappingActor("user", "a" * 200, "workspace_admin", "r" * 100)
+        check(
+            "VARIANT2-8",
+            "an actor id of exactly 200 and a request id of exactly 100 characters are accepted",
+            w.propose(ds, actor=edge).created_by == "a" * 200,
+        )
+        m = w.session.query(store.DatasetMapping).one()
+        refuses(
+            w,
+            "an approver role in capitals",
+            "approval_not_permitted",
+            lambda: w.approve(m, actor=store.MappingActor("user", "a", "Workspace_Admin", "r")),
+            "VARIANT2-9",
+        )
+        refuses(
+            w,
+            "a purpose of 33 characters",
+            "invalid_request",
+            lambda: w.approve(m, purpose="t" * 33),
+            "VARIANT2-10",
+        )
+        refuses(
+            w,
+            "a purpose that differs only by case from the dataset's",
+            "purpose_mismatch",
+            lambda: w.approve(m, purpose="Training"),
+            "VARIANT2-11",
+        )
+        m.status = "rejected"
+        w.session.flush()
+        m.status = "REJECTED"
+        w.session.flush()
+        again = w.propose(ds, now=_NOW)
+        check(
+            "VARIANT2-12",
+            "a stored status that only looks like rejected is not rejected (the identical proposal is reused)",
+            again.id == m.id,
+        )
+        m.status = "proposed"
+        w.session.flush()
+
+        def shout() -> None:
+            m.status = "PROPOSED"
+            w.session.flush()
+
+        w.before_preview = shout
+        refuses(
+            w,
+            "a mapping whose status changed to a lookalike while its preview ran",
+            "mapping_not_proposed",
+            lambda: w.approve(m),
+            "VARIANT2-13",
+        )
+        m.status = "proposed"
+        w.session.flush()
+        for limit in (1, 200):
+            check(
+                "VARIANT2-14",
+                f"list accepts limit {limit}",
+                len(
+                    store.list_dataset_mappings(
+                        w.session, w.ctx, project_id=_PROJECT, dataset_id=ds.id, limit=limit
+                    )
+                )
+                == 1,
+            )
+
+    csv_doc = {
+        "shape": "prompt_completion",
+        "csv": {"encoding": "utf-8", "delimiter": ",", "has_header": True, "header_row": 0},
+        "prompt": {"header": "q"},
+        "completion": {"header": "a"},
+    }
+    with sqlite_world() as w:
+        conn = w.connection("v4", [*ALL_PURPOSES, "Training"])
+        w.schema_sha = sha("q,a")
+        v1 = w.dataset("tab", "training", conn, version=1, content_type="text/csv")
+        cm = w.propose(v1, csv_doc)
+        w.approve(cm)
+        twin = w.dataset("tab", "training", conn, version=1, content_type="text/csv", tag="twin")
+        refuses(
+            w,
+            "a prior of the same version number is not a prior",
+            "mapping_not_found",
+            lambda: w.resolve(twin),
+            "VARIANT2-15",
+        )
+        shout_name = w.dataset("TAB", "training", conn, version=2, content_type="text/csv")
+        refuses(
+            w,
+            "a dataset name that differs only by case has no prior",
+            "mapping_not_found",
+            lambda: w.resolve(shout_name),
+            "VARIANT2-16",
+        )
+        v2 = w.dataset("tab", "training", conn, version=2, content_type="text/csv")
+        check(
+            "VARIANT2-17",
+            "positive control: the real next version reuses",
+            w.resolve(v2).reused is True,
+        )
+
+    with sqlite_world() as w:
+        conn = w.connection("v5", [*ALL_PURPOSES, "Training"])
+        w.schema_sha = sha("q,a")
+        c1 = w.dataset("cap", "Training", conn, version=1, content_type="text/csv")
+        cm = w.propose(c1, csv_doc)
+        w.approve(cm, purpose="Training")
+        c2 = w.dataset("cap", "Training", conn, version=2, content_type="text/csv")
+        check(
+            "VARIANT2-18",
+            "positive control: a Training approval reuses for Training",
+            w.resolve(c2, purpose="Training").reused is True,
+        )
+        cm.approved_purpose = "training"
+        w.session.flush()
+        refuses(
+            w,
+            "an approved purpose 'training' against a 'Training' resolve",
+            "mapping_reapproval_required",
+            lambda: w.resolve(c2, purpose="Training"),
+            "VARIANT2-19",
+        )
+        refuses(
+            w,
+            "a resolve purpose that differs only by case from the dataset's",
+            "purpose_mismatch",
+            lambda: w.resolve(c2, purpose="training"),
+            "VARIANT2-20",
+        )
+
+
 def main() -> None:
     part_p()
     part_m()
@@ -2713,6 +2953,7 @@ def main() -> None:
     part_s_resolve()
     part_s_reads()
     part_s_variants()
+    part_s_variants2()
     if FAILURES:
         for failure in FAILURES:
             print(failure, file=sys.stderr)
