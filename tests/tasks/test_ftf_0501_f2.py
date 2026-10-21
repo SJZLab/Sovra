@@ -638,7 +638,22 @@ def test_m1_the_migration_adds_a_checked_immutable_column() -> None:
     check(
         f"{CID}-M1",
         "a single Alembic head",
-        heads.stdout.count("(head)") == 1 and "0033_upload_declared_encoding" in heads.stdout,
+        heads.stdout.count("(head)") == 1,
+    )
+    # Later migrations may extend the chain, so 0033 need not be the head itself; it must stay
+    # in the single linear chain (the history lists every revision reachable from the head).
+    history = subprocess.run(
+        [sys.executable, "-m", "alembic", "history"],
+        cwd=str(ROOT / "apps" / "api"),
+        capture_output=True,
+        text=True,
+        env={**os.environ, "SOVRA_DATABASE_URL": "postgresql+psycopg://x:y@localhost:5432/z"},
+    )
+    check(
+        f"{CID}-M1",
+        "0033 stays in the single Alembic chain",
+        history.returncode == 0
+        and "0032_split_manifest_requests -> 0033_upload_declared_encoding" in history.stdout,
     )
 
 
