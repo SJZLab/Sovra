@@ -34,6 +34,7 @@ import hashlib
 import importlib.util
 import itertools
 import json
+import os
 import struct
 import sys
 import tempfile
@@ -48,6 +49,19 @@ sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 MODULE_PATH = ROOT / "apps" / "api" / "app" / "model_versions" / "import_artifact_validators.py"
 CID = "FTF-H010-P3a"
+
+# The mutation gate (scripts/mutation_gate.py) mutates MODULE_PATH on disk and runs this
+# script to decide whether the mutant is "killed" (nonzero exit). H1 below re-patches the
+# *already-mutated* source text against its own hardcoded FAULTS strings, so under the gate
+# a patch that no longer matches (because the gate's own mutation already changed that text)
+# fails with "patch text occurs N time(s), expected M" -- a mismatch that says nothing about
+# whether the behavioural suite (`suite(m, source, big=True)` above) actually caught the
+# gate's mutation. That inflates the kill count with false positives unrelated to real
+# coverage. Same class as FTF-0904/FTF-0616-F1's own FTF0904_BEHAVIOUR_ONLY/
+# FTF0616_F1_NO_FAULTS: detect the gate by its private PYTHONPYCACHEPREFIX and skip H1 then,
+# so the gate's kill signal is purely the behavioural suite, like every other suite's.
+UNDER_MUTATION_GATE = "mutation-gate-pyc" in os.environ.get("PYTHONPYCACHEPREFIX", "")
+BEHAVIOUR_ONLY = os.environ.get("FTF_H010_P3A_BEHAVIOUR_ONLY") == "1" or UNDER_MUTATION_GATE
 
 _failures: list[str] = []
 
@@ -2521,6 +2535,124 @@ def group_round3(m: Any) -> None:
         )
 
 
+def group_round4(m: Any) -> None:
+    """Round 4: case/whitespace-fold variants of the closed classes (mutation survivors S01-S11).
+    Each row asserts today's observable result, so a fold-tolerant rewrite turns it RED."""
+    cfg = m.validate_config_json
+    base_text = json.dumps(GOOD_CONFIG)
+
+    def with_extra(extra: str) -> bytes:
+        return (base_text[:-1] + "," + extra + "}").encode()
+
+    # S01: duplicate-key detection is exact (no case or whitespace folding either way)
+    for label, extra in (
+        ("'A' twice", '"A":1,"A":2'),
+        ("nested 'Key' twice", '"n":{"Key":1,"Key":2}'),
+        ("key with a space twice", '"a b":1,"a b":2'),
+    ):
+        check(
+            "S01",
+            f"{label} -> duplicate_key",
+            reason_of(m, cfg, with_extra(extra)) == "duplicate_key",
+        )
+    for label, extra in (
+        ("'a' and 'A' are distinct keys", '"a":1,"A":2'),
+        ("'a b' and 'a  b' are distinct keys", '"a b":1,"a  b":2'),
+        ("'Key' and ' Key' are distinct keys", '"n":{"Key":1," Key":2}'),
+    ):
+        check("S01", f"{label} accepted", outcome(m, cfg, with_extra(extra)) == "ok")
+
+    # S02: list-only nesting counts toward depth (top object = depth 1)
+    def nested_lists(k: int) -> bytes:
+        return with_extra('"x":' + "[" * k + "]" * k)
+
+    check("S02", "list-only depth 32 accepted", outcome(m, cfg, nested_lists(31)) == "ok")
+    check(
+        "S02",
+        "list-only depth 33 refused as too_deep",
+        reason_of(m, cfg, nested_lists(32)) == "too_deep",
+    )
+    check(
+        "S02",
+        "list-only depth 5000 refused as too_deep",
+        reason_of(m, cfg, nested_lists(5000)) == "too_deep",
+    )
+
+    # S09: tensor names across shards are exact
+    def shard(name: str) -> Any:
+        return parse(m, st_file({name: ("U8", [1])}))
+
+    check(
+        "S09",
+        "'W.weight' in two shards -> tensor_in_two_shards",
+        reason_of(m, m.base_shapes_from_headers, [shard("W.weight"), shard("W.weight")])
+        == "tensor_in_two_shards",
+    )
+    check(
+        "S09",
+        "'w.weight' and 'W.weight' across shards are distinct tensors",
+        outcome(m, m.base_shapes_from_headers, [shard("w.weight"), shard("W.weight")]) == "ok",
+    )
+
+    # S10/S11: PEFT target match is exact on case and whitespace
+    cc = m.check_adapter_base_compatibility
+    up = "Model.Layers.0.Q"
+    for label, module, target in (
+        ("upper-cased full-path target", MOD_Q, MOD_Q.upper()),
+        ("trailing-space target", MOD_Q, MOD_Q + " "),
+        ("leading-space target", MOD_Q, " " + MOD_Q),
+        ("case-differing module vs target", up, up.lower()),
+    ):
+        adapter = parse(m, st_file(lora(m, module, 4, 8, 16)))
+        conf = m.validate_adapter_config_json(jb({**GOOD_ADAPTER_CFG, "target_modules": [target]}))
+        check(
+            "S10",
+            f"{label} -> module_not_targeted",
+            reason_of(m, cc, adapter, conf, {f"{module}.weight": (16, 8)}) == "module_not_targeted",
+        )
+    adapter = parse(m, st_file(lora(m, up, 4, 8, 16)))
+    conf = m.validate_adapter_config_json(jb({**GOOD_ADAPTER_CFG, "target_modules": [up]}))
+    check(
+        "S10",
+        "exact-case target for a mixed-case module accepted",
+        outcome(m, cc, adapter, conf, {f"{up}.weight": (16, 8)}) == "ok",
+    )
+
+    # S03/S04/S06: file-name classification is exact (rows pin today's result)
+    f = m.check_file_names
+    minimal = ["config.json", "tokenizer_config.json", "tokenizer.model", "model.safetensors"]
+    check(
+        "S03",
+        "'x.pkl ' (trailing space) is unexpected_file, not unsafe_weight_format",
+        outcome(m, f, [*minimal, "x.pkl "], kind="weights") == "unexpected_file",
+    )
+    check(
+        "S03",
+        "'x.pkl' stays unsafe_weight_format",
+        outcome(m, f, [*minimal, "x.pkl"], kind="weights") == "unsafe_weight_format",
+    )
+    check(
+        "S04",
+        "'ADAPTER_MODEL.safetensors' is an ordinary shard for weights",
+        outcome(m, f, [*minimal, "ADAPTER_MODEL.safetensors"], kind="weights") == "ok",
+    )
+    check(
+        "S04",
+        "'adapter_model.safetensors' is not a weights shard",
+        outcome(m, f, [*minimal, "adapter_model.safetensors"], kind="weights") == "unexpected_file",
+    )
+    check(
+        "S06",
+        "'model.safetensors' and 'MODEL.safetensors' are two distinct shards",
+        outcome(m, f, [*minimal, "MODEL.safetensors"], kind="weights") == "ok",
+    )
+    check(
+        "S06",
+        "an exact duplicate 'model.safetensors' is unexpected_file",
+        outcome(m, f, [*minimal, "model.safetensors"], kind="weights") == "unexpected_file",
+    )
+
+
 def suite(m: Any, source: str, big: bool) -> list[str]:
     _failures.clear()
     group_a(m)
@@ -2529,6 +2661,7 @@ def suite(m: Any, source: str, big: bool) -> list[str]:
     group_e(m)
     group_round2(m)
     group_round3(m)
+    group_round4(m)
     group_f(m)
     group_g(m, source)
     return list(_failures)
@@ -2569,20 +2702,26 @@ def main() -> int:
     names = [f[0] for f in FAULTS]
     if len(set(names)) != len(names):
         failures.append("FAIL [H1] duplicate fault names")
-    for name, old, new, count, big in FAULTS:
-        ok, detail = run_fault(source, name, old, new, count, big)
-        if ok:
-            print(f"  fault {name}: RED ({detail})")
-        else:
-            failures.append(f"FAIL [H1] fault {name}: {detail}")
+    if not BEHAVIOUR_ONLY:
+        for name, old, new, count, big in FAULTS:
+            ok, detail = run_fault(source, name, old, new, count, big)
+            if ok:
+                print(f"  fault {name}: RED ({detail})")
+            else:
+                failures.append(f"FAIL [H1] fault {name}: {detail}")
     if failures:
         print(f"{len(failures)} failing check(s):")
         for failure in failures[:80]:
             print(f"  {failure}")
         return 1
-    print(
-        f"OK -- {CHECK_COUNT[0]} checks in {len(FAULTS) + 1} suite runs, {len(FAULTS)} faults RED, 0 failing ({CID})"
-    )
+    if BEHAVIOUR_ONLY:
+        print(
+            f"OK -- {CHECK_COUNT[0]} checks, behaviour-only (H1 skipped under the mutation gate) ({CID})"
+        )
+    else:
+        print(
+            f"OK -- {CHECK_COUNT[0]} checks in {len(FAULTS) + 1} suite runs, {len(FAULTS)} faults RED, 0 failing ({CID})"
+        )
     return 0
 
 
