@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { dirFor, phrase, type Locale } from "./phrases";
+import { dirFor, phrase, resolveLocale, type Locale } from "./phrases";
 
 /**
  * NN/g response-time limits: nothing before 1 s (direct manipulation feedback is the caller's
@@ -30,8 +30,9 @@ export interface PendingViewProps {
 export function PendingView({ phase, label, onCancel, value, locale = "en" }: PendingViewProps) {
   if (phase === "none") return null;
   const determinate = typeof value === "number" && Number.isFinite(value);
+  const percent = determinate ? Math.min(100, Math.max(0, value as number)) : 0;
   return (
-    <div role="status" aria-live="polite" lang={locale} dir={dirFor(locale)}>
+    <div role="status" aria-live="polite" lang={resolveLocale(locale)} dir={dirFor(locale)}>
       <span>{label}</span>
       {phase === "progress" ? (
         <>
@@ -40,7 +41,7 @@ export function PendingView({ phase, label, onCancel, value, locale = "en" }: Pe
             aria-label={label}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-valuenow={determinate ? value : undefined}
+            aria-valuenow={determinate ? percent : undefined}
             data-testid="progress-track"
             style={{
               blockSize: "8px",
@@ -54,9 +55,7 @@ export function PendingView({ phase, label, onCancel, value, locale = "en" }: Pe
               data-indeterminate={determinate ? undefined : "true"}
               style={{
                 blockSize: "100%",
-                inlineSize: determinate
-                  ? `${Math.min(100, Math.max(0, value as number))}%`
-                  : "100%",
+                inlineSize: determinate ? `${percent}%` : "100%",
                 // Indeterminate: stripes, so the bar never reads as a finished 100%.
                 background: determinate
                   ? "var(--color-action)"
@@ -64,7 +63,7 @@ export function PendingView({ phase, label, onCancel, value, locale = "en" }: Pe
               }}
             />
           </div>
-          <span>{determinate ? `${Math.round(value as number)}%` : phrase("working", locale)}</span>
+          <span>{determinate ? `${Math.round(percent)}%` : phrase("working", locale)}</span>
           {onCancel ? (
             <button
               type="button"
