@@ -25200,3 +25200,7 @@ different session.
 - **Certified:** FTF-H011-P1 (#907, merge c0bd2b2f), round 4 (tests only).
 - **Returned:** FTF-UX03 r1 -> r2 (0g, after FTF-UX01): rebuild on UX01 components, full en/ar + dir/lang, error handling and recovery, loading/empty states, 8 pins, severity-2 decisions, §4 evidence in CI.
 - **Not certified:** FTF-0501-F2 (#914): two Alembic heads on main (with #915). Control plane rechained the migration in this PR; certification of the fix + FTF-0501-F2 + the FTF-0519 parent goes to a separate session.
+- **Certified:** FTF-0519 parent (main b61a0acb; count 155 -> 156), and the Control-plane two-heads fix (#924) - both by the separate session session_01FxdpwdR6T7wbuY17C6gw3o.
+- **Returned:** FTF-UX01 r3 -> r4 (0n): focus only on submitCount change; complete §4 evidence.
+- **Returned:** FTF-0501-F2 r1 -> r2 (0c, tests only): pin the non-UTF-8 split-at-SNIFF_BYTES path (B-F9). FTF-0501 requalified on main.
+- **Certified:** FTF-1505 (#931, merge 05554535), round 9; verdict by the separate session session_01FeAArcFJu2Z9bw7JQZTBSY. Follow-up FTF-1505-F1 queued.

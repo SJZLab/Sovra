@@ -566,6 +566,54 @@ def test_v5_the_tail_decision_is_made_on_the_whole_object() -> None:
     )
 
 
+def _split_at_window(encoding: str, character: str, *, into: int) -> bytes:
+    """A CSV in `encoding` whose `character` starts `into` bytes before the end of
+    the SNIFF_BYTES window (so `into` of its bytes are inside it, the rest after),
+    behind an ASCII prefix of exactly the right width."""
+    lead = len("".encode(encoding))  # a BOM, written by utf-8-sig even for no text
+    unit = len("a".encode(encoding)) - lead
+    prefix_chars = (dos.SNIFF_BYTES - into - lead) // unit
+    assert lead + prefix_chars * unit + into == dos.SNIFF_BYTES, (encoding, into)
+    prefix = ("a,b\r\n" * (prefix_chars // 5 + 1))[:prefix_chars]
+    return (prefix + character + ",x\r\n").encode(encoding)
+
+
+def test_v6_a_character_split_at_the_sniff_window_is_accepted_in_every_encoding() -> None:
+    """The sniff window ends wherever reading stopped, so a multi-byte character cut
+    there is not an error for ANY declared encoding -- not only utf-8 (fault B-F9: the
+    sniff treated the window as complete for every non-utf-8 encoding)."""
+    cases = (
+        ("utf-16-le", "\U0001f600", 2),  # high surrogate in the window, low one after
+        ("utf-16-be", "\U0001f600", 2),
+        ("utf-8-sig", "\u00e9", 1),  # two-byte character cut after its lead byte
+        ("utf-8-sig", "\u0639", 1),
+        ("utf-8", "\u00e9", 1),
+    )
+    for encoding, character, into in cases:
+        body = _split_at_window(encoding, character, into=into)
+        window = body[: dos.SNIFF_BYTES]
+        cut = dos.sniff_content("text/csv", window, complete=True, encoding=encoding)
+        check(
+            f"{CID}-V6",
+            f"{encoding}: the fixture really is cut mid-character at the window "
+            f"({into} byte(s) in)",
+            len(body) > dos.SNIFF_BYTES and cut == BAD,
+        )
+        check(
+            f"{CID}-V6",
+            f"{encoding}: {character!r} cut {into} byte(s) into the window verifies if declared",
+            isinstance(_finalize(body, encoding), dos.VerifiedObject),
+        )
+    for encoding in ("windows-1256", "utf-16-le", "utf-8-sig"):
+        # whole characters ending exactly on the window edge: nothing to split
+        body = _split_at_window(encoding, "\u0639", into=0)
+        check(
+            f"{CID}-V6",
+            f"{encoding}: a window that ends on a character boundary verifies",
+            isinstance(_finalize(body, encoding), dos.VerifiedObject),
+        )
+
+
 # -- M1: migration --------------------------------------------------------------
 
 
