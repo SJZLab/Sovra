@@ -54,6 +54,8 @@
 
 import { useState } from "react";
 
+import { dirFor, phrase, type Locale } from "../ui";
+
 export interface DiscoveredAgentCandidateSummary {
   id: string;
   display_name: string;
@@ -83,6 +85,7 @@ export interface CandidateSelectionUIProps {
   connectionId: string;
   snapshotId: string;
   onSelected?: (confirmation: CandidateSelectionConfirmation) => void;
+  locale?: Locale;
 }
 
 function trimBase(apiBaseUrl: string): string {
@@ -138,6 +141,7 @@ export function CandidateSelectionUI({
   connectionId,
   snapshotId,
   onSelected,
+  locale = "en",
 }: CandidateSelectionUIProps) {
   const [candidates, setCandidates] = useState<DiscoveredAgentCandidateSummary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -211,7 +215,7 @@ export function CandidateSelectionUI({
   }
 
   return (
-    <div data-testid="candidate-selection-ui">
+    <div data-testid="candidate-selection-ui" dir={dirFor(locale)}>
       <button
         type="button"
         data-testid="candidate-load-button"
@@ -228,7 +232,7 @@ export function CandidateSelectionUI({
           <li key={candidate.id} data-testid={`candidate-row-${candidate.id}`}>
             <span>{candidate.display_name}</span>
             <span data-testid={`candidate-confidence-${candidate.id}`}>
-              {candidate.confidence_score}
+              {phrase("confidenceScore", locale)}: {candidate.confidence_score}
             </span>
             <button
               type="button"

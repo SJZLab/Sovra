@@ -30,6 +30,8 @@
 
 import { useState } from "react";
 
+import { EmptyState, dirFor, phrase, type Locale } from "../ui";
+
 export interface GitHubRepositorySummary {
   repository_identity: string;
   private: boolean;
@@ -48,6 +50,7 @@ export interface GitHubAccessibleRepositorySelectorProps {
   organizationId: string;
   projectId: string;
   onSelect?: (repository: GitHubRepositorySummary) => void;
+  locale?: Locale;
 }
 
 function trimBase(apiBaseUrl: string): string {
@@ -82,6 +85,7 @@ export function GitHubAccessibleRepositorySelector({
   organizationId,
   projectId,
   onSelect,
+  locale = "en",
 }: GitHubAccessibleRepositorySelectorProps) {
   const [credential, setCredential] = useState("");
   const [repositories, setRepositories] = useState<GitHubRepositorySummary[]>([]);
@@ -89,6 +93,9 @@ export function GitHubAccessibleRepositorySelector({
   const [hasNextPage, setHasNextPage] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // True only after a real search returned a page successfully (empty state must not
+  // show before searching or after an error).
+  const [searched, setSearched] = useState(false);
   // Explicit selection state -- deliberately starts `null` and is set only
   // inside `handleSelect`, itself only ever invoked from a real click
   // handler below. No other code path in this component assigns it.
@@ -114,6 +121,7 @@ export function GitHubAccessibleRepositorySelector({
       );
       setPage(body.page);
       setHasNextPage(body.has_next_page);
+      setSearched(true);
     } finally {
       setLoading(false);
     }
@@ -122,6 +130,7 @@ export function GitHubAccessibleRepositorySelector({
   async function handleLoadRepositories(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSelectedRepositoryIdentity(null);
+    setSearched(false);
     await fetchPage(1, false);
   }
 
@@ -135,7 +144,7 @@ export function GitHubAccessibleRepositorySelector({
   }
 
   return (
-    <div data-testid="github-repository-selector">
+    <div data-testid="github-repository-selector" dir={dirFor(locale)}>
       <form onSubmit={handleLoadRepositories} data-testid="github-credential-form">
         <label htmlFor="github-credential">GitHub token</label>
         <input
@@ -144,14 +153,24 @@ export function GitHubAccessibleRepositorySelector({
           type="password"
           value={credential}
           onChange={(event) => setCredential(event.target.value)}
+          aria-describedby="github-credential-help"
           required
         />
+        <p id="github-credential-help">{phrase("githubTokenHelp", locale)}</p>
         <button type="submit" data-testid="github-load-repositories-button" disabled={loading}>
           Load repositories
         </button>
       </form>
 
       {error && <p data-testid="github-repository-error">{error}</p>}
+
+      {searched && repositories.length === 0 && (
+        <EmptyState
+          title={phrase("noRepositoriesTitle", locale)}
+          why={phrase("noRepositoriesWhy", locale)}
+          action={<span>{phrase("noRepositoriesAction", locale)}</span>}
+        />
+      )}
 
       <ul data-testid="github-repository-list">
         {repositories.map((repository) => (

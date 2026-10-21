@@ -17,6 +17,23 @@ export const PHRASES = {
     ar: "يحدد الاتصال المكان الذي يمكن قراءة مجموعة البيانات منه. أنشئ اتصالًا أدناه للبدء.",
   },
   uploadProgress: { en: "Upload progress", ar: "تقدم الرفع" },
+  confidenceScore: { en: "Confidence score", ar: "درجة الثقة" },
+  githubTokenHelp: {
+    en: "Paste a GitHub App installation token or an organization-approved token with read access to repository metadata (read-only repository scope).",
+    ar: "الصق رمز تثبيت تطبيق GitHub أو رمزًا معتمدًا من المؤسسة بصلاحية قراءة بيانات المستودعات (نطاق قراءة فقط).",
+  },
+  noRepositoriesTitle: {
+    en: "No accessible repositories found",
+    ar: "لم يتم العثور على مستودعات متاحة",
+  },
+  noRepositoriesWhy: {
+    en: "GitHub does not give this token access to any repository. Check the token's scope and the installation's repository access, then load again.",
+    ar: "لا يمنح GitHub هذا الرمز صلاحية الوصول إلى أي مستودع. تحقق من نطاق الرمز وصلاحيات التثبيت ثم أعد التحميل.",
+  },
+  noRepositoriesAction: {
+    en: "Use a token with wider repository access.",
+    ar: "استخدم رمزًا بصلاحية وصول أوسع إلى المستودعات.",
+  },
   cancel: { en: "Cancel", ar: "إلغاء" },
   working: { en: "Working…", ar: "جارٍ التنفيذ…" },
   errorSummaryTitle: { en: "There is a problem", ar: "توجد مشكلة" },
