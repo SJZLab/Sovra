@@ -25197,3 +25197,6 @@ different session.
 - **Returned (urgent):** FTF-0904-F2 r1 -> r2 (0b, take first): generic quoted-value fail-open regression of FTF-0904 (live on main), escaped-quote forms, V6/V10/V11/V17 pins, over-redaction counts. FTF-0904 requalification pending.
 - **Certified:** FTF-0519-P2 (#915, merge 43a381ec), round 2. Allowlist: pending_pr keys removed (#742/#869/#915 on main), _refusal re-pinned 304 -> 327, three stale M9 entries retired.
 - **Certified:** FTF-0512-F3 (#912, merge a4dff1f8), round 2; FTF-0512 requalified.
+- **Certified:** FTF-H011-P1 (#907, merge c0bd2b2f), round 4 (tests only).
+- **Returned:** FTF-UX03 r1 -> r2 (0g, after FTF-UX01): rebuild on UX01 components, full en/ar + dir/lang, error handling and recovery, loading/empty states, 8 pins, severity-2 decisions, §4 evidence in CI.
+- **Not certified:** FTF-0501-F2 (#914): two Alembic heads on main (with #915). Control plane rechained the migration in this PR; certification of the fix + FTF-0501-F2 + the FTF-0519 parent goes to a separate session.

@@ -12091,3 +12091,40 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   data_exposure OK.
 - **FTF-0512: stays CERTIFIED**, evidence_hash -> a4dff1f8287d31d6832f9f526598ca4ccbc47b20 (Law 15). FTF-0516-P1's suites passed on the PR head; on main
   they were red only from the two-Alembic-heads break (#914 + #915), fixed in this PR.
+## 2026-10-21T14:16Z — CERTIFIED (child slice): FTF-H011-P1
+- **FTF-H011-P1: CERTIFIED (L2)** (round 4 under the stopping rule, tests only; PR #907, merge c0bd2b2f3b7c8ec90dadac32b91689cf36275a46, head 3d67ee7b).
+  Producer session_01GH61PFUM5FjruWY2K4wKEo (+ merge-main commit session_01DdSXYxPv6YojoCuoAagAXd) ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR, absent from #907. CI 79/79, ci-verdict 119226433698; dataset-mapping-preview-integration
+  119143248181 "FTF-H011-P1 dataset mapping preview (PG16 + SeaweedFS): all checks passed"; I13 shown to run in CI by the
+  producer's F14 fault push (job 118931961733). Preview-path production byte-identical to round 3. I13 wraps the real
+  preview_dataset_mapping / probe_dataset_source in a socket allow-list hook, a compile/exec hook and the META-LEAK
+  capture, each with a positive control. F14, R16, R16b, R18 and every DoD variant (other host/port, getaddrinfo,
+  gethostbyname, UDP sendto, connect_ex, exec, compile, ERROR/DEBUG log, print, stderr, warnings) RED. Probes VP1-VP8 pass
+  on PG16 + SeaweedFS. GREEN advisory variants (not done by production): sendmsg, worker-thread/subprocess socket,
+  getnameinfo, first-call-only, masked-mode-only, os.system, sys.__stdout__, non-propagating logger. Gates: product_truth
+  48/48, validate_spec --strict, data_exposure OK. Local run used the #924 two-heads fix (69bce600), reverted after.
+## 2026-10-21T14:16Z — RETURNED: FTF-UX03 (r1)
+- **FTF-UX03: RETURNED** (child slice of the FTF-UX program; round 1 → 2; PR #909, merge
+  3878f66ecf8cf981c872445bb1ee4e5445c9f423, head 79d776d1). Producers session_01SAobe5XefTqMGRTNQxkmeS,
+  session_01DdSXYxPv6YojoCuoAagAXd, session_01TfUv3AnWioaY8j1xTbGzpj ≠ certifier session_01QVznorVMjnmcttUhyDnoGR.
+  CI 79/79, ci-verdict 119195194386; gate 119146759194 vitest 1470 tests; no real-browser step for UX03. Met: five narrow
+  audit fixes; parents 04A03/04A04/04A18/04A21/04A22 REQUALIFIED (Law 9: no parent spec line removed); no overflow; keyboard
+  reach; no contrast violation; no runtime dependency. Return: UX01 components unused (target-size fails, severity 3),
+  English left in Arabic renders (severity 3), silent/unannounced errors and a malformed-200 unmount (severity 3), missing
+  loading/empty states, 8 GREEN faults, §4 evidence absent. Faults 14/22 RED. Gates: product_truth 48/48, validate_spec
+  --strict, data_exposure OK. Ordering: merged before UX01 certification; r2 after UX01.
+## 2026-10-21T14:16Z — NOT CERTIFIED: FTF-0501-F2 (r1); main's two Alembic heads fixed by the Control plane
+- **FTF-0501-F2: NOT CERTIFIED** (PR #914, merge e62c1acc616b25a59613e8ac1f7a22b3ba8ab86c, head 1e526325). Producer
+  session_01RqP8C8gXsbGNGzjQLfhz7s ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 78/78 on its own candidate (base
+  d128966, without #915): ci-verdict 119148411383, gate step "FTF-0501-F2 tests: all checks passed", direct-upload-routes
+  integration passed, mutation 181/181. Production decode logic sound: 85/85 finalize probes (every encoding valid and
+  invalid, BOM mismatch, split multi-byte at SNIFF_BYTES, undeclared cp1256 at every offset to 2 MiB+3, >64 KiB preamble,
+  cp1256 `;` CSV with an Arabic header), 53/53 route probes, 21/21 PG probes (RLS unchanged; declared_encoding not
+  updatable), faults 17/18 RED (G11 alias normalization GREEN, allowed by the DoD), uncapped mutation 181/181. Blocking:
+  its 0032 migration and #915's 0032 both revise 0031, so main had two heads and every PG suite failed at upgrade head;
+  FTF-0501 not requalified on main. Fix (Control plane, this PR, commit 69bce600 + follow-up): rechained as
+  0033_upload_declared_encoding on 0032_split_manifest_requests; 0501-F2/0501-P1/0519 pins moved; the H010-P2 integration
+  suite now downgrades by revision name (it already failed on main since #915 added 0032). Because the fix is the Control
+  plane's own code (Law 4), a separate cloud session certifies the fix, FTF-0501-F2 and the FTF-0519 parent.
+  Advisories: A1 wrong-endian utf-16 BOM accepted; A2 NUL detection only in the 64 KiB head (pre-existing); A3 a
+  `charset=` parameter is ignored in favour of declared_encoding.

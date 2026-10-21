@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-21T13:21Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-21T14:16Z. Source: `python3 scripts/status.py` on main.
 - **Status: 155/304 certified · 46 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,10 @@ Updated: 2026-10-21T13:21Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-21T14:16Z:**
+  - Not certified yet: FTF-0501-F2 (declared text encodings on upload). The encoding logic is sound in every probe, but its migration collided with another one and broke main; the Control plane fixed that here, and a separate session will certify both.
+  - Returned: FTF-UX03 r1 (target-application screens: a partial first pass - the five screens still pass all their tests, but they do not use the shared accessible components yet, Arabic screens still show English, network errors are silent, and the design-review evidence is missing). Round 2 starts after FTF-UX01 is certified.
+  - CERTIFIED (child slice): FTF-H011-P1 after 4 rounds - the dataset preview runner is proven, against real storage, to open no network connection except storage and the database, to run no code from the data, and to leak no raw value into logs or output.
 - **2026-10-21T13:21Z:**
   - CERTIFIED (child slice): FTF-0512-F3 after 2 rounds - duplicate detection keeps every sign, unit and currency mark attached to a number ("-$5" and "$5", "5″" and "5′" stay different) while ordinary punctuation still merges; 0 new merges over 370,454 texts. FTF-0512 stays certified.
   - CERTIFIED (child slice): FTF-0519-P2 after 2 rounds - the dataset split manifest API (propose, approve, reject, list) is live, hides held-out evaluation sources from roles that may not see them, and replays or refuses a reused Idempotency-Key. FTF-0519 itself is reviewed next.
