@@ -55,7 +55,8 @@ from packages.integrations.argilla.client import (  # noqa: E402
     ArgillaUnavailableError,
     parse_strict_json,
 )
-from packages.security.outbound_guard import OutboundGuardError  # noqa: E402
+from packages.security import outbound_guard as guard_mod  # noqa: E402
+from packages.security.outbound_guard import OutboundGuardError, guarded_stream_fetch  # noqa: E402
 from packages.security.url_policy import ConnectionPolicy, OutboundPolicyError  # noqa: E402
 
 FAILURES: list[str] = []
@@ -1242,6 +1243,420 @@ def test_r2_deadline_between_chunks_with_fake_clock() -> None:
     finally:
         client_mod.time = real
     server.close()
+
+
+# -- round 3 (Control-plane return 2026-10-20) ---------------------------------
+
+
+def _timed_call(fn: Any, *args: Any, limit: float) -> tuple[bool, float, type | None, str]:
+    """Run `fn` in a daemon thread so a call that never returns fails the
+    test instead of hanging it: (finished, elapsed, exc type, exc text)."""
+    out: dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            fn(*args)
+        except Exception as exc:
+            out["kind"] = type(exc)
+            out["text"] = str(exc) + repr(exc.__cause__) + repr(exc.__context__)
+
+    started = time.monotonic()
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(limit)
+    return (not worker.is_alive(), time.monotonic() - started, out.get("kind"), out.get("text", ""))
+
+
+def test_r3_header_phase_deadline() -> None:
+    def status_drip(_s: RawServer, conn: socket.socket) -> None:
+        for byte in b"HTTP/1.1 200 OK" * 40:
+            conn.sendall(bytes([byte]))
+            time.sleep(0.1)
+
+    def header_drip(_s: RawServer, conn: socket.socket) -> None:
+        conn.sendall(b"HTTP/1.1 200 OK\r\n")
+        for _ in range(2000):
+            conn.sendall(b"X")
+            time.sleep(0.1)
+
+    for label, handler in (("H1 status-line", status_drip), ("H2 header", header_drip)):
+        server = RawServer(handler)
+        c = server.client(timeout=0.5)
+        finished, elapsed, kind, _ = _timed_call(c.get_status, limit=8)
+        check("R006P1a-7", f"{label} drip: the call returns at all", finished)
+        check(
+            "R006P1a-7",
+            f"{label} drip is Unavailable within ~2x the timeout (took {elapsed:.2f}s)",
+            finished and kind is ArgillaUnavailableError and elapsed < 1.1,
+        )
+        server.close()
+
+
+def test_r3_guard_deadline_directly() -> None:
+    def status_drip(_s: RawServer, conn: socket.socket) -> None:
+        for byte in b"HTTP/1.1 200 OK" * 40:
+            conn.sendall(bytes([byte]))
+            time.sleep(0.1)
+
+    server = RawServer(status_drip)
+    policy = ConnectionPolicy(
+        name="raw",
+        allowed_schemes=frozenset({"http"}),
+        allowed_ports=frozenset({server.port}),
+        explicit_private_allowlist=(ipaddress.ip_network("127.0.0.0/8"),),
+    )
+    url = f"http://127.0.0.1:{server.port}/x"
+
+    def fetch(**kw: Any) -> Any:
+        return guarded_stream_fetch(url, policy, method="GET", timeout=10.0, **kw)
+
+    finished, elapsed, kind, text = _timed_call(lambda: fetch(deadline=0.4), limit=8)
+    check(
+        "R006P1a-7",
+        f"guarded_stream_fetch(deadline=0.4) raises OutboundGuardError (took {elapsed:.2f}s)",
+        finished and kind is OutboundGuardError and elapsed < 0.9 and "deadline" in text,
+    )
+    for bad in (0, -1.0, float("nan"), float("inf"), True, "1"):
+        check(
+            "R006P1a-7",
+            f"deadline={bad!r} is refused before any connection",
+            raises(OutboundGuardError, fetch, deadline=bad),
+        )
+    for bad in (0, -1.0, float("nan"), float("inf"), True, "1"):
+        _, text = _message_of(fetch, deadline=bad)
+        check(
+            "R006P1a-7",
+            f"deadline={bad!r} is refused as an invalid value, not as an expiry",
+            "positive finite" in text,
+        )
+    check("R006P1a-7", "no refused deadline opened a connection", server.connections <= 1)
+    server.close()
+
+    # the watchdog firing in the window after getresponse() but before the
+    # caller stops it must not hand back a half-killed stream, and the
+    # connection must be built with a timeout no longer than the deadline
+    quick = RawServer(
+        lambda _s, conn: conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}")
+    )
+    qpolicy = ConnectionPolicy(
+        name="raw",
+        allowed_schemes=frozenset({"http"}),
+        allowed_ports=frozenset({quick.port}),
+        explicit_private_allowlist=(ipaddress.ip_network("127.0.0.0/8"),),
+    )
+    qurl = f"http://127.0.0.1:{quick.port}/x"
+    real_prepare = guard_mod._prepare_pinned_connection
+    real_timer = guard_mod.threading.Timer
+    captured: dict[str, Any] = {}
+
+    class FakeTimer:
+        daemon = False
+
+        def __init__(self, _interval: float, fn: Any) -> None:
+            captured["fire"] = fn
+
+        def start(self) -> None:
+            pass
+
+        def cancel(self) -> None:
+            pass
+
+    def prepare(*a: Any, **k: Any) -> Any:
+        conn, path, host = real_prepare(*a, **k)
+        captured["conn"] = conn
+        real_get = conn.getresponse
+
+        def late_fire() -> Any:
+            resp = real_get()
+            captured["fire"]()  # the deadline expires right after the headers arrive
+            return resp
+
+        conn.getresponse = late_fire  # type: ignore[method-assign]
+        return conn, path, host
+
+    guard_mod._prepare_pinned_connection = prepare
+    guard_mod.threading.Timer = FakeTimer  # type: ignore[misc,assignment]
+    try:
+        kind, text = _message_of(
+            guarded_stream_fetch, qurl, qpolicy, method="GET", timeout=10.0, deadline=0.5
+        )
+    finally:
+        guard_mod._prepare_pinned_connection = real_prepare
+        guard_mod.threading.Timer = real_timer  # type: ignore[misc]
+    check(
+        "R006P1a-7",
+        "a deadline that expires right after the headers arrive raises, not a dead stream",
+        kind is OutboundGuardError and "deadline" in text,
+    )
+    check(
+        "R006P1a-7",
+        "the connection timeout is capped at the deadline (10s timeout, 0.5s deadline)",
+        captured["conn"].timeout <= 0.5,
+    )
+    quick.close()
+
+    # default (None) is unchanged: a prompt response still works, no thread left behind
+    quick = RawServer(
+        lambda _s, conn: conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}")
+    )
+    quick_policy = ConnectionPolicy(
+        name="raw",
+        allowed_schemes=frozenset({"http"}),
+        allowed_ports=frozenset({quick.port}),
+        explicit_private_allowlist=(ipaddress.ip_network("127.0.0.0/8"),),
+    )
+    quick_url = f"http://127.0.0.1:{quick.port}/x"
+    before = threading.active_count()
+    kws: list[dict[str, Any]] = [{}, {"deadline": 5.0}]
+    for kw in kws:
+        with guarded_stream_fetch(quick_url, quick_policy, method="GET", **kw) as resp:
+            check(
+                "R006P1a-7",
+                f"deadline={kw.get('deadline')} does not disturb a prompt response",
+                resp.status == 200 and resp.read_chunk() == b"{}",
+            )
+    time.sleep(0.2)
+    check(
+        "R006P1a-7",
+        "the deadline watchdog is cancelled once headers are in (no thread left behind)",
+        threading.active_count() <= before + 1,
+    )
+    quick.close()
+
+
+def test_r3_guard_deadline_mutation_kills() -> None:
+    import types
+
+    handler = lambda _s, conn: conn.sendall(  # noqa: E731
+        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}"
+    )
+    quick = RawServer(handler)
+    policy = ConnectionPolicy(
+        name="raw",
+        allowed_schemes=frozenset({"http"}),
+        allowed_ports=frozenset({quick.port}),
+        explicit_private_allowlist=(ipaddress.ip_network("127.0.0.0/8"),),
+    )
+    url = f"http://127.0.0.1:{quick.port}/x"
+
+    # (a) a budget that is already spent (exactly 0 left, on a fake clock)
+    # raises the deadline error before any connection or timer exists.
+    real_time = guard_mod.time
+    real_timer = guard_mod.threading.Timer
+    timers: list[Any] = []
+
+    class CountingTimer:
+        daemon = False
+
+        def __init__(self, interval: float, fn: Any) -> None:
+            timers.append(fn)
+            self._real = real_timer(interval, fn)
+
+        def start(self) -> None:
+            self._real.start()
+
+        def cancel(self) -> None:
+            self._real.cancel()
+
+    ticks = iter([100.0] + [100.5] * 50)
+    guard_mod.time = types.SimpleNamespace(monotonic=lambda: next(ticks))  # type: ignore[assignment]
+    guard_mod.threading.Timer = CountingTimer  # type: ignore[misc,assignment]
+    try:
+        kind, text = _message_of(
+            guarded_stream_fetch, url, policy, method="GET", timeout=10.0, deadline=0.5
+        )
+    finally:
+        guard_mod.time = real_time
+        guard_mod.threading.Timer = real_timer  # type: ignore[misc]
+    check(
+        "R006P1a-7",
+        "a spent budget (exactly 0 remaining) raises the deadline error",
+        kind is OutboundGuardError and "exceeded the call deadline" in text,
+    )
+    check(
+        "R006P1a-7",
+        "a spent budget starts no watchdog and opens no connection",
+        not timers and quick.connections == 0,
+    )
+
+    # (b) a watchdog that fires after the call finished must not abort the
+    # stream the caller now holds.
+    captured: list[Any] = []
+
+    class FakeTimer:
+        daemon = False
+
+        def __init__(self, _interval: float, fn: Any) -> None:
+            captured.append(fn)
+
+        def start(self) -> None:
+            pass
+
+        def cancel(self) -> None:
+            pass
+
+    guard_mod.threading.Timer = FakeTimer  # type: ignore[misc,assignment]
+    try:
+        stream = guarded_stream_fetch(url, policy, method="GET", timeout=5.0, deadline=5.0)
+    finally:
+        guard_mod.threading.Timer = real_timer  # type: ignore[misc]
+    with stream:
+        captured[0]()  # late timer callback, after the headers were accepted
+        check(
+            "R006P1a-7",
+            "a late watchdog callback does not abort a stream already handed back",
+            stream.read_chunk() == b"{}"
+            and stream.final_url == url
+            and stream.status == 200
+            and stream._connection.sock is not None
+            and stream._connection.sock.fileno() != -1,
+        )
+
+    # (c) a plain connection failure with a deadline set is still wrapped.
+    hangup = RawServer(lambda _s, conn: None)
+    hpolicy = ConnectionPolicy(
+        name="raw",
+        allowed_schemes=frozenset({"http"}),
+        allowed_ports=frozenset({hangup.port}),
+        explicit_private_allowlist=(ipaddress.ip_network("127.0.0.0/8"),),
+    )
+    kind, text = _message_of(
+        guarded_stream_fetch,
+        f"http://127.0.0.1:{hangup.port}/x",
+        hpolicy,
+        method="GET",
+        timeout=5.0,
+        deadline=5.0,
+    )
+    check(
+        "R006P1a-7",
+        "a server that hangs up is OutboundGuardError('... failed'), not a raw OSError",
+        kind is OutboundGuardError and "failed" in text and "deadline" not in text,
+    )
+    hangup.close()
+    quick.close()
+
+    # (d) the HTTPS connect hook records the raw socket for the watchdog.
+    class FakeCtx:
+        def wrap_socket(self, raw: Any, server_hostname: str) -> str:
+            return f"tls({server_hostname})"
+
+    real_cc = guard_mod.socket.create_connection
+    guard_mod.socket.create_connection = lambda *_a, **_k: "RAW"  # type: ignore[assignment]
+    try:
+        tls = guard_mod._PinnedHTTPSConnection("h.example", "127.0.0.1", 443, 1.0, FakeCtx())  # type: ignore[arg-type]
+        tls.connect()
+    finally:
+        guard_mod.socket.create_connection = real_cc
+    check(
+        "R006P1a-7",
+        "_PinnedHTTPSConnection.connect wraps the pinned socket and keeps the raw one",
+        tls.sock == "tls(h.example)" and tls._raw_sock == "RAW",
+    )
+
+
+def test_r3_final_1xx_is_unavailable() -> None:
+    # No Content-Length: http.client treats a 1xx body as empty, so the
+    # truncation check cannot catch it and only `_classify` can.
+    for code in (102, 103, 199):
+        server = RawServer(
+            lambda _s, conn, code=code: conn.sendall(f"HTTP/1.1 {code} Info\r\n\r\n".encode())
+        )
+        kind, text = _message_of(server.client(api_key="k-1xx", timeout=2).get_status)
+        check(
+            "R006P1a-8",
+            f"a final HTTP {code} with no Content-Length is Unavailable, not Rejected",
+            kind is ArgillaUnavailableError and "k-1xx" not in text,
+        )
+        server.close()
+
+
+def test_r3_key_never_reaches_an_exception_from_response_fields() -> None:
+    key = "argilla.provisioning.key"
+    stub = Stub()
+    c = stub.client(api_key=key)
+    variants: list[tuple[str, dict[str, Any]]] = [
+        ("role", {**USER, "role": key}),
+        ("role+suffix", {**USER, "role": key + "x"}),
+        ("role list", {**USER, "role": [key]}),
+        ("id", {**USER, "id": key}),
+        ("username", {**USER, "username": key, "role": "root"}),
+    ]
+    for label, payload in variants:
+        for call, args in (
+            ("get_user", (USER["id"],)),
+            ("create_user", ()),
+            ("list_workspace_users", (WORKSPACE["id"],)),
+        ):
+            stub.reply(
+                200 if call != "create_user" else 201,
+                payload if call != "list_workspace_users" else {"items": [payload]},
+            )
+            if call == "create_user":
+                kind, text = _message_of(
+                    c.create_user,
+                    username="sovra-a",
+                    role="annotator",
+                    password="correct-horse-battery",
+                )
+            else:
+                kind, text = _message_of(getattr(c, call), *args)
+            check(
+                "R006P1a-9",
+                f"{call}: the key echoed in {label} never reaches an exception",
+                kind is ArgillaRejectedError and _no_key(text, key),
+            )
+    for field_name in ("id", "name"):
+        stub.reply(200, {"items": [{**WORKSPACE, field_name: key}]})
+        kind, text = _message_of(c.list_workspaces_me)
+        check(
+            "R006P1a-9",
+            f"list_workspaces_me: the key echoed in {field_name} never reaches an exception",
+            _no_key(text, key),
+        )
+    stub.server.shutdown()
+
+
+def test_r3_create_response_api_key_shape() -> None:
+    stub = Stub()
+    c = stub.client()
+    for label, bad in (
+        ("whitespace", "has space"),
+        ("leading space", " key"),
+        ("CRLF", "key\r\nX-Evil: 1"),
+        ("NUL", "key\x00"),
+        ("tab", "k\tey"),
+        ("DEL", "k\x7fey"),
+        ("NBSP", "k\u00a0ey"),
+    ):
+        stub.reply(201, {**USER, "api_key": bad})
+        check(
+            "R006P1a-10",
+            f"a create_user response whose api_key has {label} is rejected",
+            raises(
+                ArgillaRejectedError,
+                c.create_user,
+                username="sovra-a",
+                role="annotator",
+                password="correct-horse-battery",
+            ),
+        )
+        stub.reply(200, {**USER, "api_key": bad})
+        check(
+            "R006P1a-10",
+            f"a get_user response whose api_key has {label} is rejected",
+            raises(ArgillaRejectedError, c.get_user, USER["id"]),
+        )
+    stub.reply(201, {**USER, "api_key": "argilla.A-b_c~9=="})
+    check(
+        "R006P1a-10",
+        "an ordinary printable api_key is still accepted",
+        c.create_user(
+            username="sovra-a", role="annotator", password="correct-horse-battery"
+        ).api_key
+        == "argilla.A-b_c~9==",
+    )
+    stub.server.shutdown()
 
 
 def main() -> None:
