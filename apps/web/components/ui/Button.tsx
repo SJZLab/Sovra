@@ -1,5 +1,7 @@
 import { useId, type ButtonHTMLAttributes, type CSSProperties } from "react";
 
+import { cleanText } from "./text";
+
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "secondary" | "danger";
   /** NN/g H5: an impossible action stays visible but disabled WITH the reason shown. */
@@ -13,18 +15,34 @@ const VARIANT_STYLE: Record<NonNullable<ButtonProps["variant"]>, CSSProperties> 
   primary: {
     background: "var(--color-action)",
     color: "var(--color-action-text)",
-    border: "2px solid var(--color-action)",
+    borderWidth: "2px",
+    borderStyle: "solid",
+    borderColor: "var(--color-action)",
   },
   danger: {
     background: "var(--color-danger)",
     color: "var(--color-action-text)",
-    border: "2px solid var(--color-danger)",
+    borderWidth: "2px",
+    borderStyle: "solid",
+    borderColor: "var(--color-danger)",
   },
   secondary: {
     background: "transparent",
     color: "var(--color-text)",
-    border: "2px solid var(--color-muted)",
+    borderWidth: "2px",
+    borderStyle: "solid",
+    borderColor: "var(--color-muted)",
   },
+};
+
+/** A disabled button is visibly different without relying on colour or opacity alone (H4/H5):
+ * a dashed border, the not-allowed cursor and a flat surface in place of the variant fill. */
+const DISABLED_STYLE: CSSProperties = {
+  background: "var(--color-surface-2)",
+  color: "var(--color-muted)",
+  borderStyle: "dashed",
+  borderColor: "var(--color-muted)",
+  cursor: "not-allowed",
 };
 
 /** Primary actions name the result ("Create dataset"), never "Submit" (UX_STANDARD 3.2). */
@@ -39,7 +57,7 @@ export function Button({
   ...rest
 }: ButtonProps) {
   const autoId = useId();
-  const reason = disabledReason?.trim();
+  const reason = cleanText(disabledReason);
   const isDisabled = Boolean(disabled || reason);
   const reasonId = reason ? `${id ?? autoId}-reason` : undefined;
   const describedBy = [callerDescribedBy, reasonId].filter(Boolean).join(" ") || undefined;
@@ -56,6 +74,7 @@ export function Button({
           minBlockSize: "var(--target-min)",
           minInlineSize: "var(--target-min)",
           ...VARIANT_STYLE[variant],
+          ...(isDisabled ? DISABLED_STYLE : null),
           ...style,
         }}
       >

@@ -53,11 +53,15 @@ export const PHRASES = {
   statusFailed: { en: "Failed", ar: "فشل" },
   statusCancelled: { en: "Cancelled", ar: "ملغى" },
   statusQualified: { en: "Qualified for", ar: "مؤهّل لـ" },
+  statusQualifiedBare: { en: "Qualified", ar: "مؤهّل" },
+  statusUnknown: { en: "Unknown state", ar: "حالة غير معروفة" },
   statusProduction: { en: "Production", ar: "الإنتاج" },
 } as const satisfies Record<string, Record<Locale, string>>;
 
 export function phrase(key: keyof typeof PHRASES, locale: Locale = "en"): string {
-  return PHRASES[key][locale];
+  // A locale arriving at runtime (an API value, a stored preference) may be one we do not ship:
+  // fall back to English rather than render nothing.
+  return PHRASES[key][locale] ?? PHRASES[key].en;
 }
 
 export function dirFor(locale: Locale): "ltr" | "rtl" {

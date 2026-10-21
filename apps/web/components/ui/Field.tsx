@@ -1,6 +1,7 @@
 import type { InputHTMLAttributes } from "react";
 
 import { dirFor, phrase, type Locale } from "./phrases";
+import { cleanText } from "./text";
 
 export interface FieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "id"> {
   id: string;
@@ -23,7 +24,7 @@ export function Field({
   "aria-describedby": callerDescribedBy,
   ...rest
 }: FieldProps) {
-  const trimmedError = error?.trim();
+  const trimmedError = cleanText(error);
   const helperId = helper ? `${id}-helper` : undefined;
   const errorId = trimmedError ? `${id}-error` : undefined;
   const describedBy = [callerDescribedBy, helperId, errorId].filter(Boolean).join(" ") || undefined;
