@@ -1815,7 +1815,8 @@ def _finalize_body(name: str = "support") -> dict[str, Any]:
 
 _SESSION_KEYS = {
     "id", "project_id", "dataset_source_connection_id", "purpose", "status",
-    "declared_size_bytes", "declared_sha256", "declared_content_type", "rejection_reason",
+    "declared_size_bytes", "declared_sha256", "declared_content_type", "declared_encoding",
+    "rejection_reason",
     "created_at", "expires_at", "finalized_at", "part_size_bytes", "part_count",
 }  # fmt: skip
 _DATASET_KEYS = {

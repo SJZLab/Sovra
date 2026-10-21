@@ -101,6 +101,9 @@ def _raises(fn: Any, error: type[BaseException]) -> bool:
 # -- M: migration shape --------------------------------------------------------
 
 
+_MIGRATION_0032 = MIGRATION_PATH.parent / "0032_upload_declared_encoding.py"  # FTF-0501-F2
+
+
 def _migration() -> str:
     return MIGRATION_PATH.read_text()
 
@@ -1388,7 +1391,7 @@ def test_s8_module_constants_and_no_storage_surface() -> None:
         CID,
         "the session model's columns match the migration's",
         all(
-            f'"{column.name}"' in _migration()
+            f'"{column.name}"' in _migration() + _MIGRATION_0032.read_text()
             for column in store.DatasetUploadSession.__table__.columns
         ),
     )

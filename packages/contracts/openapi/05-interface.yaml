@@ -1265,6 +1265,14 @@ components:
         declared_size_bytes: {type: integer, minimum: 1, maximum: 10737418240}
         declared_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
         declared_content_type: {type: string, minLength: 1, maxLength: 255}
+        declared_encoding:
+          type: string
+          enum: [utf-8, utf-8-sig, utf-16-le, utf-16-be, windows-1256]
+          default: utf-8
+          description: >-
+            FTF-0501-F2. The text encoding finalize decodes the whole object with,
+            strictly. Optional (default `utf-8`); not allowed with the spreadsheet type
+            unless `utf-8`.
       required:
         - dataset_source_connection_id
         - purpose
@@ -1286,6 +1294,9 @@ components:
         declared_size_bytes: {type: integer, minimum: 1}
         declared_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
         declared_content_type: {type: string}
+        declared_encoding:
+          type: string
+          enum: [utf-8, utf-8-sig, utf-16-le, utf-16-be, windows-1256]
         rejection_reason: {type: [string, 'null']}
         created_at: {type: string, format: date-time}
         expires_at: {type: string, format: date-time}
@@ -1299,6 +1310,7 @@ components:
         - declared_size_bytes
         - declared_sha256
         - declared_content_type
+        - declared_encoding
         - rejection_reason
         - created_at
         - expires_at
@@ -1328,6 +1340,9 @@ components:
         declared_size_bytes: {type: integer, minimum: 1}
         declared_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
         declared_content_type: {type: string}
+        declared_encoding:
+          type: string
+          enum: [utf-8, utf-8-sig, utf-16-le, utf-16-be, windows-1256]
         rejection_reason: {type: [string, 'null']}
         created_at: {type: string, format: date-time}
         expires_at: {type: string, format: date-time}
@@ -1343,6 +1358,7 @@ components:
         - declared_size_bytes
         - declared_sha256
         - declared_content_type
+        - declared_encoding
         - rejection_reason
         - created_at
         - expires_at
