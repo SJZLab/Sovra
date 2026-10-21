@@ -281,8 +281,6 @@ def build_direct_upload_router(
         size = payload["declared_size_bytes"]
         content_type = payload["declared_content_type"]
         encoding = payload.get("declared_encoding", DEFAULT_TEXT_ENCODING)
-        if not isinstance(encoding, str):
-            raise HTTPException(status_code=400, detail="invalid_body")
         if (
             not isinstance(purpose, str)
             or isinstance(size, bool)

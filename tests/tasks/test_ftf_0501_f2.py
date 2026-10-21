@@ -339,6 +339,8 @@ def test_r2_bad_declarations_are_refused_before_anything_is_written() -> None:
         ("unknown encoding", {"declared_encoding": "latin-1"}),
         ("empty encoding", {"declared_encoding": ""}),
         ("non-string encoding", {"declared_encoding": 7}),
+        ("list encoding", {"declared_encoding": ["utf-8"]}),
+        ("null encoding", {"declared_encoding": None}),
         ("cased encoding", {"declared_encoding": "UTF-8"}),
         (
             "non-default encoding on a spreadsheet",
