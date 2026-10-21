@@ -1629,10 +1629,44 @@ test("negative_acceptance: resuming with a different file is refused before any 
   expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
 });
 
+test("FTF-UX02 H5 (sev 3): abandoning a draft needs an explicit confirmation; the first click changes nothing", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  expect(screen.getByTestId("upload-abandon-confirm")).toBeTruthy();
+  expect(screen.queryByTestId("upload-form")).toBeNull();
+  expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+  expect(fetchCalls().length).toBe(0);
+});
+
+test("FTF-UX02 H3: cancelling the abandon confirmation keeps the draft resumable", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  fireEvent.click(screen.getByTestId("upload-abandon-cancel-button"));
+  expect(screen.queryByTestId("upload-abandon-confirm")).toBeNull();
+  expect(screen.getByTestId("upload-resume-file-input")).toBeTruthy();
+  expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+});
+
+test("FTF-UX02 X4: the abandon confirmation is in Arabic and right-to-left when locale is ar", () => {
+  seedDraft();
+  render(createElement(ResumableDatasetUploadUI, { ...PROPS, locale: "ar" }));
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  const confirm = screen.getByTestId("upload-abandon-confirm");
+  expect(confirm.closest("[dir]")?.getAttribute("dir")).toBe("rtl");
+  expect(confirm.textContent).toMatch(/[\u0600-\u06FF]/);
+  expect(screen.getByTestId("upload-abandon-confirm-button").textContent).toMatch(
+    /[\u0600-\u06FF]/,
+  );
+  expect(screen.getByTestId("upload-abandon-cancel-button").textContent).toMatch(/[\u0600-\u06FF]/);
+});
+
 test("abandoning a draft clears it and returns to a fresh upload form, with no network call", () => {
   seedDraft();
   renderUI();
   fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  fireEvent.click(screen.getByTestId("upload-abandon-confirm-button"));
   expect(screen.getByTestId("upload-form")).toBeTruthy();
   expect(window.localStorage.getItem(DRAFT_KEY)).toBeNull();
   expect(fetchCalls().length).toBe(0);
@@ -1701,6 +1735,9 @@ test("UF3-r3: a PUT still in flight shows 'Uploaded 0 of 2', and a 403 PUT is no
   await selectFileAndStart(testFile(FILE_BYTES));
   await waitFor(() => expect(calls("PUT", PART1_URL).length).toBe(1));
   expect(screen.getByTestId("upload-progress-text").textContent).toContain("Uploaded 0 of 2 parts");
+  const bar = screen.getByRole("progressbar");
+  expect(bar.getAttribute("aria-valuenow")).toBe("0");
+  expect(bar.getAttribute("aria-valuemax")).toBe("100");
   release({ status: 403, body: {} });
   await waitFor(() => expect(screen.getByTestId("upload-interrupted-text")).toBeTruthy());
   expect(screen.getByTestId("upload-interrupted-text").textContent).toContain(

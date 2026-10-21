@@ -25157,3 +25157,15 @@ different session.
 
 ## 2026-10-20T14:55Z — Control plane: FTF-1505 returned (r6, tests only; verdict by independent session_016xoeYyLgDc3cm43hScnvsc)
 - **Returned:** FTF-1505 r6 (0h): live-lane decision pins, main() on live results, rule-set/shallow/stale-baseline pins, truncation and base64/.tgz cases. Control plane produces round 6.
+
+## 2026-10-20T21:15Z — Control plane: FTF-0904-F1 certified (child slice)
+- **Certified:** FTF-0904-F1 (#890, merge 51f8753f), round 6; FTF-0904 requalified. Follow-up FTF-0904-F2 queued.
+
+## 2026-10-20T21:15Z — Control plane: FTF-H011-P1 returned (r4, tests only); FTF-0501-F2 queued
+- **Returned:** FTF-H011-P1 r4 (0l): socket/exec/META-LEAK hooks around the real service; cp1256 waived for P1, gap queued as FTF-0501-F2.
+
+## 2026-10-20T21:15Z — Control plane: FTF-1505 returned (r7, tests only; verdict by independent session_016dKFHNZEopWerUhMGrQnLG)
+- **Returned:** FTF-1505 r7 (0h): base64/hex long-run caps pinned, live call-site pinned on real boots. Control plane produces round 7.
+
+## 2026-10-20T21:15Z — Control plane: FTF-R006-P1a returned (r3)
+- **Returned:** FTF-R006-P1a r3 (0m): header-phase deadline via an optional guard deadline (ruling), final-1xx pin, static role error; stopping rule.

@@ -76,6 +76,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { dirFor, type Locale, phrase } from "../ui/phrases";
+
 // Redeclared from the server's own closed vocabularies (no shared TS/Python
 // contract package for domain enums exists yet -- see this file's docstring).
 export const ALLOWED_PURPOSES = [
@@ -171,6 +173,8 @@ export interface ResumableDatasetUploadUIProps {
    * origin is malformed. Independently of this prop, every grant of one
    * upload must share a single origin. */
   storageOrigin?: string;
+  /** Standard-phrase language; "ar" renders right-to-left. */
+  locale?: Locale;
 }
 
 function trimBase(apiBaseUrl: string): string {
@@ -727,11 +731,13 @@ function UploadInner({
   projectId,
   datasetSourceConnectionId,
   storageOrigin,
+  locale = "en",
 }: ResumableDatasetUploadUIProps) {
   const storageKey = draftStorageKey(organizationId, projectId, datasetSourceConnectionId);
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [resumableDraft, setResumableDraft] = useState<Draft | null>(null);
+  const [confirmingAbandon, setConfirmingAbandon] = useState(false);
   const [purpose, setPurpose] = useState<UploadPurpose>(ALLOWED_PURPOSES[0]);
   const [contentType, setContentType] = useState<UploadContentType>(SUPPORTED_CONTENT_TYPES[0]);
   const [file, setFile] = useState<File | null>(null);
@@ -1190,7 +1196,11 @@ function UploadInner({
   const isFinalizing = phase === "finalizing";
 
   return (
-    <div data-testid="resumable-dataset-upload-ui" aria-label="Resumable dataset upload">
+    <div
+      data-testid="resumable-dataset-upload-ui"
+      aria-label="Resumable dataset upload"
+      dir={dirFor(locale)}
+    >
       {phase === "resumable" && resumableDraft && (
         <section data-testid="upload-resume-banner">
           <p data-testid="upload-resume-text">
@@ -1210,9 +1220,40 @@ function UploadInner({
               if (picked) void exclusive(() => resumeFromDraft(picked));
             }}
           />
-          <button type="button" data-testid="upload-abandon-draft-button" onClick={resetToIdle}>
-            Abandon this draft and start a new upload
-          </button>
+          {confirmingAbandon ? (
+            <div
+              role="alertdialog"
+              aria-label="Confirm abandon"
+              data-testid="upload-abandon-confirm"
+            >
+              <p>{phrase("abandonConfirmBody", locale)}</p>
+              <button
+                type="button"
+                data-testid="upload-abandon-confirm-button"
+                onClick={() => {
+                  setConfirmingAbandon(false);
+                  resetToIdle();
+                }}
+              >
+                {phrase("abandonDraft", locale)}
+              </button>
+              <button
+                type="button"
+                data-testid="upload-abandon-cancel-button"
+                onClick={() => setConfirmingAbandon(false)}
+              >
+                {phrase("keepDraft", locale)}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              data-testid="upload-abandon-draft-button"
+              onClick={() => setConfirmingAbandon(true)}
+            >
+              Abandon this draft and start a new upload
+            </button>
+          )}
         </section>
       )}
 
@@ -1272,6 +1313,13 @@ function UploadInner({
           <p data-testid="upload-progress-text">
             Uploaded {uploadedCount} of {partCount || "?"} parts.
           </p>
+          <div
+            role="progressbar"
+            aria-label={phrase("uploadProgress", locale)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={partCount ? Math.floor((uploadedCount / partCount) * 100) : 0}
+          />
         </section>
       )}
 
