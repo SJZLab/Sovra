@@ -3013,6 +3013,39 @@ def part_s_review() -> None:
         )
 
 
+def part_s_round2() -> None:
+    """Pre-review round 2: importer-level refusals are coded; a stored mapping that fails the critical checks never resolves."""
+    with sqlite_world() as w:
+        conn = w.connection("r2", ALL_PURPOSES)
+        ds = w.dataset("alpha", "training", conn)
+        for exc, code in (
+            (ic.MappingInvalidError("bad_shape"), "mapping_invalid"),
+            (ic.MappingUnsupportedError(), "mapping_unsupported"),
+        ):
+            w.preview_error = exc
+            refuses(
+                w,
+                f"{type(exc).__name__} from the preview",
+                code,
+                lambda: w.propose(ds),
+                "REVIEW2-1",
+            )
+        w.preview_error = None
+        m = w.propose(ds)
+        w.approve(m)
+        no_assistant = {"human": "user"}
+        m.mapping_document = {**m.mapping_document, "role_map": no_assistant}
+        m.mapping_sha256 = mapping_of(m.mapping_document).mapping_sha256
+        w.session.flush()
+        refuses(
+            w,
+            "a stored approval without an assistant target",
+            "mapping_tampered",
+            lambda: w.resolve(ds),
+            "REVIEW2-2",
+        )
+
+
 def main() -> None:
     part_p()
     part_m()
@@ -3023,6 +3056,7 @@ def main() -> None:
     part_s_variants()
     part_s_variants2()
     part_s_review()
+    part_s_round2()
     if FAILURES:
         for failure in FAILURES:
             print(failure, file=sys.stderr)

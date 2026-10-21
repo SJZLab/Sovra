@@ -636,6 +636,12 @@ def section_propose_refusals(env: Env) -> None:
     )
     refuses(
         env,
+        "a csv mapping over a JSONL dataset (importer-level refusal)",
+        "mapping_invalid",
+        p(csv_mapping()),
+    )
+    refuses(
+        env,
         "an unknown dataset",
         "dataset_not_found",
         p(msg_mapping(), ds=ustore.Dataset(id=uuid.uuid4())),
@@ -1365,6 +1371,7 @@ def section_raw(env: Env) -> None:
     # is the only way a snapshot can lack the dataset's own purpose
     w2 = env.world("raw-narrow")
     nd = env.dataset(w2, "n", "training", jsonl(convo()), connection="train")
+    nd2 = env.dataset(w2, "n2", "training", jsonl(convo()), connection="train")
     env.execute(
         "UPDATE dataset_source_connections SET allowed_purposes_json = CAST('[\"validation\"]' AS jsonb) WHERE id=:i",
         i=w2.conns["train"],
@@ -1385,6 +1392,46 @@ def section_raw(env: Env) -> None:
     check(
         "a training approval outside the frozen grant is refused by the CHECK",
         err is not None and "approved_purpose_in_grant" in str(err),
+    )
+
+    err = raw(
+        env,
+        w2.ctx,
+        insert_sql,
+        **{**base, "id": uuid.uuid4(), "ds": nd2.id, "snap": "{training,validation}"},
+    )
+    check(
+        f"a snapshot that is a superset of the narrowed grant is refused ({str(err)[:120]})",
+        err is not None and "grant snapshot" in str(err),
+    )
+    # the frozen-column diff holds for every role, the owner included
+    owner_edit = (
+        "UPDATE dataset_mappings SET {col}, status='approved', approved_purpose='validation', "
+        "approved_by='x', approver_role='workspace_admin', approved_at=now() WHERE id=:i"
+    )
+    for label, col, params in (
+        ("mapping_sha256", "mapping_sha256=:v", {"v": _sha("other")}),
+        (
+            "allowed_purposes_snapshot",
+            "allowed_purposes_snapshot=CAST('{validation,training}' AS text[])",
+            {},
+        ),
+    ):
+        try:
+            env.execute(owner_edit.format(col=col), i=narrow_id, **params)
+            outcome = "accepted"
+        except DBAPIError as exc:
+            outcome = str(exc)
+        check(
+            f"the owner role cannot change frozen column {label} on a proposed row ({outcome[:100]})",
+            "immutable except" in outcome,
+        )
+    check(
+        "the row is untouched after the refused owner edits",
+        env.rows("SELECT status, mapping_sha256 FROM dataset_mappings WHERE id=:i", i=narrow_id)[0][
+            0
+        ]
+        == "proposed",
     )
 
     # the snapshot and the connection cannot be forged at insert (insert guard)

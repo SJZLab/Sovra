@@ -561,6 +561,11 @@ def _finished_preview(
         )
     except MappingPreviewUnavailableError:
         raise MappingStoreError("importer_unavailable") from None
+    except MappingUnsupportedError:
+        raise MappingStoreError("mapping_unsupported") from None
+    except MappingInvalidError:
+        # the importer-level rules (a csv/json block, a slot kind) the grammar alone cannot see
+        raise MappingStoreError("mapping_invalid") from None
     except DatasetNotFoundError:
         raise MappingStoreError("dataset_not_found") from None
     except (DatasetSourceAuthorizationError, DatasetSourceConnectionNotFoundError):
@@ -864,6 +869,11 @@ def _verified_mapping(row: DatasetMapping) -> ImportMapping:
     mapping = _parse_document(row.mapping_document)
     if not _same_hash(mapping.mapping_sha256, row.mapping_sha256):
         raise MappingStoreError("mapping_tampered")
+    try:
+        check_critical_mapping(mapping)
+    except MappingStoreError:
+        # an approved row that fails the propose-time critical checks was never proposed here
+        raise MappingStoreError("mapping_tampered") from None
     return mapping
 
 
