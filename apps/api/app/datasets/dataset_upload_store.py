@@ -56,6 +56,7 @@ from app.datasets.dataset_source_connection_crud import (
     authorize_dataset_source_purpose,
 )
 from app.datasets.dataset_source_connection_schema import ALLOWED_PURPOSES
+from app.datasets.direct_object_storage_upload import TEXT_ENCODINGS as DECLARED_ENCODINGS
 from app.db.tenant_context import TenantContext
 
 __all__ = [
@@ -165,6 +166,9 @@ class DatasetUploadSession(Base):
     max_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     declared_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     declared_content_type: Mapped[str] = mapped_column(String(255), nullable=False)
+    declared_encoding: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="utf-8", server_default="utf-8"
+    )
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     verified_size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     verified_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -277,6 +281,7 @@ def create_upload_session(
     declared_sha256: str,
     declared_content_type: str,
     max_bytes: int,
+    declared_encoding: str = "utf-8",
     ttl: timedelta = MAX_UPLOAD_TTL,
     now: datetime | None = None,
     actor: UploadActor,
@@ -291,6 +296,8 @@ def create_upload_session(
         raise ValueError("require 0 < declared_size_bytes <= max_bytes <= 10 GiB")
     sha = _require_sha256(declared_sha256, "declared_sha256")
     content_type = _require_content_type(declared_content_type, "declared_content_type")
+    if declared_encoding not in DECLARED_ENCODINGS:
+        raise ValueError(f"declared_encoding must be one of {DECLARED_ENCODINGS}")
     if not isinstance(ttl, timedelta) or not timedelta(0) < ttl <= MAX_UPLOAD_TTL:
         raise ValueError("ttl must be positive and at most 24 hours")
     if purpose not in ALLOWED_PURPOSES:
@@ -320,6 +327,7 @@ def create_upload_session(
         max_bytes=maximum,
         declared_sha256=sha,
         declared_content_type=content_type,
+        declared_encoding=declared_encoding,
         status="open",
         created_by=actor.actor_id,
         created_at=created,

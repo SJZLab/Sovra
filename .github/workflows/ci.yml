@@ -510,6 +510,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0501_p2.py
       - name: FTF-0501 negative-test proof (direct object-storage upload -- SigV4 presign vector + tamper, part plan, content sniffing, finalize verification against an in-process S3, real routes over the real store on SQLite, contract, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0501.py
+      - name: FTF-0501-F2 negative-test proof (declared text encoding -- sniff table, whole-object decode at finalize wherever the bad byte falls, create route and store, migration 0032 SQL + CHECK shape, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0501_f2.py
       - name: FTF-0516-P1 negative-test proof (dataset quality issues -- migration SQL + RLS/GRANT/CHECK shape + fault injection, store on SQLite with the real detectors and engine, five routes, contract, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0516_p1.py
       - name: FTF-0103A negative-test proof (live session principal + Membership -- every /api/v1 route wired to the real resolver/role lookup, fail-closed resolver, no DB required)

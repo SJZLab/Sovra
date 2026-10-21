@@ -72,6 +72,9 @@ from app.datasets.dataset_upload_store import (
     record_upload_verified_and_create_dataset,
 )
 from app.datasets.direct_object_storage_upload import (
+    DEFAULT_TEXT_ENCODING,
+    TEXT_ENCODINGS,
+    XLSX_CONTENT_TYPE,
     UploadExpired,
     UploadIncomplete,
     UploadRejection,
@@ -116,6 +119,8 @@ _CREATE_FIELDS = frozenset(
     }
 )
 
+_CREATE_OPTIONAL_FIELDS = frozenset({"declared_encoding"})
+
 StorageFactory = Callable[[], UploadStorageSettings | None]
 
 
@@ -126,7 +131,9 @@ def _default_storage_factory() -> UploadStorageSettings | None:
         raise HTTPException(status_code=503, detail="storage_not_configured") from exc
 
 
-async def _read_object(request: Request, allowed: frozenset[str]) -> dict[str, Any]:
+async def _read_object(
+    request: Request, allowed: frozenset[str], optional: frozenset[str] = frozenset()
+) -> dict[str, Any]:
     raw = await request.body()
     if len(raw) > _MAX_BODY_BYTES:
         raise HTTPException(status_code=413, detail="request_too_large")
@@ -134,7 +141,7 @@ async def _read_object(request: Request, allowed: frozenset[str]) -> dict[str, A
         payload = json.loads(raw)
     except (ValueError, UnicodeDecodeError) as exc:
         raise HTTPException(status_code=400, detail="invalid_body") from exc
-    if not isinstance(payload, dict) or set(payload) != allowed:
+    if not isinstance(payload, dict) or not allowed <= set(payload) <= allowed | optional:
         raise HTTPException(status_code=400, detail="invalid_body")
     return payload
 
@@ -152,6 +159,7 @@ def _target(record: DatasetUploadSession) -> UploadTarget:
         declared_sha256=record.declared_sha256,
         declared_content_type=record.declared_content_type,
         expires_at=record.expires_at,
+        declared_encoding=record.declared_encoding,
     )
 
 
@@ -166,6 +174,7 @@ def _serialize(record: DatasetUploadSession) -> dict[str, object]:
         "declared_size_bytes": record.declared_size_bytes,
         "declared_sha256": record.declared_sha256,
         "declared_content_type": record.declared_content_type,
+        "declared_encoding": record.declared_encoding,
         "rejection_reason": record.rejection_reason,
         "created_at": record.created_at.isoformat(),
         "expires_at": record.expires_at.isoformat(),
@@ -264,7 +273,7 @@ def build_direct_upload_router(
         ctx: AuthorizedContext = dependency,
     ) -> JSONResponse:
         del organization_id
-        payload = await _read_object(request, _CREATE_FIELDS)
+        payload = await _read_object(request, _CREATE_FIELDS, _CREATE_OPTIONAL_FIELDS)
         settings = _storage(storage_factory)
         try:
             connection_id = uuid.UUID(str(payload["dataset_source_connection_id"]))
@@ -273,6 +282,16 @@ def build_direct_upload_router(
         purpose = payload["purpose"]
         size = payload["declared_size_bytes"]
         content_type = payload["declared_content_type"]
+        encoding = payload.get("declared_encoding", DEFAULT_TEXT_ENCODING)
+        if (
+            not isinstance(encoding, str)
+            or encoding not in TEXT_ENCODINGS
+            or (
+                encoding != DEFAULT_TEXT_ENCODING
+                and normalize_content_type(content_type) == XLSX_CONTENT_TYPE
+            )
+        ):
+            raise HTTPException(status_code=400, detail="invalid_body")
         if (
             not isinstance(purpose, str)
             or isinstance(size, bool)
@@ -297,6 +316,7 @@ def build_direct_upload_router(
                     declared_size_bytes=size,
                     declared_sha256=payload["declared_sha256"],
                     declared_content_type=content_type,
+                    declared_encoding=encoding,
                     max_bytes=size,
                     now=clock(),
                     actor=_actor(ctx),

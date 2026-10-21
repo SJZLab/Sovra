@@ -63,8 +63,10 @@ __all__ = [
     "MAX_PARTS",
     "MAX_PART_URLS_PER_REQUEST",
     "MIN_PART_BYTES",
+    "DEFAULT_TEXT_ENCODING",
     "SNIFF_BYTES",
     "SUPPORTED_CONTENT_TYPES",
+    "TEXT_ENCODINGS",
     "PartGrant",
     "PartPlan",
     "UploadExpired",
@@ -92,6 +94,9 @@ DEFAULT_PART_BYTES = 64 * 1024**2
 MAX_PARTS = 10_000  # S3's maximum part count.
 MAX_PART_URLS_PER_REQUEST = 100
 SNIFF_BYTES = 64 * 1024
+# The text encodings an upload session may declare (the importers' CSV_ENCODINGS, FTF-0503/0504).
+TEXT_ENCODINGS = ("utf-8", "utf-8-sig", "utf-16-le", "utf-16-be", "windows-1256")
+DEFAULT_TEXT_ENCODING = "utf-8"
 _HASH_CHUNK_BYTES = 1024 * 1024
 
 XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -223,6 +228,7 @@ class UploadTarget:
     declared_sha256: str
     declared_content_type: str
     expires_at: datetime
+    declared_encoding: str = DEFAULT_TEXT_ENCODING
 
 
 @dataclass(frozen=True)
@@ -292,13 +298,15 @@ def normalize_content_type(value: object) -> str | None:
     return _SUPPORTED_BY_NAME.get(value.split(";", 1)[0].strip().lower())
 
 
-def _decodes_as_utf8(head: bytes, *, complete: bool) -> bool:
-    decoder = codecs.getincrementaldecoder("utf-8")()
+def _decode_head(head: bytes, *, complete: bool, encoding: str) -> bytes | None:
+    """The head re-encoded as UTF-8 after a strict decode with the declared
+    `encoding`, or `None` when it does not decode. `complete` says the bytes are
+    the whole object, so a truncated multi-byte tail is an error."""
+    decoder = codecs.getincrementaldecoder(encoding)()
     try:
-        decoder.decode(head, final=complete)
+        return decoder.decode(head, final=complete).encode("utf-8")
     except UnicodeDecodeError:
-        return False
-    return True
+        return None
 
 
 def _first_significant_byte(text: bytes) -> bytes:
@@ -307,22 +315,33 @@ def _first_significant_byte(text: bytes) -> bytes:
     return found.group(1) if found else b""
 
 
-def sniff_content(declared_content_type: str, head: bytes, *, complete: bool) -> str | None:
+def sniff_content(
+    declared_content_type: str,
+    head: bytes,
+    *,
+    complete: bool,
+    encoding: str = DEFAULT_TEXT_ENCODING,
+) -> str | None:
     """Checks the leading bytes of an object against its declared type
     (Section 8.1 step 3). Returns `None` when they agree, else a stable reason:
     `unsupported_content_type` or `content_type_mismatch`. `complete` says the
-    bytes are the whole object (so a truncated UTF-8 tail is an error)."""
+    bytes are the whole object (so a truncated multi-byte tail is an error). A
+    text body must decode strictly with the declared `encoding` (default UTF-8);
+    the structural checks then run on the decoded text."""
+    if encoding not in TEXT_ENCODINGS:
+        raise ValueError(f"encoding must be one of {TEXT_ENCODINGS}")
     base = normalize_content_type(declared_content_type)
     if base is None:
         return "unsupported_content_type"
     zip_magic = _ZIP_MAGIC_BY_TYPE.get(base)
     if zip_magic is not None:
         return None if head.startswith(zip_magic) else "content_type_mismatch"
-    if any(head.startswith(magic) for magic in _BINARY_MAGIC) or b"\x00" in head:
+    if any(head.startswith(magic) for magic in _BINARY_MAGIC):
         return "content_type_mismatch"
-    if not _decodes_as_utf8(head, complete=complete):
+    decoded = _decode_head(head, complete=complete, encoding=encoding)
+    if decoded is None or b"\x00" in decoded:
         return "content_type_mismatch"
-    text = head[len(_UTF8_BOM) :] if head.startswith(_UTF8_BOM) else head
+    text = decoded[len(_UTF8_BOM) :] if decoded.startswith(_UTF8_BOM) else decoded
     first = _first_significant_byte(text)
     if not first:
         return "content_type_mismatch"
@@ -694,6 +713,8 @@ def verify_and_complete(
     if moment > target.expires_at:
         raise UploadExpired
     plan = plan_parts(target.declared_size_bytes)
+    if target.declared_encoding not in TEXT_ENCODINGS:
+        raise ValueError(f"declared_encoding must be one of {TEXT_ENCODINGS}")
     if normalize_content_type(target.declared_content_type) is None:
         raise _reject(client, settings, target, "unsupported_content_type")
 
@@ -740,9 +761,19 @@ def verify_and_complete(
     digest = hashlib.sha256()
     first = b""
     seen = 0
+    # A text body must decode with the declared encoding end to end, so the
+    # verdict never depends on where its first undecodable byte falls.
+    is_text = normalize_content_type(target.declared_content_type) not in _ZIP_MAGIC_BY_TYPE
+    decoder = codecs.getincrementaldecoder(target.declared_encoding)()
+    undecodable = False
     try:
         for chunk in client.stream_object(settings.bucket, target.object_key):
             first += chunk[: SNIFF_BYTES - len(first)]
+            if is_text and not undecodable:
+                try:
+                    decoder.decode(chunk)
+                except UnicodeDecodeError:
+                    undecodable = True
             digest.update(chunk)
             seen += len(chunk)
             if seen > target.declared_size_bytes:
@@ -756,8 +787,18 @@ def verify_and_complete(
     if digest.hexdigest() != target.declared_sha256:
         raise _reject(client, settings, target, "sha256_mismatch")
     reason = sniff_content(
-        target.declared_content_type, first, complete=target.declared_size_bytes <= SNIFF_BYTES
+        target.declared_content_type,
+        first,
+        complete=target.declared_size_bytes <= SNIFF_BYTES,
+        encoding=target.declared_encoding,
     )
+    if reason is None and is_text:
+        try:
+            decoder.decode(b"", final=True)
+        except UnicodeDecodeError:
+            undecodable = True
+        if undecodable:
+            reason = "content_type_mismatch"
     if (
         reason is None
         and normalize_content_type(target.declared_content_type) in _ZIP_MAGIC_BY_TYPE
