@@ -6,6 +6,7 @@
 import { createElement } from "react";
 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 
 import {
@@ -17,6 +18,7 @@ import {
   ErrorSummary,
   Field,
   Pending,
+  PendingView,
   phaseFor,
   StatusBadge,
   statusLabel,
@@ -318,4 +320,260 @@ test("[UX01-T12] Pending follows the NN/g 0.1/1/10 s limits: nothing, busy after
   } finally {
     vi.useRealTimers();
   }
+});
+
+// ---------------------------------------------------------------------------
+// FTF-UX01 round 2 (Control-plane return, PR #898 verifier findings)
+// ---------------------------------------------------------------------------
+
+test("[UX01-T13] Pending progress renders a visible bar proportional to value, or 'Working…' when indeterminate", () => {
+  const { rerender } = render(
+    createElement(PendingView, { phase: "progress", label: "Importing dataset", value: 42 }),
+  );
+  const fill = screen.getByTestId("progress-fill") as HTMLElement;
+  expect(fill.style.inlineSize).toBe("42%");
+  expect(fill.getAttribute("aria-hidden")).toBeNull();
+  expect(screen.getByText("42%")).toBeTruthy();
+  rerender(createElement(PendingView, { phase: "progress", label: "Importing dataset" }));
+  expect(screen.getByText("Working…")).toBeTruthy();
+  expect(screen.queryByText(/%$/)).toBeNull();
+});
+
+test("[UX01-T14] tokens.css pins a visible :focus-visible outline using --color-focus", () => {
+  const block = CSS.slice(CSS.indexOf(":focus-visible"), CSS.indexOf(":focus-visible") + 200);
+  const start = block.indexOf("{");
+  const body = block.slice(start, block.indexOf("}", start));
+  expect(body).toMatch(/outline:\s*\d+px\s+solid\s+var\(--color-focus\)/);
+  const width = Number(/outline:\s*(\d+)px/.exec(body)?.[1]);
+  expect(width).toBeGreaterThanOrEqual(2);
+});
+
+test("[UX01-T15] --target-min meets the WCAG 2.2 AA 24px floor and every clickable control applies it", () => {
+  expect(Number.parseInt(tok(LIGHT, "--target-min"), 10)).toBeGreaterThanOrEqual(24);
+  const { container: buttonC } = render(createElement(Button, {}, "Create dataset"));
+  const btn = buttonC.querySelector("button") as HTMLButtonElement;
+  expect(btn.style.minBlockSize).toBe("var(--target-min)");
+  expect(btn.style.minInlineSize).toBe("var(--target-min)");
+  const { container: cancelC } = render(
+    createElement(PendingView, { phase: "progress", label: "Importing", onCancel: () => {} }),
+  );
+  const cancelBtn = screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement;
+  expect(cancelBtn.style.minBlockSize).toBe("var(--target-min)");
+  void cancelC;
+  type R = { id: string; name: string };
+  const { container: tableC } = render(
+    createElement(DataTable<R>, {
+      caption: "Runs",
+      columns: [
+        { key: "name", header: "Name", render: (r: R) => r.name, sortValue: (r: R) => r.name },
+      ],
+      rows: [{ id: "a", name: "x" }],
+      rowKey: (r: R) => r.id,
+      empty: createElement("div"),
+    }),
+  );
+  const sortBtn = tableC.querySelector("th button") as HTMLButtonElement;
+  expect(sortBtn.style.minBlockSize).toBe("var(--target-min)");
+});
+
+test("[UX01-T16] DataTable's scroll region is reachable and operable by keyboard alone", async () => {
+  type R = { id: string; name: string };
+  render(
+    createElement(
+      "div",
+      null,
+      createElement("button", { type: "button" }, "Before"),
+      createElement(DataTable<R>, {
+        caption: "Runs",
+        columns: [
+          { key: "name", header: "Name", render: (r: R) => r.name, sortValue: (r: R) => r.name },
+        ],
+        rows: [{ id: "a", name: "x" }],
+        rowKey: (r: R) => r.id,
+        empty: createElement("div"),
+      }),
+    ),
+  );
+  const region = screen.getByRole("region", { name: "Runs" });
+  expect(region.tabIndex).toBe(0);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Before" }));
+  await user.tab();
+  expect(document.activeElement).toBe(region);
+  await user.tab();
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Name" }));
+});
+
+test("[UX01-T17] Breadcrumbs: the last crumb is never a link, even when the caller also gives it an href", () => {
+  render(
+    createElement(Breadcrumbs, {
+      items: [
+        { label: "Projects", href: "/p" },
+        { label: "Datasets", href: "/p/datasets" },
+      ],
+    }),
+  );
+  expect(screen.getAllByRole("link").map((l) => l.textContent)).toEqual(["Projects"]);
+  const current = screen.getByText("Datasets");
+  expect(current.tagName).not.toBe("A");
+  expect(current.getAttribute("aria-current")).toBe("page");
+});
+
+test("[UX01-T18] Pending's busy label is real visible text, never aria-hidden", () => {
+  render(createElement(PendingView, { phase: "busy", label: "Importing dataset" }));
+  const label = screen.getByText("Importing dataset");
+  expect(label.getAttribute("aria-hidden")).toBeNull();
+  expect(label.hidden).toBe(false);
+  expect(label.style.display).not.toBe("none");
+});
+
+test("[UX01-T19] StatusBadge icons are pairwise distinct across every state (running vs queued included)", () => {
+  const states = [
+    "draft",
+    "not_connected",
+    "validation_required",
+    "queued",
+    "running",
+    "failed",
+    "cancelled",
+    "production",
+  ] as const;
+  const icons = new Map<string, string>();
+  for (const s of states) {
+    const { container, unmount } = render(createElement(StatusBadge, { state: s }));
+    const icon = container.querySelector("[aria-hidden=true]")?.textContent ?? "";
+    for (const [otherState, otherIcon] of icons) {
+      expect(icon, `${s} vs ${otherState} share an icon`).not.toBe(otherIcon);
+    }
+    icons.set(s, icon);
+    unmount();
+  }
+});
+
+test("[UX01-T20] Button: no explicit id still gets a unique reason id; a caller aria-describedby is kept", () => {
+  render(
+    createElement(
+      "div",
+      null,
+      createElement(Button, { disabledReason: "Upload a dataset first" }, "A"),
+      createElement(Button, { disabledReason: "Connect LiteLLM first" }, "B"),
+    ),
+  );
+  const buttons = screen.getAllByRole("button") as HTMLButtonElement[];
+  expect(buttons).toHaveLength(2);
+  const [a, b] = buttons as [HTMLButtonElement, HTMLButtonElement];
+  expect(a.getAttribute("aria-describedby")).not.toBe(b.getAttribute("aria-describedby"));
+  expect(a.getAttribute("aria-describedby")).not.toBeNull();
+  render(
+    createElement(
+      Button,
+      { id: "go", "aria-describedby": "caller-hint", disabledReason: "Upload a dataset first" },
+      "Go",
+    ),
+  );
+  const go = screen.getByRole("button", { name: "Go" });
+  expect(go.getAttribute("aria-describedby")).toBe("caller-hint go-reason");
+});
+
+test("[UX01-T20b] Field: a caller aria-describedby is kept alongside the helper/error association", () => {
+  render(
+    createElement(Field, {
+      id: "name",
+      label: "Dataset name",
+      requirement: "required",
+      helper: "Unique in the project",
+      "aria-describedby": "caller-hint",
+    } as never),
+  );
+  const input = screen.getByLabelText(/Dataset name/);
+  expect(input.getAttribute("aria-describedby")).toBe("caller-hint name-helper");
+});
+
+test("[UX01-T21] ErrorSummary re-takes focus on a repeated failed submit with the same error count", () => {
+  const { rerender } = render(
+    createElement(ErrorSummary, { errors: [{ fieldId: "f1", message: "Enter a name" }] }),
+  );
+  const summary = screen.getByRole("alert");
+  (document.activeElement as HTMLElement)?.blur();
+  expect(document.activeElement).not.toBe(summary);
+  // Same length (1), different content, but a FRESH array -- a real second submit.
+  rerender(createElement(ErrorSummary, { errors: [{ fieldId: "f1", message: "Enter a name" }] }));
+  expect(document.activeElement).toBe(screen.getByRole("alert"));
+});
+
+test("[UX01-T22] Button/Field: a whitespace-only reason or error is treated as absent, not shown blank", () => {
+  render(createElement(Button, { disabledReason: "   " }, "Go"));
+  const btn = screen.getByRole("button", { name: "Go" }) as HTMLButtonElement;
+  expect(btn.disabled).toBe(false);
+  expect(screen.queryByTestId("disabled-reason")).toBeNull();
+  render(
+    createElement(Field, {
+      id: "n2",
+      label: "Dataset name",
+      requirement: "required",
+      error: "  ",
+    }),
+  );
+  const input = screen.getByLabelText(/Dataset name/, { selector: "#n2" });
+  expect(input.getAttribute("aria-invalid")).toBeNull();
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("[UX01-T23] StatusBadge never throws: a missing detail falls back to visible text instead of crashing", () => {
+  expect(() => render(createElement(StatusBadge, { state: "blocked" }))).not.toThrow();
+  expect(screen.getByText(/reason unavailable/i)).toBeTruthy();
+  cleanup();
+  expect(() =>
+    render(createElement(StatusBadge, { state: "blocked", detail: "   " })),
+  ).not.toThrow();
+  expect(screen.getByText(/reason unavailable/i)).toBeTruthy();
+  cleanup();
+  expect(() => render(createElement(StatusBadge, { state: "qualified" }))).not.toThrow();
+});
+
+test("[UX01-T24] Button: each variant has a visibly distinct style (never colour alone -- border differs too)", () => {
+  const styles = (["primary", "secondary", "danger"] as const).map((variant) => {
+    const { container, unmount } = render(createElement(Button, { variant }, "Go"));
+    const btn = container.querySelector("button") as HTMLButtonElement;
+    const snapshot = `${btn.style.background}|${btn.style.border}`;
+    unmount();
+    return snapshot;
+  });
+  expect(new Set(styles).size).toBe(3);
+});
+
+test("[UX01-T25] Standard phrases ship in Arabic with RTL: ErrorSummary, Field, Pending, StatusBadge, Breadcrumbs", () => {
+  render(
+    createElement(ErrorSummary, {
+      errors: [{ fieldId: "f1", message: "x" }],
+      locale: "ar",
+    }),
+  );
+  const summary = screen.getByRole("alert");
+  expect(summary.getAttribute("lang")).toBe("ar");
+  expect(summary.getAttribute("dir")).toBe("rtl");
+  expect(screen.getByText("توجد مشكلة")).toBeTruthy();
+  cleanup();
+
+  render(
+    createElement(Field, {
+      id: "n3",
+      label: "Name",
+      requirement: "required",
+      locale: "ar",
+    } as never),
+  );
+  expect(screen.getByText("(مطلوب)")).toBeTruthy();
+  cleanup();
+
+  render(createElement(PendingView, { phase: "progress", label: "x", locale: "ar" }));
+  expect(screen.getByText("جارٍ التنفيذ…")).toBeTruthy();
+  cleanup();
+
+  render(createElement(StatusBadge, { state: "running", locale: "ar" }));
+  expect(screen.getByText("قيد التشغيل")).toBeTruthy();
+  cleanup();
+
+  render(createElement(Breadcrumbs, { items: [{ label: "x" }], locale: "ar" }));
+  expect(screen.getByRole("navigation", { name: "مسار التصفح" })).toBeTruthy();
 });

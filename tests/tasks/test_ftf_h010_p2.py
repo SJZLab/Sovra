@@ -102,6 +102,7 @@ BASE_URL = "https://gateway.example"
 SECRET_REF = "openbao://secret/litellm/org1/api_key"
 SECRET_CONFIG = OpenBaoConfig(address="http://127.0.0.1:1", token="vault-" + "LEAK" + "TOKEN")
 WORKER = "worker-1"
+ECHO_REQUEST: Any = object()
 
 
 @event.listens_for(job_schema.ModelImportJob, "load")
@@ -128,6 +129,7 @@ class Gateway:
     attestation_state: RouteAttestationState = RouteAttestationState.ATTESTED
     identity: RouteIdentityState = RouteIdentityState.VERIFIED
     fingerprint: str | None = FINGERPRINT
+    resolved_model: Any = ECHO_REQUEST  # ECHO_REQUEST echoes the model that was asked for
     discover_calls: list[dict[str, Any]] = None
     attest_calls: list[dict[str, Any]] = None
     sessions_open_during_call: list[int] = None
@@ -157,8 +159,15 @@ class Env:
         self.gateway.sessions_open_during_call = []
         self.open_sessions = 0
         self.connection = SimpleNamespace(
-            base_url=BASE_URL, secret_ref=SECRET_REF, status="active", revoked_at=None
+            id=CONN,
+            organization_id=ORG,
+            base_url=BASE_URL,
+            secret_ref=SECRET_REF,
+            status="active",
+            revoked_at=None,
         )
+        self.connection_reads = 0
+        self.last_lock_read: bool | None = None
         self.connection_missing = False
         self.factory = lambda: Session(self.engine)
         self.statements: list[Any] = []
@@ -183,7 +192,34 @@ class Env:
         self, session: Any, organization_id: Any, statement: Any, params: Any = None
     ) -> Any:
         self.statements.append(statement)
+        entity = (
+            statement.column_descriptions[0].get("entity")
+            if hasattr(statement, "column_descriptions")
+            else None
+        )
+        if entity is not None and entity.__name__ == "LiteLLMConnection":
+            return self.connection_rows(statement)
         return session.execute(statement)
+
+    def connection_rows(self, statement: Any) -> Any:
+        """The terminal transaction's share-locked re-read of the connection. The real WHERE
+        clause is evaluated over the one fake row, so a wrong id or organization matches nothing."""
+        self.connection_reads += 1
+        clauses = getattr(statement.whereclause, "clauses", (statement.whereclause,))
+        row = None if self.connection_missing else self.connection
+        values = {
+            "id": getattr(row, "id", None),
+            "organization_id": getattr(row, "organization_id", None),
+        }
+        matched = row is not None and all(
+            op(values[c.left.key], c.right.value) for c in clauses for op in (c.operator,)
+        )
+        locked = getattr(statement, "_for_update_arg", None)
+        self.last_lock_read = None if locked is None else bool(locked.read)
+        found = [row] if matched else []
+        return SimpleNamespace(
+            scalars=lambda: SimpleNamespace(first=lambda: found[0] if found else None)
+        )
 
     def get_connection(self, session: Any, context: Any, connection_id: Any) -> Any:
         if self.connection_missing:
@@ -208,7 +244,13 @@ class Env:
             self.gateway.on_call("attest")
         g = self.gateway
         return RouteAttestationResult(
-            g.attestation_state, g.identity, "resolved", g.fingerprint, 1.0, "d", NOW
+            g.attestation_state,
+            g.identity,
+            kwargs["model_id"] if g.resolved_model is ECHO_REQUEST else g.resolved_model,
+            g.fingerprint,
+            1.0,
+            "d",
+            NOW,
         )
 
     @contextlib.contextmanager
@@ -390,7 +432,7 @@ def group_a(m: Any) -> None:
         "CONNECTION_REFUSED": (blocked, "route_attestation_unavailable"),
         "UNREACHABLE": (blocked, "route_attestation_unavailable"),
         "DESTINATION_DENIED": (blocked, "route_attestation_unavailable"),
-        "MALFORMED_RESPONSE": (blocked, "route_attestation_unavailable"),
+        "MALFORMED_RESPONSE": (failed, "route_identity_unverified"),
         "SECRET_NOT_FOUND": (blocked, "route_attestation_unavailable"),
         "SECRET_ACCESS_DENIED": (blocked, "route_attestation_unavailable"),
         "SECRET_EXPIRED": (blocked, "route_attestation_unavailable"),
@@ -449,6 +491,16 @@ def group_a(m: Any) -> None:
         "A3",
         "an unverified identity is never usable even with a perfect fingerprint",
         m.attestation_outcome(attested, RouteIdentityState.UNVERIFIED, FINGERPRINT)
+        == (failed, "route_identity_unverified"),
+    )
+    check(
+        "A4",
+        "a chat response without a resolved-model echo (MALFORMED_RESPONSE) is failed, not blocked",
+        m.attestation_outcome(
+            RouteAttestationState.MALFORMED_RESPONSE,
+            RouteIdentityState.UNVERIFIED,
+            None,
+        )
         == (failed, "route_identity_unverified"),
     )
 
@@ -915,6 +967,131 @@ def group_d(m: Any) -> None:
                 == ("failed", "route_identity_unverified", None)
                 and not env.versions(),
             )
+
+    # ROUND 3: the resolved-model echo (findings 3 and 4)
+    for label, echo in (
+        ("no resolved-model echo in the chat body", None),
+        ("an echo naming another model", "other-model"),
+        ("an echo differing only by case", REF.upper()),
+        ("an echo with trailing space", REF + " "),
+    ):
+        with Env(m, Gateway(resolved_model=echo)).patched() as env:
+            job, token = claimed(env)
+            out = env.validate(token)
+            check(
+                "D6",
+                f"{label}: failed route_identity_unverified with no ModelVersion",
+                (out.state, out.failure_code, out.model_version_id)
+                == ("failed", "route_identity_unverified", None)
+                and env.job(job).state == "failed"
+                and not env.versions(),
+            )
+            check(
+                "D6",
+                f"{label}: one audit row and the lease cleared",
+                len(env.audit.events) == 1 and env.job(job).lease_expires_at is None,
+            )
+    with Env(
+        m, Gateway(attestation_state=RouteAttestationState.MALFORMED_RESPONSE, resolved_model=None)
+    ).patched() as env:
+        job, token = claimed(env)
+        out = env.validate(token)
+        check(
+            "D6",
+            "a malformed chat response (no echo) is failed, not blocked_external",
+            (out.state, out.failure_code) == ("failed", "route_identity_unverified")
+            and not env.versions(),
+        )
+    with Env(m).patched() as env:
+        job, token = claimed(env)
+        out = env.validate(token)
+        check("D6", "the exact echo still succeeds (control)", out.state == "succeeded")
+
+    # ROUND 3: a connection revoked while the gateway calls ran (finding 5)
+    def revoke_status(env: Env) -> None:
+        env.connection.status = "revoked"
+
+    def revoke_stamp(env: Env) -> None:
+        env.connection.revoked_at = NOW
+
+    def delete_connection(env: Env) -> None:
+        env.connection_missing = True
+
+    for label, action in (
+        ("status revoked", revoke_status),
+        ("revoked_at set", revoke_stamp),
+        ("connection deleted", delete_connection),
+    ):
+        for during in ("discover", "attest"):
+            gateway = Gateway()
+            with Env(m, gateway).patched() as env:
+                fired: list[str] = []
+
+                def hook(
+                    phase: str,
+                    env: Env = env,
+                    action: Any = action,
+                    during: str = during,
+                    fired: list[str] = fired,
+                ) -> None:
+                    if phase == during:
+                        action(env)
+                        fired.append(phase)
+
+                gateway.on_call = hook
+                job, token = claimed(env)
+                out = env.validate(token)
+                check(
+                    "D7",
+                    f"{label} during {during}: failed connection_revoked, nothing written but the terminal row",
+                    fired == [during]
+                    and (out.state, out.failure_code, out.model_version_id)
+                    == ("failed", "connection_revoked", None)
+                    and env.job(job).state == "failed"
+                    and env.job(job).failure_code == "connection_revoked"
+                    and env.job(job).result_model_version_id is None
+                    and not env.versions(),
+                )
+                check(
+                    "D7",
+                    f"{label} during {during}: one audit row naming connection_revoked only",
+                    len(env.audit.events) == 1
+                    and env.audit.events[0]["details"]["outcome"] == "connection_revoked",
+                )
+    with Env(m).patched() as env:
+        job, token = claimed(env)
+        out = env.validate(token)
+        check(
+            "D7",
+            "the terminal transaction re-reads the connection once, share-locked, and an active one succeeds",
+            out.state == "succeeded" and env.connection_reads == 1 and env.last_lock_read is True,
+        )
+    with Env(m).patched() as env:
+        env.connection.id = uuid.uuid4()
+        job, token = claimed(env)
+        out = env.validate(token)
+        check(
+            "D7",
+            "a connection row that is not the job's own connection never counts as active",
+            (out.state, out.failure_code) == ("failed", "connection_revoked"),
+        )
+    with Env(m).patched() as env:
+        env.connection.organization_id = OTHER_ORG
+        job, token = claimed(env)
+        out = env.validate(token)
+        check(
+            "D7",
+            "a connection of another organization never counts as active",
+            (out.state, out.failure_code) == ("failed", "connection_revoked"),
+        )
+    with Env(m, Gateway(discovery_state=DiscoveryState.TIMEOUT)).patched() as env:
+        job, token = claimed(env)
+        out = env.validate(token)
+        check(
+            "D7",
+            "a blocked outcome does not re-read the connection (the re-read guards success only)",
+            out.state == "blocked_external" and env.connection_reads == 0,
+        )
 
     # alias exactness: generated Unicode variants of the ref
     variants = alias_variants(REF)
@@ -1524,6 +1701,41 @@ def group_h(m: Any, vs: Any = None) -> None:
             return False
         return False
 
+    # ROUND 3 (survivor model_version_schema.py:343): the import_kind validation is reached only
+    # when the key is present, and an invalid kind is refused with the domain error.
+    for bad_kind in ("bogus", "Endpoint", " endpoint", "endpoint ", "", "weights\x00", 7, None):
+        check(
+            "H9",
+            f"import_kind {bad_kind!r} is refused with ModelVersionValidationError",
+            refused(
+                import_kind=bad_kind, origin="external_endpoint", external_provider_model_ref=REF
+            ),
+        )
+    try:
+        MV(organization_id=ORG, project_id=PROJECT, version_number=1, created_by="u")
+        no_kind = "constructed"
+    except VE:
+        no_kind = "refused"
+    except Exception as exc:  # noqa: BLE001
+        no_kind = f"crashed with {type(exc).__name__}"
+    check(
+        "H9",
+        f"a ModelVersion built without import_kind never crashes in the kind validation ({no_kind})",
+        no_kind in ("constructed", "refused"),
+    )
+    check(
+        "H9",
+        "an https endpoint_reference (FTF-1001's own synchronous path) is kept verbatim",
+        build(endpoint_reference="https://gw.example/v1").endpoint_reference
+        == "https://gw.example/v1",
+    )
+    for bad_url in ("http://gw.example", "ftp://x", "gw.example", ""):
+        check(
+            "H9",
+            f"endpoint_reference {bad_url!r} is refused with ModelVersionValidationError",
+            refused(endpoint_reference=bad_url),
+        )
+
     ok = build(origin="external_endpoint", external_provider_model_ref=REF)
     check(
         "H1",
@@ -2104,6 +2316,108 @@ def group_r(mir: Any = None) -> None:
 
 FAULTS: list[tuple[str, str, str, int]] = [
     (
+        "attest-malformed-blocked",
+        "    if state is RouteAttestationState.MALFORMED_RESPONSE:  # no resolved-model echo at all\n        return STATE_FAILED, CODE_ROUTE_IDENTITY_UNVERIFIED",
+        "    if False:\n        return STATE_FAILED, CODE_ROUTE_IDENTITY_UNVERIFIED",
+        1,
+    ),
+    (
+        "echo-not-compared",
+        "        attestation.deployment_fingerprint if echo_ok else None,",
+        "        attestation.deployment_fingerprint,",
+        1,
+    ),
+    (
+        "echo-case-folded",
+        "    echo_ok = attestation.resolved_model == snapshot.ref",
+        "    echo_ok = (attestation.resolved_model or '').lower() == snapshot.ref.lower()",
+        1,
+    ),
+    (
+        "echo-stripped",
+        "    echo_ok = attestation.resolved_model == snapshot.ref",
+        "    echo_ok = (attestation.resolved_model or '').strip() == snapshot.ref",
+        1,
+    ),
+    (
+        "echo-compared-with-itself",
+        "    echo_ok = attestation.resolved_model == snapshot.ref",
+        "    echo_ok = attestation.resolved_model == attestation.resolved_model",
+        1,
+    ),
+    (
+        "echo-inverted",
+        "    echo_ok = attestation.resolved_model == snapshot.ref",
+        "    echo_ok = attestation.resolved_model != snapshot.ref",
+        1,
+    ),
+    (
+        "echo-prefix-accepted",
+        "    echo_ok = attestation.resolved_model == snapshot.ref",
+        "    echo_ok = snapshot.ref.startswith(attestation.resolved_model or '')",
+        1,
+    ),
+    (
+        "revoke-recheck-skipped",
+        "                if _connection_still_active(session, context, snapshot.connection_id):",
+        "                if True:",
+        1,
+    ),
+    (
+        "revoke-recheck-always-active",
+        '        connection is not None and connection.status == "active" and connection.revoked_at is None',
+        "        True",
+        1,
+    ),
+    (
+        "revoke-recheck-ignores-status",
+        '        connection is not None and connection.status == "active" and connection.revoked_at is None',
+        "        connection is not None and connection.revoked_at is None",
+        1,
+    ),
+    (
+        "revoke-recheck-ignores-revoked-at",
+        '        connection is not None and connection.status == "active" and connection.revoked_at is None',
+        '        connection is not None and connection.status == "active"',
+        1,
+    ),
+    (
+        "revoke-recheck-missing-is-active",
+        '        connection is not None and connection.status == "active" and connection.revoked_at is None',
+        '        connection is None or (connection.status == "active" and connection.revoked_at is None)',
+        1,
+    ),
+    (
+        "revoke-recheck-no-share-lock",
+        "        .with_for_update(read=True)",
+        "",
+        1,
+    ),
+    (
+        "revoke-recheck-wrong-org",
+        "            LiteLLMConnection.organization_id == context.organization_id,",
+        "            LiteLLMConnection.organization_id != context.organization_id,",
+        1,
+    ),
+    (
+        "revoke-recheck-wrong-id",
+        "            LiteLLMConnection.id == connection_id,",
+        "            LiteLLMConnection.id != connection_id,",
+        1,
+    ),
+    (
+        "revoke-recheck-wrong-code",
+        "                    state, failure_code = STATE_FAILED, CODE_CONNECTION_REVOKED",
+        "                    state, failure_code = STATE_FAILED, CODE_GATEWAY_UNAVAILABLE",
+        1,
+    ),
+    (
+        "revoke-recheck-blocked-not-failed",
+        "                    state, failure_code = STATE_FAILED, CODE_CONNECTION_REVOKED",
+        "                    state, failure_code = STATE_BLOCKED_EXTERNAL, CODE_CONNECTION_REVOKED",
+        1,
+    ),
+    (
         "discovery-invalid-token-blocked",
         "    if state is DiscoveryState.INVALID_TOKEN:\n        return STATE_FAILED, CODE_GATEWAY_ACCESS_DENIED",
         "    if False:\n        return STATE_FAILED, CODE_GATEWAY_ACCESS_DENIED",
@@ -2560,6 +2874,164 @@ ROUTE_FAULTS: list[tuple[str, str, str, int]] = [
 ]
 
 
+# -- K: the creation path's connection check (ROUND 3 survivor model_import_crud.py:175) -----
+
+
+def group_k() -> None:
+    from app.litellm.connection_crud import ConnectionNotFoundError
+    from app.model_versions import model_import_crud as crud
+
+    known = uuid.uuid4()
+    calls: list[uuid.UUID] = []
+
+    def fake_get_connection(session: Any, context: Any, connection_id: Any) -> Any:
+        calls.append(connection_id)
+        if connection_id != known:
+            raise ConnectionNotFoundError("foreign")
+        return SimpleNamespace(id=connection_id)
+
+    engine = create_engine("sqlite://")
+    job_schema.ModelImportJob.__table__.create(engine)
+    audit = Audit()
+    saved = (
+        crud.get_connection,
+        crud._authorize_project_or_raise,
+        crud.execute_tenant_scoped,
+        crud.write_audit_event,
+    )
+    crud.get_connection = fake_get_connection
+    crud._authorize_project_or_raise = lambda session, context, project_id: None
+    crud.execute_tenant_scoped = lambda session, organization_id, statement: session.execute(
+        statement
+    )
+    crud.write_audit_event = audit
+    ctx: Any = SimpleNamespace(organization_id=ORG)
+    actor = crud.ActorInfo(actor_type="user", actor_id="u1", request_id="r1")
+
+    def create(session: Session, **over: Any) -> Any:
+        args: dict[str, Any] = dict(
+            project_id=PROJECT,
+            requested_origin="external_endpoint",
+            parent_model_version_id=None,
+            trainable_artifact_id=None,
+            external_provider_model_ref=REF,
+            actor=actor,
+            litellm_connection_id=known,
+        )
+        args.update(over)
+        return crud.create_model_import_job(session, ctx, **args)
+
+    try:
+        with Session(engine) as session:
+            job = create(session)
+            session.commit()
+            check(
+                "K1",
+                "a known connection is looked up once and stored on the job",
+                calls == [known] and job.litellm_connection_id == known and job.state == "queued",
+            )
+            before = len(audit.events)
+            calls.clear()
+            foreign = uuid.uuid4()
+            try:
+                create(session, litellm_connection_id=foreign)
+                outcome = "created"
+            except ConnectionNotFoundError:
+                outcome = "ConnectionNotFoundError"
+            except Exception as exc:  # noqa: BLE001
+                outcome = type(exc).__name__
+            session.rollback()
+            check(
+                "K1",
+                f"a foreign or missing connection is ConnectionNotFoundError, nothing written ({outcome})",
+                outcome == "ConnectionNotFoundError"
+                and calls == [foreign]
+                and len(audit.events) == before
+                and session.query(job_schema.ModelImportJob).count() == 1,
+            )
+            calls.clear()
+            for origin_kwargs in (
+                dict(requested_origin="external_endpoint", litellm_connection_id=None),
+                dict(requested_origin="imported_weights", litellm_connection_id=known),
+            ):
+                try:
+                    create(session, **origin_kwargs)
+                    outcome = "created"
+                except job_schema.ModelImportValidationError:
+                    outcome = "refused"
+                except Exception as exc:  # noqa: BLE001
+                    outcome = type(exc).__name__
+                session.rollback()
+                check(
+                    "K1",
+                    f"{origin_kwargs} is refused before any connection lookup ({outcome})",
+                    outcome == "refused" and calls == [],
+                )
+    finally:
+        (
+            crud.get_connection,
+            crud._authorize_project_or_raise,
+            crud.execute_tenant_scoped,
+            crud.write_audit_event,
+        ) = saved
+        engine.dispose()
+
+
+# -- C10: the interface contract matches the route (ROUND 3 finding 1) -----------------------
+
+
+def group_c10() -> None:
+    import yaml
+
+    doc = yaml.safe_load(
+        (ROOT / "packages" / "contracts" / "openapi" / "10-interface.yaml").read_text()
+    )
+    schemas = doc["components"]["schemas"]
+    request = schemas["ModelImportJobCreateRequest"]
+    job = schemas["ModelImportJob"]
+    check(
+        "C10",
+        "the request allow-list names litellm_connection_id as an optional nullable uuid",
+        "litellm_connection_id" in request["properties"]
+        and "litellm_connection_id" not in request["required"]
+        and request["properties"]["litellm_connection_id"]["format"] == "uuid"
+        and request["additionalProperties"] is False,
+    )
+    check(
+        "C10",
+        "the job response carries litellm_connection_id and result_model_version_id as nullable uuids",
+        all(
+            job["properties"][name]["format"] == "uuid"
+            and "null" in job["properties"][name]["type"]
+            for name in ("litellm_connection_id", "result_model_version_id")
+        )
+        and job["additionalProperties"] is False,
+    )
+    base = "/api/v1/organizations/{organization_id}/projects/{project_id}/model-imports"
+    post = doc["paths"][base]["post"]["responses"]
+    check(
+        "C10",
+        "POST documents invalid_body for a bad connection id and 404 for a foreign one",
+        "invalid_body" in post["400"]["description"]
+        and "litellm_connection_id" in post["404"]["description"],
+    )
+    route_src = (
+        ROOT / "apps" / "api" / "app" / "model_versions" / "model_import_routes.py"
+    ).read_text()
+    emitted = set(
+        re.findall(
+            r'^        "([a-z_]+)":',
+            route_src.split("def _serialize")[1].split("async def")[0],
+            re.M,
+        )
+    )
+    check(
+        "C10",
+        f"the contract's response properties equal the route's emitted fields ({sorted(emitted ^ set(job['properties']))})",
+        emitted == set(job["properties"]),
+    )
+
+
 def suite(m: Any, with_routes: bool = False) -> list[str]:
     _failures.clear()
     group_a(m)
@@ -2576,6 +3048,8 @@ def suite(m: Any, with_routes: bool = False) -> list[str]:
     group_h6_migration()
     if with_routes:
         group_r()
+        group_k()
+        group_c10()
     return list(_failures)
 
 
@@ -2660,6 +3134,12 @@ def main() -> int:
     source = MODULE_PATH.read_text()
     m = load_module(MODULE_PATH, "model_import_validation_real")
     failures = suite(m, with_routes=True)
+    if failures:
+        # The real module already fails: the fault runs below would only repeat that verdict.
+        print(f"{len(failures)} failing check(s) on the real module:")
+        for failure in failures[:80]:
+            print(f"  {failure}")
+        return 1
     names = [f[0] for f in FAULTS] + [f[0] for f in SCHEMA_FAULTS] + [f[0] for f in ROUTE_FAULTS]
     if len(set(names)) != len(names):
         failures.append("FAIL [I1] duplicate fault names")

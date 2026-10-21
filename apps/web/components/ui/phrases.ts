@@ -34,6 +34,26 @@ export const PHRASES = {
     en: "Use a token with wider repository access.",
     ar: "استخدم رمزًا بصلاحية وصول أوسع إلى المستودعات.",
   },
+  cancel: { en: "Cancel", ar: "إلغاء" },
+  working: { en: "Working…", ar: "جارٍ التنفيذ…" },
+  errorSummaryTitle: { en: "There is a problem", ar: "توجد مشكلة" },
+  fieldRequired: { en: "(required)", ar: "(مطلوب)" },
+  fieldOptional: { en: "(optional)", ar: "(اختياري)" },
+  breadcrumbNav: { en: "Breadcrumb", ar: "مسار التصفح" },
+  statusDraft: { en: "Draft", ar: "مسودة" },
+  statusNotConnected: { en: "Not connected", ar: "غير متصل" },
+  statusValidationRequired: { en: "Validation required", ar: "يتطلب التحقق" },
+  statusBlocked: { en: "Blocked", ar: "محظور" },
+  statusBlockedReasonUnavailable: {
+    en: "Blocked — reason unavailable",
+    ar: "محظور — السبب غير متوفر",
+  },
+  statusQueued: { en: "Queued", ar: "في الانتظار" },
+  statusRunning: { en: "Running", ar: "قيد التشغيل" },
+  statusFailed: { en: "Failed", ar: "فشل" },
+  statusCancelled: { en: "Cancelled", ar: "ملغى" },
+  statusQualified: { en: "Qualified for", ar: "مؤهّل لـ" },
+  statusProduction: { en: "Production", ar: "الإنتاج" },
 } as const satisfies Record<string, Record<Locale, string>>;
 
 export function phrase(key: keyof typeof PHRASES, locale: Locale = "en"): string {
