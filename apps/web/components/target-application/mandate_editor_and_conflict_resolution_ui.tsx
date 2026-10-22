@@ -817,6 +817,7 @@ export function MandateEditorAndConflictResolutionUI({
           ))}
           {MANDATE_LIST_FIELDS.map((field) => (
             <Field
+              style={{ minBlockSize: "var(--target-min)" }}
               key={field}
               id={`mandate-${field}`}
               data-testid={`mandate-field-${field}`}
@@ -831,6 +832,7 @@ export function MandateEditorAndConflictResolutionUI({
           ))}
           {MANDATE_NUMBER_FIELDS.map((field) => (
             <Field
+              style={{ minBlockSize: "var(--target-min)" }}
               key={field}
               id={`mandate-${field}`}
               data-testid={`mandate-field-${field}`}
@@ -956,6 +958,7 @@ export function MandateEditorAndConflictResolutionUI({
             >
               <ErrorSummary errors={addErrors} locale={locale} submitCount={addSubmitCount} />
               <Field
+                style={{ minBlockSize: "var(--target-min)" }}
                 id="new-forbidden-action-name"
                 data-testid="new-forbidden-action-name"
                 label={t("addName")}
@@ -969,6 +972,7 @@ export function MandateEditorAndConflictResolutionUI({
                 }}
               />
               <Field
+                style={{ minBlockSize: "var(--target-min)" }}
                 id="new-forbidden-action-reason"
                 data-testid="new-forbidden-action-reason"
                 label={t("addReason")}

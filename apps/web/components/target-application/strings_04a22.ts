@@ -53,7 +53,10 @@ const STRINGS = {
     ar: "لم يُرصد حجبه أثناء التشغيل بعد",
   },
   removeAction: { en: "Remove from mandate", ar: "إزالة من التفويض" },
-  removeActionNamed: { en: "Remove {name} from mandate", ar: "إزالة {name} من التفويض" },
+  removeActionNamed: {
+    en: "Remove from mandate: {name}",
+    ar: "إزالة من التفويض: {name}",
+  },
   addName: { en: "Action or tool name", ar: "اسم الإجراء أو الأداة" },
   addReason: { en: "Reason", ar: "السبب" },
   addButton: { en: "Add forbidden action", ar: "إضافة إجراء محظور" },

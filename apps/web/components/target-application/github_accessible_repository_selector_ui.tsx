@@ -253,6 +253,7 @@ function RepositorySelector({
       />
       <form onSubmit={handleLoadRepositories} data-testid="github-credential-form" noValidate>
         <Field
+          style={{ minBlockSize: "var(--target-min)" }}
           id="github-credential"
           data-testid="github-credential-input"
           type="password"

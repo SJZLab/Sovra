@@ -398,6 +398,7 @@ function BranchRefSelector({
 
       <form onSubmit={handleResolve} data-testid="github-ref-form" noValidate>
         <Field
+          style={{ minBlockSize: "var(--target-min)" }}
           id="github-ref-input"
           data-testid="github-ref-input"
           type="text"

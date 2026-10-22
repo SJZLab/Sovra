@@ -60,7 +60,7 @@
  * to the candidate and snapshot that were asked for (`bindSelection`, `bindListing`).
  */
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 
 import {
   Banner,
@@ -380,7 +380,11 @@ function CandidateSelection({
             const isConfirmed = confirmed?.candidate_id === candidate.id;
             const label = t04a18("selectCandidate", locale);
             return (
-              <li key={candidate.id} data-testid={`candidate-row-${candidate.id}`}>
+              <li
+                key={candidate.id}
+                data-testid={`candidate-row-${candidate.id}`}
+                style={{ overflowWrap: "anywhere" }}
+              >
                 <bdi>{candidate.display_name}</bdi>{" "}
                 {candidate.framework_or_runtime && (
                   <span>
@@ -411,7 +415,11 @@ function CandidateSelection({
       </div>
 
       {confirmed && (
-        <div role="status" data-testid="candidate-selection-confirmation">
+        <div
+          role="status"
+          data-testid="candidate-selection-confirmation"
+          style={{ overflowWrap: "anywhere" }}
+        >
           <span aria-hidden="true">✓</span> {t04a18("selectedPrefix", locale)}{" "}
           <bdi>{confirmedName ?? t04a18("unknownCandidate", locale)}</bdi>{" "}
           {t04a18("selectedAt", locale)} {formatSelectedAt(confirmed.selected_at, locale)}
