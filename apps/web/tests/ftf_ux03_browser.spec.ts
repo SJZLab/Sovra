@@ -195,6 +195,14 @@ const UNBROKEN_REPO = `acme/${"r".repeat(95)}`;
 const UNBROKEN_BRANCH = `release_${"b".repeat(56)}`;
 const UNBROKEN_TOOL = `issue_refund_for_${"t".repeat(40)}_order`;
 const UNBROKEN_TOOL_2 = `export_customer_data_${"u".repeat(40)}`;
+// Round 3 (reviewer): a realistic evidence path and symbol, unbroken, in the 04A21 evidence row.
+const UNBROKEN_EVIDENCE = [
+  {
+    ...EVIDENCE[0]!,
+    file_path: "src/customer_support_agent/integrations/zendesk_ticket_escalation_handler.py",
+    symbol: "CustomerSupportAgent.handle_ticket_escalation_request",
+  },
+];
 const UNBROKEN_MANIFEST = manifest22({
   forbidden_actions_json: {
     actions: [
@@ -510,6 +518,16 @@ const STATES: UiState[] = [
     ready: '[data-testid="field-agent_name"]',
   },
   {
+    id: "04A21 unbroken evidence path and symbol",
+    component: "04A21",
+    props: P21,
+    routes: [
+      { method: "GET", path: MANIFEST_PATH, body: manifest21() },
+      { method: "GET", path: `${MANIFEST_PATH}/evidence`, body: UNBROKEN_EVIDENCE },
+    ],
+    ready: '[data-testid^="evidence-location-"]',
+  },
+  {
     id: "04A21 invalid JSON edit",
     component: "04A21",
     props: P21,
@@ -674,6 +692,7 @@ const VIEWPORTS = [
   { name: "desktop", width: 1280, height: 900 },
   { name: "tablet", width: 768, height: 1024 },
   { name: "mobile", width: 390, height: 844 },
+  { name: "narrow", width: 320, height: 640 },
 ] as const;
 const AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 

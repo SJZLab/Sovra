@@ -2018,3 +2018,56 @@ describe.each([
     });
   }
 });
+
+// Reviewer round 1: a 2xx reply that is malformed, or not bound to the request, is announced too.
+describe.each([
+  ["malformed 200", { nope: true }],
+  ["unbound 200 (another manifest id)", "unbound"],
+] as const)("[UX03-R3-R4] %s on save, submit and lock is role=alert", (_name, kind) => {
+  for (const action of ["save", "submit", "lock"] as const) {
+    for (const locale of ["en", "ar"] as const) {
+      test(`${action} ${locale}`, async () => {
+        installServer({
+          manifest: manifestRecord({ status: action === "submit" ? "draft" : "review_required" }),
+        });
+        const base = fetch as unknown as ReturnType<typeof vi.fn>;
+        const inner = base.getMockImplementation()! as (
+          url: string,
+          init?: RequestInit,
+        ) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
+        base.mockImplementation(async (url: string, init?: RequestInit) => {
+          const real = await inner(url, init);
+          const method = init?.method ?? "GET";
+          if (method === "GET") return real;
+          if (kind !== "unbound") return jsonResponse(200, kind);
+          const body = (await real.json()) as Record<string, unknown>;
+          return jsonResponse(200, { ...body, id: "99999999-9999-9999-9999-999999999999" });
+        });
+        render(
+          createElement(ManifestReviewEditUI, {
+            apiBaseUrl: API_BASE,
+            organizationId: ORG_ID,
+            projectId: PROJECT_ID,
+            manifestId: MANIFEST_ID,
+            storage: storage as unknown as Storage,
+            locale,
+          }),
+        );
+        await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+        if (action === "save") {
+          edit("agent_name", "renamed-agent");
+          fireEvent.click(saveButton());
+        } else if (action === "lock") {
+          fireEvent.click(lockButton());
+        } else {
+          fireEvent.click(screen.getByTestId("submit-for-review-button"));
+        }
+        await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
+        const wrapper = screen.getByTestId("manifest-action-error");
+        expect(wrapper.querySelectorAll('[role="alert"]')).toHaveLength(1);
+        expect(wrapper.querySelector('[role="status"]')).toBeNull();
+        expect(wrapper.querySelector('[role="alert"]')!.getAttribute("lang")).toBe(locale);
+      });
+    }
+  }
+});
