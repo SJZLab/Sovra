@@ -12271,3 +12271,16 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   (exact-length controls GREEN); decompressor variants (zlib wbits=31 without eof check, EOFError swallowed, salvage) RED;
   ~490 cut probes all blocking. Advisory A1 MULTI-MEMBER-DROP (outside the DoD). Law 9: tests + docs only in rounds 2-3.
   FTF-1505 REQUALIFIED. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
+## 2026-10-22T15:33Z — RETURNED: FTF-R006-P1b (r1)
+- **FTF-R006-P1b: RETURNED** (child slice of FTF-R006; round 1 → 2; PR #953, merge
+  4f8624f0fd895713b74f406de6ae3e1ea970efd2, head 7bf19fbb). Producers session_014L3iBhSokxUmSbndiY87dR,
+  session_01GBU5fBaKmzGz3QC41U9Bac, session_01DKLGL61DSskQBox4jjAGy7, session_0175QVqBvpzGXzRUwAn3GT1V ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 81/81, ci-verdict 119776851962; argilla-identity-scope-integration 119722224951
+  "All FTF-R006-P1b integration checks passed" (real PG + OpenBao, FAKE Argilla); mutation-gate 113/113 killed; the gate job
+  does not run test_ftf_r006_p1b.py. Local: task script 103/0; integration 56/0 on PG16; one head 0034. Real argilla-server
+  2.8.0 run locally by the verifier: store flows correct, but REPRODUCED (1) a cross-tenant Argilla write before the DB check
+  (org1 annotator reads org2's dataset, HTTP 200) and (2) a revoke/sync race leaving a revoked identity with access. Also
+  F13-F16 (Law 17 outage paths) GREEN, concurrent sync IntegrityError, table-wide UPDATE grant allows resurrecting a revoked
+  identity, and DoD items (real-Argilla CI, R002 /validate, compose, gate step) missing without approval. Code is UNWIRED
+  (proving_symbol blank): nothing reachable from a live route. Governance note: the PR touched ci.yml (additive) under a
+  [relay] title. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
