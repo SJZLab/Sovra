@@ -93,8 +93,43 @@ describe("[UX07-BROWSER] real-Chromium §72.5 evidence", () => {
                   display: cs.display,
                   visibility: cs.visibility,
                   clientWidth: document.documentElement.clientWidth,
+                  top: r.top,
+                  opacity: Number.parseFloat(cs.opacity),
+                  fontSize: Number.parseFloat(cs.fontSize),
+                  pointerEvents: cs.pointerEvents,
+                  clip: cs.clip,
+                  clipPath: cs.clipPath,
+                  textIndent: Number.parseFloat(cs.textIndent),
+                  color: cs.color,
+                  scrollW: el.scrollWidth,
+                  clientW: (el as HTMLElement).clientWidth,
+                  scrollH: el.scrollHeight,
+                  clientH: (el as HTMLElement).clientHeight,
+                  // Effective background: first non-transparent ancestor-or-self background.
+                  bg: (() => {
+                    for (let n: Element | null = el; n; n = n.parentElement) {
+                      const b = getComputedStyle(n).backgroundColor;
+                      if (b !== "rgba(0, 0, 0, 0)" && b !== "transparent") return b;
+                    }
+                    return "rgb(255, 255, 255)";
+                  })(),
                 };
               });
+              expect(box.opacity, `${id} opacity`).toBe(1);
+              expect(box.fontSize, `${id} font-size`).toBeGreaterThanOrEqual(12);
+              expect(box.top, `${id} top edge in viewport`).toBeGreaterThanOrEqual(0);
+              expect(box.pointerEvents, `${id} pointer-events`).not.toBe("none");
+              expect(box.clip, `${id} clip`).toBe("auto");
+              expect(box.clipPath, `${id} clip-path`).toBe("none");
+              expect(box.textIndent, `${id} text-indent`).toBeGreaterThanOrEqual(0);
+              expect(box.color, `${id} text colour is opaque`).not.toMatch(/rgba\(.*,\s*0\)$/);
+              expect(box.color, `${id} colour differs from its background`).not.toBe(box.bg);
+              expect(box.scrollW, `${id} content not clipped horizontally`).toBeLessThanOrEqual(
+                box.clientW + 1,
+              );
+              expect(box.scrollH, `${id} content not clipped vertically`).toBeLessThanOrEqual(
+                box.clientH + 1,
+              );
               expect(box.display, `${id} display`).not.toBe("none");
               expect(box.visibility, `${id} visibility`).toBe("visible");
               expect(box.width, `${id} width`).toBeGreaterThan(0);
