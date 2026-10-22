@@ -534,3 +534,271 @@ describe("[UX06-X1] shared component library", () => {
     expect(button.getAttribute("data-variant")).not.toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// FTF-UX06 round 2 (QUEUE 0f; PR #975's return of #964)
+// ---------------------------------------------------------------------------------------------
+describe("[UX06-R2 FOCUS-LOST-TO-BODY] a failed load/import/save takes focus on its own alert", () => {
+  test("a failed load takes focus on the list-error alert, not <body>", async () => {
+    enqueue("GET", LIST_URL, fail(503, {}));
+    renderUI();
+    fireEvent.click(screen.getByTestId("load-cases-button"));
+    await waitFor(() => expect(screen.getByTestId("list-error")).toBeTruthy());
+    expect(document.activeElement).toBe(screen.getByTestId("list-error"));
+  });
+
+  test("NEGATIVE: with no failure, there is no list-error alert to take focus", async () => {
+    renderUI();
+    expect(screen.queryByTestId("list-error")).toBeNull();
+  });
+
+  test("a failed import takes focus on the import-error alert, not <body>", async () => {
+    enqueue("POST", LIST_URL, fail(503, {}));
+    renderUI();
+    fireEvent.change(screen.getByTestId("import-text"), {
+      target: { value: JSON.stringify([importRow("c1")]) },
+    });
+    fireEvent.click(screen.getByTestId("import-button"));
+    await waitFor(() => expect(screen.getByTestId("import-error")).toBeTruthy());
+    expect(document.activeElement).toBe(screen.getByTestId("import-error"));
+  });
+
+  test("a failed save takes focus on the edit-error alert, not <body>", async () => {
+    renderUI();
+    await loadCases([evalCase(CASE_A, "a-case")]);
+    await openEditor(CASE_A);
+    enqueue("PATCH", `${LIST_URL}/${CASE_A}`, fail(503, {}));
+    setField("field-language", "fr");
+    fireEvent.click(screen.getByTestId("save-case-button"));
+    await waitFor(() => expect(screen.getByTestId("edit-error")).toBeTruthy());
+    expect(document.activeElement).toBe(screen.getByTestId("edit-error"));
+  });
+
+  test("a second failure with the identical message re-focuses the alert even though the text did not change", async () => {
+    enqueue("GET", LIST_URL, fail(503, {}));
+    renderUI();
+    fireEvent.click(screen.getByTestId("load-cases-button"));
+    await waitFor(() => expect(screen.getByTestId("list-error")).toBeTruthy());
+    const alert = screen.getByTestId("list-error");
+    // Simulate the user tabbing away before retrying.
+    screen.getByTestId("load-cases-button").focus();
+    expect(document.activeElement).not.toBe(alert);
+    enqueue("GET", LIST_URL, fail(503, {}));
+    fireEvent.click(screen.getByTestId("load-cases-button"));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("list-error")));
+  });
+});
+
+describe("[UX06-R2 ERRORS-NO-RECOVERY] every top-level alert names a concrete recovery step", () => {
+  test("the list-load alert tells the user to press Load cases again", async () => {
+    enqueue("GET", LIST_URL, fail(503, {}));
+    renderUI();
+    fireEvent.click(screen.getByTestId("load-cases-button"));
+    await waitFor(() => expect(screen.getByTestId("list-error")).toBeTruthy());
+    expect(screen.getByTestId("list-error").textContent).toContain("Press Load cases again.");
+  });
+
+  test("the import alert tells the user to fix the file and import again", async () => {
+    enqueue("POST", LIST_URL, fail(503, {}));
+    renderUI();
+    fireEvent.change(screen.getByTestId("import-text"), {
+      target: { value: JSON.stringify([importRow("c1")]) },
+    });
+    fireEvent.click(screen.getByTestId("import-button"));
+    await waitFor(() => expect(screen.getByTestId("import-error")).toBeTruthy());
+    expect(screen.getByTestId("import-error").textContent).toContain("import again");
+  });
+
+  test("the save alert tells the user to fix the field and save again", async () => {
+    renderUI();
+    await loadCases([evalCase(CASE_A, "a-case")]);
+    await openEditor(CASE_A);
+    enqueue("PATCH", `${LIST_URL}/${CASE_A}`, fail(503, {}));
+    setField("field-language", "fr");
+    fireEvent.click(screen.getByTestId("save-case-button"));
+    await waitFor(() => expect(screen.getByTestId("edit-error")).toBeTruthy());
+    expect(screen.getByTestId("edit-error").textContent).toContain("save again");
+  });
+});
+
+describe("[UX06-R2 X1] the empty case list's EmptyState has a real action", () => {
+  test("clicking the empty-state action focuses the import textarea", async () => {
+    renderUI();
+    await loadCases([]);
+    fireEvent.click(screen.getByTestId("empty-state-import-action"));
+    expect(document.activeElement).toBe(screen.getByTestId("import-text"));
+  });
+});
+
+describe("[UX06-R2 NOT-BILINGUAL] non-JSON 200 responses never leak a raw browser parser message", () => {
+  test("a non-JSON 200 on list load shows the localized malformed-listing message, English default", async () => {
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError("Unexpected token < in JSON at position 0");
+      },
+    }));
+    renderUI();
+    fireEvent.click(screen.getByTestId("load-cases-button"));
+    await waitFor(() => expect(screen.getByTestId("list-error")).toBeTruthy());
+    const text = screen.getByTestId("list-error").textContent ?? "";
+    expect(text).toContain("malformed case listing response");
+    expect(text).not.toContain("Unexpected token");
+  });
+
+  test("the same non-JSON 200 under locale='ar' shows the localized Arabic message, no English leak", async () => {
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError("Unexpected token < in JSON at position 0");
+      },
+    }));
+    renderUI("ar");
+    fireEvent.click(screen.getByTestId("load-cases-button"));
+    await waitFor(() => expect(screen.getByTestId("list-error")).toBeTruthy());
+    const text = screen.getByTestId("list-error").textContent ?? "";
+    expect(text).toContain("استجابة قائمة الحالات غير سليمة");
+    expect(text).not.toContain("Unexpected token");
+    expect(text).not.toContain("SyntaxError");
+  });
+
+  test("a non-JSON 200 on import shows the localized malformed-import message, no parser leak", async () => {
+    renderUI();
+    fireEvent.change(screen.getByTestId("import-text"), {
+      target: { value: JSON.stringify([importRow("c1")]) },
+    });
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => ({
+      ok: true,
+      status: 201,
+      json: async () => {
+        throw new SyntaxError("Unexpected end of JSON input");
+      },
+    }));
+    fireEvent.click(screen.getByTestId("import-button"));
+    await waitFor(() => expect(screen.getByTestId("import-error")).toBeTruthy());
+    const text = screen.getByTestId("import-error").textContent ?? "";
+    expect(text).toContain("malformed import response");
+    expect(text).not.toContain("Unexpected end");
+  });
+
+  test("an unreachable-server fetch rejection under locale='ar' never shows the raw English 'Failed to fetch'", async () => {
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
+      throw new TypeError("Failed to fetch");
+    });
+    renderUI("ar");
+    fireEvent.click(screen.getByTestId("load-cases-button"));
+    await waitFor(() => expect(screen.getByTestId("list-error")).toBeTruthy());
+    const text = screen.getByTestId("list-error").textContent ?? "";
+    expect(text).toContain("تعذّر الوصول إلى الخادم");
+    expect(text).not.toContain("Failed to fetch");
+  });
+
+  test("NEGATIVE: the same unreachable-server rejection at the default English locale keeps the raw message", async () => {
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
+      throw new TypeError("Failed to fetch");
+    });
+    renderUI();
+    fireEvent.click(screen.getByTestId("load-cases-button"));
+    await waitFor(() => expect(screen.getByTestId("list-error")).toBeTruthy());
+    expect(screen.getByTestId("list-error").textContent).toContain("Failed to fetch");
+  });
+});
+
+describe("[UX06-R2 NOT-BILINGUAL] a server-returned field name and validation code are translated under locale='ar'", () => {
+  test("an import field error's field label and code are both translated", async () => {
+    renderUI("ar");
+    const rows = [importRow("alpha")];
+    enqueue(
+      "POST",
+      LIST_URL,
+      fail(400, {
+        detail: "validation_failed",
+        errors: [{ index: 0, field: "group_key", code: "required" }],
+      }),
+    );
+    fireEvent.change(screen.getByTestId("import-text"), {
+      target: { value: JSON.stringify(rows) },
+    });
+    fireEvent.click(screen.getByTestId("import-button"));
+    await waitFor(() => expect(screen.getByTestId("import-field-errors")).toBeTruthy());
+    const text = screen.getByTestId("import-field-errors").textContent ?? "";
+    expect(text).toContain("مفتاح المجموعة"); // translated field label
+    expect(text).toContain("مطلوب"); // translated code
+    expect(text).not.toContain("group_key");
+    expect(text).not.toContain("required");
+  });
+
+  test("NEGATIVE: the identical field error keeps the exact raw 'Row 1 / group_key: required' text at the default locale", async () => {
+    renderUI();
+    const rows = [importRow("alpha")];
+    enqueue(
+      "POST",
+      LIST_URL,
+      fail(400, {
+        detail: "validation_failed",
+        errors: [{ index: 0, field: "group_key", code: "required" }],
+      }),
+    );
+    fireEvent.change(screen.getByTestId("import-text"), {
+      target: { value: JSON.stringify(rows) },
+    });
+    fireEvent.click(screen.getByTestId("import-button"));
+    await waitFor(() => expect(screen.getByTestId("import-field-errors")).toBeTruthy());
+    expect(screen.getByTestId("import-field-errors").textContent).toContain(
+      "Row 1 / group_key: required",
+    );
+  });
+
+  test("an unmapped field/code combination falls back to the raw value under 'ar' too (disclosed, not hidden)", async () => {
+    renderUI("ar");
+    const rows = [importRow("alpha")];
+    enqueue(
+      "POST",
+      LIST_URL,
+      fail(400, {
+        detail: "validation_failed",
+        errors: [{ index: 0, field: "a_future_field", code: "a_future_code" }],
+      }),
+    );
+    fireEvent.change(screen.getByTestId("import-text"), {
+      target: { value: JSON.stringify(rows) },
+    });
+    fireEvent.click(screen.getByTestId("import-button"));
+    await waitFor(() => expect(screen.getByTestId("import-field-errors")).toBeTruthy());
+    const text = screen.getByTestId("import-field-errors").textContent ?? "";
+    expect(text).toContain("a_future_field");
+    expect(text).toContain("a_future_code");
+  });
+});
+
+describe("[UX06-R2 NOT-ON-UX01] category/language/group_key/weight are built on the shared Field component", () => {
+  test("a category field error renders through Field's own error association, same id as round 1", async () => {
+    renderUI();
+    await loadCases([evalCase(CASE_A, "a-case")]);
+    await openEditor(CASE_A);
+    enqueue(
+      "PATCH",
+      `${LIST_URL}/${CASE_A}`,
+      fail(400, {
+        detail: "validation_failed",
+        errors: [{ index: null, field: "category", code: "too_long" }],
+      }),
+    );
+    setField("field-category", "x".repeat(300));
+    fireEvent.click(screen.getByTestId("save-case-button"));
+    await waitFor(() => expect(document.getElementById("field-category-error")).toBeTruthy());
+    expect(screen.getByTestId("field-category").getAttribute("aria-describedby") ?? "").toContain(
+      "field-category-error",
+    );
+    expect(screen.getByTestId("field-category").getAttribute("aria-invalid")).toBe("true");
+  });
+
+  test("the category/language/group_key/weight fields each carry a visible required marker", async () => {
+    renderUI();
+    await loadCases([evalCase(CASE_A, "a-case")]);
+    await openEditor(CASE_A);
+    expect(screen.getAllByText("(required)").length).toBeGreaterThanOrEqual(4);
+  });
+});

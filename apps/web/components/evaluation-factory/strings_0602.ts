@@ -153,6 +153,44 @@ const STRINGS = {
   },
   rowWord: { en: "Row", ar: "الصف" },
   requestWord: { en: "Request", ar: "الطلب" },
+
+  // ---- FTF-UX06 round 2: recovery hints, empty-state action, and Arabic translations for
+  // server-returned field names / validation codes (the field/code TEXT stays raw at the default
+  // English locale -- byte-identical to round 1 -- these are used only when locale="ar").
+  emptyAction: { en: "Go to import", ar: "الانتقال إلى الاستيراد" },
+  recoverList: { en: "Press Load cases again.", ar: "اضغط تحميل الحالات مرة أخرى." },
+  recoverImport: {
+    en: "Fix the file or text above, then import again.",
+    ar: "أصلح الملف أو النص أعلاه، ثم استورد مرة أخرى.",
+  },
+  recoverSave: {
+    en: "Fix the field shown above, then save again.",
+    ar: "أصلح الحقل الموضَّح أعلاه، ثم احفظ مرة أخرى.",
+  },
+  codeRequired: { en: "required", ar: "مطلوب" },
+  codeTooLong: { en: "too long", ar: "طويل جدًا" },
+  codeInvalidValue: { en: "not a valid value", ar: "قيمة غير صالحة" },
+  codeUnsupported: { en: "not supported", ar: "غير مدعوم" },
+  codeRequiresIndependentGrader: {
+    en: "needs an independent grader",
+    ar: "يحتاج إلى أداة تقييم مستقلة",
+  },
+  codeCriticalOracleNotIndependent: {
+    en: "a critical case needs an independent grader",
+    ar: "تحتاج الحالة الحرِجة إلى أداة تقييم مستقلة",
+  },
+  codeBodyMalformed: { en: "the request body is malformed", ar: "محتوى الطلب غير سليم" },
+  codeDuplicateCaseKeyField: {
+    en: "this case_key already exists",
+    ar: "مفتاح الحالة هذا موجود مسبقًا",
+  },
+  /** Only for the three well-known fetch()-level unreachable-server messages (Chrome/Firefox/
+   * Safari); any other reason falls back to errUnknownReason under Arabic rather than leaking
+   * untranslated browser text (disclosed, not hidden -- same fallback discipline as ERROR_DETAIL_KEY). */
+  networkReasonUnreachable: {
+    en: "the server could not be reached",
+    ar: "تعذّر الوصول إلى الخادم",
+  },
 } as const satisfies Record<string, CatalogueEntry>;
 
 export function t0602(
