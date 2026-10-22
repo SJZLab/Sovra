@@ -195,7 +195,7 @@ def main() -> None:
         "foreign": seed_project(ctx2, ws2_id, "ux04-seed-foreign", "zero_egress"),
     }
     tool_actor = ToolActor(actor_type="user", actor_id="seed", request_id="req-tools")
-    schema = {"type": "object", "properties": {"order_id": {"type": "string"}}}
+    schema: dict[str, object] = {"type": "object", "properties": {"order_id": {"type": "string"}}}
     with tenant_scoped_session_for(factory, ctx1) as session:
         for name, effect, critical, confirm in (
             ("issue_refund", "financial", True, True),
