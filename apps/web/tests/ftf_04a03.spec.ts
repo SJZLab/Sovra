@@ -208,7 +208,7 @@ test("Load more fetches the real next page and appends to the existing real list
   expect(screen.queryByTestId("github-load-more-button")).toBeNull();
 });
 
-test("a failed listing surfaces the real server-provided error detail, never a generic swallow", async () => {
+test("a failed listing says why in words (GitHub rejected the token), never a generic swallow or the raw backend text", async () => {
   const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
   fetchMock.mockResolvedValueOnce({
     ok: false,
@@ -229,7 +229,7 @@ test("a failed listing surfaces the real server-provided error detail, never a g
 
   await waitFor(() =>
     expect(screen.getByTestId("github-repository-error").textContent).toContain(
-      "GitHub rejected the credential (HTTP 401)",
+      "GitHub rejected this token. Use a different token",
     ),
   );
   expect(screen.getByTestId("github-repository-list").children.length).toBe(0);

@@ -54,7 +54,7 @@ import {
   MALFORMED_FAILURE,
   NETWORK_FAILURE,
   failureFromResponse,
-  failureMessage,
+  selectorFailureMessage,
   isRecord,
   type Failure,
 } from "./common";
@@ -285,7 +285,7 @@ function RepositorySelector({
       {failure && (
         <div data-testid="github-repository-error">
           <Banner kind="error" locale={locale}>
-            {failureMessage(failure, locale)}
+            {selectorFailureMessage(failure, locale)}
           </Banner>
         </div>
       )}

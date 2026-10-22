@@ -211,7 +211,7 @@ test("negative_acceptance: an unknown/inaccessible ref surfaces the real server-
 
   await waitFor(() =>
     expect(screen.getByTestId("github-branch-ref-error").textContent).toContain(
-      "GitHub could not find the requested resource (HTTP 404)",
+      "not found, or this token cannot see it",
     ),
   );
   expect(screen.queryByTestId("github-resolved-ref-notice")).toBeNull();

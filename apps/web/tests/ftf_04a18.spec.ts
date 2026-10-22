@@ -187,7 +187,9 @@ test("negative_acceptance: a stale candidate from a superseded snapshot is rejec
   fireEvent.click(screen.getByTestId(`candidate-select-button-${CANDIDATE_LOW}`));
 
   await waitFor(() =>
-    expect(screen.getByTestId("candidate-selection-error").textContent).toContain("superseded"),
+    expect(screen.getByTestId("candidate-selection-error").textContent).toContain(
+      "A newer snapshot of this connection exists",
+    ),
   );
   expect(screen.queryByTestId("candidate-selection-confirmation")).toBeNull();
 });

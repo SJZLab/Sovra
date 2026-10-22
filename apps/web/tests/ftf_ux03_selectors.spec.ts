@@ -25,7 +25,11 @@ import {
   GitHubAccessibleRepositorySelector,
   bindListing as bindRepositoryListing,
 } from "../components/target-application/github_accessible_repository_selector_ui";
-import { failureMessage, type Failure } from "../components/target-application/common";
+import {
+  failureMessage,
+  selectorFailureMessage,
+  type Failure,
+} from "../components/target-application/common";
 
 const API = "http://localhost:8000";
 const ORG = "11111111-1111-1111-1111-111111111111";
@@ -370,8 +374,8 @@ describe("[UX03-R2-P2] bilingual with lang and dir on every state", () => {
       { kind: "http", status: 418, detail: null },
     ];
     for (const failure of failures) {
-      const en = failureMessage(failure, "en");
-      const ar = failureMessage(failure, "ar");
+      const en = selectorFailureMessage(failure, "en");
+      const ar = selectorFailureMessage(failure, "ar");
       expect(en).not.toBe(ar);
       expect(/[؀-ۿ]/.test(ar)).toBe(true);
       expect(/[؀-ۿ]/.test(en)).toBe(false);
@@ -379,7 +383,7 @@ describe("[UX03-R2-P2] bilingual with lang and dir on every state", () => {
     }
     expect(
       failureMessage({ kind: "http", status: 409, detail: "stale_candidate" }, "ar"),
-    ).toContain("stale_candidate");
+    ).not.toContain("stale_candidate");
   });
 });
 
@@ -481,7 +485,7 @@ describe("[UX03-R2-P3] failures are announced and never blank or fabricate a sta
     expect((screen.getByTestId("candidate-load-button") as HTMLButtonElement).disabled).toBe(false);
   });
 
-  test("04A18: a conflict names its reason and a next step; the select buttons stay usable", async () => {
+  test("04A18: a conflict says a newer snapshot exists and how to recover; the select buttons stay usable", async () => {
     fetchMock().mockResolvedValueOnce(ok(CANDIDATE_PAGE()));
     render(candidateUI());
     fireEvent.click(screen.getByTestId("candidate-load-button"));
@@ -489,8 +493,8 @@ describe("[UX03-R2-P3] failures are announced and never blank or fabricate a sta
     fetchMock().mockResolvedValueOnce(refused(409, { detail: "stale_candidate" }));
     fireEvent.click(screen.getByTestId(`candidate-select-button-${CAND_A}`));
     const error = await screen.findByTestId("candidate-selection-error");
-    expect(error.textContent).toContain("stale_candidate");
-    expect(error.textContent).toContain("try again");
+    expect(error.textContent).not.toContain("stale_candidate");
+    expect(error.textContent).toContain("Reload the candidates");
     expect(screen.queryByTestId("candidate-selection-confirmation")).toBeNull();
     expect(
       (screen.getByTestId(`candidate-select-button-${CAND_A}`) as HTMLButtonElement).disabled,
@@ -1712,5 +1716,262 @@ describe("[UX03-R2-REVIEW1] pre-review findings", () => {
         SELECTION({ selected_at: "2026-10-02T12:00:00.123456+03:00" }),
       ),
     ).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Pre-review round 3: the selectors never show the backend's own `detail`. These tests use the EXACT
+// bodies the real routes produce (apps/api/app/auth/rbac_middleware.py, target_connectors/github_*_routes.py,
+// discovered_agent_candidate_selection_routes.py) in English and Arabic.
+// ---------------------------------------------------------------------------------------------
+type RealCase = {
+  name: string;
+  status: number;
+  body: unknown;
+  en: string;
+  ar: string;
+};
+const STALE_TEXT =
+  `target source snapshot ${SNAPSHOT} is not the connection's latest snapshot (a newer snapshot ` +
+  "of the same connection exists); selection must be made against the connection's current snapshot";
+const REAL_CASES: RealCase[] = [
+  {
+    name: "401 not_authenticated (platform session)",
+    status: 401,
+    body: { detail: "not_authenticated" },
+    en: "Sign in again",
+    ar: "سجّل الدخول",
+  },
+  {
+    name: "401 GitHub rejected the credential",
+    status: 401,
+    body: { detail: "GitHub rejected the credential (HTTP 401)" },
+    en: "different token",
+    ar: "رمزًا آخر",
+  },
+  {
+    name: "403 role_not_authorized",
+    status: 403,
+    body: { detail: "role_not_authorized" },
+    en: "administrator",
+    ar: "مسؤول",
+  },
+  {
+    name: "403 tenant_mismatch",
+    status: 403,
+    body: { detail: "tenant_mismatch" },
+    en: "administrator",
+    ar: "مسؤول",
+  },
+  {
+    name: "404 project_not_found",
+    status: 404,
+    body: { detail: "project_not_found" },
+    en: "was not found",
+    ar: "لم يتم العثور",
+  },
+  {
+    name: "404 not_found",
+    status: 404,
+    body: { detail: "not_found" },
+    en: "was not found",
+    ar: "لم يتم العثور",
+  },
+  {
+    name: "404 GitHub could not find the resource",
+    status: 404,
+    body: { detail: "GitHub could not find the requested resource (HTTP 404)" },
+    en: "was not found",
+    ar: "لم يتم العثور",
+  },
+  {
+    name: "409 stale snapshot",
+    status: 409,
+    body: { detail: STALE_TEXT },
+    en: "Reload the candidates",
+    ar: "أعد تحميل المرشحين",
+  },
+  {
+    name: "429 GitHub rate limit",
+    status: 429,
+    body: { detail: "GitHub rate limit exceeded (HTTP 429); retry after 60s" },
+    en: "Wait a few minutes",
+    ar: "انتظر بضع دقائق",
+  },
+  {
+    name: "400 page must be an integer",
+    status: 400,
+    body: { detail: "page must be an integer" },
+    en: "Check the token",
+    ar: "تحقق من الرمز",
+  },
+  {
+    name: "400 credential is required",
+    status: 400,
+    body: { detail: "credential is required and must be a string" },
+    en: "Check the token",
+    ar: "تحقق من الرمز",
+  },
+  {
+    name: "502 GitHub upstream",
+    status: 502,
+    body: { detail: "GitHub returned an unexpected response (HTTP 500)" },
+    en: "The service had a problem (502)",
+    ar: "واجهت الخدمة مشكلة (502)",
+  },
+];
+
+type Driver = { name: string; errorId: string; run: (locale: "en" | "ar") => Promise<void> };
+const DRIVERS: Driver[] = [
+  {
+    name: "04A03 list",
+    errorId: "github-repository-error",
+    run: async (locale) => {
+      render(repoSelector(locale));
+      fireEvent.change(screen.getByTestId("github-credential-input"), { target: { value: "tok" } });
+      fireEvent.click(screen.getByTestId("github-load-repositories-button"));
+    },
+  },
+  {
+    name: "04A04 branches",
+    errorId: "github-branch-ref-error",
+    run: async (locale) => {
+      render(branchSelector(locale));
+      fireEvent.click(screen.getByTestId("github-load-branches-button"));
+    },
+  },
+  {
+    name: "04A04 resolve",
+    errorId: "github-branch-ref-error",
+    run: async (locale) => {
+      render(
+        createElement(GitHubBranchRefSelector, {
+          apiBaseUrl: API,
+          organizationId: ORG,
+          projectId: PROJECT,
+          credential: "t",
+          repositoryIdentity: "acme/app",
+          targetApplicationConnectionId: CONNECTION,
+          defaultBranch: "main",
+          locale: locale,
+        }),
+      );
+      fireEvent.click(screen.getByTestId("github-resolve-ref-button"));
+    },
+  },
+  {
+    name: "04A18 list",
+    errorId: "candidate-selection-error",
+    run: async (locale) => {
+      render(candidateUI(locale));
+      fireEvent.click(screen.getByTestId("candidate-load-button"));
+    },
+  },
+  {
+    name: "04A18 select",
+    errorId: "candidate-selection-error",
+    run: async (locale) => {
+      render(candidateUI(locale));
+      // The list reply is consumed first (mockResolvedValueOnce order), then the refusal.
+      fireEvent.click(screen.getByTestId("candidate-load-button"));
+      await screen.findByTestId(`candidate-row-${CAND_A}`);
+      fireEvent.click(screen.getByTestId(`candidate-select-button-${CAND_A}`));
+    },
+  },
+];
+
+describe("[UX03-R3] real backend failure bodies are worded for the user, never echoed", () => {
+  for (const driver of DRIVERS) {
+    for (const real of REAL_CASES) {
+      for (const locale of ["en", "ar"] as const) {
+        test(`${driver.name} ${real.name} [${locale}]`, async () => {
+          if (driver.name === "04A18 select") {
+            fetchMock().mockResolvedValueOnce(ok(CANDIDATE_PAGE()));
+          }
+          fetchMock().mockResolvedValueOnce(refused(real.status, real.body));
+          await driver.run(locale);
+          const error = await screen.findByTestId(driver.errorId);
+          const text = error.textContent!;
+          // the recovery step that can actually succeed, in the right language
+          expect(text).toContain(locale === "en" ? real.en : real.ar);
+          // never the backend's own words, codes, GitHub text or ids
+          const detail = (real.body as { detail: string }).detail;
+          expect(text).not.toContain(detail);
+          expect(text).not.toMatch(/[a-z]+_[a-z_]+/);
+          expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+          // a recovery that cannot work for these failures
+          expect(text).not.toContain("Check what you entered");
+          expect(text).not.toContain("تحقق مما أدخلته");
+          if (locale === "ar") {
+            // no English sentence in an Arabic render ("GitHub" is a product name)
+            expect(text.replace(/GitHub/g, "").replace(/\(502\)/, "")).not.toMatch(/[A-Za-z]/);
+          }
+        });
+      }
+    }
+  }
+
+  test("an unknown 4xx shows a generic sentence with the status, never the detail", () => {
+    const failure: Failure = { kind: "http", status: 418, detail: "teapot_error" };
+    expect(selectorFailureMessage(failure, "en")).toContain("(418)");
+    expect(selectorFailureMessage(failure, "en")).not.toContain("teapot");
+    expect(selectorFailureMessage(failure, "ar")).toContain("(418)");
+  });
+
+  test("a 401 is GitHub's rejection unless the platform says not_authenticated; a null detail 401 is GitHub's too", () => {
+    expect(selectorFailureMessage({ kind: "http", status: 401, detail: null }, "en")).toContain(
+      "different token",
+    );
+    expect(
+      selectorFailureMessage({ kind: "http", status: 401, detail: "not_authenticated" }, "en"),
+    ).toContain("Sign in again");
+  });
+});
+
+describe("[UX03-R3] cheap advisories pinned", () => {
+  test("M03: a THIRD 'Load more' still uses the token that produced the list, not the edited field", async () => {
+    fetchMock().mockResolvedValueOnce(ok(REPO_PAGE({ has_next_page: true })));
+    render(repoSelector());
+    fireEvent.change(screen.getByTestId("github-credential-input"), { target: { value: "tokA" } });
+    fireEvent.click(screen.getByTestId("github-load-repositories-button"));
+    await screen.findByTestId("github-load-more-button");
+    fireEvent.change(screen.getByTestId("github-credential-input"), { target: { value: "tokB" } });
+    fetchMock().mockResolvedValueOnce(ok(REPO_PAGE({ page: 2, has_next_page: true })));
+    fireEvent.click(screen.getByTestId("github-load-more-button"));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect((screen.getByTestId("github-load-more-button") as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    fetchMock().mockResolvedValueOnce(ok(REPO_PAGE({ page: 3 })));
+    fireEvent.click(screen.getByTestId("github-load-more-button"));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+    expect(JSON.parse(fetchMock().mock.calls[2]![1].body)).toEqual({ credential: "tokA", page: 3 });
+  });
+
+  test("M17: a selected_at shaped like an ISO instant but not a real date is refused", () => {
+    for (const bad of ["2026-13-45T99:99:99Z", "2026-02-30T25:61:00Z"]) {
+      expect(bindSelection(CAND_B, SNAPSHOT, SELECTION({ selected_at: bad }))).toBeNull();
+    }
+  });
+
+  test("M22: an old error banner disappears when the next selection starts", async () => {
+    fetchMock().mockResolvedValueOnce(ok(CANDIDATE_PAGE()));
+    render(candidateUI());
+    fireEvent.click(screen.getByTestId("candidate-load-button"));
+    await screen.findByTestId(`candidate-row-${CAND_A}`);
+    fetchMock().mockResolvedValueOnce(refused(409, { detail: STALE_TEXT }));
+    fireEvent.click(screen.getByTestId(`candidate-select-button-${CAND_A}`));
+    await screen.findByTestId("candidate-selection-error");
+    const pending = inFlight();
+    fetchMock().mockReturnValueOnce(pending.promise);
+    fireEvent.click(screen.getByTestId(`candidate-select-button-${CAND_A}`));
+    await waitFor(() => expect(screen.queryByTestId("candidate-selection-error")).toBeNull());
+    await act(async () => {
+      pending.release(ok(SELECTION({ candidate_id: CAND_A })));
+    });
+    await screen.findByTestId("candidate-selection-confirmation");
+    expect(screen.queryByTestId("candidate-selection-error")).toBeNull();
   });
 });

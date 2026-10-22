@@ -71,17 +71,13 @@ const FAILURE_WORDS = {
     en: "You do not have access to this. Ask an organization administrator to grant it, then retry.",
     ar: "ليست لديك صلاحية الوصول إلى هذا. اطلب من مسؤول المؤسسة منحك الصلاحية ثم أعد المحاولة.",
   },
+  other: {
+    en: "The request failed ({status}). Try again; if it keeps happening, contact your administrator.",
+    ar: "فشل الطلب ({status}). حاول مرة أخرى، وإذا استمرت المشكلة فتواصل مع المسؤول.",
+  },
   server: {
     en: "The service had a problem ({status}). Wait a minute, then try again.",
     ar: "واجهت الخدمة مشكلة ({status}). انتظر دقيقة ثم حاول مرة أخرى.",
-  },
-  refused: {
-    en: "The server refused the request: {detail}. Check what you entered, then try again.",
-    ar: "رفض الخادم الطلب: {detail}. تحقق مما أدخلته ثم حاول مرة أخرى.",
-  },
-  refusedNoDetail: {
-    en: "The request failed ({status}). Check what you entered, then try again.",
-    ar: "فشل الطلب ({status}). تحقق مما أدخلته ثم حاول مرة أخرى.",
   },
 } as const satisfies Record<string, CatalogueEntry>;
 
@@ -95,13 +91,12 @@ export function failureMessage(failure: Failure, locale: Locale | string = "en")
     case "malformed":
       return failureWord("malformed", locale);
     case "http": {
-      // The backend's own reason wins on a 4xx: a 401 from GitHub's credential check is not "your
-      // session ended", and hiding the reason would send the user to fix the wrong thing.
-      if (failure.status >= 500) return failureWord("server", locale, { status: failure.status });
-      if (failure.detail) return failureWord("refused", locale, { detail: failure.detail });
+      // The backend's `detail` is never shown: it is an internal code (`role_not_authorized`) or an
+      // English developer sentence, neither of which a user can act on or read in Arabic.
       if (failure.status === 401) return failureWord("unauthenticated", locale);
       if (failure.status === 403) return failureWord("forbidden", locale);
-      return failureWord("refusedNoDetail", locale, { status: failure.status });
+      if (failure.status >= 500) return failureWord("server", locale, { status: failure.status });
+      return failureWord("other", locale, { status: failure.status });
     }
   }
 }
@@ -153,5 +148,58 @@ export function safeFailureMessage(failure: Failure, locale: Locale | string = "
       return failure.status >= 500
         ? failureMessage({ kind: "http", status: failure.status, detail: null }, locale)
         : safeWord("other", locale, { status: failure.status });
+  }
+}
+
+const SELECTOR_WORDS = {
+  githubRejected: {
+    en: "GitHub rejected this token. Use a different token with read access to the repository, then try again.",
+    ar: "رفض GitHub هذا الرمز. استخدم رمزًا آخر بصلاحية قراءة المستودع ثم حاول مرة أخرى.",
+  },
+  notFound: {
+    en: "The project, connection or repository was not found, or this token cannot see it. Check that it exists and that you have access, then try again.",
+    ar: "لم يتم العثور على المشروع أو الاتصال أو المستودع، أو لا يستطيع هذا الرمز رؤيته. تحقق من وجوده ومن صلاحياتك ثم حاول مرة أخرى.",
+  },
+  staleSnapshot: {
+    en: "A newer snapshot of this connection exists, so this selection was not recorded. Reload the candidates to work on the latest snapshot, then choose again.",
+    ar: "توجد لقطة أحدث لهذا الاتصال، لذلك لم يتم تسجيل هذا الاختيار. أعد تحميل المرشحين للعمل على أحدث لقطة ثم اختر مرة أخرى.",
+  },
+  rateLimited: {
+    en: "GitHub is limiting requests right now. Wait a few minutes, then try again.",
+    ar: "يحدّ GitHub من الطلبات حاليًا. انتظر بضع دقائق ثم حاول مرة أخرى.",
+  },
+  invalid: {
+    en: "The request was not accepted. Check the token, the branch or ref, and the page you asked for, then try again.",
+    ar: "لم يتم قبول الطلب. تحقق من الرمز والفرع أو المرجع والصفحة المطلوبة ثم حاول مرة أخرى.",
+  },
+} as const satisfies Record<string, CatalogueEntry>;
+
+const selectorWord = makeT(SELECTOR_WORDS);
+
+/**
+ * The message for FTF-04A03 / 04A04 / 04A18, whose routes answer with internal codes
+ * (`project_not_found`, `role_not_authorized`), English developer sentences (the stale-snapshot text
+ * carries a snapshot UUID) and GitHub's own wording. None of that is shown: each status gets a
+ * localized sentence with the step that can succeed. A 401 is GitHub rejecting the credential unless
+ * the platform itself says `not_authenticated` (the user's own session ended).
+ */
+export function selectorFailureMessage(failure: Failure, locale: Locale | string = "en"): string {
+  if (failure.kind !== "http") return failureMessage(failure, locale);
+  switch (failure.status) {
+    case 401:
+      return failure.detail === "not_authenticated"
+        ? failureMessage(failure, locale)
+        : selectorWord("githubRejected", locale);
+    case 404:
+      return selectorWord("notFound", locale);
+    case 409:
+      return selectorWord("staleSnapshot", locale);
+    case 429:
+      return selectorWord("rateLimited", locale);
+    case 400:
+    case 422:
+      return selectorWord("invalid", locale);
+    default:
+      return failureMessage(failure, locale);
   }
 }

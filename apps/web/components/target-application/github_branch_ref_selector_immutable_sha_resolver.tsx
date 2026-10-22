@@ -69,7 +69,7 @@ import {
   MALFORMED_FAILURE,
   NETWORK_FAILURE,
   failureFromResponse,
-  failureMessage,
+  selectorFailureMessage,
   isRecord,
   type Failure,
 } from "./common";
@@ -343,7 +343,7 @@ function BranchRefSelector({
       {failure && (
         <div data-testid="github-branch-ref-error">
           <Banner kind="error" locale={locale}>
-            {failureMessage(failure, locale)}
+            {selectorFailureMessage(failure, locale)}
           </Banner>
         </div>
       )}
