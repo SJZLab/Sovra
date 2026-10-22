@@ -50,7 +50,7 @@ export function ErrorSummary({
       <h2 id={titleId}>{resolvedTitle}</h2>
       <ul style={{ display: "grid", gap: "var(--space-2)" }}>
         {errors.map((e) => (
-          <li key={e.fieldId}>
+          <li key={e.fieldId} style={{ overflowWrap: "anywhere" }}>
             <a
               href={`#${e.fieldId}`}
               style={{ display: "inline-block", paddingBlock: "4px" }}
