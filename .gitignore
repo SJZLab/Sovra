@@ -25,5 +25,8 @@ reports/
 .vscode/
 .idea/
 
+# Agent-tool worktrees (local orchestration state, never project content)
+.claude/worktrees/
+
 # Python type-checker cache (never commit)
 .mypy_cache/
