@@ -30697,3 +30697,63 @@ work is unaffected). No owner ask raised (the pre-existing FTF-UX01 Dialog owner
 QUEUE.md stays open, unchanged, since PR #947 is unmerged). Certified count/product-true count
 unchanged by this shift (PR #947 is PROVISIONAL, unmerged, parked -- Control plane has not
 certified anything here).
+
+## 2026-10-22T2251Z -- Scheduled relay shift -- frontier saturated, no new claim
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` -- no mismatch. STEP 0.1:
+read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh this shift (all three multi-MB
+append-only; read via `tail`/`grep`/targeted `sed` offsets, not in full). `BLOCKER.md`'s only entry
+is `## RESOLVED 2026-10-20T04:45Z` at the top -- no live entry anywhere in the file. STEP 0.2: no
+`cognee-cli` binary on this sandbox -- text-search fallback declared.
+
+**Returned work first.** Fetched `origin/main` fresh (`703008e..921e4ef`, this session's designated
+branch was already even with it -- no divergence). Listed all 17 open PRs (`list_pull_requests`,
+no labels on any of them, so no `needs-fix`) and checked each non-draft `[relay]`/Control-plane PR's
+real status: `pull_request_read`'s `get_status` returns empty on this repo (Checks API via
+`ci.yml`, not the legacy Status API, matching the 1450Z shift's own finding), so used `get_check_runs`
+directly against each head SHA instead.
+
+- **#979 FTF-UX06-r2** -- `ci-verdict` completed `success`. `mergeable_state: clean`.
+- **#978 FTF-H011-P2-r2** -- `ci-verdict` completed `success`. `mergeable_state: clean`.
+- **#971 FTF-R006-P1b-r2** -- `gate` still `in_progress` (no `ci-verdict` yet); every other job
+  shown is `success`. `mergeable_state: unstable` -- pending checks, not a failure.
+- **#948 FTF-H010-P3-r1** -- same: `gate` `in_progress`, everything else `success`,
+  `mergeable_state: unstable` for the same pending-checks reason.
+- **#950 FTF-0904-F2 (Control-plane produced, tests-only)** -- `mergeable_state: unstable`
+  (pending checks); its own body already discloses a possible conflict with #949, which merged
+  into `main` hours ago (`7451e8d`), so that risk is now moot for Control plane to resolve, not
+  relay's.
+- **#974 FTF-H011-P3-r1** (draft) -- `mergeable_state: unstable` (mid-flight WIP, pushed within
+  the last few hours; nothing red).
+- **#961 FTF-R006-P2-r1** / **#960 FTF-UX04-r1** (drafts) -- both `mergeable_state: clean`,
+  pushed today, concurrent-session WIP.
+- **#947 FTF-UX02-r2** -- the item PARKED by the 2026-10-22T0230Z shift; left untouched per that
+  entry's own instruction.
+- **#970 / #967 / #965 / #959 / #957** -- plain docs/chore PRs (not `[relay]`-titled), nothing
+  blocking relay work.
+- **#759 / #732 / #709** -- older open drafts (FTF-1504 / FTF-0617 / FTF-R004-P3), already claimed
+  per the Claim rule (open PR = claim); untouched, consistent with every prior shift.
+
+**No red `ci-verdict`, no merge conflict, no `needs-fix` label found on any open PR.**
+
+**Active/Backlog sweep (recomputed fresh from QUEUE.md's own Active section, not trusted from a
+prior shift's summary):** every bullet 0b/0c/0d/0e/0f/0g/0k is accounted for -- 0b (`#949`), 0d
+(FTF-UX07-r2, `#973`) and 0e (FTF-UX05-r2, `#976`) are already merged to `main` (confirmed via
+`git log --oneline`, not assumed); 0c (FTF-R006-P1b-r2) is open as `#971`; 0f (FTF-UX06-r2) is open
+as `#979`; 0g (FTF-H011-P2-r2) is open as `#978`; 0k is the already-PARKED `#947`. Nothing in
+Active is unclaimed. Every Backlog UX0x area slice likewise has an open PR from a concurrent
+session inside the 3-hour claim window (UX04 `#960`, the R006 family `#961`/`#971`/`#970`-parked,
+H011-P3 `#974`). No genuinely unclaimed, undeclined, non-parked item was found anywhere in Active
+or Backlog this shift.
+
+This is the same "frontier saturated" conclusion three consecutive prior shifts already reached
+(`2026-10-22T0650Z`, `2026-10-22T0855Z`, `2026-10-22T1450Z`) -- re-derived fresh this shift from a
+live `list_pull_requests` + `get_check_runs` sweep and a fresh read of QUEUE.md's Active/Backlog/
+Parked sections, not trusted from their text. Full detail: `docs/progress/2026-10-22T2251Z-relay.md`.
+
+STEP 3: this file and the shift log (plain docs-only PR, not `[relay]`-titled; `QUEUE.md` and
+`docs/certifications/queue.md` untouched, per "No shared-file edits"). STEP 4 stop condition: none
+of (a)-(e) apply in the blocking sense -- routine saturation, not a blocker. No new `BLOCKER.md`
+entry. No new "Owner actions -- current" line (the three existing dated asks -- FTF-UX01 Radix
+install, FTF-0616 judge gateway credential, FTF-04A31 private-repo credential -- are unchanged).
+No item claimed, no new PR opened against a task ID this shift.
