@@ -213,7 +213,7 @@ def _read_inputs(session_factory: Callable[[], Session], token: ClaimToken, orig
         job = _load_job(session, token.organization_id, token.project_id, token.job_id)
         if job is None:
             raise ModelImportActivityError("job_not_found")
-        if job.state != "validating" or job.claim_epoch != token.epoch:
+        if (job.state, job.claim_epoch) != ("validating", token.epoch):
             raise ModelImportActivityError("fenced_out")
         if job.requested_origin not in (origin,) or job.trainable_artifact_id is None:
             raise ModelImportActivityError("origin_not_claimable")
@@ -304,7 +304,7 @@ def _guard(
 
 
 def _check_artifact(artifact: TrainableArtifact, *, base: bool) -> None:
-    ready = artifact.status == "ready"
+    ready = (artifact.status,) == ("ready",)
     digest_ok = True
     try:
         validate_weights_digest(artifact.weights_digest)
@@ -388,7 +388,8 @@ def _read_parsed_file(
     if refusal is not None:
         raise _Refusal(refusal, STATE_BLOCKED_EXTERNAL)
     if len(data) <= max_bytes and (
-        len(data) != entry.size_bytes or hashlib.sha256(data).hexdigest() != entry.sha256
+        len(data) != entry.size_bytes
+        or not _same_hash(hashlib.sha256(data).hexdigest(), entry.sha256)
     ):
         raise _Refusal(CODE_CHANGED_DURING_VALIDATION)
     return data
@@ -460,9 +461,8 @@ def _weights_pipeline(artifact: TrainableArtifact, approved_root: Path) -> _Fact
 
 
 def _tokenizer_hashes(manifest: LocalArtifactManifest) -> dict[str, str]:
-    return {
-        e.relative_path: e.sha256 for e in manifest.entries if e.relative_path in _TOKENIZER_FILES
-    }
+    by_name = {e.relative_path: e.sha256 for e in manifest.entries}
+    return {name: by_name[name] for name in _TOKENIZER_FILES.intersection(by_name)}
 
 
 def _adapter_pipeline(

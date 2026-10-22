@@ -1964,6 +1964,13 @@ def group_j(m: Any) -> None:
             env, ADAPTER, fx, "J10 base without a resolved digest", "failed", "base_not_validated"
         )
 
+    # J11: a stored artifact status that is a look-alike of `ready` is not ready
+    for variant in ("Ready", " ready", "ready "):
+        with Env(m).patched() as env:
+            fx = env.weights_job("w", weights_files())
+            raw(env, "UPDATE trainable_artifacts SET status = :s", s=variant)
+            expect_outcome(env, FULL, fx, f"J11 status {variant!r}", "failed", "artifact_not_ready")
+
 
 # -- faults ----------------------------------------------------------------------------------------
 
