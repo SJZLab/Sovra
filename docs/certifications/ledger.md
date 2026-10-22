@@ -12245,3 +12245,29 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   04A18/04A21 role=alert and the 04A03 failed-submit focus unpinned (C5/C5b/R4/R4b/C8/C8b GREEN); checklist abbreviated
   and stale submission statements. Law 9: the 04A22 parent pair rewrite is a tightening. Faults: round-1 8/8 RED, own
   41 RED. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
+## 2026-10-22T11:23Z — CERTIFIED (child slice): FTF-UX03
+- **FTF-UX03: CERTIFIED (L2)** (round 3 under the stopping rule; PR #956, merge 369decc2c817b93b740ee6ee40da8a6dda6b8eb6, head e6ec2b76). Producer
+  session_01Tc9f9M7VSNCCVAoNdSa4UB ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI 80/80, ci-verdict 119700816292;
+  gate 119689270693 installed Chromium and ran vitest (step-level evidence; log host refused). Local vitest 2422/2422
+  (UX03 browser harness 161 in real Chromium). Overflow: every round-2 reproduction now 0 px at 1280/768/390/320, 200 % and
+  400 %, en and ar; wrap removal per site RED (W1-W10). Announce: C5/C5b/R4/R4b RED; 44 Chromium failure pages each one
+  role=alert, axe 0. Focus: C8/C8b RED; Chromium focus on ErrorSummary after blank/whitespace/repeat submit. Evidence: 39
+  pro-rules items, stale statements corrected. Faults 33/35 RED (GREEN: two equivalent wrap variants, no overflow). Law 15:
+  FTF-UX01 REQUALIFIED (two CSS-only lines; UX01 65/65, its earlier faults RED); parents 04A03/04A04/04A18/04A21/04A22
+  REQUALIFIED (no assertion weakened); UX02 parents pass. No severity 3-4. Gates: product_truth 49/49, validate_spec
+  --strict, data_exposure OK. UNWIRED until FTF-H029.
+## 2026-10-22T11:23Z — CERTIFIED (child slice): FTF-1505-F1 — certifier of record session_01RgxRM92WR9EPsUX9K1QWH7
+- **FTF-1505-F1: CERTIFIED (L2)** (round 3 under the stopping rule; PR #958, merge 24f1672f2ca4e4538fa9600195c45f9a13052876, head 7721996a). Producer of
+  rounds 1-3: the Control-plane session session_01QVznorVMjnmcttUhyDnoGR; certifier of record: the separate cloud session
+  session_01RgxRM92WR9EPsUX9K1QWH7 (named in no commit). Round 1 (#944, merge 59ba166c): production change in
+  `_iter_archive_members` (a .tar.gz is decompressed whole, CRC-checked and bounded, then opened as a plain tar) found sound
+  by session_01AoheU1Chq4VUrFdB9Yw9sB, returned for QUICK-GATE-SUFFIX-CAP and GZIP-SALVAGE pins; round 2 (#951, merge
+  052475fa) returned by session_017Gk8f2Yuv2S56CqTraqKu8 for HEX-GATE-SUFFIX-CAP-2MiB and
+  GZIP-TRUNCATION-AT-MEMBER-BOUNDARY (no production violation either round). Round 3: head-secret runs exactly
+  MAX_SCAN_BYTES with the secret on decoded byte 0; trailer-only and full-flush member-boundary cuts. CI: ci-verdict
+  119723041245; gate 119702086040 step 65 "FTF-1505 negative-test proof" passed; secret-scanning 119702086072 "11166
+  unit(s) scanned, 14200 finding(s), 0 blocking -- clean". Local: full suite all checks passed; real full-history scan
+  11,166 units, 0 blocking. Faults: every suffix cap to decoded-1 RED in hex gate, base64 gate and _could_match_any_rule
+  (exact-length controls GREEN); decompressor variants (zlib wbits=31 without eof check, EOFError swallowed, salvage) RED;
+  ~490 cut probes all blocking. Advisory A1 MULTI-MEMBER-DROP (outside the DoD). Law 9: tests + docs only in rounds 2-3.
+  FTF-1505 REQUALIFIED. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
