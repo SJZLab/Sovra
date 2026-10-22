@@ -183,10 +183,15 @@ _SEP = r"""\\*["']?[ \t]*[:=][ \t]*"""
 # backslash is left unpaired, and that lone case is `\\[^\r\n]` on its own for a run of exactly one.
 # A paired (even) run never reaches the optional escape, so the real closing quote is left for the
 # literal `"`/`'` below, exactly as an even run of literal backslashes should.
+# Round 3 (F2 r3, UNTERMINATED-FAILS-CLOSED): with escape-aware bodies, a value whose last quote
+# is escaped (`password="V\\"`, an odd backslash run and no later quote) has no closing quote, so
+# the bare-quote alternative used to fail and the generic pair rule printed the secret, which
+# certified FTF-0904 redacts. An unterminated quoted value now runs to the end of the line (fail
+# closed); a terminated one still ends at its real closing quote.
 _QUOTED_VALUE = (
     r'(?<!\\)\\++"(?:[^"\\\r\n]++|\\++(?!"))*+\\+"'
-    r"""|"(?:[^"\\\r\n]++|(?:\\\\)++(?:\\[^\r\n])?|\\[^\r\n])*+"""
-    r""""|'(?:[^'\\\r\n]++|(?:\\\\)++(?:\\[^\r\n])?|\\[^\r\n])*+'"""
+    r"""|"(?:[^"\\\r\n]++|(?:\\\\)++(?:\\[^\r\n])?|\\[^\r\n])*+(?:"|(?=[\r\n])|\Z)"""
+    r"""|'(?:[^'\\\r\n]++|(?:\\\\)++(?:\\[^\r\n])?|\\[^\r\n])*+(?:'|(?=[\r\n])|\Z)"""
 )
 
 _PEM = re.compile(
