@@ -126,6 +126,8 @@ export interface ManifestRecord {
 
 export interface EvidenceRecord {
   id: string;
+  organization_id: string;
+  agent_manifest_id: string;
   field_path: string;
   evidence_type: string;
   repository_commit_sha: string | null;
@@ -289,11 +291,18 @@ const EVIDENCE_NULLABLE_STRINGS = [
 const EVIDENCE_NULLABLE_NUMBERS = ["line_start", "line_end", "confidence_score"] as const;
 
 /** Strict parse of the evidence list: one bad row makes the whole list malformed (never "no evidence"). */
-export function parseEvidence(body: unknown): EvidenceRecord[] | null {
+export function parseEvidence(
+  body: unknown,
+  expected: { manifestId: string; organizationId: string },
+): EvidenceRecord[] | null {
   if (!Array.isArray(body)) return null;
   for (const row of body as unknown[]) {
     if (!isRecord(row)) return null;
     if (typeof row.id !== "string" || row.id === "") return null;
+    // Bound to the request: a row that names another manifest or organization is never this
+    // manifest's evidence.
+    if (row.agent_manifest_id !== expected.manifestId) return null;
+    if (row.organization_id !== expected.organizationId) return null;
     if (typeof row.field_path !== "string") return null;
     if (
       typeof row.evidence_type !== "string" ||
@@ -580,8 +589,14 @@ function ManifestReviewEditInner({
         return;
       }
       const manifestBody = parseManifest(manifestResult.body);
-      const evidenceBody = parseEvidence(evidenceResult.body);
-      if (!manifestBody || !evidenceBody) {
+      const evidenceBody = parseEvidence(evidenceResult.body, { manifestId, organizationId });
+      // The reply must be the manifest that was asked for, not just any well-formed manifest.
+      if (
+        !manifestBody ||
+        !evidenceBody ||
+        manifestBody.id !== manifestId ||
+        manifestBody.project_id !== projectId
+      ) {
         setLoadFailure(MALFORMED_FAILURE);
         return;
       }
@@ -643,6 +658,8 @@ function ManifestReviewEditInner({
   const editable = manifest?.status === "draft" || manifest?.status === "review_required";
 
   function handleEdit(field: string, text: string) {
+    // A save / submit / lock is in flight: an edit now would be reverted or lost when the reply lands.
+    if (busy) return;
     if (!manifest || !editable) return;
     const current = serverText(manifest, field);
     const next = { ...drafts };
@@ -813,6 +830,7 @@ function ManifestReviewEditInner({
       : "";
   const roleEditable =
     editable &&
+    !busy &&
     bindingForRole.ok &&
     !!bindingForRole.value &&
     typeof bindingForRole.value === "object" &&
@@ -950,7 +968,7 @@ function ManifestReviewEditInner({
               data-testid={`field-input-${field}`}
               dir={textField ? "auto" : "ltr"}
               value={draft ? draft.text : current}
-              readOnly={!editable}
+              readOnly={!editable || busy}
               aria-invalid={state === "invalid" ? true : undefined}
               aria-describedby={describedBy}
               rows={textField ? 1 : 6}

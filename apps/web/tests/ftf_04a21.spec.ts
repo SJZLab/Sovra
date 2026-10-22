@@ -97,6 +97,8 @@ function manifestRecord(overrides: Record<string, unknown> = {}): ManifestRecord
 function evidenceRow(overrides: Partial<EvidenceRecord> = {}): EvidenceRecord {
   return {
     id: "ev-1",
+    organization_id: ORG_ID,
+    agent_manifest_id: MANIFEST_ID,
     field_path: "agent_entrypoint_json",
     evidence_type: "repo_symbol",
     repository_commit_sha: "abcdef0123456789abcdef0123456789abcdef01",
@@ -1239,6 +1241,8 @@ test.each([
 
 const EVIDENCE_KEYS = [
   "id",
+  "organization_id",
+  "agent_manifest_id",
   "field_path",
   "evidence_type",
   "repository_commit_sha",
@@ -1252,6 +1256,12 @@ const EVIDENCE_KEYS = [
 const EVIDENCE_WRONG: [string, unknown][] = [
   ["id", 5],
   ["id", ""],
+  ["agent_manifest_id", "99999999-9999-9999-9999-999999999999"],
+  ["agent_manifest_id", 5],
+  ["agent_manifest_id", null],
+  ["organization_id", "99999999-9999-9999-9999-999999999999"],
+  ["organization_id", 5],
+  ["organization_id", null],
   ["field_path", null],
   ["evidence_type", "guess"],
   ["evidence_type", 3],
@@ -1293,16 +1303,21 @@ test.each([
   await expectMalformedAndInert();
 });
 
+const EV_CTX = { manifestId: MANIFEST_ID, organizationId: ORG_ID };
+
 test("[UX03-C7] the parsers accept the real shapes and reject the wrong ones directly", () => {
   expect(parseManifest(manifestRecord())).not.toBeNull();
   expect(parseManifest({ ...manifestRecord(), status: "superseded" })).not.toBeNull();
   expect(parseManifest({ ...manifestRecord(), manifest_sha256: "a".repeat(64) })).not.toBeNull();
   expect(parseManifest(undefined)).toBeNull();
-  expect(parseEvidence([])).toEqual([]);
+  expect(parseEvidence([], EV_CTX)).toEqual([]);
   expect(
-    parseEvidence([evidenceRow({ line_start: null, line_end: null, confidence_score: null })]),
+    parseEvidence(
+      [evidenceRow({ line_start: null, line_end: null, confidence_score: null })],
+      EV_CTX,
+    ),
   ).toHaveLength(1);
-  expect(parseEvidence(undefined)).toBeNull();
+  expect(parseEvidence(undefined, EV_CTX)).toBeNull();
 });
 
 // --- [UX03-D] one binding function: the reply must match what was sent --------------------------
@@ -1693,4 +1708,72 @@ test("[UX03-G7] evidence with a start line but no end line shows the start only,
   renderLocale("en");
   await waitFor(() => expect(screen.getByTestId("evidence-location-ev-1")).toBeTruthy());
   expect(screen.getByTestId("evidence-location-ev-1").textContent).toBe("agent/main.py:10");
+});
+
+// --- [UX03-R1] pre-review: replies are bound to the manifest/project that was asked for ---------
+
+const OTHER_ID = "99999999-9999-9999-9999-999999999999";
+
+test.each([
+  ["id", OTHER_ID],
+  ["project_id", OTHER_ID],
+])(
+  "[UX03-R1] a GET manifest reply whose %s names another resource is malformed and renders nothing of it",
+  async (field, value) => {
+    stubServer({ manifest: manifestRecord({ [field]: value, agent_name: "OTHER-AGENT" }) });
+    renderLocale("en");
+    await expectMalformedAndInert();
+    expect(document.body.textContent).not.toContain("OTHER-AGENT");
+  },
+);
+
+test("[UX03-R1] evidence of another manifest is never shown as this manifest's evidence", async () => {
+  stubServer({ evidence: [evidenceRow({ agent_manifest_id: OTHER_ID, symbol: "OTHER-SYMBOL" })] });
+  renderLocale("en");
+  await expectMalformedAndInert();
+  expect(document.body.textContent).not.toContain("OTHER-SYMBOL");
+});
+
+test("[UX03-R1] parseEvidence binds agent_manifest_id and organization_id, one fault each", () => {
+  expect(parseEvidence([evidenceRow()], EV_CTX)).toHaveLength(1);
+  expect(parseEvidence([evidenceRow({ agent_manifest_id: OTHER_ID })], EV_CTX)).toBeNull();
+  expect(parseEvidence([evidenceRow({ organization_id: OTHER_ID })], EV_CTX)).toBeNull();
+  expect(
+    parseEvidence(
+      [evidenceRow(), evidenceRow({ id: "ev-2", agent_manifest_id: OTHER_ID })],
+      EV_CTX,
+    ),
+  ).toBeNull();
+});
+
+test("[UX03-R1] edits typed while a save is in flight are refused (read-only), never lost or reverted", async () => {
+  let reply: (() => void) | undefined;
+  stubFetch((url, method, body) => {
+    if (url.pathname.endsWith("/evidence")) return jsonResponse(200, [evidenceRow()]);
+    if (method === "PATCH") {
+      return new Promise((resolve) => {
+        reply = () => resolve(jsonResponse(200, { ...manifestRecord(), ...(body as object) }));
+      });
+    }
+    return jsonResponse(200, manifestRecord());
+  });
+  renderLocale("en");
+  await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+  edit("mandate_json", '{"goal":"first"}');
+  fireEvent.click(saveButton());
+  await waitFor(() => expect(saveButton().disabled).toBe(true));
+  const stored = storage.getItem(draftStorageKey(ORG_ID, PROJECT_ID, MANIFEST_ID));
+  expect(input("mandate_json").readOnly).toBe(true);
+  expect(input("agent_name").readOnly).toBe(true);
+  expect((screen.getByTestId("model-role-select") as HTMLSelectElement).disabled).toBe(true);
+  edit("agent_name", "typed-during-save");
+  edit("mandate_json", '{"goal":"second"}');
+  expect(input("agent_name").value).not.toBe("typed-during-save");
+  expect(input("mandate_json").value).toBe('{"goal":"first"}');
+  expect(storage.getItem(draftStorageKey(ORG_ID, PROJECT_ID, MANIFEST_ID))).toBe(stored);
+  await act(async () => reply?.());
+  await waitFor(() => expect(screen.getByTestId("manifest-action-notice")).toBeTruthy());
+  expect(input("mandate_json").readOnly).toBe(false);
+  edit("agent_name", "after");
+  expect(input("agent_name").value).toBe("after");
 });
