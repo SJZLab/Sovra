@@ -458,3 +458,125 @@ test("UX05 round 2: locale='ar' translates the empty-state text, and the empty d
     "لا يوجد أرخص سعر معتمد بعد -- سجّل واعتمد سعرًا لتظهر هنا.",
   );
 });
+
+// -- UX05 round 2 (second L2 return, PR #972) -----------------------------------------------
+
+test("UX05 r2 (L2 return): an empty {} 200 search response is a typed error, never a silently-accepted empty result (Law 17)", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("cost-profile-form-error")).toBeTruthy());
+  // Never silently accepted as a real, validated empty result set (EmptyState requires `search`
+  // to be set, which never happens on a rejected malformed response):
+  expect(screen.queryByTestId("cost-profile-reload-button")).toBeNull();
+});
+
+test("UX05 r2 (L2 return): a results array whose item is malformed (certifiable_cheapest is a string) is rejected, not rendered", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({
+      results: [{ ...searchResult(), certifiable_cheapest: "yes" }],
+      current_cheapest_certified: null,
+    }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("cost-profile-form-error")).toBeTruthy());
+  expect(screen.queryByTestId(`cost-profile-result-${baseRecord().id}`)).toBeNull();
+});
+
+test("UX05 r2 (L2 return): a results array that is not an array (an object instead) is rejected", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ results: { not: "an array" }, current_cheapest_certified: null }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("cost-profile-form-error")).toBeTruthy());
+});
+
+test("UX05 r2 (L2 return): the create/verify/select controls render through the shared Button component at the minimum target size", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({
+      results: [searchResult({ verified_at: null })],
+      current_cheapest_certified: null,
+    }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId(`cost-profile-verify-${baseRecord().id}`)).toBeTruthy(),
+  );
+  for (const testId of ["cost-profile-submit-button", `cost-profile-verify-${baseRecord().id}`]) {
+    const el = screen.getByTestId(testId) as HTMLElement;
+    expect(el.style.minBlockSize).toBe("var(--target-min)");
+    expect(el.style.minInlineSize).toBe("var(--target-min)");
+  }
+  expect((screen.getByTestId("cost-profile-type-select") as HTMLElement).style.minBlockSize).toBe(
+    "var(--target-min)",
+  );
+});
+
+test("UX05 r2 (L2 return): a successful load with zero results shows an EmptyState with a reload action", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ results: [], current_cheapest_certified: null }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("cost-profile-reload-button")).toBeTruthy());
+  expect(screen.getByText("No rates recorded yet")).toBeTruthy();
+});
+
+test("UX05 r2 (L2 return): a long source/label value in a result is wrapped, not left to overflow", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  const longResult = searchResult({ source: "https://example.com/" + "x".repeat(300) });
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ results: [longResult], current_cheapest_certified: null }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId(`cost-profile-result-${longResult.id}`)).toBeTruthy(),
+  );
+  expect(
+    (screen.getByTestId(`cost-profile-result-${longResult.id}`) as HTMLElement).style.overflowWrap,
+  ).toBe("anywhere");
+});
