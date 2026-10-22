@@ -601,3 +601,208 @@ test("FTF-0309-F7 a 200 whose body is still being read when the model switches i
   expect(screen.queryByRole("alert")).toBeNull();
   expect(screen.queryByTestId("declared-vram")).toBeNull();
 });
+
+// FTF-UX05 (2026-10-22): audit finding H1 (severity 1) -- "Checking..." carried no `aria-busy`
+// (cross-cutting X7); finding X4 (bilingual, partial).
+
+test("UX05: the Check compatibility button carries aria-busy while its own request is in flight", async () => {
+  let release: (value: unknown) => void = () => {};
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Promise((resolve) => (release = resolve))),
+  );
+  renderUI();
+  const button = screen.getByRole("button", { name: "Check compatibility" });
+  expect(button.getAttribute("aria-busy")).toBe("false");
+  fireEvent.click(button);
+  await waitFor(() =>
+    expect(screen.getByText("Checking...").getAttribute("aria-busy")).toBe("true"),
+  );
+  release({ ok: true, status: 200, json: async () => capabilities() });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Check compatibility" }).getAttribute("aria-busy"),
+    ).toBe("false"),
+  );
+});
+
+test("UX05: locale='ar' sets lang/dir and renders the button label in Arabic", () => {
+  render(
+    createElement(CapabilityCompatibilityUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      connectionId: CONN_ID,
+      projectId: PROJECT_ID,
+      modelName: ALIAS,
+      locale: "ar",
+    }),
+  );
+  const section = screen.getByLabelText("Capability compatibility");
+  expect(section.getAttribute("dir")).toBe("rtl");
+  expect(section.getAttribute("lang")).toBe("ar");
+  expect(screen.getByRole("button", { name: "فحص التوافق" })).toBeTruthy();
+});
+
+// ---- round 2 (L2 return): full bilingual pass, dt labels, dimension headings, Train/blockers ----
+
+test("UX05 round 2: locale='ar' translates every dt label and the dimension row headings (data-testid stays English-keyed)", async () => {
+  reply = ok(capabilities());
+  render(
+    createElement(CapabilityCompatibilityUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      connectionId: CONN_ID,
+      projectId: PROJECT_ID,
+      modelName: ALIAS,
+      locale: "ar",
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "فحص التوافق" }));
+  await waitFor(() => expect(screen.queryByText("جارٍ الفحص...")).toBeNull());
+
+  const dts = Array.from(document.querySelectorAll("dt")).map((dt) => dt.textContent);
+  expect(dts).toEqual([
+    "الوصول إلى البوابة",
+    "القدرة",
+    "الدور",
+    "المصنف",
+    "تم فحص الاكتشاف",
+    "فحص استدعاء الأداة",
+  ]);
+  // The internal data-testid scheme is unchanged (an identifier, not visible copy) even though the
+  // visible heading text is now translated.
+  const methodRow = screen.getByTestId("dimension-Method support");
+  expect(methodRow.querySelector("th")?.textContent).toBe("دعم الطريقة");
+  expect(screen.getByTestId("dimension-Tested VRAM").querySelector("th")?.textContent).toBe(
+    "ذاكرة GPU المُختبرة",
+  );
+  expect(screen.getByTestId("dimension-Chat template").querySelector("th")?.textContent).toBe(
+    "قالب المحادثة",
+  );
+});
+
+test("UX05 round 2: locale='ar' translates the blockers list's connecting words, and the Train button/status", async () => {
+  reply = ok(capabilities({ access: "not_granted" }));
+  const onTrain = vi.fn();
+  render(
+    createElement(CapabilityCompatibilityUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      connectionId: CONN_ID,
+      projectId: PROJECT_ID,
+      modelName: ALIAS,
+      locale: "ar",
+      onTrain,
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "فحص التوافق" }));
+  await waitFor(() => expect(screen.queryByText("جارٍ الفحص...")).toBeNull());
+  expect(screen.getByText("الوصول إلى البوابة هو not_granted", { exact: false })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "تدريب" })).toBeTruthy();
+});
+
+test("UX05 round 2: locale='ar' translates 'Not trainable', 'not ready' and 'license is not approved' blockers", async () => {
+  cleanup();
+  reply = ok(capabilities({ trainable: false, capability_reason: "no_trainable_evidence" }));
+  render(
+    createElement(CapabilityCompatibilityUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      connectionId: CONN_ID,
+      projectId: PROJECT_ID,
+      modelName: ALIAS,
+      locale: "ar",
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "فحص التوافق" }));
+  await waitFor(() => expect(screen.queryByText("جارٍ الفحص...")).toBeNull());
+  expect(
+    screen.getByText("غير قابل للتدريب: no_trainable_evidence", { exact: false }),
+  ).toBeTruthy();
+
+  cleanup();
+  reply = ok(capabilities({ artifact: { ...capabilities().artifact, availability: "none" } }));
+  render(
+    createElement(CapabilityCompatibilityUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      connectionId: CONN_ID,
+      projectId: PROJECT_ID,
+      modelName: ALIAS,
+      locale: "ar",
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "فحص التوافق" }));
+  await waitFor(() => expect(screen.queryByText("جارٍ الفحص...")).toBeNull());
+  expect(
+    screen.getByText("المصنف القابل للتدريب هو none، غير جاهز", { exact: false }),
+  ).toBeTruthy();
+
+  cleanup();
+  reply = ok(capabilities({ artifact: { ...capabilities().artifact, license_approved: false } }));
+  render(
+    createElement(CapabilityCompatibilityUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      connectionId: CONN_ID,
+      projectId: PROJECT_ID,
+      modelName: ALIAS,
+      locale: "ar",
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "فحص التوافق" }));
+  await waitFor(() => expect(screen.queryByText("جارٍ الفحص...")).toBeNull());
+  expect(screen.getByText("ترخيص المصنف غير مقبول")).toBeTruthy();
+});
+
+test("UX05 round 2: locale='ar' translates the 503/404 error messages the component itself authors", async () => {
+  await load({ ok: false, status: 503, body: { detail: "gateway_unavailable" } });
+  cleanup();
+  reply = { ok: false, status: 503, body: { detail: "gateway_unavailable" } };
+  render(
+    createElement(CapabilityCompatibilityUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      connectionId: CONN_ID,
+      projectId: PROJECT_ID,
+      modelName: ALIAS,
+      locale: "ar",
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "فحص التوافق" }));
+  await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+  expect(screen.getByRole("alert").textContent).toContain("تعذّر الوصول إلى البوابة");
+
+  cleanup();
+  reply = { ok: false, status: 404, body: { detail: "not_found" } };
+  render(
+    createElement(CapabilityCompatibilityUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      connectionId: CONN_ID,
+      projectId: PROJECT_ID,
+      modelName: ALIAS,
+      locale: "ar",
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "فحص التوافق" }));
+  await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+  expect(screen.getByRole("alert").textContent).toContain("لم يتم العثور على الاتصال");
+});
+
+test("UX05 round 2: an unrecognized error detail is data (shown verbatim, no mistranslation) even under locale='ar'", async () => {
+  reply = { ok: false, status: 403, body: { detail: "role_not_authorized" } };
+  render(
+    createElement(CapabilityCompatibilityUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      connectionId: CONN_ID,
+      projectId: PROJECT_ID,
+      modelName: ALIAS,
+      locale: "ar",
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "فحص التوافق" }));
+  await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+  expect(screen.getByRole("alert").textContent).toBe("role_not_authorized");
+});
