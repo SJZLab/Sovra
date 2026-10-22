@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-21T22:49Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-22T00:10Z. Source: `python3 scripts/status.py` on main.
 - **Status: 157/304 certified · 49 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,9 @@ Updated: 2026-10-21T22:49Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-22T00:10Z:**
+  - CERTIFIED (child slice): FTF-H010-P3a after 4 rounds - the import validators for full weights and adapters (file allow-list, strict JSON, safetensors header, shard and target checks) now have every behaviour pinned, including letter-case and whitespace look-alikes; 0 unreviewed mutation survivors.
+  - CERTIFIED (child slice): FTF-0501-F2 - uploads that declare UTF-8, UTF-8 with BOM, UTF-16 (LE/BE) or Windows-1256 are now checked strictly in that encoding, wherever the first non-ASCII byte falls; undeclared non-UTF-8 text is refused. FTF-0501 stays certified.
 - **2026-10-21T22:49Z:**
   - FTF-R006-P1a (Argilla client): the HTTPS time-limit fix is confirmed; the last gap was two missing tests, which the Control plane wrote (PR #941) instead of sending a fifth round back.
   - Returned, urgent: FTF-0904-F2 r2 (quoted values in logs). It fixed only half of the password leak; the Control plane closed the rest in PR #940 (pending independent certification). The relay still owes the escaped-JSON leak for names like state and code, and three missing tests.
