@@ -70,6 +70,12 @@ MODULE_PATH = (
     ROOT / "apps" / "api" / "app" / "model_versions" / "model_import_weights_validation.py"
 )
 
+# Under scripts/mutation_gate.py the production file is already mutated, so re-patching it with the
+# FAULTS texts would count a mutant "killed" by a patch-text mismatch instead of by behaviour: the
+# gate's kill signal must be the behavioural suite alone (same mode FTF-0904 / FTF-H010-P3a use).
+UNDER_MUTATION_GATE = "mutation-gate-pyc" in os.environ.get("PYTHONPYCACHEPREFIX", "")
+BEHAVIOUR_ONLY = os.environ.get("FTF_H010_P3_BEHAVIOUR_ONLY") == "1" or UNDER_MUTATION_GATE
+
 _failures: list[str] = []
 CHECK_COUNT = [0]
 
@@ -2299,6 +2305,11 @@ def main() -> int:
         for failure in failures[:80]:
             print(f"  {failure}")
         return 1
+    if BEHAVIOUR_ONLY:
+        print(
+            f"OK -- {CHECK_COUNT[0]} checks in 1 suite run (behaviour only, no fault copies) ({CID})"
+        )
+        return 0
     names = [f[0] for f in FAULTS]
     if len(set(names)) != len(names):
         failures.append("FAIL [I1] duplicate fault names")
