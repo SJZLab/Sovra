@@ -221,7 +221,12 @@ def _document(value: object) -> dict[str, Any]:
 
 
 def _rationale(value: object) -> str:
-    if type(value) is not str or not 1 <= len(value) <= _MAX_RATIONALE or "\x00" in value:
+    if (
+        type(value) is not str
+        or not 1 <= len(value) <= _MAX_RATIONALE
+        or not value.strip()
+        or "\x00" in value
+    ):
         raise _invalid_body()
     try:
         value.encode("utf-8")

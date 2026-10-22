@@ -857,10 +857,18 @@ def part_m_sql() -> None:
         text=True,
         env={**os.environ, "SOVRA_DATABASE_URL": "postgresql+psycopg://x:y@localhost:5432/z"},
     )
+    history = subprocess.run(
+        [sys.executable, "-m", "alembic", "history"],
+        cwd=str(ROOT / "apps" / "api"),
+        capture_output=True,
+        text=True,
+        env={**os.environ, "SOVRA_DATABASE_URL": "postgresql+psycopg://x:y@localhost:5432/z"},
+    )
     check(
         "LAW18-MIGRATION",
-        f"exactly one head, 0035: {heads.stdout!r}",
-        heads.stdout.count("(head)") == 1 and "0035_dataset_mappings" in heads.stdout,
+        f"exactly one head, with 0035 chained onto 0034: {heads.stdout!r}",
+        heads.stdout.count("(head)") == 1
+        and "0034_argilla_review_identity -> 0035_dataset_mappings" in history.stdout,
     )
 
 

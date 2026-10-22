@@ -8,13 +8,13 @@ rationale, in the same transaction as the proposal, approval or rejection it rec
 (`0032_split_manifest_requests` pattern):
 
 - `dataset_mapping_requests` -- one row per request that took effect. The key is unique per
-  (organization, project): the same key with the same digest replays the stored outcome, the same key
-  with another digest is `idempotency_key_reused`. The mapping is held true by a composite foreign key
-  to `dataset_mappings (organization_id, id)`. `rationale` is required for approve and reject and
-  absent for a proposal; it is never copied into an audit row. ENABLE + FORCE row-level security
-  with the `tenant_isolation` policy every prior migration uses (Section 65.1); `sovra_app` is
-  granted SELECT and INSERT only (no UPDATE, no DELETE), so a stored digest or rationale cannot be
-  rewritten.
+  (organization, project): the same key with the same digest replays the stored outcome, the same
+  key with another digest is `idempotency_key_reused`. The mapping is held true by a composite
+  foreign key to `dataset_mappings (organization_id, id)`. `rationale` is required for approve and
+  reject and absent for a proposal; it is never copied into an audit row. ENABLE + FORCE row-level
+  security with the `tenant_isolation` policy every prior migration uses (Section 65.1); `sovra_app`
+  is granted SELECT and INSERT only (no UPDATE, no DELETE), so a stored digest or rationale cannot
+  be rewritten.
 
 Revision ID: 0036_dataset_mapping_requests
 Revises: 0035_dataset_mappings
@@ -34,13 +34,12 @@ branch_labels = None
 depends_on = None
 
 APP_ROLE_NAME = "sovra_app"
-_TABLE = "dataset_mapping_requests"
 _HEX64 = "'^[0-9a-f]{64}$'"
 
 
 def upgrade() -> None:
     op.create_table(
-        _TABLE,
+        "dataset_mapping_requests",
         sa.Column(
             "id",
             postgresql.UUID(as_uuid=True),
@@ -51,7 +50,9 @@ def upgrade() -> None:
             "organization_id",
             postgresql.UUID(as_uuid=True),
             sa.ForeignKey(
-                "organizations.id", ondelete="CASCADE", name=f"fk_{_TABLE}_organization_id"
+                "organizations.id",
+                ondelete="CASCADE",
+                name="fk_dataset_mapping_requests_organization_id",
             ),
             nullable=False,
         ),
@@ -72,43 +73,55 @@ def upgrade() -> None:
             ["organization_id", "mapping_id"],
             ["dataset_mappings.organization_id", "dataset_mappings.id"],
             ondelete="RESTRICT",
-            name=f"fk_{_TABLE}_mapping",
+            name="fk_dataset_mapping_requests_mapping",
         ),
         sa.UniqueConstraint(
-            "organization_id", "project_id", "idempotency_key", name=f"uq_{_TABLE}_key"
+            "organization_id",
+            "project_id",
+            "idempotency_key",
+            name="uq_dataset_mapping_requests_key",
         ),
         sa.CheckConstraint(
-            "action IN ('propose', 'approve', 'reject')", name=f"ck_{_TABLE}_action"
+            "action IN ('propose', 'approve', 'reject')", name="ck_dataset_mapping_requests_action"
         ),
-        sa.CheckConstraint(f"request_digest ~ {_HEX64}", name=f"ck_{_TABLE}_digest"),
+        sa.CheckConstraint(f"request_digest ~ {_HEX64}", name="ck_dataset_mapping_requests_digest"),
         sa.CheckConstraint(
-            "char_length(idempotency_key) BETWEEN 8 AND 200", name=f"ck_{_TABLE}_key_length"
+            "char_length(idempotency_key) BETWEEN 8 AND 200",
+            name="ck_dataset_mapping_requests_key_length",
         ),
         sa.CheckConstraint(
             "(action = 'propose' AND rationale IS NULL) OR "
             "(action IN ('approve', 'reject') AND rationale IS NOT NULL "
             "AND char_length(rationale) BETWEEN 1 AND 2000)",
-            name=f"ck_{_TABLE}_rationale",
+            name="ck_dataset_mapping_requests_rationale",
         ),
     )
-    op.create_index(f"ix_{_TABLE}_organization_id", _TABLE, ["organization_id"])
-    op.create_index(f"ix_{_TABLE}_mapping", _TABLE, ["mapping_id"])
+    op.create_index(
+        "ix_dataset_mapping_requests_organization_id",
+        "dataset_mapping_requests",
+        ["organization_id"],
+    )
+    op.create_index(
+        "ix_dataset_mapping_requests_mapping", "dataset_mapping_requests", ["mapping_id"]
+    )
 
-    op.execute(f'GRANT SELECT, INSERT ON {_TABLE} TO "{APP_ROLE_NAME}"')
+    op.execute(f'GRANT SELECT, INSERT ON dataset_mapping_requests TO "{APP_ROLE_NAME}"')
 
     tenant_setting = "NULLIF(current_setting('app.current_organization_id', true), '')::uuid"
-    op.execute(f"ALTER TABLE {_TABLE} ENABLE ROW LEVEL SECURITY")
-    op.execute(f"ALTER TABLE {_TABLE} FORCE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE dataset_mapping_requests ENABLE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE dataset_mapping_requests FORCE ROW LEVEL SECURITY")
     op.execute(
-        f"CREATE POLICY tenant_isolation ON {_TABLE} FOR ALL "
+        "CREATE POLICY tenant_isolation ON dataset_mapping_requests FOR ALL "
         f"USING (organization_id = {tenant_setting}) "
         f"WITH CHECK (organization_id = {tenant_setting})"
     )
 
 
 def downgrade() -> None:
-    op.execute(f"DROP POLICY IF EXISTS tenant_isolation ON {_TABLE}")
-    op.execute(f'REVOKE ALL ON {_TABLE} FROM "{APP_ROLE_NAME}"')
-    op.drop_index(f"ix_{_TABLE}_mapping", table_name=_TABLE)
-    op.drop_index(f"ix_{_TABLE}_organization_id", table_name=_TABLE)
-    op.drop_table(_TABLE)
+    op.execute("DROP POLICY IF EXISTS tenant_isolation ON dataset_mapping_requests")
+    op.execute(f'REVOKE ALL ON dataset_mapping_requests FROM "{APP_ROLE_NAME}"')
+    op.drop_index("ix_dataset_mapping_requests_mapping", table_name="dataset_mapping_requests")
+    op.drop_index(
+        "ix_dataset_mapping_requests_organization_id", table_name="dataset_mapping_requests"
+    )
+    op.drop_table("dataset_mapping_requests")

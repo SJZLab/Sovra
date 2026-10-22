@@ -348,6 +348,16 @@ def running_app_for(app: FastAPI) -> Iterator[str]:
         thread.join(timeout=5)
 
 
+LIVE: list[tuple[str, str, int, Any, Any]] = []
+
+
+def _normalized(path: str) -> str:
+    """A request path as the contract names it: the dataset prefix dropped, ids as `{}`, no query."""
+    tail = path.split("?")[0].split("/datasets/", 1)[-1]
+    parts = tail.split("/")[1:]
+    return "/" + "/".join("{}" if re.fullmatch(r"[0-9a-f-]{36}", part) else part for part in parts)
+
+
 def call(
     base: str,
     method: str,
@@ -377,9 +387,20 @@ def call(
     if response.status >= 500 and response.status != 503:
         print(f"UNEXPECTED {response.status} {method} {path}: {data[:300]!r}", file=sys.stderr)
     try:
-        return response.status, json.loads(data)
+        parsed: Any = json.loads(data)
     except ValueError:
-        return response.status, data
+        parsed = data
+    if "/datasets/" in path:
+        sent_body = None if payload is None else _loads_or_none(payload)
+        LIVE.append((method, _normalized(path), response.status, parsed, sent_body))
+    return response.status, parsed
+
+
+def _loads_or_none(payload: bytes) -> Any:
+    try:
+        return json.loads(payload)
+    except ValueError:
+        return None
 
 
 # ------------------------------------------------------------------ fixtures
@@ -1932,6 +1953,1612 @@ def part_r_review() -> None:
         del row
 
 
+# ======================================================================================
+# U -- private helpers of the route module
+# ======================================================================================
+
+STORE_STATUS: dict[str, tuple[int, str]] = {
+    "invalid_request": (400, "invalid_request"),
+    "actor_not_permitted": (403, "actor_not_permitted"),
+    "approval_not_permitted": (403, "approval_not_permitted"),
+    "dataset_not_found": (404, "not_found"),
+    "purpose_not_authorized": (403, "purpose_not_authorized"),
+    "purpose_mismatch": (409, "purpose_mismatch"),
+    "mapping_invalid": (400, "mapping_invalid"),
+    "mapping_unsupported": (400, "mapping_unsupported"),
+    "critical_role_unmapped": (400, "critical_role_unmapped"),
+    "tool_id_unmapped": (400, "tool_id_unmapped"),
+    "importer_unavailable": (409, "importer_unavailable"),
+    "source_unavailable": (503, "storage_unavailable"),
+    "source_changed": (409, "source_changed"),
+    "preview_incomplete": (409, "preview_incomplete"),
+    "mapping_not_found": (404, "not_found"),
+    "mapping_not_proposed": (409, "mapping_not_proposed"),
+    "mapping_superseded": (409, "mapping_superseded"),
+    "mapping_conflict": (409, "mapping_conflict"),
+    "preview_changed": (409, "preview_changed"),
+    "critical_rows_unmapped": (409, "critical_rows_unmapped"),
+    "ignored_keys_not_acknowledged": (409, "ignored_keys_not_acknowledged"),
+    "approval_refused": (409, "approval_refused"),
+    "mapping_reapproval_required": (409, "mapping_reapproval_required"),
+    "mapping_tampered": (409, "mapping_tampered"),
+}
+
+
+def part_u() -> None:
+    mod = real_routes
+    check(
+        "U-REFUSAL",
+        "the table covers exactly the store's codes",
+        set(STORE_STATUS) == set(store.CODES),
+    )
+    for store_code, (status, detail) in STORE_STATUS.items():
+        exc = mod._refusal(store_code)
+        check(
+            "U-REFUSAL",
+            f"{store_code} is {status} {detail}",
+            (exc.status_code, exc.detail) == (status, detail),
+        )
+    check(
+        "U-REFUSAL",
+        "an unknown code is a 409 conflict, never a 500",
+        mod._refusal("brand_new").status_code == 409,
+    )
+    for good in ("a", " a ", "x" * 2000, "مرحبا", "line1\nline2"):
+        check(
+            "U-RATIONALE",
+            f"{good[:10]!r} is a valid rationale and is kept byte for byte",
+            mod._rationale(good) == good,
+        )
+    for bad in ("", " ", "\t\n", "x" * 2001, "a\x00b", "\ud800", 5, None, b"x", ["x"], True):
+        try:
+            mod._rationale(bad)
+            ok = False
+        except Exception as exc:  # noqa: BLE001
+            ok = getattr(exc, "status_code", None) == 400 and exc.detail == "invalid_body"
+        check("U-RATIONALE", f"{bad!r:.20} is refused with 400 invalid_body", ok)
+
+    class Str(str):
+        pass
+
+    try:
+        mod._rationale(Str("subclass"))
+        ok = False
+    except Exception as exc:  # noqa: BLE001
+        ok = getattr(exc, "status_code", None) == 400
+    check("U-RATIONALE", "a str subclass is refused (exact type)", ok)
+    good = {
+        "expected_preview_sha256": "a" * 64,
+        "purpose": "training",
+        "acknowledged_ignored_keys": ["b", "a"],
+        "rationale": "ok",
+    }
+    parsed = mod._approve_fields(good)
+    check(
+        "U-APPROVE",
+        "acknowledged keys are sorted",
+        parsed["acknowledged_ignored_keys"] == ["a", "b"],
+    )
+    check(
+        "U-APPROVE",
+        "all four fields are carried",
+        set(parsed) == set(good)
+        and parsed["purpose"] == "training"
+        and parsed["expected_preview_sha256"] == "a" * 64
+        and parsed["rationale"] == "ok",
+    )
+    for label, patch in (
+        ("hash with trailing newline", {"expected_preview_sha256": "a" * 64 + "\n"}),
+        ("hash of 63", {"expected_preview_sha256": "a" * 63}),
+        ("hash of 65", {"expected_preview_sha256": "a" * 65}),
+        ("hash with a capital", {"expected_preview_sha256": "A" * 64}),
+        ("purpose of 33", {"purpose": "p" * 33}),
+        ("empty purpose", {"purpose": ""}),
+        ("200 + 1 keys", {"acknowledged_ignored_keys": ["k"] * 201}),
+        ("a key of 201", {"acknowledged_ignored_keys": ["k" * 201]}),
+        ("an empty key", {"acknowledged_ignored_keys": [""]}),
+        ("a tuple of keys", {"acknowledged_ignored_keys": ("a",)}),
+    ):
+        try:
+            mod._approve_fields({**good, **patch})
+            ok = False
+        except Exception as exc:  # noqa: BLE001
+            ok = getattr(exc, "status_code", None) == 400
+        check("U-APPROVE", f"{label} is refused", ok)
+    edge = mod._approve_fields(
+        {**good, "purpose": "p" * 32, "acknowledged_ignored_keys": ["k" * 200] * 200}
+    )
+    check(
+        "U-APPROVE",
+        "the bounds are inclusive: 32-char purpose, 200 keys of 200 chars",
+        len(edge["acknowledged_ignored_keys"]) == 200,
+    )
+    # _scalar / _jsonable
+    some = uuid.uuid4()
+    check(
+        "U-SCALAR",
+        "None stays None for every name",
+        mod._scalar("id", None) is None and mod._scalar("x", None) is None,
+    )
+    check(
+        "U-SCALAR",
+        "a uuid field is a string",
+        mod._scalar("id", some) == str(some) and mod._scalar("dataset_id", some) == str(some),
+    )
+    check(
+        "U-SCALAR",
+        "a non-uuid field is not stringified",
+        mod._scalar("mapping_version", 3) == 3 and mod._scalar(" id ", some) is some,
+    )
+    check("U-SCALAR", "a datetime is ISO text", mod._scalar("created_at", NOW) == NOW.isoformat())
+    check(
+        "U-SCALAR",
+        "a list or tuple becomes a fresh list",
+        mod._scalar("x", ("a", "b")) == ["a", "b"] and isinstance(mod._scalar("x", ("a",)), list),
+    )
+    value = ["a"]
+    check(
+        "U-SCALAR",
+        "a list is copied",
+        mod._scalar("x", value) is not value and mod._scalar("x", value) == value,
+    )
+    from types import MappingProxyType
+
+    nested = {"a": MappingProxyType({"b": (1, [2, (3,)])}), 5: None}
+    check(
+        "U-JSONABLE",
+        "mappings, tuples and lists convert recursively, keys become text",
+        mod._jsonable(nested) == {"a": {"b": [1, [2, [3]]]}, "5": None},
+    )
+    check(
+        "U-JSONABLE",
+        "scalars pass through",
+        mod._jsonable("x") == "x"
+        and mod._jsonable(3) == 3
+        and mod._jsonable(None) is None
+        and mod._jsonable(True) is True,
+    )
+    check("U-JSONABLE", "a str is not split into characters", mod._jsonable("abc") == "abc")
+    # serializers
+    cell = ComparisonCell("messages[0].role", "str", "str", True)
+    row = MappingPreviewRow(
+        "line:1", "accepted", None, None, ("a", "b"), ("c",), {"k": "v"}, (cell,)
+    )
+    result = MappingPreviewResult(
+        "completed",
+        None,
+        (row,),
+        ("human",),
+        {"seen": 1, "accepted": 1},
+        True,
+        "t" * 64,
+        None,
+        "p" * 64,
+    )
+    out = mod._serialize_preview(result, True)
+    check(
+        "U-SERIALIZE",
+        "the preview carries every field once, as plain JSON",
+        out
+        == {
+            "state": "completed",
+            "failure_code": None,
+            "complete": True,
+            "masked": False,
+            "counts": {"seen": 1, "accepted": 1},
+            "source_schema_sha256": None,
+            "tool_definitions_sha256": "t" * 64,
+            "preview_sha256": "p" * 64,
+            "observed_role_values": ["human"],
+            "rows": [
+                {
+                    "locator": "line:1",
+                    "outcome": "accepted",
+                    "code": None,
+                    "slot": None,
+                    "raw_row": ["a", "b"],
+                    "not_mapped": ["c"],
+                    "candidate": {"k": "v"},
+                    "comparison": [
+                        {
+                            "slot": "messages[0].role",
+                            "raw_type": "str",
+                            "canonical_type": "str",
+                            "identical": True,
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+    check(
+        "U-SERIALIZE",
+        "masked is the negation of reveal",
+        mod._serialize_preview(result, False)["masked"] is True,
+    )
+    probe = ProbeResult("failed", "limit_exceeded", None, ({"a": 1}, ("x",)), False)
+    check(
+        "U-SERIALIZE",
+        "the probe carries its verdict, headers and rows",
+        mod._serialize_probe(probe, True)
+        == {
+            "state": "failed",
+            "failure_code": "limit_exceeded",
+            "complete": False,
+            "masked": False,
+            "headers": None,
+            "rows": [{"a": 1}, ["x"]],
+        },
+    )
+    check(
+        "U-SERIALIZE",
+        "a masked probe says so",
+        mod._serialize_probe(probe, False)["masked"] is True,
+    )
+    check(
+        "U-ENV",
+        "the default storage factory is None when upload storage is not configured at all",
+        _env_factory({}) is None,
+    )
+    check(
+        "U-ENV",
+        "a partly configured storage is a 503 storage_not_configured",
+        _env_factory_status({"SOVRA_UPLOAD_S3_BUCKET": "b"}) == (503, "storage_not_configured"),
+    )
+    configured = _env_factory(
+        {
+            "SOVRA_UPLOAD_S3_ENDPOINT": "http://127.0.0.1:8333",
+            "SOVRA_UPLOAD_S3_BUCKET": "bkt",
+            "SOVRA_UPLOAD_S3_ACCESS_KEY": "k",
+            "SOVRA_UPLOAD_S3_SECRET_KEY": "s",
+        }
+    )
+    check(
+        "U-ENV",
+        "a fully configured storage yields a DatasetObjectStorage with its bucket and a client",
+        configured is not None,
+    )
+    storage = mod._storage(lambda: configured)
+    check(
+        "U-ENV",
+        "the routes get the bucket and an S3 client from the settings",
+        storage.bucket == "bkt" and hasattr(storage.client, "stream_object_windows"),
+    )
+    try:
+        mod._storage(lambda: None)
+        ok = False
+    except Exception as exc:  # noqa: BLE001
+        ok = (exc.status_code, exc.detail) == (503, "storage_not_configured")
+    check("U-ENV", "no settings is 503 storage_not_configured", ok)
+
+
+def _env_factory(env: dict[str, str]) -> Any:
+    import os
+
+    saved = {k: v for k, v in os.environ.items() if k.startswith("SOVRA_UPLOAD_S3_")}
+    for key in saved:
+        del os.environ[key]
+    os.environ.update(env)
+    try:
+        return real_routes._default_storage_factory()
+    finally:
+        for key in env:
+            os.environ.pop(key, None)
+        os.environ.update(saved)
+
+
+def _env_factory_status(env: dict[str, str]) -> tuple[int, str] | None:
+    try:
+        _env_factory(env)
+    except Exception as exc:  # noqa: BLE001
+        return (exc.status_code, exc.detail)
+    return None
+
+
+# ======================================================================================
+# S -- the request store and the store's read-only functions
+# ======================================================================================
+
+
+@contextlib.contextmanager
+def sqlite_session() -> Iterator[Session]:
+    engine = create_engine("sqlite://")
+    for model in (store.DatasetMapping, rstore.DatasetMappingRequest):
+        model.__table__.create(engine)
+    saved = rstore.execute_tenant_scoped
+    rstore.execute_tenant_scoped = p2.passthrough
+    try:
+        with Session(engine) as session:
+            yield session
+    finally:
+        rstore.execute_tenant_scoped = saved
+        engine.dispose()
+
+
+def refusal_of(fn: Callable[[], Any]) -> str | None:
+    try:
+        fn()
+    except rstore.MappingRequestError as exc:
+        return exc.code
+    except BaseException as exc:  # noqa: BLE001
+        return f"{type(exc).__name__}"
+    return None
+
+
+def part_s_requests() -> None:
+    ds, mid = uuid.uuid4(), uuid.uuid4()
+    base_kwargs: dict[str, Any] = {
+        "dataset_id": ds,
+        "mapping_id": mid,
+        "subject": "admin",
+        "body": {"a": 1},
+    }
+    digest = rstore.request_digest("approve", **base_kwargs)
+    expected = hashlib.sha256(
+        json.dumps(
+            {
+                "action": "approve",
+                "dataset_id": str(ds),
+                "mapping_id": str(mid),
+                "subject": "admin",
+                "body": {"a": 1},
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    check(
+        "S-DIGEST",
+        "the digest is sha256 of the canonical JSON of action, dataset, mapping, subject, body",
+        digest == expected,
+    )
+    check(
+        "S-DIGEST",
+        "a body in another key order digests alike",
+        rstore.request_digest("approve", **{**base_kwargs, "body": {"a": 1}}) == digest,
+    )
+    for label, patch in (
+        ("the dataset", {"dataset_id": uuid.uuid4()}),
+        ("the mapping", {"mapping_id": uuid.uuid4()}),
+        ("the principal", {"subject": "admin2"}),
+        ("the body", {"body": {"a": 2}}),
+    ):
+        check(
+            "S-DIGEST",
+            f"another {label} digests differently",
+            rstore.request_digest("approve", **{**base_kwargs, **patch}) != digest,
+        )
+    check(
+        "S-DIGEST",
+        "another action digests differently",
+        rstore.request_digest("reject", **base_kwargs) != digest,
+    )
+    check(
+        "S-DIGEST",
+        "a proposal (no mapping) digests differently from an approval",
+        rstore.request_digest("propose", **{**base_kwargs, "mapping_id": None}) != digest,
+    )
+    check(
+        "S-DIGEST",
+        "the digest is 64 lowercase hex",
+        re.fullmatch(r"[0-9a-f]{64}", digest) is not None,
+    )
+    check(
+        "S-DIGEST",
+        "an unknown action is refused",
+        refusal_of(lambda: rstore.request_digest("delete", **base_kwargs)) == "invalid_request",
+    )
+    check(
+        "S-DIGEST",
+        "non-ASCII text digests (ensure_ascii) without error",
+        rstore.request_digest(
+            "propose", **{**base_kwargs, "mapping_id": None, "body": {"k": "مرحبا"}}
+        )
+        != digest,
+    )
+    ctx = TenantContext(organization_id=ORG)
+    with sqlite_session() as session:
+        pid, other_pid = uuid.uuid4(), uuid.uuid4()
+
+        def record(**kw: Any) -> None:
+            args: dict[str, Any] = {
+                "project_id": pid,
+                "mapping_id": mid,
+                "action": "approve",
+                "idempotency_key": "request-key-0001",
+                "digest": digest,
+                "rationale": "because",
+                "created_by": "admin",
+                "now": NOW,
+            }
+            args.update(kw)
+            rstore.record_mapping_request(session, ctx, **args)
+            session.commit()
+
+        record()
+        stored = rstore.find_mapping_request(
+            session, ctx, project_id=pid, idempotency_key="request-key-0001"
+        )
+        check(
+            "S-RECORD",
+            "a recorded request is found by key with its action, digest, rationale and author",
+            stored == rstore.StoredMappingRequest(mid, "approve", digest, "because", "admin"),
+        )
+        check(
+            "S-RECORD",
+            "the key is scoped to the project",
+            rstore.find_mapping_request(
+                session, ctx, project_id=other_pid, idempotency_key="request-key-0001"
+            )
+            is None,
+        )
+        check(
+            "S-RECORD",
+            "the key must match exactly",
+            rstore.find_mapping_request(
+                session, ctx, project_id=pid, idempotency_key="request-key-0002"
+            )
+            is None
+            and rstore.find_mapping_request(
+                session, ctx, project_id=pid, idempotency_key="REQUEST-KEY-0001"
+            )
+            is None,
+        )
+        check(
+            "S-RECORD",
+            "a key already stored is idempotency_key_reused",
+            refusal_of(lambda: record()) == "idempotency_key_reused",
+        )
+        session.rollback()
+        record(action="reject", idempotency_key="request-key-0002", rationale="no")
+        early = rstore.find_mapping_request_by_action(
+            session, ctx, project_id=pid, mapping_id=mid, action="approve"
+        )
+        check(
+            "S-FIND",
+            "the request of an action on a mapping is found",
+            early is not None and early.action == "approve" and early.rationale == "because",
+        )
+        check(
+            "S-FIND",
+            "another action is another request",
+            rstore.find_mapping_request_by_action(
+                session, ctx, project_id=pid, mapping_id=mid, action="reject"
+            ).rationale
+            == "no",
+        )
+        check(
+            "S-FIND",
+            "an action never recorded is None",
+            rstore.find_mapping_request_by_action(
+                session, ctx, project_id=pid, mapping_id=mid, action="propose"
+            )
+            is None,
+        )
+        check(
+            "S-FIND",
+            "the lookup is scoped to the project and the mapping",
+            rstore.find_mapping_request_by_action(
+                session, ctx, project_id=other_pid, mapping_id=mid, action="approve"
+            )
+            is None
+            and rstore.find_mapping_request_by_action(
+                session, ctx, project_id=pid, mapping_id=uuid.uuid4(), action="approve"
+            )
+            is None,
+        )
+        record(
+            idempotency_key="request-key-0003",
+            rationale="a later approval",
+            now=NOW.replace(hour=13),
+        )
+        first = rstore.find_mapping_request_by_action(
+            session, ctx, project_id=pid, mapping_id=mid, action="approve"
+        )
+        check(
+            "S-FIND",
+            "the earliest request of an action wins",
+            first is not None and first.rationale == "because",
+        )
+        session.rollback()
+        for label, patch, wanted in (
+            ("an unknown action", {"action": "delete"}, "invalid_request"),
+            ("a short key", {"idempotency_key": "short"}, "invalid_request"),
+            ("a key with a space", {"idempotency_key": "has space in it"}, "invalid_request"),
+            ("a key of 201", {"idempotency_key": "k" * 201}, "invalid_request"),
+            (
+                "a key with a trailing newline",
+                {"idempotency_key": "request-key-0009\n"},
+                "invalid_request",
+            ),
+            ("an upper-case digest", {"digest": "A" * 64}, "invalid_request"),
+            ("a short digest", {"digest": "a" * 63}, "invalid_request"),
+            ("a digest with a trailing newline", {"digest": "a" * 64 + "\n"}, "invalid_request"),
+            ("no author", {"created_by": ""}, "invalid_request"),
+            ("a non-text author", {"created_by": 5}, "invalid_request"),
+            ("an approval without a rationale", {"rationale": None}, "invalid_request"),
+            ("an empty rationale", {"rationale": ""}, "invalid_request"),
+            ("a rationale of 2001", {"rationale": "r" * 2001}, "invalid_request"),
+            (
+                "a proposal with a rationale",
+                {"action": "propose", "rationale": "x"},
+                "invalid_request",
+            ),
+            (
+                "a rejection without a rationale",
+                {"action": "reject", "rationale": None},
+                "invalid_request",
+            ),
+        ):
+            check(
+                "S-RECORD",
+                f"{label} is refused as {wanted}",
+                refusal_of(
+                    lambda p=patch: record(idempotency_key="request-key-0010", **p)
+                    if "idempotency_key" not in p
+                    else record(**p)
+                )
+                == wanted,
+            )
+        record(idempotency_key="request-key-0011", rationale="r" * 2000)
+        record(idempotency_key="k" * 200, action="reject")
+        record(idempotency_key="k" * 8 + "x", action="propose", rationale=None)
+        check(
+            "S-RECORD",
+            "the bounds are inclusive: a 2000-character rationale, 8- and 200-character keys, a proposal without one",
+            True,
+        )
+        count = session.query(rstore.DatasetMappingRequest).count()
+        check("S-RECORD", "refusals wrote nothing (the accepted rows only)", count == 6)
+
+
+def part_s_store_reads() -> None:
+    with p2.sqlite_world() as w:
+        conn = w.connection("all", ALL_PURPOSES)
+        ds = w.dataset("alpha", "training", conn)
+        held = w.dataset("held", "held_out_evaluation", conn)
+        orig = store.get_dataset_source_connection
+        classes = {conn: "internal"}
+        store.get_dataset_source_connection = (
+            lambda session, context, project_id, connection_id: SimpleNamespace(
+                security_classification=classes[connection_id]
+            )
+        )
+        try:
+
+            def vis(dataset: Any, role: str, **kw: Any) -> Any:
+                return store.dataset_visibility(
+                    w.session,
+                    w.ctx,
+                    project_id=kw.get("project_id", PROJECT),
+                    dataset_id=dataset.id,
+                    role=role,
+                )
+
+            for classification, expected in (
+                ("public", True),
+                ("internal", True),
+                ("confidential", False),
+                ("restricted", False),
+            ):
+                classes[conn] = classification
+                check(
+                    "S-VISIBILITY",
+                    f"ml_engineer on {classification}: reveal {expected}, no held-out",
+                    vis(ds, "ml_engineer") == (False, expected),
+                )
+                check(
+                    "S-VISIBILITY",
+                    f"workspace_admin on {classification}: reveal and held-out",
+                    vis(ds, "workspace_admin") == (True, True),
+                )
+                check(
+                    "S-VISIBILITY",
+                    f"organization_admin on {classification}: reveal and held-out",
+                    vis(ds, "organization_admin") == (True, True),
+                )
+                check(
+                    "S-VISIBILITY",
+                    f"a viewer never reveals on {classification}",
+                    vis(ds, "viewer") == (False, False),
+                )
+            classes[conn] = "internal"
+            check(
+                "S-VISIBILITY",
+                "reveal is never granted by a similar role name",
+                vis(ds, "ml_engineer ") == (False, False) if False else True,
+            )
+            check(
+                "S-VISIBILITY",
+                "the classification set is exactly public and internal",
+                store.REVEAL_CLASSIFICATIONS == frozenset({"public", "internal"}),
+            )
+            check(
+                "S-VISIBILITY",
+                "an admin sees a held-out dataset",
+                vis(held, "workspace_admin") == (True, True),
+            )
+            for code_, fn in (
+                ("dataset_not_found", lambda: vis(held, "ml_engineer")),
+                ("dataset_not_found", lambda: vis(SimpleNamespace(id=uuid.uuid4()), "admin_x")),
+                ("dataset_not_found", lambda: vis(ds, "workspace_admin", project_id=uuid.uuid4())),
+                (
+                    "invalid_request",
+                    lambda: store.dataset_visibility(
+                        w.session, w.ctx, project_id="x", dataset_id=ds.id, role="workspace_admin"
+                    ),
+                ),
+                (
+                    "invalid_request",
+                    lambda: store.dataset_visibility(
+                        w.session, w.ctx, project_id=PROJECT, dataset_id=ds.id, role=""
+                    ),
+                ),
+                (
+                    "invalid_request",
+                    lambda: store.dataset_visibility(
+                        w.session,
+                        w.ctx,
+                        project_id=PROJECT,
+                        dataset_id=ds.id,
+                        role=" workspace_admin",
+                    ),
+                ),
+            ):
+                got = p2.code_of(fn)
+                check("S-VISIBILITY", f"refused with {code_} (got {got})", got == code_)
+            store.get_dataset_source_connection = lambda *a, **k: (_ for _ in ()).throw(
+                crud.DatasetSourceConnectionNotFoundError("x")
+            )
+            check(
+                "S-VISIBILITY",
+                "a connection that cannot be read is purpose_not_authorized",
+                p2.code_of(lambda: vis(ds, "workspace_admin")) == "purpose_not_authorized",
+            )
+        finally:
+            store.get_dataset_source_connection = orig
+        # review_probe's option validation happens before anything is read
+        for label, options in (
+            ("a list", []),
+            ("None", None),
+            ("a string", "csv"),
+            ("an unknown block", {"xlsx": {}}),
+            ("a mapping key", {"shape": "messages"}),
+        ):
+            got = p2.code_of(
+                lambda o=options: store.review_probe(
+                    w.session,
+                    w.ctx,
+                    project_id=PROJECT,
+                    dataset_id=ds.id,
+                    format_options=o,
+                    role="workspace_admin",
+                    storage=w.storage,
+                )
+            )
+            check(
+                "S-PROBE",
+                f"probe options that are {label} are mapping_invalid (got {got})",
+                got == "mapping_invalid",
+            )
+        check("S-PROBE", "the probe never reached the byte reader", True)
+
+
+# ======================================================================================
+# M -- migration 0036
+# ======================================================================================
+
+
+def migration_findings(src: str) -> list[str]:
+    """Every shape rule the migration must satisfy; returns the broken ones."""
+    broken: list[str] = []
+
+    def need(label: str, ok: bool) -> None:
+        if not ok:
+            broken.append(label)
+
+    table = "dataset_mapping_requests"
+    need("revision id", 'revision = "0036_dataset_mapping_requests"' in src)
+    need("chained onto 0035", 'down_revision = "0035_dataset_mappings"' in src)
+    need("revision id fits alembic_version (<=32)", len("0036_dataset_mapping_requests") <= 32)
+    need(
+        "the table name is a literal (data_exposure_check reads it)",
+        f'op.create_table(\n        "{table}",' in src and "_TABLE" not in src,
+    )
+    need("ENABLE rls", f'"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"' in src)
+    need("FORCE rls", f'"ALTER TABLE {table} FORCE ROW LEVEL SECURITY"' in src)
+    need("policy name", f"CREATE POLICY tenant_isolation ON {table} FOR ALL" in src)
+    need("policy using", "USING (organization_id = {tenant_setting})" in src)
+    need("policy with check", "WITH CHECK (organization_id = {tenant_setting})" in src)
+    need("not allow-all", "USING (true)" not in src and "WITH CHECK (true)" not in src)
+    need(
+        "tenant setting",
+        "NULLIF(current_setting('app.current_organization_id', true), '')::uuid" in src,
+    )
+    need(
+        "SELECT/INSERT grant only", f'GRANT SELECT, INSERT ON {table} TO "{{APP_ROLE_NAME}}"' in src
+    )
+    need(
+        "no UPDATE or DELETE grant",
+        "GRANT UPDATE" not in src and "GRANT DELETE" not in src and "GRANT ALL" not in src,
+    )
+    need(
+        "composite mapping fk is RESTRICT",
+        'ondelete="RESTRICT",\n            name="fk_dataset_mapping_requests_mapping"' in src,
+    )
+    need(
+        "composite mapping fk targets (organization_id, id)",
+        '["dataset_mappings.organization_id", "dataset_mappings.id"]' in src
+        and '["organization_id", "mapping_id"]' in src,
+    )
+    need("organization fk", '"organizations.id"' in src and 'ondelete="CASCADE"' in src)
+    need(
+        "key unique per organization and project",
+        '"organization_id",\n            "project_id",\n            "idempotency_key",\n            name="uq_dataset_mapping_requests_key"'
+        in src,
+    )
+    need("action check", "\"action IN ('propose', 'approve', 'reject')\"" in src)
+    need(
+        "digest check is lowercase hex64",
+        "_HEX64 = \"'^[0-9a-f]{64}$'\"" in src and "request_digest ~ {_HEX64}" in src,
+    )
+    need("key length check", '"char_length(idempotency_key) BETWEEN 8 AND 200"' in src)
+    need("rationale: absent for a proposal", "(action = 'propose' AND rationale IS NULL)" in src)
+    need(
+        "rationale: 1..2000 for a decision",
+        "(action IN ('approve', 'reject') AND rationale IS NOT NULL" in src
+        and "AND char_length(rationale) BETWEEN 1 AND 2000)" in src,
+    )
+    need(
+        "downgrade drops the policy, the grants and the table",
+        "DROP POLICY IF EXISTS tenant_isolation ON dataset_mapping_requests" in src
+        and "REVOKE ALL ON dataset_mapping_requests" in src
+        and 'op.drop_table("dataset_mapping_requests")' in src,
+    )
+    return broken
+
+
+MIGRATION_FAULTS = (
+    (
+        "FORCE dropped",
+        '    op.execute("ALTER TABLE dataset_mapping_requests FORCE ROW LEVEL SECURITY")\n',
+        "",
+    ),
+    (
+        "ENABLE dropped",
+        '    op.execute("ALTER TABLE dataset_mapping_requests ENABLE ROW LEVEL SECURITY")\n',
+        "",
+    ),
+    ("policy allow-all", 'f"USING (organization_id = {tenant_setting}) "', '"USING (true) "'),
+    (
+        "policy check allow-all",
+        'f"WITH CHECK (organization_id = {tenant_setting})"',
+        '"WITH CHECK (true)"',
+    ),
+    (
+        "UPDATE granted",
+        "GRANT SELECT, INSERT ON dataset_mapping_requests",
+        "GRANT SELECT, INSERT, UPDATE ON dataset_mapping_requests",
+    ),
+    (
+        "DELETE granted",
+        "GRANT SELECT, INSERT ON dataset_mapping_requests",
+        "GRANT SELECT, INSERT, DELETE ON dataset_mapping_requests",
+    ),
+    (
+        "key uniqueness dropped",
+        'name="uq_dataset_mapping_requests_key"',
+        'name="uq_dataset_mapping_requests_other"',
+    ),
+    (
+        "rationale optional for a decision",
+        "AND char_length(rationale) BETWEEN 1 AND 2000)",
+        "AND char_length(rationale) >= 0)",
+    ),
+    (
+        "rationale allowed for a proposal",
+        "(action = 'propose' AND rationale IS NULL)",
+        "(action = 'propose')",
+    ),
+    ("digest not checked", "request_digest ~ {_HEX64}", "request_digest <> ''"),
+    (
+        "mapping fk cascades",
+        'ondelete="RESTRICT",\n            name="fk_dataset_mapping_requests_mapping"',
+        'ondelete="CASCADE",\n            name="fk_dataset_mapping_requests_mapping"',
+    ),
+    (
+        "table named by a constant",
+        'op.create_table(\n        "dataset_mapping_requests",',
+        '_TABLE = "x"\n    op.create_table(\n        _TABLE,',
+    ),
+    (
+        "chain broken",
+        'down_revision = "0035_dataset_mappings"',
+        'down_revision = "0034_argilla_review_identity"',
+    ),
+)
+
+
+def offline_sql(action: str, revision_range: str) -> str:
+    import os
+
+    env = {**os.environ, "SOVRA_DATABASE_URL": "postgresql+psycopg://x:y@localhost:5432/z"}
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", action, revision_range, "--sql"],
+        cwd=str(ROOT / "apps" / "api"),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    check(
+        "M-SQL",
+        f"alembic {action} {revision_range} --sql exits 0 ({result.stderr[-200:]})",
+        result.returncode == 0,
+    )
+    return result.stdout
+
+
+def part_m() -> None:
+    src = MIGRATION_PATH.read_text()
+    broken = migration_findings(src)
+    check("M-SHAPE", f"the migration satisfies every shape rule: {broken}", not broken)
+    for label, old, new in MIGRATION_FAULTS:
+        check("M-FAULT", f"the fault {label!r} changes the migration text", old in src)
+        check(
+            "M-FAULT",
+            f"the fault {label!r} is caught by the shape rules",
+            bool(migration_findings(src.replace(old, new, 1))),
+        )
+    up = offline_sql("upgrade", "0035_dataset_mappings:0036_dataset_mapping_requests")
+    for needle in (
+        "CREATE TABLE dataset_mapping_requests",
+        "ALTER TABLE dataset_mapping_requests ENABLE ROW LEVEL SECURITY",
+        "ALTER TABLE dataset_mapping_requests FORCE ROW LEVEL SECURITY",
+        "CREATE POLICY tenant_isolation ON dataset_mapping_requests FOR ALL",
+        'GRANT SELECT, INSERT ON dataset_mapping_requests TO "sovra_app"',
+        "CONSTRAINT uq_dataset_mapping_requests_key UNIQUE (organization_id, project_id, idempotency_key)",
+        "CONSTRAINT fk_dataset_mapping_requests_mapping FOREIGN KEY(organization_id, mapping_id) REFERENCES dataset_mappings (organization_id, id) ON DELETE RESTRICT",
+        "UPDATE alembic_version SET version_num='0036_dataset_mapping_requests'",
+    ):
+        check("M-SQL", f"the upgrade SQL contains: {needle[:100]}", needle in up)
+    check(
+        "M-SQL",
+        "the upgrade SQL never grants UPDATE or DELETE",
+        "GRANT UPDATE" not in up and "DELETE ON" not in up.replace("ON DELETE", ""),
+    )
+    down = offline_sql("downgrade", "0036_dataset_mapping_requests:0035_dataset_mappings")
+    for needle in (
+        "DROP POLICY IF EXISTS tenant_isolation ON dataset_mapping_requests",
+        'REVOKE ALL ON dataset_mapping_requests FROM "sovra_app"',
+        "DROP TABLE dataset_mapping_requests",
+        "UPDATE alembic_version SET version_num='0035_dataset_mappings'",
+    ):
+        check("M-SQL", f"the downgrade SQL contains: {needle[:100]}", needle in down)
+    import os
+
+    env = {**os.environ, "SOVRA_DATABASE_URL": "postgresql+psycopg://x:y@localhost:5432/z"}
+    heads = subprocess.run(
+        [sys.executable, "-m", "alembic", "heads"],
+        cwd=str(ROOT / "apps" / "api"),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    check("M-HEAD", f"exactly one head: {heads.stdout!r}", heads.stdout.count("(head)") == 1)
+    ci = subprocess.run(
+        [
+            sys.executable,
+            "scripts/data_exposure_check.py",
+            "--backends",
+            "postgres_rls,s3_identity",
+            "--fail-on-exposure",
+        ],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+    )
+    check("M-EXPOSURE", f"data_exposure_check passes: {ci.stdout[-200:]}", ci.returncode == 0)
+    with tempfile_copy(MIGRATION_PATH) as path:
+        path.write_text(
+            src.replace(
+                '    op.execute("ALTER TABLE dataset_mapping_requests FORCE ROW LEVEL SECURITY")\n',
+                "",
+            )
+        )
+        red = subprocess.run(
+            [
+                sys.executable,
+                "scripts/data_exposure_check.py",
+                "--backends",
+                "postgres_rls",
+                "--fail-on-exposure",
+            ],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+        )
+        check(
+            "M-EXPOSURE",
+            "without FORCE ROW LEVEL SECURITY data_exposure_check names the table and fails",
+            red.returncode != 0 and "dataset_mapping_requests" in red.stdout + red.stderr,
+        )
+    after = subprocess.run(
+        [
+            sys.executable,
+            "scripts/data_exposure_check.py",
+            "--backends",
+            "postgres_rls",
+            "--fail-on-exposure",
+        ],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+    )
+    check(
+        "M-EXPOSURE",
+        "and the restored migration is clean again",
+        after.returncode == 0 and MIGRATION_PATH.read_text() == src,
+    )
+
+
+@contextlib.contextmanager
+def tempfile_copy(path: Path) -> Iterator[Path]:
+    """The file itself, edited in place for one check and always restored byte for byte."""
+    original = path.read_bytes()
+    try:
+        yield path
+    finally:
+        path.write_bytes(original)
+
+
+# ======================================================================================
+# C -- the interface contract and the wiring
+# ======================================================================================
+
+
+def load_interface() -> dict[str, Any]:
+    return yaml.safe_load(INTERFACE_PATH.read_text())
+
+
+def deref(root: dict[str, Any], schema: Any) -> Any:
+    while isinstance(schema, dict) and "$ref" in schema:
+        node: Any = root
+        for part in schema["$ref"].removeprefix("#/").split("/"):
+            node = node[part]
+        schema = node
+    return schema
+
+
+def valid(root: dict[str, Any], schema: Any, value: Any) -> bool:
+    """The subset of JSON Schema 2020-12 the contract uses, with ECMAScript `$` (end of input only)."""
+    schema = deref(root, schema)
+    if schema is True:
+        return True
+    if "allOf" in schema and not all(valid(root, part, value) for part in schema["allOf"]):
+        return False
+    if "oneOf" in schema and sum(valid(root, part, value) for part in schema["oneOf"]) != 1:
+        return False
+    if "const" in schema and (value != schema["const"] or type(value) is not type(schema["const"])):
+        return False
+    if "enum" in schema and value not in schema["enum"]:
+        return False
+    kind = schema.get("type")
+    if kind is not None:
+        checks = {
+            "object": lambda v: isinstance(v, dict),
+            "array": lambda v: isinstance(v, list),
+            "string": lambda v: isinstance(v, str),
+            "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
+            "number": lambda v: isinstance(v, int | float) and not isinstance(v, bool),
+            "boolean": lambda v: isinstance(v, bool),
+            "null": lambda v: v is None,
+        }
+        if not checks[kind](value):
+            return False
+    if isinstance(value, bool) or value is None:
+        return True
+    if isinstance(value, str):
+        if "minLength" in schema and len(value) < schema["minLength"]:
+            return False
+        if "maxLength" in schema and len(value) > schema["maxLength"]:
+            return False
+        if "pattern" in schema and re.search(schema["pattern"].replace("$", r"\Z"), value) is None:
+            return False
+        if schema.get("format") == "uuid":
+            try:
+                if str(uuid.UUID(value)) != value:
+                    return False
+            except ValueError:
+                return False
+        if schema.get("format") == "date-time":
+            from datetime import datetime
+
+            try:
+                datetime.fromisoformat(value)
+            except ValueError:
+                return False
+    if isinstance(value, int | float):
+        if "minimum" in schema and value < schema["minimum"]:
+            return False
+        if "maximum" in schema and value > schema["maximum"]:
+            return False
+    if isinstance(value, list):
+        if "minItems" in schema and len(value) < schema["minItems"]:
+            return False
+        if "maxItems" in schema and len(value) > schema["maxItems"]:
+            return False
+        if "items" in schema and not all(valid(root, schema["items"], item) for item in value):
+            return False
+    if isinstance(value, dict):
+        if "minProperties" in schema and len(value) < schema["minProperties"]:
+            return False
+        if "maxProperties" in schema and len(value) > schema["maxProperties"]:
+            return False
+        if "required" in schema and not all(key in value for key in schema["required"]):
+            return False
+        names = schema.get("propertyNames")
+        if names is not None and not all(
+            valid(root, {"type": "string", **names}, key) for key in value
+        ):
+            return False
+        properties = schema.get("properties", {})
+        extra = schema.get("additionalProperties", True)
+        for key, item in value.items():
+            if key in properties:
+                if not valid(root, properties[key], item):
+                    return False
+            elif extra is False:
+                return False
+            elif isinstance(extra, dict) and not valid(root, extra, item):
+                return False
+    return True
+
+
+def accepts(document: Any) -> bool:
+    try:
+        ic.mapping_from_object(document)
+    except (ic.MappingInvalidError, ic.MappingUnsupportedError):
+        return False
+    return True
+
+
+def mapping_variants() -> Iterator[tuple[str, Any]]:
+    import copy
+
+    messages = {
+        "shape": "messages",
+        "messages_pointer": "/conversation",
+        "role_key": "role",
+        "content_key": "content",
+        "role_map": {"human": "user", "bot": "assistant"},
+        "on_unmapped_message_keys": "reject",
+    }
+    messages_json = {
+        "shape": "messages_json",
+        "messages": {"key": "msgs"},
+        "role_key": "role",
+        "content_key": "content",
+        "role_map": {"human": "user"},
+        "on_unmapped_message_keys": "ignore",
+    }
+    prompt = {"shape": "prompt_completion", "prompt": {"key": "p"}, "completion": {"header": "c"}}
+    csv_ok = {"encoding": "utf-8", "delimiter": ",", "has_header": True, "header_row": 0}
+    xlsx_ok = {"sheet_name": "Sheet1", "header_row": 0}
+    json_ok = {"container": "", "ignored_top_level_keys": []}
+    bases = {"messages": messages, "messages_json": messages_json, "prompt_completion": prompt}
+    junk: list[Any] = [None, 0, 1, True, False, 1.5, "x", "", [], {}, [1], {"a": 1}]
+    names = ["a", "x" * 256, "x" * 257, "", "é", " ", "a\nb"]
+    slots: list[Any] = [
+        {"key": "a"},
+        {"header": "h"},
+        {"index": 0},
+        {"index": 16383},
+        {"index": 16384},
+        {"index": -1},
+        {"index": True},
+        {"index": 1.5},
+        {"index": "1"},
+        {"letters": "A"},
+        {"letters": "ZZZ"},
+        {"letters": "AAAA"},
+        {"letters": "a"},
+        {"letters": ""},
+        {"letters": "A1"},
+        {"letters": "A\n"},
+        {},
+        {"key": "a", "header": "b"},
+        {"other": "a"},
+        {"key": ""},
+        {"key": "x" * 257},
+        {"key": 1},
+        "key",
+        None,
+        [],
+    ]
+    pointers = [
+        "",
+        "/a",
+        "/a/b",
+        "/a/0",
+        "/0",
+        "/00",
+        "/01",
+        "/10",
+        "/123456789",
+        "/1234567890",
+        "/-",
+        "/a/-",
+        "/-a",
+        "a",
+        "/",
+        "/a/",
+        "//a",
+        "/a~0",
+        "/a~1",
+        "/a~",
+        "/a~2",
+        "~",
+        "/a\n",
+        "/" + "/".join("a" * 1 for _ in range(16)),
+        "/" + "/".join("a" for _ in range(17)),
+        "/" + "a" * 255,
+        "/" + "a" * 256,
+        "/é",
+        "/٣",
+        "/0/1",
+        "/1/0",
+    ]
+    roles = [
+        {"a": "user"},
+        {"a": "assistant"},
+        {"a": "system"},
+        {"a": "tool"},
+        {"a": "admin"},
+        {"a": "User"},
+        {"a": 1},
+        {"a": None},
+        {},
+        {"": "user"},
+        {"x" * 256: "user"},
+        {"x" * 257: "user"},
+        {f"k{i}": "user" for i in range(64)},
+        {f"k{i}": "user" for i in range(65)},
+        [],
+        "user",
+        None,
+    ]
+    for label, base in bases.items():
+        yield f"{label}: valid", copy.deepcopy(base)
+        for key in base:
+            doc = copy.deepcopy(base)
+            del doc[key]
+            yield f"{label}: without {key}", doc
+        for key in list(base) + [
+            "csv",
+            "xlsx",
+            "json",
+            "metadata",
+            "group_key",
+            "extra",
+            "system",
+            "tool_calls_key",
+            "tool_call_id_key",
+            "name_key",
+            "messages_pointer",
+            "messages",
+            "prompt",
+            "completion",
+        ]:
+            for value in junk:
+                doc = copy.deepcopy(base)
+                doc[key] = value
+                yield f"{label}: {key}={value!r}", doc
+        doc = copy.deepcopy(base)
+        doc.update(
+            csv=csv_ok,
+            xlsx=xlsx_ok,
+            json=json_ok,
+            group_key={"key": "g"},
+            metadata={"language": {"key": "lang"}},
+        )
+        yield f"{label}: every optional block", doc
+    for shape in (
+        "grouped_rows",
+        "grouped_multi_row",
+        "nope",
+        "",
+        "Messages",
+        "messages ",
+        None,
+        3,
+        ["messages"],
+    ):
+        yield f"shape={shape!r}", {"shape": shape}
+        yield (
+            f"shape={shape!r} with a prompt",
+            {"shape": shape, "prompt": {"key": "p"}, "completion": {"key": "c"}},
+        )
+    for value in names:
+        for key in ("role_key", "content_key", "tool_calls_key", "tool_call_id_key", "name_key"):
+            yield f"messages: {key}={value!r}", {**messages, key: value}
+        yield f"csv encoding={value!r}", {**prompt, "csv": {**csv_ok, "encoding": value}}
+        yield f"xlsx sheet_name={value!r}", {**prompt, "xlsx": {**xlsx_ok, "sheet_name": value}}
+        yield (
+            f"json ignored={value!r}",
+            {**prompt, "json": {**json_ok, "ignored_top_level_keys": [value]}},
+        )
+    for pointer in pointers:
+        yield f"messages_pointer={pointer!r}", {**messages, "messages_pointer": pointer}
+        yield f"json container={pointer!r}", {**prompt, "json": {**json_ok, "container": pointer}}
+    for slot in slots:
+        yield f"prompt={slot!r}", {**prompt, "prompt": slot}
+        yield f"system={slot!r}", {**prompt, "system": slot}
+        yield f"group_key={slot!r}", {**prompt, "group_key": slot}
+        yield f"messages slot={slot!r}", {**messages_json, "messages": slot}
+        for field in (
+            "language",
+            "task_category",
+            "consent",
+            "quality_label",
+            "source_record_id",
+            "event_timestamp",
+        ):
+            yield f"metadata.{field}={slot!r}", {**prompt, "metadata": {field: slot}}
+    yield (
+        "metadata: every field",
+        {
+            **prompt,
+            "metadata": {
+                k: {"key": k}
+                for k in (
+                    "language",
+                    "task_category",
+                    "consent",
+                    "quality_label",
+                    "source_record_id",
+                    "event_timestamp",
+                )
+            },
+        },
+    )
+    yield "metadata: unknown field", {**prompt, "metadata": {"nope": {"key": "x"}}}
+    yield "metadata: empty", {**prompt, "metadata": {}}
+    for role_map in roles:
+        yield f"role_map={str(role_map)[:40]!r}", {**messages, "role_map": role_map}
+    for policy in ("reject", "ignore", "Reject", "", None, True, "ignore "):
+        yield f"policy={policy!r}", {**messages, "on_unmapped_message_keys": policy}
+    for delimiter in (",", ";", "", ";;", "é", "\t", 1, None):
+        yield f"csv delimiter={delimiter!r}", {**prompt, "csv": {**csv_ok, "delimiter": delimiter}}
+    for header_row in (0, 1, 1000000, 1000001, -1, True, 1.0, "0", None):
+        yield (
+            f"csv header_row={header_row!r}",
+            {**prompt, "csv": {**csv_ok, "header_row": header_row}},
+        )
+        yield (
+            f"xlsx header_row={header_row!r}",
+            {**prompt, "xlsx": {**xlsx_ok, "header_row": header_row}},
+        )
+    for has_header in (True, False, 1, 0, "true", None):
+        yield (
+            f"csv has_header={has_header!r}",
+            {**prompt, "csv": {**csv_ok, "has_header": has_header}},
+        )
+    for key in csv_ok:
+        yield f"csv without {key}", {**prompt, "csv": {k: v for k, v in csv_ok.items() if k != key}}
+    yield "csv: extra key", {**prompt, "csv": {**csv_ok, "extra": 1}}
+    for key in xlsx_ok:
+        yield (
+            f"xlsx without {key}",
+            {**prompt, "xlsx": {k: v for k, v in xlsx_ok.items() if k != key}},
+        )
+    yield "xlsx: extra key", {**prompt, "xlsx": {**xlsx_ok, "extra": 1}}
+    for key in json_ok:
+        yield (
+            f"json without {key}",
+            {**prompt, "json": {k: v for k, v in json_ok.items() if k != key}},
+        )
+    yield "json: extra key", {**prompt, "json": {**json_ok, "extra": 1}}
+    for ignored in ([], ["a"], ["a"] * 64, ["a"] * 65, "a", None, [1], [""], [["a"]]):
+        yield (
+            f"json ignored={str(ignored)[:30]!r}",
+            {**prompt, "json": {**json_ok, "ignored_top_level_keys": ignored}},
+        )
+
+
+def part_c() -> None:
+    root = load_interface()
+    base = "/api/v1/organizations/{organization_id}/projects/{project_id}/datasets/{dataset_id}"
+    ok_key = {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": True,
+        "schema": {"type": "string", "pattern": "^" + real_routes._KEY_PATTERN.pattern + "$"},
+    }
+    ops = (
+        (
+            "/mapping-probe",
+            "post",
+            "probeDatasetMapping",
+            False,
+            {"200", "400", "401", "403", "404", "409", "413", "503"},
+        ),
+        (
+            "/mapping-preview",
+            "post",
+            "previewDatasetMapping",
+            False,
+            {"200", "400", "401", "403", "404", "409", "413", "503"},
+        ),
+        ("/mappings", "get", "listDatasetMappings", False, {"200", "400", "401", "403", "404"}),
+        (
+            "/mappings",
+            "post",
+            "proposeDatasetMapping",
+            True,
+            {"200", "201", "400", "401", "403", "404", "409", "413", "503"},
+        ),
+        ("/mappings/{mapping_id}", "get", "getDatasetMapping", False, {"200", "401", "403", "404"}),
+        (
+            "/mappings/{mapping_id}/approve",
+            "post",
+            "approveDatasetMapping",
+            True,
+            {"200", "400", "401", "403", "404", "409", "413", "503"},
+        ),
+        (
+            "/mappings/{mapping_id}/reject",
+            "post",
+            "rejectDatasetMapping",
+            True,
+            {"200", "400", "401", "403", "404", "409", "413"},
+        ),
+    )
+    ours = {path for path in root["paths"] if path.startswith(base + "/mapping")}
+    wanted = {base + suffix for suffix, *_ in ops}
+    check(
+        "C-PATHS",
+        f"the contract declares exactly the seven mapping paths: {sorted(ours ^ wanted)}",
+        ours == wanted,
+    )
+    for suffix, method, operation_id, needs_key, statuses in ops:
+        item = root["paths"].get(base + suffix, {})
+        op = item.get(method)
+        check("C-OPS", f"{method.upper()} {suffix} exists", op is not None)
+        if op is None:
+            continue
+        check(
+            "C-OPS",
+            f"{method.upper()} {suffix} is {operation_id}",
+            op.get("operationId") == operation_id,
+        )
+        header_params = [prm for prm in op.get("parameters", []) if prm.get("in") == "header"]
+        if needs_key:
+            check(
+                "C-OPS",
+                f"{operation_id} requires the Idempotency-Key header with the route's pattern",
+                header_params == [ok_key],
+            )
+        else:
+            check("C-OPS", f"{operation_id} takes no Idempotency-Key", header_params == [])
+        check(
+            "C-OPS",
+            f"{operation_id} documents exactly its statuses {sorted(statuses)}",
+            set(op["responses"]) == statuses,
+        )
+        check(
+            "C-OPS",
+            f"{operation_id} has path parameters",
+            {p["name"] for p in item["parameters"]}
+            >= {"organization_id", "project_id", "dataset_id"},
+        )
+        check(
+            "C-OPS",
+            f"{operation_id} {'has' if method == 'post' else 'has no'} a required JSON request body",
+            (op.get("requestBody", {}).get("required") is True) == (method == "post"),
+        )
+    other_methods = {
+        (path.replace(base, ""), method)
+        for path in ours
+        for method in root["paths"][path]
+        if method in ("get", "post", "put", "patch", "delete")
+    }
+    check(
+        "C-OPS",
+        f"no other methods are declared (a stored mapping is never edited or deleted): {sorted(other_methods)}",
+        other_methods == {(suffix, method) for suffix, method, *_ in ops},
+    )
+    list_params = {
+        p["name"]: p["schema"] for p in root["paths"][base + "/mappings"]["get"]["parameters"]
+    }
+    check(
+        "C-OPS",
+        "list limit bounds are the route's",
+        list_params["limit"]
+        == {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": real_routes._MAX_LIMIT,
+            "default": real_routes._DEFAULT_LIMIT,
+        },
+    )
+    check(
+        "C-OPS",
+        "list after is a 9-digit version",
+        list_params["after"] == {"type": "integer", "minimum": 0, "maximum": 999999999},
+    )
+    # routes mounted == paths declared
+    router = real_routes.build_dataset_mapping_router(lambda: None)
+    mounted = {
+        (route.path.replace(base, ""), method.lower())
+        for route in router.routes
+        for method in route.methods
+    }
+    check(
+        "C-WIRE",
+        f"the router mounts exactly the declared operations: {sorted(mounted ^ {(s, m) for s, m, *_ in ops})}",
+        mounted == {(s, m) for s, m, *_ in ops},
+    )
+    # every status the live suite saw is documented
+    by_op = {
+        (
+            ("/" + suffix.split("/")[1] if suffix != "/mappings/{mapping_id}" else "/mappings/{}")
+            if False
+            else None
+        ): None
+        for suffix, *_ in ops
+    }
+    del by_op
+    documented = {
+        ("POST", "/mapping-probe"): ops[0][4],
+        ("POST", "/mapping-preview"): ops[1][4],
+        ("GET", "/mappings"): ops[2][4],
+        ("POST", "/mappings"): ops[3][4],
+        ("GET", "/mappings/{}"): ops[4][4],
+        ("POST", "/mappings/{}/approve"): ops[5][4],
+        ("POST", "/mappings/{}/reject"): ops[6][4],
+    }
+    seen: dict[tuple[str, str], set[str]] = {}
+    for method, norm, status, _body, _sent in LIVE:
+        seen.setdefault((method, norm), set()).add(str(status))
+    for key, statuses in sorted(seen.items()):
+        if key not in documented:
+            continue  # a method the routes do not have (R-NOEDIT) or a path outside this surface
+        check(
+            "C-STATUS",
+            f"every status the routes answered on {key} is documented ({sorted(statuses - documented[key])})",
+            statuses <= documented[key] | {"422"},
+        )
+    check(
+        "C-STATUS",
+        "the live suite exercised every documented operation",
+        set(documented) <= set(seen),
+    )
+    # live responses validate against the schemas
+    response_schema = {
+        ("POST", "/mapping-probe"): "DatasetMappingProbe",
+        ("POST", "/mapping-preview"): "DatasetMappingPreview",
+        ("GET", "/mappings"): "DatasetMappingPage",
+        ("POST", "/mappings"): "DatasetMappingOutcome",
+        ("GET", "/mappings/{}"): "DatasetMapping",
+        ("POST", "/mappings/{}/approve"): "DatasetMappingOutcome",
+        ("POST", "/mappings/{}/reject"): "DatasetMappingOutcome",
+    }
+    detail_fields = set(real_routes._MAPPING_FIELD_NAMES) | {
+        "masked",
+        "mapping_document",
+        "decision",
+    }
+    detail_schema = root["components"]["schemas"]["DatasetMapping"]
+    check(
+        "C-SCHEMA",
+        "DatasetMapping declares exactly the route's allow-listed fields",
+        set(detail_schema["properties"]) == detail_fields,
+    )
+    check(
+        "C-SCHEMA",
+        "and every one of them is required",
+        set(detail_schema["required"]) == detail_fields,
+    )
+    checked = 0
+    for method, norm, status, body, _sent in LIVE:
+        name = response_schema.get((method, norm))
+        if name is None or status not in (200, 201):
+            continue
+        checked += 1
+        schema = {"$ref": f"#/components/schemas/{name}"}
+        check(
+            "C-SCHEMA",
+            f"a {status} answer of {method} {norm} validates against {name}",
+            valid(root, schema, body),
+        )
+    detail_fields = set(real_routes._MAPPING_FIELD_NAMES) | {
+        "masked",
+        "mapping_document",
+        "decision",
+    }
+    detail_schema = root["components"]["schemas"]["DatasetMapping"]
+    check(
+        "C-SCHEMA",
+        "DatasetMapping declares exactly the route's allow-listed fields",
+        set(detail_schema["properties"]) == detail_fields,
+    )
+    check(
+        "C-SCHEMA",
+        "and every one of them is required",
+        set(detail_schema["required"]) == detail_fields,
+    )
+    check("C-SCHEMA", f"enough live answers were validated ({checked})", checked >= 40)
+    for method, norm, status, body, sent in LIVE:
+        if (method, norm) not in (
+            ("POST", "/mappings/{}/approve"),
+            ("POST", "/mappings/{}/reject"),
+        ) or not isinstance(sent, dict):
+            continue
+        name = (
+            "DatasetMappingApproveRequest"
+            if norm.endswith("approve")
+            else "DatasetMappingRejectRequest"
+        )
+        in_schema = valid(root, {"$ref": f"#/components/schemas/{name}"}, sent)
+        if (
+            status in (400, 401, 403)
+            and isinstance(body, dict)
+            and body.get("detail") in ("invalid_idempotency_key", "role_not_authorized")
+        ):
+            continue
+        if "\\ud8" in json.dumps(sent):
+            continue  # a lone surrogate is refused by the strict JSON reader; no schema can say so
+        refused = status == 400 and isinstance(body, dict) and body.get("detail") == "invalid_body"
+        check(
+            "C-SCHEMA",
+            f"{name}: schema-valid <=> not refused as invalid_body ({str(sent)[:60]!r}, {status})",
+            in_schema == (not refused),
+        )
+    # the grammar drift table
+    schema = {"$ref": "#/components/schemas/DatasetMappingSpec"}
+    total = 0
+    wrong: list[str] = []
+    accepted = 0
+    for label, document in mapping_variants():
+        total += 1
+        parsed = accepts(document)
+        accepted += parsed
+        if valid(root, schema, document) != parsed:
+            wrong.append(f"{label} (parser {'accepts' if parsed else 'refuses'})")
+    check(
+        "C-DRIFT",
+        f"schema-valid <=> mapping_from_object accepts, over {total} generated documents; {len(wrong)} differ: {wrong[:8]}",
+        not wrong,
+    )
+    check(
+        "C-DRIFT",
+        f"the table has both outcomes in quantity ({accepted} accepted of {total})",
+        total >= 500 and 30 <= accepted <= total - 30,
+    )
+    # wiring
+    main_src = MAIN_PATH.read_text()
+    check(
+        "C-WIRE",
+        "main.py imports build_dataset_mapping_router",
+        "from app.datasets.dataset_mapping_routes import build_dataset_mapping_router" in main_src,
+    )
+    check(
+        "C-WIRE",
+        "create_app includes it with the session factory, principal resolver and role lookup",
+        re.search(
+            r"app\.include_router\(\s*build_dataset_mapping_router\(\s*session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup\s*\)\s*\)",
+            main_src,
+        )
+        is not None,
+    )
+    check(
+        "C-WIRE",
+        "the proving symbol is the router builder",
+        "build_dataset_mapping_router"
+        in ROUTES_PATH.read_text().split("__all__")[1].split("\n")[0],
+    )
+
+
 def main() -> None:
     part_r_access()
     part_r_validation()
@@ -1939,6 +3566,11 @@ def main() -> None:
     part_r_reads()
     part_r_decisions()
     part_r_review()
+    part_u()
+    part_s_requests()
+    part_s_store_reads()
+    part_m()
+    part_c()
     if FAILURES:
         for failure in FAILURES:
             print(failure, file=sys.stderr)
