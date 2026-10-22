@@ -69,7 +69,9 @@ def _in(values: tuple[str, ...]) -> str:
 
 def _now_col(name: str, *, nullable: bool = False) -> sa.Column:
     if nullable:
-        return sa.Column(name, sa.DateTime(timezone=True), nullable=True)
+        return sa.Column(
+            name, sa.DateTime(timezone=True)
+        )  # SQLAlchemy's default: nullable, no server default
     return sa.Column(
         name, sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")
     )
