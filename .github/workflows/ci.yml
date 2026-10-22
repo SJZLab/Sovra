@@ -2012,6 +2012,67 @@ jobs:
       - name: Prove the real TargetApplicationConnection evidence against the live database and live OpenBao
         run: uv run python3 tests/integration/test_ftf_04a01_target_application_connection.py
 
+  argilla-identity-scope-integration:
+    # FTF-R006-P1b: real Postgres + real OpenBao proof for the Argilla review-scope/
+    # reviewer-identity/workspace-membership store (Section 8-10/65/67/77.3-77.6/78.4/81) --
+    # migration 0034 upgrade/downgrade/upgrade with one head; ENABLE+FORCE row-level security
+    # and a non-allow-all tenant_isolation policy on all three new tables; SELECT/INSERT/UPDATE
+    # only, no DELETE grant; real get_status health/unhealthy (FTF-R006-P1a's own client,
+    # unchanged); real Argilla-role readback ('annotator'); real workspace-membership
+    # convergence proven against the real server's own membership state (an unentitled
+    # identity never added, a narrowed-away membership really removed); a real 8-thread
+    # concurrent-create race on both ensure_review_scope and ensure_reviewer_identity; a
+    # revoked identity refused for every further use; cross-tenant RLS and the
+    # unauthorized-principal write/delete matrix; no real Argilla api_key value ever stored in
+    # the database -- tests/integration/test_argilla_identity_scope.py. The Argilla-facing leg
+    # runs against a real-socket, real-HTTP fake server implementing the exact pinned v2.8.0
+    # surface (tests/tasks/argilla_test_support.py; see that file's own docstring for why --
+    # the actual upstream argilla-server additionally requires a live OpenSearch/Elasticsearch
+    # engine at startup for endpoints this task never calls, confirmed by a real `pip install`
+    # attempt during this task's development). Same real `services: postgres` container
+    # pattern as dataset-source-connection-integration, plus the same real from-source OpenBao
+    # build (this repo's interactive dev sandbox has no container-registry egress; that
+    # evidence was instead produced locally against a directly-installed PostgreSQL 16 and a
+    # locally-built OpenBao binary -- see this task's docs/certifications/queue.md entry).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' argilla-identity-scope-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest FTF-0004/FTF-0102/FTF-0104/FTF-0105/FTF-H003/FTF-0106/FTF-0201/FTF-0301/FTF-0401/FTF-0402/FTF-0305/FTF-0404/FTF-1401/FTF-0500/FTF-04A01 already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf_r006_p1b
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf_r006_p1b"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf_r006_p1b
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: '1.23'
+      - name: Build the real OpenBao binary (pinned commit, the owner-selected secret backend)
+        run: |
+          git clone --filter=blob:none https://github.com/openbao/openbao.git /tmp/openbao-src
+          cd /tmp/openbao-src
+          git checkout e98dc184344fe84ee4e69965ac3f4217d5b6a45d
+          go build -o /usr/local/bin/bao .
+          bao version
+      - name: Prove the real Argilla review-scope/reviewer-identity/workspace-membership evidence against the live database and live OpenBao
+        run: uv run python3 tests/integration/test_argilla_identity_scope.py
+
   target-source-snapshot-integration:
     # FTF-04A07: real Postgres TargetSourceSnapshot evidence (Section
     # 6.8B/7A.1-7A.3/9/45/65-67/77/81) -- two real organizations (org1 with
@@ -3972,6 +4033,7 @@ jobs:
       - model-version-schema-api-integration
       - api-load-test-integration
       - dataset-source-connection-integration
+      - argilla-identity-scope-integration
       - target-application-connection-integration
       - target-source-snapshot-integration
       - github-repository-listing-integration
