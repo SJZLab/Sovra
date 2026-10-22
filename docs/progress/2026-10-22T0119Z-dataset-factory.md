@@ -98,3 +98,39 @@ barred from spawning its own subagents).
 no `proving_symbol` entry touched). Certified count not independently recomputed this shift (no
 QUEUE.md/certifications/queue.md edit made, per the "No shared-file edits" ruling); see those files'
 own live state for the authoritative count.
+
+## Update 2026-10-22T0310Z — pre-review round 2 fixes
+
+Pre-review round 2 (a fresh independent reviewer, no stake in round 1's fixes) returned 7 more
+findings. All 7 fixed this update:
+
+- F4e, F3a + the wider Arabic-string surface, and the sticky-checking/Button-variant pins were all
+  verified first and turned out to be test-pin gaps on already-correct code, not real bugs — pinned
+  with exact-string/attribute assertions and fault-injection RED→GREEN for each.
+- LABELS-ABOVE-FIELDS-PURPOSE-TO-CHECK (the fifth label missed from last round's fix),
+  SERVER-DETAIL-ENGLISH-IN-AR (backend `detail` is free-form English prose, not a stable code —
+  added a frontend pattern-match translator to Arabic, English untouched), and
+  AUTH-RESULT-SILENT-AND-FOCUS-LOST (missing `role="status"`, and three focus-loss bugs on
+  Check-authorization/Confirm-create-fails/Retry caused by the browser blurring a disabled element
+  with nothing to restore focus afterward) were genuine fixes, each reproduced before fixing.
+- EVIDENCE-ACCURACY: withdrew the earlier "stable detail codes" framing and the "`ftf_ux01*`
+  failures are pre-existing on main" claim — a clean checkout reproduces no failure there; that
+  report was a sandbox artifact.
+
+This sandbox had a working Docker daemon this round (confirmed with `docker pull postgres:16` before
+relying on it, unlike the prior update's sandbox): booted an isolated PG16 container (port 5433) and
+the real SeaweedFS fixture, and independently re-ran both real-API suites this time —
+`test_ftf_0501_ui_real_api.py` R1-R3 (3/3) and `test_ftf_0516_ui_real_api.py` R1-R7 (7/7), both
+passing against real services. Both containers removed afterward.
+
+Full suite now: **24 files, 1589/1589 passing** (up from 1527 at the round-1-fix head), typecheck/
+lint/format clean, `product_truth_check.py --fail-on-unwired` 49/49 unchanged. Commit `55c5842` on
+`relay/FTF-UX02-r2`, pushed. PR #947 still in **draft** — still awaits a third-round independent
+pre-review (or certification) from the coordinating session before any merge decision; per CLAUDE.md
+this is fix round 2 of at most 3 before the item would need to be parked instead.
+
+## Not done / queued (unchanged from round 1)
+
+- FTF-0516 (dataset issue resolution): untouched. Needs its own pass.
+- FTF-0501-UI: only the abandon dialog is rebuilt; the rest of that component (the multi-step upload
+  form itself) is still native/English.
