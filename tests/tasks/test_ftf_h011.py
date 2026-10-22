@@ -3880,6 +3880,73 @@ def part_r_races() -> None:
             who="admin",
         )
         before = w.snapshot()
+        with first_none(real_routes, "find_mapping_request"):
+            got = reject(base, ds, fifth, key="race-reject-01", rationale="wrong role map")
+        check(
+            "R-RACE",
+            f"reject: the key of another rejection is 409 idempotency_key_reused (got {got[0]} {code(got)})",
+            got == (409, {"detail": "idempotency_key_reused"}),
+        )
+        check(
+            "R-RACE",
+            "reject: and the rejection it would have made is rolled back",
+            w.snapshot()[:2] == before[:2] and rows_status(w, fifth["id"]) == "proposed",
+        )
+        with patched_attr(real_routes, "record_mapping_request", raising("invalid_request")):
+            got = reject(base, ds, fifth, key="race-reject-03")
+        check(
+            "R-RACE",
+            f"reject: any other request-store refusal is a 409 with its code (got {got[0]} {code(got)})",
+            got == (409, {"detail": "invalid_request"}),
+        )
+        check(
+            "R-RACE",
+            "reject: and rolls the rejection back",
+            w.snapshot()[:2] == before[:2] and rows_status(w, fifth["id"]) == "proposed",
+        )
+
+
+def part_r_not_replayable() -> None:
+    """A refusal that does not mean "an identical request already took effect" is never turned into a
+    replay, even when the stored outcome exists."""
+
+    def raising_store(code_: str) -> Any:
+        def fn(*args: Any, **kwargs: Any) -> None:
+            raise store.MappingStoreError(code_)
+
+        return fn
+
+    def raising_request(code_: str) -> Any:
+        def fn(*args: Any, **kwargs: Any) -> None:
+            raise rstore.MappingRequestError(code_)
+
+        return fn
+
+    with http_world() as (w, base):
+        conn, ds = seeded(w)
+        status, made = propose(base, ds, key="norep-key-00001", who="admin")
+        with (
+            first_none(real_routes, "find_mapping_request"),
+            patched_attr(real_routes, "record_mapping_request", raising_request("invalid_request")),
+        ):
+            got = propose(base, ds, key="norep-key-00001", who="admin")
+        check(
+            "R-NOREPLAY",
+            f"propose: a non-replayable request-store refusal is not a replay even though the key is stored (got {got[0]} {code(got)})",
+            got == (409, {"detail": "invalid_request"}),
+        )
+        status, approved = approve(base, ds, made, key="norep-appr-0001")
+        check("R-NOREPLAY", "fixture: approved", status == 200)
+        with (
+            first_none(real_routes, "find_mapping_request", "find_mapping_request_by_action"),
+            patched_attr(real_routes, "approve_dataset_mapping", raising_store("preview_changed")),
+        ):
+            got = approve(base, ds, made, key="norep-appr-0001")
+        check(
+            "R-NOREPLAY",
+            f"approve: a non-replayable store refusal is not a replay even though the approval is stored (got {got[0]} {code(got)})",
+            got == (409, {"detail": "preview_changed"}),
+        )
         status, second = propose(base, ds, doc=MSG2, key="norep-key-00002", who="admin")
         status, rejected = reject(base, ds, second, key="norep-rej-00001")
         check("R-NOREPLAY", "fixture: rejected", status == 200)
