@@ -3829,72 +3829,109 @@ def test_s_review_round2() -> None:
             code_of(lambda: env.respond(queue.id, rid(env, 1), alice)) == "review_item_drift",
         )
 
-    # FALSE-DRIFT-AFTER-UNCOMMITTED-WRITE: the write reached Argilla, the read-back failed
-    with env_of(records=3) as env:
+    # FALSE-DRIFT-AFTER-UNCOMMITTED-WRITE: the write reached Argilla, the read-back failed. The
+    # orphan is not drift and is never recorded from the poll; the reviewer's retry brings it in.
+    def orphan_env() -> Any:
+        return env_of(records=3)
+
+    for variant in ("untouched", "edited by the owner"):
+        with orphan_env() as env:
+            queue = env.create()
+            alice = env.reviewer("alice")
+            flaky = OutageOnceOwner(env.server.client().transport)
+            env.owner_api = flaky
+            flaky.fail_next = True
+            check(
+                "R2b",
+                f"{variant}: an outage on the read-back is argilla_unavailable",
+                code_of(
+                    lambda queue=queue, alice=alice: env.respond(
+                        queue.id, rid(env, 0), alice, "accept", "kept"
+                    )
+                )
+                == "argilla_unavailable",
+            )
+            check(
+                "R2b",
+                f"{variant}: no Factory row exists and Argilla holds the orphan",
+                env.sql("SELECT count(*) FROM review_responses")[0][0] == 0
+                and len(env.server.responses) == 1,
+            )
+            if variant != "untouched":
+                orphan = next(iter(env.server.responses.values()))
+                orphan["values"] = {
+                    "decision": {"value": "reject"},
+                    "rationale": {"value": "owner"},
+                }
+            audits_before = len(env.audits)
+            findings = env.reconcile(queue.id)
+            check(
+                "R2b",
+                f"{variant}: the poll reports it as pending adoption, not drift",
+                [(f.record_id, f.reason) for f in findings]
+                == [(rid(env, 0), "response_pending_adoption")]
+                and drifted(env) == {},
+            )
+            check(
+                "R2b",
+                f"{variant}: the poll records nothing (no row, no adoption audit)",
+                env.sql("SELECT count(*) FROM review_responses")[0][0] == 0
+                and [a["action"] for a in env.audits[audits_before:]] == ["review_queue.reconciled"]
+                and env.audits[-1]["details"]["pending_adoption"] == 1,
+            )
+            check(
+                "R2b",
+                f"{variant}: the item stays pending, so the reviewer can retry",
+                [i[6] for i in env.items()] == ["pending", "pending", "pending"],
+            )
+            retried = env.respond(queue.id, rid(env, 0), alice, "accept", "kept")
+            server_values = next(iter(env.server.responses.values()))["values"]
+            check(
+                "R2b",
+                f"{variant}: the retry brings it in at version 1 with the reviewer's own value",
+                retried.row_version == 1
+                and server_values
+                == {"decision": {"value": "accept"}, "rationale": {"value": "kept"}}
+                and len(env.server.responses) == 1,
+            )
+            check("R2b", f"{variant}: afterwards the queue is clean", env.reconcile(queue.id) == ())
+
+    # a value the Factory refused (read-back mismatch) is never recorded by a poll either
+    with orphan_env() as env:
         queue = env.create()
         alice = env.reviewer("alice")
-        flaky = OutageOnceOwner(env.server.client().transport)
-        env.owner_api = flaky
-        flaky.fail_next = True
-        check(
-            "R2b",
-            "an outage on the read-back is argilla_unavailable",
-            code_of(
-                lambda: env.respond(queue.id, rid(env, 0), alice, "accept", "kept", owner_api=flaky)
+
+        def tampering(key: str) -> TamperingApi:
+            return TamperingApi(
+                env.server.client(api_key=key).transport, env.server, decision="reject"
             )
-            == "argilla_unavailable",
-        )
+
         check(
             "R2b",
-            "no Factory row exists yet",
-            env.sql("SELECT count(*) FROM review_responses")[0][0] == 0,
+            "a response whose stored value differs from what was sent is response_author_mismatch",
+            code_of(
+                lambda: env.respond(
+                    queue.id, rid(env, 0), alice, "accept", "ok", reviewer_api_factory=tampering
+                )
+            )
+            == "response_author_mismatch",
         )
-        check("R2b", "but Argilla holds the reviewer's response", len(env.server.responses) == 1)
         findings = env.reconcile(queue.id)
         check(
             "R2b",
-            "reconcile adopts it instead of marking drift",
-            findings == () and drifted(env) == {},
-        )
-        row = env.sql(
-            "SELECT decision, rationale, response_sha256, row_version, argilla_response_id FROM review_responses"
-        )[0]
-        expected = rm.response_sha256(
-            record_id=rid(env, 0), user_id=alice.user.id, decision="accept", rationale="kept"
+            "the refused value is not recorded by the poll",
+            env.sql("SELECT count(*) FROM review_responses")[0][0] == 0
+            and [f.reason for f in findings] == ["response_pending_adoption"],
         )
         check(
             "R2b",
-            "the adopted row is the independent recompute at version 1",
-            row == ("accept", "kept", expected, 1, next(iter(env.server.responses))),
-        )
-        adopted = [a for a in env.audits if a["action"] == "review_response.adopted"]
-        check(
-            "R2b",
-            "one content-free adoption audit by the reconciler",
-            len(adopted) == 1
-            and adopted[0]["actor_id"] == "reconciler-1"
-            and "kept" not in json.dumps(adopted[0], default=str)
-            and adopted[0]["details"]["row_version"] == 1,
-        )
-        check(
-            "R2b",
-            "the reconcile audit counts the adoption",
-            env.audits[-1]["details"]["adopted_responses"] == 1
-            and env.audits[-1]["details"]["newly_drifted"] == 0,
-        )
-        check(
-            "R2b",
-            "the reviewer's retry then succeeds as a change",
-            env.respond(queue.id, rid(env, 0), alice, "reject", "", expected_version=1).row_version
-            == 2,
-        )
-        check(
-            "R2b",
-            "a second reconcile adopts nothing and is clean",
-            env.reconcile(queue.id) == () and env.audits[-1]["details"]["adopted_responses"] == 0,
+            "the reviewer's honest retry replaces it",
+            env.respond(queue.id, rid(env, 0), alice, "accept", "ok").decision == "accept"
+            and next(iter(env.server.responses.values()))["values"]["decision"]
+            == {"value": "accept"},
         )
 
-    # what is never adopted
+    # what is not even pending adoption (drift)
     def injected(
         label: str,
         setup: Callable[[Env, SimpleNamespace], tuple[str, str, str, str]],
