@@ -25216,3 +25216,4 @@ different session.
 - **Returned:** FTF-R006-P1b r1 -> r2 (0c): verify scope before any Argilla call (cross-tenant), serialize revoke/sync, pin Law 17 outage paths, converge concurrent sync, column-limited UPDATE + trigger, real-Argilla CI job + R002 + gate step.
 - **Returned:** FTF-UX07 r1 -> r2 (0d): real-browser spec with F7/F20/F8/F9 RED, §4 evidence, blank-label fix or decision, severity-2 decisions.
 - **Returned:** FTF-UX05 r1 -> r2 (0e): rebuild on UX01, catch + shape-check (no unmount, no fabricated empty), wrap long data, 0308 confirm focus, empty/loading states, phrase() residue, 7 pins, browser harness in CI + §4 evidence.
+- **Returned:** FTF-UX06 r1 -> r2 (0f): browser harness in CI, wrap long names, ErrorSummary focus, full Arabic, recovery steps + empty action, Field/useId, 16 pins, §4 evidence.
