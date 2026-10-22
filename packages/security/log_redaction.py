@@ -325,13 +325,19 @@ _QUERY_ASSIGN = re.compile(
 # escaped-open branch exactly: a possessive backslash run (one start per run, `(?<!\\)`) then the
 # opening quote, content that is either plain chars or a backslash run NOT immediately followed by
 # the SAME quote char (so a `\"` pair inside the content is reserved for the terminator, never
-# content), then the closing backslash run and quote. An escaped-open value with no later escaped
-# close is left to the two bare-quote alternatives (kept last, adjacent, and byte-for-byte
-# unchanged from round 2), which cannot match a backslash as their first character either -- the
-# same disclosed limitation `_QUOTED_VALUE` already has.
+# content), then the closing backslash run and quote -- OR, if no such closing escape exists,
+# end of line/string (fail closed, the same `(?:X|(?=[\r\n])|\Z)` shape round 3's own
+# `_QUOTED_VALUE` fix above already uses). Pre-review (L2) reproduced the leak without this: an
+# escaped-open value truncated mid-line or at end of input (a cut-off log line: `{\"state\": \"V`,
+# no later `\"`) made the WHOLE alternative fail to match at all, so `_QUOTED_SECRET.match`
+# returned None, `_QueryParamRule.sub` skipped the match entirely (key included), and the value
+# printed raw -- this round's own new code, not a pre-existing gap. The two bare-quote
+# alternatives (kept last, adjacent, and byte-for-byte unchanged from round 2) are the fallback for
+# a value whose opening quote is NOT escaped; they cannot match a backslash as their first
+# character either -- the same disclosed limitation `_QUOTED_VALUE` already has.
 _QUOTED_SECRET = re.compile(
-    r'(?<!\\)\\++"(?:[^"\\\r\n]++|\\++(?!"))*+\\+"'
-    r"""|(?<!\\)\\++'(?:[^'\\\r\n]++|\\++(?!'))*+\\+'"""
+    r'(?<!\\)\\++"(?:[^"\\\r\n]++|\\++(?!"))*+(?:\\+"|(?=[\r\n])|\Z)'
+    r"""|(?<!\\)\\++'(?:[^'\\\r\n]++|\\++(?!'))*+(?:\\+'|(?=[\r\n])|\Z)"""
     r'|"(?:[^"\\\r\n]|(?:\\\\)++(?:\\[^\r\n])?|\\[^\r\n])*+"?'
     r"""|'(?:[^'\\\r\n]|(?:\\\\)++(?:\\[^\r\n])?|\\[^\r\n])*+'?"""
 )
