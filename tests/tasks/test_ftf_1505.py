@@ -2771,20 +2771,30 @@ def test_f1_r2_head_only_secret_in_a_long_run_and_salvaged_tgz() -> None:
     (well over 1 MiB) hold their only secret on their first bytes. (2) GZIP-SALVAGE - keeping
     the part of a corrupted .tgz read before the error passed, because the F1 archive is smaller
     than one read chunk; a .tgz with a member ending exactly on a 64 KiB boundary, then a secret
-    member, must be a blocking scan_incomplete when its trailer is corrupted or it is truncated."""
+    member, must be a blocking scan_incomplete when its trailer is corrupted or it is truncated.
+    Round 3 (certifier session_017Gk8f2Yuv2S56CqTraqKu8): (1) HEX-GATE-SUFFIX-CAP-2MiB - a 2 MiB
+    suffix cap stayed GREEN on a 2,000,000-byte hex run, so both runs are now exactly
+    `MAX_SCAN_BYTES` long (no unit is longer, so every suffix cap shorter than a decoded unit
+    loses the head secret); (2) GZIP-TRUNCATION-AT-MEMBER-BOUNDARY - a 50-byte cut is caught by
+    tarfile, not by the gzip integrity check, so a decompressor that accepts an incomplete
+    stream stayed GREEN; a cut of only the 8-byte trailer and a cut exactly at the member
+    boundary (a full flush there, so the prefix is a complete tar of the pad member alone) must
+    also be a blocking scan_incomplete."""
     seed = generate_seed_for_rule("github_token")
-    secret = f"token {seed} ".encode()
+    secret = f"{seed} ".encode()  # on byte 0: a cap that drops any byte loses it
     for kind, encode, raw_len in (
-        ("base64", lambda b: base64.b64encode(b).decode(), 3_000_000),
-        ("hex", lambda b: b.hex(), 2_000_000),
+        ("base64", lambda b: base64.b64encode(b).decode(), sr.MAX_SCAN_BYTES // 4 * 3),
+        ("hex", lambda b: b.hex(), sr.MAX_SCAN_BYTES // 2),
     ):
         run = encode(secret + b"a" * (raw_len - len(secret)))
         hits = {v for r, v in scan_line(run) if r == "github_token"}
         check(
             "FTF-1505-F1",
-            f"one {len(run):,}-char {kind} run whose only secret is on its first bytes is found",
-            len(run) > 2 * 1024 * 1024 and seed in hits,
+            f"one {len(run):,}-char {kind} run (= MAX_SCAN_BYTES) whose only secret is on its "
+            f"first bytes (byte 0) is found",
+            len(run) == sr.MAX_SCAN_BYTES and seed in hits,
         )
+        del run
     import gzip
     import tarfile
 
@@ -2806,9 +2816,28 @@ def test_f1_r2_head_only_secret_in_a_long_run_and_salvaged_tgz() -> None:
         "an intact multi-chunk .tgz has its second member's secret found",
         any(r == "github_token" and v == seed for r, v, _ in intact),
     )
+    import zlib
+
+    tar_bytes = buf.getvalue()
+    boundary = 131072  # pad header + data: the secret member's header starts here
+    gz = zlib.compressobj(6, zlib.DEFLATED, 31)
+    head = gz.compress(tar_bytes[:boundary]) + gz.flush(zlib.Z_FULL_FLUSH)
+    flushed = head + gz.compress(tar_bytes[boundary:]) + gz.flush()
+    intact_flushed = ss._scan_content_and_members(
+        "big.tgz", flushed, include_canary=False, content_truncated=False
+    )
+    check(
+        "FTF-1505-F1",
+        "the same .tgz with a full flush at the member boundary has its secret found intact, "
+        "and its cut prefix inflates to exactly the pad member",
+        any(r == "github_token" and v == seed for r, v, _ in intact_flushed)
+        and zlib.decompressobj(31).decompress(head) == tar_bytes[:boundary],
+    )
     for label, data in (
         ("corrupted CRC trailer", good[:-8] + bytes([good[-8] ^ 1]) + good[-7:]),
         ("truncated by 50 bytes", good[:-50]),
+        ("8-byte trailer cut off", good[:-8]),
+        ("cut exactly at the member boundary", head),
     ):
         results = ss._scan_content_and_members(
             "big.tgz", data, include_canary=False, content_truncated=False
