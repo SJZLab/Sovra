@@ -25,8 +25,14 @@ every access-control surface tested). This migration:
   `AND status <> 'revoked'`, so a legitimate idempotent re-revoke affects zero rows rather than
   reaching the trigger at all (see that function's own comment).
 
-Revision ID: 0035_argilla_identity_hardening
-Revises: 0034_argilla_review_identity
+Renumbered 0035 -> 0036 and rebased onto `0035_dataset_mappings` (FTF-H011-P2): that migration
+landed on `main` first with the same `down_revision = "0034_argilla_review_identity"`, forking the
+chain (QUEUE.md's own migration-serialization rule: "take the next free number at claim time ...
+renumber if another lands first"). No content change from the fork, only revision/down_revision
+and the Revision ID below.
+
+Revision ID: 0036_argilla_identity_hardening
+Revises: 0035_dataset_mappings
 Create Date: 2026-10-22
 """
 
@@ -34,8 +40,8 @@ from __future__ import annotations
 
 from alembic import op
 
-revision = "0035_argilla_identity_hardening"
-down_revision = "0034_argilla_review_identity"
+revision = "0036_argilla_identity_hardening"
+down_revision = "0035_dataset_mappings"
 branch_labels = None
 depends_on = None
 

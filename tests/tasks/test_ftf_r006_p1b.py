@@ -1219,21 +1219,23 @@ def test_migration_0034_shapes() -> None:
     )
 
 
-def test_migration_0035_shapes() -> None:
+def test_migration_0036_shapes() -> None:
     """PR #968: 'the table-wide UPDATE grant lets a revoked identity be restored.' This
     migration narrows the 0034 grants to column-limited UPDATE (or none at all for
     `argilla_review_scopes`, which nothing ever updates) and adds the terminal-state trigger on
-    `argilla_reviewer_identities`."""
+    `argilla_reviewer_identities`. Renumbered 0035 -> 0036, rebased onto `0035_dataset_mappings`
+    (FTF-H011-P2 landed on main first with the same down_revision, forking the chain) -- see this
+    migration's own module docstring."""
     import importlib.util
 
-    path = ROOT / "apps" / "api" / "alembic" / "versions" / "0035_argilla_identity_hardening.py"
-    spec = importlib.util.spec_from_file_location("migration_0035", path)
+    path = ROOT / "apps" / "api" / "alembic" / "versions" / "0036_argilla_identity_hardening.py"
+    spec = importlib.util.spec_from_file_location("migration_0036", path)
     assert spec is not None and spec.loader is not None
     mod: Any = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     check(
-        "0035 revises 0034 directly -- one head, no fork",
-        mod.down_revision == "0034_argilla_review_identity",
+        "0036 revises 0035_dataset_mappings directly -- one head, no fork",
+        mod.down_revision == "0035_dataset_mappings",
     )
 
     rec = _Recorder()
