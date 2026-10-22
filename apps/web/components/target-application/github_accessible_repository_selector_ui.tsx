@@ -324,6 +324,7 @@ function RepositorySelector({
                   variant={selected ? "primary" : "secondary"}
                   data-testid={`github-repository-option-${repository.repository_identity}`}
                   aria-pressed={selected}
+                  style={{ overflowWrap: "anywhere", maxInlineSize: "100%" }}
                   onClick={() => handleSelect(repository)}
                 >
                   {selected && <span aria-hidden="true">✓ </span>}
@@ -343,7 +344,11 @@ function RepositorySelector({
       </div>
 
       {selectedRepositoryIdentity && (
-        <div role="status" data-testid="github-repository-selected-notice">
+        <div
+          role="status"
+          data-testid="github-repository-selected-notice"
+          style={{ overflowWrap: "anywhere" }}
+        >
           <span aria-hidden="true">✓</span> {t04a03("selectedNotice", locale)}{" "}
           <bdi>{selectedRepositoryIdentity}</bdi>
         </div>

@@ -189,6 +189,25 @@ const CONFLICT_REQUIREMENTS = [
   requirement({ name: "delete_user", runtime_enforced: true }),
 ];
 
+// Round 3 (point 1): realistic UNBROKEN names, with no hyphen or space to wrap at. 100 characters is
+// GitHub's maximum repository name; the snake_case tool and branch names are what real code uses.
+const UNBROKEN_REPO = `acme/${"r".repeat(95)}`;
+const UNBROKEN_BRANCH = `release_${"b".repeat(56)}`;
+const UNBROKEN_TOOL = `issue_refund_for_${"t".repeat(40)}_order`;
+const UNBROKEN_TOOL_2 = `export_customer_data_${"u".repeat(40)}`;
+const UNBROKEN_MANIFEST = manifest22({
+  forbidden_actions_json: {
+    actions: [
+      { name: UNBROKEN_TOOL, reason: "finance policy" },
+      { name: UNBROKEN_TOOL_2, reason: "" },
+    ],
+  },
+});
+const UNBROKEN_REQUIREMENTS = [
+  requirement({ name: UNBROKEN_TOOL, runtime_enforced: false }),
+  requirement({ name: UNBROKEN_TOOL_2, is_critical: false, requires_confirmation: false }),
+];
+
 // ---------------------------------------------------------------------------------------------
 // State table
 // ---------------------------------------------------------------------------------------------
@@ -269,6 +288,25 @@ const STATES: UiState[] = [
     ready: '[data-testid="github-repository-selected-notice"]',
   },
   {
+    id: "04A03 unbroken 100-char repository selected",
+    component: "04A03",
+    props: P03,
+    routes: [
+      {
+        method: "POST",
+        path: R03,
+        body: {
+          ...REPOS,
+          repositories: [
+            { repository_identity: UNBROKEN_REPO, private: true, default_branch: "main" },
+          ],
+        },
+      },
+    ],
+    steps: [...token, { click: `github-repository-option-${UNBROKEN_REPO}` }],
+    ready: '[data-testid="github-repository-selected-notice"]',
+  },
+  {
     id: "04A03 empty",
     component: "04A03",
     props: P03,
@@ -321,6 +359,28 @@ const STATES: UiState[] = [
     steps: [
       { click: "github-load-branches-button" },
       { click: "github-branch-option-main" },
+      { click: "github-resolve-ref-button" },
+    ],
+    ready: '[data-testid="github-resolved-ref-notice"]',
+  },
+  {
+    id: "04A04 unbroken 64-char branch resolved",
+    component: "04A04",
+    props: P04,
+    routes: [
+      {
+        method: "POST",
+        path: R04,
+        body: {
+          ...BRANCHES,
+          branches: [{ name: UNBROKEN_BRANCH, list_time_commit_sha: "b".repeat(40) }],
+        },
+      },
+      { method: "POST", path: R04R, body: { ref: UNBROKEN_BRANCH, resolved_commit_sha: SHA } },
+    ],
+    steps: [
+      { click: "github-load-branches-button" },
+      { click: `github-branch-option-${UNBROKEN_BRANCH}` },
       { click: "github-resolve-ref-button" },
     ],
     ready: '[data-testid="github-resolved-ref-notice"]',
@@ -540,6 +600,16 @@ const STATES: UiState[] = [
       { method: "GET", path: `${P}/requirements`, body: CONFLICT_REQUIREMENTS },
     ],
     ready: '[data-testid="forbidden-action-row-refund"]',
+  },
+  {
+    id: "04A22 unbroken snake_case tool names",
+    component: "04A22",
+    props: P21,
+    routes: [
+      { method: "GET", path: MANIFEST_PATH, body: UNBROKEN_MANIFEST },
+      { method: "GET", path: `${P}/requirements`, body: UNBROKEN_REQUIREMENTS },
+    ],
+    ready: `[data-testid="mandate-lock-blockers"]`,
   },
   {
     id: "04A22 dirty + discard confirm",
