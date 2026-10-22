@@ -3009,6 +3009,36 @@ def test_f2_r3_odd_run_without_a_later_quote_fails_closed() -> None:
         check("FTF-0904-F2", f"r3 {text!r}: logging-path leak {found}", not found)
 
 
+def test_f2_r3_unterminated_value_stops_at_the_end_of_its_line() -> None:
+    """The fail-closed close is "end of LINE", not end of text: in a multi-line record (\\n or
+    \\r\\n) an unterminated quoted value is redacted up to the line break, and the next line
+    survives. Without the line-break alternative the value matched nothing and leaked."""
+    rows = []
+    for name in _F2R2_SECRET_NAMES + _F2_NAMES:
+        for q in _F2_QUOTES:
+            for eol in ("\n", "\r\n"):
+                for n in (1, 3):
+                    bs = "\\" * n
+                    rows.append(f"{name}={q}{_F1_VALUE}{bs}{q}{eol}next_line_kept")
+    for literal in _F2R3_LITERALS:
+        rows.append(f"{literal}\nnext_line_kept")
+        rows.append(f"login failed {literal}\r\nnext_line_kept")
+    check("FTF-0904-F2", "r3 multi-line table is large", len(rows) > 100)
+    for text in rows:
+        out = lr.redact_text(text)
+        check("FTF-0904-F2", f"r3 multi-line {text!r}: leaked {out!r}", "Zq7Lm2" not in out)
+        check(
+            "FTF-0904-F2",
+            f"r3 multi-line {text!r}: next line lost {out!r}",
+            out.endswith("next_line_kept"),
+        )
+    for text in rows[::7]:
+        with _Harness() as h:
+            logging.getLogger("t").error("%s", text)
+            found = leaked([_F1_VALUE], h.outputs())
+        check("FTF-0904-F2", f"r3 multi-line {text!r}: logging-path leak {found}", not found)
+
+
 FAULTS: list[tuple[str, str, str, int]] = [
     # --- rules removed one at a time -------------------------------------------------
     ("F01 header rule removed", '    ("header", _HEADER),\n', "", 1),
@@ -3681,6 +3711,37 @@ FAULTS += [
         "F2-r3 unterminated single-quoted value no longer fails closed (key_value/header path)",
         '*+(?:\'|(?=[\\r\\n])|\\Z)"""\n)',
         '*+\'"""\n)',
+        1,
+    ),
+]
+
+FAULTS += [
+    (
+        "F2-r3 line-break close removed (double quote)",
+        '*+(?:"|(?=[\\r\\n])|\\Z)"""',
+        '*+(?:"|\\Z)"""',
+        1,
+    ),
+    (
+        "F2-r3 line-break close removed (single quote)",
+        '*+(?:\'|(?=[\\r\\n])|\\Z)"""',
+        '*+(?:\'|\\Z)"""',
+        1,
+    ),
+    (
+        "F2-r3 line-break close removed (both quote styles)",
+        '*+(?:"|(?=[\\r\\n])|\\Z)"""\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]++|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])'
+        '*+(?:\'|(?=[\\r\\n])|\\Z)"""',
+        '*+(?:"|\\Z)"""\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]++|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])'
+        '*+(?:\'|\\Z)"""',
+        1,
+    ),
+    (
+        "F2-r3 close replaced by $ without re.M (double quote)",
+        '*+(?:"|(?=[\\r\\n])|\\Z)"""',
+        '*+(?:"|$)"""',
         1,
     ),
 ]
