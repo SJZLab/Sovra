@@ -49,7 +49,9 @@ __all__ = [
     "request_digest",
 ]
 
-ACTIONS: Final = frozenset({"propose", "approve", "reject"})
+# Whether the action carries a reviewer rationale: a proposal has none, a decision has one.
+_RATIONALE_REQUIRED: Final = {"propose": False, "approve": True, "reject": True}
+ACTIONS: Final = frozenset(_RATIONALE_REQUIRED)
 MAX_RATIONALE: Final = 2000
 _KEY_PATTERN: Final = re.compile(r"[A-Za-z0-9._:-]{8,200}")
 _HEX64: Final = re.compile(r"[0-9a-f]{64}")
@@ -211,7 +213,7 @@ def record_mapping_request(
         or not created_by
     ):
         raise MappingRequestError("invalid_request")
-    if action == "propose":
+    if not _RATIONALE_REQUIRED[action]:
         if rationale is not None:
             raise MappingRequestError("invalid_request")
     elif type(rationale) is not str or not 1 <= len(rationale) <= MAX_RATIONALE:

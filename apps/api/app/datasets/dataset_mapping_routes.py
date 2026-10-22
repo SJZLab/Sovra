@@ -124,6 +124,8 @@ _FORBIDDEN: Final = frozenset(
 _NOT_FOUND: Final = frozenset({"dataset_not_found", "mapping_not_found"})
 # A refusal that may mean "an identical request already took effect": look for the stored outcome.
 _REPLAYABLE: Final = frozenset({"mapping_not_proposed", "idempotency_key_reused"})
+# The decision a stored status records: the action of the request that took the mapping there.
+_DECISION_ACTION: Final = {"approved": "approve", "rejected": "reject"}
 
 _MAPPING_FIELD_NAMES: Final = (
     "id",
@@ -404,6 +406,19 @@ def _audit(
     )
 
 
+def _decision(
+    session: Session, tenant: TenantContext, project_id: uuid.UUID, row: DatasetMapping
+) -> Any | None:
+    """The stored request that approved or rejected `row`; None while it is proposed (or in a
+    status no decision leads to)."""
+    action = _DECISION_ACTION.get(row.status)
+    if action is None:
+        return None
+    return find_mapping_request_by_action(
+        session, tenant, project_id=project_id, mapping_id=row.id, action=action
+    )
+
+
 def build_dataset_mapping_router(
     session_factory: Callable[[], Session],
     *,
@@ -437,16 +452,9 @@ def build_dataset_mapping_router(
         row = get_dataset_mapping(session, tenant, project_id=project_id, mapping_id=mapping_id)
         if row.dataset_id != dataset_id:
             raise MappingStoreError("mapping_not_found")
-        decision = None
-        if row.status in ("approved", "rejected"):
-            decision = find_mapping_request_by_action(
-                session,
-                tenant,
-                project_id=project_id,
-                mapping_id=mapping_id,
-                action="approve" if row.status == "approved" else "reject",
-            )
-        return _serialize_mapping(row, reveal=reveal, decision=decision)
+        return _serialize_mapping(
+            row, reveal=reveal, decision=_decision(session, tenant, project_id, row)
+        )
 
     def _stored_outcome(
         tenant: TenantContext,
@@ -479,11 +487,9 @@ def build_dataset_mapping_router(
         digest: str,
     ) -> dict[str, Any] | None:
         """The mapping as it is now when this exact request already took effect under another key
-        (same action, principal and body, so the same digest), None otherwise. Read-only."""
+        (a stored request of this action on this mapping with the same digest: the action, the
+        dataset, the mapping, the principal and the body), None otherwise. Read-only."""
         with tenant_scoped_session_for(session_factory, tenant) as session:
-            row = get_dataset_mapping(session, tenant, project_id=project_id, mapping_id=mapping_id)
-            if row.status != ("approved" if action == "approve" else "rejected"):
-                return None
             stored = find_mapping_request_by_action(
                 session, tenant, project_id=project_id, mapping_id=mapping_id, action=action
             )
@@ -634,17 +640,7 @@ def build_dataset_mapping_router(
                     _serialize_mapping(
                         row,
                         reveal=reveal,
-                        decision=(
-                            find_mapping_request_by_action(
-                                session,
-                                tenant,
-                                project_id=project_id,
-                                mapping_id=row.id,
-                                action="approve" if row.status == "approved" else "reject",
-                            )
-                            if row.status in ("approved", "rejected")
-                            else None
-                        ),
+                        decision=_decision(session, tenant, project_id, row),
                     )
                     for row in rows
                 ]
@@ -737,10 +733,12 @@ def build_dataset_mapping_router(
                     )
                     body = _serialize_mapping(row, reveal=reveal, decision=None)
             except MappingRequestError as exc:
-                if not _replayable(exc.code):
-                    raise
                 # A concurrent identical request may have stored the key first.
-                replay = _replay(tenant, ctx, project_id, dataset_id, None, "propose", key, digest)
+                replay = (
+                    _replay(tenant, ctx, project_id, dataset_id, None, "propose", key, digest)
+                    if _replayable(exc.code)
+                    else None
+                )
                 if replay is None:
                     raise
                 return JSONResponse({**replay, "replayed": True, "created": False})
@@ -809,11 +807,11 @@ def build_dataset_mapping_router(
                     )
                     body = _view(session, tenant, ctx, project_id, dataset_id, mapping_id)
             except (MappingStoreError, MappingRequestError) as exc:
-                if not _replayable(exc.code):
-                    raise
                 # A concurrent identical request may have approved it first.
-                replay = _replay(
-                    tenant, ctx, project_id, dataset_id, mapping_id, "approve", key, digest
+                replay = (
+                    _replay(tenant, ctx, project_id, dataset_id, mapping_id, "approve", key, digest)
+                    if _replayable(exc.code)
+                    else None
                 )
                 if replay is None:
                     raise
@@ -875,10 +873,10 @@ def build_dataset_mapping_router(
                     )
                     body = _view(session, tenant, ctx, project_id, dataset_id, mapping_id)
             except (MappingStoreError, MappingRequestError) as exc:
-                if not _replayable(exc.code):
-                    raise
-                replay = _replay(
-                    tenant, ctx, project_id, dataset_id, mapping_id, "reject", key, digest
+                replay = (
+                    _replay(tenant, ctx, project_id, dataset_id, mapping_id, "reject", key, digest)
+                    if _replayable(exc.code)
+                    else None
                 )
                 if replay is None:
                     raise

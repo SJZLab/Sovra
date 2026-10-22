@@ -2526,6 +2526,37 @@ def part_s_requests() -> None:
                 )
                 == wanted,
             )
+        for variant in (
+            " approve",
+            "APPROVE",
+            "approve ",
+            "Reject",
+            " reject",
+            "reject\n",
+            "Propose",
+            " propose",
+        ):
+            check(
+                "S-RECORD",
+                f"the action {variant!r} is no action: refused as invalid_request",
+                refusal_of(
+                    lambda v=variant: record(
+                        idempotency_key="request-key-0012",
+                        action=v,
+                        rationale=None if v.strip().lower() == "propose" else "x",
+                    )
+                )
+                == "invalid_request",
+            )
+            check(
+                "S-FIND",
+                f"the lookup of the action {variant!r} finds nothing, whatever its normal form",
+                rstore.find_mapping_request_by_action(
+                    session, ctx, project_id=pid, mapping_id=mid, action=variant
+                )
+                is None,
+            )
+        record(idempotency_key="request-key-0013", rationale="x")
         record(idempotency_key="request-key-0011", rationale="r" * 2000)
         record(idempotency_key="k" * 200, action="reject")
         record(idempotency_key="k" * 8 + "x", action="propose", rationale=None)
@@ -2535,7 +2566,7 @@ def part_s_requests() -> None:
             True,
         )
         count = session.query(rstore.DatasetMappingRequest).count()
-        check("S-RECORD", "refusals wrote nothing (the accepted rows only)", count == 6)
+        check("S-RECORD", "refusals wrote nothing (the accepted rows only)", count == 7)
 
 
 def part_s_store_reads() -> None:
@@ -3849,29 +3880,18 @@ def part_r_races() -> None:
             who="admin",
         )
         before = w.snapshot()
-        with first_none(real_routes, "find_mapping_request"):
-            got = reject(base, ds, fifth, key="race-reject-01", rationale="wrong role map")
+        status, second = propose(base, ds, doc=MSG2, key="norep-key-00002", who="admin")
+        status, rejected = reject(base, ds, second, key="norep-rej-00001")
+        check("R-NOREPLAY", "fixture: rejected", status == 200)
+        with (
+            first_none(real_routes, "find_mapping_request", "find_mapping_request_by_action"),
+            patched_attr(real_routes, "reject_dataset_mapping", raising_store("approval_refused")),
+        ):
+            got = reject(base, ds, second, key="norep-rej-00001")
         check(
-            "R-RACE",
-            f"reject: the key of another rejection is 409 idempotency_key_reused (got {got[0]} {code(got)})",
-            got == (409, {"detail": "idempotency_key_reused"}),
-        )
-        check(
-            "R-RACE",
-            "reject: and the rejection it would have made is rolled back",
-            w.snapshot()[:2] == before[:2] and rows_status(w, fifth["id"]) == "proposed",
-        )
-        with patched_attr(real_routes, "record_mapping_request", raising("invalid_request")):
-            got = reject(base, ds, fifth, key="race-reject-03")
-        check(
-            "R-RACE",
-            f"reject: any other request-store refusal is a 409 with its code (got {got[0]} {code(got)})",
-            got == (409, {"detail": "invalid_request"}),
-        )
-        check(
-            "R-RACE",
-            "reject: and rolls the rejection back",
-            w.snapshot()[:2] == before[:2] and rows_status(w, fifth["id"]) == "proposed",
+            "R-NOREPLAY",
+            f"reject: a non-replayable store refusal is not a replay even though the rejection is stored (got {got[0]} {code(got)})",
+            got == (409, {"detail": "approval_refused"}),
         )
 
 
@@ -4157,6 +4177,36 @@ def part_u2() -> None:
             )
         )
         check("U-DIGEST", f"the action {action!r} is no action: refused", got == "invalid_request")
+    # the decision a stored status leads to
+    mid = uuid.uuid4()
+    asked: list[str] = []
+    original = mod.find_mapping_request_by_action
+    mod.find_mapping_request_by_action = lambda session, tenant, **kw: asked.append(
+        kw["action"]
+    ) or ("decision", kw["mapping_id"])
+    try:
+        for status, wanted in (
+            ("approved", "approve"),
+            ("rejected", "reject"),
+            ("proposed", None),
+            ("Approved", None),
+            (" approved", None),
+            ("APPROVED", None),
+            ("rejected ", None),
+            ("Rejected", None),
+            ("", None),
+        ):
+            asked.clear()
+            got = mod._decision(None, None, uuid.uuid4(), SimpleNamespace(status=status, id=mid))
+            check(
+                "U-DECISION",
+                f"status {status!r} asks for the {wanted!r} request and returns it ({asked})",
+                asked == ([wanted] if wanted else [])
+                and (got == ("decision", mid)) == (wanted is not None)
+                and (wanted is not None or got is None),
+            )
+    finally:
+        mod.find_mapping_request_by_action = original
     # the store's role handling is exact
     with p2.sqlite_world() as w:
         conn = w.connection("all", ALL_PURPOSES)
@@ -4183,6 +4233,33 @@ def part_u2() -> None:
                 check(
                     "S-VISIBILITY",
                     f"the role {role!r} is not a known role: no reveal, no held-out ({got})",
+                    got == (False, False),
+                )
+            for classification in (
+                "Internal",
+                "PUBLIC",
+                " internal",
+                "public ",
+                "Public",
+                "internal\n",
+            ):
+                orig_conn = store.get_dataset_source_connection
+                store.get_dataset_source_connection = (
+                    lambda session,
+                    context,
+                    project_id,
+                    connection_id,
+                    c=classification: SimpleNamespace(security_classification=c)
+                )
+                try:
+                    got = store.dataset_visibility(
+                        w.session, w.ctx, project_id=PROJECT, dataset_id=ds.id, role="ml_engineer"
+                    )
+                finally:
+                    store.get_dataset_source_connection = orig_conn
+                check(
+                    "S-VISIBILITY",
+                    f"the classification {classification!r} is none of public/internal: an ml_engineer does not reveal ({got})",
                     got == (False, False),
                 )
             check(
@@ -4319,6 +4396,7 @@ def main() -> None:
     part_s_store_reads()
     part_r_tenant()
     part_r_races()
+    part_r_not_replayable()
     part_r_errors()
     part_r_lists_and_limits()
     part_u2()
