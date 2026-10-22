@@ -189,6 +189,33 @@ const CONFLICT_REQUIREMENTS = [
   requirement({ name: "delete_user", runtime_enforced: true }),
 ];
 
+// Round 3 (point 1): realistic UNBROKEN names, with no hyphen or space to wrap at. 100 characters is
+// GitHub's maximum repository name; the snake_case tool and branch names are what real code uses.
+const UNBROKEN_REPO = `acme/${"r".repeat(95)}`;
+const UNBROKEN_BRANCH = `release_${"b".repeat(56)}`;
+const UNBROKEN_TOOL = `issue_refund_for_${"t".repeat(40)}_order`;
+const UNBROKEN_TOOL_2 = `export_customer_data_${"u".repeat(40)}`;
+// Round 3 (reviewer): a realistic evidence path and symbol, unbroken, in the 04A21 evidence row.
+const UNBROKEN_EVIDENCE = [
+  {
+    ...EVIDENCE[0]!,
+    file_path: "src/customer_support_agent/integrations/zendesk_ticket_escalation_handler.py",
+    symbol: "CustomerSupportAgent.handle_ticket_escalation_request",
+  },
+];
+const UNBROKEN_MANIFEST = manifest22({
+  forbidden_actions_json: {
+    actions: [
+      { name: UNBROKEN_TOOL, reason: "finance policy" },
+      { name: UNBROKEN_TOOL_2, reason: "" },
+    ],
+  },
+});
+const UNBROKEN_REQUIREMENTS = [
+  requirement({ name: UNBROKEN_TOOL, runtime_enforced: false }),
+  requirement({ name: UNBROKEN_TOOL_2, is_critical: false, requires_confirmation: false }),
+];
+
 // ---------------------------------------------------------------------------------------------
 // State table
 // ---------------------------------------------------------------------------------------------
@@ -269,6 +296,25 @@ const STATES: UiState[] = [
     ready: '[data-testid="github-repository-selected-notice"]',
   },
   {
+    id: "04A03 unbroken 100-char repository selected",
+    component: "04A03",
+    props: P03,
+    routes: [
+      {
+        method: "POST",
+        path: R03,
+        body: {
+          ...REPOS,
+          repositories: [
+            { repository_identity: UNBROKEN_REPO, private: true, default_branch: "main" },
+          ],
+        },
+      },
+    ],
+    steps: [...token, { click: `github-repository-option-${UNBROKEN_REPO}` }],
+    ready: '[data-testid="github-repository-selected-notice"]',
+  },
+  {
     id: "04A03 empty",
     component: "04A03",
     props: P03,
@@ -321,6 +367,28 @@ const STATES: UiState[] = [
     steps: [
       { click: "github-load-branches-button" },
       { click: "github-branch-option-main" },
+      { click: "github-resolve-ref-button" },
+    ],
+    ready: '[data-testid="github-resolved-ref-notice"]',
+  },
+  {
+    id: "04A04 unbroken 64-char branch resolved",
+    component: "04A04",
+    props: P04,
+    routes: [
+      {
+        method: "POST",
+        path: R04,
+        body: {
+          ...BRANCHES,
+          branches: [{ name: UNBROKEN_BRANCH, list_time_commit_sha: "b".repeat(40) }],
+        },
+      },
+      { method: "POST", path: R04R, body: { ref: UNBROKEN_BRANCH, resolved_commit_sha: SHA } },
+    ],
+    steps: [
+      { click: "github-load-branches-button" },
+      { click: `github-branch-option-${UNBROKEN_BRANCH}` },
       { click: "github-resolve-ref-button" },
     ],
     ready: '[data-testid="github-resolved-ref-notice"]',
@@ -450,6 +518,16 @@ const STATES: UiState[] = [
     ready: '[data-testid="field-agent_name"]',
   },
   {
+    id: "04A21 unbroken evidence path and symbol",
+    component: "04A21",
+    props: P21,
+    routes: [
+      { method: "GET", path: MANIFEST_PATH, body: manifest21() },
+      { method: "GET", path: `${MANIFEST_PATH}/evidence`, body: UNBROKEN_EVIDENCE },
+    ],
+    ready: '[data-testid^="evidence-location-"]',
+  },
+  {
     id: "04A21 invalid JSON edit",
     component: "04A21",
     props: P21,
@@ -488,6 +566,23 @@ const STATES: UiState[] = [
       { method: "GET", path: `${MANIFEST_PATH}/evidence`, body: EVIDENCE },
     ],
     ready: '[data-testid="manifest-read-only"]',
+  },
+  {
+    id: "04A21 locked realistic sha256",
+    component: "04A21",
+    props: P21,
+    routes: [
+      {
+        method: "GET",
+        path: MANIFEST_PATH,
+        body: manifest21({
+          status: "locked",
+          manifest_sha256: "3a7bd3e29c41f08d6b5e17a2c94d0f83be6a1d57c20e94f7a8b3d61e05cd4f1b",
+        }),
+      },
+      { method: "GET", path: `${MANIFEST_PATH}/evidence`, body: EVIDENCE },
+    ],
+    ready: '[data-testid="manifest-sha256"]',
   },
   {
     id: "04A21 error 503",
@@ -540,6 +635,30 @@ const STATES: UiState[] = [
       { method: "GET", path: `${P}/requirements`, body: CONFLICT_REQUIREMENTS },
     ],
     ready: '[data-testid="forbidden-action-row-refund"]',
+  },
+  {
+    id: "04A22 unbroken snake_case tool names",
+    component: "04A22",
+    props: P21,
+    routes: [
+      { method: "GET", path: MANIFEST_PATH, body: UNBROKEN_MANIFEST },
+      { method: "GET", path: `${P}/requirements`, body: UNBROKEN_REQUIREMENTS },
+    ],
+    ready: `[data-testid="mandate-lock-blockers"]`,
+  },
+  {
+    id: "04A22 unbroken duplicate-name error",
+    component: "04A22",
+    props: P21,
+    routes: [
+      { method: "GET", path: MANIFEST_PATH, body: UNBROKEN_MANIFEST },
+      { method: "GET", path: `${P}/requirements`, body: UNBROKEN_REQUIREMENTS },
+    ],
+    steps: [
+      { fill: ["new-forbidden-action-name", UNBROKEN_TOOL] },
+      { click: "forbidden-action-add-button" },
+    ],
+    ready: '[id="new-forbidden-action-name-error"]',
   },
   {
     id: "04A22 dirty + discard confirm",
@@ -604,6 +723,7 @@ const VIEWPORTS = [
   { name: "desktop", width: 1280, height: 900 },
   { name: "tablet", width: 768, height: 1024 },
   { name: "mobile", width: 390, height: 844 },
+  { name: "narrow", width: 320, height: 640 },
 ] as const;
 const AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 

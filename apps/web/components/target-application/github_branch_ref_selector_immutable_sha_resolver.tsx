@@ -382,6 +382,7 @@ function BranchRefSelector({
                   variant={selected ? "primary" : "secondary"}
                   data-testid={`github-branch-option-${branch.name}`}
                   aria-pressed={selected}
+                  style={{ overflowWrap: "anywhere", maxInlineSize: "100%" }}
                   onClick={() => changeRef(branch.name)}
                 >
                   {selected && <span aria-hidden="true">✓ </span>}
@@ -429,7 +430,11 @@ function BranchRefSelector({
       {resolving && <Pending label={t04a04("resolving", locale)} locale={locale} />}
 
       {resolvedRef && (
-        <div role="status" data-testid="github-resolved-ref-notice">
+        <div
+          role="status"
+          data-testid="github-resolved-ref-notice"
+          style={{ overflowWrap: "anywhere" }}
+        >
           <span aria-hidden="true">✓</span> {t04a04("resolvedPrefix", locale)}{" "}
           <bdi>{resolvedRef.ref}</bdi> {t04a04("resolvedTo", locale)}{" "}
           <bdi dir="ltr">{resolvedRef.resolved_commit_sha}</bdi>
