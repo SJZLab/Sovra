@@ -83,6 +83,7 @@ from packages.litellm_client.secret_manager_integration import (  # noqa: E402
     store_secret_ref,
 )
 from sqlalchemy import create_engine, text  # noqa: E402
+from sqlalchemy.exc import DBAPIError  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 
 from app.auth.organization_workspace_schema import (  # noqa: E402
@@ -134,6 +135,18 @@ def _finish() -> None:
         sys.exit(1)
     print("All FTF-R006-P1b integration checks passed.")
     sys.exit(0)
+
+
+def _sqlstate(exc: DBAPIError) -> str | None:
+    diag = getattr(exc.orig, "diag", None)
+    return None if diag is None else diag.sqlstate
+
+
+def _set_tenant(session: Session, organization_id: uuid.UUID) -> None:
+    session.execute(
+        text("SELECT set_config('app.current_organization_id', :org, true)"),
+        {"org": str(organization_id)},
+    )
 
 
 def _required_env(name: str) -> str:
@@ -856,6 +869,312 @@ def section_rls_and_secrecy(world: World) -> None:
                     )
 
 
+def section_revoke_sync_race(world: World) -> None:
+    """Round 2 (PR #968): 'Revoke/sync race: a revoked identity keeps workspace access.' A
+    concurrent `revoke_reviewer_identity` can complete in the window between
+    `sync_workspace_membership`'s own pre-call identity check and the real Argilla
+    `add_workspace_user` call it is about to make (a real network call takes real wall-clock
+    time) -- proved here against the real database's own transaction semantics, not merely a
+    simulated ordering (the unit-level proof in `tests/tasks/test_ftf_r006_p1b.py` is the
+    deterministic version of this same race)."""
+    client = world.fake_server.client()
+    scope = ensure_review_scope(
+        world.factory,
+        organization_id=world.org1,
+        project_id=world.new_project(),
+        component_binding_id=world.binding1,
+        client=client,
+    )
+    issuer, subject = "https://issuer.example", f"race-revoke-{uuid.uuid4().hex[:8]}"
+    identity = ensure_reviewer_identity(
+        world.factory,
+        organization_id=world.org1,
+        issuer=issuer,
+        subject=subject,
+        client=client,
+        openbao_config=world.openbao,
+    )
+
+    real_add = client.add_workspace_user
+
+    def delayed_add(workspace_id: str, user_id: str) -> None:
+        # Widens the race window: the concurrent revoke below runs to completion while this
+        # sleeps, so the atomic write that follows genuinely finds the identity already revoked.
+        time.sleep(0.3)
+        real_add(workspace_id, user_id)
+
+    client.add_workspace_user = delayed_add
+
+    def run_sync() -> str:
+        try:
+            sync_workspace_membership(
+                world.factory,
+                organization_id=world.org1,
+                issuer=issuer,
+                subject=subject,
+                role=Role.ML_ENGINEER,
+                scope=scope,
+                identity=identity,
+                client=client,
+            )
+            return "ok"
+        except ReviewerIdentityRevokedError:
+            return "revoked"
+
+    def run_revoke() -> str:
+        time.sleep(0.1)  # let run_sync pass its own pre-call identity check first.
+        revoke_reviewer_identity(
+            world.factory,
+            organization_id=world.org1,
+            issuer=issuer,
+            subject=subject,
+            client=client,
+        )
+        return "revoked_identity"
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        sync_future = pool.submit(run_sync)
+        revoke_future = pool.submit(run_revoke)
+        sync_outcome = sync_future.result(timeout=5.0)
+        revoke_future.result(timeout=5.0)
+
+    client.add_workspace_user = real_add
+
+    check(
+        "the racing sync call is refused once the concurrent revoke wins (real Postgres)",
+        sync_outcome == "revoked",
+    )
+    check(
+        "the real Argilla-side add made during the race is undone",
+        (scope.argilla_workspace_id, identity.argilla_user_id) not in world.fake_server.memberships,
+    )
+    with Session(world.owner) as owner_session:
+        rows = owner_session.execute(
+            text(
+                "SELECT status FROM argilla_workspace_members WHERE scope_id = :scope "
+                "AND identity_id = :identity"
+            ),
+            {"scope": str(scope.id), "identity": str(identity.id)},
+        ).all()
+    check(
+        "no membership row is ever recorded active for the now-revoked identity (real Postgres)",
+        all(r[0] != "active" for r in rows),
+    )
+
+
+def section_concurrent_double_revoke(world: World) -> None:
+    """`revoke_reviewer_identity`'s own final UPDATE carries `AND status <> 'revoked'` so a
+    second concurrent revoke call -- having already passed the function's own early
+    already-revoked check before the first call's write lands -- never issues an UPDATE against
+    a row the migration's own terminal-state trigger would otherwise refuse (that trigger exists
+    for a *different* caller's raw SQL, never this module's own idempotent double-revoke). This
+    proves it against the real trigger, not merely by inspection."""
+    client = world.fake_server.client()
+    scope = ensure_review_scope(
+        world.factory,
+        organization_id=world.org1,
+        project_id=world.new_project(),
+        component_binding_id=world.binding1,
+        client=client,
+    )
+    issuer, subject = "https://issuer.example", f"double-revoke-{uuid.uuid4().hex[:8]}"
+    identity = ensure_reviewer_identity(
+        world.factory,
+        organization_id=world.org1,
+        issuer=issuer,
+        subject=subject,
+        client=client,
+        openbao_config=world.openbao,
+    )
+    sync_workspace_membership(
+        world.factory,
+        organization_id=world.org1,
+        issuer=issuer,
+        subject=subject,
+        role=Role.ML_ENGINEER,
+        scope=scope,
+        identity=identity,
+        client=client,
+    )
+
+    real_remove = client.remove_workspace_user
+
+    def concurrent_revoke_then_remove(workspace_id: str, user_id: str) -> None:
+        # Simulates a second concurrent `revoke_reviewer_identity` call completing its own full
+        # revoke -- including its own final identity UPDATE -- before this call's own identity
+        # UPDATE below runs.
+        with Session(world.factory().bind) as raw:
+            _set_tenant(raw, world.org1)
+            raw.execute(
+                text(
+                    "UPDATE argilla_reviewer_identities SET status = 'revoked', "
+                    "revoked_at = now(), updated_at = now() "
+                    "WHERE id = :id AND status <> 'revoked'"
+                ),
+                {"id": str(identity.id)},
+            )
+            raw.commit()
+        real_remove(workspace_id, user_id)
+
+    client.remove_workspace_user = concurrent_revoke_then_remove
+    raised = False
+    try:
+        revoke_reviewer_identity(
+            world.factory,
+            organization_id=world.org1,
+            issuer=issuer,
+            subject=subject,
+            client=client,
+        )
+    except Exception:  # noqa: BLE001 -- any exception at all is the failure mode under test.
+        raised = True
+    check(
+        "a revoke racing another concurrent revoke never hits the terminal-state trigger "
+        "(real Postgres)",
+        not raised,
+    )
+    with Session(world.owner) as owner_session:
+        row = owner_session.execute(
+            text("SELECT status FROM argilla_reviewer_identities WHERE id = :id"),
+            {"id": str(identity.id)},
+        ).first()
+    assert row is not None
+    check("the identity ends up revoked either way", row[0] == "revoked")
+
+
+def section_migration_hardening(world: World) -> None:
+    """Round 2 (PR #968): 'the table-wide UPDATE grant lets a revoked identity be restored.'
+    Migration 0035 narrows 0034's blanket UPDATE grant to exactly the columns the store module
+    writes, and adds a terminal-state trigger so a revoked reviewer identity can never be
+    restored to active -- even by a raw `sovra_app` UPDATE that never goes through
+    `app/reviews/argilla_identity_store.py` at all. Runs after `section_revoke`, which leaves
+    `world.identity` genuinely revoked on the real server and in the real database."""
+    assert world.scope1 is not None and world.identity is not None
+    scope1, identity = world.scope1, world.identity
+
+    with Session(world.factory().bind) as raw:
+        _set_tenant(raw, world.org1)
+        try:
+            raw.execute(
+                text(
+                    "UPDATE argilla_review_scopes SET argilla_workspace_name = 'tampered' "
+                    "WHERE id = :id"
+                ),
+                {"id": str(scope1.id)},
+            )
+            raw.commit()
+            check("sovra_app has no UPDATE grant at all on argilla_review_scopes", False)
+        except DBAPIError as exc:
+            raw.rollback()
+            check(
+                "sovra_app has no UPDATE grant at all on argilla_review_scopes (sqlstate "
+                f"{_sqlstate(exc)}, expect 42501 insufficient_privilege)",
+                _sqlstate(exc) == "42501",
+            )
+
+    with Session(world.factory().bind) as raw:
+        _set_tenant(raw, world.org1)
+        try:
+            raw.execute(
+                text(
+                    "UPDATE argilla_reviewer_identities SET argilla_user_id = :fake "
+                    "WHERE id = :id"
+                ),
+                {"id": str(identity.id), "fake": str(uuid.uuid4())},
+            )
+            raw.commit()
+            check(
+                "sovra_app cannot UPDATE argilla_user_id directly -- the grant is "
+                "column-limited to status/revoked_at/updated_at",
+                False,
+            )
+        except DBAPIError as exc:
+            raw.rollback()
+            check(
+                "sovra_app cannot UPDATE argilla_user_id directly (sqlstate "
+                f"{_sqlstate(exc)}, expect 42501 insufficient_privilege)",
+                _sqlstate(exc) == "42501",
+            )
+
+    with Session(world.factory().bind) as raw:
+        _set_tenant(raw, world.org1)
+        try:
+            raw.execute(
+                text("UPDATE argilla_reviewer_identities SET status = 'active' WHERE id = :id"),
+                {"id": str(identity.id)},
+            )
+            raw.commit()
+            check(
+                "a revoked identity can never be restored to active, even via the allowed "
+                "status column (terminal-state trigger)",
+                False,
+            )
+        except DBAPIError as exc:
+            raw.rollback()
+            check(
+                "a revoked identity can never be restored to active (sqlstate "
+                f"{_sqlstate(exc)}, expect 23514 check_violation; terminal-state trigger)",
+                _sqlstate(exc) == "23514",
+            )
+
+    check(
+        "revoke_reviewer_identity's own idempotent re-revoke never hits the terminal-state "
+        "trigger (the fix's own race-safety guard)",
+        not raises(
+            Exception,
+            revoke_reviewer_identity,
+            world.factory,
+            organization_id=world.org1,
+            issuer=world.issuer,
+            subject=world.subject,
+            client=world.fake_server.client(),
+        ),
+    )
+
+    with Session(world.owner) as owner_session:
+        member_row = owner_session.execute(
+            text("SELECT id FROM argilla_workspace_members WHERE organization_id = :org LIMIT 1"),
+            {"org": str(world.org1)},
+        ).first()
+    assert member_row is not None
+    member_id = member_row[0]
+    with Session(world.factory().bind) as raw:
+        _set_tenant(raw, world.org1)
+        try:
+            raw.execute(
+                text("UPDATE argilla_workspace_members SET scope_id = :other WHERE id = :id"),
+                {"id": str(member_id), "other": str(uuid.uuid4())},
+            )
+            raw.commit()
+            check(
+                "sovra_app cannot UPDATE scope_id on argilla_workspace_members directly -- "
+                "the grant is column-limited to status/updated_at",
+                False,
+            )
+        except DBAPIError as exc:
+            raw.rollback()
+            check(
+                "sovra_app cannot UPDATE scope_id on argilla_workspace_members directly "
+                f"(sqlstate {_sqlstate(exc)}, expect 42501 insufficient_privilege)",
+                _sqlstate(exc) == "42501",
+            )
+    with Session(world.factory().bind) as raw:
+        _set_tenant(raw, world.org1)
+        try:
+            raw.execute(
+                text(
+                    "UPDATE argilla_workspace_members SET status = 'active', "
+                    "updated_at = now() WHERE id = :id"
+                ),
+                {"id": str(member_id)},
+            )
+            raw.commit()
+            check("sovra_app may still UPDATE the column-limited status/updated_at pair", True)
+        except DBAPIError:
+            raw.rollback()
+            check("sovra_app may still UPDATE the column-limited status/updated_at pair", False)
+
+
 def main() -> None:
     migration_url = _required_env("SOVRA_DATABASE_URL")
     app_password = _required_env("SOVRA_APP_DB_PASSWORD")
@@ -900,7 +1219,10 @@ def main() -> None:
         section_races(world)
         section_edge_cases(world)
         section_identity_and_membership(world)
+        section_revoke_sync_race(world)
+        section_concurrent_double_revoke(world)
         section_revoke(world)
+        section_migration_hardening(world)
         section_rls_and_secrecy(world)
     finally:
         fake_server.shutdown()

@@ -31,6 +31,10 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from argilla_test_support import FakeArgillaServer  # noqa: E402
+from packages.integrations.argilla.client import (  # noqa: E402
+    ArgillaRejectedError,
+    ArgillaUnavailableError,
+)
 from sqlalchemy import create_engine, text  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
@@ -189,8 +193,15 @@ CREATE TABLE argilla_workspace_members (
   id UUID PRIMARY KEY DEFAULT (gen_uuid()),
   organization_id UUID NOT NULL, scope_id UUID NOT NULL, identity_id UUID NOT NULL,
   status VARCHAR(16) NOT NULL DEFAULT 'active', updated_at TEXT,
-  UNIQUE (organization_id, scope_id, identity_id));
+  UNIQUE (scope_id, identity_id));
 """
+# The UNIQUE above is (scope_id, identity_id) ONLY -- matching migration 0034's real
+# `uq_argilla_workspace_members_scope_identity` exactly (not a 3-column
+# (organization_id, scope_id, identity_id) unique, which production does not have). The store
+# module's `sync_workspace_membership` names this exact column pair as its own `ON CONFLICT`
+# target; a mismatched conflict target here would make SQLite reject the statement outright
+# (wrong index) while Postgres silently used a different, non-existent target -- so this fixture
+# must mirror production's real constraint columns precisely, not merely "a" unique constraint.
 
 _NO_BAO: Any = None  # store_secret_ref is stood in for, so no config is read
 ISSUER, SUBJECT = "https://issuer.example", "reviewer-1"
@@ -704,6 +715,180 @@ def test_sync_membership_refuses_stale_or_revoked_identity(env: Env) -> None:
 
 
 @with_env
+def test_sync_membership_refuses_stale_or_foreign_scope(env: Env) -> None:
+    """PR #968's round-2 return: `sync_workspace_membership` trusted `scope` blindly and told
+    the real Argilla server to add a member before any database check confirmed the scope
+    belongs to this organization at all -- an org1 caller holding (or constructing) a
+    `ReviewScopeRecord` naming org2's real workspace id could grant itself real external access
+    to org2's review workspace. `_require_current_scope` closes this the same way the identity
+    argument is already checked: re-fetched under this organization's own RLS scope, before any
+    network call."""
+    scope, ident = env.scope(), env.identity()
+    foreign = store.ReviewScopeRecord(
+        id=uuid.uuid4(),  # no row anywhere names this id.
+        organization_id=env.org,
+        project_id=uuid.uuid4(),
+        component_binding_id=env.binding,
+        argilla_workspace_id=scope.argilla_workspace_id,
+        argilla_workspace_name=scope.argilla_workspace_name,
+    )
+    check(
+        "a scope id with no matching row under this organization is refused before any "
+        "Argilla call",
+        raises(ArgillaIdentityError, env.sync, Role.ML_ENGINEER, foreign, ident)
+        and not env.server.memberships,
+    )
+    tampered = store.ReviewScopeRecord(
+        id=scope.id,  # a real row -- but the workspace id below does not match it.
+        organization_id=env.org,
+        project_id=scope.project_id,
+        component_binding_id=scope.component_binding_id,
+        argilla_workspace_id="00000000-0000-0000-0000-000000000000",
+        argilla_workspace_name=scope.argilla_workspace_name,
+    )
+    check(
+        "a scope id whose real row names a different real workspace id is refused before any "
+        "Argilla call",
+        raises(ArgillaIdentityError, env.sync, Role.ML_ENGINEER, tampered, ident)
+        and not env.server.memberships,
+    )
+
+
+@with_env
+def test_sync_membership_revoke_race_undoes_real_add(env: Env) -> None:
+    """A concurrent `revoke_reviewer_identity` call can complete in the window between this
+    function's own pre-call DB check and the real Argilla `add_workspace_user` call it is about
+    to make (that real network call takes genuine wall-clock time) -- PR #968's "revoke/sync
+    race: a revoked identity keeps workspace access." The atomic, identity-still-active-guarded
+    write in `sync_workspace_membership` must refuse to persist 'active' once that has happened,
+    and must undo the real Argilla-side add it already made."""
+    scope, ident = env.scope(), env.identity()
+    real_add = env.client.add_workspace_user
+
+    def racing_add(workspace_id: str, user_id: str) -> None:
+        env.revoke()  # the race: a concurrent revoke lands before our own real add does.
+        real_add(workspace_id, user_id)
+
+    env.client.add_workspace_user = racing_add  # type: ignore[method-assign]
+    check(
+        "a revoke racing the real Argilla add is refused, never silently granted",
+        raises(ReviewerIdentityRevokedError, env.sync, Role.ML_ENGINEER, scope, ident),
+    )
+    check(
+        "the real Argilla-side add made during the race is undone",
+        (scope.argilla_workspace_id, ident.argilla_user_id) not in env.server.memberships,
+    )
+    check(
+        "no membership row is ever recorded active for the now-revoked identity",
+        env.member_rows() == [],
+    )
+
+
+@with_env
+def test_sync_membership_concurrent_insert_uses_on_conflict_not_integrity_error(
+    env: Env,
+) -> None:
+    """PR #968: 'Concurrent `sync_workspace_membership` raises IntegrityError.' Two concurrent
+    first-time syncs for the same (scope, identity) pair both find no existing membership row and
+    both attempt to create one; the loser must converge via `ON CONFLICT`, not crash."""
+    scope, ident = env.scope(), env.identity()
+    real_add = env.client.add_workspace_user
+
+    def concurrent_winner_add(workspace_id: str, user_id: str) -> None:
+        # Simulates a second concurrent sync's own INSERT landing first.
+        env.sql(
+            "INSERT INTO argilla_workspace_members "
+            "(organization_id, scope_id, identity_id, status) "
+            "VALUES (:org, :scope, :identity, 'active')",
+            org=str(env.org),
+            scope=str(scope.id),
+            identity=str(ident.id),
+        )
+        real_add(workspace_id, user_id)
+
+    env.client.add_workspace_user = concurrent_winner_add  # type: ignore[method-assign]
+    threw = False
+    try:
+        env.sync(Role.ML_ENGINEER, scope, ident)
+    except Exception:  # noqa: BLE001 -- the check below is "did anything throw at all."
+        threw = True
+    check(
+        "a row inserted by a concurrent winner between the check and our own write is resolved "
+        "by ON CONFLICT, not an uncaught IntegrityError",
+        not threw,
+    )
+    rows = env.member_rows()
+    check(
+        "exactly one active membership row survives the race",
+        len(rows) == 1 and str(rows[0][0]) == str(ident.id) and rows[0][1] == "active",
+    )
+
+
+@with_env
+def test_sync_membership_outage_on_add_is_never_swallowed(env: Env) -> None:
+    """Law 17: a real Argilla outage during the add must propagate as `ArgillaUnavailableError`,
+    never be swallowed into a fabricated success with a membership row recorded anyway."""
+    scope, ident = env.scope(), env.identity()
+
+    def outage(workspace_id: str, user_id: str) -> None:
+        raise ArgillaUnavailableError("Argilla returned HTTP 503")
+
+    env.client.add_workspace_user = outage  # type: ignore[method-assign]
+    check(
+        "an outage during the real add propagates, never a fabricated success",
+        raises(ArgillaUnavailableError, env.sync, Role.ML_ENGINEER, scope, ident),
+    )
+    check(
+        "no membership row is written when the real add never completed",
+        env.member_rows() == [],
+    )
+
+
+@with_env
+def test_sync_membership_outage_on_remove_is_never_swallowed(env: Env) -> None:
+    """Law 17, the narrowing side: an outage while removing real access must leave the DB row
+    exactly as it was (still active) -- never a fabricated revoke the real server never granted."""
+    scope, ident = env.scope(), env.identity()
+    env.sync(Role.ML_ENGINEER, scope, ident)
+    check("precondition: membership is active", env.member_rows()[0][1] == "active")
+
+    def outage(workspace_id: str, user_id: str) -> None:
+        raise ArgillaUnavailableError("Argilla returned HTTP 503")
+
+    env.client.remove_workspace_user = outage  # type: ignore[method-assign]
+    check(
+        "an outage during the real remove propagates, never a fabricated revoke",
+        raises(ArgillaUnavailableError, env.sync, Role.VIEWER, scope, ident),
+    )
+    check(
+        "the membership row stays active -- an unconfirmed removal is never recorded as revoked",
+        env.member_rows()[0][1] == "active",
+    )
+
+
+@with_env
+def test_fake_server_rejects_wrong_or_missing_api_key(env: Env) -> None:
+    """Closes PR #968's own disclosed gap in the fake itself ('the fake server never checks the
+    API key'): every route now 401s a request bearing the wrong key, proving this test double is
+    no longer silently permissive on the one dimension the real-Argilla CI job exists to cover
+    independently."""
+    wrong = env.server.client(api_key="not-the-real-key")
+    check(
+        "a workspace list call with the wrong key is refused, not served",
+        raises(ArgillaRejectedError, wrong.list_workspaces_me),
+    )
+    none_key = env.server.client(api_key="")
+    check(
+        "a workspace list call with no key is refused, not served",
+        raises(ArgillaRejectedError, none_key.list_workspaces_me),
+    )
+    check(
+        "the real (correctly-keyed) client used by every other test still works",
+        env.client.list_workspaces_me() == [],
+    )
+
+
+@with_env
 def test_revoke_reviewer_identity(env: Env) -> None:
     check("revoking an unknown identity raises", raises(ArgillaIdentityError, env.revoke))
     scope, ident = env.scope(), env.identity()
@@ -1003,6 +1188,88 @@ def test_migration_0034_shapes() -> None:
         "downgrade drops children before parents",
         [a[0] for n, a, _ in down.calls if n == "drop_table"]
         == ["argilla_workspace_members", "argilla_reviewer_identities", "argilla_review_scopes"],
+    )
+
+
+def test_migration_0035_shapes() -> None:
+    """PR #968: 'the table-wide UPDATE grant lets a revoked identity be restored.' This
+    migration narrows the 0034 grants to column-limited UPDATE (or none at all for
+    `argilla_review_scopes`, which nothing ever updates) and adds the terminal-state trigger on
+    `argilla_reviewer_identities`."""
+    import importlib.util
+
+    path = ROOT / "apps" / "api" / "alembic" / "versions" / "0035_argilla_identity_hardening.py"
+    spec = importlib.util.spec_from_file_location("migration_0035", path)
+    assert spec is not None and spec.loader is not None
+    mod: Any = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    check(
+        "0035 revises 0034 directly -- one head, no fork",
+        mod.down_revision == "0034_argilla_review_identity",
+    )
+
+    rec = _Recorder()
+    mod.op = rec
+    mod.upgrade()
+    sqls = [a[0] for n, a, _ in rec.calls if n == "execute"]
+    check(
+        "argilla_review_scopes loses UPDATE entirely -- nothing ever updates this table",
+        'REVOKE UPDATE ON argilla_review_scopes FROM "sovra_app"' in sqls,
+    )
+    check(
+        "argilla_reviewer_identities keeps UPDATE on exactly status/revoked_at/updated_at",
+        'REVOKE UPDATE ON argilla_reviewer_identities FROM "sovra_app"' in sqls
+        and "GRANT UPDATE (status, revoked_at, updated_at) ON argilla_reviewer_identities "
+        'TO "sovra_app"'
+        in sqls,
+    )
+    check(
+        "argilla_workspace_members keeps UPDATE on exactly status/updated_at",
+        'REVOKE UPDATE ON argilla_workspace_members FROM "sovra_app"' in sqls
+        and 'GRANT UPDATE (status, updated_at) ON argilla_workspace_members TO "sovra_app"' in sqls,
+    )
+    check(
+        "the terminal-state trigger function rejects any update once status is revoked",
+        any(
+            "CREATE FUNCTION argilla_reviewer_identities_revoked_is_terminal" in q
+            and "IF OLD.status = 'revoked' THEN" in q
+            and "RAISE EXCEPTION" in q
+            for q in sqls
+        ),
+    )
+    check(
+        "the trigger fires BEFORE UPDATE on argilla_reviewer_identities, every row",
+        any(
+            "CREATE TRIGGER trg_argilla_reviewer_identities_revoked_is_terminal" in q
+            and "BEFORE UPDATE ON argilla_reviewer_identities" in q
+            and "FOR EACH ROW" in q
+            for q in sqls
+        ),
+    )
+
+    down = _Recorder()
+    mod.op = down
+    mod.downgrade()
+    down_sqls = [a[0] for n, a, _ in down.calls if n == "execute"]
+    check(
+        "downgrade drops the trigger and function before restoring the blanket grants",
+        any(
+            q.startswith(
+                "DROP TRIGGER IF EXISTS trg_argilla_reviewer_identities_revoked_is_terminal "
+                "ON argilla_reviewer_identities"
+            )
+            for q in down_sqls
+        )
+        and any(
+            q.startswith("DROP FUNCTION IF EXISTS argilla_reviewer_identities_revoked_is_terminal")
+            for q in down_sqls
+        ),
+    )
+    check(
+        "downgrade restores the original blanket UPDATE grant on all three tables",
+        'GRANT UPDATE ON argilla_review_scopes TO "sovra_app"' in down_sqls
+        and 'GRANT UPDATE ON argilla_reviewer_identities TO "sovra_app"' in down_sqls
+        and 'GRANT UPDATE ON argilla_workspace_members TO "sovra_app"' in down_sqls,
     )
 
 
