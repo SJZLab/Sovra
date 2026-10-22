@@ -3039,6 +3039,257 @@ def test_f2_r3_unterminated_value_stops_at_the_end_of_its_line() -> None:
         check("FTF-0904-F2", f"r3 multi-line {text!r}: logging-path leak {found}", not found)
 
 
+# --- FTF-0904-F2 round 3 point 2: ESCAPED-QUOTE-FORM -----------------------------------------
+# `qsep`'s lookahead used to require a literal `"`/`'` right after the separator, so a
+# JSON-escaped key (`\"state\": ...`) or an escaped opening value quote (`state=\"V\"`) left the
+# WHOLE match (key included) untouched -- `_QUOTED_SECRET.match` was never even attempted, a total
+# leak, not a truncation. Escape levels 1-3 (the backslash run directly before each quote), the
+# key's own closing quote escaped independently of the value's own quotes, every PURE F2 name,
+# both quote styles, both separator forms. `_F2R2_SECRET_NAMES` and the two `_F2_NAMES` entries
+# that substring-match `_SECRET_KEY_WORDS` ("jsessionid" contains "session"+"id";
+# "access.token_sid" contains "token") are excluded here: those go through the UNTOUCHED
+# `_HEADER`/`_KEY_VALUE`/`_QUOTED_VALUE` path first, which has its own, pre-existing,
+# out-of-round-3-scope gap (no escaped-open alternative for single quotes, only double) --
+# confirmed by reproducing it directly against `_QUOTED_VALUE` alone, unchanged by this round.
+_F2R3_ESCAPE_LEVELS = (1, 2, 3)
+_F2R3_SAFE_NAMES = tuple(n for n in _F2_NAMES if n not in ("jsessionid", "access.token_sid"))
+
+
+def _f2r3_escaped_rows() -> list[str]:
+    rows: list[str] = []
+    for name in _F2R3_SAFE_NAMES:
+        for q in _F2_QUOTES:
+            for sep in ("=", ": "):
+                for key_bs_n in (0, *_F2R3_ESCAPE_LEVELS):
+                    key_bs = "\\" * key_bs_n
+                    for val_bs_n in _F2R3_ESCAPE_LEVELS:
+                        val_bs = "\\" * val_bs_n
+                        rows.append(f"{name}{key_bs}{q}{sep}{val_bs}{q}{_F1_VALUE}{val_bs}{q}")
+    return rows
+
+
+_F2R3_ESCAPED_ROWS = _f2r3_escaped_rows()
+
+
+def test_f2_r3_escaped_quote_form_is_redacted() -> None:
+    """F2-ESCAPED-QUOTE-FORM (round 3 point 2)."""
+    check("FTF-0904-F2", "r3 escaped-quote table is large", len(_F2R3_ESCAPED_ROWS) > 700)
+    for text in _F2R3_ESCAPED_ROWS:
+        out = lr.redact_text(text)
+        check("FTF-0904-F2", f"r3 escaped {text!r}: leaked {out!r}", "Zq7Lm2" not in out)
+        check(
+            "FTF-0904-F2", f"r3 escaped {text!r}: not redacted at all {out!r}", "[REDACTED]" in out
+        )
+    for text in _F2R3_ESCAPED_ROWS[::13]:
+        with _Harness() as h:
+            logging.getLogger("t").error("%s", text)
+            found = leaked([_F1_VALUE], h.outputs())
+        check("FTF-0904-F2", f"r3 escaped {text!r}: logging-path leak {found}", not found)
+
+
+def test_f2_r3_escaped_quote_form_live_json_and_logfmt() -> None:
+    """Realistic shapes: a JSON object re-escaped into a log line, and a logfmt wrapper quoting
+    an inner escaped value (`msg="... code=\\"V\\""`)."""
+    samples = (
+        '{\\"state\\": \\"' + _F1_VALUE + '\\", \\"user\\": \\"bob\\"}',
+        'msg="context code=\\"' + _F1_VALUE + '\\" more" extra=1',
+        'client_secret=\\"' + _F1_VALUE + '\\"',
+        "token='" + _F1_VALUE + "'",
+    )
+    for text in samples:
+        out = lr.redact_text(text)
+        check("FTF-0904-F2", f"r3 live escaped {text!r}: leaked {out!r}", "Zq7Lm2" not in out)
+    check("FTF-0904-F2", "r3 live json neighbour kept", "bob" in lr.redact_text(samples[0]))
+    check("FTF-0904-F2", "r3 live logfmt tail kept", "extra=1" in lr.redact_text(samples[1]))
+
+
+# --- FTF-0904-F2 round 3 point 3: V6 -- an unterminated single-quoted value fails closed -----
+def test_f2_r3_v6_unterminated_single_quote_fails_closed_to_end_of_line() -> None:
+    for name in _F2R2_SECRET_NAMES + _F2_NAMES:
+        for sep in ("=", ": "):
+            text = f"{name}{sep}'{_F1_VALUE} no closing quote on this line"
+            out = lr.redact_text(text)
+            check("FTF-0904-F2", f"r3 V6 {text!r}: leaked {out!r}", "Zq7Lm2" not in out)
+            check(
+                "FTF-0904-F2", f"r3 V6 {text!r}: not redacted at all {out!r}", "[REDACTED]" in out
+            )
+    with _Harness() as h:
+        logging.getLogger("t").error("%s", f"state='{_F1_VALUE} unterminated")
+        found = leaked([_F1_VALUE], h.outputs())
+    check("FTF-0904-F2", f"r3 V6 logging-path leak {found}", not found)
+
+
+# --- FTF-0904-F2 round 3 point 2 (pre-review finding): an escaped-open value with no later
+# escaped close fails closed too -----------------------------------------------------------
+# The two new escaped-open `_QUOTED_SECRET` alternatives (above) originally required a genuine
+# closing backslash-run-then-quote; a truncated log line (`{\"state\": \"V`, cut off mid-JSON, no
+# later `\"` anywhere) made the WHOLE alternative fail to match, so `_QueryParamRule.sub` skipped
+# the match entirely (key included) and the value printed raw -- this round's own new code, not
+# the pre-existing `_QUOTED_VALUE` single-quote gap disclosed above. Fixed with the same
+# `(?:X|(?=[\r\n])|\Z)` fail-closed shape round 3's own `_QUOTED_VALUE` fix already uses.
+def test_f2_r3_escaped_open_with_no_closing_escape_fails_closed() -> None:
+    for name in _F2R3_SAFE_NAMES:
+        for q in _F2_QUOTES:
+            for sep in ("=", ": "):
+                # truncated at end of string, nothing after the value at all
+                text = f"{name}{sep}\\{q}{_F1_VALUE}"
+                out = lr.redact_text(text)
+                check(
+                    "FTF-0904-F2",
+                    f"r3 escaped-open-unterminated {text!r}: leaked {out!r}",
+                    "Zq7Lm2" not in out,
+                )
+                check(
+                    "FTF-0904-F2",
+                    f"r3 escaped-open-unterminated {text!r}: not redacted at all {out!r}",
+                    "[REDACTED]" in out,
+                )
+                # truncated mid-line, more non-quote content follows with no closing escape
+                text2 = f"{name}{sep}\\{q}{_F1_VALUE}... more text, never a closing escaped quote"
+                out2 = lr.redact_text(text2)
+                check(
+                    "FTF-0904-F2",
+                    f"r3 escaped-open-unterminated {text2!r}: leaked {out2!r}",
+                    "Zq7Lm2" not in out2,
+                )
+    for text in (
+        'state=\\"' + _F1_VALUE,
+        '{\\"state\\": \\"' + _F1_VALUE,
+        '{\\"code\\": \\"' + _F1_VALUE + "...",
+    ):
+        with _Harness() as h:
+            logging.getLogger("t").error("%s", text)
+            found = leaked([_F1_VALUE], h.outputs())
+        check(
+            "FTF-0904-F2",
+            f"r3 escaped-open-unterminated {text!r}: logging-path leak {found}",
+            not found,
+        )
+
+
+# --- FTF-0904-F2 round 3 point 2 (pre-review round 2 finding): an escaped-open value that
+# closes on a BARE (unescaped) quote still fails closed --------------------------------------
+# The first fail-closed fix (above) only let the closing delimiter be a backslash-run-then-quote
+# or end of line/string; a value that opened escaped but is truncated right at an unescaped quote
+# (an outer logfmt wrapper's own closing quote: `msg="...code=\"V"`, or any value whose own
+# content transitions to a bare quote with no closing backslash at all) still fell through to
+# end-of-line, over-redacting or under-redacting past the real boundary. The closing backslash
+# run is now `\*+` (zero or more, possessive) instead of `\+` (one or more): the content loop's
+# own backslash-alternative already excludes ANY backslash run immediately followed by a quote
+# from content, so there is still only one terminator-eligible position per value, whatever
+# number of backslashes (including zero) precede it -- not a new ambiguity, just the same
+# possessive match widened by one case.
+def test_f2_r3_escaped_open_closes_on_a_bare_quote() -> None:
+    for name in _F2R3_SAFE_NAMES:
+        for q in _F2_QUOTES:
+            for sep in ("=", ": "):
+                # the value's own closing quote has no backslash before it at all
+                text = f"{name}{sep}\\{q}{_F1_VALUE}{q} tail_ok"
+                out = lr.redact_text(text)
+                check(
+                    "FTF-0904-F2",
+                    f"r3 escaped-open-bare-close {text!r}: leaked {out!r}",
+                    "Zq7Lm2" not in out,
+                )
+                check(
+                    "FTF-0904-F2",
+                    f"r3 escaped-open-bare-close {text!r}: tail lost {out!r}",
+                    out.endswith(" tail_ok"),
+                )
+    for text in (
+        'level=info msg="{\\"code\\": \\"' + _F1_VALUE + '"',
+        'msg="callback?state=\\"' + _F1_VALUE + '" ok=1',
+    ):
+        out = lr.redact_text(text)
+        check(
+            "FTF-0904-F2",
+            f"r3 escaped-open-bare-close {text!r}: leaked {out!r}",
+            "Zq7Lm2" not in out,
+        )
+        with _Harness() as h:
+            logging.getLogger("t").error("%s", text)
+            found = leaked([_F1_VALUE], h.outputs())
+        check(
+            "FTF-0904-F2",
+            f"r3 escaped-open-bare-close {text!r}: logging-path leak {found}",
+            not found,
+        )
+    check(
+        "FTF-0904-F2",
+        "r3 escaped-open-bare-close tail kept",
+        "ok=1" in lr.redact_text('msg="callback?state=\\"' + _F1_VALUE + '" ok=1'),
+    )
+
+
+# --- FTF-0904-F2 round 3 point 3: V10/V11 -- no length bound on a quoted value ---------------
+# An earlier, now-superseded design would have bounded quoted-secret content to 4096 (double
+# quote) or 256 (single quote) characters; above that bound the real closing quote, and
+# everything after the cut, leaked raw. The module's own disclosed rule ("unbounded in the length
+# of secret it redacts") applies here too; pinned directly against values well past 8 KB.
+def test_f2_r3_v10_v11_quoted_values_have_no_length_bound() -> None:
+    overflow = "Q" * 8300  # > 8 KB: past any historical 256/4096 bound
+    for q in _F2_QUOTES:
+        for name in _F2R2_SECRET_NAMES + _F2_NAMES:
+            value = _F1_VALUE + overflow
+            text = f"{name}={q}{value}{q} tail_ok"
+            out = lr.redact_text(text)
+            check(
+                "FTF-0904-F2", f"r3 V10/V11 {name} {q}: secret leaked {out!r}", "Zq7Lm2" not in out
+            )
+            check(
+                "FTF-0904-F2",
+                f"r3 V10/V11 {name} {q}: overflow past a bound leaked {out[:60]!r}",
+                "QQQQQQQQQQ" not in out,
+            )
+            check(
+                "FTF-0904-F2",
+                f"r3 V10/V11 {name} {q}: over-redacted past the real close {out!r}",
+                out == f"{name}=[REDACTED] tail_ok",
+            )
+
+
+# --- FTF-0904-F2 round 3 point 4: V17 -- all 13 _QUERY_PARAM_NAMES endings, quoted form ------
+# Round 2's composite table (`_F2_NAMES`) only glued a prefix onto 5-6 of the 13 endings. This
+# list is written out HERE, independently of `lr._QUERY_PARAM_NAMES` (same discipline as the F1
+# round-4 prefix tables above): a table derived from the implementation's own vocabulary could
+# only ever confirm it, never catch an ending silently dropped from it.
+_F2R3_THIRTEEN_ENDINGS = (
+    "key", "sig", "auth", "session", "jwt", "code", "state",
+    "verifier", "ticket", "otp", "pass", "sid", "jsessionid",
+)  # fmt: skip
+_F2R3_V17_PREFIXES = ("mfa", "x", "my", "oauth2", "service", "legacy")
+
+
+def test_f2_r3_v17_all_thirteen_endings_in_quoted_form() -> None:
+    check(
+        "FTF-0904-F2",
+        "r3 V17 the independently-written ending list has 13 entries",
+        len(_F2R3_THIRTEEN_ENDINGS) == 13,
+    )
+    rows = 0
+    for ending in _F2R3_THIRTEEN_ENDINGS:
+        for prefix in _F2R3_V17_PREFIXES:
+            for joiner in ("_", "-", ".", ""):
+                composite = f"{prefix}{joiner}{ending}"
+                spellings = {
+                    composite,
+                    composite.upper(),
+                    composite.title(),
+                    composite.capitalize(),
+                }
+                for spelling in spellings:
+                    for q in _F2_QUOTES:
+                        rows += 1
+                        text = f"{spelling}={q}{_F1_VALUE}{q} tail_ok"
+                        out = lr.redact_text(text)
+                        check(
+                            "FTF-0904-F2",
+                            f"r3 V17 {spelling!r} (ending {ending!r}): leaked {out!r}",
+                            "Zq7Lm2" not in out,
+                        )
+    check("FTF-0904-F2", "r3 V17 generated table is large", rows > 1500)
+
+
 FAULTS: list[tuple[str, str, str, int]] = [
     # --- rules removed one at a time -------------------------------------------------
     ("F01 header rule removed", '    ("header", _HEADER),\n', "", 1),
@@ -3056,7 +3307,9 @@ FAULTS: list[tuple[str, str, str, int]] = [
     ),
     (
         "F08 escaped-JSON value form dropped (F2 retarget: the quoted forms are now a "
-        "parenthesised multi-line literal, so the fault removes the first alternative and its `|`)",
+        "parenthesised multi-line literal, so the fault removes the first alternative and its "
+        "`|`; round 3's own fail-closed suffix on _QUOTED_SECRET's own escaped-open alternative "
+        "made this anchor unique to _QUOTED_VALUE again)",
         'r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+\\\\+"\'\n    r"""|',
         '\n    r"""',
         1,
@@ -3307,17 +3560,19 @@ FAULTS: list[tuple[str, str, str, int]] = [
     # "fix" here is the bound itself (reproduced small, V-*) or the whole protection (F-*-QUAD) --
     (
         "F-QV-QUAD escaped-value content reverted to naive lazy (reproduces the round-5 "
-        "backslash-run-inside-quoted-value quadratic this round fixes)",
+        "backslash-run-inside-quoted-value quadratic this round fixes; round 3 added the "
+        "identical escaped-open branch to _QUOTED_SECRET, so this now hits both)",
         '(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+',
         '[^"\\r\\n]*?',
-        1,
+        2,
     ),
     (
         "V-QV-BOUND-16 escaped-value content re-bounded to ~16 chars (reproduces the "
-        "round-4-style leak the round-5 class-closing ruling forbids)",
+        "round-4-style leak the round-5 class-closing ruling forbids; round 3 added the "
+        "identical escaped-open branch to _QUOTED_SECRET, so this now hits both)",
         '(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+',
         '(?:[^"\\\\\\r\\n]|\\\\++(?!")){0,16}+',
-        1,
+        2,
     ),
     # --- round 6: the JWT shape is a per-run scan; sweeps must be able to fail -------------
     (
@@ -3656,16 +3911,41 @@ FAULTS += [
         1,
     ),
     (
-        "F2-unterminated double quote not redacted to end of line",
-        '    r\'"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n',
-        '    r\'"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"\'\n',
+        "F2-unterminated double quote not redacted to end of line (round 3: anchored to "
+        "the whole _QUOTED_SECRET block -- its two bare-quote alternatives are no longer "
+        "the first lines of the definition, the two escaped-open alternatives now precede them)",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
         1,
     ),
     (
-        "F2-single-quoted values dropped",
-        '    r\'"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
-        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n',
-        '    r\'"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n',
+        "F2-single-quoted values dropped (round 3: anchored to the whole _QUOTED_SECRET "
+        "block, see above)",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        ")\n",
         1,
     ),
     (
@@ -3681,11 +3961,22 @@ FAULTS += [
         1,
     ),
     (
-        "F2-r2 even backslash run before the close still treated as escaping it (query-param path)",
-        '    r\'"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
-        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n',
-        '    r\'"(?:[^"\\\\\\r\\n]|\\\\++[^\\r\\n]?)*+"?\'\n'
-        '    r"""|\'(?:[^\'\\\\\\r\\n]|\\\\++[^\\r\\n]?)*+\'?"""\n',
+        "F2-r2 even backslash run before the close still treated as escaping it "
+        "(query-param path; round 3: anchored to the whole _QUOTED_SECRET block, see above)",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|\\\\++[^\\r\\n]?)*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|\\\\++[^\\r\\n]?)*+\'?"""\n'
+        ")\n",
         1,
     ),
     (
@@ -3742,6 +4033,175 @@ FAULTS += [
         "F2-r3 close replaced by $ without re.M (double quote)",
         '*+(?:"|(?=[\\r\\n])|\\Z)"""',
         '*+(?:"|$)"""',
+        1,
+    ),
+    (
+        "F2-r3p2 qsep no longer accepts an escaped key-closing/value-opening quote",
+        "_QUERY_ASSIGN = re.compile(\n"
+        '    r"""(?<![\\w.\\-])(?P<key>[\\w.\\-]++)"""\n'
+        '    r"""(?:(?P<qsep>\\\\*["\']?[ \\t]*[:=][ \\t]*)(?=\\\\*["\'])|(?P<sep>=))"""\n'
+        ")\n",
+        "_QUERY_ASSIGN = re.compile(\n"
+        '    r"""(?<![\\w.\\-])(?P<key>[\\w.\\-]++)"""\n'
+        '    r"""(?:(?P<qsep>["\']?[ \\t]*[:=][ \\t]*)(?=["\'])|(?P<sep>=))"""\n'
+        ")\n",
+        1,
+    ),
+    (
+        "F2-r3p2 _QUOTED_SECRET loses its escaped-open alternatives entirely",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        1,
+    ),
+    (
+        "F2-r3p3 V6: bare single-quote branch's closing quote made non-optional (an "
+        "unterminated value no longer matches at all, skipping redaction)",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'"""\n'
+        ")\n",
+        1,
+    ),
+    (
+        "F2-r3p3 V10: double-quote branch content re-bounded to 4096 chars (reproduces "
+        "the historical bound this round's pin forbids, query-param path)",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n]){0,4096}+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        1,
+    ),
+    (
+        "F2-r3p3 V11: single-quote branch content re-bounded to 256 chars (reproduces the "
+        "historical bound this round's pin forbids, query-param path)",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]'
+        '|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n]){0,256}+\'?"""\n'
+        ")\n",
+        1,
+    ),
+    (
+        "F2-r3p4 V17: 'ticket' dropped from _QUERY_PARAM_NAMES (the independently-written "
+        "13-ending test table must still catch it)",
+        '        "ticket",\n',
+        "",
+        1,
+    ),
+    (
+        "F2-r3p5 (pre-review finding) escaped-open double-quote alternative loses its "
+        "fail-closed-to-end-of-line ending (an escaped-open value with no later escaped "
+        "close stops matching at all, skipping redaction, instead of running to end of line)",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+\\\\+"\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        1,
+    ),
+    (
+        "F2-r3p5 (pre-review finding) escaped-open single-quote alternative loses its "
+        "fail-closed-to-end-of-line ending (same class, the single-quote branch)",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        '    r"""|(?<!\\\\)\\\\++\'(?:[^\'\\\\\\r\\n]++|\\\\++(?!\'))*+\\\\+\'"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        1,
+    ),
+    (
+        "F2-r3p6 (pre-review round 2 finding) escaped-open double-quote alternative's "
+        "closing backslash run required at least one backslash (bare-quote close no longer "
+        "matches, falling through to end-of-line and over/under-redacting past the real "
+        "boundary)",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        1,
+    ),
+    (
+        "F2-r3p6 (pre-review round 2 finding) escaped-open single-quote alternative, same class",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
         1,
     ),
 ]
