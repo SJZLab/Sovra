@@ -4077,6 +4077,43 @@ def part_r_errors() -> None:
         w.probe_state = ("completed", None)
 
 
+def part_r_nul() -> None:
+    """U+0000 in a mapping document is refused up front (PostgreSQL's JSONB cannot store it)."""
+    with http_world() as (w, base):
+        conn, ds = seeded(w)
+        before = w.snapshot()
+        docs: list[Any] = [
+            {**MSG, "role_key": "ro\x00le"},
+            {**MSG, "content_key": "\x00"},
+            {**MSG, "messages_pointer": "/con\x00versation"},
+            {**MSG, "role_map": {"hu\x00man": "user", "bot": "assistant"}},
+            {**MSG, "metadata": {"language": {"key": ["a", {"k": "x\x00"}][1]["k"]}}},
+        ]
+        for doc in docs:
+            for path, key in (("/mappings", "nul-key-00001"), ("/mapping-preview", None)):
+                got = call(base, "POST", f"{BASE_DS}/{ds.id}{path}", "admin", {"mapping": doc}, key)
+                check(
+                    "R-NUL",
+                    f"{path}: U+0000 in {str(doc)[:60]!r} is 400 mapping_invalid (got {got[0]} {code(got)})",
+                    got == (400, {"detail": "mapping_invalid"}),
+                )
+        check("R-NUL", "nothing was stored", w.snapshot() == before)
+        for value, wanted in (
+            ("a", False),
+            ("\x00", True),
+            ({"k": ["x", {"\x00": 1}]}, True),
+            ([["a", ["\x01"]]], False),
+            (5, False),
+            (None, False),
+            ({"a": {"b": "c\x00"}}, True),
+        ):
+            check(
+                "U-NUL",
+                f"_has_nul({str(value)[:30]!r}) is {wanted}",
+                real_routes._has_nul(value) is wanted,
+            )
+
+
 def part_r_unchanged_decision() -> None:
     with http_world() as (w, base):
         conn, ds = seeded(w)
@@ -4498,6 +4535,7 @@ def main() -> None:
     part_r_errors()
     part_r_lists_and_limits()
     part_r_unchanged_decision()
+    part_r_nul()
     part_u2()
     part_m()
     part_c()

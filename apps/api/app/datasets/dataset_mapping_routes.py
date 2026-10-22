@@ -222,9 +222,22 @@ async def _read_body(
     return payload
 
 
+def _has_nul(value: object) -> bool:
+    """U+0000 in a key or string of a parsed JSON value (PostgreSQL JSONB refuses it)."""
+    if isinstance(value, str):
+        return "\x00" in value
+    if isinstance(value, dict):
+        return any(_has_nul(key) or _has_nul(item) for key, item in value.items())
+    if isinstance(value, list):
+        return any(_has_nul(item) for item in value)
+    return False
+
+
 def _document(value: object) -> dict[str, Any]:
     if type(value) is not dict:
         raise _invalid_body()
+    if _has_nul(value):
+        raise HTTPException(status_code=400, detail="mapping_invalid")
     return value
 
 

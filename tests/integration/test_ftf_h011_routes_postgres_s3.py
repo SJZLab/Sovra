@@ -796,6 +796,25 @@ def main() -> None:
         (status, refusal) == (400, {"detail": "tool_id_unmapped"}) and counts() == before,
     )
 
+    # ---- I2b: U+0000 would be a database error, so it is a 400 up front --------------------------
+    before = counts()
+    for nul_doc in (
+        msg_doc(role_key="ro\u0000le"),
+        msg_doc({"hu\u0000man": "user", "bot": "assistant"}),
+    ):
+        status, refused = route(
+            "POST",
+            f"{train}/mappings",
+            {"mapping": nul_doc},
+            who("org1", "admin"),
+            "i2b-propose-0001",
+        )
+        check(
+            f"I2b U+0000 in a mapping document is 400 mapping_invalid, never a 500 (got {status} {refused})",
+            (status, refused) == (400, {"detail": "mapping_invalid"}),
+        )
+    check("I2b and nothing was stored", counts() == before)
+
     # ---- I3 / I4 -------------------------------------------------------------------------------
     before = counts()
     status, refusal = route(
