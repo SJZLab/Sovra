@@ -60,3 +60,15 @@ test("UX07: a custom label and hintId are honoured", () => {
   expect(screen.getByTestId("oidc-login-link").textContent).toBe("Sign in with SSO");
   expect(screen.getByTestId("oidc-login-hint").id).toBe("h1");
 });
+
+test("UX07-NEG: the hint is visible and the link is keyboard-reachable, readable and same-tab", () => {
+  render(OidcLoginButton({ apiBaseUrl: API }));
+  const link = screen.getByTestId("oidc-login-link") as HTMLAnchorElement;
+  const hint = screen.getByTestId("oidc-login-hint");
+  expect(hint.hidden).toBe(false);
+  expect(hint.getAttribute("aria-hidden")).toBeNull();
+  expect(link.tabIndex).toBeGreaterThanOrEqual(0);
+  expect(link.style.color).toBe("var(--color-action-text)");
+  expect(link.getAttribute("target")).toBeNull();
+  expect(link.getAttribute("role")).toBeNull();
+});
