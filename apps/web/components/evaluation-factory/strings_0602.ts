@@ -66,6 +66,9 @@ const STRINGS = {
   },
   saveButton: { en: "Save case", ar: "حفظ الحالة" },
   savingCase: { en: "Saving case…", ar: "جارٍ حفظ الحالة…" },
+  criticalTag: { en: "critical", ar: "حرِج" },
+  groupPrefix: { en: "group", ar: "مجموعة" },
+  editButton: { en: "Edit", ar: "تعديل" },
 
   // ---- dynamic/error text: English copied verbatim from the pre-UX06 component ----
   errNotFound: {

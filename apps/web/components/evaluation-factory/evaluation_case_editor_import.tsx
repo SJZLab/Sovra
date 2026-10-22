@@ -668,10 +668,14 @@ export function EvaluationCaseEditorImport({
                 <li key={item.id} data-testid={`case-row-${item.id}`}>
                   <span data-testid={`case-key-${item.id}`}>{item.case_key}</span>{" "}
                   <span>{item.category}</span> <span>{item.severity}</span>
-                  {item.critical ? <strong> critical</strong> : null} <span>{item.language}</span>{" "}
-                  <span>group {item.group_key}</span> <span>{item.grader_type}</span>{" "}
+                  {item.critical ? <strong> {t0602("criticalTag", locale)}</strong> : null}{" "}
+                  <span>{item.language}</span>{" "}
+                  <span>
+                    {t0602("groupPrefix", locale)} {item.group_key}
+                  </span>{" "}
+                  <span>{item.grader_type}</span>{" "}
                   <Button data-testid={`edit-case-${item.id}`} onClick={() => startEdit(item)}>
-                    Edit
+                    {t0602("editButton", locale)}
                   </Button>
                 </li>
               ))}
@@ -794,8 +798,16 @@ export function EvaluationCaseEditorImport({
               data-testid="field-critical"
               checked={draft.critical}
               onChange={(event) => updateDraft({ critical: event.target.checked })}
+              aria-describedby={describedBy(
+                fieldError("critical") ? "field-critical-error" : undefined,
+              )}
             />
           </label>
+          {fieldError("critical") ? (
+            <div id="field-critical-error" role="alert">
+              {fieldError("critical")}
+            </div>
+          ) : null}
           <label htmlFor="field-language">
             {t0602("fieldLanguage", locale)}
             <input
@@ -803,8 +815,16 @@ export function EvaluationCaseEditorImport({
               data-testid="field-language"
               value={draft.language}
               onChange={(event) => updateDraft({ language: event.target.value })}
+              aria-describedby={describedBy(
+                fieldError("language") ? "field-language-error" : undefined,
+              )}
             />
           </label>
+          {fieldError("language") ? (
+            <div id="field-language-error" role="alert">
+              {fieldError("language")}
+            </div>
+          ) : null}
           <label htmlFor="field-group-key">
             {t0602("fieldGroupKey", locale)}
             <input

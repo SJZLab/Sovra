@@ -170,6 +170,30 @@ describe("[UX06-X4] bilingual en/ar", () => {
     expect(screen.getByText("تحميل الحالات")).toBeTruthy();
     expect(screen.queryByText("Load cases")).toBeNull();
   });
+
+  // Round 2 (L2 reviewer finding, Probe A): the earlier tests above only ever render the EMPTY
+  // list under locale="ar" -- none of them loaded a populated case, so three literal English
+  // words baked into the row ("critical", "group ", "Edit") went unnoticed. This is the row test.
+  test("a populated case row under locale='ar' has no stray English word", async () => {
+    renderUI("ar");
+    await loadCases([evalCase(CASE_A, "a-case", { critical: true })]);
+    const row = screen.getByTestId(`case-row-${CASE_A}`);
+    expect(row.textContent).toContain("حرِج"); // critical tag
+    expect(row.textContent).toContain("مجموعة"); // group prefix
+    expect(screen.getByTestId(`edit-case-${CASE_A}`).textContent).toBe("تعديل"); // Edit button
+    expect(row.textContent).not.toContain("critical");
+    expect(row.textContent).not.toContain("group ");
+    expect(screen.getByTestId(`edit-case-${CASE_A}`).textContent).not.toBe("Edit");
+  });
+
+  test("NEGATIVE: the default locale keeps the row's critical tag, group prefix and Edit button in English", async () => {
+    renderUI();
+    await loadCases([evalCase(CASE_A, "a-case", { critical: true })]);
+    const row = screen.getByTestId(`case-row-${CASE_A}`);
+    expect(row.textContent).toContain("critical");
+    expect(row.textContent).toContain("group group-a-case");
+    expect(screen.getByTestId(`edit-case-${CASE_A}`).textContent).toBe("Edit");
+  });
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -228,6 +252,76 @@ describe("[UX06-X3] error <-> field association", () => {
     await waitFor(() => expect(document.getElementById("field-category-error")).toBeTruthy());
     const weight = screen.getByTestId("field-weight");
     expect(weight.getAttribute("aria-describedby") ?? "").not.toContain("error");
+  });
+
+  // Round 2 (L2 reviewer finding, Probe B): `buildPatch` treats category/severity/language/
+  // group_key/grader_type identically as server-patchable string fields, so a field error naming
+  // "critical" or "language" is exactly as plausible as one naming "category" -- round 1 wired
+  // aria-describedby for 8 of the 10 patchable fields and silently left these two out.
+  test("a language field error is referenced by the language input's aria-describedby", async () => {
+    renderUI();
+    await loadCases([evalCase(CASE_A, "a-case")]);
+    await openEditor(CASE_A);
+    const url = `${LIST_URL}/${CASE_A}`;
+    enqueue(
+      "PATCH",
+      url,
+      fail(400, {
+        detail: "validation_failed",
+        errors: [{ index: null, field: "language", code: "unsupported" }],
+      }),
+    );
+    setField("field-language", "zz");
+    fireEvent.click(screen.getByTestId("save-case-button"));
+    await waitFor(() => expect(screen.getByTestId("edit-field-errors")).toBeTruthy());
+
+    const input = screen.getByTestId("field-language");
+    expect(input.getAttribute("aria-describedby") ?? "").toContain("field-language-error");
+    const errorNode = document.getElementById("field-language-error");
+    expect(errorNode?.getAttribute("role")).toBe("alert");
+    expect(errorNode?.textContent).toContain("unsupported");
+  });
+
+  test("a critical field error is referenced by the critical checkbox's aria-describedby", async () => {
+    renderUI();
+    await loadCases([evalCase(CASE_A, "a-case", { grader_type: "tool_name" })]);
+    await openEditor(CASE_A);
+    const url = `${LIST_URL}/${CASE_A}`;
+    enqueue(
+      "PATCH",
+      url,
+      fail(400, {
+        detail: "validation_failed",
+        errors: [{ index: null, field: "critical", code: "requires_independent_grader" }],
+      }),
+    );
+    fireEvent.click(screen.getByTestId("field-critical"));
+    fireEvent.click(screen.getByTestId("save-case-button"));
+    await waitFor(() => expect(screen.getByTestId("edit-field-errors")).toBeTruthy());
+
+    const checkbox = screen.getByTestId("field-critical");
+    expect(checkbox.getAttribute("aria-describedby") ?? "").toContain("field-critical-error");
+    const errorNode = document.getElementById("field-critical-error");
+    expect(errorNode?.getAttribute("role")).toBe("alert");
+    expect(errorNode?.textContent).toContain("requires_independent_grader");
+  });
+
+  test("NEGATIVE: with no field error, the language input and critical checkbox name no error id", async () => {
+    renderUI();
+    await loadCases([evalCase(CASE_A, "a-case")]);
+    await openEditor(CASE_A);
+    expect(
+      (screen.getByTestId("field-language").getAttribute("aria-describedby") ?? "").includes(
+        "error",
+      ),
+    ).toBe(false);
+    expect(
+      (screen.getByTestId("field-critical").getAttribute("aria-describedby") ?? "").includes(
+        "error",
+      ),
+    ).toBe(false);
+    expect(document.getElementById("field-language-error")).toBeNull();
+    expect(document.getElementById("field-critical-error")).toBeNull();
   });
 });
 
