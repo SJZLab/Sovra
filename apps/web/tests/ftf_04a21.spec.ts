@@ -1961,3 +1961,113 @@ test("[UX03-R2-OTHER4XX] an unrecognised 4xx shows a generic sentence with the s
   );
   expect(text).not.toContain("teapot");
 });
+
+// FTF-UX03 round 3, point 2: every save / submit / lock failure is announced assertively -- the
+// error Banner is role="alert" (never role="status" or a plain div), exactly once, inside the
+// action-error wrapper, in both locales. A Banner demoted to info/warning or a plain div is RED.
+describe.each([
+  ["save refused 409", "save", { patchStatus: 409 }],
+  ["save refused 500", "save", { patchStatus: 500 }],
+  ["lock refused 409", "lock", { lockStatus: 409 }],
+  ["lock refused 500", "lock", { lockStatus: 500 }],
+  ["submit-for-review network failure", "submit", {}],
+] as const)("[UX03-R3-R4] %s is announced as role=alert", (_name, action, partial) => {
+  for (const locale of ["en", "ar"] as const) {
+    test(`${locale}`, async () => {
+      installServer({
+        manifest: manifestRecord({ status: action === "submit" ? "draft" : "review_required" }),
+        ...partial,
+      });
+      if (action === "submit") {
+        const base = fetch as unknown as ReturnType<typeof vi.fn>;
+        const inner = base.getMockImplementation()! as (
+          url: string,
+          init?: RequestInit,
+        ) => Promise<unknown>;
+        base.mockImplementation(async (url: string, init?: RequestInit) => {
+          if (String(url).endsWith("/submit-for-review")) throw new TypeError("network down");
+          return inner(url, init);
+        });
+      }
+      render(
+        createElement(ManifestReviewEditUI, {
+          apiBaseUrl: API_BASE,
+          organizationId: ORG_ID,
+          projectId: PROJECT_ID,
+          manifestId: MANIFEST_ID,
+          storage: storage as unknown as Storage,
+          locale,
+        }),
+      );
+      await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+      if (action === "save") {
+        edit("agent_name", "renamed-agent");
+        fireEvent.click(saveButton());
+      } else if (action === "lock") {
+        fireEvent.click(lockButton());
+      } else {
+        fireEvent.click(screen.getByTestId("submit-for-review-button"));
+      }
+      await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
+      const wrapper = screen.getByTestId("manifest-action-error");
+      const alerts = wrapper.querySelectorAll('[role="alert"]');
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]!.textContent!.trim().length).toBeGreaterThan(2);
+      expect(wrapper.querySelector('[role="status"]')).toBeNull();
+      expect(alerts[0]!.getAttribute("lang")).toBe(locale);
+    });
+  }
+});
+
+// Reviewer round 1: a 2xx reply that is malformed, or not bound to the request, is announced too.
+describe.each([
+  ["malformed 200", { nope: true }],
+  ["unbound 200 (another manifest id)", "unbound"],
+] as const)("[UX03-R3-R4] %s on save, submit and lock is role=alert", (_name, kind) => {
+  for (const action of ["save", "submit", "lock"] as const) {
+    for (const locale of ["en", "ar"] as const) {
+      test(`${action} ${locale}`, async () => {
+        installServer({
+          manifest: manifestRecord({ status: action === "submit" ? "draft" : "review_required" }),
+        });
+        const base = fetch as unknown as ReturnType<typeof vi.fn>;
+        const inner = base.getMockImplementation()! as (
+          url: string,
+          init?: RequestInit,
+        ) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
+        base.mockImplementation(async (url: string, init?: RequestInit) => {
+          const real = await inner(url, init);
+          const method = init?.method ?? "GET";
+          if (method === "GET") return real;
+          if (kind !== "unbound") return jsonResponse(200, kind);
+          const body = (await real.json()) as Record<string, unknown>;
+          return jsonResponse(200, { ...body, id: "99999999-9999-9999-9999-999999999999" });
+        });
+        render(
+          createElement(ManifestReviewEditUI, {
+            apiBaseUrl: API_BASE,
+            organizationId: ORG_ID,
+            projectId: PROJECT_ID,
+            manifestId: MANIFEST_ID,
+            storage: storage as unknown as Storage,
+            locale,
+          }),
+        );
+        await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+        if (action === "save") {
+          edit("agent_name", "renamed-agent");
+          fireEvent.click(saveButton());
+        } else if (action === "lock") {
+          fireEvent.click(lockButton());
+        } else {
+          fireEvent.click(screen.getByTestId("submit-for-review-button"));
+        }
+        await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
+        const wrapper = screen.getByTestId("manifest-action-error");
+        expect(wrapper.querySelectorAll('[role="alert"]')).toHaveLength(1);
+        expect(wrapper.querySelector('[role="status"]')).toBeNull();
+        expect(wrapper.querySelector('[role="alert"]')!.getAttribute("lang")).toBe(locale);
+      });
+    }
+  }
+});
