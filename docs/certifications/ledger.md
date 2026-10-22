@@ -12222,3 +12222,15 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   Process finding: merged at 23:09Z on a CI run whose base was 20 commits older (fresh-base rule in CLAUDE.md since #937 at
   20:47Z not followed); none of the 36 intervening files touch this module or its test, and the verifier's runs on the
   merged main are green.
+## 2026-10-22T01:04Z — CERTIFIED (child slice): FTF-R006-P1a — round 5 certifier of record session_014KfghB3VrkPEodzJAk4oK3
+- **FTF-R006-P1a: CERTIFIED (L2)** (round 5 under the stopping rule, tests only; PR #941, merge 69d099f8dec6f9a0927df5c7c12185134cce2d73, head f334defc). Round 5
+  producer: the Control-plane session session_01QVznorVMjnmcttUhyDnoGR (to avoid a fifth relay round); certifier of record:
+  the separate session session_014KfghB3VrkPEodzJAk4oK3 (named in no commit). Rounds 1-4 (production): relay sessions, last
+  session_01MPMJL8GLy978iKzWvgp2AT; round 4 L2 (this Control plane's verifier) closed the late-TLS-handshake deadline and
+  found no production key leak. CI: gate 119528004719 step 112 "FTF-R006-P1 Argilla client tests: all checks passed";
+  ci-verdict 119546329264. No production file changed (client.py / outbound_guard.py last touched in 57fd9701). Faults RED:
+  G21, G22, echo via cause / context / add_note / second arg / dict-only / list-only, G17 (`_require_role` echo),
+  `_require_uuid_text` echo. Probe: 498 calls across six client calls, every user/workspace field and body shape, HTTP
+  400-500 - the key never appeared in str/repr/args/notes/cause/context/traceback. Advisory GREEN variants (no such echo in
+  production): list page-bound / malformed-list / non-dict / api_key-missing / empty-name messages. Gates: product_truth
+  49/49, validate_spec --strict, data_exposure OK, CLAUDE.md hash OK. UNWIRED until P1b.
