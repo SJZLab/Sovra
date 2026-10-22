@@ -25207,3 +25207,6 @@ different session.
 - **Certified:** FTF-UX01 (#938, merge 8de3116d), round 4. UX02 r2 and UX03 r2 are claimable now.
 - **Returned (urgent):** FTF-0904-F2 r2 -> r3 (0b): escaped-quote qsep, V6/V10/V11/V17 pins, over-redaction record. Generic odd-run leak fixed by the Control plane in #940 (separate-session certification pending).
 - **Returned:** FTF-R006-P1a r4 -> r5 (0m, tests only, Control-plane produced in #941): response-side key-echo pins.
+- **Certified:** FTF-0501-F2 (#936, merge 05545cfc), round 2; FTF-0501 requalified.
+- **Certified:** FTF-H010-P3a (#839, merge 5fd14b86), round 4; S05/S07/S08 allowlisted as reviewed equivalents.
+- **Certified:** FTF-R006-P1a (#941, merge 69d099f8), round 5; verdict by the separate session session_014KfghB3VrkPEodzJAk4oK3. P1b claimable.

@@ -71,8 +71,10 @@ import base64
 import contextlib
 import io
 import logging
+import random
 import re
 import shutil
+import string
 import subprocess
 import sys
 import tempfile
@@ -2686,6 +2688,95 @@ def test_unit_sized_base64_and_hex_runs_are_scanned_end_to_end() -> None:
         )
 
 
+def _tgz_with(member: bytes) -> bytes:
+    import gzip
+    import tarfile
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tf:
+        info = tarfile.TarInfo("notes/a.txt")
+        info.size = len(member)
+        tf.addfile(info, io.BytesIO(member))
+    return gzip.compress(buf.getvalue())
+
+
+def test_f1_corrupt_tar_gz_is_a_blocking_scan_incomplete() -> None:
+    """FTF-1505-F1 (GZIP-INTEGRITY): tarfile's "r:gz" ignored the gzip CRC, so a .tar.gz with a
+    corrupted trailer or a bit flip mid-stream was scanned as if intact. Both must be a blocking
+    scan_incomplete; the intact archive still has its secret found."""
+    seed = generate_seed_for_rule("github_token")
+    good = _tgz_with(b"x" * 4000 + f" token {seed} ".encode() + b"y" * 4000)
+    found = ss._scan_content_and_members(
+        "b.tgz", good, include_canary=False, content_truncated=False
+    )
+    check(
+        "FTF-1505-F1",
+        "an intact .tgz member's secret is found",
+        any(r == "github_token" and v == seed for r, v, _ in found),
+    )
+    trailer = good[:-8] + bytes([good[-8] ^ 1]) + good[-7:]
+    flip_at = len(good) // 2
+    flipped = good[:flip_at] + bytes([good[flip_at] ^ 0x10]) + good[flip_at + 1 :]
+    for label, data in (("corrupted CRC trailer", trailer), ("mid-stream bit flip", flipped)):
+        for name in ("b.tgz", "b.tar.gz"):
+            results = ss._scan_content_and_members(
+                name, data, include_canary=False, content_truncated=False
+            )
+            check(
+                "FTF-1505-F1",
+                f"{name} with a {label} is a scan_incomplete ({[r for r, _, _ in results]})",
+                any(r == "scan_incomplete" for r, _, _ in results),
+            )
+
+
+def test_f1_tail_only_secret_in_a_unit_sized_run_and_after_ten_thousand_runs() -> None:
+    """FTF-1505-F1 (QUICK-GATE-CAP, RUN-COUNT-BREAK, SHAPE-CAP): the round-9 tiling always has a
+    secret at the front of the run, so a cheap pre-filter reading only a prefix of the decoded
+    text passed. One unit-sized base64 run and one hex run hold a single secret ending on the
+    last byte; and a line of more than 10,000 short base64 / hex runs holds its secret in the
+    last run only."""
+    seed = generate_seed_for_rule("github_token")
+    secret = f" token {seed}".encode()
+    for kind, raw_len, encode in (
+        ("base64", sr.MAX_SCAN_BYTES // 4 * 3, lambda b: base64.b64encode(b).decode()),
+        ("hex", sr.MAX_SCAN_BYTES // 2, lambda b: b.hex()),
+    ):
+        raw = b"a" * (raw_len - len(secret)) + secret
+        run = encode(raw)
+        hits = {v for r, v in scan_line(run) if r == "github_token"}
+        check(
+            "FTF-1505-F1",
+            f"one {len(run):,}-char {kind} run with its only secret on the last byte is found",
+            len(run) == sr.MAX_SCAN_BYTES and seed in hits,
+        )
+    filler_b64 = base64.b64encode(b"q" * 24).decode()
+    filler_hex = (b"q" * 12).hex()
+    for kind, filler, last in (
+        ("base64", filler_b64, base64.b64encode(secret).decode()),
+        ("hex", filler_hex, secret.hex()),
+    ):
+        line = " ".join([filler] * 12_000 + [last])
+        hits = {v for r, v in scan_line(line) if r == "github_token"}
+        check(
+            "FTF-1505-F1",
+            f"a secret in the last of 12,001 {kind} runs on one line is found",
+            seed in hits,
+        )
+
+
+def test_f1_minimum_length_github_token_is_found() -> None:
+    """FTF-1505-F1 (GITHUB-TOKEN-36): generated seeds are 40 characters, so a real-format
+    `ghp_` token of the rule's minimum 36 characters was never exercised."""
+    seed = "ghp_" + "".join(random.choice(string.ascii_letters + string.digits) for _ in range(36))
+    for label, line in (
+        ("raw", f"token {seed}"),
+        ("base64", base64.b64encode(f"token {seed} ".encode()).decode()),
+        ("hex", f"token {seed} ".encode().hex()),
+    ):
+        hits = {v for r, v in scan_line(line) if r == "github_token"}
+        check("FTF-1505-F1", f"a 36-character ghp_ token ({label}) is found", seed in hits)
+
+
 def test_real_live_lane_decides_on_observed_statuses_and_the_real_capture() -> None:
     """LIVE-CALLSITE, on real boots: (a) an extra probe expecting a status the
     app never returns (418) fails, so the statuses handed to the decisions are
@@ -3002,6 +3093,9 @@ def main() -> None:
     test_secret_deep_inside_one_long_hex_run_is_found()
     test_long_base64_and_hex_runs_are_one_whole_match_and_dense_sweeps_find_every_secret()
     test_unit_sized_base64_and_hex_runs_are_scanned_end_to_end()
+    test_f1_corrupt_tar_gz_is_a_blocking_scan_incomplete()
+    test_f1_tail_only_secret_in_a_unit_sized_run_and_after_ten_thousand_runs()
+    test_f1_minimum_length_github_token_is_found()
     test_real_live_lane_decides_on_observed_statuses_and_the_real_capture()
     test_main_decides_on_every_lane_and_every_completeness_check()
     test_artifact_lane_detects_a_canary()

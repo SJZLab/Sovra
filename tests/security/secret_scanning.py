@@ -467,9 +467,21 @@ def _iter_archive_members(data: bytes, name: str) -> Iterator[tuple[str, bytes |
                 yield info.filename, content, truncated
         return
     if lower.endswith(_TAR_SUFFIXES):
-        mode = "r:gz" if lower.endswith((".tar.gz", ".tgz")) else "r:"
+        tar_bytes = data
+        if lower.endswith((".tar.gz", ".tgz")):
+            # FTF-1505-F1 (GZIP-INTEGRITY): tarfile's "r:gz" never checks the gzip CRC, so a
+            # corrupted trailer or a bit flip mid-stream was scanned as if intact. Decompress the
+            # whole stream first (bounded by the uncompressed-size cap): GzipFile verifies the CRC
+            # and length at end of stream, so any corruption makes the archive unreadable.
+            try:
+                tar_bytes = _bounded_gzip_decompress(data, _MAX_ARCHIVE_UNCOMPRESSED_BYTES + 1)
+            except Exception:
+                yield UNREADABLE_ARCHIVE, None, False
+                return
+            if len(tar_bytes) > _MAX_ARCHIVE_UNCOMPRESSED_BYTES:
+                raise SecretScanError(f"archive {name!r} exceeds uncompressed-size cap")
         try:
-            tf = tarfile.open(fileobj=io.BytesIO(data), mode=mode)
+            tf = tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:")
             members = [m for m in tf.getmembers() if m.isfile()]
         except Exception:
             yield UNREADABLE_ARCHIVE, None, False

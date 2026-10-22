@@ -12199,3 +12199,38 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   handshake bounded, 2.33 s at timeout 2.0; 52 probes within 1.52x; deadline=None unchanged 28/28). Production leaks no key
   (77 probes). Return: response-side key-echo faults G21/G22/G17 GREEN. Round 5 (tests only) written by the Control plane
   in #941 to avoid a fifth relay round; certification by a separate session (Law 4).
+## 2026-10-22T00:10Z — CERTIFIED (child slice): FTF-0501-F2; FTF-0501 requalified
+- **FTF-0501-F2: CERTIFIED (L2)** (round 2 under the stopping rule, tests only; PR #936, merge 05545cfc57be03fab2dfc7ee1d48c96d96c30301, head 1ca0888d).
+  Producer session_01W7x1JBBoGr7KYLNQPseSNm ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI 80/80, ci-verdict
+  119525246846; gate 119471889229 step 184 "FTF-0501-F2 tests: all checks passed", step 183 "FTF-0501 direct upload tests:
+  all checks passed"; 119472034405 "FTF-0501 real routes (PG16 + SeaweedFS): all checks passed". No production file
+  changed. New rows split a character exactly across SNIFF_BYTES (utf-16-le/be surrogate pair at W-2; utf-8-sig cut after
+  the lead byte; windows-1256 boundary rows) and assert the window really cuts mid-character. Probes 92/92 + 7 on real
+  SeaweedFS (splits at W-6..W+2 with stream chunks of 1..65537 bytes; lone surrogates refused; every utf-8 inner offset;
+  bad declarations refused). Faults: B-F9 and 7 variants RED (complete-for-windows-1256-only GREEN: cannot change a
+  result). Gates: product_truth 49/49, validate_spec --strict, data_exposure OK. Decode logic and Law 18 were certified at
+  b61a0acb by session_01FxdpwdR6T7wbuY17C6gw3o (round 1 + the #924 rechain).
+- **FTF-0501: stays CERTIFIED**, evidence_hash -> 05545cfc57be03fab2dfc7ee1d48c96d96c30301 (Law 15).
+## 2026-10-22T00:10Z — CERTIFIED (child slice): FTF-H010-P3a
+- **FTF-H010-P3a: CERTIFIED (L2)** (round 4 under the stopping rule, tests only; PR #839, merge 5fd14b86668d8f11966912980fa84212209a3a76, head d68840ee). Producers
+  session_01SXzsnCHbTciHzbRV2nhpQD, session_01CvxGEB1BmfBxduPHgYYKs5 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent.
+  CI 80/80, ci-verdict 119525462385; gate 119426907081 "OK -- 129592 checks in 70 suite runs, 69 faults RED, 0 failing".
+  Production byte-identical to round 3. Uncapped mutation with the behavioural kill command: 345 run, 340 KILLED, 2 TIMEOUT
+  (RED on real rows uncapped), 3 SURVIVED = the ruled equivalents S05/S07/S08 (now allowlisted). Points 2-6 met: S01-S04,
+  S06, S09-S11 RED behaviourally; round-3 F5-F7 RED; 14 own faults RED; probes 94/94 + 50,000 random shapes vs a u64
+  reference 0 mismatches. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK. UNWIRED until P3.
+  Process finding: merged at 23:09Z on a CI run whose base was 20 commits older (fresh-base rule in CLAUDE.md since #937 at
+  20:47Z not followed); none of the 36 intervening files touch this module or its test, and the verifier's runs on the
+  merged main are green.
+## 2026-10-22T01:04Z — CERTIFIED (child slice): FTF-R006-P1a — round 5 certifier of record session_014KfghB3VrkPEodzJAk4oK3
+- **FTF-R006-P1a: CERTIFIED (L2)** (round 5 under the stopping rule, tests only; PR #941, merge 69d099f8dec6f9a0927df5c7c12185134cce2d73, head f334defc). Round 5
+  producer: the Control-plane session session_01QVznorVMjnmcttUhyDnoGR (to avoid a fifth relay round); certifier of record:
+  the separate session session_014KfghB3VrkPEodzJAk4oK3 (named in no commit). Rounds 1-4 (production): relay sessions, last
+  session_01MPMJL8GLy978iKzWvgp2AT; round 4 L2 (this Control plane's verifier) closed the late-TLS-handshake deadline and
+  found no production key leak. CI: gate 119528004719 step 112 "FTF-R006-P1 Argilla client tests: all checks passed";
+  ci-verdict 119546329264. No production file changed (client.py / outbound_guard.py last touched in 57fd9701). Faults RED:
+  G21, G22, echo via cause / context / add_note / second arg / dict-only / list-only, G17 (`_require_role` echo),
+  `_require_uuid_text` echo. Probe: 498 calls across six client calls, every user/workspace field and body shape, HTTP
+  400-500 - the key never appeared in str/repr/args/notes/cause/context/traceback. Advisory GREEN variants (no such echo in
+  production): list page-bound / malformed-list / non-dict / api_key-missing / empty-name messages. Gates: product_truth
+  49/49, validate_spec --strict, data_exposure OK, CLAUDE.md hash OK. UNWIRED until P1b.
