@@ -1342,9 +1342,10 @@ def _adopt_untracked(
     request_id: str,
 ) -> int:
     """Records the Factory row for a submitted response that exists in Argilla, was written by an
-    active, authorized reviewer of this queue's scope and is a valid decision. The caller has already
-    established that the record is still exactly the queued one (the reason is `response_untracked`,
-    which `_drift_reason` reaches only after the record checks). Returns how many rows were adopted."""
+    active, authorized reviewer of this queue's scope and is a valid decision. The caller has
+    already established that the record is still exactly the queued one (the reason is
+    `response_untracked`, which `_drift_reason` reaches only after the record checks). Returns
+    how many rows were adopted."""
     adopted = 0
     for response in record.responses:
         identity_text = mapped_users.get(response.user_id)

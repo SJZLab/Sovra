@@ -3047,7 +3047,7 @@ def test_s_find_and_ensure() -> None:
             [ok_field],
             with_option([accept, {"value": "reject", "text": "No"}]),
         ),
-        ("a non-dict option", [ok_field], with_option([accept, "reject"])),
+        ("a non-dict option", [ok_field], with_option([accept, "reject"])),  # type: ignore[list-item]
         (
             "options that are not a list",
             [ok_field],
