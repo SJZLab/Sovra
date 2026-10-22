@@ -2764,6 +2764,63 @@ def test_f1_tail_only_secret_in_a_unit_sized_run_and_after_ten_thousand_runs() -
         )
 
 
+def test_f1_r2_head_only_secret_in_a_long_run_and_salvaged_tgz() -> None:
+    """FTF-1505-F1 round 2 (certifier session_01AoheU1Chq4VUrFdB9Yw9sB): (1) QUICK-GATE-SUFFIX-CAP -
+    a pre-filter reading only the END of the decoded text passed every test, because every
+    long-run test also has a secret near the end; one long base64 run and one long hex run
+    (well over 1 MiB) hold their only secret on their first bytes. (2) GZIP-SALVAGE - keeping
+    the part of a corrupted .tgz read before the error passed, because the F1 archive is smaller
+    than one read chunk; a .tgz with a member ending exactly on a 64 KiB boundary, then a secret
+    member, must be a blocking scan_incomplete when its trailer is corrupted or it is truncated."""
+    seed = generate_seed_for_rule("github_token")
+    secret = f"token {seed} ".encode()
+    for kind, encode, raw_len in (
+        ("base64", lambda b: base64.b64encode(b).decode(), 3_000_000),
+        ("hex", lambda b: b.hex(), 2_000_000),
+    ):
+        run = encode(secret + b"a" * (raw_len - len(secret)))
+        hits = {v for r, v in scan_line(run) if r == "github_token"}
+        check(
+            "FTF-1505-F1",
+            f"one {len(run):,}-char {kind} run whose only secret is on its first bytes is found",
+            len(run) > 2 * 1024 * 1024 and seed in hits,
+        )
+    import gzip
+    import tarfile
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tf:
+        pad = tarfile.TarInfo("pad.bin")
+        pad.size = 131072 - 512
+        tf.addfile(pad, io.BytesIO(b"p" * pad.size))
+        body = b"x" * 1000 + f" token {seed} ".encode() + b"y" * 1000
+        member = tarfile.TarInfo("notes/secret.txt")
+        member.size = len(body)
+        tf.addfile(member, io.BytesIO(body))
+    good = gzip.compress(buf.getvalue())
+    intact = ss._scan_content_and_members(
+        "big.tgz", good, include_canary=False, content_truncated=False
+    )
+    check(
+        "FTF-1505-F1",
+        "an intact multi-chunk .tgz has its second member's secret found",
+        any(r == "github_token" and v == seed for r, v, _ in intact),
+    )
+    for label, data in (
+        ("corrupted CRC trailer", good[:-8] + bytes([good[-8] ^ 1]) + good[-7:]),
+        ("truncated by 50 bytes", good[:-50]),
+    ):
+        results = ss._scan_content_and_members(
+            "big.tgz", data, include_canary=False, content_truncated=False
+        )
+        check(
+            "FTF-1505-F1",
+            f"a multi-chunk .tgz with a {label} is a blocking scan_incomplete "
+            f"({[r for r, _, _ in results]})",
+            any(r == "scan_incomplete" for r, _, _ in results),
+        )
+
+
 def test_f1_minimum_length_github_token_is_found() -> None:
     """FTF-1505-F1 (GITHUB-TOKEN-36): generated seeds are 40 characters, so a real-format
     `ghp_` token of the rule's minimum 36 characters was never exercised."""
@@ -3096,6 +3153,7 @@ def main() -> None:
     test_f1_corrupt_tar_gz_is_a_blocking_scan_incomplete()
     test_f1_tail_only_secret_in_a_unit_sized_run_and_after_ten_thousand_runs()
     test_f1_minimum_length_github_token_is_found()
+    test_f1_r2_head_only_secret_in_a_long_run_and_salvaged_tgz()
     test_real_live_lane_decides_on_observed_statuses_and_the_real_capture()
     test_main_decides_on_every_lane_and_every_completeness_check()
     test_artifact_lane_detects_a_canary()

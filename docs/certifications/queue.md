@@ -25210,3 +25210,4 @@ different session.
 - **Certified:** FTF-0501-F2 (#936, merge 05545cfc), round 2; FTF-0501 requalified.
 - **Certified:** FTF-H010-P3a (#839, merge 5fd14b86), round 4; S05/S07/S08 allowlisted as reviewed equivalents.
 - **Certified:** FTF-R006-P1a (#941, merge 69d099f8), round 5; verdict by the separate session session_014KfghB3VrkPEodzJAk4oK3. P1b claimable.
+- **Returned:** FTF-UX03 r2 -> r3 (0g): wrap long names (04A03/04A04/04A22) with RED harness fixtures; pin role=alert (04A18, 04A21) and failed-submit focus (04A03); canonical checklist and corrected submission.

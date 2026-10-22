@@ -67,6 +67,8 @@ function mockCandidateList() {
           framework_or_runtime: "python",
           confidence_score: 0.42,
           discovery_status: "candidate",
+          organization_id: ORG_ID,
+          target_source_snapshot_id: SNAPSHOT_ID,
         },
         {
           id: CANDIDATE_HIGH,
@@ -74,6 +76,8 @@ function mockCandidateList() {
           framework_or_runtime: "typescript",
           confidence_score: 0.96,
           discovery_status: "candidate",
+          organization_id: ORG_ID,
+          target_source_snapshot_id: SNAPSHOT_ID,
         },
       ],
       limit: 50,
@@ -151,8 +155,12 @@ test("negative_acceptance: the higher-confidence candidate is rendered but not a
 
   await waitFor(() =>
     expect(screen.getByTestId("candidate-selection-confirmation").textContent).toContain(
-      CANDIDATE_HIGH,
+      "CustomerSupportAgent",
     ),
+  );
+  // UX03: the confirmation names the candidate, never its UUID.
+  expect(screen.getByTestId("candidate-selection-confirmation").textContent).not.toContain(
+    CANDIDATE_HIGH,
   );
   expect(onSelected).toHaveBeenCalledWith({
     candidate_id: CANDIDATE_HIGH,
@@ -179,7 +187,9 @@ test("negative_acceptance: a stale candidate from a superseded snapshot is rejec
   fireEvent.click(screen.getByTestId(`candidate-select-button-${CANDIDATE_LOW}`));
 
   await waitFor(() =>
-    expect(screen.getByTestId("candidate-selection-error").textContent).toContain("superseded"),
+    expect(screen.getByTestId("candidate-selection-error").textContent).toContain(
+      "A newer snapshot of this connection exists",
+    ),
   );
   expect(screen.queryByTestId("candidate-selection-confirmation")).toBeNull();
 });
@@ -196,6 +206,8 @@ function mockSingleCandidateList() {
           framework_or_runtime: "python",
           confidence_score: 0.99,
           discovery_status: "candidate",
+          organization_id: ORG_ID,
+          target_source_snapshot_id: SNAPSHOT_ID,
         },
       ],
       limit: 50,
@@ -246,7 +258,7 @@ test("network error while loading candidates is surfaced, never an empty or succ
 
   await waitFor(() =>
     expect(screen.getByTestId("candidate-selection-error").textContent).toContain(
-      "connection refused",
+      "Could not reach the server",
     ),
   );
   expect(screen.getByTestId("candidate-list").children.length).toBe(0);
@@ -264,7 +276,9 @@ test("network error while selecting is surfaced and nothing is confirmed", async
   fireEvent.click(screen.getByTestId(`candidate-select-button-${CANDIDATE_LOW}`));
 
   await waitFor(() =>
-    expect(screen.getByTestId("candidate-selection-error").textContent).toContain("socket hang up"),
+    expect(screen.getByTestId("candidate-selection-error").textContent).toContain(
+      "Could not reach the server",
+    ),
   );
   expect(screen.queryByTestId("candidate-selection-confirmation")).toBeNull();
   expect(onSelected).not.toHaveBeenCalled();
@@ -286,7 +300,7 @@ test("an unparseable select response is surfaced as an error, never confirmed", 
   fireEvent.click(screen.getByTestId(`candidate-select-button-${CANDIDATE_LOW}`));
 
   await waitFor(() =>
-    expect(screen.getByTestId("candidate-selection-error").textContent).toContain("network error"),
+    expect(screen.getByTestId("candidate-selection-error").textContent).toContain("cannot read"),
   );
   expect(screen.queryByTestId("candidate-selection-confirmation")).toBeNull();
 });
