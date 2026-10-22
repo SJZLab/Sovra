@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-22T01:04Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-22T05:03Z. Source: `python3 scripts/status.py` on main.
 - **Status: 157/304 certified · 49 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,8 @@ Updated: 2026-10-22T01:04Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-22T05:03Z:**
+  - Returned: FTF-UX03 r2 (target-application screens: now on the shared accessible components, fully bilingual, with announced errors and loading/empty states, and all five parent screens still pass; but very long repository, branch and tool names overflow on a phone-width screen, two error announcements and one focus rule have no test, and the design checklist is abbreviated). Round 3 is small.
 - **2026-10-22T01:04Z:**
   - CERTIFIED (child slice): FTF-R006-P1a after 5 rounds - the Argilla annotation client: every call has a hard total time limit (also over HTTPS with a slow handshake), refuses unexpected replies, and never puts the provisioning key into an error message (498 probes). The next Argilla slice (P1b) can start.
 - **2026-10-22T00:10Z:**
