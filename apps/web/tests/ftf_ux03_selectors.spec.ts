@@ -2043,3 +2043,76 @@ describe("[UX03-R4] route-aware wording", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// FTF-UX03 round 3, point 2: every 04A18 failure is announced with role="alert"
+// ---------------------------------------------------------------------------------------------
+describe("[UX03-R3-C5] 04A18 failures are announced assertively", () => {
+  const LOAD_FAILURES: [string, () => unknown][] = [
+    ["a refused load (500)", () => refused(500, {})],
+    ["a refused load (403)", () => refused(403, {})],
+    ["a malformed 200", () => ok({ nope: true })],
+    ["a rejected fetch", () => Promise.reject(new TypeError("offline"))],
+  ];
+  for (const locale of ["en", "ar"] as const) {
+    test.each(LOAD_FAILURES)(`${locale}: %s`, async (_name, reply) => {
+      fetchMock().mockImplementationOnce(async () => reply());
+      render(candidateUI(locale));
+      fireEvent.click(screen.getByTestId("candidate-load-button"));
+      const wrapper = await screen.findByTestId("candidate-selection-error");
+      const alerts = wrapper.querySelectorAll('[role="alert"]');
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]!.textContent!.trim().length).toBeGreaterThan(2);
+      expect(wrapper.querySelector('[role="status"]')).toBeNull();
+      expect(alerts[0]!.getAttribute("lang")).toBe(locale);
+    });
+
+    test.each(LOAD_FAILURES)(`${locale}: select -- %s`, async (_name, reply) => {
+      fetchMock().mockResolvedValueOnce(ok(CANDIDATE_PAGE()));
+      render(candidateUI(locale));
+      fireEvent.click(screen.getByTestId("candidate-load-button"));
+      await screen.findByTestId(`candidate-row-${CAND_A}`);
+      fetchMock().mockImplementationOnce(async () => reply());
+      fireEvent.click(screen.getByTestId(`candidate-select-button-${CAND_A}`));
+      const wrapper = await screen.findByTestId("candidate-selection-error");
+      const alerts = wrapper.querySelectorAll('[role="alert"]');
+      expect(alerts).toHaveLength(1);
+      expect(wrapper.querySelector('[role="status"]')).toBeNull();
+      expect(alerts[0]!.getAttribute("lang")).toBe(locale);
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// FTF-UX03 round 3, point 3: every failed 04A03 submit moves focus to the ErrorSummary
+// ---------------------------------------------------------------------------------------------
+describe("[UX03-R3-C8] 04A03 failed submit focuses the ErrorSummary", () => {
+  function summary() {
+    return document.querySelector('[data-testid="error-summary"], [role="alert"][tabindex="-1"]');
+  }
+  test.each([
+    ["blank", ""],
+    ["whitespace-only", "   "],
+  ])("%s token: focus lands on the summary and it lists the field error", async (_n, value) => {
+    render(repoSelector());
+    const input = screen.getByTestId("github-credential-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value } });
+    fireEvent.click(screen.getByTestId("github-load-repositories-button"));
+    await waitFor(() => expect(summary()).not.toBeNull());
+    expect(document.activeElement).toBe(summary());
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  test("a repeated failed submit moves focus back to the summary each time", async () => {
+    render(repoSelector());
+    const input = screen.getByTestId("github-credential-input") as HTMLInputElement;
+    const button = screen.getByTestId("github-load-repositories-button");
+    fireEvent.click(button);
+    await waitFor(() => expect(summary()).not.toBeNull());
+    expect(document.activeElement).toBe(summary());
+    input.focus();
+    expect(document.activeElement).toBe(input);
+    fireEvent.click(button);
+    await waitFor(() => expect(document.activeElement).toBe(summary()));
+  });
+});
