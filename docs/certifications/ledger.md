@@ -12311,3 +12311,14 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   px with max-length names, focus lost to <body> after a failed save, English system text under ar (severity 3 each); no
   recovery steps, empty state without action, Field unused; 16/24 faults GREEN; no browser harness in CI; §4 evidence
   absent and contradicted. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK. UNWIRED until FTF-H029.
+## 2026-10-22T19:49Z — RETURNED: FTF-H011-P2 (r1)
+- **FTF-H011-P2: RETURNED** (child slice of FTF-H011; round 1 → 2; PR #934, merge
+  935f14d91405d3ec3f8fdcbb47e1728dc3118722, head c21103b6). Producers session_01RjchJLT6vbaC5fk5YQ8Mkm (9 commits, PR body,
+  merge), session_01CW9VbWz9eetvnP9HPVM6qF, session_01CPgHHbKiqLhRdkb5jSkvWo, session_01DKLGL61DSskQBox4jjAGy7 ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 82/82, ci-verdict 119980460557; dataset-mapping-store-integration 119861606434 and gate
+  119854196879 "all checks passed". Local: task script 735/0, PG16 integration 227/0, one head 0035, uncapped mutation
+  320/320; FTF-H011-P1 REQUALIFIED. 101 probes: RLS/grants/trigger/CHECKs/tenancy/concurrency/Law 17 all hold. Return:
+  (1) an explicit admin rejection is overridden by reusing a prior version's approval (fail-open, reproduced); (2) reuse of
+  an approval made under a now-revoked connection (Control-plane ruling: fail closed, Law 16). Faults 63/64 RED (1
+  equivalent). ci.yml change additive (under a [relay] title). Gates: product_truth 49/49, validate_spec --strict,
+  data_exposure OK. UNWIRED (P3 wires it).
