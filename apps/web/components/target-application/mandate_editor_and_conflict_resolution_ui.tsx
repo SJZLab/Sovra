@@ -971,7 +971,11 @@ export function MandateEditorAndConflictResolutionUI({
                 const entry = forbiddenActions.find((a) => a.name === status.name);
                 const blocking = BLOCKING_FORBIDDEN_ACTION_REASONS.includes(status.reason);
                 return (
-                  <li key={status.name} data-testid={`forbidden-action-row-${status.name}`}>
+                  <li
+                    key={status.name}
+                    data-testid={`forbidden-action-row-${status.name}`}
+                    style={{ overflowWrap: "anywhere", minInlineSize: 0 }}
+                  >
                     <span data-testid={`forbidden-action-name-${status.name}`}>
                       <bdi>{status.name}</bdi>
                     </span>{" "}
@@ -1123,7 +1127,7 @@ export function MandateEditorAndConflictResolutionUI({
               </p>
               <ul data-testid="mandate-lock-blockers">
                 {blockers.map((blocker) => (
-                  <li key={blocker.name}>
+                  <li key={blocker.name} style={{ overflowWrap: "anywhere", minInlineSize: 0 }}>
                     <bdi>{blocker.name}</bdi>: {conflictSentence(blocker.reason, locale)}
                   </li>
                 ))}
