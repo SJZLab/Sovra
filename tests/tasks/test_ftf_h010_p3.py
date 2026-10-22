@@ -921,6 +921,9 @@ def group_b(m: Any) -> None:
             def fileno(self) -> int:
                 return self.handle.fileno()
 
+            def __getattr__(self, name: str) -> Any:
+                return getattr(self.handle, name)
+
         os.fdopen = lambda *a, **k: Spy(real_fdopen(*a, **k))
         try:
             outcome = env.run(FULL, fx)
@@ -1972,6 +1975,137 @@ def group_j(m: Any) -> None:
             expect_outcome(env, FULL, fx, f"J11 status {variant!r}", "failed", "artifact_not_ready")
 
 
+def group_k(m: Any) -> None:
+    """The shard header is bound to the manifest hash; non-regular files; the exact header cap."""
+    import signal
+
+    benign = safetensors_bytes(BASE_TENSORS)
+    hostile = benign.replace(b'"F32"', b'"F33"', 1)
+    check(
+        "K",
+        "K0 fixture: the hostile shard has the benign shard's size",
+        len(hostile) == len(benign) and hostile != benign,
+    )
+
+    # K1: registered over a hostile shard; a same-size benign shard is swapped in after the manifest
+    with Env(m).patched() as env:
+        fx = env.weights_job("w", weights_files(model__safetensors=hostile))
+        real = env.m.resolve_local_artifact
+
+        def swap(*a: Any, **k: Any) -> Any:
+            result = real(*a, **k)
+            (env.root / "w" / "model.safetensors").write_bytes(benign)
+            return result
+
+        env.m.resolve_local_artifact = swap
+        try:
+            outcome = env.run(FULL, fx)
+        finally:
+            env.m.resolve_local_artifact = real
+        check(
+            "K",
+            f"K1 a same-size shard swapped after the manifest is not judged as the digested file ({outcome_pair(outcome)})",
+            outcome_pair(outcome) == ("failed", "artifact_changed_during_validation")
+            and env.versions() == [],
+        )
+
+    # K2: the same for the base in the adapter path
+    with Env(m).patched() as env:
+        fx = env.adapter_job(base_files=weights_files(model__safetensors=hostile))
+        real = env.m.resolve_local_artifact
+
+        def swap_base(*a: Any, **k: Any) -> Any:
+            result = real(*a, **k)
+            if a[1] == "base":
+                (env.root / "base" / "model.safetensors").write_bytes(benign)
+            return result
+
+        env.m.resolve_local_artifact = swap_base
+        try:
+            outcome = env.run(ADAPTER, fx)
+        finally:
+            env.m.resolve_local_artifact = real
+        check(
+            "K",
+            f"K2 a same-size base shard swapped after its manifest pass is not judged ({outcome_pair(outcome)})",
+            outcome_pair(outcome) == ("failed", "artifact_changed_during_validation"),
+        )
+
+    # K3: a non-regular file swapped in after the manifest is a changed file, never a hang
+    def timed(env: Env, fx: Fixture) -> Any:
+        def alarm(*_a: Any) -> None:
+            raise TimeoutError("hang")
+
+        old = signal.signal(signal.SIGALRM, alarm)
+        signal.setitimer(signal.ITIMER_REAL, 15)
+        try:
+            return env.run(FULL, fx)
+        except TimeoutError:
+            return "hang"
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, old)
+
+    for name in ("config.json", "tokenizer_config.json", "model.safetensors"):
+        for kind in ("fifo", "directory"):
+            with Env(m).patched() as env:
+                fx = env.weights_job("w", weights_files())
+                real = env.m.resolve_local_artifact
+
+                def replace(
+                    *a: Any,
+                    name: str = name,
+                    kind: str = kind,
+                    env: Env = env,
+                    real: Any = real,
+                    **k: Any,
+                ) -> Any:
+                    result = real(*a, **k)
+                    target = env.root / "w" / name
+                    target.unlink()
+                    if kind == "fifo":
+                        os.mkfifo(target)
+                    else:
+                        target.mkdir()
+                    return result
+
+                env.m.resolve_local_artifact = replace
+                try:
+                    outcome = timed(env, fx)
+                finally:
+                    env.m.resolve_local_artifact = real
+                got = outcome if isinstance(outcome, str) else outcome_pair(outcome)
+                check(
+                    "K",
+                    f"K3 {name} swapped for a {kind} after the manifest: {got}",
+                    got == ("failed", "artifact_changed_during_validation")
+                    and env.versions() == [],
+                )
+
+    # K4: a header of exactly the format's own bound (100,000,000 bytes) is accepted
+    n = 100_000_000
+    body = json.dumps(
+        {
+            "model.layers.0.q_proj.weight": {
+                "dtype": "F32",
+                "shape": [8, 4],
+                "data_offsets": [0, 128],
+            }
+        },
+        separators=(",", ":"),
+    ).encode()
+    big = struct.pack("<Q", n) + body + b" " * (n - len(body)) + bytes(128)
+    with Env(m).patched() as env:
+        fx = env.weights_job("w", weights_files(model__safetensors=big))
+        outcome = env.run(FULL, fx)
+        check(
+            "K",
+            f"K4 a header of exactly 100,000,000 bytes is accepted ({outcome_pair(outcome)})",
+            outcome_pair(outcome) == ("succeeded", None),
+        )
+    del big
+
+
 # -- faults ----------------------------------------------------------------------------------------
 
 FAULTS: list[tuple[str, str, str, int]] = [
@@ -2012,7 +2146,30 @@ FAULTS: list[tuple[str, str, str, int]] = [
         "False",
         1,
     ),
-    ("shard size drift ignored", "if size != entry.size_bytes:", "if False:", 1),
+    (
+        "shard header not bound to the manifest hash",
+        "if size != entry.size_bytes or not _same_hash(digest.hexdigest(), entry.sha256):",
+        "if size != entry.size_bytes:",
+        1,
+    ),
+    (
+        "non-regular files read (no S_ISREG check)",
+        "if not stat.S_ISREG(os.fstat(fd).st_mode):",
+        "if False:",
+        1,
+    ),
+    (
+        "blocking open (O_NONBLOCK dropped)",
+        '| getattr(os, "O_NONBLOCK", 0)',
+        "",
+        1,
+    ),
+    (
+        "header read cap one short",
+        "MAX_SAFETENSORS_HEADER_BYTES\n            )",
+        "MAX_SAFETENSORS_HEADER_BYTES - 1\n            )",
+        1,
+    ),
     (
         "symlinks followed when reading",
         'os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)',
@@ -2106,6 +2263,7 @@ def suite(m: Any) -> list[str]:
     group_g(m)
     group_h(m)
     group_j(m)
+    group_k(m)
     return list(_failures)
 
 

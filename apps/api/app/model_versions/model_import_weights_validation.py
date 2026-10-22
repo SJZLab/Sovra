@@ -47,9 +47,11 @@ the text of a resolver exception never reaches a failure code, an audit row or a
 
 Disclosed: UNWIRED (no dispatcher calls these yet, FTF-0801/H016); `factory_trained` parents are
 refused `base_not_validated` because no factory-run entity exists yet to prove them; the
-`model.safetensors.index.json` file is allow-listed and hashed but not interpreted; shard bytes
-beyond each header are covered by the two full-hash passes (FTF-0306 digest and the manifest
-re-resolve), not by a third read.
+`model.safetensors.index.json` file is allow-listed and hashed but not interpreted. Every shard is
+read once more (header parsed and the whole file hashed from the same descriptor) after the two
+full-hash passes (FTF-0306 digest and the manifest re-resolve), so the header that is judged is
+the one the digest covers; a file swapped for a FIFO or any non-regular file after the manifest is
+`artifact_changed_during_validation`, never a hang.
 """
 
 from __future__ import annotations
@@ -57,6 +59,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import stat
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -368,7 +371,14 @@ def _artifact_dir(approved_root: Path, artifact: TrainableArtifact) -> Path:
 
 
 def _open_no_follow(path: Path) -> int:
-    return os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    """Opens without following a symlink and without blocking (a FIFO swapped in after the
+    manifest would otherwise hang the worker); anything that is not a regular file is a file that
+    changed after the manifest."""
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        os.close(fd)
+        raise _Refusal(CODE_CHANGED_DURING_VALIDATION)
+    return fd
 
 
 def _read_parsed_file(
@@ -400,6 +410,7 @@ def _read_header(directory: Path, manifest: LocalArtifactManifest, name: str) ->
     refusal: str | None = None
     prefix = b""
     size = -1
+    digest = hashlib.sha256()
     try:
         with os.fdopen(_open_no_follow(directory / name), "rb") as handle:
             size = os.fstat(handle.fileno()).st_size
@@ -412,11 +423,14 @@ def _read_header(directory: Path, manifest: LocalArtifactManifest, name: str) ->
                 length, max(size - _HEADER_LENGTH_BYTES, 0), MAX_SAFETENSORS_HEADER_BYTES
             )
             prefix += handle.read(body_cap)
+            # The parsed bytes are the hashed bytes: one pass over this very descriptor.
+            digest.update(prefix)
+            hashlib.file_digest(handle, lambda: digest)
     except OSError:
         refusal = CODE_SOURCE_UNAVAILABLE
     if refusal is not None:
         raise _Refusal(refusal, STATE_BLOCKED_EXTERNAL)
-    if size != entry.size_bytes:
+    if size != entry.size_bytes or not _same_hash(digest.hexdigest(), entry.sha256):
         raise _Refusal(CODE_CHANGED_DURING_VALIDATION)
     return _parse(lambda: parse_safetensors_header(prefix, file_size=size))  # type: ignore[return-value]
 
