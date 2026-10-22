@@ -70,6 +70,7 @@ import {
   NETWORK_FAILURE,
   failureFromResponse,
   selectorFailureMessage,
+  type SelectorRoute,
   isRecord,
   type Failure,
 } from "./common";
@@ -206,6 +207,9 @@ function BranchRefSelector({
   const [branchesLoaded, setBranchesLoaded] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
+  // Which request the failure belongs to: the words for a 404 or 409 differ between listing branches
+  // and resolving a ref.
+  const [failureRoute, setFailureRoute] = useState<SelectorRoute>("branches");
   // The ref currently being edited/selected (display value only).
   const [selectedRef, setSelectedRef] = useState(defaultBranch ?? "");
   // Deliberately starts `null` and is set only from a real, fresh
@@ -223,6 +227,7 @@ function BranchRefSelector({
   async function fetchBranchPage(requestedPage: number, append: boolean) {
     setLoadingBranches(true);
     setFailure(null);
+    setFailureRoute("branches");
     try {
       const response = await fetch(githubBranchesUrl(apiBaseUrl, organizationId, projectId), {
         method: "POST",
@@ -284,6 +289,7 @@ function BranchRefSelector({
     const requestId = ++latestResolve.current;
     setResolving(true);
     setFailure(null);
+    setFailureRoute("resolve");
     // A reply only counts while it is still the newest request AND the input still holds the ref it
     // was sent for; otherwise the user has moved on and showing it would mix commits.
     const stale = () => requestId !== latestResolve.current || liveRef.current !== requestedRef;
@@ -343,7 +349,7 @@ function BranchRefSelector({
       {failure && (
         <div data-testid="github-branch-ref-error">
           <Banner kind="error" locale={locale}>
-            {selectorFailureMessage(failure, locale)}
+            {selectorFailureMessage(failure, locale, failureRoute)}
           </Banner>
         </div>
       )}

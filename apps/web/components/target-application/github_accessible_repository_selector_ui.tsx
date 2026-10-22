@@ -285,7 +285,7 @@ function RepositorySelector({
       {failure && (
         <div data-testid="github-repository-error">
           <Banner kind="error" locale={locale}>
-            {selectorFailureMessage(failure, locale)}
+            {selectorFailureMessage(failure, locale, "repositories")}
           </Banner>
         </div>
       )}

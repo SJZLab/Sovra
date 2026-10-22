@@ -77,6 +77,7 @@ import {
   NETWORK_FAILURE,
   failureFromResponse,
   selectorFailureMessage,
+  type SelectorRoute,
   isRecord,
   type Failure,
 } from "./common";
@@ -265,6 +266,7 @@ function CandidateSelection({
   const [loading, setLoading] = useState(false);
   const [selectingId, setSelectingId] = useState<string | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
+  const [failureRoute, setFailureRoute] = useState<SelectorRoute>("candidates");
   // Deliberately starts `null` and is set only from a real, fresh
   // `.../select` response inside `handleSelect` -- this task's own real
   // "no auto-selection" guarantee: nothing in this component's own state
@@ -276,6 +278,7 @@ function CandidateSelection({
   async function handleLoadCandidates() {
     setLoading(true);
     setFailure(null);
+    setFailureRoute("candidates");
     try {
       const response = await fetch(
         candidatesListUrl(apiBaseUrl, organizationId, projectId, connectionId, snapshotId),
@@ -311,6 +314,7 @@ function CandidateSelection({
   async function handleSelect(candidateId: string) {
     setSelectingId(candidateId);
     setFailure(null);
+    setFailureRoute("select");
     try {
       const response = await fetch(
         candidateSelectUrl(
@@ -368,7 +372,7 @@ function CandidateSelection({
       {failure && (
         <div data-testid="candidate-selection-error">
           <Banner kind="error" locale={locale}>
-            {selectorFailureMessage(failure, locale)}
+            {selectorFailureMessage(failure, locale, failureRoute)}
           </Banner>
         </div>
       )}

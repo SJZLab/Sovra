@@ -211,7 +211,7 @@ test("negative_acceptance: an unknown/inaccessible ref surfaces the real server-
 
   await waitFor(() =>
     expect(screen.getByTestId("github-branch-ref-error").textContent).toContain(
-      "not found, or this token cannot see it",
+      "Check the ref name first",
     ),
   );
   expect(screen.queryByTestId("github-resolved-ref-notice")).toBeNull();

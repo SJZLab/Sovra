@@ -1730,6 +1730,10 @@ type RealCase = {
   body: unknown;
   en: string;
   ar: string;
+  /** Only the drivers whose real route can return this body (default: all). */
+  only?: string[];
+  /** A different expected sentence for specific drivers (the words depend on the route). */
+  overrides?: Record<string, { en: string; ar: string }>;
 };
 const STALE_TEXT =
   `target source snapshot ${SNAPSHOT} is not the connection's latest snapshot (a newer snapshot ` +
@@ -1776,6 +1780,25 @@ const REAL_CASES: RealCase[] = [
     body: { detail: "not_found" },
     en: "was not found",
     ar: "لم يتم العثور",
+    overrides: { "04A04 resolve": { en: "Check the ref name first", ar: "تحقق من اسم المرجع" } },
+  },
+  {
+    name: "404 unknown ref (GitHub 422 turned into 404 by the resolver)",
+    status: 404,
+    body: { detail: "could not resolve the requested ref 'nope' in acme/app" },
+    en: "Check the ref name first",
+    ar: "تحقق من اسم المرجع",
+    only: ["04A04 resolve"],
+  },
+  {
+    name: "409 connection revoked",
+    status: 409,
+    body: {
+      detail: `target application connection ${CONNECTION} is revoked and cannot be edited -- create a new connection instead`,
+    },
+    en: "Create a new connection",
+    ar: "أنشئ اتصالًا جديدًا",
+    only: ["04A04 resolve"],
   },
   {
     name: "404 GitHub could not find the resource",
@@ -1783,6 +1806,8 @@ const REAL_CASES: RealCase[] = [
     body: { detail: "GitHub could not find the requested resource (HTTP 404)" },
     en: "was not found",
     ar: "لم يتم العثور",
+    only: ["04A03 list", "04A04 branches", "04A04 resolve"],
+    overrides: { "04A04 resolve": { en: "Check the ref name first", ar: "تحقق من اسم المرجع" } },
   },
   {
     name: "409 stale snapshot",
@@ -1790,6 +1815,7 @@ const REAL_CASES: RealCase[] = [
     body: { detail: STALE_TEXT },
     en: "Reload the candidates",
     ar: "أعد تحميل المرشحين",
+    only: ["04A18 select"],
   },
   {
     name: "429 GitHub rate limit",
@@ -1882,7 +1908,8 @@ const DRIVERS: Driver[] = [
 
 describe("[UX03-R3] real backend failure bodies are worded for the user, never echoed", () => {
   for (const driver of DRIVERS) {
-    for (const real of REAL_CASES) {
+    for (const real of REAL_CASES.filter((c) => !c.only || c.only.includes(driver.name))) {
+      const expected = real.overrides?.[driver.name] ?? real;
       for (const locale of ["en", "ar"] as const) {
         test(`${driver.name} ${real.name} [${locale}]`, async () => {
           if (driver.name === "04A18 select") {
@@ -1893,7 +1920,7 @@ describe("[UX03-R3] real backend failure bodies are worded for the user, never e
           const error = await screen.findByTestId(driver.errorId);
           const text = error.textContent!;
           // the recovery step that can actually succeed, in the right language
-          expect(text).toContain(locale === "en" ? real.en : real.ar);
+          expect(text).toContain(locale === "en" ? expected.en : expected.ar);
           // never the backend's own words, codes, GitHub text or ids
           const detail = (real.body as { detail: string }).detail;
           expect(text).not.toContain(detail);
@@ -1973,5 +2000,46 @@ describe("[UX03-R3] cheap advisories pinned", () => {
     });
     await screen.findByTestId("candidate-selection-confirmation");
     expect(screen.queryByTestId("candidate-selection-error")).toBeNull();
+  });
+});
+
+describe("[UX03-R4] route-aware wording", () => {
+  const http = (status: number, detail: string | null): Failure => ({
+    kind: "http",
+    status,
+    detail,
+  });
+
+  test("candidate routes have no token: their 404 never mentions one (en and ar)", () => {
+    for (const route of ["candidates", "select"] as const) {
+      const en = selectorFailureMessage(http(404, "not_found"), "en", route);
+      const ar = selectorFailureMessage(http(404, "not_found"), "ar", route);
+      expect(en).toContain("connection or snapshot was not found");
+      expect(en).not.toMatch(/token/i);
+      expect(ar).toContain("لم يتم العثور على الاتصال أو اللقطة");
+      expect(ar).not.toContain("الرمز");
+    }
+  });
+
+  test("a project_not_found on resolve is about the project, not the ref name", () => {
+    const en = selectorFailureMessage(http(404, "project_not_found"), "en", "resolve");
+    expect(en).toContain("project, connection or repository was not found");
+    expect(en).not.toContain("Check the ref name");
+    expect(selectorFailureMessage(http(404, "not_found"), "en", "resolve")).toContain(
+      "Check the ref name first",
+    );
+  });
+
+  test("409 means a stale snapshot only when recording a selection; a revoked connection on resolve; generic elsewhere", () => {
+    expect(selectorFailureMessage(http(409, "x"), "en", "select")).toContain("newer snapshot");
+    expect(selectorFailureMessage(http(409, "x"), "en", "resolve")).toContain(
+      "Create a new connection",
+    );
+    for (const route of ["repositories", "branches", "candidates"] as const) {
+      const text = selectorFailureMessage(http(409, "x"), "en", route);
+      expect(text).not.toContain("newer snapshot");
+      expect(text).not.toContain("Create a new connection");
+      expect(text).toContain("(409)");
+    }
   });
 });

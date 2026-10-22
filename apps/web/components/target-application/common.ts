@@ -164,6 +164,18 @@ const SELECTOR_WORDS = {
     en: "A newer snapshot of this connection exists, so this selection was not recorded. Reload the candidates to work on the latest snapshot, then choose again.",
     ar: "توجد لقطة أحدث لهذا الاتصال، لذلك لم يتم تسجيل هذا الاختيار. أعد تحميل المرشحين للعمل على أحدث لقطة ثم اختر مرة أخرى.",
   },
+  connectionRevoked: {
+    en: "This connection was revoked and can no longer be used. Create a new connection, then resolve the ref again.",
+    ar: "تم إلغاء هذا الاتصال ولم يعد قابلًا للاستخدام. أنشئ اتصالًا جديدًا ثم حلّل المرجع مرة أخرى.",
+  },
+  refNotFound: {
+    en: "That ref, or the repository or connection it belongs to, was not found or is not visible to this token. Check the ref name first, then the repository and the token's access.",
+    ar: "لم يتم العثور على هذا المرجع أو المستودع أو الاتصال، أو أنه غير مرئي لهذا الرمز. تحقق من اسم المرجع أولًا ثم من المستودع وصلاحيات الرمز.",
+  },
+  candidatesNotFound: {
+    en: "The connection or snapshot was not found, or you do not have access to it. Reload the page, or ask an administrator.",
+    ar: "لم يتم العثور على الاتصال أو اللقطة، أو ليست لديك صلاحية الوصول إليها. أعد تحميل الصفحة أو اطلب المساعدة من مسؤول.",
+  },
   rateLimited: {
     en: "GitHub is limiting requests right now. Wait a few minutes, then try again.",
     ar: "يحدّ GitHub من الطلبات حاليًا. انتظر بضع دقائق ثم حاول مرة أخرى.",
@@ -183,7 +195,13 @@ const selectorWord = makeT(SELECTOR_WORDS);
  * localized sentence with the step that can succeed. A 401 is GitHub rejecting the credential unless
  * the platform itself says `not_authenticated` (the user's own session ended).
  */
-export function selectorFailureMessage(failure: Failure, locale: Locale | string = "en"): string {
+export type SelectorRoute = "repositories" | "branches" | "resolve" | "candidates" | "select";
+
+export function selectorFailureMessage(
+  failure: Failure,
+  locale: Locale | string = "en",
+  route: SelectorRoute = "repositories",
+): string {
   if (failure.kind !== "http") return failureMessage(failure, locale);
   switch (failure.status) {
     case 401:
@@ -191,9 +209,22 @@ export function selectorFailureMessage(failure: Failure, locale: Locale | string
         ? failureMessage(failure, locale)
         : selectorWord("githubRejected", locale);
     case 404:
+      // The word depends on what the user was doing: an unknown ref is about the ref, and the
+      // candidate routes have no token at all.
+      if (route === "resolve") {
+        return failure.detail === "project_not_found"
+          ? selectorWord("notFound", locale)
+          : selectorWord("refNotFound", locale);
+      }
+      if (route === "candidates" || route === "select") {
+        return selectorWord("candidatesNotFound", locale);
+      }
       return selectorWord("notFound", locale);
     case 409:
-      return selectorWord("staleSnapshot", locale);
+      // Only recording a selection can be stale; resolving a ref 409s when the connection was revoked.
+      if (route === "select") return selectorWord("staleSnapshot", locale);
+      if (route === "resolve") return selectorWord("connectionRevoked", locale);
+      return failureMessage(failure, locale);
     case 429:
       return selectorWord("rateLimited", locale);
     case 400:
