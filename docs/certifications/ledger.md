@@ -12234,3 +12234,14 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   400-500 - the key never appeared in str/repr/args/notes/cause/context/traceback. Advisory GREEN variants (no such echo in
   production): list page-bound / malformed-list / non-dict / api_key-missing / empty-name messages. Gates: product_truth
   49/49, validate_spec --strict, data_exposure OK, CLAUDE.md hash OK. UNWIRED until P1b.
+## 2026-10-22T05:03Z — RETURNED: FTF-UX03 (r2)
+- **FTF-UX03: RETURNED** (child slice of the FTF-UX program; round 2 → 3; PR #943, merge
+  80e66433e2de56ab0e8f370089fd230b75b96ec2, head a2727c6c). Producer session_01684Hcc2CByC85zkyNi7HQi ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 80/80, ci-verdict 119616043756; gate 119600491144 installed Chromium and ran the
+  TypeScript unit tests incl. the UX03 browser spec (step-level evidence; log host 403). Met: rebuild on UX01, en/ar with
+  dir/lang on all 34 states, error handling (84 probes, one role=alert each, axe 0 light/dark), loading/empty states,
+  the 8 round-1 pins, REQUIRED severity-2 decisions; parents 04A03/04A04/04A18/04A21/04A22 REQUALIFIED (vitest 2357/2357).
+  Return: horizontal overflow at 390/320 px with realistic unbroken names in 04A03/04A04/04A22 (severity 3, WCAG 1.4.10);
+  04A18/04A21 role=alert and the 04A03 failed-submit focus unpinned (C5/C5b/R4/R4b/C8/C8b GREEN); checklist abbreviated
+  and stale submission statements. Law 9: the 04A22 parent pair rewrite is a tightening. Faults: round-1 8/8 RED, own
+  41 RED. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
