@@ -785,7 +785,10 @@ def section_rls_and_secrecy(world: World) -> None:
         raw.rollback()
 
     # Unauthorized-principal write: sovra_app cannot insert a row for a foreign organization_id
-    # under its own bound tenant context (WITH CHECK, not merely USING).
+    # under its own bound tenant context (WITH CHECK, not merely USING). Uses a brand-new
+    # project with no existing scope row, so the UNIQUE (organization_id, project_id)
+    # constraint cannot be the thing refusing the write -- only WITH CHECK can be.
+    fresh_project = world.new_project()
     with Session(world.factory().bind) as raw:
         raw.execute(
             text("SELECT set_config('app.current_organization_id', :org, true)"),
@@ -800,7 +803,7 @@ def section_rls_and_secrecy(world: World) -> None:
                 ),
                 {
                     "org": str(world.org1),  # foreign -- must be refused by WITH CHECK
-                    "project": str(world.project1),
+                    "project": str(fresh_project),
                     "binding": str(world.binding1),
                     "wsid": str(uuid.uuid4()),
                     "wsname": "sovra-" + uuid.uuid4().hex[:24],
