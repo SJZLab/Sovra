@@ -25217,3 +25217,4 @@ different session.
 - **Returned:** FTF-UX07 r1 -> r2 (0d): real-browser spec with F7/F20/F8/F9 RED, §4 evidence, blank-label fix or decision, severity-2 decisions.
 - **Returned:** FTF-UX05 r1 -> r2 (0e): rebuild on UX01, catch + shape-check (no unmount, no fabricated empty), wrap long data, 0308 confirm focus, empty/loading states, phrase() residue, 7 pins, browser harness in CI + §4 evidence.
 - **Returned:** FTF-UX06 r1 -> r2 (0f): browser harness in CI, wrap long names, ErrorSummary focus, full Arabic, recovery steps + empty action, Field/useId, 16 pins, §4 evidence.
+- **Returned:** FTF-H011-P2 r1 -> r2 (0g): an explicit rejection blocks reuse; reuse requires the prior approval's connection to be live.
