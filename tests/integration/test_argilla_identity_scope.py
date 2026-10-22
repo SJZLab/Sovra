@@ -69,7 +69,11 @@ sys.path.insert(0, str(API_ROOT))
 sys.path.insert(0, str(ROOT / "tests" / "tasks"))
 
 from argilla_test_support import FakeArgillaServer  # noqa: E402
-from packages.integrations.argilla.client import ArgillaUnavailableError  # noqa: E402
+from packages.integrations.argilla.client import (  # noqa: E402
+    ArgillaClient,
+    ArgillaConflictError,
+    ArgillaUnavailableError,
+)
 from packages.litellm_client.secret_manager_integration import (  # noqa: E402
     OpenBaoConfig,
     store_secret_ref,
@@ -400,6 +404,40 @@ def section_races(world: World) -> None:
     check(
         "the concurrent race creates exactly one real Argilla user",
         len(real_users_for_race_subject) == 1,
+    )
+
+
+class _AlwaysConflictClient:
+    """Wraps a real ArgillaClient but makes create_user always report a
+    conflict -- simulates the race never resolving (no winner's row ever
+    appears), which `ensure_reviewer_identity` must eventually give up on
+    rather than polling forever."""
+
+    def __init__(self, real: ArgillaClient) -> None:
+        self._real = real
+
+    def create_user(self, **kwargs: Any) -> Any:
+        raise ArgillaConflictError("username already exists")
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._real, name)
+
+
+def section_edge_cases(world: World) -> None:
+    never_resolves_client = _AlwaysConflictClient(world.fake_server.client())
+    check(
+        "ensure_reviewer_identity gives up with ArgillaIdentityError if the conflicting "
+        "identity's row never appears after the bounded poll (not an infinite retry)",
+        raises(
+            ArgillaIdentityError,
+            ensure_reviewer_identity,
+            world.factory,
+            organization_id=world.org1,
+            issuer="https://issuer.example",
+            subject=f"never-resolves-{uuid.uuid4().hex[:8]}",
+            client=never_resolves_client,
+            openbao_config=world.openbao,
+        ),
     )
 
 
@@ -786,6 +824,7 @@ def main() -> None:
         section_health(world)
         section_scope(world)
         section_races(world)
+        section_edge_cases(world)
         section_identity_and_membership(world)
         section_revoke(world)
         section_rls_and_secrecy(world)
