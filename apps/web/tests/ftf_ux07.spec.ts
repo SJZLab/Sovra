@@ -72,3 +72,11 @@ test("UX07-NEG: the hint is visible and the link is keyboard-reachable, readable
   expect(link.getAttribute("target")).toBeNull();
   expect(link.getAttribute("role")).toBeNull();
 });
+
+test("UX07-BLANK-LABEL: a blank or invisible-only label falls back to the default, never an unnamed link", () => {
+  for (const blank of ["", "   ", "​", " ​­ "]) {
+    cleanup();
+    render(OidcLoginButton({ apiBaseUrl: API, label: blank }));
+    expect(screen.getByTestId("oidc-login-link").textContent).toBe("Sign in");
+  }
+});
