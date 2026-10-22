@@ -103,12 +103,13 @@ const STRINGS = {
   },
   errGeneric: { en: "request failed ({status})", ar: "فشل الطلب ({status})" },
   errNetwork: { en: "network error: {reason}", ar: "خطأ في الشبكة: {reason}" },
+  errUnknownReason: { en: "unknown error", ar: "خطأ غير معروف" },
   errMalformedListing: {
     en: "malformed case listing response",
     ar: "استجابة قائمة الحالات غير سليمة",
   },
   errMalformedImport: { en: "malformed import response", ar: "استجابة الاستيراد غير سليمة" },
-  errMalformedSave: { en: "malformed save response", ar: "استجابة الحفظ غير سليمة" },
+  errMalformedSave: { en: "malformed case response", ar: "استجابة الحالة غير سليمة" },
 
   noticeImported: { en: "Imported {count} case{plural}.", ar: "تم استيراد {count} حالة." },
   noticeSaved: { en: "Saved {key}.", ar: "تم حفظ {key}." },

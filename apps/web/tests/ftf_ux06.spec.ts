@@ -194,6 +194,32 @@ describe("[UX06-X4] bilingual en/ar", () => {
     expect(row.textContent).toContain("group group-a-case");
     expect(screen.getByTestId(`edit-case-${CASE_A}`).textContent).toBe("Edit");
   });
+
+  // Round 3 (second independent reviewer, Finding B, sev 1): a non-Error rejection's fallback
+  // "unknown error" word was a bare literal, never routed through t0602 -- the one word that could
+  // survive untranslated inside an otherwise-Arabic network-error sentence.
+  test("a non-Error fetch rejection under locale='ar' shows no stray 'unknown error' English", async () => {
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
+      // Deliberately not an Error instance -- the exact shape networkFailure's fallback exists for.
+      throw "a plain string rejection, not an Error instance";
+    });
+    renderUI("ar");
+    fireEvent.click(screen.getByTestId("load-cases-button"));
+    await waitFor(() => expect(screen.getByTestId("list-error")).toBeTruthy());
+    const text = screen.getByTestId("list-error").textContent ?? "";
+    expect(text).toContain("خطأ غير معروف");
+    expect(text).not.toContain("unknown error");
+  });
+
+  test("NEGATIVE: the same non-Error rejection at the default locale still says 'unknown error' in English", async () => {
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
+      throw "a plain string rejection, not an Error instance";
+    });
+    renderUI();
+    fireEvent.click(screen.getByTestId("load-cases-button"));
+    await waitFor(() => expect(screen.getByTestId("list-error")).toBeTruthy());
+    expect(screen.getByTestId("list-error").textContent).toContain("unknown error");
+  });
 });
 
 // ---------------------------------------------------------------------------------------------

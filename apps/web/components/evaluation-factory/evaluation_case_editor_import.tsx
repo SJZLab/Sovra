@@ -213,7 +213,8 @@ async function readFailure(response: Response, locale: Locale | string = "en"): 
 }
 
 function networkFailure(caught: unknown, locale: Locale | string = "en"): Failure {
-  const reason = caught instanceof Error && caught.message ? caught.message : "unknown error";
+  const reason =
+    caught instanceof Error && caught.message ? caught.message : t0602("errUnknownReason", locale);
   return { message: t0602("errNetwork", locale, { reason }), fieldErrors: [], restricted: false };
 }
 
