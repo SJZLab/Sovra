@@ -2091,12 +2091,23 @@ jobs:
     # assumption) -- `--restart on-failure:10` gives it several real chances to come up once its
     # dependencies are ready, and the test step's own bounded polling loop is the actual readiness
     # gate, the same discipline this task's OpenBao dev-server wait already uses one job up.
+    # Root cause of this job's first two real runs' 422s, now confirmed (not the version-skew
+    # guess this comment used to carry): the real server's own `/status` route always returns
+    # 422 once a real Elasticsearch is wired up -- a genuine upstream pydantic v2
+    # response-model-validation bug, independent of Elasticsearch's own version (reproduced
+    # locally against a real `pip install argilla-server==2.8.0`, and confirmed still present on
+    # argilla-io/argilla's own `develop` branch). Full root cause in
+    # packages/integrations/argilla/client.py::ArgillaClient.get_status()'s own docstring.
+    # tests/integration/test_argilla_real_server.py now probes `/version` instead, which this bug
+    # cannot reach -- the elasticsearch:8.8.2 pin below (vs. 8.17.0) stays only because it still
+    # matches argilla-io/argilla's own CI-tested client-library version, not because it was ever
+    # the actual fix.
     needs: classify
     if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' argilla-real-server-integration ')
     runs-on: ubuntu-latest
     services:
       argilla-elasticsearch:
-        image: elasticsearch@sha256:d45ef71c0f2680bc38b1427f53ca294ebaef4a4ea88cb243cdefc96c3e44dbab # elasticsearch:8.8.2 (amd64) -- the exact version argilla-io/argilla's own CI (.github/workflows/argilla-server.yml) tests the pinned `elasticsearch8[async] ~= 8.7.0` client library against; 8.17.0 (this job's own first real run) made every real request fail with a genuine 422, Argilla's own ValueError exception handler firing from somewhere in the request path for a reason not yet isolated beyond "real version skew against a client library pinned ~8.7.0" -- matching the exact version upstream's own CI already proves compatible removes the uncertainty rather than chasing the precise internal exception.
+        image: elasticsearch@sha256:d45ef71c0f2680bc38b1427f53ca294ebaef4a4ea88cb243cdefc96c3e44dbab # elasticsearch:8.8.2 (amd64) -- the exact version argilla-io/argilla's own CI (.github/workflows/argilla-server.yml) tests the pinned `elasticsearch8[async] ~= 8.7.0` client library against.
         env:
           discovery.type: single-node
           xpack.security.enabled: "false"

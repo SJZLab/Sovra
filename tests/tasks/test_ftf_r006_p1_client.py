@@ -238,6 +238,32 @@ def test_wire_happy_path() -> None:
     stub.server.shutdown()
 
 
+def test_get_version_wire() -> None:
+    """FTF-R006-P1b round 2: `get_version()` exists because the real
+    server's `/status` route has a confirmed upstream bug (see
+    `get_status()`'s own docstring) that `/version` cannot hit -- it never
+    reaches the search engine. Not exercised against the real bug here
+    (that needs a real Elasticsearch-backed server; see
+    `tests/integration/test_argilla_real_server.py`), just the wire
+    contract: real v1 path, real header, real response shape."""
+    stub = Stub()
+    c = stub.client(api_key="provision-key")
+    stub.reply(200, {"version": "2.8.0"})
+    version = c.get_version()
+    check("R006P1-C", "get_version returns the version", version.get("version") == "2.8.0")
+    check(
+        "R006P1-C",
+        "GET /version hits the real v1 path, not /status",
+        stub.seen[-1]["path"] == "/api/v1/version",
+    )
+    check(
+        "R006P1-C",
+        "get_version sends the API key on the documented header, not Authorization",
+        stub.seen[-1]["api_key"] == "provision-key" and stub.seen[-1]["auth"] is None,
+    )
+    stub.server.shutdown()
+
+
 def test_ensure_workspace_idempotent_and_race() -> None:
     stub = Stub()
     c = stub.client()

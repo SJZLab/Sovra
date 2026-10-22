@@ -21,6 +21,19 @@ bootstrapped with a real owner user whose API key is ARGILLA_OWNER_API_KEY -- se
 `.github/workflows/ci.yml`'s `argilla-real-server-integration` job, which boots the real
 argilla-server, Elasticsearch and Redis as real service containers and passes both.
 
+First real run of this job found a real bug (exactly the kind of gap a fake test double cannot
+surface either way, same as the API-key check above): the real server's own `/status` route
+returns a 422 on every single call once a real Elasticsearch is actually wired up, independent of
+Elasticsearch's own version -- a genuine upstream pydantic v2 response-model-validation bug (see
+`packages/integrations/argilla/client.py::ArgillaClient.get_status()`'s own docstring for the full
+root cause, reproduced locally against a real `pip install argilla-server==2.8.0` and confirmed
+still present on `argilla-io/argilla`'s own `develop` branch). This file uses `/version` instead
+for both the readiness wait and the `compute_health` proof below -- `compute_health` only ever
+checks for a 2xx response (see its own docstring), so `/version` serves identically to `/status`
+for that purpose without touching the broken code path. This is a reused-component (Argilla) bug,
+not a Sovra adapter bug -- CLAUDE.md's "seven reused components" rule means Sovra owns routing
+around it, never patching the vendored engine itself without the owner's sign-off.
+
 Run: python3 tests/integration/test_argilla_real_server.py
 """
 
@@ -78,12 +91,21 @@ def _required_env(name: str) -> str:
 
 
 def _wait_for_real_server(base_url: str, timeout_seconds: float = 120.0) -> None:
+    # `/api/v1/version` on purpose, not `/api/v1/status`: see
+    # `ArgillaClient.get_status()`'s own docstring -- the real server's
+    # `/status` route has a confirmed upstream bug (pydantic v2 response-model
+    # validation rejects the Elasticsearch client's `ObjectApiResponse`,
+    # independent of Elasticsearch's own version) that makes it return 422 on
+    # every call once a real search engine is wired up, never 200. Polling it
+    # here would make this loop spin until `timeout_seconds` and then fail
+    # with a misleading "never became reachable", even once the server is
+    # genuinely up. `/version` never touches the search engine.
     deadline = time.monotonic() + timeout_seconds
     last_error: Exception | None = None
     while time.monotonic() < deadline:
         try:
             with urllib.request.urlopen(  # noqa: S310
-                f"{base_url}/api/v1/status", timeout=2.0
+                f"{base_url}/api/v1/version", timeout=2.0
             ) as response:
                 if response.status == 200:
                     return
@@ -111,10 +133,17 @@ def main() -> None:
     _wait_for_real_server(base_url)
 
     real_client = ArgillaClient(base_url, policy, api_key=owner_api_key, timeout=10.0)
-    status = real_client.get_status()
+    # `get_version()`, not `get_status()`: this run is the first real proof this task's own
+    # submission flagged as never having run for real, and it found a real bug on the first
+    # try -- the real server's `/status` route 422s on every call once Elasticsearch is wired
+    # up (confirmed root cause, reproduced locally against a real `pip install
+    # argilla-server==2.8.0` and still present on argilla-io/argilla's own `develop` branch;
+    # see `ArgillaClient.get_status()`'s own docstring). `/version` is the one health-adjacent
+    # route this specific bug cannot reach.
+    version = real_client.get_version()
     check(
-        "the real argilla-server's own /status reports a real, non-empty version",
-        isinstance(status.get("version"), str) and status["version"] != "",
+        "the real argilla-server's own /version reports a real, non-empty version",
+        isinstance(version.get("version"), str) and version["version"] != "",
     )
 
     real_workspaces = real_client.list_workspaces_me()
@@ -137,13 +166,16 @@ def main() -> None:
     )
 
     # FTF-R002's own generic, already-certified health check (`compute_health`, the pure core
-    # of `validate_component_binding`), pointed at this real server's own `/status` -- the
+    # of `validate_component_binding`), pointed at this real server's own `/version` -- the
     # "R002 /validate" proof PR #968 asked for: every component binding shares this one
     # mechanism, and this is the evidence that it genuinely detects a real Argilla server's own
-    # health, not merely the fake's.
+    # health, not merely the fake's. `compute_health` only ever checks for a 2xx response (see
+    # its own docstring); it never inspects the body, so `/version` serves identically to
+    # `/status` here while sidestepping `/status`'s own confirmed upstream bug (see
+    # `ArgillaClient.get_status()`'s docstring and this file's `_wait_for_real_server`).
     health_result, health_detail = compute_health(
         deployment_mode="internal_service",
-        approved_endpoint=f"{base_url}/api/v1/status",
+        approved_endpoint=f"{base_url}/api/v1/version",
         policy=policy,
     )
     check(
@@ -159,7 +191,7 @@ def main() -> None:
     dead_policy = _policy(1)
     dead_result, dead_detail = compute_health(
         deployment_mode="internal_service",
-        approved_endpoint="http://127.0.0.1:1/api/v1/status",
+        approved_endpoint="http://127.0.0.1:1/api/v1/version",
         policy=dead_policy,
     )
     check(
