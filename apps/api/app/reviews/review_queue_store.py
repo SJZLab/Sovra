@@ -76,6 +76,7 @@ from packages.integrations.argilla.review_mapping import (
     dataset_name_for,
     fields_sha256,
     response_sha256,
+    response_values,
     review_record_payload,
 )
 from packages.litellm_client.secret_manager_integration import OpenBaoConfig, resolve_secret_ref
@@ -1137,6 +1138,9 @@ def _drift_reason(
     `mapped_users` maps Argilla user id -> identity id text."""
     if record is None:
         return "record_missing"
+    if record.id != item["argilla_record_id"]:
+        # Same external id, different Argilla record: the original was deleted and recreated.
+        return "record_replaced"
     reason = _record_reason(item, record)
     if reason is not None:
         return reason
@@ -1228,31 +1232,50 @@ def reconcile_review_queue(
     for external_id in sorted(by_external.keys() - known, key=lambda e: e or ""):
         findings.append(DriftFinding(None, external_id, "foreign_record"))
 
-    # -- phase 2: each candidate is re-verified under its item lock. Every response write holds
-    # that same lock until it commits, so after the lock is taken the Factory rows and a fresh
-    # read of the record agree; only a drift that survives that is marked.
+    # -- phase 2: each candidate is re-verified under its own item lock, one short transaction
+    # per item. Every response write holds that same lock until it commits, so after the lock is
+    # taken the Factory rows and a fresh read of the record agree; only a drift that survives that
+    # is marked. A submitted response by an active reviewer that the Factory has no row for (a
+    # write that reached Argilla but not the database) is adopted, never called drift.
     newly = 0
-    with tenant_scoped_session(session_factory, organization_id) as session:
-        for item in sorted(candidates, key=lambda c: str(c["id"])):
+    adopted_total = 0
+    for item in sorted(candidates, key=lambda c: str(c["id"])):
+        with tenant_scoped_session(session_factory, organization_id) as session:
             locked = execute_tenant_scoped(
                 session,
                 organization_id,
                 text(
-                    "SELECT status, argilla_record_id FROM review_items "
-                    "WHERE id = :id FOR UPDATE"
+                    "SELECT status, argilla_record_id FROM review_items WHERE id = :id FOR UPDATE"
                 ),
                 {"id": item["id"]},
             ).one()
             if locked[0] != "pending" or locked[1] is None:
                 continue
-            _, responses_now, mapped_now = _factory_state(session, organization_id, queue_id)
+            stored_now = _item_responses(session, organization_id, item["id"])
             try:
                 fresh: ArgillaReviewRecord | None = owner_api.get_record(locked[1])
             except ArgillaNotFoundError:
                 fresh = None
             except ArgillaClientError as exc:
                 raise _argilla_error(exc) from None
-            reason = _drift_reason(item, fresh, responses_now.get(item["id"], {}), mapped_now)
+            reason = _drift_reason(item, fresh, stored_now, mapped_users)
+            if reason == "response_untracked" and fresh is not None:
+                adopted = _adopt_untracked(
+                    session,
+                    organization_id,
+                    queue=queue,
+                    item=item,
+                    record=fresh,
+                    stored=stored_now,
+                    mapped_users=mapped_users,
+                    actor_type=actor_type,
+                    actor_id=actor_id,
+                    request_id=request_id,
+                )
+                if adopted:
+                    adopted_total += adopted
+                    stored_now = _item_responses(session, organization_id, item["id"])
+                    reason = _drift_reason(item, fresh, stored_now, mapped_users)
             if reason is None:
                 continue
             execute_tenant_scoped(
@@ -1266,6 +1289,7 @@ def reconcile_review_queue(
             )
             findings.append(DriftFinding(item["id"], item["record_id"], reason))
             newly += 1
+    with tenant_scoped_session(session_factory, organization_id) as session:
         write_audit_event(
             session,
             organization_id=organization_id,
@@ -1277,12 +1301,117 @@ def reconcile_review_queue(
             request_id=request_id,
             details={
                 "newly_drifted": newly,
+                "adopted_responses": adopted_total,
                 "drifted_total": len(findings),
                 "queue_snapshot_sha256": queue.queue_snapshot_sha256,
             },
         )
         session.flush()
     return tuple(findings)
+
+
+def _item_responses(
+    session: Session, organization_id: uuid.UUID, item_id: uuid.UUID
+) -> dict[str, Mapping[str, Any]]:
+    """The recorded responses of one item, by identity id text."""
+    return {
+        str(row[0]): {"argilla_response_id": row[1], "response_sha256": row[2]}
+        for row in execute_tenant_scoped(
+            session,
+            organization_id,
+            text(
+                "SELECT identity_id, argilla_response_id, response_sha256 "
+                "FROM review_responses WHERE item_id = :item"
+            ),
+            {"item": item_id},
+        )
+    }
+
+
+def _adopt_untracked(
+    session: Session,
+    organization_id: uuid.UUID,
+    *,
+    queue: ReviewQueueRecord,
+    item: Mapping[str, Any],
+    record: ArgillaReviewRecord,
+    stored: Mapping[str, Mapping[str, Any]],
+    mapped_users: Mapping[str, str],
+    actor_type: str,
+    actor_id: str,
+    request_id: str,
+) -> int:
+    """Records the Factory row for a submitted response that exists in Argilla, was written by an
+    active, authorized reviewer of this queue's scope and is a valid decision. The caller has already
+    established that the record is still exactly the queued one (the reason is `response_untracked`,
+    which `_drift_reason` reaches only after the record checks). Returns how many rows were adopted."""
+    adopted = 0
+    for response in record.responses:
+        identity_text = mapped_users.get(response.user_id)
+        if identity_text is None or identity_text in stored or not response.submitted:
+            continue
+        try:
+            response_values(response.decision or "", response.rationale or "")
+        except ReviewMappingError:
+            continue
+        identity_id = uuid.UUID(identity_text)
+        active = execute_tenant_scoped(
+            session,
+            organization_id,
+            text(
+                "SELECT 1 FROM argilla_workspace_members m JOIN argilla_reviewer_identities i "
+                "ON i.organization_id = m.organization_id AND i.id = m.identity_id "
+                "WHERE m.scope_id = :scope AND m.identity_id = :identity "
+                "AND m.status = 'active' AND i.status = 'active'"
+            ),
+            {"scope": queue.scope_id, "identity": identity_id},
+        ).first()
+        if active is None:
+            continue
+        digest = response_sha256(
+            record_id=item["record_id"],
+            user_id=response.user_id,
+            decision=response.decision or "",
+            rationale=response.rationale or "",
+        )
+        row = execute_tenant_scoped(
+            session,
+            organization_id,
+            text(
+                "INSERT INTO review_responses (organization_id, queue_id, item_id, identity_id, "
+                "decision, rationale, response_sha256, argilla_response_id) "
+                "VALUES (:org, :queue, :item, :identity, :decision, :rationale, :digest, :aid) "
+                "RETURNING id, row_version"
+            ),
+            {
+                "org": organization_id,
+                "queue": queue.id,
+                "item": item["id"],
+                "identity": identity_id,
+                "decision": response.decision,
+                "rationale": response.rationale or "",
+                "digest": digest,
+                "aid": response.id,
+            },
+        ).one()
+        write_audit_event(
+            session,
+            organization_id=organization_id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            action="review_response.adopted",
+            resource_type=_RESPONSE_RESOURCE,
+            resource_id=str(row[0]),
+            request_id=request_id,
+            details={
+                "queue_id": str(queue.id),
+                "item_id": str(item["id"]),
+                "row_version": row[1],
+                "response_sha256": digest,
+            },
+        )
+        adopted += 1
+    return adopted
 
 
 def _factory_state(
@@ -1297,7 +1426,8 @@ def _factory_state(
             organization_id,
             text(
                 "SELECT id, record_id, group_id, record_sha256, fields_sha256, status, "
-                "drift_reason FROM review_items WHERE queue_id = :queue ORDER BY batch_position"
+                "drift_reason, argilla_record_id FROM review_items "
+                "WHERE queue_id = :queue ORDER BY batch_position"
             ),
             {"queue": queue_id},
         )

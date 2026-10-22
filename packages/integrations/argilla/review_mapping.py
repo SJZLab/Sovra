@@ -42,6 +42,7 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from packages.integrations.argilla.client import (
     ArgillaConflictError,
@@ -269,6 +270,27 @@ def _question_bodies() -> list[dict[str, object]]:
     ]
 
 
+def _settings_match(expected: Mapping[str, Any], actual: object) -> bool:
+    if not isinstance(actual, dict) or actual.get("type") != expected["type"]:
+        return False
+    if expected["type"] == "text":
+        return actual.get("use_markdown") is expected["use_markdown"]
+    options = actual.get("options")
+    if not isinstance(options, list):
+        return False
+    found = [(o.get("value"), o.get("text")) if isinstance(o, dict) else None for o in options]
+    return found == [(o["value"], o["text"]) for o in expected["options"]]
+
+
+def _entry_matches(expected: Mapping[str, Any], actual: Mapping[str, Any]) -> bool:
+    """A field or question as the server reports it equals what the Factory would create."""
+    return (
+        actual.get("name") == expected["name"]
+        and actual.get("required") is expected["required"]
+        and _settings_match(expected["settings"], actual.get("settings"))
+    )
+
+
 def _items(payload: object, what: str) -> list[object]:
     if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
         raise ArgillaRejectedError(f"Argilla returned a malformed {what} list")
@@ -399,39 +421,39 @@ class ArgillaReviewApi:
             self._verify_settings(dataset.id)
         return dataset
 
-    def _field_names(self, dataset_id: str) -> list[str]:
-        found = self._transport.call("GET", f"/datasets/{dataset_id}/fields")
-        names = []
-        for item in _items(found, "field"):
+    def _entries(self, path: str, what: str) -> list[dict[str, Any]]:
+        found = self._transport.call("GET", path)
+        entries: list[dict[str, Any]] = []
+        for item in _items(found, what):
             if not isinstance(item, dict) or not isinstance(item.get("name"), str):
-                raise ArgillaRejectedError("Argilla returned a malformed field")
-            settings = item.get("settings")
-            if not isinstance(settings, dict) or settings.get("type") != "text":
-                raise ArgillaRejectedError("Argilla dataset has a field the Factory did not create")
-            names.append(item["name"])
-        return names
-
-    def _question_names(self, dataset_id: str) -> list[str]:
-        found = self._transport.call("GET", f"/datasets/{dataset_id}/questions")
-        names = []
-        for item in _items(found, "question"):
-            if not isinstance(item, dict) or not isinstance(item.get("name"), str):
-                raise ArgillaRejectedError("Argilla returned a malformed question")
-            names.append(item["name"])
-        return names
+                raise ArgillaRejectedError(f"Argilla returned a malformed {what}")
+            entries.append(item)
+        return entries
 
     def _verify_settings(self, dataset_id: str) -> None:
-        if self._field_names(dataset_id) != [FIELD_NAME]:
+        """The dataset must be exactly the Factory's: one text field and the two questions, each
+        with the expected `required`, type, options and markdown setting (names alone are not
+        enough: a look-alike dataset with a third decision option would be adopted)."""
+        fields = self._entries(f"/datasets/{dataset_id}/fields", "field")
+        expected_field = _field_body()
+        if len(fields) != 1 or not _entry_matches(expected_field, fields[0]):
             raise ArgillaRejectedError("Argilla dataset fields differ from the Factory's schema")
-        if sorted(self._question_names(dataset_id)) != sorted(
-            [QUESTION_DECISION, QUESTION_RATIONALE]
-        ):
+        questions = self._entries(f"/datasets/{dataset_id}/questions", "question")
+        expected = _question_bodies()
+        by_name = {q["name"]: q for q in questions}
+        if len(questions) != len(expected) or len(by_name) != len(expected):
             raise ArgillaRejectedError("Argilla dataset questions differ from the Factory's schema")
+        for body in expected:
+            found_question = by_name.get(body["name"])
+            if found_question is None or not _entry_matches(body, found_question):
+                raise ArgillaRejectedError(
+                    "Argilla dataset questions differ from the Factory's schema"
+                )
 
     def _ensure_settings(self, dataset_id: str) -> None:
-        if not self._field_names(dataset_id):
+        if not self._entries(f"/datasets/{dataset_id}/fields", "field"):
             self._create_ignoring_conflict(f"/datasets/{dataset_id}/fields", _field_body())
-        have = set(self._question_names(dataset_id))
+        have = {q["name"] for q in self._entries(f"/datasets/{dataset_id}/questions", "question")}
         for body in _question_bodies():
             if body["name"] not in have:
                 self._create_ignoring_conflict(f"/datasets/{dataset_id}/questions", body)

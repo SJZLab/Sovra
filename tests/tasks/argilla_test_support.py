@@ -354,7 +354,13 @@ class FakeArgillaServer:
                         h._detail(409, "name already exists")
                         return True
                     dataset[bucket].append(
-                        {"id": str(uuid.uuid4()), "name": entry_name, "settings": settings}
+                        {
+                            "id": str(uuid.uuid4()),
+                            "name": entry_name,
+                            "title": body.get("title"),
+                            "required": bool(body.get("required")),
+                            "settings": settings,
+                        }
                     )
                     h._reply(201, dataset[bucket][-1])
                     return True

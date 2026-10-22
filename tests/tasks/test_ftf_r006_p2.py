@@ -2409,13 +2409,6 @@ def test_d_clean_and_faults() -> None:
         ),
     )
     scenario(
-        "response by a mapped annotator the Factory never recorded",
-        "response_untracked",
-        lambda env, q, a: env.server.inject_response(
-            env.server_record(rid(env, 1))["id"], a.user.id, "accept"
-        ),
-    )
-    scenario(
         "recorded response edited in Argilla (decision)",
         "response_drift",
         lambda env, q, a: next(iter(env.server.responses.values())).__setitem__(
@@ -2990,8 +2983,8 @@ def test_s_find_and_ensure() -> None:
         {
             listing: [{"items": []}, {"items": [DS]}],
             ("POST", "/datasets"): [ArgillaConflictError("exists")],
-            published[0]: [{"items": [{"name": "conversation", "settings": {"type": "text"}}]}],
-            published[1]: [{"items": [{"name": "decision"}, {"name": "rationale"}]}],
+            published[0]: [{"items": [rm._field_body()]}],
+            published[1]: [{"items": rm._question_bodies()}],
         }
     )
     got = rm.ArgillaReviewApi(stub).ensure_dataset(U2, name)
@@ -3019,31 +3012,94 @@ def test_s_find_and_ensure() -> None:
         is not None
         and stub.log[-1] == ("GET", f"/datasets/{U1}/fields"),
     )
-    # non-text field, non-dict field, foreign question
+    # malformed or look-alike settings are never adopted
+    ok_field, ok_questions = rm._field_body(), rm._question_bodies()
+
+    def with_option(options: list[dict[str, str]]) -> list[dict[str, Any]]:
+        decision = {**ok_questions[0], "settings": {"type": "label_selection", "options": options}}
+        return [decision, ok_questions[1]]
+
+    accept, reject = {"value": "accept", "text": "Accept"}, {"value": "reject", "text": "Reject"}
     for label, fields, questions in (
+        ("a non-dict field", ["x"], ok_questions),
+        ("a field without a name", [{"settings": {"type": "text"}}], ok_questions),
+        ("a non-dict question", [ok_field], ["x"]),
+        ("a question without a name", [ok_field], [{"title": "t"}, ok_questions[1]]),
+        ("a field that is not required", [{**ok_field, "required": False}], ok_questions),
         (
-            "a non-dict field",
-            {"items": ["x"]},
-            {"items": [{"name": "decision"}, {"name": "rationale"}]},
+            "a field with markdown on",
+            [{**ok_field, "settings": {"type": "text", "use_markdown": True}}],
+            ok_questions,
+        ),
+        ("a field that is not text", [{**ok_field, "settings": {"type": "image"}}], ok_questions),
+        ("a field with no settings", [{**ok_field, "settings": None}], ok_questions),
+        ("two fields", [ok_field, {**ok_field, "name": "other"}], ok_questions),
+        ("a field with another name", [{**ok_field, "name": "other"}], ok_questions),
+        (
+            "a third decision option",
+            [ok_field],
+            with_option([accept, reject, {"value": "escalate", "text": "Escalate"}]),
+        ),
+        ("a missing decision option", [ok_field], with_option([accept])),
+        ("options in another order", [ok_field], with_option([reject, accept])),
+        (
+            "an option with another label",
+            [ok_field],
+            with_option([accept, {"value": "reject", "text": "No"}]),
+        ),
+        ("a non-dict option", [ok_field], with_option([accept, "reject"])),
+        (
+            "options that are not a list",
+            [ok_field],
+            [
+                {**ok_questions[0], "settings": {"type": "label_selection", "options": "x"}},
+                ok_questions[1],
+            ],
         ),
         (
-            "a field without a name",
-            {"items": [{"settings": {"type": "text"}}]},
-            {"items": [{"name": "decision"}, {"name": "rationale"}]},
+            "a decision that is not required",
+            [ok_field],
+            [{**ok_questions[0], "required": False}, ok_questions[1]],
         ),
         (
-            "a non-dict question",
-            {"items": [{"name": "conversation", "settings": {"type": "text"}}]},
-            {"items": ["x"]},
+            "a rationale that is required",
+            [ok_field],
+            [ok_questions[0], {**ok_questions[1], "required": True}],
         ),
         (
-            "a question without a name",
-            {"items": [{"name": "conversation", "settings": {"type": "text"}}]},
-            {"items": [{"title": "t"}, {"name": "rationale"}]},
+            "a rationale that is a label selection",
+            [ok_field],
+            [
+                ok_questions[0],
+                {**ok_questions[1], "settings": {"type": "label_selection", "options": [accept]}},
+            ],
         ),
+        (
+            "a rationale with markdown on",
+            [ok_field],
+            [
+                ok_questions[0],
+                {**ok_questions[1], "settings": {"type": "text", "use_markdown": True}},
+            ],
+        ),
+        (
+            "a decision that is a text question",
+            [ok_field],
+            [
+                {**ok_questions[0], "settings": {"type": "text", "use_markdown": False}},
+                ok_questions[1],
+            ],
+        ),
+        ("a third question", [ok_field], [*ok_questions, {**ok_questions[1], "name": "extra"}]),
+        ("a duplicated question name", [ok_field], [ok_questions[0], ok_questions[0]]),
+        ("a missing question", [ok_field], [ok_questions[0]]),
     ):
         stub = StubTransport(
-            {listing: [{"items": [DS]}], published[0]: [fields], published[1]: [questions]}
+            {
+                listing: [{"items": [DS]}],
+                published[0]: [{"items": fields}],
+                published[1]: [{"items": questions}],
+            }
         )
         check(
             "S9",
@@ -3054,6 +3110,32 @@ def test_s_find_and_ensure() -> None:
             )
             is not None,
         )
+    stub = StubTransport(
+        {
+            listing: [{"items": [DS]}],
+            published[0]: [{"items": [ok_field]}],
+            published[1]: [{"items": ok_questions}],
+        }
+    )
+    check(
+        "S9",
+        "the exact Factory settings are accepted",
+        rm.ArgillaReviewApi(stub).ensure_dataset(U2, name).published,
+    )
+    stub = StubTransport(
+        {
+            listing: [{"items": [DS]}],
+            published[0]: [{"items": [ok_field]}],
+            published[1]: [
+                {"items": [{**ok_questions[0], "description": "x", "title": "T"}, ok_questions[1]]}
+            ],
+        }
+    )
+    check(
+        "S9",
+        "extra descriptive keys (title, description) do not matter",
+        rm.ArgillaReviewApi(stub).ensure_dataset(U2, name).published,
+    )
 
 
 def test_s_server_settings() -> None:
@@ -3708,12 +3790,347 @@ def test_s_review_findings() -> None:
     check("F5", "the rationale cap is 2000", rm.MAX_RATIONALE_CHARS == 2000)
 
 
+class OutageOnceOwner(rm.ArgillaReviewApi):
+    """An owner API whose first read-back fails, as an outage right after the reviewer's write."""
+
+    def __init__(self, transport: Any) -> None:
+        super().__init__(transport)
+        self.fail_next = False
+
+    def get_record(self, record_id: str) -> Any:
+        if self.fail_next:
+            self.fail_next = False
+            raise ArgillaUnavailableError("outage")
+        return super().get_record(record_id)
+
+
+def test_s_review_round2() -> None:
+    # REPLACED-RECORD: deleted and recreated with identical content (new Argilla id)
+    with env_of(records=3) as env:
+        queue = env.create()
+        alice = env.reviewer("alice")
+        old = env.server_record(rid(env, 1))
+        payload = {
+            "fields": old["fields"],
+            "metadata": old["metadata"],
+            "external_id": old["external_id"],
+        }
+        env.server.delete_record(old["id"])
+        env.owner_api.create_records(queue_dataset_id(env, queue), [payload])
+        findings = env.reconcile(queue.id)
+        check(
+            "R2a",
+            "a recreated record with identical content is drift (the linked record is gone)",
+            [(f.record_id, f.reason) for f in findings] == [(rid(env, 1), "record_missing")],
+        )
+        check(
+            "R2a",
+            "and the item no longer takes responses",
+            code_of(lambda: env.respond(queue.id, rid(env, 1), alice)) == "review_item_drift",
+        )
+
+    # FALSE-DRIFT-AFTER-UNCOMMITTED-WRITE: the write reached Argilla, the read-back failed
+    with env_of(records=3) as env:
+        queue = env.create()
+        alice = env.reviewer("alice")
+        flaky = OutageOnceOwner(env.server.client().transport)
+        env.owner_api = flaky
+        flaky.fail_next = True
+        check(
+            "R2b",
+            "an outage on the read-back is argilla_unavailable",
+            code_of(
+                lambda: env.respond(queue.id, rid(env, 0), alice, "accept", "kept", owner_api=flaky)
+            )
+            == "argilla_unavailable",
+        )
+        check(
+            "R2b",
+            "no Factory row exists yet",
+            env.sql("SELECT count(*) FROM review_responses")[0][0] == 0,
+        )
+        check("R2b", "but Argilla holds the reviewer's response", len(env.server.responses) == 1)
+        findings = env.reconcile(queue.id)
+        check(
+            "R2b",
+            "reconcile adopts it instead of marking drift",
+            findings == () and drifted(env) == {},
+        )
+        row = env.sql(
+            "SELECT decision, rationale, response_sha256, row_version, argilla_response_id FROM review_responses"
+        )[0]
+        expected = rm.response_sha256(
+            record_id=rid(env, 0), user_id=alice.user.id, decision="accept", rationale="kept"
+        )
+        check(
+            "R2b",
+            "the adopted row is the independent recompute at version 1",
+            row == ("accept", "kept", expected, 1, next(iter(env.server.responses))),
+        )
+        adopted = [a for a in env.audits if a["action"] == "review_response.adopted"]
+        check(
+            "R2b",
+            "one content-free adoption audit by the reconciler",
+            len(adopted) == 1
+            and adopted[0]["actor_id"] == "reconciler-1"
+            and "kept" not in json.dumps(adopted[0], default=str)
+            and adopted[0]["details"]["row_version"] == 1,
+        )
+        check(
+            "R2b",
+            "the reconcile audit counts the adoption",
+            env.audits[-1]["details"]["adopted_responses"] == 1
+            and env.audits[-1]["details"]["newly_drifted"] == 0,
+        )
+        check(
+            "R2b",
+            "the reviewer's retry then succeeds as a change",
+            env.respond(queue.id, rid(env, 0), alice, "reject", "", expected_version=1).row_version
+            == 2,
+        )
+        check(
+            "R2b",
+            "a second reconcile adopts nothing and is clean",
+            env.reconcile(queue.id) == () and env.audits[-1]["details"]["adopted_responses"] == 0,
+        )
+
+    # what is never adopted
+    def injected(
+        label: str,
+        setup: Callable[[Env, SimpleNamespace], tuple[str, str, str, str]],
+        expected_reason: str,
+    ) -> None:
+        with env_of(records=3) as env:
+            queue = env.create()
+            alice = env.reviewer("alice")
+            user_id, decision, rationale, status = setup(env, alice)
+            env.server.inject_response(
+                env.server_record(rid(env, 0))["id"], user_id, decision, rationale, status
+            )
+            findings = env.reconcile(queue.id)
+            check(
+                "R2c",
+                f"{label}: drift {expected_reason}",
+                [(f.record_id, f.reason) for f in findings] == [(rid(env, 0), expected_reason)],
+            )
+            check(
+                "R2c",
+                f"{label}: nothing adopted",
+                env.sql("SELECT count(*) FROM review_responses")[0][0] == 0,
+            )
+
+    injected(
+        "an owner response",
+        lambda env, a: (env.server.OWNER_USER_ID, "accept", "", "submitted"),
+        "response_by_unmapped_user",
+    )
+    injected(
+        "a response by an unknown user",
+        lambda env, a: (str(uuid.uuid4()), "accept", "", "submitted"),
+        "response_by_unmapped_user",
+    )
+    injected(
+        "a draft by an active reviewer",
+        lambda env, a: (a.user.id, "accept", "", "draft"),
+        "response_untracked",
+    )
+    injected(
+        "a discarded response by an active reviewer",
+        lambda env, a: (a.user.id, "accept", "", "discarded"),
+        "response_untracked",
+    )
+    injected(
+        "a decision outside accept/reject",
+        lambda env, a: (a.user.id, "escalate", "", "submitted"),
+        "response_untracked",
+    )
+    injected(
+        "a rationale over 2000 characters",
+        lambda env, a: (a.user.id, "accept", "r" * 2001, "submitted"),
+        "response_untracked",
+    )
+
+    def revoke_identity(env: Env, a: SimpleNamespace) -> tuple[str, str, str, str]:
+        env.sql(
+            "UPDATE argilla_reviewer_identities SET status = 'revoked' WHERE id = :i",
+            i=a.identity_id,
+        )
+        return a.user.id, "accept", "", "submitted"
+
+    def revoke_membership(env: Env, a: SimpleNamespace) -> tuple[str, str, str, str]:
+        env.sql(
+            "UPDATE argilla_workspace_members SET status = 'revoked' WHERE identity_id = :i",
+            i=a.identity_id,
+        )
+        return a.user.id, "accept", "", "submitted"
+
+    injected("a response by a revoked identity", revoke_identity, "response_untracked")
+    injected(
+        "a response by a reviewer whose membership was revoked",
+        revoke_membership,
+        "response_untracked",
+    )
+    with env_of(records=3) as env:
+        queue = env.create()
+        alice = env.reviewer("alice")
+        record = env.server_record(rid(env, 0))
+        env.server.edit_record_fields(record["id"], "conversation", "edited")
+        env.server.inject_response(record["id"], alice.user.id, "accept")
+        findings = env.reconcile(queue.id)
+        check(
+            "R2c",
+            "a response on an edited record is record_fields_changed, never adopted",
+            [(f.record_id, f.reason) for f in findings] == [(rid(env, 0), "record_fields_changed")]
+            and env.sql("SELECT count(*) FROM review_responses")[0][0] == 0,
+        )
+    with env_of(records=3) as env:
+        queue = env.create()
+        alice = env.reviewer("alice")
+        other = env.sql("SELECT count(*) FROM argilla_workspace_members")[0][0]
+        other_scope = uuid.uuid4()
+        env.sql(
+            "UPDATE argilla_workspace_members SET scope_id = :s WHERE identity_id = :i",
+            s=other_scope,
+            i=alice.identity_id,
+        )
+        env.server.inject_response(env.server_record(rid(env, 0))["id"], alice.user.id, "accept")
+        findings = env.reconcile(queue.id)
+        check(
+            "R2c",
+            "a reviewer of another scope is not adopted",
+            [(f.reason) for f in findings] == ["response_untracked"] and other == 1,
+        )
+
+    # RECONCILE-QUADRATIC: the queue's rows are read once, not once per candidate
+    with env_of(records=12) as env:
+        queue = env.create()
+        for position in range(10):
+            env.server.edit_record_fields(
+                env.server_record(rid(env, position))["id"], "conversation", "x"
+            )
+        env.statements.clear()
+        findings = env.reconcile(queue.id)
+        listing = [
+            q
+            for q in env.statements
+            if "FROM review_items WHERE queue_id" in q and "ORDER BY batch_position" in q
+        ]
+        check("R2d", "all ten edited items are drift", len(findings) == 10)
+        check(
+            "R2d",
+            "the whole queue's items are read once, whatever the number of candidates",
+            len(listing) == 1,
+        )
+        check(
+            "R2d",
+            "each candidate is locked in its own statement",
+            sum(
+                1
+                for q in env.statements
+                if q.lstrip().startswith("SELECT status, argilla_record_id FROM review_items")
+            )
+            == 10,
+        )
+
+
+def test_s_live_settings_drift() -> None:
+    world = new_world()
+    try:
+        name = rm.dataset_name_for(uuid.uuid4(), uuid.uuid4(), uuid.uuid4())
+        dataset = world.api.ensure_dataset(world.workspace.id, name)
+        server_dataset = world.server.datasets[dataset.id]
+        decision = next(q for q in server_dataset["questions"] if q["name"] == "decision")
+        rationale = next(q for q in server_dataset["questions"] if q["name"] == "rationale")
+        conversation = server_dataset["fields"][0]
+        check(
+            "S31",
+            "the server really stores required and settings",
+            decision["required"] is True
+            and rationale["required"] is False
+            and conversation["required"] is True,
+        )
+
+        def drifted_by(label: str, mutate: Callable[[], None], undo: Callable[[], None]) -> None:
+            mutate()
+            check(
+                "S31",
+                f"a published dataset with {label} is not adopted",
+                raises(
+                    ArgillaRejectedError, lambda: world.api.ensure_dataset(world.workspace.id, name)
+                )
+                is not None,
+            )
+            undo()
+            check(
+                "S31",
+                f"and is adopted again once {label} is undone",
+                world.api.ensure_dataset(world.workspace.id, name).id == dataset.id,
+            )
+
+        options = decision["settings"]["options"]
+        drifted_by(
+            "a third decision option",
+            lambda: options.append({"value": "escalate", "text": "Escalate"}),
+            lambda: options.pop(),
+        )
+        drifted_by(
+            "a decision that is optional",
+            lambda: decision.__setitem__("required", False),
+            lambda: decision.__setitem__("required", True),
+        )
+        drifted_by(
+            "a rationale that is required",
+            lambda: rationale.__setitem__("required", True),
+            lambda: rationale.__setitem__("required", False),
+        )
+        saved = rationale["settings"]
+        drifted_by(
+            "a rationale that is a label selection",
+            lambda: rationale.__setitem__(
+                "settings", {"type": "label_selection", "options": [{"value": "a", "text": "A"}]}
+            ),
+            lambda: rationale.__setitem__("settings", saved),
+        )
+        drifted_by(
+            "markdown on the conversation field",
+            lambda: conversation["settings"].__setitem__("use_markdown", True),
+            lambda: conversation["settings"].__setitem__("use_markdown", False),
+        )
+        drifted_by(
+            "a relabelled option",
+            lambda: options[0].__setitem__("text", "Yes"),
+            lambda: options[0].__setitem__("text", "Accept"),
+        )
+    finally:
+        world.server.shutdown()
+
+
+def test_s_text_boundary() -> None:
+    limit = rm.MAX_REVIEW_TEXT_CHARS
+    overhead = len(rm.render_conversation([{"role": "user", "content": ""}]))
+    exact = [{"role": "user", "content": "y" * (limit - overhead)}]
+    one_over = [{"role": "user", "content": "y" * (limit - overhead + 1)}]
+    check(
+        "S32",
+        "text of exactly 65,536 characters renders",
+        len(rm.render_conversation(exact)) == 65_536,
+    )
+    caught = raises(rm.ReviewMappingError, lambda: rm.render_conversation(one_over))
+    check(
+        "S32",
+        "text of 65,537 characters is refused",
+        caught is not None and caught.code == "record_too_large_for_review",
+    )
+    check("S32", "the cap is 65,536", limit == 65_536)
+
+
 def test_s_drift_direct() -> None:
     item = {
         "record_id": "d:0",
         "group_id": sha("g"),
         "record_sha256": sha("r"),
         "fields_sha256": rm.fields_sha256("text"),
+        "argilla_record_id": U1,
     }
     good_meta = {
         "record_id": "d:0",
@@ -3829,6 +4246,16 @@ def test_s_drift_direct() -> None:
         "S27",
         "a missing field is fields drift",
         store._drift_reason(item, record(fields={}), stored, mapped) == "record_fields_changed",
+    )
+    check(
+        "S27",
+        "a record with the same external id but another Argilla id is record_replaced",
+        store._drift_reason(item, record(id=U2), stored, mapped) == "record_replaced",
+    )
+    check(
+        "S27",
+        "an upper-case Argilla id is not the linked record",
+        store._drift_reason(item, record(id=U1.upper()), stored, mapped) == "record_replaced",
     )
     check(
         "S27",
