@@ -1974,7 +1974,125 @@ def group_j(m: Any) -> None:
 
 # -- faults ----------------------------------------------------------------------------------------
 
-FAULTS: list[tuple[str, str, str, int]] = []
+FAULTS: list[tuple[str, str, str, int]] = [
+    (
+        "license gate skipped",
+        "lambda: assert_license_accepted_for_use(artifact),",
+        "lambda: None,",
+        1,
+    ),
+    (
+        "base license gate skipped",
+        "lambda: assert_license_accepted_for_use(base_artifact),",
+        "lambda: None,",
+        1,
+    ),
+    (
+        "digest trusted from the stored value (FTF-0306 call dropped)",
+        "lambda: verify_or_compute_weights_digest(\n            artifact, LocalFilesystemResolutionInputs(approved_root=approved_root)\n        ),",
+        "lambda: None,",
+        1,
+    ),
+    (
+        "manifest pass not bound to the verified digest",
+        "if not _same_hash(canonical_weights_digest(manifest.manifest_sha256), artifact.weights_digest):",
+        "if False:",
+        1,
+    ),
+    (
+        "allow-list dropped (any file accepted)",
+        "_parse(lambda: check_file_names([e.relative_path for e in manifest.entries], kind=kind))",
+        "pass",
+        1,
+    ),
+    ("artifact readiness not required", "if not ready or not digest_ok:", "if False:", 1),
+    (
+        "parsed-file hash check dropped",
+        "len(data) != entry.size_bytes\n        or not _same_hash(hashlib.sha256(data).hexdigest(), entry.sha256)",
+        "False",
+        1,
+    ),
+    ("shard size drift ignored", "if size != entry.size_bytes:", "if False:", 1),
+    (
+        "symlinks followed when reading",
+        'os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)',
+        "os.O_RDONLY",
+        1,
+    ),
+    (
+        "header read unbounded",
+        "body_cap = min(\n                length, max(size - _HEADER_LENGTH_BYTES, 0), MAX_SAFETENSORS_HEADER_BYTES\n            )",
+        "body_cap = length",
+        1,
+    ),
+    (
+        "base resolved without the import job succeeding",
+        "or not parent.import_job_succeeded",
+        "or False",
+        1,
+    ),
+    (
+        "base resolved from any origin",
+        "or parent.origin not in (ORIGIN_IMPORTED_WEIGHTS,)",
+        "or False",
+        1,
+    ),
+    (
+        "lineage exact-base check dropped",
+        "lambda: build_artifact_lineage_manifest(\n            candidate, artifact, resolved_base_artifact=base_artifact\n        ),",
+        "lambda: None,",
+        1,
+    ),
+    (
+        "adapter/base shape check dropped",
+        "_parse(lambda: check_adapter_base_compatibility(adapter_header, adapter_config, base_shapes))",
+        "pass",
+        1,
+    ),
+    (
+        "tokenizer mismatch ignored",
+        "if not _same_hash(base_hashes.get(name), digest):",
+        "if False:",
+        1,
+    ),
+    (
+        "lineage written as complete",
+        'lineage_completeness="partial",',
+        'lineage_completeness="complete",',
+        1,
+    ),
+    (
+        "chat template hash dropped",
+        "chat_template_sha256=facts.chat_template_sha256,",
+        "chat_template_sha256=None,",
+        1,
+    ),
+    ("adapter flag dropped", "adapter_only=adapter,", "adapter_only=False,", 1),
+    (
+        "declared parent dropped",
+        "parent_model_version_id=inputs.parent_model_version_id,",
+        "parent_model_version_id=None,",
+        1,
+    ),
+    (
+        "terminal artifact re-read dropped",
+        "if _artifact_unchanged(session, context, inputs.artifact):",
+        "if True:",
+        1,
+    ),
+    (
+        "epoch fence dropped",
+        "if result.rowcount != 1:\n                raise _Fenced",
+        "if False:\n                raise _Fenced",
+        1,
+    ),
+    (
+        "unmapped exceptions swallowed",
+        "        else:\n            raise\n",
+        "        else:\n            pass\n",
+        1,
+    ),
+]
 
 
 def suite(m: Any) -> list[str]:
