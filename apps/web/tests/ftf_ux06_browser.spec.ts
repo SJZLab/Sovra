@@ -28,11 +28,15 @@ const CASE_PATH = `${LIST_PATH}/${CASE_A}`;
 
 const PROPS = { apiBaseUrl: API, organizationId: ORG, projectId: PROJECT, suiteId: SUITE };
 
-// Round 3's own long, unbroken (no space/hyphen) values -- the realistic worst case this round's
-// overflow fix targets (OVERFLOW-LONG-NAMES).
+// Long, unbroken (no space/hyphen) values -- the realistic worst case this round's overflow fix
+// targets (OVERFLOW-LONG-NAMES). `MAX_CASE_KEY` is the API's own stated maximum (QUEUE.md 0f,
+// point 2: "the API allows 200") -- the second L2 review's own probe, reproduced here as a RED
+// pin on the edit form heading and the field-error list item (the two sites its probe found
+// unpinned; the case-row `<li>` and `edit-case-key` `<h3>` sites below were already pinned).
 const LONG_CATEGORY = `refunds_${"x".repeat(90)}`;
 const LONG_CASE_KEY = `case_${"k".repeat(95)}`;
 const LONG_GROUP = `group_${"g".repeat(90)}`;
+const MAX_CASE_KEY = `case_${"k".repeat(195)}`;
 
 function evalCase(over: Record<string, unknown> = {}) {
   return {
@@ -544,6 +548,76 @@ describe("[UX06-BROWSER] round 2 fixes", () => {
   test("OVERFLOW-LONG-NAMES: a 95+ char unbroken case_key/category/group_key causes no horizontal overflow at 390px", async () => {
     const page = await openState(
       STATES.find((s) => s.id === "populated with long unbroken values")!,
+      "en",
+      "light",
+    );
+    try {
+      await page.setViewportSize({ width: 390, height: 844 });
+      const over = await page.evaluate(() => {
+        const el = document.documentElement;
+        return el.scrollWidth - el.clientWidth;
+      });
+      expect(over).toBeLessThanOrEqual(1);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("OVERFLOW-LONG-NAMES (second L2 review, site 2 of 2): the edit form heading wraps a 200-char case_key with no overflow at 390px", async () => {
+    const page = await openState(
+      {
+        id: "edit form, max-length case_key",
+        routes: [
+          {
+            method: "GET",
+            path: LIST_PATH,
+            body: { items: [evalCase({ case_key: MAX_CASE_KEY })], next_after: null },
+          },
+        ],
+        steps: [{ click: "load-cases-button" }, { click: `edit-case-${CASE_A}` }],
+        ready: '[data-testid="case-form"]',
+      },
+      "en",
+      "light",
+    );
+    try {
+      await page.setViewportSize({ width: 390, height: 844 });
+      const over = await page.evaluate(() => {
+        const el = document.documentElement;
+        return el.scrollWidth - el.clientWidth;
+      });
+      expect(over).toBeLessThanOrEqual(1);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("OVERFLOW-LONG-NAMES (second L2 review, site 2 of 2): the import field-error row hint wraps a 200-char case_key with no overflow at 390px", async () => {
+    const page = await openState(
+      {
+        id: "import field error, max-length case_key row hint",
+        routes: [
+          {
+            method: "POST",
+            path: LIST_PATH,
+            status: 400,
+            body: {
+              detail: "validation_failed",
+              errors: [{ index: 0, field: "group_key", code: "required" }],
+            },
+          },
+        ],
+        steps: [
+          {
+            fill: [
+              "import-text",
+              JSON.stringify([{ case_key: MAX_CASE_KEY, category: "refunds" }]),
+            ],
+          },
+          { click: "import-button" },
+        ],
+        ready: '[data-testid="import-field-errors"]',
+      },
       "en",
       "light",
     );

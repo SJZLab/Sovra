@@ -197,6 +197,12 @@ interface FieldError {
   code: string;
 }
 
+/** Which recovery sentence a top-level alert names (WRONG-RECOVERY-STEPS, round 2): the
+ * operation's own default, or an override for a 403 (never retryable) or a transport/shape
+ * failure (never a field problem). */
+type RecoveryKey =
+  "recoverList" | "recoverImport" | "recoverSave" | "recoverRestricted" | "recoverRetry";
+
 interface Failure {
   message: string;
   fieldErrors: FieldError[];
@@ -219,7 +225,22 @@ const FIELD_LABEL_KEY: Record<string, Parameters<typeof t0602>[0]> = {
   expected_json: "fieldExpectedJson",
   grader_config_json: "fieldGraderConfigJson",
   weight: "fieldWeight",
+  case_key: "fieldCaseKey",
 };
+
+const SEVERITY_KEY: Record<(typeof SEVERITIES)[number], Parameters<typeof t0602>[0]> = {
+  low: "severityLow",
+  medium: "severityMedium",
+  high: "severityHigh",
+  critical: "severityCritical",
+};
+
+/** The visible option/row text is translated; the submitted `value` (SEVERITIES) never changes. */
+function severityDisplay(severity: string, locale: Locale | string): string {
+  if (resolveLocale(locale) === "en") return severity;
+  const key = SEVERITY_KEY[severity as (typeof SEVERITIES)[number]];
+  return key ? t0602(key, locale) : severity;
+}
 
 const FIELD_CODE_KEY: Record<string, Parameters<typeof t0602>[0]> = {
   required: "codeRequired",
@@ -283,9 +304,12 @@ async function readFailure(response: Response, locale: Locale | string = "en"): 
     // fall through to the generic message below
   }
   const key = detail ? ERROR_DETAIL_KEY[detail] : undefined;
+  // FTF-UX06 round 2 (NOT-BILINGUAL): an unmapped server `detail` code keeps the exact raw text
+  // round 1 shipped at the default English locale, but is never shown raw under Arabic -- a code
+  // this build does not recognize degrades to the generic, already-localized `errGeneric` message.
   const message = key
     ? t0602(key, locale)
-    : detail
+    : detail && resolveLocale(locale) === "en"
       ? detail
       : t0602("errGeneric", locale, { status: response.status });
   return {
@@ -418,7 +442,11 @@ function buildPatch(
   if (draft.critical !== original.critical) patch.critical = draft.critical;
   for (const key of ["input_json", "expected_json", "grader_config_json"] as const) {
     const parsed = parseObjectField(draft[key]);
-    if (parsed === null) return { error: t0602("jsonFieldMustBeObject", locale, { field: key }) };
+    if (parsed === null) {
+      return {
+        error: t0602("jsonFieldMustBeObject", locale, { field: fieldDisplay(key, locale) ?? key }),
+      };
+    }
     if (key === "expected_json" && Object.keys(parsed).length === 0) {
       return { error: t0602("expectedMustNotBeEmpty", locale) };
     }
@@ -438,25 +466,21 @@ function rowOrRequest(index: number | null, locale: Locale | string): string {
 }
 
 /** FTF-UX06 round 2 (FOCUS-LOST-TO-BODY): a top-level error alert that takes keyboard focus the
- * moment it appears, and again on every repeat failure with the same text (`signal` increments on
- * every raise, even when the message string is identical) -- so focus never lands on `<body>`
- * after a failed load/import/save, the same discipline `ui/ErrorSummary` already applies to
- * field-level forms. */
-function FocusableAlert({
-  message,
-  testId,
-  signal,
-}: {
-  message: string;
-  testId: string;
-  signal: number;
-}) {
+ * moment it mounts, so focus never lands on `<body>` after a failed load/import/save -- the same
+ * discipline `ui/ErrorSummary` already applies to field-level forms. Every call site (`loadPage`/
+ * `handleImport`/`handleSave`) clears its own error to `null` as its very first statement before
+ * its request even starts, so a SECOND failure -- even with the identical message -- always
+ * un-mounts this component first (the conditional render below sees `null`) and mounts a fresh
+ * instance for the new message; mounting itself is the only signal this needs, verified directly
+ * (`ftf_ux06.spec.ts`'s "a second failure with the identical message re-focuses the alert" test
+ * fails if this `useEffect` depended on `message` and the two failures compared unequal by
+ * reference instead of by mount, and passes here precisely because remounting is what the real
+ * control flow actually does, not an assumption). */
+function FocusableAlert({ message, testId }: { message: string; testId: string }) {
   const ref = useRef<HTMLParagraphElement>(null);
-  // `signal`, not `message`, is the intended trigger: a repeat failure with the same text must
-  // still re-focus the alert, so `message` is deliberately left out of the dependency list.
   useEffect(() => {
     ref.current?.focus();
-  }, [signal]);
+  }, []);
   return (
     <p
       ref={ref}
@@ -485,16 +509,14 @@ export function EvaluationCaseEditorImport({
   const [nextAfter, setNextAfter] = useState<string | null>(null);
   const [restricted, setRestricted] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
-  /** FTF-UX06 round 2 (FOCUS-LOST-TO-BODY): bumped alongside every `setListError(message)` call so
-   * the alert takes focus itself, never leaving it on `<body>`. */
-  const [listErrorSignal, setListErrorSignal] = useState(0);
+  const [listRecovery, setListRecovery] = useState<RecoveryKey>("recoverList");
   const [listLoading, setListLoading] = useState(false);
   const importTextRef = useRef<HTMLTextAreaElement>(null);
 
   const [importText, setImportText] = useState("");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
-  const [importErrorSignal, setImportErrorSignal] = useState(0);
+  const [importRecovery, setImportRecovery] = useState<RecoveryKey>("recoverImport");
   const [importFieldErrors, setImportFieldErrors] = useState<FieldError[]>([]);
   /** The exact rows last sent, kept so a returned field error can name that row's own case_key
    * (per-component H9: a visual link back to the pasted row, not just an index). */
@@ -505,26 +527,29 @@ export function EvaluationCaseEditorImport({
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
-  const [editErrorSignal, setEditErrorSignal] = useState(0);
+  const [editRecovery, setEditRecovery] = useState<RecoveryKey>("recoverSave");
   const [editFieldErrors, setEditFieldErrors] = useState<FieldError[]>([]);
   /** on-blur validation for the three JSON fields, independent of (and before) submit-time checks. */
   const [jsonBlurErrors, setJsonBlurErrors] = useState<Record<string, string>>({});
 
   const listUrl = casesUrl(apiBaseUrl, organizationId, projectId, suiteId);
 
-  /** Sets the message AND bumps its focus signal in the same call, so no call site can set an
-   * error without also moving focus to it (FOCUS-LOST-TO-BODY). */
-  function raiseListError(message: string) {
+  /** FTF-UX06 round 2 (WRONG-RECOVERY-STEPS, L2 return): the recovery step named alongside each
+   * error must fit what actually failed -- a 403 is never fixed by repeating the request, and a
+   * transport/shape failure (a non-JSON response, or the request never reaching the server) is
+   * never a field problem. Each call site names its own `recoveryKey`; the default is the
+   * operation's own normal "fix and retry" phrasing. */
+  function raiseListError(message: string, recoveryKey: RecoveryKey = "recoverList") {
     setListError(message);
-    setListErrorSignal((previous) => previous + 1);
+    setListRecovery(recoveryKey);
   }
-  function raiseImportError(message: string) {
+  function raiseImportError(message: string, recoveryKey: RecoveryKey = "recoverImport") {
     setImportError(message);
-    setImportErrorSignal((previous) => previous + 1);
+    setImportRecovery(recoveryKey);
   }
-  function raiseEditError(message: string) {
+  function raiseEditError(message: string, recoveryKey: RecoveryKey = "recoverSave") {
     setEditError(message);
-    setEditErrorSignal((previous) => previous + 1);
+    setEditRecovery(recoveryKey);
   }
 
   function restrictContent() {
@@ -546,7 +571,7 @@ export function EvaluationCaseEditorImport({
       if (!response.ok) {
         const failure = await readFailure(response, locale);
         if (failure.restricted) restrictContent();
-        raiseListError(failure.message);
+        raiseListError(failure.message, failure.restricted ? "recoverRestricted" : "recoverList");
         return;
       }
       let body: unknown;
@@ -619,7 +644,10 @@ export function EvaluationCaseEditorImport({
       if (!response.ok) {
         const failure = await readFailure(response, locale);
         if (failure.restricted) restrictContent();
-        raiseImportError(failure.message);
+        raiseImportError(
+          failure.message,
+          failure.restricted ? "recoverRestricted" : "recoverImport",
+        );
         setImportFieldErrors(failure.fieldErrors);
         return;
       }
@@ -627,11 +655,12 @@ export function EvaluationCaseEditorImport({
       try {
         body = await response.json();
       } catch {
-        raiseImportError(t0602("errMalformedImport", locale));
+        // A malformed SERVER response is never fixed by editing the pasted file/text.
+        raiseImportError(t0602("errMalformedImport", locale), "recoverRetry");
         return;
       }
       if (!isRecord(body) || !Array.isArray(body.items) || !body.items.every(isCase)) {
-        raiseImportError(t0602("errMalformedImport", locale));
+        raiseImportError(t0602("errMalformedImport", locale), "recoverRetry");
         return;
       }
       const createdItems = body.items as EvaluationCase[];
@@ -648,8 +677,9 @@ export function EvaluationCaseEditorImport({
           : [...previous, ...createdItems].sort((a, b) => (a.case_key < b.case_key ? -1 : 1)),
       );
     } catch (caught) {
-      // Nothing is shown as imported unless the route genuinely answered 201.
-      raiseImportError(networkFailure(caught, locale).message);
+      // Nothing is shown as imported unless the route genuinely answered 201. A transport
+      // failure is never fixed by editing the pasted file/text.
+      raiseImportError(networkFailure(caught, locale).message, "recoverRetry");
     } finally {
       setImporting(false);
     }
@@ -718,7 +748,7 @@ export function EvaluationCaseEditorImport({
       if (!response.ok) {
         const failure = await readFailure(response, locale);
         if (failure.restricted) restrictContent();
-        raiseEditError(failure.message);
+        raiseEditError(failure.message, failure.restricted ? "recoverRestricted" : "recoverSave");
         setEditFieldErrors(failure.fieldErrors);
         return;
       }
@@ -726,11 +756,12 @@ export function EvaluationCaseEditorImport({
       try {
         body = await response.json();
       } catch {
-        raiseEditError(t0602("errMalformedSave", locale));
+        // A malformed SERVER response is never a problem with a field the user filled in.
+        raiseEditError(t0602("errMalformedSave", locale), "recoverRetry");
         return;
       }
       if (!isCase(body)) {
-        raiseEditError(t0602("errMalformedSave", locale));
+        raiseEditError(t0602("errMalformedSave", locale), "recoverRetry");
         return;
       }
       setCases((previous) =>
@@ -740,7 +771,8 @@ export function EvaluationCaseEditorImport({
       setDraft(draftFrom(body));
       setNotice(t0602("noticeSaved", locale, { key: body.case_key }));
     } catch (caught) {
-      raiseEditError(networkFailure(caught, locale).message);
+      // A transport failure (the request never reached the server) is never a field problem.
+      raiseEditError(networkFailure(caught, locale).message, "recoverRetry");
     } finally {
       setSaving(false);
     }
@@ -813,9 +845,8 @@ export function EvaluationCaseEditorImport({
         {listLoading ? <Pending label={t0602("loadingCases", locale)} locale={lang} /> : null}
         {listError ? (
           <FocusableAlert
-            message={`${listError} ${t0602("recoverList", locale)}`}
+            message={`${listError} ${t0602(listRecovery, locale)}`}
             testId="list-error"
-            signal={listErrorSignal}
           />
         ) : null}
         {restricted ? (
@@ -845,12 +876,17 @@ export function EvaluationCaseEditorImport({
                   data-testid={`case-row-${item.id}`}
                   style={{ overflowWrap: "anywhere" }}
                 >
-                  <span data-testid={`case-key-${item.id}`}>{item.case_key}</span>{" "}
-                  <span>{item.category}</span> <span>{item.severity}</span>
+                  <span data-testid={`case-key-${item.id}`}>
+                    <bdi>{item.case_key}</bdi>
+                  </span>{" "}
+                  <span>
+                    <bdi>{item.category}</bdi>
+                  </span>{" "}
+                  <span>{severityDisplay(item.severity, locale)}</span>
                   {item.critical ? <strong> {t0602("criticalTag", locale)}</strong> : null}{" "}
                   <span>{item.language}</span>{" "}
                   <span>
-                    {t0602("groupPrefix", locale)} {item.group_key}
+                    {t0602("groupPrefix", locale)} <bdi>{item.group_key}</bdi>
                   </span>{" "}
                   <span>{item.grader_type}</span>{" "}
                   <Button data-testid={`edit-case-${item.id}`} onClick={() => startEdit(item)}>
@@ -906,9 +942,8 @@ export function EvaluationCaseEditorImport({
         {importing ? <Pending label={t0602("importingCases", locale)} locale={lang} /> : null}
         {importError ? (
           <FocusableAlert
-            message={`${importError} ${t0602("recoverImport", locale)}`}
+            message={`${importError} ${t0602(importRecovery, locale)}`}
             testId="import-error"
-            signal={importErrorSignal}
           />
         ) : null}
         {renderFieldErrors(importFieldErrors, "import-field-errors", importRows)}
@@ -955,7 +990,7 @@ export function EvaluationCaseEditorImport({
             >
               {SEVERITIES.map((severity) => (
                 <option key={severity} value={severity}>
-                  {severity}
+                  {severityDisplay(severity, locale)}
                 </option>
               ))}
             </select>
@@ -1140,9 +1175,8 @@ export function EvaluationCaseEditorImport({
           {saving ? <Pending label={t0602("savingCase", locale)} locale={lang} /> : null}
           {editError ? (
             <FocusableAlert
-              message={`${editError} ${t0602("recoverSave", locale)}`}
+              message={`${editError} ${t0602(editRecovery, locale)}`}
               testId="edit-error"
-              signal={editErrorSignal}
             />
           ) : null}
           {renderFieldErrors(editFieldErrors, "edit-field-errors", [])}

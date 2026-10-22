@@ -167,6 +167,20 @@ const STRINGS = {
     en: "Fix the field shown above, then save again.",
     ar: "أصلح الحقل الموضَّح أعلاه، ثم احفظ مرة أخرى.",
   },
+  /** FTF-UX06 round 2 (WRONG-RECOVERY-STEPS, L2 return): a 403 is never fixed by repeating the
+   * same request. */
+  recoverRestricted: {
+    en: "Ask an evaluator or administrator for access.",
+    ar: "اطلب الوصول من أحد المقيِّمين أو المسؤولين.",
+  },
+  /** A transport-level failure (a non-JSON response, or the request never reached the server) is
+   * never a field problem -- this reads correctly for any of the three operations. */
+  recoverRetry: { en: "Try again.", ar: "حاول مرة أخرى." },
+  severityLow: { en: "low", ar: "منخفضة" },
+  severityMedium: { en: "medium", ar: "متوسطة" },
+  severityHigh: { en: "high", ar: "عالية" },
+  severityCritical: { en: "critical", ar: "حرِجة" },
+  fieldCaseKey: { en: "case_key", ar: "مفتاح الحالة" },
   codeRequired: { en: "required", ar: "مطلوب" },
   codeTooLong: { en: "too long", ar: "طويل جدًا" },
   codeInvalidValue: { en: "not a valid value", ar: "قيمة غير صالحة" },
@@ -203,3 +217,12 @@ export function t0602(
   const template = Object.hasOwn(entry, resolved) ? entry[resolved] : entry.en;
   return fill(template, vars);
 }
+
+/** FTF-UX06 round 2 (EVIDENCE/UNPINNED): exposed so a catalogue-wide test (same pattern
+ * `strings_04a22.ts`'s `MANDATE_STRING_KEYS`/`MANDATE_STRINGS` already uses) can assert every
+ * entry has real, non-English Arabic text and identical `{placeholder}` holes in both languages --
+ * one test that catches a future "ar" value silently replaced with English, instead of relying on
+ * a RED test per string. */
+export type CaseStringKey = keyof typeof STRINGS;
+export const CASE_STRING_KEYS = Object.keys(STRINGS) as CaseStringKey[];
+export const CASE_STRINGS: Record<CaseStringKey, CatalogueEntry> = STRINGS;
