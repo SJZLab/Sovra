@@ -12,7 +12,7 @@
 //   (d) no simulated success -- only a typed, bound 2xx counts        [UX04-D*]
 //   (e) typed errors: 5xx, non-JSON, unknown codes keep state         [UX04-E*]
 //   (f) the real router lives in tests/integration/test_ftf_ux04_real_api.py
-import { createElement } from "react";
+import { createElement, useState } from "react";
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -660,6 +660,183 @@ describe("[UX04-N] leaving without saving, and units on amounts (H3, H2)", () =>
     expect(dd.textContent).toBe("12.5000 SAR");
     expect(tid("budget-available").closest("dd")!.textContent).toBe("987.5000 SAR");
     expect(dd.querySelector("bdi")!.textContent).toBe("SAR");
+  });
+});
+
+describe("[UX04-RV] review round 1: adoption, stale callbacks, roles, notices", () => {
+  function Host() {
+    const [adopted, setAdopted] = useState<ProjectRecord | null>(null);
+    return createElement(ProjectSetupForm, {
+      ...formProps({ project: adopted }),
+      onSaved: setAdopted,
+    });
+  }
+
+  test("a host that adopts the created record keeps the instance: 'Project created' stays, focus stays on the action", async () => {
+    fetchMock().mockImplementationOnce(async (_u: string, init: RequestInit) =>
+      ok(echo(init, null), 201),
+    );
+    render(createElement(Host));
+    type("project-name-input", "adopted");
+    click("project-submit-button");
+    await waitFor(() => expect(text("project-saved-notice")).toBe("Project created"));
+    expect(document.activeElement).toBe(tid("project-submit-button"));
+    expect((tid("project-type-select") as HTMLSelectElement).disabled).toBe(true);
+    expect(input("project-name-input").value).toBe("adopted");
+  });
+
+  test("after adoption the next save PATCHes with the created version", async () => {
+    fetchMock()
+      .mockImplementationOnce(async (_u: string, init: RequestInit) => ok(echo(init, null), 201))
+      .mockImplementationOnce(async (_u: string, init: RequestInit) =>
+        ok(echo(init, echo({ body: fetchMock().mock.calls[0]![1].body } as RequestInit, null))),
+      );
+    render(createElement(Host));
+    type("project-name-input", "adopted");
+    click("project-submit-button");
+    await waitFor(() => expect(text("project-saved-notice")).toBe("Project created"));
+    type("project-name-input", "adopted-2");
+    click("project-submit-button");
+    await waitFor(() => expect(text("project-saved-notice")).toBe("Changes saved"));
+    expect(sentBody(1).expected_row_version).toBe(1);
+  });
+
+  test("a save that finishes after the form switched to another project never reaches the caller", async () => {
+    let release: (v: unknown) => void = () => undefined;
+    const a = project();
+    fetchMock().mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          release = r;
+        }),
+    );
+    const onSaved = vi.fn();
+    const view = renderForm({ project: a, onSaved });
+    click("project-submit-button");
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(1));
+    view.rerender(
+      createElement(ProjectSetupForm, formProps({ project: project({ id: PROJECT_B }), onSaved })),
+    );
+    await act(async () =>
+      release(ok(echo({ body: JSON.stringify({ name: a.name }) } as RequestInit, a))),
+    );
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  test("the success line is a polite status; an inline field error is an alert", async () => {
+    const p = project();
+    fetchMock().mockImplementationOnce(async (_u: string, init: RequestInit) => ok(echo(init, p)));
+    renderForm({ project: p });
+    click("project-submit-button");
+    await waitFor(() => expect(text("project-saved-notice")).toBe("Changes saved"));
+    expect(tid("project-saved-notice").closest('[role="status"]')).toBeTruthy();
+    cleanup();
+    renderForm();
+    type("project-type-select", "agentic_product");
+    click("project-submit-button");
+    expect(document.getElementById("agent-objective-error")!.getAttribute("role")).toBe("alert");
+  });
+
+  test("focus returns to 'Save draft' after a draft save", async () => {
+    const p = project();
+    fetchMock().mockImplementationOnce(async (_u: string, init: RequestInit) =>
+      ok({ ...p, ui_state: JSON.parse(init.body as string).ui_state }),
+    );
+    renderForm({ project: p });
+    click("project-save-draft-button");
+    await waitFor(() => expect(text("project-draft-saved-notice")).toBe("Draft saved"));
+    expect(document.activeElement).toBe(tid("project-save-draft-button"));
+  });
+
+  test("an external reload clears the failure banner, and a re-render with that same version keeps what is typed afterwards", async () => {
+    fetchMock().mockImplementationOnce(async () => refused(409));
+    const view = renderForm({ project: project({ row_version: 1 }) });
+    click("project-submit-button");
+    await waitFor(() => expect(screen.getByTestId("project-form-error")).toBeTruthy());
+    const reloaded = project({ row_version: 5, name: "theirs" });
+    view.rerender(createElement(ProjectSetupForm, formProps({ project: reloaded })));
+    expect(screen.queryByTestId("project-form-error")).toBeNull();
+    type("project-name-input", "typed after reload");
+    view.rerender(createElement(ProjectSetupForm, formProps({ project: { ...reloaded } })));
+    expect(input("project-name-input").value).toBe("typed after reload");
+  });
+
+  const D = {
+    name: "from-draft",
+    projectType: "agentic_product",
+    description: "",
+    agentObjective: "Automate PR review comments.",
+    securityProfile: "standard",
+  };
+  test("a draft equal to the saved record is not offered even when the form was edited away from it", () => {
+    renderForm({ project: project({ ui_state: { ...D, name: "acme-agent" } }) });
+    type("project-name-input", "edited away");
+    expect(screen.queryByTestId("project-draft-offer")).toBeNull();
+  });
+
+  test("once restored, the offer stays dismissed after further edits", () => {
+    renderForm({ project: project({ ui_state: D }) });
+    click("project-restore-draft-button");
+    type("project-name-input", "edited after restore");
+    expect(screen.queryByTestId("project-draft-offer")).toBeNull();
+  });
+
+  test("the draft label while saving a draft says so", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock().mockImplementationOnce(() => new Promise(() => undefined));
+      renderForm({ project: project() });
+      click("project-save-draft-button");
+      await act(async () => {
+        await Promise.resolve();
+      });
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+      expect(screen.getByText("Saving draft…")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("panel: the saved notice goes away when the total or a scope is edited", async () => {
+    const existing = policy({ row_version: 3 });
+    let version = 3;
+    renderPanel({
+      budgetGet: () => ok(existing),
+      write: (init) => {
+        const sent = JSON.parse(init.body as string);
+        version += 1;
+        return ok(
+          policy({
+            row_version: version,
+            total_amount: `${sent.total_amount}.0000`.replace(/(\.\d+)\.0000$/, "$1"),
+            available_amount: `${sent.total_amount}.0000`.replace(/(\.\d+)\.0000$/, "$1"),
+            scopes: [...sent.scopes].sort(),
+          }),
+        );
+      },
+    });
+    await waitFor(() => expect(text("budget-row-version")).toBe("3"));
+    click("budget-policy-submit-button");
+    await waitFor(() => expect(tid("budget-policy-saved-notice")).toBeTruthy());
+    type("budget-total-amount-input", "1001.0000");
+    expect(screen.queryByTestId("budget-policy-saved-notice")).toBeNull();
+    click("budget-policy-submit-button");
+    await waitFor(() => expect(tid("budget-policy-saved-notice")).toBeTruthy());
+    click("budget-scope-serving");
+    expect(screen.queryByTestId("budget-policy-saved-notice")).toBeNull();
+  });
+
+  test("panel: a 404 on the requirements list speaks about the project, not the budget", async () => {
+    renderPanel({ requirements: () => refused(404) });
+    await waitFor(() => expect(tid("requirements-error")).toBeTruthy());
+    expect(text("requirements-error")).toContain("This project no longer exists");
+  });
+
+  test("the error text for Arabic-Indic digits says to use 0-9", () => {
+    expect(MANDATE_WORDS.totalInvalid.en).toContain("digits 0-9");
+    expect(MANDATE_WORDS.totalInvalid.ar).toContain("0-9");
   });
 });
 
@@ -2274,7 +2451,7 @@ describe("[UX04-T] requirements panel: the total is checked BEFORE submit, in ex
     type("budget-total-amount-input", "abc");
     fireEvent.blur(tid("budget-total-amount-input"));
     expect(document.getElementById("budget-total-amount-error")!.textContent).toBe(
-      "Enter a positive number with at most 4 decimal places, for example 2500.50.",
+      "Enter a positive number with at most 4 decimal places, using the digits 0-9, for example 2500.50.",
     );
     expect(document.activeElement).toBe(document.body);
   });

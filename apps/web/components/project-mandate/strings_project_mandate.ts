@@ -147,8 +147,8 @@ const WORDS = {
   },
   totalRequired: { en: "Enter the total amount.", ar: "أدخل المبلغ الإجمالي." },
   totalInvalid: {
-    en: "Enter a positive number with at most 4 decimal places, for example 2500.50.",
-    ar: "أدخل رقمًا موجبًا بحد أقصى 4 منازل عشرية، مثل 2500.50.",
+    en: "Enter a positive number with at most 4 decimal places, using the digits 0-9, for example 2500.50.",
+    ar: "أدخل رقمًا موجبًا بحد أقصى 4 منازل عشرية باستخدام الأرقام 0-9، مثل 2500.50.",
   },
   totalBelowReserved: {
     en: "The total cannot be less than the amount already reserved ({reserved} {currency}). Enter {reserved} or more.",

@@ -266,9 +266,28 @@ type Notice = "created" | "saved" | "draft" | "restored" | null;
 
 export function ProjectSetupForm(props: ProjectSetupFormProps) {
   // A different organization, workspace or project is a different form (UI CHECKLIST c): nothing
-  // typed for one is ever sent for another.
-  const identity = `${props.organizationId}|${props.workspaceId}|${props.project?.id ?? "new"}`;
-  return <ProjectSetupFormInner key={identity} {...props} />;
+  // typed for one is ever sent for another. The project THIS instance just created is the same
+  // form even when the caller adopts it through `onSaved` and hands it back as `project`: remounting
+  // would drop the "Project created" notice and keyboard focus.
+  const createdId = useRef<string | null>(null);
+  const idPart =
+    props.project === null || props.project === undefined
+      ? "new"
+      : props.project.id === createdId.current
+        ? "new"
+        : props.project.id;
+  const identity = `${props.organizationId}|${props.workspaceId}|${idPart}`;
+  const { onSaved } = props;
+  return (
+    <ProjectSetupFormInner
+      key={identity}
+      {...props}
+      onSaved={(saved) => {
+        if (props.project === null || props.project === undefined) createdId.current = saved.id;
+        onSaved?.(saved);
+      }}
+    />
+  );
 }
 
 function ProjectSetupFormInner({
@@ -282,6 +301,14 @@ function ProjectSetupFormInner({
 }: ProjectSetupFormProps) {
   const lang = resolveLocale(locale);
   const titleId = useId();
+  // A reply that lands after this form was replaced by another project's is not this form's to report.
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
   const [saved, setSaved] = useState<ProjectRecord | null>(null);
   const record = newerOf(project, saved);
   const isEdit = record !== null;
@@ -418,6 +445,7 @@ function ProjectSetupFormInner({
       setBusy(null);
       return;
     }
+    if (!alive.current) return;
     ownVersion.current = reply.row_version;
     setSaved(reply);
     setNotice(record ? "saved" : "created");
