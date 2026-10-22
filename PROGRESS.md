@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-22T05:03Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-22T11:23Z. Source: `python3 scripts/status.py` on main.
 - **Status: 157/304 certified · 49 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,9 @@ Updated: 2026-10-22T05:03Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-22T11:23Z:**
+  - CERTIFIED (child slice): FTF-1505-F1 after 3 rounds - secret-scanning hardening: a corrupted or cut-short .tar.gz now blocks the release instead of being half-read, and tests now prove that no size cap anywhere in the scanner can hide a secret at the start or end of a long encoded run. The real full-history scan stays at 0 exposed credentials (FTF-1505 requalified).
+  - CERTIFIED (child slice): FTF-UX03 after 3 rounds - the five target-application screens (repository and branch pickers, agent candidates, mandate editor, manifest review) are rebuilt on the shared accessible components: fully bilingual (English/Arabic, right-to-left), every failure announced with a recovery step, loading and empty states, no sideways scrolling even with very long names at phone width or 400% zoom, and 0 automated accessibility violations in light and dark. All five screens still pass their certified tests.
 - **2026-10-22T05:03Z:**
   - Returned: FTF-UX03 r2 (target-application screens: now on the shared accessible components, fully bilingual, with announced errors and loading/empty states, and all five parent screens still pass; but very long repository, branch and tool names overflow on a phone-width screen, two error announcements and one focus rule have no test, and the design checklist is abbreviated). Round 3 is small.
 - **2026-10-22T01:04Z:**
