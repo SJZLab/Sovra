@@ -441,7 +441,7 @@ class ArgillaReviewApi:
         questions = self._entries(f"/datasets/{dataset_id}/questions", "question")
         expected = _question_bodies()
         by_name = {q["name"]: q for q in questions}
-        if len(questions) != len(expected) or len(by_name) != len(expected):
+        if len(questions) != len(expected):
             raise ArgillaRejectedError("Argilla dataset questions differ from the Factory's schema")
         for body in expected:
             found_question = by_name.get(body["name"])

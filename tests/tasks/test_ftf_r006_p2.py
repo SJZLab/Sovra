@@ -3057,6 +3057,19 @@ def test_s_find_and_ensure() -> None:
             ],
         ),
         (
+            "options that are a number",
+            [ok_field],
+            [
+                {**ok_questions[0], "settings": {"type": "label_selection", "options": 5}},
+                ok_questions[1],
+            ],
+        ),
+        (
+            "options that are missing",
+            [ok_field],
+            [{**ok_questions[0], "settings": {"type": "label_selection"}}, ok_questions[1]],
+        ),
+        (
             "a decision that is not required",
             [ok_field],
             [{**ok_questions[0], "required": False}, ok_questions[1]],
@@ -4036,6 +4049,33 @@ def test_s_review_round2() -> None:
             "R2c",
             "a reviewer of another scope is not adopted",
             [(f.reason) for f in findings] == ["response_untracked"] and other == 1,
+        )
+
+    # an Argilla failure while re-verifying a candidate is argilla_unavailable, not a swallowed skip
+    with env_of(records=3) as env:
+        queue = env.create()
+        env.server.edit_record_fields(env.server_record(rid(env, 0))["id"], "conversation", "x")
+        flaky = OutageOnceOwner(env.server.client().transport)
+        env.owner_api = flaky
+        real_list = flaky.list_records
+
+        def list_then_arm(dataset_id: str) -> Any:
+            listed = real_list(dataset_id)
+            flaky.fail_next = True  # the per-candidate fresh read is the next get_record
+            return listed
+
+        flaky.list_records = list_then_arm
+        check(
+            "R2e",
+            "an outage during a candidate's fresh read is argilla_unavailable",
+            code_of(lambda: env.reconcile(queue.id)) == "argilla_unavailable",
+        )
+        check("R2e", "and the item is not marked", drifted(env) == {})
+        flaky.list_records = real_list
+        check(
+            "R2e",
+            "the next reconcile marks it",
+            [f.reason for f in env.reconcile(queue.id)] == ["record_fields_changed"],
         )
 
     # RECONCILE-QUADRATIC: the queue's rows are read once, not once per candidate

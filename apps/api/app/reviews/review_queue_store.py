@@ -1264,7 +1264,8 @@ def reconcile_review_queue(
                 raise _argilla_error(exc) from None
             reason = _drift_reason(item, fresh, stored_now, mapped_users)
             waiting: list[ArgillaReviewResponse] = []
-            if reason == "response_untracked" and fresh is not None:
+            if reason == "response_untracked":
+                assert fresh is not None  # an untracked response is read from a present record
                 waiting = _pending_responses(
                     session, organization_id, queue.scope_id, fresh, stored_now, mapped_users
                 )
@@ -1344,7 +1345,9 @@ def _pending_responses(
     waiting: list[ArgillaReviewResponse] = []
     for response in record.responses:
         identity_text = mapped_users.get(response.user_id)
-        if identity_text is None or identity_text in stored or not response.submitted:
+        if identity_text is None or not response.submitted:
+            continue
+        if not stored.keys().isdisjoint({identity_text}):
             continue
         try:
             response_values(response.decision or "", response.rationale or "")
