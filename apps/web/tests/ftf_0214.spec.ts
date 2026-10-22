@@ -512,3 +512,195 @@ test("UX05: locale='ar' renders the confirm dialog in Arabic with dir=rtl, and t
     "طلبًا حقيقيًا",
   );
 });
+
+// ---- round 2 (L2 return): pin the 5 previously-unpinned behaviors, fix focus management ----
+
+test("UX05 round 2: load-catalog-button's aria-busy reflects loadingCatalog while the request is in flight", async () => {
+  await loadAndSelectProject();
+  const loadCatalogButton = screen.getByTestId("load-catalog-button") as HTMLButtonElement;
+  expect(loadCatalogButton.getAttribute("aria-busy")).toBe("false");
+  let resolveFetch: (value: unknown) => void = () => {};
+  (fetch as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(
+    () => new Promise((resolve) => (resolveFetch = resolve)),
+  );
+  fireEvent.click(loadCatalogButton);
+  await waitFor(() => expect(loadCatalogButton.getAttribute("aria-busy")).toBe("true"));
+  resolveFetch({
+    ok: true,
+    json: async () => ({
+      connection_status: "active",
+      access_state: "healthy",
+      last_successful_check_at: null,
+      last_checked_at: null,
+      alert: null,
+      anomaly: null,
+      model_groups: null,
+      entries: [],
+    }),
+  });
+  await waitFor(() => expect(loadCatalogButton.getAttribute("aria-busy")).toBe("false"));
+});
+
+test("UX05 round 2: catalog-error carries role=alert", async () => {
+  await loadAndSelectProject();
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ detail: "x" }) });
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId("catalog-error")).toBeTruthy());
+  expect(screen.getByTestId("catalog-error").getAttribute("role")).toBe("alert");
+});
+
+test("UX05 round 2: probe-error carries role=alert", async () => {
+  await loadAndSelectProject();
+  mockCatalog();
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId(`catalog-entry-${MODEL_A}`)).toBeTruthy());
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({ ok: false, status: 403, json: async () => ({ detail: "x" }) });
+  fireEvent.click(screen.getByTestId(`probe-button-${MODEL_A}`));
+  await waitFor(() => expect(screen.getByTestId(`confirm-probe-${MODEL_A}`)).toBeTruthy());
+  fireEvent.click(screen.getByTestId(`confirm-probe-button-${MODEL_A}`));
+  await waitFor(() => expect(screen.getByTestId("probe-error")).toBeTruthy());
+  expect(screen.getByTestId("probe-error").getAttribute("role")).toBe("alert");
+});
+
+test("UX05 round 2: locale='ar' translates the confirm dialog's own Run-probe/Cancel button text", async () => {
+  await loadAndSelectProject();
+  mockCatalog();
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId(`catalog-entry-${MODEL_A}`)).toBeTruthy());
+  // Default locale="en": unchanged literal text.
+  fireEvent.click(screen.getByTestId(`probe-button-${MODEL_A}`));
+  await waitFor(() => expect(screen.getByTestId(`confirm-probe-${MODEL_A}`)).toBeTruthy());
+  expect(screen.getByTestId(`confirm-probe-button-${MODEL_A}`).textContent).toBe("Run probe");
+  expect(screen.getByTestId(`cancel-probe-button-${MODEL_A}`).textContent).toBe("Cancel");
+  cleanup();
+
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => [{ id: PROJECT_ID, name: "Acme Tuning Project", status: "active" }],
+  });
+  render(
+    createElement(ModelCatalogUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      connectionId: CONNECTION_ID,
+      locale: "ar",
+    }),
+  );
+  fireEvent.click(screen.getByTestId("load-projects-button"));
+  await waitFor(() => expect(screen.getByTestId(`project-row-${PROJECT_ID}`)).toBeTruthy());
+  fireEvent.click(screen.getByTestId(`project-select-button-${PROJECT_ID}`));
+  mockCatalog();
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId(`catalog-entry-${MODEL_A}`)).toBeTruthy());
+  fireEvent.click(screen.getByTestId(`probe-button-${MODEL_A}`));
+  await waitFor(() => expect(screen.getByTestId(`confirm-probe-${MODEL_A}`)).toBeTruthy());
+  expect(screen.getByTestId(`confirm-probe-button-${MODEL_A}`).textContent).toBe("تشغيل الفحص");
+  expect(screen.getByTestId(`cancel-probe-button-${MODEL_A}`).textContent).toBe("إلغاء");
+});
+
+test("UX05 round 2: locale='ar' translates the component's own static UI copy (buttons/labels/filters), not just the confirm dialog", async () => {
+  render(
+    createElement(ModelCatalogUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      connectionId: CONNECTION_ID,
+      locale: "ar",
+    }),
+  );
+  expect(screen.getByTestId("load-projects-button").textContent).toBe("تحميل المشاريع");
+  expect(screen.getByTestId("no-project-selected").textContent).toBe("لم يتم تحديد مشروع بعد.");
+  expect((screen.getByTestId("load-catalog-button") as HTMLButtonElement).textContent).toBe(
+    "تحميل الكتالوج",
+  );
+});
+
+test("UX05 round 2: a raw backend error detail is treated as data (wrapped, no claimed lang), never mistranslated", async () => {
+  render(
+    createElement(ModelCatalogUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      connectionId: CONNECTION_ID,
+      locale: "ar",
+    }),
+  );
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: false,
+    status: 500,
+    json: async () => ({ detail: "boom" }),
+  });
+  fireEvent.click(screen.getByTestId("load-projects-button"));
+  await waitFor(() => expect(screen.getByTestId("projects-error")).toBeTruthy());
+  const errorParagraph = screen.getByTestId("projects-error");
+  // The raw backend string is shown verbatim (never mistranslated) and the paragraph itself no
+  // longer claims a `lang` for text whose language is the backend's choice, not this component's.
+  expect(errorParagraph.textContent).toBe("boom");
+  expect(errorParagraph.getAttribute("lang")).toBeNull();
+});
+
+test("UX05 round 2: opening the confirm dialog moves focus off the disabled-to-be trigger and into the dialog (WAI-ARIA Alert Dialog Pattern)", async () => {
+  await loadAndSelectProject();
+  mockCatalog();
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId(`catalog-entry-${MODEL_A}`)).toBeTruthy());
+
+  const trigger = screen.getByTestId(`probe-button-${MODEL_A}`);
+  trigger.focus();
+  expect(document.activeElement).toBe(trigger);
+
+  fireEvent.click(trigger);
+  await waitFor(() => expect(screen.getByTestId(`confirm-probe-${MODEL_A}`)).toBeTruthy());
+  // queueMicrotask runs before the next awaited assertion resolves.
+  await waitFor(() =>
+    expect(document.activeElement).toBe(screen.getByTestId(`cancel-probe-button-${MODEL_A}`)),
+  );
+  expect(document.activeElement).not.toBe(trigger);
+});
+
+test("UX05 round 2: Cancel returns focus to the trigger button, which is re-enabled by then", async () => {
+  await loadAndSelectProject();
+  mockCatalog();
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId(`catalog-entry-${MODEL_A}`)).toBeTruthy());
+
+  const trigger = screen.getByTestId(`probe-button-${MODEL_A}`) as HTMLButtonElement;
+  fireEvent.click(trigger);
+  await waitFor(() => expect(screen.getByTestId(`confirm-probe-${MODEL_A}`)).toBeTruthy());
+
+  fireEvent.click(screen.getByTestId(`cancel-probe-button-${MODEL_A}`));
+  expect(screen.queryByTestId(`confirm-probe-${MODEL_A}`)).toBeNull();
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
+  expect(trigger.disabled).toBe(false);
+});
+
+test("UX05 round 2: Escape inside the dialog cancels and returns focus to the trigger, same as the Cancel button", async () => {
+  await loadAndSelectProject();
+  mockCatalog();
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId(`catalog-entry-${MODEL_A}`)).toBeTruthy());
+
+  const trigger = screen.getByTestId(`probe-button-${MODEL_A}`) as HTMLButtonElement;
+  fireEvent.click(trigger);
+  const dialog = await screen.findByTestId(`confirm-probe-${MODEL_A}`);
+  fireEvent.keyDown(dialog, { key: "Escape" });
+  expect(screen.queryByTestId(`confirm-probe-${MODEL_A}`)).toBeNull();
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
+});
+
+test("UX05 round 2: the dialog's aria-labelledby points at a real, visible title using the previously-dead runProbeConfirmTitle phrase", async () => {
+  await loadAndSelectProject();
+  mockCatalog();
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId(`catalog-entry-${MODEL_A}`)).toBeTruthy());
+  fireEvent.click(screen.getByTestId(`probe-button-${MODEL_A}`));
+  const dialog = await screen.findByTestId(`confirm-probe-${MODEL_A}`);
+  const labelledBy = dialog.getAttribute("aria-labelledby");
+  expect(labelledBy).toBe(`confirm-probe-title-${MODEL_A}`);
+  const title = document.getElementById(labelledBy!);
+  expect(title).toBeTruthy();
+  expect(title!.tagName).toBe("H2");
+  expect(title!.textContent).toBe("Run a real probe?");
+});

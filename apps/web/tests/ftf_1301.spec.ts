@@ -333,3 +333,128 @@ test("UX05: locale='ar' sets lang/dir on the panel", async () => {
   expect(screen.getByTestId("cost-profile-panel").getAttribute("dir")).toBe("rtl");
   expect(screen.getByTestId("cost-profile-panel").getAttribute("lang")).toBe("ar");
 });
+
+// ---- round 2 (L2 return): pin the 2 previously-unpinned behaviors, full bilingual pass ----
+
+test("UX05 round 2: cost-profile-submit-button's aria-busy reflects saving while the create request is in flight", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ results: [], current_cheapest_certified: null }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+  fireEvent.change(screen.getByTestId("cost-profile-label-input"), { target: { value: "x" } });
+  fireEvent.change(screen.getByTestId("cost-profile-rate-amount-input"), {
+    target: { value: "1" },
+  });
+  fireEvent.change(screen.getByTestId("cost-profile-source-input"), { target: { value: "x" } });
+
+  const submitButton = screen.getByTestId("cost-profile-submit-button") as HTMLButtonElement;
+  expect(submitButton.getAttribute("aria-busy")).toBe("false");
+  let resolveCreate: (value: unknown) => void = () => {};
+  fetchMock.mockImplementationOnce(() => new Promise((resolve) => (resolveCreate = resolve)));
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ results: [], current_cheapest_certified: null }),
+  });
+  fireEvent.click(submitButton);
+  await waitFor(() => expect(submitButton.getAttribute("aria-busy")).toBe("true"));
+  resolveCreate({ ok: true, json: async () => baseRecord() });
+  await waitFor(() => expect(submitButton.getAttribute("aria-busy")).toBe("false"));
+});
+
+test("UX05 round 2: cost-profile-loading carries role=status and aria-live=polite while the search is loading", async () => {
+  let resolveSearch: (value: unknown) => void = () => {};
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockImplementationOnce(() => new Promise((resolve) => (resolveSearch = resolve)));
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  const loadingParagraph = await screen.findByTestId("cost-profile-loading");
+  expect(loadingParagraph.getAttribute("role")).toBe("status");
+  expect(loadingParagraph.getAttribute("aria-live")).toBe("polite");
+  resolveSearch({
+    ok: true,
+    json: async () => ({ results: [], current_cheapest_certified: null }),
+  });
+  await waitFor(() => expect(screen.queryByTestId("cost-profile-loading")).toBeNull());
+});
+
+test("UX05 round 2: locale='ar' translates every form label, select option and search-panel string", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({
+      results: [
+        searchResult({ id: "r-expired", disqualified_reason: "expired" }),
+        searchResult({
+          id: "r-certified",
+          verified_at: "2026-09-10T00:00:00+00:00",
+          certifiable_cheapest: true,
+          disqualified_reason: null,
+        }),
+      ],
+      current_cheapest_certified: baseRecord({ id: "r-certified" }),
+    }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+  expect(document.querySelector('label[for="cost-profile-type"]')?.textContent).toBe("النوع");
+  expect(document.querySelector('label[for="cost-profile-label"]')?.textContent).toBe("التسمية");
+  expect(document.querySelector('label[for="cost-profile-rate-unit"]')?.textContent).toBe(
+    "وحدة السعر",
+  );
+  expect(document.querySelector('label[for="cost-profile-currency"]')?.textContent).toBe("العملة");
+  expect(document.querySelector('label[for="cost-profile-source"]')?.textContent).toBe("المصدر");
+  expect(screen.getByTestId("cost-profile-submit-button").textContent).toBe("تسجيل السعر");
+  expect(screen.getByText("بحث التكلفة لكل نجاح")).toBeTruthy();
+  await waitFor(() =>
+    expect(screen.getByTestId("cost-profile-disqualified-r-expired").textContent).toContain(
+      "منتهي",
+    ),
+  );
+  expect(screen.getByTestId("cost-profile-certified-r-certified").textContent).toBe(
+    "معتمد ومؤهّل للأرخص",
+  );
+  expect(screen.getByTestId("cost-profile-verify-r-expired").textContent).toBe("اعتماد");
+});
+
+test("UX05 round 2: locale='ar' translates the empty-state text, and the empty default locale='en' text is unchanged", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ results: [], current_cheapest_certified: null }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  expect(screen.getByTestId("no-certified-cheapest-rate").textContent).toBe(
+    "لا يوجد أرخص سعر معتمد بعد -- سجّل واعتمد سعرًا لتظهر هنا.",
+  );
+});

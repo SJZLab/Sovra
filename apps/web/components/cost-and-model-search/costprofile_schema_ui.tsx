@@ -39,12 +39,25 @@
  * unchanged. Control plane to decide whether to accept the datalist-only
  * mitigation or route a proper contract change for a closed list. An
  * optional `locale` prop renders the loading/error text's own `lang`/`dir`
- * (finding X4, partial).
+ * (finding X4).
+ *
+ * FTF-UX05 round 2 (2026-10-22, L2 return): round 1 left the error paragraph's `role="alert"` and
+ * `aria-busy` with no test pinning them -- round 2 adds the missing assertions (see
+ * `ftf_1301.spec.ts`, "round 2 pins") and independently re-verified each one RED-then-GREEN. It also
+ * fixes the WCAG 3.1.2 defect the L2 review found: the container's `lang`/`dir` covered large
+ * amounts of hardcoded-English UI copy (every form label, every select option, the search heading,
+ * the loading/empty/certified-eligible text, the disqualification reasons). Every string this
+ * component itself authors now routes through `phrase()` with a real `ar` translation (see
+ * `ui/phrases.ts`'s FTF-1301 block), so `lang="ar"` is now honest for that copy. Values this
+ * component does not author -- the record's own label/rate/currency/source text, a user-typed
+ * value -- are data, not UI copy, and are wrapped in `<bdi>` rather than given a language tag (same
+ * convention `candidate_selection_ui_no_auto_selection.tsx` already established). Default
+ * `locale="en"` rendering is byte-identical to round 1.
  */
 
 import { useEffect, useState } from "react";
 
-import { dirFor, resolveLocale, type Locale } from "../ui/phrases";
+import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
 
 export type ProfileType = "provider" | "local_hardware";
 export type RateUnit =
@@ -135,14 +148,18 @@ export function costPerSuccessSearchUrl(
   );
 }
 
-const DISQUALIFIED_REASON_TEXT: Record<Exclude<DisqualifiedReason, null>, string> = {
-  expired: "Expired -- this rate is no longer current.",
-  unverified: "Unverified -- nobody has independently confirmed this rate yet.",
-  zero_provider_rate_unconfirmed:
-    "A provider price of exactly zero is never treated as certified-free (a $0 token price is not local-compute-free).",
-};
+function disqualifiedReasonText(reason: Exclude<DisqualifiedReason, null>, locale: Locale): string {
+  switch (reason) {
+    case "expired":
+      return phrase("costProfileDisqualifiedExpired", locale);
+    case "unverified":
+      return phrase("costProfileDisqualifiedUnverified", locale);
+    case "zero_provider_rate_unconfirmed":
+      return phrase("costProfileDisqualifiedZeroProviderRate", locale);
+  }
+}
 
-async function readErrorDetail(response: Response): Promise<string> {
+async function readErrorDetail(response: Response, locale: Locale): Promise<string> {
   try {
     const body = await response.json();
     if (body && typeof body.detail === "string") {
@@ -151,7 +168,7 @@ async function readErrorDetail(response: Response): Promise<string> {
   } catch {
     // fall through to the generic message below
   }
-  return `request failed (${response.status})`;
+  return phrase("requestFailedTemplate", locale, { status: response.status });
 }
 
 export function CostProfileSearchPanel({
@@ -181,7 +198,7 @@ export function CostProfileSearchPanel({
         credentials: "include",
       });
       if (!response.ok) {
-        setError(await readErrorDetail(response));
+        setError(await readErrorDetail(response, locale));
         return;
       }
       setSearch(await response.json());
@@ -214,7 +231,7 @@ export function CostProfileSearchPanel({
         }),
       });
       if (!response.ok) {
-        setError(await readErrorDetail(response));
+        setError(await readErrorDetail(response, locale));
         return;
       }
       const created: CostProfileRecord = await response.json();
@@ -235,7 +252,7 @@ export function CostProfileSearchPanel({
       credentials: "include",
     });
     if (!response.ok) {
-      setError(await readErrorDetail(response));
+      setError(await readErrorDetail(response, locale));
       return;
     }
     await refresh();
@@ -244,18 +261,18 @@ export function CostProfileSearchPanel({
   return (
     <div data-testid="cost-profile-panel" lang={resolveLocale(locale)} dir={dirFor(locale)}>
       <form onSubmit={handleCreate} data-testid="cost-profile-create-form">
-        <label htmlFor="cost-profile-type">Type</label>
+        <label htmlFor="cost-profile-type">{phrase("costProfileTypeLabel", locale)}</label>
         <select
           id="cost-profile-type"
           data-testid="cost-profile-type-select"
           value={profileType}
           onChange={(event) => setProfileType(event.target.value as ProfileType)}
         >
-          <option value="provider">Provider</option>
-          <option value="local_hardware">Local hardware</option>
+          <option value="provider">{phrase("costProfileTypeProvider", locale)}</option>
+          <option value="local_hardware">{phrase("costProfileTypeLocalHardware", locale)}</option>
         </select>
 
-        <label htmlFor="cost-profile-label">Label</label>
+        <label htmlFor="cost-profile-label">{phrase("costProfileLabelLabel", locale)}</label>
         <input
           id="cost-profile-label"
           data-testid="cost-profile-label-input"
@@ -264,23 +281,25 @@ export function CostProfileSearchPanel({
           required
         />
 
-        <label htmlFor="cost-profile-rate-unit">Rate unit</label>
+        <label htmlFor="cost-profile-rate-unit">{phrase("costProfileRateUnitLabel", locale)}</label>
         <select
           id="cost-profile-rate-unit"
           data-testid="cost-profile-rate-unit-select"
           value={rateUnit}
           onChange={(event) => setRateUnit(event.target.value as RateUnit)}
         >
-          <option value="per_input_token">Per input token</option>
-          <option value="per_output_token">Per output token</option>
-          <option value="per_gpu_hour">Per GPU hour</option>
-          <option value="per_cpu_hour">Per CPU hour</option>
-          <option value="per_ram_gb_hour">Per RAM GB-hour</option>
-          <option value="per_hour">Per hour</option>
-          <option value="per_request">Per request</option>
+          <option value="per_input_token">{phrase("rateUnitPerInputToken", locale)}</option>
+          <option value="per_output_token">{phrase("rateUnitPerOutputToken", locale)}</option>
+          <option value="per_gpu_hour">{phrase("rateUnitPerGpuHour", locale)}</option>
+          <option value="per_cpu_hour">{phrase("rateUnitPerCpuHour", locale)}</option>
+          <option value="per_ram_gb_hour">{phrase("rateUnitPerRamGbHour", locale)}</option>
+          <option value="per_hour">{phrase("rateUnitPerHour", locale)}</option>
+          <option value="per_request">{phrase("rateUnitPerRequest", locale)}</option>
         </select>
 
-        <label htmlFor="cost-profile-rate-amount">Rate amount</label>
+        <label htmlFor="cost-profile-rate-amount">
+          {phrase("costProfileRateAmountLabel", locale)}
+        </label>
         <input
           id="cost-profile-rate-amount"
           data-testid="cost-profile-rate-amount-input"
@@ -289,7 +308,7 @@ export function CostProfileSearchPanel({
           required
         />
 
-        <label htmlFor="cost-profile-currency">Currency</label>
+        <label htmlFor="cost-profile-currency">{phrase("costProfileCurrencyLabel", locale)}</label>
         <input
           id="cost-profile-currency"
           data-testid="cost-profile-currency-input"
@@ -308,7 +327,7 @@ export function CostProfileSearchPanel({
           ))}
         </datalist>
 
-        <label htmlFor="cost-profile-source">Source</label>
+        <label htmlFor="cost-profile-source">{phrase("costProfileSourceLabel", locale)}</label>
         <input
           id="cost-profile-source"
           data-testid="cost-profile-source-input"
@@ -318,13 +337,8 @@ export function CostProfileSearchPanel({
         />
 
         {error && (
-          <p
-            role="alert"
-            data-testid="cost-profile-form-error"
-            lang={resolveLocale(locale)}
-            dir={dirFor(locale)}
-          >
-            {error}
+          <p role="alert" data-testid="cost-profile-form-error" dir={dirFor(locale)}>
+            <bdi>{error}</bdi>
           </p>
         )}
 
@@ -334,29 +348,30 @@ export function CostProfileSearchPanel({
           disabled={saving}
           aria-busy={saving}
         >
-          Record rate
+          {phrase("costProfileRecordRate", locale)}
         </button>
       </form>
 
       <section data-testid="cost-per-success-search-results">
-        <h2>Cost-per-success search</h2>
+        <h2>{phrase("costPerSuccessSearchHeading", locale)}</h2>
         {loading && (
           <p role="status" aria-live="polite" data-testid="cost-profile-loading">
-            Loading...
+            {phrase("costProfileLoading", locale)}
           </p>
         )}
 
         <div data-testid="current-cheapest-certified">
           {search?.current_cheapest_certified ? (
             <p>
-              Cheapest certified rate: {search.current_cheapest_certified.label} --{" "}
-              {search.current_cheapest_certified.rate_amount}{" "}
-              {search.current_cheapest_certified.currency} /{" "}
-              {search.current_cheapest_certified.rate_unit}
+              {phrase("costProfileCheapestCertifiedPrefix", locale)}{" "}
+              <bdi>{search.current_cheapest_certified.label}</bdi> --{" "}
+              <bdi>{search.current_cheapest_certified.rate_amount}</bdi>{" "}
+              <bdi>{search.current_cheapest_certified.currency}</bdi> /{" "}
+              <bdi>{search.current_cheapest_certified.rate_unit}</bdi>
             </p>
           ) : (
             <p data-testid="no-certified-cheapest-rate">
-              No certified cheapest rate yet -- record and verify a rate to see one here.
+              {phrase("costProfileNoCertifiedCheapestRate", locale)}
             </p>
           )}
         </div>
@@ -365,16 +380,17 @@ export function CostProfileSearchPanel({
           {(search?.results ?? []).map((result) => (
             <li key={result.id} data-testid={`cost-profile-result-${result.id}`}>
               <span>
-                {result.label} -- {result.rate_amount} {result.currency} / {result.rate_unit}
+                <bdi>{result.label}</bdi> -- <bdi>{result.rate_amount}</bdi>{" "}
+                <bdi>{result.currency}</bdi> / <bdi>{result.rate_unit}</bdi>
               </span>
               {result.certifiable_cheapest ? (
                 <span data-testid={`cost-profile-certified-${result.id}`}>
-                  Certified cheapest-eligible
+                  {phrase("costProfileCertifiedCheapestEligible", locale)}
                 </span>
               ) : (
                 <span data-testid={`cost-profile-disqualified-${result.id}`}>
                   {result.disqualified_reason
-                    ? DISQUALIFIED_REASON_TEXT[result.disqualified_reason]
+                    ? disqualifiedReasonText(result.disqualified_reason, locale)
                     : null}
                 </span>
               )}
@@ -384,7 +400,7 @@ export function CostProfileSearchPanel({
                   data-testid={`cost-profile-verify-${result.id}`}
                   onClick={() => handleVerify(result.id)}
                 >
-                  Verify
+                  {phrase("costProfileVerify", locale)}
                 </button>
               )}
             </li>
