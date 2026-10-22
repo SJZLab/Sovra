@@ -712,6 +712,14 @@ def test_sync_membership_refuses_stale_or_revoked_identity(env: Env) -> None:
         raises(ReviewerIdentityRevokedError, env.sync, Role.ML_ENGINEER, scope, ident)
         and not env.server.memberships,
     )
+    check(
+        "a revoked identity is refused on the NARROWING path too, not just entitled sync -- "
+        "the atomic write guard added in round 2 only covers the entitled/add path, so the "
+        "upfront _require_active check is the only thing protecting this one",
+        raises(ReviewerIdentityRevokedError, env.sync, None, scope, ident)
+        and raises(ReviewerIdentityRevokedError, env.sync, Role.VIEWER, scope, ident)
+        and env.requests("DELETE") == 0,
+    )
 
 
 @with_env

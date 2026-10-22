@@ -903,7 +903,7 @@ def section_revoke_sync_race(world: World) -> None:
         time.sleep(0.3)
         real_add(workspace_id, user_id)
 
-    client.add_workspace_user = delayed_add
+    client.add_workspace_user = delayed_add  # type: ignore[method-assign]
 
     def run_sync() -> str:
         try:
@@ -938,7 +938,7 @@ def section_revoke_sync_race(world: World) -> None:
         sync_outcome = sync_future.result(timeout=5.0)
         revoke_future.result(timeout=5.0)
 
-    client.add_workspace_user = real_add
+    client.add_workspace_user = real_add  # type: ignore[method-assign]
 
     check(
         "the racing sync call is refused once the concurrent revoke wins (real Postgres)",
@@ -1016,7 +1016,7 @@ def section_concurrent_double_revoke(world: World) -> None:
             raw.commit()
         real_remove(workspace_id, user_id)
 
-    client.remove_workspace_user = concurrent_revoke_then_remove
+    client.remove_workspace_user = concurrent_revoke_then_remove  # type: ignore[method-assign]
     raised = False
     try:
         revoke_reviewer_identity(
