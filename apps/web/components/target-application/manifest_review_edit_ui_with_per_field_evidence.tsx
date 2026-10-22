@@ -898,7 +898,7 @@ function ManifestReviewEditInner({
           {tt("versionLabel")}: <bdi>{manifest.version}</bdi>
         </p>
         {manifest.manifest_sha256 && (
-          <p data-testid="manifest-sha256">
+          <p data-testid="manifest-sha256" style={{ overflowWrap: "anywhere" }}>
             {tt("hashLabel")}: <bdi dir="ltr">{manifest.manifest_sha256}</bdi>
           </p>
         )}
@@ -1075,7 +1075,11 @@ function ManifestReviewEditInner({
                   <li data-testid={`field-no-evidence-${field}`}>{tt("noEvidence")}</li>
                 )}
                 {rows.map((row) => (
-                  <li key={row.id} data-testid={`evidence-${row.id}`}>
+                  <li
+                    key={row.id}
+                    data-testid={`evidence-${row.id}`}
+                    style={{ overflowWrap: "anywhere" }}
+                  >
                     <span data-testid={`evidence-type-${row.id}`}>
                       {evidenceTypeLabel(row.evidence_type, locale)}
                     </span>{" "}
