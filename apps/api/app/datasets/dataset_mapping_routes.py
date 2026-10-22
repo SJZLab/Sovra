@@ -269,7 +269,7 @@ def _parse_limit(request: Request) -> int:
     raw = request.query_params.get("limit")
     if raw is None:
         return _DEFAULT_LIMIT
-    if not raw.isascii() or not raw.isdecimal():
+    if not raw.isascii() or not raw.isdecimal() or len(raw) > 3:
         raise HTTPException(status_code=400, detail="invalid_limit")
     limit = int(raw)
     if not 1 <= limit <= _MAX_LIMIT:
@@ -731,7 +731,11 @@ def build_dataset_mapping_router(
                         dataset_id=dataset_id,
                         role=ctx.role.value,
                     )
-                    body = _serialize_mapping(row, reveal=reveal, decision=None)
+                    body = _serialize_mapping(
+                        row,
+                        reveal=reveal,
+                        decision=_decision(session, tenant, project_id, row),
+                    )
             except MappingRequestError as exc:
                 # A concurrent identical request may have stored the key first.
                 replay = (

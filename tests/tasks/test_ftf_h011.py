@@ -777,6 +777,9 @@ def part_r_validation() -> None:
             ("limit=201", 400, "invalid_limit"),
             ("limit=-1", 400, "invalid_limit"),
             ("limit=abc", 400, "invalid_limit"),
+            ("limit=" + "9" * 5000, 400, "invalid_limit"),
+            ("limit=0200", 400, "invalid_limit"),
+            ("limit=200", 200, None),
             ("limit=1.5", 400, "invalid_limit"),
             ("limit=%D9%A3", 400, "invalid_limit"),
             ("limit=", 400, "invalid_limit"),
@@ -4074,6 +4077,21 @@ def part_r_errors() -> None:
         w.probe_state = ("completed", None)
 
 
+def part_r_unchanged_decision() -> None:
+    with http_world() as (w, base):
+        conn, ds = seeded(w)
+        status, m1 = propose(base, ds, key="undec-key-00001", who="admin")
+        approve(base, ds, m1, key="undec-key-00002", rationale="fine")
+        status, again = propose(base, ds, key="undec-key-00003", who="admin")
+        check(
+            "R-LIST",
+            f"an unchanged re-proposal of an approved mapping carries its decision (got {status} {again.get('decision')})",
+            status == 200
+            and again["decision"]
+            == {"action": "approve", "rationale": "fine", "decided_by": "admin"},
+        )
+
+
 def part_r_lists_and_limits() -> None:
     with http_world() as (w, base):
         conn, ds = seeded(w)
@@ -4479,6 +4497,7 @@ def main() -> None:
     part_r_not_replayable()
     part_r_errors()
     part_r_lists_and_limits()
+    part_r_unchanged_decision()
     part_u2()
     part_m()
     part_c()
