@@ -127,6 +127,7 @@ from app.services.json_schema_tool_validation import validate_instance
 __all__ = [
     "CODES",
     "MAX_QUEUE_RECORDS",
+    "QUEUE_PURPOSES",
     "SEALED_PURPOSES",
     "DriftFinding",
     "ReviewQueueError",
@@ -142,6 +143,11 @@ MAX_QUEUE_RECORDS = MAX_RECORDS
 # Total rendered conversation text one queue build may hold in memory while it is pushed.
 MAX_QUEUE_TEXT_CHARS = 128 * 1024 * 1024
 SEALED_PURPOSES = frozenset({"held_out_evaluation", "baseline_only"})
+# Review is an allowlist, not a denylist: any purpose that is not one of these three (the two
+# sealed ones, a misspelling, a case variant) is refused as sealed.
+QUEUE_PURPOSES = frozenset({"training", "validation", "candidate_development"})
+# ImportAborted failure code -> queue error code; every other abort is an unreadable source.
+_ABORT_CODES = {"source_changed": "source_changed"}
 _RESOURCE = "review_queue"
 _RESPONSE_RESOURCE = "review_response"
 
@@ -157,6 +163,8 @@ CODES = frozenset(
         "record_too_large_for_review",
         "no_records",
         "source_unreadable",
+        "source_changed",
+        "record_not_renderable",
         "scope_not_found",
         "queue_source_changed",
         "queue_not_found",
@@ -421,12 +429,10 @@ def _read_queue_items(
     total_chars = 0
     try:
         for event in stream:
-            reader.deadline.check()
             if isinstance(event, BlankLine | RowRejection):
                 group_keys.clear()
                 continue
-            if not isinstance(event, AcceptedRecord):
-                raise ReviewQueueError("source_unreadable")
+            assert isinstance(event, AcceptedRecord)  # the importers yield only these three
             key = group_keys.pop() if group_keys else None
             group_keys.clear()
             candidate = event.candidate
@@ -462,16 +468,12 @@ def _read_queue_items(
                     payload=payload,
                 )
             )
-        for _ in reader:  # the importer must have consumed the stream to its end
-            raise ReviewQueueError("source_unreadable")
-    except ImportAborted:
-        raise ReviewQueueError("source_unreadable") from None
+        for _ in reader:  # drain: size and sha256 are verified when the stream ends
+            pass
+    except ImportAborted as exc:
+        raise ReviewQueueError(_ABORT_CODES.get(exc.failure_code, "source_unreadable")) from None
     except ReviewMappingError as exc:
-        if exc.code == "record_too_large_for_review":
-            raise ReviewQueueError("record_too_large_for_review") from None
-        raise ReviewQueueError("source_unreadable") from None
-    if reader.sha256 != source.expected_sha256 or reader.bytes_read != source.expected_size:
-        raise ReviewQueueError("source_unreadable")
+        raise ReviewQueueError(exc.code) from None
     if not items:
         raise ReviewQueueError("no_records")
     return items
@@ -522,7 +524,7 @@ def create_review_queue(
             )
         except DatasetNotFoundError:
             raise ReviewQueueError("dataset_not_found") from None
-        if dataset.purpose in SEALED_PURPOSES:
+        if dataset.purpose not in QUEUE_PURPOSES:
             raise ReviewQueueError("sealed_purpose_refused")
         try:
             upload = get_upload_session(session, context, project_id, dataset.upload_session_id)
@@ -607,6 +609,37 @@ def create_review_queue(
     )
 
 
+def _same_lineage(
+    record: ReviewQueueRecord, *, snapshot: str, lineage: Mapping[str, Any], scope_id: uuid.UUID
+) -> ReviewQueueRecord:
+    """A queue already exists for this dataset: it is the same queue only if every hash that
+    defined it still holds; otherwise the source changed and a new queue needs a decision."""
+    if (
+        record.queue_snapshot_sha256 != snapshot
+        or record.quality_report_sha256 != lineage["quality_report_sha256"]
+        or record.excluded_positions_sha256 != lineage["excluded_positions_sha256"]
+        or record.scope_id != scope_id
+    ):
+        raise ReviewQueueError("queue_source_changed")
+    return record
+
+
+def _existing_queue(
+    session: Session, organization_id: uuid.UUID, project_id: uuid.UUID, dataset_id: uuid.UUID
+) -> ReviewQueueRecord | None:
+    row = execute_tenant_scoped(
+        session,
+        organization_id,
+        text(
+            f"SELECT {_QUEUE_COLUMNS} FROM review_queues "
+            "WHERE organization_id = :org AND project_id = :project "
+            "AND dataset_id = :dataset FOR UPDATE"
+        ),
+        {"org": organization_id, "project": project_id, "dataset": dataset_id},
+    ).first()
+    return None if row is None else _queue_of(organization_id, row)
+
+
 def _insert_queue(
     session_factory: Callable[[], Session],
     *,
@@ -622,107 +655,91 @@ def _insert_queue(
     actor_id: str,
     request_id: str,
 ) -> ReviewQueueRecord:
-    for attempt in range(2):
-        with tenant_scoped_session(session_factory, organization_id) as session:
-            existing = execute_tenant_scoped(
+    with tenant_scoped_session(session_factory, organization_id) as session:
+        existing = _existing_queue(session, organization_id, project_id, dataset_id)
+        if existing is not None:
+            return _same_lineage(existing, snapshot=snapshot, lineage=lineage, scope_id=scope_id)
+        try:
+            row = execute_tenant_scoped(
                 session,
                 organization_id,
                 text(
-                    f"SELECT {_QUEUE_COLUMNS} FROM review_queues "
-                    "WHERE organization_id = :org AND project_id = :project "
-                    "AND dataset_id = :dataset FOR UPDATE"
+                    "INSERT INTO review_queues (organization_id, project_id, dataset_id, "
+                    "dataset_name, dataset_purpose, dataset_version, dataset_sha256, "
+                    "scope_id, argilla_dataset_name, quality_report_id, "
+                    "quality_report_sha256, excluded_positions_sha256, "
+                    "queue_snapshot_sha256, record_count, schema_version, created_by) "
+                    "VALUES (:org, :project, :dataset, :dataset_name, :dataset_purpose, "
+                    ":dataset_version, :dataset_sha256, :scope, :argilla_name, "
+                    ":quality_report_id, :quality_report_sha256, "
+                    ":excluded_positions_sha256, :snapshot, :count, :schema, :actor) "
+                    f"RETURNING {_QUEUE_COLUMNS}"
                 ),
-                {"org": organization_id, "project": project_id, "dataset": dataset_id},
-            ).first()
-            if existing is not None:
-                record = _queue_of(organization_id, existing)
-                if (
-                    record.queue_snapshot_sha256 != snapshot
-                    or record.quality_report_sha256 != lineage["quality_report_sha256"]
-                    or record.excluded_positions_sha256 != lineage["excluded_positions_sha256"]
-                    or record.scope_id != scope_id
-                ):
-                    raise ReviewQueueError("queue_source_changed")
-                return record
-            try:
-                row = execute_tenant_scoped(
-                    session,
-                    organization_id,
-                    text(
-                        "INSERT INTO review_queues (organization_id, project_id, dataset_id, "
-                        "dataset_name, dataset_purpose, dataset_version, dataset_sha256, "
-                        "scope_id, argilla_dataset_name, quality_report_id, "
-                        "quality_report_sha256, excluded_positions_sha256, "
-                        "queue_snapshot_sha256, record_count, schema_version, created_by) "
-                        "VALUES (:org, :project, :dataset, :dataset_name, :dataset_purpose, "
-                        ":dataset_version, :dataset_sha256, :scope, :argilla_name, "
-                        ":quality_report_id, :quality_report_sha256, "
-                        ":excluded_positions_sha256, :snapshot, :count, :schema, :actor) "
-                        f"RETURNING {_QUEUE_COLUMNS}"
-                    ),
+                {
+                    "org": organization_id,
+                    "project": project_id,
+                    "dataset": dataset_id,
+                    "scope": scope_id,
+                    "argilla_name": argilla_name,
+                    "snapshot": snapshot,
+                    "count": len(items),
+                    "schema": SCHEMA_VERSION,
+                    "actor": actor_id,
+                    **lineage,
+                },
+            ).one()
+            record = _queue_of(organization_id, row)
+            execute_tenant_scoped(
+                session,
+                organization_id,
+                text(
+                    "INSERT INTO review_items (organization_id, queue_id, record_id, "
+                    "batch_position, group_id, record_sha256, fields_sha256) "
+                    "VALUES (:org, :queue, :record_id, :position, :group_id, "
+                    ":record_sha256, :fields_sha256)"
+                ),
+                [  # type: ignore[arg-type]  # executemany rows: Session.execute takes a list
                     {
                         "org": organization_id,
-                        "project": project_id,
-                        "dataset": dataset_id,
-                        "scope": scope_id,
-                        "argilla_name": argilla_name,
-                        "snapshot": snapshot,
-                        "count": len(items),
-                        "schema": SCHEMA_VERSION,
-                        "actor": actor_id,
-                        **lineage,
-                    },
-                ).first()
-                assert row is not None
-                record = _queue_of(organization_id, row)
-                execute_tenant_scoped(
-                    session,
-                    organization_id,
-                    text(
-                        "INSERT INTO review_items (organization_id, queue_id, record_id, "
-                        "batch_position, group_id, record_sha256, fields_sha256) "
-                        "VALUES (:org, :queue, :record_id, :position, :group_id, "
-                        ":record_sha256, :fields_sha256)"
-                    ),
-                    [  # type: ignore[arg-type]  # executemany rows: Session.execute takes a list
-                        {
-                            "org": organization_id,
-                            "queue": record.id,
-                            "record_id": item.record_id,
-                            "position": item.batch_position,
-                            "group_id": item.group_id,
-                            "record_sha256": item.record_sha256,
-                            "fields_sha256": item.fields_sha256,
-                        }
-                        for item in items
-                    ],
-                )
-                write_audit_event(
-                    session,
-                    organization_id=organization_id,
-                    actor_type=actor_type,
-                    actor_id=actor_id,
-                    action="review_queue.created",
-                    resource_type=_RESOURCE,
-                    resource_id=str(record.id),
-                    request_id=request_id,
-                    details={
-                        "project_id": str(project_id),
-                        "dataset_id": str(dataset_id),
-                        "record_count": len(items),
-                        "queue_snapshot_sha256": snapshot,
-                    },
-                )
-                session.flush()
-            except IntegrityError:
-                # A concurrent creator won the unique (org, project, dataset) race: re-read.
-                session.rollback()
-                set_tenant_context(session, organization_id)
-                if attempt == 0:
-                    continue
+                        "queue": record.id,
+                        "record_id": item.record_id,
+                        "position": item.batch_position,
+                        "group_id": item.group_id,
+                        "record_sha256": item.record_sha256,
+                        "fields_sha256": item.fields_sha256,
+                    }
+                    for item in items
+                ],
+            )
+            write_audit_event(
+                session,
+                organization_id=organization_id,
+                actor_type=actor_type,
+                actor_id=actor_id,
+                action="review_queue.created",
+                resource_type=_RESOURCE,
+                resource_id=str(record.id),
+                request_id=request_id,
+                details={
+                    "project_id": str(project_id),
+                    "dataset_id": str(dataset_id),
+                    "record_count": len(items),
+                    "queue_snapshot_sha256": snapshot,
+                },
+            )
+            session.flush()
+        except IntegrityError:
+            # A concurrent creator won the unique (org, project, dataset) race: take its queue.
+            session.rollback()
+            set_tenant_context(session, organization_id)
+            winner = _existing_queue(session, organization_id, project_id, dataset_id)
+            if winner is None:
                 raise
-            return record
-    raise AssertionError("unreachable")  # pragma: no cover
+            return _same_lineage(winner, snapshot=snapshot, lineage=lineage, scope_id=scope_id)
+        return record
+
+
+_PUSH_ATTEMPTS = 3
 
 
 def _push_queue(
@@ -734,22 +751,29 @@ def _push_queue(
     items: list[_QueueItem],
     owner_api: ArgillaReviewApi,
 ) -> ReviewQueueRecord:
+    by_id = {item.record_id: item for item in items}
+    wanted = by_id.keys()
+    ids: dict[str | None, str] = {}
     try:
         dataset = owner_api.ensure_dataset(workspace_id, queue.argilla_dataset_name)
-        existing = {record.external_id: record for record in owner_api.list_records(dataset.id)}
-        wanted = {item.record_id for item in items}
-        if any(external_id not in wanted for external_id in existing):
-            # Records the Factory never queued: refuse to adopt the dataset.
-            raise ReviewQueueError("argilla_rejected")
-        missing = [item for item in items if item.record_id not in existing]
-        created = owner_api.create_records(dataset.id, [item.payload for item in missing])
-    except ArgillaConflictError:
-        # A concurrent push created the same external ids first; the replay re-lists.
-        raise ReviewQueueError("argilla_unavailable") from None
+        for attempt in range(_PUSH_ATTEMPTS):
+            existing = {r.external_id: r for r in owner_api.list_records(dataset.id)}
+            if existing.keys() - wanted:
+                # Records the Factory never queued: refuse to adopt the dataset.
+                raise ReviewQueueError("argilla_rejected")
+            missing = [by_id[record_id] for record_id in sorted(by_id.keys() - existing.keys())]
+            try:
+                created = owner_api.create_records(dataset.id, [i.payload for i in missing])
+            except ArgillaConflictError:
+                # A concurrent push created some of them first: list again.
+                if attempt + 1 == _PUSH_ATTEMPTS:
+                    raise ReviewQueueError("argilla_unavailable") from None
+                continue
+            ids = {record.external_id: record.id for record in existing.values()}
+            ids.update({record.external_id: record.id for record in created})
+            break
     except ArgillaClientError as exc:
         raise _argilla_error(exc) from None
-    ids = {record.external_id: record.id for record in existing.values()}
-    ids.update({record.external_id: record.id for record in created})
     with tenant_scoped_session(session_factory, organization_id) as session:
         if queue.argilla_dataset_id is None:
             execute_tenant_scoped(
@@ -774,27 +798,20 @@ def _push_queue(
                 for item in items
             ],
         )
-        unlinked = execute_tenant_scoped(
-            session,
-            organization_id,
-            text(
-                "SELECT count(*) FROM review_items WHERE queue_id = :queue "
-                "AND argilla_record_id IS NULL"
-            ),
-            {"queue": queue.id},
-        ).scalar_one()
-        if unlinked:
-            raise ReviewQueueError("argilla_rejected")
+        # `ready` only when no item of the queue is left unlinked (the guard is in the statement).
         row = execute_tenant_scoped(
             session,
             organization_id,
             text(
                 "UPDATE review_queues SET status = 'ready', updated_at = now() "
-                f"WHERE id = :id AND status IN ('building', 'ready') RETURNING {_QUEUE_COLUMNS}"
+                "WHERE id = :id AND NOT EXISTS (SELECT 1 FROM review_items "
+                "WHERE queue_id = :id AND argilla_record_id IS NULL) "
+                f"RETURNING {_QUEUE_COLUMNS}"
             ),
             {"id": queue.id},
         ).first()
-        assert row is not None
+        if row is None:
+            raise ReviewQueueError("argilla_rejected")
         return _queue_of(organization_id, row)
 
 
@@ -905,11 +922,9 @@ def submit_review_response(
                 "WHERE queue_id = :queue AND record_id = :record_id FOR UPDATE"
             ),
             {"queue": queue_id, "record_id": record_id},
-        ).first()
-        if item is None:
-            raise ReviewQueueError("review_item_not_found")
+        ).one()  # existence was proven above; items are never deleted
         item_id, argilla_record_id, item_status = item
-        if item_status == "drift":
+        if item_status != "pending":
             raise ReviewQueueError("review_item_drift")
         if argilla_record_id is None:
             raise ReviewQueueError("queue_not_ready")
@@ -1040,7 +1055,7 @@ def _write_argilla_response(
     stored = _response_by(owner_api.get_record(argilla_record_id), argilla_user_id)
     if (
         stored is None
-        or stored.status != "submitted"
+        or not stored.submitted
         or stored.decision != decision
         or (stored.rationale or "") != rationale
     ):
@@ -1066,13 +1081,13 @@ def _drift_reason(
     `mapped_users` maps Argilla user id -> identity id text."""
     if record is None:
         return "record_missing"
-    metadata = record.metadata
-    if (
-        metadata.get("record_id") != item["record_id"]
-        or metadata.get("group_id") != item["group_id"]
-        or metadata.get("record_sha256") != item["record_sha256"]
-        or metadata.get("schema_version") != SCHEMA_VERSION
-    ):
+    expected_metadata = {
+        "record_id": item["record_id"],
+        "group_id": item["group_id"],
+        "record_sha256": item["record_sha256"],
+        "schema_version": SCHEMA_VERSION,
+    }
+    if dict(record.metadata) != expected_metadata:
         return "record_metadata_changed"
     rendered = record.fields.get(FIELD_NAME)
     if not isinstance(rendered, str) or fields_sha256(rendered) != item["fields_sha256"]:
@@ -1087,7 +1102,7 @@ def _drift_reason(
             return "response_untracked"
         seen.add(identity)
         if (
-            response.status != "submitted"
+            not response.submitted
             or response.decision is None
             or response.id != row["argilla_response_id"]
             or response_sha256(
@@ -1196,9 +1211,8 @@ def reconcile_review_queue(
                 new_drift.append({"id": item["id"], "reason": reason})
                 findings.append(DriftFinding(item["id"], item["record_id"], reason))
         known = {item["record_id"] for item in items}
-        for external_id in by_external:
-            if external_id not in known:
-                findings.append(DriftFinding(None, external_id, "foreign_record"))
+        for external_id in sorted(by_external.keys() - known, key=lambda e: e or ""):
+            findings.append(DriftFinding(None, external_id, "foreign_record"))
         if new_drift:
             execute_tenant_scoped(
                 session,

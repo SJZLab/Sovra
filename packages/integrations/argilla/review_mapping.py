@@ -92,8 +92,10 @@ _GUIDELINES = (
     "Decide whether this conversation is acceptable training data. "
     "Choose accept or reject and, if you wish, give a short rationale."
 )
-_DATASET_STATUSES = frozenset({"draft", "ready"})
-_RESPONSE_STATUSES = frozenset({"submitted", "discarded", "draft"})
+# Server status -> "is it in its final form" (a published dataset / a submitted response).
+# Looked up, never compared, so a case or whitespace variant is simply unknown.
+_DATASET_PUBLISHED = {"draft": False, "ready": True}
+_RESPONSE_SUBMITTED = {"submitted": True, "discarded": False, "draft": False}
 
 
 class ReviewMappingError(ValueError):
@@ -108,14 +110,14 @@ class ReviewMappingError(ValueError):
 class ArgillaReviewDataset:
     id: str
     name: str
-    status: str
+    published: bool
 
 
 @dataclass(frozen=True)
 class ArgillaReviewResponse:
     id: str
     user_id: str
-    status: str
+    submitted: bool
     decision: str | None
     rationale: str | None
 
@@ -278,10 +280,11 @@ def _dataset_of(payload: object) -> ArgillaReviewDataset:
         raise ArgillaRejectedError("Argilla returned a malformed dataset")
     name = payload.get("name")
     status = payload.get("status")
-    if not isinstance(name, str) or not isinstance(status, str) or status not in _DATASET_STATUSES:
+    published = _DATASET_PUBLISHED.get(status) if isinstance(status, str) else None
+    if not isinstance(name, str) or published is None:
         raise ArgillaRejectedError("Argilla returned a malformed dataset")
     return ArgillaReviewDataset(
-        id=_require_uuid(payload.get("id"), "dataset id"), name=name, status=status
+        id=_require_uuid(payload.get("id"), "dataset id"), name=name, published=published
     )
 
 
@@ -289,7 +292,8 @@ def _response_of(payload: object) -> ArgillaReviewResponse:
     if not isinstance(payload, dict):
         raise ArgillaRejectedError("Argilla returned a malformed response")
     status = payload.get("status")
-    if not isinstance(status, str) or status not in _RESPONSE_STATUSES:
+    submitted = _RESPONSE_SUBMITTED.get(status) if isinstance(status, str) else None
+    if submitted is None:
         raise ArgillaRejectedError("Argilla returned a malformed response")
     values = payload.get("values")
     decision: str | None = None
@@ -302,7 +306,7 @@ def _response_of(payload: object) -> ArgillaReviewResponse:
     return ArgillaReviewResponse(
         id=_require_uuid(payload.get("id"), "response id"),
         user_id=_require_uuid(payload.get("user_id"), "response user_id"),
-        status=status,
+        submitted=submitted,
         decision=decision,
         rationale=rationale,
     )
@@ -387,7 +391,7 @@ class ArgillaReviewApi:
                     raise ArgillaRejectedError(
                         "dataset create conflicted but no matching dataset was found on re-list"
                     ) from None
-        if dataset.status == "draft":
+        if not dataset.published:
             self._ensure_settings(dataset.id)
             published = self._transport.call("PUT", f"/datasets/{dataset.id}/publish")
             dataset = _dataset_of(published)
@@ -425,7 +429,7 @@ class ArgillaReviewApi:
             raise ArgillaRejectedError("Argilla dataset questions differ from the Factory's schema")
 
     def _ensure_settings(self, dataset_id: str) -> None:
-        if FIELD_NAME not in self._field_names(dataset_id):
+        if not self._field_names(dataset_id):
             self._create_ignoring_conflict(f"/datasets/{dataset_id}/fields", _field_body())
         have = set(self._question_names(dataset_id))
         for body in _question_bodies():
