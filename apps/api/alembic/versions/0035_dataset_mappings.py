@@ -28,8 +28,8 @@ whose purpose the database itself pins. One table, ENABLE + FORCE row-level secu
 
 Nothing here stores preview content: the mapping document, hashes and counts only.
 
-Revision ID: 0034_dataset_mappings
-Revises: 0033_upload_declared_encoding
+Revision ID: 0035_dataset_mappings
+Revises: 0034_argilla_review_identity
 Create Date: 2026-10-21
 """
 
@@ -40,8 +40,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "0034_dataset_mappings"
-down_revision = "0033_upload_declared_encoding"
+revision = "0035_dataset_mappings"
+down_revision = "0034_argilla_review_identity"
 branch_labels = None
 depends_on = None
 

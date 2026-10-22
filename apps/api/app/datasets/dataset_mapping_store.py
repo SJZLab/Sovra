@@ -3,7 +3,7 @@ Section 7, Section 7A.10, Section 8-8.2, Section 9, Section 67.1-67.4, Section 6
 
 FTF-H011-P1 previews a MappingSpec against a real dataset. This module persists the result as a
 versioned, approvable record and is the input of a later import run. The table, constraints, grants
-and triggers are in `0034_dataset_mappings.py`; the mapping grammar is the certified FTF-0502-P1
+and triggers are in `0035_dataset_mappings.py`; the mapping grammar is the certified FTF-0502-P1
 `mapping_from_object` (no new mapping language here) and the preview is FTF-H011-P1
 `preview_dataset_mapping` (the only reader of the dataset bytes).
 

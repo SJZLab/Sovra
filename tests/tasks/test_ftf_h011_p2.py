@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # mypy: disable-error-code="arg-type,call-arg,list-item,unused-ignore,func-returns-value,attr-defined,misc,assignment,index,var-annotated,union-attr,operator,return-value,no-any-return"
 # ruff: noqa: E501
-"""FTF-H011-P2 -- dataset mapping persistence: pure helpers, migration 0034 and the store.
+"""FTF-H011-P2 -- dataset mapping persistence: pure helpers, migration 0035 and the store.
 
 Runnable without a database or network (the live Postgres evidence is
 `tests/integration/test_ftf_h011_p2_dataset_mappings.py`, run by CI's
@@ -9,7 +9,7 @@ Runnable without a database or network (the live Postgres evidence is
 
 P  pure helpers of `dataset_mapping_store`: the canonical digests (golden values), the importer a
    verified content type selects, the propose-time critical checks, the ignored-message-key reader.
-M  migration `0034_dataset_mappings.py`: chained onto 0033 as the single head, ENABLE + FORCE RLS and
+M  migration `0035_dataset_mappings.py`: chained onto 0034 as the single head, ENABLE + FORCE RLS and
    a non-allow-all `tenant_isolation` policy, no DELETE grant, the exact column-limited UPDATE, the
    CHECK / foreign-key / trigger names the contract names -- each shown able to fail by editing the
    file on disk.
@@ -434,10 +434,10 @@ def part_ignored_keys() -> None:
 
 
 # ======================================================================================
-# M -- migration 0034
+# M -- migration 0035
 # ======================================================================================
 
-MIGRATION_PATH = ROOT / "apps" / "api" / "alembic" / "versions" / "0034_dataset_mappings.py"
+MIGRATION_PATH = ROOT / "apps" / "api" / "alembic" / "versions" / "0035_dataset_mappings.py"
 EXPECTED_UPDATABLE = {
     "status",
     "approved_purpose",
@@ -477,9 +477,9 @@ def migration_findings(src: str) -> list[str]:
         if not ok:
             broken.append(label)
 
-    need("revision id", 'revision = "0034_dataset_mappings"' in src)
-    need("chained onto 0033", 'down_revision = "0033_upload_declared_encoding"' in src)
-    need("revision id fits alembic_version (<=32)", len("0034_dataset_mappings") <= 32)
+    need("revision id", 'revision = "0035_dataset_mappings"' in src)
+    need("chained onto 0034", 'down_revision = "0034_argilla_review_identity"' in src)
+    need("revision id fits alembic_version (<=32)", len("0035_dataset_mappings") <= 32)
     need("ENABLE rls", '"ALTER TABLE dataset_mappings ENABLE ROW LEVEL SECURITY"' in src)
     need("FORCE rls", '"ALTER TABLE dataset_mappings FORCE ROW LEVEL SECURITY"' in src)
     need("policy name", "CREATE POLICY tenant_isolation ON dataset_mappings FOR ALL" in src)
@@ -748,8 +748,8 @@ def part_m() -> None:
             "op.create_table(\n        TABLE_NAME,",
         ),
         "wrong parent revision": (
+            'down_revision = "0034_argilla_review_identity"',
             'down_revision = "0033_upload_declared_encoding"',
-            'down_revision = "0032_split_manifest_requests"',
         ),
         "empty grant snapshot allowed": ("cardinality(allowed_purposes_snapshot) >= 1", "true"),
     }
@@ -781,7 +781,7 @@ def offline_sql(action: str, revision_range: str) -> str:
 
 
 def part_m_sql() -> None:
-    up = offline_sql("upgrade", "0033_upload_declared_encoding:0034_dataset_mappings")
+    up = offline_sql("upgrade", "0034_argilla_review_identity:0035_dataset_mappings")
     for needle in (
         "CREATE TABLE dataset_mappings",
         "ALTER TABLE dataset_mappings ENABLE ROW LEVEL SECURITY",
@@ -792,7 +792,7 @@ def part_m_sql() -> None:
         "CREATE TRIGGER tr_dataset_mappings_insert_guard BEFORE INSERT ON dataset_mappings",
         "CREATE TRIGGER tr_dataset_mappings_update_guard BEFORE UPDATE ON dataset_mappings",
         "CREATE FUNCTION dataset_mapping_counts_content_free",
-        "UPDATE alembic_version SET version_num='0034_dataset_mappings'",
+        "UPDATE alembic_version SET version_num='0035_dataset_mappings'",
     ):
         check("LAW18-MIGRATION", f"the upgrade SQL contains: {needle[:90]}", needle in up)
     for column in [
@@ -840,14 +840,14 @@ def part_m_sql() -> None:
         check(
             "LAW18-MIGRATION", f"the upgrade SQL never contains: {forbidden}", forbidden not in up
         )
-    down = offline_sql("downgrade", "0034_dataset_mappings:0033_upload_declared_encoding")
+    down = offline_sql("downgrade", "0035_dataset_mappings:0034_argilla_review_identity")
     for needle in (
         "DROP TRIGGER IF EXISTS tr_dataset_mappings_update_guard ON dataset_mappings",
         "DROP FUNCTION IF EXISTS dataset_mappings_update_guard()",
         "DROP POLICY IF EXISTS tenant_isolation ON dataset_mappings",
         "DROP TABLE dataset_mappings",
         "DROP FUNCTION IF EXISTS dataset_mapping_counts_content_free(jsonb)",
-        "UPDATE alembic_version SET version_num='0033_upload_declared_encoding'",
+        "UPDATE alembic_version SET version_num='0034_argilla_review_identity'",
     ):
         check("LAW18-MIGRATION", f"the downgrade SQL contains: {needle[:90]}", needle in down)
     heads = subprocess.run(
@@ -859,8 +859,8 @@ def part_m_sql() -> None:
     )
     check(
         "LAW18-MIGRATION",
-        f"exactly one head, 0034: {heads.stdout!r}",
-        heads.stdout.count("(head)") == 1 and "0034_dataset_mappings" in heads.stdout,
+        f"exactly one head, 0035: {heads.stdout!r}",
+        heads.stdout.count("(head)") == 1 and "0035_dataset_mappings" in heads.stdout,
     )
 
 

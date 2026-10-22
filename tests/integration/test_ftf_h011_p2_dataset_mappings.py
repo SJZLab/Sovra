@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ruff: noqa: E501
 # mypy: disable-error-code="misc,arg-type,attr-defined,assignment,call-arg,index,union-attr,var-annotated"
-"""FTF-H011-P2 -- real Postgres proof for dataset mapping persistence (migration 0034).
+"""FTF-H011-P2 -- real Postgres proof for dataset mapping persistence (migration 0035).
 
 Proves against a live PostgreSQL server (never SQLite -- it has no row-level security) every clause
 of the QUEUE.md FTF-H011-P2 contract. The datasets are real `datasets` rows created through the

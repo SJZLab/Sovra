@@ -3642,7 +3642,7 @@ jobs:
         run: uv run python3 tests/integration/test_ftf_h011_p1_mapping_preview_postgres_s3.py
 
   dataset-mapping-store-integration:
-    # FTF-H011-P2: dataset mapping persistence (migration 0034, apps/api/app/datasets/
+    # FTF-H011-P2: dataset mapping persistence (migration 0035, apps/api/app/datasets/
     # dataset_mapping_store.py) over PostgreSQL 16 as the restricted sovra_app role:
     # upgrade/downgrade/upgrade with one head; ENABLE+FORCE RLS and a non-allow-all tenant
     # policy; no DELETE and a column-limited UPDATE; the store over real datasets and the real
