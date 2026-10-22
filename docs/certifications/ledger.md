@@ -12284,3 +12284,21 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   identity, and DoD items (real-Argilla CI, R002 /validate, compose, gate step) missing without approval. Code is UNWIRED
   (proving_symbol blank): nothing reachable from a live route. Governance note: the PR touched ci.yml (additive) under a
   [relay] title. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
+## 2026-10-22T17:35Z — RETURNED: FTF-UX07 (r1)
+- **FTF-UX07: RETURNED** (child slice of the FTF-UX program; round 1 → 2; PR #966, merge
+  b1597be08e1404a3be361524f619606a631f40d9, head 98110f7a). Producer session_013YxyzTt9T2gAhF4H2eASsZ ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 81/81, ci-verdict 119877541833; gate 119849495129 ran vitest and the FTF-0101
+  negative-test proof (step-level; log host 403). Local vitest 2464/2464; FTF-0101 REQUALIFIED (spec unchanged). Real-Chromium
+  probes: axe 0, 0 px overflow to 400 %, visible focus, en/ar. Return: no real-browser UX07 spec (deferred against the
+  ruling); F7/F20/F8/F9 GREEN; §4 evidence absent; blank label renders an unnamed link (severity 2). Faults 11/20 RED.
+  Gates: product_truth 49/49, validate_spec --strict, data_exposure OK. UNWIRED until FTF-H029.
+## 2026-10-22T17:35Z — RETURNED: FTF-UX05 (r1)
+- **FTF-UX05: RETURNED** (child slice of the FTF-UX program; round 1 → 2; PR #962, merge
+  10ef83511feeaf179253f963b8da6490bb7d241b, head f40fa2b3). Producer session_013MQz6mrcx4MQbctyaWFF73 ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 81/81, ci-verdict 119894071816; gate 119877854432 ran vitest (step-level) and the
+  parent task scripts ("FTF-0214 tests: all checks passed", 0308-P1, 0309-P1). Local vitest 2464/2464; parents FTF-0214/0308/
+  0309/1301 REQUALIFIED; FTF-UX01 REQUALIFIED (phrases.ts additive). 208 real-Chromium probe pages. Return (severity 3):
+  UX01 components unused (target-size fails), 1301 errors silent and a `{}` 200 shown as a real empty result (Law 17),
+  malformed items unmount the component, overflow up to 1495 px, 0308 confirm focus lost, missing empty/loading states,
+  English residue under ar, 7 GREEN faults, no browser harness in CI. Faults 26/33 RED. Gates: product_truth 49/49,
+  validate_spec --strict, data_exposure OK. UNWIRED until FTF-H029.
