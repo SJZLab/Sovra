@@ -42,6 +42,7 @@ class FakeArgillaServer:
         self.memberships: set[tuple[str, str]] = set()  # (workspace_id, user_id)
         self.healthy = True
         self.requests: list[tuple[str, str]] = []
+        self._lock = threading.Lock()  # real server state is mutated by many request threads.
         server = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -105,44 +106,47 @@ class FakeArgillaServer:
                 body = self._body()
                 if self.path == f"{_API}/workspaces":
                     name = body.get("name")
-                    if name in server.workspaces:
-                        self._detail(409, "workspace already exists")
-                        return
-                    workspace = {"id": str(uuid.uuid4()), "name": name}
-                    server.workspaces[name] = workspace
+                    with server._lock:
+                        if name in server.workspaces:
+                            self._detail(409, "workspace already exists")
+                            return
+                        workspace = {"id": str(uuid.uuid4()), "name": name}
+                        server.workspaces[name] = workspace
                     self._reply(201, workspace)
                     return
                 if self.path == f"{_API}/users":
                     username = body.get("username")
-                    if any(u["username"] == username for u in server.users.values()):
-                        self._detail(409, "username already exists")
-                        return
                     if body.get("role") != "annotator":
                         self._detail(422, "only the annotator role may be created")
                         return
-                    user_id = str(uuid.uuid4())
-                    user = {
-                        "id": user_id,
-                        "username": username,
-                        "role": body.get("role"),
-                        "api_key": f"argilla-fake-key-{uuid.uuid4().hex}",
-                    }
-                    server.users[user_id] = user
+                    with server._lock:
+                        if any(u["username"] == username for u in server.users.values()):
+                            self._detail(409, "username already exists")
+                            return
+                        user_id = str(uuid.uuid4())
+                        user = {
+                            "id": user_id,
+                            "username": username,
+                            "role": body.get("role"),
+                            "api_key": f"argilla-fake-key-{uuid.uuid4().hex}",
+                        }
+                        server.users[user_id] = user
                     self._reply(201, user)
                     return
                 if self.path.startswith(f"{_API}/workspaces/") and self.path.endswith("/users"):
                     workspace_id = self.path.split("/")[-2]
                     user_id = body.get("user_id")
-                    if not any(w["id"] == workspace_id for w in server.workspaces.values()):
-                        self._detail(404, "workspace not found")
-                        return
-                    if user_id not in server.users:
-                        self._detail(404, "user not found")
-                        return
-                    if (workspace_id, user_id) in server.memberships:
-                        self._detail(409, "user is already a member of this workspace")
-                        return
-                    server.memberships.add((workspace_id, user_id))
+                    with server._lock:
+                        if not any(w["id"] == workspace_id for w in server.workspaces.values()):
+                            self._detail(404, "workspace not found")
+                            return
+                        if user_id not in server.users:
+                            self._detail(404, "user not found")
+                            return
+                        if (workspace_id, user_id) in server.memberships:
+                            self._detail(409, "user is already a member of this workspace")
+                            return
+                        server.memberships.add((workspace_id, user_id))
                     self._reply(201, {"id": str(uuid.uuid4())})
                     return
                 self._detail(404, "not found")
@@ -156,18 +160,20 @@ class FakeArgillaServer:
                 # ['', 'api', 'v1', 'workspaces', '{wid}', 'users', '{uid}']
                 if len(parts) == 7 and parts[3] == "workspaces" and parts[5] == "users":
                     workspace_id, user_id = parts[4], parts[6]
-                    if (workspace_id, user_id) not in server.memberships:
-                        self._detail(404, "not a member")
-                        return
-                    server.memberships.discard((workspace_id, user_id))
+                    with server._lock:
+                        if (workspace_id, user_id) not in server.memberships:
+                            self._detail(404, "not a member")
+                            return
+                        server.memberships.discard((workspace_id, user_id))
                     self._reply(200, {})
                     return
                 if self.path.startswith(f"{_API}/users/"):
                     user_id = self.path.rsplit("/", 1)[-1]
-                    if user_id not in server.users:
-                        self._detail(404, "user not found")
-                        return
-                    del server.users[user_id]
+                    with server._lock:
+                        if user_id not in server.users:
+                            self._detail(404, "user not found")
+                            return
+                        del server.users[user_id]
                     self._reply(200, {})
                     return
                 self._detail(404, "not found")

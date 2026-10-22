@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -101,6 +102,13 @@ ARGILLA_COMPONENT_KEY = "argilla"
 _OPENBAO_MOUNT = "secret"
 _OPENBAO_PATH_PREFIX = "argilla-reviewers"
 _PASSWORD_BYTES = 32  # secrets.token_urlsafe(32) -> 43 chars, inside ArgillaClient's 8..100 bound.
+# A real Argilla username conflict on create_user can only mean a concurrent caller is
+# provisioning the exact same (organization, issuer, subject) identity -- the username is a
+# deterministic hash of exactly that triple (_username_for), never reused across identities.
+# The race is bounded: the winner commits its own DB row immediately after its own successful
+# create_user call, so a short, bounded poll always converges.
+_CONFLICT_POLL_ATTEMPTS = 20
+_CONFLICT_POLL_DELAY_SECONDS = 0.05
 
 
 class ArgillaIdentityError(Exception):
@@ -293,7 +301,24 @@ def ensure_reviewer_identity(
 
     username = _username_for(organization_id, issuer, subject)
     password = secrets.token_urlsafe(_PASSWORD_BYTES)
-    user = client.create_user(username=username, role="annotator", password=password)
+    try:
+        user = client.create_user(username=username, role="annotator", password=password)
+    except ArgillaConflictError:
+        # A concurrent caller already won the race for this exact identity (the username is
+        # deterministic, so this can only be our own identity's winner) -- poll the database
+        # for the row it is about to commit rather than treating this as a real failure.
+        for attempt in range(_CONFLICT_POLL_ATTEMPTS):
+            with tenant_scoped_session(session_factory, organization_id) as session:
+                existing = _identity_row(session, organization_id, issuer, subject)
+            if existing is not None:
+                return _require_active(existing)
+            if attempt + 1 < _CONFLICT_POLL_ATTEMPTS:
+                time.sleep(_CONFLICT_POLL_DELAY_SECONDS)
+        raise ArgillaIdentityError(
+            f"Argilla rejected username {username!r} as already existing, but no matching "
+            f"identity row ever appeared for (organization, issuer, subject) after "
+            f"{_CONFLICT_POLL_ATTEMPTS} attempts"
+        ) from None
     del password  # never keep the plaintext password alive past the create call.
     credential_secret_ref = store_secret_ref(
         config=openbao_config,

@@ -51,6 +51,7 @@ Run: python3 tests/integration/test_argilla_identity_scope.py
 
 from __future__ import annotations
 
+import concurrent.futures
 import os
 import subprocess
 import sys
@@ -85,7 +86,10 @@ from app.auth.rbac_middleware import Role  # noqa: E402
 from app.component_bindings.component_binding_schema import ComponentBinding  # noqa: E402
 from app.projects.project_schema import Project  # noqa: E402
 from app.reviews.argilla_identity_store import (  # noqa: E402
+    ArgillaIdentityError,
+    ReviewerIdentityRecord,
     ReviewerIdentityRevokedError,
+    _username_for,
     ensure_review_scope,
     ensure_reviewer_identity,
     revoke_reviewer_identity,
@@ -157,6 +161,7 @@ class World:
     factory: Callable[[], Session]
     org1: uuid.UUID
     org2: uuid.UUID
+    workspace1: uuid.UUID
     project1: uuid.UUID
     project2: uuid.UUID
     binding1: uuid.UUID
@@ -164,14 +169,22 @@ class World:
     openbao: OpenBaoConfig
     fake_server: FakeArgillaServer
 
-
-def _role_lookup(
-    mapping: dict[tuple[str, str, uuid.UUID], Role],
-) -> Callable[[str, str, uuid.UUID], Role | None]:
-    def lookup(issuer: str, subject: str, organization_id: uuid.UUID) -> Role | None:
-        return mapping.get((issuer, subject, organization_id))
-
-    return lookup
+    def new_project(self) -> uuid.UUID:
+        """A fresh project in org1/workspace1, for a race test that needs a
+        (organization, project) pair neither `ensure_review_scope` nor
+        `ensure_reviewer_identity` has touched yet."""
+        with Session(self.owner) as session:
+            project = Project(
+                organization_id=self.org1,
+                workspace_id=self.workspace1,
+                name=f"Race Project {uuid.uuid4().hex[:8]}",
+                project_type="generic_model_tuning",
+                status="active",
+                created_by="tester",
+            )
+            session.add(project)
+            session.commit()
+            return project.id
 
 
 def _seed(
@@ -249,6 +262,7 @@ def _seed(
             factory=factory,
             org1=org1.id,
             org2=org2.id,
+            workspace1=ws1.id,
             project1=project1.id,
             project2=project2.id,
             binding1=binding1.id,
@@ -294,6 +308,7 @@ def section_scope(world: World) -> None:
         "the real workspace exists on the fake server after ensure_review_scope",
         scope1.argilla_workspace_name in world.fake_server.workspaces,
     )
+    requests_before = len(world.fake_server.requests)
     scope1_again = ensure_review_scope(
         world.factory,
         organization_id=world.org1,
@@ -309,6 +324,10 @@ def section_scope(world: World) -> None:
         "idempotent re-call does not create a second real workspace",
         len(world.fake_server.workspaces) == 1,
     )
+    check(
+        "the fast idempotent path (scope already in the database) makes zero real Argilla calls",
+        len(world.fake_server.requests) == requests_before,
+    )
 
     scope2 = ensure_review_scope(
         world.factory,
@@ -322,6 +341,66 @@ def section_scope(world: World) -> None:
         scope2.argilla_workspace_id != scope1.argilla_workspace_id,
     )
     world._scope1, world._scope2 = scope1, scope2  # type: ignore[attr-defined]
+
+
+def section_races(world: World) -> None:
+    """Real concurrent-create races: two callers `ensure_review_scope`ing
+    (resp. `ensure_reviewer_identity`ing) the exact same identity for the
+    first time at once. Exactly one real Argilla workspace/user is
+    created; the loser's own INSERT hits the table's own UNIQUE
+    constraint and falls back to a plain re-select, not an error."""
+    client = world.fake_server.client()
+    race_project = world.new_project()
+
+    def _ensure() -> uuid.UUID:
+        scope = ensure_review_scope(
+            world.factory,
+            organization_id=world.org1,
+            project_id=race_project,
+            component_binding_id=world.binding1,
+            client=client,
+        )
+        return scope.id
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        ids = list(pool.map(lambda _: _ensure(), range(8)))
+    check(
+        "8 concurrent ensure_review_scope calls for a brand-new project all agree on one scope id",
+        len(set(ids)) == 1,
+    )
+    real_workspace_name = workspace_name_for(world.org1, race_project)
+    check(
+        "the concurrent race creates exactly one real Argilla workspace",
+        sum(1 for name in world.fake_server.workspaces if name == real_workspace_name) == 1,
+    )
+
+    race_issuer, race_subject = "https://issuer.example", f"race-{uuid.uuid4().hex[:8]}"
+
+    def _ensure_identity() -> uuid.UUID:
+        identity = ensure_reviewer_identity(
+            world.factory,
+            organization_id=world.org1,
+            issuer=race_issuer,
+            subject=race_subject,
+            client=client,
+            openbao_config=world.openbao,
+        )
+        return identity.id
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        identity_ids = list(pool.map(lambda _: _ensure_identity(), range(8)))
+    check(
+        "8 concurrent ensure_reviewer_identity calls for a brand-new identity all agree on one id",
+        len(set(identity_ids)) == 1,
+    )
+    real_username = _username_for(world.org1, race_issuer, race_subject)
+    real_users_for_race_subject = [
+        u for u in world.fake_server.users.values() if u["username"] == real_username
+    ]
+    check(
+        "the concurrent race creates exactly one real Argilla user",
+        len(real_users_for_race_subject) == 1,
+    )
 
 
 def section_identity_and_membership(world: World) -> None:
@@ -344,6 +423,10 @@ def section_identity_and_membership(world: World) -> None:
         real_user["role"] == "annotator",
     )
     check(
+        "the returned identity record echoes the exact (issuer, subject) it was looked up by",
+        identity.issuer == issuer and identity.subject == subject,
+    )
+    check(
         "the credential_secret_ref uses the openbao:// scheme, never the raw key",
         identity.credential_secret_ref.startswith("openbao://"),
     )
@@ -353,6 +436,7 @@ def section_identity_and_membership(world: World) -> None:
         real_api_key != identity.credential_secret_ref,
     )
 
+    requests_before = len(world.fake_server.requests)
     identity_again = ensure_reviewer_identity(
         world.factory,
         organization_id=world.org1,
@@ -366,7 +450,21 @@ def section_identity_and_membership(world: World) -> None:
         identity_again.id == identity.id,
     )
     check(
-        "idempotent re-call does not create a second real user", len(world.fake_server.users) == 1
+        "idempotent re-call does not create a second real user for this identity",
+        sum(
+            1
+            for u in world.fake_server.users.values()
+            if u["username"] == _username_for(world.org1, issuer, subject)
+        )
+        == 1,
+    )
+    check(
+        "the fast idempotent path (identity already in the database) makes zero real Argilla calls",
+        len(world.fake_server.requests) == requests_before,
+    )
+    check(
+        "the idempotent re-fetch also echoes the exact (issuer, subject) looked up",
+        identity_again.issuer == issuer and identity_again.subject == subject,
     )
 
     # Not entitled yet (no role granted): sync_workspace_membership must not add a real member.
@@ -401,6 +499,7 @@ def section_identity_and_membership(world: World) -> None:
         "an entitled identity is really added to the workspace on the real server",
         (scope1.argilla_workspace_id, identity.argilla_user_id) in world.fake_server.memberships,
     )
+    requests_before = len(world.fake_server.requests)
     sync_workspace_membership(
         world.factory,
         organization_id=world.org1,
@@ -414,6 +513,35 @@ def section_identity_and_membership(world: World) -> None:
     check(
         "re-syncing the same entitled role is idempotent on the real server (no ArgillaConflictError surfaces)",
         (scope1.argilla_workspace_id, identity.argilla_user_id) in world.fake_server.memberships,
+    )
+    check(
+        "re-syncing an already-active membership makes zero real Argilla calls (fast idempotent path)",
+        len(world.fake_server.requests) == requests_before,
+    )
+
+    check(
+        "sync_workspace_membership refuses a caller-supplied identity whose id no longer "
+        "matches the one looked up by (organization, issuer, subject)",
+        raises(
+            ArgillaIdentityError,
+            sync_workspace_membership,
+            world.factory,
+            organization_id=world.org1,
+            issuer=issuer,
+            subject=subject,
+            role=Role.ML_ENGINEER,
+            scope=scope1,
+            identity=ReviewerIdentityRecord(
+                id=uuid.uuid4(),
+                organization_id=world.org1,
+                issuer=issuer,
+                subject=subject,
+                argilla_user_id=identity.argilla_user_id,
+                credential_secret_ref=identity.credential_secret_ref,
+                status="active",
+            ),
+            client=client,
+        ),
     )
 
     # Membership narrowed away (role now viewer -- not in DATASET_SOURCE_ROLES): must really be removed.
@@ -490,9 +618,28 @@ def section_revoke(world: World) -> None:
         identity.argilla_user_id in world.fake_server.users,
     )
 
-    # Idempotent: revoking again is a no-op, not an error.
+    # Idempotent: revoking again is a no-op, not an error, and makes zero real Argilla calls
+    # (nothing left to remove, nothing left to re-mark revoked).
+    requests_before = len(world.fake_server.requests)
     revoke_reviewer_identity(
         world.factory, organization_id=world.org1, issuer=issuer, subject=subject, client=client
+    )
+    check(
+        "revoking an already-revoked identity makes zero real Argilla calls (fast idempotent path)",
+        len(world.fake_server.requests) == requests_before,
+    )
+
+    check(
+        "revoking an identity that was never provisioned raises ArgillaIdentityError",
+        raises(
+            ArgillaIdentityError,
+            revoke_reviewer_identity,
+            world.factory,
+            organization_id=world.org1,
+            issuer="https://issuer.example",
+            subject=f"never-provisioned-{uuid.uuid4().hex[:8]}",
+            client=client,
+        ),
     )
 
     check(
@@ -638,6 +785,7 @@ def main() -> None:
         world = _seed(migration_url, app_password, openbao, fake_server)
         section_health(world)
         section_scope(world)
+        section_races(world)
         section_identity_and_membership(world)
         section_revoke(world)
         section_rls_and_secrecy(world)
