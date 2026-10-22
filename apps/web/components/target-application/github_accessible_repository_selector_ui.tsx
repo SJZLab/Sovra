@@ -28,9 +28,37 @@
  * a mocked `fetch`), not a full browser E2E.
  */
 
-import { useState } from "react";
+/*
+ * FTF-UX03 round 2: rebuilt on the UX01 components (Button / Field / ErrorSummary / Banner /
+ * EmptyState / Pending). Every system string is in both languages (strings_04a03.ts), `lang` and
+ * `dir` are set on every state, repository names are rendered in <bdi>, a failed or malformed
+ * request is announced with a recovery step and never blanks the screen, and a 2xx only counts when
+ * its body binds to what was asked (`bindListing`).
+ */
 
-import { EmptyState, dirFor, phrase, type Locale } from "../ui";
+import { useRef, useState } from "react";
+
+import {
+  Banner,
+  Button,
+  EmptyState,
+  ErrorSummary,
+  Field,
+  Pending,
+  dirFor,
+  phrase,
+  resolveLocale,
+  type Locale,
+} from "../ui";
+import {
+  MALFORMED_FAILURE,
+  NETWORK_FAILURE,
+  failureFromResponse,
+  selectorFailureMessage,
+  isRecord,
+  type Failure,
+} from "./common";
+import { t04a03 } from "./strings_04a03";
 
 export interface GitHubRepositorySummary {
   repository_identity: string;
@@ -68,19 +96,52 @@ export function githubRepositoriesUrl(
   );
 }
 
-async function readErrorDetail(response: Response): Promise<string> {
-  try {
-    const body = await response.json();
-    if (body && typeof body.detail === "string") {
-      return body.detail;
-    }
-  } catch {
-    // fall through to the generic message below
-  }
-  return `request failed (${response.status})`;
+function parseRepository(value: unknown): GitHubRepositorySummary | null {
+  if (!isRecord(value)) return null;
+  const { repository_identity, private: isPrivate, default_branch } = value;
+  if (typeof repository_identity !== "string" || repository_identity.trim() === "") return null;
+  if (typeof isPrivate !== "boolean" || typeof default_branch !== "string") return null;
+  return { repository_identity, private: isPrivate, default_branch };
 }
 
-export function GitHubAccessibleRepositorySelector({
+/**
+ * The one place a listing response is bound to the request that asked for it: a 2xx whose body is
+ * not a well-typed listing, or that answers a different page than the one requested, is not a
+ * success (UI CHECKLIST a/b/d). Returns `null` for anything else so nothing is rendered from it.
+ */
+export function bindListing(
+  requestedPage: number,
+  body: unknown,
+): GitHubRepositoryListingResponse | null {
+  if (!isRecord(body)) return null;
+  const { repositories, page, per_page, has_next_page } = body;
+  if (!Array.isArray(repositories)) return null;
+  if (!Number.isInteger(page) || page !== requestedPage) return null;
+  if (!Number.isInteger(per_page) || typeof has_next_page !== "boolean") return null;
+  const parsed: GitHubRepositorySummary[] = [];
+  for (const entry of repositories) {
+    const repository = parseRepository(entry);
+    if (!repository) return null;
+    parsed.push(repository);
+  }
+  return {
+    repositories: parsed,
+    page: page as number,
+    per_page: per_page as number,
+    has_next_page,
+  };
+}
+
+/**
+ * Identity (UI CHECKLIST c): everything below the key is remounted when the organization, project
+ * or API base changes, so a token, a list or a selection never carries over to another project.
+ */
+export function GitHubAccessibleRepositorySelector(props: GitHubAccessibleRepositorySelectorProps) {
+  const identity = JSON.stringify([props.apiBaseUrl, props.organizationId, props.projectId]);
+  return <RepositorySelector key={identity} {...props} />;
+}
+
+function RepositorySelector({
   apiBaseUrl,
   organizationId,
   projectId,
@@ -92,45 +153,79 @@ export function GitHubAccessibleRepositorySelector({
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<Failure | null>(null);
   // True only after a real search returned a page successfully (empty state must not
-  // show before searching or after an error).
+  // show before searching, while loading, or after an error).
   const [searched, setSearched] = useState(false);
+  const [submitCount, setSubmitCount] = useState(0);
+  const [tokenMissing, setTokenMissing] = useState(false);
   // Explicit selection state -- deliberately starts `null` and is set only
   // inside `handleSelect`, itself only ever invoked from a real click
   // handler below. No other code path in this component assigns it.
   const [selectedRepositoryIdentity, setSelectedRepositoryIdentity] = useState<string | null>(null);
+  // A reply for anything but the newest request is ignored, never merged into the list.
+  const latestRequest = useRef(0);
+  // "Load more" continues the search that produced the list, so it uses the token that search used
+  // even if the field has been edited since: a list never mixes two tokens' repositories.
+  const listCredential = useRef("");
+
+  const lang = resolveLocale(locale);
 
   async function fetchPage(requestedPage: number, append: boolean) {
+    const requestId = ++latestRequest.current;
     setLoading(true);
-    setError(null);
+    setFailure(null);
     try {
       const response = await fetch(githubRepositoriesUrl(apiBaseUrl, organizationId, projectId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ credential, page: requestedPage }),
+        body: JSON.stringify({
+          credential: append ? listCredential.current : credential,
+          page: requestedPage,
+        }),
       });
       if (!response.ok) {
-        setError(await readErrorDetail(response));
+        const refused = await failureFromResponse(response);
+        if (requestId === latestRequest.current) setFailure(refused);
         return;
       }
-      const body: GitHubRepositoryListingResponse = await response.json();
+      let raw: unknown;
+      try {
+        raw = await response.json();
+      } catch {
+        raw = null;
+      }
+      if (requestId !== latestRequest.current) return;
+      const body = bindListing(requestedPage, raw);
+      if (!body) {
+        // Never a fabricated or half-rendered list: keep what is shown, say what happened.
+        setFailure(MALFORMED_FAILURE);
+        return;
+      }
       setRepositories((previous) =>
         append ? [...previous, ...body.repositories] : body.repositories,
       );
+      if (!append) listCredential.current = credential;
       setPage(body.page);
       setHasNextPage(body.has_next_page);
       setSearched(true);
+    } catch {
+      if (requestId === latestRequest.current) setFailure(NETWORK_FAILURE);
     } finally {
-      setLoading(false);
+      if (requestId === latestRequest.current) setLoading(false);
     }
   }
 
   async function handleLoadRepositories(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setSubmitCount((count) => count + 1);
+    if (credential.trim() === "") {
+      setTokenMissing(true);
+      return;
+    }
+    setTokenMissing(false);
     setSelectedRepositoryIdentity(null);
-    setSearched(false);
     await fetchPage(1, false);
   }
 
@@ -143,66 +238,115 @@ export function GitHubAccessibleRepositorySelector({
     onSelect?.(repository);
   }
 
+  function handleDifferentToken() {
+    setCredential("");
+    setRepositories([]);
+    setSearched(false);
+    setSelectedRepositoryIdentity(null);
+    document.getElementById("github-credential")?.focus();
+  }
+
+  const tokenError = tokenMissing ? t04a03("tokenRequired", locale) : undefined;
+  // Only a finished, successful search that found nothing and has no further page is "empty".
+  const showEmpty =
+    searched && !loading && failure === null && !hasNextPage && repositories.length === 0;
+
   return (
-    <div data-testid="github-repository-selector" dir={dirFor(locale)}>
-      <form onSubmit={handleLoadRepositories} data-testid="github-credential-form">
-        <label htmlFor="github-credential">GitHub token</label>
-        <input
+    <div data-testid="github-repository-selector" lang={lang} dir={dirFor(locale)}>
+      <ErrorSummary
+        errors={tokenError ? [{ fieldId: "github-credential", message: tokenError }] : []}
+        locale={locale}
+        submitCount={submitCount}
+      />
+      <form onSubmit={handleLoadRepositories} data-testid="github-credential-form" noValidate>
+        <Field
+          style={{ minBlockSize: "var(--target-min)" }}
           id="github-credential"
           data-testid="github-credential-input"
           type="password"
+          label={t04a03("tokenLabel", locale)}
+          helper={phrase("githubTokenHelp", locale)}
+          error={tokenError}
+          requirement="required"
+          locale={locale}
           value={credential}
           onChange={(event) => setCredential(event.target.value)}
-          aria-describedby="github-credential-help"
-          required
         />
-        <p id="github-credential-help">{phrase("githubTokenHelp", locale)}</p>
-        <button type="submit" data-testid="github-load-repositories-button" disabled={loading}>
-          Load repositories
-        </button>
+        <Button
+          type="submit"
+          variant="primary"
+          data-testid="github-load-repositories-button"
+          disabled={loading}
+        >
+          {t04a03("loadRepositories", locale)}
+        </Button>
       </form>
 
-      {error && <p data-testid="github-repository-error">{error}</p>}
-
-      {searched && repositories.length === 0 && (
-        <EmptyState
-          title={phrase("noRepositoriesTitle", locale)}
-          why={phrase("noRepositoriesWhy", locale)}
-          action={<span>{phrase("noRepositoriesAction", locale)}</span>}
-        />
+      {failure && (
+        <div data-testid="github-repository-error">
+          <Banner kind="error" locale={locale}>
+            {selectorFailureMessage(failure, locale, "repositories")}
+          </Banner>
+        </div>
       )}
 
-      <ul data-testid="github-repository-list">
-        {repositories.map((repository) => (
-          <li key={repository.repository_identity}>
-            <button
-              type="button"
-              data-testid={`github-repository-option-${repository.repository_identity}`}
-              aria-pressed={selectedRepositoryIdentity === repository.repository_identity}
-              onClick={() => handleSelect(repository)}
-            >
-              {repository.repository_identity}
-              {repository.private ? " (private)" : ""}
-            </button>
-          </li>
-        ))}
-      </ul>
+      <div aria-busy={loading}>
+        {loading && <Pending label={t04a03("loadingRepositories", locale)} locale={locale} />}
 
-      {hasNextPage && (
-        <button
-          type="button"
-          data-testid="github-load-more-button"
-          disabled={loading}
-          onClick={handleLoadMore}
-        >
-          Load more
-        </button>
-      )}
+        {showEmpty && (
+          <EmptyState
+            title={phrase("noRepositoriesTitle", locale)}
+            why={phrase("noRepositoriesWhy", locale)}
+            action={
+              <Button
+                variant="secondary"
+                data-testid="github-different-token-button"
+                onClick={handleDifferentToken}
+              >
+                {t04a03("differentToken", locale)}
+              </Button>
+            }
+          />
+        )}
+
+        {repositories.length > 0 && (
+          <p data-testid="github-repository-list-note">
+            {t04a03("listNote", locale, { count: repositories.length })}
+          </p>
+        )}
+
+        <ul data-testid="github-repository-list" aria-label={t04a03("listLabel", locale)}>
+          {repositories.map((repository, index) => {
+            const selected = selectedRepositoryIdentity === repository.repository_identity;
+            return (
+              <li key={`${index}:${repository.repository_identity}`}>
+                <Button
+                  variant={selected ? "primary" : "secondary"}
+                  data-testid={`github-repository-option-${repository.repository_identity}`}
+                  aria-pressed={selected}
+                  onClick={() => handleSelect(repository)}
+                >
+                  {selected && <span aria-hidden="true">✓ </span>}
+                  <bdi>{repository.repository_identity}</bdi>
+                  {repository.private ? ` (${t04a03("privateMark", locale)})` : ""}
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+
+        {hasNextPage && (
+          <Button data-testid="github-load-more-button" disabled={loading} onClick={handleLoadMore}>
+            {t04a03("loadMore", locale)}
+          </Button>
+        )}
+      </div>
 
       {selectedRepositoryIdentity && (
-        <p data-testid="github-repository-selected-notice">
-          Selected: {selectedRepositoryIdentity}
-        </p>
+        <div role="status" data-testid="github-repository-selected-notice">
+          <span aria-hidden="true">✓</span> {t04a03("selectedNotice", locale)}{" "}
+          <bdi>{selectedRepositoryIdentity}</bdi>
+        </div>
       )}
     </div>
   );
