@@ -69,11 +69,13 @@ from workers.data.dataset_mapping_review import (  # noqa: E402
 )
 
 from app.auth.rbac_middleware import AuthenticatedPrincipal, Role  # noqa: E402
+from app.auth.tenant_isolation_query_guards import TenantContextError  # noqa: E402
 from app.datasets import dataset_mapping_request_store as rstore  # noqa: E402
 from app.datasets import dataset_mapping_routes as real_routes  # noqa: E402
 from app.datasets import dataset_mapping_store as store  # noqa: E402
 from app.datasets import dataset_source_connection_crud as crud  # noqa: E402
 from app.datasets import dataset_upload_store as ustore  # noqa: E402
+from app.datasets.dataset_object_source import DatasetSourceInconsistentError  # noqa: E402
 from app.db.tenant_context import TenantContext  # noqa: E402
 
 FAILURES: list[str] = []
@@ -183,6 +185,8 @@ class HttpWorld:
         self.storage_configured = True
         self.preview_rows: tuple[MappingPreviewRow, ...] = ()
         self.saved: list[tuple[Any, str, Any]] = []
+        self.tenant_error = False
+        self.calls: dict[str, int] = {}
 
     # -- the fakes --
     def authorize_dataset(self, session: Session, context: Any, **kwargs: Any) -> None:
@@ -252,6 +256,8 @@ class HttpWorld:
 
     @contextlib.contextmanager
     def session_cm(self, session_factory: Any, tenant_context: Any) -> Iterator[Session]:
+        if self.tenant_error:
+            raise TenantContextError("the tenant context could not be bound")
         try:
             yield self.session
             self.session.commit()
@@ -300,6 +306,26 @@ def http_world(routes_mod: ModuleType = real_routes) -> Iterator[tuple[HttpWorld
         (store, "probe_dataset_source", world.fake_probe),
         (store, "get_dataset_source_connection", world.fake_connection),
         (routes_mod, "tenant_scoped_session_for", world.session_cm),
+    ]
+
+    def counting(name: str) -> Any:
+        target = getattr(routes_mod, name)
+
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            world.calls[name] = world.calls.get(name, 0) + 1
+            return target(*args, **kwargs)
+
+        return wrapper
+
+    patches += [
+        (routes_mod, name, counting(name))
+        for name in (
+            "propose_dataset_mapping",
+            "approve_dataset_mapping",
+            "reject_dataset_mapping",
+            "review_preview",
+            "review_probe",
+        )
     ]
     originals = [(mod, name, getattr(mod, name)) for mod, name, _ in patches]
     for mod, name, value in patches:
@@ -2565,11 +2591,6 @@ def part_s_store_reads() -> None:
             classes[conn] = "internal"
             check(
                 "S-VISIBILITY",
-                "reveal is never granted by a similar role name",
-                vis(ds, "ml_engineer ") == (False, False) if False else True,
-            )
-            check(
-                "S-VISIBILITY",
                 "the classification set is exactly public and internal",
                 store.REVEAL_CLASSIFICATIONS == frozenset({"public", "internal"}),
             )
@@ -3559,6 +3580,733 @@ def part_c() -> None:
     )
 
 
+@contextlib.contextmanager
+def first_none(mod: ModuleType, *names: str) -> Iterator[None]:
+    """The first call of each named lookup answers None (the key is not stored yet), later calls are
+    the real ones: a concurrent identical request that stores its key in between."""
+    originals = {name: getattr(mod, name) for name in names}
+
+    def make(name: str) -> Any:
+        state = {"first": True}
+
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            if state["first"]:
+                state["first"] = False
+                return None
+            return originals[name](*args, **kwargs)
+
+        return wrapper
+
+    for name in names:
+        setattr(mod, name, make(name))
+    try:
+        yield
+    finally:
+        for name, value in originals.items():
+            setattr(mod, name, value)
+
+
+@contextlib.contextmanager
+def patched_attr(mod: ModuleType, name: str, value: Any) -> Iterator[None]:
+    original = getattr(mod, name)
+    setattr(mod, name, value)
+    try:
+        yield
+    finally:
+        setattr(mod, name, original)
+
+
+def part_r_tenant() -> None:
+    with http_world() as (w, base):
+        conn, ds = seeded(w)
+        status, made = propose(base, ds)
+        mid = made["id"]
+        w.tenant_error = True
+        routes: list[tuple[str, str, Any, str | None]] = [
+            ("POST", "/mapping-probe", {}, None),
+            ("POST", "/mapping-preview", {"mapping": MSG}, None),
+            ("POST", "/mappings", {"mapping": MSG}, "tenant-key-0001"),
+            ("GET", "/mappings", None, None),
+            ("GET", f"/mappings/{mid}", None, None),
+            ("POST", f"/mappings/{mid}/approve", approve_body(made), "tenant-key-0002"),
+            ("POST", f"/mappings/{mid}/reject", {"rationale": "no"}, "tenant-key-0003"),
+        ]
+        for method, suffix, body, key in routes:
+            got = call(base, method, f"{BASE_DS}/{ds.id}{suffix}", "admin", body, key)
+            check(
+                "R-TENANT",
+                f"{method} {suffix.split('/')[1]}: an unbindable tenant context is 404 not_found, never a 500 (got {got[0]} {code(got)})",
+                got == (404, {"detail": "not_found"}),
+            )
+        w.tenant_error = False
+        check("R-TENANT", "and nothing was written", w.snapshot()[0] == 1)
+
+
+def part_r_races() -> None:
+    with http_world() as (w, base):
+        conn, ds = seeded(w)
+        status, first = propose(base, ds, key="race-key-00001", who="admin")
+        check("R-RACE", "fixture: the first proposal is 201", status == 201)
+        before = w.snapshot()
+        attempts = w.calls.get("propose_dataset_mapping", 0)
+        previews = len(w.base.preview_calls)
+        # a plain replay never reaches the store or the storage
+        status, replay = propose(base, ds, key="race-key-00001", who="admin")
+        check(
+            "R-RACE",
+            "a replay does not call the store (no second preview, no second proposal)",
+            status == 200
+            and w.calls.get("propose_dataset_mapping", 0) == attempts
+            and len(w.base.preview_calls) == previews,
+        )
+        # a concurrent identical request stored its key between the lookup and the write
+        with first_none(real_routes, "find_mapping_request"):
+            status, raced = propose(base, ds, key="race-key-00001", who="admin")
+        check(
+            "R-RACE",
+            f"propose: the key stored by a concurrent identical request replays (got {status} {raced})",
+            status == 200
+            and raced["replayed"] is True
+            and raced["created"] is False
+            and raced["id"] == first["id"],
+        )
+        check(
+            "R-RACE",
+            "propose: the raced attempt did reach the store and wrote nothing",
+            w.calls.get("propose_dataset_mapping", 0) == attempts + 1 and w.snapshot() == before,
+        )
+        with first_none(real_routes, "find_mapping_request"):
+            got = propose(base, ds, doc=MSG2, key="race-key-00001", who="admin")
+        check(
+            "R-RACE",
+            f"propose: the key stored by a different request is 409 idempotency_key_reused (got {got[0]} {code(got)})",
+            got == (409, {"detail": "idempotency_key_reused"}),
+        )
+        check(
+            "R-RACE",
+            "propose: and the version it would have written is rolled back",
+            w.snapshot()[:2] == before[:2],
+        )
+        with patched_attr(real_routes, "find_mapping_request", lambda *a, **k: None):
+            got = propose(base, ds, key="race-key-00001", who="admin")
+        check(
+            "R-RACE",
+            f"propose: a key that cannot be found again is 409 idempotency_key_reused, not a 500 (got {got[0]} {code(got)})",
+            got == (409, {"detail": "idempotency_key_reused"}),
+        )
+
+        def raising(code_: str) -> Any:
+            def fn(*args: Any, **kwargs: Any) -> None:
+                raise rstore.MappingRequestError(code_)
+
+            return fn
+
+        with patched_attr(real_routes, "record_mapping_request", raising("invalid_request")):
+            got = propose(base, ds, doc=MSG2, key="race-key-00009", who="admin")
+        check(
+            "R-RACE",
+            f"propose: any other request-store refusal is a 409 with its code (got {got[0]} {code(got)})",
+            got == (409, {"detail": "invalid_request"}),
+        )
+        check("R-RACE", "propose: and it wrote nothing", w.snapshot()[:2] == before[:2])
+        # approve: two proposals, the first approved
+        status, other = propose(base, ds, doc=MSG2, key="race-key-00002", who="admin")
+        status, third = propose(
+            base,
+            ds,
+            doc=p2.msg_doc({"a": "user", "b": "assistant"}),
+            key="race-key-00003",
+            who="admin",
+        )
+        check(
+            "R-RACE",
+            "fixture: versions 2 and 3 exist",
+            other["mapping_version"] == 2 and third["mapping_version"] == 3,
+        )
+        # only the latest version can be approved (earlier ones are superseded): use the latest
+        status, approved = approve(base, ds, third, key="race-approve-01")
+        check("R-RACE", f"fixture: version 3 is approved (got {status} {approved})", status == 200)
+        before = w.snapshot()
+        attempts = w.calls.get("approve_dataset_mapping", 0)
+        previews = len(w.base.preview_calls)
+        status, replay = approve(base, ds, third, key="race-approve-01")
+        check(
+            "R-RACE",
+            "approve: a replay does not call the store (no second preview)",
+            status == 200
+            and replay["replayed"] is True
+            and w.calls.get("approve_dataset_mapping", 0) == attempts
+            and len(w.base.preview_calls) == previews,
+        )
+        status, replay = approve(base, ds, third, key="race-approve-02")
+        check(
+            "R-RACE",
+            "approve: the same request under another key is recognised without calling the store",
+            status == 200
+            and replay["replayed"] is True
+            and w.calls.get("approve_dataset_mapping", 0) == attempts
+            and len(w.base.preview_calls) == previews,
+        )
+        with first_none(real_routes, "find_mapping_request", "find_mapping_request_by_action"):
+            status, raced = approve(base, ds, third, key="race-approve-01")
+        check(
+            "R-RACE",
+            f"approve: a concurrent identical approval that won is replayed (got {status} {raced})",
+            status == 200
+            and raced["replayed"] is True
+            and w.calls.get("approve_dataset_mapping", 0) == attempts + 1,
+        )
+        check("R-RACE", "approve: and wrote nothing", w.snapshot() == before)
+        with (
+            patched_attr(real_routes, "find_mapping_request", lambda *a, **k: None),
+            patched_attr(real_routes, "find_mapping_request_by_action", lambda *a, **k: None),
+        ):
+            got = approve(base, ds, third, key="race-approve-01")
+        check(
+            "R-RACE",
+            f"approve: when no stored outcome can be found the refusal stands: 409 mapping_not_proposed (got {got[0]} {code(got)})",
+            got == (409, {"detail": "mapping_not_proposed"}),
+        )
+        # approve a second proposal under a key an earlier request already used
+        status, fourth = propose(
+            base,
+            ds,
+            doc=p2.msg_doc({"c": "user", "d": "assistant"}),
+            key="race-key-00004",
+            who="admin",
+        )
+        before = w.snapshot()
+        with first_none(real_routes, "find_mapping_request"):
+            got = approve(base, ds, fourth, key="race-approve-01")
+        check(
+            "R-RACE",
+            f"approve: the key of another approval is 409 idempotency_key_reused (got {got[0]} {code(got)})",
+            got == (409, {"detail": "idempotency_key_reused"}),
+        )
+        check(
+            "R-RACE",
+            "approve: and the approval it would have made is rolled back",
+            w.snapshot()[:2] == before[:2] and rows_status(w, fourth["id"]) == "proposed",
+        )
+        with patched_attr(real_routes, "record_mapping_request", raising("invalid_request")):
+            got = approve(base, ds, fourth, key="race-approve-03")
+        check(
+            "R-RACE",
+            f"approve: any other request-store refusal is a 409 with its code (got {got[0]} {code(got)})",
+            got == (409, {"detail": "invalid_request"}),
+        )
+        check(
+            "R-RACE",
+            "approve: and rolls the approval back",
+            w.snapshot()[:2] == before[:2] and rows_status(w, fourth["id"]) == "proposed",
+        )
+        # reject
+        status, rejected = reject(base, ds, fourth, key="race-reject-01")
+        check("R-RACE", f"fixture: version 4 is rejected (got {status})", status == 200)
+        before = w.snapshot()
+        attempts = w.calls.get("reject_dataset_mapping", 0)
+        status, replay = reject(base, ds, fourth, key="race-reject-01")
+        check(
+            "R-RACE",
+            "reject: a replay does not call the store",
+            status == 200
+            and replay["replayed"] is True
+            and w.calls.get("reject_dataset_mapping", 0) == attempts,
+        )
+        status, replay = reject(base, ds, fourth, key="race-reject-02")
+        check(
+            "R-RACE",
+            "reject: the same request under another key is recognised without calling the store",
+            status == 200
+            and replay["replayed"] is True
+            and w.calls.get("reject_dataset_mapping", 0) == attempts,
+        )
+        with first_none(real_routes, "find_mapping_request", "find_mapping_request_by_action"):
+            status, raced = reject(base, ds, fourth, key="race-reject-01")
+        check(
+            "R-RACE",
+            f"reject: a concurrent identical rejection that won is replayed (got {status} {raced})",
+            status == 200
+            and raced["replayed"] is True
+            and w.calls.get("reject_dataset_mapping", 0) == attempts + 1,
+        )
+        check("R-RACE", "reject: and wrote nothing", w.snapshot() == before)
+        with (
+            patched_attr(real_routes, "find_mapping_request", lambda *a, **k: None),
+            patched_attr(real_routes, "find_mapping_request_by_action", lambda *a, **k: None),
+        ):
+            got = reject(base, ds, fourth, key="race-reject-01")
+        check(
+            "R-RACE",
+            f"reject: when no stored outcome can be found the refusal stands: 409 mapping_not_proposed (got {got[0]} {code(got)})",
+            got == (409, {"detail": "mapping_not_proposed"}),
+        )
+        status, fifth = propose(
+            base,
+            ds,
+            doc=p2.msg_doc({"e": "user", "f": "assistant"}),
+            key="race-key-00005",
+            who="admin",
+        )
+        before = w.snapshot()
+        with first_none(real_routes, "find_mapping_request"):
+            got = reject(base, ds, fifth, key="race-reject-01", rationale="wrong role map")
+        check(
+            "R-RACE",
+            f"reject: the key of another rejection is 409 idempotency_key_reused (got {got[0]} {code(got)})",
+            got == (409, {"detail": "idempotency_key_reused"}),
+        )
+        check(
+            "R-RACE",
+            "reject: and the rejection it would have made is rolled back",
+            w.snapshot()[:2] == before[:2] and rows_status(w, fifth["id"]) == "proposed",
+        )
+        with patched_attr(real_routes, "record_mapping_request", raising("invalid_request")):
+            got = reject(base, ds, fifth, key="race-reject-03")
+        check(
+            "R-RACE",
+            f"reject: any other request-store refusal is a 409 with its code (got {got[0]} {code(got)})",
+            got == (409, {"detail": "invalid_request"}),
+        )
+        check(
+            "R-RACE",
+            "reject: and rolls the rejection back",
+            w.snapshot()[:2] == before[:2] and rows_status(w, fifth["id"]) == "proposed",
+        )
+
+
+def rows_status(w: HttpWorld, mapping_id: str) -> str:
+    w.session.commit()
+    return w.session.get(store.DatasetMapping, uuid.UUID(mapping_id)).status
+
+
+def part_r_errors() -> None:
+    with http_world() as (w, base):
+        conn, ds = seeded(w)
+        errors: list[tuple[str, BaseException, int, str]] = [
+            (
+                "an importer-level unsupported shape",
+                ic.MappingUnsupportedError(),
+                400,
+                "mapping_unsupported",
+            ),
+            (
+                "an importer-level invalid option",
+                ic.MappingInvalidError("bad_value"),
+                400,
+                "mapping_invalid",
+            ),
+            ("a dataset that disappeared", ustore.DatasetNotFoundError("gone"), 404, "not_found"),
+            (
+                "a revoked grant",
+                crud.DatasetSourceAuthorizationError("revoked"),
+                403,
+                "purpose_not_authorized",
+            ),
+            (
+                "a deleted connection",
+                crud.DatasetSourceConnectionNotFoundError("gone"),
+                403,
+                "purpose_not_authorized",
+            ),
+            (
+                "an inconsistent dataset",
+                DatasetSourceInconsistentError("changed"),
+                409,
+                "source_changed",
+            ),
+            (
+                "a content type without an importer",
+                p2.MappingPreviewUnavailableError("application/zip"),
+                409,
+                "importer_unavailable",
+            ),
+        ]
+        for label, error, status, detail in errors:
+            before = w.snapshot()
+            w.base.preview_error = error
+            w.probe_error = error
+            got = call(
+                base, "POST", f"{BASE_DS}/{ds.id}/mapping-preview", "admin", {"mapping": MSG}
+            )
+            check(
+                "R-ERRORS",
+                f"preview: {label} is {status} {detail} (got {got[0]} {code(got)})",
+                got == (status, {"detail": detail}),
+            )
+            got = call(base, "POST", f"{BASE_DS}/{ds.id}/mapping-probe", "admin", {})
+            check(
+                "R-ERRORS",
+                f"probe: {label} is {status} {detail} (got {got[0]} {code(got)})",
+                got == (status, {"detail": detail}),
+            )
+            got = propose(base, ds, key="errors-key-0001", who="admin")
+            check(
+                "R-ERRORS",
+                f"propose: {label} is {status} {detail} (got {got[0]} {code(got)})",
+                got == (status, {"detail": detail}),
+            )
+            w.base.preview_error = None
+            w.probe_error = None
+            check(
+                "R-ERRORS", f"{label}: nothing was stored, not even the key", w.snapshot() == before
+            )
+        # an unknown state is never shown as a result
+        for state in ("BLOCKED", "completed ", "running", ""):
+            w.base.preview_state = (state, None)
+            got = call(
+                base, "POST", f"{BASE_DS}/{ds.id}/mapping-preview", "admin", {"mapping": MSG}
+            )
+            check(
+                "R-ERRORS",
+                f"preview: the unknown state {state!r} is 409 preview_incomplete (got {got[0]} {code(got)})",
+                got == (409, {"detail": "preview_incomplete"}),
+            )
+        w.base.preview_state = ("completed", None)
+        for state in ("BLOCKED", "completed ", "running", ""):
+            w.probe_state = (state, None)
+            got = call(base, "POST", f"{BASE_DS}/{ds.id}/mapping-probe", "admin", {})
+            check(
+                "R-ERRORS",
+                f"probe: the unknown state {state!r} is 409 preview_incomplete (got {got[0]} {code(got)})",
+                got == (409, {"detail": "preview_incomplete"}),
+            )
+        w.probe_state = ("completed", None)
+
+
+def part_r_lists_and_limits() -> None:
+    with http_world() as (w, base):
+        conn, ds = seeded(w)
+        status, m1 = propose(base, ds, key="list-key-000001", who="admin")
+        status, m2 = propose(base, ds, doc=MSG2, key="list-key-000002", who="admin")
+        status, m3 = propose(
+            base,
+            ds,
+            doc=p2.msg_doc({"a": "user", "b": "assistant"}),
+            key="list-key-000003",
+            who="admin",
+        )
+        reject(base, ds, m1, key="list-key-000004", rationale="first no")
+        approve(base, ds, m3, key="list-key-000005", rationale="third yes")
+        status, listing = call(base, "GET", f"{BASE_DS}/{ds.id}/mappings", "admin")
+        decisions = [m["decision"] for m in listing["items"]]
+        check(
+            "R-LIST",
+            f"the list carries each version's decision: reject, none, approve ({decisions})",
+            decisions
+            == [
+                {"action": "reject", "rationale": "first no", "decided_by": "admin"},
+                None,
+                {"action": "approve", "rationale": "third yes", "decided_by": "admin"},
+            ],
+        )
+        check(
+            "R-LIST",
+            "and the statuses",
+            [m["status"] for m in listing["items"]] == ["rejected", "proposed", "approved"],
+        )
+        # body size boundary: exactly the cap is read, one byte more is 413
+        status, target = propose(
+            base,
+            ds,
+            doc=p2.msg_doc({"x": "user", "y": "assistant"}),
+            key="list-key-000006",
+            who="admin",
+        )
+        cap = real_routes._MAX_BODY_BYTES
+        body = b'{"rationale": "x"}'
+        exact = body + b" " * (cap - len(body))
+        got = call(
+            base,
+            "POST",
+            f"{BASE_DS}/{ds.id}/mappings/{target['id']}/reject",
+            "admin",
+            raw=exact,
+            key="list-key-000007",
+        )
+        check(
+            "R-LIMIT",
+            f"a body of exactly {cap} bytes is read (got {got[0]} {code(got)})",
+            got[0] == 409 or got[0] == 200,
+        )
+        over = body + b" " * (cap - len(body) + 1)
+        got = call(
+            base,
+            "POST",
+            f"{BASE_DS}/{ds.id}/mappings/{target['id']}/reject",
+            "admin",
+            raw=over,
+            key="list-key-000008",
+        )
+        check(
+            "R-LIMIT",
+            "one byte over the cap is 413 request_too_large",
+            got == (413, {"detail": "request_too_large"}),
+        )
+        # one-character purpose and rationale are accepted by body validation
+        status, fresh = propose(
+            base,
+            ds,
+            doc=p2.msg_doc({"m": "user", "n": "assistant"}),
+            key="list-key-000009",
+            who="admin",
+        )
+        got = call(
+            base,
+            "POST",
+            f"{BASE_DS}/{ds.id}/mappings/{fresh['id']}/approve",
+            "admin",
+            approve_body(fresh, purpose="t", rationale="r"),
+            "list-key-000010",
+        )
+        check(
+            "R-LIMIT",
+            f"a one-character purpose and rationale pass body validation (got {got[0]} {code(got)})",
+            got == (403, {"detail": "purpose_not_authorized"}),
+        )
+        # every audit event names the authenticated user
+        check(
+            "R-AUDIT",
+            "every audit event has actor_type user",
+            all(e["actor_type"] == "user" for e in w.audit.events) and len(w.audit.events) >= 6,
+        )
+        call(base, "POST", f"{BASE_DS}/{ds.id}/mapping-preview", "ml", {"mapping": MSG})
+        call(base, "POST", f"{BASE_DS}/{ds.id}/mapping-probe", "ml", {})
+        check(
+            "R-AUDIT",
+            "and so do the preview and probe events",
+            [e["actor_type"] for e in w.audit.events[-2:]] == ["user", "user"]
+            and [e["actor_id"] for e in w.audit.events[-2:]] == ["ml", "ml"],
+        )
+
+
+def part_u2() -> None:
+    mod = real_routes
+    for code_ in store.CODES:
+        for variant in (" " + code_, code_ + " ", code_.upper(), code_ + "\n"):
+            exc = mod._refusal(variant)
+            check(
+                "U-REFUSAL",
+                f"{variant!r} is no code of the table: it is a 409 conflict",
+                (exc.status_code, exc.detail) == (409, variant),
+            )
+    for code_, wanted in (
+        ("mapping_not_proposed", True),
+        ("idempotency_key_reused", True),
+        ("mapping_conflict", False),
+        ("invalid_request", False),
+        (" mapping_not_proposed", False),
+        ("MAPPING_NOT_PROPOSED", False),
+        ("idempotency_key_reused\n", False),
+        ("Idempotency_Key_Reused", False),
+    ):
+        check("U-REPLAYABLE", f"{code_!r} replayable: {wanted}", mod._replayable(code_) is wanted)
+    for state, failure, wanted in (
+        ("completed", None, None),
+        ("failed", None, None),
+        ("failed", "limit_exceeded", None),
+        ("blocked", None, "source_unavailable"),
+        ("blocked", "source_changed", "source_unavailable"),
+        ("failed", "source_changed", "source_changed"),
+        ("completed", "source_changed", "source_changed"),
+        ("BLOCKED", None, "preview_incomplete"),
+        (" blocked", None, "preview_incomplete"),
+        ("Blocked", None, "preview_incomplete"),
+        ("COMPLETED", None, "preview_incomplete"),
+        ("completed ", None, "preview_incomplete"),
+        ("Failed", None, "preview_incomplete"),
+        ("running", None, "preview_incomplete"),
+        ("", None, "preview_incomplete"),
+        ("failed", "SOURCE_CHANGED", None),
+        ("failed", "source_changed ", None),
+    ):
+        check(
+            "U-VERDICT",
+            f"state {state!r} failure {failure!r} is refused as {wanted}",
+            store._verdict_refusal(state, failure) == wanted,
+        )
+    try:
+        rstore.MappingRequestError("brand_new")
+        raised = False
+    except AssertionError:
+        raised = True
+    check("U-CODES", "an unknown request-store code cannot be constructed", raised)
+    for variant in (
+        " invalid_request",
+        "INVALID_REQUEST",
+        "invalid_request ",
+        "Idempotency_Key_Reused",
+    ):
+        try:
+            rstore.MappingRequestError(variant)
+            raised = False
+        except AssertionError:
+            raised = True
+        check("U-CODES", f"{variant!r} is no request-store code", raised)
+    ok = rstore.MappingRequestError("idempotency_key_reused")
+    check(
+        "U-CODES",
+        "a known code is kept",
+        ok.code == "idempotency_key_reused" and str(ok) == "idempotency_key_reused",
+    )
+    d = uuid.uuid4()
+    for action in (" approve", "APPROVE", "approve ", "Propose", "reject\n"):
+        got = refusal_of(
+            lambda a=action: rstore.request_digest(
+                a, dataset_id=d, mapping_id=None, subject="x", body={}
+            )
+        )
+        check("U-DIGEST", f"the action {action!r} is no action: refused", got == "invalid_request")
+    # the store's role handling is exact
+    with p2.sqlite_world() as w:
+        conn = w.connection("all", ALL_PURPOSES)
+        ds = w.dataset("alpha", "training", conn)
+        orig = store.get_dataset_source_connection
+        store.get_dataset_source_connection = (
+            lambda session, context, project_id, connection_id: SimpleNamespace(
+                security_classification="internal"
+            )
+        )
+        try:
+            for role in (
+                "Workspace_Admin",
+                "WORKSPACE_ADMIN",
+                "ORGANIZATION_ADMIN",
+                "ML_ENGINEER",
+                "Ml_Engineer",
+                "ml_engineer2",
+                "admin",
+            ):
+                got = store.dataset_visibility(
+                    w.session, w.ctx, project_id=PROJECT, dataset_id=ds.id, role=role
+                )
+                check(
+                    "S-VISIBILITY",
+                    f"the role {role!r} is not a known role: no reveal, no held-out ({got})",
+                    got == (False, False),
+                )
+            check(
+                "S-VISIBILITY",
+                "the exact roles keep working",
+                store.dataset_visibility(
+                    w.session, w.ctx, project_id=PROJECT, dataset_id=ds.id, role="ml_engineer"
+                )
+                == (False, True)
+                and store.dataset_visibility(
+                    w.session, w.ctx, project_id=PROJECT, dataset_id=ds.id, role="workspace_admin"
+                )
+                == (True, True),
+            )
+            # the probe's slot per importer
+            csv_ds = w.dataset("csv", "training", conn, content_type="text/csv")
+            seen: list[Any] = []
+            orig_probe = store.probe_dataset_source
+            store.probe_dataset_source = lambda session, context, **kw: seen.append(
+                kw["probe_mapping"]
+            ) or ProbeResult("completed", None, None, (), True)
+            try:
+                store.review_probe(
+                    w.session,
+                    w.ctx,
+                    project_id=PROJECT,
+                    dataset_id=csv_ds.id,
+                    format_options={},
+                    role="workspace_admin",
+                    storage=w.storage,
+                )
+                store.review_probe(
+                    w.session,
+                    w.ctx,
+                    project_id=PROJECT,
+                    dataset_id=ds.id,
+                    format_options={},
+                    role="workspace_admin",
+                    storage=w.storage,
+                )
+                json_ds = w.dataset("json", "training", conn, content_type="application/json")
+                store.review_probe(
+                    w.session,
+                    w.ctx,
+                    project_id=PROJECT,
+                    dataset_id=json_ds.id,
+                    format_options={},
+                    role="workspace_admin",
+                    storage=w.storage,
+                )
+            finally:
+                store.probe_dataset_source = orig_probe
+            check(
+                "S-PROBE",
+                "a CSV is probed by column index, JSONL and JSON by key",
+                [(m.prompt.kind, m.completion.kind) for m in seen]
+                == [("index", "index"), ("key", "key"), ("key", "key")],
+            )
+            check(
+                "S-PROBE",
+                "the probe slots are fixed (index 0 / key probe)",
+                [(m.prompt.value, m.completion.value) for m in seen]
+                == [(0, 0), ("probe", "probe"), ("probe", "probe")],
+            )
+        finally:
+            store.get_dataset_source_connection = orig
+
+
+def part_c2() -> None:
+    import os
+
+    env = {
+        "SOVRA_ENVIRONMENT": "staging",
+        "SOVRA_DATABASE_URL": "postgresql+psycopg://sovra_app:s3cr3t@db.internal:5432/sovra",
+        "SOVRA_LITELLM_GATEWAY_URL": "https://litellm.internal.example",
+        "SOVRA_PRIVACY_POLICY": "standard",
+        "SOVRA_TLS_VERIFY": "true",
+        "SOVRA_MAX_TRAINING_BUDGET_USD": "500.00",
+        "SOVRA_LITELLM_API_KEY_SECRET_REF": "vault://sovra/litellm-api-key",
+        "SOVRA_DATABASE_PASSWORD_SECRET_REF": "openbao://sovra/db-password",
+        "SOVRA_OIDC_ISSUER": "http://idp.internal.example",
+        "SOVRA_OIDC_CLIENT_ID": "sovra-factory",
+        "SOVRA_OIDC_CLIENT_SECRET_REF": "vault://sovra/oidc-client-secret",
+        "SOVRA_OIDC_REDIRECT_URI": "http://factory.internal.example/auth/callback",
+        "SOVRA_OIDC_AUTHORIZATION_ENDPOINT": "http://idp.internal.example/authorize",
+        "SOVRA_OIDC_TOKEN_ENDPOINT": "http://idp.internal.example/token",
+        "SOVRA_OIDC_JWKS_URI": "http://idp.internal.example/jwks",
+        "SOVRA_SESSION_SIGNING_KEY_SECRET_REF": "vault://sovra/session-signing-key",
+        "SOVRA_OIDC_ALLOWED_ORIGIN": "http://factory.internal.example",
+        "SOVRA_OIDC_CLIENT_SECRET_VALUE": "not-a-real-secret",
+        "SOVRA_SESSION_SIGNING_KEY_VALUE": "not-a-real-signing-key",
+    }
+    added = set(env) - set(os.environ)
+    old = {k: os.environ[k] for k in env if k in os.environ}
+    os.environ.update(env)
+    try:
+        import app.main as main_module
+
+        app = main_module.create_app()
+    finally:
+        for key in added:
+            os.environ.pop(key, None)
+        os.environ.update(old)
+    dataset = uuid.uuid4()
+    with running_app_for(app) as base:
+        for method, suffix in (
+            ("POST", "/mapping-probe"),
+            ("POST", "/mapping-preview"),
+            ("GET", "/mappings"),
+            ("POST", "/mappings"),
+            ("GET", f"/mappings/{uuid.uuid4()}"),
+            ("POST", f"/mappings/{uuid.uuid4()}/approve"),
+            ("POST", f"/mappings/{uuid.uuid4()}/reject"),
+        ):
+            got = call(
+                base, method, f"{BASE_DS}/{dataset}{suffix}", None, {} if method == "POST" else None
+            )
+            check(
+                "C-WIRE",
+                f"{method} {suffix.split('/')[1]} is mounted on the real app (401, got {got[0]})",
+                got[0] == 401,
+            )
+
+
 def main() -> None:
     part_r_access()
     part_r_validation()
@@ -3569,8 +4317,14 @@ def main() -> None:
     part_u()
     part_s_requests()
     part_s_store_reads()
+    part_r_tenant()
+    part_r_races()
+    part_r_errors()
+    part_r_lists_and_limits()
+    part_u2()
     part_m()
     part_c()
+    part_c2()
     if FAILURES:
         for failure in FAILURES:
             print(failure, file=sys.stderr)

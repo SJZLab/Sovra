@@ -128,6 +128,11 @@ MAX_LIST_LIMIT: Final = 200
 # on a connection classified public or internal.
 REVEAL_CLASSIFICATIONS: Final = frozenset({"public", "internal"})
 _PROBE_BLOCKS: Final = frozenset({"csv", "json"})
+# The verdicts a read-only probe or preview may show (`blocked` is a refusal: `_verdict_refusal`).
+_SHOWN_STATES: Final = frozenset({"completed", "failed"})
+# The probe's server-built slot per importer: a tabular source is read by column index, an object
+# source by key. The caller never supplies a slot.
+_PROBE_SLOTS: Final = {csv_importer.IMPORTER_NAME: {"index": 0}}
 _RESOURCE: Final = "dataset_mapping"
 _HEX64: Final = re.compile(r"[0-9a-f]{64}")
 _CRITICAL_ROW_CODES: Final = ("rejected:unmapped_role", "rejected:unmapped_message_key")
@@ -1017,6 +1022,19 @@ def dataset_visibility(
     return include_held_out, reveal
 
 
+def _verdict_refusal(state: str, failure_code: str | None) -> str | None:
+    """The code of why a read-only verdict is not a result to show (Law 17): the store was
+    unreachable, the object changed under the read, or the state is none this release knows. A
+    `failed` verdict with any other code is shown as it is: the caller sees why it failed."""
+    if state == "blocked":
+        return "source_unavailable"
+    if failure_code == "source_changed":
+        return "source_changed"
+    if state not in _SHOWN_STATES:
+        return "preview_incomplete"
+    return None
+
+
 def review_preview(
     session: Session,
     context: TenantContext,
@@ -1047,10 +1065,9 @@ def review_preview(
             mapping=mapping,
             reveal=reveal,
         )
-    if result.state == "blocked":
-        raise MappingStoreError("source_unavailable")
-    if result.failure_code == "source_changed":
-        raise MappingStoreError("source_changed")
+    refusal = _verdict_refusal(result.state, result.failure_code)
+    if refusal is not None:
+        raise MappingStoreError(refusal)
     return result, reveal
 
 
@@ -1080,9 +1097,7 @@ def review_probe(
         dataset_id=dataset_id,
         include_held_out=include_held_out,
     )
-    slot: dict[str, object] = (
-        {"index": 0} if importer == csv_importer.IMPORTER_NAME else {"key": "probe"}
-    )
+    slot: dict[str, object] = dict(_PROBE_SLOTS.get(importer, {"key": "probe"}))
     probe_mapping = _parse_document(
         {"shape": "prompt_completion", "prompt": slot, "completion": slot, **format_options}
     )
@@ -1097,8 +1112,7 @@ def review_probe(
             probe_mapping=probe_mapping,
             reveal=reveal,
         )
-    if probe.state == "blocked":
-        raise MappingStoreError("source_unavailable")
-    if probe.failure_code == "source_changed":
-        raise MappingStoreError("source_changed")
+    refusal = _verdict_refusal(probe.state, probe.failure_code)
+    if refusal is not None:
+        raise MappingStoreError(refusal)
     return probe, reveal

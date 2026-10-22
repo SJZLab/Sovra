@@ -122,6 +122,8 @@ _FORBIDDEN: Final = frozenset(
     {"actor_not_permitted", "approval_not_permitted", "purpose_not_authorized"}
 )
 _NOT_FOUND: Final = frozenset({"dataset_not_found", "mapping_not_found"})
+# A refusal that may mean "an identical request already took effect": look for the stored outcome.
+_REPLAYABLE: Final = frozenset({"mapping_not_proposed", "idempotency_key_reused"})
 
 _MAPPING_FIELD_NAMES: Final = (
     "id",
@@ -168,6 +170,10 @@ def _not_found() -> HTTPException:
 
 def _invalid_body() -> HTTPException:
     return HTTPException(status_code=400, detail="invalid_body")
+
+
+def _replayable(code: str) -> bool:
+    return code in _REPLAYABLE
 
 
 def _refusal(code: str) -> HTTPException:
@@ -224,7 +230,7 @@ def _rationale(value: object) -> str:
     if (
         type(value) is not str
         or not 1 <= len(value) <= _MAX_RATIONALE
-        or not value.strip()
+        or value.isspace()
         or "\x00" in value
     ):
         raise _invalid_body()
@@ -476,9 +482,7 @@ def build_dataset_mapping_router(
         (same action, principal and body, so the same digest), None otherwise. Read-only."""
         with tenant_scoped_session_for(session_factory, tenant) as session:
             row = get_dataset_mapping(session, tenant, project_id=project_id, mapping_id=mapping_id)
-            if row.dataset_id != dataset_id or row.status != (
-                "approved" if action == "approve" else "rejected"
-            ):
+            if row.status != ("approved" if action == "approve" else "rejected"):
                 return None
             stored = find_mapping_request_by_action(
                 session, tenant, project_id=project_id, mapping_id=mapping_id, action=action
@@ -733,7 +737,7 @@ def build_dataset_mapping_router(
                     )
                     body = _serialize_mapping(row, reveal=reveal, decision=None)
             except MappingRequestError as exc:
-                if exc.code != "idempotency_key_reused":
+                if not _replayable(exc.code):
                     raise
                 # A concurrent identical request may have stored the key first.
                 replay = _replay(tenant, ctx, project_id, dataset_id, None, "propose", key, digest)
@@ -805,7 +809,7 @@ def build_dataset_mapping_router(
                     )
                     body = _view(session, tenant, ctx, project_id, dataset_id, mapping_id)
             except (MappingStoreError, MappingRequestError) as exc:
-                if exc.code not in ("mapping_not_proposed", "idempotency_key_reused"):
+                if not _replayable(exc.code):
                     raise
                 # A concurrent identical request may have approved it first.
                 replay = _replay(
@@ -871,7 +875,7 @@ def build_dataset_mapping_router(
                     )
                     body = _view(session, tenant, ctx, project_id, dataset_id, mapping_id)
             except (MappingStoreError, MappingRequestError) as exc:
-                if exc.code not in ("mapping_not_proposed", "idempotency_key_reused"):
+                if not _replayable(exc.code):
                     raise
                 replay = _replay(
                     tenant, ctx, project_id, dataset_id, mapping_id, "reject", key, digest
