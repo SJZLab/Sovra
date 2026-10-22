@@ -125,7 +125,7 @@ export function SelectField({
           [helperId, reasonId].filter(Boolean).join(" ") || undefined,
           errorId,
         )}
-        style={{ maxInlineSize: "100%", minBlockSize: "var(--target-min)" }}
+        style={{ inlineSize: "100%", maxInlineSize: "100%", minBlockSize: "var(--target-min)" }}
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>

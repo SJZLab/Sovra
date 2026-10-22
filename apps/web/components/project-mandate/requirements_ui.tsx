@@ -55,6 +55,7 @@ import {
   type Locale,
 } from "../ui";
 import { SelectField, StatusLine } from "./form_controls";
+import { isOneOf, isString } from "./guards";
 import { requestJson } from "./request";
 import { mandateFailureMessage, tm, type MandateWord } from "./strings_project_mandate";
 
@@ -182,10 +183,6 @@ export function totalProblem(total: string, reserved: string | null): TotalProbl
 // Strict parsing and binding (UI CHECKLIST a, b)
 // ---------------------------------------------------------------------------------------------
 
-function isString(value: unknown): value is string {
-  return typeof value === "string";
-}
-
 /** Every field of the FTF-0407 view, type-checked; null when the body is not exactly a list of them. */
 export function parseRequirements(body: unknown): CriticalBehaviorRequirementView[] | null {
   if (!Array.isArray(body)) return null;
@@ -233,11 +230,10 @@ export function parseBudgetPolicy(body: unknown): BudgetPolicyRecord | null {
     b.project_id === "" ||
     !isString(b.total_amount) ||
     toUnits(b.total_amount) === null ||
-    !isString(b.currency) ||
-    !(BUDGET_CURRENCIES as readonly string[]).includes(b.currency) ||
+    !isOneOf(BUDGET_CURRENCIES, b.currency) ||
     !Array.isArray(b.scopes) ||
     b.scopes.length === 0 ||
-    !b.scopes.every((s: unknown) => (BUDGET_SCOPES as readonly unknown[]).includes(s)) ||
+    !b.scopes.every((s: unknown) => isOneOf(BUDGET_SCOPES, s)) ||
     new Set(b.scopes as string[]).size !== b.scopes.length ||
     !isString(b.reserved_amount) ||
     toUnits(b.reserved_amount) === null ||
@@ -303,7 +299,9 @@ export function bindBudgetSave(
   if (current === null) {
     return reply.currency === sent.currency && reply.row_version === 1;
   }
+  // A revision never sends a currency (it is fixed at creation), and never changes it.
   return (
+    sent.currency === null &&
     reply.id === current.id &&
     reply.currency === current.currency &&
     reply.row_version === current.row_version + 1
@@ -313,15 +311,13 @@ export function bindBudgetSave(
 // ---------------------------------------------------------------------------------------------
 
 type Load<T> =
-  | { state: "loading" }
-  | { state: "ready"; data: T }
-  | { state: "failed"; failure: Failure; previous: T | null };
+  { state: "loading" } | { state: "ready"; data: T } | { state: "failed"; failure: Failure };
 
 type BudgetLoad =
   | { state: "loading" }
   | { state: "missing" }
   | { state: "ready"; policy: BudgetPolicyRecord }
-  | { state: "failed"; failure: Failure; previous: BudgetPolicyRecord | null };
+  | { state: "failed"; failure: Failure };
 
 const SCOPE_WORD: Record<BudgetScope, MandateWord> = {
   training: "scopeTraining",
@@ -358,33 +354,28 @@ function RequirementsPanelInner({
   const [saveFailure, setSaveFailure] = useState<Failure | null>(null);
   const [saveNotice, setSaveNotice] = useState<"created" | "saved" | null>(null);
 
-  const alive = useRef(true);
+  // The submit button disables itself while its request is in flight, which drops keyboard focus;
+  // hand it back once the request has settled.
+  const refocusSubmit = useRef(false);
   useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
+    if (!saving && refocusSubmit.current) {
+      refocusSubmit.current = false;
+      document.getElementById("budget-policy-submit")?.focus();
+    }
+  }, [saving]);
 
   async function refreshRequirements(): Promise<void> {
-    setRequirements((previous) => (previous.state === "ready" ? previous : { state: "loading" }));
+    setRequirements({ state: "loading" });
     const outcome = await requestJson(requirementsUrl(apiBaseUrl, organizationId, projectId), {
       credentials: "include",
     });
-    if (!alive.current) return;
-    const keep = (p: Load<CriticalBehaviorRequirementView[]>) =>
-      p.state === "ready" ? p.data : p.state === "failed" ? p.previous : null;
     if (!outcome.ok) {
-      setRequirements((p) => ({ state: "failed", failure: outcome.failure, previous: keep(p) }));
+      setRequirements({ state: "failed", failure: outcome.failure });
       return;
     }
     const rows = parseRequirements(outcome.body);
     if (rows === null) {
-      setRequirements((p) => ({
-        state: "failed",
-        failure: { kind: "malformed" },
-        previous: keep(p),
-      }));
+      setRequirements({ state: "failed", failure: { kind: "malformed" } });
       return;
     }
     setRequirements({ state: "ready", data: rows });
@@ -397,12 +388,10 @@ function RequirementsPanelInner({
   }
 
   async function refreshBudgetPolicy(): Promise<void> {
+    setBudget({ state: "loading" });
     const outcome = await requestJson(budgetPolicyUrl(apiBaseUrl, organizationId, projectId), {
       credentials: "include",
     });
-    if (!alive.current) return;
-    const keep = (p: BudgetLoad) =>
-      p.state === "ready" ? p.policy : p.state === "failed" ? p.previous : null;
     if (!outcome.ok) {
       // A 404 is "no policy yet" (the route answers `not_found` for a missing policy and for a
       // project it cannot show; creating one then answers 404 for the latter, which is shown).
@@ -410,7 +399,7 @@ function RequirementsPanelInner({
         setBudget({ state: "missing" });
         return;
       }
-      setBudget((p) => ({ state: "failed", failure: outcome.failure, previous: keep(p) }));
+      setBudget({ state: "failed", failure: outcome.failure });
       return;
     }
     const policy = parseBudgetPolicy(outcome.body);
@@ -419,7 +408,7 @@ function RequirementsPanelInner({
       policy.organization_id !== organizationId ||
       policy.project_id !== projectId
     ) {
-      setBudget((p) => ({ state: "failed", failure: { kind: "malformed" }, previous: keep(p) }));
+      setBudget({ state: "failed", failure: { kind: "malformed" } });
       return;
     }
     setBudget({ state: "ready", policy });
@@ -433,8 +422,7 @@ function RequirementsPanelInner({
     void refreshBudgetPolicy();
   }, []);
 
-  const policy =
-    budget.state === "ready" ? budget.policy : budget.state === "failed" ? budget.previous : null;
+  const policy = budget.state === "ready" ? budget.policy : null;
   const creating = budget.state === "missing";
   const formAvailable = creating || policy !== null;
   const problem = totalProblem(totalAmount, creating ? null : (policy?.reserved_amount ?? null));
@@ -483,6 +471,7 @@ function RequirementsPanelInner({
       return;
     }
     setSaving(true);
+    refocusSubmit.current = true;
     setSaveFailure(null);
     setSaveNotice(null);
     const sent: BudgetSent = {
@@ -514,7 +503,6 @@ function RequirementsPanelInner({
           }),
         };
     const outcome = await requestJson(url, init);
-    if (!alive.current) return;
     if (!outcome.ok) {
       // The draft stays exactly as typed (this task's negative_acceptance).
       setSaveFailure(outcome.failure);
@@ -540,19 +528,19 @@ function RequirementsPanelInner({
 
   const desiredOf = (r: CriticalBehaviorRequirementView) =>
     r.is_critical || r.requires_confirmation;
-  const reqRows =
-    requirements.state === "ready"
-      ? requirements.data
-      : requirements.state === "failed"
-        ? (requirements.previous ?? [])
-        : [];
+  const reqRows = requirements.state === "ready" ? requirements.data : [];
 
   return (
     <div
       data-testid="requirements-panel"
       lang={lang}
       dir={dirFor(locale)}
-      style={{ display: "grid", gap: "var(--space-5)", maxInlineSize: "100%" }}
+      style={{
+        display: "grid",
+        gridTemplateColumns: "minmax(0, 1fr)",
+        gap: "var(--space-5)",
+        maxInlineSize: "100%",
+      }}
     >
       <h2 style={{ fontSize: "var(--font-title)" }}>{tm("panelTitle", locale)}</h2>
 
@@ -706,7 +694,12 @@ function RequirementsPanelInner({
             data-testid="budget-policy-form"
             aria-label={tm("budgetHeading", locale)}
             aria-busy={saving}
-            style={{ display: "grid", gap: "var(--space-4)", maxInlineSize: "100%" }}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "minmax(0, 1fr)",
+              gap: "var(--space-4)",
+              maxInlineSize: "100%",
+            }}
           >
             <ErrorSummary errors={summary} locale={locale} submitCount={submitCount} />
 
@@ -746,8 +739,9 @@ function RequirementsPanelInner({
 
             <fieldset
               data-testid="budget-scopes-fieldset"
-              aria-describedby="budget-scopes-helper"
-              aria-invalid={scopesError ? true : undefined}
+              aria-describedby={
+                scopesError ? "budget-scopes-helper budget-scopes-error" : "budget-scopes-helper"
+              }
             >
               <legend>
                 {tm("scopesLegend", locale)} <span>{phrase("fieldRequired", locale)}</span>
@@ -767,7 +761,7 @@ function RequirementsPanelInner({
                 </label>
               ))}
               {scopesError ? (
-                <div role="alert" data-testid="budget-scopes-error">
+                <div id="budget-scopes-error" role="alert" data-testid="budget-scopes-error">
                   {scopesError}
                 </div>
               ) : null}

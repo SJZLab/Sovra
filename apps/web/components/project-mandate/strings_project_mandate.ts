@@ -208,6 +208,9 @@ const WORDS = {
 
 export type MandateWord = keyof typeof WORDS;
 
+/** The whole catalogue, exported so a test can check every entry has a real Arabic counterpart. */
+export const MANDATE_WORDS: Record<MandateWord, CatalogueEntry> = WORDS;
+
 /** Lookup over this feature's catalogue; an unshipped locale renders English. */
 export const tm = makeT(WORDS);
 

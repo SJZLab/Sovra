@@ -46,6 +46,7 @@ import {
   type Locale,
 } from "../ui";
 import { SelectField, StatusLine, TextAreaField, type SelectOption } from "./form_controls";
+import { isOneOf, isString, isStringOrNull } from "./guards";
 import { jsonEqual, requestJson } from "./request";
 import { mandateFailureMessage, tm } from "./strings_project_mandate";
 
@@ -116,16 +117,6 @@ export function projectUiStateUrl(
 // Strict parsing and binding (UI CHECKLIST a, b): a reply only counts when it is a well-formed
 // project that is the one this request was about.
 // ---------------------------------------------------------------------------------------------
-
-function isString(value: unknown): value is string {
-  return typeof value === "string";
-}
-function isStringOrNull(value: unknown): value is string | null {
-  return value === null || typeof value === "string";
-}
-function isOneOf<T extends string>(set: readonly T[], value: unknown): value is T {
-  return typeof value === "string" && (set as readonly string[]).includes(value);
-}
 
 /** Every field of the FTF-0401 `_serialize` shape, type- and enum-checked; null when anything is off. */
 export function parseProjectRecord(body: unknown): ProjectRecord | null {
@@ -431,7 +422,7 @@ function ProjectSetupFormInner({
   }
 
   async function handleSaveDraft(): Promise<void> {
-    if (busy !== null || record === null || archived) return;
+    if (record === null || archived) return;
     setBusy("draft");
     focusAfter.current = "project-save-draft";
     setFailure(null);
@@ -511,7 +502,12 @@ function ProjectSetupFormInner({
       aria-busy={busy !== null}
       lang={lang}
       dir={dirFor(locale)}
-      style={{ display: "grid", gap: "var(--space-4)", maxInlineSize: "100%" }}
+      style={{
+        display: "grid",
+        gridTemplateColumns: "minmax(0, 1fr)",
+        gap: "var(--space-4)",
+        maxInlineSize: "100%",
+      }}
     >
       <h2 id={titleId}>{isEdit ? tm("formTitleEdit", locale) : tm("formTitleCreate", locale)}</h2>
 
