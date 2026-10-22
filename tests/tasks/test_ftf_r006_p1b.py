@@ -21,7 +21,7 @@ import re
 import sqlite3
 import sys
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -192,6 +192,7 @@ CREATE TABLE argilla_workspace_members (
   UNIQUE (organization_id, scope_id, identity_id));
 """
 
+_NO_BAO: Any = None  # store_secret_ref is stood in for, so no config is read
 ISSUER, SUBJECT = "https://issuer.example", "reviewer-1"
 
 
@@ -204,14 +205,10 @@ class Env:
             poolclass=StaticPool,
             connect_args={"detect_types": sqlite3.PARSE_DECLTYPES, "check_same_thread": False},
         )
-        raw = self.engine.raw_connection()
-        raw.driver_connection.create_function(  # type: ignore[attr-defined]
-            "now", 0, lambda: datetime.now(UTC).isoformat()
-        )
-        raw.driver_connection.create_function(  # type: ignore[attr-defined]
-            "gen_uuid", 0, lambda: str(uuid.uuid4())
-        )
-        raw.driver_connection.executescript(_DDL)  # type: ignore[attr-defined]
+        dbapi: Any = self.engine.raw_connection().driver_connection
+        dbapi.create_function("now", 0, lambda: datetime.now(UTC).isoformat())
+        dbapi.create_function("gen_uuid", 0, lambda: str(uuid.uuid4()))
+        dbapi.executescript(_DDL)
         self.org, self.project, self.binding = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
         self.seen_orgs: list[Any] = []
         self.secret_writes: list[dict[str, Any]] = []
@@ -231,8 +228,10 @@ class Env:
             return session.execute(statement, params or {})
 
         @contextlib.contextmanager
-        def scoped(factory: Any, organization_id: Any) -> Iterator[Session]:
-            session = factory()
+        def scoped(
+            session_factory: Callable[[], Session], organization_id: uuid.UUID
+        ) -> Iterator[Session]:
+            session = session_factory()
             try:
                 yield session
                 session.commit()
@@ -246,11 +245,11 @@ class Env:
             self.secret_writes.append(kw)
             return f"openbao://{kw['mount']}/{kw['path']}#{kw['field']}"
 
-        store.execute_tenant_scoped = passthrough  # type: ignore[assignment]
-        store.tenant_scoped_session = scoped  # type: ignore[assignment]
-        store.set_tenant_context = lambda *a, **k: None  # type: ignore[assignment]
-        store.store_secret_ref = fake_secret  # type: ignore[assignment]
-        store.time.sleep = self.sleeps.append  # type: ignore[assignment]
+        store.execute_tenant_scoped = passthrough
+        store.tenant_scoped_session = scoped
+        store.set_tenant_context = lambda *a, **k: None
+        store.store_secret_ref = fake_secret
+        store.time.sleep = self.sleeps.append
 
     def factory(self) -> Session:
         return Session(self.engine)
@@ -270,7 +269,7 @@ class Env:
             store.set_tenant_context,
             store.store_secret_ref,
             store.time.sleep,
-        ) = self._saved  # type: ignore[assignment]
+        ) = self._saved
         self.server.shutdown()
 
     def scope(self) -> Any:
@@ -289,7 +288,7 @@ class Env:
             issuer=ISSUER,
             subject=subject,
             client=self.client,
-            openbao_config=None,  # type: ignore[arg-type]
+            openbao_config=_NO_BAO,
         )
 
     def sync(self, role: Role | None, scope: Any, identity: Any, subject: str = SUBJECT) -> None:
@@ -515,10 +514,11 @@ def test_ensure_reviewer_identity_conflict_poll(env: Env) -> None:
         if len(env.sleeps) == 3:
             winner.append(_insert_identity(env, "pre"))
 
-    store.time.sleep = sleep  # type: ignore[assignment]
+    store.time.sleep = sleep
     ident = env.identity()
     check(
-        "polling returns the row the winner committed", winner and str(ident.id) == str(winner[0])
+        "polling returns the row the winner committed",
+        bool(winner) and str(ident.id) == str(winner[0]),
     )
     check(
         "it polled with the pinned delay, 3 times",
@@ -587,11 +587,13 @@ def test_ensure_reviewer_identity_insert_race(env: Env) -> None:
         winner.append(_insert_identity(env, "someone-else"))
         return "openbao://secret/loser#api_key"
 
-    store.store_secret_ref = racing_secret  # type: ignore[assignment]
+    store.store_secret_ref = racing_secret
     ident = env.identity()
     check(
         "a lost insert-race returns the winner's row",
-        winner and str(ident.id) == str(winner[0]) and ident.argilla_user_id == "someone-else",
+        bool(winner)
+        and str(ident.id) == str(winner[0])
+        and ident.argilla_user_id == "someone-else",
     )
     check(
         "no duplicate identity row", len(env.sql("SELECT 1 FROM argilla_reviewer_identities")) == 1
@@ -869,7 +871,7 @@ def test_integrity_error_without_a_winner_row_is_not_swallowed(env: Env) -> None
         )
         return "openbao://secret/loser#api_key"
 
-    store.store_secret_ref = clash_identity  # type: ignore[assignment]
+    store.store_secret_ref = clash_identity
     check(
         "an identity unique clash that is NOT this identity's own row re-raises the IntegrityError",
         raises(IntegrityError, env.identity),
@@ -915,7 +917,7 @@ def test_migration_0034_shapes() -> None:
     path = ROOT / "apps" / "api" / "alembic" / "versions" / "0034_argilla_review_identity.py"
     spec = importlib.util.spec_from_file_location("migration_0034", path)
     assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
+    mod: Any = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     rec = _Recorder()
     mod.op = rec
