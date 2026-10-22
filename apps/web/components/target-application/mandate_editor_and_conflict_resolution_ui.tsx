@@ -355,6 +355,63 @@ export function bindManifest(body: unknown, expected: ManifestIdentity): Manifes
   return body as ManifestRecord;
 }
 
+/** `.json()` that reports an unreadable body as `null` instead of throwing, so a non-JSON 200
+ * reaches the binding functions (which refuse `null`) and reads "cannot read", never "could not
+ * reach the server". */
+async function readBody(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+/** Structural equality that ignores object key order (a jsonb column does not keep it). */
+export function sameJson(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((item, index) => sameJson(item, b[index]))
+    );
+  }
+  if (isRecord(a) && isRecord(b)) {
+    const keys = Object.keys(a);
+    return (
+      keys.length === Object.keys(b).length &&
+      keys.every((key) => Object.hasOwn(b, key) && sameJson(a[key], b[key]))
+    );
+  }
+  return false;
+}
+
+export interface SentMandate {
+  mandate_json: unknown;
+  forbidden_actions_json: unknown;
+}
+
+/**
+ * Binds a SAVE reply to the request that produced it, on top of `bindManifest`: the stored
+ * `mandate_json` and `forbidden_actions_json` must be what was sent (a 200 that kept the old
+ * columns is a dropped edit, not a save) and the lifecycle `status` must be unchanged (a save never
+ * locks or supersedes). `null` when anything differs.
+ */
+export function bindSavedManifest(
+  body: unknown,
+  expected: ManifestIdentity,
+  sent: SentMandate,
+  statusBefore: string,
+): ManifestRecord | null {
+  const bound = bindManifest(body, expected);
+  if (!bound) return null;
+  if (bound.status !== statusBefore) return null;
+  if (!sameJson(bound.mandate_json, sent.mandate_json)) return null;
+  if (!sameJson(bound.forbidden_actions_json, sent.forbidden_actions_json)) return null;
+  return bound;
+}
+
 const REQUIREMENT_STRINGS = ["tool_definition_id", "name", "side_effect_class"] as const;
 const REQUIREMENT_BOOLEANS = [
   "is_critical",
@@ -545,12 +602,11 @@ export function MandateEditorAndConflictResolutionUI({
           if (!cancelled) setLoadFailure(failure);
           return;
         }
-        const manifestBody = bindManifest(await manifestResponse.json(), {
-          manifestId,
-          projectId,
-        });
-        const requirementsBody = parseRequirements(await requirementsResponse.json());
+        const manifestRaw = await readBody(manifestResponse);
+        const requirementsRaw = await readBody(requirementsResponse);
         if (cancelled) return;
+        const manifestBody = bindManifest(manifestRaw, { manifestId, projectId });
+        const requirementsBody = parseRequirements(requirementsRaw);
         if (!manifestBody || !requirementsBody) {
           setLoadFailure(MALFORMED_FAILURE);
           return;
@@ -562,7 +618,7 @@ export function MandateEditorAndConflictResolutionUI({
         setMandateBase(mandateBaseOf(manifestBody.mandate_json));
         setForbiddenBase(forbiddenBaseOf(manifestBody.forbidden_actions_json));
       } catch {
-        // A rejected fetch or an unreadable body is a visible, retryable failure, never a blank
+        // A rejected fetch is a visible, retryable failure, never a blank
         // page and never an empty "no conflicts" state (Law 17).
         if (!cancelled) setLoadFailure(NETWORK_FAILURE);
       }
@@ -573,7 +629,10 @@ export function MandateEditorAndConflictResolutionUI({
     };
   }, [base, organizationId, projectId, manifestId, loadNonce]);
 
-  const editable = manifest?.status === "draft" || manifest?.status === "review_required";
+  const statusEditable = manifest?.status === "draft" || manifest?.status === "review_required";
+  // While a save is in flight the form is read-only: an edit typed now would be neither in the
+  // request nor in the reply, and the reply would overwrite it while the screen read "saved".
+  const editable = statusEditable && !saving;
   const busy = saving || refreshing;
 
   const forbiddenActionStatuses = useMemo(
@@ -685,14 +744,15 @@ export function MandateEditorAndConflictResolutionUI({
     setSaveFailure(null);
     setSaved(false);
     try {
+      const sent: SentMandate = {
+        mandate_json: serializeMandateContent(mandate, mandateBase),
+        forbidden_actions_json: serializeForbiddenActions(forbiddenActions, forbiddenBase),
+      };
       const response = await fetch(manifestUrl(base, organizationId, projectId, manifestId), {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mandate_json: serializeMandateContent(mandate, mandateBase),
-          forbidden_actions_json: serializeForbiddenActions(forbiddenActions, forbiddenBase),
-        }),
+        body: JSON.stringify(sent),
       });
       if (!response.ok) {
         // The draft stays exactly as the user left it -- a refused save
@@ -701,8 +761,11 @@ export function MandateEditorAndConflictResolutionUI({
         if (identityRef.current === started) setSaveFailure(failure);
         return;
       }
-      const updated = bindManifest(await response.json(), { manifestId, projectId });
+      const raw = await readBody(response);
       if (identityRef.current !== started) return;
+      // A reply that does not say what was sent (unreadable, another manifest, old columns, a
+      // status change) is not a save: the drafts stay and nothing reads "saved".
+      const updated = bindSavedManifest(raw, { manifestId, projectId }, sent, manifest.status);
       if (!updated) {
         setSaveFailure(MALFORMED_FAILURE);
         return;
@@ -741,8 +804,9 @@ export function MandateEditorAndConflictResolutionUI({
         if (identityRef.current === started) setRefreshFailure(failure);
         return;
       }
-      const body = parseRequirements(await response.json());
+      const raw = await readBody(response);
       if (identityRef.current !== started) return;
+      const body = parseRequirements(raw);
       if (!body) {
         setRefreshFailure(MALFORMED_FAILURE);
         return;
@@ -795,7 +859,7 @@ export function MandateEditorAndConflictResolutionUI({
           style={{ display: "grid", gap: "var(--space-3)" }}
         >
           <h2>{t("title")}</h2>
-          {!editable && (
+          {!statusEditable && (
             <div data-testid="mandate-readonly-notice">
               <Banner kind="info" locale={locale}>
                 {t("readOnly", { status: statusWord })}
@@ -811,7 +875,8 @@ export function MandateEditorAndConflictResolutionUI({
               helper={helpFor(field, locale)}
               locale={locale}
               value={mandate[field] ?? ""}
-              disabled={!editable}
+              disabled={!statusEditable}
+              readOnly={saving}
               onChange={(event) => setTextField(field, event.target.value)}
             />
           ))}
@@ -826,7 +891,8 @@ export function MandateEditorAndConflictResolutionUI({
               requirement="optional"
               locale={locale}
               value={listDrafts[field] ?? mandate[field].join(", ")}
-              disabled={!editable}
+              disabled={!statusEditable}
+              readOnly={saving}
               onChange={(event) => setListField(field, event.target.value)}
             />
           ))}
@@ -842,7 +908,8 @@ export function MandateEditorAndConflictResolutionUI({
               requirement="optional"
               locale={locale}
               value={mandate[field] ?? ""}
-              disabled={!editable}
+              disabled={!statusEditable}
+              readOnly={saving}
               onChange={(event) => setNumberField(field, event.target.value)}
             />
           ))}
@@ -855,7 +922,7 @@ export function MandateEditorAndConflictResolutionUI({
           <h2>{t("forbiddenTitle")}</h2>
           <p>{t("forbiddenExplainer")}</p>
           {forbiddenActionStatuses.length === 0 ? (
-            editable ? (
+            statusEditable ? (
               <EmptyState
                 title={t("forbiddenEmptyTitle")}
                 why={t("forbiddenEmptyWhy")}
@@ -936,10 +1003,11 @@ export function MandateEditorAndConflictResolutionUI({
                         {t("noteEnforced")}
                       </div>
                     )}
-                    {editable && (
+                    {statusEditable && (
                       <Button
                         data-testid={`forbidden-action-remove-${status.name}`}
                         aria-label={t("removeActionNamed", { name: status.name })}
+                        disabled={saving}
                         onClick={() => removeForbiddenAction(status.name)}
                       >
                         {t("removeAction")}
@@ -951,7 +1019,7 @@ export function MandateEditorAndConflictResolutionUI({
             </ul>
           )}
 
-          {editable && (
+          {statusEditable && (
             <div
               data-testid="forbidden-action-add-form"
               style={{ display: "grid", gap: "var(--space-3)" }}
@@ -965,6 +1033,7 @@ export function MandateEditorAndConflictResolutionUI({
                 requirement="required"
                 locale={locale}
                 error={nameError}
+                readOnly={saving}
                 value={newActionName}
                 onChange={(event) => {
                   setNewActionName(event.target.value);
@@ -978,6 +1047,7 @@ export function MandateEditorAndConflictResolutionUI({
                 label={t("addReason")}
                 requirement="optional"
                 locale={locale}
+                readOnly={saving}
                 value={newActionReason}
                 onChange={(event) => setNewActionReason(event.target.value)}
               />
@@ -985,6 +1055,7 @@ export function MandateEditorAndConflictResolutionUI({
                 <Button
                   variant="primary"
                   data-testid="forbidden-action-add-button"
+                  disabled={saving}
                   onClick={addForbiddenAction}
                 >
                   {t("addButton")}
@@ -1038,7 +1109,7 @@ export function MandateEditorAndConflictResolutionUI({
           )}
         </section>
 
-        {editable && (
+        {statusEditable && (
           <section style={{ display: "grid", gap: "var(--space-3)" }}>
             {dirty && (
               <p data-testid="mandate-dirty-notice">

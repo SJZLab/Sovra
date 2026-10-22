@@ -9,7 +9,7 @@
 // Each pin was run RED against a mutated component first (see the submission's fault table).
 import { createElement } from "react";
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import axe from "axe-core";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -21,8 +21,10 @@ import {
   MANDATE_TEXT_FIELDS,
   MandateEditorAndConflictResolutionUI,
   bindManifest,
+  bindSavedManifest,
   conflictSentence,
   parseRequirements,
+  sameJson,
 } from "../components/target-application/mandate_editor_and_conflict_resolution_ui";
 import {
   MANDATE_STRINGS,
@@ -430,9 +432,11 @@ describe("[UX03-04A22-EMPTY] empty state with a real action", () => {
 describe("[UX03-04A22-LOADING] busy states are announced", () => {
   test("saving: aria-busy, a 'Saving…' button that is disabled, and the editor stays mounted", async () => {
     let release: (value: ReturnType<typeof reply>) => void = () => undefined;
+    let sentBody: Json = {};
     serve({
-      patch: () =>
+      patch: (body) =>
         new Promise((resolve) => {
+          sentBody = body;
           release = resolve;
         }),
     });
@@ -445,7 +449,7 @@ describe("[UX03-04A22-LOADING] busy states are announced", () => {
     const save = screen.getByTestId("mandate-save-button") as HTMLButtonElement;
     expect(save.textContent).toBe(mandateT("saving", "en"));
     expect(save.disabled).toBe(true);
-    release(reply(200, manifestBody({ mandate_json: { business_purpose: "x" } })));
+    release(reply(200, manifestBody(sentBody)));
     await waitFor(() => expect(screen.getByTestId("mandate-saved-notice")).toBeTruthy());
     expect(screen.getByTestId("mandate-editor-ui").getAttribute("aria-busy")).toBeNull();
   });
@@ -1219,4 +1223,302 @@ describe("[UX03-04A22-AXE] structural a11y rules hold in every state", () => {
       expect(await violations()).toEqual([]);
     });
   }
+});
+
+// -- UX03 r2 review: a save is bound to what was sent; stale refresh; unreadable bodies; locked while saving
+
+describe("[UX03-04A22-R2-SAVEBIND] a save reply must say what was sent", () => {
+  const ids = { manifestId: MANIFEST, projectId: PROJECT };
+  const sent = {
+    mandate_json: { business_purpose: "new", tags: ["a", { k: 1, j: 2 }] },
+    forbidden_actions_json: { actions: [{ name: "refund", reason: "policy" }] },
+  };
+  const echo = () => manifestBody({ ...sent });
+
+  test("an exact echo binds, regardless of object key order", () => {
+    expect(bindSavedManifest(echo(), ids, sent, "draft")).not.toBeNull();
+    expect(
+      bindSavedManifest(
+        manifestBody({
+          mandate_json: { tags: ["a", { j: 2, k: 1 }], business_purpose: "new" },
+          forbidden_actions_json: { actions: [{ reason: "policy", name: "refund" }] },
+        }),
+        ids,
+        sent,
+        "draft",
+      ),
+    ).not.toBeNull();
+  });
+
+  const FAULTS: [string, Json][] = [
+    [
+      "mandate_json (old value kept)",
+      manifestBody({ ...sent, mandate_json: { business_purpose: "old" } }),
+    ],
+    ["mandate_json (null)", manifestBody({ ...sent, mandate_json: null })],
+    [
+      "mandate_json (array order)",
+      manifestBody({
+        ...sent,
+        mandate_json: { business_purpose: "new", tags: [{ k: 1, j: 2 }, "a"] },
+      }),
+    ],
+    [
+      "mandate_json (key dropped)",
+      manifestBody({ ...sent, mandate_json: { business_purpose: "new" } }),
+    ],
+    [
+      "mandate_json (extra key)",
+      manifestBody({ ...sent, mandate_json: { ...sent.mandate_json, extra: 1 } }),
+    ],
+    [
+      "forbidden_actions_json (old value kept)",
+      manifestBody({ ...sent, forbidden_actions_json: null }),
+    ],
+    [
+      "forbidden_actions_json (reason changed)",
+      manifestBody({
+        ...sent,
+        forbidden_actions_json: { actions: [{ name: "refund", reason: "other" }] },
+      }),
+    ],
+    ["status (flipped to locked)", manifestBody({ ...sent, status: "locked" })],
+    ["status (flipped to review_required)", manifestBody({ ...sent, status: "review_required" })],
+    ["id", manifestBody({ ...sent, id: OTHER_MANIFEST })],
+    ["project_id", manifestBody({ ...sent, project_id: "9" })],
+  ];
+  for (const [field, body] of FAULTS) {
+    test(`a reply whose ${field} differs from the request is refused`, () => {
+      expect(bindSavedManifest(body, ids, sent, "draft")).toBeNull();
+    });
+  }
+  test("sameJson distinguishes types, lengths and keys", () => {
+    expect(sameJson({ a: 1 }, { a: "1" })).toBe(false);
+    expect(sameJson([1], [1, 2])).toBe(false);
+    expect(sameJson({ a: 1 }, { b: 1 })).toBe(false);
+    expect(sameJson({ a: 1 }, { a: 1, b: 2 })).toBe(false);
+    expect(sameJson({ a: 1, b: 2 }, { a: 1 })).toBe(false);
+    expect(sameJson([], {})).toBe(false);
+    expect(sameJson(null, {})).toBe(false);
+    expect(sameJson({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] })).toBe(true);
+  });
+
+  test("UI: a 200 that kept the OLD mandate is never 'saved' and the draft stays", async () => {
+    serve({
+      manifests: { [MANIFEST]: manifestBody({ mandate_json: { business_purpose: "old" } }) },
+      patch: (body) =>
+        reply(200, manifestBody({ ...body, mandate_json: { business_purpose: "old" } })),
+    });
+    await loaded();
+    type("mandate-field-business_purpose", "edited");
+    fireEvent.click(screen.getByTestId("mandate-save-button"));
+    const error = await screen.findByTestId("mandate-save-error");
+    expect(error.textContent).toContain("cannot read");
+    expect(screen.queryByTestId("mandate-saved-notice")).toBeNull();
+    expect(
+      (screen.getByTestId("mandate-field-business_purpose") as HTMLTextAreaElement).value,
+    ).toBe("edited");
+    expect(screen.getByTestId("mandate-dirty-notice")).toBeTruthy();
+  });
+
+  test("UI: a 200 that kept the OLD forbidden actions is never 'saved' and the new entry stays", async () => {
+    serve({ patch: (body) => reply(200, manifestBody({ ...body, forbidden_actions_json: null })) });
+    await loaded();
+    type("new-forbidden-action-name", "wire_transfer");
+    fireEvent.click(screen.getByTestId("forbidden-action-add-button"));
+    fireEvent.click(screen.getByTestId("mandate-save-button"));
+    await screen.findByTestId("mandate-save-error");
+    expect(screen.queryByTestId("mandate-saved-notice")).toBeNull();
+    expect(screen.getByTestId("forbidden-action-name-wire_transfer")).toBeTruthy();
+  });
+
+  test("UI: a 200 that flips the status to locked is refused and the editor stays editable", async () => {
+    serve({ patch: (body) => reply(200, manifestBody({ ...body, status: "locked" })) });
+    await loaded();
+    type("mandate-field-business_purpose", "edited");
+    fireEvent.click(screen.getByTestId("mandate-save-button"));
+    await screen.findByTestId("mandate-save-error");
+    expect(screen.queryByTestId("mandate-saved-notice")).toBeNull();
+    expect(screen.queryByTestId("mandate-readonly-notice")).toBeNull();
+  });
+});
+
+describe("[UX03-04A22-R2-REFRESH-IDENTITY] a stale enforcement refresh never applies to another manifest", () => {
+  test("a refresh reply that arrives after the manifest changed is ignored", async () => {
+    const forbidden = { actions: [{ name: "refund", reason: "policy" }] };
+    let release: (value: ReturnType<typeof reply>) => void = () => undefined;
+    let n = 0;
+    serve({
+      manifests: {
+        [MANIFEST]: manifestBody({ forbidden_actions_json: forbidden }),
+        [OTHER_MANIFEST]: manifestBody({ id: OTHER_MANIFEST, forbidden_actions_json: forbidden }),
+      },
+      requirementsReply: () => {
+        n += 1;
+        if (n === 2) {
+          return new Promise((resolve) => {
+            release = resolve;
+          });
+        }
+        return reply(200, []);
+      },
+    });
+    const view = await loaded();
+    fireEvent.click(screen.getByTestId("refresh-enforcement-button"));
+    await waitFor(() => expect(n).toBe(2));
+    view.rerender(
+      createElement(MandateEditorAndConflictResolutionUI, {
+        apiBaseUrl: API_BASE,
+        organizationId: ORG,
+        projectId: PROJECT,
+        manifestId: OTHER_MANIFEST,
+      }),
+    );
+    await waitFor(() => expect(screen.getByTestId("forbidden-action-name-refund")).toBeTruthy());
+    await act(async () => {
+      release(reply(200, [requirementRow({ name: "refund", runtime_enforced: true })]));
+    });
+    // The stale reply (enforced refund) must not have been applied to the new manifest.
+    expect(screen.queryByTestId("forbidden-action-enforced-refund")).toBeNull();
+  });
+});
+
+describe("[UX03-04A22-R2-REFRESH-FAILURE-IDENTITY] a stale refresh failure is not shown on another manifest", () => {
+  test("a 503 for the old manifest's refresh does not appear after the manifest changed", async () => {
+    let release: (value: ReturnType<typeof reply>) => void = () => undefined;
+    let n = 0;
+    serve({
+      manifests: {
+        [MANIFEST]: manifestBody(),
+        [OTHER_MANIFEST]: manifestBody({ id: OTHER_MANIFEST }),
+      },
+      requirementsReply: () => {
+        n += 1;
+        if (n === 2) {
+          return new Promise((resolve) => {
+            release = resolve;
+          });
+        }
+        return reply(200, []);
+      },
+    });
+    const view = await loaded();
+    fireEvent.click(screen.getByTestId("refresh-enforcement-button"));
+    await waitFor(() => expect(n).toBe(2));
+    view.rerender(
+      createElement(MandateEditorAndConflictResolutionUI, {
+        apiBaseUrl: API_BASE,
+        organizationId: ORG,
+        projectId: PROJECT,
+        manifestId: OTHER_MANIFEST,
+      }),
+    );
+    await waitFor(() => expect(n).toBe(3));
+    await waitFor(() => expect(screen.getByTestId("mandate-fields-section")).toBeTruthy());
+    await act(async () => {
+      release(reply(503, { detail: "down" }));
+    });
+    expect(screen.queryByTestId("refresh-enforcement-error")).toBeNull();
+  });
+});
+
+describe("[UX03-04A22-R2-UNREADABLE] a non-JSON 200 is 'cannot read', not a network failure", () => {
+  const unreadable = () => ({
+    ok: true,
+    status: 200,
+    json: async (): Promise<unknown> => {
+      throw new SyntaxError("Unexpected token <");
+    },
+  });
+
+  test("load", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => unreadable()),
+    );
+    mount();
+    const error = await screen.findByTestId("mandate-load-error");
+    expect(error.textContent).toContain("cannot read");
+    expect(error.textContent).not.toContain("Could not reach");
+  });
+
+  test("save", async () => {
+    const { calls } = serve({ patch: () => unreadable() as unknown as ReturnType<typeof reply> });
+    await loaded();
+    type("mandate-field-business_purpose", "edited");
+    fireEvent.click(screen.getByTestId("mandate-save-button"));
+    const error = await screen.findByTestId("mandate-save-error");
+    expect(calls.some((c) => c.method === "PATCH")).toBe(true);
+    expect(error.textContent).toContain("cannot read");
+    expect(error.textContent).not.toContain("Could not reach");
+  });
+
+  test("refresh", async () => {
+    let n = 0;
+    serve({
+      requirementsReply: () => {
+        n += 1;
+        return (n === 1 ? reply(200, []) : unreadable()) as unknown as ReturnType<typeof reply>;
+      },
+    });
+    await loaded();
+    fireEvent.click(screen.getByTestId("refresh-enforcement-button"));
+    const error = await screen.findByTestId("refresh-enforcement-error");
+    expect(error.textContent).toContain("cannot read");
+    expect(error.textContent).not.toContain("Could not reach");
+  });
+});
+
+describe("[UX03-04A22-R2-SAVELOCK] edits typed while a save is in flight are not lost or shown as saved", () => {
+  test("the form is read-only during the save, typing is ignored, and the reply matches the request", async () => {
+    let release: (value: ReturnType<typeof reply>) => void = () => undefined;
+    let sentBody: Json = {};
+    serve({
+      manifests: {
+        [MANIFEST]: manifestBody({
+          forbidden_actions_json: { actions: [{ name: "refund", reason: "policy" }] },
+        }),
+      },
+      patch: (body) =>
+        new Promise((resolve) => {
+          sentBody = body;
+          release = resolve;
+        }),
+    });
+    await loaded();
+    type("mandate-field-business_purpose", "first");
+    fireEvent.click(screen.getByTestId("mandate-save-button"));
+    await waitFor(() =>
+      expect(screen.getByTestId("mandate-save-button").textContent).toBe("Saving…"),
+    );
+    const purpose = screen.getByTestId("mandate-field-business_purpose") as HTMLTextAreaElement;
+    expect(purpose.readOnly).toBe(true);
+    for (const field of [...MANDATE_LIST_FIELDS, ...MANDATE_NUMBER_FIELDS]) {
+      expect(
+        (screen.getByTestId(`mandate-field-${field}`) as HTMLInputElement).readOnly,
+        field,
+      ).toBe(true);
+    }
+    expect((screen.getByTestId("new-forbidden-action-name") as HTMLInputElement).readOnly).toBe(
+      true,
+    );
+    expect((screen.getByTestId("forbidden-action-add-button") as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(
+      (screen.getByTestId("forbidden-action-remove-refund") as HTMLButtonElement).disabled,
+    ).toBe(true);
+    // Edits attempted anyway (a programmatic change event) do nothing.
+    type("mandate-field-business_purpose", "second");
+    type("mandate-field-latency_slo_ms", "900");
+    fireEvent.click(screen.getByTestId("forbidden-action-remove-refund"));
+    expect(purpose.value).toBe("first");
+    expect((screen.getByTestId("mandate-field-latency_slo_ms") as HTMLInputElement).value).toBe("");
+    release(reply(200, manifestBody({ ...sentBody })));
+    await screen.findByTestId("mandate-saved-notice");
+    expect(purpose.value).toBe("first");
+    expect(screen.queryByTestId("mandate-dirty-notice")).toBeNull();
+    expect(screen.getByTestId("forbidden-action-name-refund")).toBeTruthy();
+    expect(purpose.readOnly).toBe(false);
+  });
 });

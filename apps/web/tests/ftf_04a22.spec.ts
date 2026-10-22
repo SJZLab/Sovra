@@ -931,41 +931,33 @@ test("a props change refetches the manifest", async () => {
   expect(before).toBeGreaterThan(0);
 });
 
-// -- Round 3: the server's returned manifest is what is shown after a save --
+// -- Round 3: the server's returned manifest is what is shown after a save (UX03 r2: and it must be
+// the manifest that was asked for -- the columns sent, the status unchanged) --
 
-test("after a successful save the returned manifest is shown (fields, lock state, no Save)", async () => {
+test("after a successful save the returned manifest is shown (server-owned fields, no Save)", async () => {
   installServer({
-    patchResponse: {
-      status: "locked",
-      mandate_json: { business_purpose: "SERVER" },
-      forbidden_actions_json: { actions: [{ name: "server_action", reason: "from server" }] },
-    },
+    patchResponse: { version: 7, manifest_sha256: "f".repeat(64) },
   });
   await renderLoaded();
   typeInto("mandate-field-business_purpose", "local edit");
   fireEvent.click(screen.getByTestId("mandate-save-button"));
   await waitFor(() => expect(callsOf("PATCH").length).toBe(1));
-  await waitFor(() => expect(screen.queryByTestId("mandate-save-button")).toBeNull());
+  await waitFor(() => expect(screen.getByTestId("mandate-saved-notice")).toBeTruthy());
   const field = screen.getByTestId("mandate-field-business_purpose") as HTMLTextAreaElement;
-  expect(field.value).toBe("SERVER");
-  expect(field.disabled).toBe(true);
-  expect(screen.getByTestId("mandate-readonly-notice")).toBeTruthy();
-  expect(screen.getByTestId("forbidden-action-name-server_action")).toBeTruthy();
-  expect(screen.queryByTestId("forbidden-action-add-form")).toBeNull();
+  expect(field.value).toBe("local edit");
+  expect((screen.getByTestId("mandate-save-button") as HTMLButtonElement).disabled).toBe(true);
 });
 
-test("after a successful save that stays editable, Save is disabled again and the server value shows", async () => {
-  installServer({
-    patchResponse: { mandate_json: { business_purpose: "SERVER" } },
-  });
+test("a save reply that flips the lifecycle status is refused: never 'saved', drafts kept", async () => {
+  installServer({ patchResponse: { status: "locked" } });
   await renderLoaded();
   typeInto("mandate-field-business_purpose", "local edit");
   fireEvent.click(screen.getByTestId("mandate-save-button"));
-  await waitFor(() =>
-    expect((screen.getByTestId("mandate-save-button") as HTMLButtonElement).disabled).toBe(true),
-  );
+  await waitFor(() => expect(callsOf("PATCH").length).toBe(1));
+  await waitFor(() => expect(screen.getByTestId("mandate-save-error")).toBeTruthy());
+  expect(screen.queryByTestId("mandate-saved-notice")).toBeNull();
   expect((screen.getByTestId("mandate-field-business_purpose") as HTMLTextAreaElement).value).toBe(
-    "SERVER",
+    "local edit",
   );
 });
 

@@ -71,6 +71,8 @@ const CANDIDATES = {
       framework_or_runtime: "python",
       confidence_score: 0.42,
       discovery_status: "candidate",
+      organization_id: ORG,
+      target_source_snapshot_id: SNAPSHOT,
     },
     {
       id: CAND_B,
@@ -78,6 +80,8 @@ const CANDIDATES = {
       framework_or_runtime: null,
       confidence_score: 0.96,
       discovery_status: "candidate",
+      organization_id: ORG,
+      target_source_snapshot_id: SNAPSHOT,
     },
   ],
   limit: 50,
@@ -129,6 +133,8 @@ function manifest21(over: Record<string, unknown> = {}) {
 const EVIDENCE = [
   {
     id: "ev-1",
+    organization_id: ORG,
+    agent_manifest_id: MANIFEST,
     field_path: "agent_entrypoint_json",
     evidence_type: "repo_symbol",
     repository_commit_sha: "abcdef0123456789abcdef0123456789abcdef01",
