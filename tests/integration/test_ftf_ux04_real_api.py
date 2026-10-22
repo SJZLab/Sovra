@@ -2,23 +2,24 @@
 """FTF-UX04 -- the real project form and requirements panel against the REAL routers.
 
 `apps/web/tests/ftf_ux04.spec.ts` drives the two components against a mocked `fetch`. This suite
-closes the UI CHECKLIST's item (f): it boots `build_project_router`, `build_budget_policy_router` and
+closes the UI CHECKLIST's item (f): it boots `build_project_router`,
+`build_budget_policy_router` and
 `build_critical_behavior_requirement_router` on a real uvicorn server over PostgreSQL 16 as the
 restricted `sovra_app` role, seeds real organizations / workspaces / projects / tools through the
 real stores, then runs `apps/web/tests/real_api/ftf_ux04_real_api.realapi.ts` (Vitest + jsdom, the
 real components and real `fetch`) against it:
 
 R1   create a generic project                      -> 201, bound, "Project created"
-R2   create an agentic project, then save again    -> POST then PATCH (no duplicate), security profile kept
+R2   create an agentic project, then save again    -> POST then PATCH (no duplicate), profile kept
 R3   edit, then clear the description              -> "" stored, version +1 each save
 R4   stale edit (another editor saved first)       -> 409 shown as a sentence, nothing overwritten
 R5   save a draft, reopen                          -> draft stored, version unchanged, offered back
 R6   read-only role                                -> 403 shown, nothing changed
 R7   another organization's project, this path     -> 404 shown, nothing written
-R8   profile less strict than the org default      -> 400 shown with the reason, no project; then accepted
+R8   profile less strict than the org default      -> 400 with the reason, no project; then accepted
 R9   the real /requirements view                   -> rows and states in words
-R10  create then revise a budget policy            -> bound replies, versions 1 then 2, exact amounts
-R11  total below the reserved amount               -> stopped before any request; stale revise -> 409
+R10  create then revise a budget policy            -> bound replies, versions 1 then 2, exact
+R11  total below the reserved amount               -> stopped before a request; stale revise 409
 R12  read-only role on the budget                  -> 403 shown, no policy
 R13  another organization's project (budget)       -> 404 shown, nothing stored
 
@@ -57,8 +58,8 @@ from app.auth.organization_workspace_schema import Organization, Workspace  # no
 from app.auth.rbac_middleware import AuthenticatedPrincipal, Role  # noqa: E402
 from app.budget.budget_policy_routes import build_budget_policy_router  # noqa: E402
 from app.db.tenant_context import TenantContext, tenant_scoped_session_for  # noqa: E402
-from app.projects.project_crud import create_project  # noqa: E402
 from app.projects.project_crud import ActorInfo as ProjectActor  # noqa: E402
+from app.projects.project_crud import create_project  # noqa: E402
 from app.projects.project_routes import build_project_router  # noqa: E402
 from app.tools.critical_behavior_requirement_routes import (  # noqa: E402
     build_critical_behavior_requirement_router,
@@ -158,7 +159,9 @@ def main() -> None:
     with owner_engine.begin() as conn:
         # org2 inherits a stricter default: a project there may not be less strict (R8)
         conn.execute(
-            text("UPDATE organizations SET default_security_profile = 'zero_egress' WHERE id = :id"),
+            text(
+                "UPDATE organizations SET default_security_profile = 'zero_egress' WHERE id = :id"
+            ),
             {"id": org2_id},
         )
 
@@ -281,8 +284,13 @@ def main() -> None:
     r1 = one("SELECT * FROM projects WHERE name = 'ux04-r1-generic'")
     check("R1 exactly the created project exists", r1 is not None)
     if r1 is not None:
-        check("R1 stored as sent", r1["description"] == "made by the UI" and r1["status"] == "active")
-        check("R1 actor is the authenticated principal", r1["created_by"] == "user-org1-workspace_admin")
+        check(
+            "R1 stored as sent", r1["description"] == "made by the UI" and r1["status"] == "active"
+        )
+        check(
+            "R1 actor is the authenticated principal",
+            r1["created_by"] == "user-org1-workspace_admin",
+        )
         check("R1 version 1, org1", r1["row_version"] == 1 and r1["organization_id"] == org1_id)
 
     check(
@@ -365,18 +373,24 @@ def main() -> None:
     )
     check(
         "R12 the read-only role stored no policy",
-        count("SELECT count(*) FROM budget_policies WHERE project_id = :id", id=seeds_ids["budgetRole"])
+        count(
+            "SELECT count(*) FROM budget_policies WHERE project_id = :id",
+            id=seeds_ids["budgetRole"],
+        )
         == 0,
     )
     check(
         "R13 nothing was stored for the other organization's project",
-        count("SELECT count(*) FROM budget_policies WHERE project_id = :id", id=seeds_ids["foreign"])
+        count(
+            "SELECT count(*) FROM budget_policies WHERE project_id = :id", id=seeds_ids["foreign"]
+        )
         == 0,
     )
     check(
         "no row in org2 carries an org1 actor",
         count(
-            "SELECT count(*) FROM projects WHERE organization_id = :org AND created_by LIKE 'user-org1-%'",
+            "SELECT count(*) FROM projects "
+            "WHERE organization_id = :org AND created_by LIKE 'user-org1-%'",
             org=org2_id,
         )
         == 0,

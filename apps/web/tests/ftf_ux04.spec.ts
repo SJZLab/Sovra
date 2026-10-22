@@ -621,6 +621,48 @@ describe("[UX04-B3] project form: a draft reply that is not this request's resul
   });
 });
 
+describe("[UX04-N] leaving without saving, and units on amounts (H3, H2)", () => {
+  test("Cancel is offered only when the caller can act on it, sends nothing and calls onCancel", () => {
+    const { unmount } = renderForm({ project: project() });
+    expect(screen.queryByTestId("project-cancel-button")).toBeNull();
+    unmount();
+    const onCancel = vi.fn();
+    renderForm({ project: project(), onCancel });
+    type("project-name-input", "typed but not saved");
+    click("project-cancel-button");
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(fetchMock()).not.toHaveBeenCalled();
+    expect(text("project-cancel-button")).toBe("Cancel");
+    expect((tid("project-cancel-button") as HTMLButtonElement).type).toBe("button");
+    expect(tid("project-cancel-button").getAttribute("data-variant")).toBe("secondary");
+  });
+
+  test("ar: the Cancel label is Arabic", () => {
+    renderForm({ project: project(), onCancel: () => undefined, locale: "ar" });
+    expect(text("project-cancel-button")).toBe("إلغاء");
+  });
+
+  test("a cancel stays available while a request is in flight (the user is never trapped)", async () => {
+    fetchMock().mockImplementationOnce(() => new Promise(() => undefined));
+    renderForm({ project: project(), onCancel: () => undefined });
+    click("project-submit-button");
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(1));
+    expect((tid("project-cancel-button") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  test("reserved and available amounts carry their currency", async () => {
+    renderPanel({
+      budgetGet: () =>
+        ok(policy({ currency: "SAR", reserved_amount: "12.5000", available_amount: "987.5000" })),
+    });
+    await waitFor(() => expect(text("budget-reserved")).toBe("12.5000"));
+    const dd = tid("budget-reserved").closest("dd")!;
+    expect(dd.textContent).toBe("12.5000 SAR");
+    expect(tid("budget-available").closest("dd")!.textContent).toBe("987.5000 SAR");
+    expect(dd.querySelector("bdi")!.textContent).toBe("SAR");
+  });
+});
+
 describe("[UX04-E] project form: typed errors keep state and never become success (UI CHECKLIST d, e)", () => {
   const CASES: [string, () => unknown, string][] = [
     [
@@ -1365,22 +1407,52 @@ describe("[UX04-P0] requirements panel: certified request shapes and states are 
     expect(text("requirement-enforced-ok")).toBe("Enforced");
   });
 
-  test("the list is a real table: caption, column headers, a row header per tool, and a state in words", async () => {
+  test("the list is the shared DataTable: caption, column headers, sortable, and a state in words", async () => {
     renderPanel({ requirements: () => ok([requirement({ runtime_enforced: false })]) });
     await waitFor(() => expect(tid("requirement-list")).toBeTruthy());
-    const table = tid("requirement-list");
+    const wrapper = tid("requirement-list");
+    const table = wrapper.querySelector("table")!;
     expect(table.querySelector("caption")!.textContent).toBe(
       "Tools: declared requirement and runtime enforcement",
     );
-    expect(
-      Array.from(table.querySelectorAll('thead th[scope="col"]')).map((th) => th.textContent),
-    ).toEqual(["Tool (side-effect class)", "Declared", "Runtime", "Check"]);
-    expect(table.querySelector('tbody th[scope="row"]')!.textContent).toBe(
-      "issue_refund (financial)",
-    );
-    expect(table.parentElement!.getAttribute("role")).toBe("region");
-    expect(table.parentElement!.getAttribute("tabindex")).toBe("0");
+    const headers = Array.from(table.querySelectorAll('thead th[scope="col"]'));
+    expect(headers.map((th) => th.textContent)).toEqual([
+      "Tool (side-effect class)",
+      "Declared",
+      "Runtime",
+      "Check",
+    ]);
+    for (const th of headers) expect(th.getAttribute("aria-sort")).toBe("none");
+    expect(text("requirement-row-tool-1")).toBe("issue_refund (financial)");
+    const region = wrapper.querySelector('[role="region"]')!;
+    expect(region.getAttribute("tabindex")).toBe("0");
     expect(table.querySelector('[aria-hidden="true"]')!.textContent).toBe("✕");
+  });
+
+  test("the columns sort: the Check column brings the conflicts to the top; the Tool column orders by name", async () => {
+    const rows = [
+      requirement({ tool_definition_id: "b", name: "b_tool" }),
+      requirement({ tool_definition_id: "a", name: "a_tool" }),
+      requirement({ tool_definition_id: "c", name: "c_tool", runtime_enforced: false }),
+    ];
+    renderPanel({ requirements: () => ok(rows) });
+    await waitFor(() => expect(tid("requirement-list")).toBeTruthy());
+    const order = () =>
+      Array.from(tid("requirement-list").querySelectorAll("tbody tr")).map(
+        (tr) => tr.querySelector("bdi")!.textContent,
+      );
+    expect(order()).toEqual(["b_tool", "a_tool", "c_tool"]);
+    const header = (label: string) =>
+      Array.from(tid("requirement-list").querySelectorAll("thead button")).find((b) =>
+        b.textContent!.includes(label),
+      )!;
+    fireEvent.click(header("Check"));
+    expect(order()[0]).toBe("c_tool");
+    fireEvent.click(header("Tool"));
+    expect(order()).toEqual(["a_tool", "b_tool", "c_tool"]);
+    fireEvent.click(header("Tool"));
+    expect(order()).toEqual(["c_tool", "b_tool", "a_tool"]);
+    expect(header("Tool").closest("th")!.getAttribute("aria-sort")).toBe("descending");
   });
 
   test("create: a missing policy shows the notice, an enabled currency and the create action", async () => {
@@ -1948,7 +2020,7 @@ describe("[UX04-S2] requirements panel: waiting is shown, and nothing can change
   test("the requirement table region is keyboard-scrollable (focusable) and named", async () => {
     renderPanel({ requirements: () => ok([requirement()]) });
     await waitFor(() => expect(tid("requirement-list")).toBeTruthy());
-    const region = tid("requirement-list").parentElement!;
+    const region = tid("requirement-list").querySelector('[role="region"]')!;
     expect(region.getAttribute("tabindex")).toBe("0");
     expect(region.getAttribute("aria-label")).toBe(
       "Tools: declared requirement and runtime enforcement",
@@ -2463,10 +2535,10 @@ describe("[UX04-L2] requirements panel: English and Arabic (RTL)", () => {
     const longName = `issue_refund_for_${"t".repeat(60)}_order`;
     renderPanel({ requirements: () => ok([requirement({ name: longName })]) });
     await waitFor(() => expect(tid("requirement-list")).toBeTruthy());
-    const header = tid("requirement-list").querySelector('tbody th[scope="row"]') as HTMLElement;
-    expect(header.querySelectorAll("bdi")).toHaveLength(2);
-    expect(header.textContent).toContain(longName);
-    expect(header.style.overflowWrap).toBe("anywhere");
+    const cell = tid("requirement-row-tool-1");
+    expect(cell.querySelectorAll("bdi")).toHaveLength(2);
+    expect(cell.textContent).toContain(longName);
+    expect(cell.style.overflowWrap).toBe("anywhere");
   });
 });
 

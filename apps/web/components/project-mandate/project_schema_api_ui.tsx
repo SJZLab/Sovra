@@ -41,6 +41,7 @@ import {
   ErrorSummary,
   Field,
   Pending,
+  phrase,
   resolveLocale,
   type ErrorSummaryItem,
   type Locale,
@@ -86,6 +87,8 @@ export interface ProjectSetupFormProps {
   workspaceId: string;
   project?: ProjectRecord | null;
   onSaved?: (project: ProjectRecord) => void;
+  /** Leaving without saving (NN/g H3). The caller decides where to go; nothing is sent. */
+  onCancel?: () => void;
   locale?: Locale;
 }
 
@@ -274,6 +277,7 @@ function ProjectSetupFormInner({
   workspaceId,
   project = null,
   onSaved,
+  onCancel,
   locale = "en",
 }: ProjectSetupFormProps) {
   const lang = resolveLocale(locale);
@@ -686,6 +690,16 @@ function ProjectSetupFormInner({
         >
           {tm("saveDraft", locale)}
         </Button>
+        {onCancel && (
+          <Button
+            id="project-cancel"
+            variant="secondary"
+            data-testid="project-cancel-button"
+            onClick={onCancel}
+          >
+            {phrase("cancel", locale)}
+          </Button>
+        )}
       </div>
     </form>
   );

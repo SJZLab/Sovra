@@ -44,6 +44,7 @@ import { isRecord, type Failure } from "../target-application/common";
 import {
   Banner,
   Button,
+  DataTable,
   dirFor,
   EmptyState,
   ErrorSummary,
@@ -528,6 +529,8 @@ function RequirementsPanelInner({
 
   const desiredOf = (r: CriticalBehaviorRequirementView) =>
     r.is_critical || r.requires_confirmation;
+  /** Computed fresh on every render from the live view; never a stored or overridable flag. */
+  const isConflict = (r: CriticalBehaviorRequirementView) => desiredOf(r) && !r.runtime_enforced;
   const reqRows = requirements.state === "ready" ? requirements.data : [];
 
   return (
@@ -590,59 +593,71 @@ function RequirementsPanelInner({
           </div>
         )}
         {reqRows.length > 0 && (
-          <div
-            role="region"
-            aria-label={tm("criticalCaption", locale)}
-            tabIndex={0}
-            style={{ overflowX: "auto" }}
-          >
-            <table style={{ fontSize: "var(--font-table)" }} data-testid="requirement-list">
-              <caption>{tm("criticalCaption", locale)}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">{tm("colTool", locale)}</th>
-                  <th scope="col">{tm("colDesired", locale)}</th>
-                  <th scope="col">{tm("colEnforced", locale)}</th>
-                  <th scope="col">{tm("colConflict", locale)}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {reqRows.map((requirement) => {
-                  const desired = desiredOf(requirement);
-                  const conflict = desired && !requirement.runtime_enforced;
-                  const id = requirement.tool_definition_id;
-                  return (
-                    <tr key={id} data-testid={`requirement-row-${id}`}>
-                      <th scope="row" style={{ overflowWrap: "anywhere", textAlign: "start" }}>
-                        <bdi>{requirement.name}</bdi> (<bdi>{requirement.side_effect_class}</bdi>)
-                      </th>
-                      <td data-testid={`requirement-desired-${id}`}>
-                        {desired ? tm("desiredCritical", locale) : tm("desiredNonCritical", locale)}
-                      </td>
-                      <td data-testid={`requirement-enforced-${id}`}>
-                        {requirement.runtime_enforced
-                          ? tm("enforced", locale)
-                          : tm("notEnforced", locale)}
-                      </td>
-                      <td style={{ overflowWrap: "anywhere" }}>
-                        {conflict ? (
-                          <span
-                            data-testid={`requirement-conflict-${id}`}
-                            style={{ color: "var(--color-danger)" }}
-                          >
-                            <span aria-hidden="true">✕</span> {tm("conflict", locale)}
-                          </span>
-                        ) : (
-                          <span style={{ color: "var(--color-success)" }}>
-                            <span aria-hidden="true">✓</span> {tm("consistent", locale)}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div data-testid="requirement-list">
+            <DataTable<CriticalBehaviorRequirementView>
+              caption={tm("criticalCaption", locale)}
+              rows={reqRows}
+              rowKey={(requirement) => requirement.tool_definition_id}
+              empty={null}
+              columns={[
+                {
+                  key: "tool",
+                  header: tm("colTool", locale),
+                  sortValue: (requirement) => requirement.name,
+                  render: (requirement) => (
+                    <span
+                      data-testid={`requirement-row-${requirement.tool_definition_id}`}
+                      style={{ overflowWrap: "anywhere" }}
+                    >
+                      <bdi>{requirement.name}</bdi> (<bdi>{requirement.side_effect_class}</bdi>)
+                    </span>
+                  ),
+                },
+                {
+                  key: "desired",
+                  header: tm("colDesired", locale),
+                  sortValue: (requirement) => (desiredOf(requirement) ? 1 : 0),
+                  render: (requirement) => (
+                    <span data-testid={`requirement-desired-${requirement.tool_definition_id}`}>
+                      {desiredOf(requirement)
+                        ? tm("desiredCritical", locale)
+                        : tm("desiredNonCritical", locale)}
+                    </span>
+                  ),
+                },
+                {
+                  key: "enforced",
+                  header: tm("colEnforced", locale),
+                  sortValue: (requirement) => (requirement.runtime_enforced ? 1 : 0),
+                  render: (requirement) => (
+                    <span data-testid={`requirement-enforced-${requirement.tool_definition_id}`}>
+                      {requirement.runtime_enforced
+                        ? tm("enforced", locale)
+                        : tm("notEnforced", locale)}
+                    </span>
+                  ),
+                },
+                {
+                  key: "check",
+                  header: tm("colConflict", locale),
+                  // Conflicts first when ascending: the rows that need attention come to the top.
+                  sortValue: (requirement) => (isConflict(requirement) ? 0 : 1),
+                  render: (requirement) =>
+                    isConflict(requirement) ? (
+                      <span
+                        data-testid={`requirement-conflict-${requirement.tool_definition_id}`}
+                        style={{ color: "var(--color-danger)", overflowWrap: "anywhere" }}
+                      >
+                        <span aria-hidden="true">✕</span> {tm("conflict", locale)}
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--color-success)" }}>
+                        <span aria-hidden="true">✓</span> {tm("consistent", locale)}
+                      </span>
+                    ),
+                },
+              ]}
+            />
           </div>
         )}
       </section>
@@ -680,9 +695,15 @@ function RequirementsPanelInner({
             <dt>{tm("rowVersion", locale)}</dt>
             <dd data-testid="budget-row-version">{policy.row_version}</dd>
             <dt>{tm("reserved", locale)}</dt>
-            <dd data-testid="budget-reserved">{policy.reserved_amount}</dd>
+            <dd>
+              <span data-testid="budget-reserved">{policy.reserved_amount}</span>{" "}
+              <bdi>{policy.currency}</bdi>
+            </dd>
             <dt>{tm("available", locale)}</dt>
-            <dd data-testid="budget-available">{policy.available_amount}</dd>
+            <dd>
+              <span data-testid="budget-available">{policy.available_amount}</span>{" "}
+              <bdi>{policy.currency}</bdi>
+            </dd>
           </dl>
         )}
 

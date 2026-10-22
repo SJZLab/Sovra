@@ -280,7 +280,7 @@ describe("FTF-0408 requirements panel against the real routers", () => {
     const rows = Array.from(tid("requirement-list").querySelectorAll("tbody tr"));
     expect(rows).toHaveLength(2);
     const byName = Object.fromEntries(
-      rows.map((r) => [r.querySelector("th bdi")!.textContent, r.textContent ?? ""]),
+      rows.map((r) => [r.querySelector("bdi")!.textContent, r.textContent ?? ""]),
     );
     expect(byName["issue_refund"]).toContain("Critical");
     expect(byName["issue_refund"]).toContain("Enforced");
